@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title> WON - 공학 계산기</title>
+        <meta charset="utf-8">
+        <link rel="stylesheet" href="style.css">
+    </head>
+
+    <body>
+        <h1><a href="index.html">계산기</a></h1>   
+        <div id="배경색">
+            <input type="button" value="Dark" onclick="
+            document.querySelector('body').style.backgroundColor = 'black';
+            document.querySelector('body').style.color = 'white';
+            ">
+            <input type="button" value="white" onclick="
+            document.querySelector('body').style.backgroundColor = 'white';
+            document.querySelector('body').style.color = 'black';
+            ">
+        </div>   
+        <div id="종류">       
+            <div><a href="일반.html"><b>일반</b></a></div> <div><a href="공학.html" id="종류클릭"><b>공학용</b></a></div>
+        </div>  
+    </body>
+</html>
