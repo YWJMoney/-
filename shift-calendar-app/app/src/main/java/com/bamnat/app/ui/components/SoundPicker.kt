@@ -8,7 +8,9 @@ import android.media.Ringtone
 import android.media.RingtoneManager
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.provider.MediaStore
 import android.provider.Settings
+import android.content.ContentUris
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -20,7 +22,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.heightIn
@@ -140,7 +141,7 @@ fun SoundPickerRow(
                 choosing = true
             }) {
                 Icon(Icons.Filled.LibraryMusic, contentDescription = null)
-                Text("  기본 소리")
+                Text("  휴대폰 알람음")
             }
             OutlinedButton(onClick = {
                 previewing?.stop()
@@ -167,24 +168,59 @@ fun SoundPickerRow(
 }
 
 /** One sound offered in the list. [value] is what gets stored (see [SoundPickerRow]). */
-private data class SoundChoice(val title: String, val value: String?)
+private data class SoundChoice(val title: String, val value: String?, val group: String)
 
+private val SOUND_GROUPS = listOf(
+    RingtoneManager.TYPE_ALARM to "휴대폰 알람음",
+    RingtoneManager.TYPE_RINGTONE to "벨소리",
+    RingtoneManager.TYPE_NOTIFICATION to "알림음",
+)
+
+/**
+ * Every alarm, ringtone and notification sound on the phone, alarms first.
+ * RingtoneManager's list comes back empty on some phones, so MediaStore is read directly as well.
+ */
 private fun loadSounds(context: Context, allowDefault: Boolean): List<SoundChoice> {
     val list = mutableListOf<SoundChoice>()
-    if (allowDefault) list += SoundChoice("휴대폰 기본 알람음", null)
-    list += SoundChoice("무음 (진동만)", AppSettings.SILENT_SOUND)
+    if (allowDefault) list += SoundChoice("휴대폰 기본 알람음", null, "")
+    list += SoundChoice("무음 (진동만)", AppSettings.SILENT_SOUND, "")
     val seen = HashSet<String>()
-    for (type in listOf(RingtoneManager.TYPE_ALARM, RingtoneManager.TYPE_RINGTONE, RingtoneManager.TYPE_NOTIFICATION)) {
+    for ((type, group) in SOUND_GROUPS) {
+        val before = list.size
         runCatching {
             val manager = RingtoneManager(context).apply { setType(type) }
             val cursor = manager.cursor
             while (cursor.moveToNext()) {
                 val uri = manager.getRingtoneUri(cursor.position)?.toString() ?: continue
-                if (seen.add(uri)) list += SoundChoice(cursor.getString(RingtoneManager.TITLE_COLUMN_INDEX) ?: "소리", uri)
+                if (seen.add(uri)) list += SoundChoice(cursor.getString(RingtoneManager.TITLE_COLUMN_INDEX) ?: "소리", uri, group)
+            }
+        }
+        if (list.size == before) list += mediaStoreSounds(context, type, group).filter { seen.add(it.value!!) }
+    }
+    return list
+}
+
+private fun mediaStoreSounds(context: Context, type: Int, group: String): List<SoundChoice> {
+    val flag = when (type) {
+        RingtoneManager.TYPE_ALARM -> MediaStore.Audio.AudioColumns.IS_ALARM
+        RingtoneManager.TYPE_RINGTONE -> MediaStore.Audio.AudioColumns.IS_RINGTONE
+        else -> MediaStore.Audio.AudioColumns.IS_NOTIFICATION
+    }
+    val result = mutableListOf<SoundChoice>()
+    for (base in listOf(MediaStore.Audio.Media.INTERNAL_CONTENT_URI, MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)) {
+        runCatching {
+            context.contentResolver.query(
+                base, arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE),
+                "$flag != 0", null, MediaStore.Audio.Media.TITLE,
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    val uri = ContentUris.withAppendedId(base, c.getLong(0)).toString()
+                    result += SoundChoice(c.getString(1) ?: "소리", uri, group)
+                }
             }
         }
     }
-    return list
+    return result
 }
 
 /**
@@ -205,6 +241,15 @@ private fun SoundListDialog(
     var chosen by remember { mutableStateOf(current) }
     var playing by remember { mutableStateOf<Ringtone?>(null) }
     DisposableEffect(Unit) { onDispose { playing?.stop() } }
+    // The phone's own sound picker, for sounds the list above cannot see.
+    val systemPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val uri = result.data?.let {
+                IntentCompat.getParcelableExtra(it, RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
+            }
+            if (uri != null) onDone(uri.toString())
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -215,7 +260,28 @@ private fun SoundListDialog(
                 Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             } else {
                 LazyColumn(Modifier.heightIn(max = 420.dp)) {
-                    items(list, key = { it.value ?: "default" }) { s ->
+                    if (list.none { it.group.isNotEmpty() }) {
+                        item(key = "empty") {
+                            Text(
+                                "이 휴대폰에서는 소리 목록을 바로 읽을 수 없어요. 아래 '휴대폰 목록 열기'로 골라 주세요.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 8.dp),
+                            )
+                        }
+                    }
+                    list.forEachIndexed { i, s ->
+                        if (s.group.isNotEmpty() && s.group != list.getOrNull(i - 1)?.group) {
+                            item(key = "h-${s.group}") {
+                                Text(
+                                    s.group,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+                                )
+                            }
+                        }
+                        item(key = s.value ?: "default") {
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -232,6 +298,7 @@ private fun SoundListDialog(
                             Text(s.title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 8.dp),
                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
+                        }
                     }
                 }
             }
@@ -242,7 +309,23 @@ private fun SoundListDialog(
                 onDone(chosen)
             }) { Text("완료") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+        dismissButton = {
+            Row {
+                TextButton(onClick = {
+                    playing?.stop()
+                    playing = null
+                    val existing = chosen?.takeIf { it != AppSettings.SILENT_SOUND }?.let { runCatching { Uri.parse(it) }.getOrNull() }
+                    val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER)
+                        .putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
+                        .putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "알람음 선택")
+                        .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, false)
+                        .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                        .putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, existing)
+                    runCatching { systemPicker.launch(intent) }
+                }) { Text("휴대폰 목록 열기") }
+                TextButton(onClick = onDismiss) { Text("취소") }
+            }
+        },
     )
 }
 
