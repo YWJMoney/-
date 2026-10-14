@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
@@ -177,27 +179,30 @@ fun StatTile(
                     Icon(Icons.Filled.WarningAmber, null, tint = cal.warning, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
                 }
-                Text(
+                // Three tiles share the narrow folded screen, so text shrinks instead of being cut off.
+                BasicText(
                     label,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (warning) cal.warning else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        color = if (warning) cal.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines = 2,
+                    autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 12.sp),
                 )
             }
-            Text(
+            BasicText(
                 value,
-                style = MaterialTheme.typography.titleLarge.merge(NumberStyle),
-                color = if (warning) cal.warning else MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleLarge.merge(NumberStyle).copy(
+                    color = if (warning) cal.warning else MaterialTheme.colorScheme.onSurface,
+                ),
                 maxLines = 1,
+                autoSize = TextAutoSize.StepBased(minFontSize = 12.sp, maxFontSize = 22.sp),
             )
             if (caption != null) {
-                Text(
+                BasicText(
                     caption,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = 11.sp),
                 )
             }
         }
@@ -250,7 +255,7 @@ fun MinutesStepper(
             style = MaterialTheme.typography.titleMedium.merge(NumberStyle),
             textAlign = TextAlign.Center,
             modifier = Modifier
-                .widthIn(min = 96.dp)
+                .widthIn(min = 64.dp)
                 .clip(MaterialTheme.shapes.small)
                 .clickable { editing = true }
                 .padding(horizontal = 8.dp, vertical = 8.dp),

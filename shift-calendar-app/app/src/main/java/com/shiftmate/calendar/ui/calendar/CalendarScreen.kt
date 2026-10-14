@@ -245,7 +245,7 @@ fun CalendarScreen(
             Row(Modifier.fillMaxSize()) {
                 Column(
                     Modifier
-                        .weight(1.15f)
+                        .weight(1.05f)
                         .fillMaxHeight()
                         .verticalScroll(rememberScrollState())
                         .padding(bottom = bottomSpace),
