@@ -14,7 +14,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ShiftMate"
+rootProject.name = "Bamnat"
 
 include(":app")
 // Pure Kotlin logic (patterns, hours, alarms), unit tested on the JVM.

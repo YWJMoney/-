@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">시프트메이트</string>
+    <string name="app_name">밤낮</string>
     <string name="channel_alarm_name">근무 알람</string>
     <string name="channel_alarm_description">근무 시작 전에 울리는 알람</string>
 </resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and below: Google auto backup [REL-04].
+     Keeps the schedule database and settings; leaves out what only makes sense on this phone. -->
+<full-backup-content>
+    <include domain="database" path="." />
+    <include domain="sharedpref" path="settings.xml" />
+    <include domain="file" path="." />
+    <exclude domain="file" path="diag/" />
+    <exclude domain="sharedpref" path="alarm_state.xml" />
+</full-backup-content>

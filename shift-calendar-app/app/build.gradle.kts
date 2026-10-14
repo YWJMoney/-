@@ -6,13 +6,13 @@ plugins {
 }
 
 android {
-    namespace = "com.shiftmate.calendar"
-    compileSdk = 35
+    namespace = "com.bamnat.app"
+    compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.shiftmate.calendar"
+        applicationId = "com.bamnat.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -68,7 +68,7 @@ ksp {
 }
 
 dependencies {
-    implementation("com.shiftmate:core")
+    implementation("com.bamnat:core")
 
     val composeBom = platform("androidx.compose:compose-bom:2025.05.00")
     implementation(composeBom)

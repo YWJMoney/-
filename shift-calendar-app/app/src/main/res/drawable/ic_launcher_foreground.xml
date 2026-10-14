@@ -1,23 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Calendar page with a clock hand: shift calendar. 108dp adaptive icon, art inside the 66dp safe zone. -->
+<!-- 밤낮 logo: half sun (day) and half crescent (night) split by the shift-change line.
+     108dp adaptive icon; the art stays inside the 66dp safe zone. Source: brand/bamnat-icon.svg -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M36,34h36a6,6 0,0 1,6 6v32a6,6 0,0 1,-6 6h-36a6,6 0,0 1,-6 -6v-32a6,6 0,0 1,6 -6z" />
-    <path
-        android:fillColor="#C9D5FF"
-        android:pathData="M36,34h36a6,6 0,0 1,6 6v6h-48v-6a6,6 0,0 1,6 -6z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M40,28h4v10h-4z M64,28h4v10h-4z" />
-    <path
-        android:fillColor="#2F5BEA"
-        android:pathData="M54,51a11,11 0,1 1,0 22a11,11 0,1 1,0 -22z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M52.75,55h2.5v7.2l4.6,2.7l-1.25,2.15l-5.85,-3.45z" />
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.78" android:scaleY="0.78">
+        <path android:pathData="M54,24 A30,30 0 0,0 24,54 A30,30 0 0,0 54,84 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="54" android:startY="24"
+                    android:endX="54" android:endY="84">
+                    <item android:offset="0" android:color="#FFFFC94D" />
+                    <item android:offset="1" android:color="#FFFF8A3D" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path android:fillColor="#E9EDFF" android:pathData="M54,68.32 A23.6,23.6 0 0,0 81.63,65.68 A30,30 0 0,1 54,84 Z M54,24 A30,30 0 0,1 61.23,24.88 A23.6,23.6 0 0,0 54,27.68 Z" />
+        <path android:fillColor="#EBFFFFFF" android:pathData="M52.8,23.2a1.2,1.2 0,0 1,2.4 0v61.6a1.2,1.2 0,0 1,-2.4 0z" />
+        <path android:fillColor="#E9EDFF" android:pathData="M73.2,29.4a1.8,1.8 0,1 1,0 3.6a1.8,1.8 0,1 1,0 -3.6z" />
+        <path android:fillColor="#CCE9EDFF" android:pathData="M81.2,40.8a1.2,1.2 0,1 1,0 2.4a1.2,1.2 0,1 1,0 -2.4z" />
+    </group>
 </vector>

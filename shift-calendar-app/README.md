@@ -1,4 +1,4 @@
-# 시프트메이트 (ShiftMate)
+# 밤낮 (Bamnat)
 
 교대 근무자와 시간제 근무자를 위한 안드로이드 근무 달력입니다.
 Kotlin, Jetpack Compose(Material 3), Room, AlarmManager로 만들었습니다.

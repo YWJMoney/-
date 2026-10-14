@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: cloud backup and phone-to-phone transfer [REL-04].
+     Alarms are planned again on first launch, so the per-phone alarm state and the diagnostics log stay behind. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="database" path="." />
+        <include domain="sharedpref" path="settings.xml" />
+        <include domain="file" path="." />
+        <exclude domain="file" path="diag/" />
+        <exclude domain="sharedpref" path="alarm_state.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="database" path="." />
+        <include domain="sharedpref" path="settings.xml" />
+        <include domain="file" path="." />
+        <exclude domain="file" path="diag/" />
+        <exclude domain="sharedpref" path="alarm_state.xml" />
+    </device-transfer>
+</data-extraction-rules>

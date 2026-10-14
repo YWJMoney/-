@@ -5,7 +5,7 @@ plugins {
     kotlin("jvm") version "2.1.21"
 }
 
-group = "com.shiftmate"
+group = "com.bamnat"
 version = "1.0.0"
 
 java {

@@ -15,13 +15,15 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <application
-        android:name=".ShiftMateApp"
+        android:name=".BamnatApp"
         android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.ShiftMate.Starting"
+        android:theme="@style/Theme.Bamnat.Starting"
         android:enableOnBackInvokedCallback="true">
 
         <!-- resizeableActivity + configChanges keep state smooth when a Fold opens or closes. -->
@@ -45,7 +47,7 @@
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:taskAffinity=""
-            android:theme="@style/Theme.ShiftMate" />
+            android:theme="@style/Theme.Bamnat" />
 
         <service
             android:name=".alarm.AlarmService"
