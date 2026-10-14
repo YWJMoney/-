@@ -1,5 +1,6 @@
 package com.shiftmate.calendar.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -19,6 +20,8 @@ data class ShiftTypeEntity(
     val alarmOffsetMinutes: Int,
     val alarmSoundUri: String?,
     val sortOrder: Int,
+    /** All alarms, see [com.shiftmate.core.alarm.AlarmCodec]; empty on rows from version 1. */
+    @ColumnInfo(defaultValue = "") val alarmOffsets: String = "",
 )
 
 /** The single active pattern, always stored with id 1. */
@@ -51,6 +54,8 @@ data class DayEntryEntity(
     val overtimeMinutes: Int,
     val holidayWorkMinutes: Int,
     val alarmSkipped: Boolean,
+    /** Alarms set by hand for this date; null follows the shift type. */
+    @ColumnInfo(defaultValue = "NULL") val customAlarms: String? = null,
 ) {
     companion object {
         const val MODE_NONE = 0
@@ -59,7 +64,7 @@ data class DayEntryEntity(
     }
 }
 
-@Entity(tableName = "memos", indices = [Index("epochDay"), Index("updatedAt")])
+@Entity(tableName = "memos", indices = [Index("epochDay"), Index("updatedAt"), Index("deletedAt")])
 data class MemoEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val epochDay: Long?,
@@ -72,4 +77,6 @@ data class MemoEntity(
     val pinned: Boolean,
     val createdAt: Long,
     val updatedAt: Long,
+    /** When the memo went to the trash; null for live memos. */
+    @ColumnInfo(defaultValue = "NULL") val deletedAt: Long? = null,
 )

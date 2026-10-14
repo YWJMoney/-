@@ -1,5 +1,6 @@
 package com.shiftmate.calendar.ui.shifts
 
+import com.shiftmate.core.hours.HoursFormat
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -147,21 +148,6 @@ fun PatternScreen(vm: ShiftsViewModel, onBack: () -> Unit, onOpenShiftTypes: () 
             )
 
             if (kind == PatternKind.ROTATION) {
-                SectionCard(title = "자주 쓰는 패턴") {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for (preset in PatternPresets.all) {
-                            AssistChip(
-                                onClick = {
-                                    rotation.clear()
-                                    rotation.addAll(PatternPresets.toSteps(preset, types))
-                                    selectedStep = null
-                                },
-                                label = { Text("${preset.name} · ${preset.description}") },
-                            )
-                        }
-                    }
-                }
-
                 SectionCard(
                     title = "순서 (${rotation.size}일 주기)",
                     trailing = {
@@ -234,6 +220,13 @@ fun PatternScreen(vm: ShiftsViewModel, onBack: () -> Unit, onOpenShiftTypes: () 
                     TextButton(onClick = onOpenShiftTypes) { Text("근무 유형 추가·수정") }
                 }
 
+                // Right under the input so each tap shows its effect on the calendar at once.
+                if (draft != null) {
+                    SectionCard(title = "미리보기 (오늘부터 3주)") {
+                        PatternPreview(types = types, pattern = draft, from = today)
+                    }
+                }
+
                 if (rotation.isNotEmpty()) {
                     SectionCard(title = "오늘(${Fmt.shortDate(today)})은 몇 번째 날인가요?") {
                         val todayIndex = Math.floorMod(ChronoUnit.DAYS.between(startDate, today), rotation.size.toLong()).toInt()
@@ -253,6 +246,22 @@ fun PatternScreen(vm: ShiftsViewModel, onBack: () -> Unit, onOpenShiftTypes: () 
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 8.dp),
                         )
+                    }
+                }
+
+                // Presets sit below so the order input and its preview share the first screen.
+                SectionCard(title = "자주 쓰는 패턴") {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (preset in PatternPresets.all) {
+                            AssistChip(
+                                onClick = {
+                                    rotation.clear()
+                                    rotation.addAll(PatternPresets.toSteps(preset, types))
+                                    selectedStep = null
+                                },
+                                label = { Text("${preset.name} · ${preset.description}") },
+                            )
+                        }
                     }
                 }
             } else {
@@ -288,6 +297,11 @@ fun PatternScreen(vm: ShiftsViewModel, onBack: () -> Unit, onOpenShiftTypes: () 
                         }
                     }
                 }
+                if (draft != null) {
+                    SectionCard(title = "미리보기 (오늘부터 3주)") {
+                        PatternPreview(types = types, pattern = draft, from = today)
+                    }
+                }
             }
 
             SectionCard(title = "적용 기간") {
@@ -312,12 +326,6 @@ fun PatternScreen(vm: ShiftsViewModel, onBack: () -> Unit, onOpenShiftTypes: () 
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),
                 )
-            }
-
-            if (draft != null) {
-                SectionCard(title = "미리보기 (오늘부터 3주)") {
-                    PatternPreview(types = types, pattern = draft, from = today)
-                }
             }
 
             Button(
@@ -429,6 +437,11 @@ private fun PatternPreview(types: List<ShiftType>, pattern: WorkPattern, from: L
                 Spacer(Modifier.height(2.dp))
                 val t = day.shiftType
                 if (t != null) ShiftBadge(t, size = 22.dp, outlined = t.isOff) else Spacer(Modifier.height(22.dp))
+                Text(
+                    if (day.scheduledMinutes > 0) HoursFormat.short(day.scheduledMinutes) else "",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

@@ -80,7 +80,7 @@ class AlarmActivity : ComponentActivity() {
                 val current = ring
                 if (current != null) {
                     RingingScreen(
-                        title = "${current.shiftName} 근무",
+                        title = if (current.shiftName.isBlank()) "알람" else "${current.shiftName} 근무",
                         subtitle = AlarmService.describe(current),
                         snoozeMinutes = snoozeMinutes,
                         onSnooze = { AlarmService.snooze(this@AlarmActivity) },

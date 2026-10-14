@@ -29,11 +29,20 @@ data class DayEntry(
     val holidayWorkMinutes: Int = 0,
     /** Skip the shift alarm on this day only. */
     val alarmSkipped: Boolean = false,
+    /**
+     * Alarms set by hand for this date. They replace the shift's alarms on this day;
+     * null means the day follows its shift type.
+     */
+    val customAlarms: List<DayAlarm>? = null,
 ) {
     val hasCustomTimes: Boolean get() = customStart != null && customEnd != null
 
     /** True when this entry changes nothing and can be deleted. */
     val isEmpty: Boolean
         get() = override == ShiftOverride.None && customStart == null && customEnd == null &&
-            customBreakMinutes == null && overtimeMinutes == 0 && holidayWorkMinutes == 0 && !alarmSkipped
+            customBreakMinutes == null && overtimeMinutes == 0 && holidayWorkMinutes == 0 && !alarmSkipped &&
+            customAlarms == null
 }
+
+/** An alarm at a clock time on one date, set from the calendar. */
+data class DayAlarm(val time: LocalTime, val enabled: Boolean = true)

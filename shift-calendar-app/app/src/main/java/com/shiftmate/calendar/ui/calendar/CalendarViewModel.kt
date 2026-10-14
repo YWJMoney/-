@@ -1,5 +1,6 @@
 package com.shiftmate.calendar.ui.calendar
 
+import com.shiftmate.core.model.DayAlarm
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.shiftmate.calendar.AppContainer
@@ -136,6 +137,18 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel() {
                 })
             }
         }
+    }
+
+    fun setDayAlarms(date: LocalDate, alarms: List<DayAlarm>?) {
+        viewModelScope.launch { schedule.setDayAlarms(date, alarms) }
+    }
+
+    fun setAlarmsEnabled(on: Boolean) = container.settingsRepository.update { it.copy(alarmsEnabled = on) }
+
+    fun hideDayAlarmNotice() = container.settingsRepository.update { it.copy(hideDayAlarmNotice = true) }
+
+    fun deleteMemo(memo: Memo) {
+        viewModelScope.launch { memoRepo.delete(memo) }
     }
 
     fun addQuickMemo(date: LocalDate, text: String) {

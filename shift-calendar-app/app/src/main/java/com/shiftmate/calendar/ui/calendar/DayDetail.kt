@@ -1,5 +1,19 @@
 package com.shiftmate.calendar.ui.calendar
 
+import com.shiftmate.core.schedule.ScheduleResolver
+import com.shiftmate.core.model.DayAlarm
+import com.shiftmate.core.alarm.PlannedAlarm
+import com.shiftmate.core.alarm.AlarmPlanner
+import com.shiftmate.calendar.data.ScheduleRepository
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.EditCalendar
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.AlarmAdd
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -127,15 +141,14 @@ fun DayDetail(
 
         ExtraWorkSection(day = day, vm = vm)
 
-        if (day.isWorkDay && day.shiftType != null) {
-            AlarmSection(day = day, vm = vm, onOpenShiftTypes = onOpenShiftTypes)
-        }
+        AlarmSection(day = day, snapshot = snapshot, vm = vm, onOpenShiftTypes = onOpenShiftTypes)
 
         MemoSection(
             date = date,
             memos = memos,
             onQuickAdd = { vm.addQuickMemo(date, it) },
             onOpenMemo = onOpenMemo,
+            onDeleteMemo = vm::deleteMemo,
             onNewMemo = { onNewMemo(date) },
         )
 
@@ -341,49 +354,243 @@ private fun ExtraWorkSection(day: ResolvedDay, vm: CalendarViewModel) {
 }
 
 @Composable
-private fun AlarmSection(day: ResolvedDay, vm: CalendarViewModel, onOpenShiftTypes: () -> Unit) {
-    val type = day.shiftType ?: return
-    val start = day.start ?: return
-    SectionCard(title = "알람") {
-        if (type.alarmEnabled) {
-            val trigger = day.date.atTime(start).minusMinutes(type.alarmOffsetMinutes.toLong())
-            val dayPrefix = when {
-                trigger.toLocalDate().isBefore(day.date) -> "전날 "
-                else -> ""
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    if (day.alarmSkipped) Icons.Filled.AlarmOff else Icons.Filled.Alarm,
-                    contentDescription = null,
-                    tint = if (day.alarmSkipped) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary,
-                )
+private fun AlarmSection(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, onOpenShiftTypes: () -> Unit) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val type = day.shiftType?.takeIf { day.isWorkDay }
+    val custom = day.entry?.customAlarms
+    // Without the skip, to show what turning the day back on would ring.
+    val planned = remember(snapshot, day.date) {
+        AlarmPlanner.alarmsOn(snapshot.resolver, day.date).ifEmpty {
+            if (!day.alarmSkipped) emptyList()
+            else AlarmPlanner.alarmsOn(
+                ScheduleResolver(snapshot.shiftTypes, snapshot.pattern,
+                    snapshot.entries.map { if (it.date == day.date) it.copy(alarmSkipped = false) else it }),
+                day.date,
+            )
+        }
+    }
+    var editing by remember(day.date) { mutableStateOf(false) }
+    var pendingSave by remember(day.date) { mutableStateOf<List<DayAlarm>?>(null) }
+
+    SectionCard(
+        title = "알람",
+        trailing = if (custom != null) {
+            { TextButton(onClick = { vm.setDayAlarms(day.date, null) }) { Text("근무 알람으로") } }
+        } else {
+            null
+        },
+    ) {
+        if (!settings.alarmsEnabled) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
+                Icon(Icons.Filled.NotificationsOff, null, tint = MaterialTheme.colorScheme.error)
                 Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        if (day.alarmSkipped) "이 날은 알람 끔" else "$dayPrefix${Fmt.time(trigger.toLocalTime())}에 울려요",
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    Text(
-                        "근무 ${Fmt.offset(type.alarmOffsetMinutes)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Text("알람 사용이 꺼져 있어 아무 알람도 울리지 않아요", style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f))
+                TextButton(onClick = { vm.setAlarmsEnabled(true) }) { Text("켜기") }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val ringing = planned.isNotEmpty() && !day.alarmSkipped
+            Icon(
+                if (ringing) Icons.Filled.Alarm else Icons.Filled.AlarmOff,
+                contentDescription = null,
+                tint = if (ringing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    when {
+                        day.alarmSkipped -> "이 날은 알람 끔"
+                        planned.isEmpty() -> "울릴 알람이 없어요"
+                        planned.size == 1 -> "${whenText(planned.first(), day.date)}에 울려요"
+                        else -> "알람 ${planned.size}개가 울려요"
+                    },
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    when {
+                        custom != null -> "이 날만 직접 정한 알람"
+                        type != null && type.alarmEnabled -> "${type.name} 근무 알람 설정을 따라요"
+                        type != null -> "${type.name} 근무는 알람이 꺼져 있어요"
+                        else -> "쉬는 날이에요. 필요하면 직접 정할 수 있어요"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (planned.isNotEmpty()) {
                 Switch(checked = !day.alarmSkipped, onCheckedChange = { vm.setAlarmSkipped(day.date, !it) })
             }
-        } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.AlarmOff, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    "${type.name} 근무는 알람이 꺼져 있어요",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton(onClick = onOpenShiftTypes) { Text("켜기") }
+        }
+        if (planned.size > 1 && !day.alarmSkipped) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(top = 8.dp, start = 36.dp),
+            ) {
+                for (a in planned) {
+                    SuggestionChip(onClick = { editing = true }, label = { Text(whenText(a, day.date)) })
+                }
+            }
+        }
+        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { editing = true }, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Filled.EditCalendar, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(if (custom != null) "이 날 알람 수정" else "이 날 알람 직접 정하기")
+            }
+            if (type != null && !type.alarmEnabled && custom == null) {
+                TextButton(onClick = onOpenShiftTypes) { Text("근무 알람 켜기") }
             }
         }
     }
+
+    if (editing) {
+        val start = day.start
+        DayAlarmEditorDialog(
+            date = day.date,
+            initial = custom ?: planned.filter { it.triggerAt.toLocalDate() == day.date }
+                .map { DayAlarm(it.triggerAt.toLocalTime()) },
+            suggested = start?.minusHours(1) ?: LocalTime.of(8, 0),
+            onDismiss = { editing = false },
+            onSave = { list ->
+                editing = false
+                if (settings.hideDayAlarmNotice) vm.setDayAlarms(day.date, list) else pendingSave = list
+            },
+        )
+    }
+    pendingSave?.let { list ->
+        DayAlarmNoticeDialog(
+            date = day.date,
+            alarms = list,
+            alarmsEnabled = settings.alarmsEnabled,
+            onDismiss = { pendingSave = null },
+            onConfirm = { dontShowAgain ->
+                vm.setDayAlarms(day.date, list)
+                if (dontShowAgain) vm.hideDayAlarmNotice()
+                pendingSave = null
+            },
+        )
+    }
+}
+
+/** "07:00" or "전날 22:30" for an alarm that rings the evening before. */
+private fun whenText(alarm: PlannedAlarm, date: LocalDate): String =
+    (if (alarm.triggerAt.toLocalDate().isBefore(date)) "전날 " else "") + Fmt.time(alarm.triggerAt.toLocalTime())
+
+@Composable
+private fun DayAlarmEditorDialog(
+    date: LocalDate,
+    initial: List<DayAlarm>,
+    suggested: LocalTime,
+    onDismiss: () -> Unit,
+    onSave: (List<DayAlarm>) -> Unit,
+) {
+    val alarms = remember { mutableStateListOf<DayAlarm>().apply { addAll(initial.sortedBy { it.time }) } }
+    var picking by remember { mutableStateOf<Int?>(null) } // index to change, or -1 for a new alarm
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${Fmt.dayTitle(date)} 알람") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "이 날은 아래 알람만 울려요. 근무 알람 대신 쓰여요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (alarms.isEmpty()) {
+                    Text("알람이 없어요. 저장하면 이 날은 울리지 않아요.", style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(vertical = 8.dp))
+                }
+                alarms.forEachIndexed { i, alarm ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            Fmt.time(alarm.time),
+                            style = MaterialTheme.typography.headlineSmall.merge(NumberStyle),
+                            color = if (alarm.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(MaterialTheme.shapes.small)
+                                .clickable { picking = i }
+                                .padding(vertical = 6.dp),
+                        )
+                        Switch(checked = alarm.enabled, onCheckedChange = { on -> alarms[i] = alarm.copy(enabled = on) })
+                        IconButton(onClick = { alarms.removeAt(i) }) { Icon(Icons.Filled.Close, "이 알람 지우기") }
+                    }
+                }
+                OutlinedButton(
+                    onClick = { picking = -1 },
+                    enabled = alarms.size < ScheduleRepository.MAX_ALARMS,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Filled.AlarmAdd, null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("알람 추가")
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(alarms.toList()) }) { Text("저장") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
+    picking?.let { index ->
+        val initialTime = if (index >= 0) alarms[index].time else alarms.maxOfOrNull { it.time }?.plusMinutes(10) ?: suggested
+        TimePickerDialog(if (index >= 0) "알람 시각 바꾸기" else "알람 추가", initialTime, onDismiss = { picking = null }) { t ->
+            if (alarms.none { it.time == t }) {
+                if (index >= 0) alarms[index] = alarms[index].copy(time = t) else alarms.add(DayAlarm(t))
+                alarms.sortBy { it.time }
+            }
+            picking = null
+        }
+    }
+}
+
+@Composable
+private fun DayAlarmNoticeDialog(
+    date: LocalDate,
+    alarms: List<DayAlarm>,
+    alarmsEnabled: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (dontShowAgain: Boolean) -> Unit,
+) {
+    var dontShow by remember { mutableStateOf(false) }
+    val active = alarms.filter { it.enabled }.sortedBy { it.time }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.Alarm, null) },
+        title = { Text("이렇게 울려요") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    if (active.isEmpty()) "${Fmt.dayTitle(date)}에는 알람이 울리지 않아요."
+                    else "${Fmt.dayTitle(date)}에 아래 알람이 울려요. 이 날의 근무 알람 대신 쓰여요.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                for (a in active) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Alarm, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(8.dp))
+                        Text(Fmt.time(a.time), style = MaterialTheme.typography.titleMedium.merge(NumberStyle))
+                    }
+                }
+                if (!alarmsEnabled) {
+                    Text("지금은 설정에서 알람 사용이 꺼져 있어 울리지 않아요.", color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(MaterialTheme.shapes.small)
+                        .clickable { dontShow = !dontShow }
+                        .padding(end = 8.dp),
+                ) {
+                    Checkbox(checked = dontShow, onCheckedChange = { dontShow = it })
+                    Text("다시 표시하지 않기", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(dontShow) }) { Text("확인") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
 }
 
 @Composable
@@ -392,6 +599,7 @@ private fun MemoSection(
     memos: List<Memo>,
     onQuickAdd: (String) -> Unit,
     onOpenMemo: (Long) -> Unit,
+    onDeleteMemo: (Memo) -> Unit,
     onNewMemo: () -> Unit,
 ) {
     var text by rememberSaveable(date) { mutableStateOf("") }
@@ -428,21 +636,21 @@ private fun MemoSection(
         if (memos.isNotEmpty()) Spacer(Modifier.height(10.dp))
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             for (memo in memos) {
-                MemoRow(memo = memo, onClick = { onOpenMemo(memo.id) })
+                MemoRow(memo = memo, onClick = { onOpenMemo(memo.id) }, onDelete = { onDeleteMemo(memo) })
             }
         }
     }
 }
 
 @Composable
-private fun MemoRow(memo: Memo, onClick: () -> Unit) {
+private fun MemoRow(memo: Memo, onClick: () -> Unit, onDelete: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .background(memoBackground(memo.colorIndex))
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (memo.isChecklist) {
@@ -464,6 +672,9 @@ private fun MemoRow(memo: Memo, onClick: () -> Unit) {
         if (memo.pinned) {
             Icon(Icons.Filled.PushPin, contentDescription = "고정됨", Modifier.size(16.dp),
                 tint = MaterialTheme.colorScheme.primary)
+        }
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Outlined.Delete, contentDescription = "메모 삭제", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

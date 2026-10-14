@@ -61,7 +61,7 @@ object Notifications {
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setContentTitle("${ring.shiftName} 근무 알람")
+            .setContentTitle(ring.title)
             .setContentText(AlarmService.describe(ring))
             .setContentIntent(open)
             .build()

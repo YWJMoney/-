@@ -1,23 +1,30 @@
 package com.shiftmate.core.alarm
 
 import com.shiftmate.core.schedule.ScheduleResolver
+import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
-/** One upcoming shift alarm. */
+/** One upcoming alarm. */
 data class PlannedAlarm(
     val triggerAt: LocalDateTime,
     val shiftDate: LocalDate,
+    /** Start of that day's shift, or the alarm time itself on a day without work. */
     val shiftStart: LocalTime,
+    /** 0 when the day has no shift. */
     val shiftTypeId: Long,
+    /** Empty when the day has no shift. */
     val shiftName: String,
+    /** Minutes before the shift start; negative when a hand-set alarm rings after it. */
     val offsetMinutes: Int,
     val soundUri: String?,
+    /** Set by hand for this date from the calendar. */
+    val custom: Boolean = false,
 )
 
 /**
- * Finds the next shift alarm. Only one alarm is registered with the system at a time;
+ * Finds the next alarm. Only one alarm is registered with the system at a time;
  * once it rings, the next one is planned from its trigger time. This keeps the system
  * alarm in sync with any schedule edit without tracking dozens of pending intents.
  */
@@ -41,9 +48,10 @@ object AlarmPlanner {
         val last = after.toLocalDate().plusDays(lookaheadDays)
         var best: PlannedAlarm? = null
         while (!date.isAfter(last)) {
-            val alarm = alarmOn(resolver, date)
-            if (alarm != null && alarm.triggerAt.isAfter(after)) {
-                if (best == null || alarm.triggerAt.isBefore(best.triggerAt)) best = alarm
+            for (alarm in alarmsOn(resolver, date)) {
+                if (alarm.triggerAt.isAfter(after) && (best == null || alarm.triggerAt.isBefore(best.triggerAt))) {
+                    best = alarm
+                }
             }
             // Triggers lie within a day of their shift date, so dates this far past the
             // best candidate cannot ring earlier.
@@ -53,23 +61,50 @@ object AlarmPlanner {
         return best
     }
 
-    /** The alarm for the shift starting on [date], ignoring whether it is in the past. */
-    fun alarmOn(resolver: ScheduleResolver, date: LocalDate): PlannedAlarm? {
+    /**
+     * Every alarm belonging to [date], earliest first, ignoring whether it is in the past.
+     * Alarms set by hand for the date replace the shift's own alarms on that day.
+     */
+    fun alarmsOn(resolver: ScheduleResolver, date: LocalDate): List<PlannedAlarm> {
         val day = resolver.resolve(date)
-        val type = day.shiftType ?: return null
-        val start = day.start ?: return null
-        if (!type.alarmEnabled || day.alarmSkipped) return null
-        val offset = type.alarmOffsetMinutes.coerceIn(0, MAX_OFFSET_MINUTES)
-        return PlannedAlarm(
-            triggerAt = date.atTime(start).minusMinutes(offset.toLong()),
-            shiftDate = date,
-            shiftStart = start,
-            shiftTypeId = type.id,
-            shiftName = type.name,
-            offsetMinutes = offset,
-            soundUri = type.alarmSoundUri,
-        )
+        if (day.alarmSkipped) return emptyList()
+        val type = day.shiftType?.takeIf { day.isWorkDay }
+        val start = day.start
+        val custom = day.entry?.customAlarms
+        val list = if (custom != null) {
+            custom.filter { it.enabled }.map { alarm ->
+                val at = date.atTime(alarm.time)
+                PlannedAlarm(
+                    triggerAt = at,
+                    shiftDate = date,
+                    shiftStart = start ?: alarm.time,
+                    shiftTypeId = type?.id ?: 0,
+                    shiftName = type?.name.orEmpty(),
+                    offsetMinutes = if (start != null) Duration.between(at, date.atTime(start)).toMinutes().toInt() else 0,
+                    soundUri = type?.alarmSoundUri,
+                    custom = true,
+                )
+            }
+        } else {
+            if (type == null || start == null) return emptyList()
+            type.activeAlarms.map { spec ->
+                val offset = spec.offsetMinutes.coerceIn(0, MAX_OFFSET_MINUTES)
+                PlannedAlarm(
+                    triggerAt = date.atTime(start).minusMinutes(offset.toLong()),
+                    shiftDate = date,
+                    shiftStart = start,
+                    shiftTypeId = type.id,
+                    shiftName = type.name,
+                    offsetMinutes = offset,
+                    soundUri = type.alarmSoundUri,
+                )
+            }
+        }
+        return list.distinctBy { it.triggerAt }.sortedBy { it.triggerAt }
     }
+
+    /** The first alarm of the shift on [date], or null. */
+    fun alarmOn(resolver: ScheduleResolver, date: LocalDate): PlannedAlarm? = alarmsOn(resolver, date).firstOrNull()
 
     /** Offsets are limited to 24h so the two-day search window above is always enough. */
     const val MAX_OFFSET_MINUTES = 24 * 60

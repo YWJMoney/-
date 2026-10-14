@@ -6,6 +6,8 @@ import com.shiftmate.calendar.data.db.decodeSteps
 import com.shiftmate.calendar.data.db.encodeSteps
 import com.shiftmate.calendar.data.db.toEntity
 import com.shiftmate.calendar.data.db.toModel
+import com.shiftmate.core.model.AlarmSpec
+import com.shiftmate.core.model.DayAlarm
 import com.shiftmate.core.model.DayEntry
 import com.shiftmate.core.model.ShiftOverride
 import com.shiftmate.core.model.ShiftType
@@ -59,7 +61,11 @@ class ScheduleRepository(private val db: AppDatabase) {
             name = type.name.trim().ifEmpty { "근무" },
             label = type.label.trim().take(MAX_LABEL_LENGTH).ifEmpty { type.name.trim().take(1).ifEmpty { "근" } },
             breakMinutes = type.breakMinutes.coerceIn(0, 12 * 60),
-            alarmOffsetMinutes = type.alarmOffsetMinutes.coerceIn(0, 24 * 60),
+            alarms = type.alarms
+                .map { it.copy(offsetMinutes = it.offsetMinutes.coerceIn(0, 24 * 60)) }
+                .distinctBy { it.offsetMinutes }
+                .sortedByDescending { it.offsetMinutes }
+                .take(MAX_ALARMS),
             start = if (type.isOff) null else type.start,
             end = if (type.isOff) null else type.end,
             alarmEnabled = type.alarmEnabled && !type.isOff,
@@ -144,10 +150,21 @@ class ScheduleRepository(private val db: AppDatabase) {
     suspend fun setAlarmSkipped(date: LocalDate, skipped: Boolean) =
         updateDay(date) { it.copy(alarmSkipped = skipped) }
 
+    /** Hand-set alarms for one date; null goes back to the shift's own alarms. */
+    suspend fun setDayAlarms(date: LocalDate, alarms: List<DayAlarm>?) =
+        updateDay(date) { entry ->
+            entry.copy(
+                customAlarms = alarms?.distinctBy { it.time }?.sortedBy { it.time }?.take(MAX_ALARMS),
+                // Choosing alarms for a day means the user wants that day to ring.
+                alarmSkipped = if (alarms != null) false else entry.alarmSkipped,
+            )
+        }
+
     suspend fun resetDay(date: LocalDate) = updateDay(date) { DayEntry(date) }
 
     companion object {
         const val MAX_LABEL_LENGTH = 2
+        const val MAX_ALARMS = 10
         /** 24 hours: one day cannot hold more extra work than that. */
         const val MAX_EXTRA_MINUTES = 24 * 60
     }
@@ -156,11 +173,11 @@ class ScheduleRepository(private val db: AppDatabase) {
 object DefaultShiftTypes {
     fun all(): List<ShiftType> = listOf(
         ShiftType(0, "주간", "주", 0xFF2F80ED, LocalTime.of(9, 0), LocalTime.of(18, 0), breakMinutes = 60,
-            alarmEnabled = true, alarmOffsetMinutes = 60, sortOrder = 0),
+            alarmEnabled = true, alarms = listOf(AlarmSpec(60)), sortOrder = 0),
         ShiftType(0, "오후", "오", 0xFFF2994A, LocalTime.of(14, 0), LocalTime.of(22, 0), breakMinutes = 30,
-            alarmEnabled = true, alarmOffsetMinutes = 60, sortOrder = 1),
+            alarmEnabled = true, alarms = listOf(AlarmSpec(60)), sortOrder = 1),
         ShiftType(0, "야간", "야", 0xFF6C5CE7, LocalTime.of(22, 0), LocalTime.of(7, 0), breakMinutes = 60,
-            alarmEnabled = true, alarmOffsetMinutes = 90, sortOrder = 2),
+            alarmEnabled = true, alarms = listOf(AlarmSpec(90)), sortOrder = 2),
         ShiftType(0, "휴무", "휴", 0xFF8E9AAF, null, null, isOff = true, sortOrder = 3),
     )
 }

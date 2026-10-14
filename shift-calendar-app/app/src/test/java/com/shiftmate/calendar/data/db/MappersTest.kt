@@ -2,6 +2,8 @@ package com.shiftmate.calendar.data.db
 
 import com.shiftmate.core.memo.ChecklistItem
 import com.shiftmate.core.memo.Memo
+import com.shiftmate.core.model.AlarmSpec
+import com.shiftmate.core.model.DayAlarm
 import com.shiftmate.core.model.DayEntry
 import com.shiftmate.core.model.ShiftOverride
 import com.shiftmate.core.model.ShiftType
@@ -38,6 +40,8 @@ class MappersTest {
             DayEntry(date, ShiftOverride.Off),
             DayEntry(date, ShiftOverride.Shift(7), LocalTime.of(10, 30), LocalTime.of(2, 15), 45, 30, 0, true),
             DayEntry(date, holidayWorkMinutes = 300),
+            DayEntry(date, customAlarms = listOf(DayAlarm(LocalTime.of(6, 10)), DayAlarm(LocalTime.of(6, 40), false))),
+            DayEntry(date, customAlarms = emptyList()),
         )
         for (e in entries) assertEquals(e, e.toEntity().toModel())
     }
@@ -45,8 +49,11 @@ class MappersTest {
     @Test
     fun shiftTypesRoundTrip() {
         val t = ShiftType(5, "야간", "야", 0xFF6C5CE7, LocalTime.of(22, 0), LocalTime.of(7, 0), 60,
-            alarmEnabled = true, alarmOffsetMinutes = 90, alarmSoundUri = "content://x", sortOrder = 2)
+            alarmEnabled = true, alarms = listOf(AlarmSpec(90), AlarmSpec(30, enabled = false)), alarmSoundUri = "content://x", sortOrder = 2)
         assertEquals(t, t.toEntity().toModel())
+        // Rows from before several alarms existed still carry their single alarm.
+        val legacy = t.toEntity().copy(alarmOffsets = "", alarmOffsetMinutes = 45).toModel()
+        assertEquals(listOf(AlarmSpec(45)), legacy.alarms)
         val off = ShiftType(6, "휴무", "휴", 0xFF8E9AAF, null, null, isOff = true)
         assertEquals(off, off.toEntity().toModel())
     }
@@ -57,5 +64,7 @@ class MappersTest {
         assertEquals(m, m.toEntity().toModel())
         val plain = Memo(4, null, "", "본문", emptyList(), false, 0, false, 1, 2)
         assertEquals(plain, plain.toEntity().toModel())
+        val trashed = plain.copy(deletedAtMillis = 99)
+        assertEquals(trashed, trashed.toEntity().toModel())
     }
 }

@@ -36,6 +36,9 @@ interface ShiftTypeDao {
 
     @Query("DELETE FROM shift_types WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("DELETE FROM shift_types")
+    suspend fun clear()
 }
 
 @Dao
@@ -69,32 +72,74 @@ interface DayEntryDao {
 
     @Query("SELECT * FROM day_entries WHERE overrideMode = 2 AND overrideShiftTypeId = :shiftTypeId")
     suspend fun withOverride(shiftTypeId: Long): List<DayEntryEntity>
+
+    @Query("SELECT * FROM day_entries")
+    suspend fun getAll(): List<DayEntryEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entities: List<DayEntryEntity>)
+
+    @Query("DELETE FROM day_entries")
+    suspend fun clear()
 }
 
 @Dao
 interface MemoDao {
-    @Query("SELECT * FROM memos ORDER BY pinned DESC, updatedAt DESC, id DESC")
+    @Query("SELECT * FROM memos WHERE deletedAt IS NULL ORDER BY pinned DESC, updatedAt DESC, id DESC")
     fun observeAll(): Flow<List<MemoEntity>>
 
-    @Query("SELECT * FROM memos WHERE epochDay = :epochDay ORDER BY pinned DESC, updatedAt DESC, id DESC")
+    @Query("SELECT * FROM memos WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
+    fun observeTrash(): Flow<List<MemoEntity>>
+
+    @Query(
+        "SELECT * FROM memos WHERE epochDay = :epochDay AND deletedAt IS NULL " +
+            "ORDER BY pinned DESC, updatedAt DESC, id DESC",
+    )
     fun observeOn(epochDay: Long): Flow<List<MemoEntity>>
 
-    @Query("SELECT DISTINCT epochDay FROM memos WHERE epochDay IS NOT NULL")
+    @Query("SELECT DISTINCT epochDay FROM memos WHERE epochDay IS NOT NULL AND deletedAt IS NULL")
     fun observeDatesWithMemos(): Flow<List<Long>>
 
     @Query("SELECT * FROM memos WHERE id = :id")
     suspend fun get(id: Long): MemoEntity?
 
+    @Query("SELECT * FROM memos")
+    suspend fun getAll(): List<MemoEntity>
+
     @Insert
     suspend fun insert(entity: MemoEntity): Long
 
-    /** Re-inserts a deleted memo with its original id (undo). */
+    /** Re-inserts a memo with its original id (undo, backup restore). */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun restore(entity: MemoEntity)
 
     @Update
     suspend fun update(entity: MemoEntity)
 
+    @Query("UPDATE memos SET deletedAt = :at WHERE id IN (:ids)")
+    suspend fun moveToTrash(ids: List<Long>, at: Long)
+
+    @Query("UPDATE memos SET deletedAt = NULL WHERE id IN (:ids)")
+    suspend fun restoreFromTrash(ids: List<Long>)
+
+    @Query("UPDATE memos SET pinned = :pinned WHERE id IN (:ids)")
+    suspend fun setPinned(ids: List<Long>, pinned: Boolean)
+
+    @Query("UPDATE memos SET colorIndex = :color WHERE id IN (:ids)")
+    suspend fun setColor(ids: List<Long>, color: Int)
+
     @Query("DELETE FROM memos WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("DELETE FROM memos WHERE id IN (:ids)")
+    suspend fun deleteAll(ids: List<Long>)
+
+    @Query("DELETE FROM memos WHERE deletedAt IS NOT NULL AND deletedAt < :before")
+    suspend fun purgeTrash(before: Long)
+
+    @Query("DELETE FROM memos WHERE deletedAt IS NOT NULL")
+    suspend fun emptyTrash()
+
+    @Query("DELETE FROM memos")
+    suspend fun clear()
 }

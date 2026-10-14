@@ -18,7 +18,25 @@ data class Memo(
     val pinned: Boolean = false,
     val createdAtMillis: Long = 0,
     val updatedAtMillis: Long = 0,
+    /** Set while the memo is in the trash. */
+    val deletedAtMillis: Long? = null,
 ) {
+    val inTrash: Boolean get() = deletedAtMillis != null
+
+    /** Calendar memos belong to a date; general memos do not. */
+    val isCalendarMemo: Boolean get() = date != null
+
+    /** #tags written anywhere in the memo, without the '#', in order of first use. */
+    val tags: List<String>
+        get() = (sequenceOf(title, body) + checklist.asSequence().map { it.text })
+            .flatMap { TAG.findAll(it).map { m -> m.groupValues[1] } }
+            .distinct()
+            .toList()
+
+    /** Letters in the text, used for the word count in the editor. */
+    val characterCount: Int
+        get() = title.length + body.length + checklist.sumOf { it.text.length }
+
     val isBlank: Boolean
         get() = title.isBlank() && body.isBlank() && checklist.none { it.text.isNotBlank() }
 
@@ -33,12 +51,19 @@ data class Memo(
     val checkedCount: Int get() = checklist.count { it.checked && it.text.isNotBlank() }
     val itemCount: Int get() = checklist.count { it.text.isNotBlank() }
 
+    /** Every word of [query] must appear somewhere (title, body, items or tags). */
     fun matches(query: String): Boolean {
-        val q = query.trim()
-        if (q.isEmpty()) return true
-        return title.contains(q, ignoreCase = true) ||
-            body.contains(q, ignoreCase = true) ||
-            checklist.any { it.text.contains(q, ignoreCase = true) }
+        val words = query.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (words.isEmpty()) return true
+        return words.all { w ->
+            title.contains(w, ignoreCase = true) ||
+                body.contains(w, ignoreCase = true) ||
+                checklist.any { it.text.contains(w, ignoreCase = true) }
+        }
+    }
+
+    companion object {
+        private val TAG = Regex("#([\\p{L}\\p{N}_]{1,30})")
     }
 }
 

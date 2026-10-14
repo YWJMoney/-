@@ -42,8 +42,8 @@ class AlarmScheduler(private val context: Context) {
      * just rang guarantees the same alarm is never registered twice.
      */
     @Synchronized
-    fun reschedule(snapshot: ScheduleSnapshot, after: LocalDateTime = LocalDateTime.now()) {
-        val plan = AlarmPlanner.nextAlarm(snapshot.resolver, after)
+    fun reschedule(snapshot: ScheduleSnapshot, enabled: Boolean, after: LocalDateTime = LocalDateTime.now()) {
+        val plan = if (enabled) AlarmPlanner.nextAlarm(snapshot.resolver, after) else null
         val operation = shiftAlarmIntent(plan)
         if (plan == null) {
             alarmManager.cancel(operation)

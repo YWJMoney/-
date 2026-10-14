@@ -70,6 +70,8 @@ import com.shiftmate.calendar.ui.memo.MemoEditorScreen
 import com.shiftmate.calendar.ui.memo.MemoEditorViewModel
 import com.shiftmate.calendar.ui.memo.MemoListScreen
 import com.shiftmate.calendar.ui.memo.MemoListViewModel
+import com.shiftmate.calendar.ui.memo.MemoTrashScreen
+import com.shiftmate.calendar.ui.memo.MemoTrashViewModel
 import com.shiftmate.calendar.ui.settings.SettingsScreen
 import com.shiftmate.calendar.ui.settings.SettingsViewModel
 import com.shiftmate.calendar.ui.shifts.PatternScreen
@@ -90,6 +92,7 @@ private enum class TopLevel(val route: String, val label: String, val icon: Imag
 private object Routes {
     const val SHIFT_TYPES = "shift_types"
     const val PATTERN = "pattern"
+    const val MEMO_TRASH = "memo_trash"
     const val MEMO = "memo/{id}?date={date}&checklist={checklist}"
 
     fun memo(id: Long, date: LocalDate? = null, checklist: Boolean = false) =
@@ -113,9 +116,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val lastDeleted by container.memoRepository.lastDeleted.collectAsStateWithLifecycle()
     LaunchedEffect(lastDeleted) {
         val deleted = lastDeleted ?: return@LaunchedEffect
-        val title = deleted.title.ifBlank { deleted.preview }.take(20)
+        val title = deleted.label
         val result = snackbar.showSnackbar(
-            message = if (title.isBlank()) "메모를 삭제했어요" else "‘$title’ 메모를 삭제했어요",
+            message = when {
+                deleted.memos.size > 1 -> "메모 ${deleted.memos.size}개를 휴지통으로 옮겼어요"
+                title.isBlank() -> "메모를 휴지통으로 옮겼어요"
+                else -> "‘$title’ 메모를 휴지통으로 옮겼어요"
+            },
             actionLabel = "되돌리기",
             duration = SnackbarDuration.Long,
         )
@@ -208,8 +215,13 @@ private fun AppNavHost(
             MemoListScreen(
                 vm = vm,
                 onOpen = { id -> nav.navigate(Routes.memo(id)) },
-                onNew = { checklist -> nav.navigate(Routes.memo(0, null, checklist)) },
+                onNew = { checklist, date -> nav.navigate(Routes.memo(0, date, checklist)) },
+                onOpenTrash = { nav.navigate(Routes.MEMO_TRASH) { launchSingleTop = true } },
             )
+        }
+        composable(Routes.MEMO_TRASH) {
+            val vm = appViewModel { MemoTrashViewModel(it) }
+            MemoTrashScreen(vm = vm, onBack = { nav.popFrom(Routes.MEMO_TRASH) })
         }
         composable(TopLevel.STATS.route) {
             val vm = appViewModel { StatsViewModel(it) }
@@ -291,7 +303,7 @@ private fun RingingBanner() {
             Icon(Icons.Filled.Alarm, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text("${current.shiftName} 근무 알람", style = MaterialTheme.typography.titleSmall,
+                Text(current.title, style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onErrorContainer)
                 Text(AlarmService.describe(current), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer)

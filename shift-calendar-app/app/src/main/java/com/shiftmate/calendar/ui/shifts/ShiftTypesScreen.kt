@@ -1,5 +1,12 @@
 package com.shiftmate.calendar.ui.shifts
 
+import com.shiftmate.calendar.data.ScheduleRepository
+import com.shiftmate.core.model.AlarmSpec
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.AlarmAdd
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -99,7 +106,7 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit) {
                     editing = ShiftType(
                         id = 0, name = "", label = "", colorArgb = ShiftPalette[(types?.size ?: 0) % ShiftPalette.size],
                         start = LocalTime.of(9, 0), end = LocalTime.of(18, 0), breakMinutes = 60,
-                        alarmEnabled = true, alarmOffsetMinutes = 60,
+                        alarmEnabled = true, alarms = listOf(AlarmSpec(60)),
                     )
                 },
                 icon = { Icon(Icons.Filled.Add, null) },
@@ -211,7 +218,7 @@ private fun ShiftTypeRow(
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(
-                            if (type.alarmEnabled) "알람 ${Fmt.offset(type.alarmOffsetMinutes)}" else "알람 꺼짐",
+                            alarmSummary(type),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -227,6 +234,70 @@ private fun ShiftTypeRow(
 }
 
 private val OffsetChoices = listOf(0, 10, 30, 60, 90, 120, 180)
+private val DurationChoices = listOf(4, 6, 8, 9, 10, 12, 24)
+
+private fun alarmSummary(type: ShiftType): String {
+    val active = type.activeAlarms
+    return when {
+        !type.alarmEnabled || active.isEmpty() -> "알람 꺼짐"
+        active.size == 1 -> "알람 ${Fmt.offset(active.first().offsetMinutes)}"
+        else -> "알람 ${active.size}개 · " + active.joinToString(", ") { Fmt.offset(it.offsetMinutes) }
+    }
+}
+
+@Composable
+private fun AlarmSpecRow(alarm: AlarmSpec, ringsAt: LocalTime, onToggle: (Boolean) -> Unit, onRemove: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
+        Icon(
+            if (alarm.enabled) Icons.Filled.Alarm else Icons.Filled.AlarmOff,
+            null,
+            tint = if (alarm.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("근무 ${Fmt.offset(alarm.offsetMinutes)}", style = MaterialTheme.typography.bodyLarge)
+            Text("${Fmt.time(ringsAt)}에 울려요", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = alarm.enabled, onCheckedChange = onToggle)
+        IconButton(onClick = onRemove) { Icon(Icons.Filled.Close, "이 알람 지우기") }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun OffsetPickerDialog(existing: Set<Int>, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
+    var minutes by remember { mutableIntStateOf(OffsetChoices.firstOrNull { it !in existing } ?: 45) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("알람 추가") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("근무 시작 몇 분 전에 울릴까요?", style = MaterialTheme.typography.bodyMedium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (m in OffsetChoices) {
+                        FilterChip(
+                            selected = minutes == m,
+                            onClick = { minutes = m },
+                            enabled = m !in existing,
+                            label = { Text(Fmt.offset(m)) },
+                        )
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("직접 입력", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    MinutesStepper(minutes = minutes, onChange = { minutes = it }, step = 5, max = 24 * 60,
+                        dialogTitle = "몇 분 전에 울릴까요?")
+                }
+                if (minutes in existing) {
+                    Text("이미 있는 알람이에요", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onPick(minutes) }, enabled = minutes !in existing) { Text("추가") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -239,6 +310,7 @@ fun ShiftTypeEditorDialog(
     var draft by remember(initial) { mutableStateOf(initial) }
     var pickStart by remember { mutableStateOf(false) }
     var pickEnd by remember { mutableStateOf(false) }
+    var addingAlarm by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -331,12 +403,41 @@ fun ShiftTypeEditorDialog(
                     if (!draft.isOff) {
                         val start = draft.start ?: LocalTime.of(9, 0)
                         val end = draft.end ?: LocalTime.of(18, 0)
+                        val timed = draft.copy(start = start, end = end)
                         SectionCard(title = "근무 시간") {
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 TimeButton("시작", start, Modifier.weight(1f)) { pickStart = true }
-                                TimeButton("종료", end, Modifier.weight(1f)) { pickEnd = true }
+                                TimeButton(
+                                    if (timed.durationMinutes >= 24 * 60 || !end.isAfter(start)) "종료 (다음날)" else "종료",
+                                    end,
+                                    Modifier.weight(1f),
+                                ) { pickEnd = true }
                             }
                             Spacer(Modifier.height(12.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("근무 길이", style = MaterialTheme.typography.bodyLarge)
+                                    Text("시작부터 끝까지", style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                MinutesStepper(
+                                    minutes = timed.durationMinutes,
+                                    onChange = { draft = timed.withDuration(it) },
+                                    step = 30,
+                                    max = 24 * 60,
+                                    dialogTitle = "근무 길이",
+                                )
+                            }
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                for (h in DurationChoices) {
+                                    FilterChip(
+                                        selected = timed.durationMinutes == h * 60,
+                                        onClick = { draft = timed.withDuration(h * 60) },
+                                        label = { Text("${h}시간") },
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(4.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("휴게 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                                 MinutesStepper(
@@ -347,9 +448,8 @@ fun ShiftTypeEditorDialog(
                                     dialogTitle = "휴게 시간",
                                 )
                             }
-                            val work = draft.copy(start = start, end = end).workMinutes
                             Text(
-                                "하루 근무 ${HoursFormat.korean(work)}" +
+                                "실제 근무 ${HoursFormat.korean(timed.workMinutes)}" +
                                     if (!end.isAfter(start)) " · 다음날 ${Fmt.time(end)}에 끝나요" else "",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -358,35 +458,49 @@ fun ShiftTypeEditorDialog(
 
                         SectionCard(title = "알람") {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("근무 전 알람", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                                Column(Modifier.weight(1f)) {
+                                    Text("근무 전 알람", style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        "여러 개를 추가할 수 있어요",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                                 Switch(checked = draft.alarmEnabled, onCheckedChange = { on ->
-                                    draft = draft.copy(alarmEnabled = on)
+                                    draft = draft.copy(
+                                        alarmEnabled = on,
+                                        alarms = if (on && draft.alarms.isEmpty()) listOf(AlarmSpec(60)) else draft.alarms,
+                                    )
                                     if (on && Build.VERSION.SDK_INT >= 33 && !Notifications.canPost(context)) {
                                         notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                                     }
                                 })
                             }
                             if (draft.alarmEnabled) {
-                                Spacer(Modifier.height(8.dp))
-                                Text("언제 울릴까요?", style = MaterialTheme.typography.bodyMedium)
-                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    for (m in OffsetChoices) {
-                                        FilterChip(
-                                            selected = draft.alarmOffsetMinutes == m,
-                                            onClick = { draft = draft.copy(alarmOffsetMinutes = m) },
-                                            label = { Text(Fmt.offset(m)) },
-                                        )
-                                    }
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("직접 입력", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                                    MinutesStepper(
-                                        minutes = draft.alarmOffsetMinutes,
-                                        onChange = { draft = draft.copy(alarmOffsetMinutes = it) },
-                                        step = 5,
-                                        max = 24 * 60,
-                                        dialogTitle = "몇 분 전에 울릴까요?",
+                                Spacer(Modifier.height(4.dp))
+                                val sorted = draft.alarms.sortedByDescending { it.offsetMinutes }
+                                for (alarm in sorted) {
+                                    AlarmSpecRow(
+                                        alarm = alarm,
+                                        ringsAt = start.minusMinutes(alarm.offsetMinutes.toLong()),
+                                        onToggle = { on ->
+                                            draft = draft.copy(alarms = draft.alarms.map { if (it == alarm) it.copy(enabled = on) else it })
+                                        },
+                                        onRemove = { draft = draft.copy(alarms = draft.alarms - alarm) },
                                     )
+                                }
+                                if (sorted.isEmpty()) {
+                                    Text("알람이 없어요. 아래에서 추가하세요.", style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                OutlinedButton(
+                                    onClick = { addingAlarm = true },
+                                    enabled = draft.alarms.size < ScheduleRepository.MAX_ALARMS,
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                ) {
+                                    Icon(Icons.Filled.AlarmAdd, null)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("알람 추가")
                                 }
                                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                                 SoundPickerRow(
@@ -424,6 +538,16 @@ fun ShiftTypeEditorDialog(
             draft = draft.copy(end = it)
             pickEnd = false
         }
+    }
+    if (addingAlarm) {
+        OffsetPickerDialog(
+            existing = draft.alarms.map { it.offsetMinutes }.toSet(),
+            onDismiss = { addingAlarm = false },
+            onPick = { m ->
+                if (draft.alarms.none { it.offsetMinutes == m }) draft = draft.copy(alarms = draft.alarms + AlarmSpec(m))
+                addingAlarm = false
+            },
+        )
     }
 }
 

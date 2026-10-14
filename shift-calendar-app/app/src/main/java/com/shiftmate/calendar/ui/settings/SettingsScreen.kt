@@ -60,6 +60,22 @@ import com.shiftmate.calendar.ui.components.SectionCard
 import com.shiftmate.calendar.ui.components.SoundPickerRow
 import kotlinx.coroutines.flow.StateFlow
 import java.time.DayOfWeek
+import android.widget.Toast
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.viewModelScope
+import com.shiftmate.calendar.data.BackupException
+import com.shiftmate.calendar.data.BackupManager
+import com.shiftmate.calendar.data.BackupSummary
+import com.shiftmate.calendar.ui.components.ConfirmDialog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.time.LocalDate
 
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val settings: StateFlow<AppSettings> = container.settingsRepository.settings
@@ -68,6 +84,62 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun cancelSnooze() = container.alarmScheduler.cancelSnooze()
     fun update(transform: (AppSettings) -> AppSettings) = container.settingsRepository.update(transform)
     fun canScheduleExact() = container.alarmScheduler.canScheduleExact()
+
+    fun setAlarmsEnabled(on: Boolean) {
+        update { it.copy(alarmsEnabled = on) }
+        if (!on) container.alarmScheduler.cancelSnooze()
+    }
+
+    private val _backupMessage = MutableStateFlow<String?>(null)
+    /** Result of the last backup or restore, shown once. */
+    val backupMessage: StateFlow<String?> = _backupMessage.asStateFlow()
+    fun consumeBackupMessage() {
+        _backupMessage.value = null
+    }
+
+    /** A backup read and checked, waiting for the user to confirm the restore. */
+    private val _pendingRestore = MutableStateFlow<Pair<String, BackupSummary>?>(null)
+    val pendingRestore: StateFlow<Pair<String, BackupSummary>?> = _pendingRestore.asStateFlow()
+
+    fun exportTo(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            _backupMessage.value = runCatching {
+                val json = container.backupManager.export()
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(json.toByteArray()) }
+                }
+                "백업 파일을 저장했어요"
+            }.getOrElse { "백업을 저장하지 못했어요" }
+        }
+    }
+
+    fun readBackup(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            runCatching {
+                val json = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)!!.use { it.readBytes().decodeToString() }
+                }
+                _pendingRestore.value = json to container.backupManager.summarize(json)
+            }.onFailure { e ->
+                _backupMessage.value = (e as? BackupException)?.message ?: "백업 파일을 읽을 수 없어요"
+            }
+        }
+    }
+
+    fun cancelRestore() {
+        _pendingRestore.value = null
+    }
+
+    fun confirmRestore() {
+        val json = _pendingRestore.value?.first ?: return
+        _pendingRestore.value = null
+        container.appScope.launch {
+            _backupMessage.value = runCatching {
+                container.backupManager.restore(json)
+                "백업을 불러왔어요"
+            }.getOrElse { e -> (e as? BackupException)?.message ?: "백업을 불러오지 못했어요. 기존 데이터는 그대로예요" }
+        }
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -88,6 +160,33 @@ fun SettingsScreen(
     val notificationsOk = remember(refresh) { Notifications.canPost(context) }
     val exactOk = remember(refresh) { vm.canScheduleExact() }
     val fullScreenOk = remember(refresh) { Notifications.canUseFullScreen(context) }
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(BackupManager.MIME_TYPE),
+    ) { uri -> if (uri != null) vm.exportTo(context, uri) }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.readBackup(context, uri)
+    }
+    val backupMessage by vm.backupMessage.collectAsStateWithLifecycle()
+    LaunchedEffect(backupMessage) {
+        backupMessage?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            vm.consumeBackupMessage()
+        }
+    }
+    val pendingRestore by vm.pendingRestore.collectAsStateWithLifecycle()
+    pendingRestore?.let { (_, summary) ->
+        ConfirmDialog(
+            title = "백업을 불러올까요?",
+            message = "근무 유형 ${summary.shiftTypes}개, 바꾼 날짜 ${summary.days}일, 메모 ${summary.memos}개가 들어 있어요" +
+                (if (summary.exportedAtMillis > 0) " (${Fmt.dayTitle(AlarmScheduler.millisToLocal(summary.exportedAtMillis).toLocalDate())} 저장)" else "") +
+                ".\n지금 앱에 있는 데이터는 이 백업으로 바뀌어요.",
+            confirmLabel = "불러오기",
+            destructive = true,
+            onDismiss = vm::cancelRestore,
+            onConfirm = vm::confirmRestore,
+        )
+    }
+
     // After two denials Android stops showing the dialog, so a refusal opens the app's settings instead.
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted) openAppNotificationSettings(context)
@@ -110,13 +209,23 @@ fun SettingsScreen(
         }
 
         SectionCard(title = "알람") {
+            SwitchRow(
+                "알람 사용",
+                if (settings.alarmsEnabled) "근무 알람과 날짜별로 정한 알람이 울려요"
+                else "모든 알람이 꺼져 있어요. 알람 설정은 그대로 남아요",
+                settings.alarmsEnabled,
+            ) { on -> vm.setAlarmsEnabled(on) }
             val next = upcoming
             Text(
-                if (next == null) "예정된 알람이 없어요"
-                else "다음 알람: ${Fmt.dayTitle(AlarmScheduler.millisToLocal(next.triggerAtMillis).toLocalDate())} " +
-                    "${Fmt.time(AlarmScheduler.millisToLocal(next.triggerAtMillis).toLocalTime())} · ${next.plan.shiftName}",
+                when {
+                    !settings.alarmsEnabled -> "울릴 알람이 없어요"
+                    next == null -> "예정된 알람이 없어요"
+                    else -> "다음 알람: ${Fmt.dayTitle(AlarmScheduler.millisToLocal(next.triggerAtMillis).toLocalDate())} " +
+                        "${Fmt.time(AlarmScheduler.millisToLocal(next.triggerAtMillis).toLocalTime())} · " +
+                        next.plan.shiftName.ifBlank { "직접 정한 알람" }
+                },
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
+                color = if (settings.alarmsEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             snoozeAt?.let { at ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -197,6 +306,35 @@ fun SettingsScreen(
                         onClick = { vm.update { it.copy(ringMinutes = m) } },
                         label = { Text("${m}분 후") },
                     )
+                }
+            }
+            SwitchRow(
+                "날짜 알람 저장 안내",
+                "달력에서 날짜 알람을 저장할 때 어떤 알람이 울리는지 알려 줘요",
+                !settings.hideDayAlarmNotice,
+            ) { on -> vm.update { it.copy(hideDayAlarmNotice = !on) } }
+        }
+
+        SectionCard(title = "백업") {
+            Text(
+                "근무 유형, 패턴, 바꾼 날짜, 메모, 설정을 파일 하나로 저장해요. 휴대폰을 바꾸거나 앱을 다시 설치할 때 불러오세요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                OutlinedButton(onClick = {
+                    exportLauncher.launch("시프트메이트-백업-${LocalDate.now()}.json")
+                }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.Upload, null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("백업 저장")
+                }
+                OutlinedButton(onClick = {
+                    importLauncher.launch(arrayOf(BackupManager.MIME_TYPE, "text/plain", "application/octet-stream"))
+                }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.Download, null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("불러오기")
                 }
             }
         }

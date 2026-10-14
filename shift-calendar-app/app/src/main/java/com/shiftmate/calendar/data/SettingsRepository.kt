@@ -25,6 +25,10 @@ data class AppSettings(
     /** The alarm stops by itself after this many minutes. */
     val ringMinutes: Int = 10,
     val notificationPermissionAsked: Boolean = false,
+    /** Master switch: off silences every alarm without losing any alarm settings. */
+    val alarmsEnabled: Boolean = true,
+    /** The user ticked "다시 표시하지 않기" on the notice shown when saving a day's alarms. */
+    val hideDayAlarmNotice: Boolean = false,
 ) {
     val limits: HourLimits get() = HourLimits(weeklyLimitHours, averageLimitHours)
 
@@ -78,6 +82,8 @@ class SettingsRepository(context: Context) {
             snoozeMinutes = prefs.getInt(K_SNOOZE, d.snoozeMinutes),
             ringMinutes = prefs.getInt(K_RING, d.ringMinutes),
             notificationPermissionAsked = prefs.getBoolean(K_NOTIF_ASKED, false),
+            alarmsEnabled = prefs.getBoolean(K_ALARMS_ON, d.alarmsEnabled),
+            hideDayAlarmNotice = prefs.getBoolean(K_HIDE_DAY_NOTICE, d.hideDayAlarmNotice),
         )
     }
 
@@ -95,6 +101,8 @@ class SettingsRepository(context: Context) {
             .putInt(K_SNOOZE, s.snoozeMinutes)
             .putInt(K_RING, s.ringMinutes)
             .putBoolean(K_NOTIF_ASKED, s.notificationPermissionAsked)
+            .putBoolean(K_ALARMS_ON, s.alarmsEnabled)
+            .putBoolean(K_HIDE_DAY_NOTICE, s.hideDayAlarmNotice)
             .apply()
     }
 
@@ -111,5 +119,7 @@ class SettingsRepository(context: Context) {
         const val K_SNOOZE = "snooze"
         const val K_RING = "ring_minutes"
         const val K_NOTIF_ASKED = "notif_asked"
+        const val K_ALARMS_ON = "alarms_on"
+        const val K_HIDE_DAY_NOTICE = "hide_day_alarm_notice"
     }
 }

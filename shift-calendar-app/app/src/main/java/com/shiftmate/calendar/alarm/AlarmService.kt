@@ -128,7 +128,7 @@ class AlarmService : Service() {
             return builder.setContentTitle(getString(R.string.app_name)).build()
         }
         return builder
-            .setContentTitle("${ring.shiftName} 근무 알람")
+            .setContentTitle(ring.title)
             .setContentText(describe(ring))
             .setContentIntent(fullScreen)
             .setFullScreenIntent(fullScreen, true)
@@ -253,7 +253,14 @@ class AlarmService : Service() {
 
         fun describe(ring: RingRequest): String {
             val start = ring.shiftStart.format(timeFormat)
-            return if (ring.isSnooze) "$start 근무 시작 · 다시 알림" else "$start 근무 시작 · ${ring.offsetMinutes}분 전 알람"
+            val work = ring.shiftName.isNotBlank()
+            return when {
+                ring.isSnooze && work -> "$start 근무 시작 · 다시 알림"
+                ring.isSnooze -> "다시 알림"
+                ring.custom && work -> "$start 근무 시작 · 직접 설정한 알람"
+                ring.custom -> "직접 설정한 알람"
+                else -> "$start 근무 시작 · ${ring.offsetMinutes}분 전 알람"
+            }
         }
 
         fun start(context: Context, ring: RingRequest) {

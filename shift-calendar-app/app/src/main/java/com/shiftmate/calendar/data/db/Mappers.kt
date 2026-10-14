@@ -1,7 +1,9 @@
 package com.shiftmate.calendar.data.db
 
+import com.shiftmate.core.alarm.AlarmCodec
 import com.shiftmate.core.memo.ChecklistCodec
 import com.shiftmate.core.memo.Memo
+import com.shiftmate.core.model.AlarmSpec
 import com.shiftmate.core.model.DayEntry
 import com.shiftmate.core.model.ShiftOverride
 import com.shiftmate.core.model.ShiftType
@@ -22,7 +24,7 @@ fun ShiftTypeEntity.toModel() = ShiftType(
     breakMinutes = breakMinutes,
     isOff = isOff,
     alarmEnabled = alarmEnabled,
-    alarmOffsetMinutes = alarmOffsetMinutes,
+    alarms = AlarmCodec.decodeSpecs(alarmOffsets) ?: listOf(AlarmSpec(alarmOffsetMinutes)),
     alarmSoundUri = alarmSoundUri,
     sortOrder = sortOrder,
 )
@@ -37,9 +39,11 @@ fun ShiftType.toEntity() = ShiftTypeEntity(
     breakMinutes = breakMinutes,
     isOff = isOff,
     alarmEnabled = alarmEnabled,
-    alarmOffsetMinutes = alarmOffsetMinutes,
+    // Kept filled so a downgrade to version 1 would still find an alarm.
+    alarmOffsetMinutes = alarms.firstOrNull()?.offsetMinutes ?: 60,
     alarmSoundUri = alarmSoundUri,
     sortOrder = sortOrder,
+    alarmOffsets = AlarmCodec.encodeSpecs(alarms),
 )
 
 internal fun encodeSteps(steps: List<Long?>): String = steps.joinToString(",") { it?.toString() ?: "" }
@@ -83,6 +87,7 @@ fun DayEntryEntity.toModel() = DayEntry(
     overtimeMinutes = overtimeMinutes,
     holidayWorkMinutes = holidayWorkMinutes,
     alarmSkipped = alarmSkipped,
+    customAlarms = AlarmCodec.decodeDayAlarms(customAlarms),
 )
 
 fun DayEntry.toEntity() = DayEntryEntity(
@@ -99,6 +104,7 @@ fun DayEntry.toEntity() = DayEntryEntity(
     overtimeMinutes = overtimeMinutes,
     holidayWorkMinutes = holidayWorkMinutes,
     alarmSkipped = alarmSkipped,
+    customAlarms = AlarmCodec.encodeDayAlarms(customAlarms),
 )
 
 fun MemoEntity.toModel() = Memo(
@@ -112,6 +118,7 @@ fun MemoEntity.toModel() = Memo(
     pinned = pinned,
     createdAtMillis = createdAt,
     updatedAtMillis = updatedAt,
+    deletedAtMillis = deletedAt,
 )
 
 fun Memo.toEntity() = MemoEntity(
@@ -125,4 +132,5 @@ fun Memo.toEntity() = MemoEntity(
     pinned = pinned,
     createdAt = createdAtMillis,
     updatedAt = updatedAtMillis,
+    deletedAt = deletedAtMillis,
 )

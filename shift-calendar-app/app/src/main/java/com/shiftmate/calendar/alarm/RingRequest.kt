@@ -16,7 +16,12 @@ data class RingRequest(
     val soundUri: String?,
     val triggerAtMillis: Long,
     val isSnooze: Boolean = false,
+    /** Set by hand for that date from the calendar. */
+    val custom: Boolean = false,
 ) {
+    /** "주간 근무 알람", or just "알람" for a hand-set alarm on a day without work. */
+    val title: String get() = if (shiftName.isBlank()) "알람" else "$shiftName 근무 알람"
+
     fun putInto(intent: Intent): Intent = intent
         .putExtra(X_NAME, shiftName)
         .putExtra(X_DATE, shiftDate.toEpochDay())
@@ -25,6 +30,7 @@ data class RingRequest(
         .putExtra(X_SOUND, soundUri)
         .putExtra(X_TRIGGER, triggerAtMillis)
         .putExtra(X_SNOOZE, isSnooze)
+        .putExtra(X_CUSTOM, custom)
 
     fun encode(): String = JSONObject()
         .put(X_NAME, shiftName)
@@ -34,6 +40,7 @@ data class RingRequest(
         .put(X_SOUND, soundUri ?: JSONObject.NULL)
         .put(X_TRIGGER, triggerAtMillis)
         .put(X_SNOOZE, isSnooze)
+        .put(X_CUSTOM, custom)
         .toString()
 
     companion object {
@@ -44,6 +51,7 @@ data class RingRequest(
         private const val X_SOUND = "ring_sound"
         private const val X_TRIGGER = "ring_trigger"
         private const val X_SNOOZE = "ring_snooze"
+        private const val X_CUSTOM = "ring_custom"
 
         fun from(plan: PlannedAlarm, triggerAtMillis: Long) = RingRequest(
             shiftName = plan.shiftName,
@@ -52,6 +60,7 @@ data class RingRequest(
             offsetMinutes = plan.offsetMinutes,
             soundUri = plan.soundUri,
             triggerAtMillis = triggerAtMillis,
+            custom = plan.custom,
         )
 
         fun fromIntent(intent: Intent?): RingRequest? {
@@ -64,6 +73,7 @@ data class RingRequest(
                 soundUri = intent.getStringExtra(X_SOUND),
                 triggerAtMillis = intent.getLongExtra(X_TRIGGER, System.currentTimeMillis()),
                 isSnooze = intent.getBooleanExtra(X_SNOOZE, false),
+                custom = intent.getBooleanExtra(X_CUSTOM, false),
             )
         }
 
@@ -79,6 +89,7 @@ data class RingRequest(
                     soundUri = if (o.isNull(X_SOUND)) null else o.getString(X_SOUND),
                     triggerAtMillis = o.getLong(X_TRIGGER),
                     isSnooze = o.optBoolean(X_SNOOZE, false),
+                    custom = o.optBoolean(X_CUSTOM, false),
                 )
             }.getOrNull()
         }

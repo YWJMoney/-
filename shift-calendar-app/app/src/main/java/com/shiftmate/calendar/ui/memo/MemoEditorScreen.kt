@@ -42,6 +42,8 @@ import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import android.widget.Toast
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
@@ -95,6 +97,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     val savedAt by vm.savedAt.collectAsStateWithLifecycle()
     val canUndo by vm.canUndo.collectAsStateWithLifecycle()
     val canRedo by vm.canRedo.collectAsStateWithLifecycle()
+    val day by vm.day.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     var showColors by remember { mutableStateOf(false) }
@@ -156,6 +159,16 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                                 },
                                 enabled = !memo.isBlank,
                             )
+                            DropdownMenuItem(
+                                text = { Text("복제") },
+                                leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
+                                onClick = {
+                                    menu = false
+                                    vm.duplicate()
+                                    Toast.makeText(context, "복사본을 만들었어요", Toast.LENGTH_SHORT).show()
+                                },
+                                enabled = !memo.isBlank,
+                            )
                             if (memo.isChecklist && memo.checkedCount > 0) {
                                 DropdownMenuItem(
                                     text = { Text("완료 항목 지우기") },
@@ -190,6 +203,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
             Row(
                 Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 val date = memo.date
                 AssistChip(
@@ -202,6 +216,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                         null
                     },
                 )
+                if (date != null) ShiftLabel(day)
             }
             Column(
                 Modifier
@@ -264,8 +279,8 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
 
     if (confirmDelete) {
         ConfirmDialog(
-            title = "메모를 삭제할까요?",
-            message = "삭제한 뒤 잠시 동안 되돌릴 수 있어요.",
+            title = "메모를 지울까요?",
+            message = "휴지통으로 옮겨요. 30일 동안 되살릴 수 있어요.",
             confirmLabel = "삭제",
             destructive = true,
             onDismiss = { confirmDelete = false },
