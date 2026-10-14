@@ -18,6 +18,17 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Fixed debug key kept in the project so every new test APK installs over the old one.
+    // The keystore lives in the project folder; without it Gradle's default debug key is used.
+    signingConfigs {
+        if (file("debug.keystore").exists()) getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
