@@ -47,9 +47,30 @@ class ShiftsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { repo.moveShiftType(id, delta) }
     }
 
-    fun savePattern(pattern: WorkPattern, onDone: () -> Unit) {
+    /** Every pattern period, earliest first, for the history list. */
+    val history: StateFlow<List<WorkPattern>> =
+        repo.patterns.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** First pattern: also fills the last two years. */
+    fun saveFirstPattern(pattern: WorkPattern, onDone: () -> Unit) {
         viewModelScope.launch {
-            repo.savePattern(pattern)
+            repo.setFirstPattern(pattern)
+            onDone()
+        }
+    }
+
+    /** Team change: the new pattern from [from] on, every earlier day as it was. */
+    fun changePatternFrom(pattern: WorkPattern, from: LocalDate, onDone: () -> Unit) {
+        viewModelScope.launch {
+            repo.changePatternFrom(pattern, from)
+            onDone()
+        }
+    }
+
+    /** Corrects the period being worked now without starting a new one. */
+    fun fixCurrentPattern(pattern: WorkPattern, onDone: () -> Unit) {
+        viewModelScope.launch {
+            repo.replaceCurrentPattern(pattern)
             onDone()
         }
     }
@@ -89,7 +110,8 @@ class PatternDraft {
             }
             null -> Unit
         }
-        startDate = existing?.startDate ?: today
+        // A rotation is edited by its step-0 day; its period may reach back years.
+        startDate = (existing as? WorkPattern.Rotation)?.anchorDate ?: existing?.startDate ?: today
         endDate = existing?.endDate
         initialized = true
     }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -30,7 +31,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -98,6 +101,8 @@ fun PatternScreen(vm: ShiftsViewModel, onBack: () -> Unit, onOpenShiftTypes: () 
     var pickStart by remember { mutableStateOf(false) }
     var pickEnd by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
+    var askWhen by remember { mutableStateOf(false) }
+    val history by vm.history.collectAsStateWithLifecycle()
 
     val typesById = remember(types) { types.associateBy { it.id } }
     // Steps pointing at a shift type deleted meanwhile become plain days off.
@@ -107,7 +112,13 @@ fun PatternScreen(vm: ShiftsViewModel, onBack: () -> Unit, onOpenShiftTypes: () 
             if (rotation.isEmpty()) null else WorkPattern.Rotation(startDate, clean(rotation.toList()), endDate)
         PatternKind.WEEKLY -> WorkPattern.Weekly.fromSteps(startDate, clean(weekly.toList()), endDate)
     }
-    val valid = draft != null && (endDate == null || !endDate!!.isBefore(startDate))
+    val valid = draft != null && (endDate == null || !endDate!!.isBefore(today))
+    val save: () -> Unit = {
+        if (draft != null) {
+            // With a pattern already in place, ask whether this is a team change and from when.
+            if (existing == null) vm.saveFirstPattern(draft, onBack) else askWhen = true
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -115,7 +126,7 @@ fun PatternScreen(vm: ShiftsViewModel, onBack: () -> Unit, onOpenShiftTypes: () 
                 title = { Text("근무 패턴") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 actions = {
-                    TextButton(onClick = { draft?.let { vm.savePattern(it, onBack) } }, enabled = valid) { Text("저장") }
+                    TextButton(onClick = save, enabled = valid) { Text("저장") }
                 },
             )
         },
@@ -305,34 +316,44 @@ fun PatternScreen(vm: ShiftsViewModel, onBack: () -> Unit, onOpenShiftTypes: () 
             }
 
             SectionCard(title = "적용 기간") {
-                DateRow("시작일", startDate) { pickStart = true }
-                Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("종료일 정하기", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                     Switch(checked = endDate != null, onCheckedChange = { on ->
-                        endDate = if (on) startDate.plusMonths(6) else null
+                        endDate = if (on) today.plusMonths(6) else null
                     })
                 }
                 endDate?.let { end ->
                     DateRow("종료일", end) { pickEnd = true }
-                    if (end.isBefore(startDate)) {
-                        Text("종료일이 시작일보다 빨라요", color = MaterialTheme.colorScheme.error,
+                    if (end.isBefore(today)) {
+                        Text("종료일이 오늘보다 빨라요", color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 Text(
-                    "직접 바꾼 날짜는 패턴을 바꿔도 그대로 남아요.",
+                    if (existing == null) {
+                        "처음 저장하면 지난 2년도 같은 순서로 채워져요. 직접 바꾼 날짜는 그대로 남아요."
+                    } else {
+                        "저장할 때 조 변경으로 언제부터 바꿀지 고를 수 있어요. 그 전날까지의 근무와 잔업·특근·메모는 그대로 남아요."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
 
+            if (history.size > 1) {
+                SectionCard(title = "교대 주기 기록") {
+                    for (p in history.asReversed()) {
+                        PatternHistoryRow(p, typesById, today)
+                    }
+                }
+            }
+
             Button(
-                onClick = { draft?.let { vm.savePattern(it, onBack) } },
+                onClick = save,
                 enabled = valid,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
-            ) { Text("저장하고 달력에 적용") }
+            ) { Text(if (existing == null) "저장하고 달력에 적용" else "저장 (조 변경 / 수정)") }
             if (existing != null) {
                 TextButton(onClick = { confirmClear = true }, modifier = Modifier.fillMaxWidth()) {
                     Text("패턴 삭제", color = MaterialTheme.colorScheme.error)
@@ -364,6 +385,23 @@ fun PatternScreen(vm: ShiftsViewModel, onBack: () -> Unit, onOpenShiftTypes: () 
         }
     }
 
+    if (askWhen && draft != null) {
+        ChangeFromDialog(
+            draft = draft,
+            typesById = typesById,
+            today = today,
+            onDismiss = { askWhen = false },
+            onChangeFrom = { pattern, from ->
+                askWhen = false
+                vm.changePatternFrom(pattern, from, onBack)
+            },
+            onFix = {
+                askWhen = false
+                vm.fixCurrentPattern(draft, onBack)
+            },
+        )
+    }
+
     if (confirmClear) {
         ConfirmDialog(
             title = "패턴을 삭제할까요?",
@@ -380,6 +418,116 @@ fun PatternScreen(vm: ShiftsViewModel, onBack: () -> Unit, onOpenShiftTypes: () 
 }
 
 private const val MAX_STEPS = 62
+
+/** One period in the history, e.g. "2024.10.14 – 2026.11.30 · 주주휴휴야야". */
+@Composable
+private fun PatternHistoryRow(pattern: WorkPattern, typesById: Map<Long, ShiftType>, today: LocalDate) {
+    val current = pattern.covers(today)
+    val order = when (pattern) {
+        is WorkPattern.Rotation -> pattern.steps.joinToString("") { id -> id?.let { typesById[it]?.label } ?: "휴" }
+        is WorkPattern.Weekly -> "요일 고정"
+    }
+    val range = "${Fmt.shortFullDate(pattern.startDate)} – " + (pattern.endDate?.let { Fmt.shortFullDate(it) } ?: "계속")
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(order, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+            Text(range, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (current) {
+            Text("지금", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+/**
+ * Asked when a pattern already exists: a team change applies the new order from a chosen date and
+ * keeps every earlier day; a fix rewrites the period being worked now.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun ChangeFromDialog(
+    draft: WorkPattern,
+    typesById: Map<Long, ShiftType>,
+    today: LocalDate,
+    onDismiss: () -> Unit,
+    onChangeFrom: (WorkPattern, LocalDate) -> Unit,
+    onFix: () -> Unit,
+) {
+    val nextMonth = today.withDayOfMonth(1).plusMonths(1)
+    var from by remember { mutableStateOf(nextMonth) }
+    // Which step of the order falls on the first new day; the 1st by default.
+    var firstStep by remember { mutableStateOf(0) }
+    var pickDate by remember { mutableStateOf(false) }
+    val rotation = draft as? WorkPattern.Rotation
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("언제부터 바꿀까요?") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "조가 바뀌었다면 새 순서를 시작할 날을 골라 주세요. 그 전날까지의 근무와 잔업·특근·대근, 메모는 그대로 남아요.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for ((label, date) in listOf("오늘" to today, "내일" to today.plusDays(1), "다음 달 1일" to nextMonth)) {
+                        FilterChip(selected = from == date, onClick = { from = date }, label = { Text(label) })
+                    }
+                    FilterChip(
+                        selected = from != today && from != today.plusDays(1) && from != nextMonth,
+                        onClick = { pickDate = true },
+                        label = { Text("날짜 고르기") },
+                        leadingIcon = { Icon(Icons.Filled.Event, null, Modifier.size(18.dp)) },
+                    )
+                }
+                Text("새 순서 시작: ${Fmt.fullDate(from)}", style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary)
+                if (rotation != null) {
+                    Text("${Fmt.dayTitle(from)}은 순서의 몇 번째 날인가요?", style = MaterialTheme.typography.bodyMedium)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        rotation.steps.forEachIndexed { i, id ->
+                            FilterChip(
+                                selected = firstStep == i,
+                                onClick = { firstStep = i },
+                                label = { Text("${i + 1}") },
+                                leadingIcon = {
+                                    ShiftBadge(id?.let { typesById[it] }, size = 18.dp, text = id?.let { typesById[it]?.label } ?: "휴")
+                                },
+                            )
+                        }
+                    }
+                }
+                HorizontalDivider()
+                TextButton(onClick = onFix, modifier = Modifier.fillMaxWidth()) {
+                    Text("조 변경이 아니에요. 지금 순서를 고쳐요")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val pattern = if (rotation != null) rotation.copy(anchorDate = from.minusDays(firstStep.toLong())) else draft
+                onChangeFrom(pattern, from)
+            }) { Text("이날부터 적용") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
+
+    if (pickDate) {
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = from.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+        )
+        DatePickerDialog(
+            onDismissRequest = { pickDate = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let { ms -> from = Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC).toLocalDate() }
+                    pickDate = false
+                }) { Text("확인") }
+            },
+            dismissButton = { TextButton(onClick = { pickDate = false }) { Text("취소") } },
+        ) { DatePicker(state = state) }
+    }
+}
 
 @Composable
 private fun StepCell(index: Int, type: ShiftType?, selected: Boolean, onClick: () -> Unit) {

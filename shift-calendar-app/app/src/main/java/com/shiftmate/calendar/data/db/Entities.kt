@@ -24,7 +24,10 @@ data class ShiftTypeEntity(
     @ColumnInfo(defaultValue = "") val alarmOffsets: String = "",
 )
 
-/** The single active pattern, always stored with id 1. */
+/**
+ * One period of the pattern history. Version 2 kept a single row with id 1; since version 3 a
+ * team change adds a row that starts where the previous one now ends.
+ */
 @Entity(tableName = "pattern")
 data class PatternEntity(
     @PrimaryKey val id: Int = SINGLE_ID,
@@ -34,6 +37,8 @@ data class PatternEntity(
     val endEpochDay: Long?,
     /** Comma separated shift type ids; an empty item is a plain day off. */
     val steps: String,
+    /** Day of step 0 for a rotation; null means [startEpochDay]. */
+    @ColumnInfo(defaultValue = "NULL") val anchorEpochDay: Long? = null,
 ) {
     companion object {
         const val SINGLE_ID = 1
@@ -56,6 +61,8 @@ data class DayEntryEntity(
     val alarmSkipped: Boolean,
     /** Alarms set by hand for this date; null follows the shift type. */
     @ColumnInfo(defaultValue = "NULL") val customAlarms: String? = null,
+    /** [com.shiftmate.core.model.ExtraWork.code]; 0 means not marked. */
+    @ColumnInfo(defaultValue = "0") val extraWork: Int = 0,
 ) {
     companion object {
         const val MODE_NONE = 0

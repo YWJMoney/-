@@ -34,6 +34,8 @@ data class DayEntry(
      * null means the day follows its shift type.
      */
     val customAlarms: List<DayAlarm>? = null,
+    /** What the extra hours were: 잔업, 특근 or 대근. */
+    val extraWork: ExtraWork? = null,
 ) {
     val hasCustomTimes: Boolean get() = customStart != null && customEnd != null
 
@@ -41,7 +43,22 @@ data class DayEntry(
     val isEmpty: Boolean
         get() = override == ShiftOverride.None && customStart == null && customEnd == null &&
             customBreakMinutes == null && overtimeMinutes == 0 && holidayWorkMinutes == 0 && !alarmSkipped &&
-            customAlarms == null
+            customAlarms == null && extraWork == null
+}
+
+/** Kinds of extra work shift workers mark on the calendar. */
+enum class ExtraWork(val label: String, val short: String) {
+    OVERTIME("잔업", "잔"),
+    SPECIAL("특근", "특"),
+    COVER("대근", "대"),
+    ;
+
+    companion object {
+        fun fromCode(code: Int): ExtraWork? = entries.getOrNull(code - 1)
+    }
+
+    /** Stored code; 0 means none. */
+    val code: Int get() = ordinal + 1
 }
 
 /** An alarm at a clock time on one date, set from the calendar. */

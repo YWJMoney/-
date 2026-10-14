@@ -1,5 +1,11 @@
 package com.shiftmate.calendar.ui
 
+import com.shiftmate.calendar.HomeRequests
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.EnterTransition
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -112,6 +118,21 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 
     AskNotificationPermissionOnce(container)
 
+    // Opening the app (again) always lands on the calendar.
+    val homeRequests by HomeRequests.count.collectAsStateWithLifecycle()
+    var handledHome by rememberSaveable { mutableStateOf(homeRequests) }
+    LaunchedEffect(homeRequests) {
+        if (homeRequests != handledHome) {
+            handledHome = homeRequests
+            if (nav.currentBackStackEntry?.destination?.route != TopLevel.CALENDAR.route) {
+                nav.navigate(TopLevel.CALENDAR.route) {
+                    popUpTo(nav.graph.findStartDestination().id) { inclusive = false }
+                    launchSingleTop = true
+                }
+            }
+        }
+    }
+
     // Undo for memo deletion, wherever the memo was deleted from.
     val lastDeleted by container.memoRepository.lastDeleted.collectAsStateWithLifecycle()
     LaunchedEffect(lastDeleted) {
@@ -195,7 +216,16 @@ private fun AppNavHost(
     snackbar: SnackbarHostState,
     modifier: Modifier = Modifier,
 ) {
-    NavHost(navController = nav, startDestination = TopLevel.CALENDAR.route, modifier = modifier) {
+    // Screens switch at once, without the default cross-fade.
+    NavHost(
+        navController = nav,
+        startDestination = TopLevel.CALENDAR.route,
+        modifier = modifier,
+        enterTransition = { EnterTransition.None },
+        exitTransition = { ExitTransition.None },
+        popEnterTransition = { EnterTransition.None },
+        popExitTransition = { ExitTransition.None },
+    ) {
         composable(TopLevel.CALENDAR.route) {
             val vm = appViewModel { CalendarViewModel(it) }
             CalendarScreen(

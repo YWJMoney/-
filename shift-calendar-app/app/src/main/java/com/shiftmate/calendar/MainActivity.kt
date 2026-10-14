@@ -22,6 +22,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        HomeRequests.onCreate(restoring = savedInstanceState != null)
         enableEdgeToEdge()
         val container = appContainer
         setContent {
@@ -43,6 +44,16 @@ class MainActivity : ComponentActivity() {
                 AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container)
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        HomeRequests.onStart()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        HomeRequests.onStop(isChangingConfigurations)
     }
 
     private companion object {

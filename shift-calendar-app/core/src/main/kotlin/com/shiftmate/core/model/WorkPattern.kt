@@ -20,21 +20,29 @@ sealed interface WorkPattern {
     /** Shift type id for [date], or null when it is a day off or outside the pattern. */
     fun shiftTypeIdOn(date: LocalDate): Long?
 
+    /** The same schedule over a different stretch of days. */
+    fun withRange(start: LocalDate, end: LocalDate?): WorkPattern = when (this) {
+        // The anchor stays, so the order lines up with the same dates as before.
+        is Rotation -> copy(startDate = start, endDate = end)
+        is Weekly -> copy(startDate = start, endDate = end)
+    }
+
     /**
-     * Rotation such as 주주야야비휴 for shift workers. Step 0 falls on [startDate],
-     * and the cycle repeats every [steps].size days.
+     * Rotation such as 주주야야비휴 for shift workers. Step 0 falls on [anchorDate] (and on every
+     * [steps].size days before and after it); the rotation fills the calendar from [startDate].
      */
     data class Rotation(
         override val startDate: LocalDate,
         val steps: List<Long?>,
         override val endDate: LocalDate? = null,
+        val anchorDate: LocalDate = startDate,
     ) : WorkPattern {
         init {
             require(steps.isNotEmpty()) { "A rotation needs at least one step" }
         }
 
         fun stepIndexOn(date: LocalDate): Int {
-            val days = ChronoUnit.DAYS.between(startDate, date)
+            val days = ChronoUnit.DAYS.between(anchorDate, date)
             return Math.floorMod(days, steps.size.toLong()).toInt()
         }
 

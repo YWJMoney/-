@@ -5,6 +5,7 @@ import com.shiftmate.core.memo.ChecklistCodec
 import com.shiftmate.core.memo.Memo
 import com.shiftmate.core.model.AlarmSpec
 import com.shiftmate.core.model.DayEntry
+import com.shiftmate.core.model.ExtraWork
 import com.shiftmate.core.model.ShiftOverride
 import com.shiftmate.core.model.ShiftType
 import com.shiftmate.core.model.WorkPattern
@@ -55,18 +56,25 @@ fun PatternEntity.toModel(): WorkPattern? {
     val end = endEpochDay?.let(LocalDate::ofEpochDay)
     return when (kind) {
         PatternEntity.KIND_WEEKLY -> if (parsed.size == 7) WorkPattern.Weekly.fromSteps(start, parsed, end) else null
-        else -> if (parsed.isNotEmpty()) WorkPattern.Rotation(start, parsed, end) else null
+        else -> if (parsed.isNotEmpty()) {
+            WorkPattern.Rotation(start, parsed, end, anchorEpochDay?.let(LocalDate::ofEpochDay) ?: start)
+        } else {
+            null
+        }
     }
 }
 
-fun WorkPattern.toEntity(): PatternEntity = when (this) {
+fun WorkPattern.toEntity(id: Int = PatternEntity.SINGLE_ID): PatternEntity = when (this) {
     is WorkPattern.Rotation -> PatternEntity(
+        id = id,
         kind = PatternEntity.KIND_ROTATION,
         startEpochDay = startDate.toEpochDay(),
         endEpochDay = endDate?.toEpochDay(),
         steps = encodeSteps(steps),
+        anchorEpochDay = anchorDate.toEpochDay().takeIf { anchorDate != startDate },
     )
     is WorkPattern.Weekly -> PatternEntity(
+        id = id,
         kind = PatternEntity.KIND_WEEKLY,
         startEpochDay = startDate.toEpochDay(),
         endEpochDay = endDate?.toEpochDay(),
@@ -88,6 +96,7 @@ fun DayEntryEntity.toModel() = DayEntry(
     holidayWorkMinutes = holidayWorkMinutes,
     alarmSkipped = alarmSkipped,
     customAlarms = AlarmCodec.decodeDayAlarms(customAlarms),
+    extraWork = ExtraWork.fromCode(extraWork),
 )
 
 fun DayEntry.toEntity() = DayEntryEntity(
@@ -105,6 +114,7 @@ fun DayEntry.toEntity() = DayEntryEntity(
     holidayWorkMinutes = holidayWorkMinutes,
     alarmSkipped = alarmSkipped,
     customAlarms = AlarmCodec.encodeDayAlarms(customAlarms),
+    extraWork = extraWork?.code ?: 0,
 )
 
 fun MemoEntity.toModel() = Memo(

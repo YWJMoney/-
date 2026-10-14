@@ -12,6 +12,21 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.ui.draw.clip
+import androidx.compose.runtime.produceState
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -72,18 +87,7 @@ fun SoundPickerRow(
     allowDefault: Boolean = true,
 ) {
     val context = LocalContext.current
-    val ringtonePicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
-        val data = result.data ?: return@rememberLauncherForActivityResult
-        val picked = IntentCompat.getParcelableExtra(data, RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
-        onPicked(
-            when {
-                picked == null -> AppSettings.SILENT_SOUND
-                allowDefault && picked == Settings.System.DEFAULT_ALARM_ALERT_URI -> null
-                else -> picked.toString()
-            },
-        )
-    }
+    var choosing by remember { mutableStateOf(false) }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching {
@@ -133,19 +137,7 @@ fun SoundPickerRow(
             OutlinedButton(onClick = {
                 previewing?.stop()
                 previewing = null
-                val existing = when (sound) {
-                    null -> Settings.System.DEFAULT_ALARM_ALERT_URI
-                    AppSettings.SILENT_SOUND -> null
-                    else -> runCatching { Uri.parse(sound) }.getOrNull()
-                }
-                val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER)
-                    .putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALL)
-                    .putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "알람음 선택")
-                    .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, allowDefault)
-                    .putExtra(RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI, Settings.System.DEFAULT_ALARM_ALERT_URI)
-                    .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
-                    .putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, existing)
-                runCatching { ringtonePicker.launch(intent) }
+                choosing = true
             }) {
                 Icon(Icons.Filled.LibraryMusic, contentDescription = null)
                 Text("  기본 소리")
@@ -160,6 +152,98 @@ fun SoundPickerRow(
             }
         }
     }
+
+    if (choosing) {
+        SoundListDialog(
+            current = sound,
+            allowDefault = allowDefault,
+            onDismiss = { choosing = false },
+            onDone = {
+                choosing = false
+                onPicked(it)
+            },
+        )
+    }
+}
+
+/** One sound offered in the list. [value] is what gets stored (see [SoundPickerRow]). */
+private data class SoundChoice(val title: String, val value: String?)
+
+private fun loadSounds(context: Context, allowDefault: Boolean): List<SoundChoice> {
+    val list = mutableListOf<SoundChoice>()
+    if (allowDefault) list += SoundChoice("휴대폰 기본 알람음", null)
+    list += SoundChoice("무음 (진동만)", AppSettings.SILENT_SOUND)
+    val seen = HashSet<String>()
+    for (type in listOf(RingtoneManager.TYPE_ALARM, RingtoneManager.TYPE_RINGTONE, RingtoneManager.TYPE_NOTIFICATION)) {
+        runCatching {
+            val manager = RingtoneManager(context).apply { setType(type) }
+            val cursor = manager.cursor
+            while (cursor.moveToNext()) {
+                val uri = manager.getRingtoneUri(cursor.position)?.toString() ?: continue
+                if (seen.add(uri)) list += SoundChoice(cursor.getString(RingtoneManager.TITLE_COLUMN_INDEX) ?: "소리", uri)
+            }
+        }
+    }
+    return list
+}
+
+/**
+ * The app's own sound list: tap to hear a sound, then 완료 to keep it. Some phones' system pickers
+ * return nothing when closed with their own buttons, so the choice is made here instead.
+ */
+@Composable
+private fun SoundListDialog(
+    current: String?,
+    allowDefault: Boolean,
+    onDismiss: () -> Unit,
+    onDone: (String?) -> Unit,
+) {
+    val context = LocalContext.current
+    val sounds by produceState<List<SoundChoice>?>(null) {
+        value = withContext(Dispatchers.IO) { loadSounds(context, allowDefault) }
+    }
+    var chosen by remember { mutableStateOf(current) }
+    var playing by remember { mutableStateOf<Ringtone?>(null) }
+    DisposableEffect(Unit) { onDispose { playing?.stop() } }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("알람음 선택") },
+        text = {
+            val list = sounds
+            if (list == null) {
+                Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            } else {
+                LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    items(list, key = { it.value ?: "default" }) { s ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(MaterialTheme.shapes.small)
+                                .clickable {
+                                    chosen = s.value
+                                    playing?.stop()
+                                    playing = playPreview(context, s.value)
+                                }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = chosen == s.value, onClick = null)
+                            Text(s.title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 8.dp),
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                playing?.stop()
+                onDone(chosen)
+            }) { Text("완료") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
 }
 
 private fun playPreview(context: Context, sound: String?): Ringtone? {

@@ -31,6 +31,8 @@ object Fmt {
     fun fullDate(d: LocalDate): String =
         "${d.year}. ${d.monthValue}. ${d.dayOfMonth}. (${dayOfWeekShort(d.dayOfWeek)})"
 
+    fun shortFullDate(d: LocalDate): String = "${d.year}.${d.monthValue}.${d.dayOfMonth}"
+
     fun shortDate(d: LocalDate): String = "${d.monthValue}/${d.dayOfMonth}"
 
     fun offset(minutes: Int): String = when {

@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.shiftmate.core.model.AlarmSpec
+import com.shiftmate.core.model.WorkPattern
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -30,7 +31,7 @@ class MigrationTest {
         createVersion1(context.getDatabasePath(name).apply { parentFile?.mkdirs() })
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
             .allowMainThreadQueries()
             .build()
         try {
@@ -43,6 +44,11 @@ class MigrationTest {
             val day = db.dayEntryDao().getAll().single().toModel()
             assertEquals(120, day.overtimeMinutes)
             assertNull(day.customAlarms)
+
+            val pattern = db.patternDao().getAll().single().toModel() as WorkPattern.Rotation
+            assertEquals(listOf(1L, 1L, null, null), pattern.steps)
+            assertEquals(pattern.startDate, pattern.anchorDate)
+            assertNull(day.extraWork)
 
             val memo = db.memoDao().getAll().single().toModel()
             assertEquals("인수인계", memo.title)
@@ -78,6 +84,7 @@ class MigrationTest {
                 "customBreakMinutes, overtimeMinutes, holidayWorkMinutes, alarmSkipped) " +
                 "VALUES (20000, 0, NULL, NULL, NULL, NULL, 120, 0, 0)",
         )
+        sql.execSQL("INSERT INTO pattern (id, kind, startEpochDay, endEpochDay, steps) VALUES (1, 'ROTATION', 20000, NULL, '1,1,,')")
         sql.execSQL(
             "INSERT INTO memos (id, epochDay, title, body, checklist, isChecklist, colorIndex, pinned, createdAt, updatedAt) " +
                 "VALUES (1, 20000, '인수인계', '본문', '', 0, 0, 0, 1, 2)",

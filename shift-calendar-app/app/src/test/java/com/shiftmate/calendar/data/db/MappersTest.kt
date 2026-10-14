@@ -5,6 +5,7 @@ import com.shiftmate.core.memo.Memo
 import com.shiftmate.core.model.AlarmSpec
 import com.shiftmate.core.model.DayAlarm
 import com.shiftmate.core.model.DayEntry
+import com.shiftmate.core.model.ExtraWork
 import com.shiftmate.core.model.ShiftOverride
 import com.shiftmate.core.model.ShiftType
 import com.shiftmate.core.model.WorkPattern
@@ -28,6 +29,9 @@ class MappersTest {
     fun patternsRoundTrip() {
         val rotation = WorkPattern.Rotation(date, listOf(1L, 1L, 2L, null), date.plusMonths(3))
         assertEquals(rotation, rotation.toEntity().toModel())
+        // A period that starts after its step-0 day keeps both dates.
+        val shifted = rotation.copy(startDate = date.plusDays(40))
+        assertEquals(shifted, shifted.toEntity().toModel())
         val weekly = WorkPattern.Weekly.fromSteps(date, listOf(1L, 1L, 1L, 1L, 1L, null, null))
         assertEquals(weekly, weekly.toEntity().toModel())
         // A corrupt weekly row is ignored rather than crashing the calendar.
@@ -42,6 +46,7 @@ class MappersTest {
             DayEntry(date, holidayWorkMinutes = 300),
             DayEntry(date, customAlarms = listOf(DayAlarm(LocalTime.of(6, 10)), DayAlarm(LocalTime.of(6, 40), false))),
             DayEntry(date, customAlarms = emptyList()),
+            DayEntry(date, holidayWorkMinutes = 480, extraWork = ExtraWork.COVER),
         )
         for (e in entries) assertEquals(e, e.toEntity().toModel())
     }

@@ -1,11 +1,13 @@
 package com.shiftmate.calendar.ui.calendar
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.text.style.TextOverflow
+import com.shiftmate.calendar.ui.theme.NumberStyle
+import com.shiftmate.core.schedule.ResolvedDay
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -149,7 +151,8 @@ fun CalendarScreen(
     val pagerState = rememberPagerState(initialPage = monthToPage(baseMonth, YearMonth.from(selected))) { PAGE_COUNT }
     val visibleMonth = pageToMonth(baseMonth, pagerState.currentPage)
     val scope = rememberCoroutineScope()
-    val goToMonth: (YearMonth) -> Unit = { m -> scope.launch { pagerState.animateScrollToPage(monthToPage(baseMonth, m)) } }
+    // Jumps without a sliding animation: buttons should feel instant.
+    val goToMonth: (YearMonth) -> Unit = { m -> scope.launch { pagerState.scrollToPage(monthToPage(baseMonth, m)) } }
 
     // After swiping to another month, select today (if shown) or the 1st so the detail follows.
     LaunchedEffect(pagerState, baseMonth) {
@@ -163,10 +166,26 @@ fun CalendarScreen(
         }
     }
 
+    // On phones (and a folded Fold) the day opens in a sheet over the calendar.
+    var sheetOpen by remember { mutableStateOf(false) }
     val onDayClick: (LocalDate) -> Unit = { date ->
+        val painting = paint != null
         vm.onDayTapped(date)
         val m = YearMonth.from(date)
         if (m != visibleMonth) goToMonth(m)
+        if (!wide && !painting) sheetOpen = true
+    }
+    val onQuickAction: (LocalDate, QuickAction) -> Unit = { date, action ->
+        val day = snap.resolver.resolve(date)
+        when (action) {
+            is QuickAction.Shift -> vm.assign(date, action.override)
+            is QuickAction.Extra -> vm.setExtraWork(day, action.kind, action.minutes)
+            QuickAction.ClearExtra -> vm.setExtraWork(day, null, 0)
+            QuickAction.Open -> {
+                vm.select(date)
+                if (!wide) sheetOpen = true
+            }
+        }
     }
 
     var showMonthPicker by remember { mutableStateOf(false) }
@@ -193,9 +212,10 @@ fun CalendarScreen(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable(onClick = onOpenSettings),
             )
         }
+        MonthShiftCounts(snap, visibleMonth, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         WeekdayHeader(settings.weekStart, Modifier.padding(horizontal = 8.dp))
         BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-            val cellHeight = (maxWidth / 7 * 1.08f).coerceIn(54.dp, 92.dp)
+            val cellHeight = (maxWidth / 7 * 1.3f).coerceIn(66.dp, 100.dp)
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxWidth().height(cellHeight * GRID_ROWS),
@@ -212,10 +232,21 @@ fun CalendarScreen(
                     showHours = settings.showHoursInCells,
                     cellHeight = cellHeight,
                     onDayClick = onDayClick,
+                    onQuickAction = onQuickAction,
                 )
             }
         }
         Spacer(Modifier.height(12.dp))
+        if (!wide) {
+            SelectedDayCard(
+                day = snap.resolver.resolve(selected),
+                isToday = selected == today,
+                memoCount = if (selected in memoDates) 1 else 0,
+                onOpen = { sheetOpen = true },
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            Spacer(Modifier.height(12.dp))
+        }
         HoursSummary(
             calculator = calculator,
             settings = settings,
@@ -269,32 +300,26 @@ fun CalendarScreen(
                     .padding(bottom = bottomSpace),
             ) {
                 calendarPart()
-                Spacer(Modifier.height(16.dp))
-                detailPart()
             }
         }
 
-        AnimatedVisibility(
-            visible = paint == null,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-        ) {
+        if (paint == null) {
             val first = snap.shiftTypes.firstOrNull()
             ExtendedFloatingActionButton(
                 onClick = { vm.setPaint(first?.let { PaintTool.Shift(it.id) } ?: PaintTool.Clear) },
                 icon = { Icon(Icons.Filled.EditCalendar, contentDescription = null) },
                 text = { Text("빠른 입력") },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
             )
+        } else {
+            Box(Modifier.align(Alignment.BottomCenter)) {
+                PaintBar(snapshot = snap, tool = paint, onTool = vm::setPaint)
+            }
         }
-        AnimatedVisibility(
-            visible = paint != null,
-            enter = slideInVertically { it } + fadeIn(),
-            exit = slideOutVertically { it } + fadeOut(),
-            modifier = Modifier.align(Alignment.BottomCenter),
-        ) {
-            PaintBar(snapshot = snap, tool = paint, onTool = vm::setPaint)
-        }
+    }
+
+    if (sheetOpen && !wide) {
+        DaySheet(onDismiss = { sheetOpen = false }) { detailPart() }
     }
 
     if (showMonthPicker) {
@@ -306,6 +331,96 @@ fun CalendarScreen(
                 goToMonth(m)
             },
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DaySheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 24.dp),
+        ) { content() }
+    }
+}
+
+/** How many of each shift this month, e.g. 주 10 · 야 10 · 휴 6 · 특근 2. */
+@Composable
+private fun MonthShiftCounts(snapshot: ScheduleSnapshot, month: YearMonth, modifier: Modifier = Modifier) {
+    val counts = remember(snapshot, month) {
+        val days = snapshot.resolver.resolveRange(month.atDay(1), month.atEndOfMonth())
+        val byType = days.mapNotNull { it.shiftType }.groupingBy { it.id }.eachCount()
+        val extras = days.mapNotNull { it.extraWork }.groupingBy { it }.eachCount()
+        Pair(snapshot.shiftTypes.filter { (byType[it.id] ?: 0) > 0 }.map { it to byType.getValue(it.id) }, extras)
+    }
+    if (counts.first.isEmpty() && counts.second.isEmpty()) return
+    Row(
+        modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        for ((type, n) in counts.first) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ShiftBadge(type, size = 18.dp, outlined = type.isOff)
+                Text(" $n", style = MaterialTheme.typography.labelLarge.merge(NumberStyle))
+            }
+        }
+        for ((kind, n) in counts.second) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ExtraWorkMark(kind, size = 18.dp)
+                Text(" ${kind.label} $n", style = MaterialTheme.typography.labelLarge.merge(NumberStyle))
+            }
+        }
+    }
+}
+
+/** The selected day under the calendar on phones; tapping it opens the full day sheet. */
+@Composable
+private fun SelectedDayCard(
+    day: ResolvedDay,
+    isToday: Boolean,
+    memoCount: Int,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onOpen,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            val type = day.shiftType
+            ShiftBadge(type, size = 36.dp, text = type?.label ?: "휴", outlined = type == null || type.isOff)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    Fmt.dayTitle(day.date) + if (isToday) " · 오늘" else "",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                val start = day.start
+                val end = day.end
+                val parts = buildList {
+                    add(
+                        if (day.isWorkDay && start != null && end != null) "${type?.name ?: "근무"} ${Fmt.time(start)}–${Fmt.time(end)}"
+                        else type?.name ?: "쉬는 날",
+                    )
+                    day.extraWork?.let { add(it.label) }
+                    if (day.extraMinutes > 0) add("+" + HoursFormat.short(day.extraMinutes))
+                    if (memoCount > 0) add("메모 있음")
+                }
+                Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Text("열기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary)
+        }
     }
 }
 

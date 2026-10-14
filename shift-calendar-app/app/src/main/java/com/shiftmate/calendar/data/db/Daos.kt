@@ -43,14 +43,17 @@ interface ShiftTypeDao {
 
 @Dao
 interface PatternDao {
-    @Query("SELECT * FROM pattern WHERE id = 1")
-    fun observe(): Flow<PatternEntity?>
+    @Query("SELECT * FROM pattern ORDER BY startEpochDay, id")
+    fun observeAll(): Flow<List<PatternEntity>>
 
-    @Query("SELECT * FROM pattern WHERE id = 1")
-    suspend fun get(): PatternEntity?
+    @Query("SELECT * FROM pattern ORDER BY startEpochDay, id")
+    suspend fun getAll(): List<PatternEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun save(entity: PatternEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveAll(entities: List<PatternEntity>)
 
     @Query("DELETE FROM pattern")
     suspend fun clear()

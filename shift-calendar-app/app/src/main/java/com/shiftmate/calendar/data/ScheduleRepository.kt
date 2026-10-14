@@ -9,9 +9,11 @@ import com.shiftmate.calendar.data.db.toModel
 import com.shiftmate.core.model.AlarmSpec
 import com.shiftmate.core.model.DayAlarm
 import com.shiftmate.core.model.DayEntry
+import com.shiftmate.core.model.ExtraWork
 import com.shiftmate.core.model.ShiftOverride
 import com.shiftmate.core.model.ShiftType
 import com.shiftmate.core.model.WorkPattern
+import com.shiftmate.core.schedule.PatternTimeline
 import com.shiftmate.core.schedule.ScheduleResolver
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -23,12 +25,17 @@ import java.time.LocalTime
 /** Everything needed to draw the calendar, as one immutable value. */
 data class ScheduleSnapshot(
     val shiftTypes: List<ShiftType>,
-    val pattern: WorkPattern?,
+    /** Pattern periods, earliest first; more than one after a team change. */
+    val patterns: List<WorkPattern>,
     val entries: List<DayEntry>,
 ) {
-    val resolver: ScheduleResolver by lazy { ScheduleResolver(shiftTypes, pattern, entries) }
+    constructor(shiftTypes: List<ShiftType>, pattern: WorkPattern?, entries: List<DayEntry>) :
+        this(shiftTypes, listOfNotNull(pattern), entries)
+
+    val resolver: ScheduleResolver by lazy { ScheduleResolver(shiftTypes, patterns, entries) }
     val typesById: Map<Long, ShiftType> by lazy { shiftTypes.associateBy { it.id } }
-    val isEmpty: Boolean get() = pattern == null && entries.isEmpty()
+    val isEmpty: Boolean get() = patterns.isEmpty() && entries.isEmpty()
+    val hasPattern: Boolean get() = patterns.isNotEmpty()
 }
 
 class ScheduleRepository(private val db: AppDatabase) {
@@ -39,14 +46,17 @@ class ScheduleRepository(private val db: AppDatabase) {
     val shiftTypes: Flow<List<ShiftType>> =
         shiftTypeDao.observeAll().map { list -> list.map { it.toModel() } }.distinctUntilChanged()
 
-    val pattern: Flow<WorkPattern?> =
-        patternDao.observe().map { it?.toModel() }.distinctUntilChanged()
+    val patterns: Flow<List<WorkPattern>> =
+        patternDao.observeAll().map { list -> list.mapNotNull { it.toModel() } }.distinctUntilChanged()
+
+    /** The period being worked now (or the latest one), shown in the pattern editor. */
+    val pattern: Flow<WorkPattern?> = patterns.map { PatternTimeline.current(it, LocalDate.now()) }
 
     val entries: Flow<List<DayEntry>> =
         dayEntryDao.observeAll().map { list -> list.map { it.toModel() } }.distinctUntilChanged()
 
     val snapshot: Flow<ScheduleSnapshot> =
-        combine(shiftTypes, pattern, entries) { t, p, e -> ScheduleSnapshot(t, p, e) }
+        combine(shiftTypes, patterns, entries) { t, p, e -> ScheduleSnapshot(t, p, e) }
 
     /** Seeds the default shift types on first launch. */
     suspend fun ensureDefaults() {
@@ -99,7 +109,7 @@ class ScheduleRepository(private val db: AppDatabase) {
      */
     suspend fun deleteShiftType(id: Long) {
         db.withTransaction {
-            patternDao.get()?.let { p ->
+            for (p in patternDao.getAll()) {
                 val steps = decodeSteps(p.steps).map { if (it == id) null else it }
                 patternDao.save(p.copy(steps = encodeSteps(steps)))
             }
@@ -111,7 +121,46 @@ class ScheduleRepository(private val db: AppDatabase) {
         }
     }
 
-    suspend fun savePattern(pattern: WorkPattern) = patternDao.save(pattern.toEntity())
+    /** Replaces the whole history with [pattern] (a test or restore uses this as is). */
+    suspend fun savePattern(pattern: WorkPattern) = replacePatterns(listOf(pattern))
+
+    /** The first pattern: it also fills the last two years so past days are not empty. */
+    suspend fun setFirstPattern(pattern: WorkPattern, today: LocalDate = LocalDate.now()) =
+        replacePatterns(listOf(PatternTimeline.first(pattern, today)))
+
+    /**
+     * A team change: [pattern] applies from [from] on, and every day before keeps the pattern it
+     * had. Changes made on single days (extra work, swaps, memos) are untouched either way.
+     */
+    suspend fun changePatternFrom(pattern: WorkPattern, from: LocalDate) {
+        db.withTransaction {
+            val existing = patternDao.getAll().mapNotNull { it.toModel() }
+            replacePatterns(PatternTimeline.changeFrom(existing, pattern, from))
+        }
+    }
+
+    /** Rewrites the period being edited in place (fixing a typo, not a team change). */
+    suspend fun replaceCurrentPattern(pattern: WorkPattern, today: LocalDate = LocalDate.now()) {
+        db.withTransaction {
+            val existing = patternDao.getAll().mapNotNull { it.toModel() }
+            val current = PatternTimeline.current(existing, today)
+            if (current == null) {
+                replacePatterns(listOf(PatternTimeline.first(pattern, today)))
+            } else {
+                // Keeps the period's dates; only what it holds changes.
+                val isLast = current == existing.last()
+                val end = if (isLast) pattern.endDate else current.endDate
+                replacePatterns(existing.map { if (it == current) pattern.withRange(current.startDate, end) else it })
+            }
+        }
+    }
+
+    private suspend fun replacePatterns(patterns: List<WorkPattern>) {
+        db.withTransaction {
+            patternDao.clear()
+            patternDao.saveAll(patterns.sortedBy { it.startDate }.mapIndexed { i, p -> p.toEntity(id = i + 1) })
+        }
+    }
 
     suspend fun clearPattern() = patternDao.clear()
 
@@ -146,6 +195,16 @@ class ScheduleRepository(private val db: AppDatabase) {
 
     suspend fun setHolidayWork(date: LocalDate, minutes: Int) =
         updateDay(date) { it.copy(holidayWorkMinutes = minutes) }
+
+    /**
+     * Marks extra work on a day: [minutes] go to 연장 on a working day and to 휴일 근무 on a day off,
+     * so they count toward the week either way. A null [kind] with 0 minutes clears it.
+     */
+    suspend fun setExtraWork(date: LocalDate, kind: ExtraWork?, minutes: Int, workDay: Boolean) =
+        updateDay(date) {
+            if (workDay) it.copy(extraWork = kind, overtimeMinutes = minutes)
+            else it.copy(extraWork = kind, holidayWorkMinutes = minutes)
+        }
 
     suspend fun setAlarmSkipped(date: LocalDate, skipped: Boolean) =
         updateDay(date) { it.copy(alarmSkipped = skipped) }

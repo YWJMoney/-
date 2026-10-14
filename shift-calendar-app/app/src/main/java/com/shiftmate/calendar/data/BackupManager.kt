@@ -42,13 +42,14 @@ class BackupManager(
             )
         }
         root.put("shiftTypes", types)
-        db.patternDao().get()?.let { p ->
-            root.put(
-                "pattern",
+        val patterns = JSONArray()
+        db.patternDao().getAll().forEach { p ->
+            patterns.put(
                 JSONObject().put("kind", p.kind).put("start", p.startEpochDay).putOpt("end", p.endEpochDay)
-                    .put("steps", p.steps),
+                    .put("steps", p.steps).putOpt("anchor", p.anchorEpochDay),
             )
         }
+        root.put("patterns", patterns)
         val days = JSONArray()
         db.dayEntryDao().getAll().forEach { d ->
             days.put(
@@ -57,7 +58,7 @@ class BackupManager(
                     .putOpt("start", d.customStartMinute).putOpt("end", d.customEndMinute)
                     .putOpt("break", d.customBreakMinutes).put("overtime", d.overtimeMinutes)
                     .put("holiday", d.holidayWorkMinutes).put("skip", d.alarmSkipped)
-                    .putOpt("alarms", d.customAlarms),
+                    .putOpt("alarms", d.customAlarms).put("extra", d.extraWork),
             )
         }
         root.put("days", days)
@@ -109,10 +110,14 @@ class BackupManager(
             )
         }
         if (types.isEmpty()) throw BackupException("근무 유형이 없는 백업 파일이에요")
-        val pattern = root.optJSONObject("pattern")?.let { p ->
+        // Older backups held one "pattern" object instead of the "patterns" history.
+        val patternObjects = root.optJSONArray("patterns")?.objects()
+            ?: listOfNotNull(root.optJSONObject("pattern"))
+        val patterns = patternObjects.mapIndexed { i, p ->
             PatternEntity(
-                kind = p.getString("kind"), startEpochDay = p.getLong("start"),
+                id = i + 1, kind = p.getString("kind"), startEpochDay = p.getLong("start"),
                 endEpochDay = if (p.isNull("end")) null else p.optLong("end"), steps = p.getString("steps"),
+                anchorEpochDay = if (p.isNull("anchor") || !p.has("anchor")) null else p.getLong("anchor"),
             )
         }
         val days = root.optJSONArray("days").objects().map { o ->
@@ -122,7 +127,7 @@ class BackupManager(
                 customStartMinute = o.optIntOrNull("start"), customEndMinute = o.optIntOrNull("end"),
                 customBreakMinutes = o.optIntOrNull("break"), overtimeMinutes = o.optInt("overtime"),
                 holidayWorkMinutes = o.optInt("holiday"), alarmSkipped = o.optBoolean("skip"),
-                customAlarms = o.optStringOrNull("alarms"),
+                customAlarms = o.optStringOrNull("alarms"), extraWork = o.optInt("extra"),
             )
         }
         val memos = root.optJSONArray("memos").objects().map { o ->
@@ -140,7 +145,7 @@ class BackupManager(
             db.patternDao().clear()
             db.shiftTypeDao().clear()
             db.shiftTypeDao().insertAll(types)
-            pattern?.let { db.patternDao().save(it) }
+            db.patternDao().saveAll(patterns)
             db.dayEntryDao().insertAll(days)
             memos.forEach { db.memoDao().restore(it) }
         }

@@ -1,5 +1,6 @@
 package com.shiftmate.calendar.ui.shifts
 
+import android.widget.Toast
 import com.shiftmate.calendar.data.ScheduleRepository
 import com.shiftmate.core.model.AlarmSpec
 import androidx.compose.runtime.mutableIntStateOf
@@ -314,7 +315,16 @@ fun ShiftTypeEditorDialog(
     val context = LocalContext.current
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    // Leaving with changes keeps them: alarms added or times picked are never lost to a back press.
+    val close: () -> Unit = {
+        if (draft != initial && draft.name.isNotBlank()) {
+            onSave(draft)
+            Toast.makeText(context, "저장했어요", Toast.LENGTH_SHORT).show()
+        } else {
+            onDismiss()
+        }
+    }
+    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.surface,
@@ -323,7 +333,7 @@ fun ShiftTypeEditorDialog(
                 topBar = {
                     TopAppBar(
                         title = { Text(if (initial.id == 0L) "근무 추가" else "근무 수정") },
-                        navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "닫기") } },
+                        navigationIcon = { IconButton(onClick = close) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "닫기") } },
                         actions = {
                             TextButton(onClick = { onSave(draft) }, enabled = draft.name.isNotBlank()) { Text("저장") }
                         },

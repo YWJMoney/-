@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.shiftmate.core.model.ExtraWork
+import com.shiftmate.core.schedule.ResolvedDay
 import java.time.LocalDate
 import java.time.LocalTime
 
@@ -80,11 +82,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel() {
     fun assign(date: LocalDate, override: ShiftOverride) = changeShift(date) { override }
 
     private fun changeShift(date: LocalDate, choose: (ShiftOverride) -> ShiftOverride) {
-        val pattern = snapshot.value?.pattern
+        val pattern = snapshot.value?.resolver?.patternOn(date)
         viewModelScope.launch {
             schedule.updateDay(date) { entry ->
                 val patternId = pattern?.shiftTypeIdOn(date)
-                val patternCovers = pattern?.covers(date) == true
+                val patternCovers = pattern != null
                 val next = when (val o = choose(entry.override)) {
                     is ShiftOverride.Shift -> if (patternCovers && patternId == o.shiftTypeId) ShiftOverride.None else o
                     ShiftOverride.Off -> if (patternCovers && patternId == null) ShiftOverride.None else o
@@ -118,6 +120,10 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setOvertime(date: LocalDate, minutes: Int) {
         viewModelScope.launch { schedule.setOvertime(date, minutes) }
+    }
+
+    fun setExtraWork(day: ResolvedDay, kind: ExtraWork?, minutes: Int) {
+        viewModelScope.launch { schedule.setExtraWork(day.date, kind, minutes.coerceIn(0, 24 * 60), day.isWorkDay) }
     }
 
     fun setHolidayWork(date: LocalDate, minutes: Int) {

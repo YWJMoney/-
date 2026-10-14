@@ -78,8 +78,15 @@ import com.shiftmate.core.schedule.DaySource
 import com.shiftmate.core.schedule.ResolvedDay
 import java.time.LocalDate
 import java.time.LocalTime
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.shiftmate.core.model.ExtraWork
 
 private const val DEFAULT_HOLIDAY_WORK_MINUTES = 8 * 60
+private const val DEFAULT_OVERTIME_MINUTES = 2 * 60
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -120,12 +127,12 @@ fun DayDetail(
                 FilterChip(
                     selected = day.source != DaySource.OVERRIDE,
                     onClick = { vm.assign(date, ShiftOverride.None) },
-                    label = { Text(if (snapshot.pattern != null) "패턴대로" else "지정 안 함") },
+                    label = { Text(if (snapshot.hasPattern) "패턴대로" else "지정 안 함") },
                     leadingIcon = { Icon(Icons.Filled.Autorenew, contentDescription = null, Modifier.size(18.dp)) },
                 )
             }
             if (day.source == DaySource.OVERRIDE) {
-                val patternType = snapshot.pattern?.shiftTypeIdOn(date)?.let { snapshot.typesById[it] }
+                val patternType = snapshot.resolver.patternShiftIdOn(date)?.let { snapshot.typesById[it] }
                 Text(
                     "직접 바꾼 날이에요 · 패턴: ${patternType?.name ?: "쉬는 날"}",
                     style = MaterialTheme.typography.bodySmall,
@@ -291,66 +298,79 @@ private fun TimeBox(label: String, time: LocalTime, onClick: () -> Unit, modifie
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ExtraWorkSection(day: ResolvedDay, vm: CalendarViewModel) {
-    val showOvertime = day.isWorkDay || day.overtimeMinutes > 0
-    val showHoliday = day.isOff || day.holidayWorkMinutes > 0
-    if (!showOvertime && !showHoliday) return
     val cal = LocalCalendarColors.current
+    val workDay = day.isWorkDay
+    // On a working day extra hours are 연장; on a day off they are 휴일 근무.
+    val minutes = if (workDay) day.overtimeMinutes else day.holidayWorkMinutes
+    val kind = day.extraWork
+    val active = kind != null || minutes > 0
+    val defaultMinutes = if (workDay) DEFAULT_OVERTIME_MINUTES else DEFAULT_HOLIDAY_WORK_MINUTES
 
-    SectionCard(title = "추가 근무") {
-        if (showOvertime) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("연장 근무", style = MaterialTheme.typography.bodyLarge)
-                    Text("정해진 시간보다 더 일한 시간", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                MinutesStepper(
-                    minutes = day.overtimeMinutes,
-                    onChange = { vm.setOvertime(day.date, it) },
-                    dialogTitle = "연장 근무 시간",
+    SectionCard(title = if (workDay) "잔업 · 특근 · 대근" else "쉬는 날 근무 (특근 · 대근 · 잔업)") {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (k in ExtraWork.entries) {
+                FilterChip(
+                    selected = kind == k,
+                    onClick = {
+                        if (kind == k) vm.setExtraWork(day, null, 0)
+                        else vm.setExtraWork(day, k, if (minutes > 0) minutes else defaultMinutes)
+                    },
+                    label = { Text(k.label) },
+                    leadingIcon = { ExtraWorkMark(k, size = 18.dp) },
                 )
             }
         }
-        if (showOvertime && showHoliday) {
-            HorizontalDivider(Modifier.padding(vertical = 12.dp))
-        }
-        if (showHoliday) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        if (active) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                 Column(Modifier.weight(1f)) {
-                    Text("휴일 근무", style = MaterialTheme.typography.bodyLarge,
-                        color = if (day.isHolidayWork) cal.holidayWork else MaterialTheme.colorScheme.onSurface)
-                    Text("쉬는 날 일한 시간도 주·월·3개월 합계에 들어가요",
+                    Text("일한 시간", style = MaterialTheme.typography.bodyLarge,
+                        color = if (minutes > 0) cal.holidayWork else MaterialTheme.colorScheme.onSurface)
+                    Text(
+                        if (workDay) "근무 시간에 더해져요" else "쉬는 날 일한 시간도 주·월 합계에 들어가요",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Switch(
-                    checked = day.isHolidayWork,
-                    onCheckedChange = { on -> vm.setHolidayWork(day.date, if (on) DEFAULT_HOLIDAY_WORK_MINUTES else 0) },
-                )
-            }
-            if (day.isHolidayWork) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(top = 8.dp),
-                ) {
-                    Text("일한 시간", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    MinutesStepper(
-                        minutes = day.holidayWorkMinutes,
-                        onChange = { vm.setHolidayWork(day.date, it) },
-                        dialogTitle = "휴일 근무 시간",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (h in listOf(2, 4, 6, 8, 10, 12)) {
-                        SuggestionChip(
-                            onClick = { vm.setHolidayWork(day.date, h * 60) },
-                            label = { Text("${h}시간") },
-                        )
-                    }
+                MinutesStepper(
+                    minutes = minutes,
+                    onChange = { vm.setExtraWork(day, kind, it) },
+                    dialogTitle = (kind?.label ?: "추가 근무") + " 시간",
+                )
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (h in listOf(1, 2, 3, 4, 8, 12, 24)) {
+                    SuggestionChip(onClick = { vm.setExtraWork(day, kind, h * 60) }, label = { Text("${h}시간") })
                 }
             }
+        } else {
+            Text(
+                "고르면 달력에 표시되고 시간이 합계에 들어가요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
+            )
         }
     }
+}
+
+/** Small colored square with 잔/특/대, used in cells and chips. */
+@Composable
+fun ExtraWorkMark(kind: ExtraWork, size: androidx.compose.ui.unit.Dp = 16.dp) {
+    val color = extraWorkColor(kind)
+    Box(
+        Modifier.size(size).clip(RoundedCornerShape(size / 4)).background(color),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(kind.short, color = androidx.compose.ui.graphics.Color.White, fontSize = (size.value * 0.6f).sp,
+            fontWeight = FontWeight.Bold, lineHeight = (size.value * 0.6f).sp)
+    }
+}
+
+@Composable
+fun extraWorkColor(kind: ExtraWork): androidx.compose.ui.graphics.Color = when (kind) {
+    ExtraWork.OVERTIME -> androidx.compose.ui.graphics.Color(0xFFE8900C)
+    ExtraWork.SPECIAL -> androidx.compose.ui.graphics.Color(0xFFE03131)
+    ExtraWork.COVER -> androidx.compose.ui.graphics.Color(0xFF0E9F6E)
 }
 
 @Composable
@@ -363,7 +383,7 @@ private fun AlarmSection(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calen
         AlarmPlanner.alarmsOn(snapshot.resolver, day.date).ifEmpty {
             if (!day.alarmSkipped) emptyList()
             else AlarmPlanner.alarmsOn(
-                ScheduleResolver(snapshot.shiftTypes, snapshot.pattern,
+                ScheduleResolver(snapshot.shiftTypes, snapshot.patterns,
                     snapshot.entries.map { if (it.date == day.date) it.copy(alarmSkipped = false) else it }),
                 day.date,
             )
@@ -490,6 +510,8 @@ private fun DayAlarmEditorDialog(
     var picking by remember { mutableStateOf<Int?>(null) } // index to change, or -1 for a new alarm
     AlertDialog(
         onDismissRequest = onDismiss,
+        // A stray tap outside must not throw away alarms just added; 취소 or 완료 decides.
+        properties = DialogProperties(dismissOnClickOutside = false),
         title = { Text("${Fmt.dayTitle(date)} 알람") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -529,7 +551,7 @@ private fun DayAlarmEditorDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(alarms.toList()) }) { Text("저장") } },
+        confirmButton = { TextButton(onClick = { onSave(alarms.toList()) }) { Text("완료") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
     picking?.let { index ->

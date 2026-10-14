@@ -16,6 +16,7 @@ import com.shiftmate.core.memo.ChecklistItem
 import com.shiftmate.core.memo.Memo
 import com.shiftmate.core.model.AlarmSpec
 import com.shiftmate.core.model.DayAlarm
+import com.shiftmate.core.model.ExtraWork
 import com.shiftmate.core.model.ShiftOverride
 import com.shiftmate.core.model.WorkPattern
 import kotlinx.coroutines.flow.first
@@ -66,7 +67,10 @@ class ScreenshotTest {
         repo.setOvertime(today.minusDays(2), 120)
         val pattern = WorkPattern.Rotation(LocalDate.of(2026, 7, 1), listOf(day, day, night, night, off))
         val nextOff = (1..10).map { today.minusDays(it.toLong()) }.first { pattern.shiftTypeIdOn(it) == off }
-        repo.setHolidayWork(nextOff, 4 * 60)
+        repo.setExtraWork(nextOff, ExtraWork.SPECIAL, 8 * 60, workDay = false)
+        val laterOff = (1..10).map { today.plusDays(it.toLong()) }.first { pattern.shiftTypeIdOn(it) == off }
+        repo.setExtraWork(laterOff, ExtraWork.COVER, 12 * 60, workDay = false)
+        repo.setExtraWork(today.plusDays(1), ExtraWork.OVERTIME, 2 * 60, workDay = true)
         repo.setAlarmSkipped(today.plusDays(6), true)
         repo.setDayAlarms(today, listOf(DayAlarm(LocalTime.of(6, 10)), DayAlarm(LocalTime.of(6, 30), enabled = false)))
 
@@ -168,6 +172,12 @@ class ScreenshotTest {
             listOf(p, p)
         }
 
+        /** Holds a finger on a point long enough for a long press. */
+        fun longPress(xDp: Float, yDp: Float) = gesture { _, _, d ->
+            val p = xDp * d to yDp * d
+            List(40) { p }
+        }
+
         /** Drags the content up by [dp] (slowly, so it does not fling). */
         fun scrollUp(dp: Int, across: Float = 0.15f) = gesture { w, h, d ->
             val x = w * across
@@ -177,7 +187,26 @@ class ScreenshotTest {
     }
 
     @Test fun foldedCalendar() = shoot("1_folded_calendar", FOLDED)
-    @Test fun foldedDayDetail() = shoot("2_folded_day", FOLDED) { scrollUp(900) }
+    @Test fun foldedDayDetail() = shoot("2_folded_day_sheet", FOLDED) { tap(DAY_X, DAY_Y) }
+    @Test fun foldedDaySheetScrolled() = shoot("2b_folded_day_sheet_extra", FOLDED) {
+        tap(DAY_X, DAY_Y)
+        scrollUp(500)
+    }
+    @Test fun foldedExtraWorkDay() = shoot("19_folded_extra_work_day", FOLDED) {
+        tap(EXTRA_DAY_X, DAY_Y)
+        scrollUp(250)
+    }
+    @Test fun foldedTimeWheel() = shoot("20_folded_time_wheel", FOLDED) {
+        tab(3, wide = false)
+        tap(180f, SETTINGS_SHIFT_TYPES_Y)
+        tap(150f, 185f)
+        tap(100f, 470f)
+    }
+    @Test fun foldedPatternChange() = shoot("21_folded_pattern_change", FOLDED) {
+        tab(3, wide = false)
+        tap(180f, SETTINGS_PATTERN_Y)
+        tap(30f, 32f, fromRight = true)
+    }
     @Test fun foldedStats() = shoot("3_folded_stats", FOLDED) { tab(2, wide = false) }
     @Test fun foldedSettings() = shoot("4_folded_settings", FOLDED) { tab(3, wide = false) }
     @Test fun unfoldedCalendar() = shoot("5_unfolded_calendar", UNFOLDED)
@@ -204,7 +233,8 @@ class ScreenshotTest {
         tap(180f, SETTINGS_PATTERN_Y)
     }
     @Test fun foldedDayAlarmEditor() = shoot("15_folded_day_alarm_editor", FOLDED) {
-        scrollUp(900)
+        tap(DAY_X, DAY_Y)
+        scrollUp(DAY_ALARM_SCROLL)
         tap(180f, DAY_ALARM_EDIT_Y)
     }
 
@@ -221,7 +251,8 @@ class ScreenshotTest {
         scrollUp(600)
     }
     @Test fun foldedDayAlarmNotice() = shoot("18_folded_day_alarm_notice", FOLDED) {
-        scrollUp(900)
+        tap(DAY_X, DAY_Y)
+        scrollUp(DAY_ALARM_SCROLL)
         tap(180f, DAY_ALARM_EDIT_Y)
         tap(315f, 578f)
     }
@@ -231,7 +262,12 @@ class ScreenshotTest {
         const val TAB_ROW_Y = 148f
         const val SETTINGS_SHIFT_TYPES_Y = 206f
         const val SETTINGS_PATTERN_Y = 139f
-        const val DAY_ALARM_EDIT_Y = 335f
+        const val DAY_ALARM_EDIT_Y = 519f
+        const val DAY_ALARM_SCROLL = 600
+        // Today's cell in the folded calendar (row 3, Wednesday).
+        const val DAY_X = 135f
+        const val DAY_Y = 290f
+        const val EXTRA_DAY_X = 84f
 
         // Galaxy Z Fold6: cover screen 968x2376 px and main screen 1856x2160 px at 420 dpi.
         const val FOLDED = "w369dp-h905dp-port-420dpi"
