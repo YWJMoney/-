@@ -1,16 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Status-bar icon: the 밤낮 logo silhouette. -->
+<!-- Status-bar icon: the 밤낮 dial without its ticks, which vanish at 24dp. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
-    android:viewportWidth="68"
-    android:viewportHeight="68">
-    <group android:translateX="-20" android:translateY="-20">
-        <group android:translateX="-2">
-            <path android:fillColor="#FFFFFFFF" android:pathData="M54,24 A30,30 0 0,0 24,54 A30,30 0 0,0 54,84 Z" />
-        </group>
-        <group android:translateX="2">
-            <path android:fillColor="#FFFFFFFF" android:pathData="M54,68.32 A23.6,23.6 0 0,0 81.63,65.68 A30,30 0 0,1 54,84 Z M54,24 A30,30 0 0,1 61.23,24.88 A23.6,23.6 0 0,0 54,27.68 Z" />
-        </group>
-    </group>
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M12,2a10,10 0,1 1,0 20a10,10 0,1 1,0 -20zM12,4a8,8 0,1 0,0 16a8,8 0,1 0,0 -16z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M4,12a8,8 0,0 1,16 0z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M12,14.6a1.4,1.4 0,1 1,0 2.8a1.4,1.4 0,1 1,0 -2.8z" />
 </vector>

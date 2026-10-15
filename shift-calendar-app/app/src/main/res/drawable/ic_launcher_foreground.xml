@@ -1,27 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 밤낮 logo: half sun (day) and half crescent (night) split by the shift-change line.
-     108dp adaptive icon; the art stays inside the 66dp safe zone. Source: brand/bamnat-icon.svg -->
+<!-- [BRAND-01] 밤낮 logo: a watch-style day/night disc. Ivory top half is day, the open lower half is night,
+     framed by 24 hour ticks. 108dp adaptive icon; the art stays inside the 66dp safe zone. Source: brand/v2/A.svg -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.78" android:scaleY="0.78">
-        <path android:pathData="M54,24 A30,30 0 0,0 24,54 A30,30 0 0,0 54,84 Z">
-            <aapt:attr name="android:fillColor">
-                <gradient
-                    android:type="linear"
-                    android:startX="54" android:startY="24"
-                    android:endX="54" android:endY="84">
-                    <item android:offset="0" android:color="#FFFFC94D" />
-                    <item android:offset="1" android:color="#FFFF8A3D" />
-                </gradient>
-            </aapt:attr>
-        </path>
-        <path android:fillColor="#E9EDFF" android:pathData="M54,68.32 A23.6,23.6 0 0,0 81.63,65.68 A30,30 0 0,1 54,84 Z M54,24 A30,30 0 0,1 61.23,24.88 A23.6,23.6 0 0,0 54,27.68 Z" />
-        <path android:fillColor="#EBFFFFFF" android:pathData="M52.8,23.2a1.2,1.2 0,0 1,2.4 0v61.6a1.2,1.2 0,0 1,-2.4 0z" />
-        <path android:fillColor="#E9EDFF" android:pathData="M73.2,29.4a1.8,1.8 0,1 1,0 3.6a1.8,1.8 0,1 1,0 -3.6z" />
-        <path android:fillColor="#CCE9EDFF" android:pathData="M81.2,40.8a1.2,1.2 0,1 1,0 2.4a1.2,1.2 0,1 1,0 -2.4z" />
-    </group>
+        <path android:pathData="M54.0,27.34L54.0,23.03" android:strokeColor="#FFF2ECE1" android:strokeWidth="0.98" android:strokeLineCap="round" />
+        <path android:pathData="M60.9,28.25L61.61,25.6" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M67.33,30.92L68.7,28.54" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M72.85,35.15L74.79,33.21" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M77.08,40.67L79.46,39.3" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M79.75,47.1L82.4,46.39" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M80.66,54.0L84.97,54.0" android:strokeColor="#FFF2ECE1" android:strokeWidth="0.98" android:strokeLineCap="round" />
+        <path android:pathData="M79.75,60.9L82.4,61.61" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M77.08,67.33L79.46,68.7" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M72.85,72.85L74.79,74.79" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M67.33,77.08L68.7,79.46" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M60.9,79.75L61.61,82.4" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M54.0,80.66L54.0,84.97" android:strokeColor="#FFF2ECE1" android:strokeWidth="0.98" android:strokeLineCap="round" />
+        <path android:pathData="M47.1,79.75L46.39,82.4" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M40.67,77.08L39.3,79.46" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M35.15,72.85L33.21,74.79" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M30.92,67.33L28.54,68.7" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M28.25,60.9L25.6,61.61" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M27.34,54.0L23.03,54.0" android:strokeColor="#FFF2ECE1" android:strokeWidth="0.98" android:strokeLineCap="round" />
+        <path android:pathData="M28.25,47.1L25.6,46.39" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M30.92,40.67L28.54,39.3" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M35.15,35.15L33.21,33.21" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M40.67,30.92L39.3,28.54" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+        <path android:pathData="M47.1,28.25L46.39,25.6" android:strokeColor="#80F2ECE1" android:strokeWidth="0.59" android:strokeLineCap="round" />
+    <path android:pathData="M32.05,54a21.95,21.95 0,1 1,43.9,0a21.95,21.95 0,1 1,-43.9,0z" android:strokeColor="#FFF2ECE1" android:strokeWidth="0.98" />
+    <path android:pathData="M32.05,54a21.95,21.95 0,0 1,43.9,0z" android:fillColor="#FFF2ECE1" />
+    <path android:pathData="M52.43,64.58a1.57,1.57 0,1 1,3.14,0a1.57,1.57 0,1 1,-3.14,0z" android:fillColor="#FFC2A36B" />
 </vector>
