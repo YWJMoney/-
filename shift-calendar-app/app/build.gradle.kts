@@ -18,6 +18,9 @@ android {
         versionCode = 4
         versionName = "1.0.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // [MKT-09] Link sharing server (server/share-worker). Blank hides '링크로 공유'.
+        val shareBaseUrl = (project.findProperty("bamnat.shareBaseUrl") as String?).orEmpty()
+        buildConfigField("String", "SHARE_BASE_URL", "\"$shareBaseUrl\"")
     }
 
     // Fixed debug key kept in the project so every new test APK installs over the old one.

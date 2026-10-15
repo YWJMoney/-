@@ -401,6 +401,14 @@ class ScreenshotTest {
     @Test fun foldedPayWizardSchedule() = shoot("47_folded_pay_wizard_schedule", FOLDED) {
         content { com.bamnat.app.ui.pay.PayWizard(null, null, {}, startStep = 4, scrollToEnd = true) }
     }
+    @Test fun foldedShareLink() = shoot("48_folded_share_link", FOLDED) {
+        val snap = runBlocking { app.container.scheduleRepository.snapshot.first() }
+        content {
+            com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {},
+                preview = com.bamnat.app.share.ShareLinkState("Ab3dE", "https://bamnat-share.example.workers.dev/s/Ab3dEfGh5JkLmNoPqRsTuv", "t",
+                    java.time.Instant.now().plus(java.time.Duration.ofDays(30)), "민지"))
+        }
+    }
     @Test fun foldedPayLocked() = shoot("29_folded_pay_locked", FOLDED, payScreen(Tier.FREE, withProfile = true))
     @Test fun foldedPayBulkEdit() = shoot("30_folded_pay_bulk_edit", FOLDED, payScreen(Tier.PRO, withProfile = true) { vm ->
         val profile = vm.profile.collectAsState().value

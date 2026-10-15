@@ -204,6 +204,13 @@ fun CalendarScreen(
     }
 
     var showMonthPicker by remember { mutableStateOf(false) }
+    var showShare by remember { mutableStateOf(false) }
+    val shareLinks = remember { com.bamnat.app.share.ShareLinkClient().enabled }
+    if (showShare) ShareDialog(
+        snapshot = snap, month = visibleMonth,
+        onImage = { MonthImage.share(context, snap, visibleMonth, settings.weekStart); vm.logShare() },
+        onDismiss = { showShare = false },
+    )
 
     val calendarPart: @Composable () -> Unit = {
         CalendarHeader(
@@ -216,8 +223,12 @@ fun CalendarScreen(
             },
             onPickMonth = { showMonthPicker = true },
             onShare = {
-                MonthImage.share(context, snap, visibleMonth, settings.weekStart)
-                vm.logShare()
+                // [MKT-09] With a link server the icon offers picture or link; without one it sends the picture.
+                if (shareLinks) showShare = true
+                else {
+                    MonthImage.share(context, snap, visibleMonth, settings.weekStart)
+                    vm.logShare()
+                }
             },
             onOpenPattern = onOpenPattern,
         )
@@ -471,7 +482,7 @@ private fun CalendarHeader(
         IconButton(onClick = onNext) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
         Spacer(Modifier.weight(1f))
         TextButton(onClick = onToday) { Text("오늘") }
-        IconButton(onClick = onShare) { Icon(Icons.Filled.Share, "이 달 근무표 이미지로 공유") }
+        IconButton(onClick = onShare) { Icon(Icons.Filled.Share, "근무표 공유") }
         IconButton(onClick = onOpenPattern) { Icon(Icons.Filled.EventRepeat, "근무 패턴 설정") }
     }
 }
