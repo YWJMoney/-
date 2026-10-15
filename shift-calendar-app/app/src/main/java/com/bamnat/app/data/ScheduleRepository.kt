@@ -10,6 +10,7 @@ import com.bamnat.core.model.AlarmSpec
 import com.bamnat.core.model.DayAlarm
 import com.bamnat.core.model.DayEntry
 import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.model.Leave
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
@@ -205,6 +206,9 @@ class ScheduleRepository(private val db: AppDatabase) {
             if (workDay) it.copy(extraWork = kind, overtimeMinutes = minutes)
             else it.copy(extraWork = kind, holidayWorkMinutes = minutes)
         }
+
+    /** 연차·반차·반반차 on [date]; null removes it [FEAT-10]. */
+    suspend fun setLeave(date: LocalDate, leave: Leave?) = updateDay(date) { it.copy(leave = leave) }
 
     suspend fun setAlarmSkipped(date: LocalDate, skipped: Boolean) =
         updateDay(date) { it.copy(alarmSkipped = skipped) }

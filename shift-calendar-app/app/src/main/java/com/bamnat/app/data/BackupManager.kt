@@ -38,7 +38,7 @@ class BackupManager(
                     .putOpt("start", t.startMinute).putOpt("end", t.endMinute)
                     .put("break", t.breakMinutes).put("off", t.isOff)
                     .put("alarm", t.alarmEnabled).put("alarmOffset", t.alarmOffsetMinutes)
-                    .putOpt("sound", t.alarmSoundUri).put("order", t.sortOrder).put("alarms", t.alarmOffsets),
+                    .putOpt("sound", t.alarmSoundUri).put("order", t.sortOrder).put("alarms", t.alarmOffsets).putOpt("icon", t.icon),
             )
         }
         root.put("shiftTypes", types)
@@ -58,7 +58,7 @@ class BackupManager(
                     .putOpt("start", d.customStartMinute).putOpt("end", d.customEndMinute)
                     .putOpt("break", d.customBreakMinutes).put("overtime", d.overtimeMinutes)
                     .put("holiday", d.holidayWorkMinutes).put("skip", d.alarmSkipped)
-                    .putOpt("alarms", d.customAlarms).put("extra", d.extraWork),
+                    .putOpt("alarms", d.customAlarms).put("extra", d.extraWork).put("leave", d.leave),
             )
         }
         root.put("days", days)
@@ -106,7 +106,7 @@ class BackupManager(
                 colorArgb = o.getLong("color"), startMinute = o.optIntOrNull("start"), endMinute = o.optIntOrNull("end"),
                 breakMinutes = o.optInt("break"), isOff = o.optBoolean("off"), alarmEnabled = o.optBoolean("alarm"),
                 alarmOffsetMinutes = o.optInt("alarmOffset", 60), alarmSoundUri = o.optStringOrNull("sound"),
-                sortOrder = o.optInt("order"), alarmOffsets = o.optString("alarms", ""),
+                sortOrder = o.optInt("order"), alarmOffsets = o.optString("alarms", ""), icon = o.optStringOrNull("icon"),
             )
         }
         if (types.isEmpty()) throw BackupException("근무 유형이 없는 백업 파일이에요")
@@ -127,7 +127,7 @@ class BackupManager(
                 customStartMinute = o.optIntOrNull("start"), customEndMinute = o.optIntOrNull("end"),
                 customBreakMinutes = o.optIntOrNull("break"), overtimeMinutes = o.optInt("overtime"),
                 holidayWorkMinutes = o.optInt("holiday"), alarmSkipped = o.optBoolean("skip"),
-                customAlarms = o.optStringOrNull("alarms"), extraWork = o.optInt("extra"),
+                customAlarms = o.optStringOrNull("alarms"), extraWork = o.optInt("extra"), leave = o.optInt("leave"),
             )
         }
         val memos = root.optJSONArray("memos").objects().map { o ->

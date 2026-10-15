@@ -9,7 +9,7 @@ import java.time.temporal.TemporalAdjusters
 import kotlin.math.roundToLong
 
 /** What a line is, so screens can group and colour it. */
-enum class LineKind { BASE, OVERTIME, NIGHT, HOLIDAY, EXTRA, ALLOWANCE }
+enum class LineKind { BASE, OVERTIME, NIGHT, HOLIDAY, EXTRA, ALLOWANCE, LEAVE }
 
 /**
  * One line of the result, explaining itself [PAY-09]: the formula, the minutes, the hourly rate
@@ -129,6 +129,9 @@ class PayCalculator(
         var regular = 0; var overtime = 0; var night = 0; var hWithin = 0; var hOver = 0
         val itemCounts = HashMap<String, Int>()
         val dayPays = mutableListOf<DayPay>()
+        // Leave [FEAT-10]: minutes by kind, and paid leave per date for 주휴 weeks.
+        var paidLeave = 0; var unpaidLeave = 0
+        val paidLeaveByDate = days.filter { it.leave?.kind?.paid == true }.associate { it.date to it.leaveMinutes }
 
         for (day in monthDays) {
             val m = byDate[day.date] ?: DayMinutes(day.date)
@@ -167,6 +170,17 @@ class PayCalculator(
             if (hw > 0) parts += DayPart(LineKind.HOLIDAY, "휴일", money(hw, mHw), "${hours(hw)} × ${pct(mHw)}")
             if (ho > 0) parts += DayPart(LineKind.HOLIDAY, "휴일 8시간 초과", money(ho, mHo), "${hours(ho)} × ${pct(mHo)}")
 
+            day.leave?.let { leave ->
+                val mins = day.leaveMinutes
+                val (amount, formula) = when {
+                    leave.kind.paid && profile.wageType == WageType.HOURLY -> money(mins, 1.0) to "${hours(mins)} × ${won(hourly)} (유급)"
+                    leave.kind.paid -> 0L to "기본급에 포함 (유급, ${hours(mins)})"
+                    profile.wageType == WageType.MONTHLY -> -money(mins, 1.0) to "${hours(mins)} × ${won(hourly)} 공제 (무급)"
+                    else -> 0L to "무급 ${hours(mins)}"
+                }
+                if (leave.kind.paid) paidLeave += mins else unpaidLeave += mins
+                parts += DayPart(LineKind.LEAVE, leave.label, amount, formula)
+            }
             for (item in profile.items) {
                 val counts = when (item.cadence) {
                     Cadence.MONTHLY -> false
@@ -181,7 +195,8 @@ class PayCalculator(
             }
             dayPays += DayPay(
                 date = day.date,
-                label = day.shiftType?.takeIf { day.isWorkDay }?.name ?: if (day.holidayWorkMinutes > 0) "쉬는 날 근무" else "휴무",
+                label = day.leave?.takeIf { it.isFullDay }?.let { "${day.shiftType?.name ?: "근무"} · ${it.label}" }
+                    ?: day.shiftType?.takeIf { day.isWorkDay }?.name ?: if (day.holidayWorkMinutes > 0) "쉬는 날 근무" else "휴무",
                 holidayName = KoreanHolidays.nameOf(day.date),
                 extraWork = day.extraWork,
                 minutes = m,
@@ -238,6 +253,15 @@ class PayCalculator(
             }
         }
 
+        if (paidLeave > 0 && profile.wageType == WageType.HOURLY) lines += line(
+            LineKind.LEAVE, "유급 휴가", paidLeave, hourly, 1.0,
+            "연차·유급 휴가로 쉰 근무시간", "근로기준법 제60조 (연차 유급휴가)", baseEstimated,
+        )
+        if (unpaidLeave > 0 && profile.wageType == WageType.MONTHLY) lines += line(
+            LineKind.LEAVE, "무급 휴가 공제", unpaidLeave, hourly, -1.0,
+            "무급으로 쉰 근무시간", "결근·무급 휴가는 일한 만큼만 지급", baseEstimated,
+        )
+
         for (item in profile.items) {
             val amount = item.amount.on(month)
             val count = if (item.cadence == Cadence.MONTHLY) 1 else itemCounts[item.id] ?: 0
@@ -251,7 +275,7 @@ class PayCalculator(
         }
 
         if (profile.wageType == WageType.HOURLY && rules.weeklyHolidayPay) {
-            weeklyHolidayLine(allMinutes, from, month, profile, hourly, baseEstimated)?.let { lines += it }
+            weeklyHolidayLine(allMinutes, paidLeaveByDate, from, month, hourly, baseEstimated)?.let { lines += it }
         }
 
         if (hourly in 1 until rates.minimumHourlyWage) {
@@ -283,7 +307,7 @@ class PayCalculator(
      * worked in full (개근).
      */
     private fun weeklyHolidayLine(
-        all: List<DayMinutes>, from: LocalDate, month: YearMonth, profile: PayProfile, hourly: Long, estimated: Boolean,
+        all: List<DayMinutes>, paidLeave: Map<LocalDate, Int>, from: LocalDate, month: YearMonth, hourly: Long, estimated: Boolean,
     ): PayLine? {
         var weekStart = from
         var minutes = 0
@@ -291,7 +315,9 @@ class PayCalculator(
         while (!weekStart.plusDays(6).isAfter(month.atEndOfMonth())) {
             val end = weekStart.plusDays(6)
             if (YearMonth.from(end) == month) {
-                val worked = all.filter { !it.date.isBefore(weekStart) && !it.date.isAfter(end) }.sumOf { it.regular }
+                // Paid leave counts as attended hours of the week.
+                val worked = all.filter { !it.date.isBefore(weekStart) && !it.date.isAfter(end) }
+                    .sumOf { it.regular + (paidLeave[it.date] ?: 0) }
                 if (worked >= 15 * 60) {
                     val credit = minOf(worked, 40 * 60) / 5
                     minutes += credit

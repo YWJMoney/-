@@ -1,10 +1,13 @@
 package com.bamnat.app.ui.shifts
 
+import com.bamnat.core.model.ShiftIcon
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
 import com.bamnat.app.data.AppSettings
 import com.bamnat.core.model.ShiftType
+import com.bamnat.core.schedule.ShiftTypeSet
+import com.bamnat.core.schedule.ShiftTypeSets
 import com.bamnat.core.model.WorkPattern
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -37,6 +40,16 @@ class ShiftsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun save(type: ShiftType) {
         viewModelScope.launch { repo.saveShiftType(type) }
+    }
+
+    /** Adds the set's shift types the user does not have yet [MKT-03]. */
+    fun addSet(set: ShiftTypeSet) {
+        viewModelScope.launch {
+            val existing = shiftTypes.value ?: return@launch
+            // Sets come with a fitting icon [FEAT-01]; the user can change or remove it.
+            ShiftTypeSets.missing(set, existing).forEach { repo.saveShiftType(it.copy(icon = it.icon ?: ShiftIcon.suggest(it)?.key)) }
+            container.telemetry.event("shift_set_added", set.name)
+        }
     }
 
     fun delete(id: Long) {

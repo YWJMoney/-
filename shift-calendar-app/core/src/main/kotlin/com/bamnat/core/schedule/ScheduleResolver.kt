@@ -2,6 +2,7 @@ package com.bamnat.core.schedule
 
 import com.bamnat.core.model.DayEntry
 import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.model.Leave
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
@@ -30,6 +31,10 @@ data class ResolvedDay(
     val entry: DayEntry?,
     /** True when start/end come from this day's entry instead of the shift type. */
     val hasCustomTimes: Boolean = false,
+    /** Leave taken on a working day [FEAT-10]; null on days off, where leave means nothing. */
+    val leave: Leave? = null,
+    /** Shift minutes the leave covers; paid leave pays them, unpaid leave deducts them. */
+    val leaveMinutes: Int = 0,
 ) {
     val isWorkDay: Boolean get() = scheduledMinutes > 0 || (start != null && end != null)
     val isOff: Boolean get() = !isWorkDay
@@ -102,15 +107,32 @@ class ScheduleResolver(
             breakMinutes = 0
         }
 
-        val scheduled = if (start != null && end != null) WorkTime.workMinutes(start, end, breakMinutes) else 0
+        val fullScheduled = if (start != null && end != null) WorkTime.workMinutes(start, end, breakMinutes) else 0
+        // Leave only counts on a day with work to take off. Partial leave comes off the end of
+        // the shift and the break shrinks in proportion, so 반차 of 09~18 (1h break) is 09~13:30.
+        val leave = entry?.leave?.takeIf { fullScheduled > 0 }
+        val leaveMinutes = leave?.let { Math.round(fullScheduled * it.quarters / 4.0).toInt() } ?: 0
+        var workEnd = end
+        var workBreak = breakMinutes
+        if (leave != null && start != null) {
+            if (leave.isFullDay) {
+                workEnd = null
+                workBreak = 0
+            } else {
+                workBreak = Math.round(breakMinutes * (4 - leave.quarters) / 4.0).toInt()
+                workEnd = start.plusMinutes((fullScheduled - leaveMinutes + workBreak).toLong())
+            }
+        }
+        val workStart = if (workEnd == null) null else start
+        val scheduled = fullScheduled - leaveMinutes
 
         return ResolvedDay(
             date = date,
             shiftType = type,
             source = source,
-            start = start,
-            end = end,
-            breakMinutes = breakMinutes,
+            start = workStart,
+            end = workEnd,
+            breakMinutes = workBreak,
             scheduledMinutes = scheduled,
             overtimeMinutes = entry?.overtimeMinutes?.coerceAtLeast(0) ?: 0,
             holidayWorkMinutes = entry?.holidayWorkMinutes?.coerceAtLeast(0) ?: 0,
@@ -118,6 +140,8 @@ class ScheduleResolver(
             extraWork = entry?.extraWork,
             entry = entry,
             hasCustomTimes = customTimes,
+            leave = leave,
+            leaveMinutes = leaveMinutes,
         )
     }
 

@@ -1,5 +1,8 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.ui.components.LeaveMark
+import com.bamnat.core.model.LeaveKind
+import com.bamnat.core.model.Leave
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.shape.CircleShape
@@ -96,6 +99,8 @@ sealed interface QuickAction {
     data class Shift(val override: ShiftOverride) : QuickAction
     data class Extra(val kind: ExtraWork, val minutes: Int) : QuickAction
     data object ClearExtra : QuickAction
+    /** 연차·반차·반반차, or null to remove it [FEAT-10]. */
+    data class SetLeave(val leave: Leave?) : QuickAction
     data object Open : QuickAction
 }
 
@@ -184,13 +189,14 @@ private fun DayCell(
         }
     }
     // Working days are tinted with their shift's color so the month reads at a glance.
-    val tint = type?.takeIf { !it.isOff }?.colorArgb?.asColor()?.copy(alpha = if (isDarkSurface()) 0.22f else 0.13f)
+    val tint = type?.takeIf { !it.isOff && day.leave?.isFullDay != true }?.colorArgb?.asColor()?.copy(alpha = if (isDarkSurface()) 0.22f else 0.13f)
     val description = buildString {
         append(Fmt.dayTitle(date))
         holidayName?.let { append(", ").append(it) }
         type?.let { append(", ").append(it.name) }
         if (day.isWorkDay) append(", ").append(HoursFormat.korean(day.totalMinutes))
         day.extraWork?.let { append(", ").append(it.label) }
+        day.leave?.let { append(", ").append(it.label) }
         if (day.isHolidayWork) append(", 휴일 근무 ").append(HoursFormat.korean(day.holidayWorkMinutes))
         if (hasMemo) append(", 메모 있음")
     }
@@ -244,15 +250,21 @@ private fun DayCell(
                     )
                 }
                 val extra = day.extraWork
+                val leave = day.leave
                 when {
                     extra != null -> Box(Modifier.align(Alignment.TopEnd)) { ExtraWorkMark(extra, size = 13.dp) }
+                    leave != null && !leave.isFullDay -> Box(Modifier.align(Alignment.TopEnd)) { LeaveMark(leave, size = 13.dp) }
                     day.source == DaySource.OVERRIDE || day.hasCustomTimes -> Box(
                         // Marks days the user changed by hand.
                         Modifier.align(Alignment.TopEnd).padding(2.dp).size(5.dp).clip(CircleShape).background(scheme.tertiary),
                     )
                 }
             }
-            if (type != null || day.hasCustomTimes) {
+            val fullLeave = day.leave?.takeIf { it.isFullDay }
+            if (fullLeave != null) {
+                // A whole day of leave shows the leave instead of the shift it replaced [FEAT-10].
+                LeaveMark(fullLeave, size = 22.dp)
+            } else if (type != null || day.hasCustomTimes) {
                 ShiftBadge(type = type, text = type?.label ?: "근", size = 22.dp, outlined = type?.isOff == true)
             } else {
                 Spacer(Modifier.height(22.dp))
@@ -314,6 +326,18 @@ private fun DayCell(
                         onQuickAction(if (day.extraWork == k) QuickAction.ClearExtra else QuickAction.Extra(k, minutes))
                     },
                 )
+            }
+            val shift = type?.takeIf { it.hasTimes }
+            if (shift != null || day.leave != null) {
+                HorizontalDivider()
+                for (q in listOf(4, 2, 1)) {
+                    val l = Leave(LeaveKind.ANNUAL, q)
+                    DropdownMenuItem(
+                        text = { Text(if (day.leave == l) "${l.label} 해제" else l.label) },
+                        leadingIcon = { LeaveMark(l, size = 20.dp) },
+                        onClick = { menu = false; onQuickAction(QuickAction.SetLeave(if (day.leave == l) null else l)) },
+                    )
+                }
             }
             HorizontalDivider()
             DropdownMenuItem(

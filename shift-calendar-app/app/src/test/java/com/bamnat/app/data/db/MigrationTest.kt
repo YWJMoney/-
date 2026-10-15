@@ -31,7 +31,7 @@ class MigrationTest {
         createVersion1(context.getDatabasePath(name).apply { parentFile?.mkdirs() })
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
             .allowMainThreadQueries()
             .build()
         try {
@@ -40,6 +40,7 @@ class MigrationTest {
             // The old single alarm (90 minutes before) carries over as the first of the list.
             assertEquals(listOf(AlarmSpec(90)), types.single().alarms)
             assertEquals(true, types.single().alarmEnabled)
+            assertNull(types.single().icon)
 
             val day = db.dayEntryDao().getAll().single().toModel()
             assertEquals(120, day.overtimeMinutes)
@@ -49,6 +50,7 @@ class MigrationTest {
             assertEquals(listOf(1L, 1L, null, null), pattern.steps)
             assertEquals(pattern.startDate, pattern.anchorDate)
             assertNull(day.extraWork)
+            assertNull(day.leave)
 
             val memo = db.memoDao().getAll().single().toModel()
             assertEquals("인수인계", memo.title)

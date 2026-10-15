@@ -36,6 +36,8 @@ data class DayEntry(
     val customAlarms: List<DayAlarm>? = null,
     /** What the extra hours were: 잔업, 특근 or 대근. */
     val extraWork: ExtraWork? = null,
+    /** 연차·반차·반반차 taken on this day [FEAT-10]. */
+    val leave: Leave? = null,
 ) {
     val hasCustomTimes: Boolean get() = customStart != null && customEnd != null
 
@@ -43,7 +45,7 @@ data class DayEntry(
     val isEmpty: Boolean
         get() = override == ShiftOverride.None && customStart == null && customEnd == null &&
             customBreakMinutes == null && overtimeMinutes == 0 && holidayWorkMinutes == 0 && !alarmSkipped &&
-            customAlarms == null && extraWork == null
+            customAlarms == null && extraWork == null && leave == null
 }
 
 /** Kinds of extra work shift workers mark on the calendar. */
@@ -63,3 +65,59 @@ enum class ExtraWork(val label: String, val short: String) {
 
 /** An alarm at a clock time on one date, set from the calendar. */
 data class DayAlarm(val time: LocalTime, val enabled: Boolean = true)
+
+/** Kinds of leave; [paid] keeps the day's pay, [annual] counts against 연차 [FEAT-10]. */
+enum class LeaveKind(val label: String, val paid: Boolean, val annual: Boolean) {
+    ANNUAL("연차", paid = true, annual = true),
+    PAID("유급 휴가", paid = true, annual = false),
+    UNPAID("무급 휴가", paid = false, annual = false),
+    ;
+
+    companion object {
+        fun fromCode(code: Int): LeaveKind? = entries.getOrNull(code - 1)
+    }
+
+    val code: Int get() = ordinal + 1
+}
+
+/**
+ * Leave on one day in quarters of a day [FEAT-10]: 4 = 종일, 2 = 반차, 1 = 반반차.
+ * Partial leave is taken from the end of the shift.
+ */
+data class Leave(val kind: LeaveKind = LeaveKind.ANNUAL, val quarters: Int = 4) {
+    init {
+        require(quarters in 1..4) { "quarters must be 1..4" }
+    }
+
+    val days: Double get() = quarters / 4.0
+    val isFullDay: Boolean get() = quarters == 4
+
+    /** 연차, 반차, 반반차, or "0.75일 연차". */
+    val label: String
+        get() {
+            val base = if (kind == LeaveKind.ANNUAL) "" else kind.label + " "
+            return when (quarters) {
+                4 -> if (kind == LeaveKind.ANNUAL) "연차" else kind.label
+                2 -> base + "반차"
+                1 -> base + "반반차"
+                else -> "0.75일 " + kind.label
+            }
+        }
+
+    /** Short mark for calendar cells. */
+    val short: String get() = when (quarters) { 4 -> if (kind == LeaveKind.UNPAID) "무" else "연"; 3 -> "¾"; 2 -> "반"; else -> "¼" }
+
+    /** One stored integer: kind code × 10 + quarters; 0 means no leave. */
+    val code: Int get() = kind.code * 10 + quarters
+
+    companion object {
+        val QUARTER_OPTIONS = listOf(4, 2, 1, 3)
+
+        fun fromCode(code: Int): Leave? {
+            if (code <= 0) return null
+            val kind = LeaveKind.fromCode(code / 10) ?: return null
+            val q = code % 10
+            return if (q in 1..4) Leave(kind, q) else null
+        }
+    }
+}

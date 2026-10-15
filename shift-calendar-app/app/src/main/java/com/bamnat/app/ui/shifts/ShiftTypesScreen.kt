@@ -1,5 +1,10 @@
 package com.bamnat.app.ui.shifts
 
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.bamnat.app.ui.components.vector
+import com.bamnat.core.model.ShiftIcon
 import android.widget.Toast
 import com.bamnat.app.data.ScheduleRepository
 import com.bamnat.core.model.AlarmSpec
@@ -47,6 +52,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AssistChip
+import com.bamnat.core.schedule.ShiftTypeSet
+import com.bamnat.core.schedule.ShiftTypeSets
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -93,6 +103,7 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit) {
     val types by vm.shiftTypes.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<ShiftType?>(null) }
     var deleting by remember { mutableStateOf<ShiftType?>(null) }
+    var addingSet by remember { mutableStateOf<ShiftTypeSet?>(null) }
 
     Scaffold(
         topBar = {
@@ -133,6 +144,21 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit) {
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
             }
+            item {
+                // Ready-made sets for common workplaces [MKT-03].
+                Text("한 번에 추가", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 4.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                    items(ShiftTypeSets.all, key = { it.name }) { set ->
+                        val missing = ShiftTypeSets.missing(set, list)
+                        AssistChip(
+                            onClick = { addingSet = set },
+                            enabled = missing.isNotEmpty(),
+                            label = { Text(set.name) },
+                            leadingIcon = { Icon(Icons.Filled.Add, null, Modifier.size(18.dp)) },
+                        )
+                    }
+                }
+            }
             itemsIndexed(list, key = { _, t -> t.id }) { index, type ->
                 ShiftTypeRow(
                     type = type,
@@ -161,6 +187,21 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit) {
                 }
             } else {
                 null
+            },
+        )
+    }
+    addingSet?.let { set ->
+        val missing = ShiftTypeSets.missing(set, types.orEmpty())
+        ConfirmDialog(
+            title = "‘${set.name}’ 근무를 추가할까요?",
+            message = set.description + "\n\n추가: " + missing.joinToString { it.name } +
+                (if (missing.size < set.types.size) "\n이미 있는 이름은 건너뛰어요." else "") +
+                "\n추가한 뒤 시간과 알람은 근무마다 바꿀 수 있어요.",
+            confirmLabel = "추가",
+            onDismiss = { addingSet = null },
+            onConfirm = {
+                vm.addSet(set)
+                addingSet = null
             },
         )
     }
@@ -389,6 +430,21 @@ fun ShiftTypeEditorDialog(
                         }
                     }
 
+                    SectionCard(title = "아이콘") {
+                        // [FEAT-01] An icon next to the label on the calendar; none keeps cells plain.
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val tint = draft.colorArgb.asColor()
+                            IconChoice(selected = draft.icon == null, label = "없음", onClick = { draft = draft.copy(icon = null) }) {
+                                Text("—", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            for (icon in ShiftIcon.entries) {
+                                IconChoice(selected = draft.icon == icon.key, label = icon.label, onClick = { draft = draft.copy(icon = icon.key) }) {
+                                    Icon(icon.vector, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+                                }
+                            }
+                        }
+                    }
+
                     SectionCard(title = null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
@@ -573,4 +629,20 @@ private fun TimeButton(label: String, time: LocalTime, modifier: Modifier = Modi
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(Fmt.time(time), style = MaterialTheme.typography.headlineSmall)
     }
+}
+
+/** One tile of the icon picker [FEAT-01]. */
+@Composable
+private fun IconChoice(selected: Boolean, label: String, onClick: () -> Unit, content: @Composable () -> Unit) {
+    val shape = MaterialTheme.shapes.medium
+    Box(
+        Modifier
+            .size(44.dp)
+            .clip(shape)
+            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer)
+            .border(if (selected) 2.dp else 0.dp, MaterialTheme.colorScheme.primary, shape)
+            .clickable(onClickLabel = label, onClick = onClick)
+            .semantics { contentDescription = label; this.selected = selected },
+        contentAlignment = Alignment.Center,
+    ) { content() }
 }

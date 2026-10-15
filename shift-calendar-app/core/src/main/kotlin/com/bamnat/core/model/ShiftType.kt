@@ -27,6 +27,8 @@ data class ShiftType(
     /** Alarm sound for this shift; null uses the default sound from settings. */
     val alarmSoundUri: String? = null,
     val sortOrder: Int = 0,
+    /** Key of a [ShiftIcon] shown next to the label; null shows the label only [FEAT-01]. */
+    val icon: String? = null,
 ) {
     val hasTimes: Boolean get() = !isOff && start != null && end != null
 
@@ -69,4 +71,41 @@ object WorkTime {
         (spanMinutes(start, end) - breakMinutes.coerceAtLeast(0)).coerceAtLeast(0)
 
     fun isOvernight(start: LocalTime, end: LocalTime): Boolean = !end.isAfter(start)
+}
+
+/** Icons a shift type can carry [FEAT-01]. The app maps each [key] to a drawable. */
+enum class ShiftIcon(val key: String, val label: String) {
+    SUN("sun", "해"),
+    SUNRISE("sunrise", "아침"),
+    EVENING("evening", "저녁"),
+    MOON("moon", "달"),
+    CLOCK24("clock24", "24시간"),
+    BED("bed", "휴식"),
+    COFFEE("coffee", "커피"),
+    HOSPITAL("hospital", "병원"),
+    FACTORY("factory", "공장"),
+    STORE("store", "매장"),
+    CAR("car", "운전"),
+    SHIELD("shield", "경비"),
+    SCHOOL("school", "교육"),
+    FLIGHT("flight", "출장"),
+    HOME("home", "재택"),
+    STAR("star", "별"),
+    ;
+
+    companion object {
+        fun of(key: String?): ShiftIcon? = key?.let { k -> entries.firstOrNull { it.key == k } }
+
+        /** A sensible icon for a new type from its times. */
+        fun suggest(type: ShiftType): ShiftIcon? {
+            if (type.isOff) return BED
+            val s = type.start ?: return null
+            if (type.durationMinutes >= 20 * 60) return CLOCK24
+            return when (s.hour) {
+                in 4..9 -> SUN
+                in 10..15 -> EVENING
+                else -> MOON
+            }
+        }
+    }
 }

@@ -69,6 +69,8 @@ data class CompanyRules(
     val overtimeRounding: MinuteRounding = MinuteRounding(),
     /** 시급제 주휴수당 (근로기준법 제55조, 주 15시간 이상). */
     val weeklyHolidayPay: Boolean = true,
+    /** 연차 days the company grants this year; null when not entered [FEAT-10]. */
+    val annualLeaveDays: Double? = null,
 ) {
     fun extraRule(kind: ExtraWork?): ExtraRule? = kind?.let { extra[it] }?.takeIf { it.basis != ExtraBasis.LEGAL }
 }

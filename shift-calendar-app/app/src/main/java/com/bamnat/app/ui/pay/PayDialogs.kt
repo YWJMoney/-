@@ -176,7 +176,7 @@ fun EditValueDialog(
                             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                                 Text("${d.month.year % 100}.${d.month.monthValue}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(44.dp))
                                 Text("${won(d.before)} → ${won(d.after)}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                                Text(signed(d.delta), style = MaterialTheme.typography.bodySmall,
+                                Text(if (d.locked) "마감" else signed(d.delta), style = MaterialTheme.typography.bodySmall,
                                     color = if (d.delta >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
                             }
                         }

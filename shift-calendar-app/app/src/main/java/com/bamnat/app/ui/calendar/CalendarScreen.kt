@@ -45,6 +45,8 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.filled.Share
+import com.bamnat.app.share.MonthImage
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
@@ -182,6 +184,7 @@ fun CalendarScreen(
             is QuickAction.Shift -> vm.assign(date, action.override)
             is QuickAction.Extra -> vm.setExtraWork(day, action.kind, action.minutes)
             QuickAction.ClearExtra -> vm.setExtraWork(day, null, 0)
+            is QuickAction.SetLeave -> vm.setLeave(date, action.leave)
             QuickAction.Open -> {
                 vm.select(date)
                 if (!wide) sheetOpen = true
@@ -201,6 +204,10 @@ fun CalendarScreen(
                 goToMonth(YearMonth.now())
             },
             onPickMonth = { showMonthPicker = true },
+            onShare = {
+                MonthImage.share(context, snap, visibleMonth, settings.weekStart)
+                vm.logShare()
+            },
             onOpenPattern = onOpenPattern,
         )
         if (snap.isEmpty) {
@@ -434,6 +441,7 @@ private fun CalendarHeader(
     onToday: () -> Unit,
     onPickMonth: () -> Unit,
     onOpenPattern: () -> Unit,
+    onShare: () -> Unit = {},
 ) {
     Row(
         Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp),
@@ -451,6 +459,7 @@ private fun CalendarHeader(
         IconButton(onClick = onNext) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
         Spacer(Modifier.weight(1f))
         TextButton(onClick = onToday) { Text("오늘") }
+        IconButton(onClick = onShare) { Icon(Icons.Filled.Share, "이 달 근무표 이미지로 공유") }
         IconButton(onClick = onOpenPattern) { Icon(Icons.Filled.EventRepeat, "근무 패턴 설정") }
     }
 }

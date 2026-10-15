@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.core.pay.LeaveBook
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -61,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -69,6 +71,8 @@ import com.bamnat.app.tier.Feature
 import com.bamnat.app.tier.Tier
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
+import com.bamnat.core.holiday.KoreanHolidays
+import com.bamnat.core.pay.CalcSnapshot
 import com.bamnat.core.pay.HolidayPayMode
 import com.bamnat.core.pay.LineKind
 import com.bamnat.core.pay.MonthPay
@@ -90,6 +94,7 @@ internal fun kindColor(kind: LineKind): Color = when (kind) {
     LineKind.HOLIDAY -> Color(0xFFE03131)
     LineKind.EXTRA -> Color(0xFFD6336C)
     LineKind.ALLOWANCE -> Color(0xFF2F9E44)
+    LineKind.LEAVE -> Color(0xFF7048E8)
 }
 
 /**
@@ -159,8 +164,15 @@ private fun PayResult(
     val month by vm.month.collectAsStateWithLifecycle()
     val undo by vm.undoAvailable.collectAsStateWithLifecycle()
     val unlocked = vm.canUse(Feature.PAY_ENGINE, tier)
+    val closed by vm.closed.collectAsStateWithLifecycle()
     val result = remember(profile, snapshot, month) { vm.calculate(profile, snapshot, month) }
-    val year = remember(profile, snapshot, month) { (0L until 12L).map { month.plusMonths(it) }.map { it to vm.calculate(profile, snapshot, it).total } }
+    val closedSnap = closed[month]
+    // A closed month shows what was saved, not today's recalculation [PAYX-03].
+    val shown = remember(result, closedSnap) {
+        closedSnap?.let { result.copy(lines = it.lines, ratesVersion = it.ratesVersion) } ?: result
+    }
+    val year = remember(profile, snapshot, month, closed) { (0L until 12L).map { month.plusMonths(it) }.map { it to vm.totalFor(profile, snapshot, it) } }
+    val context = LocalContext.current
 
     var detail by remember { mutableStateOf<PayLine?>(null) }
     var editTarget by remember { mutableStateOf<ValueTarget?>(null) }
@@ -182,24 +194,34 @@ private fun PayResult(
             IconButton(onClick = { vm.moveMonth(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
         }
 
-        TotalCard(result, unlocked)
+        TotalCard(shown, unlocked, closed = closedSnap != null)
 
         if (!unlocked) {
             LockedCard()
         }
 
         if (walkthrough && unlocked) {
-            Walkthrough(result, onClose = { walkthrough = false })
+            Walkthrough(shown, onClose = { walkthrough = false })
         }
 
         SectionCard(title = "항목별 내역", trailing = { Text("누르면 계산 풀이", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }) {
-            for (line in result.lines) {
+            for (line in shown.lines) {
                 LineRow(line, unlocked) { if (unlocked) detail = line }
             }
-            if (result.lines.isEmpty()) Text("이 달은 계산할 근무가 없어요", style = MaterialTheme.typography.bodyMedium)
+            if (shown.lines.isEmpty()) Text("이 달은 계산할 근무가 없어요", style = MaterialTheme.typography.bodyMedium)
         }
 
         DayLedger(result, unlocked)
+
+        LeaveCard(profile, snapshot, month, onEditRules = onEditRules)
+
+        if (unlocked && profile.wageType == WageType.MONTHLY && closedSnap == null && result.lines.any { it.kind == LineKind.HOLIDAY }) {
+            HolidayModes(vm, profile, snapshot, month)
+        }
+
+        if (unlocked && !month.isAfter(YearMonth.now())) {
+            CloseMonthCard(vm, result, closedSnap)
+        }
 
         if (result.warnings.isNotEmpty()) {
             SectionCard(title = "확인해 주세요") {
@@ -285,15 +307,17 @@ private fun PayResult(
 
         Glossary()
 
+        TextButton(onClick = { reportProblem(context, profile, shown) }) { Text("계산이 이상해요 (오류 제보)") }
         Text(
-            "회사 급여명세서와 다를 수 있어요. 세금과 4대보험을 빼기 전 금액이에요. 계산 기준: 요율 ${result.ratesVersion}.",
+            "회사 급여명세서와 다를 수 있어요. 세금과 4대보험을 빼기 전 금액이에요. 계산 기준: 요율 ${shown.ratesVersion}, " +
+                "공휴일 ${KoreanHolidays.VERSION}.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 24.dp),
         )
     }
 
-    detail?.let { LineDetailDialog(it, result) { detail = null } }
+    detail?.let { LineDetailDialog(it, shown) { detail = null } }
     editTarget?.let { target ->
         EditValueDialog(vm, profile, snapshot, target, month, onDismiss = { editTarget = null })
     }
@@ -309,7 +333,7 @@ private fun PayResult(
 }
 
 @Composable
-private fun TotalCard(result: MonthPay, unlocked: Boolean) {
+private fun TotalCard(result: MonthPay, unlocked: Boolean, closed: Boolean = false) {
     Column(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large)
             .background(MaterialTheme.colorScheme.primaryContainer).padding(20.dp),
@@ -317,6 +341,7 @@ private fun TotalCard(result: MonthPay, unlocked: Boolean) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("${result.month.monthValue}월 예상 급여 (세전)", style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.weight(1f))
+            if (closed) { EstimatedChip("마감"); Spacer(Modifier.width(6.dp)) }
             if (result.estimated) EstimatedChip()
         }
         val target = if (unlocked) result.total.toFloat() else 0f
@@ -569,4 +594,129 @@ private fun DayLedger(result: MonthPay, unlocked: Boolean) {
             TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "접기" else "${days.size - 6}일 더 보기") }
         }
     }
+}
+
+/** Both readings of 월급제 휴일 근무 side by side, the chosen one marked [PAY-06]. */
+@Composable
+private fun HolidayModes(vm: PayViewModel, profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth) {
+    val totals = remember(profile, snapshot, month) {
+        HolidayPayMode.entries.map { it to vm.calculate(profile.copy(holidayPayMode = it), snapshot, month).total }
+    }
+    SectionCard(title = "휴일 근무, 두 가지 해석") {
+        Text("월급제 휴일 근무는 회사마다 계산이 달라요. 명세서와 맞는 쪽을 고르세요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+            totals.forEach { (mode, total) ->
+                val chosen = profile.holidayPayMode == mode
+                androidx.compose.material3.Surface(
+                    onClick = { vm.update { it.copy(holidayPayMode = mode, estimatedFields = it.estimatedFields - "holidayPayMode") } },
+                    shape = MaterialTheme.shapes.medium,
+                    color = if (chosen) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(mode.label + if (chosen) " ✓" else "", style = MaterialTheme.typography.labelLarge)
+                        Text(won(total), style = MaterialTheme.typography.titleMedium)
+                        Text(if (mode == HolidayPayMode.FULL) "그날 몫 100%를 더 주고 가산" else "월급에 그날 몫 포함, 가산만",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 연차 used, planned and left this year [FEAT-10]. */
+@Composable
+private fun LeaveCard(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth, onEditRules: () -> Unit) {
+    val today = remember { java.time.LocalDate.now() }
+    val balance = remember(profile.rules.annualLeaveDays, snapshot, month.year) {
+        LeaveBook.balance(month.year, profile.rules.annualLeaveDays, today, snapshot.resolver::resolve)
+    }
+    if (balance.byKind.isEmpty() && balance.granted == null) return
+    SectionCard(title = "${month.year}년 휴가", trailing = { TextButton(onClick = onEditRules) { Text("연차 일수") } }) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LeaveStat("쓴 연차", LeaveBook.days(balance.used), Modifier.weight(1f))
+            LeaveStat("예정", LeaveBook.days(balance.planned), Modifier.weight(1f))
+            LeaveStat("남은 연차", balance.remaining?.let(LeaveBook::days) ?: "—", Modifier.weight(1f),
+                warn = (balance.remaining ?: 0.0) < 0)
+        }
+        val others = balance.byKind.filterKeys { !it.annual }
+        if (others.isNotEmpty()) {
+            Text(others.entries.joinToString(" · ") { "${it.key.label} ${LeaveBook.days(it.value)}" },
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp))
+        }
+        Text(
+            if (balance.granted == null) "올해 받은 연차 일수를 넣으면 남은 날을 알려 드려요. 달력에서 날을 길게 눌러 연차·반차를 넣어요."
+            else "달력에서 날을 길게 눌러 연차·반차·반반차를 넣으면 여기와 급여에 바로 반영돼요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp),
+        )
+    }
+}
+
+@Composable
+private fun LeaveStat(label: String, value: String, modifier: Modifier, warn: Boolean = false) {
+    androidx.compose.material3.Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = modifier) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value, style = MaterialTheme.typography.titleMedium,
+                color = if (warn) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+        }
+    }
+}
+
+/** 마감 [PAYX-03]: keeps a month's result fixed once the pay slip is in, with a way to compare and redo. */
+@Composable
+private fun CloseMonthCard(vm: PayViewModel, result: MonthPay, closed: CalcSnapshot?) {
+    SectionCard(title = "${result.month.monthValue}월 마감") {
+        if (closed == null) {
+            Text("급여를 받은 달은 마감해 두세요. 나중에 규칙이나 요율이 바뀌어도 이 달 결과는 그대로 남아요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = { vm.closeMonth(result) }, modifier = Modifier.padding(top = 6.dp)) {
+                Icon(Icons.Filled.Lock, null); Text(" 이 달 마감하기")
+            }
+        } else {
+            val at = java.time.Instant.ofEpochMilli(closed.closedAtMillis).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+            Text("${at.monthValue}월 ${at.dayOfMonth}일에 마감한 결과를 보여 주고 있어요 (요율 ${closed.ratesVersion}).",
+                style = MaterialTheme.typography.bodyMedium)
+            val diff = result.total - closed.total
+            if (diff != 0L) {
+                Text("지금 다시 계산하면 ${won(result.total)} (${if (diff > 0) "+" else "−"}${won(kotlin.math.abs(diff))})",
+                    style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
+            }
+            if (closed.previous.isNotEmpty()) {
+                Text("이전 마감 ${closed.previous.size}개 보관 중 · 처음 ${won(closed.previous.last().total)}",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                if (diff != 0L) OutlinedButton(onClick = { vm.closeMonth(result) }) { Text("다시 계산한 값으로") }
+                TextButton(onClick = { vm.reopenMonth(result.month) }) { Text("마감 풀기") }
+            }
+        }
+    }
+}
+
+/** 오류 제보 [PAY-09]: the user picks where to send it; nothing leaves the phone otherwise. */
+private fun reportProblem(context: android.content.Context, profile: PayProfile, result: MonthPay) {
+    val text = buildString {
+        appendLine("[밤낮 급여 계산 오류 제보]")
+        appendLine("월: ${result.month} · 요율 ${result.ratesVersion} · 공휴일 ${KoreanHolidays.VERSION} · 앱 ${com.bamnat.app.BuildConfig.VERSION_NAME}")
+        appendLine("직군: ${profile.occupation.label} · ${if (profile.wageType == WageType.MONTHLY) "월급제" else "시급제"} · " +
+            "${if (profile.fiveOrMoreEmployees) "5인 이상" else "5인 미만"} · 소정 ${profile.monthlyHours}시간")
+        profile.rules.summary(profile).forEach { appendLine("규칙: $it") }
+        appendLine()
+        result.lines.forEach { appendLine("${it.label}: ${won(it.amount)} — ${it.formula}") }
+        appendLine("합계: ${won(result.total)}")
+        result.warnings.forEach { appendLine("경고: $it") }
+        appendLine()
+        appendLine("명세서 금액과 다른 부분을 적어 주세요:")
+    }
+    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(android.content.Intent.EXTRA_SUBJECT, "밤낮 급여 계산 오류 제보 (${result.month})")
+        putExtra(android.content.Intent.EXTRA_TEXT, text)
+    }
+    context.startActivity(android.content.Intent.createChooser(send, "오류 제보 보내기"))
 }

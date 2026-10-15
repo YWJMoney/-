@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.model.Leave
 import com.bamnat.core.schedule.ResolvedDay
 import java.time.LocalDate
 import java.time.LocalTime
@@ -68,6 +69,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel() {
     val messages: SharedFlow<UndoMessage> = _messages.asSharedFlow()
 
     fun memosOn(date: LocalDate): Flow<List<Memo>> = memoRepo.memosOn(date)
+
+    fun logShare() = container.telemetry.event("share_month_image")
 
     fun select(date: LocalDate) {
         _selected.value = date
@@ -137,6 +140,10 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setExtraWork(day: ResolvedDay, kind: ExtraWork?, minutes: Int) {
         viewModelScope.launch { schedule.setExtraWork(day.date, kind, minutes.coerceIn(0, 24 * 60), day.isWorkDay) }
+    }
+
+    fun setLeave(date: LocalDate, leave: Leave?) {
+        viewModelScope.launch { schedule.setLeave(date, leave) }
     }
 
     fun setHolidayWork(date: LocalDate, minutes: Int) {

@@ -9,6 +9,7 @@ import com.bamnat.app.tier.FeatureGate
 import com.bamnat.app.tier.Tier
 import com.bamnat.core.diag.DiagEvents
 import com.bamnat.core.pay.BulkEditPlanner
+import com.bamnat.core.pay.CalcSnapshot
 import com.bamnat.core.pay.Cadence
 import com.bamnat.core.pay.CompanyRules
 import com.bamnat.core.pay.MinuteRounding
@@ -66,6 +67,22 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
 
     fun canUse(feature: Feature, tier: Tier) = FeatureGate.allows(tier, feature)
 
+    val closed: StateFlow<Map<YearMonth, CalcSnapshot>> = container.payStore.closed
+
+    /** Keeps this month's result as it is now, whatever changes later [PAYX-03]. */
+    fun closeMonth(result: MonthPay) = viewModelScope.launch {
+        val existing = closed.value[result.month]
+        val snap = existing?.recalculated(result, System.currentTimeMillis()) ?: CalcSnapshot.close(result, System.currentTimeMillis())
+        container.payStore.saveClosed(snap, result.month)
+        container.telemetry.event("pay_month_close", if (existing == null) "close" else "recalc")
+    }
+
+    fun reopenMonth(month: YearMonth) = viewModelScope.launch { container.payStore.saveClosed(null, month) }
+
+    /** What a month comes to: its closed result when closed, else a fresh calculation. */
+    fun totalFor(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): Long =
+        closed.value[month]?.total ?: calculate(profile, snapshot, month).total
+
     fun calculate(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): MonthPay =
         calculator.calculate(profile, month, snapshot.resolver::resolve)
 
@@ -114,6 +131,7 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
             timelineOf(p, target), value, scope,
             preview = (0L until 12L).map { from.plusMonths(it) },
             totalFor = { t, m -> calculate(p.withTimeline(target, t), snapshot, m).total },
+            isLocked = { it in closed.value },
         )
 
     fun applyEdit(target: ValueTarget, plan: EditPlan) {

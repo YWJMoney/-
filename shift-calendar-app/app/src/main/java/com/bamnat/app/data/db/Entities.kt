@@ -22,6 +22,8 @@ data class ShiftTypeEntity(
     val sortOrder: Int,
     /** All alarms, see [com.bamnat.core.alarm.AlarmCodec]; empty on rows from version 1. */
     @ColumnInfo(defaultValue = "") val alarmOffsets: String = "",
+    /** [com.bamnat.core.model.ShiftIcon.key]; null shows the label only [FEAT-01]. */
+    @ColumnInfo(defaultValue = "NULL") val icon: String? = null,
 )
 
 /**
@@ -63,6 +65,8 @@ data class DayEntryEntity(
     @ColumnInfo(defaultValue = "NULL") val customAlarms: String? = null,
     /** [com.bamnat.core.model.ExtraWork.code]; 0 means not marked. */
     @ColumnInfo(defaultValue = "0") val extraWork: Int = 0,
+    /** [com.bamnat.core.model.Leave.code]; 0 means no leave [FEAT-10]. */
+    @ColumnInfo(defaultValue = "0") val leave: Int = 0,
 ) {
     companion object {
         const val MODE_NONE = 0

@@ -2,7 +2,10 @@ package com.bamnat.app.pay
 
 import android.content.Context
 import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.pay.CalcSnapshot
 import com.bamnat.core.pay.Cadence
+import com.bamnat.core.pay.LineKind
+import com.bamnat.core.pay.PayLine
 import com.bamnat.core.pay.CompanyRules
 import com.bamnat.core.pay.ExtraBasis
 import com.bamnat.core.pay.ExtraRule
@@ -27,6 +30,7 @@ import org.json.JSONObject
 import java.io.File
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.YearMonth
 
 /**
  * The pay profile, kept as one JSON file in app storage (included in phone backup) [PAY-10].
@@ -62,6 +66,66 @@ class PayStore(context: Context) {
 
     private fun read(): PayProfile? =
         runCatching { if (file.exists()) PayCodec.decode(JSONObject(file.readText())) else null }.getOrNull()
+
+    // ---- closed months [PAYX-03, PAY-10] ----
+
+    private val closedFile = File(context.filesDir, "pay/closed.json")
+    private val _closed = MutableStateFlow(readClosed())
+    /** Months the user closed: their saved results stay as they were when rules or rates change. */
+    val closed: StateFlow<Map<YearMonth, CalcSnapshot>> = _closed.asStateFlow()
+
+    suspend fun saveClosed(snapshot: CalcSnapshot?, month: YearMonth) = withContext(Dispatchers.IO) {
+        synchronized(this@PayStore) {
+            val next = if (snapshot == null) _closed.value - month else _closed.value + (month to snapshot)
+            closedFile.parentFile?.mkdirs()
+            val tmp = File(closedFile.parentFile, "closed.json.tmp")
+            tmp.writeText(JSONArray(next.values.map(SnapshotCodec::encode)).toString())
+            tmp.renameTo(closedFile)
+            _closed.value = next
+        }
+    }
+
+    private fun readClosed(): Map<YearMonth, CalcSnapshot> = runCatching {
+        if (!closedFile.exists()) return@runCatching emptyMap()
+        val a = JSONArray(closedFile.readText())
+        (0 until a.length()).map { SnapshotCodec.decode(a.getJSONObject(it)) }.associateBy { it.month }
+    }.getOrDefault(emptyMap())
+}
+
+/** JSON for a closed month's [CalcSnapshot]. */
+object SnapshotCodec {
+    fun encode(s: CalcSnapshot): JSONObject = JSONObject()
+        .put("month", s.month.toString())
+        .put("total", s.total)
+        .put("rates", s.ratesVersion)
+        .put("at", s.closedAtMillis)
+        .put("lines", JSONArray(s.lines.map { l ->
+            JSONObject().put("kind", l.kind.name).put("label", l.label).put("amount", l.amount).put("formula", l.formula)
+                .put("minutes", l.minutes).put("hourly", l.hourly).put("multiplier", l.multiplier).put("basis", l.basis)
+                .put("estimated", l.estimated)
+        }))
+        .put("previous", JSONArray(s.previous.map(::encode)))
+
+    fun decode(o: JSONObject): CalcSnapshot {
+        val lines = o.optJSONArray("lines")
+        val previous = o.optJSONArray("previous")
+        return CalcSnapshot(
+            month = YearMonth.parse(o.getString("month")),
+            total = o.getLong("total"),
+            lines = (0 until (lines?.length() ?: 0)).map { i ->
+                val l = lines!!.getJSONObject(i)
+                PayLine(
+                    kind = runCatching { LineKind.valueOf(l.getString("kind")) }.getOrDefault(LineKind.ALLOWANCE),
+                    label = l.getString("label"), amount = l.getLong("amount"), formula = l.optString("formula"),
+                    minutes = l.optInt("minutes"), hourly = l.optLong("hourly"), multiplier = l.optDouble("multiplier", 0.0),
+                    basis = l.optString("basis"), estimated = l.optBoolean("estimated"),
+                )
+            },
+            ratesVersion = o.optString("rates"),
+            closedAtMillis = o.optLong("at"),
+            previous = (0 until (previous?.length() ?: 0)).map { decode(previous!!.getJSONObject(it)) },
+        )
+    }
 }
 
 /** JSON for [PayProfile]; also used by the full backup file. */
@@ -108,6 +172,7 @@ object PayCodec {
         .put("publicHolidays", r.publicHolidaysPaid)
         .put("roundUnit", r.overtimeRounding.unit).put("round", r.overtimeRounding.rounding.name)
         .put("weeklyHoliday", r.weeklyHolidayPay)
+        .putRate("annualLeave", r.annualLeaveDays)
         .put("extra", JSONObject().apply {
             r.extra.forEach { (kind, e) ->
                 put(kind.name, JSONObject().put("basis", e.basis.name).put("multiplier", e.multiplier).put("amount", e.amount)
@@ -127,6 +192,7 @@ object PayCodec {
             runCatching { Rounding.valueOf(o.getString("round")) }.getOrDefault(Rounding.DOWN),
         ),
         weeklyHolidayPay = o.optBoolean("weeklyHoliday", true),
+        annualLeaveDays = o.rate("annualLeave"),
         extra = o.optJSONObject("extra")?.let { x ->
             x.keys().asSequence().mapNotNull { key ->
                 val kind = runCatching { ExtraWork.valueOf(key) }.getOrNull() ?: return@mapNotNull null

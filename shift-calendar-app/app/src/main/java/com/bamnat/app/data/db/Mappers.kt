@@ -6,6 +6,7 @@ import com.bamnat.core.memo.Memo
 import com.bamnat.core.model.AlarmSpec
 import com.bamnat.core.model.DayEntry
 import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.model.Leave
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
@@ -28,6 +29,7 @@ fun ShiftTypeEntity.toModel() = ShiftType(
     alarms = AlarmCodec.decodeSpecs(alarmOffsets) ?: listOf(AlarmSpec(alarmOffsetMinutes)),
     alarmSoundUri = alarmSoundUri,
     sortOrder = sortOrder,
+    icon = icon,
 )
 
 fun ShiftType.toEntity() = ShiftTypeEntity(
@@ -45,6 +47,7 @@ fun ShiftType.toEntity() = ShiftTypeEntity(
     alarmSoundUri = alarmSoundUri,
     sortOrder = sortOrder,
     alarmOffsets = AlarmCodec.encodeSpecs(alarms),
+    icon = icon,
 )
 
 internal fun encodeSteps(steps: List<Long?>): String = steps.joinToString(",") { it?.toString() ?: "" }
@@ -97,6 +100,7 @@ fun DayEntryEntity.toModel() = DayEntry(
     alarmSkipped = alarmSkipped,
     customAlarms = AlarmCodec.decodeDayAlarms(customAlarms),
     extraWork = ExtraWork.fromCode(extraWork),
+    leave = Leave.fromCode(leave),
 )
 
 fun DayEntry.toEntity() = DayEntryEntity(
@@ -115,6 +119,7 @@ fun DayEntry.toEntity() = DayEntryEntity(
     alarmSkipped = alarmSkipped,
     customAlarms = AlarmCodec.encodeDayAlarms(customAlarms),
     extraWork = extraWork?.code ?: 0,
+    leave = leave?.code ?: 0,
 )
 
 fun MemoEntity.toModel() = Memo(

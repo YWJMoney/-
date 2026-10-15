@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.components
 
+import com.bamnat.core.model.ShiftIcon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -83,10 +84,13 @@ fun ShiftBadge(
     text: String? = null,
     size: Dp = 22.dp,
     outlined: Boolean = false,
+    showIcon: Boolean = true,
 ) {
     val color = type?.colorArgb?.asColor() ?: MaterialTheme.colorScheme.outline
     val label = text ?: type?.label ?: "휴"
     val shape = RoundedCornerShape(size / 3)
+    // The icon only goes with the type's own label, not with stand-in text like "휴" [FEAT-01].
+    val icon = if (showIcon && (text == null || text == type?.label)) ShiftIcon.of(type?.icon) else null
     Box(
         modifier = modifier
             .clip(shape)
@@ -98,14 +102,21 @@ fun ShiftBadge(
             .padding(horizontal = 5.dp, vertical = 1.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = label,
-            color = if (outlined) color else contentColorOn(color),
-            fontSize = (size.value * 0.52f).sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Clip,
-        )
+        val fg = if (outlined) color else contentColorOn(color)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (icon != null) {
+                Icon(icon.vector, contentDescription = null, tint = fg, modifier = Modifier.size(size * 0.5f))
+                Spacer(Modifier.width(1.dp))
+            }
+            Text(
+                text = label,
+                color = fg,
+                fontSize = (size.value * 0.52f).sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+            )
+        }
     }
 }
 

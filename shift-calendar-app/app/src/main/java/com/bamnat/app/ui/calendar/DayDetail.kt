@@ -1,5 +1,12 @@
 package com.bamnat.app.ui.calendar
 
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SegmentedButton
+import com.bamnat.app.ui.components.LeaveMark
+import com.bamnat.core.pay.LeaveBook
+import com.bamnat.core.model.LeaveKind
+import com.bamnat.core.model.Leave
 import com.bamnat.core.schedule.ScheduleResolver
 import com.bamnat.core.model.DayAlarm
 import com.bamnat.core.alarm.PlannedAlarm
@@ -151,6 +158,10 @@ fun DayDetail(
             WorkTimeSection(day = day, vm = vm)
         }
 
+        if (day.leave != null || day.shiftType?.hasTimes == true && day.isWorkDay) {
+            LeaveSection(day = day, vm = vm)
+        }
+
         ExtraWorkSection(day = day, vm = vm)
 
         DayPaySection(day = day, snapshot = snapshot, vm = vm, onOpenPay = onOpenPay)
@@ -202,6 +213,7 @@ private fun DayHeader(day: ResolvedDay, isToday: Boolean) {
         val start = day.start
         val end = day.end
         val summary = when {
+            day.leave?.isFullDay == true -> "${type?.name ?: "근무"} · ${day.leave!!.label} (${HoursFormat.korean(day.leaveMinutes)})"
             day.isWorkDay && start != null && end != null ->
                 "${type?.name ?: "근무"} · ${Fmt.timeRange(start, end)} · ${HoursFormat.korean(day.scheduledMinutes)}"
             type != null -> type.name
@@ -356,6 +368,63 @@ private fun ExtraWorkSection(day: ResolvedDay, vm: CalendarViewModel) {
         } else {
             Text(
                 "고르면 달력에 표시되고 시간이 합계에 들어가요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+    }
+}
+
+/**
+ * 연차·반차·반반차 [FEAT-10]. Partial leave comes off the end of the shift; the pay screen and
+ * the day's pay below follow at once.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LeaveSection(day: ResolvedDay, vm: CalendarViewModel) {
+    val leave = day.leave
+    SectionCard(title = "휴가") {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (q in Leave.QUARTER_OPTIONS) {
+                val option = Leave(leave?.kind ?: LeaveKind.ANNUAL, q)
+                FilterChip(
+                    selected = leave?.quarters == q,
+                    onClick = { vm.setLeave(day.date, if (leave?.quarters == q) null else option) },
+                    label = { Text(when (q) { 4 -> "종일"; 2 -> "반차"; 1 -> "반반차"; else -> "0.75일" }) },
+                    leadingIcon = { LeaveMark(option, size = 18.dp) },
+                )
+            }
+        }
+        if (leave != null) {
+            Spacer(Modifier.height(8.dp))
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                LeaveKind.entries.forEachIndexed { i, k ->
+                    SegmentedButton(
+                        selected = leave.kind == k,
+                        onClick = { vm.setLeave(day.date, leave.copy(kind = k)) },
+                        shape = SegmentedButtonDefaults.itemShape(i, LeaveKind.entries.size),
+                    ) { Text(k.label, maxLines = 1) }
+                }
+            }
+            val shift = day.shiftType
+            Text(
+                buildString {
+                    append("${leave.label} · ${HoursFormat.korean(day.leaveMinutes)} 쉼")
+                    if (!leave.isFullDay && day.start != null && day.end != null) {
+                        append(" · 남은 근무 ${Fmt.timeRange(day.start!!, day.end!!)}")
+                    }
+                    if (leave.kind.annual) append(" · 연차에서 ${LeaveBook.days(leave.days)} 차감")
+                    if (!leave.kind.paid) append(" · 무급")
+                    if (shift == null) append(" · 근무가 없는 날이라 계산에서 빠져요")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        } else {
+            Text(
+                "반차는 근무 뒤쪽 절반을 쉬는 것으로 계산해요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp),

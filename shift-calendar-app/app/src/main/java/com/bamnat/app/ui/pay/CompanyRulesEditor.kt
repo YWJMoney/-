@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.core.pay.LeaveBook
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -165,6 +166,20 @@ fun CompanyRulesEditor(
                     }
                 }
             }
+            SectionCard(title = "연차") {
+                // [FEAT-10] Days granted this year; the pay screen shows used and left.
+                val days = rules.annualLeaveDays
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = days == null, onClick = { setRules(rules.copy(annualLeaveDays = null)) }, label = { Text("입력 안 함") })
+                    listOf(11.0, 15.0, 20.0, 25.0).forEach { d ->
+                        FilterChip(selected = days == d, onClick = { setRules(rules.copy(annualLeaveDays = d)) }, label = { Text(LeaveBook.days(d)) })
+                    }
+                    OutlinedButton(onClick = { setRules(rules.copy(annualLeaveDays = ((days ?: 15.0) - 0.5).coerceAtLeast(0.0))) }) { Text("−") }
+                    Text(days?.let(LeaveBook::days) ?: "—", style = MaterialTheme.typography.titleSmall, modifier = Modifier.align(Alignment.CenterVertically))
+                    OutlinedButton(onClick = { setRules(rules.copy(annualLeaveDays = ((days ?: 15.0) + 0.5).coerceAtMost(40.0))) }) { Text("+") }
+                }
+                Hint("1년 이상 다니면 15일, 그 뒤 2년마다 1일씩 늘어 최대 25일이에요. 1년 안 됐으면 한 달 개근마다 1일(최대 11일)이에요.")
+            }
             Spacer(Modifier.padding(bottom = 16.dp))
         }
 
@@ -277,4 +292,5 @@ fun CompanyRules.summary(profile: PayProfile): List<String> = buildList {
     }
     if (profile.wageType == WageType.MONTHLY && profile.monthlyHours != 209) add("월 소정근로 ${profile.monthlyHours}시간")
     if (profile.wageType == WageType.HOURLY && !weeklyHolidayPay) add("주휴수당 없음")
+    annualLeaveDays?.let { add("연차 ${LeaveBook.days(it)}") }
 }

@@ -1,5 +1,9 @@
 package com.bamnat.app.screenshots
 
+import org.junit.Assert.assertTrue
+import com.bamnat.app.share.MonthImage
+import com.bamnat.core.model.LeaveKind
+import com.bamnat.core.model.Leave
 import android.Manifest
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -77,8 +81,8 @@ class ScreenshotTest {
         val types = repo.shiftTypes.first().associateBy { it.name }
         // 12-hour two-shift work, common in security and manufacturing.
         val day = repo.saveShiftType(types.getValue("주간").copy(start = LocalTime.of(8, 0), end = LocalTime.of(20, 0),
-            alarmEnabled = true, alarms = listOf(AlarmSpec(90), AlarmSpec(60), AlarmSpec(30, enabled = false))))
-        val night = repo.saveShiftType(types.getValue("야간").copy(start = LocalTime.of(20, 0), end = LocalTime.of(8, 0)))
+            alarmEnabled = true, alarms = listOf(AlarmSpec(90), AlarmSpec(60), AlarmSpec(30, enabled = false)), icon = "sun"))
+        val night = repo.saveShiftType(types.getValue("야간").copy(start = LocalTime.of(20, 0), end = LocalTime.of(8, 0), icon = "moon"))
         val evening = types.getValue("오후").id
         val off = types.getValue("휴무").id
         repo.savePattern(WorkPattern.Rotation(LocalDate.of(2026, 7, 1), listOf(day, day, night, night, off)))
@@ -93,6 +97,10 @@ class ScreenshotTest {
         repo.setExtraWork(laterOff, ExtraWork.COVER, 12 * 60, workDay = false)
         repo.setExtraWork(today.plusDays(1), ExtraWork.OVERTIME, 2 * 60, workDay = true)
         repo.setAlarmSkipped(today.plusDays(6), true)
+        // [FEAT-10] 반차 today and a whole day of 연차 for the check-up on the first working day after it.
+        repo.setLeave(today, Leave(LeaveKind.ANNUAL, 2))
+        val checkUp = (5..12).map { today.plusDays(it.toLong()) }.first { pattern.shiftTypeIdOn(it) == day }
+        repo.setLeave(checkUp, Leave())
         repo.setDayAlarms(today, listOf(DayAlarm(LocalTime.of(6, 10)), DayAlarm(LocalTime.of(6, 30), enabled = false)))
 
         val memos = c.memoRepository
@@ -225,7 +233,7 @@ class ScreenshotTest {
     @Test fun foldedTimeWheel() = shoot("20_folded_time_wheel", FOLDED) {
         tab(3, wide = false)
         tap(180f, SETTINGS_SHIFT_TYPES_Y)
-        tap(150f, 185f)
+        tap(150f, 270f)
         tap(100f, 470f)
     }
     @Test fun foldedPatternChange() = shoot("21_folded_pattern_change", FOLDED) {
@@ -267,13 +275,13 @@ class ScreenshotTest {
     @Test fun foldedShiftTypeEditor() = shoot("16_folded_shift_type_editor", FOLDED) {
         tab(3, wide = false)
         tap(180f, SETTINGS_SHIFT_TYPES_Y)
-        tap(150f, 185f)
+        tap(150f, 270f)
     }
 
     @Test fun foldedShiftTypeAlarms() = shoot("17_folded_shift_type_alarms", FOLDED) {
         tab(3, wide = false)
         tap(180f, SETTINGS_SHIFT_TYPES_Y)
-        tap(150f, 185f)
+        tap(150f, 270f)
         scrollUp(600)
     }
     @Test fun foldedDiagnostics() = shoot("22_folded_diagnostics", FOLDED) {
@@ -292,6 +300,7 @@ class ScreenshotTest {
             ExtraWork.COVER to ExtraRule(ExtraBasis.HOURLY_RATE, multiplier = 2.0, minMinutes = 480),
             ExtraWork.SPECIAL to ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 150_000),
         ),
+        annualLeaveDays = 15.0,
     )
 
     private fun payScreen(tier: Tier, withProfile: Boolean, body: (@androidx.compose.runtime.Composable (PayViewModel) -> Unit)? = null): Screen.() -> Unit = {
@@ -328,6 +337,30 @@ class ScreenshotTest {
     @Test fun foldedPayDays() = shoot("36_folded_pay_days", FOLDED) {
         payScreen(Tier.PRO, withProfile = true).invoke(this)
         scrollUp(880)
+    }
+
+    @Test fun foldedLeaveDay() = shoot("37_folded_leave_day", FOLDED) {
+        tap(DAY_X + 51f, DAY_Y)
+        scrollUp(500)
+        scrollUp(420)
+    }
+    @Test fun foldedShiftIcons() = shoot("38_folded_shift_icons", FOLDED) {
+        tab(3, wide = false)
+        tap(180f, SETTINGS_SHIFT_TYPES_Y)
+        tap(150f, 270f)
+        scrollUp(330)
+    }
+    @Test fun foldedPayLeave() = shoot("39_folded_pay_leave", FOLDED) {
+        payScreen(Tier.PRO, withProfile = true).invoke(this)
+        scrollUp(880)
+        scrollUp(250)
+    }
+    @Test fun monthImage() = runBlocking {
+        val snap = app.container.scheduleRepository.snapshot.first()
+        val bmp = MonthImage.render(snap, java.time.YearMonth.from(today), java.time.DayOfWeek.SUNDAY)
+        val out = File("build/screenshots/40_month_share_image.png").apply { parentFile!!.mkdirs() }
+        out.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        assertTrue(bmp.height > bmp.width)
     }
 
     @Test fun foldedPayWizard() = shoot("26_folded_pay_wizard", FOLDED, payScreen(Tier.PRO, withProfile = false))
