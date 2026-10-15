@@ -8,6 +8,8 @@ import com.bamnat.app.data.ScheduleRepository
 import com.bamnat.app.data.SettingsRepository
 import com.bamnat.app.data.db.AppDatabase
 import com.bamnat.app.diag.EventLog
+import com.bamnat.app.pay.PayStore
+import com.bamnat.app.tier.FeatureGate
 import com.bamnat.app.diag.Telemetry
 import com.bamnat.app.widget.WidgetRefresher
 import kotlinx.coroutines.CoroutineScope
@@ -37,6 +39,8 @@ class AppContainer(context: Context) {
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository)
     val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry)
     val backupManager = BackupManager(database, settingsRepository)
+    val payStore = PayStore(appContext)
+    val featureGate = FeatureGate(settingsRepository, appScope)
 
     suspend fun rescheduleAlarms(after: LocalDateTime = LocalDateTime.now()) {
         alarmScheduler.reschedule(scheduleRepository.snapshot.first(), settingsRepository.current.alarmsEnabled, after)

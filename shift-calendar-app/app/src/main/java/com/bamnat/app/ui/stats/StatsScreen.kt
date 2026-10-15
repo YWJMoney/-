@@ -23,6 +23,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -41,6 +42,9 @@ import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.ScheduleSnapshot
+import com.bamnat.app.tier.Feature
+import com.bamnat.app.tier.FeatureGate
+import com.bamnat.app.tier.Tier
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
@@ -48,6 +52,8 @@ import com.bamnat.app.ui.components.WarningBanner
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.hours.HoursFormat
+import com.bamnat.core.pay.PayCalculator
+import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.hours.WeekSummary
 import com.bamnat.core.hours.WorkHoursCalculator
 import kotlinx.coroutines.flow.SharingStarted
@@ -60,11 +66,19 @@ class StatsViewModel(container: AppContainer) : ViewModel() {
     val snapshot: StateFlow<ScheduleSnapshot?> =
         container.scheduleRepository.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val settings: StateFlow<AppSettings> = container.settingsRepository.settings
+    val payProfile: StateFlow<PayProfile?> = container.payStore.profile
+    val tier: StateFlow<Tier> = container.featureGate.tier
+    private val payCalculator = PayCalculator()
+
+    fun payTotal(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): Long =
+        payCalculator.calculate(profile, month, snapshot.resolver::resolve).total
 }
 
 @Composable
-fun StatsScreen(vm: StatsViewModel, wide: Boolean) {
+fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
+    val payProfile by vm.payProfile.collectAsStateWithLifecycle()
+    val tier by vm.tier.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     var monthText by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
     val month = remember(monthText) { YearMonth.parse(monthText) }
@@ -114,6 +128,15 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean) {
                 repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
+
+        PayEntryCard(
+            month = month,
+            total = remember(payProfile, snap, month, tier) {
+                payProfile?.takeIf { FeatureGate.allows(tier, Feature.PAY_ENGINE) }?.let { vm.payTotal(it, snap, month) }
+            },
+            hasProfile = payProfile != null,
+            onClick = onOpenPay,
+        )
 
         SectionCard(title = "3개월 평균 (${three.firstMonth.monthValue}월–${three.lastMonth.monthValue}월)") {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -272,6 +295,39 @@ private fun MonthTrend(values: List<Pair<YearMonth, Int>>) {
                 Text(Fmt.monthShort(m), style = MaterialTheme.typography.labelSmall,
                     color = if (last) MaterialTheme.colorScheme.primary else Color.Unspecified)
             }
+        }
+    }
+}
+
+/** Entry to 급여 계산 [PAYX-06]: the month's estimate when set up and unlocked, otherwise an invitation. */
+@Composable
+private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("${month.monthValue}월 예상 급여 (세전)", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text(
+                    when {
+                        total != null -> "%,d원".format(total)
+                        hasProfile -> "${Tier.PRO.label}에서 금액이 보여요"
+                        else -> "근무표로 급여 계산하기"
+                    },
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Text(
+                    if (hasProfile) "누르면 항목별 계산 풀이를 볼 수 있어요" else "직군을 고르고 기본급만 넣으면 연장·야간·휴일까지 계산해요",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
         }
     }
 }

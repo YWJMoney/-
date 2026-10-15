@@ -17,6 +17,14 @@ import androidx.activity.compose.setContent
 import com.bamnat.app.ui.diag.DiagnosticsScreen
 import com.bamnat.app.ui.diag.DiagnosticsViewModel
 import com.bamnat.app.ui.theme.BamnatTheme
+import com.bamnat.app.tier.Tier
+import com.bamnat.app.ui.pay.EditValueDialog
+import com.bamnat.app.ui.pay.LineDetailDialog
+import com.bamnat.app.ui.pay.PayScreen
+import com.bamnat.app.ui.pay.PayViewModel
+import com.bamnat.app.ui.pay.RaiseDialog
+import com.bamnat.app.ui.pay.ValueTarget
+import androidx.compose.runtime.collectAsState
 import com.bamnat.core.diag.DiagEvents
 import com.bamnat.core.diag.EventBook
 import com.bamnat.core.memo.ChecklistItem
@@ -273,6 +281,40 @@ class ScreenshotTest {
         c.telemetry.event(DiagEvents.SCREEN, "stats")
         content { DiagnosticsScreen(DiagnosticsViewModel(c), onBack = {}) }
     }
+
+    private fun payScreen(tier: Tier, withProfile: Boolean, body: (@androidx.compose.runtime.Composable (PayViewModel) -> Unit)? = null): Screen.() -> Unit = {
+        val c = app.container
+        c.settingsRepository.update { it.copy(tier = tier) }
+        val vm = PayViewModel(c)
+        runBlocking { c.payStore.save(if (withProfile) vm.sampleProfile() else null, keepUndo = false) }
+        settle()
+        content { if (body != null) body(vm) else PayScreen(vm, onBack = {}) }
+    }
+
+    @Test fun foldedPayWizard() = shoot("26_folded_pay_wizard", FOLDED, payScreen(Tier.PRO, withProfile = false))
+    @Test fun foldedPayResult() = shoot("27_folded_pay_result", FOLDED, payScreen(Tier.PRO, withProfile = true))
+    @Test fun unfoldedPayResult() = shoot("28_unfolded_pay_result", UNFOLDED, payScreen(Tier.PRO, withProfile = true))
+    @Test fun foldedPayLocked() = shoot("29_folded_pay_locked", FOLDED, payScreen(Tier.FREE, withProfile = true))
+    @Test fun foldedPayBulkEdit() = shoot("30_folded_pay_bulk_edit", FOLDED, payScreen(Tier.PRO, withProfile = true) { vm ->
+        val profile = vm.profile.collectAsState().value
+        val snap = vm.snapshot.collectAsState().value
+        if (profile != null && snap != null) {
+            EditValueDialog(vm, profile, snap, ValueTarget.Base, java.time.YearMonth.now(), onDismiss = {})
+        }
+    })
+    @Test fun foldedPayLineDetail() = shoot("31_folded_pay_line_detail", FOLDED, payScreen(Tier.PRO, withProfile = true) { vm ->
+        val profile = vm.profile.collectAsState().value
+        val snap = vm.snapshot.collectAsState().value
+        if (profile != null && snap != null) {
+            val result = vm.calculate(profile, snap, java.time.YearMonth.now())
+            val line = result.lines.firstOrNull { it.kind == com.bamnat.core.pay.LineKind.NIGHT } ?: result.lines.first()
+            LineDetailDialog(line, result, onDismiss = {})
+        }
+    })
+    @Test fun foldedPayRaise() = shoot("32_folded_pay_raise", FOLDED, payScreen(Tier.PRO, withProfile = true) { vm ->
+        val profile = vm.profile.collectAsState().value
+        if (profile != null) RaiseDialog(vm, profile, ValueTarget.Base, onDismiss = {})
+    })
 
     /** The launcher icon as a circle-masked launcher would show it, and the themed (monochrome) one. */
     @Test fun launcherIcon() {

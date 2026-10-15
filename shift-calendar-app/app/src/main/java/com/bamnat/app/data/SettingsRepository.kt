@@ -2,6 +2,7 @@ package com.bamnat.app.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.bamnat.app.tier.Tier
 import com.bamnat.core.hours.HourLimits
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +32,8 @@ data class AppSettings(
     val hideDayAlarmNotice: Boolean = false,
     /** Opt-in: send anonymous usage statistics once a remote service is connected [MEAS-03]. */
     val shareUsageStats: Boolean = false,
+    /** Subscription tier; set by billing later, by testers for now [TIER-01]. */
+    val tier: Tier = Tier.FREE,
 ) {
     val limits: HourLimits get() = HourLimits(weeklyLimitHours, averageLimitHours)
 
@@ -87,6 +90,7 @@ class SettingsRepository(context: Context) {
             alarmsEnabled = prefs.getBoolean(K_ALARMS_ON, d.alarmsEnabled),
             hideDayAlarmNotice = prefs.getBoolean(K_HIDE_DAY_NOTICE, d.hideDayAlarmNotice),
             shareUsageStats = prefs.getBoolean(K_SHARE_STATS, d.shareUsageStats),
+            tier = runCatching { Tier.valueOf(prefs.getString(K_TIER, null) ?: "") }.getOrDefault(d.tier),
         )
     }
 
@@ -107,6 +111,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_ALARMS_ON, s.alarmsEnabled)
             .putBoolean(K_HIDE_DAY_NOTICE, s.hideDayAlarmNotice)
             .putBoolean(K_SHARE_STATS, s.shareUsageStats)
+            .putString(K_TIER, s.tier.name)
             .apply()
     }
 
@@ -126,5 +131,6 @@ class SettingsRepository(context: Context) {
         const val K_ALARMS_ON = "alarms_on"
         const val K_HIDE_DAY_NOTICE = "hide_day_alarm_notice"
         const val K_SHARE_STATS = "share_usage_stats"
+        const val K_TIER = "tier"
     }
 }

@@ -75,6 +75,8 @@ import com.bamnat.app.ui.components.AdSlot
 import com.bamnat.app.ui.diag.DiagnosticsScreen
 import com.bamnat.app.ui.diag.DiagnosticsViewModel
 import com.bamnat.core.diag.DiagEvents
+import com.bamnat.app.ui.pay.PayScreen
+import com.bamnat.app.ui.pay.PayViewModel
 import com.bamnat.app.ui.memo.MemoEditorScreen
 import com.bamnat.app.ui.memo.MemoEditorViewModel
 import com.bamnat.app.ui.memo.MemoListScreen
@@ -103,6 +105,7 @@ private object Routes {
     const val PATTERN = "pattern"
     const val MEMO_TRASH = "memo_trash"
     const val DIAGNOSTICS = "diagnostics"
+    const val PAY = "pay"
     const val MEMO = "memo/{id}?date={date}&checklist={checklist}"
 
     fun memo(id: Long, date: LocalDate? = null, checklist: Boolean = false) =
@@ -264,7 +267,7 @@ private fun AppNavHost(
         }
         composable(TopLevel.STATS.route) {
             val vm = appViewModel { StatsViewModel(it) }
-            StatsScreen(vm = vm, wide = wide)
+            StatsScreen(vm = vm, wide = wide, onOpenPay = { nav.navigate(Routes.PAY) { launchSingleTop = true } })
         }
         composable(TopLevel.SETTINGS.route) {
             val vm = appViewModel { SettingsViewModel(it) }
@@ -274,6 +277,10 @@ private fun AppNavHost(
                 onOpenPattern = { nav.navigate(Routes.PATTERN) { launchSingleTop = true } },
                 onOpenDiagnostics = { nav.navigate(Routes.DIAGNOSTICS) { launchSingleTop = true } },
             )
+        }
+        composable(Routes.PAY) {
+            val vm = appViewModel { PayViewModel(it) }
+            PayScreen(vm = vm, onBack = { nav.popFrom(Routes.PAY) })
         }
         composable(Routes.DIAGNOSTICS) {
             val vm = appViewModel { DiagnosticsViewModel(it) }

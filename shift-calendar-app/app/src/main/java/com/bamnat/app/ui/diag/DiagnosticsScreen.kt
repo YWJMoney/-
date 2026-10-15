@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +47,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.AppContainer
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.alarm.Notifications
+import com.bamnat.app.tier.Tier
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.core.diag.DiagEvent
 import com.bamnat.core.diag.EventBook
@@ -64,6 +66,10 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun events(): List<DiagEvent> = container.telemetry.log.read()
     fun clearLog() = container.telemetry.log.clear()
+
+    /** Testers switch tiers here until billing exists [TIER-01]. */
+    val tier = container.featureGate.tier
+    fun setTier(t: Tier) = container.settingsRepository.update { it.copy(tier = t) }
 
     fun report(context: Context, events: List<DiagEvent>): DiagReport {
         val now = System.currentTimeMillis()
@@ -170,6 +176,18 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            item {
+                val tier by vm.tier.collectAsStateWithLifecycle()
+                SectionCard(title = "테스트용 등급") {
+                    Text("결제가 열리기 전까지 등급별 화면을 확인하는 스위치예요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Tier.entries.forEach { t ->
+                            FilterChip(selected = tier == t, onClick = { vm.setTier(t) }, label = { Text(t.label) })
+                        }
+                    }
+                }
             }
             items(report.sections, key = { it.first }) { (title, lines) ->
                 SectionCard(title = title) {
