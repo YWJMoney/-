@@ -7,13 +7,11 @@
         <include domain="sharedpref" path="settings.xml" />
         <include domain="file" path="." />
         <exclude domain="file" path="diag/" />
-        <exclude domain="sharedpref" path="alarm_state.xml" />
     </cloud-backup>
     <device-transfer>
         <include domain="database" path="." />
         <include domain="sharedpref" path="settings.xml" />
         <include domain="file" path="." />
         <exclude domain="file" path="diag/" />
-        <exclude domain="sharedpref" path="alarm_state.xml" />
     </device-transfer>
 </data-extraction-rules>

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -27,12 +29,24 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        // [OPS-20] Play upload key. The key and its passwords never enter git: point
+        // BAMNAT_KEYSTORE_PROPERTIES (or keystore.properties in the project root) at the file.
+        val keyProps = (System.getenv("BAMNAT_KEYSTORE_PROPERTIES")?.let(::File) ?: rootProject.file("keystore.properties"))
+            .takeIf { it.exists() }
+            ?.let { f -> Properties().apply { f.inputStream().use { load(it) } } }
+        if (keyProps != null) create("upload") {
+            storeFile = File(keyProps.getProperty("storeFile"))
+            storePassword = keyProps.getProperty("storePassword")
+            keyAlias = keyProps.getProperty("keyAlias")
+            keyPassword = keyProps.getProperty("keyPassword")
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfigs.findByName("upload")?.let { signingConfig = it }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
