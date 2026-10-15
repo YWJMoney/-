@@ -73,6 +73,8 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.core.holiday.KoreanHolidays
 import com.bamnat.core.pay.CalcSnapshot
+import com.bamnat.core.pay.Cadence
+import com.bamnat.core.pay.PayItem
 import com.bamnat.core.pay.HolidayPayMode
 import com.bamnat.core.pay.LineKind
 import com.bamnat.core.pay.MonthPay
@@ -180,6 +182,7 @@ private fun PayResult(
     var importing by remember { mutableStateOf(false) }
     var reconciling by remember { mutableStateOf(false) }
     var addingItem by remember { mutableStateOf(false) }
+    var addingBonus by remember { mutableStateOf(false) }
     var walkthrough by rememberSaveable { mutableStateOf(true) }
 
     Column(
@@ -257,8 +260,14 @@ private fun PayResult(
             )
             profile.items.forEach { item ->
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                if (item.cadence == Cadence.BONUS) {
+                    BonusRow(item, profile.base.on(month).value, month, unlocked,
+                        onOrdinary = { on -> vm.updateItem(item.id) { it.copy(ordinary = on) } },
+                        onRemove = { vm.removeItem(item.id) })
+                    return@forEach
+                }
                 ValueRow(
-                    title = "${item.name} · ${item.cadence.label}",
+                    title = "${item.name} · " + if (item.isFixedOvertime) "고정 연장 ${item.fixedOvertimeMinutes / 60}시간분" else item.cadence.label,
                     value = item.amount.on(month),
                     raise = item.amount.raise?.describe(),
                     estimated = item.id in profile.estimatedFields,
@@ -273,6 +282,9 @@ private fun PayResult(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                 OutlinedButton(onClick = { addingItem = true }, enabled = unlocked) {
                     Icon(Icons.Filled.Add, null); Text(" 수당 추가")
+                }
+                OutlinedButton(onClick = { addingBonus = true }, enabled = unlocked) {
+                    Icon(Icons.Filled.Add, null); Text(" 상여금 추가")
                 }
                 OutlinedButton(onClick = { importing = true }, enabled = vm.canUse(Feature.PAY_RULE_IMPORT, tier)) {
                     Icon(Icons.Filled.ContentPaste, null); Text(" 규칙 글로 채우기")
@@ -326,8 +338,12 @@ private fun PayResult(
     }
     if (importing) RuleImportDialog(vm, month, onDismiss = { importing = false })
     if (reconciling) ReconcileDialog(vm, profile, snapshot, month, result.total, onDismiss = { reconciling = false })
-    if (addingItem) AddItemDialog(onDismiss = { addingItem = false }) { name, amount, cadence, ordinary ->
-        vm.addItem(name, amount, cadence, ordinary, month)
+    if (addingBonus) AddBonusDialog(onDismiss = { addingBonus = false }) { name, months, percent, amount, ordinary ->
+        vm.addBonus(name, months, percent, amount, ordinary, month)
+        addingBonus = false
+    }
+    if (addingItem) AddItemDialog(onDismiss = { addingItem = false }) { name, amount, cadence, ordinary, fixedOt ->
+        vm.addItem(name, amount, cadence, ordinary, month, fixedOt)
         addingItem = false
     }
 }
@@ -513,6 +529,29 @@ private fun ValueRow(
                 Switch(checked = ordinary, onCheckedChange = onOrdinary, enabled = enabled)
                 if (onRemove != null) TextButton(onClick = onRemove, enabled = enabled) { Text("삭제") }
             }
+        }
+    }
+}
+
+/** A bonus line [PAY-05]: when it is paid, how much, and whether it raises the 통상시급. */
+@Composable
+private fun BonusRow(item: PayItem, base: Long, month: YearMonth, enabled: Boolean, onOrdinary: (Boolean) -> Unit, onRemove: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text("${item.name} · ${item.months.sorted().joinToString(", ")}월", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            won(item.bonusPayment(base, month)) + (item.percentOfBase?.let { " (기본급 ${PayCalculator.pct(it)})" } ?: "") +
+                " × 연 ${item.months.size}회",
+            style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            if (item.ordinary) "통상임금에 한 달 ${won(item.bonusMonthlyShare(base, month))}씩 들어가 연장·야간 수당이 올라가요"
+            else "통상임금에서 뺐어요 (성과에 따라 달라지는 상여 등)",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("통상임금에 포함", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            Switch(checked = item.ordinary, onCheckedChange = onOrdinary, enabled = enabled)
+            TextButton(onClick = onRemove, enabled = enabled) { Text("삭제") }
         }
     }
 }

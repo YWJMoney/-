@@ -231,6 +231,8 @@ object PayCodec {
     private fun item(i: PayItem): JSONObject = JSONObject()
         .put("id", i.id).put("name", i.name).put("amount", timeline(i.amount)).put("cadence", i.cadence.name)
         .put("types", JSONArray(i.shiftTypeIds.toList())).put("ordinary", i.ordinary).put("taxable", i.taxable)
+        .put("months", JSONArray(i.months.sorted())).putOpt("percentOfBase", i.percentOfBase)
+        .put("fixedOvertime", i.fixedOvertimeMinutes)
 
     private fun item(o: JSONObject): PayItem = PayItem(
         id = o.getString("id"),
@@ -240,6 +242,9 @@ object PayCodec {
         shiftTypeIds = o.optJSONArray("types")?.let { a -> (0 until a.length()).map { a.getLong(it) }.toSet() } ?: emptySet(),
         ordinary = o.optBoolean("ordinary", false),
         taxable = o.optBoolean("taxable", true),
+        months = o.optJSONArray("months")?.let { a -> (0 until a.length()).map { a.getInt(it) }.toSet() } ?: emptySet(),
+        percentOfBase = if (o.has("percentOfBase")) o.getDouble("percentOfBase") else null,
+        fixedOvertimeMinutes = o.optInt("fixedOvertime", 0),
     )
 
     private fun JSONArray?.objects(): List<JSONObject> =

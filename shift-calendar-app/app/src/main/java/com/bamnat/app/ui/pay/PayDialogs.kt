@@ -409,14 +409,86 @@ fun ReconcileDialog(
     )
 }
 
+/**
+ * A bonus [PAY-05]: paid in chosen months, as a percent of 기본급 or a fixed amount. Counted in
+ * 통상임금 by default, since a regular bonus is 통상임금 even with an employment condition
+ * (대법원 2024.12.19. 2020다247190 전원합의체).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun AddBonusDialog(onDismiss: () -> Unit, onAdd: (String, Set<Int>, Double?, Long, Boolean) -> Unit) {
+    var name by remember { mutableStateOf("상여금") }
+    var byPercent by remember { mutableStateOf(true) }
+    var percent by remember { mutableStateOf(100) }
+    var amount by remember { mutableStateOf<Long?>(null) }
+    var months by remember { mutableStateOf(setOf(1, 4, 7, 10)) }
+    var ordinary by remember { mutableStateOf(true) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("상여금 추가") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it.take(20) }, label = { Text("이름") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text("한 번에 얼마?", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = byPercent, onClick = { byPercent = true }, label = { Text("기본급의 %") })
+                    FilterChip(selected = !byPercent, onClick = { byPercent = false }, label = { Text("정해진 금액") })
+                }
+                if (byPercent) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(50, 100, 150, 200).forEach { p ->
+                            FilterChip(selected = percent == p, onClick = { percent = p }, label = { Text("$p%") })
+                        }
+                        OutlinedButton(onClick = { percent = (percent - 10).coerceAtLeast(10) }) { Text("−") }
+                        Text("$percent%", style = MaterialTheme.typography.titleSmall, modifier = Modifier.align(Alignment.CenterVertically))
+                        OutlinedButton(onClick = { percent = (percent + 10).coerceAtMost(1000) }) { Text("+") }
+                    }
+                } else {
+                    MoneyField("1회 금액", amount, { amount = it })
+                }
+                Text("받는 달", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("분기 (1·4·7·10월)" to setOf(1, 4, 7, 10), "짝수 달" to setOf(2, 4, 6, 8, 10, 12),
+                        "매달" to (1..12).toSet(), "반기 (6·12월)" to setOf(6, 12)).forEach { (label, set) ->
+                        FilterChip(selected = months == set, onClick = { months = set }, label = { Text(label) })
+                    }
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    (1..12).forEach { m ->
+                        FilterChip(selected = m in months, onClick = { months = if (m in months) months - m else months + m },
+                            label = { Text("${m}월") })
+                    }
+                }
+                Row(Modifier.fillMaxWidth().clickable { ordinary = !ordinary }, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("통상임금에 포함", style = MaterialTheme.typography.bodyLarge)
+                        Text("정해진 조건으로 정기적으로 받는 상여는 재직 조건이 있어도 통상임금이에요(대법원 2024.12.19. 판결). 성과에 따라 달라지면 꺼 주세요.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = ordinary, onCheckedChange = { ordinary = it })
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onAdd(name, months, if (byPercent) percent / 100.0 else null, if (byPercent) 0 else amount ?: 0, ordinary) },
+                enabled = months.isNotEmpty() && (byPercent || (amount ?: 0) > 0),
+            ) { Text("추가") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
+
 /** A new allowance from this month on [PAYX-03]. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun AddItemDialog(onDismiss: () -> Unit, onAdd: (String, Long, Cadence, Boolean) -> Unit) {
+fun AddItemDialog(onDismiss: () -> Unit, onAdd: (String, Long, Cadence, Boolean, Int) -> Unit) {
     var name by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf<Long?>(null) }
     var cadence by remember { mutableStateOf(Cadence.MONTHLY) }
     var ordinary by remember { mutableStateOf(false) }
+    var fixedOtHours by remember { mutableStateOf(0) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("수당 추가") },
@@ -437,12 +509,26 @@ fun AddItemDialog(onDismiss: () -> Unit, onAdd: (String, Long, Cadence, Boolean)
                         Text("매달 고정으로 받는 수당이면 켜 주세요. 연장·야간 수당이 함께 올라가요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Switch(checked = ordinary, onCheckedChange = { ordinary = it })
+                    Switch(checked = ordinary, onCheckedChange = { ordinary = it }, enabled = fixedOtHours == 0)
+                }
+                if (cadence == Cadence.MONTHLY) {
+                    // [PAY-05] 고정 연장수당: prepaid overtime, never 통상임금.
+                    Text("연장수당을 미리 주는 고정 수당인가요?", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(0, 10, 20, 30, 40, 52).forEach { h ->
+                            FilterChip(selected = fixedOtHours == h, onClick = {
+                                fixedOtHours = h
+                                if (h > 0) ordinary = false
+                            }, label = { Text(if (h == 0) "아니요" else "${h}시간분") })
+                        }
+                    }
+                    if (fixedOtHours > 0) Text("실제 연장수당이 이 금액보다 많으면 차액을 알려 드려요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         },
         confirmButton = {
-            Button(onClick = { onAdd(name, amount ?: 0, cadence, ordinary) }, enabled = name.isNotBlank() && (amount ?: 0) > 0) { Text("추가") }
+            Button(onClick = { onAdd(name, amount ?: 0, cadence, ordinary && fixedOtHours == 0, if (cadence == Cadence.MONTHLY) fixedOtHours * 60 else 0) }, enabled = name.isNotBlank() && (amount ?: 0) > 0) { Text("추가") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )

@@ -142,15 +142,23 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
     fun setRaise(target: ValueTarget, rule: RaiseRule?) =
         update { it.withTimeline(target, timelineOf(it, target).copy(raise = rule)) }
 
-    fun addItem(name: String, amount: Long, cadence: Cadence, ordinary: Boolean, from: YearMonth) = update { p ->
+    fun addItem(name: String, amount: Long, cadence: Cadence, ordinary: Boolean, from: YearMonth, fixedOvertimeMinutes: Int = 0) = update { p ->
         val id = "item-" + System.currentTimeMillis()
-        p.copy(items = p.items + PayItem(id, name.trim().ifEmpty { "수당" }, ValueTimeline(listOf(DatedValue(from.atDay(1), amount))), cadence, ordinary = ordinary))
+        p.copy(items = p.items + PayItem(id, name.trim().ifEmpty { "수당" }, ValueTimeline(listOf(DatedValue(from.atDay(1), amount))), cadence,
+            ordinary = ordinary, fixedOvertimeMinutes = fixedOvertimeMinutes))
     }
 
     /** Changes the company's rules [PAYX-07]; every change can be undone like a value edit. */
     fun updateRules(transform: (CompanyRules) -> CompanyRules) {
         update { it.copy(rules = transform(it.rules)) }
         container.telemetry.event("pay_rules_edit")
+    }
+
+    /** [PAY-05] A bonus paid in [months], a percent of 기본급 or a fixed amount. */
+    fun addBonus(name: String, months: Set<Int>, percentOfBase: Double?, amount: Long, ordinary: Boolean, from: YearMonth) = update { p ->
+        val id = "bonus-" + System.currentTimeMillis()
+        p.copy(items = p.items + PayItem(id, name.trim().ifEmpty { "상여금" }, ValueTimeline(listOf(DatedValue(from.atDay(1), amount))),
+            Cadence.BONUS, ordinary = ordinary, months = months, percentOfBase = percentOfBase))
     }
 
     fun removeItem(id: String) = update { p -> p.copy(items = p.items.filterNot { it.id == id }) }
@@ -234,7 +242,7 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
             add((if (r.publicHolidaysPaid) "공휴일 근무를 평일처럼 계산 (휴일 대체)" else "공휴일 근무를 휴일근로로 계산") to
                 p.copy(rules = r.copy(publicHolidaysPaid = !r.publicHolidaysPaid)))
             if (r.overtimeRounding.unit > 1) add("연장 시간을 1분 단위로 계산" to p.copy(rules = r.copy(overtimeRounding = MinuteRounding())))
-            p.items.filter { !it.ordinary && it.cadence == Cadence.MONTHLY }.forEach { item ->
+            p.items.filter { !it.ordinary && it.cadence == Cadence.MONTHLY && !it.isFixedOvertime }.forEach { item ->
                 add("‘${item.name}’을 통상임금에 포함" to p.copy(items = p.items.map { if (it.id == item.id) it.copy(ordinary = true) else it }))
             }
         }

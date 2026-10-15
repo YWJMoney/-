@@ -21,6 +21,8 @@ enum class Cadence(val label: String) {
     PER_WORK_DAY("근무일마다"),
     PER_NIGHT_SHIFT("야간근무마다"),
     PER_SHIFT_TYPE("특정 근무마다"),
+    /** 상여금 paid in set months, a fixed amount or a percent of 기본급 [PAY-05]. */
+    BONUS("정해진 달 상여"),
 }
 
 /** How a monthly-paid worker is paid for work on a paid holiday [PAY-06, 쟁점 처리]. */
@@ -44,7 +46,30 @@ data class PayItem(
     val shiftTypeIds: Set<Long> = emptySet(),
     val ordinary: Boolean = false,
     val taxable: Boolean = true,
-)
+    /** For [Cadence.BONUS]: months it is paid (1..12). */
+    val months: Set<Int> = emptySet(),
+    /** For [Cadence.BONUS]: share of 기본급 per payment, 1.0 = 100%; null pays [amount]. */
+    val percentOfBase: Double? = null,
+    /**
+     * A fixed monthly allowance paid for overtime in advance (고정 연장수당, 포괄임금): the hours
+     * it is meant to cover, 0 when it is an ordinary allowance [PAY-05]. Never 통상임금.
+     */
+    val fixedOvertimeMinutes: Int = 0,
+) {
+    val isFixedOvertime: Boolean get() = fixedOvertimeMinutes > 0 && cadence == Cadence.MONTHLY
+
+    /** One payment of a [Cadence.BONUS] item given the month's 기본급. */
+    fun bonusPayment(base: Long, on: java.time.YearMonth): Long =
+        percentOfBase?.let { Math.round(base * it) } ?: amount.on(on).value
+
+    /**
+     * The monthly share of a bonus for 통상임금: a year's payments ÷ 12. Since 대법원 2024.12.19.
+     * 2020다247190 (전원합의체), a bonus paid regularly on fixed terms is 통상임금 even when it
+     * requires being employed on the pay date.
+     */
+    fun bonusMonthlyShare(base: Long, on: java.time.YearMonth): Long =
+        Math.round(bonusPayment(base, on) * months.size / 12.0)
+}
 
 /**
  * Everything about the worker's pay that does not change month to month [PAY-10].

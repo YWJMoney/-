@@ -49,6 +49,8 @@ import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.Rounding
 import com.bamnat.core.pay.WageType
+import com.bamnat.core.pay.StandardHours
+import com.bamnat.core.hours.HoursFormat
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
@@ -123,6 +125,19 @@ fun CompanyRulesEditor(
                         OutlinedButton(onClick = { draft = draft.copy(monthlyHours = (draft.monthlyHours + 1).coerceAtMost(320)) }) { Text("+") }
                     }
                     Hint("주 40시간이면 209시간이 보통이에요. 토요일 4시간 유급이면 226시간, 8시간 유급이면 243시간이에요.")
+                    // [PAY-04] The same formula on the user's own roster (시행령 제6조 제2항).
+                    val weekly = remember(snapshot, month) { StandardHours.averageWeekly(month.atDay(1), resolve = snapshot.resolver::resolve) }
+                    val fromRoster = StandardHours.monthly(weekly)
+                    if (weekly > 0 && fromRoster != draft.monthlyHours) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                Text("근무표로 계산하면 ${fromRoster}시간", style = MaterialTheme.typography.bodyLarge)
+                                Text("1년 평균 주 ${HoursFormat.korean(weekly)} 소정근로 + 주휴. 계약서에 적힌 시간이 있으면 그것을 쓰세요.",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            OutlinedButton(onClick = { draft = draft.copy(monthlyHours = fromRoster) }) { Text("적용") }
+                        }
+                    }
                 }
             }
 

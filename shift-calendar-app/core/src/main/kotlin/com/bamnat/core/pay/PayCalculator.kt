@@ -100,15 +100,19 @@ class PayCalculator(
         val monthDays = days.filter { YearMonth.from(it.date) == month }
 
         val base = profile.base.on(month)
-        val ordinaryMonthly = profile.items.filter { it.ordinary && it.cadence == Cadence.MONTHLY }
+        val ordinaryMonthly = profile.items.filter { it.ordinary && it.cadence == Cadence.MONTHLY && !it.isFixedOvertime }
             .sumOf { it.amount.on(month).value }
+        // [PAY-05] Regular bonuses count toward 통상임금 at a year's payments ÷ 12.
+        val bonusMonthly = profile.items.filter { it.ordinary && it.cadence == Cadence.BONUS }
+            .sumOf { it.bonusMonthlyShare(base.value, month) }
         val hourly = when (profile.wageType) {
-            WageType.MONTHLY -> ((base.value + ordinaryMonthly).toDouble() / profile.monthlyHours).roundToLong()
+            WageType.MONTHLY -> ((base.value + ordinaryMonthly + bonusMonthly).toDouble() / profile.monthlyHours).roundToLong()
             WageType.HOURLY -> base.value
         }
         val hourlyFormula = when (profile.wageType) {
             WageType.MONTHLY -> "(기본급 ${won(base.value)}" +
                 (if (ordinaryMonthly > 0) " + 통상 수당 ${won(ordinaryMonthly)}" else "") +
+                (if (bonusMonthly > 0) " + 상여금 월할 ${won(bonusMonthly)}" else "") +
                 ") ÷ ${profile.monthlyHours}시간"
             WageType.HOURLY -> "시급"
         }
@@ -201,7 +205,7 @@ class PayCalculator(
             }
             for (item in profile.items) {
                 val counts = when (item.cadence) {
-                    Cadence.MONTHLY -> false
+                    Cadence.MONTHLY, Cadence.BONUS -> false
                     Cadence.PER_WORK_DAY -> day.isWorkDay || day.holidayWorkMinutes > 0
                     Cadence.PER_NIGHT_SHIFT -> day.isWorkDay && isNightShift(day.date, day.start, day.end, rates)
                     Cadence.PER_SHIFT_TYPE -> day.isWorkDay && day.shiftType?.id in item.shiftTypeIds
@@ -296,6 +300,17 @@ class PayCalculator(
         )
 
         for (item in profile.items) {
+            if (item.cadence == Cadence.BONUS) {
+                if (month.monthValue !in item.months) continue
+                val paid = item.bonusPayment(base.value, month)
+                if (paid > 0) lines += PayLine(
+                    LineKind.ALLOWANCE, item.name, paid,
+                    formula = item.percentOfBase?.let { "기본급 ${won(base.value)} × ${pct(it)}" } ?: "정액 ${won(paid)}",
+                    basis = (if (item.ordinary) "통상임금에 포함 (연 ${item.months.size}회 ÷ 12)" else "통상임금 제외") +
+                        " · ${item.months.sorted().joinToString(",")}월 지급",
+                )
+                continue
+            }
             val amount = item.amount.on(month)
             val count = if (item.cadence == Cadence.MONTHLY) 1 else itemCounts[item.id] ?: 0
             if (count == 0 || amount.value == 0L) continue
@@ -305,6 +320,23 @@ class PayCalculator(
                 basis = if (item.ordinary) "통상임금에 포함" else "",
                 estimated = amount.source == ValueSource.RAISED || item.id in profile.estimatedFields,
             )
+        }
+
+        // [PAY-05] 고정 연장수당 already pays overtime up to its amount; only what the hours earn
+        // beyond it is owed on top, and a shortfall is never taken back.
+        val fixedOt = profile.items.filter { it.isFixedOvertime }
+        if (fixedOt.isNotEmpty()) {
+            val prepaid = fixedOt.sumOf { it.amount.on(month).value }
+            val earned = lines.filter { it.kind == LineKind.OVERTIME }.sumOf { it.amount }
+            val covered = minOf(prepaid, earned)
+            if (covered > 0) lines += PayLine(
+                LineKind.OVERTIME, "고정 연장수당으로 이미 받은 몫", -covered,
+                formula = "연장근로 ${won(earned)} 중 고정 연장수당 ${won(prepaid)}만큼",
+                multiplier = -1.0,
+                basis = "고정 연장수당은 정한 시간까지의 연장수당을 미리 주는 것이라 겹쳐 받지 않아요",
+            )
+            if (earned > prepaid) warnings += "이번 달 연장수당이 ${won(earned)}으로 고정 연장수당 ${won(prepaid)}보다 " +
+                "${won(earned - prepaid)} 많아요. 차액은 따로 받아야 해요"
         }
 
         if (profile.wageType == WageType.HOURLY && rules.weeklyHolidayPay) {
