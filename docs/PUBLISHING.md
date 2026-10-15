@@ -23,6 +23,10 @@ aapt2, javac, d8(또는 dx), zipalign, apksigner가 PATH에 있어야 합니다.
 
 ## 2. Play 스토어에 올리기
 
+> 폰에서 바로 시험하려면 [PLAY_INTERNAL_TEST.md](PLAY_INTERNAL_TEST.md)의 내부 테스트 절차를 따르세요. 파일로 받은 APK는 알림 접근 권한 때문에 Play 프로텍트가 설치를 막습니다.
+
+Gradle 없이 .aab를 만들 때: `ANDROID_JAR=... BUNDLETOOL=bundletool-all.jar KEYSTORE_PROPERTIES=keystore.properties ./build-aab.sh`
+
 1. **Play 개발자 계정**: Play Console에서 계정을 만들고(등록비 25달러) 본인 인증을 마칩니다.
 2. **앱 만들기**: 패키지 이름 `com.ywjmoney.jangbu`, 1단계에서 만든 .aab를 올립니다. Play 앱 서명을 사용합니다.
 3. **스토어 등록 정보**: 앱 이름, 설명, 스크린샷, 아이콘(`icons/icon-512.png`), 개인정보처리방침 URL(`privacy.html`을 GitHub Pages 등에 공개한 주소)을 넣습니다.
