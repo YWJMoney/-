@@ -77,7 +77,10 @@ private class ItemRow(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun PayWizard(initial: PayProfile?, onCancel: (() -> Unit)?, onDone: (PayProfile) -> Unit, startStep: Int = 0) {
+fun PayWizard(initial: PayProfile?, onCancel: (() -> Unit)?, onDone: (PayProfile) -> Unit, startStep: Int = 0,
+    /** Screenshots only: open the step scrolled to the bottom. */
+    scrollToEnd: Boolean = false,
+) {
     val thisMonth = remember { YearMonth.now() }
     var step by remember { mutableIntStateOf(startStep) }
     var occupation by remember { mutableStateOf(initial?.occupation) }
@@ -90,6 +93,8 @@ fun PayWizard(initial: PayProfile?, onCancel: (() -> Unit)?, onDone: (PayProfile
     var holidayChosen by remember { mutableStateOf(initial != null && "holidayPayMode" !in initial.estimatedFields) }
     var dailyLimit by remember { mutableStateOf(initial?.dailyLimitMinutes != null || initial == null) }
     var weeklyLimit by remember { mutableStateOf(initial?.weeklyLimitMinutes != null || initial == null) }
+    // [PAYX-07] null until answered, so the question shows as unanswered rather than guessing.
+    var scheduleRegular by remember { mutableStateOf(initial?.scheduleIsRegular ?: if (scrollToEnd) true else null) }
     val rows = remember { mutableStateListOf<ItemRow>() }
     // [PAY-05][PAY-04] The bonus and the monthly hours change the hourly rate, so setup asks for both.
     var hours by remember { mutableIntStateOf(initial?.monthlyHours ?: 209) }
@@ -126,6 +131,7 @@ fun PayWizard(initial: PayProfile?, onCancel: (() -> Unit)?, onDone: (PayProfile
             if (base == null) add("base")
             rows.filter { it.checked && it.untouched }.forEach { add(it.id) }
             if (wageType == WageType.MONTHLY && !holidayChosen) add("holidayPayMode")
+            if (scheduleRegular == null) add("scheduleIsRegular")
         }
         val since = baseSince.atDay(1)
         val baseValue = base ?: preset.baseHint
@@ -157,6 +163,7 @@ fun PayWizard(initial: PayProfile?, onCancel: (() -> Unit)?, onDone: (PayProfile
                 holidayPayMode = holidayMode,
                 dailyLimitMinutes = if (dailyLimit) 480 else null,
                 weeklyLimitMinutes = if (weeklyLimit) 2400 else null,
+                scheduleIsRegular = scheduleRegular == true,
                 monthlyHours = hours,
                 estimatedFields = estimated,
             ),
@@ -167,7 +174,7 @@ fun PayWizard(initial: PayProfile?, onCancel: (() -> Unit)?, onDone: (PayProfile
     Column(Modifier.fillMaxSize()) {
         LinearProgressIndicator(progress = { (step + 1) / titles.size.toFloat() }, modifier = Modifier.fillMaxWidth())
         Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp)
+            Modifier.weight(1f).verticalScroll(rememberScrollState(if (scrollToEnd) Int.MAX_VALUE else 0)).padding(horizontal = 20.dp, vertical = 16.dp)
                 .widthIn(max = 640.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -235,8 +242,11 @@ fun PayWizard(initial: PayProfile?, onCancel: (() -> Unit)?, onDone: (PayProfile
                         else -> {
                             if (wageType == WageType.MONTHLY) HoursPicker(hours) { hours = it }
                             RuleToggle("5인 이상 사업장이에요", "아니면 연장·야간·휴일 가산이 붙지 않아요 (근로기준법 제11조)", fiveOrMore) { fiveOrMore = it }
-                            RuleToggle("하루 8시간 넘으면 연장으로 계산", "탄력적·선택적 근로시간제라면 꺼 주세요", dailyLimit) { dailyLimit = it }
-                            RuleToggle("주 40시간 넘으면 연장으로 계산", "4조2교대처럼 근무표대로 일한 시간이 기본급에 들어 있으면 꺼 주세요", weeklyLimit) { weeklyLimit = it }
+                            ScheduleQuestion(scheduleRegular) { scheduleRegular = it }
+                            if (scheduleRegular != true) {
+                                RuleToggle("하루 8시간 넘으면 연장으로 계산", "탄력적·선택적 근로시간제라면 꺼 주세요", dailyLimit) { dailyLimit = it }
+                                RuleToggle("주 40시간 넘으면 연장으로 계산", "근무표대로 일한 시간이 주 40시간을 넘어도 기본급에 들어 있으면 꺼 주세요", weeklyLimit) { weeklyLimit = it }
+                            }
                             if (wageType == WageType.MONTHLY) {
                                 Text("쉬는 날(휴일)에 일하면", style = MaterialTheme.typography.titleSmall)
                                 HolidayPayMode.entries.forEach { mode ->
@@ -326,6 +336,28 @@ private fun ItemRowEditor(row: ItemRow) {
             }
         }
     }
+}
+
+/** [PAYX-07] Whether long scheduled shifts already sit in the base pay, asked as a plain question. */
+@Composable
+private fun ScheduleQuestion(answer: Boolean?, onAnswer: (Boolean) -> Unit) {
+    Text("근무표대로 12시간 일하는 날, 8시간 넘는 4시간을 연장수당으로 따로 받나요?", style = MaterialTheme.typography.titleSmall)
+    Text("4조2교대처럼 긴 근무가 원래 근무표인 회사는 그 시간이 기본급에 들어 있어 연장수당이 없기도 해요. 급여명세서에 연장수당이 매달 따로 찍히는지 보면 알 수 있어요.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    listOf(
+        false to ("네, 따로 받아요" to "법정 기준. 하루 8시간·주 40시간을 넘는 시간은 연장으로 계산해요"),
+        true to ("아니요, 기본 근무예요" to "근무표 시간은 모두 기본 근무로 보고, 잔업으로 적은 시간만 연장으로 계산해요. 야간 가산은 그대로예요"),
+    ).forEach { (value, text) ->
+        Row(Modifier.fillMaxWidth().clickable { onAnswer(value) }, verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = answer == value, onClick = { onAnswer(value) })
+            Column {
+                Text(text.first, style = MaterialTheme.typography.bodyLarge)
+                Text(text.second, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+    if (answer == true) Text("법으로는 탄력적 근로시간제를 둔 회사만 이렇게 계산할 수 있어요. 법정 기준과 차이가 나면 결과 화면에 얼마인지 따로 알려 드려요.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
 }
 
 @Composable

@@ -143,6 +143,7 @@ object PayCodec {
         .put("holidayMode", p.holidayPayMode.name)
         .put("dailyLimit", p.dailyLimitMinutes ?: -1)
         .put("weeklyLimit", p.weeklyLimitMinutes ?: -1)
+        .put("scheduleIsRegular", p.scheduleIsRegular)
         .put("weekStart", p.weekStart.name)
         .put("estimated", JSONArray(p.estimatedFields.toList()))
         .put("rules", rules(p.rules))
@@ -158,6 +159,7 @@ object PayCodec {
         holidayPayMode = runCatching { HolidayPayMode.valueOf(o.getString("holidayMode")) }.getOrDefault(HolidayPayMode.FULL),
         dailyLimitMinutes = o.optInt("dailyLimit", 480).takeIf { it >= 0 },
         weeklyLimitMinutes = o.optInt("weeklyLimit", 2400).takeIf { it >= 0 },
+        scheduleIsRegular = o.optBoolean("scheduleIsRegular", false),
         weekStart = runCatching { DayOfWeek.valueOf(o.getString("weekStart")) }.getOrDefault(DayOfWeek.MONDAY),
         estimatedFields = o.optJSONArray("estimated")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet(),
         rules = o.optJSONObject("rules")?.let(::rules) ?: CompanyRules(),

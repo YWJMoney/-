@@ -81,11 +81,14 @@ class PayCalculator(
         val premiums = profile.fiveOrMoreEmployees
         // 공휴일 are paid holidays only at 5인 이상 (근로기준법 제55조 제2항, 시행령 별표1); below that
         // they are ordinary days unless the caller says otherwise.
-        val holiday = isHoliday ?: { d: LocalDate -> premiums && rules.publicHolidaysPaid && KoreanHolidays.isHoliday(d) }
+        // [PAYX-07] 노동절 is a paid holiday at every workplace and cannot be swapped, so it skips both checks.
+        val holiday = isHoliday ?: { d: LocalDate ->
+            KoreanHolidays.isLaborDay(d) || premiums && rules.publicHolidaysPaid && KoreanHolidays.isHoliday(d)
+        }
         val classifier = MinuteClassifier(
             rates = { RateTable.on(it, rateTable) },
             options = ClassifyOptions(profile.dailyLimitMinutes, profile.weeklyLimitMinutes, profile.weekStart,
-                offDayWorkIsHoliday = rules.offDayWork == OffDayWork.HOLIDAY),
+                offDayWorkIsHoliday = rules.offDayWork == OffDayWork.HOLIDAY, scheduleIsRegular = profile.scheduleIsRegular),
         )
         // Start at the week containing the 1st so weekly overtime counts the days before it.
         val from = month.atDay(1).with(TemporalAdjusters.previousOrSame(profile.weekStart))
@@ -369,6 +372,17 @@ class PayCalculator(
         val r = rules.overtimeRounding
         if (r.unit > 1 && r.rounding == Rounding.DOWN) {
             warnings += "연장 시간을 ${r.unit}분 단위로 버리고 있어요. 일한 시간보다 적게 계산되면 임금 체불이 될 수 있어요"
+        }
+
+        // [PAYX-07] Scheduled hours over 8 a day are 연장 by law unless 탄력적 근로시간제 (제51조) is in
+        // place, so the difference to the legal count is shown rather than silently dropped.
+        if (profile.scheduleIsRegular && premiums) {
+            val legal = calculate(profile.copy(scheduleIsRegular = false, dailyLimitMinutes = 8 * 60, weeklyLimitMinutes = 40 * 60),
+                month, resolve, isHoliday)
+            val gap = legal.total - lines.sumOf { it.amount }
+            val extra = legal.minutes.sumOf { it.overtime } - minutes.sumOf { it.overtime }
+            if (gap > 0 && extra > 0) warnings += "근무표 시간을 모두 기본 근무로 계산했어요. 탄력적 근로시간제가 아니라면 법으로는 " +
+                "하루 8시간·주 40시간을 넘는 ${hours(extra)}이 연장근로라 약 ${won(gap)}을 더 받아야 해요. 취업규칙을 확인해 보세요"
         }
 
         return MonthPay(month, lines, hourly, rates.version, minutes, warnings, dayPays).withHourlyNote(hourlyFormula)

@@ -63,6 +63,10 @@ class HolidayRulesTest {
             val computed = com.bamnat.core.holiday.KoreanHolidays.rules(y).keys
             assertEquals("year $y", published, computed)
         }
+        // 제헌절 is back from 2026; 2027-07-17 is a Saturday, so Monday the 19th is the 대체공휴일.
+        assertEquals("제헌절", com.bamnat.core.holiday.KoreanHolidays.nameOf(java.time.LocalDate.of(2026, 7, 17)))
+        assertEquals("대체공휴일", com.bamnat.core.holiday.KoreanHolidays.nameOf(java.time.LocalDate.of(2027, 7, 19)))
+        assertEquals(null, com.bamnat.core.holiday.KoreanHolidays.nameOf(java.time.LocalDate.of(2025, 7, 17)))
         // A year outside the table now knows its lunar holidays: 2028 설날 is 27 January.
         assertEquals("설날", com.bamnat.core.holiday.KoreanHolidays.nameOf(java.time.LocalDate.of(2028, 1, 27)))
     }

@@ -295,7 +295,8 @@ class ScreenshotTest {
         c.telemetry.event(DiagEvents.ALARM_FIRED, EventBook.triggerDetail(now - 3_600_000, "late_s=2"))
         c.telemetry.event(DiagEvents.ALARM_DISMISSED)
         c.telemetry.event(DiagEvents.SCREEN, "stats")
-        content { DiagnosticsScreen(DiagnosticsViewModel(c), onBack = {}) }
+        val vm = DiagnosticsViewModel(c)
+        content { DiagnosticsScreen(vm, onBack = {}) }
     }
 
     /** 대근 at 200% with 8 hours credited, 특근 at a fixed amount: a typical company setup. */
@@ -396,6 +397,9 @@ class ScreenshotTest {
     }
     @Test fun foldedPayWizardHours() = shoot("46_folded_pay_wizard_hours", FOLDED) {
         content { com.bamnat.app.ui.pay.PayWizard(null, null, {}, startStep = 4) }
+    }
+    @Test fun foldedPayWizardSchedule() = shoot("47_folded_pay_wizard_schedule", FOLDED) {
+        content { com.bamnat.app.ui.pay.PayWizard(null, null, {}, startStep = 4, scrollToEnd = true) }
     }
     @Test fun foldedPayLocked() = shoot("29_folded_pay_locked", FOLDED, payScreen(Tier.FREE, withProfile = true))
     @Test fun foldedPayBulkEdit() = shoot("30_folded_pay_bulk_edit", FOLDED, payScreen(Tier.PRO, withProfile = true) { vm ->

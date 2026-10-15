@@ -132,6 +132,24 @@ class PayEngineTest {
         assertEquals(2, pay.warnings.size)
     }
 
+    @Test
+    fun `labor day is a paid holiday even at a small workplace`() {
+        // [PAYX-07] 2026-05-01 (금) worked 8 hours at 10,000원: 유급휴일 8h × 100% + 휴일 근무 8h × 100%, no premium.
+        val partTime = PayProfile(
+            occupation = Occupation.PART_TIME, wageType = WageType.HOURLY,
+            base = ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 10_000))),
+            fiveOrMoreEmployees = false,
+        )
+        val may1 = LocalDate.of(2026, 5, 1)
+        val r = resolver(may1, listOf(Fixtures.day.id))
+        val day = PayCalculator().calculate(partTime, YearMonth.of(2026, 5), r::resolve).day(may1)!!
+        assertEquals(80_000L, day.parts.single { it.kind == LineKind.HOLIDAY }.amount)
+        assertEquals(80_000L, day.parts.single { it.label == "유급휴일" }.amount)
+        // Another 공휴일 at the same workplace stays an ordinary day: 2026-05-05 어린이날.
+        val may5 = PayCalculator().calculate(partTime, YearMonth.of(2026, 5), r::resolve).day(LocalDate.of(2026, 5, 5))!!
+        assertTrue(may5.parts.none { it.kind == LineKind.HOLIDAY })
+    }
+
     // ---- values over time ----
 
     @Test

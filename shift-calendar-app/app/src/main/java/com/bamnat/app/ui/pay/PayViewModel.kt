@@ -232,6 +232,8 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
                 val other = if (p.holidayPayMode == HolidayPayMode.FULL) HolidayPayMode.PREMIUM_ONLY else HolidayPayMode.FULL
                 add("휴일 근무를 ‘${other.label}’으로 계산" to p.copy(holidayPayMode = other))
             }
+            add((if (p.scheduleIsRegular) "근무표에서 8시간 넘는 시간을 연장으로 계산" else "근무표 시간은 모두 기본 근무로 계산 (12시간 교대 등)") to
+                p.copy(scheduleIsRegular = !p.scheduleIsRegular))
             add((if (p.dailyLimitMinutes == null) "하루 8시간 넘으면 연장으로 계산" else "하루 8시간 기준 끄기 (탄력적 근로시간제)") to
                 p.copy(dailyLimitMinutes = if (p.dailyLimitMinutes == null) 480 else null))
             add((if (p.fiveOrMoreEmployees) "5인 미만 사업장으로 계산 (가산 없음)" else "5인 이상 사업장으로 계산") to

@@ -90,6 +90,8 @@ data class PayProfile(
     /** null turns daily overtime off (탄력적 근로시간제 등). */
     val dailyLimitMinutes: Int? = 8 * 60,
     val weeklyLimitMinutes: Int? = 40 * 60,
+    /** [PAYX-07] Scheduled hours are all 기본 근무; see [ClassifyOptions.scheduleIsRegular]. */
+    val scheduleIsRegular: Boolean = false,
     val weekStart: DayOfWeek = DayOfWeek.MONDAY,
     /** Values the user skipped and the app guessed; shown with an "추정" label. */
     val estimatedFields: Set<String> = emptySet(),

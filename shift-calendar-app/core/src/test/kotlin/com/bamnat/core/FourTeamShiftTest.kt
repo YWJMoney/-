@@ -92,4 +92,43 @@ class FourTeamShiftTest {
         val book = LeaveBook.balance(2026, 15.0, LocalDate.of(2026, 12, 31), r::resolve, free = { it == holiday })
         assertEquals(0.0, book.used, 1e-9)
     }
+
+    // [PAYX-07] The same roster with the legal 8h/40h limits left on but "근무표 시간은 모두 기본 근무".
+    private val legal = profile.copy(dailyLimitMinutes = 480, weeklyLimitMinutes = 2400, rules = CompanyRules())
+    private fun overtimeMinutes(p: PayProfile, r: ScheduleResolver) =
+        PayCalculator().calculate(p, nov, r::resolve) { false }.lines.filter { it.kind == LineKind.OVERTIME }.sumOf { it.minutes }
+
+    @Test
+    fun `without the schedule option the 12 hour roster counts 4 hours a shift as overtime`() {
+        // 15 shifts in November 2026 (cycle starts on the 1st), 4 hours each over the daily limit, at least.
+        assertTrue(overtimeMinutes(legal, roster()) >= 15 * 240)
+    }
+
+    @Test
+    fun `schedule as regular work adds no overtime for the 12 hour roster`() {
+        assertEquals(0, overtimeMinutes(legal.copy(scheduleIsRegular = true), roster()))
+    }
+
+    @Test
+    fun `schedule as regular work still pays recorded extra hours and a second shift as overtime`() {
+        val p = legal.copy(scheduleIsRegular = true)
+        assertEquals(90, overtimeMinutes(p, roster(DayEntry(LocalDate.of(2026, 11, 1), overtimeMinutes = 90))))
+        // A 4-hour 잔업 shift on top of a working day is all overtime, not room under the daily limit.
+        val extra = ShiftType(4, "잔업", "잔", 0xFF000000, LocalTime.of(19, 0), LocalTime.of(23, 0))
+        val r = ScheduleResolver(listOf(day, night, off, extra), WorkPattern.Rotation(start, cycle),
+            listOf(DayEntry(LocalDate.of(2026, 11, 1), secondShiftId = extra.id)))
+        assertEquals(240, overtimeMinutes(p, r))
+    }
+
+    @Test
+    fun `schedule as regular work warns how much the legal count would add`() {
+        val pay = PayCalculator().calculate(legal.copy(scheduleIsRegular = true), nov, roster()::resolve) { false }
+        assertTrue(pay.warnings.any { it.startsWith("근무표 시간을 모두 기본 근무로") })
+    }
+
+    @Test
+    fun `schedule as regular work keeps the night premium`() {
+        val pay = PayCalculator().calculate(legal.copy(scheduleIsRegular = true), nov, roster()::resolve) { false }
+        assertTrue(pay.lines.filter { it.kind == LineKind.NIGHT }.sumOf { it.amount } > 0)
+    }
 }

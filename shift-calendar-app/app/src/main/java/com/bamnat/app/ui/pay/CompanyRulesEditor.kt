@@ -111,11 +111,17 @@ fun CompanyRulesEditor(
                 Toggle("5인 이상 사업장", "아니면 법정 가산이 없어요. 회사가 주는 가산은 아래에서 따로 넣어요", draft.fiveOrMoreEmployees) {
                     draft = draft.copy(fiveOrMoreEmployees = it)
                 }
-                Toggle("하루 8시간 넘으면 연장", "탄력적·선택적 근로시간제라면 꺼 주세요", draft.dailyLimitMinutes != null) {
-                    draft = draft.copy(dailyLimitMinutes = if (it) 480 else null)
+                Toggle("근무표 시간은 모두 기본 근무", "12시간 교대처럼 근무표대로 일한 시간이 기본급에 들어 있으면 켜 주세요. 잔업으로 적은 시간만 연장이 돼요",
+                    draft.scheduleIsRegular) {
+                    draft = draft.copy(scheduleIsRegular = it)
                 }
-                Toggle("주 40시간 넘으면 연장", "4조2교대처럼 근무표대로 일한 시간이 기본급에 들어 있으면 꺼 주세요", draft.weeklyLimitMinutes != null) {
-                    draft = draft.copy(weeklyLimitMinutes = if (it) 2400 else null)
+                if (!draft.scheduleIsRegular) {
+                    Toggle("하루 8시간 넘으면 연장", "탄력적·선택적 근로시간제라면 꺼 주세요", draft.dailyLimitMinutes != null) {
+                        draft = draft.copy(dailyLimitMinutes = if (it) 480 else null)
+                    }
+                    Toggle("주 40시간 넘으면 연장", "근무표대로 일한 시간이 주 40시간을 넘어도 기본급에 들어 있으면 꺼 주세요", draft.weeklyLimitMinutes != null) {
+                        draft = draft.copy(weeklyLimitMinutes = if (it) 2400 else null)
+                    }
                 }
                 if (draft.wageType == WageType.MONTHLY) {
                     Label("월 소정근로시간 (통상시급을 나누는 시간)")

@@ -36,6 +36,12 @@ data class ClassifyOptions(
     val weekStart: DayOfWeek = DayOfWeek.MONDAY,
     /** Work on a day off counts as holiday work; false makes all of it overtime [PAYX-07]. */
     val offDayWorkIsHoliday: Boolean = true,
+    /**
+     * [PAYX-07] Every scheduled minute is regular work, however long the shift (4조2교대 12시간
+     * 근무처럼 근무표 시간이 기본급에 들어 있는 경우). Only extra hours the user records, and a
+     * second shift on a working day, count as overtime; the daily and weekly limits are not used.
+     */
+    val scheduleIsRegular: Boolean = false,
 )
 
 /**
@@ -59,6 +65,7 @@ class MinuteClassifier(
         return sorted.map { day ->
             val offDayWork = day.holidayWorkMinutes > 0 || (day.second != null && !day.isWorkDay)
             val raw = classifyDay(day, isHoliday(day.date) || (offDayWork && options.offDayWorkIsHoliday))
+            if (options.scheduleIsRegular) return@map raw
             val limit = options.weeklyLimitMinutes ?: return@map raw
             val week = day.date.with(TemporalAdjusters.previousOrSame(options.weekStart))
             val before = weeklyRegular[week] ?: 0
@@ -80,7 +87,7 @@ class MinuteClassifier(
         if (holiday) return holidaySplit(day.date, first.worked + minutes, first.night + night, r, first.estimated)
         // On a working day it fills what is left of the daily limit, then is overtime; on a day
         // off counted as 연장 by company rule all of it is overtime.
-        val room = if (!day.isWorkDay) 0 else options.dailyLimitMinutes?.let { (it - first.regular - first.overtime).coerceAtLeast(0) } ?: minutes
+        val room = if (!day.isWorkDay || options.scheduleIsRegular) 0 else options.dailyLimitMinutes?.let { (it - first.regular - first.overtime).coerceAtLeast(0) } ?: minutes
         val regular = minOf(minutes, room)
         return first.copy(regular = first.regular + regular, overtime = first.overtime + minutes - regular, night = first.night + night)
     }
@@ -115,7 +122,7 @@ class MinuteClassifier(
         val total = paidScheduled + extra + holidayOnly
 
         if (holiday) return holidaySplit(day.date, total, night, r, estimated = false)
-        val limit = options.dailyLimitMinutes
+        val limit = options.dailyLimitMinutes.takeUnless { options.scheduleIsRegular }
         val dailyOver = if (limit == null) 0 else (paidScheduled - limit).coerceAtLeast(0)
         return DayMinutes(
             date = day.date,
