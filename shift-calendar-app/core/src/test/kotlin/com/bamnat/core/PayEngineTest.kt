@@ -94,7 +94,7 @@ class PayEngineTest {
     @Test
     fun `nurse month with 16 nights adds night premium and night allowance`() {
         val r = resolver(LocalDate.of(2026, 10, 1), listOf(Fixtures.night.id, Fixtures.off.id))
-        val pay = PayCalculator().calculate(nurse, YearMonth.of(2026, 10), r::resolve)
+        val pay = PayCalculator().calculate(nurse, YearMonth.of(2026, 10), r::resolve) { false }
         assertEquals(14_354, pay.ordinaryHourly)
         assertEquals(3_000_000, pay.lines.single { it.kind == LineKind.BASE }.amount)
         val night = pay.lines.single { it.kind == LineKind.NIGHT }

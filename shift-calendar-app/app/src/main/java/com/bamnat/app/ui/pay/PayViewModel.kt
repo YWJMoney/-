@@ -10,6 +10,10 @@ import com.bamnat.app.tier.Tier
 import com.bamnat.core.diag.DiagEvents
 import com.bamnat.core.pay.BulkEditPlanner
 import com.bamnat.core.pay.Cadence
+import com.bamnat.core.pay.CompanyRules
+import com.bamnat.core.pay.MinuteRounding
+import com.bamnat.core.pay.OffDayWork
+import com.bamnat.core.pay.PremiumTarget
 import com.bamnat.core.pay.CandidateKind
 import com.bamnat.core.pay.DatedValue
 import com.bamnat.core.pay.EditPlan
@@ -125,6 +129,12 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
         p.copy(items = p.items + PayItem(id, name.trim().ifEmpty { "수당" }, ValueTimeline(listOf(DatedValue(from.atDay(1), amount))), cadence, ordinary = ordinary))
     }
 
+    /** Changes the company's rules [PAYX-07]; every change can be undone like a value edit. */
+    fun updateRules(transform: (CompanyRules) -> CompanyRules) {
+        update { it.copy(rules = transform(it.rules)) }
+        container.telemetry.event("pay_rules_edit")
+    }
+
     fun removeItem(id: String) = update { p -> p.copy(items = p.items.filterNot { it.id == id }) }
 
     fun updateItem(id: String, transform: (PayItem) -> PayItem) =
@@ -169,8 +179,19 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
                         ?: from.monthValue
                     p = p.copy(base = p.base.copy(raise = RaiseRule(month = month, percent = pct, unit = 1_000)))
                 }
-                // Legal premiums come from the rate table; company multipliers are shown, not applied.
-                CandidateKind.MULTIPLIER -> Unit
+                CandidateKind.MULTIPLIER -> {
+                    val premium = c.premium ?: continue
+                    p = p.copy(rules = when (c.premiumTarget) {
+                        PremiumTarget.NIGHT -> p.rules.copy(nightPremium = premium)
+                        PremiumTarget.HOLIDAY -> p.rules.copy(holidayPremiumWithin8h = premium)
+                        else -> p.rules.copy(overtimePremium = premium)
+                    })
+                }
+                CandidateKind.EXTRA_RULE -> {
+                    val kind = c.extraWork ?: continue
+                    val rule = c.extraRule ?: continue
+                    p = p.copy(rules = p.rules.copy(extra = p.rules.extra + (kind to rule)))
+                }
             }
         }
         p
@@ -189,6 +210,12 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
                 p.copy(dailyLimitMinutes = if (p.dailyLimitMinutes == null) 480 else null))
             add((if (p.fiveOrMoreEmployees) "5인 미만 사업장으로 계산 (가산 없음)" else "5인 이상 사업장으로 계산") to
                 p.copy(fiveOrMoreEmployees = !p.fiveOrMoreEmployees))
+            val r = p.rules
+            add((if (r.offDayWork == OffDayWork.HOLIDAY) "쉬는 날 근무를 연장근로로 계산" else "쉬는 날 근무를 휴일근로로 계산") to
+                p.copy(rules = r.copy(offDayWork = if (r.offDayWork == OffDayWork.HOLIDAY) OffDayWork.OVERTIME else OffDayWork.HOLIDAY)))
+            add((if (r.publicHolidaysPaid) "공휴일 근무를 평일처럼 계산 (휴일 대체)" else "공휴일 근무를 휴일근로로 계산") to
+                p.copy(rules = r.copy(publicHolidaysPaid = !r.publicHolidaysPaid)))
+            if (r.overtimeRounding.unit > 1) add("연장 시간을 1분 단위로 계산" to p.copy(rules = r.copy(overtimeRounding = MinuteRounding())))
             p.items.filter { !it.ordinary && it.cadence == Cadence.MONTHLY }.forEach { item ->
                 add("‘${item.name}’을 통상임금에 포함" to p.copy(items = p.items.map { if (it.id == item.id) it.copy(ordinary = true) else it }))
             }

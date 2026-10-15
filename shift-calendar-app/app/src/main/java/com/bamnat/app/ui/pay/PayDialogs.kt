@@ -273,8 +273,9 @@ private fun CandidateKind.label() = when (this) {
     CandidateKind.BASE_SALARY -> "기본급"
     CandidateKind.HOURLY_WAGE -> "시급"
     CandidateKind.ALLOWANCE -> "수당"
-    CandidateKind.MULTIPLIER -> "가산율 (참고)"
+    CandidateKind.MULTIPLIER -> "회사 가산율"
     CandidateKind.RAISE -> "인상률"
+    CandidateKind.EXTRA_RULE -> "회사 규칙"
 }
 
 /**
@@ -298,7 +299,7 @@ fun RuleImportDialog(vm: PayViewModel, month: YearMonth, onDismiss: () -> Unit) 
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedTextField(
                         value = text, onValueChange = { text = it },
-                        placeholder = { Text("예)\n기본급 3,100,000원\n나이트 수당 1회 35,000원\n매년 3월 3.5% 인상") },
+                        placeholder = { Text("예)\n기본급 3,100,000원\n나이트 수당 1회 35,000원\n대근은 통상시급의 200%, 최소 8시간\n매년 3월 3.5% 인상") },
                         minLines = 5, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     )
                     Text("휴대폰 안에서만 읽고 어디에도 보내지 않아요. 사진으로 읽기는 다음 업데이트에서 열려요.",
@@ -306,12 +307,14 @@ fun RuleImportDialog(vm: PayViewModel, month: YearMonth, onDismiss: () -> Unit) 
                 } else {
                     if (candidates.isEmpty()) Text("읽을 수 있는 금액이나 비율을 못 찾았어요. ‘나이트 수당 30,000원’처럼 이름과 금액을 같이 적어 주세요.")
                     candidates.forEachIndexed { i, (c, on) ->
-                        val reference = c.kind == CandidateKind.MULTIPLIER
                         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
-                            Checkbox(checked = on && !reference, enabled = !reference, onCheckedChange = { candidates[i] = c to it })
+                            Checkbox(checked = on, onCheckedChange = { candidates[i] = c to it })
                             Column(Modifier.weight(1f)) {
                                 Text(
                                     "${c.kind.label()} · ${c.name} " + when {
+                                        c.extraRule != null -> c.extraRule!!.describe()
+                                        c.premiumTarget != null && c.premium != null ->
+                                            "${c.premiumTarget!!.label} 가산 ${com.bamnat.core.pay.PayCalculator.pct(c.premium!!)}"
                                         c.amount != null -> won(c.amount!!)
                                         c.percent != null -> "${c.percent}%"
                                         else -> ""
@@ -319,9 +322,7 @@ fun RuleImportDialog(vm: PayViewModel, month: YearMonth, onDismiss: () -> Unit) 
                                     style = MaterialTheme.typography.bodyLarge,
                                 )
                                 Text("“${c.sourceLine}”", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                if (reference) Text("가산율은 법정 기준으로 계산해요. 회사 기준이 더 높으면 수당으로 넣어 주세요.",
-                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
-                                else if (c.confidence < 0.6) Text("확실하지 않아요. 맞는지 확인해 주세요.",
+                                if (c.confidence < 0.6) Text("확실하지 않아요. 맞는지 확인해 주세요.",
                                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                             }
                         }
@@ -337,11 +338,11 @@ fun RuleImportDialog(vm: PayViewModel, month: YearMonth, onDismiss: () -> Unit) 
             if (!read) {
                 Button(onClick = {
                     candidates.clear()
-                    candidates += vm.readRules(text).map { it to (it.confidence >= 0.6 && it.kind != CandidateKind.MULTIPLIER) }
+                    candidates += vm.readRules(text).map { it to (it.confidence >= 0.6) }
                     read = true
                 }, enabled = text.isNotBlank()) { Text("읽기") }
             } else {
-                val chosen = candidates.filter { it.second && it.first.kind != CandidateKind.MULTIPLIER }.map { it.first }
+                val chosen = candidates.filter { it.second }.map { it.first }
                 Button(onClick = { vm.applyCandidates(chosen, from); onDismiss() }, enabled = chosen.isNotEmpty()) { Text("${chosen.size}개 적용") }
             }
         },

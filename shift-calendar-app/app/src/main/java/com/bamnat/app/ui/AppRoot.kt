@@ -249,6 +249,7 @@ private fun AppNavHost(
                 onOpenPattern = { nav.navigate(Routes.PATTERN) { launchSingleTop = true } },
                 onOpenShiftTypes = { nav.navigate(Routes.SHIFT_TYPES) { launchSingleTop = true } },
                 onOpenStats = { nav.navigateTopLevel(TopLevel.STATS.route) },
+                onOpenPay = { nav.navigate(Routes.PAY) { launchSingleTop = true } },
                 onOpenSettings = { nav.navigateTopLevel(TopLevel.SETTINGS.route) },
             )
         }

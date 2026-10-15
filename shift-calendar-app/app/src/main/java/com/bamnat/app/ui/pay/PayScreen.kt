@@ -88,6 +88,7 @@ internal fun kindColor(kind: LineKind): Color = when (kind) {
     LineKind.OVERTIME -> Color(0xFFF08C00)
     LineKind.NIGHT -> Color(0xFF6741D9)
     LineKind.HOLIDAY -> Color(0xFFE03131)
+    LineKind.EXTRA -> Color(0xFFD6336C)
     LineKind.ALLOWANCE -> Color(0xFF2F9E44)
 }
 
@@ -102,12 +103,27 @@ fun PayScreen(vm: PayViewModel, onBack: () -> Unit) {
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val tier by vm.tier.collectAsStateWithLifecycle()
     var editingSetup by rememberSaveable { mutableStateOf(false) }
+    var editingRules by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (profile == null || editingSetup) "급여 계산 설정" else "급여 계산") },
-                navigationIcon = { IconButton(onClick = { if (editingSetup) editingSetup = false else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                title = {
+                    Text(when {
+                        profile == null || editingSetup -> "급여 계산 설정"
+                        editingRules -> "회사 규칙"
+                        else -> "급여 계산"
+                    })
+                },
+                navigationIcon = {
+                    IconButton(onClick = {
+                        when {
+                            editingSetup -> editingSetup = false
+                            editingRules -> editingRules = false
+                            else -> onBack()
+                        }
+                    }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") }
+                },
             )
         },
     ) { padding ->
@@ -120,7 +136,11 @@ fun PayScreen(vm: PayViewModel, onBack: () -> Unit) {
                     onCancel = if (profile != null) ({ editingSetup = false }) else null,
                     onDone = { p -> vm.saveSetup(p); editingSetup = false },
                 )
-                else -> PayResult(vm, profile!!, snap, tier, onEditSetup = { editingSetup = true })
+                editingRules -> {
+                    val month by vm.month.collectAsStateWithLifecycle()
+                    CompanyRulesEditor(vm, profile!!, snap, month, onClose = { editingRules = false })
+                }
+                else -> PayResult(vm, profile!!, snap, tier, onEditSetup = { editingSetup = true }, onEditRules = { editingRules = true })
             }
         }
     }
@@ -128,7 +148,14 @@ fun PayScreen(vm: PayViewModel, onBack: () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PayResult(vm: PayViewModel, profile: PayProfile, snapshot: ScheduleSnapshot, tier: Tier, onEditSetup: () -> Unit) {
+private fun PayResult(
+    vm: PayViewModel,
+    profile: PayProfile,
+    snapshot: ScheduleSnapshot,
+    tier: Tier,
+    onEditSetup: () -> Unit,
+    onEditRules: () -> Unit,
+) {
     val month by vm.month.collectAsStateWithLifecycle()
     val undo by vm.undoAvailable.collectAsStateWithLifecycle()
     val unlocked = vm.canUse(Feature.PAY_ENGINE, tier)
@@ -171,6 +198,8 @@ private fun PayResult(vm: PayViewModel, profile: PayProfile, snapshot: ScheduleS
             }
             if (result.lines.isEmpty()) Text("이 달은 계산할 근무가 없어요", style = MaterialTheme.typography.bodyMedium)
         }
+
+        DayLedger(result, unlocked)
 
         if (result.warnings.isNotEmpty()) {
             SectionCard(title = "확인해 주세요") {
@@ -232,28 +261,21 @@ private fun PayResult(vm: PayViewModel, profile: PayProfile, snapshot: ScheduleS
             }
         }
 
-        SectionCard(title = "회사 규칙") {
-            RuleSwitch("5인 이상 사업장", "연장·야간·휴일 가산은 5인 이상일 때만 붙어요", profile.fiveOrMoreEmployees, unlocked) { on ->
-                vm.update { it.copy(fiveOrMoreEmployees = on) }
-            }
-            RuleSwitch("하루 8시간 넘으면 연장", "탄력적 근로시간제라면 꺼 주세요", profile.dailyLimitMinutes != null, unlocked) { on ->
-                vm.update { it.copy(dailyLimitMinutes = if (on) 480 else null) }
-            }
-            if (profile.wageType == WageType.MONTHLY) {
-                Text("월급제 휴일 근무 계산", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 8.dp))
-                Text("회사마다 해석이 달라요. 급여명세서와 맞는 쪽을 골라 주세요.",
+        SectionCard(title = "회사 규칙", trailing = { TextButton(onClick = onEditRules, enabled = unlocked) { Text("설정") } }) {
+            val summary = profile.rules.summary(profile)
+            Text(
+                (if (profile.fiveOrMoreEmployees) "5인 이상" else "5인 미만") +
+                    (if (profile.dailyLimitMinutes == null) " · 하루 8시간 기준 없음" else "") +
+                    (if (profile.wageType == WageType.MONTHLY) " · 월급제 휴일 ${profile.holidayPayMode.label}" else ""),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (summary.isEmpty()) {
+                Text("나머지는 모두 법정 기준으로 계산하고 있어요. 대근·특근 단가나 가산율이 다르면 ‘설정’에서 바꿔 주세요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    HolidayPayMode.entries.forEach { mode ->
-                        FilterChip(
-                            selected = profile.holidayPayMode == mode, enabled = unlocked,
-                            onClick = { vm.update { it.copy(holidayPayMode = mode, estimatedFields = it.estimatedFields - "holidayPayMode") } },
-                            label = { Text(mode.label) },
-                        )
-                    }
-                }
+            } else {
+                summary.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                 OutlinedButton(onClick = { reconciling = true }, enabled = unlocked) {
                     Icon(Icons.Filled.ReceiptLong, null); Text(" 명세서와 대조")
                 }
@@ -498,5 +520,53 @@ private fun Glossary() {
             terms.forEach { (t, _) -> AssistChip(onClick = { open = if (open == t) null else t }, label = { Text(t) }) }
         }
         open?.let { t -> Text(terms.first { it.first == t }.second, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 6.dp)) }
+    }
+}
+
+/**
+ * 날짜별 내역 [PAYX-08]: every calendar day that adds to pay, with its shift, 잔업·특근·대근 mark and
+ * holiday, so a change on the calendar can be traced to the money.
+ */
+@Composable
+private fun DayLedger(result: MonthPay, unlocked: Boolean) {
+    val days = result.days.filter { it.amount > 0 }
+    if (days.isEmpty()) return
+    var expanded by rememberSaveable(result.month) { mutableStateOf(false) }
+    var open by remember(result.month) { mutableStateOf<java.time.LocalDate?>(null) }
+    val shown = if (expanded) days else days.take(6)
+    SectionCard(title = "날짜별 내역 (${days.size}일)", trailing = {
+        Text("달력과 연결돼 있어요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }) {
+        shown.forEach { d ->
+            Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(enabled = unlocked) { open = if (open == d.date) null else d.date }
+                .padding(vertical = 6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${d.date.monthValue}/${d.date.dayOfMonth} (${Fmt.dayOfWeekShort(d.date.dayOfWeek)})", style = MaterialTheme.typography.labelLarge,
+                        color = if (d.holidayName != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.width(76.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(listOfNotNull(d.label, d.extraWork?.label, d.holidayName).joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            d.parts.map { it.kind }.distinct().forEach { k ->
+                                Box(Modifier.padding(top = 3.dp).size(8.dp).clip(RoundedCornerShape(2.dp)).background(kindColor(k)))
+                            }
+                        }
+                    }
+                    Text(if (unlocked) won(d.amount) else "●●,●●●원", style = MaterialTheme.typography.titleSmall)
+                }
+                if (open == d.date) {
+                    d.parts.forEach { part ->
+                        Row(Modifier.fillMaxWidth().padding(start = 76.dp, top = 2.dp)) {
+                            Text("${part.label} · ${part.formula}", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                            Text(won(part.amount), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+        if (days.size > 6) {
+            TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "접기" else "${days.size - 6}일 더 보기") }
+        }
     }
 }

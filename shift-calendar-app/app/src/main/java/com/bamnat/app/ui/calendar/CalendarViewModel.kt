@@ -24,6 +24,11 @@ import com.bamnat.core.model.ExtraWork
 import com.bamnat.core.schedule.ResolvedDay
 import java.time.LocalDate
 import java.time.LocalTime
+import com.bamnat.app.tier.Tier
+import com.bamnat.core.pay.DayPay
+import com.bamnat.core.pay.PayCalculator
+import com.bamnat.core.pay.PayProfile
+import java.time.YearMonth
 
 /** Quick-input tool: tap days to stamp a shift on them. */
 sealed interface PaintTool {
@@ -44,6 +49,14 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel() {
     val memoDates: StateFlow<Set<LocalDate>> =
         memoRepo.datesWithMemos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
     val upcomingAlarm: StateFlow<UpcomingAlarm?> = container.alarmScheduler.upcoming
+
+    /** Pay setup and tier, so a day on the calendar shows what it adds to pay [PAYX-08]. */
+    val payProfile: StateFlow<PayProfile?> = container.payStore.profile
+    val tier: StateFlow<Tier> = container.featureGate.tier
+    private val payCalculator = PayCalculator()
+
+    fun dayPay(profile: PayProfile, snapshot: ScheduleSnapshot, date: LocalDate): DayPay? =
+        payCalculator.calculate(profile, YearMonth.from(date), snapshot.resolver::resolve).day(date)
 
     private val _selected = MutableStateFlow(LocalDate.now())
     val selected: StateFlow<LocalDate> = _selected.asStateFlow()

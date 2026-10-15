@@ -33,6 +33,8 @@ data class ClassifyOptions(
     val dailyLimitMinutes: Int? = 8 * 60,
     val weeklyLimitMinutes: Int? = 40 * 60,
     val weekStart: DayOfWeek = DayOfWeek.MONDAY,
+    /** Work on a day off counts as holiday work; false makes all of it overtime [PAYX-07]. */
+    val offDayWorkIsHoliday: Boolean = true,
 )
 
 /**
@@ -53,7 +55,7 @@ class MinuteClassifier(
         val sorted = days.sortedBy { it.date }
         val weeklyRegular = HashMap<LocalDate, Int>()
         return sorted.map { day ->
-            val raw = classifyDay(day, isHoliday(day.date) || day.holidayWorkMinutes > 0)
+            val raw = classifyDay(day, isHoliday(day.date) || (day.holidayWorkMinutes > 0 && options.offDayWorkIsHoliday))
             val limit = options.weeklyLimitMinutes ?: return@map raw
             val week = day.date.with(TemporalAdjusters.previousOrSame(options.weekStart))
             val before = weeklyRegular[week] ?: 0
@@ -75,7 +77,9 @@ class MinuteClassifier(
             // Extra work on a day off with no clock times: count it, assume daytime.
             val minutes = scheduled + extra + holidayOnly
             if (minutes == 0) return DayMinutes(day.date)
-            return if (holiday) holidaySplit(day.date, minutes, 0, r, estimated = true)
+            if (holiday) return holidaySplit(day.date, minutes, 0, r, estimated = true)
+            // A day off worked as 연장 by company rule: every minute is overtime.
+            return if (holidayOnly > 0 && scheduled == 0) DayMinutes(day.date, overtime = minutes, estimated = true)
             else DayMinutes(day.date, regular = minutes - extra, overtime = extra, estimated = true)
         }
 

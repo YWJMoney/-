@@ -59,6 +59,7 @@ import com.bamnat.app.ui.components.ColorDot
 import com.bamnat.app.ui.components.ShiftBadge
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
+import com.bamnat.core.holiday.KoreanHolidays
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.hours.WorkHoursCalculator
 import com.bamnat.core.schedule.DaySource
@@ -172,15 +173,21 @@ private fun DayCell(
     val shape = RoundedCornerShape(10.dp)
     val date = day.date
     val type = day.shiftType
-    val numberColor = when (date.dayOfWeek) {
+    val holidayName = KoreanHolidays.nameOf(date)
+    val numberColor = when {
+        // Public holidays are red like Sundays [FEAT-05].
+        holidayName != null -> cal.sunday
+        else -> when (date.dayOfWeek) {
         DayOfWeek.SUNDAY -> cal.sunday
         DayOfWeek.SATURDAY -> cal.saturday
         else -> scheme.onSurface
+        }
     }
     // Working days are tinted with their shift's color so the month reads at a glance.
     val tint = type?.takeIf { !it.isOff }?.colorArgb?.asColor()?.copy(alpha = if (isDarkSurface()) 0.22f else 0.13f)
     val description = buildString {
         append(Fmt.dayTitle(date))
+        holidayName?.let { append(", ").append(it) }
         type?.let { append(", ").append(it.name) }
         if (day.isWorkDay) append(", ").append(HoursFormat.korean(day.totalMinutes))
         day.extraWork?.let { append(", ").append(it.label) }

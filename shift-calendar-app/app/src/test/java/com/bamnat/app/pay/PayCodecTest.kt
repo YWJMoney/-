@@ -1,7 +1,13 @@
 package com.bamnat.app.pay
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.bamnat.core.model.ExtraWork
 import com.bamnat.core.pay.Cadence
+import com.bamnat.core.pay.CompanyRules
+import com.bamnat.core.pay.ExtraBasis
+import com.bamnat.core.pay.ExtraRule
+import com.bamnat.core.pay.MinuteRounding
+import com.bamnat.core.pay.OffDayWork
 import com.bamnat.core.pay.DatedValue
 import com.bamnat.core.pay.HolidayPayMode
 import com.bamnat.core.pay.Occupation
@@ -36,6 +42,16 @@ class PayCodecTest {
             holidayPayMode = HolidayPayMode.PREMIUM_ONLY,
             dailyLimitMinutes = null,
             estimatedFields = setOf("night"),
+            rules = CompanyRules(
+                overtimePremium = 1.0, nightPremium = null, holidayPremiumWithin8h = 0.7,
+                offDayWork = OffDayWork.OVERTIME, publicHolidaysPaid = false,
+                extra = mapOf(
+                    ExtraWork.COVER to ExtraRule(ExtraBasis.HOURLY_RATE, multiplier = 2.0, minMinutes = 480, nightPremium = false),
+                    ExtraWork.SPECIAL to ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 80_000),
+                ),
+                overtimeRounding = MinuteRounding(30, Rounding.NEAREST),
+                weeklyHolidayPay = false,
+            ),
         )
         assertEquals(p, PayCodec.decode(PayCodec.encode(p)))
     }

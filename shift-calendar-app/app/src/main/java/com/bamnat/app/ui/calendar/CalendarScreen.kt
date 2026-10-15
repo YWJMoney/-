@@ -107,6 +107,7 @@ fun CalendarScreen(
     onOpenPattern: () -> Unit,
     onOpenShiftTypes: () -> Unit,
     onOpenStats: () -> Unit,
+    onOpenPay: () -> Unit = onOpenStats,
     onOpenSettings: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -267,6 +268,7 @@ fun CalendarScreen(
             onNewMemo = onNewMemo,
             onOpenShiftTypes = onOpenShiftTypes,
             modifier = Modifier.padding(horizontal = 16.dp),
+            onOpenPay = onOpenPay,
         )
     }
 

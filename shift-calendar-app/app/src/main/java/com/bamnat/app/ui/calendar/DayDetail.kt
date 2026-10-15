@@ -71,7 +71,11 @@ import com.bamnat.app.ui.components.TimePickerDialog
 import com.bamnat.app.ui.components.memoBackground
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
+import com.bamnat.app.tier.Feature
+import com.bamnat.app.tier.FeatureGate
+import com.bamnat.core.holiday.KoreanHolidays
 import com.bamnat.core.hours.HoursFormat
+import com.bamnat.core.pay.WageType
 import com.bamnat.core.memo.Memo
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.schedule.DaySource
@@ -99,6 +103,7 @@ fun DayDetail(
     onNewMemo: (LocalDate) -> Unit,
     onOpenShiftTypes: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenPay: () -> Unit = {},
 ) {
     val day = remember(snapshot, date) { snapshot.resolver.resolve(date) }
     val memos by remember(date) { vm.memosOn(date) }.collectAsStateWithLifecycle(emptyList())
@@ -148,6 +153,8 @@ fun DayDetail(
 
         ExtraWorkSection(day = day, vm = vm)
 
+        DayPaySection(day = day, snapshot = snapshot, vm = vm, onOpenPay = onOpenPay)
+
         AlarmSection(day = day, snapshot = snapshot, vm = vm, onOpenShiftTypes = onOpenShiftTypes)
 
         MemoSection(
@@ -186,6 +193,10 @@ private fun DayHeader(day: ResolvedDay, isToday: Boolean) {
                         .padding(horizontal = 8.dp, vertical = 2.dp),
                 )
             }
+        }
+        KoreanHolidays.nameOf(day.date)?.let { name ->
+            Text(name, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 2.dp))
         }
         val type = day.shiftType
         val start = day.start
@@ -697,6 +708,49 @@ private fun MemoRow(memo: Memo, onClick: () -> Unit, onDelete: () -> Unit) {
         }
         IconButton(onClick = onDelete) {
             Icon(Icons.Outlined.Delete, contentDescription = "메모 삭제", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/**
+ * What this day adds to pay, straight from the pay engine [PAYX-08]: the shift, any 잔업·특근·대근
+ * mark and the holiday all show up here as soon as they change on the calendar.
+ */
+@Composable
+private fun DayPaySection(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, onOpenPay: () -> Unit) {
+    val profile by vm.payProfile.collectAsStateWithLifecycle()
+    val tier by vm.tier.collectAsStateWithLifecycle()
+    val p = profile
+    if (p == null) {
+        if (day.hasExtraWork) {
+            TextButton(onClick = onOpenPay) { Text("급여 계산을 설정하면 이 날 수당이 보여요") }
+        }
+        return
+    }
+    val pay = remember(p, snapshot, day.date) { vm.dayPay(p, snapshot, day.date) } ?: return
+    if (pay.parts.isEmpty()) return
+    val unlocked = FeatureGate.allows(tier, Feature.PAY_ENGINE)
+    SectionCard(
+        title = if (p.wageType == WageType.MONTHLY) "이 날 더해지는 급여" else "이 날 급여",
+        trailing = { TextButton(onClick = onOpenPay) { Text("자세히") } },
+    ) {
+        for (part in pay.parts) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(part.label, style = MaterialTheme.typography.bodyLarge)
+                    Text(part.formula, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(if (unlocked) "%,d원".format(part.amount) else "●●,●●●원", style = MaterialTheme.typography.titleSmall)
+            }
+        }
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("합계 (세전)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            Text(
+                if (unlocked) "%,d원".format(pay.amount) else "프로 등급에서 보여요",
+                style = MaterialTheme.typography.titleMedium.merge(NumberStyle),
+                color = MaterialTheme.colorScheme.primary,
+            )
         }
     }
 }

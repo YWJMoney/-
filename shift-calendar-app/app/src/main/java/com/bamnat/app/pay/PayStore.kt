@@ -1,7 +1,13 @@
 package com.bamnat.app.pay
 
 import android.content.Context
+import com.bamnat.core.model.ExtraWork
 import com.bamnat.core.pay.Cadence
+import com.bamnat.core.pay.CompanyRules
+import com.bamnat.core.pay.ExtraBasis
+import com.bamnat.core.pay.ExtraRule
+import com.bamnat.core.pay.MinuteRounding
+import com.bamnat.core.pay.OffDayWork
 import com.bamnat.core.pay.DatedValue
 import com.bamnat.core.pay.HolidayPayMode
 import com.bamnat.core.pay.Occupation
@@ -74,6 +80,7 @@ object PayCodec {
         .put("weeklyLimit", p.weeklyLimitMinutes ?: -1)
         .put("weekStart", p.weekStart.name)
         .put("estimated", JSONArray(p.estimatedFields.toList()))
+        .put("rules", rules(p.rules))
 
     fun decode(o: JSONObject): PayProfile = PayProfile(
         occupation = Occupation.valueOf(o.getString("occupation")),
@@ -88,6 +95,51 @@ object PayCodec {
         weeklyLimitMinutes = o.optInt("weeklyLimit", 2400).takeIf { it >= 0 },
         weekStart = runCatching { DayOfWeek.valueOf(o.getString("weekStart")) }.getOrDefault(DayOfWeek.MONDAY),
         estimatedFields = o.optJSONArray("estimated")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet(),
+        rules = o.optJSONObject("rules")?.let(::rules) ?: CompanyRules(),
+    )
+
+    private fun JSONObject.putRate(key: String, v: Double?) = put(key, v ?: JSONObject.NULL)
+    private fun JSONObject.rate(key: String): Double? = if (!has(key) || isNull(key)) null else getDouble(key)
+
+    private fun rules(r: CompanyRules): JSONObject = JSONObject()
+        .putRate("ot", r.overtimePremium).putRate("night", r.nightPremium)
+        .putRate("hw", r.holidayPremiumWithin8h).putRate("ho", r.holidayPremiumOver8h)
+        .put("offDay", r.offDayWork.name)
+        .put("publicHolidays", r.publicHolidaysPaid)
+        .put("roundUnit", r.overtimeRounding.unit).put("round", r.overtimeRounding.rounding.name)
+        .put("weeklyHoliday", r.weeklyHolidayPay)
+        .put("extra", JSONObject().apply {
+            r.extra.forEach { (kind, e) ->
+                put(kind.name, JSONObject().put("basis", e.basis.name).put("multiplier", e.multiplier).put("amount", e.amount)
+                    .put("min", e.minMinutes).put("night", e.nightPremium))
+            }
+        })
+
+    private fun rules(o: JSONObject): CompanyRules = CompanyRules(
+        overtimePremium = o.rate("ot"),
+        nightPremium = o.rate("night"),
+        holidayPremiumWithin8h = o.rate("hw"),
+        holidayPremiumOver8h = o.rate("ho"),
+        offDayWork = runCatching { OffDayWork.valueOf(o.getString("offDay")) }.getOrDefault(OffDayWork.HOLIDAY),
+        publicHolidaysPaid = o.optBoolean("publicHolidays", true),
+        overtimeRounding = MinuteRounding(
+            o.optInt("roundUnit", 1),
+            runCatching { Rounding.valueOf(o.getString("round")) }.getOrDefault(Rounding.DOWN),
+        ),
+        weeklyHolidayPay = o.optBoolean("weeklyHoliday", true),
+        extra = o.optJSONObject("extra")?.let { x ->
+            x.keys().asSequence().mapNotNull { key ->
+                val kind = runCatching { ExtraWork.valueOf(key) }.getOrNull() ?: return@mapNotNull null
+                val e = x.getJSONObject(key)
+                kind to ExtraRule(
+                    basis = runCatching { ExtraBasis.valueOf(e.getString("basis")) }.getOrDefault(ExtraBasis.LEGAL),
+                    multiplier = e.optDouble("multiplier", 1.5),
+                    amount = e.optLong("amount", 0),
+                    minMinutes = e.optInt("min", 0),
+                    nightPremium = e.optBoolean("night", true),
+                )
+            }.toMap()
+        } ?: emptyMap(),
     )
 
     private fun timeline(t: ValueTimeline): JSONObject = JSONObject()

@@ -68,4 +68,6 @@ data class PayProfile(
     val weekStart: DayOfWeek = DayOfWeek.MONDAY,
     /** Values the user skipped and the app guessed; shown with an "추정" label. */
     val estimatedFields: Set<String> = emptySet(),
+    /** The company's own rules on top of the law [PAYX-07]. */
+    val rules: CompanyRules = CompanyRules(),
 )

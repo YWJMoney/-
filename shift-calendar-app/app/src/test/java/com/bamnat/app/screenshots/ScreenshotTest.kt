@@ -18,7 +18,11 @@ import com.bamnat.app.ui.diag.DiagnosticsScreen
 import com.bamnat.app.ui.diag.DiagnosticsViewModel
 import com.bamnat.app.ui.theme.BamnatTheme
 import com.bamnat.app.tier.Tier
+import com.bamnat.app.ui.pay.CompanyRulesEditor
 import com.bamnat.app.ui.pay.EditValueDialog
+import com.bamnat.core.pay.CompanyRules
+import com.bamnat.core.pay.ExtraBasis
+import com.bamnat.core.pay.ExtraRule
 import com.bamnat.app.ui.pay.LineDetailDialog
 import com.bamnat.app.ui.pay.PayScreen
 import com.bamnat.app.ui.pay.PayViewModel
@@ -282,13 +286,48 @@ class ScreenshotTest {
         content { DiagnosticsScreen(DiagnosticsViewModel(c), onBack = {}) }
     }
 
+    /** 대근 at 200% with 8 hours credited, 특근 at a fixed amount: a typical company setup. */
+    private val companyRules = CompanyRules(
+        extra = mapOf(
+            ExtraWork.COVER to ExtraRule(ExtraBasis.HOURLY_RATE, multiplier = 2.0, minMinutes = 480),
+            ExtraWork.SPECIAL to ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 150_000),
+        ),
+    )
+
     private fun payScreen(tier: Tier, withProfile: Boolean, body: (@androidx.compose.runtime.Composable (PayViewModel) -> Unit)? = null): Screen.() -> Unit = {
         val c = app.container
         c.settingsRepository.update { it.copy(tier = tier) }
         val vm = PayViewModel(c)
-        runBlocking { c.payStore.save(if (withProfile) vm.sampleProfile() else null, keepUndo = false) }
+        runBlocking { c.payStore.save(if (withProfile) vm.sampleProfile().copy(rules = companyRules) else null, keepUndo = false) }
         settle()
         content { if (body != null) body(vm) else PayScreen(vm, onBack = {}) }
+        settle()
+    }
+
+    @Test fun foldedDayPay() = shoot("33_folded_day_pay", FOLDED) {
+        val c = app.container
+        c.settingsRepository.update { it.copy(tier = Tier.PRO) }
+        runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(rules = companyRules), keepUndo = false) }
+        settle()
+        tap(EXTRA_DAY_X, DAY_Y)
+        scrollUp(560)
+    }
+    @Test fun foldedCompanyRules() = shoot("34_folded_company_rules", FOLDED, payScreen(Tier.PRO, withProfile = true) { vm ->
+        val profile = vm.profile.collectAsState().value
+        val snap = vm.snapshot.collectAsState().value
+        if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {})
+    })
+    @Test fun foldedCompanyRulesExtra() = shoot("35_folded_company_rules_extra", FOLDED) {
+        payScreen(Tier.PRO, withProfile = true) { vm ->
+            val profile = vm.profile.collectAsState().value
+            val snap = vm.snapshot.collectAsState().value
+            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {})
+        }.invoke(this)
+        scrollUp(700)
+    }
+    @Test fun foldedPayDays() = shoot("36_folded_pay_days", FOLDED) {
+        payScreen(Tier.PRO, withProfile = true).invoke(this)
+        scrollUp(880)
     }
 
     @Test fun foldedPayWizard() = shoot("26_folded_pay_wizard", FOLDED, payScreen(Tier.PRO, withProfile = false))

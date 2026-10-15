@@ -1,7 +1,12 @@
 package com.bamnat.core.pay
 
+import com.bamnat.core.model.ExtraWork
+
 /** What a line of a wage rule seems to say [PAYX-04]. */
-enum class CandidateKind { BASE_SALARY, HOURLY_WAGE, ALLOWANCE, MULTIPLIER, RAISE }
+enum class CandidateKind { BASE_SALARY, HOURLY_WAGE, ALLOWANCE, MULTIPLIER, RAISE, EXTRA_RULE }
+
+/** Which premium a [CandidateKind.MULTIPLIER] line sets. */
+enum class PremiumTarget(val label: String) { OVERTIME("연장"), NIGHT("야간"), HOLIDAY("휴일") }
 
 /**
  * A suggestion read from one line of text. Nothing is applied until the user confirms it on
@@ -16,6 +21,12 @@ data class RuleCandidate(
     val cadence: Cadence? = null,
     /** 0..1: how sure the reader is; low ones are shown unticked. */
     val confidence: Double,
+    /** For [CandidateKind.MULTIPLIER]: the premium on top of 100% it sets. */
+    val premiumTarget: PremiumTarget? = null,
+    val premium: Double? = null,
+    /** For [CandidateKind.EXTRA_RULE]: which marked work and how it is paid [PAYX-07]. */
+    val extraWork: ExtraWork? = null,
+    val extraRule: ExtraRule? = null,
 )
 
 /**
@@ -37,6 +48,7 @@ object RuleImport {
         val percent = percentRe.find(line)?.groupValues?.get(1)?.toDouble()
             ?: timesRe.find(line)?.groupValues?.get(1)?.toDouble()?.let { it * 100 }
         val compact = line.replace(" ", "")
+        extraRule(line, compact, amount, percent)?.let { return listOf(it) }
         return when {
             ("인상" in compact || "상승" in compact) && percent != null ->
                 listOf(RuleCandidate(line, CandidateKind.RAISE, name.ifEmpty { "인상률" }, percent = percent, confidence = 0.8))
@@ -47,12 +59,42 @@ object RuleImport {
             amount != null && ("수당" in compact || "가산금" in compact || "지원금" in compact || "비" in compact.takeLast(8)) ->
                 listOf(RuleCandidate(line, CandidateKind.ALLOWANCE, name.ifEmpty { "수당" }, amount = amount,
                     cadence = cadenceOf(compact), confidence = if (name.isEmpty()) 0.5 else 0.8))
-            percent != null && ("연장" in compact || "야간" in compact || "휴일" in compact) ->
-                listOf(RuleCandidate(line, CandidateKind.MULTIPLIER, name.ifEmpty { "가산율" }, percent = percent, confidence = 0.7))
+            percent != null && ("연장" in compact || "야간" in compact || "휴일" in compact) -> {
+                val target = when {
+                    "야간" in compact -> PremiumTarget.NIGHT
+                    "휴일" in compact -> PremiumTarget.HOLIDAY
+                    else -> PremiumTarget.OVERTIME
+                }
+                // "연장 150%" is the whole rate, "연장 가산 50%" only the part on top; night is always the part on top.
+                val premium = if ("가산" in compact || target == PremiumTarget.NIGHT || percent < 100) percent / 100 else percent / 100 - 1
+                listOf(RuleCandidate(line, CandidateKind.MULTIPLIER, name.ifEmpty { "가산율" }, percent = percent, confidence = 0.7,
+                    premiumTarget = target, premium = premium))
+            }
             amount != null && name.isNotEmpty() ->
                 listOf(RuleCandidate(line, CandidateKind.ALLOWANCE, name, amount = amount, cadence = cadenceOf(compact), confidence = 0.4))
             else -> emptyList()
         }
+    }
+
+    /** "대근 1회 80,000원", "특근 시간당 2만원", "대근은 통상시급의 200%, 최소 8시간 인정". */
+    private fun extraRule(line: String, compact: String, amount: Long?, percent: Double?): RuleCandidate? {
+        val kind = when {
+            "대근" in compact || "대체근무" in compact -> ExtraWork.COVER
+            "특근" in compact || "특별근무" in compact -> ExtraWork.SPECIAL
+            "잔업" in compact -> ExtraWork.OVERTIME
+            else -> return null
+        }
+        val minHours = Regex("""최소\s*(\d{1,2})\s*시간""").find(line)?.groupValues?.get(1)?.toInt()
+        val noNight = Regex("야간가산(없|제외|미)").containsMatchIn(compact)
+        // Amounts in a "최소 8시간" phrase are hours, not won; amountRe only matches 원 so it is safe.
+        val rule = when {
+            percent != null -> ExtraRule(ExtraBasis.HOURLY_RATE, multiplier = if (percent >= 100) percent / 100 else 1 + percent / 100)
+            amount != null && Regex("시간당|1시간|매시간").containsMatchIn(compact) -> ExtraRule(ExtraBasis.FIXED_PER_HOUR, amount = amount)
+            amount != null -> ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = amount)
+            else -> return null
+        }.copy(minMinutes = (minHours ?: 0) * 60, nightPremium = !noNight)
+        return RuleCandidate(line, CandidateKind.EXTRA_RULE, kind.label, amount = amount, percent = percent,
+            confidence = 0.8, extraWork = kind, extraRule = rule)
     }
 
     /** "30,000원", "3만원", "3만 5천원", "1.5만원" → won. */
