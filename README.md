@@ -6,7 +6,7 @@
 
 - 개발계획서: [자동 장부 앱 개발계획서](https://claude.ai/code/artifact/d3766d1b-f012-4ec6-b2cd-31995eb99066)
 - 버전별 범위: [docs/ROADMAP.md](docs/ROADMAP.md)
-- 개인정보처리방침: [docs/PRIVACY.md](docs/PRIVACY.md)
+- 개인정보처리방침: [공개 페이지](https://claude.ai/artifact/CcL5RymbMBWLEajJm2qBZQ) (원본 [docs/PRIVACY.md](docs/PRIVACY.md))
 - 빌드와 Play 스토어 게시: [docs/PUBLISHING.md](docs/PUBLISHING.md)
 
 ## 들어 있는 것 (v0.2)

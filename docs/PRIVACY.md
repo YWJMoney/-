@@ -1,5 +1,7 @@
 # 자동 장부 개인정보처리방침
 
+> 공개 주소는 저장소 밖에 있습니다: https://claude.ai/artifact/CcL5RymbMBWLEajJm2qBZQ (이 파일은 원본 사본이며, 고치면 공개 페이지도 함께 고칩니다)
+
 자동 장부 v0.2 · 시행일 2026-11-01 · 개발자 YWJMoney
 
 ## 1. 한 줄 요약
@@ -52,7 +54,7 @@
 ## 8. 문의
 
 개발자: YWJMoney
-개인정보 관련 문의는 [github.com/YWJMoney/-/issues](https://github.com/YWJMoney/-/issues)에 남겨 주세요. 정식 출시 전 전용 연락처를 추가합니다.
+개인정보 관련 문의는 Google Play 스토어의 자동 장부 앱 페이지에 표시된 개발자 이메일로 보내 주세요.
 
 ---
 
