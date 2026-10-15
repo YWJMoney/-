@@ -18,8 +18,7 @@
 
 ## 2. 개인정보처리방침 주소
 
-`https://github.com/YWJMoney/-/blob/main/docs/PRIVACY.md` 를 그대로 넣으면 됩니다(공개 저장소라 누구나 열람 가능).
-나중에 GitHub Pages를 켜면 `https://ywjmoney.github.io/-/privacy.html` 로 바꿔도 됩니다.
+`https://ywjmoney.github.io/-/privacy.html` 를 넣습니다. GitHub Pages가 main 브랜치의 privacy.html을 보여 주므로 저장소가 공개여야 합니다(무료 계정 기준).
 
 ## 3. 앱 만들기 (처음 한 번)
 
@@ -46,7 +45,7 @@ Play Console → **앱 만들기**
 
 | 항목 | 답 |
 | --- | --- |
-| 개인정보처리방침 | https://github.com/YWJMoney/-/blob/main/docs/PRIVACY.md |
+| 개인정보처리방침 | https://ywjmoney.github.io/-/privacy.html |
 | 앱 액세스 | 모든 기능을 제한 없이 사용 가능 |
 | 광고 | 광고 없음 |
 | 콘텐츠 등급 | 카테고리 "기타(유틸리티·생산성 등)", 폭력·성적 내용·도박 등 모두 아니요 |
