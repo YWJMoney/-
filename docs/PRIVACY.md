@@ -1,6 +1,6 @@
 # 자동 장부 개인정보처리방침
 
-> 공개 주소는 저장소 밖에 있습니다: https://claude.ai/artifact/CcL5RymbMBWLEajJm2qBZQ (이 파일은 원본 사본이며, 고치면 공개 페이지도 함께 고칩니다)
+> 공개 주소: https://ywjmoney.github.io/-/privacy.html (GitHub Pages가 main의 privacy.html을 보여 줍니다. 이 파일과 privacy.html을 함께 고칩니다)
 
 자동 장부 v0.2 · 시행일 2026-11-01 · 개발자 YWJMoney
 

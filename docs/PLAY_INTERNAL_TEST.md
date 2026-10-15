@@ -18,7 +18,7 @@
 
 ## 2. 개인정보처리방침 주소
 
-`https://claude.ai/artifact/CcL5RymbMBWLEajJm2qBZQ` 를 넣습니다. 저장소는 비공개로 두고, 방침만 이 공개 페이지로 제공합니다(페이지의 공유 설정이 "링크가 있는 모든 사용자"여야 합니다).
+`https://ywjmoney.github.io/-/privacy.html` 를 넣습니다. GitHub Pages가 main 브랜치의 privacy.html을 보여 주므로 저장소가 공개여야 합니다(무료 계정 기준).
 
 ## 3. 앱 만들기 (처음 한 번)
 
@@ -45,7 +45,7 @@ Play Console → **앱 만들기**
 
 | 항목 | 답 |
 | --- | --- |
-| 개인정보처리방침 | https://claude.ai/artifact/CcL5RymbMBWLEajJm2qBZQ |
+| 개인정보처리방침 | https://ywjmoney.github.io/-/privacy.html |
 | 앱 액세스 | 모든 기능을 제한 없이 사용 가능 |
 | 광고 | 광고 없음 |
 | 콘텐츠 등급 | 카테고리 "기타(유틸리티·생산성 등)", 폭력·성적 내용·도박 등 모두 아니요 |
