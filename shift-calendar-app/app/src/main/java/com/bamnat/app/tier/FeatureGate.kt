@@ -32,9 +32,15 @@ enum class Feature(val label: String, val minTier: Tier) {
 class FeatureGate(settings: SettingsRepository, scope: CoroutineScope) {
     val tier: StateFlow<Tier> = settings.settings.map { it.tier }.stateIn(scope, SharingStarted.Eagerly, settings.current.tier)
 
-    fun allows(feature: Feature): Boolean = tier.value >= feature.minTier
+    fun allows(feature: Feature): Boolean = allows(tier.value, feature)
 
     companion object {
-        fun allows(tier: Tier, feature: Feature): Boolean = tier >= feature.minTier
+        /**
+         * [TIER-02] No Play billing yet, so nobody can buy a tier: every feature stays open until
+         * billing ships, otherwise the 1.0 test build shows the pay screen locked with no way in.
+         */
+        const val BILLING_LIVE = false
+
+        fun allows(tier: Tier, feature: Feature): Boolean = !BILLING_LIVE || tier >= feature.minTier
     }
 }

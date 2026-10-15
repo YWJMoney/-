@@ -77,9 +77,9 @@ private class ItemRow(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun PayWizard(initial: PayProfile?, onCancel: (() -> Unit)?, onDone: (PayProfile) -> Unit) {
+fun PayWizard(initial: PayProfile?, onCancel: (() -> Unit)?, onDone: (PayProfile) -> Unit, startStep: Int = 0) {
     val thisMonth = remember { YearMonth.now() }
-    var step by remember { mutableIntStateOf(0) }
+    var step by remember { mutableIntStateOf(startStep) }
     var occupation by remember { mutableStateOf(initial?.occupation) }
     var wageType by remember { mutableStateOf(initial?.wageType ?: WageType.MONTHLY) }
     val initialBase = initial?.base?.on(thisMonth)?.value
@@ -89,7 +89,14 @@ fun PayWizard(initial: PayProfile?, onCancel: (() -> Unit)?, onDone: (PayProfile
     var holidayMode by remember { mutableStateOf(initial?.holidayPayMode ?: HolidayPayMode.FULL) }
     var holidayChosen by remember { mutableStateOf(initial != null && "holidayPayMode" !in initial.estimatedFields) }
     var dailyLimit by remember { mutableStateOf(initial?.dailyLimitMinutes != null || initial == null) }
+    var weeklyLimit by remember { mutableStateOf(initial?.weeklyLimitMinutes != null || initial == null) }
     val rows = remember { mutableStateListOf<ItemRow>() }
+    // [PAY-05][PAY-04] The bonus and the monthly hours change the hourly rate, so setup asks for both.
+    var hours by remember { mutableIntStateOf(initial?.monthlyHours ?: 209) }
+    val keptBonuses = remember { initial?.items?.filter { it.cadence == Cadence.BONUS }.orEmpty() }
+    var bonusAnnual by remember { mutableStateOf<Int?>(null) }
+    var bonusMonths by remember { mutableStateOf(setOf(2, 4, 6, 8, 10, 12)) }
+    var bonusOrdinary by remember { mutableStateOf(true) }
 
     fun choose(o: Occupation) {
         val preset = PayPresets.of(o)
@@ -100,7 +107,7 @@ fun PayWizard(initial: PayProfile?, onCancel: (() -> Unit)?, onDone: (PayProfile
         }
         rows.clear()
         if (initial != null && initial.occupation == o) {
-            initial.items.forEach {
+            initial.items.filter { it.cadence != Cadence.BONUS }.forEach {
                 rows += ItemRow(it.id, it.name, it.cadence, it.ordinary, "", it.amount.on(thisMonth).value, true, original = it)
                     .also { r -> r.untouched = it.id in initial.estimatedFields }
             }
@@ -134,7 +141,12 @@ fun PayWizard(initial: PayProfile?, onCancel: (() -> Unit)?, onDone: (PayProfile
                 o.amount.on(thisMonth).value == r.amount -> o
                 else -> o.copy(amount = BulkEditPlanner.apply(o.amount, r.amount, EditScope.FromMonth(thisMonth)))
             }
-        }
+        } + keptBonuses + listOfNotNull(
+            bonusAnnual?.takeIf { wageType == WageType.MONTHLY && bonusMonths.isNotEmpty() }?.let { a ->
+                PayItem("bonus-" + System.currentTimeMillis(), "정기상여", ValueTimeline(listOf(DatedValue(since, 0))), Cadence.BONUS,
+                    ordinary = bonusOrdinary, months = bonusMonths, percentOfBase = a / 100.0 / bonusMonths.size)
+            },
+        )
         onDone(
             (initial ?: PayProfile(preset.occupation, wageType, baseTimeline)).copy(
                 occupation = preset.occupation,
@@ -144,6 +156,8 @@ fun PayWizard(initial: PayProfile?, onCancel: (() -> Unit)?, onDone: (PayProfile
                 fiveOrMoreEmployees = fiveOrMore,
                 holidayPayMode = holidayMode,
                 dailyLimitMinutes = if (dailyLimit) 480 else null,
+                weeklyLimitMinutes = if (weeklyLimit) 2400 else null,
+                monthlyHours = hours,
                 estimatedFields = estimated,
             ),
         )
@@ -213,10 +227,16 @@ fun PayWizard(initial: PayProfile?, onCancel: (() -> Unit)?, onDone: (PayProfile
                             rows.forEach { row -> ItemRowEditor(row) }
                             Text("금액을 그대로 두면 ‘추정’으로 표시돼요. 명세서 금액으로 바꾸면 사라져요.",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (wageType == WageType.MONTHLY) BonusPicker(
+                                kept = keptBonuses.size, annual = bonusAnnual, months = bonusMonths, ordinary = bonusOrdinary,
+                                onAnnual = { bonusAnnual = it }, onMonths = { bonusMonths = it }, onOrdinary = { bonusOrdinary = it },
+                            )
                         }
                         else -> {
+                            if (wageType == WageType.MONTHLY) HoursPicker(hours) { hours = it }
                             RuleToggle("5인 이상 사업장이에요", "아니면 연장·야간·휴일 가산이 붙지 않아요 (근로기준법 제11조)", fiveOrMore) { fiveOrMore = it }
-                            RuleToggle("하루 8시간 넘으면 연장으로 계산", "탄력적·선택적 근로시간제라면 꺼 주세요. 주 40시간 기준은 그대로예요", dailyLimit) { dailyLimit = it }
+                            RuleToggle("하루 8시간 넘으면 연장으로 계산", "탄력적·선택적 근로시간제라면 꺼 주세요", dailyLimit) { dailyLimit = it }
+                            RuleToggle("주 40시간 넘으면 연장으로 계산", "4조2교대처럼 근무표대로 일한 시간이 기본급에 들어 있으면 꺼 주세요", weeklyLimit) { weeklyLimit = it }
                             if (wageType == WageType.MONTHLY) {
                                 Text("쉬는 날(휴일)에 일하면", style = MaterialTheme.typography.titleSmall)
                                 HolidayPayMode.entries.forEach { mode ->
@@ -328,4 +348,56 @@ internal fun MonthStepper(month: YearMonth, onChange: (YearMonth) -> Unit, modif
             modifier = Modifier.padding(horizontal = 16.dp))
         OutlinedButton(onClick = { onChange(month.plusMonths(1)) }) { Text("›") }
     }
+}
+
+
+/** Regular bonus as a yearly total of the base pay [PAY-05], e.g. 상여 800% paid in even months. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun BonusPicker(
+    kept: Int, annual: Int?, months: Set<Int>, ordinary: Boolean,
+    onAnnual: (Int?) -> Unit, onMonths: (Set<Int>) -> Unit, onOrdinary: (Boolean) -> Unit,
+) {
+    Text("상여금", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+    if (kept > 0) {
+        Text("이미 넣은 상여금 ${kept}개는 그대로 둬요. 결과 화면에서 고칠 수 있어요.", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        return
+    }
+    Text("1년에 기본급의 몇 %를 상여로 받나요?", style = MaterialTheme.typography.bodyMedium)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FilterChip(selected = annual == null, onClick = { onAnnual(null) }, label = { Text("없음") })
+        listOf(400, 600, 800, 1000).forEach { a -> FilterChip(selected = annual == a, onClick = { onAnnual(a) }, label = { Text("연 $a%") }) }
+    }
+    if (annual == null) return
+    Text("받는 달", style = MaterialTheme.typography.bodyMedium)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf("짝수 달" to setOf(2, 4, 6, 8, 10, 12), "분기 (1·4·7·10월)" to setOf(1, 4, 7, 10), "반기 (6·12월)" to setOf(6, 12),
+            "매달" to (1..12).toSet()).forEach { (label, set) ->
+            FilterChip(selected = months == set, onClick = { onMonths(set) }, label = { Text(label) })
+        }
+    }
+    Text("한 번에 기본급의 ${com.bamnat.core.pay.PayCalculator.pct(annual / 100.0 / months.size)}씩 ${months.size}번 받아요.",
+        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+    RuleToggle("통상임금에 포함", "정기적으로 정해진 상여는 재직 조건이 있어도 통상임금이에요(대법원 2024.12.19. 판결). 성과에 따라 달라지면 꺼 주세요.",
+        ordinary, onOrdinary)
+}
+
+/** 월 소정근로시간 [PAY-04]: the hours the monthly pay is divided by. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun HoursPicker(hours: Int, onChange: (Int) -> Unit) {
+    Text("월 소정근로시간 (근로 시수)", style = MaterialTheme.typography.titleSmall)
+    Text("통상시급을 구할 때 나누는 시간이에요. 근로계약서나 단체협약에 적힌 시간을 넣어 주세요.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(180, 209, 226, 243).forEach { h -> FilterChip(selected = hours == h, onClick = { onChange(h) }, label = { Text("${h}시간") }) }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedButton(onClick = { onChange((hours - 1).coerceAtLeast(100)) }) { Text("−") }
+        Text("${hours}시간", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp))
+        OutlinedButton(onClick = { onChange((hours + 1).coerceAtMost(320)) }) { Text("+") }
+    }
+    Text("주 40시간이면 보통 209시간이에요. 교대 사업장은 180시간처럼 따로 정하기도 해요. 근무표로 계산한 값은 ‘회사 규칙 > 설정’에서 볼 수 있어요.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }

@@ -300,9 +300,15 @@ private fun PayResult(
             Text(
                 (if (profile.fiveOrMoreEmployees) "5인 이상" else "5인 미만") +
                     (if (profile.dailyLimitMinutes == null) " · 하루 8시간 기준 없음" else "") +
-                    (if (profile.wageType == WageType.MONTHLY) " · 월급제 휴일 ${profile.holidayPayMode.label}" else ""),
+                    (if (profile.wageType == WageType.MONTHLY) " · 월급제 휴일 ${profile.holidayPayMode.label} · 월 ${profile.monthlyHours}시간" else ""),
                 style = MaterialTheme.typography.bodyMedium,
             )
+            // [PAY-05] The regular bonus decides the hourly rate, so it is shown next to the hours.
+            profile.items.filter { it.cadence == Cadence.BONUS }.forEach { b ->
+                val yearly = b.percentOfBase?.let { "연 ${PayCalculator.pct(it * b.months.size)}" } ?: "${b.months.size}번"
+                Text("${b.name} $yearly (${b.months.sorted().joinToString("·")}월)" + if (b.ordinary) " · 통상임금 포함" else "",
+                    style = MaterialTheme.typography.bodyMedium)
+            }
             if (summary.isEmpty()) {
                 Text("나머지는 모두 법정 기준으로 계산하고 있어요. 대근·특근 단가나 가산율이 다르면 ‘설정’에서 바꿔 주세요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
