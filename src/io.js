@@ -24,8 +24,58 @@ export function toCSV(txs, cards = []) {
   return '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n');
 }
 
+// 못 읽은 알림 원문(inbox)은 기기 밖으로 내보내지 않는다.
 export function backupJSON(state) {
-  return JSON.stringify({ app: 'jangbu', exportedAt: new Date().toISOString(), state }, null, 2);
+  return JSON.stringify({ app: 'jangbu', exportedAt: new Date().toISOString(), state: { ...state, inbox: [] } }, null, 2);
+}
+
+// ── 비밀번호 암호화 백업 (AES-GCM 256, 키는 PBKDF2-SHA256으로 비밀번호에서 만든다) ──
+const PBKDF2_ITER = 310000;
+const b64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+async function deriveKey(password, salt, iter) {
+  const subtle = globalThis.crypto.subtle;
+  const base = await subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  return subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: iter }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+
+export async function encryptBackup(json, password) {
+  if (!password) throw new Error('비밀번호를 넣어 주세요');
+  const salt = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(password, salt, PBKDF2_ITER);
+  const data = await globalThis.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(json));
+  // 큰 장부도 처리할 수 있게 나눠서 base64로 바꾼다.
+  const bytes = new Uint8Array(data);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return JSON.stringify({
+    app: 'jangbu',
+    encrypted: { v: 1, alg: 'AES-GCM', kdf: 'PBKDF2-SHA256', iter: PBKDF2_ITER, salt: b64(salt), iv: b64(iv) },
+    data: btoa(bin),
+  });
+}
+
+export function isEncryptedBackup(text) {
+  try {
+    return !!JSON.parse(text)?.encrypted;
+  } catch {
+    return false;
+  }
+}
+
+export async function decryptBackup(text, password) {
+  const obj = JSON.parse(text);
+  const e = obj?.encrypted;
+  if (!e || e.alg !== 'AES-GCM') throw new Error('암호화된 장부 백업이 아닙니다');
+  const key = await deriveKey(password, unb64(e.salt), e.iter);
+  try {
+    const plain = await globalThis.crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(e.iv) }, key, unb64(obj.data));
+    return new TextDecoder().decode(plain);
+  } catch {
+    throw new Error('비밀번호가 맞지 않아요');
+  }
 }
 
 export function readBackup(text) {

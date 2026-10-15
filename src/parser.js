@@ -241,3 +241,11 @@ export function findCancelTarget(cancel, existing) {
     .sort((a, b) => (a.date < b.date ? 1 : -1));
   return cands[0] || null;
 }
+
+// 못 읽은 문자 형식을 제보할 때 쓰는 가림 처리: 숫자는 모두 0, 가려진 이름(홍*동)은 ***로 바꿔
+// 형식만 남긴다. 보내기 전에 사용자가 내용을 직접 확인한다.
+export function maskForReport(text) {
+  return String(text || '')
+    .replace(/[가-힣A-Za-z]*\*[가-힣A-Za-z*]*/g, '***')
+    .replace(/\d/g, '0');
+}

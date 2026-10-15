@@ -122,6 +122,65 @@ public class Bridge {
         Reminders.replaceAll(activity, json);
     }
 
+    // ── 결제 알림 자동 기록 ──────────────────────────────────────
+    /** {enabled, connected, lastEventAt, lastCaptureAt, total, pending} */
+    @JavascriptInterface
+    public String captureStatus() {
+        return CaptureStore.status(activity);
+    }
+
+    /** 아직 화면이 처리하지 않은 알림 문구 [{id, pkg, app, text, at}] */
+    @JavascriptInterface
+    public String pullCaptured() {
+        return CaptureStore.pull(activity);
+    }
+
+    @JavascriptInterface
+    public void ackCaptured(String idsJson) {
+        CaptureStore.ack(activity, idsJson);
+    }
+
+    @JavascriptInterface
+    public void openCaptureSettings() {
+        startSettings(new Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
+    }
+
+    /** 제조사 절전 기능이 수집을 끊을 때: 배터리 최적화 예외 목록 화면을 연다. */
+    @JavascriptInterface
+    public void openBatterySettings() {
+        startSettings(new Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+    }
+
+    /** 못 읽은 문자 형식 제보 등 텍스트를 다른 앱으로 보낸다(사용자가 받는 곳을 고른다). */
+    @JavascriptInterface
+    public void shareText(final String subject, final String text) {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain")
+                        .putExtra(Intent.EXTRA_SUBJECT, subject)
+                        .putExtra(Intent.EXTRA_TEXT, text);
+                activity.startActivity(Intent.createChooser(send, subject));
+            }
+        });
+    }
+
+    private void startSettings(final Intent i) {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    activity.startActivity(i);
+                } catch (ActivityNotFoundException e) {
+                    try {
+                        activity.startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS));
+                    } catch (ActivityNotFoundException ignored) {
+                    }
+                }
+            }
+        });
+    }
+
     @JavascriptInterface
     public void toast(final String msg) {
         activity.runOnUiThread(new Runnable() {

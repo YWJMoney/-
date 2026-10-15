@@ -2,12 +2,14 @@ package com.ywjmoney.jangbu;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.service.notification.NotificationListenerService;
 import android.view.View;
 import android.view.WindowInsets;
 import android.webkit.ValueCallback;
@@ -174,10 +176,22 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         web.onResume();
+        // 화면이 떠 있는 동안 새 결제 알림이 오면 바로 기록한다.
+        CaptureService.onCaptured = new Runnable() {
+            @Override
+            public void run() {
+                web.evaluateJavascript("window.__jangbuCaptured && window.__jangbuCaptured()", null);
+            }
+        };
+        // 제조사 절전 등으로 수집 연결이 끊겼으면 다시 붙인다.
+        if (CaptureStore.isEnabled(this)) {
+            NotificationListenerService.requestRebind(new ComponentName(this, CaptureService.class));
+        }
     }
 
     @Override
     protected void onPause() {
+        CaptureService.onCaptured = null;
         web.onPause();
         super.onPause();
     }

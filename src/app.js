@@ -1,11 +1,12 @@
 // 화면. 서버도, 분석 SDK도, 광고도 없다. 모든 데이터는 이 기기의 localStorage에만 있다.
 import { createStore } from './store.js';
-import { parseMany, findDuplicate, findCancelTarget, guessCategory } from './parser.js';
+import { parseMany, findDuplicate, findCancelTarget, guessCategory, maskForReport } from './parser.js';
+import { captureToTxs, resultToTx } from './capture.js';
 import { upcoming, summary, categoryTotals, cardPeriod, STATUS_LABEL } from './engine.js';
 import { todayStr, fmtMD, fmtMDW, diffDays, parts, ymd, daysInMonth } from './dates.js';
-import { toCSV, backupJSON, readBackup, toICS } from './io.js';
+import { toCSV, backupJSON, readBackup, toICS, encryptBackup, decryptBackup, isEncryptedBackup } from './io.js';
 
-export const APP_VERSION = '0.1.0';
+export const APP_VERSION = '0.2.0';
 
 const store = createStore();
 // 안드로이드 앱 안에서 실행 중이면 네이티브 기능(파일 저장·예약 알림·클립보드)을 쓴다.
@@ -87,7 +88,7 @@ function txRow(t) {
     .join(' · ');
   const amount = t.amount == null ? `<span class="badge bad">원화 입력 필요</span>` : `${sign}${won(t.amount)}`;
   return `<button class="row" data-action="edit-tx" data-id="${esc(t.id)}">
-    <div class="main"><div class="title">${esc(t.merchant || t.category || '기록')}${t.kind === 'refund' ? ' <span class="badge good">취소</span>' : ''}</div>
+    <div class="main"><div class="title">${esc(t.merchant || t.category || '기록')}${t.kind === 'refund' ? ' <span class="badge good">취소</span>' : ''}${t.review ? ' <span class="badge est">자동</span>' : ''}</div>
     <div class="desc">${esc(sub)}</div></div>
     <div class="amt ${cls}">${amount}</div></button>`;
 }
@@ -111,18 +112,24 @@ function renderHome() {
   const s = summary(st, t);
   const set = st.settings;
   const pct = s.budget ? Math.min(100, Math.round((s.spent / s.budget) * 100)) : 0;
-  const hasSetup = { payday: !!set.onboarded, card: st.cards.length > 0, ob: st.obligations.length > 0, tx: store.txs.length > 0 };
+  const cap = captureStatus();
+  const hasSetup = { payday: !!set.onboarded, card: st.cards.length > 0, ob: st.obligations.length > 0, tx: store.txs.length > 0, auto: !cap || cap.enabled };
 
   let html = '';
-  if (!hasSetup.payday || !hasSetup.card || !hasSetup.ob || !hasSetup.tx) {
+  if (!hasSetup.payday || !hasSetup.card || !hasSetup.ob || !hasSetup.tx || !hasSetup.auto) {
     html += `<div class="card"><strong>3분 시작하기</strong>
       <ol class="steps">
         <li class="${hasSetup.payday ? 'done' : ''}"><span>급여일과 한 달 생활비 정하기</span><button class="linkbtn" data-action="open-basics">설정</button></li>
         <li class="${hasSetup.card ? 'done' : ''}"><span>쓰는 카드의 결제일 등록</span><button class="linkbtn" data-action="new-card">추가</button></li>
         <li class="${hasSetup.ob ? 'done' : ''}"><span>월세·통신비·구독 같은 고정 지출 등록</span><button class="linkbtn" data-action="new-ob">추가</button></li>
-        <li class="${hasSetup.tx ? 'done' : ''}"><span>카드 문자 붙여넣어 첫 기록 만들기</span><button class="linkbtn" data-action="open-paste">붙여넣기</button></li>
+        ${
+          cap
+            ? `<li class="${hasSetup.auto ? 'done' : ''}"><span>결제 알림 자동 기록 켜기</span><button class="linkbtn" data-action="capture-intro">켜기</button></li>`
+            : `<li class="${hasSetup.tx ? 'done' : ''}"><span>카드 문자 붙여넣어 첫 기록 만들기</span><button class="linkbtn" data-action="open-paste">붙여넣기</button></li>`
+        }
       </ol></div>`;
   }
+  html += captureNotice(cap);
 
   if (s.budget) {
     html += `<div class="card hero">
@@ -146,6 +153,15 @@ function renderHome() {
       <div><div class="s">다음 큰 지출</div><div class="t">${esc(b.title)} ${won(b.amount)}${b.label === '예상' ? ' <span class="badge est">예상</span>' : ''}</div>
       <div class="s">이번 급여 주기에 아직 나갈 고정 지출 ${won(s.pendingSum)}</div></div>
     </div></div>`;
+  }
+
+  const review = store.txs.filter((x) => !x.deleted && x.review);
+  if (review.length) {
+    html += `<div class="section-title"><span>알림에서 자동 기록 ${review.length}건</span><button class="linkbtn" data-action="review-all">모두 확인</button></div>
+      <div class="list">${review.slice(0, 5).map(txRow).join('')}${review.length > 5 ? `<button class="row" data-tab="history"><div class="main"><div class="desc">${review.length - 5}건 더 보기</div></div></button>` : ''}</div>`;
+  }
+  if (st.inbox.length) {
+    html += `<div class="callout warn" style="margin-top:12px">못 읽은 결제 알림이 ${st.inbox.length}건 있어요. <button class="linkbtn" data-action="open-inbox">확인하기</button></div>`;
   }
 
   if (s.attention.length) {
@@ -264,6 +280,7 @@ function renderSettings() {
     <label class="field"><span>테마</span><select data-setting="theme">${opt('auto', '시스템 설정 따름', s.theme)}${opt('light', '밝게', s.theme)}${opt('dark', '어둡게', s.theme)}</select></label>
     <label class="check"><input type="checkbox" data-setting="largeText" ${s.largeText ? 'checked' : ''}> 큰 글자</label>
   </div>
+${autoSettings()}
   <div class="section-title">알림</div>
   <div class="card">
     <p style="font-size:.9em">${
@@ -284,7 +301,7 @@ function renderSettings() {
     <p style="font-size:.9em">모든 기록은 이 기기에만 저장돼요. 폰을 바꾸거나 브라우저 데이터를 지우기 전에 백업하세요.</p>
     <div class="btns">
       <button class="btn small" data-action="export-csv">CSV 내보내기</button>
-      <button class="btn small" data-action="export-backup">백업 파일 저장</button>
+      <button class="btn small" data-action="open-backup">백업 파일 저장</button>
       <label class="btn small">백업에서 복원<input type="file" accept="application/json,.json" data-action="restore" class="sr-only"></label>
     </div>
     <div class="btns"><button class="btn small danger" data-action="reset">모든 데이터 지우기</button></div>
@@ -292,7 +309,7 @@ function renderSettings() {
   <div class="section-title">정보</div>
   <div class="card" style="font-size:.9em">
     <p>자동 장부 v${APP_VERSION} · 기록 ${store.txs.filter((t) => !t.deleted).length}건 · 학습된 분류 규칙 ${Object.keys(store.state.rules).length}개</p>
-    <p style="margin-top:6px">광고·분석 도구가 없고, 입력한 데이터를 외부로 보내지 않습니다. 붙여넣은 문자 원문은 저장하지 않고 읽어낸 결과만 남겨요.</p>
+    <p style="margin-top:6px">광고·분석 도구가 없고, 입력한 데이터를 외부로 보내지 않습니다. 문자·알림 원문은 저장하지 않고 읽어낸 결과만 남겨요. 못 읽은 알림만 고칠 수 있게 이 기기에 30일 동안 보관해요.</p>
     <p style="margin-top:6px"><a href="privacy.html">개인정보처리방침</a></p>
   </div>`;
 }
@@ -342,19 +359,6 @@ function pasteForm(text = '') {
   </form><div id="paste-preview"></div>`;
 }
 
-function matchCard(r) {
-  const cards = store.state.cards;
-  if (r.last4) {
-    const c = cards.find((x) => x.last4 === r.last4);
-    if (c) return c.id;
-  }
-  if (r.issuer) {
-    const same = cards.filter((x) => x.issuer === r.issuer);
-    if (same.length === 1) return same[0].id;
-  }
-  return '';
-}
-
 function buildDraft(text) {
   const rules = store.state.rules;
   const parsed = parseMany(text, { rules });
@@ -362,21 +366,7 @@ function buildDraft(text) {
   const pending = [];
   return parsed.map(({ chunk, result: r }, i) => {
     if (!r.ok) return { i, ok: false, reason: r.reason, preview: chunk.slice(0, 60) };
-    const tx = {
-      kind: r.kind,
-      amount: r.amount,
-      fx: r.fx,
-      date: r.date || today(),
-      time: r.time,
-      merchant: r.merchant,
-      category: r.category,
-      cardId: r.channel === 'card' ? matchCard(r) : '',
-      installmentMonths: r.installmentMonths,
-      last4: r.last4,
-      issuer: r.issuer,
-      source: 'paste',
-      parserVersion: r.parserVersion,
-    };
+    const tx = resultToTx(r, { cards: store.state.cards, source: 'paste', fallbackDate: today() });
     const dup = findDuplicate(tx, existing.concat(pending));
     let link = null;
     if (tx.kind === 'refund') link = findCancelTarget(tx, existing.concat(pending));
@@ -422,6 +412,149 @@ function renderPreview() {
       .join('') +
     `<button class="btn primary block" data-action="paste-save" ${okCount ? '' : 'disabled'}>${okCount}건 저장</button>
      <p class="note">못 읽은 문자가 있으면 숫자를 가린 형식을 알려주세요. 다음 버전에서 바로 읽도록 고칩니다.</p>`;
+}
+
+// ── 결제 알림 자동 기록 ───────────────────────────────────────
+function captureStatus() {
+  if (!native?.captureStatus) return null;
+  try {
+    return JSON.parse(native.captureStatus());
+  } catch {
+    return null;
+  }
+}
+
+const DAY = 864e5;
+const ago = (ms) => {
+  if (!ms) return '아직 없음';
+  const d = Date.now() - ms;
+  if (d < 3600e3) return `${Math.max(1, Math.round(d / 60e3))}분 전`;
+  if (d < DAY) return `${Math.round(d / 3600e3)}시간 전`;
+  return `${Math.round(d / DAY)}일 전`;
+};
+
+// 수집 점검: 켜 뒀는데 한동안 어떤 알림도 못 받았다면 제조사 절전이 끊었을 가능성이 크다.
+function captureHealth(cap) {
+  if (!cap || !cap.enabled) return 'off';
+  const since = Math.max(cap.lastEventAt || 0, cap.connectedAt || 0);
+  if (since && Date.now() - since > 2 * DAY) return 'stale';
+  return 'ok';
+}
+
+function captureNotice(cap) {
+  if (captureHealth(cap) !== 'stale') return '';
+  return `<div class="callout warn">결제 알림을 ${ago(cap.lastEventAt || cap.connectedAt)}부터 받지 못하고 있어요. 휴대폰 절전 기능이 자동 기록을 멈췄을 수 있어요.
+    <div class="btns"><button class="btn small" data-action="battery">절전 예외로 설정</button><button class="btn small" data-action="capture-enable">알림 접근 다시 켜기</button></div></div>`;
+}
+
+function autoSettings() {
+  const cap = captureStatus();
+  if (!cap) {
+    return `<div class="section-title">자동 기록</div><div class="card"><p style="font-size:.9em">결제 알림 자동 기록은 안드로이드 앱에서 쓸 수 있어요. 여기서는 문자를 붙여넣거나 공유하기로 기록하세요.</p></div>`;
+  }
+  const h = captureHealth(cap);
+  const badge = h === 'ok' ? '<span class="badge good">켜짐</span>' : h === 'stale' ? '<span class="badge bad">끊김 의심</span>' : '<span class="badge">꺼짐</span>';
+  const inbox = store.state.inbox.length;
+  return `<div class="section-title">자동 기록</div>
+  <div class="card">
+    <p style="font-size:.9em">카드·은행·페이 앱 알림과 문자 앱 알림에서 결제·입출금만 골라 바로 장부에 적어요. ${badge}</p>
+    ${cap.enabled ? `<p class="hint" style="margin-top:6px">마지막 결제 알림 ${ago(cap.lastCaptureAt)} · 지금까지 ${Number(cap.total || 0).toLocaleString('ko-KR')}건 받음</p>` : ''}
+    <div class="btns">
+      ${cap.enabled ? '<button class="btn small" data-action="capture-enable">알림 접근 설정</button>' : '<button class="btn small primary" data-action="capture-intro">자동 기록 켜기</button>'}
+      ${cap.enabled ? '<button class="btn small" data-action="battery">절전 예외로 설정</button>' : ''}
+      ${inbox ? `<button class="btn small" data-action="open-inbox">못 읽은 알림 ${inbox}건</button>` : ''}
+    </div>
+  </div>`;
+}
+
+// 알림 접근 권한을 켜기 전에 무엇을 읽고 무엇을 남기는지 먼저 알린다.
+function captureIntro() {
+  return `<p>휴대폰에 오는 <b>카드·은행·페이 앱 알림과 문자 알림</b> 가운데 금액과 "승인·결제·입금·출금" 같은 말이 함께 있는 것만 골라 장부에 자동으로 적어요.</p>
+    <ul class="plain" style="margin:10px 0 0 18px;font-size:.92em;line-height:1.6">
+      <li>다른 알림(대화, 광고 등)은 읽자마자 버리고 저장하지 않아요.</li>
+      <li>결제 알림도 원문은 지우고 읽어낸 금액·가맹점·날짜만 남겨요.</li>
+      <li>못 읽은 알림만 직접 고칠 수 있게 이 기기에 30일 보관해요.</li>
+      <li>어떤 내용도 서버로 보내지 않아요.</li>
+    </ul>
+    <p style="margin-top:10px;font-size:.92em">다음 화면에서 <b>자동 장부</b>를 찾아 "알림 접근 허용"을 켜 주세요. 언제든 같은 곳에서 끌 수 있어요.</p>
+    <div class="btns"><button class="btn primary" data-action="capture-enable">허용하러 가기</button><button class="btn" data-action="close-sheet">나중에</button></div>`;
+}
+
+function inboxList() {
+  const items = [...store.state.inbox].sort((a, b) => b.at - a.at);
+  if (!items.length) return '<div class="empty">못 읽은 알림이 없어요.</div>';
+  return `<p class="hint">자동으로 읽지 못한 결제 알림이에요. 고쳐서 기록하거나 지우세요. 30일이 지나면 자동으로 지워져요.</p>
+    ${items
+      .map(
+        (x) => `<div class="pitem" data-inbox="${esc(x.id)}">
+      <div class="ph"><span class="badge bad">${esc(x.reason || '못 읽음')}</span><span class="hint">${esc(x.app)} · ${new Date(x.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span></div>
+      <pre class="raw">${esc(x.text)}</pre>
+      <div class="btns"><button class="btn small primary" data-action="inbox-fix" data-id="${esc(x.id)}">직접 기록</button><button class="btn small" data-action="inbox-report" data-id="${esc(x.id)}">형식 제보</button><button class="btn small danger" data-action="inbox-del" data-id="${esc(x.id)}">지우기</button></div>
+    </div>`,
+      )
+      .join('')}`;
+}
+
+// 알림 문구에서 금액·날짜만이라도 건져 직접 입력 칸을 채운다.
+function inboxGuess(x) {
+  const amt = /(\d[\d,]*)\s*원/.exec(x.text);
+  const d = new Date(x.at);
+  return { amount: amt ? Number(amt[1].replace(/,/g, '')) : null, date: todayStr(d), kind: /입금/.test(x.text) ? 'income' : 'expense', memo: '' };
+}
+
+let lastCapture = 0;
+function processCaptured() {
+  if (!native?.pullCaptured) return;
+  let items;
+  try {
+    items = JSON.parse(native.pullCaptured() || '[]');
+  } catch {
+    return;
+  }
+  if (!items.length) {
+    if (Date.now() - lastCapture > 60e3) render();
+    return;
+  }
+  lastCapture = Date.now();
+  const r = captureToTxs(items, { existing: store.txs, rules: store.state.rules, cards: store.state.cards });
+  if (r.txs.length) store.addTxs(r.txs.map(({ issuer, ...t }) => t));
+  if (r.inbox.length) store.addInbox(r.inbox);
+  native.ackCaptured(JSON.stringify(r.ack));
+  if (r.txs.length || r.inbox.length) {
+    const msg = [r.txs.length ? `알림에서 ${r.txs.length}건 자동 기록` : '', r.inbox.length ? `못 읽은 알림 ${r.inbox.length}건` : ''].filter(Boolean).join(' · ');
+    toast(msg);
+  }
+}
+window.__jangbuCaptured = processCaptured;
+
+// ── 백업: 비밀번호를 넣으면 암호화해서 저장한다 ─────────────────
+function backupForm() {
+  return `<form data-form="backup">
+    <p style="font-size:.92em">백업 파일에는 모든 기록이 들어 있어요. 클라우드나 메일로 옮길 거라면 비밀번호를 걸어 두세요.</p>
+    <label class="field"><span>비밀번호(선택)</span><input type="password" name="pw" autocomplete="new-password" placeholder="비워 두면 암호화하지 않아요"></label>
+    <label class="field"><span>비밀번호 확인</span><input type="password" name="pw2" autocomplete="new-password"></label>
+    <div class="hint">비밀번호를 잊으면 이 백업은 누구도 열 수 없어요.</div>
+    <button class="btn primary block" type="submit">백업 파일 저장</button>
+  </form>`;
+}
+
+function restorePasswordForm() {
+  return `<form data-form="restore-pw">
+    <p style="font-size:.92em">비밀번호로 잠긴 백업이에요.</p>
+    <label class="field"><span>비밀번호</span><input type="password" name="pw" autocomplete="current-password" autofocus></label>
+    <button class="btn primary block" type="submit">열기</button>
+  </form>`;
+}
+
+function confirmRestore(next) {
+  const count = next.log.filter((x) => x.op === 'add').length;
+  window.__restore = next;
+  openSheet(
+    '백업 복원',
+    `<p>이 백업에는 기록 ${count}건, 카드 ${next.cards?.length || 0}개, 고정 지출 ${next.obligations?.length || 0}개가 있어요.</p>
+    <p class="callout warn" style="margin-top:10px">지금 기기의 데이터는 이 백업으로 바뀝니다. 현재 데이터가 필요하면 먼저 백업하세요.</p>
+    <div class="btns"><button class="btn primary" data-action="confirm-restore">복원하기</button><button class="btn" data-action="close-sheet">취소</button></div>`,
+  );
 }
 
 // ── 시트: 고정 지출 / 카드 / 카드 청구 확정 / 기본 설정 ─────────
@@ -591,9 +724,36 @@ document.addEventListener('click', async (e) => {
     render();
   } else if (a === 'export-csv') {
     download(`장부_${today()}.csv`, toCSV(store.txs, st.cards), 'text/csv;charset=utf-8');
-  } else if (a === 'export-backup') {
-    download(`장부_백업_${today()}.json`, backupJSON(st), 'application/json');
-    toast('백업 파일을 저장했어요');
+  } else if (a === 'open-backup') {
+    openSheet('백업 파일 저장', backupForm());
+  } else if (a === 'capture-intro') {
+    openSheet('결제 알림 자동 기록', captureIntro());
+  } else if (a === 'capture-enable') {
+    closeSheet();
+    native?.openCaptureSettings();
+  } else if (a === 'battery') {
+    native?.openBatterySettings();
+    toast('목록에서 자동 장부를 찾아 "최적화 안 함"으로 바꿔 주세요');
+  } else if (a === 'review-all') {
+    store.updateTxs(store.txs.filter((x) => !x.deleted && x.review).map((x) => x.id), { review: false });
+    toast('확인했어요');
+  } else if (a === 'open-inbox') {
+    openSheet('못 읽은 알림', inboxList());
+  } else if (a === 'inbox-del') {
+    store.removeInbox(id);
+    if (store.state.inbox.length) openSheet('못 읽은 알림', inboxList());
+    else closeSheet();
+  } else if (a === 'inbox-fix') {
+    const x = st.inbox.find((i) => i.id === id);
+    if (x) openSheet('직접 기록', txForm(inboxGuess(x)).replace('<form data-form="tx"', `<form data-form="tx" data-inbox="${esc(id)}"`));
+  } else if (a === 'inbox-report') {
+    const x = st.inbox.find((i) => i.id === id);
+    if (!x) return;
+    const masked = `[자동 장부 v${APP_VERSION} 못 읽은 형식]\n보낸 앱: ${x.app}\n${maskForReport(x.text)}`;
+    if (confirm(`숫자와 이름을 가린 아래 내용을 보냅니다. 보내기 전에 받는 곳을 고를 수 있어요.\n\n${masked}`)) {
+      if (native?.shareText) native.shareText('자동 장부 문자 형식 제보', masked);
+      else navigator.clipboard?.writeText(masked).then(() => toast('복사했어요'));
+    }
   } else if (a === 'export-ics') {
     const items = upcoming(store.view(), today(), 90);
     if (!items.length) return toast('내보낼 예정 지출이 없어요.');
@@ -642,12 +802,13 @@ document.addEventListener('submit', (e) => {
     };
     if (id) {
       const prev = store.txs.find((t) => t.id === id);
-      store.updateTx(id, tx);
+      store.updateTx(id, { ...tx, review: false });
       // 분류를 고치면 같은 가맹점에 계속 적용한다 (학습형 분류).
       if (tx.merchant && prev && prev.category !== tx.category && (tx.kind === 'expense' || tx.kind === 'refund')) store.setRule(tx.merchant, tx.category);
       toast('저장했어요');
     } else {
-      store.addTx({ ...tx, source: 'manual' });
+      store.addTx({ ...tx, source: form.dataset.inbox ? 'notif-manual' : 'manual' });
+      if (form.dataset.inbox) store.removeInbox(form.dataset.inbox);
       toast('기록했어요');
     }
     closeSheet();
@@ -693,6 +854,29 @@ document.addEventListener('submit', (e) => {
     if (amount == null) return toast('금액을 넣어 주세요');
     store.upsert('cards', { id, confirmed: { ...(c.confirmed || {}), [form.dataset.key]: amount } });
     closeSheet();
+  } else if (kind === 'backup') {
+    if (data.pw !== data.pw2) return toast('비밀번호가 서로 달라요');
+    const json = backupJSON(store.state);
+    const name = `장부_백업_${today()}`;
+    if (!data.pw) {
+      download(`${name}.json`, json, 'application/json');
+      closeSheet();
+      return toast('백업 파일을 저장했어요');
+    }
+    encryptBackup(json, data.pw)
+      .then((enc) => {
+        download(`${name}_암호.json`, enc, 'application/json');
+        closeSheet();
+        toast('암호화한 백업을 저장했어요');
+      })
+      .catch((err) => toast(err.message || '암호화하지 못했어요'));
+  } else if (kind === 'restore-pw') {
+    decryptBackup(window.__restoreText, data.pw)
+      .then((plain) => {
+        window.__restoreText = null;
+        confirmRestore(readBackup(plain));
+      })
+      .catch((err) => toast(err.message || '열지 못했어요'));
   } else if (kind === 'basics') {
     store.setSettings({ payday: Number(data.payday), monthlyBudget: toNum(data.monthlyBudget) || 0, onboarded: true });
     closeSheet();
@@ -728,15 +912,11 @@ document.addEventListener('change', async (e) => {
   }
   if (el.dataset.action === 'restore' && el.files?.[0]) {
     try {
-      const next = readBackup(await el.files[0].text());
-      const count = next.log.filter((x) => x.op === 'add').length;
-      window.__restore = next;
-      openSheet(
-        '백업 복원',
-        `<p>이 백업에는 기록 ${count}건, 카드 ${next.cards?.length || 0}개, 고정 지출 ${next.obligations?.length || 0}개가 있어요.</p>
-        <p class="callout warn" style="margin-top:10px">지금 기기의 데이터는 이 백업으로 바뀝니다. 현재 데이터가 필요하면 먼저 백업하세요.</p>
-        <div class="btns"><button class="btn primary" data-action="confirm-restore">복원하기</button><button class="btn" data-action="close-sheet">취소</button></div>`,
-      );
+      const text = await el.files[0].text();
+      if (isEncryptedBackup(text)) {
+        window.__restoreText = text;
+        openSheet('백업 복원', restorePasswordForm());
+      } else confirmRestore(readBackup(text));
     } catch (err) {
       toast(err.message || '파일을 읽지 못했어요');
     }
@@ -844,10 +1024,12 @@ if (!native && 'serviceWorker' in navigator && location.protocol !== 'file:') {
 }
 checkReminders();
 syncNativeReminders();
+processCaptured();
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     render();
     checkReminders();
     syncNativeReminders();
+    processCaptured();
   }
 });

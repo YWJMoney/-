@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 화면은 앱 안의 파일만 쓴다. 인터넷 권한은 WebView 동작과 이후 파서 규칙 갱신(v0.2)용이며, v0.1은 외부로 데이터를 보내지 않는다. -->
+    <!-- 화면은 앱 안의 파일만 쓴다. 인터넷 권한은 WebView 동작과 이후 파서 규칙 갱신용이며, 지금은 외부로 데이터를 보내지 않는다. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 결제 예정일 알림 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -40,6 +40,17 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <!-- 결제 알림 자동 기록: 사용자가 설정에서 "알림 접근"을 허용해야만 동작한다. -->
+        <service
+            android:name=".CaptureService"
+            android:exported="true"
+            android:label="@string/capture_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <provider
             android:name=".ExportProvider"
