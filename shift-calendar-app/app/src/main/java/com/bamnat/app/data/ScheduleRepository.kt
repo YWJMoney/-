@@ -118,6 +118,10 @@ class ScheduleRepository(private val db: AppDatabase) {
                 val updated = e.toModel().copy(override = ShiftOverride.None)
                 if (updated.isEmpty) dayEntryDao.delete(e.epochDay) else dayEntryDao.upsert(updated.toEntity())
             }
+            for (e in dayEntryDao.withSecondShift(id)) {
+                val updated = e.toModel().copy(secondShiftId = null)
+                if (updated.isEmpty) dayEntryDao.delete(e.epochDay) else dayEntryDao.upsert(updated.toEntity())
+            }
             shiftTypeDao.delete(id)
         }
     }
@@ -209,6 +213,9 @@ class ScheduleRepository(private val db: AppDatabase) {
 
     /** 연차·반차·반반차 on [date]; null removes it [FEAT-10]. */
     suspend fun setLeave(date: LocalDate, leave: Leave?) = updateDay(date) { it.copy(leave = leave) }
+
+    /** Second shift on [date]; null removes it [FEAT-02]. */
+    suspend fun setSecondShift(date: LocalDate, shiftTypeId: Long?) = updateDay(date) { it.copy(secondShiftId = shiftTypeId) }
 
     suspend fun setAlarmSkipped(date: LocalDate, skipped: Boolean) =
         updateDay(date) { it.copy(alarmSkipped = skipped) }

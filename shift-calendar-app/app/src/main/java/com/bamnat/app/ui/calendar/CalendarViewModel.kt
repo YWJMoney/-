@@ -146,6 +146,10 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { schedule.setLeave(date, leave) }
     }
 
+    fun setSecondShift(date: LocalDate, shiftTypeId: Long?) {
+        viewModelScope.launch { schedule.setSecondShift(date, shiftTypeId) }
+    }
+
     fun setHolidayWork(date: LocalDate, minutes: Int) {
         viewModelScope.launch { schedule.setHolidayWork(date, minutes) }
     }

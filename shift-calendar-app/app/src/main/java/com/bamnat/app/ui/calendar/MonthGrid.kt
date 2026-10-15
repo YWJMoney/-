@@ -197,6 +197,7 @@ private fun DayCell(
         if (day.isWorkDay) append(", ").append(HoursFormat.korean(day.totalMinutes))
         day.extraWork?.let { append(", ").append(it.label) }
         day.leave?.let { append(", ").append(it.label) }
+        day.second?.let { append(", 그리고 ").append(it.type.name) }
         if (day.isHolidayWork) append(", 휴일 근무 ").append(HoursFormat.korean(day.holidayWorkMinutes))
         if (hasMemo) append(", 메모 있음")
     }
@@ -264,6 +265,12 @@ private fun DayCell(
             if (fullLeave != null) {
                 // A whole day of leave shows the leave instead of the shift it replaced [FEAT-10].
                 LeaveMark(fullLeave, size = 22.dp)
+            } else if (day.second != null) {
+                // [FEAT-02] Two shifts side by side, labels only so both fit a folded cell.
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (type != null) ShiftBadge(type = type, size = 18.dp, outlined = type.isOff, showIcon = false)
+                    ShiftBadge(type = day.second!!.type, size = 18.dp, showIcon = false)
+                }
             } else if (type != null || day.hasCustomTimes) {
                 ShiftBadge(type = type, text = type?.label ?: "근", size = 22.dp, outlined = type?.isOff == true)
             } else {

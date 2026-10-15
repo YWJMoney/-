@@ -55,7 +55,8 @@ class MinuteClassifier(
         val sorted = days.sortedBy { it.date }
         val weeklyRegular = HashMap<LocalDate, Int>()
         return sorted.map { day ->
-            val raw = classifyDay(day, isHoliday(day.date) || (day.holidayWorkMinutes > 0 && options.offDayWorkIsHoliday))
+            val offDayWork = day.holidayWorkMinutes > 0 || (day.second != null && !day.isWorkDay)
+            val raw = classifyDay(day, isHoliday(day.date) || (offDayWork && options.offDayWorkIsHoliday))
             val limit = options.weeklyLimitMinutes ?: return@map raw
             val week = day.date.with(TemporalAdjusters.previousOrSame(options.weekStart))
             val before = weeklyRegular[week] ?: 0
@@ -66,6 +67,24 @@ class MinuteClassifier(
     }
 
     fun classifyDay(day: ResolvedDay, holiday: Boolean): DayMinutes {
+        val first = classifyFirst(day, holiday)
+        val second = day.second ?: return first
+        // [FEAT-02] The second shift keeps its own clock, so its night minutes are its own.
+        val r = rates(day.date)
+        val from = day.date.atTime(second.start)
+        val to = if (second.end.isAfter(second.start)) day.date.atTime(second.end) else day.date.plusDays(1).atTime(second.end)
+        val gross = Duration.between(from, to).toMinutes().toInt()
+        val minutes = second.minutes
+        val night = if (gross == 0) 0 else (nightMinutes(from, to, r) * minutes.toDouble() / gross).roundToInt()
+        if (holiday) return holidaySplit(day.date, first.worked + minutes, first.night + night, r, first.estimated)
+        // On a working day it fills what is left of the daily limit, then is overtime; on a day
+        // off counted as 연장 by company rule all of it is overtime.
+        val room = if (!day.isWorkDay) 0 else options.dailyLimitMinutes?.let { (it - first.regular - first.overtime).coerceAtLeast(0) } ?: minutes
+        val regular = minOf(minutes, room)
+        return first.copy(regular = first.regular + regular, overtime = first.overtime + minutes - regular, night = first.night + night)
+    }
+
+    private fun classifyFirst(day: ResolvedDay, holiday: Boolean): DayMinutes {
         val r = rates(day.date)
         val start = day.start
         val end = day.end

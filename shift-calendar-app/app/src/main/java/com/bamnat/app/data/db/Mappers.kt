@@ -101,6 +101,7 @@ fun DayEntryEntity.toModel() = DayEntry(
     customAlarms = AlarmCodec.decodeDayAlarms(customAlarms),
     extraWork = ExtraWork.fromCode(extraWork),
     leave = Leave.fromCode(leave),
+    secondShiftId = secondShiftTypeId,
 )
 
 fun DayEntry.toEntity() = DayEntryEntity(
@@ -120,6 +121,7 @@ fun DayEntry.toEntity() = DayEntryEntity(
     customAlarms = AlarmCodec.encodeDayAlarms(customAlarms),
     extraWork = extraWork?.code ?: 0,
     leave = leave?.code ?: 0,
+    secondShiftTypeId = secondShiftId,
 )
 
 fun MemoEntity.toModel() = Memo(

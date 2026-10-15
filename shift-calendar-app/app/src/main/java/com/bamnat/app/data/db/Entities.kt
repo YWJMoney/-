@@ -67,6 +67,8 @@ data class DayEntryEntity(
     @ColumnInfo(defaultValue = "0") val extraWork: Int = 0,
     /** [com.bamnat.core.model.Leave.code]; 0 means no leave [FEAT-10]. */
     @ColumnInfo(defaultValue = "0") val leave: Int = 0,
+    /** Second shift of the day [FEAT-02]; null when there is none. */
+    @ColumnInfo(defaultValue = "NULL") val secondShiftTypeId: Long? = null,
 ) {
     companion object {
         const val MODE_NONE = 0

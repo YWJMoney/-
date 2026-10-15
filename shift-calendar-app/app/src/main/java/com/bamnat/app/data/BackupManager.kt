@@ -58,7 +58,7 @@ class BackupManager(
                     .putOpt("start", d.customStartMinute).putOpt("end", d.customEndMinute)
                     .putOpt("break", d.customBreakMinutes).put("overtime", d.overtimeMinutes)
                     .put("holiday", d.holidayWorkMinutes).put("skip", d.alarmSkipped)
-                    .putOpt("alarms", d.customAlarms).put("extra", d.extraWork).put("leave", d.leave),
+                    .putOpt("alarms", d.customAlarms).put("extra", d.extraWork).put("leave", d.leave).putOpt("second", d.secondShiftTypeId),
             )
         }
         root.put("days", days)
@@ -128,6 +128,7 @@ class BackupManager(
                 customBreakMinutes = o.optIntOrNull("break"), overtimeMinutes = o.optInt("overtime"),
                 holidayWorkMinutes = o.optInt("holiday"), alarmSkipped = o.optBoolean("skip"),
                 customAlarms = o.optStringOrNull("alarms"), extraWork = o.optInt("extra"), leave = o.optInt("leave"),
+                secondShiftTypeId = if (o.has("second") && !o.isNull("second")) o.getLong("second") else null,
             )
         }
         val memos = root.optJSONArray("memos").objects().map { o ->

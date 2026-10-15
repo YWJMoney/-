@@ -76,6 +76,9 @@ interface DayEntryDao {
     @Query("SELECT * FROM day_entries WHERE overrideMode = 2 AND overrideShiftTypeId = :shiftTypeId")
     suspend fun withOverride(shiftTypeId: Long): List<DayEntryEntity>
 
+    @Query("SELECT * FROM day_entries WHERE secondShiftTypeId = :shiftTypeId")
+    suspend fun withSecondShift(shiftTypeId: Long): List<DayEntryEntity>
+
     @Query("SELECT * FROM day_entries")
     suspend fun getAll(): List<DayEntryEntity>
 

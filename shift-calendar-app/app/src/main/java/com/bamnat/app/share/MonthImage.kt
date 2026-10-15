@@ -31,7 +31,7 @@ object MonthImage {
     fun render(snapshot: ScheduleSnapshot, month: YearMonth, weekStart: DayOfWeek): Bitmap {
         val weeks = CalendarGrid.monthWeeks(month, weekStart)
         val used = weeks.flatten().filter { YearMonth.from(it) == month }
-            .mapNotNull { snapshot.resolver.resolve(it).shiftType }.distinctBy { it.id }
+            .flatMap { d -> snapshot.resolver.resolve(d).let { listOfNotNull(it.shiftType, it.second?.type) } }.distinctBy { it.id }
         val legendRows = (used.size + 1) / 2
         val height = (HEADER + WEEKDAYS + weeks.size * CELL_H + 40f + legendRows * 64f + 80f).toInt()
         val bmp = Bitmap.createBitmap(WIDTH, height, Bitmap.Config.ARGB_8888)
@@ -73,8 +73,25 @@ object MonthImage {
                     text.color = if (day.extraWork != null) 0xFFD6336C.toInt() else 0xFF7048E8.toInt()
                     c.drawText(mark, left + cellW - 12f, top + 42f, text)
                 }
-                val type = day.shiftType ?: return@forEachIndexed
                 val box = RectF(left + 8f, top + 62f, left + cellW - 8f, top + CELL_H - 14f)
+                val second = day.second
+                if (second != null && leave?.isFullDay != true) {
+                    // [FEAT-02] Two shifts split the box.
+                    val first = day.shiftType
+                    val halves = listOfNotNull(first, second.type)
+                    val w = (box.width() - 4f * (halves.size - 1)) / halves.size
+                    halves.forEachIndexed { k, t ->
+                        val b = RectF(box.left + k * (w + 4f), box.top, box.left + k * (w + 4f) + w, box.bottom)
+                        fill.color = if (t.isOff) 0xFFF1F3F5.toInt() else (t.colorArgb or 0xFF000000).toInt()
+                        c.drawRoundRect(b, 14f, 14f, fill)
+                        text.textSize = if (t.label.length > 1 || halves.size > 1) 28f else 44f
+                        text.typeface = bold; text.textAlign = Paint.Align.CENTER
+                        text.color = if (t.isOff) 0xFF6B7280.toInt() else 0xFFFFFFFF.toInt()
+                        c.drawText(t.label, b.centerX(), b.centerY() + text.textSize / 3, text)
+                    }
+                    return@forEachIndexed
+                }
+                val type = day.shiftType ?: return@forEachIndexed
                 if (leave?.isFullDay == true) {
                     // [FEAT-10] A whole day of leave shows 연차 instead of the shift.
                     fill.color = 0xFF7048E8.toInt()

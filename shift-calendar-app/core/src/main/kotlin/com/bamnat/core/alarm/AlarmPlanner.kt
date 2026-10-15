@@ -86,8 +86,23 @@ object AlarmPlanner {
                 )
             }
         } else {
-            if (type == null || start == null) return emptyList()
-            type.activeAlarms.map { spec ->
+            // [FEAT-02] A second shift rings with its own alarms too.
+            val second = day.second?.let { s ->
+                s.type.activeAlarms.map { spec ->
+                    val offset = spec.offsetMinutes.coerceIn(0, MAX_OFFSET_MINUTES)
+                    PlannedAlarm(
+                        triggerAt = date.atTime(s.start).minusMinutes(offset.toLong()),
+                        shiftDate = date,
+                        shiftStart = s.start,
+                        shiftTypeId = s.type.id,
+                        shiftName = s.type.name,
+                        offsetMinutes = offset,
+                        soundUri = s.type.alarmSoundUri,
+                    )
+                }
+            }.orEmpty()
+            if (type == null || start == null) return second.distinctBy { it.triggerAt }.sortedBy { it.triggerAt }
+            second + type.activeAlarms.map { spec ->
                 val offset = spec.offsetMinutes.coerceIn(0, MAX_OFFSET_MINUTES)
                 PlannedAlarm(
                     triggerAt = date.atTime(start).minusMinutes(offset.toLong()),

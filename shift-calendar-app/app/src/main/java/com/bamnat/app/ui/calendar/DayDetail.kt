@@ -164,6 +164,8 @@ fun DayDetail(
 
         ExtraWorkSection(day = day, vm = vm)
 
+        SecondShiftSection(day = day, snapshot = snapshot, vm = vm)
+
         DayPaySection(day = day, snapshot = snapshot, vm = vm, onOpenPay = onOpenPay)
 
         AlarmSection(day = day, snapshot = snapshot, vm = vm, onOpenShiftTypes = onOpenShiftTypes)
@@ -226,7 +228,15 @@ private fun DayHeader(day: ResolvedDay, isToday: Boolean) {
             }
             Text(summary, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (day.overtimeMinutes > 0 || day.holidayWorkMinutes > 0) {
+        day.second?.let { s ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                ShiftBadge(s.type, size = 20.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("+ ${s.type.name} · ${Fmt.timeRange(s.start, s.end)} · ${HoursFormat.korean(s.minutes)}",
+                    style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (day.overtimeMinutes > 0 || day.holidayWorkMinutes > 0 || day.second != null) {
             Text(
                 "이 날 합계 ${HoursFormat.korean(day.totalMinutes)}",
                 style = MaterialTheme.typography.titleSmall.merge(NumberStyle),
@@ -430,6 +440,35 @@ private fun LeaveSection(day: ResolvedDay, vm: CalendarViewModel) {
                 modifier = Modifier.padding(top = 6.dp),
             )
         }
+    }
+}
+
+/** 같은 날 근무 하나 더 [FEAT-02]: e.g. 데이 then a 나이트 대근, each with its own times. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SecondShiftSection(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel) {
+    val choices = snapshot.shiftTypes.filter { it.hasTimes }
+    if (choices.isEmpty()) return
+    val current = day.second?.type?.id
+    SectionCard(title = "같은 날 근무 하나 더") {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            FilterChip(selected = current == null, onClick = { vm.setSecondShift(day.date, null) }, label = { Text("없음") })
+            for (t in choices) {
+                FilterChip(
+                    selected = current == t.id,
+                    onClick = { vm.setSecondShift(day.date, if (current == t.id) null else t.id) },
+                    label = { Text(t.name) },
+                    leadingIcon = { ShiftBadge(t, size = 18.dp) },
+                )
+            }
+        }
+        Text(
+            if (current == null) "데이 뒤 나이트 대근처럼 하루에 근무를 두 번 했을 때 고르세요. 달력 칸에 두 개가 나란히 보여요."
+            else "두 번째 근무는 모두 추가 근무로 계산하고 알람도 따로 울려요. 대근·특근 단가를 쓰려면 위에서 표시해 주세요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp),
+        )
     }
 }
 

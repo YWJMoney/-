@@ -12,6 +12,16 @@ import java.time.LocalTime
 
 enum class DaySource { PATTERN, OVERRIDE, NONE }
 
+/** The second shift of a day [FEAT-02], with its own times. */
+data class SecondShift(
+    val type: ShiftType,
+    val start: LocalTime,
+    val end: LocalTime,
+    val breakMinutes: Int,
+) {
+    val minutes: Int get() = WorkTime.workMinutes(start, end, breakMinutes)
+}
+
 /** The final picture of one calendar day after applying pattern and user changes. */
 data class ResolvedDay(
     val date: LocalDate,
@@ -35,16 +45,19 @@ data class ResolvedDay(
     val leave: Leave? = null,
     /** Shift minutes the leave covers; paid leave pays them, unpaid leave deducts them. */
     val leaveMinutes: Int = 0,
+    /** Another shift worked the same day [FEAT-02]. */
+    val second: SecondShift? = null,
 ) {
     val isWorkDay: Boolean get() = scheduledMinutes > 0 || (start != null && end != null)
     val isOff: Boolean get() = !isWorkDay
     val isHolidayWork: Boolean get() = holidayWorkMinutes > 0
     /** Any extra work to show on the calendar: hours beyond the shift or a marked kind. */
-    val hasExtraWork: Boolean get() = extraWork != null || overtimeMinutes > 0 || holidayWorkMinutes > 0
-    val extraMinutes: Int get() = overtimeMinutes + holidayWorkMinutes
+    val hasExtraWork: Boolean get() = extraWork != null || overtimeMinutes > 0 || holidayWorkMinutes > 0 || second != null
+    val extraMinutes: Int get() = overtimeMinutes + holidayWorkMinutes + secondMinutes
+    val secondMinutes: Int get() = second?.minutes ?: 0
 
     /** Everything that counts toward weekly / monthly hours. */
-    val totalMinutes: Int get() = scheduledMinutes + overtimeMinutes + holidayWorkMinutes
+    val totalMinutes: Int get() = scheduledMinutes + overtimeMinutes + holidayWorkMinutes + secondMinutes
 }
 
 /**
@@ -142,6 +155,8 @@ class ScheduleResolver(
             hasCustomTimes = customTimes,
             leave = leave,
             leaveMinutes = leaveMinutes,
+            second = entry?.secondShiftId?.let { typesById[it] }?.takeIf { it.hasTimes }
+                ?.let { SecondShift(it, it.start!!, it.end!!, it.breakMinutes) },
         )
     }
 

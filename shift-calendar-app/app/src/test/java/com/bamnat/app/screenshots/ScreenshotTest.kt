@@ -101,6 +101,10 @@ class ScreenshotTest {
         repo.setLeave(today, Leave(LeaveKind.ANNUAL, 2))
         val checkUp = (5..12).map { today.plusDays(it.toLong()) }.first { pattern.shiftTypeIdOn(it) == day }
         repo.setLeave(checkUp, Leave())
+        // [FEAT-02] 주간 then a 야간 대근 on the next working day after the check-up.
+        val doubleDay = (1..6).map { checkUp.plusDays(it.toLong()) }.first { pattern.shiftTypeIdOn(it) == day }
+        repo.setSecondShift(doubleDay, night)
+        repo.setExtraWork(doubleDay, ExtraWork.COVER, 0, workDay = true)
         repo.setDayAlarms(today, listOf(DayAlarm(LocalTime.of(6, 10)), DayAlarm(LocalTime.of(6, 30), enabled = false)))
 
         val memos = c.memoRepository
@@ -354,6 +358,9 @@ class ScreenshotTest {
         payScreen(Tier.PRO, withProfile = true).invoke(this)
         scrollUp(880)
         scrollUp(250)
+    }
+    @Test fun foldedSecondShift() = shoot("41_folded_second_shift", FOLDED) {
+        scrollUp(330)
     }
     @Test fun monthImage() = runBlocking {
         val snap = app.container.scheduleRepository.snapshot.first()

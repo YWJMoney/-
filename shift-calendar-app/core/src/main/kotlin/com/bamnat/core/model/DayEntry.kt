@@ -38,6 +38,11 @@ data class DayEntry(
     val extraWork: ExtraWork? = null,
     /** 연차·반차·반반차 taken on this day [FEAT-10]. */
     val leave: Leave? = null,
+    /**
+     * A second shift on the same day, e.g. 데이 then a 나이트 대근 [FEAT-02]. It keeps its own
+     * clock times; all of it is work on top of the day's own shift.
+     */
+    val secondShiftId: Long? = null,
 ) {
     val hasCustomTimes: Boolean get() = customStart != null && customEnd != null
 
@@ -45,7 +50,7 @@ data class DayEntry(
     val isEmpty: Boolean
         get() = override == ShiftOverride.None && customStart == null && customEnd == null &&
             customBreakMinutes == null && overtimeMinutes == 0 && holidayWorkMinutes == 0 && !alarmSkipped &&
-            customAlarms == null && extraWork == null && leave == null
+            customAlarms == null && extraWork == null && leave == null && secondShiftId == null
 }
 
 /** Kinds of extra work shift workers mark on the calendar. */

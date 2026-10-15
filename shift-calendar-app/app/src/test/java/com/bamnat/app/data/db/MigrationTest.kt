@@ -31,7 +31,7 @@ class MigrationTest {
         createVersion1(context.getDatabasePath(name).apply { parentFile?.mkdirs() })
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
         try {
@@ -51,6 +51,7 @@ class MigrationTest {
             assertEquals(pattern.startDate, pattern.anchorDate)
             assertNull(day.extraWork)
             assertNull(day.leave)
+            assertNull(day.secondShiftId)
 
             val memo = db.memoDao().getAll().single().toModel()
             assertEquals("인수인계", memo.title)

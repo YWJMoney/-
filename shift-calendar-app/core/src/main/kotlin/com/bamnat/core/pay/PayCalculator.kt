@@ -185,18 +185,28 @@ class PayCalculator(
                 val counts = when (item.cadence) {
                     Cadence.MONTHLY -> false
                     Cadence.PER_WORK_DAY -> day.isWorkDay || day.holidayWorkMinutes > 0
-                    Cadence.PER_NIGHT_SHIFT -> day.isWorkDay && isNightShift(day, rates)
+                    Cadence.PER_NIGHT_SHIFT -> day.isWorkDay && isNightShift(day.date, day.start, day.end, rates)
                     Cadence.PER_SHIFT_TYPE -> day.isWorkDay && day.shiftType?.id in item.shiftTypeIds
                 }
-                if (!counts) continue
-                itemCounts[item.id] = (itemCounts[item.id] ?: 0) + 1
+                // [FEAT-02] A second shift earns per-shift allowances again (a 나이트 대근 is a night shift).
+                val second = day.second
+                val secondCounts = second != null && when (item.cadence) {
+                    Cadence.PER_NIGHT_SHIFT -> isNightShift(day.date, second.start, second.end, rates)
+                    Cadence.PER_SHIFT_TYPE -> second.type.id in item.shiftTypeIds
+                    else -> false
+                }
+                val times = (if (counts) 1 else 0) + (if (secondCounts) 1 else 0)
+                if (times == 0) continue
+                itemCounts[item.id] = (itemCounts[item.id] ?: 0) + times
                 val v = item.amount.on(day.date).value
-                if (v > 0) parts += DayPart(LineKind.ALLOWANCE, item.name, v, item.cadence.label)
+                if (v > 0) parts += DayPart(LineKind.ALLOWANCE, item.name, v * times, if (times > 1) "${item.cadence.label} × $times" else item.cadence.label)
             }
             dayPays += DayPay(
                 date = day.date,
                 label = day.leave?.takeIf { it.isFullDay }?.let { "${day.shiftType?.name ?: "근무"} · ${it.label}" }
-                    ?: day.shiftType?.takeIf { day.isWorkDay }?.name ?: if (day.holidayWorkMinutes > 0) "쉬는 날 근무" else "휴무",
+                    ?: (day.shiftType?.takeIf { day.isWorkDay }?.name?.let { n -> day.second?.let { "$n + ${it.type.name}" } ?: n })
+                    ?: day.second?.let { "쉬는 날 ${it.type.name}" }
+                    ?: if (day.holidayWorkMinutes > 0) "쉬는 날 근무" else "휴무",
                 holidayName = KoreanHolidays.nameOf(day.date),
                 extraWork = day.extraWork,
                 minutes = m,
@@ -347,11 +357,11 @@ class PayCalculator(
     )
 
     /** A shift with at least half its time in the night window counts as a night shift. */
-    private fun isNightShift(day: ResolvedDay, rates: Rates): Boolean {
-        val s = day.start ?: return false
-        val e = day.end ?: return false
-        val from = day.date.atTime(s)
-        val to = if (e.isAfter(s)) day.date.atTime(e) else day.date.plusDays(1).atTime(e)
+    private fun isNightShift(date: LocalDate, start: java.time.LocalTime?, end: java.time.LocalTime?, rates: Rates): Boolean {
+        val s = start ?: return false
+        val e = end ?: return false
+        val from = date.atTime(s)
+        val to = if (e.isAfter(s)) date.atTime(e) else date.plusDays(1).atTime(e)
         val total = java.time.Duration.between(from, to).toMinutes()
         val night = MinuteClassifier({ rates }).nightMinutes(from, to, rates)
         return total > 0 && night * 2 >= total
