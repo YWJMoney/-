@@ -420,6 +420,8 @@ fun AddBonusDialog(onDismiss: () -> Unit, onAdd: (String, Set<Int>, Double?, Lon
     var name by remember { mutableStateOf("상여금") }
     var byPercent by remember { mutableStateOf(true) }
     var percent by remember { mutableStateOf(100) }
+    // A yearly total such as 상여 800% is split over the chosen months.
+    var annual by remember { mutableStateOf<Int?>(null) }
     var amount by remember { mutableStateOf<Long?>(null) }
     var months by remember { mutableStateOf(setOf(1, 4, 7, 10)) }
     var ordinary by remember { mutableStateOf(true) }
@@ -436,13 +438,24 @@ fun AddBonusDialog(onDismiss: () -> Unit, onAdd: (String, Set<Int>, Double?, Lon
                     FilterChip(selected = !byPercent, onClick = { byPercent = false }, label = { Text("정해진 금액") })
                 }
                 if (byPercent) {
+                    Text("연 합계로", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(400, 600, 800, 1000).forEach { a ->
+                            FilterChip(selected = annual == a, onClick = { annual = a }, label = { Text("연 $a%") })
+                        }
+                    }
+                    annual?.takeIf { months.isNotEmpty() }?.let { a ->
+                        Text("한 번에 기본급의 ${PayCalculator.pct(a / 100.0 / months.size)}씩 ${months.size}번",
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Text("한 번에", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf(50, 100, 150, 200).forEach { p ->
-                            FilterChip(selected = percent == p, onClick = { percent = p }, label = { Text("$p%") })
+                            FilterChip(selected = annual == null && percent == p, onClick = { percent = p; annual = null }, label = { Text("$p%") })
                         }
-                        OutlinedButton(onClick = { percent = (percent - 10).coerceAtLeast(10) }) { Text("−") }
+                        OutlinedButton(onClick = { percent = (percent - 10).coerceAtLeast(10); annual = null }) { Text("−") }
                         Text("$percent%", style = MaterialTheme.typography.titleSmall, modifier = Modifier.align(Alignment.CenterVertically))
-                        OutlinedButton(onClick = { percent = (percent + 10).coerceAtMost(1000) }) { Text("+") }
+                        OutlinedButton(onClick = { percent = (percent + 10).coerceAtMost(1000); annual = null }) { Text("+") }
                     }
                 } else {
                     MoneyField("1회 금액", amount, { amount = it })
@@ -472,7 +485,7 @@ fun AddBonusDialog(onDismiss: () -> Unit, onAdd: (String, Set<Int>, Double?, Lon
         },
         confirmButton = {
             Button(
-                onClick = { onAdd(name, months, if (byPercent) percent / 100.0 else null, if (byPercent) 0 else amount ?: 0, ordinary) },
+                onClick = { onAdd(name, months, if (byPercent) (annual?.let { it / 100.0 / months.size } ?: (percent / 100.0)) else null, if (byPercent) 0 else amount ?: 0, ordinary) },
                 enabled = months.isNotEmpty() && (byPercent || (amount ?: 0) > 0),
             ) { Text("추가") }
         },

@@ -20,7 +20,11 @@ data class LeaveBalance(
 
 object LeaveBook {
     /** Counts leave on working days of [year]; [resolve] is the calendar. */
-    fun balance(year: Int, granted: Double?, today: LocalDate, resolve: (LocalDate) -> ResolvedDay): LeaveBalance {
+    fun balance(
+        year: Int, granted: Double?, today: LocalDate, resolve: (LocalDate) -> ResolvedDay,
+        /** Dates whose leave does not use up 연차, e.g. 공휴일 at some companies. */
+        free: (LocalDate) -> Boolean = { false },
+    ): LeaveBalance {
         var used = 0.0
         var planned = 0.0
         val byKind = linkedMapOf<LeaveKind, Double>()
@@ -29,7 +33,7 @@ object LeaveBook {
             val leave = resolve(d).leave
             if (leave != null) {
                 byKind[leave.kind] = (byKind[leave.kind] ?: 0.0) + leave.days
-                if (leave.kind.annual) if (d.isAfter(today)) planned += leave.days else used += leave.days
+                if (leave.kind.annual && !free(d)) if (d.isAfter(today)) planned += leave.days else used += leave.days
             }
             d = d.plusDays(1)
         }

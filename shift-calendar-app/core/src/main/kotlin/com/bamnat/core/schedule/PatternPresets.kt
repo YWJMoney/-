@@ -20,6 +20,7 @@ object PatternPresets {
         PatternPreset("4조 3교대 12일", "주주주오오오야야야휴휴휴", "DDDEEENNNOOO"),
         PatternPreset("5조 3교대", "주주오오야야휴휴휴휴", "DDEENNOOOO"),
         PatternPreset("4조 2교대 8일", "주주야야휴휴휴휴", "DDNNOOOO"),
+        PatternPreset("4조 2교대 8일 (주휴야휴)", "주주휴휴야야휴휴", "DDOONNOO"),
         PatternPreset("24시간 격일 맞교대", "당번 · 비번 반복", "XO"),
         PatternPreset("24시간 3조 맞교대", "당번 · 비번 · 휴무", "XOO"),
         PatternPreset("24시간 4조 맞교대", "당번 · 비번 · 당번 · 비번 · 휴무 · 휴무 · 휴무 · 휴무", "XOXOOOOO"),

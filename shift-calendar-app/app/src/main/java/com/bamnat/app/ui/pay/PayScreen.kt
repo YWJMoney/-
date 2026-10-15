@@ -669,8 +669,9 @@ private fun HolidayModes(vm: PayViewModel, profile: PayProfile, snapshot: Schedu
 @Composable
 private fun LeaveCard(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth, onEditRules: () -> Unit) {
     val today = remember { java.time.LocalDate.now() }
-    val balance = remember(profile.rules.annualLeaveDays, snapshot, month.year) {
-        LeaveBook.balance(month.year, profile.rules.annualLeaveDays, today, snapshot.resolver::resolve)
+    val balance = remember(profile.rules, snapshot, month.year) {
+        LeaveBook.balance(month.year, profile.rules.annualLeaveDays, today, snapshot.resolver::resolve,
+            free = { profile.rules.holidayLeaveFree && com.bamnat.core.holiday.KoreanHolidays.isHoliday(it) })
     }
     if (balance.byKind.isEmpty() && balance.granted == null) return
     SectionCard(title = "${month.year}년 휴가", trailing = { TextButton(onClick = onEditRules) { Text("연차 일수") } }) {

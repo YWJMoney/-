@@ -50,6 +50,7 @@ import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.Rounding
 import com.bamnat.core.pay.WageType
 import com.bamnat.core.pay.StandardHours
+import com.bamnat.core.pay.Tier
 import com.bamnat.core.hours.HoursFormat
 import java.time.Instant
 import java.time.LocalDate
@@ -113,6 +114,9 @@ fun CompanyRulesEditor(
                 Toggle("하루 8시간 넘으면 연장", "탄력적·선택적 근로시간제라면 꺼 주세요", draft.dailyLimitMinutes != null) {
                     draft = draft.copy(dailyLimitMinutes = if (it) 480 else null)
                 }
+                Toggle("주 40시간 넘으면 연장", "4조2교대처럼 근무표대로 일한 시간이 기본급에 들어 있으면 꺼 주세요", draft.weeklyLimitMinutes != null) {
+                    draft = draft.copy(weeklyLimitMinutes = if (it) 2400 else null)
+                }
                 if (draft.wageType == WageType.MONTHLY) {
                     Label("월 소정근로시간 (통상시급을 나누는 시간)")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -162,6 +166,24 @@ fun CompanyRulesEditor(
                 }
                 Toggle("공휴일 근무는 휴일근로", "근무표에서 공휴일을 다른 날로 바꿔 주는 회사(휴일 대체)라면 꺼 주세요", rules.publicHolidaysPaid) {
                     setRules(rules.copy(publicHolidaysPaid = it))
+                }
+                if (rules.publicHolidaysPaid) {
+                    // [PAYX-07] Some companies pay a 공휴일 shift exactly like a 대근.
+                    Label("공휴일에 근무표대로 일하면")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(selected = rules.publicHolidayAs == null, onClick = { setRules(rules.copy(publicHolidayAs = null)) },
+                            label = { Text("법정 휴일근로") })
+                        listOf(ExtraWork.COVER, ExtraWork.SPECIAL).forEach { k ->
+                            FilterChip(selected = rules.publicHolidayAs == k, onClick = { setRules(rules.copy(publicHolidayAs = k)) },
+                                label = { Text("${k.label}처럼 계산") })
+                        }
+                    }
+                    if (rules.publicHolidayAs != null && rules.extraRule(rules.publicHolidayAs) == null) {
+                        Hint("아래 ‘${rules.publicHolidayAs!!.label}’ 계산 방식을 정해 주세요. 정하지 않으면 법정대로 계산해요.")
+                    }
+                    Toggle("공휴일 연차는 연차 일수에서 안 빠짐", "공휴일 근무일에 쉬어도 연차가 줄지 않는 회사라면 켜 주세요", rules.holidayLeaveFree) {
+                        setRules(rules.copy(holidayLeaveFree = it))
+                    }
                 }
                 if (draft.wageType == WageType.MONTHLY) {
                     Label("월급제 휴일 근무")
@@ -272,7 +294,10 @@ private fun ExtraRuleEditor(kind: ExtraWork, rule: ExtraRule, onChange: (ExtraRu
     Text(kind.label, style = MaterialTheme.typography.titleSmall)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         ExtraBasis.entries.forEach { b ->
-            FilterChip(selected = rule.basis == b, onClick = { onChange(rule.copy(basis = b)) }, label = { Text(b.label) })
+            FilterChip(selected = rule.basis == b, onClick = {
+                // Tiers usually already price the night hours, so the separate night premium starts off.
+                onChange(rule.copy(basis = b, nightPremium = if (b == ExtraBasis.TIERED) false else rule.nightPremium))
+            }, label = { Text(b.label) })
         }
     }
     when (rule.basis) {
@@ -291,6 +316,11 @@ private fun ExtraRuleEditor(kind: ExtraWork, rule: ExtraRule, onChange: (ExtraRu
                 }
             }
         }
+        ExtraBasis.TIERED -> {
+            TierEditor("주간 근무일 때", rule.dayTiers) { onChange(rule.copy(dayTiers = it)) }
+            TierEditor("야간 근무일 때 (22~06시가 절반 이상)", rule.nightTiers) { onChange(rule.copy(nightTiers = it)) }
+            Hint("근무 시작부터 순서대로 구간마다 통상시급 × 배율을 받아요. 마지막 구간은 남은 시간 전부에 적용돼요.")
+        }
         ExtraBasis.FIXED_PER_TIME, ExtraBasis.FIXED_PER_HOUR -> MoneyField(
             if (rule.basis == ExtraBasis.FIXED_PER_TIME) "1회 금액" else "1시간 금액",
             rule.amount.takeIf { it > 0 }, { onChange(rule.copy(amount = it ?: 0)) },
@@ -307,6 +337,28 @@ private fun ExtraRuleEditor(kind: ExtraWork, rule: ExtraRule, onChange: (ExtraRu
             }
         }
         Toggle("야간 가산 따로 받기", "22~06시 부분에 야간 가산을 더해요", rule.nightPremium) { onChange(rule.copy(nightPremium = it)) }
+    }
+}
+
+/** Blocks of hours with their rate, in shift order [PAYX-07]. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TierEditor(title: String, tiers: List<Tier>, onChange: (List<Tier>) -> Unit) {
+    Label(title)
+    tiers.forEachIndexed { i, t ->
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.Center) {
+            OutlinedButton(onClick = { onChange(tiers.toMutableList().also { it[i] = t.copy(minutes = (t.minutes - 60).coerceAtLeast(60)) }) }) { Text("−") }
+            Text(PayCalculator.hours(t.minutes), style = MaterialTheme.typography.titleSmall, modifier = Modifier.align(Alignment.CenterVertically))
+            OutlinedButton(onClick = { onChange(tiers.toMutableList().also { it[i] = t.copy(minutes = (t.minutes + 60).coerceAtMost(24 * 60)) }) }) { Text("+") }
+            listOf(0.0, 0.25, 0.5, 0.75, 1.0).forEach { p ->
+                FilterChip(selected = t.premium == p, onClick = { onChange(tiers.toMutableList().also { it[i] = t.copy(premium = p) }) },
+                    label = { Text(PayCalculator.pct(1.0 + p)) })
+            }
+        }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TextButton(onClick = { onChange(tiers + Tier(240, tiers.lastOrNull()?.premium ?: 0.5)) }) { Text("구간 추가") }
+        if (tiers.size > 1) TextButton(onClick = { onChange(tiers.dropLast(1)) }) { Text("마지막 구간 빼기") }
     }
 }
 

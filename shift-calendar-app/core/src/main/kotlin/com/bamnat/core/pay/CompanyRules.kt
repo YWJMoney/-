@@ -12,7 +12,12 @@ enum class ExtraBasis(val label: String) {
     FIXED_PER_TIME("1회 정액"),
     /** A fixed amount per hour, e.g. 특근 시간당 20,000원. */
     FIXED_PER_HOUR("시간당 정액"),
+    /** 통상시급 × (100% + a premium per block of hours), e.g. 8시간 100%, 다음 4시간 150% [PAYX-07]. */
+    TIERED("시간 구간별 가산"),
 }
+
+/** [minutes] of work, in shift order, paid with [premium] on top of 100% (0.5 = 150%). */
+data class Tier(val minutes: Int, val premium: Double)
 
 data class ExtraRule(
     val basis: ExtraBasis = ExtraBasis.LEGAL,
@@ -24,12 +29,40 @@ data class ExtraRule(
     val minMinutes: Int = 0,
     /** Also add the night premium for the 22~06 part of this work. */
     val nightPremium: Boolean = true,
+    /** For [ExtraBasis.TIERED]: blocks for a day shift; the last block repeats for any more hours. */
+    val dayTiers: List<Tier> = DEFAULT_DAY_TIERS,
+    /** For [ExtraBasis.TIERED]: blocks when the work is a night shift (at least half in 22~06). */
+    val nightTiers: List<Tier> = DEFAULT_NIGHT_TIERS,
 ) {
+    /** Money for [minutes] of this work at [hourly], by the tiers for a day or night shift. */
+    fun tieredAmount(minutes: Int, hourly: Long, night: Boolean): Long {
+        val tiers = (if (night) nightTiers else dayTiers).ifEmpty { listOf(Tier(minutes, 0.0)) }
+        var left = minutes
+        var total = 0.0
+        for ((i, t) in tiers.withIndex()) {
+            if (left <= 0) break
+            val m = if (i == tiers.lastIndex) left else minOf(left, t.minutes)
+            total += m / 60.0 * hourly * (1.0 + t.premium)
+            left -= m
+        }
+        return Math.round(total)
+    }
+
+    fun describeTiers(night: Boolean): String = (if (night) nightTiers else dayTiers).joinToString(" → ") {
+        "${PayCalculator.hours(it.minutes)} ${PayCalculator.pct(1.0 + it.premium)}"
+    }
+
+    companion object {
+        val DEFAULT_DAY_TIERS = listOf(Tier(480, 0.0), Tier(240, 0.5))
+        val DEFAULT_NIGHT_TIERS = listOf(Tier(240, 0.5), Tier(240, 0.75), Tier(240, 1.0))
+    }
+
     fun describe(): String = when (basis) {
         ExtraBasis.LEGAL -> basis.label
         ExtraBasis.HOURLY_RATE -> "통상시급 × ${PayCalculator.pct(multiplier)}"
         ExtraBasis.FIXED_PER_TIME -> "1회 ${won(amount)}"
         ExtraBasis.FIXED_PER_HOUR -> "시간당 ${won(amount)}"
+        ExtraBasis.TIERED -> "주간 ${describeTiers(false)} · 야간 ${describeTiers(true)}"
     } + (if (minMinutes > 0) ", 최소 ${PayCalculator.hours(minMinutes)} 인정" else "") +
         (if (basis != ExtraBasis.LEGAL && !nightPremium) ", 야간 가산 없음" else "")
 }
@@ -71,6 +104,13 @@ data class CompanyRules(
     val weeklyHolidayPay: Boolean = true,
     /** 연차 days the company grants this year; null when not entered [FEAT-10]. */
     val annualLeaveDays: Double? = null,
+    /**
+     * A scheduled shift on a 공휴일 is paid like this kind of extra work on top of the salary,
+     * e.g. 대근 방식 [PAYX-07]; null uses the legal holiday premiums.
+     */
+    val publicHolidayAs: ExtraWork? = null,
+    /** 연차 taken on a 공휴일 does not use up the year's days (some companies) [FEAT-10]. */
+    val holidayLeaveFree: Boolean = false,
 ) {
     fun extraRule(kind: ExtraWork?): ExtraRule? = kind?.let { extra[it] }?.takeIf { it.basis != ExtraBasis.LEGAL }
 }

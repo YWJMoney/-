@@ -111,7 +111,7 @@ PAYX-03,"수정 범위(이 달만·이후 계속·기간) 선택, 미리보기, 
 PAYX-04,임금 규칙 사진·텍스트 인식(기기 안 ML Kit) + 확인 화면,1,진행 중,G-PAY-OCR,"텍스트 인식 RuleImport + 확인 화면(원문 줄 표시, 낮은 확신 해제). 사진 인식은 G-PAY-OCR 대기"
 PAYX-05,"설명 인터랙션: 체험 애니메이션, 계산 풀이, 용어 설명, 명세서 대조",1,완료,,"4단계 체험 풀이, 항목 누르면 계산 풀이(31_folded_pay_line_detail.png), 용어 풀이, 명세서 대조와 대안 적용"
 PAYX-06,앞으로 12개월 예상 급여,1,완료,,"결과 화면 ""앞으로 12개월 예상"", 통계 탭 이번 달 예상 급여 카드"
-PAYX-07,"회사 규칙 대입: 가산율, 잔업·특근·대근 방식(통상시급×배율·1회 정액·시간당 정액·최소 인정 시간·야간 가산), 쉬는 날 근무 해석, 공휴일 대체, 연장 끝자리, 월 소정근로시간, 시급제 주휴수당",1,완료,,"core CompanyRules + PayCalculator, CompanyRulesTest 11건, 회사 규칙 화면(34·35_folded_company_rules*.png), 법정보다 낮으면 경고, 규칙 글에서 대근 단가·가산율 인식; 월 소정근로시간을 근무표로 계산해 제안(StandardHours, 시행령 제6조 제2항, 토요일 유급 4·8시간)"
+PAYX-07,"회사 규칙 대입: 가산율, 잔업·특근·대근 방식(통상시급×배율·1회 정액·시간당 정액·최소 인정 시간·야간 가산), 쉬는 날 근무 해석, 공휴일 대체, 연장 끝자리, 월 소정근로시간, 시급제 주휴수당",1,완료,,"core CompanyRules + PayCalculator, CompanyRulesTest 11건, 회사 규칙 화면(34·35_folded_company_rules*.png), 법정보다 낮으면 경고, 규칙 글에서 대근 단가·가산율 인식; 월 소정근로시간을 근무표로 계산해 제안(StandardHours, 시행령 제6조 제2항, 토요일 유급 4·8시간); 대근·특근 ""시간 구간별 가산""(주간·야간 구간표), 공휴일 근무를 대근 방식으로, 주 40시간 연장 끄기, 공휴일 연차 미차감; FourTeamShiftTest(4조2교대 사용자 사례)"
 PAYX-08,"달력 근무와 급여 연동: 날짜별 내역, 달력 날짜 화면에 그날 더해지는 급여",1,완료,,"MonthPay.days(DayPay), 결과 화면 날짜별 내역(36_folded_pay_days.png), 달력 날짜 화면 ‘이 날 더해지는 급여’(33_folded_day_pay.png)"
 TIER-01,"4등급 구성(무료·플러스·프로·리더), 급여 엔진은 프로",1~2,진행 중,G-TIER,"Tier 4등급, 급여 엔진=프로 잠금(29_folded_pay_locked.png), 알람 점검 화면 테스트용 등급 전환. 결제는 Play 등록 뒤"
 TIER-02,"FeatureGate 한 곳에서 등급 판정, Remote Config로 등급 배치 변경",1,진행 중,,FeatureGate 한 곳에서 판정(Feature.minTier). Remote Config 연결은 Firebase 뒤

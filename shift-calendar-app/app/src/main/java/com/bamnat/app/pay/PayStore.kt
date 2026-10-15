@@ -4,6 +4,7 @@ import android.content.Context
 import com.bamnat.core.model.ExtraWork
 import com.bamnat.core.pay.CalcSnapshot
 import com.bamnat.core.pay.Cadence
+import com.bamnat.core.pay.Tier
 import com.bamnat.core.pay.LineKind
 import com.bamnat.core.pay.PayLine
 import com.bamnat.core.pay.CompanyRules
@@ -173,10 +174,13 @@ object PayCodec {
         .put("roundUnit", r.overtimeRounding.unit).put("round", r.overtimeRounding.rounding.name)
         .put("weeklyHoliday", r.weeklyHolidayPay)
         .putRate("annualLeave", r.annualLeaveDays)
+        .putOpt("publicHolidayAs", r.publicHolidayAs?.name)
+        .put("holidayLeaveFree", r.holidayLeaveFree)
         .put("extra", JSONObject().apply {
             r.extra.forEach { (kind, e) ->
                 put(kind.name, JSONObject().put("basis", e.basis.name).put("multiplier", e.multiplier).put("amount", e.amount)
-                    .put("min", e.minMinutes).put("night", e.nightPremium))
+                    .put("min", e.minMinutes).put("night", e.nightPremium)
+                    .put("dayTiers", tiers(e.dayTiers)).put("nightTiers", tiers(e.nightTiers)))
             }
         })
 
@@ -193,6 +197,8 @@ object PayCodec {
         ),
         weeklyHolidayPay = o.optBoolean("weeklyHoliday", true),
         annualLeaveDays = o.rate("annualLeave"),
+        publicHolidayAs = o.optString("publicHolidayAs").takeIf { it.isNotEmpty() }?.let { runCatching { ExtraWork.valueOf(it) }.getOrNull() },
+        holidayLeaveFree = o.optBoolean("holidayLeaveFree", false),
         extra = o.optJSONObject("extra")?.let { x ->
             x.keys().asSequence().mapNotNull { key ->
                 val kind = runCatching { ExtraWork.valueOf(key) }.getOrNull() ?: return@mapNotNull null
@@ -203,10 +209,15 @@ object PayCodec {
                     amount = e.optLong("amount", 0),
                     minMinutes = e.optInt("min", 0),
                     nightPremium = e.optBoolean("night", true),
+                    dayTiers = e.optJSONArray("dayTiers")?.let(::tiers) ?: ExtraRule.DEFAULT_DAY_TIERS,
+                    nightTiers = e.optJSONArray("nightTiers")?.let(::tiers) ?: ExtraRule.DEFAULT_NIGHT_TIERS,
                 )
             }.toMap()
         } ?: emptyMap(),
     )
+
+    private fun tiers(t: List<Tier>): JSONArray = JSONArray(t.map { JSONObject().put("min", it.minutes).put("premium", it.premium) })
+    private fun tiers(a: JSONArray): List<Tier> = (0 until a.length()).map { a.getJSONObject(it) }.map { Tier(it.getInt("min"), it.getDouble("premium")) }
 
     private fun timeline(t: ValueTimeline): JSONObject = JSONObject()
         .put("entries", JSONArray(t.entries.map { JSONObject().put("from", it.from.toString()).put("value", it.value) }))

@@ -157,16 +157,21 @@ class PayCalculator(
             val m = byDate[day.date] ?: DayMinutes(day.date)
             var ot = m.overtime; var hw = m.holidayWithin8h; var ho = m.holidayOver8h; var n = m.night
             val parts = mutableListOf<DayPart>()
-            val rule = rules.extraRule(day.extraWork)
+            // [PAYX-07] A shift on a 공휴일 can be paid the company's way for some kind of extra work.
+            val kindOfDay = day.extraWork ?: rules.publicHolidayAs?.takeIf { holiday(day.date) && day.isWorkDay }
+            val rule = rules.extraRule(kindOfDay)
             if (rule != null) {
-                val kind = day.extraWork!!
-                val extraMin = ot + hw + ho
+                val kind = kindOfDay!!
+                // A second shift on a working day can land inside the daily limit (탄력적 근로시간제),
+                // but it is still the extra work the rule pays for.
+                val extraMin = maxOf(ot + hw + ho, if (day.extraWork != null) day.extraMinutes else 0)
                 if (extraMin > 0 || rule.basis == ExtraBasis.FIXED_PER_TIME) {
                     val credited = maxOf(extraMin, rule.minMinutes)
                     val amount = when (rule.basis) {
                         ExtraBasis.HOURLY_RATE -> money(credited, rule.multiplier)
                         ExtraBasis.FIXED_PER_TIME -> rule.amount
                         ExtraBasis.FIXED_PER_HOUR -> (credited / 60.0 * rule.amount).roundToLong()
+                        ExtraBasis.TIERED -> rule.tieredAmount(credited, hourly, night = m.night * 2 >= m.worked && m.worked > 0)
                         ExtraBasis.LEGAL -> 0
                     }
                     val legalAmount = money(ot, 1.0 + legal(rates.overtimePremium)) +
@@ -177,7 +182,8 @@ class PayCalculator(
                     extraTotals.getOrPut(kind) { ExtraTotal() }.apply {
                         this.amount += amount; this.minutes += credited; times++; this.legal += legalAmount
                     }
-                    parts += DayPart(LineKind.EXTRA, kind.label, amount, "${rule.describe()}" +
+                    parts += DayPart(LineKind.EXTRA, kind.label, amount,
+                        (if (rule.basis == ExtraBasis.TIERED) "${if (m.night * 2 >= m.worked && m.worked > 0) "야간" else "주간"} ${rule.describeTiers(m.night * 2 >= m.worked && m.worked > 0)}" else rule.describe()) +
                         if (credited > 0) " · ${hours(credited)}" else "")
                 }
             }
