@@ -6,7 +6,7 @@ import { upcoming, summary, categoryTotals, cardPeriod, STATUS_LABEL } from './e
 import { todayStr, fmtMD, fmtMDW, diffDays, parts, ymd, daysInMonth } from './dates.js';
 import { toCSV, backupJSON, readBackup, toICS, encryptBackup, decryptBackup, isEncryptedBackup } from './io.js';
 
-export const APP_VERSION = '0.2.0';
+export const APP_VERSION = '0.2.1';
 
 const store = createStore();
 // 안드로이드 앱 안에서 실행 중이면 네이티브 기능(파일 저장·예약 알림·클립보드)을 쓴다.
@@ -308,7 +308,7 @@ ${autoSettings()}
   </div>
   <div class="section-title">정보</div>
   <div class="card" style="font-size:.9em">
-    <p>자동 장부 v${APP_VERSION} · 기록 ${store.txs.filter((t) => !t.deleted).length}건 · 학습된 분류 규칙 ${Object.keys(store.state.rules).length}개</p>
+    <p>살림왕 v${APP_VERSION} · 기록 ${store.txs.filter((t) => !t.deleted).length}건 · 학습된 분류 규칙 ${Object.keys(store.state.rules).length}개</p>
     <p style="margin-top:6px">광고·분석 도구가 없고, 입력한 데이터를 외부로 보내지 않습니다. 문자·알림 원문은 저장하지 않고 읽어낸 결과만 남겨요. 못 읽은 알림만 고칠 수 있게 이 기기에 30일 동안 보관해요.</p>
     <p style="margin-top:6px"><a href="privacy.html">개인정보처리방침</a></p>
   </div>`;
@@ -354,7 +354,7 @@ function pasteForm(text = '') {
   return `<form data-form="paste">
     <label class="field"><span>카드·은행 문자나 알림을 붙여넣으세요 (여러 건 가능)</span>
     <textarea name="text" placeholder="[Web발신]\n신한카드(1234)승인 홍*동 12,500원(일시불)10/15 13:20 스타벅스 누적1,234,567원" ${text ? '' : 'autofocus'}>${esc(text)}</textarea>
-    <div class="hint">문자 앱에서 메시지를 길게 눌러 복사하거나, Android에서는 공유하기 → 자동 장부를 고르세요. 원문은 저장하지 않아요.</div></label>
+    <div class="hint">문자 앱에서 메시지를 길게 눌러 복사하거나, Android에서는 공유하기 → 살림왕을 고르세요. 원문은 저장하지 않아요.</div></label>
     <div class="btns"><button type="button" class="btn" data-action="paste-clipboard">클립보드에서 가져오기</button><button class="btn primary" type="submit">읽기</button></div>
   </form><div id="paste-preview"></div>`;
 }
@@ -476,7 +476,7 @@ function captureIntro() {
       <li>못 읽은 알림만 직접 고칠 수 있게 이 기기에 30일 보관해요.</li>
       <li>어떤 내용도 서버로 보내지 않아요.</li>
     </ul>
-    <p style="margin-top:10px;font-size:.92em">다음 화면에서 <b>자동 장부</b>를 찾아 "알림 접근 허용"을 켜 주세요. 언제든 같은 곳에서 끌 수 있어요.</p>
+    <p style="margin-top:10px;font-size:.92em">다음 화면에서 <b>살림왕</b>을 찾아 "알림 접근 허용"을 켜 주세요. 언제든 같은 곳에서 끌 수 있어요.</p>
     <div class="btns"><button class="btn primary" data-action="capture-enable">허용하러 가기</button><button class="btn" data-action="close-sheet">나중에</button></div>`;
 }
 
@@ -630,7 +630,7 @@ const toNum = (v) => {
 };
 
 // ── 렌더 ─────────────────────────────────────────────────────
-const TITLES = { home: '자동 장부', history: '내역', upcoming: '곧 나갈 돈', settings: '설정' };
+const TITLES = { home: '살림왕', history: '내역', upcoming: '곧 나갈 돈', settings: '설정' };
 function render() {
   document.getElementById('title').textContent = TITLES[tab];
   document.getElementById('subtitle').textContent = tab === 'home' ? `${fmtMDW(today())} · 광고 없는 가계부` : '';
@@ -733,7 +733,7 @@ document.addEventListener('click', async (e) => {
     native?.openCaptureSettings();
   } else if (a === 'battery') {
     native?.openBatterySettings();
-    toast('목록에서 자동 장부를 찾아 "최적화 안 함"으로 바꿔 주세요');
+    toast('목록에서 살림왕을 찾아 "최적화 안 함"으로 바꿔 주세요');
   } else if (a === 'review-all') {
     store.updateTxs(store.txs.filter((x) => !x.deleted && x.review).map((x) => x.id), { review: false });
     toast('확인했어요');
@@ -749,9 +749,9 @@ document.addEventListener('click', async (e) => {
   } else if (a === 'inbox-report') {
     const x = st.inbox.find((i) => i.id === id);
     if (!x) return;
-    const masked = `[자동 장부 v${APP_VERSION} 못 읽은 형식]\n보낸 앱: ${x.app}\n${maskForReport(x.text)}`;
+    const masked = `[살림왕 v${APP_VERSION} 못 읽은 형식]\n보낸 앱: ${x.app}\n${maskForReport(x.text)}`;
     if (confirm(`숫자와 이름을 가린 아래 내용을 보냅니다. 보내기 전에 받는 곳을 고를 수 있어요.\n\n${masked}`)) {
-      if (native?.shareText) native.shareText('자동 장부 문자 형식 제보', masked);
+      if (native?.shareText) native.shareText('살림왕 문자 형식 제보', masked);
       else navigator.clipboard?.writeText(masked).then(() => toast('복사했어요'));
     }
   } else if (a === 'export-ics') {

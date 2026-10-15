@@ -1,5 +1,5 @@
 // 오프라인 실행용 서비스 워커. 앱 파일만 캐시하고, 사용자 데이터는 다루지 않는다.
-const VERSION = 'jangbu-v0.2.0';
+const VERSION = 'jangbu-v0.2.1';
 const SHELL = [
   './',
   './index.html',
