@@ -1,10 +1,12 @@
-# 자동 장부
+# 살림왕
+
+(이전 이름: 자동 장부)
 
 카드·은행 문자를 붙여넣으면 장부가 되고, 구독·고정비·공과금·카드 결제일을 **"곧 나갈 돈"** 한곳에서 미리 알려주는 무광고 가계부입니다. 서버가 없고 모든 데이터는 기기 안에만 저장됩니다.
 
 **Android 전용 앱**입니다(iOS는 보류). `android/` 의 네이티브 앱이 같은 화면 코드를 앱 안에 넣어 오프라인으로 실행하고, 결제 예정 알림·파일 저장·공유하기 받기를 Android 기능으로 처리합니다.
 
-- 개발계획서: [자동 장부 앱 개발계획서](https://claude.ai/code/artifact/d3766d1b-f012-4ec6-b2cd-31995eb99066)
+- 개발계획서: [개발계획서(옛 이름: 자동 장부)](https://claude.ai/code/artifact/d3766d1b-f012-4ec6-b2cd-31995eb99066)
 - 버전별 범위: [docs/ROADMAP.md](docs/ROADMAP.md)
 - 개인정보처리방침: [공개 페이지](https://ywjmoney.github.io/-/privacy.html) (원본 [docs/PRIVACY.md](docs/PRIVACY.md))
 - 빌드와 Play 스토어 게시: [docs/PUBLISHING.md](docs/PUBLISHING.md)

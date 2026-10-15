@@ -102,7 +102,7 @@ export function toICS(items, now = new Date()) {
       `DTSTART;VALUE=DATE:${icsDate(it.date)}`,
       `DTEND;VALUE=DATE:${icsDate(addDays(it.date, 1))}`,
       `SUMMARY:${icsText(`${it.title} ${won}${it.label === '예상' ? ' (예상)' : ''}`)}`,
-      `DESCRIPTION:${icsText('자동 장부 앱에서 내보낸 예정 지출입니다.')}`,
+      `DESCRIPTION:${icsText('살림왕 앱에서 내보낸 예정 지출입니다.')}`,
       'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsText(`3일 뒤 ${it.title} ${won}`)}`, 'TRIGGER:-P3DT0H0M0S', 'END:VALARM',
       'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsText(`오늘 ${it.title} ${won}`)}`, 'TRIGGER:PT9H', 'END:VALARM',
       'END:VEVENT',

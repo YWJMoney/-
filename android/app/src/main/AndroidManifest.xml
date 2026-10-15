@@ -26,7 +26,7 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- 문자 앱에서 "공유하기" → 자동 장부 -->
+            <!-- 문자 앱에서 "공유하기" → 살림왕 -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
