@@ -3,7 +3,10 @@ package com.bamnat.core
 import com.bamnat.core.model.DayEntry
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
+import com.bamnat.core.pay.Cadence
 import com.bamnat.core.pay.DatedValue
+import com.bamnat.core.pay.PayItem
+import com.bamnat.core.pay.StandardHours
 import com.bamnat.core.pay.LeaveBook
 import com.bamnat.core.pay.LineKind
 import com.bamnat.core.pay.MonthPay
@@ -239,5 +242,74 @@ class PayGoldenTest {
         assertEquals(17, on(5))
         assertEquals(25, on(21))
         assertEquals(25, on(25))
+    }
+
+    // ---- 상여금과 통상임금 (대법원 2024.12.19. 2020다247190 전원합의체, 시행령 제6조 제2항 제5호) ----
+
+    private fun bonus(percent: Double, months: Set<Int>, ordinary: Boolean = true) = PayItem(
+        "bonus", "상여금", ValueTimeline(listOf(DatedValue(LocalDate.of(2020, 1, 1), 0))), Cadence.BONUS,
+        ordinary = ordinary, months = months, percentOfBase = percent,
+    )
+
+    @Test
+    fun `a 600 percent bonus raises the ordinary hourly by a year's payments over 12`() {
+        // 고용노동부 통상임금 지침(2025.2.6) 예시 (검색 요약): 기본급 200만, 상여 600% → 월 100만, 300만 ÷ 209 = 14,354 (산술).
+        val p = monthly(2_000_000).copy(items = listOf(bonus(1.0, setOf(2, 4, 6, 8, 10, 12))))
+        val r = weekly(day)
+        assertEquals(14_354, PayCalculator().calculate(p, nov, r::resolve).ordinaryHourly)
+        // Paid in even months only, 100% of 기본급 each time.
+        val dec = PayCalculator().calculate(p, YearMonth.of(2026, 12), r::resolve)
+        assertEquals(2_000_000, dec.lines.single { it.label == "상여금" }.amount)
+        assertTrue(PayCalculator().calculate(p, YearMonth.of(2026, 11), r::resolve).lines.none { it.label == "상여금" })
+        // A performance bonus left out of 통상임금 does not change the hourly.
+        val perf = p.copy(items = listOf(bonus(1.0, setOf(2, 4, 6, 8, 10, 12), ordinary = false)))
+        assertEquals(9_569, PayCalculator().calculate(perf, nov, r::resolve).ordinaryHourly)
+    }
+
+    @Test
+    fun `bonuses count toward ordinary wage only from the 2024-12-19 ruling`() {
+        val p = monthly(2_000_000).copy(base = ValueTimeline(listOf(DatedValue(LocalDate.of(2020, 1, 1), 2_000_000))),items = listOf(bonus(1.0, setOf(2, 4, 6, 8, 10, 12))))
+        val r = weekly(day)
+        assertEquals(9_569, PayCalculator().calculate(p, YearMonth.of(2024, 11), r::resolve).ordinaryHourly)
+        assertEquals(14_354, PayCalculator().calculate(p, YearMonth.of(2024, 12), r::resolve).ordinaryHourly)
+    }
+
+    // ---- 월 소정근로시간 (시행령 제6조 제2항) ----
+
+    @Test
+    fun `monthly standard hours from weekly hours`() {
+        assertEquals(209, StandardHours.monthly(40 * 60))            // 208.57
+        assertEquals(183, StandardHours.monthly(35 * 60))            // (35 + 7) × 365/7/12 = 182.5 (산술)
+        assertEquals(226, StandardHours.monthly(40 * 60, 4 * 60))    // 토요일 유급 4시간: 225.95
+        assertEquals(243, StandardHours.monthly(40 * 60, 8 * 60))    // 토요일 유급 8시간: 243.33
+        assertEquals(0, StandardHours.weeklyHolidayMinutes(14 * 60))
+    }
+
+    @Test
+    fun `the roster gives the weekly average`() {
+        assertEquals(40 * 60, StandardHours.averageWeekly(monday, resolve = weekly(dayNoBreak)::resolve))
+        // 12-hour shifts count 8 hours of 소정근로 a day (제50조); the rest is 연장.
+        val twelve = type(29, 7, 0, 19, 0)
+        assertEquals(24 * 60, StandardHours.averageWeekly(monday, resolve = weekly(twelve, daysPerWeek = 3)::resolve))
+    }
+
+    // ---- 고정 연장수당 ----
+
+    @Test
+    fun `fixed overtime allowance covers overtime up to its amount and flags the rest`() {
+        val fixed = PayItem("ot", "고정 연장수당", ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 360_000))),
+            Cadence.MONTHLY, fixedOvertimeMinutes = 20 * 60)
+        val p = moel.copy(items = listOf(fixed.copy(ordinary = true)))
+        fun ot(hours: Int) = (3..20).filter { LocalDate.of(2026, 11, it).dayOfWeek.value <= 5 }.take(hours / 2)
+            .map { DayEntry(LocalDate.of(2026, 11, it), overtimeMinutes = 120) }.toTypedArray()
+        // 16시간 연장 = 288,000원 (고용노동부 예시) ≤ 360,000원: nothing more, the hourly stays 12,000.
+        val within = PayCalculator().calculate(p, nov, weekly(day, *ot(16))::resolve)
+        assertEquals(12_000, within.ordinaryHourly)
+        assertEquals(12_000L * 209 + 360_000, within.total)
+        assertTrue(within.warnings.none { "차액" in it })
+        // 24시간 = 432,000원: 72,000원 more is owed.
+        val over = PayCalculator().calculate(p, nov, weekly(day, *ot(24))::resolve)
+        assertEquals(12_000L * 209 + 432_000, over.total)
+        assertTrue(over.warnings.any { "72,000원" in it })
     }
 }

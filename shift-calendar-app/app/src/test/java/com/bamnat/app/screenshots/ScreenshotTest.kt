@@ -377,6 +377,9 @@ class ScreenshotTest {
         scrollUp(800)
         scrollUp(800)
     }
+    @Test fun foldedBonusDialog() = shoot("44_folded_bonus_dialog", FOLDED, payScreen(Tier.PRO, withProfile = true) { _ ->
+        com.bamnat.app.ui.pay.AddBonusDialog(onDismiss = {}) { _, _, _, _, _ -> }
+    })
     @Test fun monthImage() = runBlocking {
         val snap = app.container.scheduleRepository.snapshot.first()
         val bmp = MonthImage.render(snap, java.time.YearMonth.from(today), java.time.DayOfWeek.SUNDAY)

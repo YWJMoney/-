@@ -102,8 +102,10 @@ class PayCalculator(
         val base = profile.base.on(month)
         val ordinaryMonthly = profile.items.filter { it.ordinary && it.cadence == Cadence.MONTHLY && !it.isFixedOvertime }
             .sumOf { it.amount.on(month).value }
-        // [PAY-05] Regular bonuses count toward 통상임금 at a year's payments ÷ 12.
-        val bonusMonthly = profile.items.filter { it.ordinary && it.cadence == Cadence.BONUS }
+        // [PAY-05] Regular bonuses count toward 통상임금 at a year's payments ÷ 12 (시행령 제6조 제2항
+        // 제5호), from 2024-12-19 on: the 전원합의체 ruling of that day applies to later pay only.
+        val bonusMonthly = if (month.atEndOfMonth().isBefore(BONUS_ORDINARY_FROM)) 0L
+        else profile.items.filter { it.ordinary && it.cadence == Cadence.BONUS }
             .sumOf { it.bonusMonthlyShare(base.value, month) }
         val hourly = when (profile.wageType) {
             WageType.MONTHLY -> ((base.value + ordinaryMonthly + bonusMonthly).toDouble() / profile.monthlyHours).roundToLong()
@@ -425,6 +427,9 @@ class PayCalculator(
     companion object {
         fun hours(minutes: Int): String =
             if (minutes % 60 == 0) "${minutes / 60}시간" else "${minutes / 60}시간 ${minutes % 60}분"
+
+        /** 대법원 2024.12.19. 2020다247190·2023다302838 (전원합의체): 정기상여금 is 통상임금 from this date. */
+        val BONUS_ORDINARY_FROM: LocalDate = LocalDate.of(2024, 12, 19)
 
         fun pct(m: Double): String = "${(m * 100).roundToLong()}%"
     }
