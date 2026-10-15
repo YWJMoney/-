@@ -24,6 +24,8 @@ data class ShiftTypeEntity(
     @ColumnInfo(defaultValue = "") val alarmOffsets: String = "",
     /** [com.bamnat.core.model.ShiftIcon.key]; null shows the label only [FEAT-01]. */
     @ColumnInfo(defaultValue = "NULL") val icon: String? = null,
+    /** Minutes after midnight the break starts; null when unknown [PAY-01]. */
+    @ColumnInfo(defaultValue = "NULL") val breakStartMinute: Int? = null,
 )
 
 /**

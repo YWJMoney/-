@@ -69,6 +69,8 @@ ksp {
 
 dependencies {
     implementation("com.bamnat:core")
+    // [OPS-20] Google Play in-app review, asked once at a happy moment.
+    implementation("com.google.android.play:review-ktx:2.0.2")
 
     val composeBom = platform("androidx.compose:compose-bom:2025.05.00")
     implementation(composeBom)

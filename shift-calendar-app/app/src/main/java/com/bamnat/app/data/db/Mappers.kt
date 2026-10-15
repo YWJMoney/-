@@ -30,6 +30,7 @@ fun ShiftTypeEntity.toModel() = ShiftType(
     alarmSoundUri = alarmSoundUri,
     sortOrder = sortOrder,
     icon = icon,
+    breakStart = if (isOff) null else breakStartMinute?.toLocalTime(),
 )
 
 fun ShiftType.toEntity() = ShiftTypeEntity(
@@ -48,6 +49,7 @@ fun ShiftType.toEntity() = ShiftTypeEntity(
     sortOrder = sortOrder,
     alarmOffsets = AlarmCodec.encodeSpecs(alarms),
     icon = icon,
+    breakStartMinute = breakStart?.toMinuteOfDay(),
 )
 
 internal fun encodeSteps(steps: List<Long?>): String = steps.joinToString(",") { it?.toString() ?: "" }

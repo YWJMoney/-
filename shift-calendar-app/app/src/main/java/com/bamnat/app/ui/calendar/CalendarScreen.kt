@@ -82,6 +82,8 @@ import com.bamnat.app.ui.components.StatTile
 import com.bamnat.app.ui.components.WarningBanner
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.hours.WorkHoursCalculator
+import com.bamnat.app.review.InAppReview
+import com.bamnat.app.review.InAppReview.findActivity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -127,6 +129,15 @@ fun CalendarScreen(
         while (true) {
             delay(60_000)
             value = LocalDate.now()
+        }
+    }
+
+    // [OPS-20] Ask for a store review once, shortly after the first pattern was saved.
+    LaunchedEffect(settings.reviewDue, settings.reviewAsked) {
+        if (settings.reviewDue && !settings.reviewAsked) {
+            delay(1500)
+            context.findActivity()?.let { InAppReview.ask(it) }
+            vm.markReviewAsked()
         }
     }
 
@@ -238,6 +249,7 @@ fun CalendarScreen(
                     today = today,
                     memoDates = memoDates,
                     showHours = settings.showHoursInCells,
+                    showLunar = settings.showLunar,
                     cellHeight = cellHeight,
                     onDayClick = onDayClick,
                     onQuickAction = onQuickAction,

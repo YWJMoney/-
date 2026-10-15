@@ -421,6 +421,9 @@ fun SettingsScreen(
             SwitchRow("달력에 근무시간 표시", "날짜 칸 아래에 8h처럼 표시", settings.showHoursInCells) { v ->
                 vm.update { it.copy(showHoursInCells = v) }
             }
+            SwitchRow("음력 날짜 표시", "날짜 칸 아래에 음력(8.24)을 근무시간 대신 보여줘요", settings.showLunar) { v ->
+                vm.update { it.copy(showLunar = v) }
+            }
         }
 
         SectionCard(title = "개인정보") {

@@ -68,6 +68,7 @@ class ShiftsViewModel(private val container: AppContainer) : ViewModel() {
     fun saveFirstPattern(pattern: WorkPattern, onDone: () -> Unit) {
         viewModelScope.launch {
             repo.setFirstPattern(pattern)
+            container.settingsRepository.update { if (it.reviewAsked) it else it.copy(reviewDue = true) }
             onDone()
         }
     }

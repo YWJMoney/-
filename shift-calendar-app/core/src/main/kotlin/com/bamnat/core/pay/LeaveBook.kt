@@ -3,6 +3,7 @@ package com.bamnat.core.pay
 import com.bamnat.core.model.LeaveKind
 import com.bamnat.core.schedule.ResolvedDay
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 
 /** 연차 used in a year against what the company grants [FEAT-10]. */
 data class LeaveBalance(
@@ -33,6 +34,19 @@ object LeaveBook {
             d = d.plusDays(1)
         }
         return LeaveBalance(year, granted, used, planned, byKind)
+    }
+
+    /**
+     * 연차 the law grants by length of service on [on], counted from [hireDate] (입사일 기준)
+     * [PAY-10]. 근로기준법 제60조: under one year, 1 day per month fully attended, so at most 11
+     * (제2항); from one year, 15 days (제1항), plus 1 day for every 2 years beyond the first, at most
+     * 25 (제4항). Assumes full attendance (80% 이상 출근) and a workplace of 5 or more (시행령 별표1).
+     */
+    fun legalDays(hireDate: LocalDate, on: LocalDate): Int {
+        if (on.isBefore(hireDate)) return 0
+        val years = ChronoUnit.YEARS.between(hireDate, on).toInt()
+        if (years < 1) return ChronoUnit.MONTHS.between(hireDate, on).toInt().coerceAtMost(11)
+        return (15 + (years - 1) / 2).coerceAtMost(25)
     }
 
     /** "3.75일", "2일". */

@@ -362,6 +362,21 @@ class ScreenshotTest {
     @Test fun foldedSecondShift() = shoot("41_folded_second_shift", FOLDED) {
         scrollUp(330)
     }
+    @Test fun foldedBreakStart() = shoot("42_folded_break_start", FOLDED) {
+        tab(3, wide = false)
+        tap(180f, SETTINGS_SHIFT_TYPES_Y)
+        tap(150f, 270f)
+        scrollUp(150)
+    }
+    @Test fun foldedRulesLeave() = shoot("43_folded_rules_leave", FOLDED) {
+        payScreen(Tier.PRO, withProfile = true) { vm ->
+            val profile = vm.profile.collectAsState().value
+            val snap = vm.snapshot.collectAsState().value
+            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {})
+        }.invoke(this)
+        scrollUp(800)
+        scrollUp(800)
+    }
     @Test fun monthImage() = runBlocking {
         val snap = app.container.scheduleRepository.snapshot.first()
         val bmp = MonthImage.render(snap, java.time.YearMonth.from(today), java.time.DayOfWeek.SUNDAY)

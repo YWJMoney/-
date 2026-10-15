@@ -57,16 +57,62 @@ object KoreanHolidays {
 
     /** The holiday's name, or null on an ordinary day. */
     fun nameOf(date: LocalDate): String? =
-        if (date.year in years) table[date] else fixed["%02d-%02d".format(date.monthValue, date.dayOfMonth)]
-
-    /** Solar-date holidays, used for years outside the table (no lunar dates or substitutes). */
-    private val fixed = mapOf(
-        "01-01" to "신정", "03-01" to "삼일절", "05-01" to "근로자의 날", "05-05" to "어린이날", "06-06" to "현충일",
-        "08-15" to "광복절", "10-03" to "개천절", "10-09" to "한글날", "12-25" to "성탄절",
-    )
+        if (date.year in years) table[date] else computed.getOrPut(date.year) { rules(date.year) }[date]
 
     fun isHoliday(date: LocalDate): Boolean = nameOf(date) != null
 
-    /** Years the table covers; outside them only fixed-date holidays are known. */
+    /** Years the table covers (checked against the 월력요항, with 임시공휴일 and 선거일). */
     val years: IntRange = 2025..2027
+
+    private val computed = java.util.concurrent.ConcurrentHashMap<Int, Map<LocalDate, String>>()
+
+    /**
+     * Holidays of any other year from the rules of 관공서의 공휴일에 관한 규정 [FEAT-05]: solar dates,
+     * lunar dates from [KoreanLunar], and 대체공휴일 (설·추석 연휴 on a Sunday or another holiday;
+     * 어린이날 on a weekend or another holiday; 삼일절·부처님오신날·광복절·개천절·한글날·성탄절 on a
+     * weekend). 임시공휴일 and 선거일 cannot be known ahead, so they are missing.
+     */
+    internal fun rules(year: Int): Map<LocalDate, String> {
+        val days = sortedMapOf<LocalDate, String>()
+        fun add(d: LocalDate?, name: String) {
+            if (d == null || d.year != year && name != "설날 연휴") return
+            days[d] = days[d]?.let { "$it·$name" } ?: name
+        }
+        add(LocalDate.of(year, 1, 1), "신정")
+        val seollal = KoreanLunar.toSolar(year, 1, 1)
+        add(seollal?.minusDays(1), "설날 연휴"); add(seollal, "설날"); add(seollal?.plusDays(1), "설날 연휴")
+        add(LocalDate.of(year, 3, 1), "삼일절")
+        add(LocalDate.of(year, 5, 1), "근로자의 날")
+        add(LocalDate.of(year, 5, 5), "어린이날")
+        val buddha = KoreanLunar.toSolar(year, 4, 8)
+        add(buddha, "부처님오신날")
+        add(LocalDate.of(year, 6, 6), "현충일")
+        add(LocalDate.of(year, 8, 15), "광복절")
+        val chuseok = KoreanLunar.toSolar(year, 8, 15)
+        add(chuseok?.minusDays(1), "추석 연휴"); add(chuseok, "추석"); add(chuseok?.plusDays(1), "추석 연휴")
+        add(LocalDate.of(year, 10, 3), "개천절")
+        add(LocalDate.of(year, 10, 9), "한글날")
+        add(LocalDate.of(year, 12, 25), "성탄절")
+
+        val base = days.toMap()
+        fun weekend(d: LocalDate) = d.dayOfWeek == java.time.DayOfWeek.SATURDAY || d.dayOfWeek == java.time.DayOfWeek.SUNDAY
+        // 근로자의 날 is not a 관공서 공휴일, so it neither causes nor blocks a substitute.
+        fun overlaps(d: LocalDate) = (base[d] ?: "").split('·').count { it != "근로자의 날" } > 1
+        fun substitute(after: LocalDate) {
+            var d = after.plusDays(1)
+            while (weekend(d) || days[d]?.let { it != "근로자의 날" } == true) d = d.plusDays(1)
+            add(d, "대체공휴일")
+        }
+        for (group in listOfNotNull(seollal, chuseok)) {
+            val span = (-1L..1L).map { group.plusDays(it) }
+            if (span.any { it.dayOfWeek == java.time.DayOfWeek.SUNDAY || overlaps(it) }) substitute(span.last())
+        }
+        val children = LocalDate.of(year, 5, 5)
+        if (weekend(children) || overlaps(children)) substitute(children)
+        for (d in listOfNotNull(LocalDate.of(year, 3, 1), buddha, LocalDate.of(year, 8, 15), LocalDate.of(year, 10, 3),
+            LocalDate.of(year, 10, 9), LocalDate.of(year, 12, 25))) {
+            if (weekend(d) && !(d == buddha && children == buddha)) substitute(d)
+        }
+        return days.filterKeys { it.year == year }
+    }
 }

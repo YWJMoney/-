@@ -18,6 +18,11 @@ data class ShiftType(
     val start: LocalTime?,
     val end: LocalTime?,
     val breakMinutes: Int = 0,
+    /**
+     * When the break starts [PAY-01]. Break time is not working time (근로기준법 제54조), so a
+     * break inside 22:00~06:00 takes night minutes off exactly; null takes it out evenly (estimate).
+     */
+    val breakStart: LocalTime? = null,
     /** Off-duty type (휴무, 비번). Off types never count toward work hours. */
     val isOff: Boolean = false,
     /** Turns all of this shift's alarms on or off at once. */

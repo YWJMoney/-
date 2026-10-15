@@ -38,7 +38,8 @@ class BackupManager(
                     .putOpt("start", t.startMinute).putOpt("end", t.endMinute)
                     .put("break", t.breakMinutes).put("off", t.isOff)
                     .put("alarm", t.alarmEnabled).put("alarmOffset", t.alarmOffsetMinutes)
-                    .putOpt("sound", t.alarmSoundUri).put("order", t.sortOrder).put("alarms", t.alarmOffsets).putOpt("icon", t.icon),
+                    .putOpt("sound", t.alarmSoundUri).put("order", t.sortOrder).put("alarms", t.alarmOffsets).putOpt("icon", t.icon)
+                    .putOpt("breakStart", t.breakStartMinute),
             )
         }
         root.put("shiftTypes", types)
@@ -79,7 +80,7 @@ class BackupManager(
             JSONObject()
                 .put("weekStart", s.weekStart.name).put("weeklyLimit", s.weeklyLimitHours)
                 .put("averageLimit", s.averageLimitHours).put("theme", s.themeMode.name)
-                .put("dynamicColor", s.dynamicColor).put("cellHours", s.showHoursInCells)
+                .put("dynamicColor", s.dynamicColor).put("cellHours", s.showHoursInCells).put("lunar", s.showLunar)
                 .putOpt("sound", s.defaultAlarmSound).put("vibrate", s.vibrate).put("gradual", s.gradualVolume)
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmsOn", s.alarmsEnabled),
         )
@@ -107,6 +108,7 @@ class BackupManager(
                 breakMinutes = o.optInt("break"), isOff = o.optBoolean("off"), alarmEnabled = o.optBoolean("alarm"),
                 alarmOffsetMinutes = o.optInt("alarmOffset", 60), alarmSoundUri = o.optStringOrNull("sound"),
                 sortOrder = o.optInt("order"), alarmOffsets = o.optString("alarms", ""), icon = o.optStringOrNull("icon"),
+                breakStartMinute = o.optIntOrNull("breakStart"),
             )
         }
         if (types.isEmpty()) throw BackupException("근무 유형이 없는 백업 파일이에요")
@@ -159,6 +161,7 @@ class BackupManager(
                     themeMode = runCatching { ThemeMode.valueOf(o.getString("theme")) }.getOrDefault(s.themeMode),
                     dynamicColor = o.optBoolean("dynamicColor", s.dynamicColor),
                     showHoursInCells = o.optBoolean("cellHours", s.showHoursInCells),
+                    showLunar = o.optBoolean("lunar", s.showLunar),
                     // Sound files from another phone usually do not exist here.
                     vibrate = o.optBoolean("vibrate", s.vibrate),
                     gradualVolume = o.optBoolean("gradual", s.gradualVolume),

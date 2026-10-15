@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.core.holiday.KoreanLunar
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SegmentedButton
@@ -116,7 +117,8 @@ fun DayDetail(
     val memos by remember(date) { vm.memosOn(date) }.collectAsStateWithLifecycle(emptyList())
 
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        DayHeader(day = day, isToday = date == today)
+        val settings by vm.settings.collectAsStateWithLifecycle()
+        DayHeader(day = day, isToday = date == today, showLunar = settings.showLunar)
 
         // Shift choice
         SectionCard(title = "근무") {
@@ -190,7 +192,7 @@ fun DayDetail(
 }
 
 @Composable
-private fun DayHeader(day: ResolvedDay, isToday: Boolean) {
+private fun DayHeader(day: ResolvedDay, isToday: Boolean, showLunar: Boolean) {
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(Fmt.dayTitle(day.date), style = MaterialTheme.typography.headlineSmall)
@@ -206,6 +208,10 @@ private fun DayHeader(day: ResolvedDay, isToday: Boolean) {
                         .padding(horizontal = 8.dp, vertical = 2.dp),
                 )
             }
+        }
+        if (showLunar) {
+            Text(KoreanLunar.fromSolar(day.date).label, style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
         }
         KoreanHolidays.nameOf(day.date)?.let { name ->
             Text(name, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error,

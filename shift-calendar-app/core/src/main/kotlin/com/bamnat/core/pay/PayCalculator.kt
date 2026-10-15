@@ -3,6 +3,7 @@ package com.bamnat.core.pay
 import com.bamnat.core.holiday.KoreanHolidays
 import com.bamnat.core.model.ExtraWork
 import com.bamnat.core.schedule.ResolvedDay
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.TemporalAdjusters
@@ -78,7 +79,9 @@ class PayCalculator(
         val rules = profile.rules
         val rates = RateTable.on(month.atDay(1), rateTable)
         val premiums = profile.fiveOrMoreEmployees
-        val holiday = isHoliday ?: { d: LocalDate -> rules.publicHolidaysPaid && KoreanHolidays.isHoliday(d) }
+        // 공휴일 are paid holidays only at 5인 이상 (근로기준법 제55조 제2항, 시행령 별표1); below that
+        // they are ordinary days unless the caller says otherwise.
+        val holiday = isHoliday ?: { d: LocalDate -> premiums && rules.publicHolidaysPaid && KoreanHolidays.isHoliday(d) }
         val classifier = MinuteClassifier(
             rates = { RateTable.on(it, rateTable) },
             options = ClassifyOptions(profile.dailyLimitMinutes, profile.weeklyLimitMinutes, profile.weekStart,
@@ -132,6 +135,17 @@ class PayCalculator(
         // Leave [FEAT-10]: minutes by kind, and paid leave per date for 주휴 weeks.
         var paidLeave = 0; var unpaidLeave = 0
         val paidLeaveByDate = days.filter { it.leave?.kind?.paid == true }.associate { it.date to it.leaveMinutes }
+        // [PAY-13] A paid holiday on a scheduled working day: hourly and daily-paid workers get one
+        // day's ordinary wage for it, worked or not, and holiday pay on top when they work it
+        // (고용노동부 임금근로시간과-653, 2021.3.22.). A 비번 day that falls on a holiday earns nothing.
+        // Monthly pay already includes it. Sundays are left out: the 주휴일 covers them.
+        fun paidHolidayMinutes(day: ResolvedDay): Int =
+            if (profile.wageType != WageType.HOURLY || !holiday(day.date) || day.date.dayOfWeek == DayOfWeek.SUNDAY) 0
+            else (day.scheduledMinutes + day.leaveMinutes).coerceAtMost(rates.dailyLimitMinutes)
+        var paidHoliday = 0
+        // The week's 소정근로 for 주휴 counts paid leave and paid holidays as attended.
+        val attendedByDate = days.associate { it.date to (paidLeaveByDate[it.date] ?: 0) + paidHolidayMinutes(it) }
+            .filterValues { it > 0 }
 
         for (day in monthDays) {
             val m = byDate[day.date] ?: DayMinutes(day.date)
@@ -170,6 +184,10 @@ class PayCalculator(
             if (hw > 0) parts += DayPart(LineKind.HOLIDAY, "휴일", money(hw, mHw), "${hours(hw)} × ${pct(mHw)}")
             if (ho > 0) parts += DayPart(LineKind.HOLIDAY, "휴일 8시간 초과", money(ho, mHo), "${hours(ho)} × ${pct(mHo)}")
 
+            paidHolidayMinutes(day).takeIf { it > 0 }?.let { mins ->
+                paidHoliday += mins
+                parts += DayPart(LineKind.ALLOWANCE, "유급휴일", money(mins, 1.0), "${hours(mins)} × ${won(hourly)} (공휴일)")
+            }
             day.leave?.let { leave ->
                 val mins = day.leaveMinutes
                 val (amount, formula) = when {
@@ -267,6 +285,11 @@ class PayCalculator(
             LineKind.LEAVE, "유급 휴가", paidLeave, hourly, 1.0,
             "연차·유급 휴가로 쉰 근무시간", "근로기준법 제60조 (연차 유급휴가)", baseEstimated,
         )
+        if (paidHoliday > 0) lines += line(
+            LineKind.ALLOWANCE, "유급휴일수당 (공휴일)", paidHoliday, hourly, 1.0,
+            "근무일과 겹친 공휴일의 1일분 통상임금 (일하면 휴일근로 수당을 더해서)",
+            "근로기준법 제55조 제2항, 고용노동부 임금근로시간과-653 (2021.3.22.)", baseEstimated,
+        )
         if (unpaidLeave > 0 && profile.wageType == WageType.MONTHLY) lines += line(
             LineKind.LEAVE, "무급 휴가 공제", unpaidLeave, hourly, -1.0,
             "무급으로 쉰 근무시간", "결근·무급 휴가는 일한 만큼만 지급", baseEstimated,
@@ -285,7 +308,7 @@ class PayCalculator(
         }
 
         if (profile.wageType == WageType.HOURLY && rules.weeklyHolidayPay) {
-            weeklyHolidayLine(allMinutes, paidLeaveByDate, from, month, hourly, baseEstimated)?.let { lines += it }
+            weeklyHolidayLine(allMinutes, attendedByDate, from, month, hourly, baseEstimated)?.let { lines += it }
         }
 
         if (hourly in 1 until rates.minimumHourlyWage) {
@@ -317,7 +340,7 @@ class PayCalculator(
      * worked in full (개근).
      */
     private fun weeklyHolidayLine(
-        all: List<DayMinutes>, paidLeave: Map<LocalDate, Int>, from: LocalDate, month: YearMonth, hourly: Long, estimated: Boolean,
+        all: List<DayMinutes>, attended: Map<LocalDate, Int>, from: LocalDate, month: YearMonth, hourly: Long, estimated: Boolean,
     ): PayLine? {
         var weekStart = from
         var minutes = 0
@@ -325,9 +348,9 @@ class PayCalculator(
         while (!weekStart.plusDays(6).isAfter(month.atEndOfMonth())) {
             val end = weekStart.plusDays(6)
             if (YearMonth.from(end) == month) {
-                // Paid leave counts as attended hours of the week.
+                // Paid leave and paid holidays count as attended hours of the week.
                 val worked = all.filter { !it.date.isBefore(weekStart) && !it.date.isAfter(end) }
-                    .sumOf { it.regular + (paidLeave[it.date] ?: 0) }
+                    .sumOf { it.regular + (attended[it.date] ?: 0) }
                 if (worked >= 15 * 60) {
                     val credit = minOf(worked, 40 * 60) / 5
                     minutes += credit

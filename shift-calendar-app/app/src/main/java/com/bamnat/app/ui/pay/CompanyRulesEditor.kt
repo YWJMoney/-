@@ -15,6 +15,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -44,13 +49,16 @@ import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.Rounding
 import com.bamnat.core.pay.WageType
+import java.time.Instant
+import java.time.LocalDate
 import java.time.YearMonth
+import java.time.ZoneOffset
 
 /**
  * 회사 규칙 [PAYX-07]: everything a company decides on top of the law, edited as a draft with the
  * month's total updating live, then saved in one step (and undone in one step).
  */
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun CompanyRulesEditor(
     vm: PayViewModel,
@@ -60,10 +68,33 @@ fun CompanyRulesEditor(
     onClose: () -> Unit,
 ) {
     var draft by remember { mutableStateOf(saved) }
+    var pickHire by remember { mutableStateOf(false) }
     val rules = draft.rules
     fun setRules(r: CompanyRules) { draft = draft.copy(rules = r) }
     val before = remember(saved, snapshot, month) { vm.calculate(saved, snapshot, month).total }
     val after = remember(draft, snapshot, month) { vm.calculate(draft, snapshot, month) }
+
+    if (pickHire) {
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = (draft.hireDate ?: LocalDate.now().minusYears(1)).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+        )
+        DatePickerDialog(
+            onDismissRequest = { pickHire = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let { ms ->
+                        val hire = Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC).toLocalDate()
+                        draft = draft.copy(
+                            hireDate = hire,
+                            rules = draft.rules.copy(annualLeaveDays = LeaveBook.legalDays(hire, LocalDate.now()).toDouble()),
+                        )
+                    }
+                    pickHire = false
+                }) { Text("확인") }
+            },
+            dismissButton = { TextButton(onClick = { pickHire = false }) { Text("취소") } },
+        ) { DatePicker(state = state, title = { Text("입사일", Modifier.padding(start = 24.dp, top = 16.dp)) }) }
+    }
 
     Column(Modifier.fillMaxSize()) {
         Column(
@@ -178,7 +209,24 @@ fun CompanyRulesEditor(
                     Text(days?.let(LeaveBook::days) ?: "—", style = MaterialTheme.typography.titleSmall, modifier = Modifier.align(Alignment.CenterVertically))
                     OutlinedButton(onClick = { setRules(rules.copy(annualLeaveDays = ((days ?: 15.0) + 0.5).coerceAtMost(40.0))) }) { Text("+") }
                 }
-                Hint("1년 이상 다니면 15일, 그 뒤 2년마다 1일씩 늘어 최대 25일이에요. 1년 안 됐으면 한 달 개근마다 1일(최대 11일)이에요.")
+                // [PAY-10] 입사일 gives the legal number (근로기준법 제60조), which the user can still adjust.
+                val today = remember { LocalDate.now() }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("입사일", style = MaterialTheme.typography.bodyLarge)
+                        val legal = draft.hireDate?.let { LeaveBook.legalDays(it, today) }
+                        Text(
+                            if (legal == null) "넣으면 법정 연차를 계산해 채워요"
+                            else "오늘 기준 법정 연차 ${legal}일 (80% 이상 출근 가정)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    OutlinedButton(onClick = { pickHire = true }) {
+                        Text(draft.hireDate?.let { "${it.year}.${it.monthValue}.${it.dayOfMonth}" } ?: "선택")
+                    }
+                }
+                Hint("1년 이상 다니면 15일, 그 뒤 2년마다 1일씩 늘어 최대 25일이에요. 1년 안 됐으면 한 달 개근마다 1일(최대 11일)이에요. 근로기준법 제60조 · 5인 미만 사업장은 해당 없음.")
             }
             Spacer(Modifier.padding(bottom = 16.dp))
         }

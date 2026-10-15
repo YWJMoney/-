@@ -5,6 +5,7 @@ import java.time.DayOfWeek
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.temporal.TemporalAdjusters
 import kotlin.math.roundToInt
 
@@ -40,7 +41,8 @@ data class ClassifyOptions(
 /**
  * Sorts each day's minutes [PAY-01]. A shift that runs past midnight belongs to the day it
  * started on, including the holiday decision (an assumption the settings can change later).
- * Breaks are taken out evenly across the shift, so night minutes shrink in proportion.
+ * A break with a known start time comes off the clock where it is (근로기준법 제54조); one without
+ * is taken out evenly across the shift, so night minutes shrink in proportion (an estimate).
  */
 class MinuteClassifier(
     private val rates: (LocalDate) -> Rates,
@@ -73,9 +75,8 @@ class MinuteClassifier(
         val r = rates(day.date)
         val from = day.date.atTime(second.start)
         val to = if (second.end.isAfter(second.start)) day.date.atTime(second.end) else day.date.plusDays(1).atTime(second.end)
-        val gross = Duration.between(from, to).toMinutes().toInt()
         val minutes = second.minutes
-        val night = if (gross == 0) 0 else (nightMinutes(from, to, r) * minutes.toDouble() / gross).roundToInt()
+        val night = shiftNight(from, to, minutes, second.breakMinutes, second.breakStart, r)
         if (holiday) return holidaySplit(day.date, first.worked + minutes, first.night + night, r, first.estimated)
         // On a working day it fills what is left of the daily limit, then is overtime; on a day
         // off counted as 연장 by company rule all of it is overtime.
@@ -108,8 +109,7 @@ class MinuteClassifier(
         val paidScheduled = scheduled.coerceAtMost(gross)
         // Extra hours run on after the shift ends.
         val extraEnd = to.plusMinutes((extra + holidayOnly).toLong())
-        val nightGross = nightMinutes(from, to, r)
-        val night = if (gross == 0) 0 else (nightGross * paidScheduled.toDouble() / gross).roundToInt() +
+        val night = shiftNight(from, to, paidScheduled, day.breakMinutes, day.breakStart, r) +
             nightMinutes(to, extraEnd, r)
         to = extraEnd
         val total = paidScheduled + extra + holidayOnly
@@ -128,6 +128,24 @@ class MinuteClassifier(
     private fun holidaySplit(date: LocalDate, minutes: Int, night: Int, r: Rates, estimated: Boolean): DayMinutes {
         val within = minutes.coerceAtMost(r.dailyLimitMinutes)
         return DayMinutes(date, holidayWithin8h = within, holidayOver8h = minutes - within, night = night, estimated = estimated)
+    }
+
+    /**
+     * Night minutes actually worked in a shift of [from, to) with [paid] working minutes. A break
+     * that starts at [breakStart] and fits inside the shift is taken off where it falls; otherwise
+     * the break comes off in proportion.
+     */
+    internal fun shiftNight(from: LocalDateTime, to: LocalDateTime, paid: Int, breakMinutes: Int, breakStart: LocalTime?, r: Rates): Int {
+        val gross = Duration.between(from, to).toMinutes().toInt()
+        if (gross <= 0) return 0
+        val nightGross = nightMinutes(from, to, r)
+        if (breakStart != null && breakMinutes > 0) {
+            var bFrom = from.toLocalDate().atTime(breakStart)
+            if (bFrom.isBefore(from)) bFrom = bFrom.plusDays(1)
+            val bTo = bFrom.plusMinutes(breakMinutes.toLong())
+            if (!bTo.isAfter(to)) return nightGross - nightMinutes(bFrom, bTo, r)
+        }
+        return (nightGross * paid.toDouble() / gross).roundToInt()
     }
 
     /** Minutes of [from, to) inside the night window, across any number of midnights. */

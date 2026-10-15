@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.core.holiday.KoreanLunar
 import com.bamnat.app.ui.components.LeaveMark
 import com.bamnat.core.model.LeaveKind
 import com.bamnat.core.model.Leave
@@ -113,6 +114,7 @@ fun MonthGrid(
     today: LocalDate,
     memoDates: Set<LocalDate>,
     showHours: Boolean,
+    showLunar: Boolean = false,
     cellHeight: Dp,
     onDayClick: (LocalDate) -> Unit,
     onQuickAction: (LocalDate, QuickAction) -> Unit,
@@ -147,6 +149,7 @@ fun MonthGrid(
                         isSelected = date == selected,
                         hasMemo = date in memoDates,
                         showHours = showHours,
+                        showLunar = showLunar,
                         onClick = { onDayClick(date) },
                         onQuickAction = { onQuickAction(date, it) },
                         modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -167,6 +170,7 @@ private fun DayCell(
     isSelected: Boolean,
     hasMemo: Boolean,
     showHours: Boolean,
+    showLunar: Boolean = false,
     onClick: () -> Unit,
     onQuickAction: (QuickAction) -> Unit,
     modifier: Modifier = Modifier,
@@ -280,6 +284,8 @@ private fun DayCell(
                 val extraMinutes = day.extraMinutes
                 val footer = when {
                     extraMinutes > 0 -> "+" + HoursFormat.short(extraMinutes)
+                    // [FEAT-05] Lunar date takes the place of the hours when turned on.
+                    showLunar -> remember(date) { KoreanLunar.fromSolar(date).short }
                     showHours && day.scheduledMinutes > 0 -> HoursFormat.short(day.scheduledMinutes)
                     else -> ""
                 }

@@ -18,6 +18,7 @@ data class SecondShift(
     val start: LocalTime,
     val end: LocalTime,
     val breakMinutes: Int,
+    val breakStart: LocalTime? = null,
 ) {
     val minutes: Int get() = WorkTime.workMinutes(start, end, breakMinutes)
 }
@@ -31,6 +32,8 @@ data class ResolvedDay(
     val start: LocalTime?,
     val end: LocalTime?,
     val breakMinutes: Int,
+    /** When the break starts, if the shift says; null means unknown (taken out evenly). */
+    val breakStart: LocalTime? = null,
     /** Minutes of the scheduled shift (after break). */
     val scheduledMinutes: Int,
     val overtimeMinutes: Int,
@@ -146,6 +149,8 @@ class ScheduleResolver(
             start = workStart,
             end = workEnd,
             breakMinutes = workBreak,
+            // A partial leave shrinks the break, so its clock time is no longer known.
+            breakStart = type?.breakStart?.takeIf { workStart != null && workBreak == breakMinutes && breakMinutes > 0 },
             scheduledMinutes = scheduled,
             overtimeMinutes = entry?.overtimeMinutes?.coerceAtLeast(0) ?: 0,
             holidayWorkMinutes = entry?.holidayWorkMinutes?.coerceAtLeast(0) ?: 0,
@@ -156,7 +161,7 @@ class ScheduleResolver(
             leave = leave,
             leaveMinutes = leaveMinutes,
             second = entry?.secondShiftId?.let { typesById[it] }?.takeIf { it.hasTimes }
-                ?.let { SecondShift(it, it.start!!, it.end!!, it.breakMinutes) },
+                ?.let { SecondShift(it, it.start!!, it.end!!, it.breakMinutes, it.breakStart) },
         )
     }
 

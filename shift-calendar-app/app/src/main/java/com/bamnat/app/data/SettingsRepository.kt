@@ -18,6 +18,11 @@ data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val dynamicColor: Boolean = false,
     val showHoursInCells: Boolean = true,
+    /** Lunar dates in calendar cells and the day header [FEAT-05]. */
+    val showLunar: Boolean = false,
+    /** [OPS-20] A happy moment happened (first pattern saved); ask for a review once. */
+    val reviewDue: Boolean = false,
+    val reviewAsked: Boolean = false,
     /** Default alarm sound; null means the system alarm sound, [SILENT_SOUND] means vibrate only. */
     val defaultAlarmSound: String? = null,
     val vibrate: Boolean = true,
@@ -81,6 +86,9 @@ class SettingsRepository(context: Context) {
                 .getOrDefault(d.themeMode),
             dynamicColor = prefs.getBoolean(K_DYNAMIC, d.dynamicColor),
             showHoursInCells = prefs.getBoolean(K_CELL_HOURS, d.showHoursInCells),
+            showLunar = prefs.getBoolean(K_LUNAR, d.showLunar),
+            reviewDue = prefs.getBoolean(K_REVIEW_DUE, false),
+            reviewAsked = prefs.getBoolean(K_REVIEW_ASKED, false),
             defaultAlarmSound = prefs.getString(K_SOUND, null),
             vibrate = prefs.getBoolean(K_VIBRATE, d.vibrate),
             gradualVolume = prefs.getBoolean(K_GRADUAL, d.gradualVolume),
@@ -102,6 +110,9 @@ class SettingsRepository(context: Context) {
             .putString(K_THEME, s.themeMode.name)
             .putBoolean(K_DYNAMIC, s.dynamicColor)
             .putBoolean(K_CELL_HOURS, s.showHoursInCells)
+            .putBoolean(K_LUNAR, s.showLunar)
+            .putBoolean(K_REVIEW_DUE, s.reviewDue)
+            .putBoolean(K_REVIEW_ASKED, s.reviewAsked)
             .putString(K_SOUND, s.defaultAlarmSound)
             .putBoolean(K_VIBRATE, s.vibrate)
             .putBoolean(K_GRADUAL, s.gradualVolume)
@@ -122,6 +133,9 @@ class SettingsRepository(context: Context) {
         const val K_THEME = "theme"
         const val K_DYNAMIC = "dynamic_color"
         const val K_CELL_HOURS = "cell_hours"
+        const val K_LUNAR = "lunar"
+        const val K_REVIEW_DUE = "review_due"
+        const val K_REVIEW_ASKED = "review_asked"
         const val K_SOUND = "default_sound"
         const val K_VIBRATE = "vibrate"
         const val K_GRADUAL = "gradual"

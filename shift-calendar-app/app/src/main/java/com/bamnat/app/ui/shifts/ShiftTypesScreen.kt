@@ -67,6 +67,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -352,6 +353,7 @@ fun ShiftTypeEditorDialog(
     var draft by remember(initial) { mutableStateOf(initial) }
     var pickStart by remember { mutableStateOf(false) }
     var pickEnd by remember { mutableStateOf(false) }
+    var pickBreak by remember { mutableStateOf(false) }
     var addingAlarm by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -514,6 +516,26 @@ fun ShiftTypeEditorDialog(
                                     dialogTitle = "휴게 시간",
                                 )
                             }
+                            if (draft.breakMinutes > 0) {
+                                // [PAY-01] Where the break falls decides how much of the shift is night work.
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("휴게 시작", style = MaterialTheme.typography.bodyLarge)
+                                        Text(
+                                            if (draft.breakStart == null) "모르면 비워 두세요. 야간 가산은 추정해요"
+                                            else "야간(22~06시) 가산을 정확히 계산해요",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    if (draft.breakStart != null) {
+                                        TextButton(onClick = { draft = draft.copy(breakStart = null) }) { Text("비우기") }
+                                    }
+                                    FilledTonalButton(onClick = { pickBreak = true }) {
+                                        Text(draft.breakStart?.let { Fmt.time(it) } ?: "선택")
+                                    }
+                                }
+                            }
                             Text(
                                 "실제 근무 ${HoursFormat.korean(timed.workMinutes)}" +
                                     if (!end.isAfter(start)) " · 다음날 ${Fmt.time(end)}에 끝나요" else "",
@@ -603,6 +625,13 @@ fun ShiftTypeEditorDialog(
         TimePickerDialog("종료 시각", draft.end ?: LocalTime.of(18, 0), onDismiss = { pickEnd = false }) {
             draft = draft.copy(end = it)
             pickEnd = false
+        }
+    }
+    if (pickBreak) {
+        val suggested = (draft.start ?: LocalTime.of(9, 0)).plusMinutes((draft.durationMinutes / 2).toLong()).withMinute(0)
+        TimePickerDialog("휴게 시작 시각", draft.breakStart ?: suggested, onDismiss = { pickBreak = false }) {
+            draft = draft.copy(breakStart = it)
+            pickBreak = false
         }
     }
     if (addingAlarm) {

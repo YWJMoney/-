@@ -146,6 +146,12 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { schedule.setLeave(date, leave) }
     }
 
+    /** Called once the review sheet was offered; Play decides whether it actually shows [OPS-20]. */
+    fun markReviewAsked() {
+        container.settingsRepository.update { it.copy(reviewDue = false, reviewAsked = true) }
+        container.telemetry.event("review_asked")
+    }
+
     fun setSecondShift(date: LocalDate, shiftTypeId: Long?) {
         viewModelScope.launch { schedule.setSecondShift(date, shiftTypeId) }
     }
