@@ -55,6 +55,9 @@ import com.bamnat.app.alarm.Notifications
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.ThemeMode
 import com.bamnat.core.diag.DiagEvents
+import com.bamnat.core.schedule.IcsWriter
+import kotlinx.coroutines.flow.first
+import java.time.ZoneId
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.MinutesStepper
 import com.bamnat.app.ui.components.SectionCard
@@ -115,6 +118,24 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** Writes work days from three months ago to a year ahead as a calendar file [REL-04]. */
+    fun exportIcs(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            _backupMessage.value = runCatching {
+                val snapshot = container.scheduleRepository.snapshot.first()
+                val (from, to) = IcsWriter.defaultRange(LocalDate.now())
+                val ics = withContext(Dispatchers.Default) {
+                    IcsWriter.write(snapshot.resolver.resolveRange(from, to), ZoneId.systemDefault())
+                }
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(ics.toByteArray()) }
+                }
+                container.telemetry.event(DiagEvents.ICS_EXPORT)
+                "캘린더 파일을 저장했어요. 구글·삼성 캘린더에서 가져오기로 불러오세요"
+            }.getOrElse { "캘린더 파일을 저장하지 못했어요" }
+        }
+    }
+
     fun readBackup(context: Context, uri: Uri) {
         viewModelScope.launch {
             runCatching {
@@ -167,6 +188,9 @@ fun SettingsScreen(
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(BackupManager.MIME_TYPE),
     ) { uri -> if (uri != null) vm.exportTo(context, uri) }
+    val icsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/calendar")) { uri ->
+        if (uri != null) vm.exportIcs(context, uri)
+    }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.readBackup(context, uri)
     }
@@ -341,6 +365,11 @@ fun SettingsScreen(
                     Text("불러오기")
                 }
             }
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            NavRow(
+                "캘린더 파일로 내보내기",
+                "근무를 .ics 파일로 저장해 구글·삼성 캘린더에 넣어요 (3개월 전부터 1년 뒤까지)",
+            ) { icsLauncher.launch("밤낮-근무-${LocalDate.now()}.ics") }
         }
 
         SectionCard(title = "근무시간 계산") {

@@ -61,6 +61,12 @@ class AlarmScheduler(private val context: Context, private val telemetry: Teleme
         if (previous == null || previous.triggerAtMillis != triggerAt || previous.exact != exact) {
             telemetry.event(DiagEvents.ALARM_SCHEDULED, EventBook.triggerDetail(triggerAt, "exact=$exact"))
         }
+        // Warn once each time the permission goes from on to off, not on every re-plan.
+        val wasExact = prefs.getBoolean(K_LAST_EXACT, true)
+        if (wasExact != exact) {
+            prefs.edit().putBoolean(K_LAST_EXACT, exact).apply()
+            if (!exact) Notifications.postExactAlarmWarning(context)
+        }
         _upcoming.value = UpcomingAlarm(plan, triggerAt, exact)
     }
 
@@ -139,6 +145,7 @@ class AlarmScheduler(private val context: Context, private val telemetry: Teleme
         private const val REQ_SHOW = 1003
         private const val K_SNOOZE_AT = "snooze_at"
         private const val K_SNOOZE_PAYLOAD = "snooze_payload"
+        private const val K_LAST_EXACT = "last_exact"
 
         fun millisToLocal(millis: Long): LocalDateTime =
             LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault())

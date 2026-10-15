@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.bamnat.app.appContainer
+import com.bamnat.app.widget.WidgetRefresher
 import com.bamnat.core.diag.DiagEvents
 import com.bamnat.core.diag.EventBook
 import kotlinx.coroutines.launch
@@ -82,6 +83,8 @@ class SystemEventReceiver : BroadcastReceiver() {
             try {
                 container.rescheduleAlarms(LocalDateTime.now())
                 container.alarmScheduler.restoreSnooze()
+                // A new date or time zone changes what "today" is on the widgets.
+                WidgetRefresher.refresh(context)
             } finally {
                 pending.finish()
             }

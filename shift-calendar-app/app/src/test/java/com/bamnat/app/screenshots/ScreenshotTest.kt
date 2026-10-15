@@ -39,6 +39,8 @@ import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowAlarmManager
 import org.robolectric.shadows.ShadowDialog
 import java.io.File
+import androidx.glance.appwidget.compose
+import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 import java.time.LocalTime
 
@@ -293,6 +295,37 @@ class ScreenshotTest {
         mono.draw(canvas)
         val out = File("build/screenshots/0_launcher_icon.png").apply { parentFile!!.mkdirs() }
         out.outputStream().use { st -> bmp.compress(Bitmap.CompressFormat.PNG, 100, st) }
+    }
+
+    /** Home screen widgets, rendered from the RemoteViews Glance produces. */
+    @Test fun widgets() = runBlocking {
+        val shots = listOf(
+            Triple("23_widget_today", com.bamnat.app.widget.TodayWidget() as androidx.glance.appwidget.GlanceAppWidget, 180 to 150),
+            Triple("24_widget_week", com.bamnat.app.widget.WeekWidget(), 340 to 110),
+            Triple("25_widget_month", com.bamnat.app.widget.MonthWidget(), 340 to 330),
+        )
+        for ((name, widget, dims) in shots) {
+            val (wDp, hDp) = dims
+            @OptIn(androidx.glance.ExperimentalGlanceApi::class)
+            val rv = widget.compose(app, size = androidx.compose.ui.unit.DpSize(wDp.dp, hDp.dp))
+            val density = app.resources.displayMetrics.density
+            val w = (wDp * density).toInt()
+            val h = (hDp * density).toInt()
+            val parent = android.widget.FrameLayout(app)
+            val view = rv.apply(app, parent)
+            parent.addView(view, android.widget.FrameLayout.LayoutParams(w, h))
+            parent.measure(
+                android.view.View.MeasureSpec.makeMeasureSpec(w, android.view.View.MeasureSpec.EXACTLY),
+                android.view.View.MeasureSpec.makeMeasureSpec(h, android.view.View.MeasureSpec.EXACTLY),
+            )
+            parent.layout(0, 0, w, h)
+            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bmp)
+            canvas.drawColor(0xFF7A8BA8.toInt())
+            parent.draw(canvas)
+            val out = File("build/screenshots/$name.png").apply { parentFile!!.mkdirs() }
+            out.outputStream().use { st -> bmp.compress(Bitmap.CompressFormat.PNG, 100, st) }
+        }
     }
 
     @Test fun foldedDayAlarmNotice() = shoot("18_folded_day_alarm_notice", FOLDED) {

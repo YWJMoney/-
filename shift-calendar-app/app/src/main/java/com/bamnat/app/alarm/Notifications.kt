@@ -16,6 +16,7 @@ object Notifications {
     const val ALARM_CHANNEL_ID = "shift_alarm_v1"
     const val FALLBACK_CHANNEL_ID = "shift_alarm_fallback_v1"
     const val ALARM_NOTIFICATION_ID = 7001
+    private const val EXACT_WARNING_ID = 7003
 
     fun createChannels(context: Context) {
         val channel = NotificationChannel(
@@ -46,6 +47,33 @@ object Notifications {
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
         context.getSystemService(NotificationManager::class.java).createNotificationChannels(listOf(channel, fallback))
+    }
+
+    /**
+     * Tells the user that alarms can no longer ring on time because the exact-alarm permission
+     * was turned off (Android 12; on 13+ the permission cannot be revoked) [SHR-08].
+     */
+    fun postExactAlarmWarning(context: Context) {
+        if (!canPost(context)) return
+        val open = PendingIntent.getActivity(
+            context, 2102,
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, FALLBACK_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("알람이 늦게 울릴 수 있어요")
+            .setContentText("‘정확한 시간에 울리기’ 권한이 꺼졌어요. 설정 > 알람에서 다시 켜 주세요")
+            .setStyle(NotificationCompat.BigTextStyle()
+                .bigText("‘정확한 시간에 울리기’ 권한이 꺼져서 근무 알람이 몇 분 늦게 울릴 수 있어요. 밤낮 설정 > 알람에서 다시 켜 주세요."))
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(EXACT_WARNING_ID, notification)
+        } catch (e: SecurityException) {
+            // Notifications were turned off in the meantime.
+        }
     }
 
     /** Plain alarm notification used when the ringing service cannot start. */

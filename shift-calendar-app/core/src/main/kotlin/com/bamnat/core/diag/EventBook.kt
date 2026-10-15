@@ -20,6 +20,7 @@ object DiagEvents {
     const val SYSTEM_EVENT = "system_event"
     const val BACKUP_EXPORT = "backup_export"
     const val BACKUP_RESTORE = "backup_restore"
+    const val ICS_EXPORT = "ics_export"
     const val SCREEN = "screen"
 }
 

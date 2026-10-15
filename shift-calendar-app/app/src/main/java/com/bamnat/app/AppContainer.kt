@@ -9,6 +9,7 @@ import com.bamnat.app.data.SettingsRepository
 import com.bamnat.app.data.db.AppDatabase
 import com.bamnat.app.diag.EventLog
 import com.bamnat.app.diag.Telemetry
+import com.bamnat.app.widget.WidgetRefresher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -16,6 +17,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -23,6 +25,8 @@ import java.time.LocalDateTime
 
 /** Manual dependency container, created once in [BamnatApp]. */
 class AppContainer(context: Context) {
+    private val appContext: Context = context.applicationContext
+
     /** Work that must outlive any screen, e.g. saving a memo while leaving the editor. */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -47,7 +51,15 @@ class AppContainer(context: Context) {
             val enabled = settingsRepository.settings.map { it.alarmsEnabled }.distinctUntilChanged()
             combine(scheduleRepository.snapshot, enabled) { snapshot, on -> snapshot to on }
                 .debounce(300)
-                .collect { (snapshot, on) -> alarmScheduler.reschedule(snapshot, on) }
+                .collect { (snapshot, on) ->
+                    alarmScheduler.reschedule(snapshot, on)
+                    WidgetRefresher.refresh(appContext)
+                }
+        }
+        // Widgets lay out weeks from the user's first day of the week.
+        appScope.launch {
+            settingsRepository.settings.map { it.weekStart }.distinctUntilChanged().drop(1)
+                .collect { WidgetRefresher.refresh(appContext) }
         }
     }
 }
