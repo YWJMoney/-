@@ -42,7 +42,21 @@ data class ClassifyOptions(
      * second shift on a working day, count as overtime; the daily and weekly limits are not used.
      */
     val scheduleIsRegular: Boolean = false,
+    /**
+     * [PAYX-07] 탄력적 근로시간제 단위기간 (제51조). With [scheduleIsRegular], scheduled hours beyond
+     * an average of 40 a week over the period are overtime, settled on the period's last day.
+     */
+    val flexPeriod: FlexPeriod? = null,
 )
+
+/** 탄력적 근로시간제 단위기간, with fixed starts so every month agrees on the periods. */
+enum class FlexPeriod(val label: String, val months: Int) {
+    MONTH("1개월 (매달 1일~말일)", 1),
+    QUARTER("3개월 (1·4·7·10월 1일 시작)", 3);
+
+    fun start(date: LocalDate): LocalDate = date.withDayOfMonth(1).minusMonths(((date.monthValue - 1) % months).toLong())
+    fun end(date: LocalDate): LocalDate = start(date).plusMonths(months.toLong()).minusDays(1)
+}
 
 /**
  * Sorts each day's minutes [PAY-01]. A shift that runs past midnight belongs to the day it
@@ -62,6 +76,7 @@ class MinuteClassifier(
     fun classify(days: List<ResolvedDay>, isHoliday: (LocalDate) -> Boolean): List<DayMinutes> {
         val sorted = days.sortedBy { it.date }
         val weeklyRegular = HashMap<LocalDate, Int>()
+        val flex = options.flexPeriod?.takeIf { options.scheduleIsRegular }
         return sorted.map { day ->
             val offDayWork = day.holidayWorkMinutes > 0 || (day.second != null && !day.isWorkDay)
             val raw = classifyDay(day, isHoliday(day.date) || (offDayWork && options.offDayWorkIsHoliday))
@@ -72,7 +87,31 @@ class MinuteClassifier(
             val over = (before + raw.regular - limit).coerceAtLeast(0).coerceAtMost(raw.regular)
             weeklyRegular[week] = before + raw.regular - over
             if (over == 0) raw else raw.copy(regular = raw.regular - over, overtime = raw.overtime + over)
+        }.let { if (flex == null) it else settleFlex(it, flex) }
+    }
+
+    /**
+     * Moves regular minutes beyond 40 hours a week on average (총 일수 ÷ 7 × 40시간) to overtime on
+     * the last day of each 단위기간 the list covers in full. A period cut off at either end is left
+     * alone: the caller resolves from the period's start, and the next month settles a later end.
+     */
+    private fun settleFlex(list: List<DayMinutes>, flex: FlexPeriod): List<DayMinutes> {
+        if (list.isEmpty()) return list
+        val first = list.first().date
+        val last = list.last().date
+        val out = list.toMutableList()
+        list.groupBy { flex.start(it.date) }.forEach { (start, period) ->
+            val end = flex.end(start)
+            if (start.isBefore(first) || end.isAfter(last)) return@forEach
+            val days = java.time.temporal.ChronoUnit.DAYS.between(start, end) + 1
+            val limit = (days * 40 * 60 / 7.0).roundToInt()
+            val excess = period.sumOf { it.regular } - limit
+            if (excess <= 0) return@forEach
+            val i = out.indexOfFirst { it.date == end }
+            val d = out[i]
+            out[i] = d.copy(regular = (d.regular - excess).coerceAtLeast(0), overtime = d.overtime + excess)
         }
+        return out
     }
 
     fun classifyDay(day: ResolvedDay, holiday: Boolean): DayMinutes {

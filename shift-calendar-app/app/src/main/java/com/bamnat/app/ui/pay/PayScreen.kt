@@ -299,7 +299,7 @@ private fun PayResult(
             val summary = profile.rules.summary(profile)
             Text(
                 (if (profile.fiveOrMoreEmployees) "5인 이상" else "5인 미만") +
-                    (if (profile.scheduleIsRegular) " · 근무표 시간은 기본 근무"
+                    (if (profile.scheduleIsRegular) " · 근무표 시간은 기본 근무" + (profile.flexPeriod?.let { " (탄력제 ${it.months}개월)" } ?: "")
                     else if (profile.dailyLimitMinutes == null) " · 하루 8시간 기준 없음" else "") +
                     (if (profile.wageType == WageType.MONTHLY) " · 월급제 휴일 ${profile.holidayPayMode.label} · 월 ${profile.monthlyHours}시간" else ""),
                 style = MaterialTheme.typography.bodyMedium,

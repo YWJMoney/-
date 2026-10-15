@@ -113,8 +113,9 @@ fun CompanyRulesEditor(
                 }
                 Toggle("근무표 시간은 모두 기본 근무", "12시간 교대처럼 근무표대로 일한 시간이 기본급에 들어 있으면 켜 주세요. 잔업으로 적은 시간만 연장이 돼요",
                     draft.scheduleIsRegular) {
-                    draft = draft.copy(scheduleIsRegular = it)
+                    draft = draft.copy(scheduleIsRegular = it, flexPeriod = if (it) draft.flexPeriod else null)
                 }
+                if (draft.scheduleIsRegular) FlexPicker(draft.flexPeriod) { draft = draft.copy(flexPeriod = it) }
                 if (!draft.scheduleIsRegular) {
                     Toggle("하루 8시간 넘으면 연장", "탄력적·선택적 근로시간제라면 꺼 주세요", draft.dailyLimitMinutes != null) {
                         draft = draft.copy(dailyLimitMinutes = if (it) 480 else null)

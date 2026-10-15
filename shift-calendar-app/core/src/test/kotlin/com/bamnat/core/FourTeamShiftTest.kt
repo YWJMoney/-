@@ -10,6 +10,7 @@ import com.bamnat.core.pay.CompanyRules
 import com.bamnat.core.pay.DatedValue
 import com.bamnat.core.pay.ExtraBasis
 import com.bamnat.core.pay.ExtraRule
+import com.bamnat.core.pay.FlexPeriod
 import com.bamnat.core.pay.LeaveBook
 import com.bamnat.core.pay.LineKind
 import com.bamnat.core.pay.Occupation
@@ -130,5 +131,26 @@ class FourTeamShiftTest {
     fun `schedule as regular work keeps the night premium`() {
         val pay = PayCalculator().calculate(legal.copy(scheduleIsRegular = true), nov, roster()::resolve) { false }
         assertTrue(pay.lines.filter { it.kind == LineKind.NIGHT }.sumOf { it.amount } > 0)
+    }
+
+    @Test
+    fun `a one month flexible period makes only the hours over a 40 hour average overtime`() {
+        // November 2026: 16 shifts × 12h = 11,520분; 30일 ÷ 7 × 40시간 = 10,286분 → 1,234분 연장, no warning.
+        val p = legal.copy(scheduleIsRegular = true, flexPeriod = FlexPeriod.MONTH)
+        assertEquals(1_234, overtimeMinutes(p, roster()))
+        val pay = PayCalculator().calculate(p, nov, roster()::resolve) { false }
+        assertTrue(pay.warnings.none { it.startsWith("근무표 시간을 모두 기본 근무로") })
+    }
+
+    @Test
+    fun `a three month period is settled in its last month`() {
+        val p = legal.copy(scheduleIsRegular = true, flexPeriod = FlexPeriod.QUARTER)
+        // The roster starts on 1 November, so October has no shifts: the quarter is under the average.
+        assertEquals(0, overtimeMinutes(p, roster()))
+        val early = ScheduleResolver(listOf(day, night, off), WorkPattern.Rotation(LocalDate.of(2026, 10, 1), cycle), emptyList())
+        // October to December 2026: 92 days, 46 shifts × 12h = 33,120분; 92 ÷ 7 × 40시간 = 31,543분 → 1,577분.
+        val dec = PayCalculator().calculate(p, YearMonth.of(2026, 12), early::resolve) { false }
+        assertEquals(1_577, dec.lines.filter { it.kind == LineKind.OVERTIME }.sumOf { it.minutes })
+        assertEquals(0, PayCalculator().calculate(p, nov, early::resolve) { false }.lines.filter { it.kind == LineKind.OVERTIME }.sumOf { it.minutes })
     }
 }

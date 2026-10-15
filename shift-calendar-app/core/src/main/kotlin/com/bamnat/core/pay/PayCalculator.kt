@@ -88,10 +88,14 @@ class PayCalculator(
         val classifier = MinuteClassifier(
             rates = { RateTable.on(it, rateTable) },
             options = ClassifyOptions(profile.dailyLimitMinutes, profile.weeklyLimitMinutes, profile.weekStart,
-                offDayWorkIsHoliday = rules.offDayWork == OffDayWork.HOLIDAY, scheduleIsRegular = profile.scheduleIsRegular),
+                offDayWorkIsHoliday = rules.offDayWork == OffDayWork.HOLIDAY, scheduleIsRegular = profile.scheduleIsRegular,
+                flexPeriod = profile.flexPeriod),
         )
-        // Start at the week containing the 1st so weekly overtime counts the days before it.
-        val from = month.atDay(1).with(TemporalAdjusters.previousOrSame(profile.weekStart))
+        // Start at the week containing the 1st so weekly overtime counts the days before it, or at the
+        // 탄력적 근로시간제 period's start so a period ending this month is settled whole.
+        val weekFrom = month.atDay(1).with(TemporalAdjusters.previousOrSame(profile.weekStart))
+        val from = profile.flexPeriod?.takeIf { profile.scheduleIsRegular }?.start(month.atDay(1))
+            ?.let { minOf(it, weekFrom) } ?: weekFrom
         val days = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(month.atEndOfMonth()) }
             .map(resolve).toList()
         val allMinutes = classifier.classify(days, holiday).map { m ->
@@ -376,7 +380,7 @@ class PayCalculator(
 
         // [PAYX-07] Scheduled hours over 8 a day are 연장 by law unless 탄력적 근로시간제 (제51조) is in
         // place, so the difference to the legal count is shown rather than silently dropped.
-        if (profile.scheduleIsRegular && premiums) {
+        if (profile.scheduleIsRegular && profile.flexPeriod == null && premiums) {
             val legal = calculate(profile.copy(scheduleIsRegular = false, dailyLimitMinutes = 8 * 60, weeklyLimitMinutes = 40 * 60),
                 month, resolve, isHoliday)
             val gap = legal.total - lines.sumOf { it.amount }

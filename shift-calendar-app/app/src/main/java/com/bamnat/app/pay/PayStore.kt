@@ -2,6 +2,7 @@ package com.bamnat.app.pay
 
 import android.content.Context
 import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.pay.FlexPeriod
 import com.bamnat.core.pay.CalcSnapshot
 import com.bamnat.core.pay.Cadence
 import com.bamnat.core.pay.Tier
@@ -144,6 +145,7 @@ object PayCodec {
         .put("dailyLimit", p.dailyLimitMinutes ?: -1)
         .put("weeklyLimit", p.weeklyLimitMinutes ?: -1)
         .put("scheduleIsRegular", p.scheduleIsRegular)
+        .put("flexPeriod", p.flexPeriod?.name)
         .put("weekStart", p.weekStart.name)
         .put("estimated", JSONArray(p.estimatedFields.toList()))
         .put("rules", rules(p.rules))
@@ -160,6 +162,7 @@ object PayCodec {
         dailyLimitMinutes = o.optInt("dailyLimit", 480).takeIf { it >= 0 },
         weeklyLimitMinutes = o.optInt("weeklyLimit", 2400).takeIf { it >= 0 },
         scheduleIsRegular = o.optBoolean("scheduleIsRegular", false),
+        flexPeriod = o.optString("flexPeriod").let { n -> FlexPeriod.entries.firstOrNull { it.name == n } },
         weekStart = runCatching { DayOfWeek.valueOf(o.getString("weekStart")) }.getOrDefault(DayOfWeek.MONDAY),
         estimatedFields = o.optJSONArray("estimated")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet(),
         rules = o.optJSONObject("rules")?.let(::rules) ?: CompanyRules(),

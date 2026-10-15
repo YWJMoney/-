@@ -92,6 +92,8 @@ data class PayProfile(
     val weeklyLimitMinutes: Int? = 40 * 60,
     /** [PAYX-07] Scheduled hours are all 기본 근무; see [ClassifyOptions.scheduleIsRegular]. */
     val scheduleIsRegular: Boolean = false,
+    /** [PAYX-07] 탄력적 근로시간제 단위기간, used with [scheduleIsRegular]; null when there is none. */
+    val flexPeriod: FlexPeriod? = null,
     val weekStart: DayOfWeek = DayOfWeek.MONDAY,
     /** Values the user skipped and the app guessed; shown with an "추정" label. */
     val estimatedFields: Set<String> = emptySet(),
