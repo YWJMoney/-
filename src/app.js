@@ -8,6 +8,8 @@ import { toCSV, backupJSON, readBackup, toICS } from './io.js';
 export const APP_VERSION = '0.1.0';
 
 const store = createStore();
+// 안드로이드 앱 안에서 실행 중이면 네이티브 기능(파일 저장·예약 알림·클립보드)을 쓴다.
+const native = window.JangbuAndroid || null;
 const $view = document.getElementById('view');
 const $sheet = document.getElementById('sheet');
 const $sheetTitle = document.getElementById('sheet-title');
@@ -39,6 +41,10 @@ function toast(msg) {
 }
 
 function download(name, text, type) {
+  if (native) {
+    native.saveFile(name, type, text);
+    return;
+  }
   const blob = new Blob([text], { type });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -246,7 +252,7 @@ function cycleText(o) {
 // ── 화면: 설정 ────────────────────────────────────────────────
 function renderSettings() {
   const s = store.state.settings;
-  const notif = 'Notification' in window ? Notification.permission : 'unsupported';
+  const notif = native ? (native.notificationsEnabled() ? 'granted' : 'default') : 'Notification' in window ? Notification.permission : 'unsupported';
   return `<div class="section-title">기본</div>
   <div class="card">
     <label class="field"><span>급여일</span><select data-setting="payday">${Array.from({ length: 31 }, (_, i) => opt(i + 1, `${i + 1}일`, s.payday)).join('')}</select>
@@ -260,7 +266,11 @@ function renderSettings() {
   </div>
   <div class="section-title">알림</div>
   <div class="card">
-    <p style="font-size:.9em">앱을 열 때 D-3·당일 지출을 알려드려요. 앱이 꺼져 있어도 알림을 받으려면 <b>달력으로 내보내기</b>를 쓰세요.</p>
+    <p style="font-size:.9em">${
+      native
+        ? '고정 지출·카드 결제일 3일 전과 당일 아침 9시에 알려드려요. 앱을 닫아 두어도 울려요.'
+        : '앱을 열 때 D-3·당일 지출을 알려드려요. 앱이 꺼져 있어도 알림을 받으려면 <b>달력으로 내보내기</b>를 쓰세요.'
+    }</p>
     <div class="btns">${
       notif === 'granted'
         ? '<span class="badge good">앱 알림 켜짐</span>'
@@ -562,7 +572,7 @@ document.addEventListener('click', async (e) => {
     closeSheet();
   } else if (a === 'paste-clipboard') {
     try {
-      const text = await navigator.clipboard.readText();
+      const text = native ? native.readClipboard() : await navigator.clipboard.readText();
       $sheetBody.querySelector('textarea[name="text"]').value = text;
     } catch {
       toast('클립보드 권한이 없어요. 입력칸을 길게 눌러 붙여넣어 주세요.');
@@ -588,8 +598,9 @@ document.addEventListener('click', async (e) => {
     const items = upcoming(store.view(), today(), 90);
     if (!items.length) return toast('내보낼 예정 지출이 없어요.');
     download('곧_나갈_돈.ics', toICS(items), 'text/calendar;charset=utf-8');
-    toast('파일을 열어 달력에 추가하면 D-3과 당일에 알림이 와요');
+    if (!native) toast('파일을 열어 달력에 추가하면 D-3과 당일에 알림이 와요');
   } else if (a === 'enable-notif') {
+    if (native) return native.requestNotifications();
     const p = await Notification.requestPermission();
     if (p === 'granted') checkReminders(true);
     render();
@@ -751,7 +762,7 @@ $sheet.addEventListener('click', (e) => {
 
 // ── 앱 알림: 앱을 열 때 D-3·당일 항목을 하루 한 번 알린다 ─────────
 async function checkReminders(force = false) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  if (native || !('Notification' in window) || Notification.permission !== 'granted') return;
   const t = today();
   const items = upcoming(store.view(), t, 3).filter((i) => i.status === 'soon' || i.status === 'today');
   const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
@@ -769,6 +780,45 @@ async function checkReminders(force = false) {
     }
   }
 }
+
+// ── 안드로이드: 예약 알림을 기기에 맡긴다(D-3·당일 오전 9시) ─────────
+function syncNativeReminders() {
+  if (!native) return;
+  const t = today();
+  const now = Date.now();
+  const list = [];
+  for (const it of upcoming(store.view(), t, 60)) {
+    if (it.status === 'matched') continue;
+    const { y, m, d } = parts(it.date);
+    const amount = `${won(it.amount)}${it.label === '예상' ? '(예상)' : ''}`;
+    for (const [before, when] of [[3, '3일 뒤'], [0, '오늘']]) {
+      const at = new Date(y, m - 1, d - before, 9, 0, 0).getTime();
+      if (at > now) list.push({ id: `${it.id}:${before}`, title: '곧 나갈 돈', body: `${when} ${it.title} ${amount}`, at });
+    }
+  }
+  list.sort((a, b) => a.at - b.at);
+  try {
+    native.scheduleReminders(JSON.stringify(list.slice(0, 60)));
+  } catch {
+    /* 예약 실패는 화면 동작에 영향이 없게 넘긴다 */
+  }
+}
+store.subscribe(syncNativeReminders);
+
+// 안드로이드 뒤로 가기: 열린 창 닫기 → 홈 탭 → 앱 종료
+window.__jangbuBack = () => {
+  if ($sheet.open) {
+    closeSheet();
+    return true;
+  }
+  if (tab !== 'home') {
+    tab = 'home';
+    render();
+    return true;
+  }
+  return false;
+};
+window.__jangbuRefresh = () => render();
 
 // ── 시작 ─────────────────────────────────────────────────────
 applyTheme();
@@ -789,13 +839,15 @@ if (shared) {
   openAdd('paste');
 }
 
-if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+if (!native && 'serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 checkReminders();
+syncNativeReminders();
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     render();
     checkReminders();
+    syncNativeReminders();
   }
 });
