@@ -14,6 +14,7 @@ export function emptyState() {
     obligations: [],
     rules: {},
     notified: {},
+    inbox: [], // 자동 기록 중 못 읽은 알림(기기 안에만, 30일 뒤 자동 삭제)
     settings: { payday: 25, monthlyBudget: 0, theme: 'auto', largeText: false, onboarded: false },
   };
 }
@@ -50,6 +51,8 @@ export function createStore(storage = globalThis.localStorage) {
   } catch {
     state = emptyState();
   }
+  const INBOX_TTL = 30 * 864e5;
+  state.inbox = (state.inbox || []).filter((x) => Date.now() - (x.at || 0) < INBOX_TTL);
   let txs = project(state.log);
   const listeners = new Set();
 
@@ -92,6 +95,20 @@ export function createStore(storage = globalThis.localStorage) {
       });
       save();
       return out;
+    },
+    updateTxs(ids, patch) {
+      for (const id of ids) push({ op: 'update', id, data: patch });
+      save();
+    },
+    addInbox(items) {
+      const have = new Set(state.inbox.map((x) => x.id));
+      state.inbox.push(...items.filter((x) => !have.has(x.id)));
+      state.inbox = state.inbox.slice(-200);
+      save();
+    },
+    removeInbox(id) {
+      state.inbox = state.inbox.filter((x) => x.id !== id);
+      save();
     },
     updateTx(id, patch) {
       push({ op: 'update', id, data: patch });

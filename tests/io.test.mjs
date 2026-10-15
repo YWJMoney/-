@@ -45,3 +45,16 @@ test('저장소는 주입한 storage에 저장', () => {
   assert.equal(again.txs.length, 1);
   assert.equal(again.state.log.length, 1);
 });
+
+test('암호화 백업은 같은 비밀번호로만 열린다', async () => {
+  const { encryptBackup, decryptBackup, isEncryptedBackup, readBackup, backupJSON } = await import('../src/io.js');
+  const json = backupJSON({ schema: 1, log: [{ op: 'add', data: { id: 'a', amount: 1000 } }], inbox: [{ id: 'raw', text: '원문' }] });
+  assert.ok(!json.includes('원문'), '못 읽은 알림 원문은 백업에서 뺀다');
+  const enc = await encryptBackup(json, '비밀번호123');
+  assert.ok(isEncryptedBackup(enc));
+  assert.ok(!enc.includes('amount'));
+  const plain = await decryptBackup(enc, '비밀번호123');
+  assert.equal(readBackup(plain).log[0].data.amount, 1000);
+  await assert.rejects(() => decryptBackup(enc, '틀림'), /비밀번호가 맞지 않아요/);
+  assert.equal(isEncryptedBackup(json), false);
+});
