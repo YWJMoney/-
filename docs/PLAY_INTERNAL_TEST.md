@@ -16,10 +16,10 @@
 2. 계정 유형은 **개인**, 등록비 25달러를 결제합니다.
 3. 신원 확인(신분증)과 휴대폰 인증을 마칩니다. 확인에 며칠 걸릴 수 있습니다.
 
-## 2. 개인정보처리방침 주소 만들기 (처음 한 번)
+## 2. 개인정보처리방침 주소
 
-GitHub 저장소 → Settings → Pages → Source를 "Deploy from a branch", Branch를 `main` / `(root)`로 저장합니다.
-몇 분 뒤 `https://ywjmoney.github.io/-/privacy.html` 이 열리면 그 주소를 씁니다.
+`https://github.com/YWJMoney/-/blob/main/docs/PRIVACY.md` 를 그대로 넣으면 됩니다(공개 저장소라 누구나 열람 가능).
+나중에 GitHub Pages를 켜면 `https://ywjmoney.github.io/-/privacy.html` 로 바꿔도 됩니다.
 
 ## 3. 앱 만들기 (처음 한 번)
 
@@ -46,7 +46,7 @@ Play Console → **앱 만들기**
 
 | 항목 | 답 |
 | --- | --- |
-| 개인정보처리방침 | 2단계 주소 |
+| 개인정보처리방침 | https://github.com/YWJMoney/-/blob/main/docs/PRIVACY.md |
 | 앱 액세스 | 모든 기능을 제한 없이 사용 가능 |
 | 광고 | 광고 없음 |
 | 콘텐츠 등급 | 카테고리 "기타(유틸리티·생산성 등)", 폭력·성적 내용·도박 등 모두 아니요 |
