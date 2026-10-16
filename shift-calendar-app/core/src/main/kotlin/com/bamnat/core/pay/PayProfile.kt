@@ -1,0 +1,102 @@
+package com.bamnat.core.pay
+
+import java.time.DayOfWeek
+import java.time.LocalDate
+
+enum class WageType { MONTHLY, HOURLY }
+
+/** Job presets [PAYX-01]. Each fills sensible items and defaults; everything stays editable. */
+enum class Occupation(val label: String) {
+    NURSE("병원 간호사"),
+    PART_TIME("시급 파트타임"),
+    MANUFACTURING("제조·생산 교대"),
+    CARE("요양·돌봄"),
+    SECURITY("경비·시설 (24시간 맞교대)"),
+    CUSTOM("직접 설정"),
+}
+
+/** How often an allowance is paid. */
+enum class Cadence(val label: String) {
+    MONTHLY("매달"),
+    PER_WORK_DAY("근무일마다"),
+    PER_NIGHT_SHIFT("야간근무마다"),
+    PER_SHIFT_TYPE("특정 근무마다"),
+    /** 상여금 paid in set months, a fixed amount or a percent of 기본급 [PAY-05]. */
+    BONUS("정해진 달 상여"),
+}
+
+/** How a monthly-paid worker is paid for work on a paid holiday [PAY-06, 쟁점 처리]. */
+enum class HolidayPayMode(val label: String, val baseMultiplier: Double) {
+    /** The day's 100% is paid again on top of the salary, plus the premium (일반적 해석). */
+    FULL("100% + 가산", 1.0),
+    /** The salary already covers the day; only the premium is added. */
+    PREMIUM_ONLY("가산만", 0.0),
+}
+
+/**
+ * One allowance line, e.g. 나이트 수당 1회 30,000원 [PAY-05].
+ * [ordinary] includes it in 통상임금, which raises the hourly rate used for premiums.
+ */
+data class PayItem(
+    val id: String,
+    val name: String,
+    val amount: ValueTimeline,
+    val cadence: Cadence,
+    /** For [Cadence.PER_SHIFT_TYPE]: which shift types count. */
+    val shiftTypeIds: Set<Long> = emptySet(),
+    val ordinary: Boolean = false,
+    val taxable: Boolean = true,
+    /** For [Cadence.BONUS]: months it is paid (1..12). */
+    val months: Set<Int> = emptySet(),
+    /** For [Cadence.BONUS]: share of 기본급 per payment, 1.0 = 100%; null pays [amount]. */
+    val percentOfBase: Double? = null,
+    /**
+     * A fixed monthly allowance paid for overtime in advance (고정 연장수당, 포괄임금): the hours
+     * it is meant to cover, 0 when it is an ordinary allowance [PAY-05]. Never 통상임금.
+     */
+    val fixedOvertimeMinutes: Int = 0,
+) {
+    val isFixedOvertime: Boolean get() = fixedOvertimeMinutes > 0 && cadence == Cadence.MONTHLY
+
+    /** One payment of a [Cadence.BONUS] item given the month's 기본급. */
+    fun bonusPayment(base: Long, on: java.time.YearMonth): Long =
+        percentOfBase?.let { Math.round(base * it) } ?: amount.on(on).value
+
+    /**
+     * The monthly share of a bonus for 통상임금: a year's payments ÷ 12. Since 대법원 2024.12.19.
+     * 2020다247190 (전원합의체), a bonus paid regularly on fixed terms is 통상임금 even when it
+     * requires being employed on the pay date.
+     */
+    fun bonusMonthlyShare(base: Long, on: java.time.YearMonth): Long =
+        Math.round(bonusPayment(base, on) * months.size / 12.0)
+}
+
+/**
+ * Everything about the worker's pay that does not change month to month [PAY-10].
+ * Values that change over time (base pay, allowances) are [ValueTimeline]s.
+ */
+data class PayProfile(
+    val occupation: Occupation,
+    val wageType: WageType,
+    /** Monthly base salary, or the hourly wage for [WageType.HOURLY]. */
+    val base: ValueTimeline,
+    val items: List<PayItem> = emptyList(),
+    val hireDate: LocalDate? = null,
+    /** 5인 이상 사업장: premiums for overtime, night and holiday work apply only then. */
+    val fiveOrMoreEmployees: Boolean = true,
+    /** 월 소정근로시간, 209 by default. */
+    val monthlyHours: Int = 209,
+    val holidayPayMode: HolidayPayMode = HolidayPayMode.FULL,
+    /** null turns daily overtime off (탄력적 근로시간제 등). */
+    val dailyLimitMinutes: Int? = 8 * 60,
+    val weeklyLimitMinutes: Int? = 40 * 60,
+    /** [PAYX-07] Scheduled hours are all 기본 근무; see [ClassifyOptions.scheduleIsRegular]. */
+    val scheduleIsRegular: Boolean = false,
+    /** [PAYX-07] 탄력적 근로시간제 단위기간, used with [scheduleIsRegular]; null when there is none. */
+    val flexPeriod: FlexPeriod? = null,
+    val weekStart: DayOfWeek = DayOfWeek.MONDAY,
+    /** Values the user skipped and the app guessed; shown with an "추정" label. */
+    val estimatedFields: Set<String> = emptySet(),
+    /** The company's own rules on top of the law [PAYX-07]. */
+    val rules: CompanyRules = CompanyRules(),
+)

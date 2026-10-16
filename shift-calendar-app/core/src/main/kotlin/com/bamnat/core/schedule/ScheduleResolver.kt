@@ -1,0 +1,175 @@
+package com.bamnat.core.schedule
+
+import com.bamnat.core.model.DayEntry
+import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.model.Leave
+import com.bamnat.core.model.ShiftOverride
+import com.bamnat.core.model.ShiftType
+import com.bamnat.core.model.WorkPattern
+import com.bamnat.core.model.WorkTime
+import java.time.LocalDate
+import java.time.LocalTime
+
+enum class DaySource { PATTERN, OVERRIDE, NONE }
+
+/** The second shift of a day [FEAT-02], with its own times. */
+data class SecondShift(
+    val type: ShiftType,
+    val start: LocalTime,
+    val end: LocalTime,
+    val breakMinutes: Int,
+    val breakStart: LocalTime? = null,
+) {
+    val minutes: Int get() = WorkTime.workMinutes(start, end, breakMinutes)
+}
+
+/** The final picture of one calendar day after applying pattern and user changes. */
+data class ResolvedDay(
+    val date: LocalDate,
+    /** Shift type shown on the calendar, including off types; null when nothing is scheduled. */
+    val shiftType: ShiftType?,
+    val source: DaySource,
+    val start: LocalTime?,
+    val end: LocalTime?,
+    val breakMinutes: Int,
+    /** When the break starts, if the shift says; null means unknown (taken out evenly). */
+    val breakStart: LocalTime? = null,
+    /** Minutes of the scheduled shift (after break). */
+    val scheduledMinutes: Int,
+    val overtimeMinutes: Int,
+    val holidayWorkMinutes: Int,
+    val alarmSkipped: Boolean,
+    /** What kind of extra work the day had (잔업, 특근, 대근), if the user said. */
+    val extraWork: ExtraWork? = null,
+    val entry: DayEntry?,
+    /** True when start/end come from this day's entry instead of the shift type. */
+    val hasCustomTimes: Boolean = false,
+    /** Leave taken on a working day [FEAT-10]; null on days off, where leave means nothing. */
+    val leave: Leave? = null,
+    /** Shift minutes the leave covers; paid leave pays them, unpaid leave deducts them. */
+    val leaveMinutes: Int = 0,
+    /** Another shift worked the same day [FEAT-02]. */
+    val second: SecondShift? = null,
+) {
+    val isWorkDay: Boolean get() = scheduledMinutes > 0 || (start != null && end != null)
+    val isOff: Boolean get() = !isWorkDay
+    val isHolidayWork: Boolean get() = holidayWorkMinutes > 0
+    /** Any extra work to show on the calendar: hours beyond the shift or a marked kind. */
+    val hasExtraWork: Boolean get() = extraWork != null || overtimeMinutes > 0 || holidayWorkMinutes > 0 || second != null
+    val extraMinutes: Int get() = overtimeMinutes + holidayWorkMinutes + secondMinutes
+    val secondMinutes: Int get() = second?.minutes ?: 0
+
+    /** Everything that counts toward weekly / monthly hours. */
+    val totalMinutes: Int get() = scheduledMinutes + overtimeMinutes + holidayWorkMinutes + secondMinutes
+}
+
+/**
+ * Combines shift types, the active pattern and per-day entries into [ResolvedDay]s.
+ * Pure and cheap: resolving a date is a couple of map lookups.
+ */
+class ScheduleResolver(
+    shiftTypes: Collection<ShiftType>,
+    patterns: List<WorkPattern>,
+    entries: Collection<DayEntry>,
+) {
+    constructor(shiftTypes: Collection<ShiftType>, pattern: WorkPattern?, entries: Collection<DayEntry>) :
+        this(shiftTypes, listOfNotNull(pattern), entries)
+
+    /** Pattern periods, earliest first. */
+    private val patterns: List<WorkPattern> = patterns.sortedBy { it.startDate }
+    private val typesById: Map<Long, ShiftType> = shiftTypes.associateBy { it.id }
+    private val entriesByDate: Map<LocalDate, DayEntry> = entries.associateBy { it.date }
+
+    fun entryOn(date: LocalDate): DayEntry? = entriesByDate[date]
+
+    /** The pattern period that fills [date], if any. */
+    fun patternOn(date: LocalDate): WorkPattern? = PatternTimeline.on(patterns, date)
+
+    /** Shift type id the pattern gives [date] (null for a day off or no pattern). */
+    fun patternShiftIdOn(date: LocalDate): Long? = patternOn(date)?.shiftTypeIdOn(date)
+
+    fun resolve(date: LocalDate): ResolvedDay {
+        val entry = entriesByDate[date]
+        val (type, source) = when (val o = entry?.override ?: ShiftOverride.None) {
+            ShiftOverride.Off -> null to DaySource.OVERRIDE
+            // An override pointing at a deleted type falls back to "nothing scheduled".
+            is ShiftOverride.Shift -> typesById[o.shiftTypeId] to DaySource.OVERRIDE
+            ShiftOverride.None -> {
+                val pattern = patternOn(date)
+                val id = pattern?.shiftTypeIdOn(date)
+                val t = id?.let { typesById[it] }
+                t to if (pattern != null) DaySource.PATTERN else DaySource.NONE
+            }
+        }
+
+        // Custom times only adjust a working day. On a day off they are ignored, so switching a
+        // day to 휴무 can never leave hours behind.
+        val dayOff = entry?.override == ShiftOverride.Off || type == null || type.isOff
+        val customTimes = entry?.hasCustomTimes == true && !dayOff
+        val start: LocalTime?
+        val end: LocalTime?
+        val breakMinutes: Int
+        if (customTimes) {
+            start = entry!!.customStart
+            end = entry.customEnd
+            breakMinutes = entry.customBreakMinutes ?: type?.takeIf { it.hasTimes }?.breakMinutes ?: 0
+        } else if (type != null && type.hasTimes) {
+            start = type.start
+            end = type.end
+            breakMinutes = entry?.customBreakMinutes ?: type.breakMinutes
+        } else {
+            start = null
+            end = null
+            breakMinutes = 0
+        }
+
+        val fullScheduled = if (start != null && end != null) WorkTime.workMinutes(start, end, breakMinutes) else 0
+        // Leave only counts on a day with work to take off. Partial leave comes off the end of
+        // the shift and the break shrinks in proportion, so 반차 of 09~18 (1h break) is 09~13:30.
+        val leave = entry?.leave?.takeIf { fullScheduled > 0 }
+        val leaveMinutes = leave?.let { Math.round(fullScheduled * it.quarters / 4.0).toInt() } ?: 0
+        var workEnd = end
+        var workBreak = breakMinutes
+        if (leave != null && start != null) {
+            if (leave.isFullDay) {
+                workEnd = null
+                workBreak = 0
+            } else {
+                workBreak = Math.round(breakMinutes * (4 - leave.quarters) / 4.0).toInt()
+                workEnd = start.plusMinutes((fullScheduled - leaveMinutes + workBreak).toLong())
+            }
+        }
+        val workStart = if (workEnd == null) null else start
+        val scheduled = fullScheduled - leaveMinutes
+
+        return ResolvedDay(
+            date = date,
+            shiftType = type,
+            source = source,
+            start = workStart,
+            end = workEnd,
+            breakMinutes = workBreak,
+            // A partial leave shrinks the break, so its clock time is no longer known.
+            breakStart = type?.breakStart?.takeIf { workStart != null && workBreak == breakMinutes && breakMinutes > 0 },
+            scheduledMinutes = scheduled,
+            overtimeMinutes = entry?.overtimeMinutes?.coerceAtLeast(0) ?: 0,
+            holidayWorkMinutes = entry?.holidayWorkMinutes?.coerceAtLeast(0) ?: 0,
+            alarmSkipped = entry?.alarmSkipped == true,
+            extraWork = entry?.extraWork,
+            entry = entry,
+            hasCustomTimes = customTimes,
+            leave = leave,
+            leaveMinutes = leaveMinutes,
+            second = entry?.secondShiftId?.let { typesById[it] }?.takeIf { it.hasTimes }
+                ?.let { SecondShift(it, it.start!!, it.end!!, it.breakMinutes, it.breakStart) },
+        )
+    }
+
+    fun resolveRange(from: LocalDate, toInclusive: LocalDate): List<ResolvedDay> {
+        if (toInclusive.isBefore(from)) return emptyList()
+        return generateSequence(from) { it.plusDays(1) }
+            .takeWhile { !it.isAfter(toInclusive) }
+            .map(::resolve)
+            .toList()
+    }
+}

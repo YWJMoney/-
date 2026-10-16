@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">밤낮</string>
+    <string name="channel_alarm_name">근무 알람</string>
+    <string name="channel_alarm_description">근무 시작 전에 울리는 알람</string>
+    <string name="widget_today_desc">오늘과 내일 근무, 다음 알람</string>
+    <string name="widget_week_desc">오늘부터 7일 근무</string>
+    <string name="widget_month_desc">이번 달 근무표</string>
+    <string name="widget_today_name">오늘 근무</string>
+    <string name="widget_week_name">주간 근무</string>
+    <string name="widget_month_name">월간 근무표</string>
+    <string name="capture_label">밤낮 결제 알림 기록</string>
+</resources>
