@@ -1,0 +1,12 @@
+{
+  "name": "jangbu",
+  "version": "0.2.1",
+  "private": true,
+  "description": "살림왕 앱 — 카드 문자를 장부로, 곧 나갈 돈을 미리",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "start": "npx --yes http-server -c-1 -p 8080 ."
+  },
+  "engines": { "node": ">=20" }
+}

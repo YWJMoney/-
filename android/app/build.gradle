@@ -1,0 +1,59 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.ywjmoney.jangbu'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.ywjmoney.jangbu'
+        minSdk 26
+        targetSdk 35
+        versionCode 3
+        versionName '0.2.1'
+    }
+
+    // 출시용 서명: android/keystore.properties 가 있으면 그 키로 서명한다(저장소에는 올리지 않는다).
+    def ksFile = rootProject.file('keystore.properties')
+    if (ksFile.exists()) {
+        def ks = new Properties()
+        ks.load(new FileInputStream(ksFile))
+        signingConfigs {
+            release {
+                storeFile rootProject.file(ks['storeFile'])
+                storePassword ks['storePassword']
+                keyAlias ks['keyAlias']
+                keyPassword ks['keyPassword']
+            }
+        }
+        buildTypes.release.signingConfig signingConfigs.release
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        main.assets.srcDirs += layout.buildDirectory.dir('generated/web')
+    }
+}
+
+// 저장소 루트의 웹 화면 파일을 앱 assets/www 로 복사한다. 웹과 앱이 같은 코드를 쓴다.
+def syncWeb = tasks.register('syncWeb', Sync) {
+    from(rootProject.file('..')) {
+        include 'index.html', 'privacy.html', 'manifest.webmanifest'
+        include 'css/**', 'src/**', 'icons/**'
+    }
+    into layout.buildDirectory.dir('generated/web/www')
+}
+tasks.named('preBuild') { dependsOn syncWeb }
+
+// 외부 라이브러리 없이 Android 기본 API만 쓴다(빌드·심사 단순화).
