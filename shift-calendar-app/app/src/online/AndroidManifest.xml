@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [MKT-09] Only builds with a link sharing server (bamnat.shareBaseUrl) ask for the internet:
+     the app stays fully offline, as the 1.0 privacy policy says, until that server is live. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>

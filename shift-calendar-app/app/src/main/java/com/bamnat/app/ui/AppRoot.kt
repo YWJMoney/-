@@ -90,11 +90,21 @@ import com.bamnat.app.ui.shifts.ShiftTypesScreen
 import com.bamnat.app.ui.shifts.ShiftsViewModel
 import com.bamnat.app.ui.stats.StatsScreen
 import com.bamnat.app.ui.stats.StatsViewModel
+import com.bamnat.app.ui.money.MoneyScreen
+import com.bamnat.app.ui.money.MoneyViewModel
+import com.bamnat.app.ui.work.WorkStyleScreen
+import com.bamnat.core.work.WorkStyle
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 private enum class TopLevel(val route: String, val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
     CALENDAR("calendar", "달력", Icons.Outlined.CalendarMonth, Icons.Filled.CalendarMonth),
+    /** [WORK-06] Income, spending and what is left, for every kind of work. */
+    MONEY("money", "돈", Icons.Outlined.AccountBalanceWallet, Icons.Filled.AccountBalanceWallet),
     MEMOS("memos", "메모", Icons.AutoMirrored.Outlined.StickyNote2, Icons.AutoMirrored.Filled.StickyNote2),
     STATS("stats", "통계", Icons.Outlined.Insights, Icons.Filled.Insights),
     SETTINGS("settings", "설정", Icons.Outlined.Settings, Icons.Filled.Settings),
@@ -102,7 +112,10 @@ private enum class TopLevel(val route: String, val label: String, val icon: Imag
 
 private object Routes {
     const val SHIFT_TYPES = "shift_types"
-    const val PATTERN = "pattern"
+    const val PATTERN = "pattern?weekdays={weekdays}"
+    const val WORK_STYLE = "work_style"
+
+    fun pattern(weekdays: Boolean = false) = "pattern?weekdays=$weekdays"
     const val MEMO_TRASH = "memo_trash"
     const val DIAGNOSTICS = "diagnostics"
     const val PAY = "pay"
@@ -122,6 +135,45 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // Fold unfolded, tablets and landscape get a navigation rail and two-pane calendar.
     val wide = windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
     val snackbar = remember { SnackbarHostState() }
+
+    // [WORK-01] First launch asks how the user works. Phones that already have a pattern were
+    // set up before this question existed, so they are shift workers and are not asked.
+    val settingsNow by container.settingsRepository.settings.collectAsStateWithLifecycle()
+    val needsWorkStyle by produceState<Boolean?>(if (settingsNow.workStyle != null) false else null, settingsNow.workStyle) {
+        value = if (settingsNow.workStyle != null) {
+            false
+        } else if (container.scheduleRepository.patterns.first().isNotEmpty()) {
+            container.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
+            false
+        } else {
+            true
+        }
+    }
+    // The first setup screen opens once the navigation graph exists.
+    var pendingRoute by rememberSaveable { mutableStateOf<String?>(null) }
+    when (needsWorkStyle) {
+        null -> return
+        true -> {
+            WorkStyleScreen(current = null, onPick = { style ->
+                container.settingsRepository.update { it.copy(workStyle = style) }
+                container.telemetry.event("work_style", style.name)
+                pendingRoute = when (style) {
+                    WorkStyle.SHIFT -> Routes.pattern()
+                    WorkStyle.DAY -> Routes.pattern(weekdays = true)
+                    WorkStyle.HOURLY -> Routes.PAY
+                    WorkStyle.FIELD, WorkStyle.BUSINESS -> null
+                }
+            })
+            return
+        }
+        false -> Unit
+    }
+    LaunchedEffect(pendingRoute) {
+        pendingRoute?.let { r ->
+            pendingRoute = null
+            nav.navigate(r) { launchSingleTop = true }
+        }
+    }
 
     AskNotificationPermissionOnce(container)
 
@@ -211,6 +263,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 RingingBanner()
                 AppNavHost(
                     nav = nav,
+                    container = container,
                     wide = wide,
                     snackbar = snackbar,
                     modifier = Modifier.weight(1f),
@@ -224,6 +277,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 @Composable
 private fun AppNavHost(
     nav: NavHostController,
+    container: AppContainer,
     wide: Boolean,
     snackbar: SnackbarHostState,
     modifier: Modifier = Modifier,
@@ -246,12 +300,23 @@ private fun AppNavHost(
                 snackbarHostState = snackbar,
                 onOpenMemo = { id -> nav.navigate(Routes.memo(id)) },
                 onNewMemo = { date -> nav.navigate(Routes.memo(0, date)) },
-                onOpenPattern = { nav.navigate(Routes.PATTERN) { launchSingleTop = true } },
+                onOpenPattern = { nav.navigate(Routes.pattern()) { launchSingleTop = true } },
                 onOpenShiftTypes = { nav.navigate(Routes.SHIFT_TYPES) { launchSingleTop = true } },
                 onOpenStats = { nav.navigateTopLevel(TopLevel.STATS.route) },
                 onOpenPay = { nav.navigate(Routes.PAY) { launchSingleTop = true } },
                 onOpenSettings = { nav.navigateTopLevel(TopLevel.SETTINGS.route) },
             )
+        }
+        composable(TopLevel.MONEY.route) {
+            val vm = appViewModel { MoneyViewModel(it) }
+            MoneyScreen(vm = vm, wide = wide, onOpenPay = { nav.navigate(Routes.PAY) { launchSingleTop = true } })
+        }
+        composable(Routes.WORK_STYLE) {
+            val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()
+            WorkStyleScreen(current = settings.workStyle, title = "근무 형태 바꾸기", onPick = { style ->
+                container.settingsRepository.update { it.copy(workStyle = style) }
+                nav.popFrom(Routes.WORK_STYLE)
+            })
         }
         composable(TopLevel.MEMOS.route) {
             val vm = appViewModel { MemoListViewModel(it) }
@@ -275,8 +340,9 @@ private fun AppNavHost(
             SettingsScreen(
                 vm = vm,
                 onOpenShiftTypes = { nav.navigate(Routes.SHIFT_TYPES) { launchSingleTop = true } },
-                onOpenPattern = { nav.navigate(Routes.PATTERN) { launchSingleTop = true } },
+                onOpenPattern = { nav.navigate(Routes.pattern()) { launchSingleTop = true } },
                 onOpenDiagnostics = { nav.navigate(Routes.DIAGNOSTICS) { launchSingleTop = true } },
+                onOpenWorkStyle = { nav.navigate(Routes.WORK_STYLE) { launchSingleTop = true } },
             )
         }
         composable(Routes.PAY) {
@@ -291,10 +357,14 @@ private fun AppNavHost(
             val vm = appViewModel { ShiftsViewModel(it) }
             ShiftTypesScreen(vm = vm, onBack = { nav.popFrom(Routes.SHIFT_TYPES) })
         }
-        composable(Routes.PATTERN) {
+        composable(
+            Routes.PATTERN,
+            arguments = listOf(navArgument("weekdays") { type = NavType.BoolType; defaultValue = false }),
+        ) { entry ->
             val vm = appViewModel { ShiftsViewModel(it) }
             PatternScreen(
                 vm = vm,
+                startWeekdays = entry.arguments?.getBoolean("weekdays") ?: false,
                 onBack = { nav.popFrom(Routes.PATTERN) },
                 onOpenShiftTypes = { nav.navigate(Routes.SHIFT_TYPES) { launchSingleTop = true } },
             )

@@ -111,7 +111,7 @@ class PatternDraft {
     var endDate: LocalDate? by mutableStateOf(null)
 
     /** Loads the saved pattern once; later calls keep the user's unsaved edits. */
-    fun initFrom(existing: WorkPattern?, today: LocalDate) {
+    fun initFrom(existing: WorkPattern?, today: LocalDate, weekdayShiftId: Long? = null) {
         if (initialized) return
         when (existing) {
             is WorkPattern.Rotation -> {
@@ -122,7 +122,11 @@ class PatternDraft {
                 kind = PatternKind.WEEKLY
                 existing.steps.forEachIndexed { i, id -> weekly[i] = id }
             }
-            null -> Unit
+            // [WORK-01] Day workers start from Monday to Friday on their day shift.
+            null -> if (weekdayShiftId != null) {
+                kind = PatternKind.WEEKLY
+                for (i in 0 until 5) weekly[i] = weekdayShiftId
+            }
         }
         // A rotation is edited by its step-0 day; its period may reach back years.
         startDate = (existing as? WorkPattern.Rotation)?.anchorDate ?: existing?.startDate ?: today

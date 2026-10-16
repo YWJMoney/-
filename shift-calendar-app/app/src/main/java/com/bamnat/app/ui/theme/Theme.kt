@@ -96,6 +96,9 @@ data class CalendarColors(
     val warningContainer: Color,
     val holidayWork: Color,
     val memoDot: Color,
+    /** [LEDG-01] Money in and out. */
+    val income: Color = Color(0xFF12805C),
+    val expense: Color = Color(0xFFD14343),
 )
 
 private val LightCalendarColors = CalendarColors(
@@ -114,6 +117,8 @@ private val DarkCalendarColors = CalendarColors(
     warningContainer = Color(0xFF4A1712),
     holidayWork = Color(0xFFFFB783),
     memoDot = Color(0xFF7FD8C8),
+    income = Color(0xFF6FD3A6),
+    expense = Color(0xFFFF8F8F),
 )
 
 val LocalCalendarColors = staticCompositionLocalOf { LightCalendarColors }

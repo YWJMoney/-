@@ -15,12 +15,17 @@ android {
         applicationId = "com.bamnat.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // [MKT-09] Link sharing server (server/share-worker). Blank hides '링크로 공유'.
         val shareBaseUrl = (project.findProperty("bamnat.shareBaseUrl") as String?).orEmpty()
         buildConfigField("String", "SHARE_BASE_URL", "\"$shareBaseUrl\"")
+    }
+    // The internet permission comes only with a sharing server, see src/online.
+    if ((project.findProperty("bamnat.shareBaseUrl") as String?).orEmpty().isNotBlank()) {
+        sourceSets.getByName("debug").manifest.srcFile("src/online/AndroidManifest.xml")
+        sourceSets.getByName("release").manifest.srcFile("src/online/AndroidManifest.xml")
     }
 
     // Fixed debug key kept in the project so every new test APK installs over the old one.

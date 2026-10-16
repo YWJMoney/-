@@ -4,10 +4,12 @@ import android.content.Context
 import com.bamnat.app.alarm.AlarmScheduler
 import com.bamnat.app.data.BackupManager
 import com.bamnat.app.data.MemoRepository
+import com.bamnat.app.data.MoneyRepository
 import com.bamnat.app.data.ScheduleRepository
 import com.bamnat.app.data.SettingsRepository
 import com.bamnat.app.data.db.AppDatabase
 import com.bamnat.app.diag.EventLog
+import com.bamnat.app.money.JobReminderScheduler
 import com.bamnat.app.pay.PayStore
 import com.bamnat.app.tier.FeatureGate
 import com.bamnat.app.diag.Telemetry
@@ -35,6 +37,7 @@ class AppContainer(context: Context) {
     val database: AppDatabase = AppDatabase.create(context)
     val scheduleRepository = ScheduleRepository(database)
     val memoRepository = MemoRepository(database)
+    val moneyRepository = MoneyRepository(database)
     val settingsRepository = SettingsRepository(context)
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository)
     val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry)
@@ -59,6 +62,10 @@ class AppContainer(context: Context) {
                     alarmScheduler.reschedule(snapshot, on)
                     WidgetRefresher.refresh(appContext)
                 }
+        }
+        // [WORK-02] Any change to the booked jobs re-plans the next job reminder.
+        appScope.launch {
+            moneyRepository.jobs.debounce(300).collect { JobReminderScheduler.reschedule(appContext, it) }
         }
         // Widgets lay out weeks from the user's first day of the week.
         appScope.launch {

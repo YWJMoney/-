@@ -123,6 +123,7 @@ fun CalendarScreen(
     val selected by vm.selected.collectAsStateWithLifecycle()
     val paint by vm.paint.collectAsStateWithLifecycle()
     val memoDates by vm.memoDates.collectAsStateWithLifecycle()
+    val moneyBook by vm.moneyBook.collectAsStateWithLifecycle()
 
     // Re-read the date every minute so "today" moves at midnight while the app is open.
     val today by produceState(LocalDate.now()) {
@@ -264,6 +265,8 @@ fun CalendarScreen(
                     cellHeight = cellHeight,
                     onDayClick = onDayClick,
                     onQuickAction = onQuickAction,
+                    money = moneyBook,
+                    showMoney = settings.workStyle?.usesPayEngine == false,
                 )
             }
         }

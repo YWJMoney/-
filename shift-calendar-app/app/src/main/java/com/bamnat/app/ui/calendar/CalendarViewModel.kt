@@ -30,6 +30,11 @@ import com.bamnat.core.pay.DayPay
 import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayProfile
 import java.time.YearMonth
+import com.bamnat.app.ui.money.MoneyActions
+import com.bamnat.core.money.DailySales
+import com.bamnat.core.money.Job
+import com.bamnat.core.money.MoneyBook
+import com.bamnat.core.money.MoneyEntry
 
 /** Quick-input tool: tap days to stamp a shift on them. */
 sealed interface PaintTool {
@@ -40,7 +45,7 @@ sealed interface PaintTool {
     data object Clear : PaintTool
 }
 
-class CalendarViewModel(private val container: AppContainer) : ViewModel() {
+class CalendarViewModel(private val container: AppContainer) : ViewModel(), MoneyActions {
     private val schedule = container.scheduleRepository
     private val memoRepo = container.memoRepository
 
@@ -190,6 +195,30 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel() {
     fun addQuickMemo(date: LocalDate, text: String) {
         viewModelScope.launch { memoRepo.addQuick(date, text) }
     }
+
+    /** [WORK-06] Ledger, jobs and sales for the calendar's day sections and cells. */
+    private val money = container.moneyRepository
+    val moneyBook: StateFlow<MoneyBook> = money.book.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MoneyBook.EMPTY)
+
+    override fun saveEntry(entry: MoneyEntry) { container.appScope.launch { money.save(entry) } }
+
+    override fun deleteEntry(entry: MoneyEntry) {
+        container.appScope.launch {
+            money.delete(entry)
+            _messages.tryEmit(UndoMessage("‘${entry.note.ifBlank { entry.category }}’ 기록을 지웠어요") { money.save(entry) })
+        }
+    }
+
+    override fun saveJob(job: Job) { container.appScope.launch { money.save(job) } }
+
+    override fun deleteJob(job: Job) {
+        container.appScope.launch {
+            money.delete(job)
+            _messages.tryEmit(UndoMessage("‘${job.title}’ 일감을 지웠어요") { money.save(job) })
+        }
+    }
+
+    override fun saveSales(sales: DailySales) { container.appScope.launch { money.save(sales) } }
 
     fun runUndo(message: UndoMessage) {
         val undo = message.undo ?: return

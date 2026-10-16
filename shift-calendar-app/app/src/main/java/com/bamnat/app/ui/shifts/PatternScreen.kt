@@ -76,7 +76,7 @@ import java.time.temporal.ChronoUnit
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun PatternScreen(vm: ShiftsViewModel, onBack: () -> Unit, onOpenShiftTypes: () -> Unit) {
+fun PatternScreen(vm: ShiftsViewModel, onBack: () -> Unit, onOpenShiftTypes: () -> Unit, startWeekdays: Boolean = false) {
     val typesOrNull by vm.shiftTypes.collectAsStateWithLifecycle()
     val patternState by vm.pattern.collectAsStateWithLifecycle()
     val types = typesOrNull
@@ -90,7 +90,9 @@ fun PatternScreen(vm: ShiftsViewModel, onBack: () -> Unit, onOpenShiftTypes: () 
     val existing = loadedPattern.pattern
     // The draft lives in the ViewModel so a trip to the shift type screen does not lose it.
     val draft0 = vm.draft
-    LaunchedEffect(Unit) { draft0.initFrom(existing, today) }
+    LaunchedEffect(Unit) {
+        draft0.initFrom(existing, today, if (startWeekdays) types.firstOrNull { !it.isOff && it.hasTimes }?.id else null)
+    }
     if (!draft0.initialized) return
     var kind by draft0::kind
     val rotation = draft0.rotation

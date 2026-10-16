@@ -65,6 +65,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.bamnat.app.ui.money.DayMoneySections
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -120,57 +121,74 @@ fun DayDetail(
         val settings by vm.settings.collectAsStateWithLifecycle()
         DayHeader(day = day, isToday = date == today, showLunar = settings.showLunar)
 
-        // Shift choice
-        SectionCard(title = "근무") {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (type in snapshot.shiftTypes) {
-                    FilterChip(
-                        selected = day.shiftType?.id == type.id,
-                        onClick = { vm.assign(date, ShiftOverride.Shift(type.id)) },
-                        label = { Text(type.name) },
-                        leadingIcon = { ShiftBadge(type, size = 18.dp, outlined = type.isOff) },
-                    )
-                }
-                if (snapshot.shiftTypes.none { it.isOff }) {
-                    FilterChip(
-                        selected = day.source == DaySource.OVERRIDE && day.shiftType == null,
-                        onClick = { vm.assign(date, ShiftOverride.Off) },
-                        label = { Text("쉬는 날") },
-                    )
-                }
-                FilterChip(
-                    selected = day.source != DaySource.OVERRIDE,
-                    onClick = { vm.assign(date, ShiftOverride.None) },
-                    label = { Text(if (snapshot.hasPattern) "패턴대로" else "지정 안 함") },
-                    leadingIcon = { Icon(Icons.Filled.Autorenew, contentDescription = null, Modifier.size(18.dp)) },
-                )
-            }
-            if (day.source == DaySource.OVERRIDE) {
-                val patternType = snapshot.resolver.patternShiftIdOn(date)?.let { snapshot.typesById[it] }
-                Text(
-                    "직접 바꾼 날이에요 · 패턴: ${patternType?.name ?: "쉬는 날"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.tertiary,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
+        // [WORK-01] Field and shop work lead with money; shift details stay one tap away.
+        val style = settings.workStyle
+        val book by vm.moneyBook.collectAsStateWithLifecycle()
+        val dayBook = remember(book, date) { book.on(date) }
+        val moneyFirst = style != null && !style.usesPayEngine
+        var showShifts by rememberSaveable(date) { mutableStateOf(false) }
+        val shiftsVisible = !moneyFirst || showShifts || day.source == DaySource.OVERRIDE || day.entry != null
+        if (moneyFirst) DayMoneySections(date, style, dayBook, vm)
+        if (!shiftsVisible) {
+            TextButton(onClick = { showShifts = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                Text("근무·알람도 적기")
             }
         }
+        if (shiftsVisible) {
+            // Shift choice
+            SectionCard(title = "근무") {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    for (type in snapshot.shiftTypes) {
+                        FilterChip(
+                            selected = day.shiftType?.id == type.id,
+                            onClick = { vm.assign(date, ShiftOverride.Shift(type.id)) },
+                            label = { Text(type.name) },
+                            leadingIcon = { ShiftBadge(type, size = 18.dp, outlined = type.isOff) },
+                        )
+                    }
+                    if (snapshot.shiftTypes.none { it.isOff }) {
+                        FilterChip(
+                            selected = day.source == DaySource.OVERRIDE && day.shiftType == null,
+                            onClick = { vm.assign(date, ShiftOverride.Off) },
+                            label = { Text("쉬는 날") },
+                        )
+                    }
+                    FilterChip(
+                        selected = day.source != DaySource.OVERRIDE,
+                        onClick = { vm.assign(date, ShiftOverride.None) },
+                        label = { Text(if (snapshot.hasPattern) "패턴대로" else "지정 안 함") },
+                        leadingIcon = { Icon(Icons.Filled.Autorenew, contentDescription = null, Modifier.size(18.dp)) },
+                    )
+                }
+                if (day.source == DaySource.OVERRIDE) {
+                    val patternType = snapshot.resolver.patternShiftIdOn(date)?.let { snapshot.typesById[it] }
+                    Text(
+                        "직접 바꾼 날이에요 · 패턴: ${patternType?.name ?: "쉬는 날"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            }
 
-        if (day.isWorkDay) {
-            WorkTimeSection(day = day, vm = vm)
+            if (day.isWorkDay) {
+                WorkTimeSection(day = day, vm = vm)
+            }
+
+            if (day.leave != null || day.shiftType?.hasTimes == true && day.isWorkDay) {
+                LeaveSection(day = day, vm = vm)
+            }
+
+            ExtraWorkSection(day = day, vm = vm)
+
+            SecondShiftSection(day = day, snapshot = snapshot, vm = vm)
+
+            DayPaySection(day = day, snapshot = snapshot, vm = vm, onOpenPay = onOpenPay)
+
+            AlarmSection(day = day, snapshot = snapshot, vm = vm, onOpenShiftTypes = onOpenShiftTypes)
         }
 
-        if (day.leave != null || day.shiftType?.hasTimes == true && day.isWorkDay) {
-            LeaveSection(day = day, vm = vm)
-        }
-
-        ExtraWorkSection(day = day, vm = vm)
-
-        SecondShiftSection(day = day, snapshot = snapshot, vm = vm)
-
-        DayPaySection(day = day, snapshot = snapshot, vm = vm, onOpenPay = onOpenPay)
-
-        AlarmSection(day = day, snapshot = snapshot, vm = vm, onOpenShiftTypes = onOpenShiftTypes)
+        if (!moneyFirst) DayMoneySections(date, style, dayBook, vm)
 
         MemoSection(
             date = date,

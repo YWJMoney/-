@@ -3,7 +3,6 @@
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- [MKT-09] Only for read-only schedule links the user makes; nothing else goes online. -->
-    <uses-permission android:name="android.permission.INTERNET" />
     <!-- Android 12: exact alarms. Android 13+: USE_EXACT_ALARM, allowed for calendar/alarm apps. -->
     <uses-permission
         android:name="android.permission.SCHEDULE_EXACT_ALARM"
@@ -68,6 +67,10 @@
 
         <receiver
             android:name=".alarm.AlarmReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".money.JobReminderReceiver"
             android:exported="false" />
 
         <receiver

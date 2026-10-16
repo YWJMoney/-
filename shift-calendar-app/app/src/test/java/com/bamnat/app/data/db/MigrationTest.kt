@@ -31,7 +31,7 @@ class MigrationTest {
         createVersion1(context.getDatabasePath(name).apply { parentFile?.mkdirs() })
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7)
             .allowMainThreadQueries()
             .build()
         try {
@@ -56,6 +56,12 @@ class MigrationTest {
             val memo = db.memoDao().getAll().single().toModel()
             assertEquals("인수인계", memo.title)
             assertNull(memo.deletedAtMillis)
+
+            // Version 7 tables start empty and take rows [WORK-06].
+            val money = db.moneyDao()
+            assertEquals(0, money.allEntries().size)
+            val id = money.insertJob(com.bamnat.core.money.Job(date = java.time.LocalDate.of(2026, 11, 3), title = "욕실", amount = 900_000).toEntity())
+            assertEquals("욕실", money.job(id)?.toModel()?.title)
         } finally {
             db.close()
             context.deleteDatabase(name)

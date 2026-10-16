@@ -55,6 +55,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import com.bamnat.core.money.DayMoney
+import com.bamnat.core.money.MoneyBook
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bamnat.app.data.ScheduleSnapshot
@@ -119,8 +121,12 @@ fun MonthGrid(
     onDayClick: (LocalDate) -> Unit,
     onQuickAction: (LocalDate, QuickAction) -> Unit,
     modifier: Modifier = Modifier,
+    /** [WORK-02][WORK-03] Field and shop work show the day's income in place of hours. */
+    money: MoneyBook = MoneyBook.EMPTY,
+    showMoney: Boolean = false,
 ) {
     val cal = LocalCalendarColors.current
+    val dayMoney = remember(money, month, showMoney) { if (showMoney) money.days(month) else emptyMap() }
     val firstCell = remember(month, calculator) { calculator.weekStartOf(month.atDay(1)) }
     Column(modifier.fillMaxWidth()) {
         for (row in 0 until GRID_ROWS) {
@@ -148,6 +154,7 @@ fun MonthGrid(
                         isToday = date == today,
                         isSelected = date == selected,
                         hasMemo = date in memoDates,
+                        money = dayMoney[date],
                         showHours = showHours,
                         showLunar = showLunar,
                         onClick = { onDayClick(date) },
@@ -171,6 +178,7 @@ private fun DayCell(
     hasMemo: Boolean,
     showHours: Boolean,
     showLunar: Boolean = false,
+    money: DayMoney? = null,
     onClick: () -> Unit,
     onQuickAction: (QuickAction) -> Unit,
     modifier: Modifier = Modifier,
@@ -204,6 +212,11 @@ private fun DayCell(
         day.second?.let { append(", 그리고 ").append(it.type.name) }
         if (day.isHolidayWork) append(", 휴일 근무 ").append(HoursFormat.korean(day.holidayWorkMinutes))
         if (hasMemo) append(", 메모 있음")
+        money?.let { m ->
+            if (m.jobs > 0) append(", 일감 ${m.jobs}건")
+            if (m.income != 0L) append(", 수입 ").append(Fmt.won(m.income))
+            if (m.unpaid > 0) append(", 받을 돈 ").append(Fmt.won(m.unpaid))
+        }
     }
 
     Box(
@@ -277,12 +290,17 @@ private fun DayCell(
                 }
             } else if (type != null || day.hasCustomTimes) {
                 ShiftBadge(type = type, text = type?.label ?: "근", size = 22.dp, outlined = type?.isOff == true)
+            } else if (money != null && money.jobs > 0) {
+                // [WORK-02] A booked job; amber while money is still owed.
+                JobBadge(count = money.jobs, owed = money.unpaid > 0)
             } else {
                 Spacer(Modifier.height(22.dp))
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                 val extraMinutes = day.extraMinutes
+                val moneyText = money?.income?.takeIf { it != 0L }?.let { Fmt.wonShort(it) }
                 val footer = when {
+                    moneyText != null -> moneyText
                     extraMinutes > 0 -> "+" + HoursFormat.short(extraMinutes)
                     // [FEAT-05] Lunar date takes the place of the hours when turned on.
                     showLunar -> remember(date) { KoreanLunar.fromSolar(date).short }
@@ -295,8 +313,12 @@ private fun DayCell(
                     lineHeight = 10.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Clip,
-                    color = if (extraMinutes > 0) cal.holidayWork else scheme.onSurfaceVariant,
-                    fontWeight = if (extraMinutes > 0) FontWeight.Bold else FontWeight.Normal,
+                    color = when {
+                        moneyText != null -> cal.income
+                        extraMinutes > 0 -> cal.holidayWork
+                        else -> scheme.onSurfaceVariant
+                    },
+                    fontWeight = if (extraMinutes > 0 || moneyText != null) FontWeight.Bold else FontWeight.Normal,
                     style = NumberStyle,
                 )
                 if (hasMemo) {
@@ -359,5 +381,18 @@ private fun DayCell(
                 onClick = { menu = false; onQuickAction(QuickAction.Open) },
             )
         }
+    }
+}
+
+@Composable
+private fun JobBadge(count: Int, owed: Boolean) {
+    val scheme = MaterialTheme.colorScheme
+    val bg = if (owed) LocalCalendarColors.current.warningContainer else scheme.secondaryContainer
+    Box(
+        Modifier.height(22.dp).clip(RoundedCornerShape(6.dp)).background(bg).padding(horizontal = 5.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(if (count > 1) "일$count" else "일", fontSize = 11.sp, fontWeight = FontWeight.Bold,
+            color = if (owed) LocalCalendarColors.current.warning else scheme.onSecondaryContainer, maxLines = 1)
     }
 }

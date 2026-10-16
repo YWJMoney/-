@@ -35,6 +35,23 @@ object Fmt {
 
     fun shortDate(d: LocalDate): String = "${d.monthValue}/${d.dayOfMonth}"
 
+    private val wonFormat = java.text.NumberFormat.getIntegerInstance(korean)
+
+    /** "1,250,000원" */
+    fun won(amount: Long): String = wonFormat.format(amount) + "원"
+
+    /** Amounts for a calendar cell: "125만", "8천", "500" [WORK-02]. */
+    fun wonShort(amount: Long): String {
+        val a = kotlin.math.abs(amount)
+        val sign = if (amount < 0) "-" else ""
+        return sign + when {
+            a >= 100_000_000 -> "%.1f억".format(a / 100_000_000.0).replace(".0억", "억")
+            a >= 10_000 -> "${a / 10_000}만"
+            a >= 1_000 -> "${a / 1_000}천"
+            else -> a.toString()
+        }
+    }
+
     fun offset(minutes: Int): String = when {
         minutes == 0 -> "시작 시각"
         minutes % 60 == 0 -> "${minutes / 60}시간 전"

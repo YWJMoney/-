@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.bamnat.app.tier.Tier
 import com.bamnat.core.hours.HourLimits
+import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,6 +40,8 @@ data class AppSettings(
     val shareUsageStats: Boolean = false,
     /** Subscription tier; set by billing later, by testers for now [TIER-01]. */
     val tier: Tier = Tier.FREE,
+    /** [WORK-01] How the user works; null until chosen on first launch. */
+    val workStyle: WorkStyle? = null,
 ) {
     val limits: HourLimits get() = HourLimits(weeklyLimitHours, averageLimitHours)
 
@@ -99,6 +102,7 @@ class SettingsRepository(context: Context) {
             hideDayAlarmNotice = prefs.getBoolean(K_HIDE_DAY_NOTICE, d.hideDayAlarmNotice),
             shareUsageStats = prefs.getBoolean(K_SHARE_STATS, d.shareUsageStats),
             tier = runCatching { Tier.valueOf(prefs.getString(K_TIER, null) ?: "") }.getOrDefault(d.tier),
+            workStyle = prefs.getString(K_WORK_STYLE, null)?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } },
         )
     }
 
@@ -123,6 +127,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_HIDE_DAY_NOTICE, s.hideDayAlarmNotice)
             .putBoolean(K_SHARE_STATS, s.shareUsageStats)
             .putString(K_TIER, s.tier.name)
+            .putString(K_WORK_STYLE, s.workStyle?.name)
             .apply()
     }
 
@@ -146,5 +151,6 @@ class SettingsRepository(context: Context) {
         const val K_HIDE_DAY_NOTICE = "hide_day_alarm_notice"
         const val K_SHARE_STATS = "share_usage_stats"
         const val K_TIER = "tier"
+        const val K_WORK_STYLE = "work_style"
     }
 }

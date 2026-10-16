@@ -22,6 +22,8 @@ enum class Feature(val label: String, val minTier: Tier) {
     PAY_RULE_IMPORT("임금 규칙 자동 인식", Tier.PRO),
     PAY_BULK_EDIT("값 일괄 적용", Tier.PRO),
     TEAM_ROSTER("팀 근무표 만들기", Tier.LEADER),
+    /** [TIER-05] This month's records and totals stay free; comparisons, trends and breakdowns are pro. */
+    MONEY_STATS("돈 통계", Tier.PRO),
 }
 
 /**

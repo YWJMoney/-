@@ -2,16 +2,20 @@ package com.bamnat.app.data
 
 import androidx.room.withTransaction
 import com.bamnat.app.data.db.AppDatabase
+import com.bamnat.app.data.db.DailySalesEntity
 import com.bamnat.app.data.db.DayEntryEntity
+import com.bamnat.app.data.db.JobEntity
+import com.bamnat.app.data.db.MoneyEntryEntity
 import com.bamnat.app.data.db.MemoEntity
 import com.bamnat.app.data.db.PatternEntity
 import com.bamnat.app.data.db.ShiftTypeEntity
+import com.bamnat.core.work.WorkStyle
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.DayOfWeek
 
 /** What a backup file holds, shown before the user confirms a restore. */
-data class BackupSummary(val shiftTypes: Int, val days: Int, val memos: Int, val exportedAtMillis: Long)
+data class BackupSummary(val shiftTypes: Int, val days: Int, val memos: Int, val exportedAtMillis: Long, val moneyLines: Int = 0)
 
 class BackupException(message: String) : Exception(message)
 
@@ -74,6 +78,25 @@ class BackupManager(
             )
         }
         root.put("memos", memos)
+        // [WORK-06] Ledger, jobs and sales (version 7). Older apps ignore these keys.
+        val money = db.moneyDao()
+        root.put("money", JSONArray().apply {
+            money.allEntries().forEach { e ->
+                put(JSONObject().put("id", e.id).put("day", e.epochDay).put("kind", e.kind).put("amount", e.amount)
+                    .put("category", e.category).put("note", e.note).put("source", e.source).put("created", e.createdAt))
+            }
+        })
+        root.put("jobs", JSONArray().apply {
+            money.allJobs().forEach { j ->
+                put(JSONObject().put("id", j.id).put("day", j.epochDay).put("title", j.title).put("client", j.client)
+                    .put("place", j.place).putOpt("start", j.startMinute).putOpt("end", j.endMinute).put("amount", j.amount)
+                    .put("deposit", j.deposit).put("depositPaid", j.depositPaid).put("balancePaid", j.balancePaid)
+                    .putOpt("remind", j.remindMinutes).put("note", j.note))
+            }
+        })
+        root.put("sales", JSONArray().apply {
+            money.allSales().forEach { d -> put(JSONObject().put("day", d.epochDay).put("sales", d.sales).put("costs", d.costs).put("note", d.note)) }
+        })
         val s = settings.current
         root.put(
             "settings",
@@ -82,7 +105,8 @@ class BackupManager(
                 .put("averageLimit", s.averageLimitHours).put("theme", s.themeMode.name)
                 .put("dynamicColor", s.dynamicColor).put("cellHours", s.showHoursInCells).put("lunar", s.showLunar)
                 .putOpt("sound", s.defaultAlarmSound).put("vibrate", s.vibrate).put("gradual", s.gradualVolume)
-                .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmsOn", s.alarmsEnabled),
+                .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmsOn", s.alarmsEnabled)
+                .putOpt("workStyle", s.workStyle?.name),
         )
         return root.toString(1)
     }
@@ -95,6 +119,8 @@ class BackupManager(
             days = root.optJSONArray("days")?.length() ?: 0,
             memos = root.optJSONArray("memos")?.length() ?: 0,
             exportedAtMillis = root.optLong("exportedAt"),
+            moneyLines = (root.optJSONArray("money")?.length() ?: 0) + (root.optJSONArray("jobs")?.length() ?: 0) +
+                (root.optJSONArray("sales")?.length() ?: 0),
         )
     }
 
@@ -142,7 +168,30 @@ class BackupManager(
                 deletedAt = if (o.isNull("deleted") || !o.has("deleted")) null else o.getLong("deleted"),
             )
         }
+        val entries = root.optJSONArray("money")?.objects()?.map { o ->
+            MoneyEntryEntity(
+                id = o.getLong("id"), epochDay = o.getLong("day"), kind = o.getString("kind"), amount = o.getLong("amount"),
+                category = o.optString("category"), note = o.optString("note"), source = o.optString("source", "MANUAL"),
+                createdAt = o.optLong("created"),
+            )
+        }
+        val jobs = root.optJSONArray("jobs")?.objects()?.map { o ->
+            JobEntity(
+                id = o.getLong("id"), epochDay = o.getLong("day"), title = o.optString("title"), client = o.optString("client"),
+                place = o.optString("place"), startMinute = o.optIntOrNull("start"), endMinute = o.optIntOrNull("end"),
+                amount = o.optLong("amount"), deposit = o.optLong("deposit"), depositPaid = o.optBoolean("depositPaid"),
+                balancePaid = o.optBoolean("balancePaid"), remindMinutes = o.optIntOrNull("remind"), note = o.optString("note"),
+            )
+        }
+        val sales = root.optJSONArray("sales")?.objects()?.map { o ->
+            DailySalesEntity(o.getLong("day"), o.optLong("sales"), o.optLong("costs"), o.optString("note"))
+        }
         db.withTransaction {
+            // Backups from before version 7 carry no money; what is on the phone then stays.
+            val money = db.moneyDao()
+            entries?.let { list -> money.clearEntries(); list.forEach { money.restoreEntry(it) } }
+            jobs?.let { list -> money.clearJobs(); list.forEach { money.restoreJob(it) } }
+            sales?.let { list -> money.clearSales(); list.forEach { money.upsertSales(it) } }
             db.memoDao().clear()
             db.dayEntryDao().clear()
             db.patternDao().clear()
@@ -168,6 +217,7 @@ class BackupManager(
                     snoozeMinutes = o.optInt("snooze", s.snoozeMinutes),
                     ringMinutes = o.optInt("ring", s.ringMinutes),
                     alarmsEnabled = o.optBoolean("alarmsOn", s.alarmsEnabled),
+                    workStyle = o.optStringOrNull("workStyle")?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } } ?: s.workStyle,
                 )
             }
         }

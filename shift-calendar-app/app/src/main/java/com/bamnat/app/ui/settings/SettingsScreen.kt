@@ -173,6 +173,7 @@ fun SettingsScreen(
     onOpenShiftTypes: () -> Unit,
     onOpenPattern: () -> Unit,
     onOpenDiagnostics: () -> Unit,
+    onOpenWorkStyle: () -> Unit = {},
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val upcoming by vm.upcoming.collectAsStateWithLifecycle()
@@ -205,7 +206,8 @@ fun SettingsScreen(
     pendingRestore?.let { (_, summary) ->
         ConfirmDialog(
             title = "백업을 불러올까요?",
-            message = "근무 유형 ${summary.shiftTypes}개, 바꾼 날짜 ${summary.days}일, 메모 ${summary.memos}개가 들어 있어요" +
+            message = "들어 있는 것: 근무 유형 ${summary.shiftTypes}개, 바꾼 날짜 ${summary.days}일, 메모 ${summary.memos}개" +
+                (if (summary.moneyLines > 0) ", 돈 기록 ${summary.moneyLines}건" else "") +
                 (if (summary.exportedAtMillis > 0) " (${Fmt.dayTitle(AlarmScheduler.millisToLocal(summary.exportedAtMillis).toLocalDate())} 저장)" else "") +
                 ".\n지금 앱에 있는 데이터는 이 백업으로 바뀌어요.",
             confirmLabel = "불러오기",
@@ -231,6 +233,9 @@ fun SettingsScreen(
         Text("설정", style = MaterialTheme.typography.headlineSmall)
 
         SectionCard(title = "근무") {
+            // [WORK-01] Changing the kind of work keeps every record; it only changes what screens show.
+            NavRow("근무 형태", settings.workStyle?.label ?: "정하지 않음", onOpenWorkStyle)
+            HorizontalDivider()
             NavRow("근무 패턴", "교대 순서, 요일별 근무, 시작일", onOpenPattern)
             HorizontalDivider()
             NavRow("근무 유형", "이름, 시간, 색상, 근무별 알람", onOpenShiftTypes)

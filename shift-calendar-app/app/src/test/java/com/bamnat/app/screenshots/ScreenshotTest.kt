@@ -59,6 +59,11 @@ import androidx.glance.appwidget.compose
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 import java.time.LocalTime
+import com.bamnat.core.money.DailySales
+import com.bamnat.core.money.Job
+import com.bamnat.core.money.MoneyEntry
+import com.bamnat.core.money.MoneyKind
+import com.bamnat.core.work.WorkStyle
 
 /** Renders the main screens with sample data at Galaxy Fold sizes into build/screenshots. */
 @RunWith(AndroidJUnit4::class)
@@ -117,6 +122,27 @@ class ScreenshotTest {
         memos.save(Memo(title = "자격증 공부", body = "산업안전기사 필기 #공부\n주 3회 1시간", colorIndex = 5, pinned = true))
         memos.save(Memo(isChecklist = true, title = "장보기",
             checklist = listOf(ChecklistItem("우유", true), ChecklistItem("계란"), ChecklistItem("커피"))))
+        // [LEDG-01][WORK-02][WORK-03] A month of spending, a few jobs and a shop day.
+        val money = c.moneyRepository
+        val month = today.withDayOfMonth(1)
+        listOf(
+            Triple(0, 4_500L, "카페" to "출근길 커피"), Triple(1, 32_000L, "식비" to "팀 점심"), Triple(2, 68_400L, "장보기·쇼핑" to "이마트"),
+            Triple(3, 13_500L, "구독" to "넷플릭스"), Triple(5, 5_200L, "카페" to "메가커피"), Triple(6, 55_000L, "통신" to "휴대폰 요금"),
+            Triple(8, 18_000L, "배달" to "배달의민족"), Triple(9, 3_300L, "편의점" to "CU"),
+        ).forEach { (d, amount, cn) ->
+            money.save(MoneyEntry(date = month.plusDays(d.toLong().coerceAtMost(today.dayOfMonth - 1L)), kind = MoneyKind.EXPENSE,
+                amount = amount, category = cn.first, note = cn.second))
+        }
+        money.save(MoneyEntry(date = month, kind = MoneyKind.INCOME, amount = 150_000, category = "부수입", note = "중고 거래"))
+        money.save(MoneyEntry(date = month.minusMonths(1).plusDays(4), kind = MoneyKind.EXPENSE, amount = 210_000, category = "식비"))
+        money.save(Job(date = today, title = "욕실 타일 시공", client = "김OO 고객", place = "OO아파트 103동", start = LocalTime.of(9, 0),
+            end = LocalTime.of(17, 0), amount = 1_200_000, deposit = 300_000, depositPaid = true, remindMinutes = 60))
+        money.save(Job(date = today.minusDays(4), title = "도배", client = "박OO", amount = 800_000, balancePaid = true))
+        money.save(Job(date = today.minusDays(2), title = "주방 수전 교체", amount = 150_000))
+        money.save(Job(date = today.plusDays(2), title = "현장 실측", place = "OO빌라", start = LocalTime.of(14, 0), amount = 0))
+        money.save(DailySales(today, sales = 1_240_000, costs = 380_000, note = "단체 손님 1팀"))
+        money.save(DailySales(today.minusDays(1), sales = 860_000, costs = 240_000))
+
         val old = memos.save(Memo(title = "지난달 회식 장소", body = "OO갈비"))
         memos.delete(old)
         memos.consumeLastDeleted()
@@ -192,10 +218,10 @@ class ScreenshotTest {
             settle()
         }
 
-        /** Opens one of the four top-level tabs (0 = calendar, 2 = stats, 3 = settings). */
+        /** Opens a top-level tab (0 = calendar, 1 = money, 2 = memos, 3 = stats, 4 = settings). */
         fun tab(index: Int, wide: Boolean) = gesture { w, h, d ->
             val p = if (wide) 40 * d to (45 + index * 62) * d
-            else w * (index + 0.5f) / 4 to h - 40 * d
+            else w * (index + 0.5f) / 5 to h - 40 * d
             listOf(p, p)
         }
 
@@ -235,39 +261,39 @@ class ScreenshotTest {
         scrollUp(250)
     }
     @Test fun foldedTimeWheel() = shoot("20_folded_time_wheel", FOLDED) {
-        tab(3, wide = false)
+        tab(4, wide = false)
         tap(180f, SETTINGS_SHIFT_TYPES_Y)
         tap(150f, 270f)
         tap(100f, 470f)
     }
     @Test fun foldedPatternChange() = shoot("21_folded_pattern_change", FOLDED) {
-        tab(3, wide = false)
+        tab(4, wide = false)
         tap(180f, SETTINGS_PATTERN_Y)
         tap(30f, 32f, fromRight = true)
     }
-    @Test fun foldedStats() = shoot("3_folded_stats", FOLDED) { tab(2, wide = false) }
-    @Test fun foldedSettings() = shoot("4_folded_settings", FOLDED) { tab(3, wide = false) }
+    @Test fun foldedStats() = shoot("3_folded_stats", FOLDED) { tab(3, wide = false) }
+    @Test fun foldedSettings() = shoot("4_folded_settings", FOLDED) { tab(4, wide = false) }
     @Test fun unfoldedCalendar() = shoot("5_unfolded_calendar", UNFOLDED)
-    @Test fun unfoldedStats() = shoot("7_unfolded_stats", UNFOLDED) { tab(2, wide = true) }
+    @Test fun unfoldedStats() = shoot("7_unfolded_stats", UNFOLDED) { tab(3, wide = true) }
     @Test fun unfoldedDayDetail() = shoot("6_unfolded_day", UNFOLDED) { scrollUp(500, across = 0.75f) }
-    @Test fun unfoldedSettings() = shoot("8_unfolded_settings", UNFOLDED) { tab(3, wide = true) }
+    @Test fun unfoldedSettings() = shoot("8_unfolded_settings", UNFOLDED) { tab(4, wide = true) }
 
-    @Test fun foldedCalendarMemos() = shoot("9_folded_memos_calendar", FOLDED) { tab(1, wide = false) }
+    @Test fun foldedCalendarMemos() = shoot("9_folded_memos_calendar", FOLDED) { tab(2, wide = false) }
     @Test fun foldedGeneralMemos() = shoot("10_folded_memos_general", FOLDED) {
-        tab(1, wide = false)
+        tab(2, wide = false)
         tap(276f, TAB_ROW_Y)
     }
     @Test fun foldedTrash() = shoot("11_folded_trash", FOLDED) {
-        tab(1, wide = false)
+        tab(2, wide = false)
         tap(28f, 32f, fromRight = true)
     }
-    @Test fun unfoldedMemos() = shoot("12_unfolded_memos", UNFOLDED) { tab(1, wide = true) }
+    @Test fun unfoldedMemos() = shoot("12_unfolded_memos", UNFOLDED) { tab(2, wide = true) }
     @Test fun foldedShiftTypes() = shoot("13_folded_shift_types", FOLDED) {
-        tab(3, wide = false)
+        tab(4, wide = false)
         tap(180f, SETTINGS_SHIFT_TYPES_Y)
     }
     @Test fun foldedPattern() = shoot("14_folded_pattern", FOLDED) {
-        tab(3, wide = false)
+        tab(4, wide = false)
         tap(180f, SETTINGS_PATTERN_Y)
     }
     @Test fun foldedDayAlarmEditor() = shoot("15_folded_day_alarm_editor", FOLDED) {
@@ -277,13 +303,13 @@ class ScreenshotTest {
     }
 
     @Test fun foldedShiftTypeEditor() = shoot("16_folded_shift_type_editor", FOLDED) {
-        tab(3, wide = false)
+        tab(4, wide = false)
         tap(180f, SETTINGS_SHIFT_TYPES_Y)
         tap(150f, 270f)
     }
 
     @Test fun foldedShiftTypeAlarms() = shoot("17_folded_shift_type_alarms", FOLDED) {
-        tab(3, wide = false)
+        tab(4, wide = false)
         tap(180f, SETTINGS_SHIFT_TYPES_Y)
         tap(150f, 270f)
         scrollUp(600)
@@ -350,7 +376,7 @@ class ScreenshotTest {
         scrollUp(420)
     }
     @Test fun foldedShiftIcons() = shoot("38_folded_shift_icons", FOLDED) {
-        tab(3, wide = false)
+        tab(4, wide = false)
         tap(180f, SETTINGS_SHIFT_TYPES_Y)
         tap(150f, 270f)
         scrollUp(330)
@@ -364,7 +390,7 @@ class ScreenshotTest {
         scrollUp(330)
     }
     @Test fun foldedBreakStart() = shoot("42_folded_break_start", FOLDED) {
-        tab(3, wide = false)
+        tab(4, wide = false)
         tap(180f, SETTINGS_SHIFT_TYPES_Y)
         tap(150f, 270f)
         scrollUp(150)
@@ -409,6 +435,36 @@ class ScreenshotTest {
                     java.time.Instant.now().plus(java.time.Duration.ofDays(30)), "민지"))
         }
     }
+    // [WORK-01] First launch: how do you work?
+    @Test fun foldedWorkStylePicker() = shoot("49_folded_work_style", FOLDED) {
+        content { com.bamnat.app.ui.work.WorkStyleScreen(current = null, onPick = {}) }
+    }
+    @Test fun unfoldedWorkStylePicker() = shoot("50_unfolded_work_style", UNFOLDED) {
+        content { com.bamnat.app.ui.work.WorkStyleScreen(current = null, onPick = {}) }
+    }
+    // [LEDG-01][WORK-04] The money tab for a shift worker.
+    @Test fun foldedMoney() = shoot("51_folded_money", FOLDED) { tab(1, wide = false) }
+    @Test fun foldedMoneyScrolled() = shoot("52_folded_money_stats", FOLDED) { tab(1, wide = false); scrollUp(700, across = 0.3f) }
+    @Test fun unfoldedMoney() = shoot("53_unfolded_money", UNFOLDED) { tab(1, wide = true) }
+    // [WORK-02] Field work: jobs on the calendar and owed money.
+    @Test fun foldedFieldCalendar() = shoot("54_folded_field_calendar", FOLDED, style(WorkStyle.FIELD))
+    @Test fun foldedFieldDay() = shoot("55_folded_field_day", FOLDED, style(WorkStyle.FIELD) { tap(DAY_X, DAY_Y) })
+    @Test fun foldedFieldMoney() = shoot("56_folded_field_money", FOLDED, style(WorkStyle.FIELD) { tab(1, wide = false) })
+    @Test fun foldedJobDialog() = shoot("57_folded_job_dialog", FOLDED) {
+        content { com.bamnat.app.ui.money.JobDialog(today, null, onSave = {}, onDismiss = {}) }
+    }
+    // [WORK-03] A shop's day and month.
+    @Test fun foldedBusinessDay() = shoot("58_folded_business_day", FOLDED, style(WorkStyle.BUSINESS) { tap(DAY_X, DAY_Y) })
+    @Test fun foldedBusinessMoney() = shoot("59_folded_business_money", FOLDED, style(WorkStyle.BUSINESS) { tab(1, wide = false) })
+    @Test fun foldedEntryDialog() = shoot("60_folded_entry_dialog", FOLDED) {
+        content { com.bamnat.app.ui.money.EntryDialog(today, null, onSave = {}, onDismiss = {}) }
+    }
+
+    private fun style(s: WorkStyle, then: Screen.() -> Unit = {}): Screen.() -> Unit {
+        app.container.settingsRepository.update { it.copy(workStyle = s) }
+        return then
+    }
+
     @Test fun foldedPayLocked() = shoot("29_folded_pay_locked", FOLDED, payScreen(Tier.FREE, withProfile = true))
     @Test fun foldedPayBulkEdit() = shoot("30_folded_pay_bulk_edit", FOLDED, payScreen(Tier.PRO, withProfile = true) { vm ->
         val profile = vm.profile.collectAsState().value

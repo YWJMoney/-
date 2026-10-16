@@ -8,8 +8,11 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [ShiftTypeEntity::class, PatternEntity::class, DayEntryEntity::class, MemoEntity::class],
-    version = 6,
+    entities = [
+        ShiftTypeEntity::class, PatternEntity::class, DayEntryEntity::class, MemoEntity::class,
+        MoneyEntryEntity::class, JobEntity::class, DailySalesEntity::class,
+    ],
+    version = 7,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -17,11 +20,12 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun patternDao(): PatternDao
     abstract fun dayEntryDao(): DayEntryDao
     abstract fun memoDao(): MemoDao
+    abstract fun moneyDao(): MoneyDao
 
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "bamnat.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 .build()
 
         /** Version 2: several alarms per shift, hand-set alarms per day, memo trash. */
@@ -63,6 +67,29 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE shift_types ADD COLUMN breakStartMinute INTEGER DEFAULT NULL")
+            }
+        }
+
+        /** Version 7: household ledger, field jobs and shop sales [WORK-06][LEDG-01][WORK-02][WORK-03]. */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `money_entries` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`epochDay` INTEGER NOT NULL, `kind` TEXT NOT NULL, `amount` INTEGER NOT NULL, `category` TEXT NOT NULL, " +
+                        "`note` TEXT NOT NULL, `source` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_money_entries_epochDay` ON `money_entries` (`epochDay`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `jobs` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `epochDay` INTEGER NOT NULL, " +
+                        "`title` TEXT NOT NULL, `client` TEXT NOT NULL, `place` TEXT NOT NULL, `startMinute` INTEGER, `endMinute` INTEGER, " +
+                        "`amount` INTEGER NOT NULL, `deposit` INTEGER NOT NULL, `depositPaid` INTEGER NOT NULL, " +
+                        "`balancePaid` INTEGER NOT NULL, `remindMinutes` INTEGER, `note` TEXT NOT NULL)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_jobs_epochDay` ON `jobs` (`epochDay`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `daily_sales` (`epochDay` INTEGER NOT NULL, `sales` INTEGER NOT NULL, " +
+                        "`costs` INTEGER NOT NULL, `note` TEXT NOT NULL, PRIMARY KEY(`epochDay`))",
+                )
             }
         }
     }
