@@ -37,6 +37,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EditCalendar
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.EventRepeat
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -87,6 +88,7 @@ import com.bamnat.app.review.InAppReview.findActivity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import com.bamnat.app.ui.theme.LocalCalendarColors
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 
@@ -111,6 +113,7 @@ fun CalendarScreen(
     onOpenPattern: () -> Unit,
     onOpenShiftTypes: () -> Unit,
     onOpenStats: () -> Unit,
+    onOpenMoney: () -> Unit = {},
     onOpenPay: () -> Unit = onOpenStats,
     onOpenSettings: () -> Unit,
 ) {
@@ -124,6 +127,7 @@ fun CalendarScreen(
     val paint by vm.paint.collectAsStateWithLifecycle()
     val memoDates by vm.memoDates.collectAsStateWithLifecycle()
     val moneyBook by vm.moneyBook.collectAsStateWithLifecycle()
+    var quickMoney by remember { mutableStateOf(false) }
 
     // Re-read the date every minute so "today" moves at midnight while the app is open.
     val today by produceState(LocalDate.now()) {
@@ -233,7 +237,8 @@ fun CalendarScreen(
             },
             onOpenPattern = onOpenPattern,
         )
-        if (snap.isEmpty) {
+        // [WORK-01] Only work that repeats needs a pattern; field, shop and hourly work are written day by day.
+        if (snap.isEmpty && settings.workStyle?.usesPattern != false) {
             EmptyPatternCard(onOpenPattern)
         }
         if (!notificationsAllowed && snap.shiftTypes.any { it.alarmEnabled }) {
@@ -271,6 +276,7 @@ fun CalendarScreen(
             }
         }
         Spacer(Modifier.height(12.dp))
+        val moneyFirst = settings.workStyle?.usesPayEngine == false
         if (!wide) {
             SelectedDayCard(
                 day = snap.resolver.resolve(selected),
@@ -278,17 +284,28 @@ fun CalendarScreen(
                 memoCount = if (selected in memoDates) 1 else 0,
                 onOpen = { sheetOpen = true },
                 modifier = Modifier.padding(horizontal = 16.dp),
+                money = if (moneyFirst) remember(moneyBook, selected) { moneyBook.on(selected) } else null,
             )
             Spacer(Modifier.height(12.dp))
         }
-        HoursSummary(
-            calculator = calculator,
-            settings = settings,
-            selected = selected,
-            month = visibleMonth,
-            onOpenStats = onOpenStats,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
+        if (moneyFirst) {
+            // [WORK-04] Field and shop work care about the month's money, not weekly hour limits.
+            MonthMoneyCard(
+                month = remember(moneyBook, visibleMonth) { moneyBook.month(visibleMonth) },
+                unpaid = remember(moneyBook, today) { com.bamnat.core.money.MoneyCalculator.unpaid(moneyBook.jobs, today).sumOf { it.unpaid } },
+                onOpen = onOpenMoney,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        } else {
+            HoursSummary(
+                calculator = calculator,
+                settings = settings,
+                selected = selected,
+                month = visibleMonth,
+                onOpenStats = onOpenStats,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        }
     }
 
     val detailPart: @Composable () -> Unit = {
@@ -338,7 +355,16 @@ fun CalendarScreen(
             }
         }
 
-        if (paint == null) {
+        val style = settings.workStyle
+        if (paint == null && style != null && !style.usesPayEngine) {
+            // [WORK-02][WORK-03] Field and shop work add the day's job or sales instead of stamping shifts.
+            ExtendedFloatingActionButton(
+                onClick = { quickMoney = true },
+                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                text = { Text(if (style.usesJobs) "일감 적기" else "매출 적기") },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            )
+        } else if (paint == null) {
             val first = snap.shiftTypes.firstOrNull()
             ExtendedFloatingActionButton(
                 onClick = { vm.setPaint(first?.let { PaintTool.Shift(it.id) } ?: PaintTool.Clear) },
@@ -350,6 +376,15 @@ fun CalendarScreen(
             Box(Modifier.align(Alignment.BottomCenter)) {
                 PaintBar(snapshot = snap, tool = paint, onTool = vm::setPaint)
             }
+        }
+    }
+
+    if (quickMoney) {
+        if (settings.workStyle?.usesJobs == true) {
+            com.bamnat.app.ui.money.JobDialog(selected, null, onSave = { vm.saveJob(it); quickMoney = false }, onDismiss = { quickMoney = false })
+        } else {
+            com.bamnat.app.ui.money.SalesDialog(selected, moneyBook.on(selected).sales,
+                onSave = { vm.saveSales(it); quickMoney = false }, onDismiss = { quickMoney = false })
         }
     }
 
@@ -422,7 +457,13 @@ private fun SelectedDayCard(
     memoCount: Int,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
+    /** [WORK-02][WORK-03] Set for field and shop work: the card shows the day's money instead of a shift. */
+    money: com.bamnat.core.money.DayBook? = null,
 ) {
+    if (money != null) {
+        MoneyDayCard(day.date, isToday, money, memoCount, onOpen, modifier)
+        return
+    }
     Surface(
         onClick = onOpen,
         shape = MaterialTheme.shapes.large,
@@ -455,6 +496,70 @@ private fun SelectedDayCard(
             }
             Text("열기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+@Composable
+private fun MoneyDayCard(
+    date: LocalDate,
+    isToday: Boolean,
+    day: com.bamnat.core.money.DayBook,
+    memoCount: Int,
+    onOpen: () -> Unit,
+    modifier: Modifier,
+) {
+    Surface(
+        onClick = onOpen,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(Fmt.dayTitle(date) + if (isToday) " · 오늘" else "", style = MaterialTheme.typography.titleMedium)
+                val parts = buildList {
+                    day.jobs.firstOrNull()?.let { j ->
+                        add(j.start?.let { Fmt.time(it) + " " }.orEmpty() + j.title + if (day.jobs.size > 1) " 외 ${day.jobs.size - 1}건" else "")
+                    }
+                    day.sales?.let { add("매출 ${Fmt.won(it.sales)}") }
+                    val spent = day.entries.filter { it.kind == com.bamnat.core.money.MoneyKind.EXPENSE }.sumOf { it.amount }
+                    if (spent > 0) add("지출 ${Fmt.won(spent)}")
+                    if (memoCount > 0) add("메모 있음")
+                    if (isEmpty()) add("기록 없음 · 눌러서 적기")
+                }
+                Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Text("열기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+@Composable
+private fun MonthMoneyCard(month: com.bamnat.core.money.MonthMoney, unpaid: Long, onOpen: () -> Unit, modifier: Modifier) {
+    val cal = LocalCalendarColors.current
+    Surface(
+        onClick = onOpen,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("${month.month.monthValue}월 수입", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(Fmt.won(month.income), style = MaterialTheme.typography.titleLarge, color = cal.income)
+            }
+            Column(Modifier.weight(1f)) {
+                Text("받을 돈", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(Fmt.won(unpaid), style = MaterialTheme.typography.titleLarge,
+                    color = if (unpaid > 0) cal.warning else MaterialTheme.colorScheme.onSurface)
+            }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "돈 탭 열기", tint = MaterialTheme.colorScheme.primary)
         }
     }
 }

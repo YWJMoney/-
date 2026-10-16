@@ -460,6 +460,16 @@ class ScreenshotTest {
         content { com.bamnat.app.ui.money.EntryDialog(today, null, onSave = {}, onDismiss = {}) }
     }
 
+    // [WORK-01] A new install: no pattern, no work style. Picking 교대 opens the pattern screen.
+    @Test fun firstLaunchPickShift() = shoot("61_folded_first_launch_to_pattern", FOLDED, fresh(null) { tap(180f, 200f) })
+    @Test fun foldedFieldWithoutPattern() = shoot("62_folded_field_no_pattern", FOLDED, fresh(WorkStyle.FIELD))
+
+    private fun fresh(s: WorkStyle?, then: Screen.() -> Unit = {}): Screen.() -> Unit {
+        runBlocking { app.container.scheduleRepository.clearPattern() }
+        app.container.settingsRepository.update { it.copy(workStyle = s) }
+        return then
+    }
+
     private fun style(s: WorkStyle, then: Screen.() -> Unit = {}): Screen.() -> Unit {
         app.container.settingsRepository.update { it.copy(workStyle = s) }
         return then

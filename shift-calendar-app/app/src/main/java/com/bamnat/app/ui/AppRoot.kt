@@ -303,13 +303,14 @@ private fun AppNavHost(
                 onOpenPattern = { nav.navigate(Routes.pattern()) { launchSingleTop = true } },
                 onOpenShiftTypes = { nav.navigate(Routes.SHIFT_TYPES) { launchSingleTop = true } },
                 onOpenStats = { nav.navigateTopLevel(TopLevel.STATS.route) },
+                onOpenMoney = { nav.navigateTopLevel(TopLevel.MONEY.route) },
                 onOpenPay = { nav.navigate(Routes.PAY) { launchSingleTop = true } },
                 onOpenSettings = { nav.navigateTopLevel(TopLevel.SETTINGS.route) },
             )
         }
         composable(TopLevel.MONEY.route) {
             val vm = appViewModel { MoneyViewModel(it) }
-            MoneyScreen(vm = vm, wide = wide, onOpenPay = { nav.navigate(Routes.PAY) { launchSingleTop = true } })
+            MoneyScreen(vm = vm, wide = wide, snackbar = snackbar, onOpenPay = { nav.navigate(Routes.PAY) { launchSingleTop = true } })
         }
         composable(Routes.WORK_STYLE) {
             val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()

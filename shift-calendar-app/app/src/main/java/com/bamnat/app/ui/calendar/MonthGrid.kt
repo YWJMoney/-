@@ -314,7 +314,7 @@ private fun DayCell(
                     maxLines = 1,
                     overflow = TextOverflow.Clip,
                     color = when {
-                        moneyText != null -> cal.income
+                        moneyText != null -> if (money!!.income < 0) cal.expense else cal.income
                         extraMinutes > 0 -> cal.holidayWork
                         else -> scheme.onSurfaceVariant
                     },

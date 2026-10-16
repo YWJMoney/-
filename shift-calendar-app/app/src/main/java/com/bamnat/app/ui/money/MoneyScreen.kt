@@ -64,6 +64,17 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.produceState
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import com.bamnat.app.ui.UndoMessage
 import java.time.LocalDate
 import java.time.YearMonth
 import kotlin.math.abs
@@ -86,16 +97,48 @@ class MoneyViewModel(private val container: AppContainer) : ViewModel(), MoneyAc
         return runCatching { payCalculator.calculate(profile, month, snapshot.resolver::resolve).total }.getOrNull()
     }
 
-    override fun saveEntry(entry: MoneyEntry) { viewModelScope.launch { money.save(entry) } }
-    override fun deleteEntry(entry: MoneyEntry) { viewModelScope.launch { money.delete(entry) } }
-    override fun saveJob(job: Job) { viewModelScope.launch { money.save(job) } }
-    override fun deleteJob(job: Job) { viewModelScope.launch { money.delete(job) } }
-    override fun saveSales(sales: DailySales) { viewModelScope.launch { money.save(sales) } }
+    /** The month, the one before and six months of totals, each with that month's wage estimate. */
+    data class Months(val current: MonthMoney, val previous: MonthMoney?, val trend: List<MonthMoney>)
+
+    suspend fun months(book: MoneyBook, style: WorkStyle?, profile: PayProfile?, snapshot: ScheduleSnapshot?, tier: Tier,
+                       month: YearMonth, stats: Boolean): Months = withContext(Dispatchers.Default) {
+        // The pay engine walks every day of a month; six months of it stay off the main thread.
+        val pays = HashMap<YearMonth, Long?>()
+        val at = { m: YearMonth -> book.month(m, pays.getOrPut(m) { payEstimate(style, profile, snapshot, tier, m) }) }
+        val trend = if (stats) (5 downTo 0).map { at(month.minusMonths(it.toLong())) } else emptyList()
+        Months(at(month), if (stats) at(month.minusMonths(1)) else null, trend)
+    }
+
+    private val _undo = MutableSharedFlow<UndoMessage>(extraBufferCapacity = 4)
+    val undo: SharedFlow<UndoMessage> = _undo.asSharedFlow()
+
+    override fun saveEntry(entry: MoneyEntry) { container.appScope.launch { money.save(entry) } }
+    override fun deleteEntry(entry: MoneyEntry) {
+        container.appScope.launch {
+            money.delete(entry)
+            _undo.tryEmit(UndoMessage("‘${entry.note.ifBlank { entry.category }}’ 기록을 지웠어요") { money.save(entry) })
+        }
+    }
+    override fun saveJob(job: Job) { container.appScope.launch { money.save(job) } }
+    override fun deleteJob(job: Job) {
+        container.appScope.launch {
+            money.delete(job)
+            _undo.tryEmit(UndoMessage("‘${job.title}’ 일감을 지웠어요") { money.save(job) })
+        }
+    }
+    fun runUndo(message: UndoMessage) { message.undo?.let { u -> container.appScope.launch { u() } } }
+    override fun saveSales(sales: DailySales) { container.appScope.launch { money.save(sales) } }
 }
 
 /** [LEDG-01][WORK-04][TIER-05] The money tab: the month's income, spending and what is left. */
 @Composable
-fun MoneyScreen(vm: MoneyViewModel, wide: Boolean, onOpenPay: () -> Unit, today: LocalDate = LocalDate.now()) {
+fun MoneyScreen(
+    vm: MoneyViewModel,
+    wide: Boolean,
+    onOpenPay: () -> Unit,
+    snackbar: SnackbarHostState? = null,
+    today: LocalDate = LocalDate.now(),
+) {
     val bookOrNull by vm.book.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -108,13 +151,22 @@ fun MoneyScreen(vm: MoneyViewModel, wide: Boolean, onOpenPay: () -> Unit, today:
     var editingJob by remember { mutableStateOf<Job?>(null) }
     val book = bookOrNull ?: MoneyBook.EMPTY
     val style = settings.workStyle
-    val pay = remember(style, profile, snapshot, tier, month) { vm.payEstimate(style, profile, snapshot, tier, month) }
-    val m = remember(book, month, pay) { book.month(month, pay) }
     val statsOpen = FeatureGate.allows(tier, Feature.MONEY_STATS)
-    val prev = remember(book, month, statsOpen, style, profile, snapshot, tier) {
-        if (!statsOpen) null else book.month(month.minusMonths(1), vm.payEstimate(style, profile, snapshot, tier, month.minusMonths(1)))
+    // Records show at once; the wage estimate joins when the pay engine has run.
+    val months by produceState(MoneyViewModel.Months(book.month(month), null, emptyList()), book, style, profile, snapshot, tier, month, statsOpen) {
+        value = vm.months(book, style, profile, snapshot, tier, month, statsOpen)
     }
-    val trend = remember(book, month, statsOpen) { if (!statsOpen) emptyList() else (5 downTo 0).map { book.month(month.minusMonths(it.toLong())) } }
+    val m = months.current
+    val prev = months.previous
+    val trend = months.trend
+    LaunchedEffect(snackbar) {
+        val host = snackbar ?: return@LaunchedEffect
+        vm.undo.collect { msg ->
+            if (host.showSnackbar(msg.message, actionLabel = "되돌리기", duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
+                vm.runUndo(msg)
+            }
+        }
+    }
     val unpaid = remember(book, today) { MoneyCalculator.unpaid(book.jobs, today) }
     val monthEntries = remember(book, month) { book.entries.filter { YearMonth.from(it.date) == month } }
 
