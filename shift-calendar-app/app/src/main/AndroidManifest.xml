@@ -73,6 +73,19 @@
             android:name=".money.JobReminderReceiver"
             android:exported="false" />
 
+        <!-- [LEDG-02] Payment notifications. Off until the user turns it on in the app and grants
+             notification access; only texts with an amount and a payment word are read. -->
+        <service
+            android:name=".money.CaptureService"
+            android:enabled="false"
+            android:exported="true"
+            android:label="@string/capture_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".alarm.SystemEventReceiver"
             android:exported="true">

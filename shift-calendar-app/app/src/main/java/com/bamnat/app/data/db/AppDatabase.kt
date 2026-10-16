@@ -11,8 +11,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         ShiftTypeEntity::class, PatternEntity::class, DayEntryEntity::class, MemoEntity::class,
         MoneyEntryEntity::class, JobEntity::class, DailySalesEntity::class,
+        FixedCostEntity::class, CategoryRuleEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -25,7 +26,7 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "bamnat.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                 .build()
 
         /** Version 2: several alarms per shift, hand-set alarms per day, memo trash. */
@@ -99,6 +100,21 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE jobs ADD COLUMN endEpochDay INTEGER DEFAULT NULL")
                 db.execSQL("ALTER TABLE jobs ADD COLUMN costs INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE jobs ADD COLUMN withholding INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+    
+        /** Version 9: payment texts read into the ledger, fixed costs, learned categories [LEDG-02..05]. */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE money_entries ADD COLUMN merchant TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE money_entries ADD COLUMN minuteOfDay INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE money_entries ADD COLUMN cardLast4 TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE money_entries ADD COLUMN reviewed INTEGER NOT NULL DEFAULT 1")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `fixed_costs` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, " +
+                        "`amount` INTEGER NOT NULL, `day` INTEGER NOT NULL, `kind` TEXT NOT NULL, `category` TEXT NOT NULL, `remind` INTEGER NOT NULL)",
+                )
+                db.execSQL("CREATE TABLE IF NOT EXISTS `category_rules` (`merchant` TEXT NOT NULL, `category` TEXT NOT NULL, PRIMARY KEY(`merchant`))")
             }
         }
     }

@@ -31,7 +31,7 @@ class MigrationTest {
         createVersion1(context.getDatabasePath(name).apply { parentFile?.mkdirs() })
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9)
             .allowMainThreadQueries()
             .build()
         try {
@@ -62,6 +62,16 @@ class MigrationTest {
             assertEquals(0, money.allEntries().size)
             val id = money.insertJob(com.bamnat.core.money.Job(date = java.time.LocalDate.of(2026, 11, 3), title = "욕실", amount = 900_000).toEntity())
             assertEquals("욕실", money.job(id)?.toModel()?.title)
+            // Version 9: a line read from a payment text keeps its place and time [LEDG-02].
+            val line = com.bamnat.core.money.MoneyEntry(date = java.time.LocalDate.of(2026, 11, 3), kind = com.bamnat.core.money.MoneyKind.EXPENSE,
+                amount = 4_500, category = "카페", merchant = "스타벅스", time = java.time.LocalTime.of(8, 5), reviewed = false)
+            money.insertEntry(line.toEntity())
+            val read = money.allEntries().single().toModel()
+            assertEquals("스타벅스", read.merchant)
+            assertEquals(java.time.LocalTime.of(8, 5), read.time)
+            assertEquals(false, read.reviewed)
+            money.insertFixed(com.bamnat.core.money.FixedCost(name = "월세", amount = 500_000, day = 25).toEntity())
+            assertEquals("월세", money.allFixed().single().toModel().name)
         } finally {
             db.close()
             context.deleteDatabase(name)

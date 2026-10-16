@@ -67,6 +67,21 @@ class ScheduleRepository(private val db: AppDatabase) {
         }
     }
 
+    /**
+     * [WORK-01] Hourly workers get part-time shifts to tap instead of 주간·야간: morning, afternoon
+     * and evening. Added once; types the user already has are left alone.
+     */
+    suspend fun addHourlyTypes() {
+        db.withTransaction {
+            val have = shiftTypeDao.getAll().map { it.toModel() }
+            val names = have.map { it.name }.toSet()
+            val next = (have.maxOfOrNull { it.sortOrder } ?: -1) + 1
+            val add = DefaultShiftTypes.hourly().filter { it.name !in names }
+                .mapIndexed { i, t -> t.copy(sortOrder = next + i) }
+            if (add.isNotEmpty()) shiftTypeDao.insertAll(add.map { it.toEntity() })
+        }
+    }
+
     suspend fun saveShiftType(type: ShiftType): Long {
         val clean = type.copy(
             name = type.name.trim().ifEmpty { "근무" },
@@ -249,5 +264,15 @@ object DefaultShiftTypes {
         ShiftType(0, "야간", "야", 0xFF6C5CE7, LocalTime.of(22, 0), LocalTime.of(7, 0), breakMinutes = 60,
             alarmEnabled = true, alarms = listOf(AlarmSpec(90)), sortOrder = 2),
         ShiftType(0, "휴무", "휴", 0xFF8E9AAF, null, null, isOff = true, sortOrder = 3),
+    )
+
+    /** [WORK-01] Part-time blocks; under 4 hours of work needs no break, 4 hours or more gets 30 minutes. */
+    fun hourly(): List<ShiftType> = listOf(
+        ShiftType(0, "오전 알바", "전", 0xFF00A88F, LocalTime.of(9, 0), LocalTime.of(13, 0), breakMinutes = 0,
+            alarmEnabled = true, alarms = listOf(AlarmSpec(60)), sortOrder = 0),
+        ShiftType(0, "오후 알바", "후", 0xFFE0A100, LocalTime.of(13, 0), LocalTime.of(18, 0), breakMinutes = 30,
+            alarmEnabled = true, alarms = listOf(AlarmSpec(60)), sortOrder = 1),
+        ShiftType(0, "저녁 알바", "저", 0xFFD6457A, LocalTime.of(18, 0), LocalTime.of(23, 0), breakMinutes = 30,
+            alarmEnabled = true, alarms = listOf(AlarmSpec(60)), sortOrder = 2),
     )
 }

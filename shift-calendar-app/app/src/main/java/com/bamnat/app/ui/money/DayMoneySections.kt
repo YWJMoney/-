@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -34,8 +35,11 @@ import com.bamnat.core.money.DayBook
 import com.bamnat.core.money.Job
 import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
+import com.bamnat.core.money.MemoAmounts
+import com.bamnat.core.money.MoneySource
 import com.bamnat.core.work.WorkStyle
 import java.time.LocalDate
+import kotlin.math.abs
 
 /** What the day sections may change; the calendar's view model implements it. */
 interface MoneyActions {
@@ -44,6 +48,10 @@ interface MoneyActions {
     fun saveJob(job: Job)
     fun deleteJob(job: Job)
     fun saveSales(sales: DailySales)
+    /** Amounts typed again and again for that kind, one tap away in the editor [LEDG-04]. */
+    fun frequentAmounts(kind: MoneyKind): List<Long> = emptyList()
+    /** Places the user filed under a category; the editor follows them [LEDG-04]. */
+    val categoryRules: Map<String, String> get() = emptyMap()
 }
 
 /** [WORK-02] The day's booked jobs, with what is still owed. */
@@ -135,12 +143,28 @@ fun Figure(label: String, value: String, modifier: Modifier = Modifier, strong: 
 
 /** [LEDG-01] The day's ledger lines and a quick way to add one. */
 @Composable
-fun DayLedgerSection(date: LocalDate, style: WorkStyle?, entries: List<MoneyEntry>, actions: MoneyActions) {
+fun DayLedgerSection(date: LocalDate, style: WorkStyle?, entries: List<MoneyEntry>, actions: MoneyActions, memoText: String = "") {
     var adding by remember { mutableStateOf<MoneyKind?>(null) }
+    var fromMemo by remember { mutableStateOf<MoneyEntry?>(null) }
+    val memoAmounts = remember(memoText, entries) { MemoAmounts.pending(memoText, entries) }
     var addingJob by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<MoneyEntry?>(null) }
     SectionCard(title = "가계부") {
         entries.forEach { e -> EntryRow(e) { editing = e } }
+        // [WORK-05] "+50,000" or "수입 5만원" in the day's memo is offered as a line; nothing is added until saved.
+        memoAmounts.forEach { f ->
+            SuggestionChip(
+                onClick = {
+                    fromMemo = MoneyEntry(date = date, kind = f.kind, amount = f.amount,
+                        category = if (f.kind == MoneyKind.INCOME) "부수입" else "기타", merchant = f.line, source = MoneySource.MEMO)
+                },
+                label = {
+                    val to = if (f.kind == MoneyKind.INCOME) "수입으로" else "지출로"
+                    Text("메모의 ${Fmt.won(f.amount)} $to 적기", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                },
+                icon = { Icon(Icons.Filled.Add, null) },
+            )
+        }
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AssistChip(onClick = { adding = MoneyKind.EXPENSE }, label = { Text("지출 적기") },
                 leadingIcon = { Icon(Icons.Filled.Add, null) })
@@ -158,10 +182,18 @@ fun DayLedgerSection(date: LocalDate, style: WorkStyle?, entries: List<MoneyEntr
         }
     }
     if (addingJob) JobDialog(date, null, onSave = { actions.saveJob(it); addingJob = false }, onDismiss = { addingJob = false })
-    adding?.let { k -> EntryDialog(date, null, k, onSave = { actions.saveEntry(it); adding = null }, onDismiss = { adding = null }) }
+    adding?.let { k ->
+        EntryDialog(date, null, k, onSave = { actions.saveEntry(it); adding = null }, onDismiss = { adding = null },
+            frequent = actions::frequentAmounts, rules = actions.categoryRules)
+    }
+    fromMemo?.let { e ->
+        EntryDialog(date, e, e.kind, onSave = { actions.saveEntry(it); fromMemo = null }, onDismiss = { fromMemo = null },
+            frequent = actions::frequentAmounts, rules = actions.categoryRules)
+    }
     editing?.let { e ->
         EntryDialog(date, e, e.kind, onSave = { actions.saveEntry(it); editing = null },
-            onDelete = { actions.deleteEntry(it); editing = null }, onDismiss = { editing = null })
+            onDelete = { actions.deleteEntry(it); editing = null }, onDismiss = { editing = null },
+            frequent = actions::frequentAmounts, rules = actions.categoryRules)
     }
 }
 
@@ -170,26 +202,48 @@ fun EntryRow(e: MoneyEntry, showDate: Boolean = false, onClick: () -> Unit) {
     val cal = LocalCalendarColors.current
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(e.note.ifBlank { e.category }, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(listOfNotNull(if (showDate) Fmt.shortDate(e.date) else null, e.category, if (e.kind == MoneyKind.TRANSFER) "이체" else null)
-                .joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val source = when (e.source) {
+                MoneySource.NOTIFICATION -> "알림에서"
+                MoneySource.PASTE -> "문자에서"
+                MoneySource.MEMO -> "메모에서"
+                MoneySource.FIXED -> "고정 지출"
+                MoneySource.MANUAL -> null
+            }
+            Text(
+                listOfNotNull(
+                    if (showDate) Fmt.shortDate(e.date) else null, e.time?.let(Fmt::time), e.category,
+                    if (e.kind == MoneyKind.TRANSFER) "이체" else null, source,
+                    e.note.takeIf { it.isNotBlank() && e.merchant.isNotBlank() },
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
         }
-        val sign = when (e.kind) { MoneyKind.EXPENSE -> "-"; MoneyKind.INCOME -> "+"; MoneyKind.TRANSFER -> "" }
-        Text(sign + Fmt.won(e.amount), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
-            color = when (e.kind) {
-                MoneyKind.EXPENSE -> cal.expense
-                MoneyKind.INCOME -> cal.income
-                MoneyKind.TRANSFER -> MaterialTheme.colorScheme.onSurfaceVariant
+        // A cancelled payment is a negative expense: money that came back.
+        val back = e.kind == MoneyKind.EXPENSE && e.amount < 0
+        val sign = when {
+            back -> "+"
+            e.kind == MoneyKind.EXPENSE -> "-"
+            e.kind == MoneyKind.INCOME -> "+"
+            else -> ""
+        }
+        Text(sign + Fmt.won(abs(e.amount)), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
+            color = when {
+                back -> cal.income
+                e.kind == MoneyKind.EXPENSE -> cal.expense
+                e.kind == MoneyKind.INCOME -> cal.income
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
             })
     }
 }
 
 /** Sections of a calendar day for the user's kind of work [WORK-01]. */
 @Composable
-fun DayMoneySections(date: LocalDate, style: WorkStyle?, day: DayBook, actions: MoneyActions) {
+fun DayMoneySections(date: LocalDate, style: WorkStyle?, day: DayBook, actions: MoneyActions, memoText: String = "") {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (style?.usesJobs == true || day.jobs.isNotEmpty()) JobsSection(date, day.jobs, actions)
         if (style?.usesSales == true || day.sales != null) SalesSection(date, day.sales, actions)
-        DayLedgerSection(date, style, day.entries, actions)
+        DayLedgerSection(date, style, day.entries, actions, memoText)
     }
 }

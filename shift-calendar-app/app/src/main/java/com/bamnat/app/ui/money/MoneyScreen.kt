@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -57,6 +58,12 @@ import com.bamnat.core.money.MoneyBook
 import com.bamnat.core.money.MoneyCalculator
 import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MonthMoney
+import com.bamnat.core.money.MoneyKind
+import com.bamnat.core.money.MoneyStats
+import com.bamnat.core.money.FixedCost
+import com.bamnat.core.money.Upcoming
+import com.bamnat.core.money.UpcomingPayments
+import com.bamnat.app.data.Capture
 import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.work.WorkStyle
@@ -116,7 +123,7 @@ class MoneyViewModel(private val container: AppContainer) : ViewModel(), MoneyAc
     override fun deleteEntry(entry: MoneyEntry) {
         container.appScope.launch {
             money.delete(entry)
-            _undo.tryEmit(UndoMessage("‘${entry.note.ifBlank { entry.category }}’ 기록을 지웠어요") { money.save(entry) })
+            _undo.tryEmit(UndoMessage("‘${entry.title}’ 기록을 지웠어요") { money.save(entry) })
         }
     }
     override fun saveJob(job: Job) { container.appScope.launch { money.save(job) } }
@@ -126,6 +133,38 @@ class MoneyViewModel(private val container: AppContainer) : ViewModel(), MoneyAc
             _undo.tryEmit(UndoMessage("‘${job.title}’ 일감을 지웠어요") { money.save(job) })
         }
     }
+    val rules: StateFlow<Map<String, String>> = money.rules.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+    val captures = money.captures.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    override val categoryRules: Map<String, String> get() = rules.value
+    override fun frequentAmounts(kind: MoneyKind): List<Long> =
+        MoneyStats.frequentAmounts(book.value?.entries.orEmpty(), kind, LocalDate.now())
+
+    fun saveAll(entries: List<MoneyEntry>) {
+        container.appScope.launch {
+            val saved = entries.map { money.save(it) }
+            _undo.tryEmit(UndoMessage("문자 ${saved.size}건을 적었어요") { saved.forEach { money.delete(it) } })
+        }
+    }
+    fun markAllSeen() { container.appScope.launch { money.markAllReviewed() } }
+    fun finishCapture(capture: Capture, entry: MoneyEntry) {
+        container.appScope.launch { money.save(entry); money.dismissCapture(capture.id) }
+    }
+    fun dropCapture(capture: Capture) { container.appScope.launch { money.dismissCapture(capture.id) } }
+    fun saveFixed(cost: FixedCost) { container.appScope.launch { money.save(cost) } }
+    fun deleteFixed(cost: FixedCost) {
+        container.appScope.launch {
+            money.delete(cost)
+            _undo.tryEmit(UndoMessage("‘${cost.name}’ 고정 지출을 지웠어요") { money.save(cost) })
+        }
+    }
+    fun recordFixed(u: Upcoming, today: LocalDate) {
+        container.appScope.launch {
+            // Paid early is still this month's payment; it is dated today, or the due day when that has passed.
+            val saved = money.save(UpcomingPayments.entry(u.cost, if (u.date.isBefore(today)) u.date else today))
+            _undo.tryEmit(UndoMessage("‘${u.cost.name}’ ${Fmt.won(u.cost.amount)}을 적었어요") { money.delete(saved) })
+        }
+    }
+
     fun runUndo(message: UndoMessage) { message.undo?.let { u -> container.appScope.launch { u() } } }
     override fun saveSales(sales: DailySales) { container.appScope.launch { money.save(sales) } }
 }
@@ -149,6 +188,13 @@ fun MoneyScreen(
     var adding by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<MoneyEntry?>(null) }
     var editingJob by remember { mutableStateOf<Job?>(null) }
+    var pasting by remember { mutableStateOf(false) }
+    var finishing by remember { mutableStateOf<Capture?>(null) }
+    var editingFixed by remember { mutableStateOf<FixedCost?>(null) }
+    var addingFixed by remember { mutableStateOf(false) }
+    var place by rememberSaveable { mutableStateOf<String?>(null) }
+    val rules by vm.rules.collectAsStateWithLifecycle()
+    val captures by vm.captures.collectAsStateWithLifecycle()
     val book = bookOrNull ?: MoneyBook.EMPTY
     val style = settings.workStyle
     val statsOpen = FeatureGate.allows(tier, Feature.MONEY_STATS)
@@ -169,15 +215,28 @@ fun MoneyScreen(
     }
     val unpaid = remember(book, today) { MoneyCalculator.unpaid(book.jobs, today) }
     val monthEntries = remember(book, month) { book.entries.filter { YearMonth.from(it.date) == month } }
+    val shownEntries = remember(monthEntries, place) {
+        place?.let { p -> monthEntries.filter { it.merchant.ifBlank { it.note }.trim() == p } } ?: monthEntries
+    }
+    val unseen = remember(book) { book.entries.filter { !it.reviewed } }
+    val upcoming = remember(book, today) { UpcomingPayments.within(book.fixed, book.entries, today) }
+    val leftFixed = remember(book, today) { UpcomingPayments.leftThisMonth(book.fixed, book.entries, today) }
+    val places = remember(book, month, statsOpen) { if (statsOpen) MoneyStats.places(book.entries, month) else emptyList() }
 
     val summary: @Composable () -> Unit = {
+        NewRecordsCard(unseen, captures, onOpen = { editing = it }, onAllSeen = vm::markAllSeen,
+            onFinish = { finishing = it }, onDrop = vm::dropCapture)
         SummaryCard(m)
+        UpcomingCard(upcoming, book.fixed, leftFixed, onRecord = { vm.recordFixed(it, today) },
+            onEdit = { c -> if (c == null) addingFixed = true else editingFixed = c })
         IncomeCard(m, style, hasProfile = profile != null, onOpenPay = onOpenPay)
         if (unpaid.isNotEmpty()) UnpaidCard(unpaid) { editingJob = it }
+        // [LEDG-02] Next to the totals, so typing less is found before scrolling through records.
+        AutoRecordCard(onPaste = { pasting = true })
     }
     val details: @Composable () -> Unit = {
-        StatsCard(m, prev, trend, statsOpen)
-        RecordsCard(monthEntries) { editing = it }
+        StatsCard(m, prev, trend, statsOpen) { PlacesSection(places, place) { place = it } }
+        RecordsCard(shownEntries, place, onClearPlace = { place = null }) { editing = it }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -213,10 +272,25 @@ fun MoneyScreen(
     }
 
     val addDate = if (YearMonth.from(today) == month) today else month.atEndOfMonth()
-    if (adding) EntryDialog(addDate, null, onSave = { vm.saveEntry(it); adding = false }, onDismiss = { adding = false })
+    if (adding) {
+        EntryDialog(addDate, null, onSave = { vm.saveEntry(it); adding = false }, onDismiss = { adding = false },
+            frequent = vm::frequentAmounts, rules = rules)
+    }
     editing?.let { e ->
         EntryDialog(e.date, e, e.kind, onSave = { vm.saveEntry(it); editing = null },
-            onDelete = { vm.deleteEntry(it); editing = null }, onDismiss = { editing = null })
+            onDelete = { vm.deleteEntry(it); editing = null }, onDismiss = { editing = null },
+            frequent = vm::frequentAmounts, rules = rules)
+    }
+    finishing?.let { c ->
+        val draft = remember(c) { c.draft(today) }
+        EntryDialog(draft.date, draft, draft.kind, onSave = { vm.finishCapture(c, it); finishing = null },
+            onDismiss = { finishing = null }, frequent = vm::frequentAmounts, rules = rules)
+    }
+    if (pasting) PasteDialog(book.entries, rules, onSave = { vm.saveAll(it); pasting = false }, onDismiss = { pasting = false }, today = today)
+    if (addingFixed || editingFixed != null) {
+        FixedCostDialog(editingFixed, onSave = { vm.saveFixed(it); addingFixed = false; editingFixed = null },
+            onDelete = { vm.deleteFixed(it); editingFixed = null },
+            onDismiss = { addingFixed = false; editingFixed = null })
     }
     editingJob?.let { j ->
         JobDialog(j.date, j, onSave = { vm.saveJob(it); editingJob = null },
@@ -307,13 +381,13 @@ private fun UnpaidCard(jobs: List<Job>, onOpen: (Job) -> Unit) {
 
 /** [TIER-05] Comparisons and breakdowns; open to everyone until billing ships. */
 @Composable
-private fun StatsCard(m: MonthMoney, prev: MonthMoney?, trend: List<MonthMoney>, open: Boolean) {
+private fun StatsCard(m: MonthMoney, prev: MonthMoney?, trend: List<MonthMoney>, open: Boolean, extra: @Composable () -> Unit = {}) {
     SectionCard(title = "통계") {
         if (!open) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Lock, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(10.dp))
-                Text("지난 달 비교, 분류별 지출, 월별 흐름은 프로에서 볼 수 있어요. 이번 달 기록과 합계는 무료예요.",
+                Text("지난 달 비교, 분류별 지출, 자주 쓴 곳, 월별 흐름은 프로에서 볼 수 있어요. 기록과 합계는 지난 달도 모두 무료예요.",
                     style = MaterialTheme.typography.bodyMedium)
             }
             return@SectionCard
@@ -341,6 +415,7 @@ private fun StatsCard(m: MonthMoney, prev: MonthMoney?, trend: List<MonthMoney>,
                 Bar("${c.category} · ${c.count}건", Fmt.won(c.amount), c.amount.toFloat() / max, LocalCalendarColors.current.expense)
             }
         }
+        extra()
         // Months before the first record are left out rather than shown as empty rows.
         val shown = trend.dropWhile { it.income == 0L && it.expenses == 0L }
         if (shown.size > 1) {
@@ -387,8 +462,12 @@ private fun Bar(label: String, value: String, fraction: Float, color: Color) {
 }
 
 @Composable
-private fun RecordsCard(entries: List<MoneyEntry>, onOpen: (MoneyEntry) -> Unit) {
+private fun RecordsCard(entries: List<MoneyEntry>, place: String?, onClearPlace: () -> Unit, onOpen: (MoneyEntry) -> Unit) {
     SectionCard(title = "가계부 기록 ${entries.size}건") {
+        if (place != null) {
+            androidx.compose.material3.InputChip(selected = true, onClick = onClearPlace, label = { Text("$place 만 보기") },
+                trailingIcon = { Icon(Icons.Filled.Close, "모두 보기") })
+        }
         if (entries.isEmpty()) {
             Text("아래 ‘돈 적기’나 달력의 날짜에서 지출과 수입을 적어요.", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)

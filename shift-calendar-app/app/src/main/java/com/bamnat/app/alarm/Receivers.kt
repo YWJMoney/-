@@ -83,7 +83,9 @@ class SystemEventReceiver : BroadcastReceiver() {
             try {
                 container.rescheduleAlarms(LocalDateTime.now())
                 container.alarmScheduler.restoreSnooze()
-                com.bamnat.app.money.JobReminderScheduler.reschedule(context, container.moneyRepository.allJobs())
+                container.moneyRepository.let { m ->
+                    com.bamnat.app.money.JobReminderScheduler.reschedule(context, com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed()))
+                }
                 // A new date or time zone changes what "today" is on the widgets.
                 WidgetRefresher.refresh(context)
             } finally {

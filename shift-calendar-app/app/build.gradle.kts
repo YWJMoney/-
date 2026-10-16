@@ -15,8 +15,8 @@ android {
         applicationId = "com.bamnat.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "1.1.0"
+        versionCode = 6
+        versionName = "1.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // [MKT-09] Link sharing server (server/share-worker). Blank hides '링크로 공유'.
         val shareBaseUrl = (project.findProperty("bamnat.shareBaseUrl") as String?).orEmpty()

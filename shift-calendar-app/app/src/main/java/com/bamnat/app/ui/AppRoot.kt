@@ -157,6 +157,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             WorkStyleScreen(current = null, onPick = { style ->
                 container.settingsRepository.update { it.copy(workStyle = style) }
                 container.telemetry.event("work_style", style.name)
+                if (style == WorkStyle.HOURLY) container.appScope.launch { container.scheduleRepository.addHourlyTypes() }
                 pendingRoute = when (style) {
                     WorkStyle.SHIFT -> Routes.pattern()
                     WorkStyle.DAY -> Routes.pattern(weekdays = true)
@@ -316,6 +317,7 @@ private fun AppNavHost(
             val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()
             WorkStyleScreen(current = settings.workStyle, title = "근무 형태 바꾸기", onPick = { style ->
                 container.settingsRepository.update { it.copy(workStyle = style) }
+                if (style == WorkStyle.HOURLY) container.appScope.launch { container.scheduleRepository.addHourlyTypes() }
                 nav.popFrom(Routes.WORK_STYLE)
             })
         }

@@ -37,7 +37,7 @@ class AppContainer(context: Context) {
     val database: AppDatabase = AppDatabase.create(context)
     val scheduleRepository = ScheduleRepository(database)
     val memoRepository = MemoRepository(database)
-    val moneyRepository = MoneyRepository(database)
+    val moneyRepository = MoneyRepository(database, com.bamnat.app.data.CaptureStore(java.io.File(appContext.noBackupFilesDir, "captures.json")))
     val settingsRepository = SettingsRepository(context)
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository)
     val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry)
@@ -65,7 +65,7 @@ class AppContainer(context: Context) {
         }
         // [WORK-02] Any change to the booked jobs re-plans the next job reminder.
         appScope.launch {
-            moneyRepository.jobs.debounce(300).collect { JobReminderScheduler.reschedule(appContext, it) }
+            moneyRepository.book.debounce(500).collect { JobReminderScheduler.reschedule(appContext, it) }
         }
         // Widgets lay out weeks from the user's first day of the week.
         appScope.launch {

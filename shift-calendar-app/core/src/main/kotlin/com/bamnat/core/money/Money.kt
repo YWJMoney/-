@@ -7,8 +7,8 @@ import java.time.YearMonth
 /** [LEDG-01] Money moving out, in, or between the user's own accounts (not counted). */
 enum class MoneyKind(val label: String) { EXPENSE("지출"), INCOME("수입"), TRANSFER("이체") }
 
-/** Where an entry came from; only [MANUAL] exists in M1, notifications arrive in M2 [LEDG-02]. */
-enum class MoneySource { MANUAL, NOTIFICATION, PASTE, MEMO }
+/** Where an entry came from: typed, a payment notification [LEDG-02], a pasted text [LEDG-03], a memo [WORK-05], a fixed cost [LEDG-05]. */
+enum class MoneySource { MANUAL, NOTIFICATION, PASTE, MEMO, FIXED }
 
 /** One line of the household ledger [LEDG-01]. Amounts are whole won. */
 data class MoneyEntry(
@@ -19,7 +19,16 @@ data class MoneyEntry(
     val category: String,
     val note: String = "",
     val source: MoneySource = MoneySource.MANUAL,
-)
+    /** Where the money went or came from (가맹점), read from a text or typed [LEDG-04]. */
+    val merchant: String = "",
+    val time: LocalTime? = null,
+    val cardLast4: String = "",
+    /** False for a notification the app wrote down by itself until the user has seen it [LEDG-02]. */
+    val reviewed: Boolean = true,
+) {
+    /** What a list shows as the line's name. */
+    val title: String get() = merchant.ifBlank { note.ifBlank { category } }
+}
 
 /**
  * A booked job for field and freelance work [WORK-02]: who, where, when and for how much, with
@@ -202,6 +211,7 @@ data class MoneyBook(
     val entries: List<MoneyEntry> = emptyList(),
     val jobs: List<Job> = emptyList(),
     val sales: List<DailySales> = emptyList(),
+    val fixed: List<FixedCost> = emptyList(),
 ) {
     fun month(month: YearMonth, payEstimate: Long? = null) = MoneyCalculator.month(month, entries, jobs, sales, payEstimate)
     fun days(month: YearMonth) = MoneyCalculator.days(month, entries, jobs, sales)

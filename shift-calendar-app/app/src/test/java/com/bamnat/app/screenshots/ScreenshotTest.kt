@@ -37,6 +37,7 @@ import com.bamnat.core.diag.DiagEvents
 import com.bamnat.core.diag.EventBook
 import com.bamnat.core.memo.ChecklistItem
 import com.bamnat.core.memo.Memo
+import com.bamnat.core.money.FixedCost
 import com.bamnat.core.model.AlarmSpec
 import com.bamnat.core.model.DayAlarm
 import com.bamnat.core.model.ExtraWork
@@ -57,6 +58,7 @@ import org.robolectric.shadows.ShadowDialog
 import java.io.File
 import androidx.glance.appwidget.compose
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.padding
 import java.time.LocalDate
 import java.time.LocalTime
 import com.bamnat.core.money.DailySales
@@ -142,6 +144,17 @@ class ScreenshotTest {
         money.save(Job(date = today.plusDays(2), title = "현장 실측", place = "OO빌라", start = LocalTime.of(14, 0), amount = 0))
         money.save(DailySales(today, sales = 1_240_000, costs = 380_000, note = "단체 손님 1팀"))
         money.save(DailySales(today.minusDays(1), sales = 860_000, costs = 240_000))
+        // [LEDG-02][LEDG-05][WORK-05] Card notifications read in, one the parser could not finish, fixed costs, a memo amount.
+        val md = "${today.monthValue}/${today.dayOfMonth}"
+        val posted = System.currentTimeMillis()
+        money.capture("[Web발신]\n신한카드(1234)승인 홍*동 4,500원(일시불)$md 08:10 스타벅스 누적512,300원", "신한카드", posted)
+        money.capture("KB국민카드5678승인 홍*동 23,800원 일시불 $md 12:40 김밥천국 누적 88,000원", "KB Pay", posted)
+        money.capture("우리(9012)승인 USD 12.99 $md 07:00 NETFLIX.COM", "우리WON카드", posted)
+        money.save(FixedCost(name = "월세", amount = 450_000, day = today.plusDays(2).dayOfMonth, category = "주거"))
+        money.save(FixedCost(name = "실손보험", amount = 38_000, day = today.plusDays(6).dayOfMonth, category = "의료"))
+        money.save(FixedCost(name = "신한카드", amount = 612_000, day = 14, kind = MoneyKind.TRANSFER, category = "카드값"))
+        // On the cell the day screenshots tap (row 3, Wednesday).
+        memos.save(Memo(date = today.minusDays(2), title = "부업", body = "+50,000 대리운전 팁"))
 
         val old = memos.save(Memo(title = "지난달 회식 장소", body = "OO갈비"))
         memos.delete(old)
@@ -463,6 +476,25 @@ class ScreenshotTest {
     }
     // [LEDG-01] A shift worker's day: the side-job chip sits with the spend/income chips.
     @Test fun foldedShiftDayMoney() = shoot("64_folded_shift_day_money", FOLDED) { tap(DAY_X, DAY_Y); repeat(3) { scrollUp(700, across = 0.5f) } }
+    // [LEDG-02][LEDG-05] The money tab with new lines from notifications and what leaves this week.
+    @Test fun foldedMoneyNew() = shoot("65_folded_money_new_records", FOLDED) { tab(1, wide = false) }
+    @Test fun foldedMoneyAuto() = shoot("66_folded_money_auto_record", FOLDED) { tab(1, wide = false); repeat(2) { scrollUp(700, across = 0.3f) } }
+    // [LEDG-03] Three texts pasted at once: a payment, a cancellation, a deposit.
+    @Test fun foldedPaste() = shoot("67_folded_paste_texts", FOLDED) {
+        content {
+            com.bamnat.app.ui.money.PasteDialog(emptyList(), emptyMap(), onSave = {}, onDismiss = {}, initialText =
+            "[Web발신]\n현대카드(3456)승인 홍*동 45,000원 3개월 10/14 19:20 쿠팡\n\n[Web발신]\n신한카드(1234)취소 4,500원 10/15 09:00 스타벅스\n\n하나 10/15 09:00 123-456***-78 입금 3,200,000 잔액 4,000,000 (주)회사급여")
+        }
+    }
+    // [LEDG-02] Before notification access, the app says what it reads and that nothing leaves the phone.
+    @Test fun foldedCaptureDisclosure() = shoot("70_folded_capture_disclosure", FOLDED) {
+        content { androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(16.dp).let { it }) { com.bamnat.app.ui.money.AutoRecordCard(onPaste = {}, explainFirst = true) } }
+    }
+    @Test fun foldedFixedCost() = shoot("68_folded_fixed_cost", FOLDED) {
+        content { com.bamnat.app.ui.money.FixedCostDialog(null, onSave = {}, onDelete = {}, onDismiss = {}) }
+    }
+    // [WORK-05] "+50,000" in the day's memo is offered as income.
+    @Test fun foldedMemoAmount() = shoot("69_folded_memo_amount", FOLDED) { tap(DAY_X, DAY_Y); repeat(3) { scrollUp(700, across = 0.5f) } }
     // [WORK-03] A shop's day and month.
     @Test fun foldedBusinessDay() = shoot("58_folded_business_day", FOLDED, style(WorkStyle.BUSINESS) { tap(DAY_X, DAY_Y) })
     @Test fun foldedBusinessMoney() = shoot("59_folded_business_money", FOLDED, style(WorkStyle.BUSINESS) { tab(1, wide = false) })

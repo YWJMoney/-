@@ -6,6 +6,8 @@ import com.bamnat.app.data.db.DailySalesEntity
 import com.bamnat.app.data.db.DayEntryEntity
 import com.bamnat.app.data.db.JobEntity
 import com.bamnat.app.data.db.MoneyEntryEntity
+import com.bamnat.app.data.db.FixedCostEntity
+import com.bamnat.app.data.db.CategoryRuleEntity
 import com.bamnat.app.data.db.MemoEntity
 import com.bamnat.app.data.db.PatternEntity
 import com.bamnat.app.data.db.ShiftTypeEntity
@@ -83,7 +85,8 @@ class BackupManager(
         root.put("money", JSONArray().apply {
             money.allEntries().forEach { e ->
                 put(JSONObject().put("id", e.id).put("day", e.epochDay).put("kind", e.kind).put("amount", e.amount)
-                    .put("category", e.category).put("note", e.note).put("source", e.source).put("created", e.createdAt))
+                    .put("category", e.category).put("note", e.note).put("source", e.source).put("created", e.createdAt)
+                    .put("merchant", e.merchant).putOpt("minute", e.minuteOfDay).put("card", e.cardLast4).put("reviewed", e.reviewed))
             }
         })
         root.put("jobs", JSONArray().apply {
@@ -97,6 +100,16 @@ class BackupManager(
         })
         root.put("sales", JSONArray().apply {
             money.allSales().forEach { d -> put(JSONObject().put("day", d.epochDay).put("sales", d.sales).put("costs", d.costs).put("note", d.note)) }
+        })
+        // [LEDG-05][LEDG-04] Fixed costs and learned categories (version 9). Unread notification texts are never backed up.
+        root.put("fixed", JSONArray().apply {
+            money.allFixed().forEach { f ->
+                put(JSONObject().put("id", f.id).put("name", f.name).put("amount", f.amount).put("day", f.day).put("kind", f.kind)
+                    .put("category", f.category).put("remind", f.remind))
+            }
+        })
+        root.put("rules", JSONArray().apply {
+            money.allRules().forEach { r -> put(JSONObject().put("merchant", r.merchant).put("category", r.category)) }
         })
         val s = settings.current
         root.put(
@@ -121,7 +134,7 @@ class BackupManager(
             memos = root.optJSONArray("memos")?.length() ?: 0,
             exportedAtMillis = root.optLong("exportedAt"),
             moneyLines = (root.optJSONArray("money")?.length() ?: 0) + (root.optJSONArray("jobs")?.length() ?: 0) +
-                (root.optJSONArray("sales")?.length() ?: 0),
+                (root.optJSONArray("sales")?.length() ?: 0) + (root.optJSONArray("fixed")?.length() ?: 0),
         )
     }
 
@@ -173,9 +186,15 @@ class BackupManager(
             MoneyEntryEntity(
                 id = o.getLong("id"), epochDay = o.getLong("day"), kind = o.getString("kind"), amount = o.getLong("amount"),
                 category = o.optString("category"), note = o.optString("note"), source = o.optString("source", "MANUAL"),
-                createdAt = o.optLong("created"),
+                createdAt = o.optLong("created"), merchant = o.optString("merchant"), minuteOfDay = o.optIntOrNull("minute"),
+                cardLast4 = o.optString("card"), reviewed = o.optBoolean("reviewed", true),
             )
         }
+        val fixed = root.optJSONArray("fixed")?.objects()?.map { o ->
+            FixedCostEntity(o.getLong("id"), o.optString("name"), o.optLong("amount"), o.optInt("day", 1), o.optString("kind", "EXPENSE"),
+                o.optString("category"), o.optBoolean("remind", true))
+        }
+        val rules = root.optJSONArray("rules")?.objects()?.map { o -> CategoryRuleEntity(o.getString("merchant"), o.optString("category")) }
         val jobs = root.optJSONArray("jobs")?.objects()?.map { o ->
             JobEntity(
                 id = o.getLong("id"), epochDay = o.getLong("day"), title = o.optString("title"), client = o.optString("client"),
@@ -195,6 +214,8 @@ class BackupManager(
             entries?.let { list -> money.clearEntries(); list.forEach { money.restoreEntry(it) } }
             jobs?.let { list -> money.clearJobs(); list.forEach { money.restoreJob(it) } }
             sales?.let { list -> money.clearSales(); list.forEach { money.upsertSales(it) } }
+            fixed?.let { list -> money.clearFixed(); list.forEach { money.restoreFixed(it) } }
+            rules?.let { list -> money.clearRules(); list.forEach { money.upsertRule(it) } }
             db.memoDao().clear()
             db.dayEntryDao().clear()
             db.patternDao().clear()

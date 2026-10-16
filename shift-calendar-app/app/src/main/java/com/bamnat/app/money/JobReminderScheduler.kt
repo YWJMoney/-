@@ -14,34 +14,34 @@ import com.bamnat.app.MainActivity
 import com.bamnat.app.R
 import com.bamnat.app.alarm.Notifications
 import com.bamnat.app.appContainer
-import com.bamnat.app.ui.Fmt
-import com.bamnat.core.money.Job
-import com.bamnat.core.money.JobReminders
+import com.bamnat.core.money.MoneyAlerts
+import com.bamnat.core.money.MoneyBook
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 
 /**
- * [WORK-02] Reminds the user before a booked job. A reminder only needs to arrive about on
- * time, so it uses an idle-allowed alarm and never the exact-alarm permission shift alarms need.
+ * [WORK-02][LEDG-05] Money notifications: a job about to start, money still owed after a job, and
+ * fixed costs three days ahead and on the day. One alarm is set for the earliest of them, exact
+ * when the user allows it so a 30-minute heads-up is not pushed back by Doze.
  */
 object JobReminderScheduler {
-    private const val CHANNEL_ID = "job_reminder_v1"
+    private const val JOB_CHANNEL = "job_reminder_v1"
+    private const val MONEY_CHANNEL = "money_alert_v1"
     private const val REQUEST = 3101
     private const val NOTIFICATION_BASE = 7100
-    const val EXTRA_JOB_ID = "job_id"
+    const val EXTRA_AT = "at"
 
-    fun reschedule(context: Context, jobs: List<Job>, now: LocalDateTime = LocalDateTime.now()) {
+    fun reschedule(context: Context, book: MoneyBook, now: LocalDateTime = LocalDateTime.now()) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
-        val intent = pending(context, null)
-        val next = JobReminders.next(jobs, now)
+        val next = MoneyAlerts.next(book.jobs, book.fixed, book.entries, now).firstOrNull()
         if (next == null) {
-            am.cancel(intent)
+            am.cancel(pending(context, 0L))
             return
         }
         val at = next.at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        val op = pending(context, next.job.id)
-        // WORK-02: exact when the user allows it, so a 30-minute heads-up isn't pushed back by Doze.
+        val op = pending(context, at)
         if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) {
             am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, op)
         } else {
@@ -49,35 +49,35 @@ object JobReminderScheduler {
         }
     }
 
-    private fun pending(context: Context, jobId: Long?): PendingIntent = PendingIntent.getBroadcast(
+    private fun pending(context: Context, at: Long): PendingIntent = PendingIntent.getBroadcast(
         context, REQUEST,
-        Intent(context, JobReminderReceiver::class.java).apply { jobId?.let { putExtra(EXTRA_JOB_ID, it) } },
+        Intent(context, JobReminderReceiver::class.java).putExtra(EXTRA_AT, at),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    fun post(context: Context, job: Job) {
+    fun post(context: Context, alert: MoneyAlerts.Alert) {
         if (!Notifications.canPost(context)) return
         val nm = context.getSystemService(NotificationManager::class.java)
+        val job = alert.key.startsWith("job-")
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "일감 알림", NotificationManager.IMPORTANCE_HIGH)
-                .apply { description = "잡아 둔 일정이 다가오면 알려요" },
+            if (job) NotificationChannel(JOB_CHANNEL, "일감 알림", NotificationManager.IMPORTANCE_HIGH)
+                .apply { description = "잡아 둔 일정이 다가오면 알려요" }
+            else NotificationChannel(MONEY_CHANNEL, "돈 알림", NotificationManager.IMPORTANCE_DEFAULT)
+                .apply { description = "곧 나갈 돈과 아직 못 받은 돈을 알려요" },
         )
         val open = PendingIntent.getActivity(
             context, 3102, Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val time = job.start?.let { Fmt.time(it) }.orEmpty()
-        val where = listOf(job.client, job.place).filter { it.isNotBlank() }.joinToString(" · ")
-        val text = listOf("$time 시작", where).filter { it.isNotBlank() }.joinToString(" · ")
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(context, if (job) JOB_CHANNEL else MONEY_CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(job.title.ifBlank { "일감" })
-            .setContentText(text)
+            .setContentTitle(alert.title)
+            .setContentText(alert.text)
             .setContentIntent(open)
             .setAutoCancel(true)
             .build()
         try {
-            NotificationManagerCompat.from(context).notify(NOTIFICATION_BASE + (job.id % 100).toInt(), notification)
+            NotificationManagerCompat.from(context).notify(NOTIFICATION_BASE + (alert.key.hashCode() and 0x3ff), notification)
         } catch (e: SecurityException) {
             // Notifications were turned off in the meantime.
         }
@@ -87,13 +87,19 @@ object JobReminderScheduler {
 class JobReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val container = context.appContainer
-        val id = intent.getLongExtra(JobReminderScheduler.EXTRA_JOB_ID, 0L)
+        val atMillis = intent.getLongExtra(JobReminderScheduler.EXTRA_AT, 0L)
         val pending = goAsync()
         container.appScope.launch {
             try {
-                if (id != 0L) container.moneyRepository.job(id)?.let { JobReminderScheduler.post(context, it) }
-                // Plan the next one after this moment, so the same reminder never repeats.
-                JobReminderScheduler.reschedule(context, container.moneyRepository.allJobs(), LocalDateTime.now().plusSeconds(1))
+                val money = container.moneyRepository
+                val book = MoneyBook(money.allEntries(), money.allJobs(), emptyList(), money.allFixed())
+                if (atMillis != 0L) {
+                    val at = LocalDateTime.ofInstant(Instant.ofEpochMilli(atMillis), ZoneId.systemDefault())
+                    // Read again now, so a job paid or a bill recorded since is not announced.
+                    MoneyAlerts.dueAt(book.jobs, book.fixed, book.entries, at).forEach { JobReminderScheduler.post(context, it) }
+                }
+                // Plan the next one after this moment, so the same alert never repeats.
+                JobReminderScheduler.reschedule(context, book, LocalDateTime.now().plusSeconds(1))
             } finally {
                 pending.finish()
             }

@@ -201,6 +201,10 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     val moneyBook: StateFlow<MoneyBook> = money.book.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MoneyBook.EMPTY)
 
     override fun saveEntry(entry: MoneyEntry) { container.appScope.launch { money.save(entry) } }
+    private val rules: StateFlow<Map<String, String>> = money.rules.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+    override val categoryRules: Map<String, String> get() = rules.value
+    override fun frequentAmounts(kind: com.bamnat.core.money.MoneyKind): List<Long> =
+        com.bamnat.core.money.MoneyStats.frequentAmounts(moneyBook.value.entries, kind, java.time.LocalDate.now())
 
     override fun deleteEntry(entry: MoneyEntry) {
         container.appScope.launch {

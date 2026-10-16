@@ -125,10 +125,13 @@ fun DayDetail(
         val style = settings.workStyle
         val book by vm.moneyBook.collectAsStateWithLifecycle()
         val dayBook = remember(book, date) { book.on(date) }
+        val memoText = remember(memos) {
+            memos.joinToString("\n") { m -> (listOf(m.title, m.body) + m.checklist.map { it.text }).filter { it.isNotBlank() }.joinToString("\n") }
+        }
         val moneyFirst = style != null && !style.usesPayEngine
         var showShifts by rememberSaveable(date) { mutableStateOf(false) }
         val shiftsVisible = !moneyFirst || showShifts || day.source == DaySource.OVERRIDE || day.entry != null
-        if (moneyFirst) DayMoneySections(date, style, dayBook, vm)
+        if (moneyFirst) DayMoneySections(date, style, dayBook, vm, memoText)
         if (!shiftsVisible) {
             TextButton(onClick = { showShifts = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
                 Text("근무·알람도 적기")
@@ -188,7 +191,7 @@ fun DayDetail(
             AlarmSection(day = day, snapshot = snapshot, vm = vm, onOpenShiftTypes = onOpenShiftTypes)
         }
 
-        if (!moneyFirst) DayMoneySections(date, style, dayBook, vm)
+        if (!moneyFirst) DayMoneySections(date, style, dayBook, vm, memoText)
 
         MemoSection(
             date = date,

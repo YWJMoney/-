@@ -9,4 +9,5 @@
     <string name="widget_today_name">오늘 근무</string>
     <string name="widget_week_name">주간 근무</string>
     <string name="widget_month_name">월간 근무표</string>
+    <string name="capture_label">밤낮 결제 알림 기록</string>
 </resources>
