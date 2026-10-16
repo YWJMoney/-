@@ -1,5 +1,6 @@
 package com.bamnat.app.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.Index
@@ -48,6 +49,10 @@ data class JobEntity(
     val balancePaid: Boolean,
     val remindMinutes: Int?,
     val note: String,
+    /** Version 8: last day of a job over several days, its costs and 3.3% withholding. */
+    @ColumnInfo(defaultValue = "NULL") val endEpochDay: Long? = null,
+    @ColumnInfo(defaultValue = "0") val costs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val withholding: Boolean = false,
 )
 
 /** [WORK-03] One row per day a shop recorded; version 7. */
@@ -136,6 +141,7 @@ fun JobEntity.toModel() = Job(
     start = startMinute?.let { LocalTime.of(it / 60, it % 60) }, end = endMinute?.let { LocalTime.of(it / 60, it % 60) },
     amount = amount, deposit = deposit, depositPaid = depositPaid, balancePaid = balancePaid,
     remindMinutes = remindMinutes, note = note,
+    endDate = endEpochDay?.let(LocalDate::ofEpochDay), costs = costs, withholding = withholding,
 )
 
 fun Job.toEntity() = JobEntity(
@@ -143,6 +149,7 @@ fun Job.toEntity() = JobEntity(
     startMinute = start?.let { it.hour * 60 + it.minute }, endMinute = end?.let { it.hour * 60 + it.minute },
     amount = amount, deposit = deposit, depositPaid = depositPaid, balancePaid = balancePaid,
     remindMinutes = remindMinutes, note = note,
+    endEpochDay = endDate?.takeIf { it.isAfter(date) }?.toEpochDay(), costs = costs, withholding = withholding,
 )
 
 fun DailySalesEntity.toModel() = DailySales(LocalDate.ofEpochDay(epochDay), sales, costs, note)

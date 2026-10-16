@@ -24,10 +24,13 @@ data class MoneyEntry(
 /**
  * A booked job for field and freelance work [WORK-02]: who, where, when and for how much, with
  * the deposit (선금) and the rest (잔금) tracked separately because that is how such work is paid.
+ * A job may run several days (a bathroom takes three); its money belongs to the first day.
  */
 data class Job(
     val id: Long = 0,
     val date: LocalDate,
+    /** Last day of a job that runs several days; null for one day. */
+    val endDate: LocalDate? = null,
     val title: String,
     val client: String = "",
     val place: String = "",
@@ -40,10 +43,34 @@ data class Job(
     /** Minutes before [start] to remind; null for no reminder. */
     val remindMinutes: Int? = null,
     val note: String = "",
+    /** Materials and other costs of this job (자재비·인건비), so its profit is known. */
+    val costs: Long = 0,
+    /** Paid as 사업소득 with 3.3% withheld (freelance teaching, filming, many trades). */
+    val withholding: Boolean = false,
 ) {
-    val balance: Long get() = (amount - deposit).coerceAtLeast(0)
-    val received: Long get() = (if (depositPaid) deposit.coerceAtMost(amount) else 0) + (if (balancePaid) balance else 0)
-    val unpaid: Long get() = (amount - received).coerceAtLeast(0)
+    val lastDate: LocalDate get() = endDate?.takeIf { it.isAfter(date) } ?: date
+    val days: Int get() = (lastDate.toEpochDay() - date.toEpochDay()).toInt() + 1
+    fun covers(d: LocalDate): Boolean = !d.isBefore(date) && !d.isAfter(lastDate)
+
+    /** 3.3% withheld: 3% income tax and a tenth of it as local tax, each cut to 10 won as tax law does. */
+    val withheld: Long get() = if (!withholding) 0 else Withholding.of(amount)
+
+    /** What actually reaches the account; deposit and balance are parts of it. */
+    val payable: Long get() = amount - withheld
+    val balance: Long get() = (payable - deposit).coerceAtLeast(0)
+    val received: Long get() = (if (depositPaid) deposit.coerceAtMost(payable) else 0) + (if (balancePaid) balance else 0)
+    val unpaid: Long get() = (payable - received).coerceAtLeast(0)
+    val profit: Long get() = payable - costs
+}
+
+/** [WORK-02] Withholding on 사업소득: 소득세 3% + 지방소득세 (소득세의 10%), each below 10 won dropped. */
+object Withholding {
+    fun of(amount: Long): Long {
+        if (amount <= 0) return 0
+        val income = amount * 3 / 100 / 10 * 10
+        val local = income / 10 / 10 * 10
+        return income + local
+    }
 }
 
 /** A shop's day [WORK-03]: what came in and what the day cost. */
@@ -77,6 +104,10 @@ data class MonthMoney(
     val jobEarned: Long,
     val jobReceived: Long,
     val jobCount: Int,
+    /** Costs of this month's jobs (자재비 등), taken off the job income. */
+    val jobCosts: Long = 0,
+    /** 3.3% held back on this month's jobs; already out of [jobEarned]. */
+    val jobWithheld: Long = 0,
     val sales: Long,
     val salesCosts: Long,
     val salesDays: Int,
@@ -87,7 +118,8 @@ data class MonthMoney(
     /** The engine's estimate only counts until a real salary is written down. */
     val payCounted: Long get() = if (payRecorded > 0) payRecorded else payEstimate ?: 0
     val salesNet: Long get() = sales - salesCosts
-    val income: Long get() = payCounted + jobEarned + salesNet + otherIncome
+    val jobProfit: Long get() = jobEarned - jobCosts
+    val income: Long get() = payCounted + jobProfit + salesNet + otherIncome
     val balance: Long get() = income - expenses
 }
 
@@ -114,9 +146,11 @@ object MoneyCalculator {
             month = month,
             payEstimate = payEstimate,
             payRecorded = salary.sumOf { it.amount },
-            jobEarned = j.sumOf { it.amount },
+            jobEarned = j.sumOf { it.payable },
             jobReceived = j.sumOf { it.received },
             jobCount = j.size,
+            jobCosts = j.sumOf { it.costs },
+            jobWithheld = j.sumOf { it.withheld },
             sales = s.sumOf { it.sales },
             salesCosts = s.sumOf { it.costs },
             salesDays = s.count { it.sales != 0L || it.costs != 0L },
@@ -128,20 +162,29 @@ object MoneyCalculator {
         )
     }
 
-    /** Money per day for calendar cells; days with nothing are left out. */
+    /** Money per day for calendar cells; days with nothing are left out. A job's money shows on its first day. */
     fun days(month: YearMonth, entries: List<MoneyEntry>, jobs: List<Job>, sales: List<DailySales>): Map<LocalDate, DayMoney> {
+        val first = month.atDay(1)
+        val last = month.atEndOfMonth()
         val inMonth = { d: LocalDate -> YearMonth.from(d) == month }
         val e = entries.filter { inMonth(it.date) }.groupBy { it.date }
-        val j = jobs.filter { inMonth(it.date) }.groupBy { it.date }
         val s = sales.filter { inMonth(it.date) }.associateBy { it.date }
+        val starts = jobs.filter { inMonth(it.date) }.groupBy { it.date }
+        val running = HashMap<LocalDate, Int>()
+        for (j in jobs) {
+            if (j.lastDate.isBefore(first) || j.date.isAfter(last)) continue
+            var d = maxOf(j.date, first)
+            val end = minOf(j.lastDate, last)
+            while (!d.isAfter(end)) { running.merge(d, 1, Int::plus); d = d.plusDays(1) }
+        }
         val out = HashMap<LocalDate, DayMoney>()
-        for (date in e.keys + j.keys + s.keys) {
+        for (date in e.keys + s.keys + running.keys) {
             val de = e[date].orEmpty()
-            val dj = j[date].orEmpty()
+            val dj = starts[date].orEmpty()
             val day = DayMoney(
-                income = de.filter { it.kind == MoneyKind.INCOME }.sumOf { it.amount } + dj.sumOf { it.amount } + (s[date]?.net ?: 0),
+                income = de.filter { it.kind == MoneyKind.INCOME }.sumOf { it.amount } + dj.sumOf { it.profit } + (s[date]?.net ?: 0),
                 expense = de.filter { it.kind == MoneyKind.EXPENSE }.sumOf { it.amount },
-                jobs = dj.size,
+                jobs = running[date] ?: 0,
                 unpaid = dj.sumOf { it.unpaid },
             )
             if (!day.isEmpty) out[date] = day
@@ -162,7 +205,7 @@ data class MoneyBook(
 ) {
     fun month(month: YearMonth, payEstimate: Long? = null) = MoneyCalculator.month(month, entries, jobs, sales, payEstimate)
     fun days(month: YearMonth) = MoneyCalculator.days(month, entries, jobs, sales)
-    fun on(date: LocalDate) = DayBook(entries.filter { it.date == date }, jobs.filter { it.date == date }, sales.firstOrNull { it.date == date })
+    fun on(date: LocalDate) = DayBook(entries.filter { it.date == date }, jobs.filter { it.covers(date) }, sales.firstOrNull { it.date == date })
 
     companion object { val EMPTY = MoneyBook() }
 }

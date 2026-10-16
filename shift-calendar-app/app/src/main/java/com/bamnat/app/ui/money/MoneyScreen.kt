@@ -266,6 +266,8 @@ private fun IncomeCard(m: MonthMoney, style: WorkStyle?, hasProfile: Boolean, on
         }
         if (style?.usesJobs == true || m.jobCount > 0) {
             Line("일감 ${m.jobCount}건", Fmt.won(m.jobEarned))
+            if (m.jobWithheld > 0) Line("  3.3% 세금 뗀 뒤 금액 (뗀 세금 ${Fmt.won(m.jobWithheld)})", "", muted = true)
+            if (m.jobCosts > 0) Line("  자재비·경비", "-" + Fmt.won(m.jobCosts), muted = true)
             if (m.jobEarned > 0) Line("  그중 받은 돈", Fmt.won(m.jobReceived), muted = true)
         }
         if (style?.usesSales == true || m.salesDays > 0) {

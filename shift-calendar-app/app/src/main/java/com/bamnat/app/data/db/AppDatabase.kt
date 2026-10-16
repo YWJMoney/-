@@ -12,7 +12,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ShiftTypeEntity::class, PatternEntity::class, DayEntryEntity::class, MemoEntity::class,
         MoneyEntryEntity::class, JobEntity::class, DailySalesEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -25,7 +25,7 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "bamnat.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .build()
 
         /** Version 2: several alarms per shift, hand-set alarms per day, memo trash. */
@@ -90,6 +90,15 @@ abstract class AppDatabase : RoomDatabase() {
                     "CREATE TABLE IF NOT EXISTS `daily_sales` (`epochDay` INTEGER NOT NULL, `sales` INTEGER NOT NULL, " +
                         "`costs` INTEGER NOT NULL, `note` TEXT NOT NULL, PRIMARY KEY(`epochDay`))",
                 )
+            }
+        }
+
+        /** Version 8: jobs over several days, job costs and 3.3% withholding [WORK-02]. */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE jobs ADD COLUMN endEpochDay INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE jobs ADD COLUMN costs INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE jobs ADD COLUMN withholding INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

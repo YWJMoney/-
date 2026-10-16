@@ -91,7 +91,8 @@ class BackupManager(
                 put(JSONObject().put("id", j.id).put("day", j.epochDay).put("title", j.title).put("client", j.client)
                     .put("place", j.place).putOpt("start", j.startMinute).putOpt("end", j.endMinute).put("amount", j.amount)
                     .put("deposit", j.deposit).put("depositPaid", j.depositPaid).put("balancePaid", j.balancePaid)
-                    .putOpt("remind", j.remindMinutes).put("note", j.note))
+                    .putOpt("remind", j.remindMinutes).put("note", j.note)
+                    .putOpt("endDay", j.endEpochDay).put("costs", j.costs).put("withholding", j.withholding))
             }
         })
         root.put("sales", JSONArray().apply {
@@ -181,6 +182,8 @@ class BackupManager(
                 place = o.optString("place"), startMinute = o.optIntOrNull("start"), endMinute = o.optIntOrNull("end"),
                 amount = o.optLong("amount"), deposit = o.optLong("deposit"), depositPaid = o.optBoolean("depositPaid"),
                 balancePaid = o.optBoolean("balancePaid"), remindMinutes = o.optIntOrNull("remind"), note = o.optString("note"),
+                endEpochDay = if (o.has("endDay") && !o.isNull("endDay")) o.getLong("endDay") else null,
+                costs = o.optLong("costs"), withholding = o.optBoolean("withholding"),
             )
         }
         val sales = root.optJSONArray("sales")?.objects()?.map { o ->

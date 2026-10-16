@@ -30,6 +30,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -50,6 +53,9 @@ import java.time.LocalTime
 
 /** Most a single line may hold: 100억원, far above any household amount, and safe from overflow. */
 private const val MAX_DIGITS = 11
+
+/** Longest job one booking covers; longer work is several bookings (one per stage). */
+private const val MAX_JOB_DAYS = 60
 
 /** Whole won typed as digits and shown with thousands separators [LEDG-01]. */
 @Composable
@@ -118,12 +124,24 @@ fun EntryDialog(
     var digits by rememberSaveable { mutableStateOf(amountDigits(initial?.amount ?: 0)) }
     var category by rememberSaveable { mutableStateOf(initial?.category ?: MoneyCategories.of(defaultKind).first()) }
     var note by rememberSaveable { mutableStateOf(initial?.note.orEmpty()) }
+    var day by rememberSaveable { mutableStateOf((initial?.date ?: date).toString()) }
+    val onDay = LocalDate.parse(day)
     val amount = digits.toAmount()
+    val amountFocus = remember { FocusRequester() }
+    // A new line starts in the amount with the keypad up: amount first, the rest is optional.
+    if (initial == null) LaunchedEffect(Unit) { runCatching { amountFocus.requestFocus() } }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "${Fmt.dayTitle(date)} 돈 적기" else "돈 기록 고치기") },
+        title = { Text(if (initial == null) "돈 적기" else "돈 기록 고치기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Spending is often written down a day or two later, so the date moves by a tap.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { day = onDay.minusDays(1).toString() }) { Text("‹ 전날") }
+                    Text(Fmt.dayTitle(onDay), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    TextButton(onClick = { day = onDay.plusDays(1).toString() }) { Text("다음날 ›") }
+                }
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     MoneyKind.entries.forEachIndexed { i, k ->
                         SegmentedButton(
@@ -136,7 +154,7 @@ fun EntryDialog(
                         ) { Text(k.label) }
                     }
                 }
-                AmountField("금액", digits, { digits = it })
+                AmountField("금액", digits, { digits = it }, Modifier.focusRequester(amountFocus))
                 CategoryChips(MoneyCategories.of(kind), category) { category = it }
                 OutlinedTextField(value = note, onValueChange = { note = it.take(60) }, singleLine = true,
                     label = { Text("어디서·무엇 (선택)") }, modifier = Modifier.fillMaxWidth())
@@ -152,7 +170,7 @@ fun EntryDialog(
         },
         confirmButton = {
             TextButton(enabled = amount > 0, onClick = {
-                onSave(MoneyEntry(id = initial?.id ?: 0, date = initial?.date ?: date, kind = kind, amount = amount,
+                onSave(MoneyEntry(id = initial?.id ?: 0, date = onDay, kind = kind, amount = amount,
                     category = category, note = note.trim(), source = initial?.source ?: com.bamnat.core.money.MoneySource.MANUAL))
             }) { Text("저장") }
         },
@@ -188,6 +206,9 @@ fun JobDialog(
     var balancePaid by rememberSaveable { mutableStateOf(initial?.balancePaid ?: false) }
     var remind by rememberSaveable { mutableStateOf(initial?.remindMinutes) }
     var note by rememberSaveable { mutableStateOf(initial?.note.orEmpty()) }
+    var days by rememberSaveable { mutableStateOf(initial?.days ?: 1) }
+    var costs by rememberSaveable { mutableStateOf(amountDigits(initial?.costs ?: 0)) }
+    var withholding by rememberSaveable { mutableStateOf(initial?.withholding ?: false) }
     var picking by remember { mutableStateOf<String?>(null) }
     val startTime = start?.let(LocalTime::parse)
     val endTime = end?.let(LocalTime::parse)
@@ -210,7 +231,25 @@ fun JobDialog(
                     TimeChip("시작", startTime, Modifier.weight(1f)) { picking = "start" }
                     TimeChip("끝", endTime, Modifier.weight(1f)) { picking = "end" }
                 }
+                // [WORK-02] Work that runs several days (욕실 3일, 주방 5일) is booked once.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("작업 기간", style = MaterialTheme.typography.bodyLarge)
+                        val start = initial?.date ?: date
+                        Text(if (days == 1) "하루" else "${Fmt.shortDate(start)} ~ ${Fmt.shortDate(start.plusDays(days - 1L))}",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    TextButton(enabled = days > 1, onClick = { days-- }) { Text("−", style = MaterialTheme.typography.titleLarge) }
+                    Text("${days}일", style = MaterialTheme.typography.titleMedium)
+                    TextButton(enabled = days < MAX_JOB_DAYS, onClick = { days++ }) { Text("+", style = MaterialTheme.typography.titleLarge) }
+                }
                 AmountField("받을 금액 (전체)", amount, { amount = it })
+                SwitchRow("3.3% 떼고 받아요 (사업소득)", withholding) { withholding = it }
+                if (withholding && amount.toAmount() > 0) {
+                    val w = com.bamnat.core.money.Withholding.of(amount.toAmount())
+                    Text("세금 ${Fmt.won(w)}을 떼고 ${Fmt.won(amount.toAmount() - w)}이 들어와요. 5월 종합소득세 신고 때 정산돼요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 AmountField("선금 (계약금)", deposit, { deposit = it })
                 if (hasDeposit) SwitchRow("선금 받음", depositPaid) { depositPaid = it }
                 SwitchRow(if (hasDeposit) "잔금 받음" else "돈 받음", balancePaid) { balancePaid = it }
@@ -225,6 +264,12 @@ fun JobDialog(
                     Text("시작 시간을 정하면 알림을 받을 수 있어요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                AmountField("자재비·경비 (선택)", costs, { costs = it })
+                if (costs.toAmount() > 0 && amount.toAmount() > 0) {
+                    val payable = amount.toAmount() - if (withholding) com.bamnat.core.money.Withholding.of(amount.toAmount()) else 0
+                    Text("이 일로 남는 돈 ${Fmt.won(payable - costs.toAmount())}", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 OutlinedTextField(value = note, onValueChange = { note = it.take(200) },
                     label = { Text("메모 (선택)") }, modifier = Modifier.fillMaxWidth())
             }
@@ -237,6 +282,8 @@ fun JobDialog(
                         client = client.trim(), place = place.trim(), start = startTime, end = endTime,
                         amount = amount.toAmount(), deposit = deposit.toAmount(), depositPaid = hasDeposit && depositPaid,
                         balancePaid = balancePaid, remindMinutes = remind.takeIf { startTime != null }, note = note.trim(),
+                        endDate = (initial?.date ?: date).plusDays(days - 1L).takeIf { days > 1 },
+                        costs = costs.toAmount(), withholding = withholding,
                     ),
                 )
             }) { Text("저장") }

@@ -137,7 +137,7 @@ class ScreenshotTest {
         money.save(MoneyEntry(date = month.minusMonths(1).plusDays(4), kind = MoneyKind.EXPENSE, amount = 210_000, category = "식비"))
         money.save(Job(date = today, title = "욕실 타일 시공", client = "김OO 고객", place = "OO아파트 103동", start = LocalTime.of(9, 0),
             end = LocalTime.of(17, 0), amount = 1_200_000, deposit = 300_000, depositPaid = true, remindMinutes = 60))
-        money.save(Job(date = today.minusDays(4), title = "도배", client = "박OO", amount = 800_000, balancePaid = true))
+        money.save(Job(date = today.minusDays(5), endDate = today.minusDays(3), title = "도배", client = "박OO", amount = 800_000, balancePaid = true, costs = 180_000, withholding = true))
         money.save(Job(date = today.minusDays(2), title = "주방 수전 교체", amount = 150_000))
         money.save(Job(date = today.plusDays(2), title = "현장 실측", place = "OO빌라", start = LocalTime.of(14, 0), amount = 0))
         money.save(DailySales(today, sales = 1_240_000, costs = 380_000, note = "단체 손님 1팀"))
@@ -453,6 +453,16 @@ class ScreenshotTest {
     @Test fun foldedJobDialog() = shoot("57_folded_job_dialog", FOLDED) {
         content { com.bamnat.app.ui.money.JobDialog(today, null, onSave = {}, onDismiss = {}) }
     }
+    // [WORK-02] A three-day job paid with 3.3% withheld and materials bought.
+    @Test fun foldedJobDialogFilled() = shoot("63_folded_job_dialog_multiday", FOLDED) {
+        content {
+            com.bamnat.app.ui.money.JobDialog(today, Job(date = today, endDate = today.plusDays(2), title = "욕실 리모델링", amount = 3_000_000,
+                deposit = 1_000_000, depositPaid = true, costs = 700_000, withholding = true), onSave = {}, onDismiss = {})
+        }
+        scrollUp(500, across = 0.5f)
+    }
+    // [LEDG-01] A shift worker's day: the side-job chip sits with the spend/income chips.
+    @Test fun foldedShiftDayMoney() = shoot("64_folded_shift_day_money", FOLDED) { tap(DAY_X, DAY_Y); repeat(3) { scrollUp(700, across = 0.5f) } }
     // [WORK-03] A shop's day and month.
     @Test fun foldedBusinessDay() = shoot("58_folded_business_day", FOLDED, style(WorkStyle.BUSINESS) { tap(DAY_X, DAY_Y) })
     @Test fun foldedBusinessMoney() = shoot("59_folded_business_money", FOLDED, style(WorkStyle.BUSINESS) { tab(1, wide = false) })

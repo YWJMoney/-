@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.bamnat.app.MainActivity
@@ -39,7 +40,13 @@ object JobReminderScheduler {
             return
         }
         val at = next.at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending(context, next.job.id))
+        val op = pending(context, next.job.id)
+        // WORK-02: exact when the user allows it, so a 30-minute heads-up isn't pushed back by Doze.
+        if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) {
+            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, op)
+        } else {
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, op)
+        }
     }
 
     private fun pending(context: Context, jobId: Long?): PendingIntent = PendingIntent.getBroadcast(

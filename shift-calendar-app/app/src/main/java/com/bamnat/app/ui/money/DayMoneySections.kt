@@ -78,7 +78,9 @@ fun JobRow(job: Job, showDate: Boolean = false, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(job.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val time = job.start?.let { s -> Fmt.time(s) + (job.end?.let { "–" + Fmt.time(it) } ?: "") }
-            val line = listOfNotNull(if (showDate) Fmt.dayTitle(job.date) else null, time, job.client.ifBlank { null }, job.place.ifBlank { null })
+            val span = if (job.days > 1) "${Fmt.shortDate(job.date)}~${Fmt.shortDate(job.lastDate)} (${job.days}일)" else null
+            val line = listOfNotNull(if (showDate && span == null) Fmt.dayTitle(job.date) else null, span, time,
+                job.client.ifBlank { null }, job.place.ifBlank { null })
                 .joinToString(" · ")
             if (line.isNotEmpty()) {
                 Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -86,7 +88,7 @@ fun JobRow(job: Job, showDate: Boolean = false, onClick: () -> Unit) {
             }
         }
         Column(horizontalAlignment = Alignment.End) {
-            Text(Fmt.won(job.amount), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Text(Fmt.won(job.payable), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             when {
                 job.amount == 0L -> Unit
                 job.unpaid == 0L -> Text("다 받음", style = MaterialTheme.typography.labelSmall, color = cal.income)
@@ -135,14 +137,19 @@ fun Figure(label: String, value: String, modifier: Modifier = Modifier, strong: 
 @Composable
 fun DayLedgerSection(date: LocalDate, style: WorkStyle?, entries: List<MoneyEntry>, actions: MoneyActions) {
     var adding by remember { mutableStateOf<MoneyKind?>(null) }
+    var addingJob by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<MoneyEntry?>(null) }
     SectionCard(title = "가계부") {
         entries.forEach { e -> EntryRow(e) { editing = e } }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AssistChip(onClick = { adding = MoneyKind.EXPENSE }, label = { Text("지출 적기") },
                 leadingIcon = { Icon(Icons.Filled.Add, null) })
             AssistChip(onClick = { adding = MoneyKind.INCOME }, label = { Text("수입 적기") },
                 leadingIcon = { Icon(Icons.Filled.Add, null) })
+            // [WORK-02] A shift worker's weekend 부업 is a job too.
+            if (style?.usesJobs != true) {
+                AssistChip(onClick = { addingJob = true }, label = { Text("부업 일감") }, leadingIcon = { Icon(Icons.Filled.Add, null) })
+            }
         }
         if (entries.isEmpty() && style?.usesPayEngine == true) {
             Text("급여일에 실제 받은 급여를 수입(급여)으로 적으면 예상 대신 그 금액으로 계산해요.",
@@ -150,6 +157,7 @@ fun DayLedgerSection(date: LocalDate, style: WorkStyle?, entries: List<MoneyEntr
                 modifier = Modifier.padding(top = 4.dp))
         }
     }
+    if (addingJob) JobDialog(date, null, onSave = { actions.saveJob(it); addingJob = false }, onDismiss = { addingJob = false })
     adding?.let { k -> EntryDialog(date, null, k, onSave = { actions.saveEntry(it); adding = null }, onDismiss = { adding = null }) }
     editing?.let { e ->
         EntryDialog(date, e, e.kind, onSave = { actions.saveEntry(it); editing = null },

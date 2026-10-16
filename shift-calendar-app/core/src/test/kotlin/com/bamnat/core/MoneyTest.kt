@@ -83,6 +83,50 @@ class MoneyTest {
     }
 
     @Test
+    fun withholdingFollowsTheTenWonRule() {
+        // 3% then a tenth of it, each cut below 10 won: 1,000,000 → 30,000 + 3,000.
+        assertEquals(33_000, com.bamnat.core.money.Withholding.of(1_000_000))
+        assertEquals(99_000, com.bamnat.core.money.Withholding.of(3_000_000))
+        // 123,456 → 3,703.68 → 3,700; local 370.
+        assertEquals(4_070, com.bamnat.core.money.Withholding.of(123_456))
+        val lesson = Job(date = d(5), title = "강의", amount = 1_000_000, withholding = true, balancePaid = true)
+        assertEquals(967_000, lesson.payable)
+        assertEquals(0, lesson.unpaid)
+        val m = MoneyCalculator.month(nov, emptyList(), listOf(lesson), emptyList())
+        assertEquals(967_000, m.income)
+        assertEquals(33_000, m.jobWithheld)
+    }
+
+    @Test
+    fun jobCostsComeOffIncome() {
+        val tiles = Job(date = d(3), title = "욕실", amount = 1_200_000, costs = 350_000)
+        val m = MoneyCalculator.month(nov, emptyList(), listOf(tiles), emptyList())
+        assertEquals(850_000, m.income)
+        assertEquals(350_000, m.jobCosts)
+        // Costs do not change what the client still owes.
+        assertEquals(1_200_000, tiles.unpaid)
+    }
+
+    @Test
+    fun aJobOverSeveralDaysMarksEachDayButCountsOnce() {
+        val job = Job(id = 7, date = d(28), endDate = d(30).plusDays(2), title = "주방 리모델링", amount = 3_000_000)
+        assertEquals(5, job.days)
+        val book = com.bamnat.core.money.MoneyBook(jobs = listOf(job))
+        val days = book.days(nov)
+        assertEquals(setOf(d(28), d(29), d(30)), days.keys)
+        assertEquals(3_000_000, days.getValue(d(28)).income)
+        assertEquals(0, days.getValue(d(29)).income)
+        assertEquals(1, days.getValue(d(30)).jobs)
+        // December shows the remaining days without the money again.
+        val dec = book.days(nov.plusMonths(1))
+        assertEquals(setOf(nov.plusMonths(1).atDay(1), nov.plusMonths(1).atDay(2)), dec.keys)
+        assertEquals(0, book.month(nov.plusMonths(1)).income)
+        assertEquals(listOf(7L), book.on(d(29)).jobs.map { it.id })
+        // An end before the start means one day.
+        assertEquals(1, job.copy(endDate = d(1)).days)
+    }
+
+    @Test
     fun workStylesPickTheirIncome() {
         assertTrue(WorkStyle.SHIFT.usesPattern && WorkStyle.SHIFT.usesPayEngine)
         assertTrue(WorkStyle.HOURLY.usesPayEngine && !WorkStyle.HOURLY.usesPattern)
