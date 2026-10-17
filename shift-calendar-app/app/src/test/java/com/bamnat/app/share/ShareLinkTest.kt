@@ -54,7 +54,7 @@ class ShareLinkTest {
         File("build/share-payload.json").writeText(p.toString())
     }
 
-    /** Runs against `npx wrangler dev` when SHARE_TEST_URL points at it; skipped otherwise. */
+    /** Runs against `npx wrangler dev` or server/share-worker/test/local-server.mjs when SHARE_TEST_URL points at it; skipped otherwise. */
     @Test fun roundTripAgainstTestServer() = runBlocking {
         val base = System.getenv("SHARE_TEST_URL").orEmpty()
         assumeTrue(base.isNotBlank())

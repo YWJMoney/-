@@ -36,7 +36,7 @@ MKT-05,"불규칙 배정(병동, 편의점) → 빠른 입력(있음) 개선, CS
 MKT-06,제도 변경 직군의 패턴 이력 → PatternTimeline 유지,-,완료,,"core/schedule/PatternTimeline.kt, PatternTimelineTest"
 MKT-07,"근무표 품질 문제(N-O-D, E-D, 폐당폐당, 연속 야간) → 휴식 간격 점검기 규칙으로",2 → 확장 M4,완료,,"RestCheck 역순환·야간 뒤 휴식·연속 야간 규칙; M4Test, 스크린샷 80"
 MKT-08,근무 변경·단기 통보 → 날짜별 변경 이력(언제 무엇이 바뀌었는지) 보기,2 → 확장 M4,완료,,"DB v10 day_changes(MIGRATION_9_10), ScheduleRepository.logChange(1분 안 연속 조작 묶음), 하루 화면 변경 이력; M4AppTest·MigrationTest, 스크린샷 79"
-MKT-09,가족·동료 일정 조율 → 공유(5.5),1~3,진행 중,,"읽기 전용 링크 공유: server/share-worker(Cloudflare Worker+KV, 7·30·90일 자동 만료, 삭제 토큰 해시 저장, IP 미저장, noindex·CSP, 시간당 20개 제한, node 테스트 6건·wrangler dev 확인) + 앱 공유 대화상자(이미지/링크, 다시 보내기·고치기·끊기, 메모·급여 제외, 연차 외 휴가는 ""휴가""로만; ShareLinkTest 앱↔서버 왕복, 48_folded_share_link.png). 서버 배포·처리방침 1.1 게시 남음"
+MKT-09,가족·동료 일정 조율 → 공유(5.5),1~3,진행 중,,"읽기 전용 링크 공유: server/share-worker(Cloudflare Worker+KV, 7·30·90일 자동 만료, 삭제 토큰 해시 저장, IP 미저장, noindex·CSP, 시간당 20개 제한, node 테스트 6건·wrangler dev 확인) + 앱 공유 대화상자(이미지/링크, 다시 보내기·고치기·끊기, 메모·급여 제외, 연차 외 휴가는 ""휴가""로만; ShareLinkTest 앱↔서버 왕복, 48_folded_share_link.png); 1.8.0(M8): 서버 배포(https://bamnat-share.yoj0790.workers.dev, KV SHARES, RATE_SALT, /s/ 만료 페이지 확인) 후 bamnat.shareBaseUrl로 링크 공유 켬(INTERNET은 src/online), 공유 대화상자에 Cloudflare(미국) 저장·누구나 열람 안내와 스크롤 추가(ShareServerTest), local-server.mjs로 앱↔서버 왕복 통과. 실기기에서 실제 링크 확인 남음"
 MKT-10,번아웃·이직 → 앱 영역 밖(일정 가시화로 간접 지원),-,하지 않음,,
 MKT-11,"델파이 기준(연속 야간 2일, 야간 후 휴일 2일, 월 휴가 12일), 복지부 권고(야간 월 14일 [충돌: 15일], 연속…",2 → 확장 M5,완료,,"RestCheck strict(연속 야간 3일부터, 야간 뒤 쉬는 날 2일 미만), 설정 > 휴식 점검 엄격 기준; M5Test, 스크린샷 87"
 MKT-12,"지불 의사: 수당 증빙 내보내기·팀·동기화는 유료, 기본 달력·공유는 무료 → Pro 구성(5.9)",2,대기,G-TIER,
@@ -97,10 +97,10 @@ OPS-06,"타깃 API 36, 연장 최종일 2026-11-01 → 즉시",0,완료,,app/bui
 OPS-07,PBL 8 [충돌] → 결제 도입 때 PBL 8 이상으로 시작,2,대기,,
 OPS-08,16KB 페이지 [충돌] → zipalign -c -P 16으로 지금 확인,0,완료,,zipalign -c -P 16 통과(2026-10-14)
 OPS-09,신규 개인 계정 12명×14일 비공개 테스트 → 출시 3주 전 시작,0,대기,G0,
-OPS-10,"정확 알람·전체 화면 알림·포그라운드 서비스 선언, Data safety, 건강 앱 선언 → 심사 전 제출(건강은 수면 기능…","0, 2",진행 중,,"M6: 매니페스트 선언 정리(USE_EXACT_ALARM, 전체 화면 알림, 포그라운드 서비스 mediaPlayback·systemExempted, health.READ_SLEEP). Play Console 제출(포그라운드 서비스·건강 앱 선언, Data safety)은 정식 출시 때; Play 답안 1.7(release/play-console-answers.md): 건강 앱 선언 수면 관리, Health Connect 사용 이유, systemExempted 설명 추가; 1.7.1: mediaPlayback·FOREGROUND_SERVICE_MEDIA_PLAYBACK 제거, Android 14+ systemExempted만·13 이하 유형 없음(AlarmService.FOREGROUND_TYPE, AlarmFgsTypeTest)"
+OPS-10,"정확 알람·전체 화면 알림·포그라운드 서비스 선언, Data safety, 건강 앱 선언 → 심사 전 제출(건강은 수면 기능…","0, 2",진행 중,,"M6: 매니페스트 선언 정리(USE_EXACT_ALARM, 전체 화면 알림, 포그라운드 서비스 mediaPlayback·systemExempted, health.READ_SLEEP). Play Console 제출(포그라운드 서비스·건강 앱 선언, Data safety)은 정식 출시 때; Play 답안 1.7(release/play-console-answers.md): 건강 앱 선언 수면 관리, Health Connect 사용 이유, systemExempted 설명 추가; 1.7.1: mediaPlayback·FOREGROUND_SERVICE_MEDIA_PLAYBACK 제거, Android 14+ systemExempted만·13 이하 유형 없음(AlarmService.FOREGROUND_TYPE, AlarmFgsTypeTest); 1.8: Data safety 수집함(이름 선택·캘린더 일정, 앱 기능, 공유 없음, 암호화, 삭제 가능)·콘텐츠 등급 사용자 간 공유 예로 답안 갱신(release/play-console-answers.md, Claude Doc 배포 안내)"
 OPS-11,"Android vitals(비정상 종료 1.09%, ANR 0.47%) → 월간 점검, 내부 목표는 더 낮게",상시,대기,G0,
 OPS-12,"API 36 동작 변경(edge-to-edge, 큰 화면 방향 제한 무시, 예측형 뒤로가기) → 폴드·위젯·설정 화면 점검",0,진행 중,,"edge-to-edge·예측형 뒤로가기·resizeable 설정 확인, 실기기 폴드 점검 남음"
-OPS-13,"개인정보 보호법 2026-09-11 시행(72시간 통지, 보호책임자), 처리방침 → 처리방침·보호책임자·유출 대응 절차 문서화",0,완료,,"1.0판 처리방침 게시 https://ywjmoney.github.io/-/privacy/ (운영자 GoodMan_JW, 시행 2026-10-15). 인터넷 권한 없음 → 수집 없음. 수집 기능 추가 시 개정; 1.3판(앱 1.7 기준, 시행 2026-10-24): 수면 기록·Health Connect 수면 읽기·변경 이력·정산 기간·암호 백업·회사 설정 공유·권한 표 반영"
+OPS-13,"개인정보 보호법 2026-09-11 시행(72시간 통지, 보호책임자), 처리방침 → 처리방침·보호책임자·유출 대응 절차 문서화",0,완료,,"1.0판 처리방침 게시 https://ywjmoney.github.io/-/privacy/ (운영자 GoodMan_JW, 시행 2026-10-15). 인터넷 권한 없음 → 수집 없음. 수집 기능 추가 시 개정; 1.3판(앱 1.7 기준, 시행 2026-10-24): 수면 기록·Health Connect 수면 읽기·변경 이력·정산 기간·암호 백업·회사 설정 공유·권한 표 반영; 1.4판(앱 1.8 기준, 게시 2026-10-17·시행 2026-10-24, 1.3 대체): 링크 공유 수집 항목·보관 7·30·90일·IP 미저장·Cloudflare 위탁·국외 이전·안전성 조치·이용자 권리(6항)·만 14세 미만 안내·인터넷 권한(ShareServerTest가 정책과 앱 일치 확인)"
 OPS-14,"만 14세 미만, 민감정보 별도 동의 → 건강 데이터는 기기 안에만. 서버로 보낼 기능을 만들 때만 별도 동의",3,대기,,
 OPS-15,"구독 다크패턴 금지, 해지 경로, 7일 철회 → 구독 화면 규칙",2,대기,,
 OPS-16,사업자등록·통신판매업 [충돌]·세무 → 유료 판매 전 관할 기관·세무사 확인,2 선행,대기,,
