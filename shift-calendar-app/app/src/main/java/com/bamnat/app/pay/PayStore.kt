@@ -32,6 +32,8 @@ import org.json.JSONObject
 import java.io.File
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalTime
+import com.bamnat.core.pay.Festival
 import java.time.YearMonth
 
 /**
@@ -181,11 +183,15 @@ object PayCodec {
         .putRate("annualLeave", r.annualLeaveDays)
         .putOpt("publicHolidayAs", r.publicHolidayAs?.name)
         .put("holidayLeaveFree", r.holidayLeaveFree)
+        .putOpt("nightStart", r.nightStart?.toString()).putOpt("nightEnd", r.nightEnd?.toString())
+        .put("extraByShift", JSONObject().apply {
+            r.extraByShift.forEach { (kind, byType) ->
+                put(kind.name, JSONObject().apply { byType.forEach { (id, e) -> put(id.toString(), extraRule(e)) } })
+            }
+        })
         .put("extra", JSONObject().apply {
             r.extra.forEach { (kind, e) ->
-                put(kind.name, JSONObject().put("basis", e.basis.name).put("multiplier", e.multiplier).put("amount", e.amount)
-                    .put("min", e.minMinutes).put("night", e.nightPremium)
-                    .put("dayTiers", tiers(e.dayTiers)).put("nightTiers", tiers(e.nightTiers)))
+                put(kind.name, extraRule(e))
             }
         })
 
@@ -207,18 +213,32 @@ object PayCodec {
         extra = o.optJSONObject("extra")?.let { x ->
             x.keys().asSequence().mapNotNull { key ->
                 val kind = runCatching { ExtraWork.valueOf(key) }.getOrNull() ?: return@mapNotNull null
-                val e = x.getJSONObject(key)
-                kind to ExtraRule(
-                    basis = runCatching { ExtraBasis.valueOf(e.getString("basis")) }.getOrDefault(ExtraBasis.LEGAL),
-                    multiplier = e.optDouble("multiplier", 1.5),
-                    amount = e.optLong("amount", 0),
-                    minMinutes = e.optInt("min", 0),
-                    nightPremium = e.optBoolean("night", true),
-                    dayTiers = e.optJSONArray("dayTiers")?.let(::tiers) ?: ExtraRule.DEFAULT_DAY_TIERS,
-                    nightTiers = e.optJSONArray("nightTiers")?.let(::tiers) ?: ExtraRule.DEFAULT_NIGHT_TIERS,
-                )
+                kind to extraRule(x.getJSONObject(key))
             }.toMap()
         } ?: emptyMap(),
+        nightStart = o.optString("nightStart").takeIf { it.isNotEmpty() }?.let { runCatching { LocalTime.parse(it) }.getOrNull() },
+        nightEnd = o.optString("nightEnd").takeIf { it.isNotEmpty() }?.let { runCatching { LocalTime.parse(it) }.getOrNull() },
+        extraByShift = o.optJSONObject("extraByShift")?.let { x ->
+            x.keys().asSequence().mapNotNull { key ->
+                val kind = runCatching { ExtraWork.valueOf(key) }.getOrNull() ?: return@mapNotNull null
+                val byType = x.getJSONObject(key)
+                kind to byType.keys().asSequence().mapNotNull { id -> id.toLongOrNull()?.let { it to extraRule(byType.getJSONObject(id)) } }.toMap()
+            }.toMap()
+        } ?: emptyMap(),
+    )
+
+    private fun extraRule(e: ExtraRule): JSONObject = JSONObject().put("basis", e.basis.name).put("multiplier", e.multiplier).put("amount", e.amount)
+        .put("min", e.minMinutes).put("night", e.nightPremium)
+        .put("dayTiers", tiers(e.dayTiers)).put("nightTiers", tiers(e.nightTiers))
+
+    private fun extraRule(e: JSONObject): ExtraRule = ExtraRule(
+        basis = runCatching { ExtraBasis.valueOf(e.getString("basis")) }.getOrDefault(ExtraBasis.LEGAL),
+        multiplier = e.optDouble("multiplier", 1.5),
+        amount = e.optLong("amount", 0),
+        minMinutes = e.optInt("min", 0),
+        nightPremium = e.optBoolean("night", true),
+        dayTiers = e.optJSONArray("dayTiers")?.let(::tiers) ?: ExtraRule.DEFAULT_DAY_TIERS,
+        nightTiers = e.optJSONArray("nightTiers")?.let(::tiers) ?: ExtraRule.DEFAULT_NIGHT_TIERS,
     )
 
     private fun tiers(t: List<Tier>): JSONArray = JSONArray(t.map { JSONObject().put("min", it.minutes).put("premium", it.premium) })
@@ -249,6 +269,7 @@ object PayCodec {
         .put("types", JSONArray(i.shiftTypeIds.toList())).put("ordinary", i.ordinary).put("taxable", i.taxable)
         .put("months", JSONArray(i.months.sorted())).putOpt("percentOfBase", i.percentOfBase)
         .put("fixedOvertime", i.fixedOvertimeMinutes)
+        .put("festivals", JSONArray(i.festivals.map { it.name })).put("festivalBefore", i.festivalMonthBefore)
 
     private fun item(o: JSONObject): PayItem = PayItem(
         id = o.getString("id"),
@@ -261,8 +282,14 @@ object PayCodec {
         months = o.optJSONArray("months")?.let { a -> (0 until a.length()).map { a.getInt(it) }.toSet() } ?: emptySet(),
         percentOfBase = if (o.has("percentOfBase")) o.getDouble("percentOfBase") else null,
         fixedOvertimeMinutes = o.optInt("fixedOvertime", 0),
+        festivals = o.optJSONArray("festivals")?.let { a -> (0 until a.length()).mapNotNull { n -> Festival.entries.firstOrNull { it.name == a.getString(n) } }.toSet() } ?: emptySet(),
+        festivalMonthBefore = o.optBoolean("festivalBefore", false),
     )
 
     private fun JSONArray?.objects(): List<JSONObject> =
         if (this == null) emptyList() else (0 until length()).map { getJSONObject(it) }
 }
+
+/** [PAYX-09] The profile with the user's own names for 잔업·특근·대근, for labels on pay lines. */
+fun PayProfile.named(kinds: com.bamnat.core.model.ExtraKinds): PayProfile =
+    if (kinds.names.isEmpty()) this else copy(rules = rules.copy(extraNames = kinds.names))

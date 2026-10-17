@@ -418,8 +418,48 @@ class ScreenshotTest {
         scrollUp(800)
     }
     @Test fun foldedBonusDialog() = shoot("44_folded_bonus_dialog", FOLDED, payScreen(Tier.PRO, withProfile = true) { _ ->
-        com.bamnat.app.ui.pay.AddBonusDialog(onDismiss = {}) { _, _, _, _, _ -> }
+        com.bamnat.app.ui.pay.AddBonusDialog(onDismiss = {}) { _, _, _, _, _, _, _ -> }
     })
+
+    // ---- M3 [FEAT-16][FEAT-17][PAYX-09..13] ----
+    private fun rulesEditor(rules: (nightId: Long) -> CompanyRules): Screen.() -> Unit = {
+        val c = app.container
+        c.settingsRepository.update { it.copy(tier = Tier.PRO) }
+        val vm = PayViewModel(c)
+        val nightId = runBlocking { c.scheduleRepository.snapshot.first().shiftTypes.first { it.name == "야간" }.id }
+        runBlocking { c.payStore.save(vm.sampleProfile().copy(rules = rules(nightId)), keepUndo = false) }
+        settle()
+        content {
+            val profile = vm.profile.collectAsState().value
+            val snap = vm.snapshot.collectAsState().value
+            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {})
+        }
+        settle()
+    }
+    @Test fun foldedMemoFirstCalendar() = shoot("71_folded_memo_first_calendar", FOLDED) {
+        app.container.settingsRepository.update { it.copy(memoFirst = true) }
+        settle()
+        scrollUp(450)
+    }
+    @Test fun foldedCalendarMemoList() = shoot("72_folded_calendar_memo_list", FOLDED) { scrollUp(700); scrollUp(700) }
+    @Test fun foldedRulesNight() = shoot("73_folded_rules_night_window", FOLDED) {
+        rulesEditor { companyRules.copy(nightStart = LocalTime.of(23, 0), nightEnd = LocalTime.of(7, 0)) }.invoke(this)
+        scrollUp(800)
+    }
+    @Test fun foldedRulesPerShift() = shoot("74_folded_rules_cover_per_shift", FOLDED) {
+        rulesEditor { night ->
+            companyRules.copy(extraByShift = mapOf(ExtraWork.COVER to mapOf(night to ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 100_000))))
+        }.invoke(this)
+        repeat(3) { scrollUp(800) }
+    }
+    @Test fun foldedExtraKinds() = shoot("76_folded_extra_kinds", FOLDED, payScreen(Tier.PRO, withProfile = true) { _ ->
+        com.bamnat.app.ui.settings.ExtraKindsDialog(
+            com.bamnat.core.model.ExtraKinds(names = mapOf(ExtraWork.OVERTIME to "조출"), minutes = mapOf(ExtraWork.COVER to 720)),
+            onDismiss = {}, onSave = {},
+        )
+    })
+    @Test fun foldedFieldDayShifts() = shoot("77_folded_field_day_shifts_toggle", FOLDED, style(WorkStyle.FIELD) { tap(DAY_X, DAY_Y); scrollUp(600) })
+
     @Test fun monthImage() = runBlocking {
         val snap = app.container.scheduleRepository.snapshot.first()
         val bmp = MonthImage.render(snap, java.time.YearMonth.from(today), java.time.DayOfWeek.SUNDAY)

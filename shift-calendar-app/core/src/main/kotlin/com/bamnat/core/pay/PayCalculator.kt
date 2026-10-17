@@ -67,7 +67,7 @@ data class MonthPay(
 class PayCalculator(
     private val rateTable: List<Rates> = RateTable.builtIn,
 ) {
-    private class ExtraTotal(var amount: Long = 0, var minutes: Int = 0, var times: Int = 0, var legal: Long = 0)
+    private class ExtraTotal(val rule: ExtraRule, val label: String, var amount: Long = 0, var minutes: Int = 0, var times: Int = 0, var legal: Long = 0)
 
     fun calculate(
         profile: PayProfile,
@@ -77,7 +77,8 @@ class PayCalculator(
         isHoliday: ((LocalDate) -> Boolean)? = null,
     ): MonthPay {
         val rules = profile.rules
-        val rates = RateTable.on(month.atDay(1), rateTable)
+        // [PAYX-12] The company's night window replaces 22~06 for every shift, base shifts included.
+        val rates = rules.applyNight(RateTable.on(month.atDay(1), rateTable))
         val premiums = profile.fiveOrMoreEmployees
         // 공휴일 are paid holidays only at 5인 이상 (근로기준법 제55조 제2항, 시행령 별표1); below that
         // they are ordinary days unless the caller says otherwise.
@@ -86,7 +87,7 @@ class PayCalculator(
             KoreanHolidays.isLaborDay(d) || premiums && rules.publicHolidaysPaid && KoreanHolidays.isHoliday(d)
         }
         val classifier = MinuteClassifier(
-            rates = { RateTable.on(it, rateTable) },
+            rates = { rules.applyNight(RateTable.on(it, rateTable)) },
             options = ClassifyOptions(profile.dailyLimitMinutes, profile.weeklyLimitMinutes, profile.weekStart,
                 offDayWorkIsHoliday = rules.offDayWork == OffDayWork.HOLIDAY, scheduleIsRegular = profile.scheduleIsRegular,
                 flexPeriod = profile.flexPeriod),
@@ -141,7 +142,8 @@ class PayCalculator(
         val lines = mutableListOf<PayLine>()
         val warnings = mutableListOf<String>()
         val baseEstimated = "base" in profile.estimatedFields || base.source == ValueSource.RAISED
-        val extraTotals = linkedMapOf<ExtraWork, ExtraTotal>()
+        // Keyed by kind and, for a per-shift rule [PAYX-11], the covered shift type.
+        val extraTotals = linkedMapOf<Pair<ExtraWork, Long?>, ExtraTotal>()
         var regular = 0; var overtime = 0; var night = 0; var hWithin = 0; var hOver = 0
         val itemCounts = HashMap<String, Int>()
         val dayPays = mutableListOf<DayPay>()
@@ -166,9 +168,13 @@ class PayCalculator(
             val parts = mutableListOf<DayPart>()
             // [PAYX-07] A shift on a 공휴일 can be paid the company's way for some kind of extra work.
             val kindOfDay = day.extraWork ?: rules.publicHolidayAs?.takeIf { holiday(day.date) && day.isWorkDay }
-            val rule = rules.extraRule(kindOfDay)
+            // [PAYX-11] The shift the extra work covered: a second shift, else the day's own.
+            val covered = (day.second?.type ?: day.shiftType?.takeIf { day.isWorkDay })
+            val perShift = kindOfDay?.let { k -> covered?.id?.let { rules.extraByShift[k]?.get(it) } }?.takeIf { it.basis != ExtraBasis.LEGAL }
+            val rule = rules.extraRule(kindOfDay, covered?.id)
             if (rule != null) {
                 val kind = kindOfDay!!
+                val name = rules.extraName(kind) + if (perShift != null) " · ${covered!!.name}" else ""
                 // A second shift on a working day can land inside the daily limit (탄력적 근로시간제),
                 // but it is still the extra work the rule pays for.
                 val extraMin = maxOf(ot + hw + ho, if (day.extraWork != null) day.extraMinutes else 0)
@@ -186,10 +192,10 @@ class PayCalculator(
                         money(ho, holidayBase + legal(rates.holidayPremiumOver8h))
                     if (!rule.nightPremium && m.worked > 0) n -= (m.night * extraMin.toDouble() / m.worked).roundToLong().toInt()
                     ot = 0; hw = 0; ho = 0
-                    extraTotals.getOrPut(kind) { ExtraTotal() }.apply {
+                    extraTotals.getOrPut(kind to perShift?.let { covered!!.id }) { ExtraTotal(rule, name) }.apply {
                         this.amount += amount; this.minutes += credited; times++; this.legal += legalAmount
                     }
-                    parts += DayPart(LineKind.EXTRA, kind.label, amount,
+                    parts += DayPart(LineKind.EXTRA, name, amount,
                         (if (rule.basis == ExtraBasis.TIERED) "${if (m.night * 2 >= m.worked && m.worked > 0) "야간" else "주간"} ${rule.describeTiers(m.night * 2 >= m.worked && m.worked > 0)}" else rule.describe()) +
                         if (credited > 0) " · ${hours(credited)}" else "")
                 }
@@ -199,7 +205,7 @@ class PayCalculator(
                 parts.add(0, DayPart(LineKind.BASE, "기본", money(m.regular, 1.0), "${hours(m.regular)} × ${won(hourly)}"))
             }
             if (ot > 0) parts += DayPart(LineKind.OVERTIME, "연장", money(ot, mOt), "${hours(ot)} × ${pct(mOt)}")
-            if (n > 0 && nightP > 0) parts += DayPart(LineKind.NIGHT, "야간 가산", money(n, nightP), "${hours(n)} × ${pct(nightP)}")
+            if (n > 0 && nightP > 0) parts += DayPart(LineKind.NIGHT, "야간 가산", money(n, nightP), "${hours(n)} × ${pct(nightP)} (${rules.nightLabel(rates)})")
             if (hw > 0) parts += DayPart(LineKind.HOLIDAY, "휴일", money(hw, mHw), "${hours(hw)} × ${pct(mHw)}")
             if (ho > 0) parts += DayPart(LineKind.HOLIDAY, "휴일 8시간 초과", money(ho, mHo), "${hours(ho)} × ${pct(mHo)}")
 
@@ -271,7 +277,7 @@ class PayCalculator(
         )
         if (night > 0 && nightP > 0) lines += line(
             LineKind.NIGHT, "야간근로 가산", night, hourly, nightP,
-            "22시~06시 근무에 더해 주는 가산분" + companyNote(rules.nightPremium != null), "근로기준법 제56조 제3항", baseEstimated,
+            "${rules.nightLabel(rates)} 근무에 더해 주는 가산분" + companyNote(rules.nightPremium != null || rules.hasNightWindow), "근로기준법 제56조 제3항", baseEstimated,
         )
         if (hWithin > 0) lines += line(
             LineKind.HOLIDAY, "휴일근로 (8시간 이내)", hWithin, hourly, mHw,
@@ -283,19 +289,20 @@ class PayCalculator(
             LineKind.HOLIDAY, "휴일근로 (8시간 초과)", hOver, hourly, mHo,
             "휴일 근무 8시간 넘는 부분" + companyNote(rules.holidayPremiumOver8h != null), "근로기준법 제56조 제2항 제2호", baseEstimated,
         )
-        for ((kind, t) in extraTotals) {
-            val rule = rules.extraRule(kind)!!
+        for ((key, t) in extraTotals) {
+            val rule = t.rule
+            val kindName = rules.extraName(key.first)
             lines += PayLine(
-                LineKind.EXTRA, "${kind.label} (회사 규칙)", t.amount,
+                LineKind.EXTRA, "${t.label} (회사 규칙)", t.amount,
                 formula = "${rule.describe()}: ${t.times}회" + (if (t.minutes > 0) ", ${hours(t.minutes)}" else ""),
                 minutes = t.minutes,
                 hourly = if (rule.basis == ExtraBasis.HOURLY_RATE) hourly else 0,
                 multiplier = if (rule.basis == ExtraBasis.HOURLY_RATE) rule.multiplier else 0.0,
-                basis = "달력에 ‘${kind.label}’로 표시한 날",
+                basis = "달력에 ‘$kindName’로 표시한 날",
                 estimated = baseEstimated && rule.basis == ExtraBasis.HOURLY_RATE,
             )
             if (premiums && t.amount < t.legal) {
-                warnings += "${kind.label}을 회사 방식으로 계산하면 ${won(t.amount)}인데 법정 기준으로는 ${won(t.legal)}이에요. " +
+                warnings += "${t.label}을 회사 방식으로 계산하면 ${won(t.amount)}인데 법정 기준으로는 ${won(t.legal)}이에요. " +
                     "법정보다 적게 받고 있다면 근로기준법 제56조 위반일 수 있어요"
             }
         }
@@ -316,13 +323,25 @@ class PayCalculator(
 
         for (item in profile.items) {
             if (item.cadence == Cadence.BONUS) {
-                if (month.monthValue !in item.months) continue
-                val paid = item.bonusPayment(base.value, month)
-                if (paid > 0) lines += PayLine(
-                    LineKind.ALLOWANCE, item.name, paid,
-                    formula = item.percentOfBase?.let { "기본급 ${won(base.value)} × ${pct(it)}" } ?: "정액 ${won(paid)}",
-                    basis = (if (item.ordinary) "통상임금에 포함 (연 ${item.months.size}회 ÷ 12)" else "통상임금 제외") +
-                        " · ${item.months.sorted().joinToString(",")}월 지급",
+                val times = item.timesIn(month)
+                if (times == 0) continue
+                val once = item.bonusPayment(base.value, month)
+                // [PAYX-10] Name the 명절 that falls this year so the moving month is explained.
+                val festivals = item.festivals.mapNotNull { f ->
+                    listOf(month.year, month.year + 1).firstNotNullOfOrNull { y ->
+                        f.date(y)?.takeIf { f.payMonth(y, item.festivalMonthBefore) == month }
+                    }?.let { "${f.label} ${it.monthValue}/${it.dayOfMonth}" }
+                }
+                val paidIn = listOfNotNull(
+                    item.months.sorted().takeIf { it.isNotEmpty() }?.joinToString(",")?.let { "${it}월" },
+                    festivals.takeIf { it.isNotEmpty() }?.joinToString("·")?.let { "$it ${if (item.festivalMonthBefore) "전 달" else "있는 달"}" },
+                ).joinToString(" · ")
+                if (once > 0) lines += PayLine(
+                    LineKind.ALLOWANCE, item.name, once * times,
+                    formula = (item.percentOfBase?.let { "기본급 ${won(base.value)} × ${pct(it)}" } ?: "정액 ${won(once)}") +
+                        if (times > 1) " × ${times}회" else "",
+                    basis = (if (item.ordinary) "통상임금에 포함 (연 ${item.timesInYear(month.year)}회 ÷ 12)" else "통상임금 제외") +
+                        " · $paidIn 지급",
                 )
                 continue
             }
@@ -376,6 +395,15 @@ class PayCalculator(
         val r = rules.overtimeRounding
         if (r.unit > 1 && r.rounding == Rounding.DOWN) {
             warnings += "연장 시간을 ${r.unit}분 단위로 버리고 있어요. 일한 시간보다 적게 계산되면 임금 체불이 될 수 있어요"
+        }
+
+        // [PAYX-12] A company window that leaves out part of 22~06 can pay less than the law.
+        if (premiums && rules.hasNightWindow) {
+            val legal = calculate(profile.copy(rules = rules.copy(nightStart = null, nightEnd = null)), month, resolve, isHoliday)
+            val legalNight = legal.lines.filter { it.kind == LineKind.NIGHT }.sumOf { it.amount }
+            val mine = lines.filter { it.kind == LineKind.NIGHT }.sumOf { it.amount }
+            if (legalNight > mine) warnings += "회사 야간 시간 ${rules.nightLabel(rates)}로 계산한 야간 가산 ${won(mine)}이 법정 22~06시 기준 " +
+                "${won(legalNight)}보다 적어요. 22~06시 근무에는 법정 야간 가산을 받아야 해요(근로기준법 제56조 제3항)"
         }
 
         // [PAYX-07] Scheduled hours over 8 a day are 연장 by law unless 탄력적 근로시간제 (제51조) is in

@@ -43,7 +43,9 @@ class MainActivity : ComponentActivity() {
                 onDispose { }
             }
             BamnatTheme(themeMode = settings.themeMode, dynamicColor = settings.dynamicColor) {
-                AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container)
+                androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.calendar.LocalExtraKinds provides settings.extraKinds) {
+                    AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container)
+                }
             }
         }
     }

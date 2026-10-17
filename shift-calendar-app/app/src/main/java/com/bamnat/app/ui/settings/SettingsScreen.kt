@@ -1,5 +1,8 @@
 package com.bamnat.app.ui.settings
 
+import com.bamnat.core.model.ExtraWork
+import androidx.compose.runtime.mutableStateOf
+
 import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -179,6 +182,7 @@ fun SettingsScreen(
     val upcoming by vm.upcoming.collectAsStateWithLifecycle()
     val snoozeAt by vm.snoozeAt.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var editingExtras by remember { mutableStateOf(false) }
 
     // Permission states can change in system settings; re-check whenever we come back.
     var refresh by remember { mutableIntStateOf(0) }
@@ -239,6 +243,14 @@ fun SettingsScreen(
             NavRow("근무 패턴", "교대 순서, 요일별 근무, 시작일", onOpenPattern)
             HorizontalDivider()
             NavRow("근무 유형", "이름, 시간, 색상, 근무별 알람", onOpenShiftTypes)
+            HorizontalDivider()
+            // [PAYX-09] Each company names and uses extra work its own way.
+            NavRow("잔업 · 특근 · 대근", ExtraWork.entries.filter { it !in settings.extraKinds.hidden }
+                .joinToString(" · ") { settings.extraKinds.name(it) } + " · 이름·시간 바꾸기") { editingExtras = true }
+        }
+        if (editingExtras) ExtraKindsDialog(settings.extraKinds, onDismiss = { editingExtras = false }) { k ->
+            vm.update { it.copy(extraKinds = k) }
+            editingExtras = false
         }
 
         SectionCard(title = "알람") {
@@ -428,6 +440,13 @@ fun SettingsScreen(
             }
             SwitchRow("음력 날짜 표시", "날짜 칸 아래에 음력(8.24)을 근무시간 대신 보여줘요", settings.showLunar) { v ->
                 vm.update { it.copy(showLunar = v) }
+            }
+            // [FEAT-17] For people who keep their days in notes.
+            SwitchRow("달력 아래 메모 보기", "이번 달 메모를 날짜순으로 짧게 보여줘요", settings.calendarMemos) { v ->
+                vm.update { it.copy(calendarMemos = v) }
+            }
+            SwitchRow("메모 중심으로 보기", "날짜를 누르면 메모가 맨 위에 나오고, 달력 칸에 메모 첫 글자가 보여요", settings.memoFirst) { v ->
+                vm.update { it.copy(memoFirst = v, calendarMemos = if (v) true else it.calendarMemos) }
             }
         }
 

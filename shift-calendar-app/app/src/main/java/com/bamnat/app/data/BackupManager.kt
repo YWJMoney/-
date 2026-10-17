@@ -120,7 +120,8 @@ class BackupManager(
                 .put("dynamicColor", s.dynamicColor).put("cellHours", s.showHoursInCells).put("lunar", s.showLunar)
                 .putOpt("sound", s.defaultAlarmSound).put("vibrate", s.vibrate).put("gradual", s.gradualVolume)
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmsOn", s.alarmsEnabled)
-                .putOpt("workStyle", s.workStyle?.name),
+                .putOpt("workStyle", s.workStyle?.name)
+                .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoFirst).put("calendarMemos", s.calendarMemos),
         )
         return root.toString(1)
     }
@@ -242,6 +243,9 @@ class BackupManager(
                     ringMinutes = o.optInt("ring", s.ringMinutes),
                     alarmsEnabled = o.optBoolean("alarmsOn", s.alarmsEnabled),
                     workStyle = o.optStringOrNull("workStyle")?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } } ?: s.workStyle,
+                    extraKinds = o.optStringOrNull("extraKinds")?.let { com.bamnat.core.model.ExtraKinds.decode(it) } ?: s.extraKinds,
+                    memoFirst = o.optBoolean("memoFirst", s.memoFirst),
+                    calendarMemos = o.optBoolean("calendarMemos", s.calendarMemos),
                 )
             }
         }

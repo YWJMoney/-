@@ -112,10 +112,10 @@ private enum class TopLevel(val route: String, val label: String, val icon: Imag
 
 private object Routes {
     const val SHIFT_TYPES = "shift_types"
-    const val PATTERN = "pattern?weekdays={weekdays}"
+    const val PATTERN = "pattern?weekdays={weekdays}&setup={setup}"
     const val WORK_STYLE = "work_style"
 
-    fun pattern(weekdays: Boolean = false) = "pattern?weekdays=$weekdays"
+    fun pattern(weekdays: Boolean = false, setup: Boolean = false) = "pattern?weekdays=$weekdays&setup=$setup"
     const val MEMO_TRASH = "memo_trash"
     const val DIAGNOSTICS = "diagnostics"
     const val PAY = "pay"
@@ -159,8 +159,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 container.telemetry.event("work_style", style.name)
                 if (style == WorkStyle.HOURLY) container.appScope.launch { container.scheduleRepository.addHourlyTypes() }
                 pendingRoute = when (style) {
-                    WorkStyle.SHIFT -> Routes.pattern()
-                    WorkStyle.DAY -> Routes.pattern(weekdays = true)
+                    // [PAYX-13] First setup goes on from the kind of work to its cycle, then to pay.
+                    WorkStyle.SHIFT -> Routes.pattern(setup = true)
+                    WorkStyle.DAY -> Routes.pattern(weekdays = true, setup = true)
                     WorkStyle.HOURLY -> Routes.PAY
                     WorkStyle.FIELD, WorkStyle.BUSINESS -> null
                 }
@@ -362,13 +363,22 @@ private fun AppNavHost(
         }
         composable(
             Routes.PATTERN,
-            arguments = listOf(navArgument("weekdays") { type = NavType.BoolType; defaultValue = false }),
+            arguments = listOf(
+                navArgument("weekdays") { type = NavType.BoolType; defaultValue = false },
+                navArgument("setup") { type = NavType.BoolType; defaultValue = false },
+            ),
         ) { entry ->
             val vm = appViewModel { ShiftsViewModel(it) }
+            val setup = entry.arguments?.getBoolean("setup") ?: false
             PatternScreen(
                 vm = vm,
                 startWeekdays = entry.arguments?.getBoolean("weekdays") ?: false,
+                setup = setup,
                 onBack = { nav.popFrom(Routes.PATTERN) },
+                // [PAYX-13] Right after the first cycle, the pay setup opens in its place.
+                onSaved = if (setup) ({
+                    nav.navigate(Routes.PAY) { popUpTo(Routes.PATTERN) { inclusive = true }; launchSingleTop = true }
+                }) else null,
                 onOpenShiftTypes = { nav.navigate(Routes.SHIFT_TYPES) { launchSingleTop = true } },
             )
         }

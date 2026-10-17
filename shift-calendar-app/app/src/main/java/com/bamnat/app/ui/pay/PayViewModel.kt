@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.app.pay.named
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
@@ -62,6 +64,7 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
     fun moveMonth(by: Long) { _month.value = _month.value.plusMonths(by) }
 
     private val calculator = PayCalculator()
+    val settings: StateFlow<com.bamnat.app.data.AppSettings> = container.settingsRepository.settings
 
     init { container.telemetry.event(DiagEvents.SCREEN, "pay") }
 
@@ -84,7 +87,7 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
         closed.value[month]?.total ?: calculate(profile, snapshot, month).total
 
     fun calculate(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): MonthPay =
-        calculator.calculate(profile, month, snapshot.resolver::resolve)
+        calculator.calculate(profile.named(settings.value.extraKinds), month, snapshot.resolver::resolve)
 
     /** A sample nurse profile on the user's own schedule, for the free preview and the first-time walkthrough. */
     fun sampleProfile(): PayProfile {
@@ -155,10 +158,15 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /** [PAY-05] A bonus paid in [months], a percent of 기본급 or a fixed amount. */
-    fun addBonus(name: String, months: Set<Int>, percentOfBase: Double?, amount: Long, ordinary: Boolean, from: YearMonth) = update { p ->
+    fun addBonus(
+        name: String, months: Set<Int>, percentOfBase: Double?, amount: Long, ordinary: Boolean, from: YearMonth,
+        festivals: Set<com.bamnat.core.pay.Festival> = emptySet(), festivalMonthBefore: Boolean = false,
+    ) = update { p ->
         val id = "bonus-" + System.currentTimeMillis()
-        p.copy(items = p.items + PayItem(id, name.trim().ifEmpty { "상여금" }, ValueTimeline(listOf(DatedValue(from.atDay(1), amount))),
-            Cadence.BONUS, ordinary = ordinary, months = months, percentOfBase = percentOfBase))
+        p.copy(items = p.items + PayItem(id, name.trim().ifEmpty { if (festivals.isNotEmpty()) "명절상여" else "상여금" },
+            ValueTimeline(listOf(DatedValue(from.atDay(1), amount))),
+            Cadence.BONUS, ordinary = ordinary, months = months, percentOfBase = percentOfBase,
+            festivals = festivals, festivalMonthBefore = festivalMonthBefore))
     }
 
     fun removeItem(id: String) = update { p -> p.copy(items = p.items.filterNot { it.id == id }) }

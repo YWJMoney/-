@@ -127,6 +127,13 @@ fun CalendarScreen(
     val paint by vm.paint.collectAsStateWithLifecycle()
     val memoDates by vm.memoDates.collectAsStateWithLifecycle()
     val moneyBook by vm.moneyBook.collectAsStateWithLifecycle()
+    val datedMemos by vm.datedMemos.collectAsStateWithLifecycle()
+    // [FEAT-17] Memo-first cells show the start of the day's first memo.
+    val memoTexts = remember(datedMemos, settings.memoFirst) {
+        if (!settings.memoFirst) emptyMap()
+        else datedMemos.groupBy { it.date!! }.mapValues { (_, l) -> l.first().let { m -> m.title.ifBlank { m.preview } }.trim().take(4) }
+            .filterValues { it.isNotEmpty() }
+    }
     var quickMoney by remember { mutableStateOf(false) }
 
     // Re-read the date every minute so "today" moves at midnight while the app is open.
@@ -217,6 +224,20 @@ fun CalendarScreen(
         onDismiss = { showShare = false },
     )
 
+    val memoPart: @Composable () -> Unit = {
+        if (settings.calendarMemos) {
+            Spacer(Modifier.height(12.dp))
+            MonthMemoCard(
+                month = visibleMonth,
+                memos = remember(datedMemos, visibleMonth) { datedMemos.filter { YearMonth.from(it.date!!) == visibleMonth } },
+                memoFirst = settings.memoFirst,
+                onOpen = onOpenMemo,
+                onNew = { onNewMemo(if (YearMonth.from(selected) == visibleMonth) selected else visibleMonth.atDay(1)) },
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        }
+    }
+
     val calendarPart: @Composable () -> Unit = {
         CalendarHeader(
             month = visibleMonth,
@@ -272,9 +293,12 @@ fun CalendarScreen(
                     onQuickAction = onQuickAction,
                     money = moneyBook,
                     showMoney = settings.workStyle?.usesPayEngine == false,
+                    memoTexts = memoTexts,
                 )
             }
         }
+        // [FEAT-17] Memo-first puts the month's memos right under the grid.
+        if (settings.memoFirst) memoPart()
         Spacer(Modifier.height(12.dp))
         val moneyFirst = settings.workStyle?.usesPayEngine == false
         if (!wide) {
@@ -282,6 +306,7 @@ fun CalendarScreen(
                 day = snap.resolver.resolve(selected),
                 isToday = selected == today,
                 memoCount = if (selected in memoDates) 1 else 0,
+                memoPreview = remember(datedMemos, selected) { datedMemos.firstOrNull { it.date == selected }?.let { it.title.ifBlank { it.preview } } },
                 onOpen = { sheetOpen = true },
                 modifier = Modifier.padding(horizontal = 16.dp),
                 money = if (moneyFirst) remember(moneyBook, selected) { moneyBook.on(selected) } else null,
@@ -306,6 +331,7 @@ fun CalendarScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
         }
+        if (!settings.memoFirst) memoPart()
     }
 
     val detailPart: @Composable () -> Unit = {
@@ -443,7 +469,7 @@ private fun MonthShiftCounts(snapshot: ScheduleSnapshot, month: YearMonth, modif
         for ((kind, n) in counts.second) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ExtraWorkMark(kind, size = 18.dp)
-                Text(" ${kind.label} $n", style = MaterialTheme.typography.labelLarge.merge(NumberStyle))
+                Text(" ${LocalExtraKinds.current.name(kind)} $n", style = MaterialTheme.typography.labelLarge.merge(NumberStyle))
             }
         }
     }
@@ -459,9 +485,10 @@ private fun SelectedDayCard(
     modifier: Modifier = Modifier,
     /** [WORK-02][WORK-03] Set for field and shop work: the card shows the day's money instead of a shift. */
     money: com.bamnat.core.money.DayBook? = null,
+    memoPreview: String? = null,
 ) {
     if (money != null) {
-        MoneyDayCard(day.date, isToday, money, memoCount, onOpen, modifier)
+        MoneyDayCard(day.date, isToday, money, memoCount, onOpen, modifier, memoPreview)
         return
     }
     Surface(
@@ -487,9 +514,9 @@ private fun SelectedDayCard(
                         if (day.isWorkDay && start != null && end != null) "${type?.name ?: "근무"} ${Fmt.time(start)}–${Fmt.time(end)}"
                         else type?.name ?: "쉬는 날",
                     )
-                    day.extraWork?.let { add(it.label) }
+                    day.extraWork?.let { add(LocalExtraKinds.current.name(it)) }
                     if (day.extraMinutes > 0) add("+" + HoursFormat.short(day.extraMinutes))
-                    if (memoCount > 0) add("메모 있음")
+                    if (memoCount > 0) add(memoPreview?.takeIf { it.isNotBlank() }?.let { "메모: $it" } ?: "메모 있음")
                 }
                 Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -508,6 +535,7 @@ private fun MoneyDayCard(
     memoCount: Int,
     onOpen: () -> Unit,
     modifier: Modifier,
+    memoPreview: String? = null,
 ) {
     Surface(
         onClick = onOpen,
@@ -526,7 +554,7 @@ private fun MoneyDayCard(
                     day.sales?.let { add("매출 ${Fmt.won(it.sales)}") }
                     val spent = day.entries.filter { it.kind == com.bamnat.core.money.MoneyKind.EXPENSE }.sumOf { it.amount }
                     if (spent > 0) add("지출 ${Fmt.won(spent)}")
-                    if (memoCount > 0) add("메모 있음")
+                    if (memoCount > 0) add(memoPreview?.takeIf { it.isNotBlank() }?.let { "메모: $it" } ?: "메모 있음")
                     if (isEmpty()) add("기록 없음 · 눌러서 적기")
                 }
                 Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodyMedium,
@@ -778,3 +806,72 @@ private fun MonthPickerDialog(initial: YearMonth, onDismiss: () -> Unit, onPick:
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }
+
+/**
+ * [FEAT-17] This month's memos in short under the calendar, for people who plan by their notes:
+ * the date, then the title or first line. Tapping one opens it.
+ */
+@Composable
+private fun MonthMemoCard(
+    month: YearMonth,
+    memos: List<com.bamnat.core.memo.Memo>,
+    memoFirst: Boolean,
+    onOpen: (Long) -> Unit,
+    onNew: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (memos.isEmpty() && !memoFirst) return
+    var all by remember(month) { mutableStateOf(false) }
+    val shown = if (all) memos else memos.take(MEMO_PREVIEW_ROWS)
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(vertical = 8.dp)) {
+            Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("${month.monthValue}월 메모" + if (memos.isNotEmpty()) " ${memos.size}" else "",
+                    style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                androidx.compose.material3.TextButton(onClick = onNew) { Text("메모 쓰기") }
+            }
+            if (memos.isEmpty()) {
+                Text("이번 달 메모가 없어요. 날짜를 누르고 메모를 쓰면 여기 모여요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            }
+            for (m in shown) {
+                val d = m.date!!
+                Row(
+                    Modifier.fillMaxWidth().clickable { onOpen(m.id) }.padding(horizontal = 16.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "${d.dayOfMonth}일 ${d.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.KOREAN)}",
+                        style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.width(56.dp),
+                    )
+                    Column(Modifier.weight(1f)) {
+                        val title = m.title.ifBlank { m.preview }
+                        Text(title.ifBlank { "빈 메모" }, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val rest = if (m.title.isNotBlank()) m.preview else ""
+                        if (rest.isNotBlank()) Text(rest, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (m.isChecklist && m.itemCount > 0) {
+                        Text("${m.checkedCount}/${m.itemCount}", style = MaterialTheme.typography.labelMedium.merge(NumberStyle),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            if (memos.size > MEMO_PREVIEW_ROWS) {
+                androidx.compose.material3.TextButton(onClick = { all = !all }, modifier = Modifier.padding(start = 4.dp)) {
+                    Text(if (all) "접기" else "${memos.size - MEMO_PREVIEW_ROWS}개 더 보기")
+                }
+            }
+        }
+    }
+}
+
+private const val MEMO_PREVIEW_ROWS = 4

@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import com.bamnat.app.tier.Tier
 import com.bamnat.core.hours.HourLimits
 import com.bamnat.core.work.WorkStyle
+import com.bamnat.core.model.ExtraKinds
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,6 +43,12 @@ data class AppSettings(
     val tier: Tier = Tier.FREE,
     /** [WORK-01] How the user works; null until chosen on first launch. */
     val workStyle: WorkStyle? = null,
+    /** [PAYX-09] The company's own names, shown kinds and hours for 잔업·특근·대근. */
+    val extraKinds: ExtraKinds = ExtraKinds(),
+    /** [FEAT-17] Memos come first in the day view, for people who live by their notes. */
+    val memoFirst: Boolean = false,
+    /** [FEAT-17] The month's memos in short under the calendar. */
+    val calendarMemos: Boolean = true,
 ) {
     val limits: HourLimits get() = HourLimits(weeklyLimitHours, averageLimitHours)
 
@@ -103,6 +110,9 @@ class SettingsRepository(context: Context) {
             shareUsageStats = prefs.getBoolean(K_SHARE_STATS, d.shareUsageStats),
             tier = runCatching { Tier.valueOf(prefs.getString(K_TIER, null) ?: "") }.getOrDefault(d.tier),
             workStyle = prefs.getString(K_WORK_STYLE, null)?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } },
+            extraKinds = ExtraKinds.decode(prefs.getString(K_EXTRA_KINDS, null)),
+            memoFirst = prefs.getBoolean(K_MEMO_FIRST, d.memoFirst),
+            calendarMemos = prefs.getBoolean(K_CAL_MEMOS, d.calendarMemos),
         )
     }
 
@@ -128,6 +138,9 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SHARE_STATS, s.shareUsageStats)
             .putString(K_TIER, s.tier.name)
             .putString(K_WORK_STYLE, s.workStyle?.name)
+            .putString(K_EXTRA_KINDS, s.extraKinds.encode())
+            .putBoolean(K_MEMO_FIRST, s.memoFirst)
+            .putBoolean(K_CAL_MEMOS, s.calendarMemos)
             .apply()
     }
 
@@ -152,5 +165,8 @@ class SettingsRepository(context: Context) {
         const val K_SHARE_STATS = "share_usage_stats"
         const val K_TIER = "tier"
         const val K_WORK_STYLE = "work_style"
+        const val K_EXTRA_KINDS = "extra_kinds"
+        const val K_MEMO_FIRST = "memo_first"
+        const val K_CAL_MEMOS = "calendar_memos"
     }
 }

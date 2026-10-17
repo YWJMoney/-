@@ -126,3 +126,44 @@ data class Leave(val kind: LeaveKind = LeaveKind.ANNUAL, val quarters: Int = 4) 
         }
     }
 }
+
+/**
+ * [PAYX-09] How this person's company names and uses 잔업·특근·대근: its own word for each kind
+ * (조출, 철야, 대체근무 …), which kinds appear when marking a day, and the hours a tap fills in.
+ */
+data class ExtraKinds(
+    val names: Map<ExtraWork, String> = emptyMap(),
+    val hidden: Set<ExtraWork> = emptySet(),
+    /** Minutes a tap fills in on a working day; missing kinds use [DEFAULT_WORK_DAY_MINUTES]. */
+    val minutes: Map<ExtraWork, Int> = emptyMap(),
+) {
+    fun name(kind: ExtraWork): String = names[kind]?.trim()?.takeIf { it.isNotEmpty() } ?: kind.label
+    fun short(kind: ExtraWork): String = name(kind).take(1)
+    /** Kinds shown when marking a day; a kind already on a day is shown anyway so it can be cleared. */
+    fun visible(current: ExtraWork? = null): List<ExtraWork> = ExtraWork.entries.filter { it !in hidden || it == current }
+    fun minutesFor(kind: ExtraWork, workDay: Boolean): Int =
+        minutes[kind] ?: if (workDay) DEFAULT_WORK_DAY_MINUTES else DEFAULT_OFF_DAY_MINUTES
+
+    /** Plain text for storage: kind|name|hidden|minutes per line. */
+    fun encode(): String = ExtraWork.entries.joinToString("\n") { k ->
+        listOf(k.name, (names[k] ?: "").replace("|", " ").replace("\n", " "), if (k in hidden) "1" else "0", minutes[k]?.toString() ?: "").joinToString("|")
+    }
+
+    companion object {
+        const val DEFAULT_WORK_DAY_MINUTES = 2 * 60
+        const val DEFAULT_OFF_DAY_MINUTES = 8 * 60
+
+        fun decode(text: String?): ExtraKinds {
+            if (text.isNullOrBlank()) return ExtraKinds()
+            val names = HashMap<ExtraWork, String>(); val hidden = HashSet<ExtraWork>(); val minutes = HashMap<ExtraWork, Int>()
+            for (line in text.lines()) {
+                val f = line.split('|')
+                val k = ExtraWork.entries.firstOrNull { it.name == f.getOrNull(0) } ?: continue
+                f.getOrNull(1)?.takeIf { it.isNotBlank() }?.let { names[k] = it }
+                if (f.getOrNull(2) == "1") hidden += k
+                f.getOrNull(3)?.toIntOrNull()?.takeIf { it > 0 }?.let { minutes[k] = it }
+            }
+            return ExtraKinds(names, hidden, minutes)
+        }
+    }
+}

@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.pay.named
+
 import com.bamnat.core.model.DayAlarm
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import com.bamnat.core.model.ExtraWork
@@ -62,7 +65,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private val payCalculator = PayCalculator()
 
     fun dayPay(profile: PayProfile, snapshot: ScheduleSnapshot, date: LocalDate): DayPay? =
-        payCalculator.calculate(profile, YearMonth.from(date), snapshot.resolver::resolve).day(date)
+        payCalculator.calculate(profile.named(container.settingsRepository.current.extraKinds), YearMonth.from(date), snapshot.resolver::resolve).day(date)
 
     private val _selected = MutableStateFlow(LocalDate.now())
     val selected: StateFlow<LocalDate> = _selected.asStateFlow()
@@ -74,6 +77,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     val messages: SharedFlow<UndoMessage> = _messages.asSharedFlow()
 
     fun memosOn(date: LocalDate): Flow<List<Memo>> = memoRepo.memosOn(date)
+
+    /** [FEAT-17] Memos that belong to a date, for the list under the calendar and memo-first cells. */
+    val datedMemos: StateFlow<List<Memo>> = memoRepo.memos
+        .map { list -> list.filter { it.date != null && !it.inTrash && !it.isBlank }.sortedWith(compareBy({ it.date }, { -it.updatedAtMillis })) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun logShare() = container.telemetry.event("share_month_image")
 
