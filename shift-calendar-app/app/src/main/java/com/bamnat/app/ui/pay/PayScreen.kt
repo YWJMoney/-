@@ -83,6 +83,7 @@ import com.bamnat.core.pay.MonthPay
 import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayLine
 import com.bamnat.core.pay.PayProfile
+import com.bamnat.core.pay.RestDayWork
 import com.bamnat.core.pay.ValueSource
 import com.bamnat.core.pay.WageType
 import java.time.YearMonth
@@ -97,6 +98,7 @@ internal fun kindColor(kind: LineKind): Color = when (kind) {
     LineKind.NIGHT -> Color(0xFF6741D9)
     LineKind.HOLIDAY -> Color(0xFFE03131)
     LineKind.EXTRA -> Color(0xFFD6336C)
+    LineKind.EXTRA_HOURS -> Color(0xFF1C7ED6)
     LineKind.ALLOWANCE -> Color(0xFF2F9E44)
     LineKind.LEAVE -> Color(0xFF7048E8)
 }
@@ -107,7 +109,7 @@ internal fun kindColor(kind: LineKind): Color = when (kind) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PayScreen(vm: PayViewModel, onBack: () -> Unit) {
+fun PayScreen(vm: PayViewModel, onBack: () -> Unit, onOpenExtraKinds: () -> Unit = {}) {
     val profile by vm.profile.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val tier by vm.tier.collectAsStateWithLifecycle()
@@ -151,7 +153,7 @@ fun PayScreen(vm: PayViewModel, onBack: () -> Unit) {
                 )
                 editingRules -> {
                     val month by vm.month.collectAsStateWithLifecycle()
-                    CompanyRulesEditor(vm, profile!!, snap, month, onClose = { editingRules = false })
+                    CompanyRulesEditor(vm, profile!!, snap, month, onClose = { editingRules = false }, onOpenKinds = onOpenExtraKinds)
                 }
                 else -> PayResult(vm, profile!!, snap, tier, onEditSetup = { editingSetup = true }, onEditRules = { editingRules = true })
             }
@@ -207,6 +209,12 @@ private fun PayResult(
 
         if (!unlocked) {
             LockedCard()
+        }
+
+        // [EXTRA-05] 1.8 paid a day off as 휴일근로; the law's way is shown next to it once.
+        val settings by vm.settings.collectAsStateWithLifecycle()
+        if (unlocked && closedSnap == null && profile.rules.restDayWork == RestDayWork.HOLIDAY && !settings.restDayCompared) {
+            RestDayCompare(vm, profile, snapshot, month, result.total)
         }
 
         if (walkthrough && unlocked) {
@@ -633,7 +641,7 @@ private fun DayLedger(result: MonthPay, unlocked: Boolean) {
                         color = if (d.holidayName != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.width(76.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(listOfNotNull(d.label, d.extraWork?.let(com.bamnat.app.ui.calendar.LocalExtraKinds.current::name), d.holidayName).joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+                        Text(listOfNotNull(d.label, d.holidayName).joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             d.parts.map { it.kind }.distinct().forEach { k ->
                                 Box(Modifier.padding(top = 3.dp).size(8.dp).clip(RoundedCornerShape(2.dp)).background(kindColor(k)))
@@ -655,6 +663,52 @@ private fun DayLedger(result: MonthPay, unlocked: Boolean) {
         }
         if (days.size > 6) {
             TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "접기" else "${days.size - 6}일 더 보기") }
+        }
+    }
+}
+
+/**
+ * [EXTRA-05] Work on a day off the way 1.8 paid it (휴일근로) next to the law's (휴무일: 8·40시간 안 100%),
+ * shown once when the month differs. The user keeps their way or moves to the law's; either is final.
+ */
+@Composable
+private fun RestDayCompare(vm: PayViewModel, profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth, now: Long) {
+    val law = remember(profile, snapshot, month) {
+        vm.calculate(profile.copy(rules = profile.rules.copy(restDayWork = RestDayWork.LAW)), snapshot, month).total
+    }
+    if (law == now) return
+    androidx.compose.material3.Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("쉬는 날 근무, 법대로와 비교해 보세요", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "지금은 예전처럼 쉬는 날 근무를 휴일근로(8시간까지 150%)로 계산해요. 법으로 휴무일 근무는 하루 8시간·주 40시간 " +
+                    "안이면 100%, 넘는 시간만 150%예요(근로기준법 제50조·제56조).",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("지금 방식", style = MaterialTheme.typography.labelMedium)
+                    Text(won(now), style = MaterialTheme.typography.titleMedium)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("법대로", style = MaterialTheme.typography.labelMedium)
+                    Text(won(law), style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            Text("${Fmt.monthShort(month)} 차이 ${won(kotlin.math.abs(now - law))}. 취업규칙이나 명세서에 휴일근로로 준다고 되어 있으면 그대로 두세요.",
+                style = MaterialTheme.typography.bodySmall)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                TextButton(onClick = vm::restDayCompared) { Text("지금대로 두기") }
+                Button(onClick = {
+                    vm.updateRules { it.copy(restDayWork = RestDayWork.LAW) }
+                    vm.restDayCompared()
+                }) { Text("법대로 바꾸기") }
+            }
         }
     }
 }

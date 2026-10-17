@@ -122,7 +122,7 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit) {
                         alarmEnabled = true, alarms = listOf(AlarmSpec(60)),
                     )
                 },
-                icon = { Icon(Icons.Filled.Add, null) },
+                icon = { Icon(Icons.Filled.Add, "근무 추가") },
                 text = { Text("근무 추가") },
             )
         },

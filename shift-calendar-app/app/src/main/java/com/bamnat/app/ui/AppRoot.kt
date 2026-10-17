@@ -83,6 +83,8 @@ import com.bamnat.app.ui.memo.MemoListScreen
 import com.bamnat.app.ui.memo.MemoListViewModel
 import com.bamnat.app.ui.memo.MemoTrashScreen
 import com.bamnat.app.ui.memo.MemoTrashViewModel
+import com.bamnat.app.ui.settings.ExtraKindsScreen
+import com.bamnat.app.ui.settings.ExtraKindsViewModel
 import com.bamnat.app.ui.settings.SettingsScreen
 import com.bamnat.app.ui.settings.SettingsViewModel
 import com.bamnat.app.ui.shifts.PatternScreen
@@ -119,6 +121,7 @@ private object Routes {
     const val MEMO_TRASH = "memo_trash"
     const val DIAGNOSTICS = "diagnostics"
     const val PAY = "pay"
+    const val EXTRA_KINDS = "extra_kinds"
     const val MEMO = "memo/{id}?date={date}&checklist={checklist}"
 
     fun memo(id: Long, date: LocalDate? = null, checklist: Boolean = false) =
@@ -310,6 +313,7 @@ private fun AppNavHost(
                 onOpenMoney = { nav.navigateTopLevel(TopLevel.MONEY.route) },
                 onOpenPay = { nav.navigate(Routes.PAY) { launchSingleTop = true } },
                 onOpenSettings = { nav.navigateTopLevel(TopLevel.SETTINGS.route) },
+                onOpenExtraKinds = { nav.navigate(Routes.EXTRA_KINDS) { launchSingleTop = true } },
             )
         }
         composable(TopLevel.MONEY.route) {
@@ -349,11 +353,20 @@ private fun AppNavHost(
                 onOpenPattern = { nav.navigate(Routes.pattern()) { launchSingleTop = true } },
                 onOpenDiagnostics = { nav.navigate(Routes.DIAGNOSTICS) { launchSingleTop = true } },
                 onOpenWorkStyle = { nav.navigate(Routes.WORK_STYLE) { launchSingleTop = true } },
+                onOpenExtraKinds = { nav.navigate(Routes.EXTRA_KINDS) { launchSingleTop = true } },
             )
         }
         composable(Routes.PAY) {
             val vm = appViewModel { PayViewModel(it) }
-            PayScreen(vm = vm, onBack = { nav.popFrom(Routes.PAY) })
+            PayScreen(vm = vm, onBack = { nav.popFrom(Routes.PAY) },
+                onOpenExtraKinds = { nav.navigate(Routes.EXTRA_KINDS) { launchSingleTop = true } })
+        }
+        // [EXTRA-04] Names, hours and pay of each kind of extra work, from settings, a day or the pay rules.
+        composable(Routes.EXTRA_KINDS) {
+            val vm = appViewModel { ExtraKindsViewModel(it) }
+            ExtraKindsScreen(vm = vm, onBack = { nav.popFrom(Routes.EXTRA_KINDS) },
+                // Back to the pay screen when it opened this one, so the stack does not grow.
+                onOpenPay = { if (!nav.popBackStack(Routes.PAY, inclusive = false)) nav.navigate(Routes.PAY) { launchSingleTop = true } })
         }
         composable(Routes.DIAGNOSTICS) {
             val vm = appViewModel { DiagnosticsViewModel(it) }

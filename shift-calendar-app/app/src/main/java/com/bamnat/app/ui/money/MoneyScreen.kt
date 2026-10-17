@@ -265,7 +265,7 @@ fun MoneyScreen(
         }
         ExtendedFloatingActionButton(
             onClick = { adding = true },
-            icon = { Icon(Icons.Filled.Add, null) },
+            icon = { Icon(Icons.Filled.Add, "돈 적기") },
             text = { Text("돈 적기") },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
         )

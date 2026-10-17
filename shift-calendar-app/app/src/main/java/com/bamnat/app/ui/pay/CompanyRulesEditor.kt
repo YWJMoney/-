@@ -11,7 +11,22 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.Fmt
+import com.bamnat.app.ui.calendar.ExtraKindMark
+import java.time.DayOfWeek
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -21,12 +36,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,19 +51,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.components.SectionCard
-import com.bamnat.core.model.ExtraWork
 import com.bamnat.core.pay.CompanyRules
 import com.bamnat.core.pay.ExtraBasis
 import com.bamnat.core.pay.ExtraRule
 import com.bamnat.core.pay.HolidayPayMode
 import com.bamnat.core.pay.MinuteRounding
-import com.bamnat.core.pay.OffDayWork
+import com.bamnat.core.pay.RestDayWork
+import com.bamnat.core.pay.WeeklyHoliday
 import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.Rounding
 import com.bamnat.core.pay.WageType
 import com.bamnat.core.pay.StandardHours
-import com.bamnat.core.pay.Tier
 import com.bamnat.core.hours.HoursFormat
 import java.time.Instant
 import java.time.LocalDate
@@ -69,6 +81,7 @@ fun CompanyRulesEditor(
     snapshot: ScheduleSnapshot,
     month: YearMonth,
     onClose: () -> Unit,
+    onOpenKinds: () -> Unit,
 ) {
     var draft by remember { mutableStateOf(saved) }
     val kinds = com.bamnat.app.ui.calendar.LocalExtraKinds.current
@@ -112,6 +125,11 @@ fun CompanyRulesEditor(
             SectionCard(title = "기본") {
                 Toggle("5인 이상 사업장", "아니면 법정 가산이 없어요. 회사가 주는 가산은 아래에서 따로 넣어요", draft.fiveOrMoreEmployees) {
                     draft = draft.copy(fiveOrMoreEmployees = it)
+                }
+                if (!draft.fiveOrMoreEmployees) {
+                    // [EXTRA-02] 근로기준법 시행령 제7조 별표 1: these do not apply under five employees.
+                    Hint("5인 미만 사업장은 연장·야간·휴일 가산, 주 40시간·52시간, 연차가 법으로 정해져 있지 않아요(근로기준법 시행령 제7조 별표 1). " +
+                        "회사가 주는 가산이 있으면 아래 가산율에서 골라 주세요.")
                 }
                 Toggle("근무표 시간은 모두 기본 근무", "12시간 교대처럼 근무표대로 일한 시간이 기본급에 들어 있으면 켜 주세요. 잔업으로 적은 시간만 연장이 돼요",
                     draft.scheduleIsRegular) {
@@ -212,16 +230,40 @@ fun CompanyRulesEditor(
             }
 
             SectionCard(title = "쉬는 날과 공휴일") {
-                Label("쉬는 날(휴무)에 일하면")
-                OffDayWork.entries.forEach { mode ->
-                    Row(Modifier.fillMaxWidth().clickable { setRules(rules.copy(offDayWork = mode)) }, verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = rules.offDayWork == mode, onClick = { setRules(rules.copy(offDayWork = mode)) })
+                // [EXTRA-02] 휴무일 work is not 휴일근로 by law; the company may still pay it so.
+                Label("쉬는 날(휴무일)에 일하면")
+                RestDayWork.entries.forEach { mode ->
+                    val selected = rules.restDayWork == mode
+                    Row(
+                        Modifier.fillMaxWidth().selectable(selected = selected, role = Role.RadioButton) { setRules(rules.copy(restDayWork = mode)) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = selected, onClick = null)
+                        Spacer(Modifier.width(12.dp))
                         Column {
-                            Text(mode.label, style = MaterialTheme.typography.bodyLarge)
+                            Text(mode.label + if (mode == RestDayWork.LAW) " (근로기준법)" else "", style = MaterialTheme.typography.bodyLarge)
                             Text(mode.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
+                Hint("법으로 휴무일 근무는 휴일근로가 아니에요. 하루 8시간·주 40시간을 넘는 시간만 연장이에요(근로기준법 제50조·제56조). " +
+                    "취업규칙에 휴일근로로 준다고 되어 있으면 바꿔 주세요.")
+                Label("주휴일 (일주일에 한 번 쉬는 유급 휴일)")
+                val fixed = rules.weeklyHoliday as? WeeklyHoliday.Fixed
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = rules.weeklyHoliday == WeeklyHoliday.Unknown,
+                        onClick = { setRules(rules.copy(weeklyHoliday = WeeklyHoliday.Unknown)) }, label = { Text("정해지지 않음") })
+                    FilterChip(selected = rules.weeklyHoliday == WeeklyHoliday.FirstRestDay,
+                        onClick = { setRules(rules.copy(weeklyHoliday = WeeklyHoliday.FirstRestDay)) }, label = { Text("주마다 첫 쉬는 날") })
+                    // A company that fixes the day mostly fixes Sunday; the days below change it.
+                    FilterChip(selected = fixed != null,
+                        onClick = { if (fixed == null) setRules(rules.copy(weeklyHoliday = WeeklyHoliday.Fixed(DayOfWeek.SUNDAY))) },
+                        label = { Text("요일로 정하기") })
+                }
+                if (fixed != null) WeekdayPicker(fixed.day) { setRules(rules.copy(weeklyHoliday = WeeklyHoliday.Fixed(it))) }
+                Hint("주휴일에 일하면 위 방식과 상관없이 휴일근로예요(근로기준법 제55조). 교대 근무는 따로 정하지 않은 곳이 많아요. " +
+                    "모르면 ‘정해지지 않음’으로 두면 쉬는 날을 모두 휴무일로 계산해요.")
                 Toggle("공휴일 근무는 휴일근로", "근무표에서 공휴일을 다른 날로 바꿔 주는 회사(휴일 대체)라면 꺼 주세요", rules.publicHolidaysPaid) {
                     setRules(rules.copy(publicHolidaysPaid = it))
                 }
@@ -231,13 +273,13 @@ fun CompanyRulesEditor(
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         FilterChip(selected = rules.publicHolidayAs == null, onClick = { setRules(rules.copy(publicHolidayAs = null)) },
                             label = { Text("법정 휴일근로") })
-                        listOf(ExtraWork.COVER, ExtraWork.SPECIAL).forEach { k ->
-                            FilterChip(selected = rules.publicHolidayAs == k, onClick = { setRules(rules.copy(publicHolidayAs = k)) },
-                                label = { Text("${kinds.name(k)}처럼 계산") })
+                        kinds.visible(listOfNotNull(rules.publicHolidayAs)).forEach { k ->
+                            FilterChip(selected = rules.publicHolidayAs == k.id, onClick = { setRules(rules.copy(publicHolidayAs = k.id)) },
+                                label = { Text("${k.name}처럼 계산") }, leadingIcon = { ExtraKindMark(k, size = 18.dp) })
                         }
                     }
-                    if (rules.publicHolidayAs != null && rules.extraRule(rules.publicHolidayAs) == null) {
-                        Hint("아래 ‘${kinds.name(rules.publicHolidayAs!!)}’ 계산 방식을 정해 주세요. 정하지 않으면 법정대로 계산해요.")
+                    rules.publicHolidayAs?.let { id ->
+                        if (rules.extraRule(id) == null) Hint("‘${kinds.name(id)}’ 급여 방식이 법대로라 공휴일도 법정대로 계산해요. 아래에서 방식을 정해 주세요.")
                     }
                     // [PAYX-14] Overnight shifts across a holiday: by the clock unless the company says otherwise.
                     Toggle("밤샘 근무는 시작한 날로 휴일 판단", "끄면 공휴일 0시~24시에 일한 시간만 휴일근로예요. 회사가 근무 시작일로 정하면 켜 주세요", rules.holidayByShiftStart) {
@@ -259,17 +301,22 @@ fun CompanyRulesEditor(
                 }
             }
 
-            SectionCard(title = kinds.visible().joinToString(" · ") { kinds.name(it) }) {
-                Hint("달력에서 날짜를 누르고 ‘${kinds.visible().joinToString("·") { kinds.name(it) }}’로 표시한 날에 적용돼요. 이름과 쓰는 종류는 설정 → 근무에서 바꿔요.")
-                val shiftTypes = remember(snapshot) { snapshot.shiftTypes.filter { !it.isOff && it.hasTimes } }
-                kinds.visible(rules.publicHolidayAs).forEachIndexed { i, kind ->
-                    if (i > 0) HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                    ExtraRuleEditor(kinds.name(kind), kind, rules.extra[kind] ?: ExtraRule()) { r ->
-                        setRules(rules.copy(extra = if (r.basis == ExtraBasis.LEGAL) rules.extra - kind else rules.extra + (kind to r)))
+            // [EXTRA-04] How each kind is paid lives with its times on one screen; here is what it says.
+            SectionCard(title = "잔업 · 특근 · 대근") {
+                kinds.visible(rules.extra.keys + rules.extraByShift.keys).forEach { k ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                        ExtraKindMark(k, size = 22.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(k.name, style = MaterialTheme.typography.bodyLarge)
+                            Text(rules.payText(k.id), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
-                    // [PAYX-11] A different way for each shift the extra work covered, e.g. 나이트 대근 1회 10만원.
-                    if (shiftTypes.isNotEmpty()) PerShiftRules(kinds.name(kind), kind, shiftTypes, rules) { setRules(it) }
                 }
+                OutlinedButton(onClick = { if (draft != saved) vm.update { draft }; onOpenKinds() }, modifier = Modifier.padding(top = 4.dp)) {
+                    Text("종류·시간·급여 방식 정하기")
+                }
+                Hint("대근 1회 기본급의 10%처럼 회사 방식이 있으면 종류마다 정해요." + if (draft != saved) " 여기서 바꾼 내용은 저장하고 넘어가요." else "")
             }
 
             SectionCard(title = "연장 시간 끝자리") {
@@ -367,80 +414,6 @@ fun CompanyRulesEditor(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ExtraRuleEditor(title: String, kind: ExtraWork, rule: ExtraRule, onChange: (ExtraRule) -> Unit) {
-    Text(title, style = MaterialTheme.typography.titleSmall)
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        ExtraBasis.entries.forEach { b ->
-            FilterChip(selected = rule.basis == b, onClick = {
-                // Tiers usually already price the night hours, so the separate night premium starts off.
-                onChange(rule.copy(basis = b, nightPremium = if (b == ExtraBasis.TIERED) false else rule.nightPremium))
-            }, label = { Text(b.label) })
-        }
-    }
-    when (rule.basis) {
-        ExtraBasis.LEGAL -> Hint(
-            when (kind) {
-                ExtraWork.OVERTIME -> "근무 뒤에 더 일한 시간을 연장(150%)으로 계산해요."
-                else -> "쉬는 날이면 위의 ‘쉬는 날’ 규칙대로, 근무일이면 연장으로 계산해요."
-            },
-        )
-        ExtraBasis.HOURLY_RATE -> {
-            Label("통상시급의")
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(1.0, 1.5, 2.0, 2.5, 3.0).forEach { m ->
-                    FilterChip(selected = rule.multiplier == m, onClick = { onChange(rule.copy(multiplier = m)) },
-                        label = { Text(PayCalculator.pct(m)) })
-                }
-            }
-        }
-        ExtraBasis.TIERED -> {
-            TierEditor("주간 근무일 때", rule.dayTiers) { onChange(rule.copy(dayTiers = it)) }
-            TierEditor("야간 근무일 때 (야간 시간이 절반 이상)", rule.nightTiers) { onChange(rule.copy(nightTiers = it)) }
-            Hint("근무 시작부터 순서대로 구간마다 통상시급 × 배율을 받아요. 마지막 구간은 남은 시간 전부에 적용돼요.")
-        }
-        ExtraBasis.FIXED_PER_TIME, ExtraBasis.FIXED_PER_HOUR -> MoneyField(
-            if (rule.basis == ExtraBasis.FIXED_PER_TIME) "1회 금액" else "1시간 금액",
-            rule.amount.takeIf { it > 0 }, { onChange(rule.copy(amount = it ?: 0)) },
-        )
-    }
-    if (rule.basis != ExtraBasis.LEGAL) {
-        if (rule.basis != ExtraBasis.FIXED_PER_TIME) {
-            Label("최소 인정 시간")
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(0, 4 * 60, 8 * 60).forEach { m ->
-                    FilterChip(selected = rule.minMinutes == m, onClick = { onChange(rule.copy(minMinutes = m)) },
-                        label = { Text(if (m == 0) "일한 만큼" else PayCalculator.hours(m)) })
-                }
-            }
-        }
-        Toggle("야간 가산 따로 받기", "야간 시간에 걸친 부분에 야간 가산을 더해요", rule.nightPremium) { onChange(rule.copy(nightPremium = it)) }
-    }
-}
-
-/** Blocks of hours with their rate, in shift order [PAYX-07]. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun TierEditor(title: String, tiers: List<Tier>, onChange: (List<Tier>) -> Unit) {
-    Label(title)
-    tiers.forEachIndexed { i, t ->
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.Center) {
-            OutlinedButton(onClick = { onChange(tiers.toMutableList().also { it[i] = t.copy(minutes = (t.minutes - 60).coerceAtLeast(60)) }) }) { Text("−") }
-            Text(PayCalculator.hours(t.minutes), style = MaterialTheme.typography.titleSmall, modifier = Modifier.align(Alignment.CenterVertically))
-            OutlinedButton(onClick = { onChange(tiers.toMutableList().also { it[i] = t.copy(minutes = (t.minutes + 60).coerceAtMost(24 * 60)) }) }) { Text("+") }
-            listOf(0.0, 0.25, 0.5, 0.75, 1.0).forEach { p ->
-                FilterChip(selected = t.premium == p, onClick = { onChange(tiers.toMutableList().also { it[i] = t.copy(premium = p) }) },
-                    label = { Text(PayCalculator.pct(1.0 + p)) })
-            }
-        }
-    }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        TextButton(onClick = { onChange(tiers + Tier(240, tiers.lastOrNull()?.premium ?: 0.5)) }) { Text("구간 추가") }
-        if (tiers.size > 1) TextButton(onClick = { onChange(tiers.dropLast(1)) }) { Text("마지막 구간 빼기") }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
 private fun PremiumRow(title: String, value: Double?, legal: Double, options: List<Double>, onChange: (Double?) -> Unit) {
     Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 4.dp))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -451,32 +424,18 @@ private fun PremiumRow(title: String, value: Double?, legal: Double, options: Li
     }
 }
 
-@Composable
-private fun Toggle(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Switch(checked = checked, onCheckedChange = onChange)
-    }
-}
-
-@Composable
-private fun Label(text: String) =
-    Text(text, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp, bottom = 2.dp))
-
-@Composable
-private fun Hint(text: String) =
-    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
 /** One line per rule that differs from the law, for the result screen's summary. */
 fun CompanyRules.summary(profile: PayProfile): List<String> = buildList {
     overtimePremium?.let { add("연장 가산 ${PayCalculator.pct(it)}") }
     nightPremium?.let { add("야간 가산 ${PayCalculator.pct(it)}") }
     holidayPremiumWithin8h?.let { add("휴일 가산 ${PayCalculator.pct(it)}") }
     holidayPremiumOver8h?.let { add("휴일 8시간 초과 가산 ${PayCalculator.pct(it)}") }
-    if (offDayWork == OffDayWork.OVERTIME) add("쉬는 날 근무는 연장근로")
+    if (restDayWork != RestDayWork.LAW) add("쉬는 날 근무는 ${restDayWork.label} 계산 (${restDayWork.detail})")
+    when (val w = weeklyHoliday) {
+        WeeklyHoliday.Unknown -> Unit
+        WeeklyHoliday.FirstRestDay -> add("주휴일은 주마다 첫 쉬는 날")
+        is WeeklyHoliday.Fixed -> add("주휴일 ${Fmt.dayOfWeekShort(w.day)}요일")
+    }
     if (!publicHolidaysPaid) add("공휴일은 휴일 대체")
     extra.forEach { (kind, r) -> add("${extraName(kind)}: ${r.describe()}") }
     extraByShift.forEach { (kind, byType) -> if (byType.isNotEmpty()) add("${extraName(kind)}: 근무별 ${byType.size}개") }
@@ -519,42 +478,33 @@ private fun NightWindowPicker(rules: CompanyRules, onChange: (java.time.LocalTim
     }
 }
 
-/**
- * [PAYX-11] Pay for one kind of extra work by the shift it covered (주간·오후·야간 …). A shift with
- * no rule of its own uses the kind's rule above, so only the differences need entering.
- */
-@OptIn(ExperimentalLayoutApi::class)
+/** [EXTRA-04] How a kind is paid, in a line: its rule, and how many shifts have their own. */
+/** Seven days in one row, the way alarm apps pick them, so the days never wrap apart. */
 @Composable
-private fun PerShiftRules(
-    name: String, kind: ExtraWork, types: List<com.bamnat.core.model.ShiftType>, rules: CompanyRules, onChange: (CompanyRules) -> Unit,
-) {
-    val byType = rules.extraByShift[kind].orEmpty()
-    var editing by remember(kind) { mutableStateOf<Long?>(null) }
-    Label("근무별로 다르게 (대신 선 근무 기준)")
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        types.forEach { t ->
-            val own = byType[t.id]
-            FilterChip(
-                selected = editing == t.id || own != null,
-                onClick = { editing = if (editing == t.id) null else t.id },
-                label = { Text(if (own != null) "${t.name} · ${own.describe().substringBefore(", ")}" else t.name) },
-            )
-        }
-    }
-    val id = editing ?: return
-    val type = types.firstOrNull { it.id == id } ?: return
-    fun set(r: ExtraRule?) {
-        val next = if (r == null || r.basis == ExtraBasis.LEGAL) byType - id else byType + (id to r)
-        onChange(rules.copy(extraByShift = if (next.isEmpty()) rules.extraByShift - kind else rules.extraByShift + (kind to next)))
-    }
-    Surface(tonalElevation = 1.dp, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
-        Column(Modifier.padding(10.dp)) {
-            ExtraRuleEditor("${type.name} $name", kind, byType[id] ?: rules.extra[kind] ?: ExtraRule()) { set(it) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (byType[id] != null) TextButton(onClick = { set(null); editing = null }) { Text("위 방식과 같게") }
-                TextButton(onClick = { editing = null }) { Text("닫기") }
+private fun WeekdayPicker(selected: DayOfWeek, onPick: (DayOfWeek) -> Unit) {
+    Row(Modifier.fillMaxWidth().selectableGroup()) {
+        DayOfWeek.entries.forEach { d ->
+            val on = d == selected
+            Box(
+                Modifier.weight(1f).height(48.dp)
+                    .selectable(selected = on, role = Role.RadioButton, onClick = { onPick(d) })
+                    .semantics { contentDescription = "${Fmt.dayOfWeekShort(d)}요일" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    Modifier.size(40.dp).clip(CircleShape)
+                        .background(if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(Fmt.dayOfWeekShort(d), style = MaterialTheme.typography.labelLarge,
+                        color = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
-            if (byType[id] == null) Hint("방식을 고르면 ${type.name} ${name}만 따로 계산해요. 고르기 전에는 위 방식대로예요.")
         }
     }
+}
+
+internal fun CompanyRules.payText(kind: Long): String {
+    val own = extraByShift[kind].orEmpty().count { !it.value.isLegal }
+    return (extraRule(kind)?.describe() ?: "법대로") + if (own > 0) " · 근무별 ${own}개" else ""
 }

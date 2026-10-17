@@ -168,4 +168,7 @@ object HoursFormat {
         val tenths = Math.round(minutes / 6.0)
         return "${tenths / 10}.${tenths % 10}"
     }
+
+    /** Hours for tiles and charts without a trailing .0: "73.5", "290" [VIS-01]. */
+    fun hours(minutes: Double): String = decimalHours(minutes).removeSuffix(".0")
 }

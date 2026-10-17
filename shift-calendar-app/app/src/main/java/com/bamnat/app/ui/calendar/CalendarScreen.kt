@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.Share
 import com.bamnat.app.share.MonthImage
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
@@ -62,6 +63,10 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -119,6 +124,7 @@ fun CalendarScreen(
     onOpenMoney: () -> Unit = {},
     onOpenPay: () -> Unit = onOpenStats,
     onOpenSettings: () -> Unit,
+    onOpenExtraKinds: () -> Unit = {},
 ) {
     val context = LocalContext.current
     // Re-checked on every return to the app, since the user may change it in system settings.
@@ -160,12 +166,17 @@ fun CalendarScreen(
         }
     }
 
+    // On phones the day opens in a sheet over the calendar.
+    var sheetOpen by remember { mutableStateOf(false) }
+    // [DAY-03] While the sheet is open its own snackbar says what happened, above the sheet, not hidden under it.
+    val sheetSnackbar = remember { SnackbarHostState() }
+    val messageHost by rememberUpdatedState(if (sheetOpen && !wide) sheetSnackbar else snackbarHostState)
     LaunchedEffect(vm) {
         vm.messages.collect { msg ->
-            val result = snackbarHostState.showSnackbar(
+            val result = messageHost.showSnackbar(
                 message = msg.message,
-                actionLabel = if (msg.undo != null) "되돌리기" else null,
-                duration = SnackbarDuration.Short,
+                actionLabel = if (msg.undo != null) msg.actionLabel else null,
+                duration = if (msg.undo != null && msg.actionLabel != "되돌리기") SnackbarDuration.Long else SnackbarDuration.Short,
             )
             if (result == SnackbarResult.ActionPerformed) vm.runUndo(msg)
         }
@@ -199,8 +210,6 @@ fun CalendarScreen(
         }
     }
 
-    // On phones (and a folded Fold) the day opens in a sheet over the calendar.
-    var sheetOpen by remember { mutableStateOf(false) }
     // Unfolded, the day shows beside the calendar; a sheet left open must not pop up again on folding.
     LaunchedEffect(wide) { if (wide) sheetOpen = false }
     // Back ends quick input instead of leaving the app.
@@ -213,26 +222,48 @@ fun CalendarScreen(
             lastToday = today
         }
     }
+    // [DAY-01] A tap picks the day and shows it under the calendar; a tap on the picked day opens it all.
     val onDayClick: (LocalDate) -> Unit = { date ->
         val painting = paint != null
+        val again = date == selected
         vm.onDayTapped(date)
         val m = YearMonth.from(date)
         if (m != visibleMonth) goToMonth(m)
-        if (!wide && !painting) sheetOpen = true
+        if (!wide && !painting && again) sheetOpen = true
+    }
+    // [DAY-01] ‹ › and swipes in the day header move the calendar along.
+    val onDateChange: (LocalDate) -> Unit = { date ->
+        vm.select(date)
+        val m = YearMonth.from(date)
+        if (m != visibleMonth) goToMonth(m)
+    }
+    val groups = rememberDayGroupState()
+    var memoFocus by remember { mutableIntStateOf(0) }
+    val onMemo: () -> Unit = {
+        memoFocus++
+        if (!wide) sheetOpen = true
     }
     val onQuickAction: (LocalDate, QuickAction) -> Unit = { date, action ->
         val day = snap.resolver.resolve(date)
         when (action) {
-            is QuickAction.Shift -> vm.assign(date, action.override)
-            is QuickAction.Extra -> vm.setExtraWork(day, action.kind, action.minutes)
-            QuickAction.ClearExtra -> vm.setExtraWork(day, null, 0)
-            is QuickAction.SetLeave -> vm.setLeave(date, action.leave)
+            is QuickAction.Shift -> vm.assignQuick(day, action.override, snap)
+            is QuickAction.Extra -> vm.toggleExtra(day, action.choice)
+            is QuickAction.SetLeave -> vm.setLeave(date, action.leave, announce = true)
+            is QuickAction.Alarm -> vm.setAlarmSkipped(date, action.skipped, announce = true)
             QuickAction.Open -> {
                 vm.select(date)
                 if (!wide) sheetOpen = true
             }
         }
     }
+    // [EXTRA-05] Records from before 1.9 that need a look, offered once above the calendar.
+    val toReview by vm.extrasToReview.collectAsStateWithLifecycle()
+    var reviewing by remember { mutableStateOf(false) }
+    val swapCovers = remember(snap, settings.swapCoversAnswered) {
+        if (settings.swapCoversAnswered) emptyList()
+        else com.bamnat.core.schedule.ExtraReview.shiftSwapCovers(snap.shiftTypes, snap.patterns, snap.entries)
+    }
+    var explainingSwap by remember { mutableStateOf(false) }
 
     var showMonthPicker by remember { mutableStateOf(false) }
     var showShare by remember { mutableStateOf(false) }
@@ -256,6 +287,11 @@ fun CalendarScreen(
             )
         }
     }
+
+    // [DAY-01] The FAB folds to its icon while the page goes on under it (the day card, the month's hours),
+    // so what it would cover stays readable and in reach; at the page's end there is room for its label.
+    val pageScroll = rememberScrollState()
+    val fabExpanded by remember { derivedStateOf { !pageScroll.canScrollForward } }
 
     val calendarPart: @Composable () -> Unit = {
         CalendarHeader(
@@ -302,6 +338,24 @@ fun CalendarScreen(
                 },
             )
         }
+        if (swapCovers.isNotEmpty()) {
+            ExtraReviewCard(
+                title = "쉬는 날 대근 ${swapCovers.size}일을 고쳐 주세요",
+                message = "근무를 바꿔서 적은 대근은 쉬는 날 근무로 계산되지 않아요. 한 번에 대근으로 고칠 수 있어요.",
+                action = "자세히",
+                onAction = { explainingSwap = true },
+                onLater = vm::keepSwapCovers,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        } else if (toReview > 0) {
+            ExtraReviewCard(
+                title = "옮겨 온 추가 근무 ${toReview}건을 확인해 주세요",
+                message = "이제 잔업·특근·대근마다 시각이 있어요. 예전 기록의 시간이 맞는지 한 번만 봐 주세요.",
+                action = "확인하기",
+                onAction = { reviewing = true },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
         MonthShiftCounts(snap, visibleMonth, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         WeekdayHeader(settings.weekStart, Modifier.padding(horizontal = 8.dp))
         BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
@@ -335,15 +389,28 @@ fun CalendarScreen(
         Spacer(Modifier.height(12.dp))
         val moneyFirst = settings.workStyle?.usesPayEngine == false
         if (!wide) {
-            SelectedDayCard(
-                day = snap.resolver.resolve(selected),
-                isToday = selected == today,
-                memoCount = if (selected in memoDates) 1 else 0,
-                memoPreview = remember(datedMemos, selected) { datedMemos.firstOrNull { it.date == selected }?.let { it.title.ifBlank { it.preview } } },
-                onOpen = { sheetOpen = true },
-                modifier = Modifier.padding(horizontal = 16.dp),
-                money = if (moneyFirst) remember(moneyBook, selected) { moneyBook.on(selected) } else null,
-            )
+            if (moneyFirst) {
+                MoneyDayCard(
+                    date = selected,
+                    isToday = selected == today,
+                    day = remember(moneyBook, selected) { moneyBook.on(selected) },
+                    memoCount = if (selected in memoDates) 1 else 0,
+                    onOpen = { sheetOpen = true },
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    memoPreview = remember(datedMemos, selected) { datedMemos.firstOrNull { it.date == selected }?.let { it.title.ifBlank { it.preview } } },
+                )
+            } else {
+                DayPreview(
+                    day = remember(snap, selected) { snap.resolver.resolve(selected) },
+                    today = today,
+                    snapshot = snap,
+                    vm = vm,
+                    onDateChange = onDateChange,
+                    onOpen = { sheetOpen = true },
+                    onMemo = onMemo,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
             Spacer(Modifier.height(12.dp))
         }
         if (moneyFirst) {
@@ -371,71 +438,82 @@ fun CalendarScreen(
         if (!settings.memoFirst) memoPart()
     }
 
-    val detailPart: @Composable () -> Unit = {
-        DayDetail(
+    val detailPart: @Composable (Modifier, androidx.compose.ui.unit.Dp) -> Unit = { m, bottom ->
+        DayPanel(
             date = selected,
             today = today,
             snapshot = snap,
             vm = vm,
+            groups = groups,
+            onDateChange = onDateChange,
             onOpenMemo = onOpenMemo,
             onNewMemo = onNewMemo,
             onOpenShiftTypes = onOpenShiftTypes,
-            modifier = Modifier.padding(horizontal = 16.dp),
             onOpenPay = onOpenPay,
+            onOpenExtraKinds = onOpenExtraKinds,
+            modifier = m,
+            memoFocus = memoFocus,
+            onMemo = onMemo,
+            bottomPadding = bottom,
         )
     }
 
     val bottomSpace = if (paint != null) 132.dp else 88.dp
+    val fab: @Composable BoxScope.() -> Unit = {
+        val style = settings.workStyle
+        val place = Modifier.align(Alignment.BottomEnd).padding(16.dp)
+        if (paint == null && style != null && !style.usesPayEngine) {
+            // [WORK-02][WORK-03] Field and shop work add the day's job or sales instead of stamping shifts.
+            val label = if (style.usesJobs) "일감 적기" else "매출 적기"
+            // The extended FAB drops its text from semantics, so the icon carries the label for TalkBack.
+            ExtendedFloatingActionButton(
+                onClick = { quickMoney = true },
+                icon = { Icon(Icons.Filled.Add, contentDescription = label) },
+                text = { Text(label) },
+                expanded = fabExpanded,
+                modifier = place,
+            )
+        } else if (paint == null) {
+            val first = snap.shiftTypes.firstOrNull()
+            ExtendedFloatingActionButton(
+                onClick = { vm.setPaint(first?.let { PaintTool.Shift(it.id) } ?: PaintTool.Clear) },
+                icon = { Icon(Icons.Filled.EditCalendar, contentDescription = "빠른 입력") },
+                text = { Text("빠른 입력") },
+                expanded = fabExpanded,
+                modifier = place,
+            )
+        }
+    }
     Box(Modifier.fillMaxSize()) {
         if (wide) {
             Row(Modifier.fillMaxSize()) {
-                Column(
-                    Modifier
-                        .weight(1.05f)
-                        .fillMaxHeight()
-                        .verticalScroll(rememberScrollState())
-                        .padding(bottom = bottomSpace),
-                ) { calendarPart() }
+                Box(Modifier.weight(1.05f).fillMaxHeight()) {
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(pageScroll)
+                            .padding(bottom = bottomSpace),
+                    ) { calendarPart() }
+                    fab()
+                }
                 VerticalDivider()
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .imePadding()
-                        .verticalScroll(rememberScrollState())
-                        .padding(top = 12.dp, bottom = bottomSpace),
-                ) { detailPart() }
+                // [DAY-01] The same day panel as the sheet: the header stays, the groups scroll.
+                detailPart(Modifier.weight(1f).fillMaxHeight().padding(top = 4.dp), bottomSpace)
             }
         } else {
             Column(
                 Modifier
                     .fillMaxSize()
                     .imePadding()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(pageScroll)
                     .padding(bottom = bottomSpace),
             ) {
                 calendarPart()
             }
         }
 
-        val style = settings.workStyle
-        if (paint == null && style != null && !style.usesPayEngine) {
-            // [WORK-02][WORK-03] Field and shop work add the day's job or sales instead of stamping shifts.
-            ExtendedFloatingActionButton(
-                onClick = { quickMoney = true },
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text(if (style.usesJobs) "일감 적기" else "매출 적기") },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-            )
-        } else if (paint == null) {
-            val first = snap.shiftTypes.firstOrNull()
-            ExtendedFloatingActionButton(
-                onClick = { vm.setPaint(first?.let { PaintTool.Shift(it.id) } ?: PaintTool.Clear) },
-                icon = { Icon(Icons.Filled.EditCalendar, contentDescription = null) },
-                text = { Text("빠른 입력") },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-            )
-        } else {
+        if (!wide) fab()
+        if (paint != null) {
             Box(Modifier.align(Alignment.BottomCenter)) {
                 PaintBar(snapshot = snap, tool = paint, onTool = vm::setPaint)
             }
@@ -452,7 +530,23 @@ fun CalendarScreen(
     }
 
     if (sheetOpen && !wide) {
-        DaySheet(onDismiss = { sheetOpen = false }) { detailPart() }
+        DaySheet(snackbar = sheetSnackbar, onDismiss = { sheetOpen = false }) { detailPart(Modifier.fillMaxWidth(), 24.dp) }
+    }
+    if (reviewing) {
+        ExtraReviewDialog(snap, vm, onOpenDay = { d ->
+            reviewing = false
+            onDateChange(d)
+            if (!wide) sheetOpen = true
+        }, onDismiss = { reviewing = false })
+    }
+    if (explainingSwap) {
+        SwapCoverDialog(
+            days = swapCovers,
+            snapshot = snap,
+            onConvert = { explainingSwap = false; vm.convertSwapCovers(swapCovers) },
+            onKeep = { explainingSwap = false; vm.keepSwapCovers() },
+            onDismiss = { explainingSwap = false },
+        )
     }
 
     if (showMonthPicker) {
@@ -467,18 +561,16 @@ fun CalendarScreen(
     }
 }
 
+/** [DAY-01][DAY-03] The whole day over the calendar, open at once, with its own snackbar for undo. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DaySheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
-    val state = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+private fun DaySheet(snackbar: SnackbarHostState, onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(bottom = 24.dp),
-        ) { content() }
+        Box(Modifier.fillMaxWidth()) {
+            content()
+            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp))
+        }
     }
 }
 
@@ -488,7 +580,8 @@ private fun MonthShiftCounts(snapshot: ScheduleSnapshot, month: YearMonth, modif
     val counts = remember(snapshot, month) {
         val days = snapshot.resolver.resolveRange(month.atDay(1), month.atEndOfMonth())
         val byType = days.mapNotNull { it.shiftType }.groupingBy { it.id }.eachCount()
-        val extras = days.mapNotNull { it.extraWork }.groupingBy { it }.eachCount()
+        // [EXTRA-01] Pieces of extra work by kind, e.g. 대근 3.
+        val extras = days.flatMap { it.extras }.groupingBy { it.kind }.eachCount()
         Pair(snapshot.shiftTypes.filter { (byType[it.id] ?: 0) > 0 }.map { it to byType.getValue(it.id) }, extras)
     }
     if (counts.first.isEmpty() && counts.second.isEmpty()) return
@@ -505,61 +598,9 @@ private fun MonthShiftCounts(snapshot: ScheduleSnapshot, month: YearMonth, modif
         }
         for ((kind, n) in counts.second) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                ExtraWorkMark(kind, size = 18.dp)
-                Text(" ${LocalExtraKinds.current.name(kind)} $n", style = MaterialTheme.typography.labelLarge.merge(NumberStyle))
+                ExtraKindMark(kind, size = 18.dp)
+                Text(" ${kind.name} $n", style = MaterialTheme.typography.labelLarge.merge(NumberStyle))
             }
-        }
-    }
-}
-
-/** The selected day under the calendar on phones; tapping it opens the full day sheet. */
-@Composable
-private fun SelectedDayCard(
-    day: ResolvedDay,
-    isToday: Boolean,
-    memoCount: Int,
-    onOpen: () -> Unit,
-    modifier: Modifier = Modifier,
-    /** [WORK-02][WORK-03] Set for field and shop work: the card shows the day's money instead of a shift. */
-    money: com.bamnat.core.money.DayBook? = null,
-    memoPreview: String? = null,
-) {
-    if (money != null) {
-        MoneyDayCard(day.date, isToday, money, memoCount, onOpen, modifier, memoPreview)
-        return
-    }
-    Surface(
-        onClick = onOpen,
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            val type = day.shiftType
-            ShiftBadge(type, size = 36.dp, text = type?.label ?: "휴", outlined = type == null || type.isOff)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    Fmt.dayTitle(day.date) + if (isToday) " · 오늘" else "",
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                val start = day.start
-                val end = day.end
-                val parts = buildList {
-                    add(
-                        if (day.isWorkDay && start != null && end != null) "${type?.name ?: "근무"} ${Fmt.time(start)}–${Fmt.time(end)}"
-                        else type?.name ?: "쉬는 날",
-                    )
-                    day.extraWork?.let { add(LocalExtraKinds.current.name(it)) }
-                    if (day.extraMinutes > 0) add("+" + HoursFormat.short(day.extraMinutes))
-                    if (memoCount > 0) add(memoPreview?.takeIf { it.isNotBlank() }?.let { "메모: $it" } ?: "메모 있음")
-                }
-                Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Text("열기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -720,7 +761,7 @@ private fun HoursSummary(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile(
                 label = "선택한 주",
-                value = HoursFormat.decimalHours(week.totalMinutes.toDouble()) + "시간",
+                value = HoursFormat.hours(week.totalMinutes.toDouble()) + "시간",
                 caption = "${Fmt.shortDate(week.start)}–${Fmt.shortDate(week.end)}",
                 warning = week.overLimit,
                 onClick = onOpenStats,
@@ -728,14 +769,14 @@ private fun HoursSummary(
             )
             StatTile(
                 label = "${month.monthValue}월 합계",
-                value = HoursFormat.decimalHours(monthSummary.totalMinutes.toDouble()) + "시간",
+                value = HoursFormat.hours(monthSummary.totalMinutes.toDouble()) + "시간",
                 caption = "근무 ${monthSummary.workDays}일",
                 onClick = onOpenStats,
                 modifier = Modifier.weight(1f),
             )
             StatTile(
                 label = "3개월 주평균",
-                value = HoursFormat.decimalHours(three.averageWeeklyMinutes) + "시간",
+                value = HoursFormat.hours(three.averageWeeklyMinutes) + "시간",
                 caption = "${three.firstMonth.monthValue}–${three.lastMonth.monthValue}월",
                 warning = three.overLimit,
                 onClick = onOpenStats,
@@ -753,7 +794,7 @@ private fun HoursSummary(
             if (others.isNotEmpty()) {
                 WarningBanner(
                     title = "주 ${settings.weeklyLimitHours}시간 초과 주가 있어요",
-                    message = others.joinToString(", ") { "${Fmt.shortDate(it.start)}주 ${HoursFormat.decimalHours(it.totalMinutes.toDouble())}시간" },
+                    message = others.joinToString(", ") { "${Fmt.shortDate(it.start)}주 ${HoursFormat.hours(it.totalMinutes.toDouble())}시간" },
                 )
             }
         }
@@ -761,7 +802,7 @@ private fun HoursSummary(
             WarningBanner(
                 title = "3개월 평균 주 ${settings.averageLimitHours}시간 초과",
                 message = "${three.firstMonth.monthValue}–${three.lastMonth.monthValue}월 평균이 " +
-                    "주 ${HoursFormat.decimalHours(three.averageWeeklyMinutes)}시간이에요.",
+                    "주 ${HoursFormat.hours(three.averageWeeklyMinutes)}시간이에요.",
             )
         }
     }

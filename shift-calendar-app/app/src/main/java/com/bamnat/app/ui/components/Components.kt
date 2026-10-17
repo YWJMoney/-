@@ -46,6 +46,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -63,9 +65,21 @@ import java.time.LocalTime
 
 fun Long.asColor(): Color = Color(this.toInt())
 
-/** Readable text color on top of [background]. */
-fun contentColorOn(background: Color): Color =
-    if (background.luminance() > 0.55f) Color(0xFF151927) else Color.White
+private val DarkInk = Color(0xFF151927)
+
+/**
+ * [VIS-01] Readable text color on top of [background]: whichever of white and the app's dark ink
+ * has the higher contrast (WCAG), so 오후 #F2994A or 대근 #0E9F6E get dark letters, not faint white.
+ */
+fun contentColorOn(background: Color): Color {
+    val l = background.luminance()
+    val onWhite = 1.05f / (l + 0.05f)
+    val onDark = (l + 0.05f) / (DarkInk.luminance() + 0.05f)
+    return if (onDark > onWhite) DarkInk else Color.White
+}
+
+/** [DAY-02] Inside the day's groups sections drop their own card, so a group never holds a box in a box. */
+val LocalFlatSections = androidx.compose.runtime.staticCompositionLocalOf { false }
 
 @Composable
 fun isDarkSurface(): Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f
@@ -112,7 +126,8 @@ fun ShiftBadge(
             Text(
                 text = label,
                 color = fg,
-                fontSize = (size.value * 0.52f).sp,
+                // [VIS-01] Sized to the badge, so a big system font cannot push it out of the cell.
+                fontSize = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.52f).toSp() },
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Clip,
@@ -134,6 +149,20 @@ fun SectionCard(
     trailing: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    if (LocalFlatSections.current) {
+        Column(modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            if (title != null || trailing != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(title.orEmpty(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f))
+                    trailing?.invoke()
+                }
+                Spacer(Modifier.padding(top = 4.dp))
+            }
+            content()
+        }
+        return
+    }
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
@@ -149,8 +178,8 @@ fun SectionCard(
                         Text(
                             title,
                             style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f).semantics { heading() },
                         )
                     } else {
                         Spacer(Modifier.weight(1f))
@@ -264,7 +293,7 @@ fun MinutesStepper(
     }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         RepeatIconButton(onStep = { set((shown - step).coerceAtLeast(0)) }, enabled = shown > 0) {
-            Icon(Icons.Filled.Remove, contentDescription = "줄이기")
+            Icon(Icons.Filled.Remove, contentDescription = "$dialogTitle ${HoursFormat.korean(step)} 줄이기")
         }
         val style = MaterialTheme.typography.titleMedium.merge(NumberStyle)
         Box(
@@ -283,7 +312,7 @@ fun MinutesStepper(
             )
         }
         RepeatIconButton(onStep = { set((shown + step).coerceAtMost(max)) }, enabled = shown < max) {
-            Icon(Icons.Filled.Add, contentDescription = "늘리기")
+            Icon(Icons.Filled.Add, contentDescription = "$dialogTitle ${HoursFormat.korean(step)} 늘리기")
         }
     }
     if (editing) {

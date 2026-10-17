@@ -99,14 +99,19 @@ data class CalendarColors(
     /** [LEDG-01] Money in and out. */
     val income: Color = Color(0xFF12805C),
     val expense: Color = Color(0xFFD14343),
+    /** [VIS-01] A day whose alarms were turned off. */
+    val alarmOff: Color = Color(0xFFD92D20),
+    /** [VIS-01] A day the user changed by hand. */
+    val changed: Color = Color(0xFFB45309),
 )
 
+// [VIS-01] Weekend numbers and the extra-hours text reach 4.5:1 on white and on a shift's tint.
 private val LightCalendarColors = CalendarColors(
-    sunday = Color(0xFFE5484D),
-    saturday = Color(0xFF3E7BFA),
+    sunday = Color(0xFFD92D20),
+    saturday = Color(0xFF2F5BEA),
     warning = Color(0xFFD92D20),
     warningContainer = Color(0xFFFEE4E2),
-    holidayWork = Color(0xFFE07A1F),
+    holidayWork = Color(0xFFB45309),
     memoDot = Color(0xFF00897B),
 )
 
@@ -119,6 +124,8 @@ private val DarkCalendarColors = CalendarColors(
     memoDot = Color(0xFF7FD8C8),
     income = Color(0xFF6FD3A6),
     expense = Color(0xFFFF8F8F),
+    alarmOff = Color(0xFFFF8A80),
+    changed = Color(0xFFFFB783),
 )
 
 val LocalCalendarColors = staticCompositionLocalOf { LightCalendarColors }
@@ -172,6 +179,12 @@ fun BamnatTheme(
 val ShiftPalette: List<Long> = listOf(
     0xFF2F80ED, 0xFF2F5BEA, 0xFF6C5CE7, 0xFF9B51E0, 0xFFE84393, 0xFFE5484D,
     0xFFF2994A, 0xFFF2C94C, 0xFF27AE60, 0xFF00897B, 0xFF00A3C4, 0xFF8E9AAF,
+)
+
+/** [EXTRA-01] Palette offered for kinds of extra work; the first three are the built-in 잔업·특근·대근. */
+val ExtraPalette: List<Long> = listOf(
+    0xFFE8900C, 0xFFE03131, 0xFF0E9F6E, 0xFF7048E8, 0xFF1C7ED6, 0xFFD6336C,
+    0xFF0B7285, 0xFF5C940D, 0xFF862E9C, 0xFFB35C00, 0xFF495057, 0xFF2B8A3E,
 )
 
 /** Soft backgrounds for memo cards: index 0 is the plain surface. */

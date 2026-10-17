@@ -52,6 +52,30 @@ object Fmt {
         }
     }
 
+    /** "10월 17일" */
+    fun monthDay(d: LocalDate): String = "${d.monthValue}월 ${d.dayOfMonth}일"
+
+    /** [DAY-03] "을" or "를" after [word]: 대근을, 잔업 2시간을, 휴가를. */
+    fun obj(word: String): String = if (batchim(word) != 0) "을" else "를"
+
+    /** [DAY-03] "으로" or "로" after [word]: 야간으로, 데이로, 10월 17일로. */
+    fun ro(word: String): String = batchim(word).let { if (it == 0 || it == RIEUL) "로" else "으로" }
+
+    private const val RIEUL = 8
+
+    /** The final consonant index of [word]'s last sound (0 for none), reading digits and a few letters as Korean says them. */
+    private fun batchim(word: String): Int {
+        val c = word.trimEnd().lastOrNull() ?: return 0
+        return when {
+            c in '가'..'힣' -> (c - '가') % 28
+            // 영 일 삼 육 칠 팔 end in a consonant; 이 사 오 구 do not.
+            c.isDigit() -> when (c) { '0' -> 21; '1', '7', '8' -> RIEUL; '3' -> 16; '6' -> 1; else -> 0 }
+            c in "LlRr" -> RIEUL
+            c in "MmNn" -> 4
+            else -> 0
+        }
+    }
+
     fun offset(minutes: Int): String = when {
         minutes == 0 -> "시작 시각"
         minutes % 60 == 0 -> "${minutes / 60}시간 전"

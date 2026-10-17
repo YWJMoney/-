@@ -8,6 +8,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.AlarmOff
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.OpenInFull
@@ -22,7 +24,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import com.bamnat.app.ui.components.asColor
 import com.bamnat.app.ui.components.isDarkSurface
-import com.bamnat.core.model.ExtraWork
 import com.bamnat.core.model.ShiftOverride
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -100,10 +101,12 @@ fun WeekdayHeader(weekStart: DayOfWeek, modifier: Modifier = Modifier) {
 /** Shortcuts offered on a long press, so a day can be set without opening it. */
 sealed interface QuickAction {
     data class Shift(val override: ShiftOverride) : QuickAction
-    data class Extra(val kind: ExtraWork, val minutes: Int) : QuickAction
-    data object ClearExtra : QuickAction
+    /** [EXTRA-01] Adds the piece, or takes it off when the day has it. */
+    data class Extra(val choice: ExtraChoice) : QuickAction
     /** 연차·반차·반반차, or null to remove it [FEAT-10]. */
     data class SetLeave(val leave: Leave?) : QuickAction
+    /** [DAY-03] This day's alarm off (true) or back on. */
+    data class Alarm(val skipped: Boolean) : QuickAction
     data object Open : QuickAction
 }
 
@@ -205,16 +208,23 @@ private fun DayCell(
         }
     }
     // Working days are tinted with their shift's color so the month reads at a glance.
-    val tint = type?.takeIf { !it.isOff && day.leave?.isFullDay != true }?.colorArgb?.asColor()?.copy(alpha = if (isDarkSurface()) 0.22f else 0.13f)
+    // A 대근 on a day off tints the cell with the covered shift [EXTRA-01].
+    val tint = (type?.takeIf { !it.isOff && day.leave?.isFullDay != true } ?: day.coveredShift)
+        ?.colorArgb?.asColor()?.copy(alpha = if (isDarkSurface()) 0.22f else 0.13f)
+    // [VIS-01] What the cell shows, read out in the same order.
     val description = buildString {
         append(Fmt.dayTitle(date))
+        if (isToday) append(", 오늘")
         holidayName?.let { append(", ").append(it) }
-        type?.let { append(", ").append(it.name) }
-        if (day.isWorkDay) append(", ").append(HoursFormat.korean(day.totalMinutes))
-        day.extraWork?.let { append(", ").append(LocalExtraKinds.current.name(it)) }
+        append(", ").append(if (day.isWorkDay) type?.name ?: "근무" else type?.name ?: "쉬는 날")
+        if (day.isWorkDay) append(" ").append(HoursFormat.korean(day.scheduledMinutes))
         day.leave?.let { append(", ").append(it.label) }
-        day.second?.let { append(", 그리고 ").append(it.type.name) }
-        if (day.isHolidayWork) append(", 휴일 근무 ").append(HoursFormat.korean(day.holidayWorkMinutes))
+        for (e in day.extras) {
+            append(", ").append(ExtraText.name(e))
+            if (e.entry.hasTimes || e.covered != null) append(" ").append(HoursFormat.korean(e.minutes))
+        }
+        if (day.source == DaySource.OVERRIDE || day.hasCustomTimes) append(", 직접 바꿈")
+        if (day.alarmSkipped) append(", 알람 끔")
         if (hasMemo) append(", 메모 있음")
         money?.let { m ->
             if (m.jobs > 0) append(", 일감 ${m.jobs}건")
@@ -271,27 +281,50 @@ private fun DayCell(
                         fontSize = 13.sp,
                     )
                 }
-                val extra = day.extraWork
                 val leave = day.leave
+                // [EXTRA-01] The kinds of extra work on the day: the first top right, a second top left.
+                val kinds = day.extras.map { it.kind }.distinctBy { it.id }
+                val covered = day.coveredShift
+                // On a day off with a 대근 the covered shift is the badge, so the cell reads "야간, 대근".
+                val kindIsBadge = !day.isWorkDay && covered == null && kinds.isNotEmpty() && day.leave == null
+                val marks = if (kindIsBadge) kinds.drop(1) else kinds
+                val topEnd = marks.firstOrNull()
                 when {
-                    extra != null -> Box(Modifier.align(Alignment.TopEnd)) { ExtraWorkMark(extra, size = 13.dp) }
+                    topEnd != null -> Box(Modifier.align(Alignment.TopEnd)) { ExtraKindMark(topEnd, size = 13.dp) }
                     leave != null && !leave.isFullDay -> Box(Modifier.align(Alignment.TopEnd)) { LeaveMark(leave, size = 13.dp) }
                     day.source == DaySource.OVERRIDE || day.hasCustomTimes -> Box(
                         // Marks days the user changed by hand.
-                        Modifier.align(Alignment.TopEnd).padding(2.dp).size(5.dp).clip(CircleShape).background(scheme.tertiary),
+                        Modifier.align(Alignment.TopEnd).padding(2.dp).size(5.dp).clip(CircleShape).background(cal.changed),
                     )
+                }
+                // [DAY-03] A day whose alarm was turned off says so, so a missed alarm is never a surprise.
+                if (day.alarmSkipped) {
+                    Icon(Icons.Filled.AlarmOff, contentDescription = null, tint = cal.alarmOff,
+                        modifier = Modifier.align(Alignment.TopStart).size(12.dp))
+                } else {
+                    marks.getOrNull(1)?.let { second ->
+                        Box(Modifier.align(Alignment.TopStart)) { ExtraKindMark(second, size = 13.dp) }
+                    }
                 }
             }
             val fullLeave = day.leave?.takeIf { it.isFullDay }
+            val covered = day.coveredShift
+            val badgeKind = day.extras.firstOrNull()?.kind?.takeIf { !day.isWorkDay && covered == null && day.leave == null }
             if (fullLeave != null) {
                 // A whole day of leave shows the leave instead of the shift it replaced [FEAT-10].
                 LeaveMark(fullLeave, size = 22.dp)
-            } else if (day.second != null) {
-                // [FEAT-02] Two shifts side by side, labels only so both fit a folded cell.
+            } else if (covered != null && day.isWorkDay && type != null) {
+                // [FEAT-02][EXTRA-01] The day's shift and the shift covered on top, labels only so both fit a folded cell.
                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    if (type != null) ShiftBadge(type = type, size = 18.dp, outlined = type.isOff, showIcon = false)
-                    ShiftBadge(type = day.second!!.type, size = 18.dp, showIcon = false)
+                    ShiftBadge(type = type, size = 18.dp, outlined = type.isOff, showIcon = false)
+                    ShiftBadge(type = covered, size = 18.dp, showIcon = false)
                 }
+            } else if (covered != null) {
+                // [EXTRA-01] A 대근 on a day off: the covered shift's badge.
+                ShiftBadge(type = covered, size = 22.dp)
+            } else if (badgeKind != null) {
+                // [EXTRA-01] Other extra work on a day off (특근 09–18): the kind itself is the day's mark.
+                ExtraKindMark(badgeKind, size = 22.dp)
             } else if (type != null || day.hasCustomTimes) {
                 ShiftBadge(type = type, text = type?.label ?: "근", size = 22.dp, outlined = type?.isOff == true)
             } else if (money != null && money.jobs > 0) {
@@ -356,17 +389,15 @@ private fun DayCell(
                     onClick = { menu = false; onQuickAction(QuickAction.Shift(ShiftOverride.None)) },
                 )
             }
-            HorizontalDivider()
-            val kinds = LocalExtraKinds.current
-            for (k in kinds.visible(day.extraWork)) {
-                val minutes = kinds.minutesFor(k, day.isWorkDay)
+            val choices = remember(snapshot, day) { ExtraText.choices(snapshot.kinds, snapshot.shiftTypes, day) }
+            if (choices.isNotEmpty()) HorizontalDivider()
+            for (c in choices) {
+                val i = ExtraText.indexOf(day, c)
                 DropdownMenuItem(
-                    text = { Text(if (day.extraWork == k) "${kinds.name(k)} 해제" else "${kinds.name(k)} ${HoursFormat.short(minutes)}") },
-                    leadingIcon = { ExtraWorkMark(k, size = 20.dp) },
-                    onClick = {
-                        menu = false
-                        onQuickAction(if (day.extraWork == k) QuickAction.ClearExtra else QuickAction.Extra(k, minutes))
-                    },
+                    text = { Text(if (i >= 0) "${ExtraText.name(day.extras[i])} 빼기" else c.label) },
+                    leadingIcon = { ExtraKindMark(c.kind, size = 20.dp) },
+                    trailingIcon = { if (i >= 0) Icon(Icons.Filled.Check, null) },
+                    onClick = { menu = false; onQuickAction(QuickAction.Extra(c)) },
                 )
             }
             val shift = type?.takeIf { it.hasTimes }
@@ -382,6 +413,13 @@ private fun DayCell(
                 }
             }
             HorizontalDivider()
+            if (day.isWorkDay || day.coveredShift != null || day.alarmSkipped) {
+                DropdownMenuItem(
+                    text = { Text(if (day.alarmSkipped) "이 날 알람 켜기" else "이 날 알람 끄기") },
+                    leadingIcon = { Icon(if (day.alarmSkipped) Icons.Filled.Alarm else Icons.Filled.AlarmOff, null) },
+                    onClick = { menu = false; onQuickAction(QuickAction.Alarm(!day.alarmSkipped)) },
+                )
+            }
             DropdownMenuItem(
                 text = { Text("자세히 열기") },
                 leadingIcon = { Icon(Icons.Filled.OpenInFull, null) },

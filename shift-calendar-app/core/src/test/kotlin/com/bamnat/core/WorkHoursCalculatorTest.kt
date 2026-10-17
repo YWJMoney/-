@@ -188,5 +188,7 @@ class WorkHoursCalculatorTest {
         assertEquals("0.3h", HoursFormat.short(20))
         assertEquals("52.0", HoursFormat.decimalHours(52 * 60.0))
         assertEquals("52.3", HoursFormat.decimalHours(52 * 60.0 + 18))
+        assertEquals("52", HoursFormat.hours(52 * 60.0))
+        assertEquals("73.5", HoursFormat.hours(73 * 60.0 + 30))
     }
 }
