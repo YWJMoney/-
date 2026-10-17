@@ -302,7 +302,7 @@ fun CompanyRulesEditor(
             }
 
             // [EXTRA-04] How each kind is paid lives with its times on one screen; here is what it says.
-            SectionCard(title = "휴무일 근무 지정") {
+            SectionCard(title = "연장 휴무일 근무 지정") {
                 kinds.visible(rules.extra.keys + rules.extraByShift.keys).forEach { k ->
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
                         ExtraKindMark(k, size = 22.dp)

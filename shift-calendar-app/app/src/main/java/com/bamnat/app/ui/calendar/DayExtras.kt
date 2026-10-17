@@ -146,7 +146,7 @@ internal fun ExtrasContent(
         TextButton(onClick = onOpenExtraKinds, modifier = Modifier.padding(start = 0.dp)) {
             Icon(Icons.Filled.Tune, null, Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
-            Text("휴무일 근무 지정")
+            Text("연장 휴무일 근무 지정")
         }
     }
 }

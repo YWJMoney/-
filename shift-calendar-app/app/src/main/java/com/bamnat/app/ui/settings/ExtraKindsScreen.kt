@@ -411,7 +411,7 @@ private fun templates(kinds: ExtraKinds, types: List<ShiftType>): List<KindTempl
 }
 
 /**
- * [EXTRA-04, EXTRA-07] 휴무일 근무 지정: 잔업·특근·대근 as this person's company has them, on one screen: each kind's name, mark,
+ * [EXTRA-04, EXTRA-07] 연장 휴무일 근무 지정: 잔업·특근·대근 as this person's company has them, on one screen: each kind's name, mark,
  * hours (근무 뒤 2시간, 야간 대근 19~07시 …), what a day off makes of it, and how it is paid, with
  * what one of them comes to on a real coming day.
  */
@@ -437,7 +437,7 @@ fun ExtraKindsScreen(vm: ExtraKindsViewModel, onBack: () -> Unit, onOpenPay: () 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("휴무일 근무 지정") },
+                title = { Text("연장 휴무일 근무 지정") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },

@@ -396,7 +396,7 @@ fun SettingsScreen(
             NavRow("근무 유형", "이름, 시간, 색상, 근무별 알람", onOpenShiftTypes)
             HorizontalDivider()
             // [EXTRA-04][EXTRA-07] Each company names, times and pays work on a day off and extra hours its own way.
-            NavRow("휴무일 근무 지정", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·가산 임금", onOpenExtraKinds)
+            NavRow("연장 휴무일 근무 지정", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·가산 임금", onOpenExtraKinds)
         }
 
         SectionCard(title = "알람") {
