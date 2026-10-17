@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
@@ -38,6 +40,7 @@ import java.time.format.DateTimeFormatter
 /**
  * [MKT-09] Picture or link. A link shows about three months from the month on screen, read only,
  * and expires by itself; the phone keeps one link and can refresh it with the latest schedule or cut it.
+ * Before the first link it says where the schedule goes and who can open it (privacy policy 1.4).
  */
 @Composable
 fun ShareDialog(
@@ -69,11 +72,14 @@ fun ShareDialog(
         onDismissRequest = onDismiss,
         title = { Text("근무표 공유") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Scrolls so a folded cover screen with a large font still reaches the buttons.
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(onClick = { onImage(); onDismiss() }, modifier = Modifier.fillMaxWidth()) { Text("이 달 이미지로 보내기") }
                 Text("링크로 보내기", style = MaterialTheme.typography.titleSmall)
                 Text("받는 사람은 앱 없이 브라우저로 ${month.monthValue}월부터 3개월 근무표를 봐요. 메모와 급여는 들어가지 않고, 정한 기간이 지나면 링크가 저절로 지워져요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // [MKT-09][OPS-13] Said before the data leaves the phone, in the policy's words.
+                Text(SHARE_SERVER_NOTICE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(value = title, onValueChange = { if (it.length <= 30) title = it }, singleLine = true,
                     label = { Text("이름 (선택, 예: 민지)") }, modifier = Modifier.fillMaxWidth())
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -100,6 +106,10 @@ fun ShareDialog(
         confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }
+
+/** What leaves the phone with a link, where it is kept, and who can open it. Matches privacy policy 1.4, sections 1 and 5. */
+internal const val SHARE_SERVER_NOTICE =
+    "링크를 만들면 적은 이름과 근무표가 공유 서버(Cloudflare, 미국)에 저장되고, 주소를 받은 사람은 누구나 볼 수 있어요. 원하지 않으면 이미지로 보내 주세요."
 
 private fun expiryText(s: ShareLinkState): String =
     s.expiresAt.atZone(ZoneId.systemDefault()).toLocalDate().format(DateTimeFormatter.ofPattern("M월 d일"))
