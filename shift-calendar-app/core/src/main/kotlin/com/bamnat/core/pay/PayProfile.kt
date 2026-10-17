@@ -55,7 +55,23 @@ data class PayItem(
      * it is meant to cover, 0 when it is an ordinary allowance [PAY-05]. Never 통상임금.
      */
     val fixedOvertimeMinutes: Int = 0,
+    /** For [Cadence.BONUS]: 명절상여 paid with 설날·추석, whose dates move with the lunar calendar [PAYX-10]. */
+    val festivals: Set<Festival> = emptySet(),
+    /** Pay the 명절상여 in the month before the holiday instead of the holiday's own month. */
+    val festivalMonthBefore: Boolean = false,
 ) {
+    /** How many payments of this bonus fall in [month]: its fixed months plus any 명절 [PAYX-10]. */
+    fun timesIn(month: java.time.YearMonth): Int =
+        (if (month.monthValue in months) 1 else 0) + festivals.count { f ->
+            listOf(month.year, month.year + 1).any { y -> f.payMonth(y, festivalMonthBefore) == month }
+        }
+
+    /** Payments in [year]; the 명절 months change every year. */
+    fun timesInYear(year: Int): Int = (1..12).sumOf { timesIn(java.time.YearMonth.of(year, it)) }
+
+    /** Payments in a usual year, for labels: fixed months plus one per 명절. */
+    val yearlyTimes: Int get() = months.size + festivals.size
+
     val isFixedOvertime: Boolean get() = fixedOvertimeMinutes > 0 && cadence == Cadence.MONTHLY
 
     /** One payment of a [Cadence.BONUS] item given the month's 기본급. */
@@ -68,7 +84,19 @@ data class PayItem(
      * requires being employed on the pay date.
      */
     fun bonusMonthlyShare(base: Long, on: java.time.YearMonth): Long =
-        Math.round(bonusPayment(base, on) * months.size / 12.0)
+        Math.round(bonusPayment(base, on) * timesInYear(on.year) / 12.0)
+}
+
+/** 명절 that a 명절상여 follows [PAYX-10]: lunar 1/1 and 8/15, converted for each year. */
+enum class Festival(val label: String, val lunarMonth: Int, val lunarDay: Int) {
+    SEOLLAL("설날", 1, 1),
+    CHUSEOK("추석", 8, 15);
+
+    fun date(year: Int): java.time.LocalDate? = com.bamnat.core.holiday.KoreanLunar.toSolar(year, lunarMonth, lunarDay)
+
+    /** The month a bonus for this holiday in [year] is paid. */
+    fun payMonth(year: Int, monthBefore: Boolean): java.time.YearMonth? =
+        date(year)?.let { java.time.YearMonth.from(it).let { m -> if (monthBefore) m.minusMonths(1) else m } }
 }
 
 /**

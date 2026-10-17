@@ -1,5 +1,13 @@
 package com.bamnat.app.ui.calendar
 
+import androidx.compose.ui.semantics.stateDescription
+
+import androidx.compose.ui.semantics.semantics
+
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+
 import com.bamnat.core.holiday.KoreanLunar
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -98,8 +106,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.bamnat.core.model.ExtraWork
 
-private const val DEFAULT_HOLIDAY_WORK_MINUTES = 8 * 60
-private const val DEFAULT_OVERTIME_MINUTES = 2 * 60
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -120,6 +126,9 @@ fun DayDetail(
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val settings by vm.settings.collectAsStateWithLifecycle()
         DayHeader(day = day, isToday = date == today, showLunar = settings.showLunar)
+        // [SLP-01][MKT-07] Too little rest before this day, as a reference sign.
+        val rest = remember(snapshot, date, settings.restCheck) { if (settings.restCheck) vm.restIssuesOn(snapshot, date) else emptyList() }
+        if (rest.isNotEmpty()) RestWarning(rest)
 
         // [WORK-01] Field and shop work lead with money; shift details stay one tap away.
         val style = settings.workStyle
@@ -129,12 +138,30 @@ fun DayDetail(
             memos.joinToString("\n") { m -> (listOf(m.title, m.body) + m.checklist.map { it.text }).filter { it.isNotBlank() }.joinToString("\n") }
         }
         val moneyFirst = style != null && !style.usesPayEngine
-        var showShifts by rememberSaveable(date) { mutableStateOf(false) }
-        val shiftsVisible = !moneyFirst || showShifts || day.source == DaySource.OVERRIDE || day.entry != null
+        // [FEAT-16] Opened shift details can be folded again; null follows the day (open when it was changed).
+        var shiftsOpen by rememberSaveable(date) { mutableStateOf<Boolean?>(null) }
+        val changed = day.source == DaySource.OVERRIDE || day.entry != null
+        val shiftsVisible = !moneyFirst || (shiftsOpen ?: changed)
+        val memoSection: @Composable () -> Unit = {
+            MemoSection(
+                date = date,
+                memos = memos,
+                onQuickAdd = { vm.addQuickMemo(date, it) },
+                onOpenMemo = onOpenMemo,
+                onDeleteMemo = vm::deleteMemo,
+                onNewMemo = { onNewMemo(date) },
+            )
+        }
+        // [FEAT-17] Memo-first people see the day's notes before anything else.
+        if (settings.memoFirst) memoSection()
         if (moneyFirst) DayMoneySections(date, style, dayBook, vm, memoText)
-        if (!shiftsVisible) {
-            TextButton(onClick = { showShifts = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-                Text("근무·알람도 적기")
+        if (moneyFirst) {
+            TextButton(
+                onClick = { shiftsOpen = !shiftsVisible },
+                modifier = Modifier.align(Alignment.CenterHorizontally).semantics { stateDescription = if (shiftsVisible) "펼쳐짐" else "접힘" },
+            ) {
+                Text(if (shiftsVisible) "근무·알람 접기" else if (changed) "근무·알람 보기 (바꾼 내용 있음)" else "근무·알람도 적기")
+                Icon(if (shiftsVisible) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, contentDescription = null)
             }
         }
         if (shiftsVisible) {
@@ -193,14 +220,10 @@ fun DayDetail(
 
         if (!moneyFirst) DayMoneySections(date, style, dayBook, vm, memoText)
 
-        MemoSection(
-            date = date,
-            memos = memos,
-            onQuickAdd = { vm.addQuickMemo(date, it) },
-            onOpenMemo = onOpenMemo,
-            onDeleteMemo = vm::deleteMemo,
-            onNewMemo = { onNewMemo(date) },
-        )
+        if (!settings.memoFirst) memoSection()
+
+        val changes by remember(date) { vm.changesOn(date) }.collectAsStateWithLifecycle(emptyList())
+        if (changes.isNotEmpty()) ChangeHistory(changes)
 
         if (day.entry != null) {
             TextButton(onClick = { vm.resetDay(date) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
@@ -364,18 +387,20 @@ private fun ExtraWorkSection(day: ResolvedDay, vm: CalendarViewModel) {
     val minutes = if (workDay) day.overtimeMinutes else day.holidayWorkMinutes
     val kind = day.extraWork
     val active = kind != null || minutes > 0
-    val defaultMinutes = if (workDay) DEFAULT_OVERTIME_MINUTES else DEFAULT_HOLIDAY_WORK_MINUTES
+    val kinds = LocalExtraKinds.current
+    val shown = kinds.visible(kind)
+    val names = shown.joinToString(" · ") { kinds.name(it) }
 
-    SectionCard(title = if (workDay) "잔업 · 특근 · 대근" else "쉬는 날 근무 (특근 · 대근 · 잔업)") {
+    SectionCard(title = if (workDay) names else "쉬는 날 근무 ($names)") {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            for (k in ExtraWork.entries) {
+            for (k in shown) {
                 FilterChip(
                     selected = kind == k,
                     onClick = {
                         if (kind == k) vm.setExtraWork(day, null, 0)
-                        else vm.setExtraWork(day, k, if (minutes > 0) minutes else defaultMinutes)
+                        else vm.setExtraWork(day, k, if (minutes > 0) minutes else kinds.minutesFor(k, workDay))
                     },
-                    label = { Text(k.label) },
+                    label = { Text(kinds.name(k)) },
                     leadingIcon = { ExtraWorkMark(k, size = 18.dp) },
                 )
             }
@@ -394,7 +419,7 @@ private fun ExtraWorkSection(day: ResolvedDay, vm: CalendarViewModel) {
                 MinutesStepper(
                     minutes = minutes,
                     onChange = { vm.setExtraWork(day, kind, it) },
-                    dialogTitle = (kind?.label ?: "추가 근무") + " 시간",
+                    dialogTitle = (kind?.let(kinds::name) ?: "추가 근무") + " 시간",
                 )
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -499,7 +524,10 @@ private fun SecondShiftSection(day: ResolvedDay, snapshot: ScheduleSnapshot, vm:
     }
 }
 
-/** Small colored square with 잔/특/대, used in cells and chips. */
+/** [PAYX-09] The user's names, shown kinds and hours for 잔업·특근·대근, provided at the app root. */
+val LocalExtraKinds = androidx.compose.runtime.compositionLocalOf { com.bamnat.core.model.ExtraKinds() }
+
+/** Small colored square with 잔/특/대 (or the first letter of the company's own name), used in cells and chips. */
 @Composable
 fun ExtraWorkMark(kind: ExtraWork, size: androidx.compose.ui.unit.Dp = 16.dp) {
     val color = extraWorkColor(kind)
@@ -507,7 +535,7 @@ fun ExtraWorkMark(kind: ExtraWork, size: androidx.compose.ui.unit.Dp = 16.dp) {
         Modifier.size(size).clip(RoundedCornerShape(size / 4)).background(color),
         contentAlignment = Alignment.Center,
     ) {
-        Text(kind.short, color = androidx.compose.ui.graphics.Color.White, fontSize = (size.value * 0.6f).sp,
+        Text(LocalExtraKinds.current.short(kind), color = androidx.compose.ui.graphics.Color.White, fontSize = (size.value * 0.6f).sp,
             fontWeight = FontWeight.Bold, lineHeight = (size.value * 0.6f).sp)
     }
 }
@@ -889,3 +917,49 @@ private fun DayPaySection(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Cale
         }
     }
 }
+
+/** [SLP-01][MKT-07] Rest-gap signs for one day. Reference only: 근무표는 회사가 정해요. */
+@Composable
+private fun RestWarning(issues: List<com.bamnat.core.schedule.RestCheck.Issue>) {
+    androidx.compose.material3.Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("휴식 점검", style = MaterialTheme.typography.titleSmall)
+            for (issue in issues) {
+                Text("${issue.kind.label}: ${issue.text}", style = MaterialTheme.typography.bodyMedium)
+            }
+            Text("참고용이에요. 몸 상태를 먼저 살피세요.", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+/** [MKT-08] When and what was changed on this day; folded after the first few. */
+@Composable
+private fun ChangeHistory(changes: List<com.bamnat.app.data.DayChange>) {
+    var all by rememberSaveable { mutableStateOf(false) }
+    val zone = java.time.ZoneId.systemDefault()
+    val fmt = remember { java.time.format.DateTimeFormatter.ofPattern("M/d HH:mm") }
+    SectionCard(title = "변경 이력") {
+        val shown = if (all) changes else changes.take(HISTORY_ROWS)
+        for (c in shown) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                Text(
+                    java.time.Instant.ofEpochMilli(c.atMillis).atZone(zone).format(fmt),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(84.dp),
+                )
+                Text(c.text, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        if (changes.size > HISTORY_ROWS) {
+            TextButton(onClick = { all = !all }) { Text(if (all) "접기" else "${changes.size - HISTORY_ROWS}개 더 보기") }
+        }
+    }
+}
+
+private const val HISTORY_ROWS = 3

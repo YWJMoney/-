@@ -1,5 +1,7 @@
 package com.bamnat.app.data
 
+import com.bamnat.app.data.db.DayChangeEntity
+import com.bamnat.core.model.DayChanges
 import androidx.room.withTransaction
 import com.bamnat.app.data.db.AppDatabase
 import com.bamnat.app.data.db.decodeSteps
@@ -39,7 +41,31 @@ data class ScheduleSnapshot(
     val hasPattern: Boolean get() = patterns.isNotEmpty()
 }
 
-class ScheduleRepository(private val db: AppDatabase) {
+class ScheduleRepository(
+    private val db: AppDatabase,
+    /** [PAYX-09] The user's names for 잔업·특근·대근, used in the change log. */
+    private val extraName: (ExtraWork) -> String = { it.label },
+    private val clock: () -> Long = System::currentTimeMillis,
+) {
+    private val changeDao = db.dayChangeDao()
+
+    /** [MKT-08] What changed on [date] and when, newest first. */
+    fun changesOn(date: LocalDate): Flow<List<DayChange>> =
+        changeDao.observe(date.toEpochDay()).map { list -> list.map { DayChange(it.atMillis, it.text) } }
+
+    private suspend fun logChange(date: LocalDate, before: DayEntry?, after: DayEntry) {
+        val names = shiftTypeDao.getAll().associate { it.id to it.name }
+        val text = DayChanges.describe(before, after, { names[it] ?: "근무" }, extraName) ?: return
+        val now = clock()
+        // Taps on a stepper (잔업 30분 → 1시간 → 1시간 30분) read as one change, not a list of steps.
+        val last = changeDao.latest(date.toEpochDay())
+        if (last != null && now - last.atMillis in 0 until COALESCE_MILLIS && last.text.substringBefore(' ') == text.substringBefore(' ')) {
+            changeDao.delete(last.id)
+        }
+        changeDao.insert(DayChangeEntity(epochDay = date.toEpochDay(), atMillis = now, text = text))
+        changeDao.purge(now - CHANGE_KEEP_MILLIS)
+    }
+
     private val shiftTypeDao = db.shiftTypeDao()
     private val patternDao = db.patternDao()
     private val dayEntryDao = db.dayEntryDao()
@@ -196,6 +222,7 @@ class ScheduleRepository(private val db: AppDatabase) {
                 holidayWorkMinutes = changed.holidayWorkMinutes.coerceIn(0, MAX_EXTRA_MINUTES),
             )
             if (after.isEmpty) dayEntryDao.delete(epochDay) else dayEntryDao.upsert(after.toEntity())
+            logChange(date, before, after)
             before
         }
 
@@ -276,3 +303,10 @@ object DefaultShiftTypes {
             alarmEnabled = true, alarms = listOf(AlarmSpec(60)), sortOrder = 2),
     )
 }
+
+/** [MKT-08] A change to a day as the log keeps it. */
+data class DayChange(val atMillis: Long, val text: String)
+
+/** The change log keeps a year. */
+private const val COALESCE_MILLIS = 60_000L
+const val CHANGE_KEEP_MILLIS = 366L * 24 * 60 * 60 * 1000

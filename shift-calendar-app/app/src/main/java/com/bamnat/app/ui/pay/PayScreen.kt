@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.app.pay.named
+
 import com.bamnat.core.pay.LeaveBook
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
@@ -296,7 +298,7 @@ private fun PayResult(
         }
 
         SectionCard(title = "회사 규칙", trailing = { TextButton(onClick = onEditRules, enabled = unlocked) { Text("설정") } }) {
-            val summary = profile.rules.summary(profile)
+            val summary = profile.named(com.bamnat.app.ui.calendar.LocalExtraKinds.current).rules.summary(profile)
             Text(
                 (if (profile.fiveOrMoreEmployees) "5인 이상" else "5인 미만") +
                     (if (profile.scheduleIsRegular) " · 근무표 시간은 기본 근무" + (profile.flexPeriod?.let { " (탄력제 ${it.months}개월)" } ?: "")
@@ -306,8 +308,8 @@ private fun PayResult(
             )
             // [PAY-05] The regular bonus decides the hourly rate, so it is shown next to the hours.
             profile.items.filter { it.cadence == Cadence.BONUS }.forEach { b ->
-                val yearly = b.percentOfBase?.let { "연 ${PayCalculator.pct(it * b.months.size)}" } ?: "${b.months.size}번"
-                Text("${b.name} $yearly (${b.months.sorted().joinToString("·")}월)" + if (b.ordinary) " · 통상임금 포함" else "",
+                val yearly = b.percentOfBase?.let { "연 ${PayCalculator.pct(it * b.yearlyTimes)}" } ?: "${b.yearlyTimes}번"
+                Text("${b.name} $yearly (${b.paidWhen()})" + if (b.ordinary) " · 통상임금 포함" else "",
                     style = MaterialTheme.typography.bodyMedium)
             }
             if (summary.isEmpty()) {
@@ -345,8 +347,8 @@ private fun PayResult(
     }
     if (importing) RuleImportDialog(vm, month, onDismiss = { importing = false })
     if (reconciling) ReconcileDialog(vm, profile, snapshot, month, result.total, onDismiss = { reconciling = false })
-    if (addingBonus) AddBonusDialog(onDismiss = { addingBonus = false }) { name, months, percent, amount, ordinary ->
-        vm.addBonus(name, months, percent, amount, ordinary, month)
+    if (addingBonus) AddBonusDialog(onDismiss = { addingBonus = false }) { name, months, percent, amount, ordinary, festivals, before ->
+        vm.addBonus(name, months, percent, amount, ordinary, month, festivals, before)
         addingBonus = false
     }
     if (addingItem) AddItemDialog(onDismiss = { addingItem = false }) { name, amount, cadence, ordinary, fixedOt ->
@@ -544,10 +546,10 @@ private fun ValueRow(
 @Composable
 private fun BonusRow(item: PayItem, base: Long, month: YearMonth, enabled: Boolean, onOrdinary: (Boolean) -> Unit, onRemove: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text("${item.name} · ${item.months.sorted().joinToString(", ")}월", style = MaterialTheme.typography.bodyLarge)
+        Text("${item.name} · ${item.paidWhen()}", style = MaterialTheme.typography.bodyLarge)
         Text(
             won(item.bonusPayment(base, month)) + (item.percentOfBase?.let { " (기본급 ${PayCalculator.pct(it)})" } ?: "") +
-                " × 연 ${item.months.size}회",
+                " × 연 ${item.timesInYear(month.year)}회",
             style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
         )
         Text(
@@ -616,7 +618,7 @@ private fun DayLedger(result: MonthPay, unlocked: Boolean) {
                         color = if (d.holidayName != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.width(76.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(listOfNotNull(d.label, d.extraWork?.label, d.holidayName).joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+                        Text(listOfNotNull(d.label, d.extraWork?.let(com.bamnat.app.ui.calendar.LocalExtraKinds.current::name), d.holidayName).joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             d.parts.map { it.kind }.distinct().forEach { k ->
                                 Box(Modifier.padding(top = 3.dp).size(8.dp).clip(RoundedCornerShape(2.dp)).background(kindColor(k)))
@@ -678,7 +680,8 @@ private fun LeaveCard(profile: PayProfile, snapshot: ScheduleSnapshot, month: Ye
     val today = remember { java.time.LocalDate.now() }
     val balance = remember(profile.rules, snapshot, month.year) {
         LeaveBook.balance(month.year, profile.rules.annualLeaveDays, today, snapshot.resolver::resolve,
-            free = { profile.rules.holidayLeaveFree && com.bamnat.core.holiday.KoreanHolidays.isHoliday(it) })
+            free = { profile.rules.holidayLeaveFree && com.bamnat.core.holiday.KoreanHolidays.isHoliday(it) },
+            carried = if (month.year == today.year) profile.rules.annualLeaveCarry else 0.0)
     }
     if (balance.byKind.isEmpty() && balance.granted == null) return
     SectionCard(title = "${month.year}년 휴가", trailing = { TextButton(onClick = onEditRules) { Text("연차 일수") } }) {
@@ -687,6 +690,17 @@ private fun LeaveCard(profile: PayProfile, snapshot: ScheduleSnapshot, month: Ye
             LeaveStat("예정", LeaveBook.days(balance.planned), Modifier.weight(1f))
             LeaveStat("남은 연차", balance.remaining?.let(LeaveBook::days) ?: "—", Modifier.weight(1f),
                 warn = (balance.remaining ?: 0.0) < 0)
+        }
+        if (balance.carried > 0) {
+            Text("받은 연차 ${LeaveBook.days(balance.granted ?: 0.0)} (이월 ${LeaveBook.days(balance.carried)} 포함)",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp))
+        }
+        // [PAY-12][REL-08] From November, days that lapse on 12/31 unless used.
+        balance.expiring(today)?.let { left ->
+            Text("${balance.expiresOn.monthValue}/${balance.expiresOn.dayOfMonth} 소멸 예정 ${LeaveBook.days(left)}. 회사 규정에 따라 이월·수당으로 바뀔 수 있어요.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 8.dp))
         }
         val others = balance.byKind.filterKeys { !it.annual }
         if (others.isNotEmpty()) {
@@ -767,3 +781,9 @@ private fun reportProblem(context: android.content.Context, profile: PayProfile,
     }
     context.startActivity(android.content.Intent.createChooser(send, "오류 제보 보내기"))
 }
+
+/** When a bonus is paid: its fixed months and the 명절 it follows [PAYX-10]. */
+private fun PayItem.paidWhen(): String = listOfNotNull(
+    months.sorted().takeIf { it.isNotEmpty() }?.joinToString("·")?.let { "${it}월" },
+    festivals.takeIf { it.isNotEmpty() }?.joinToString("·") { it.label }?.let { "$it ${if (festivalMonthBefore) "전 달" else "있는 달"}" },
+).joinToString(" · ")

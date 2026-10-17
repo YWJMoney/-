@@ -124,6 +124,8 @@ fun MonthGrid(
     /** [WORK-02][WORK-03] Field and shop work show the day's income in place of hours. */
     money: MoneyBook = MoneyBook.EMPTY,
     showMoney: Boolean = false,
+    /** [FEAT-17] Memo-first: the start of each day's memo in place of the hours. */
+    memoTexts: Map<LocalDate, String> = emptyMap(),
 ) {
     val cal = LocalCalendarColors.current
     val dayMoney = remember(money, month, showMoney) { if (showMoney) money.days(month) else emptyMap() }
@@ -155,6 +157,7 @@ fun MonthGrid(
                         isSelected = date == selected,
                         hasMemo = date in memoDates,
                         money = dayMoney[date],
+                        memoText = memoTexts[date],
                         showHours = showHours,
                         showLunar = showLunar,
                         onClick = { onDayClick(date) },
@@ -179,6 +182,7 @@ private fun DayCell(
     showHours: Boolean,
     showLunar: Boolean = false,
     money: DayMoney? = null,
+    memoText: String? = null,
     onClick: () -> Unit,
     onQuickAction: (QuickAction) -> Unit,
     modifier: Modifier = Modifier,
@@ -207,7 +211,7 @@ private fun DayCell(
         holidayName?.let { append(", ").append(it) }
         type?.let { append(", ").append(it.name) }
         if (day.isWorkDay) append(", ").append(HoursFormat.korean(day.totalMinutes))
-        day.extraWork?.let { append(", ").append(it.label) }
+        day.extraWork?.let { append(", ").append(LocalExtraKinds.current.name(it)) }
         day.leave?.let { append(", ").append(it.label) }
         day.second?.let { append(", 그리고 ").append(it.type.name) }
         if (day.isHolidayWork) append(", 휴일 근무 ").append(HoursFormat.korean(day.holidayWorkMinutes))
@@ -300,6 +304,7 @@ private fun DayCell(
                 val extraMinutes = day.extraMinutes
                 val moneyText = money?.income?.takeIf { it != 0L }?.let { Fmt.wonShort(it) }
                 val footer = when {
+                    memoText != null -> memoText
                     moneyText != null -> moneyText
                     extraMinutes > 0 -> "+" + HoursFormat.short(extraMinutes)
                     // [FEAT-05] Lunar date takes the place of the hours when turned on.
@@ -314,6 +319,7 @@ private fun DayCell(
                     maxLines = 1,
                     overflow = TextOverflow.Clip,
                     color = when {
+                        memoText != null -> cal.memoDot
                         moneyText != null -> if (money!!.income < 0) cal.expense else cal.income
                         extraMinutes > 0 -> cal.holidayWork
                         else -> scheme.onSurfaceVariant
@@ -321,7 +327,7 @@ private fun DayCell(
                     fontWeight = if (extraMinutes > 0 || moneyText != null) FontWeight.Bold else FontWeight.Normal,
                     style = NumberStyle,
                 )
-                if (hasMemo) {
+                if (hasMemo && memoText == null) {
                     if (footer.isNotEmpty()) Spacer(Modifier.width(2.dp))
                     ColorDot(cal.memoDot, size = 5.dp)
                 }
@@ -351,10 +357,11 @@ private fun DayCell(
                 )
             }
             HorizontalDivider()
-            for (k in ExtraWork.entries) {
-                val minutes = if (day.isWorkDay) 2 * 60 else 8 * 60
+            val kinds = LocalExtraKinds.current
+            for (k in kinds.visible(day.extraWork)) {
+                val minutes = kinds.minutesFor(k, day.isWorkDay)
                 DropdownMenuItem(
-                    text = { Text(if (day.extraWork == k) "${k.label} 해제" else "${k.label} ${minutes / 60}시간") },
+                    text = { Text(if (day.extraWork == k) "${kinds.name(k)} 해제" else "${kinds.name(k)} ${HoursFormat.short(minutes)}") },
                     leadingIcon = { ExtraWorkMark(k, size = 20.dp) },
                     onClick = {
                         menu = false

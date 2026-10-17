@@ -11,9 +11,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         ShiftTypeEntity::class, PatternEntity::class, DayEntryEntity::class, MemoEntity::class,
         MoneyEntryEntity::class, JobEntity::class, DailySalesEntity::class,
-        FixedCostEntity::class, CategoryRuleEntity::class,
+        FixedCostEntity::class, CategoryRuleEntity::class, DayChangeEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -22,11 +22,12 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun dayEntryDao(): DayEntryDao
     abstract fun memoDao(): MemoDao
     abstract fun moneyDao(): MoneyDao
+    abstract fun dayChangeDao(): DayChangeDao
 
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "bamnat.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                 .build()
 
         /** Version 2: several alarms per shift, hand-set alarms per day, memo trash. */
@@ -115,6 +116,17 @@ abstract class AppDatabase : RoomDatabase() {
                         "`amount` INTEGER NOT NULL, `day` INTEGER NOT NULL, `kind` TEXT NOT NULL, `category` TEXT NOT NULL, `remind` INTEGER NOT NULL)",
                 )
                 db.execSQL("CREATE TABLE IF NOT EXISTS `category_rules` (`merchant` TEXT NOT NULL, `category` TEXT NOT NULL, PRIMARY KEY(`merchant`))")
+            }
+        }
+
+        /** Version 10: what changed on each day and when [MKT-08]. */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `day_changes` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `epochDay` INTEGER NOT NULL, " +
+                        "`atMillis` INTEGER NOT NULL, `text` TEXT NOT NULL DEFAULT '')",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_day_changes_epochDay` ON `day_changes` (`epochDay`)")
             }
         }
     }

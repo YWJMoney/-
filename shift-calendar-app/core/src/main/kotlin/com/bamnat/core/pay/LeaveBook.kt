@@ -14,16 +14,42 @@ data class LeaveBalance(
     /** Leave recorded on dates still ahead (planned). */
     val planned: Double,
     val byKind: Map<LeaveKind, Double>,
+    /** Days carried over from last year (이월) [PAY-12][REL-08]; part of [granted]. */
+    val carried: Double = 0.0,
 ) {
     val remaining: Double? get() = granted?.let { it - used - planned }
+
+    /** The last day this year's 연차 can be used (회계연도 기준). */
+    val expiresOn: LocalDate get() = LocalDate.of(year, 12, 31)
+
+    /**
+     * [PAY-12] Days that will lapse unless used, from November on (two months' notice, like the
+     * 사용촉진 of 근로기준법 제61조); null when none or too early to say.
+     */
+    fun expiring(today: LocalDate): Double? {
+        val left = remaining ?: return null
+        if (left <= 0 || today.year != year || today.monthValue < 11) return null
+        return left
+    }
 }
 
 object LeaveBook {
+    /** [PAY-12][REL-08] Lapse notices go out on these dates at 09:00: two months and one month ahead of 12/31. */
+    val NOTICE_DAYS = listOf(java.time.MonthDay.of(11, 1), java.time.MonthDay.of(12, 1))
+
+    /** The next lapse notice after [now]. */
+    fun nextNotice(now: java.time.LocalDateTime): java.time.LocalDateTime =
+        (now.year..now.year + 1).asSequence()
+            .flatMap { y -> NOTICE_DAYS.asSequence().map { it.atYear(y).atTime(9, 0) } }
+            .first { it.isAfter(now) }
+
     /** Counts leave on working days of [year]; [resolve] is the calendar. */
     fun balance(
         year: Int, granted: Double?, today: LocalDate, resolve: (LocalDate) -> ResolvedDay,
         /** Dates whose leave does not use up 연차, e.g. 공휴일 at some companies. */
         free: (LocalDate) -> Boolean = { false },
+        /** Days carried over from last year, added to [granted]. */
+        carried: Double = 0.0,
     ): LeaveBalance {
         var used = 0.0
         var planned = 0.0
@@ -37,7 +63,7 @@ object LeaveBook {
             }
             d = d.plusDays(1)
         }
-        return LeaveBalance(year, granted, used, planned, byKind)
+        return LeaveBalance(year, granted?.let { it + carried }, used, planned, byKind, carried)
     }
 
     /**

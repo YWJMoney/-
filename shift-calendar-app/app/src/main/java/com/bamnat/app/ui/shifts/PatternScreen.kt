@@ -76,7 +76,16 @@ import java.time.temporal.ChronoUnit
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun PatternScreen(vm: ShiftsViewModel, onBack: () -> Unit, onOpenShiftTypes: () -> Unit, startWeekdays: Boolean = false) {
+fun PatternScreen(
+    vm: ShiftsViewModel,
+    onBack: () -> Unit,
+    onOpenShiftTypes: () -> Unit,
+    startWeekdays: Boolean = false,
+    /** [PAYX-13] Part of the first setup: kind of work → cycle → pay. */
+    setup: Boolean = false,
+    /** Where to go after the first pattern is saved; null goes back. */
+    onSaved: (() -> Unit)? = null,
+) {
     val typesOrNull by vm.shiftTypes.collectAsStateWithLifecycle()
     val patternState by vm.pattern.collectAsStateWithLifecycle()
     val types = typesOrNull
@@ -118,17 +127,17 @@ fun PatternScreen(vm: ShiftsViewModel, onBack: () -> Unit, onOpenShiftTypes: () 
     val save: () -> Unit = {
         if (draft != null) {
             // With a pattern already in place, ask whether this is a team change and from when.
-            if (existing == null) vm.saveFirstPattern(draft, onBack) else askWhen = true
+            if (existing == null) vm.saveFirstPattern(draft, onSaved ?: onBack) else askWhen = true
         }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("근무 패턴") },
+                title = { Text(if (setup) "1/2 근무 주기" else "근무 패턴") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 actions = {
-                    TextButton(onClick = save, enabled = valid) { Text("저장") }
+                    TextButton(onClick = save, enabled = valid) { Text(if (setup && existing == null) "다음" else "저장") }
                 },
             )
         },
@@ -141,6 +150,14 @@ fun PatternScreen(vm: ShiftsViewModel, onBack: () -> Unit, onOpenShiftTypes: () 
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (setup && existing == null) {
+                // [PAYX-13] The first setup runs kind of work → cycle → pay without a detour.
+                Text(
+                    "근무 주기를 고르고 ‘다음’을 누르면 급여 계산 설정(2/2)으로 이어져요. 급여는 나중에 해도 돼요.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 SegmentedButton(
                     selected = kind == PatternKind.ROTATION,

@@ -416,7 +416,10 @@ fun ReconcileDialog(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun AddBonusDialog(onDismiss: () -> Unit, onAdd: (String, Set<Int>, Double?, Long, Boolean) -> Unit) {
+fun AddBonusDialog(
+    onDismiss: () -> Unit,
+    onAdd: (String, Set<Int>, Double?, Long, Boolean, Set<com.bamnat.core.pay.Festival>, Boolean) -> Unit,
+) {
     var name by remember { mutableStateOf("상여금") }
     var byPercent by remember { mutableStateOf(true) }
     var percent by remember { mutableStateOf(100) }
@@ -425,6 +428,10 @@ fun AddBonusDialog(onDismiss: () -> Unit, onAdd: (String, Set<Int>, Double?, Lon
     var amount by remember { mutableStateOf<Long?>(null) }
     var months by remember { mutableStateOf(setOf(1, 4, 7, 10)) }
     var ordinary by remember { mutableStateOf(true) }
+    // [PAYX-10] 명절상여 follows 설날·추석, whose months move every year.
+    var festivals by remember { mutableStateOf(emptySet<com.bamnat.core.pay.Festival>()) }
+    var festivalBefore by remember { mutableStateOf(false) }
+    val times = months.size + festivals.size
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("상여금 추가") },
@@ -444,8 +451,8 @@ fun AddBonusDialog(onDismiss: () -> Unit, onAdd: (String, Set<Int>, Double?, Lon
                             FilterChip(selected = annual == a, onClick = { annual = a }, label = { Text("연 $a%") })
                         }
                     }
-                    annual?.takeIf { months.isNotEmpty() }?.let { a ->
-                        Text("한 번에 기본급의 ${PayCalculator.pct(a / 100.0 / months.size)}씩 ${months.size}번",
+                    annual?.takeIf { times > 0 }?.let { a ->
+                        Text("한 번에 기본급의 ${PayCalculator.pct(a / 100.0 / times)}씩 ${times}번",
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                     }
                     Text("한 번에", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -460,7 +467,25 @@ fun AddBonusDialog(onDismiss: () -> Unit, onAdd: (String, Set<Int>, Double?, Lon
                 } else {
                     MoneyField("1회 금액", amount, { amount = it })
                 }
-                Text("받는 달", style = MaterialTheme.typography.labelLarge)
+                Text("명절상여", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    com.bamnat.core.pay.Festival.entries.forEach { f ->
+                        val date = remember(f) { f.date(java.time.LocalDate.now().year) }
+                        FilterChip(selected = f in festivals, onClick = {
+                            festivals = if (f in festivals) festivals - f else festivals + f
+                            if (festivals.isNotEmpty() && name == "상여금") name = "명절상여"
+                        }, label = { Text(f.label + (date?.let { " (올해 ${it.monthValue}/${it.dayOfMonth})" } ?: "")) })
+                    }
+                }
+                if (festivals.isNotEmpty()) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(selected = !festivalBefore, onClick = { festivalBefore = false }, label = { Text("명절 있는 달") })
+                        FilterChip(selected = festivalBefore, onClick = { festivalBefore = true }, label = { Text("명절 전 달") })
+                    }
+                    Text("음력이라 해마다 받는 달이 바뀌어요. 달력에 맞춰 자동으로 계산해요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(if (festivals.isEmpty()) "받는 달" else "그 밖에 받는 달 (없으면 비워 두세요)", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf("분기 (1·4·7·10월)" to setOf(1, 4, 7, 10), "짝수 달" to setOf(2, 4, 6, 8, 10, 12),
                         "매달" to (1..12).toSet(), "반기 (6·12월)" to setOf(6, 12)).forEach { (label, set) ->
@@ -485,8 +510,11 @@ fun AddBonusDialog(onDismiss: () -> Unit, onAdd: (String, Set<Int>, Double?, Lon
         },
         confirmButton = {
             Button(
-                onClick = { onAdd(name, months, if (byPercent) (annual?.let { it / 100.0 / months.size } ?: (percent / 100.0)) else null, if (byPercent) 0 else amount ?: 0, ordinary) },
-                enabled = months.isNotEmpty() && (byPercent || (amount ?: 0) > 0),
+                onClick = {
+                    onAdd(name, months, if (byPercent) (annual?.let { it / 100.0 / times } ?: (percent / 100.0)) else null,
+                        if (byPercent) 0 else amount ?: 0, ordinary, festivals, festivalBefore)
+                },
+                enabled = times > 0 && (byPercent || (amount ?: 0) > 0),
             ) { Text("추가") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },

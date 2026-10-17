@@ -21,6 +21,8 @@ object DiagEvents {
     const val BACKUP_EXPORT = "backup_export"
     const val BACKUP_RESTORE = "backup_restore"
     const val ICS_EXPORT = "ics_export"
+    const val COMPANY_SHARE = "company_share"
+    const val COMPANY_IMPORT = "company_import"
     const val SCREEN = "screen"
 }
 

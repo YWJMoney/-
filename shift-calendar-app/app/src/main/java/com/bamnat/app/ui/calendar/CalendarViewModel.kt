@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.pay.named
+
 import com.bamnat.core.model.DayAlarm
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import com.bamnat.core.model.ExtraWork
@@ -30,6 +33,7 @@ import com.bamnat.core.pay.DayPay
 import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayProfile
 import java.time.YearMonth
+import com.bamnat.core.schedule.RestCheck
 import com.bamnat.app.ui.money.MoneyActions
 import com.bamnat.core.money.DailySales
 import com.bamnat.core.money.Job
@@ -62,7 +66,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private val payCalculator = PayCalculator()
 
     fun dayPay(profile: PayProfile, snapshot: ScheduleSnapshot, date: LocalDate): DayPay? =
-        payCalculator.calculate(profile, YearMonth.from(date), snapshot.resolver::resolve).day(date)
+        payCalculator.calculate(profile.named(container.settingsRepository.current.extraKinds), YearMonth.from(date), snapshot.resolver::resolve).day(date)
 
     private val _selected = MutableStateFlow(LocalDate.now())
     val selected: StateFlow<LocalDate> = _selected.asStateFlow()
@@ -74,6 +78,31 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     val messages: SharedFlow<UndoMessage> = _messages.asSharedFlow()
 
     fun memosOn(date: LocalDate): Flow<List<Memo>> = memoRepo.memosOn(date)
+
+    /** [MKT-08] What was changed on [date], newest first. */
+    fun changesOn(date: LocalDate): Flow<List<com.bamnat.app.data.DayChange>> = schedule.changesOn(date)
+
+    /**
+     * [SLP-01][MKT-07] Rest-gap signs for [month]; the days just before it are read too, so a
+     * night at the end of last month still counts against the 1st.
+     */
+    fun restIssues(snapshot: ScheduleSnapshot, month: YearMonth): List<RestCheck.Issue> {
+        val from = month.atDay(1).minusDays(RestCheck.NIGHT_STREAK.toLong())
+        val days = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(month.atEndOfMonth()) }
+            .map(snapshot.resolver::resolve).toList()
+        return RestCheck.check(days).filter { YearMonth.from(it.date) == month }
+    }
+
+    /** Rest-gap signs that fall on [date]. */
+    fun restIssuesOn(snapshot: ScheduleSnapshot, date: LocalDate): List<RestCheck.Issue> {
+        val days = (RestCheck.NIGHT_STREAK.toLong() downTo 0).map { snapshot.resolver.resolve(date.minusDays(it)) }
+        return RestCheck.check(days).filter { it.date == date }
+    }
+
+    /** [FEAT-17] Memos that belong to a date, for the list under the calendar and memo-first cells. */
+    val datedMemos: StateFlow<List<Memo>> = memoRepo.memos
+        .map { list -> list.filter { it.date != null && !it.inTrash && !it.isBlank }.sortedWith(compareBy({ it.date }, { -it.updatedAtMillis })) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun logShare() = container.telemetry.event("share_month_image")
 
