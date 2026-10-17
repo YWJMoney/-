@@ -25,6 +25,8 @@ const LIMITS = {
   company: 40,
   dept: 20,
   note: 500,
+  // A way of paying the app cannot set yet needs room to explain it and give an example.
+  ask: 1500,
   loginFailures: 5,
   lockMs: 60 * 60 * 1000,
   sessionMs: 7 * 24 * 60 * 60 * 1000,
@@ -43,6 +45,14 @@ const REASONS = {
   wrong: "실제와 다른 정보로 보여요",
   duplicate: "이미 같은 내용이 있어요",
   inappropriate: "알맞지 않은 내용이 들어 있어요",
+};
+
+/** [EXTRA-06] The developer's answer to a way of paying the app cannot set yet, as the sender's app shows it. */
+const ANSWERS = {
+  planned: "알려 주신 방식을 앱에 넣을게요. 업데이트되면 바로 설정할 수 있어요",
+  possible: "지금 앱으로도 맞출 수 있는 방식이에요. 연장 휴무일 근무 지정과 급여 설정을 다시 봐 주세요",
+  later: "지금은 넣기 어려워요. 같은 방식을 알려 주는 분이 많아지면 다시 볼게요",
+  unclear: "내용만으로는 알기 어려워요. 예시를 더 넣어 다시 보내 주세요",
 };
 
 const HOUR = 60 * 60 * 1000;
@@ -75,6 +85,7 @@ async function route(request, env) {
   await ready(env);
   if (path.startsWith("/api/admin/")) return admin(request, env, url);
   if (path === "/api/companies" && method === "GET") return search(env, url);
+  if (path === "/api/terms" && method === "GET") return json(await terms(env));
   let m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})$/);
   if (m && method === "GET") return company(env, m[1]);
   if (path === "/api/reports" && method === "POST") return report(request, env);
@@ -503,14 +514,18 @@ export function readReport(body) {
   if (normName(company).length < 2) refuse("company", "company");
   const dept = given(body.dept) ? str(body.dept, LIMITS.dept, "dept", { code: "dept" }) : "";
   if (typeof body.verified !== "boolean") refuse("verified", "verified");
-  const note = given(body.note) ? str(body.note, LIMITS.note, "note", { lines: true, code: "note" }) : "";
+  // [EXTRA-06] A way the app cannot set yet: the setup is only as close as the sender could get.
+  if (given(body.ask) && typeof body.ask !== "boolean") refuse("ask", "ask");
+  const ask = body.ask === true;
+  const note = given(body.note) ? str(body.note, ask ? LIMITS.ask : LIMITS.note, "note", { lines: true, code: "note" }) : "";
+  if (ask && !note) refuse("note", "note");
   const texts = [];
   const setup = cleanSetup(body.setup, texts);
   for (const [field, text] of [["company", company], ["dept", dept], ["note", note], ...texts]) {
     const why = personal(text);
     if (why) refuse(why, field);
   }
-  return { company, dept, deptNorm: normName(dept), verified: body.verified, note, setup };
+  return { company, dept, deptNorm: normName(dept), verified: body.verified, note, setup, ask };
 }
 
 // ---- the same rule ----
@@ -697,6 +712,12 @@ function diffLines(before, after) {
 
 // ---- what everyone can read and send ----
 
+/** What the app tells someone before they send: the points a setup needs and the reward once it is adopted. */
+async function terms(env) {
+  const { adoptPoints, rewardMonths } = await settings(env);
+  return { threshold: adoptPoints, rewardMonths };
+}
+
 async function search(env, url) {
   const q = normName(url.searchParams.get("q")).slice(0, 40);
   if (q.length < 2) return json({ companies: [] });
@@ -780,6 +801,7 @@ async function report(request, env) {
   const c = await companyFor(env, r.company, now);
   const grp = (await sha256(`${r.deptNorm}|${await fingerprint(r.setup)}`)).slice(0, 16);
   await forgetNetworks(env, now);
+  if (r.ask) return askDeveloper(env, c, grp, r, dev, net, now);
   // The same install sending the same setup again gets its earlier report back.
   const again = await one(env, "SELECT id FROM reports WHERE company_id = ? AND grp = ? AND device = ? AND status IN ('pending', 'adopted')", c.id, grp, dev);
   if (again) return json({ ...(await reportView(env, again.id)), again: true });
@@ -797,6 +819,21 @@ async function report(request, env) {
       adopted ? "adopted" : "pending", adopted ? active.id : null, now, adopted ? now : null),
   ]);
   if (!adopted) await settle(env, c.id, grp, now);
+  return json(await reportView(env, id), 201);
+}
+
+/**
+ * [EXTRA-06] A way of paying the app cannot set yet. Only the developer reads it: it never counts for a
+ * setup or waits to be adopted, since the setup in it is only as close as the sender could get.
+ */
+async function askDeveloper(env, c, grp, r, dev, net, now) {
+  const again = await one(env, "SELECT id FROM reports WHERE company_id = ? AND grp = ? AND device = ? AND status = 'ask' AND note = ?",
+    c.id, grp, dev, r.note);
+  if (again) return json({ ...(await reportView(env, again.id)), again: true });
+  const id = randomId(22);
+  await run(env, `INSERT INTO reports (id, company_id, dept, dept_norm, grp, setup, verified, note, device, net, cluster, points, status,
+    rule_id, reason, created_at, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'ask', NULL, NULL, ?, NULL)`,
+  id, c.id, r.dept, r.deptNorm, grp, JSON.stringify(r.setup), r.verified ? 1 : 0, r.note, dev, net.now, await clusterFor(env, c.id, net), now);
   return json(await reportView(env, id), 201);
 }
 
@@ -919,21 +956,23 @@ async function reportView(env, id) {
   const s = await score(env, r.company_id, r.grp);
   const rule = r.rule_id ? await one(env, "SELECT withdrawn FROM rules WHERE id = ?", r.rule_id) : null;
   const reward = await one(env, "SELECT months, status FROM rewards WHERE report_id = ?", r.id);
+  const ask = r.status === "ask" || r.status === "answered";
   return {
     id: r.id,
     status: r.status === "adopted" && rule?.withdrawn === 1 ? "withdrawn" : r.status,
+    ask,
     company: { id: c.id, name: c.name },
     dept: r.dept,
     setup: r.grp,
     verified: r.verified === 1,
-    points: s.points,
-    persons: s.persons,
+    points: ask ? 0 : s.points,
+    persons: ask ? 0 : s.persons,
     threshold: adoptPoints,
     // Enough coworkers agree, and the developer is checking it.
     review: r.status === "pending" && s.persons >= 2 && s.points >= adoptPoints,
     createdAt: iso(r.created_at),
     decidedAt: r.decided_at ? iso(r.decided_at) : null,
-    reason: r.reason ? { code: r.reason, text: REASONS[r.reason] ?? "" } : null,
+    reason: r.reason ? { code: r.reason, text: (ask ? ANSWERS : REASONS)[r.reason] ?? "" } : null,
     reward: reward ? { months: reward.months, status: reward.status } : null,
     rewardMonths,
   };
@@ -1030,6 +1069,8 @@ async function admin(request, env, url) {
   if (path === "/queue" && method === "GET") return json(await queue(env));
   let m = path.match(/^\/groups\/([A-Za-z0-9]{12})\/([0-9a-f]{16})\/(adopt|reject)$/);
   if (m && method === "POST") return decide(request, env, m[1], m[2], m[3], now);
+  m = path.match(/^\/asks\/([A-Za-z0-9]{22})$/);
+  if (m && method === "POST") return answer(request, env, m[1], now);
   if (path === "/companies" && method === "GET") return json(await companies(env, url.searchParams.get("q")));
   if (path === "/companies" && method === "POST") return createCompany(request, env, now);
   m = path.match(/^\/companies\/([A-Za-z0-9]{12})(\/aliases|\/aliases\/remove|\/merge)?$/);
@@ -1092,6 +1133,7 @@ async function overview(env) {
   const count = async (sql) => (await one(env, sql)).n;
   return {
     pending: await count("SELECT COUNT(*) AS n FROM (SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending')"),
+    asks: await count("SELECT COUNT(*) AS n FROM reports WHERE status = 'ask'"),
     flagged: await count(`SELECT COUNT(*) AS n FROM rules r WHERE r.withdrawn = 0 AND r.superseded = 0
       AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0)`),
     owed: await count("SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'"),
@@ -1100,6 +1142,7 @@ async function overview(env) {
     reports: await count("SELECT COUNT(*) AS n FROM reports"),
     settings: await settings(env),
     reasons: REASONS,
+    answers: ANSWERS,
     salt: Boolean(env.RATE_SALT),
   };
 }
@@ -1152,7 +1195,33 @@ async function queue(env) {
       names: r.names, old: r.old, lines: describe(JSON.parse(r.setup)) });
   }
   flagged.sort((a, b) => b.bad - a.bad);
-  return { groups: out, flagged };
+  const asks = (await all(env, `SELECT p.id, p.company_id, p.dept, p.note, p.verified, p.setup, p.created_at, c.name
+    FROM reports p JOIN companies c ON c.id = p.company_id WHERE p.status = 'ask' ORDER BY p.created_at LIMIT 60`)).map((a) => ({
+    id: a.id, company: { id: a.company_id, name: a.name }, dept: a.dept, note: a.note, verified: a.verified === 1, at: iso(a.created_at),
+    lines: describe(JSON.parse(a.setup)),
+  }));
+  return { groups: out, flagged, asks };
+}
+
+/**
+ * [EXTRA-06] The developer's answer to a way the app cannot set yet. One the app will learn can earn
+ * the sender the same reward as an adopted setup.
+ */
+async function answer(request, env, id, now) {
+  const body = await readJson(request, 1024);
+  if (!Object.hasOwn(ANSWERS, body.answer)) refuse("answer", "answer");
+  const r = await one(env, "SELECT id, device FROM reports WHERE id = ? AND status = 'ask'", id);
+  if (!r) return json({ error: "not_found" }, 404);
+  const { rewardMonths } = await settings(env);
+  const stmts = [stmt(env, "UPDATE reports SET status = 'answered', reason = ?, decided_at = ? WHERE id = ?", body.answer, now, id)];
+  const reward = body.answer === "planned" && body.reward === true && rewardMonths > 0;
+  if (reward) {
+    stmts.push(stmt(env, `INSERT OR IGNORE INTO rewards (id, report_id, rule_id, device, months, status, memo, created_at, paid_at)
+      VALUES (?, ?, '', ?, ?, 'owed', '', ?, NULL)`, `w${id}`, id, r.device, rewardMonths, now));
+  }
+  await env.DB.batch(stmts);
+  await audit(env, now, "answer", id, `${body.answer}${reward ? "+reward" : ""}`);
+  return json({ ok: true, reward });
 }
 
 async function decide(request, env, companyId, grp, action, now) {
@@ -1331,7 +1400,7 @@ async function setRule(request, env, id, now) {
 async function rewards(env, status) {
   const wanted = ["owed", "paid", "void"].includes(status) ? status : "owed";
   const rows = await all(env, `
-    SELECT w.id, w.months, w.status, w.memo, w.created_at, w.paid_at, p.dept, c.id AS company_id, c.name AS company, u.version
+    SELECT w.id, w.months, w.status, w.memo, w.created_at, w.paid_at, w.rule_id, p.dept, c.id AS company_id, c.name AS company, u.version
     FROM rewards w JOIN reports p ON p.id = w.report_id JOIN companies c ON c.id = p.company_id LEFT JOIN rules u ON u.id = w.rule_id
     WHERE w.status = ? ORDER BY w.created_at DESC LIMIT 200`, wanted);
   const counts = await all(env, "SELECT status, COUNT(*) AS n FROM rewards GROUP BY status");
@@ -1340,7 +1409,7 @@ async function rewards(env, status) {
     counts: Object.fromEntries(counts.map((x) => [x.status, x.n])),
     rewards: rows.map((w) => ({
       id: w.id, months: w.months, status: w.status, memo: w.memo, company: { id: w.company_id, name: w.company }, dept: w.dept,
-      version: w.version, createdAt: iso(w.created_at), paidAt: w.paid_at ? iso(w.paid_at) : null,
+      version: w.version, ask: w.rule_id === "", createdAt: iso(w.created_at), paidAt: w.paid_at ? iso(w.paid_at) : null,
     })),
   };
 }
@@ -1775,7 +1844,8 @@ function adminApp() {
     }
     const inCompany = S.tab === "companies" && S.company;
     const title = inCompany ? S.company.name : TABS.find((t) => t[0] === S.tab)[1];
-    const badge = (key) => (key === "queue" ? (S.overview?.pending ?? 0) + (S.overview?.flagged ?? 0) : key === "rewards" ? S.overview?.owed ?? 0 : 0);
+    const badge = (key) => (key === "queue" ? (S.overview?.pending ?? 0) + (S.overview?.flagged ?? 0) + (S.overview?.asks ?? 0)
+      : key === "rewards" ? S.overview?.owed ?? 0 : 0);
     app.innerHTML = `
       <header class="top">
         <div class="bar">
@@ -1838,10 +1908,22 @@ function adminApp() {
     const points = S.overview?.settings?.adoptPoints ?? 3;
     const head = `<p class="hint">같은 규칙을 서로 다른 2명 이상이 보내 ${points}점이 되면 자동으로 채택돼요. 명세서로 맞춰 본 제보는 2점이에요.</p>`;
     if (!q) return head + skeleton();
-    if (!q.groups.length && !q.flagged.length) return head + empty("검토할 제보가 없어요", "새 제보가 오면 여기에 보여요.");
+    const asks = q.asks ?? [];
+    if (!q.groups.length && !q.flagged.length && !asks.length) return head + empty("검토할 제보가 없어요", "새 제보가 오면 여기에 보여요.");
     // With many waiting, each card shows the gist and opens on a tap.
     return head + q.groups.map((g) => groupCard(g, !g.changes && q.groups.length <= 2)).join("") +
+      (asks.length ? `<h2 class="section">앱에 없는 방식</h2><p class="hint">앱으로 설정하지 못한 방식이에요. 답을 고르면 보낸 분 앱에 보여요.</p>${asks.map(askCard).join("")}` : "") +
       (q.flagged.length ? `<h2 class="section">달라요가 있는 규칙</h2>${q.flagged.map(flagCard).join("")}` : "");
+  }
+
+  function askCard(a) {
+    return `<article class="card">
+      <div class="head"><h3>${esc(a.company.name)}${a.dept ? ` <span class="dept">${esc(a.dept)}</span>` : ""}</h3><span class="pill warn">앱에 없는 방식</span></div>
+      <p class="meta">${a.verified ? "명세서 확인 · " : ""}${moment(a.at)}</p>
+      <blockquote>${esc(a.note)}</blockquote>
+      <details><summary>보낸 분이 맞춰 둔 설정</summary>${lines(a.lines)}</details>
+      <div class="actions"><button class="btn primary" data-act="answer" data-id="${a.id}">답하기</button></div>
+    </article>`;
   }
 
   function groupCard(g, open) {
@@ -1956,7 +2038,7 @@ function adminApp() {
     const body = !r ? skeleton() : !r.rewards.length ? empty(S.rewardTab === "owed" ? "드릴 보상이 없어요" : "목록이 비어 있어요", "")
       : `<ul class="rows">${r.rewards.map((w) => `<li class="reward">
         <div class="row-main"><b>${esc(w.company.name)}${w.dept ? ` · ${esc(w.dept)}` : ""}</b>
-          <small>프로 ${w.months}개월 · ${day(w.createdAt)} 채택${w.version ? ` · 규칙 v${w.version}` : ""}${w.paidAt ? ` · ${day(w.paidAt)} 지급` : ""}</small>
+          <small>프로 ${w.months}개월 · ${day(w.createdAt)} ${w.ask ? "앱에 없는 방식" : "채택"}${w.version ? ` · 규칙 v${w.version}` : ""}${w.paidAt ? ` · ${day(w.paidAt)} 지급` : ""}</small>
           ${w.memo ? `<small class="memo">${esc(w.memo)}</small>` : ""}</div>
         <div class="actions">${w.status === "owed" ? `<button class="btn" data-act="reward" data-id="${w.id}" data-status="void">취소</button>
           <button class="btn primary" data-act="reward" data-id="${w.id}" data-status="paid">지급함</button>`
@@ -2010,6 +2092,17 @@ function adminApp() {
       <div class="radios">${reasons.map(([key, text], i) => `<label class="radio"><input type="radio" name="reason" value="${key}"${i === 0 ? " checked" : ""}>
         <span>${esc(text)}</span></label>`).join("")}</div>
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit">거절하기</button></div></form>`);
+  }
+
+  function openAnswer(id) {
+    const answers = Object.entries(S.overview?.answers ?? {});
+    const months = S.overview?.settings?.rewardMonths ?? 0;
+    openDialog(`<form data-form="answer" data-id="${id}"><h2>어떻게 답할까요?</h2><p>보낸 분 앱에 이 답이 보여요.</p>
+      <div class="radios">${answers.map(([key, text], i) => `<label class="radio"><input type="radio" name="answer" value="${key}"${i === 0 ? " checked" : ""}>
+        <span>${esc(text)}</span></label>`).join("")}</div>
+      ${months ? `<label class="switch"><input type="checkbox" name="reward" checked><span class="track" aria-hidden="true"></span>
+        <span>앱에 넣을 방식이면 프로 ${months}개월 보상 기록</span></label>` : ""}
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">답하기</button></div></form>`);
   }
 
   function openNewCompany() {
@@ -2087,6 +2180,7 @@ function adminApp() {
       load();
     },
     reject: ({ company, setup }) => openReject(company, setup),
+    answer: ({ id }) => openAnswer(id),
     "open-company": ({ id }) => openCompany(id),
     "new-company": () => openNewCompany(),
     "remove-alias": async ({ name }) => {
@@ -2174,6 +2268,17 @@ function adminApp() {
       try {
         await api(`/groups/${form.dataset.company}/${form.dataset.setup}/reject`, "POST", { reason });
         toast("거절했어요. 보낸 분 앱에 이유가 보여요");
+      } catch (e) {
+        fail(e);
+      }
+      load();
+    },
+    answer: async (form) => {
+      const data = new FormData(form);
+      dialog.close();
+      try {
+        const r = await api(`/asks/${form.dataset.id}`, "POST", { answer: data.get("answer"), reward: data.get("reward") === "on" });
+        toast(r.reward ? "답했어요. 보상 탭에 지급 대기로 올렸어요" : "답했어요. 보낸 분 앱에 보여요");
       } catch (e) {
         fail(e);
       }

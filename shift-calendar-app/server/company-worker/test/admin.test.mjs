@@ -221,12 +221,46 @@ test("a lower bar adopts what already meets it", async () => {
   const mine = (await call("GET", `/api/reports/${a.data.id}`)).data;
   assert.deepEqual([mine.status, mine.threshold, mine.rewardMonths], ["adopted", 2, 6]);
   assert.deepEqual(mine.reward, { months: 6, status: "owed" });
+  assert.deepEqual((await call("GET", "/api/terms")).data, { threshold: 2, rewardMonths: 6 });
 
   // With no reward set, adoption records none.
   await call("POST", "/api/admin/settings", { adoptPoints: 2, rewardMonths: 0 }, h);
   await call("POST", "/api/reports", report(3, { company: "다른정밀" }), from(3));
   await call("POST", "/api/reports", report(4, { company: "다른정밀" }), from(4));
   assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM rewards").get().n, 2);
+});
+
+test("the developer answers a way the app cannot set yet, with a reward when the app will learn it", async () => {
+  const { call } = server();
+  const h = await signIn(call);
+  const note = "대근은 8시간에 기본급의 10%예요";
+  const a = await call("POST", "/api/reports", report(1, { ask: true, note, dept: "생산팀" }), from(1));
+  const b = await call("POST", "/api/reports", report(2, { ask: true, note: "야간 대근은 0.6 가산이에요", verified: true }), from(2));
+  let q = (await call("GET", "/api/admin/queue", undefined, h)).data;
+  assert.deepEqual(q.groups, []);
+  assert.deepEqual(q.asks.map((x) => [x.company.name, x.dept, x.note, x.verified]),
+    [["예시정밀", "생산팀", note, false], ["예시정밀", "", "야간 대근은 0.6 가산이에요", true]]);
+  assert.deepEqual(q.asks[0].lines[0], ["근무", "주간 07:00~19:00 휴게 60분 · 야간 19:00~07:00 휴게 60분 · 휴무(쉬는 날)"]);
+  let o = (await call("GET", "/api/admin/overview", undefined, h)).data;
+  assert.deepEqual([o.pending, o.asks], [0, 2]);
+  assert.equal(o.answers.planned, "알려 주신 방식을 앱에 넣을게요. 업데이트되면 바로 설정할 수 있어요");
+
+  assert.deepEqual((await call("POST", `/api/admin/asks/${a.data.id}`, { answer: "maybe" }, h)).data, { error: "answer", field: "answer" });
+  assert.deepEqual((await call("POST", `/api/admin/asks/${a.data.id}`, { answer: "planned", reward: true }, h)).data, { ok: true, reward: true });
+  // Only a way the app will learn earns the reward.
+  assert.deepEqual((await call("POST", `/api/admin/asks/${b.data.id}`, { answer: "possible", reward: true }, h)).data, { ok: true, reward: false });
+  assert.equal((await call("POST", `/api/admin/asks/${a.data.id}`, { answer: "later" }, h)).status, 404);
+
+  const mine = (await call("GET", `/api/reports/${a.data.id}`)).data;
+  assert.deepEqual([mine.status, mine.ask, mine.reason.code, mine.reward], ["answered", true, "planned", { months: 3, status: "owed" }]);
+  assert.equal(mine.reason.text, "알려 주신 방식을 앱에 넣을게요. 업데이트되면 바로 설정할 수 있어요");
+  const theirs = (await call("GET", `/api/reports/${b.data.id}`)).data;
+  assert.deepEqual([theirs.status, theirs.reason.code, theirs.reward], ["answered", "possible", null]);
+  const list = (await call("GET", "/api/admin/rewards", undefined, h)).data;
+  assert.deepEqual(list.rewards.map((w) => [w.id, w.ask, w.version, w.dept]), [[`w${a.data.id}`, true, null, "생산팀"]]);
+  o = (await call("GET", "/api/admin/overview", undefined, h)).data;
+  assert.deepEqual([o.asks, o.owed], [0, 1]);
+  assert.deepEqual((await call("GET", "/api/admin/queue", undefined, h)).data.asks, []);
 });
 
 test("rewards are marked given with a note, or cancelled", async () => {

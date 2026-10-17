@@ -60,7 +60,12 @@ async function seed() {
     }), env);
   }
   await send("/api/reports", report(8, { company: "사아자물류", setup: odd, verified: true }), "10.0.0.8");
-  console.log("seeded: 1 adopted rule, 1 new version, 2 waiting, 1 turned down");
+  // A way the app cannot set yet.
+  await send("/api/reports", report(9, {
+    company: "예시정밀", dept: "포장팀", ask: true,
+    note: "어떻게: 대근을 4시간만 해도 8시간 근무 뒤에 하면 기본급의 10%가 나와요\n예시: 주간 근무 뒤 19~23시 대근이면 기본급의 10%",
+  }), "10.0.0.10");
+  console.log("seeded: 1 adopted rule, 1 new version, 2 waiting, 1 turned down, 1 way the app cannot set");
 }
 
 if (args.includes("--seed")) await seed();

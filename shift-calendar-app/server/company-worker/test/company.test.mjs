@@ -333,6 +333,41 @@ test("contacts and amounts in what is typed are refused with the field", async (
   assert.equal(ok.status, 201);
 });
 
+test("a way the app cannot set yet goes to the developer only", async () => {
+  const { call } = server();
+  const note = "어떻게: 대근 8시간에 기본급의 10%, 8시간을 넘기면 0.5 가산\n예시: 야간 대근 12시간이면 기본급의 15%";
+  const ask = await call("POST", "/api/reports", report(1, { ask: true, note }), from(1));
+  assert.equal(ask.status, 201);
+  assert.deepEqual([ask.data.status, ask.data.ask, ask.data.points, ask.data.persons, ask.data.review, ask.data.reason],
+    ["ask", true, 0, 0, false, null]);
+  // Sent again as it is, it is the same one.
+  const again = await call("POST", "/api/reports", report(1, { ask: true, note }), from(1));
+  assert.deepEqual([again.status, again.data.id, again.data.again], [200, ask.data.id, true]);
+  // It never counts for the setup it carries, and coworkers are not offered it.
+  const b = await call("POST", "/api/reports", report(2, { verified: true }), from(2));
+  assert.deepEqual([b.data.status, b.data.persons, b.data.points], ["pending", 1, 2]);
+  const found = (await call("GET", "/api/companies?q=예시정밀")).data.companies;
+  assert.deepEqual(found.map((c) => [c.adopted, c.pending]), [[0, 1]]);
+  assert.equal((await call("GET", `/api/companies/${b.data.company.id}`)).data.setups.length, 1);
+  // The sender's own report of the setup is separate from what they asked.
+  const own = await call("POST", "/api/reports", report(1), from(1));
+  assert.deepEqual([own.data.status, own.data.persons], ["adopted", 2]);
+  assert.equal((await call("GET", `/api/reports/${ask.data.id}`)).data.status, "ask");
+  // Without a word on what is missing there is nothing to read; money is refused as in any note.
+  assert.deepEqual((await call("POST", "/api/reports", report(3, { ask: true }), from(3))).data, { error: "note", field: "note" });
+  assert.deepEqual((await call("POST", "/api/reports", report(3, { ask: "yes", note }), from(3))).data, { error: "ask", field: "ask" });
+  assert.equal((await call("POST", "/api/reports", report(3, { ask: true, note: "가".repeat(1500) }), from(3))).status, 201);
+  assert.equal((await call("POST", "/api/reports", report(4, { ask: true, note: "가".repeat(1501) }), from(4))).data.error, "note");
+  assert.equal((await call("POST", "/api/reports", report(4, { note: "가".repeat(501) }), from(4))).data.error, "note");
+  assert.deepEqual((await call("POST", "/api/reports", report(4, { ask: true, note: "대근 8시간이면 25만원이에요" }), from(4))).data,
+    { error: "amount", field: "note" });
+});
+
+test("the app can say what adoption takes and earns", async () => {
+  const { call } = server();
+  assert.deepEqual((await call("GET", "/api/terms")).data, { threshold: 3, rewardMonths: 3 });
+});
+
 test("bodies that are not a report are refused", async () => {
   const { call } = server();
   assert.equal((await call("POST", "/api/reports", report(1, { note: "가".repeat(33 * 1024) }))).status, 413);
