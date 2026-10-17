@@ -5,7 +5,9 @@ import com.bamnat.core.memo.Memo
 import com.bamnat.core.model.AlarmSpec
 import com.bamnat.core.model.DayAlarm
 import com.bamnat.core.model.DayEntry
-import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.model.ExtraKind
+import com.bamnat.core.model.Leave
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
@@ -42,13 +44,32 @@ class MappersTest {
     fun dayEntriesRoundTrip() {
         val entries = listOf(
             DayEntry(date, ShiftOverride.Off),
-            DayEntry(date, ShiftOverride.Shift(7), LocalTime.of(10, 30), LocalTime.of(2, 15), 45, 30, 0, true),
-            DayEntry(date, holidayWorkMinutes = 300),
+            DayEntry(date, ShiftOverride.Shift(7), LocalTime.of(10, 30), LocalTime.of(2, 15), 45, alarmSkipped = true),
             DayEntry(date, customAlarms = listOf(DayAlarm(LocalTime.of(6, 10)), DayAlarm(LocalTime.of(6, 40), false))),
             DayEntry(date, customAlarms = emptyList()),
-            DayEntry(date, holidayWorkMinutes = 480, extraWork = ExtraWork.COVER),
+            DayEntry(date, leave = Leave(quarters = 2)),
         )
         for (e in entries) assertEquals(e, e.toEntity().toModel())
+    }
+
+    @Test
+    fun extraWorkRoundTripsAndJoinsItsDay() {
+        // [EXTRA-01] A 야간 대근 with its break, and 잔업 as hours only.
+        val cover = ExtraEntry(ExtraKind.COVER_ID, LocalTime.of(19, 0), LocalTime.of(7, 0), 60, LocalTime.of(2, 0), coveredShiftId = 2)
+        val overtime = ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 90, needsReview = true)
+        val day = date.toEpochDay()
+        assertEquals(cover, cover.toEntity(day, 0).toModel())
+        assertEquals(overtime, overtime.toEntity(day, 1).toModel())
+        // Half of a time pair is no time at all.
+        assertNull(ExtraEntry(ExtraKind.OVERTIME_ID, start = LocalTime.of(18, 0), minutes = 60).toEntity(day, 0).startMinute)
+        val rows = listOf(DayEntry(date, ShiftOverride.Off).toEntity())
+        val extras = listOf(overtime.toEntity(day, 1).copy(id = 5), cover.toEntity(day, 0).copy(id = 9),
+            overtime.toEntity(day + 1, 0).copy(id = 6))
+        val days = assembleDays(rows, extras).associateBy { it.date }
+        // In their order on the day, whatever order they were stored in.
+        assertEquals(DayEntry(date, ShiftOverride.Off, extras = listOf(cover, overtime)), days[date])
+        // A day with only extra work has no row of its own.
+        assertEquals(DayEntry(date.plusDays(1), extras = listOf(overtime)), days[date.plusDays(1)])
     }
 
     @Test

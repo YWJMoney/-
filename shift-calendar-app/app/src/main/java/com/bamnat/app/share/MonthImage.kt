@@ -31,7 +31,7 @@ object MonthImage {
     fun render(snapshot: ScheduleSnapshot, month: YearMonth, weekStart: DayOfWeek): Bitmap {
         val weeks = CalendarGrid.monthWeeks(month, weekStart)
         val used = weeks.flatten().filter { YearMonth.from(it) == month }
-            .flatMap { d -> snapshot.resolver.resolve(d).let { listOfNotNull(it.shiftType, it.second?.type) } }.distinctBy { it.id }
+            .flatMap { d -> snapshot.resolver.resolve(d).let { listOfNotNull(it.shiftType) + it.extras.mapNotNull { e -> e.covered } } }.distinctBy { it.id }
         val legendRows = (used.size + 1) / 2
         val height = (HEADER + WEEKDAYS + weeks.size * CELL_H + 40f + legendRows * 64f + 80f).toInt()
         val bmp = Bitmap.createBitmap(WIDTH, height, Bitmap.Config.ARGB_8888)
@@ -67,18 +67,19 @@ object MonthImage {
                 text.color = colorFor(date.dayOfWeek, holiday)
                 c.drawText(date.dayOfMonth.toString(), left + 12f, top + 44f, text)
                 val leave = day.leave
-                val mark = day.extraWork?.short ?: leave?.takeIf { !it.isFullDay }?.short
+                // [EXTRA-01] The kinds of extra work, in the first kind's colour; else a part-day leave.
+                val mark = day.extraMarks().ifEmpty { null } ?: leave?.takeIf { !it.isFullDay }?.short
                 if (mark != null) {
                     text.textSize = 26f; text.textAlign = Paint.Align.RIGHT
-                    text.color = if (day.extraWork != null) 0xFFD6336C.toInt() else 0xFF7048E8.toInt()
+                    text.color = day.extras.firstOrNull()?.kind?.colorArgb?.let { (it or 0xFF000000).toInt() } ?: 0xFF7048E8.toInt()
                     c.drawText(mark, left + cellW - 12f, top + 42f, text)
                 }
                 val box = RectF(left + 8f, top + 62f, left + cellW - 8f, top + CELL_H - 14f)
-                val second = day.second
+                val second = day.coveredShift
                 if (second != null && leave?.isFullDay != true) {
-                    // [FEAT-02] Two shifts split the box.
+                    // [FEAT-02] A shift and the shift a 대근 covered split the box.
                     val first = day.shiftType
-                    val halves = listOfNotNull(first, second.type)
+                    val halves = listOfNotNull(first, second)
                     val w = (box.width() - 4f * (halves.size - 1)) / halves.size
                     halves.forEachIndexed { k, t ->
                         val b = RectF(box.left + k * (w + 4f), box.top, box.left + k * (w + 4f) + w, box.bottom)

@@ -1,9 +1,9 @@
 package com.bamnat.core.schedule
 
+import com.bamnat.core.model.ExtraTiming
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
-import java.time.LocalTime
 
 /**
  * [SLP-01][MKT-07][MKT-11] Rest between shifts, read off the calendar: less than 11 hours off
@@ -85,25 +85,34 @@ object RestCheck {
         return issues.sortedWith(compareBy({ it.date }, { it.kind.ordinal }))
     }
 
-    private fun intervals(day: ResolvedDay): List<Work> = buildList {
-        if (day.leave?.isFullDay != true) {
-            val s = day.start
-            val e = day.end
-            if (day.isWorkDay && s != null && e != null) {
-                val from = day.date.atTime(s)
-                val to = endAfter(from, e).plusMinutes(day.overtimeMinutes.toLong())
-                add(Work(day.date, from, to, day.shiftType?.name ?: "근무"))
+    /**
+     * The day's blocks of work: the shift with any 잔업 or 조출 next to it as one, and each other piece
+     * of extra work (특근, 대근) on its own, so a 대근 straight after a shift still shows no rest between.
+     */
+    private fun intervals(day: ResolvedDay): List<Work> = blocks(day).map { Work(day.date, it.from, it.to, it.name) }
+
+    /** One stretch of work on the clock, named after the shift or the kind of extra work. */
+    data class Block(val from: LocalDateTime, val to: LocalDateTime, val name: String)
+
+    /** [EXTRA-01] [day]'s work on the clock, earliest first; pieces without times are left out. */
+    fun blocks(day: ResolvedDay): List<Block> {
+        val out = mutableListOf<Block>()
+        val shiftFrom = day.shiftFrom?.takeIf { day.isWorkDay && day.leave?.isFullDay != true }
+        val shiftTo = day.shiftTo
+        var main = if (shiftFrom != null && shiftTo != null) Block(shiftFrom, shiftTo, day.shiftType?.name ?: "근무") else null
+        for (e in day.extras) {
+            val from = e.from ?: continue
+            val to = e.to ?: continue
+            val nextToShift = e.kind.timing is ExtraTiming.AfterShift || e.kind.timing is ExtraTiming.BeforeShift
+            val m = main
+            main = if (nextToShift && m != null && !from.isAfter(m.to) && !to.isBefore(m.from)) {
+                m.copy(from = minOf(m.from, from), to = maxOf(m.to, to))
+            } else {
+                if (nextToShift && m == null) Block(from, to, e.kind.name) else { out += Block(from, to, e.kind.name); m }
             }
         }
-        day.second?.let { sec ->
-            val from = day.date.atTime(sec.start)
-            add(Work(day.date, from, endAfter(from, sec.end), sec.type.name))
-        }
-    }
-
-    private fun endAfter(from: LocalDateTime, end: LocalTime): LocalDateTime {
-        val sameDay = from.toLocalDate().atTime(end)
-        return if (sameDay.isAfter(from)) sameDay else sameDay.plusDays(1)
+        main?.let { out += it }
+        return out.sortedBy { it.from }
     }
 
     /** Minutes of [from, to) inside 22:00~06:00. */

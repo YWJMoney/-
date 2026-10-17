@@ -60,16 +60,18 @@ data class DayEntryEntity(
     val customStartMinute: Int?,
     val customEndMinute: Int?,
     val customBreakMinutes: Int?,
-    val overtimeMinutes: Int,
-    val holidayWorkMinutes: Int,
+    /** Version 11 and before; since version 12 extra work is in [DayExtraEntity] and this is always 0. */
+    val overtimeMinutes: Int = 0,
+    /** Version 11 and before; always 0 since version 12. */
+    val holidayWorkMinutes: Int = 0,
     val alarmSkipped: Boolean,
     /** Alarms set by hand for this date; null follows the shift type. */
     @ColumnInfo(defaultValue = "NULL") val customAlarms: String? = null,
-    /** [com.bamnat.core.model.ExtraWork.code]; 0 means not marked. */
+    /** Version 11 and before (잔업 1, 특근 2, 대근 3); always 0 since version 12. */
     @ColumnInfo(defaultValue = "0") val extraWork: Int = 0,
     /** [com.bamnat.core.model.Leave.code]; 0 means no leave [FEAT-10]. */
     @ColumnInfo(defaultValue = "0") val leave: Int = 0,
-    /** Second shift of the day [FEAT-02]; null when there is none. */
+    /** Version 5 to 11 [FEAT-02]; since version 12 a second shift is a [DayExtraEntity] covering it. */
     @ColumnInfo(defaultValue = "NULL") val secondShiftTypeId: Long? = null,
 ) {
     companion object {
@@ -78,6 +80,28 @@ data class DayEntryEntity(
         const val MODE_SHIFT = 2
     }
 }
+
+/**
+ * [EXTRA-01] One piece of extra work on a date (version 12): 잔업, 특근, 대근 … A day can hold several,
+ * in [position] order. Clock times are minutes after midnight; null when only the length is known.
+ */
+@Entity(tableName = "day_extras", indices = [Index("epochDay")])
+data class DayExtraEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val epochDay: Long,
+    /** [com.bamnat.core.model.ExtraKind.id]. */
+    val kindId: Long,
+    val startMinute: Int? = null,
+    val endMinute: Int? = null,
+    @ColumnInfo(defaultValue = "0") val breakMinutes: Int = 0,
+    val breakStartMinute: Int? = null,
+    /** Length when there are no clock times. */
+    @ColumnInfo(defaultValue = "0") val minutes: Int = 0,
+    val coveredShiftTypeId: Long? = null,
+    /** [EXTRA-05] Moved from a version 11 record that may hold hours nobody meant. */
+    @ColumnInfo(defaultValue = "0") val needsReview: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val position: Int = 0,
+)
 
 @Entity(tableName = "memos", indices = [Index("epochDay"), Index("updatedAt"), Index("deletedAt")])
 data class MemoEntity(

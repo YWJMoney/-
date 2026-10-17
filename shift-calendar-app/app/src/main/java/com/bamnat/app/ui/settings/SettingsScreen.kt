@@ -1,6 +1,5 @@
 package com.bamnat.app.ui.settings
 
-import com.bamnat.core.model.ExtraWork
 import androidx.compose.runtime.mutableStateOf
 
 import android.Manifest
@@ -297,12 +296,12 @@ fun SettingsScreen(
     onOpenPattern: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     onOpenWorkStyle: () -> Unit = {},
+    onOpenExtraKinds: () -> Unit = {},
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val upcoming by vm.upcoming.collectAsStateWithLifecycle()
     val snoozeAt by vm.snoozeAt.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var editingExtras by remember { mutableStateOf(false) }
 
     // Permission states can change in system settings; re-check whenever we come back.
     var refresh by remember { mutableIntStateOf(0) }
@@ -396,13 +395,8 @@ fun SettingsScreen(
             HorizontalDivider()
             NavRow("근무 유형", "이름, 시간, 색상, 근무별 알람", onOpenShiftTypes)
             HorizontalDivider()
-            // [PAYX-09] Each company names and uses extra work its own way.
-            NavRow("잔업 · 특근 · 대근", ExtraWork.entries.filter { it !in settings.extraKinds.hidden }
-                .joinToString(" · ") { settings.extraKinds.name(it) } + " · 이름·시간 바꾸기") { editingExtras = true }
-        }
-        if (editingExtras) ExtraKindsDialog(settings.extraKinds, onDismiss = { editingExtras = false }) { k ->
-            vm.update { it.copy(extraKinds = k) }
-            editingExtras = false
+            // [EXTRA-04] Each company names, times and pays extra work its own way.
+            NavRow("잔업 · 특근 · 대근", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·급여 방식", onOpenExtraKinds)
         }
 
         SectionCard(title = "알람") {
@@ -505,11 +499,6 @@ fun SettingsScreen(
                     )
                 }
             }
-            SwitchRow(
-                "날짜 알람 저장 안내",
-                "달력에서 날짜 알람을 저장할 때 어떤 알람이 울리는지 알려 줘요",
-                !settings.hideDayAlarmNotice,
-            ) { on -> vm.update { it.copy(hideDayAlarmNotice = !on) } }
         }
 
         // [COMM-00] Coworkers share one setup instead of each typing it in.

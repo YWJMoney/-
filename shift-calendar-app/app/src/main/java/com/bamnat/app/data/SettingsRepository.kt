@@ -43,7 +43,7 @@ data class AppSettings(
     val tier: Tier = Tier.FREE,
     /** [WORK-01] How the user works; null until chosen on first launch. */
     val workStyle: WorkStyle? = null,
-    /** [PAYX-09] The company's own names, shown kinds and hours for 잔업·특근·대근. */
+    /** [PAYX-09][EXTRA-01] The kinds of extra work this person's company has, with their times. */
     val extraKinds: ExtraKinds = ExtraKinds(),
     /** [FEAT-17] Memos come first in the day view, for people who live by their notes. */
     val memoFirst: Boolean = false,
@@ -61,6 +61,10 @@ data class AppSettings(
     val sleepTargetMinutes: Int = 7 * 60,
     /** [SLP-08] Read sleep sessions from Health Connect; off until the user allows it. */
     val healthSleep: Boolean = false,
+    /** [EXTRA-05] The user answered the offer to turn old shift-swap 대근 into 대근 with times. */
+    val swapCoversAnswered: Boolean = false,
+    /** [EXTRA-05] The user saw what the law would pay for work on days off and chose. */
+    val restDayCompared: Boolean = false,
 ) {
     val limits: HourLimits get() = HourLimits(weeklyLimitHours, averageLimitHours)
 
@@ -131,6 +135,8 @@ class SettingsRepository(context: Context) {
             sleepReminders = prefs.getBoolean(K_SLEEP_REMINDERS, d.sleepReminders),
             sleepTargetMinutes = prefs.getInt(K_SLEEP_TARGET, d.sleepTargetMinutes),
             healthSleep = prefs.getBoolean(K_HEALTH_SLEEP, d.healthSleep),
+            swapCoversAnswered = prefs.getBoolean(K_SWAP_COVERS, d.swapCoversAnswered),
+            restDayCompared = prefs.getBoolean(K_REST_COMPARED, d.restDayCompared),
         )
     }
 
@@ -165,6 +171,8 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SLEEP_REMINDERS, s.sleepReminders)
             .putInt(K_SLEEP_TARGET, s.sleepTargetMinutes)
             .putBoolean(K_HEALTH_SLEEP, s.healthSleep)
+            .putBoolean(K_SWAP_COVERS, s.swapCoversAnswered)
+            .putBoolean(K_REST_COMPARED, s.restDayCompared)
             .apply()
     }
 
@@ -198,5 +206,7 @@ class SettingsRepository(context: Context) {
         const val K_SLEEP_REMINDERS = "sleep_reminders"
         const val K_SLEEP_TARGET = "sleep_target"
         const val K_HEALTH_SLEEP = "health_sleep"
+        const val K_SWAP_COVERS = "swap_covers_answered"
+        const val K_REST_COMPARED = "rest_day_compared"
     }
 }

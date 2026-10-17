@@ -7,6 +7,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.ui.calendar.SHARE_SERVER_NOTICE
+import com.bamnat.app.ui.settings.REPORT_EMAIL
+import com.bamnat.app.ui.settings.REPORT_NOTICE
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -40,7 +42,7 @@ class ShareServerTest {
         val policy = File("../../privacy/index.html")
         assumeTrue(policy.exists())
         val text = policy.readText()
-        assertTrue(text.contains("처리방침 1.4"))
+        assertTrue(text.contains("처리방침 1.5"))
         assertTrue(text.contains("Cloudflare, Inc."))
         assertTrue(text.contains("<td>인터넷</td>"))
         assertTrue(text.contains("7일·30일·90일"))
@@ -49,5 +51,17 @@ class ShareServerTest {
         // The day counts the policy states are the ones the app sends.
         assertTrue(text.contains("${ShareLinkPayload.DAYS}일"))
         assertEquals(listOf(7, 30, 90), ShareLinkPayload.TTL_DAYS)
+    }
+
+    /** [EXTRA-06] A company-rule report goes by the user's mail app to the policy's contact, and both say what goes. */
+    @Test fun thePrivacyPolicyCoversCompanyReports() {
+        val policy = File("../../privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        assertTrue(text.contains("회사 방식 알려 주기"))
+        assertTrue(text.contains("mailto:$REPORT_EMAIL"))
+        assertTrue(text.contains("1년 안에 지웁니다"))
+        assertTrue(REPORT_NOTICE.contains("메일 주소"))
+        assertTrue(REPORT_NOTICE.contains("지워요"))
     }
 }

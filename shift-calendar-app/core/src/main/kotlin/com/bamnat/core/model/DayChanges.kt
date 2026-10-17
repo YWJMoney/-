@@ -11,10 +11,11 @@ object DayChanges {
         before: DayEntry?,
         after: DayEntry,
         typeName: (Long) -> String,
-        extraName: (ExtraWork) -> String = { it.label },
+        extraName: (Long) -> String = { ExtraKinds().name(it) },
     ): String? {
         val b = before ?: DayEntry(after.date)
-        if (!b.isEmpty && after.isEmpty) return "바꾼 내용 모두 지움"
+        // Clearing a day says so; taking off its only extra work says which.
+        if (!b.isEmpty && after.isEmpty && !b.copy(extras = emptyList()).isEmpty) return "바꾼 내용 모두 지움"
         val parts = mutableListOf<String>()
         if (b.override != after.override) parts += when (val o = after.override) {
             ShiftOverride.None -> "패턴대로 되돌림"
@@ -27,19 +28,20 @@ object DayChanges {
             parts += if (s != null && e != null) "시간 ${t(s)}–${t(e)}" + (after.customBreakMinutes?.let { " (휴게 ${it}분)" } ?: "")
             else "시간 원래대로"
         }
-        val bMin = b.overtimeMinutes + b.holidayWorkMinutes
-        val aMin = after.overtimeMinutes + after.holidayWorkMinutes
-        if (b.extraWork != after.extraWork || bMin != aMin) {
-            val name = after.extraWork?.let(extraName) ?: if (after.holidayWorkMinutes > 0) "쉬는 날 근무" else "추가 근무"
-            parts += if (aMin == 0) "${(b.extraWork ?: after.extraWork)?.let(extraName) ?: "추가 근무"} 지움"
-            else "$name ${hours(aMin)}"
+        // [EXTRA-01] Pieces of extra work added or changed, then kinds taken off the day.
+        if (b.extras != after.extras) {
+            val gone = b.extras.toMutableList()
+            val added = after.extras.filter { !gone.remove(it) }
+            added.forEach { parts += "${extraName(it.kindId)} ${span(it)}" }
+            gone.filter { g -> added.none { it.kindId == g.kindId } }.map { extraName(it.kindId) }.distinct().forEach { parts += "$it 지움" }
         }
         if (b.leave != after.leave) parts += after.leave?.label ?: "${b.leave?.label ?: "휴가"} 취소"
-        if (b.secondShiftId != after.secondShiftId) parts += after.secondShiftId?.let { "두 번째 근무 ${typeName(it)}" } ?: "두 번째 근무 지움"
         if (b.alarmSkipped != after.alarmSkipped) parts += if (after.alarmSkipped) "알람 끔" else "알람 켬"
         if (b.customAlarms != after.customAlarms) parts += if (after.customAlarms == null) "알람 원래대로" else "알람 바꿈"
         return parts.takeIf { it.isNotEmpty() }?.joinToString(", ")
     }
+
+    private fun span(e: ExtraEntry) = if (e.hasTimes) "${t(e.start!!)}–${t(e.end!!)}" else hours(e.paidMinutes)
 
     private fun t(x: LocalTime) = "%02d:%02d".format(x.hour, x.minute)
     private fun hours(m: Int) = if (m % 60 == 0) "${m / 60}시간" else "${m / 60}시간 ${m % 60}분"

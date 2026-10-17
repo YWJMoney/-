@@ -1,17 +1,41 @@
 package com.bamnat.app.ui.calendar
 
-import com.bamnat.app.pay.named
-
-import com.bamnat.core.model.DayAlarm
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
 import com.bamnat.app.alarm.UpcomingAlarm
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.ScheduleSnapshot
+import com.bamnat.app.pay.named
+import com.bamnat.app.tier.Tier
+import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.UndoMessage
+import com.bamnat.app.ui.money.MoneyActions
+import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.memo.Memo
+import com.bamnat.core.model.DayAlarm
+import com.bamnat.core.model.DayEntry
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.model.ExtraKind
+import com.bamnat.core.model.ExtraTiming
+import com.bamnat.core.model.Leave
 import com.bamnat.core.model.ShiftOverride
+import com.bamnat.core.model.ShiftType
+import com.bamnat.core.money.DailySales
+import com.bamnat.core.money.Job
+import com.bamnat.core.money.MoneyBook
+import com.bamnat.core.money.MoneyEntry
+import com.bamnat.core.pay.DayMinutes
+import com.bamnat.core.pay.DayPay
+import com.bamnat.core.pay.MonthPay
+import com.bamnat.core.pay.Occupation
+import com.bamnat.core.pay.PayCalculator
+import com.bamnat.core.pay.PayProfile
+import com.bamnat.core.pay.ValueTimeline
+import com.bamnat.core.pay.WageType
+import com.bamnat.core.schedule.DaySource
+import com.bamnat.core.schedule.ResolvedDay
+import com.bamnat.core.schedule.RestCheck
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,22 +47,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import com.bamnat.core.model.ExtraWork
-import com.bamnat.core.model.Leave
-import com.bamnat.core.schedule.ResolvedDay
 import java.time.LocalDate
 import java.time.LocalTime
-import com.bamnat.app.tier.Tier
-import com.bamnat.core.pay.DayPay
-import com.bamnat.core.pay.PayCalculator
-import com.bamnat.core.pay.PayProfile
 import java.time.YearMonth
-import com.bamnat.core.schedule.RestCheck
-import com.bamnat.app.ui.money.MoneyActions
-import com.bamnat.core.money.DailySales
-import com.bamnat.core.money.Job
-import com.bamnat.core.money.MoneyBook
-import com.bamnat.core.money.MoneyEntry
 
 /** Quick-input tool: tap days to stamp a shift on them. */
 sealed interface PaintTool {
@@ -48,6 +59,19 @@ sealed interface PaintTool {
     /** Back to the pattern. */
     data object Clear : PaintTool
 }
+
+/**
+ * [EXTRA-02][EXTRA-03] How the law sorts one day's work, and what it adds to pay, for the day view.
+ * Worked out with the user's pay setup, or the law's defaults without one (minutes only, no money).
+ */
+data class DayInsight(
+    /** The day's minutes by category, the week's 40 hours included. */
+    val minutes: DayMinutes? = null,
+    /** What the day adds to pay; null without a pay setup. */
+    val pay: DayPay? = null,
+    /** What each piece of extra work adds to the month's pay (the month with it less the month without it), by index. */
+    val extraAmounts: Map<Int, Long> = emptyMap(),
+)
 
 class CalendarViewModel(private val container: AppContainer) : ViewModel(), MoneyActions {
     private val schedule = container.scheduleRepository
@@ -60,22 +84,46 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         memoRepo.datesWithMemos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
     val upcomingAlarm: StateFlow<UpcomingAlarm?> = container.alarmScheduler.upcoming
 
+    /** [EXTRA-05] Pieces of extra work moved from an older record that still need a look. */
+    val extrasToReview: StateFlow<Int> =
+        schedule.extrasToReview.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
     /** Pay setup and tier, so a day on the calendar shows what it adds to pay [PAYX-08]. */
     val payProfile: StateFlow<PayProfile?> = container.payStore.profile
     val tier: StateFlow<Tier> = container.featureGate.tier
     private val payCalculator = PayCalculator()
 
-    // Tapping from day to day in one month reuses that month's result instead of recalculating it.
-    private var monthPayCache: Pair<List<Any>, com.bamnat.core.pay.MonthPay>? = null
+    // Moving from day to day in one month reuses that month's result instead of recalculating it.
+    private var monthPayCache: Pair<List<Any>, MonthPay>? = null
 
-    fun dayPay(profile: PayProfile, snapshot: ScheduleSnapshot, date: LocalDate): DayPay? {
-        val month = profile.period.monthOf(date)
-        val kinds = container.settingsRepository.current.extraKinds
-        val key = listOf(profile, snapshot, month, kinds)
-        val pay = monthPayCache?.takeIf { it.first == key }?.second
-            ?: payCalculator.calculate(profile.named(kinds), month, snapshot.resolver::resolve).also { monthPayCache = key to it }
-        return pay.day(date)
+    private fun monthPay(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): MonthPay = synchronized(this) {
+        val key = listOf(profile, snapshot, month)
+        monthPayCache?.takeIf { it.first == key }?.second
+            ?: payCalculator.calculate(profile, month, snapshot.resolver::resolve).also { monthPayCache = key to it }
     }
+
+    /**
+     * [EXTRA-02][EXTRA-03] The day's minutes by category and, with a pay setup, its pay and what each
+     * piece of extra work adds ([withAmounts], when the user may see amounts). Heavy enough to run
+     * off the main thread.
+     */
+    fun dayInsight(profile: PayProfile?, snapshot: ScheduleSnapshot, date: LocalDate, withAmounts: Boolean): DayInsight {
+        val p = (profile ?: lawOnly(settings.value)).named(snapshot.kinds)
+        val month = p.period.monthOf(date)
+        val pay = monthPay(p, snapshot, month)
+        val day = pay.day(date)
+        val extras = snapshot.resolver.entryOn(date)?.extras.orEmpty()
+        val amounts = if (profile == null || !withAmounts || extras.isEmpty()) emptyMap() else extras.indices.associateWith { i ->
+            val without = snapshot.copy(entries = snapshot.entries.map { e ->
+                if (e.date == date) e.copy(extras = e.extras.filterIndexed { j, _ -> j != i }) else e
+            })
+            pay.total - payCalculator.calculate(p, month, without.resolver::resolve).total
+        }
+        return DayInsight(day?.minutes, day?.takeIf { profile != null }, amounts)
+    }
+
+    /** The law's defaults with no money, to sort minutes before the pay setup is done. */
+    private fun lawOnly(s: AppSettings) = PayProfile(Occupation.MANUFACTURING, WageType.MONTHLY, ValueTimeline(), weekStart = s.weekStart)
 
     private val _selected = MutableStateFlow(LocalDate.now())
     val selected: StateFlow<LocalDate> = _selected.asStateFlow()
@@ -152,29 +200,72 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
         // Stamping the same shift twice undoes it, so a mis-tap is fixed with one more tap.
         // Decided inside the write so quick double taps see each other's result.
-        changeShift(date) { current -> if (current == target) ShiftOverride.None else target }
+        viewModelScope.launch { changeShift(date) { current -> if (current == target) ShiftOverride.None else target } }
     }
 
     /** Sets the shift for a day. Choosing what the pattern already gives stores nothing. */
-    fun assign(date: LocalDate, override: ShiftOverride) = changeShift(date) { override }
+    fun assign(date: LocalDate, override: ShiftOverride) {
+        viewModelScope.launch { changeShift(date) { override } }
+    }
 
-    private fun changeShift(date: LocalDate, choose: (ShiftOverride) -> ShiftOverride) {
-        val pattern = snapshot.value?.resolver?.patternOn(date)
+    /**
+     * [DAY-03] The shift chosen from a day's long-press menu, said back with undo. A working shift on
+     * a day the roster gives off is most often a 대근, so then the snackbar offers that instead [EXTRA-01].
+     */
+    fun assignQuick(day: ResolvedDay, override: ShiftOverride, snapshot: ScheduleSnapshot) {
+        val date = day.date
+        val type = (override as? ShiftOverride.Shift)?.let { snapshot.typesById[it.shiftTypeId] }
         viewModelScope.launch {
-            schedule.updateDay(date) { entry ->
-                val patternId = pattern?.shiftTypeIdOn(date)
-                val patternCovers = pattern != null
-                val next = when (val o = choose(entry.override)) {
-                    is ShiftOverride.Shift -> if (patternCovers && patternId == o.shiftTypeId) ShiftOverride.None else o
-                    ShiftOverride.Off -> if (patternCovers && patternId == null) ShiftOverride.None else o
-                    ShiftOverride.None -> o
-                }
-                if (next == entry.override) {
-                    entry
-                } else {
-                    // Times set for the old shift do not carry over to a different one.
-                    entry.copy(override = next, customStart = null, customEnd = null, customBreakMinutes = null)
-                }
+            val before = changeShift(date) { override }
+            val name = type?.name ?: if (override == ShiftOverride.None) "패턴" else "쉬는 날"
+            val restore: suspend () -> Unit = { schedule.restoreDay(date, before) }
+            val cover = type?.takeIf { isRosterRestDay(day, it) }?.let { coverKind(snapshot, it) }
+            _messages.emit(
+                when {
+                    cover != null -> UndoMessage("원래 쉬는 날이에요. 쉬는 날 일했다면 대근으로 넣어 주세요", "대근으로") {
+                        schedule.restoreDay(date, before)
+                        schedule.addExtra(date, ExtraText.cover(cover, type))
+                    }
+                    override == ShiftOverride.None -> UndoMessage("${Fmt.monthDay(date)}을 패턴대로 되돌렸어요", undo = restore)
+                    else -> UndoMessage("${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요", undo = restore)
+                },
+            )
+        }
+    }
+
+    /** [EXTRA-01] True when [type] would turn a day the roster gives off into a working day: likely a 대근. */
+    fun isRosterRestDay(day: ResolvedDay, type: ShiftType): Boolean =
+        day.source == DaySource.PATTERN && !day.isWorkDay && day.leave == null && type.hasTimes && !type.isOff
+
+    /** The kind for a 대근 of [type]: one made for that shift, else the plain 대근. */
+    fun coverKind(snapshot: ScheduleSnapshot, type: ShiftType): ExtraKind {
+        val shiftKinds = snapshot.kinds.visible().filter { it.timing is ExtraTiming.AsShift }
+        return shiftKinds.firstOrNull { (it.timing as ExtraTiming.AsShift).shiftTypeId == type.id }
+            ?: shiftKinds.firstOrNull { (it.timing as ExtraTiming.AsShift).shiftTypeId == null }
+            ?: snapshot.kinds.of(ExtraKind.COVER_ID)
+    }
+
+    /** [EXTRA-01] The roster stays a day off and the shift goes in as a 대근 of its hours, said back with undo. */
+    fun coverInstead(date: LocalDate, type: ShiftType, snapshot: ScheduleSnapshot) {
+        val kind = coverKind(snapshot, type)
+        addExtra(date, ExtraText.cover(kind, type), ExtraText.coverName(kind, type))
+    }
+
+    private suspend fun changeShift(date: LocalDate, choose: (ShiftOverride) -> ShiftOverride): DayEntry? {
+        val pattern = snapshot.value?.resolver?.patternOn(date)
+        return schedule.updateDay(date) { entry ->
+            val patternId = pattern?.shiftTypeIdOn(date)
+            val patternCovers = pattern != null
+            val next = when (val o = choose(entry.override)) {
+                is ShiftOverride.Shift -> if (patternCovers && patternId == o.shiftTypeId) ShiftOverride.None else o
+                ShiftOverride.Off -> if (patternCovers && patternId == null) ShiftOverride.None else o
+                ShiftOverride.None -> o
+            }
+            if (next == entry.override) {
+                entry
+            } else {
+                // Times set for the old shift do not carry over to a different one.
+                entry.copy(override = next, customStart = null, customEnd = null, customBreakMinutes = null)
             }
         }
     }
@@ -195,16 +286,69 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
-    fun setOvertime(date: LocalDate, minutes: Int) {
-        viewModelScope.launch { schedule.setOvertime(date, minutes) }
+    /** [EXTRA-01] Adds a piece of extra work, said back with undo: "10월 17일에 야간 대근을 넣었어요". */
+    fun addExtra(date: LocalDate, entry: ExtraEntry, name: String) {
+        viewModelScope.launch {
+            val before = schedule.addExtra(date, entry)
+            if ((before?.extras?.size ?: 0) >= com.bamnat.app.data.ScheduleRepository.MAX_EXTRAS) {
+                _messages.emit(UndoMessage("하루에 추가 근무는 ${com.bamnat.app.data.ScheduleRepository.MAX_EXTRAS}건까지 넣을 수 있어요"))
+                return@launch
+            }
+            _messages.emit(UndoMessage("${Fmt.monthDay(date)}에 $name${Fmt.obj(name)} 넣었어요") { schedule.restoreDay(date, before) })
+        }
     }
 
-    fun setExtraWork(day: ResolvedDay, kind: ExtraWork?, minutes: Int) {
-        viewModelScope.launch { schedule.setExtraWork(day.date, kind, minutes.coerceIn(0, 24 * 60), day.isWorkDay) }
+    /** [EXTRA-01] Changes the piece at [index] in place, as the user edits it. */
+    fun updateExtra(date: LocalDate, index: Int, entry: ExtraEntry) {
+        viewModelScope.launch { schedule.updateExtra(date, index, entry) }
     }
 
-    fun setLeave(date: LocalDate, leave: Leave?) {
-        viewModelScope.launch { schedule.setLeave(date, leave) }
+    fun removeExtra(date: LocalDate, index: Int, name: String) {
+        viewModelScope.launch {
+            val before = schedule.removeExtra(date, index)
+            _messages.emit(UndoMessage("$name${Fmt.obj(name)} 뺐어요") { schedule.restoreDay(date, before) })
+        }
+    }
+
+    /** [EXTRA-01] A one-tap choice from the long-press menu or the day's chips: added, or taken off when the day has it. */
+    fun toggleExtra(day: ResolvedDay, choice: ExtraChoice) {
+        val i = ExtraText.indexOf(day, choice)
+        if (i >= 0) removeExtra(day.date, i, ExtraText.name(day.extras[i])) else addExtra(day.date, choice.entry, choice.name)
+    }
+
+    /** [EXTRA-05] The day's moved pieces are as the user meant them. */
+    fun markExtrasReviewed(date: LocalDate) {
+        viewModelScope.launch { schedule.markExtrasReviewed(date) }
+    }
+
+    fun markAllExtrasReviewed() {
+        viewModelScope.launch { schedule.markAllExtrasReviewed() }
+    }
+
+    /**
+     * [EXTRA-05] Days off once changed into a shift and marked 대근 become days off with a 대근 of that
+     * shift's hours; undo puts every day back as it was.
+     */
+    fun convertSwapCovers(days: List<DayEntry>) {
+        container.settingsRepository.update { it.copy(swapCoversAnswered = true) }
+        viewModelScope.launch {
+            val n = schedule.convertShiftSwapCovers(days.map { it.date })
+            if (n > 0) _messages.emit(UndoMessage("${n}일을 대근으로 바꿨어요") { days.forEach { schedule.restoreDay(it.date, it) } })
+        }
+    }
+
+    /** [EXTRA-05] The user keeps those days as they are; not asked again. */
+    fun keepSwapCovers() = container.settingsRepository.update { it.copy(swapCoversAnswered = true) }
+
+    /** 연차·반차 for a day; [announce] says it back with undo when it was set without the day open [DAY-03]. */
+    fun setLeave(date: LocalDate, leave: Leave?, announce: Boolean = false) {
+        viewModelScope.launch {
+            val before = schedule.setLeave(date, leave)
+            if (!announce) return@launch
+            val text = leave?.let { "${Fmt.monthDay(date)}에 ${it.label}${Fmt.obj(it.label)} 넣었어요" }
+                ?: before?.leave?.let { "${Fmt.monthDay(date)} ${it.label}${Fmt.obj(it.label)} 뺐어요" } ?: return@launch
+            _messages.emit(UndoMessage(text) { schedule.restoreDay(date, before) })
+        }
     }
 
     /** Called once the review sheet was offered; Play decides whether it actually shows [OPS-20]. */
@@ -213,23 +357,20 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         container.telemetry.event("review_asked")
     }
 
-    fun setSecondShift(date: LocalDate, shiftTypeId: Long?) {
-        viewModelScope.launch { schedule.setSecondShift(date, shiftTypeId) }
-    }
-
-    fun setHolidayWork(date: LocalDate, minutes: Int) {
-        viewModelScope.launch { schedule.setHolidayWork(date, minutes) }
-    }
-
-    fun setAlarmSkipped(date: LocalDate, skipped: Boolean) {
-        viewModelScope.launch { schedule.setAlarmSkipped(date, skipped) }
+    fun setAlarmSkipped(date: LocalDate, skipped: Boolean, announce: Boolean = false) {
+        viewModelScope.launch {
+            val before = schedule.setAlarmSkipped(date, skipped)
+            if (announce) {
+                _messages.emit(UndoMessage("${Fmt.monthDay(date)} 알람을 ${if (skipped) "껐어요" else "켰어요"}") { schedule.restoreDay(date, before) })
+            }
+        }
     }
 
     fun resetDay(date: LocalDate) {
         viewModelScope.launch {
             val before = schedule.resetDay(date)
             if (before != null && !before.isEmpty) {
-                _messages.emit(UndoMessage("${date.monthValue}월 ${date.dayOfMonth}일을 패턴대로 되돌렸어요") {
+                _messages.emit(UndoMessage("${Fmt.monthDay(date)}을 패턴대로 되돌렸어요") {
                     schedule.restoreDay(date, before)
                 })
             }
@@ -241,8 +382,6 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     fun setAlarmsEnabled(on: Boolean) = container.settingsRepository.update { it.copy(alarmsEnabled = on) }
-
-    fun hideDayAlarmNotice() = container.settingsRepository.update { it.copy(hideDayAlarmNotice = true) }
 
     fun deleteMemo(memo: Memo) {
         viewModelScope.launch { memoRepo.delete(memo) }

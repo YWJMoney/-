@@ -5,7 +5,7 @@ import com.bamnat.core.memo.ChecklistCodec
 import com.bamnat.core.memo.Memo
 import com.bamnat.core.model.AlarmSpec
 import com.bamnat.core.model.DayEntry
-import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.model.ExtraEntry
 import com.bamnat.core.model.Leave
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.ShiftType
@@ -88,7 +88,8 @@ fun WorkPattern.toEntity(id: Int = PatternEntity.SINGLE_ID): PatternEntity = whe
     )
 }
 
-fun DayEntryEntity.toModel() = DayEntry(
+/** A stored day with its [extras] from `day_extras` [EXTRA-01]. */
+fun DayEntryEntity.toModel(extras: List<ExtraEntry> = emptyList()) = DayEntry(
     date = LocalDate.ofEpochDay(epochDay),
     override = when (overrideMode) {
         DayEntryEntity.MODE_OFF -> ShiftOverride.Off
@@ -98,13 +99,10 @@ fun DayEntryEntity.toModel() = DayEntry(
     customStart = customStartMinute?.toLocalTime(),
     customEnd = customEndMinute?.toLocalTime(),
     customBreakMinutes = customBreakMinutes,
-    overtimeMinutes = overtimeMinutes,
-    holidayWorkMinutes = holidayWorkMinutes,
     alarmSkipped = alarmSkipped,
     customAlarms = AlarmCodec.decodeDayAlarms(customAlarms),
-    extraWork = ExtraWork.fromCode(extraWork),
     leave = Leave.fromCode(leave),
-    secondShiftId = secondShiftTypeId,
+    extras = extras,
 )
 
 fun DayEntry.toEntity() = DayEntryEntity(
@@ -118,14 +116,44 @@ fun DayEntry.toEntity() = DayEntryEntity(
     customStartMinute = customStart?.toMinuteOfDay(),
     customEndMinute = customEnd?.toMinuteOfDay(),
     customBreakMinutes = customBreakMinutes,
-    overtimeMinutes = overtimeMinutes,
-    holidayWorkMinutes = holidayWorkMinutes,
     alarmSkipped = alarmSkipped,
     customAlarms = AlarmCodec.encodeDayAlarms(customAlarms),
-    extraWork = extraWork?.code ?: 0,
     leave = leave?.code ?: 0,
-    secondShiftTypeId = secondShiftId,
 )
+
+fun DayExtraEntity.toModel() = ExtraEntry(
+    kindId = kindId,
+    start = startMinute?.toLocalTime(),
+    end = endMinute?.toLocalTime(),
+    breakMinutes = breakMinutes.coerceAtLeast(0),
+    breakStart = breakStartMinute?.toLocalTime(),
+    minutes = minutes.coerceAtLeast(0),
+    coveredShiftId = coveredShiftTypeId,
+    needsReview = needsReview,
+)
+
+fun ExtraEntry.toEntity(epochDay: Long, position: Int) = DayExtraEntity(
+    epochDay = epochDay,
+    kindId = kindId,
+    // Times come as a pair; half of one is no time at all.
+    startMinute = start?.takeIf { hasTimes }?.toMinuteOfDay(),
+    endMinute = end?.takeIf { hasTimes }?.toMinuteOfDay(),
+    breakMinutes = breakMinutes,
+    breakStartMinute = breakStart?.takeIf { hasTimes }?.toMinuteOfDay(),
+    minutes = minutes,
+    coveredShiftTypeId = coveredShiftId,
+    needsReview = needsReview,
+    position = position,
+)
+
+/** [EXTRA-01] Days as the calendar sees them: each stored day with its extra work, and days that have only extra work. */
+fun assembleDays(rows: List<DayEntryEntity>, extras: List<DayExtraEntity>): List<DayEntry> {
+    val byDay = extras.groupBy { it.epochDay }
+        .mapValues { (_, list) -> list.sortedWith(compareBy({ it.position }, { it.id })).map { it.toModel() } }
+    val stored = rows.map { it.epochDay }.toSet()
+    return rows.map { it.toModel(byDay[it.epochDay].orEmpty()) } +
+        byDay.filterKeys { it !in stored }.map { (day, list) -> DayEntry(LocalDate.ofEpochDay(day), extras = list) }
+}
 
 fun MemoEntity.toModel() = Memo(
     id = id,

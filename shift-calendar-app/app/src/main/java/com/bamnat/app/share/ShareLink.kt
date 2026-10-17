@@ -34,11 +34,13 @@ object ShareLinkPayload {
             val day = snapshot.resolver.resolve(d)
             val type = day.shiftType ?: continue
             used[type.id] = type
-            day.second?.type?.let { used[it.id] = it }
+            // [EXTRA-01] A 대근 of another shift shows as the day's second shift; other extra work stays private.
+            val second = day.coveredShift
+            second?.let { used[it.id] = it }
             days.put(JSONObject().apply {
                 put("date", d.toString())
                 put("type", type.id)
-                day.second?.let { put("second", it.type.id) }
+                second?.let { put("second", it.id) }
                 // The kind of leave (병가, 경조사 …) is private; family only needs to know it is a day off.
                 day.leave?.let { put("leave", if (it.kind == LeaveKind.ANNUAL) it.label.take(6) else "휴가") }
             })

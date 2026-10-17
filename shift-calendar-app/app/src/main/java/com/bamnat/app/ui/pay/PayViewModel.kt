@@ -15,7 +15,7 @@ import com.bamnat.core.pay.CalcSnapshot
 import com.bamnat.core.pay.Cadence
 import com.bamnat.core.pay.CompanyRules
 import com.bamnat.core.pay.MinuteRounding
-import com.bamnat.core.pay.OffDayWork
+import com.bamnat.core.pay.RestDayWork
 import com.bamnat.core.pay.PremiumTarget
 import com.bamnat.core.pay.CandidateKind
 import com.bamnat.core.pay.DatedValue
@@ -152,6 +152,9 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
             ordinary = ordinary, fixedOvertimeMinutes = fixedOvertimeMinutes))
     }
 
+    /** [EXTRA-05] The 1.8 way of paying a day off was shown next to the law's once; it is not shown again. */
+    fun restDayCompared() = container.settingsRepository.update { it.copy(restDayCompared = true) }
+
     /** Changes the company's rules [PAYX-07]; every change can be undone like a value edit. */
     fun updateRules(transform: (CompanyRules) -> CompanyRules) {
         update { it.copy(rules = transform(it.rules)) }
@@ -223,7 +226,7 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
                     })
                 }
                 CandidateKind.EXTRA_RULE -> {
-                    val kind = c.extraWork ?: continue
+                    val kind = c.extraKind ?: continue
                     val rule = c.extraRule ?: continue
                     p = p.copy(rules = p.rules.copy(extra = p.rules.extra + (kind to rule)))
                 }
@@ -248,8 +251,10 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
             add((if (p.fiveOrMoreEmployees) "5인 미만 사업장으로 계산 (가산 없음)" else "5인 이상 사업장으로 계산") to
                 p.copy(fiveOrMoreEmployees = !p.fiveOrMoreEmployees))
             val r = p.rules
-            add((if (r.offDayWork == OffDayWork.HOLIDAY) "쉬는 날 근무를 연장근로로 계산" else "쉬는 날 근무를 휴일근로로 계산") to
-                p.copy(rules = r.copy(offDayWork = if (r.offDayWork == OffDayWork.HOLIDAY) OffDayWork.OVERTIME else OffDayWork.HOLIDAY)))
+            // [EXTRA-02] Each other way a company may pay work on a day off.
+            RestDayWork.entries.filter { it != r.restDayWork }.forEach { mode ->
+                add("쉬는 날 근무를 ${mode.label} 계산 (${mode.detail})" to p.copy(rules = r.copy(restDayWork = mode)))
+            }
             add((if (r.publicHolidaysPaid) "공휴일 근무를 평일처럼 계산 (휴일 대체)" else "공휴일 근무를 휴일근로로 계산") to
                 p.copy(rules = r.copy(publicHolidaysPaid = !r.publicHolidaysPaid)))
             if (r.overtimeRounding.unit > 1) add("연장 시간을 1분 단위로 계산" to p.copy(rules = r.copy(overtimeRounding = MinuteRounding())))

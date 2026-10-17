@@ -1,8 +1,10 @@
 package com.bamnat.core
 
 import com.bamnat.core.model.DayEntry
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.ExtraKinds
-import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.model.ExtraTiming
 import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.pay.Cadence
 import com.bamnat.core.pay.CompanyRules
@@ -91,13 +93,14 @@ class M3PayTest {
         val tue = LocalDate.of(2026, 11, 10)
         val wed = LocalDate.of(2026, 11, 11)
         val r = ScheduleResolver(Fixtures.all, WorkPattern.Rotation(monday, week), listOf(
-            DayEntry(tue, extraWork = ExtraWork.COVER, secondShiftId = Fixtures.night.id),
-            DayEntry(wed, extraWork = ExtraWork.COVER, secondShiftId = Fixtures.evening.id),
+            // Only the covered shift: the 대근 takes that shift's hours.
+            DayEntry(tue, extras = listOf(ExtraEntry(ExtraKind.COVER_ID, coveredShiftId = Fixtures.night.id))),
+            DayEntry(wed, extras = listOf(ExtraEntry(ExtraKind.COVER_ID, coveredShiftId = Fixtures.evening.id))),
         ))
         val rules = CompanyRules(
-            extra = mapOf(ExtraWork.COVER to ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 50_000, nightPremium = false)),
-            extraByShift = mapOf(ExtraWork.COVER to mapOf(Fixtures.night.id to ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 100_000, nightPremium = false))),
-            extraNames = mapOf(ExtraWork.COVER to "대체근무"),
+            extra = mapOf(ExtraKind.COVER_ID to ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 50_000, nightPremium = false)),
+            extraByShift = mapOf(ExtraKind.COVER_ID to mapOf(Fixtures.night.id to ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 100_000, nightPremium = false))),
+            extraNames = mapOf(ExtraKind.COVER_ID to "대체근무"),
         )
         val pay = calc(profile.copy(rules = rules, fiveOrMoreEmployees = false), r)
         val extras = pay.lines.filter { it.kind == LineKind.EXTRA }.associate { it.label to it.amount }
@@ -106,17 +109,19 @@ class M3PayTest {
     }
 
     @Test
-    fun `extra kinds keep names, hidden kinds and hours`() {
-        val k = ExtraKinds(names = mapOf(ExtraWork.OVERTIME to "조출"), hidden = setOf(ExtraWork.SPECIAL), minutes = mapOf(ExtraWork.COVER to 720))
+    fun `extra kinds keep names, hidden kinds and their place on the clock`() {
+        val k = ExtraKinds()
+            .put(ExtraKinds().of(ExtraKind.OVERTIME_ID).copy(name = "조출", short = "조", timing = ExtraTiming.BeforeShift(60)))
+            .put(ExtraKinds().of(ExtraKind.SPECIAL_ID).copy(hidden = true))
         val back = ExtraKinds.decode(k.encode())
         assertEquals(k, back)
-        assertEquals("조출", back.name(ExtraWork.OVERTIME))
-        assertEquals("조", back.short(ExtraWork.OVERTIME))
-        assertEquals(listOf(ExtraWork.OVERTIME, ExtraWork.COVER), back.visible())
-        assertEquals(ExtraWork.entries, back.visible(ExtraWork.SPECIAL))
-        assertEquals(720, back.minutesFor(ExtraWork.COVER, workDay = true))
-        assertEquals(120, back.minutesFor(ExtraWork.OVERTIME, workDay = true))
-        assertEquals(480, back.minutesFor(ExtraWork.OVERTIME, workDay = false))
-        assertFalse(ExtraKinds.decode("").names.isNotEmpty())
+        assertEquals("조출", back.name(ExtraKind.OVERTIME_ID))
+        assertEquals("조", back.of(ExtraKind.OVERTIME_ID).mark)
+        assertEquals(ExtraTiming.BeforeShift(60), back.of(ExtraKind.OVERTIME_ID).timing)
+        assertEquals(listOf(ExtraKind.OVERTIME_ID, ExtraKind.COVER_ID), back.visible().map { it.id })
+        // A hidden kind already on the day still shows so it can be cleared.
+        assertEquals(listOf(ExtraKind.OVERTIME_ID, ExtraKind.SPECIAL_ID, ExtraKind.COVER_ID), back.visible(listOf(ExtraKind.SPECIAL_ID)).map { it.id })
+        assertEquals(ExtraKinds(), ExtraKinds.decode(""))
+        assertFalse(back.of(ExtraKind.OVERTIME_ID).countsAsShift)
     }
 }

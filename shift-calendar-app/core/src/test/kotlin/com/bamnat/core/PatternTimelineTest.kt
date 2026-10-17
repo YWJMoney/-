@@ -3,7 +3,8 @@ package com.bamnat.core
 import com.bamnat.core.Fixtures.day
 import com.bamnat.core.Fixtures.night
 import com.bamnat.core.model.DayEntry
-import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.schedule.PatternTimeline
 import com.bamnat.core.schedule.ScheduleResolver
@@ -63,10 +64,10 @@ class PatternTimelineTest {
     @Test
     fun extraWorkKindIsKeptOnTheDay() {
         val date = LocalDate.of(2026, 9, 3)
-        val entry = DayEntry(date, holidayWorkMinutes = 8 * 60, extraWork = ExtraWork.COVER)
+        val entry = DayEntry(date, extras = listOf(ExtraEntry(ExtraKind.COVER_ID, minutes = 8 * 60)))
         val resolved = ScheduleResolver(Fixtures.all, old, listOf(entry)).resolve(date)
-        assertEquals(ExtraWork.COVER, resolved.extraWork)
+        assertEquals(ExtraKind.COVER_ID, resolved.extras.single().kind.id)
+        assertEquals("대근", resolved.extras.single().kind.name)
         assertEquals(8 * 60, resolved.extraMinutes)
-        assertEquals(ExtraWork.SPECIAL, ExtraWork.fromCode(ExtraWork.SPECIAL.code))
     }
 }

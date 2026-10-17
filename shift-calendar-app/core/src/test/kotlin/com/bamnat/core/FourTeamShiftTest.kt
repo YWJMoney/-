@@ -1,7 +1,8 @@
 package com.bamnat.core
 
 import com.bamnat.core.model.DayEntry
-import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.Leave
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
@@ -52,8 +53,8 @@ class FourTeamShiftTest {
         ),
         monthlyHours = 180, dailyLimitMinutes = null, weeklyLimitMinutes = null,
         rules = CompanyRules(
-            extra = mapOf(ExtraWork.COVER to ExtraRule(ExtraBasis.TIERED, nightPremium = false)),
-            publicHolidayAs = ExtraWork.COVER, holidayLeaveFree = true,
+            extra = mapOf(ExtraKind.COVER_ID to ExtraRule(ExtraBasis.TIERED, nightPremium = false)),
+            publicHolidayAs = ExtraKind.COVER_ID, holidayLeaveFree = true,
         ),
     )
     private val nov = YearMonth.of(2026, 11)
@@ -75,8 +76,8 @@ class FourTeamShiftTest {
         val dayCover = LocalDate.of(2026, 11, 3)   // 휴
         val nightCover = LocalDate.of(2026, 11, 4) // 휴
         val r = roster(
-            DayEntry(dayCover, secondShiftId = day.id, extraWork = ExtraWork.COVER),
-            DayEntry(nightCover, secondShiftId = night.id, extraWork = ExtraWork.COVER),
+            DayEntry(dayCover, extras = listOf(ExtraEntry(ExtraKind.COVER_ID, day.start, day.end, coveredShiftId = day.id))),
+            DayEntry(nightCover, extras = listOf(ExtraEntry(ExtraKind.COVER_ID, night.start, night.end, coveredShiftId = night.id))),
         )
         val pay = PayCalculator().calculate(profile, nov, r::resolve) { false }
         assertEquals(23_704L * 14, pay.day(dayCover)!!.parts.single { it.kind == LineKind.EXTRA }.amount)   // 8 + 4 × 1.5
@@ -111,13 +112,11 @@ class FourTeamShiftTest {
     }
 
     @Test
-    fun `schedule as regular work still pays recorded extra hours and a second shift as overtime`() {
+    fun `schedule as regular work still pays recorded extra hours as overtime`() {
         val p = legal.copy(scheduleIsRegular = true)
-        assertEquals(90, overtimeMinutes(p, roster(DayEntry(LocalDate.of(2026, 11, 1), overtimeMinutes = 90))))
-        // A 4-hour 잔업 shift on top of a working day is all overtime, not room under the daily limit.
-        val extra = ShiftType(4, "잔업", "잔", 0xFF000000, LocalTime.of(19, 0), LocalTime.of(23, 0))
-        val r = ScheduleResolver(listOf(day, night, off, extra), WorkPattern.Rotation(start, cycle),
-            listOf(DayEntry(LocalDate.of(2026, 11, 1), secondShiftId = extra.id)))
+        assertEquals(90, overtimeMinutes(p, roster(DayEntry(LocalDate.of(2026, 11, 1), extras = listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 90))))))
+        // A 4-hour 잔업 19~23 on top of a working day is all overtime, not room under the daily limit.
+        val r = roster(DayEntry(LocalDate.of(2026, 11, 1), extras = listOf(ExtraEntry(ExtraKind.OVERTIME_ID, LocalTime.of(19, 0), LocalTime.of(23, 0)))))
         assertEquals(240, overtimeMinutes(p, r))
     }
 

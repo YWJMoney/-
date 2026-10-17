@@ -1,26 +1,43 @@
 package com.bamnat.core.schedule
 
 import com.bamnat.core.model.DayEntry
-import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.model.ExtraKind
+import com.bamnat.core.model.ExtraKinds
+import com.bamnat.core.model.ExtraTiming
 import com.bamnat.core.model.Leave
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.model.WorkTime
+import java.time.Duration
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 
 enum class DaySource { PATTERN, OVERRIDE, NONE }
 
-/** The second shift of a day [FEAT-02], with its own times. */
-data class SecondShift(
-    val type: ShiftType,
-    val start: LocalTime,
-    val end: LocalTime,
+/**
+ * [EXTRA-01] One piece of extra work placed on the clock: its own times, right after or before the
+ * shift for 잔업·조출, or (an old record of hours only on a day without a shift) nowhere.
+ */
+data class ResolvedExtra(
+    val entry: ExtraEntry,
+    val kind: ExtraKind,
+    /** Null when the record has no times and there is no shift to place it next to. */
+    val from: LocalDateTime?,
+    val to: LocalDateTime?,
     val breakMinutes: Int,
-    val breakStart: LocalTime? = null,
+    val breakStart: LocalTime?,
+    /** Paid minutes: the span less the break. */
+    val minutes: Int,
+    /** The shift type this work covered (대근), if the user said. */
+    val covered: ShiftType?,
 ) {
-    val minutes: Int get() = WorkTime.workMinutes(start, end, breakMinutes)
+    /** No clock times, so night minutes are unknown and taken as none. */
+    val estimated: Boolean get() = from == null
+    val start: LocalTime? get() = from?.toLocalTime()
+    val end: LocalTime? get() = to?.toLocalTime()
 }
 
 /** The final picture of one calendar day after applying pattern and user changes. */
@@ -36,11 +53,7 @@ data class ResolvedDay(
     val breakStart: LocalTime? = null,
     /** Minutes of the scheduled shift (after break). */
     val scheduledMinutes: Int,
-    val overtimeMinutes: Int,
-    val holidayWorkMinutes: Int,
     val alarmSkipped: Boolean,
-    /** What kind of extra work the day had (잔업, 특근, 대근), if the user said. */
-    val extraWork: ExtraWork? = null,
     val entry: DayEntry?,
     /** True when start/end come from this day's entry instead of the shift type. */
     val hasCustomTimes: Boolean = false,
@@ -48,19 +61,36 @@ data class ResolvedDay(
     val leave: Leave? = null,
     /** Shift minutes the leave covers; paid leave pays them, unpaid leave deducts them. */
     val leaveMinutes: Int = 0,
-    /** Another shift worked the same day [FEAT-02]. */
-    val second: SecondShift? = null,
+    /** [EXTRA-01] Extra work this day, in the order the user added it. */
+    val extras: List<ResolvedExtra> = emptyList(),
 ) {
     val isWorkDay: Boolean get() = scheduledMinutes > 0 || (start != null && end != null)
     val isOff: Boolean get() = !isWorkDay
-    val isHolidayWork: Boolean get() = holidayWorkMinutes > 0
-    /** Any extra work to show on the calendar: hours beyond the shift or a marked kind. */
-    val hasExtraWork: Boolean get() = extraWork != null || overtimeMinutes > 0 || holidayWorkMinutes > 0 || second != null
-    val extraMinutes: Int get() = overtimeMinutes + holidayWorkMinutes + secondMinutes
-    val secondMinutes: Int get() = second?.minutes ?: 0
+    /** A day with no shift and no leave: work on it is 휴무일 or 휴일 work [EXTRA-02]. */
+    val isRestDay: Boolean get() = !isWorkDay && leave == null
+    val hasExtraWork: Boolean get() = extras.isNotEmpty()
+    val extraMinutes: Int get() = extras.sumOf { it.minutes }
+
+    /** [EXTRA-01] The first shift type some extra work covered (a 대근 for a 나이트), for two-colour cells. */
+    val coveredShift: ShiftType? get() = extras.firstNotNullOfOrNull { it.covered }
+
+    /** [EXTRA-01] Up to [max] marks of the day's kinds of extra work, e.g. "잔대". */
+    fun extraMarks(max: Int = 2): String = extras.map { it.kind.mark }.distinct().take(max).joinToString("")
 
     /** Everything that counts toward weekly / monthly hours. */
-    val totalMinutes: Int get() = scheduledMinutes + overtimeMinutes + holidayWorkMinutes + secondMinutes
+    val totalMinutes: Int get() = scheduledMinutes + extraMinutes
+
+    /** The shift on the clock, if it has times. */
+    val shiftFrom: LocalDateTime? get() = if (start != null && end != null) date.atTime(start) else null
+    val shiftTo: LocalDateTime? get() = shiftFrom?.let { endAfter(it, end!!) }
+
+    companion object {
+        /** [end] on the day of [from], or the next day when that is not after it (overnight; equal is 24 hours). */
+        fun endAfter(from: LocalDateTime, end: LocalTime): LocalDateTime {
+            val sameDay = from.toLocalDate().atTime(end)
+            return if (sameDay.isAfter(from)) sameDay else sameDay.plusDays(1)
+        }
+    }
 }
 
 /**
@@ -71,9 +101,11 @@ class ScheduleResolver(
     shiftTypes: Collection<ShiftType>,
     patterns: List<WorkPattern>,
     entries: Collection<DayEntry>,
+    /** [EXTRA-01] The user's kinds of extra work, for where each piece sits on the clock. */
+    val kinds: ExtraKinds = ExtraKinds(),
 ) {
-    constructor(shiftTypes: Collection<ShiftType>, pattern: WorkPattern?, entries: Collection<DayEntry>) :
-        this(shiftTypes, listOfNotNull(pattern), entries)
+    constructor(shiftTypes: Collection<ShiftType>, pattern: WorkPattern?, entries: Collection<DayEntry>, kinds: ExtraKinds = ExtraKinds()) :
+        this(shiftTypes, listOfNotNull(pattern), entries, kinds)
 
     /** Pattern periods, earliest first. */
     private val patterns: List<WorkPattern> = patterns.sortedBy { it.startDate }
@@ -141,6 +173,8 @@ class ScheduleResolver(
         }
         val workStart = if (workEnd == null) null else start
         val scheduled = fullScheduled - leaveMinutes
+        val shiftFrom = if (workStart != null && workEnd != null) date.atTime(workStart) else null
+        val shiftTo = shiftFrom?.let { ResolvedDay.endAfter(it, workEnd!!) }
 
         return ResolvedDay(
             date = date,
@@ -152,17 +186,49 @@ class ScheduleResolver(
             // A partial leave shrinks the break, so its clock time is no longer known.
             breakStart = type?.breakStart?.takeIf { workStart != null && workBreak == breakMinutes && breakMinutes > 0 },
             scheduledMinutes = scheduled,
-            overtimeMinutes = entry?.overtimeMinutes?.coerceAtLeast(0) ?: 0,
-            holidayWorkMinutes = entry?.holidayWorkMinutes?.coerceAtLeast(0) ?: 0,
             alarmSkipped = entry?.alarmSkipped == true,
-            extraWork = entry?.extraWork,
             entry = entry,
             hasCustomTimes = customTimes,
             leave = leave,
             leaveMinutes = leaveMinutes,
-            second = entry?.secondShiftId?.let { typesById[it] }?.takeIf { it.hasTimes }
-                ?.let { SecondShift(it, it.start!!, it.end!!, it.breakMinutes, it.breakStart) },
+            extras = entry?.extras?.takeIf { it.isNotEmpty() }?.let { placeExtras(date, it, shiftFrom, shiftTo) }.orEmpty(),
         )
+    }
+
+    /**
+     * [EXTRA-01] Puts each piece of extra work on the clock. Pieces with times keep them; a 대근 with
+     * only the covered shift takes that shift's hours; 잔업 follows the shift and 조출 comes before it,
+     * one after another when there are several; an old record of hours only follows the shift too,
+     * or has no place on a day without one.
+     */
+    private fun placeExtras(date: LocalDate, list: List<ExtraEntry>, shiftFrom: LocalDateTime?, shiftTo: LocalDateTime?): List<ResolvedExtra> {
+        var after = shiftTo
+        var before = shiftFrom
+        return list.map { e ->
+            val kind = kinds.of(e.kindId)
+            val covered = e.coveredShiftId?.let { typesById[it] }
+            val asCovered = covered?.takeIf { !e.hasTimes && it.hasTimes }
+            if (e.hasTimes || asCovered != null) {
+                val from = date.atTime(e.start ?: asCovered!!.start!!)
+                val to = ResolvedDay.endAfter(from, e.end ?: asCovered!!.end!!)
+                val span = Duration.between(from, to).toMinutes().toInt()
+                val brk = (if (e.hasTimes) e.breakMinutes else asCovered!!.breakMinutes).coerceIn(0, span)
+                val brkStart = if (e.hasTimes) e.breakStart else asCovered!!.breakStart
+                ResolvedExtra(e, kind, from, to, brk, brkStart.takeIf { brk > 0 }, span - brk, covered)
+            } else {
+                val minutes = e.minutes.coerceIn(0, WorkTime.MINUTES_PER_DAY).toLong()
+                var from: LocalDateTime? = null
+                var to: LocalDateTime? = null
+                val b = before
+                val a = after
+                if (kind.timing is ExtraTiming.BeforeShift && b != null) {
+                    from = b.minusMinutes(minutes); to = b; before = from
+                } else if (a != null) {
+                    from = a; to = a.plusMinutes(minutes); after = to
+                }
+                ResolvedExtra(e, kind, from, to, 0, null, minutes.toInt(), covered)
+            }
+        }
     }
 
     fun resolveRange(from: LocalDate, toInclusive: LocalDate): List<ResolvedDay> {

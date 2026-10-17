@@ -71,7 +71,9 @@ fun LeaveMark(leave: Leave, size: Dp = 16.dp) {
         Modifier.size(size).clip(RoundedCornerShape(size / 4)).background(leaveColor(leave.kind)),
         contentAlignment = Alignment.Center,
     ) {
-        Text(leave.short, color = Color.White, fontSize = (size.value * 0.6f).sp,
-            fontWeight = FontWeight.Bold, lineHeight = (size.value * 0.6f).sp)
+        // Sized to the square, not the font setting, so a big font cannot spill out of it.
+        val fs = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.6f).toSp() }
+        Text(leave.short, color = contentColorOn(leaveColor(leave.kind)), fontSize = fs,
+            fontWeight = FontWeight.Bold, lineHeight = fs, maxLines = 1)
     }
 }

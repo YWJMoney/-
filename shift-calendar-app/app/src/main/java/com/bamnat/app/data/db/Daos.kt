@@ -76,9 +76,6 @@ interface DayEntryDao {
     @Query("SELECT * FROM day_entries WHERE overrideMode = 2 AND overrideShiftTypeId = :shiftTypeId")
     suspend fun withOverride(shiftTypeId: Long): List<DayEntryEntity>
 
-    @Query("SELECT * FROM day_entries WHERE secondShiftTypeId = :shiftTypeId")
-    suspend fun withSecondShift(shiftTypeId: Long): List<DayEntryEntity>
-
     @Query("SELECT * FROM day_entries")
     suspend fun getAll(): List<DayEntryEntity>
 
@@ -86,6 +83,43 @@ interface DayEntryDao {
     suspend fun insertAll(entities: List<DayEntryEntity>)
 
     @Query("DELETE FROM day_entries")
+    suspend fun clear()
+}
+
+/** [EXTRA-01] Extra work by date; [ScheduleRepository] replaces a day's list as a whole. */
+@Dao
+interface DayExtraDao {
+    @Query("SELECT * FROM day_extras ORDER BY epochDay, position, id")
+    fun observeAll(): Flow<List<DayExtraEntity>>
+
+    @Query("SELECT * FROM day_extras ORDER BY epochDay, position, id")
+    suspend fun getAll(): List<DayExtraEntity>
+
+    @Query("SELECT * FROM day_extras WHERE epochDay = :epochDay ORDER BY position, id")
+    suspend fun onDay(epochDay: Long): List<DayExtraEntity>
+
+    @Query("SELECT * FROM day_extras WHERE coveredShiftTypeId = :shiftTypeId")
+    suspend fun covering(shiftTypeId: Long): List<DayExtraEntity>
+
+    @Query("SELECT COUNT(*) FROM day_extras WHERE needsReview = 1")
+    fun observeNeedsReview(): Flow<Int>
+
+    @Insert
+    suspend fun insertAll(entities: List<DayExtraEntity>)
+
+    @Update
+    suspend fun updateAll(entities: List<DayExtraEntity>)
+
+    @Query("DELETE FROM day_extras WHERE epochDay = :epochDay")
+    suspend fun deleteDay(epochDay: Long)
+
+    @Query("UPDATE day_extras SET needsReview = 0 WHERE epochDay = :epochDay")
+    suspend fun markReviewed(epochDay: Long)
+
+    @Query("UPDATE day_extras SET needsReview = 0")
+    suspend fun markAllReviewed()
+
+    @Query("DELETE FROM day_extras")
     suspend fun clear()
 }
 

@@ -113,19 +113,52 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             }
         }
 
+        // [EXTRA-01] The four tiles add up to the total: the roster, extra work on working days, work on days off.
         val tiles: List<@Composable (Modifier) -> Unit> = listOf(
             { m -> StatTile("${month.monthValue}월 총 근무", HoursFormat.korean(summary.totalMinutes), m,
                 caption = "근무 ${summary.workDays}일") },
-            { m -> StatTile("정규 근무", HoursFormat.korean(summary.scheduledMinutes), m) },
-            { m -> StatTile("연장 근무", HoursFormat.korean(summary.overtimeMinutes), m) },
-            { m -> StatTile("휴일 근무", HoursFormat.korean(summary.holidayWorkMinutes), m,
-                caption = "${summary.holidayWorkDays}일") },
+            { m -> StatTile("근무표대로", HoursFormat.korean(summary.scheduledMinutes), m) },
+            { m -> StatTile("근무일 추가 근무", HoursFormat.korean(summary.extraMinutes - summary.restDayExtraMinutes), m,
+                caption = "잔업·조출 등") },
+            { m -> StatTile("쉬는 날 근무", HoursFormat.korean(summary.restDayExtraMinutes), m,
+                caption = "${summary.restDayWorkDays}일") },
         )
         val columns = if (wide) 4 else 2
         tiles.chunked(columns).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { tile -> tile(Modifier.weight(1f)) }
                 repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+
+        // [EXTRA-02] 주 52시간 (제53조), 64 under 탄력적 근로시간제; it does not apply under 5 employees.
+        val profile = payProfile
+        if (profile?.fiveOrMoreEmployees != false) {
+            val legalHours = if (profile?.flexPeriod != null && profile.scheduleIsRegular) 64 else 52
+            val overLegal = summary.weeks.filter { it.totalMinutes > legalHours * 60 }
+            if (overLegal.isNotEmpty()) {
+                WarningBanner(
+                    "주 ${legalHours}시간을 넘은 주가 ${overLegal.size}번 있어요",
+                    overLegal.joinToString(", ") { "${Fmt.shortDate(it.start)}주 ${HoursFormat.hours(it.totalMinutes.toDouble())}시간" } +
+                        ". 연장근로는 한 주 12시간까지예요 (근로기준법 제53조). 참고용이에요.",
+                )
+            }
+        }
+
+        if (summary.extraByKind.isNotEmpty()) {
+            SectionCard(title = "추가 근무 종류별") {
+                val kinds = settings.extraKinds
+                for ((id, minutes) in summary.extraByKind.entries.sortedByDescending { it.value }) {
+                    val kind = kinds.of(id)
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        com.bamnat.app.ui.calendar.ExtraKindMark(kind, size = 20.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text(kind.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                        Text("${summary.extraCountByKind[id] ?: 0}번 · ", style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(HoursFormat.korean(minutes), style = MaterialTheme.typography.titleSmall.merge(NumberStyle))
+                    }
+                }
             }
         }
 
@@ -142,16 +175,16 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatTile(
                     "주 평균",
-                    HoursFormat.decimalHours(three.averageWeeklyMinutes) + "시간",
+                    HoursFormat.hours(three.averageWeeklyMinutes) + "시간",
                     Modifier.weight(1f),
                     caption = "기준 ${settings.averageLimitHours}시간",
                     warning = three.overLimit,
                 )
                 StatTile(
                     "월 평균",
-                    HoursFormat.decimalHours(three.averageMonthlyMinutes) + "시간",
+                    HoursFormat.hours(three.averageMonthlyMinutes) + "시간",
                     Modifier.weight(1f),
-                    caption = "합계 ${HoursFormat.decimalHours(three.totalMinutes.toDouble())}시간",
+                    caption = "합계 ${HoursFormat.hours(three.totalMinutes.toDouble())}시간",
                 )
             }
             Spacer(Modifier.height(12.dp))
@@ -164,7 +197,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                 Spacer(Modifier.height(10.dp))
                 WarningBanner(
                     "3개월 평균 주 ${settings.averageLimitHours}시간 초과",
-                    "평균 주 ${HoursFormat.decimalHours(three.averageWeeklyMinutes)}시간이에요. 앞으로의 근무를 줄여야 평균이 내려가요.",
+                    "평균 주 ${HoursFormat.hours(three.averageWeeklyMinutes)}시간이에요. 앞으로의 근무를 줄여야 평균이 내려가요.",
                 )
             }
         }
@@ -192,7 +225,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
 
         Text(
             "· 야간처럼 자정을 넘기는 근무는 시작한 날에 모두 셉니다.\n" +
-                "· 휴게 시간은 빼고, 연장 근무와 휴일 근무는 더해서 계산해요.\n" +
+                "· 휴게 시간은 빼고, 잔업·특근·대근 같은 추가 근무는 더해서 계산해요.\n" +
                 "· 3개월 평균은 해당 3개월의 총 근무시간 ÷ (일수 ÷ 7)이에요.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -214,10 +247,10 @@ private fun WeekRow(week: WeekSummary, limitHours: Int, maxHours: Double) {
                 style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
                 modifier = Modifier.weight(1f),
             )
-            if (week.holidayWorkMinutes > 0) {
+            if (week.extraMinutes > 0) {
                 Text(
-                    "휴일 ${HoursFormat.short(week.holidayWorkMinutes)}  ",
-                    style = MaterialTheme.typography.labelSmall,
+                    "추가 ${HoursFormat.short(week.extraMinutes)}  ",
+                    style = MaterialTheme.typography.labelSmall.merge(NumberStyle),
                     color = cal.holidayWork,
                 )
             }
