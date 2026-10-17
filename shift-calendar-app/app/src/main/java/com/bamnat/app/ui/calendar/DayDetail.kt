@@ -126,6 +126,9 @@ fun DayDetail(
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val settings by vm.settings.collectAsStateWithLifecycle()
         DayHeader(day = day, isToday = date == today, showLunar = settings.showLunar)
+        // [SLP-01][MKT-07] Too little rest before this day, as a reference sign.
+        val rest = remember(snapshot, date, settings.restCheck) { if (settings.restCheck) vm.restIssuesOn(snapshot, date) else emptyList() }
+        if (rest.isNotEmpty()) RestWarning(rest)
 
         // [WORK-01] Field and shop work lead with money; shift details stay one tap away.
         val style = settings.workStyle
@@ -218,6 +221,9 @@ fun DayDetail(
         if (!moneyFirst) DayMoneySections(date, style, dayBook, vm, memoText)
 
         if (!settings.memoFirst) memoSection()
+
+        val changes by remember(date) { vm.changesOn(date) }.collectAsStateWithLifecycle(emptyList())
+        if (changes.isNotEmpty()) ChangeHistory(changes)
 
         if (day.entry != null) {
             TextButton(onClick = { vm.resetDay(date) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
@@ -911,3 +917,49 @@ private fun DayPaySection(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Cale
         }
     }
 }
+
+/** [SLP-01][MKT-07] Rest-gap signs for one day. Reference only: 근무표는 회사가 정해요. */
+@Composable
+private fun RestWarning(issues: List<com.bamnat.core.schedule.RestCheck.Issue>) {
+    androidx.compose.material3.Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("휴식 점검", style = MaterialTheme.typography.titleSmall)
+            for (issue in issues) {
+                Text("${issue.kind.label}: ${issue.text}", style = MaterialTheme.typography.bodyMedium)
+            }
+            Text("참고용이에요. 몸 상태를 먼저 살피세요.", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+/** [MKT-08] When and what was changed on this day; folded after the first few. */
+@Composable
+private fun ChangeHistory(changes: List<com.bamnat.app.data.DayChange>) {
+    var all by rememberSaveable { mutableStateOf(false) }
+    val zone = java.time.ZoneId.systemDefault()
+    val fmt = remember { java.time.format.DateTimeFormatter.ofPattern("M/d HH:mm") }
+    SectionCard(title = "변경 이력") {
+        val shown = if (all) changes else changes.take(HISTORY_ROWS)
+        for (c in shown) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                Text(
+                    java.time.Instant.ofEpochMilli(c.atMillis).atZone(zone).format(fmt),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(84.dp),
+                )
+                Text(c.text, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        if (changes.size > HISTORY_ROWS) {
+            TextButton(onClick = { all = !all }) { Text(if (all) "접기" else "${changes.size - HISTORY_ROWS}개 더 보기") }
+        }
+    }
+}
+
+private const val HISTORY_ROWS = 3

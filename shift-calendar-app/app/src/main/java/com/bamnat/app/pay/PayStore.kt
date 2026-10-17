@@ -181,6 +181,7 @@ object PayCodec {
         .put("roundUnit", r.overtimeRounding.unit).put("round", r.overtimeRounding.rounding.name)
         .put("weeklyHoliday", r.weeklyHolidayPay)
         .putRate("annualLeave", r.annualLeaveDays)
+        .put("leaveCarry", r.annualLeaveCarry)
         .putOpt("publicHolidayAs", r.publicHolidayAs?.name)
         .put("holidayLeaveFree", r.holidayLeaveFree)
         .putOpt("nightStart", r.nightStart?.toString()).putOpt("nightEnd", r.nightEnd?.toString())
@@ -208,6 +209,7 @@ object PayCodec {
         ),
         weeklyHolidayPay = o.optBoolean("weeklyHoliday", true),
         annualLeaveDays = o.rate("annualLeave"),
+        annualLeaveCarry = o.optDouble("leaveCarry", 0.0),
         publicHolidayAs = o.optString("publicHolidayAs").takeIf { it.isNotEmpty() }?.let { runCatching { ExtraWork.valueOf(it) }.getOrNull() },
         holidayLeaveFree = o.optBoolean("holidayLeaveFree", false),
         extra = o.optJSONObject("extra")?.let { x ->
@@ -243,6 +245,12 @@ object PayCodec {
 
     private fun tiers(t: List<Tier>): JSONArray = JSONArray(t.map { JSONObject().put("min", it.minutes).put("premium", it.premium) })
     private fun tiers(a: JSONArray): List<Tier> = (0 until a.length()).map { a.getJSONObject(it) }.map { Tier(it.getInt("min"), it.getDouble("premium")) }
+
+    /** [COMM-00] The same JSON, for the company settings file. */
+    fun rulesJson(r: CompanyRules): JSONObject = rules(r)
+    fun rulesFrom(o: JSONObject): CompanyRules = rules(o)
+    fun itemJson(i: PayItem): JSONObject = item(i)
+    fun itemFrom(o: JSONObject): PayItem = item(o)
 
     private fun timeline(t: ValueTimeline): JSONObject = JSONObject()
         .put("entries", JSONArray(t.entries.map { JSONObject().put("from", it.from.toString()).put("value", it.value) }))

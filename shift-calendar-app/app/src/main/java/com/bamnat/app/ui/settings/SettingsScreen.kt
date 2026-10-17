@@ -108,16 +108,114 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private val _pendingRestore = MutableStateFlow<Pair<String, BackupSummary>?>(null)
     val pendingRestore: StateFlow<Pair<String, BackupSummary>?> = _pendingRestore.asStateFlow()
 
+    /** [FEAT-08] Password for the next export, chosen before the file picker opens; never stored. */
+    private var exportPassword: CharArray? = null
+
+    fun prepareExport(password: CharArray?) {
+        exportPassword?.fill(' ')
+        exportPassword = password
+    }
+
     fun exportTo(context: Context, uri: Uri) {
+        val password = exportPassword
+        exportPassword = null
         viewModelScope.launch {
             _backupMessage.value = runCatching {
                 val json = container.backupManager.export()
+                val text = if (password == null) json else withContext(Dispatchers.Default) { container.backupManager.seal(json, password) }
                 withContext(Dispatchers.IO) {
-                    context.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(json.toByteArray()) }
+                    context.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(text.toByteArray()) }
                 }
                 container.telemetry.event(DiagEvents.BACKUP_EXPORT)
-                "백업 파일을 저장했어요"
+                if (password == null) "백업 파일을 저장했어요" else "암호 건 백업을 저장했어요. 암호를 잊으면 열 수 없어요"
             }.getOrElse { "백업을 저장하지 못했어요" }
+            password?.fill(' ')
+        }
+    }
+
+    /** [FEAT-08] A sealed backup waiting for its password. */
+    private val _locked = MutableStateFlow<LockedBackup?>(null)
+    val locked: StateFlow<LockedBackup?> = _locked.asStateFlow()
+
+    fun unlock(password: CharArray) {
+        val current = _locked.value ?: return
+        _locked.value = current.copy(working = true, error = null)
+        viewModelScope.launch {
+            runCatching {
+                val json = withContext(Dispatchers.Default) { container.backupManager.unseal(current.text, password) }
+                json to container.backupManager.summarize(json)
+            }.onSuccess {
+                _locked.value = null
+                _pendingRestore.value = it
+            }.onFailure { e ->
+                _locked.value = current.copy(working = false, error = (e as? BackupException)?.message ?: "백업 파일을 읽을 수 없어요")
+            }
+            password.fill(' ')
+        }
+    }
+
+    fun cancelUnlock() {
+        _locked.value = null
+    }
+
+    /** [COMM-00] A company file read and checked, waiting for the user to apply it. */
+    private val _pendingCompany = MutableStateFlow<Pair<String, com.bamnat.app.data.CompanySummary>?>(null)
+    val pendingCompany: StateFlow<Pair<String, com.bamnat.app.data.CompanySummary>?> = _pendingCompany.asStateFlow()
+    val hasPayProfile: StateFlow<com.bamnat.core.pay.PayProfile?> = container.payStore.profile
+
+    /** [COMM-00] Writes the company file to the share cache and opens the share sheet. */
+    fun shareCompany(context: Context, company: String, withAmounts: Boolean) {
+        viewModelScope.launch {
+            runCatching {
+                val text = container.companyShare.export(company, withAmounts)
+                val file = withContext(Dispatchers.IO) {
+                    val dir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
+                    dir.listFiles()?.forEach { it.delete() }
+                    java.io.File(dir, "밤낮-회사설정-${company.trim().ifEmpty { "우리회사" }.replace(Regex("[\\\\/:*?\"<>|]"), "_")}.json").apply { writeText(text) }
+                }
+                val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.share", file)
+                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = com.bamnat.app.data.CompanyShare.MIME_TYPE
+                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                    putExtra(android.content.Intent.EXTRA_TEXT, "밤낮 앱 설정 > 회사 설정 불러오기에서 이 파일을 열면 근무 주기와 급여 규칙이 들어가요.")
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(android.content.Intent.createChooser(send, "회사 설정 보내기"))
+                container.telemetry.event(DiagEvents.COMPANY_SHARE)
+            }.onFailure { _backupMessage.value = "회사 설정 파일을 만들지 못했어요" }
+        }
+    }
+
+    fun readCompany(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            runCatching {
+                val text = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)!!.use { it.readBytes().decodeToString() }
+                }
+                _pendingCompany.value = text to container.companyShare.summarize(text)
+            }.onFailure { e -> _backupMessage.value = (e as? BackupException)?.message ?: "회사 설정 파일을 읽을 수 없어요" }
+        }
+    }
+
+    fun cancelCompany() {
+        _pendingCompany.value = null
+    }
+
+    fun applyCompany(rotation: Boolean) {
+        val text = _pendingCompany.value?.first ?: return
+        _pendingCompany.value = null
+        container.appScope.launch {
+            _backupMessage.value = runCatching {
+                val done = container.companyShare.apply(text, rotation)
+                container.telemetry.event(DiagEvents.COMPANY_IMPORT)
+                buildList {
+                    add("회사 설정을 넣었어요")
+                    if (done.addedTypes > 0) add("근무 유형 ${done.addedTypes}개 추가")
+                    done.cycleDays?.let { add("${it}일 주기 적용") }
+                    if (done.rules) add("급여 규칙 적용")
+                    if (done.pendingPay) add("급여 규칙은 급여 설정을 마친 뒤 다시 불러오세요")
+                }.joinToString(" · ")
+            }.getOrElse { e -> (e as? BackupException)?.message ?: "회사 설정을 넣지 못했어요" }
         }
     }
 
@@ -145,7 +243,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 val json = withContext(Dispatchers.IO) {
                     context.contentResolver.openInputStream(uri)!!.use { it.readBytes().decodeToString() }
                 }
-                _pendingRestore.value = json to container.backupManager.summarize(json)
+                if (com.bamnat.app.data.CompanyShare.isCompanyFile(json)) {
+                    _pendingCompany.value = json to container.companyShare.summarize(json)
+                    return@runCatching
+                }
+                if (container.backupManager.isSealed(json)) _locked.value = LockedBackup(json)
+                else _pendingRestore.value = json to container.backupManager.summarize(json)
             }.onFailure { e ->
                 _backupMessage.value = (e as? BackupException)?.message ?: "백업 파일을 읽을 수 없어요"
             }
@@ -206,6 +309,35 @@ fun SettingsScreen(
             vm.consumeBackupMessage()
         }
     }
+    var askingPassword by remember { mutableStateOf(false) }
+    if (askingPassword) {
+        ExportPasswordDialog(
+            onDismiss = { askingPassword = false },
+            onExport = { password ->
+                askingPassword = false
+                vm.prepareExport(password)
+                exportLauncher.launch("밤낮-백업-${LocalDate.now()}.json")
+            },
+        )
+    }
+    val companyImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.readCompany(context, uri)
+    }
+    var sharingCompany by remember { mutableStateOf(false) }
+    if (sharingCompany) {
+        CompanyShareDialog(
+            hasPay = vm.hasPayProfile.collectAsStateWithLifecycle().value != null,
+            onDismiss = { sharingCompany = false },
+            onShare = { name, amounts -> sharingCompany = false; vm.shareCompany(context, name, amounts) },
+        )
+    }
+    val pendingCompany by vm.pendingCompany.collectAsStateWithLifecycle()
+    pendingCompany?.let { (_, summary) ->
+        CompanyImportDialog(summary, hasPay = vm.hasPayProfile.collectAsStateWithLifecycle().value != null,
+            onDismiss = vm::cancelCompany, onApply = vm::applyCompany)
+    }
+    val locked by vm.locked.collectAsStateWithLifecycle()
+    locked?.let { UnlockBackupDialog(it, onUnlock = vm::unlock, onDismiss = vm::cancelUnlock) }
     val pendingRestore by vm.pendingRestore.collectAsStateWithLifecycle()
     pendingRestore?.let { (_, summary) ->
         ConfirmDialog(
@@ -360,16 +492,27 @@ fun SettingsScreen(
             ) { on -> vm.update { it.copy(hideDayAlarmNotice = !on) } }
         }
 
+        // [COMM-00] Coworkers share one setup instead of each typing it in.
+        SectionCard(title = "회사 설정 나누기") {
+            Text(
+                "근무 유형·주기·급여 규칙을 파일로 동료에게 보내요. 기본급, 입사일, 연차, 달력에 적은 내용은 들어가지 않아요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            NavRow("회사 설정 보내기", "카카오톡·메일 등으로 파일을 보내요") { sharingCompany = true }
+            NavRow("회사 설정 불러오기", "동료에게 받은 파일을 열어 넣어요") {
+                companyImport.launch(arrayOf(com.bamnat.app.data.CompanyShare.MIME_TYPE, "text/plain", "application/octet-stream"))
+            }
+        }
+
         SectionCard(title = "백업") {
             Text(
-                "근무 유형, 패턴, 바꾼 날짜, 메모, 설정을 파일 하나로 저장해요. 휴대폰을 바꾸거나 앱을 다시 설치할 때 불러오세요.",
+                "근무 유형, 패턴, 바꾼 날짜, 메모, 설정을 파일 하나로 저장해요. 휴대폰을 바꾸거나 앱을 다시 설치할 때 불러오세요. 암호를 걸면 파일을 남이 열어 볼 수 없어요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                OutlinedButton(onClick = {
-                    exportLauncher.launch("밤낮-백업-${LocalDate.now()}.json")
-                }, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = { askingPassword = true }, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Filled.Upload, null)
                     Spacer(Modifier.width(6.dp))
                     Text("백업 저장")
@@ -447,6 +590,10 @@ fun SettingsScreen(
             }
             SwitchRow("메모 중심으로 보기", "날짜를 누르면 메모가 맨 위에 나오고, 달력 칸에 메모 첫 글자가 보여요", settings.memoFirst) { v ->
                 vm.update { it.copy(memoFirst = v, calendarMemos = if (v) true else it.calendarMemos) }
+            }
+            // [SLP-01][MKT-07]
+            SwitchRow("휴식 점검", "근무 사이 휴식이 11시간보다 짧거나 야간이 4일 이어지면 알려줘요", settings.restCheck) { v ->
+                vm.update { it.copy(restCheck = v) }
             }
         }
 

@@ -14,7 +14,9 @@ import com.bamnat.app.data.db.ShiftTypeEntity
 import com.bamnat.core.work.WorkStyle
 import org.json.JSONArray
 import org.json.JSONObject
+import com.bamnat.core.backup.BackupCrypto
 import java.time.DayOfWeek
+import java.util.Base64
 
 /** What a backup file holds, shown before the user confirms a restore. */
 data class BackupSummary(val shiftTypes: Int, val days: Int, val memos: Int, val exportedAtMillis: Long, val moneyLines: Int = 0)
@@ -121,7 +123,8 @@ class BackupManager(
                 .putOpt("sound", s.defaultAlarmSound).put("vibrate", s.vibrate).put("gradual", s.gradualVolume)
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmsOn", s.alarmsEnabled)
                 .putOpt("workStyle", s.workStyle?.name)
-                .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoFirst).put("calendarMemos", s.calendarMemos),
+                .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoFirst).put("calendarMemos", s.calendarMemos)
+                .put("restCheck", s.restCheck),
         )
         return root.toString(1)
     }
@@ -218,6 +221,7 @@ class BackupManager(
             fixed?.let { list -> money.clearFixed(); list.forEach { money.restoreFixed(it) } }
             rules?.let { list -> money.clearRules(); list.forEach { money.upsertRule(it) } }
             db.memoDao().clear()
+            db.dayChangeDao().clear() // the log described the days being replaced [MKT-08]
             db.dayEntryDao().clear()
             db.patternDao().clear()
             db.shiftTypeDao().clear()
@@ -246,14 +250,50 @@ class BackupManager(
                     extraKinds = o.optStringOrNull("extraKinds")?.let { com.bamnat.core.model.ExtraKinds.decode(it) } ?: s.extraKinds,
                     memoFirst = o.optBoolean("memoFirst", s.memoFirst),
                     calendarMemos = o.optBoolean("calendarMemos", s.calendarMemos),
+                    restCheck = o.optBoolean("restCheck", s.restCheck),
                 )
             }
+        }
+    }
+
+    /** True for a password-protected backup [FEAT-08]. */
+    fun isSealed(text: String): Boolean =
+        runCatching { JSONObject(text).optString("format") == SEALED_FORMAT }.getOrDefault(false)
+
+    /**
+     * [FEAT-08] Wraps a backup with a password: AES-256-GCM, key from PBKDF2 (see [BackupCrypto]).
+     * Slow on purpose (about a second), so call it off the main thread.
+     */
+    fun seal(json: String, password: CharArray, iterations: Int = BackupCrypto.ITERATIONS): String {
+        val sealed = BackupCrypto.seal(json.toByteArray(), password, iterations)
+        val b64 = Base64.getEncoder()
+        return JSONObject()
+            .put("app", APP_ID).put("format", SEALED_FORMAT).put("v", 1)
+            .put("salt", b64.encodeToString(sealed.salt)).put("iv", b64.encodeToString(sealed.iv))
+            .put("iter", sealed.iterations).put("data", b64.encodeToString(sealed.data))
+            .toString()
+    }
+
+    /** The backup inside a sealed file; throws [BackupException] for a wrong password or a broken file. */
+    fun unseal(text: String, password: CharArray): String {
+        val o = runCatching { JSONObject(text) }.getOrNull() ?: throw BackupException("백업 파일을 읽을 수 없어요")
+        if (o.optInt("v") > 1) throw BackupException("더 새로운 버전에서 만든 백업이에요. 앱을 업데이트해 주세요")
+        val sealed = runCatching {
+            val b64 = Base64.getDecoder()
+            BackupCrypto.Sealed(b64.decode(o.getString("salt")), b64.decode(o.getString("iv")), o.getInt("iter"), b64.decode(o.getString("data")))
+        }.getOrNull() ?: throw BackupException("백업 파일이 손상됐어요")
+        if (sealed.iterations !in 1..MAX_ITERATIONS) throw BackupException("백업 파일이 손상됐어요")
+        return try {
+            BackupCrypto.open(sealed, password).decodeToString()
+        } catch (e: BackupCrypto.WrongPassword) {
+            throw BackupException("암호가 맞지 않아요")
         }
     }
 
     private fun parse(json: String): JSONObject {
         val root = runCatching { JSONObject(json) }.getOrNull()
             ?: throw BackupException("백업 파일을 읽을 수 없어요")
+        if (root.optString("format") == SEALED_FORMAT) throw BackupException("암호가 걸린 백업이에요")
         if (root.optString("app") !in ACCEPTED_APP_IDS) throw BackupException("밤낮 백업 파일이 아니에요")
         if (root.optInt("format") > FORMAT_VERSION) throw BackupException("더 새로운 버전에서 만든 백업이에요. 앱을 업데이트해 주세요")
         return root
@@ -271,5 +311,8 @@ class BackupManager(
         val ACCEPTED_APP_IDS = setOf(APP_ID, "com.shiftmate.calendar")
         const val FORMAT_VERSION = 1
         const val MIME_TYPE = "application/json"
+        const val SEALED_FORMAT = "bamnat-enc"
+        /** A file asking for more work than this is not ours (and would freeze the phone). */
+        private const val MAX_ITERATIONS = 5_000_000
     }
 }

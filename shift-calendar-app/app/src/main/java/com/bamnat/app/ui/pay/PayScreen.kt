@@ -680,7 +680,8 @@ private fun LeaveCard(profile: PayProfile, snapshot: ScheduleSnapshot, month: Ye
     val today = remember { java.time.LocalDate.now() }
     val balance = remember(profile.rules, snapshot, month.year) {
         LeaveBook.balance(month.year, profile.rules.annualLeaveDays, today, snapshot.resolver::resolve,
-            free = { profile.rules.holidayLeaveFree && com.bamnat.core.holiday.KoreanHolidays.isHoliday(it) })
+            free = { profile.rules.holidayLeaveFree && com.bamnat.core.holiday.KoreanHolidays.isHoliday(it) },
+            carried = if (month.year == today.year) profile.rules.annualLeaveCarry else 0.0)
     }
     if (balance.byKind.isEmpty() && balance.granted == null) return
     SectionCard(title = "${month.year}년 휴가", trailing = { TextButton(onClick = onEditRules) { Text("연차 일수") } }) {
@@ -689,6 +690,17 @@ private fun LeaveCard(profile: PayProfile, snapshot: ScheduleSnapshot, month: Ye
             LeaveStat("예정", LeaveBook.days(balance.planned), Modifier.weight(1f))
             LeaveStat("남은 연차", balance.remaining?.let(LeaveBook::days) ?: "—", Modifier.weight(1f),
                 warn = (balance.remaining ?: 0.0) < 0)
+        }
+        if (balance.carried > 0) {
+            Text("받은 연차 ${LeaveBook.days(balance.granted ?: 0.0)} (이월 ${LeaveBook.days(balance.carried)} 포함)",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp))
+        }
+        // [PAY-12][REL-08] From November, days that lapse on 12/31 unless used.
+        balance.expiring(today)?.let { left ->
+            Text("${balance.expiresOn.monthValue}/${balance.expiresOn.dayOfMonth} 소멸 예정 ${LeaveBook.days(left)}. 회사 규정에 따라 이월·수당으로 바뀔 수 있어요.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 8.dp))
         }
         val others = balance.byKind.filterKeys { !it.annual }
         if (others.isNotEmpty()) {

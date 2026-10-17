@@ -266,6 +266,18 @@ fun CompanyRulesEditor(
                     Text(days?.let(LeaveBook::days) ?: "—", style = MaterialTheme.typography.titleSmall, modifier = Modifier.align(Alignment.CenterVertically))
                     OutlinedButton(onClick = { setRules(rules.copy(annualLeaveDays = ((days ?: 15.0) + 0.5).coerceAtMost(40.0))) }) { Text("+") }
                 }
+                // [PAY-12][REL-08] Days left over from last year that the company lets you carry.
+                val carry = rules.annualLeaveCarry
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("작년에서 넘어온 연차", style = MaterialTheme.typography.bodyLarge)
+                        Text("회사가 이월해 준 날만 넣어요. 올해 연차에 더해 셈해요",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    OutlinedButton(onClick = { setRules(rules.copy(annualLeaveCarry = (carry - 0.5).coerceAtLeast(0.0))) }, enabled = carry > 0) { Text("−") }
+                    Text(LeaveBook.days(carry), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 8.dp))
+                    OutlinedButton(onClick = { setRules(rules.copy(annualLeaveCarry = (carry + 0.5).coerceAtMost(40.0))) }) { Text("+") }
+                }
                 // [PAY-10] 입사일 gives the legal number (근로기준법 제60조), which the user can still adjust.
                 val today = remember { LocalDate.now() }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
@@ -429,7 +441,7 @@ fun CompanyRules.summary(profile: PayProfile): List<String> = buildList {
     }
     if (profile.wageType == WageType.MONTHLY && profile.monthlyHours != 209) add("월 소정근로 ${profile.monthlyHours}시간")
     if (profile.wageType == WageType.HOURLY && !weeklyHolidayPay) add("주휴수당 없음")
-    annualLeaveDays?.let { add("연차 ${LeaveBook.days(it)}") }
+    annualLeaveDays?.let { add("연차 ${LeaveBook.days(it)}" + if (annualLeaveCarry > 0) " + 이월 ${LeaveBook.days(annualLeaveCarry)}" else "") }
 }
 
 /** [PAYX-12] The company's night window: the law's, a common alternative, or any hours. */

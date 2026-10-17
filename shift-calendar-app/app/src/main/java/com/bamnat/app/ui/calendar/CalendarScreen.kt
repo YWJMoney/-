@@ -330,6 +330,10 @@ fun CalendarScreen(
                 onOpenStats = onOpenStats,
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
+            if (settings.restCheck) {
+                val rest = remember(snap, visibleMonth) { vm.restIssues(snap, visibleMonth) }
+                MonthRestCard(rest, onPick = vm::select, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp))
+            }
         }
         if (!settings.memoFirst) memoPart()
     }
@@ -875,3 +879,47 @@ private fun MonthMemoCard(
 }
 
 private const val MEMO_PREVIEW_ROWS = 4
+
+/**
+ * [SLP-01][MKT-07] The month's rest-gap signs under the hours summary: short rest between
+ * shifts, a day shift soon after a night, backward rotation, long night runs. Tapping a row
+ * picks that day. Shown only when there is something to say.
+ */
+@Composable
+private fun MonthRestCard(issues: List<com.bamnat.core.schedule.RestCheck.Issue>, onPick: (LocalDate) -> Unit, modifier: Modifier = Modifier) {
+    if (issues.isEmpty()) return
+    var all by remember(issues) { mutableStateOf(false) }
+    val shown = if (all) issues else issues.take(REST_PREVIEW_ROWS)
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(vertical = 8.dp)) {
+            Text("휴식 점검 ${issues.size}건 (참고)", style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            for (issue in shown) {
+                Row(
+                    Modifier.fillMaxWidth().clickable { onPick(issue.date) }.padding(horizontal = 16.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("${issue.date.dayOfMonth}일", style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
+                        color = MaterialTheme.colorScheme.error, modifier = Modifier.width(40.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(issue.kind.label, style = MaterialTheme.typography.bodyMedium)
+                        Text(issue.text, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+            if (issues.size > REST_PREVIEW_ROWS) {
+                androidx.compose.material3.TextButton(onClick = { all = !all }, modifier = Modifier.padding(start = 4.dp)) {
+                    Text(if (all) "접기" else "${issues.size - REST_PREVIEW_ROWS}개 더 보기")
+                }
+            }
+        }
+    }
+}
+
+private const val REST_PREVIEW_ROWS = 3

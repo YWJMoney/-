@@ -73,6 +73,11 @@
             android:name=".money.JobReminderReceiver"
             android:exported="false" />
 
+        <!-- [PAY-12][REL-08] 연차 lapse notice on 11/1 and 12/1. -->
+        <receiver
+            android:name=".pay.LeaveReminderReceiver"
+            android:exported="false" />
+
         <!-- [LEDG-02] Payment notifications. Off until the user turns it on in the app and grants
              notification access; only texts with an amount and a payment word are read. -->
         <service

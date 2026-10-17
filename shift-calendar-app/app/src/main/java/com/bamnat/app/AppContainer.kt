@@ -35,7 +35,7 @@ class AppContainer(context: Context) {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val database: AppDatabase = AppDatabase.create(context)
-    val scheduleRepository = ScheduleRepository(database)
+    val scheduleRepository = ScheduleRepository(database, extraName = { settingsRepository.current.extraKinds.name(it) })
     val memoRepository = MemoRepository(database)
     val moneyRepository = MoneyRepository(database, com.bamnat.app.data.CaptureStore(java.io.File(appContext.noBackupFilesDir, "captures.json")))
     val settingsRepository = SettingsRepository(context)
@@ -43,6 +43,8 @@ class AppContainer(context: Context) {
     val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry)
     val backupManager = BackupManager(database, settingsRepository)
     val payStore = PayStore(appContext)
+    /** [COMM-00] Company settings as a file for coworkers. */
+    val companyShare by lazy { com.bamnat.app.data.CompanyShare(scheduleRepository, payStore, settingsRepository) }
     val featureGate = FeatureGate(settingsRepository, appScope)
 
     suspend fun rescheduleAlarms(after: LocalDateTime = LocalDateTime.now()) {
@@ -66,6 +68,11 @@ class AppContainer(context: Context) {
         // [WORK-02] Any change to the booked jobs re-plans the next job reminder.
         appScope.launch {
             moneyRepository.book.debounce(500).collect { JobReminderScheduler.reschedule(appContext, it) }
+        }
+        // [PAY-12][REL-08] 연차 notices follow whether the user entered their days.
+        appScope.launch {
+            payStore.profile.map { it?.rules?.annualLeaveDays != null }.distinctUntilChanged()
+                .collect { com.bamnat.app.pay.LeaveReminder.reschedule(appContext, payStore.profile.value) }
         }
         // Widgets lay out weeks from the user's first day of the week.
         appScope.launch {

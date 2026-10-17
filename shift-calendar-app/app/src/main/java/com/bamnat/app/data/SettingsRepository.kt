@@ -49,6 +49,8 @@ data class AppSettings(
     val memoFirst: Boolean = false,
     /** [FEAT-17] The month's memos in short under the calendar. */
     val calendarMemos: Boolean = true,
+    /** [SLP-01][MKT-07] Rest-gap signs on the calendar and the day view. */
+    val restCheck: Boolean = true,
 ) {
     val limits: HourLimits get() = HourLimits(weeklyLimitHours, averageLimitHours)
 
@@ -113,6 +115,7 @@ class SettingsRepository(context: Context) {
             extraKinds = ExtraKinds.decode(prefs.getString(K_EXTRA_KINDS, null)),
             memoFirst = prefs.getBoolean(K_MEMO_FIRST, d.memoFirst),
             calendarMemos = prefs.getBoolean(K_CAL_MEMOS, d.calendarMemos),
+            restCheck = prefs.getBoolean(K_REST_CHECK, d.restCheck),
         )
     }
 
@@ -141,6 +144,7 @@ class SettingsRepository(context: Context) {
             .putString(K_EXTRA_KINDS, s.extraKinds.encode())
             .putBoolean(K_MEMO_FIRST, s.memoFirst)
             .putBoolean(K_CAL_MEMOS, s.calendarMemos)
+            .putBoolean(K_REST_CHECK, s.restCheck)
             .apply()
     }
 
@@ -168,5 +172,6 @@ class SettingsRepository(context: Context) {
         const val K_EXTRA_KINDS = "extra_kinds"
         const val K_MEMO_FIRST = "memo_first"
         const val K_CAL_MEMOS = "calendar_memos"
+        const val K_REST_CHECK = "rest_check"
     }
 }

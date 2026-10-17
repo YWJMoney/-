@@ -104,6 +104,8 @@ data class CompanyRules(
     val weeklyHolidayPay: Boolean = true,
     /** 연차 days the company grants this year; null when not entered [FEAT-10]. */
     val annualLeaveDays: Double? = null,
+    /** 연차 carried over from last year (이월), on top of [annualLeaveDays] [PAY-12][REL-08]. */
+    val annualLeaveCarry: Double = 0.0,
     /**
      * A scheduled shift on a 공휴일 is paid like this kind of extra work on top of the salary,
      * e.g. 대근 방식 [PAYX-07]; null uses the legal holiday premiums.
