@@ -13,7 +13,14 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- [SLP-08] Read only: sleep sessions a watch or the phone wrote to Health Connect. -->
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+    </queries>
 
     <application
         android:name=".BamnatApp"
@@ -52,6 +59,7 @@
 
         <activity
             android:name=".alarm.AlarmActivity"
+            android:directBootAware="true"
             android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleInstance"
@@ -60,14 +68,28 @@
             android:taskAffinity=""
             android:theme="@style/Theme.Bamnat" />
 
+        <!-- [OPS-10] An alarm app holding USE_EXACT_ALARM rings as systemExempted on Android 14+;
+             mediaPlayback stays for older versions. [REL-10] directBootAware: rings before the first unlock. -->
         <service
             android:name=".alarm.AlarmService"
+            android:directBootAware="true"
             android:exported="false"
-            android:foregroundServiceType="mediaPlayback" />
+            android:foregroundServiceType="mediaPlayback|systemExempted" />
 
         <receiver
             android:name=".alarm.AlarmReceiver"
+            android:directBootAware="true"
             android:exported="false" />
+
+        <!-- [REL-10] After a reboot, before the first unlock: alarms come back from the device-protected copy. -->
+        <receiver
+            android:name=".alarm.LockedBootReceiver"
+            android:directBootAware="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <receiver
             android:name=".money.JobReminderReceiver"
@@ -147,5 +169,25 @@
         <receiver
             android:name=".widget.MidnightReceiver"
             android:exported="false" />
+        <!-- [SLP-08] Health Connect shows this from its permission screen (Android 13 and older). -->
+        <activity
+            android:name=".sleep.HealthRationaleActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Bamnat">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+        <!-- [SLP-08] The same page on Android 14 and newer, where Health Connect is part of the system. -->
+        <activity-alias
+            android:name="ViewPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity=".sleep.HealthRationaleActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
     </application>
 </manifest>

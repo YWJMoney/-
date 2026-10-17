@@ -108,9 +108,14 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         return com.bamnat.core.sleep.SleepPlan.forDay(r.resolve(date.minusDays(1)), r.resolve(date), r.resolve(date.plusDays(1)), targetMinutes)
     }
 
-    /** [SLP-06] The sleep log. */
+    /** [SLP-06] The sleep log, with [SLP-08] sleep measured by a watch or the phone merged in. */
     val sleepLog: StateFlow<List<com.bamnat.core.sleep.SleepEntry>> =
-        container.sleepRepository.recent().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        kotlinx.coroutines.flow.combine(container.sleepRepository.recent(), container.healthSleep.sleeps) { manual, measured ->
+            com.bamnat.core.sleep.SleepMerge.merge(manual, measured)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val healthSleepState: StateFlow<com.bamnat.app.sleep.HealthSleep.State> = container.healthSleep.state
+    /** [SLP-08] Reads Health Connect again while the day view is on screen. */
+    fun refreshHealthSleep(enabled: Boolean) { viewModelScope.launch { container.healthSleep.refresh(enabled) } }
     fun fellAsleep() { container.appScope.launch { container.sleepRepository.fellAsleep() } }
     fun wokeUp() { container.appScope.launch { container.sleepRepository.wokeUp() } }
     fun deleteSleep(id: Long) { container.appScope.launch { container.sleepRepository.delete(id) } }

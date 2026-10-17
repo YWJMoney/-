@@ -58,6 +58,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -274,10 +277,11 @@ fun CalendarScreen(
         if (snap.isEmpty && settings.workStyle?.usesPattern != false) {
             EmptyPatternCard(onOpenPattern)
         }
-        if (!notificationsAllowed && snap.shiftTypes.any { it.alarmEnabled }) {
+        // [REL-11] Without notifications an alarm still sounds, but nothing on the lock screen stops it.
+        if (!notificationsAllowed && settings.alarmsEnabled && snap.shiftTypes.any { it.alarmEnabled }) {
             WarningBanner(
-                title = "알림이 꺼져 있어 근무 알람이 보이지 않아요",
-                message = "눌러서 설정에서 알림을 허용해 주세요.",
+                title = "알림이 꺼져 있어 근무 알람을 잠금 화면에서 끌 수 없어요",
+                message = "소리는 울리지만 끄기·다시 울림 버튼이 안 보여요. 눌러서 알림을 허용해 주세요.",
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable(onClick = onOpenSettings),
             )
         }
@@ -618,6 +622,11 @@ private fun CalendarHeader(
     onOpenPattern: () -> Unit,
     onShare: () -> Unit = {},
 ) {
+    // [QA-01] A cover screen (~344dp) cannot fit four icons, the month and 오늘: share and pattern
+    // go into a menu there instead of being squeezed off the edge.
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+    val narrow = maxWidth < 392.dp
+    var menu by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -625,7 +634,7 @@ private fun CalendarHeader(
         IconButton(onClick = onPrev) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
         Text(
             Fmt.month(month),
-            style = MaterialTheme.typography.titleLarge,
+            style = if (narrow) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
             modifier = Modifier
                 .clip(MaterialTheme.shapes.small)
                 .clickable(onClick = onPickMonth)
@@ -634,8 +643,21 @@ private fun CalendarHeader(
         IconButton(onClick = onNext) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
         Spacer(Modifier.weight(1f))
         TextButton(onClick = onToday) { Text("오늘") }
-        IconButton(onClick = onShare) { Icon(Icons.Filled.Share, "근무표 공유") }
-        IconButton(onClick = onOpenPattern) { Icon(Icons.Filled.EventRepeat, "근무 패턴 설정") }
+        if (narrow) {
+            Box {
+                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "더 보기") }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(text = { Text("근무표 공유") }, leadingIcon = { Icon(Icons.Filled.Share, null) },
+                        onClick = { menu = false; onShare() })
+                    DropdownMenuItem(text = { Text("근무 패턴 설정") }, leadingIcon = { Icon(Icons.Filled.EventRepeat, null) },
+                        onClick = { menu = false; onOpenPattern() })
+                }
+            }
+        } else {
+            IconButton(onClick = onShare) { Icon(Icons.Filled.Share, "근무표 공유") }
+            IconButton(onClick = onOpenPattern) { Icon(Icons.Filled.EventRepeat, "근무 패턴 설정") }
+        }
+    }
     }
 }
 

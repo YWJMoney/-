@@ -35,7 +35,10 @@ class BackupManager(
     /** [PAY-10] The pay setup and closed months live in their own file, but belong in the backup. */
     private val payStore: com.bamnat.app.pay.PayStore? = null,
 ) {
-    suspend fun export(): String {
+    /** One read transaction, so an edit made meanwhile cannot leave days pointing at a missing type [QA-01]. */
+    suspend fun export(): String = db.withTransaction { exportNow() }
+
+    private suspend fun exportNow(): String {
         val root = JSONObject()
             .put("app", APP_ID)
             .put("format", FORMAT_VERSION)

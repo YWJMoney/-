@@ -619,6 +619,34 @@ class ScreenshotTest {
         scrollUp(700)
     }
 
+    // ---- M6 [SLP-08][QA-01] ----
+    @Test fun foldedSettingsHealthSleep() = shoot("89_folded_settings_health_sleep", FOLDED) {
+        tab(4, wide = false)
+        repeat(SETTINGS_SLEEP_SCROLLS) { scrollUp(800, across = 0.5f) }
+    }
+    @Test fun foldedTodayHealthSleep() = shoot("90_folded_today_health_sleep", FOLDED) {
+        app.container.settingsRepository.update { it.copy(healthSleep = true) }
+        runBlocking {
+            val zone = java.time.ZoneId.systemDefault()
+            fun ms(d: Long, h: Int, m: Int = 0) = today.minusDays(d).atTime(h, m).atZone(zone).toInstant().toEpochMilli()
+            // One night tapped by hand; the watch measured the others.
+            app.container.database.sleepDao().insert(com.bamnat.app.data.db.SleepLogEntity(startMillis = ms(2, 23, 30), endMillis = ms(1, 7)))
+        }
+        settle()
+        tap(TODAY_X, DAY_Y)
+        fun at(d: Long, h: Int, m: Int = 0) = today.minusDays(d).atTime(h, m)
+        app.container.healthSleep.showForTest(com.bamnat.app.sleep.HealthSleep.State.READY, listOf(
+            com.bamnat.core.sleep.SleepEntry(start = at(5, 8, 40), end = at(5, 14, 10), imported = true),
+            com.bamnat.core.sleep.SleepEntry(start = at(4, 9), end = at(4, 15, 20), imported = true),
+            com.bamnat.core.sleep.SleepEntry(start = at(3, 23, 10), end = at(2, 5, 50), imported = true),
+            com.bamnat.core.sleep.SleepEntry(start = at(2, 23, 20), end = at(1, 6, 40), imported = true),
+            com.bamnat.core.sleep.SleepEntry(start = at(1, 22, 30), end = at(0, 4, 50), imported = true),
+        ))
+        settle()
+        scrollUp(800, across = 0.5f)
+        scrollUp(450, across = 0.5f)
+    }
+
     private fun fresh(s: WorkStyle?, then: Screen.() -> Unit = {}): Screen.() -> Unit {
         runBlocking { app.container.scheduleRepository.clearPattern() }
         app.container.settingsRepository.update { it.copy(workStyle = s) }
@@ -720,6 +748,7 @@ class ScreenshotTest {
         const val SETTINGS_PATTERN_Y = 139f
         const val DAY_ALARM_EDIT_Y = 519f
         const val DAY_ALARM_SCROLL = 600
+        const val SETTINGS_SLEEP_SCROLLS = 4
         // Today's cell in the folded calendar (row 3, Wednesday).
         const val DAY_X = 135f
         const val DAY_Y = 290f

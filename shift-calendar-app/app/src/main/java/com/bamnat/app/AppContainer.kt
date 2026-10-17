@@ -38,10 +38,14 @@ class AppContainer(context: Context) {
     val scheduleRepository = ScheduleRepository(database, extraName = { settingsRepository.current.extraKinds.name(it) })
     val memoRepository = MemoRepository(database)
     val sleepRepository = com.bamnat.app.data.SleepRepository(database)
+    /** [SLP-08] Sleep measured by a watch or the phone, read from Health Connect. */
+    val healthSleep = com.bamnat.app.sleep.HealthSleep(context)
     val moneyRepository = MoneyRepository(database, com.bamnat.app.data.CaptureStore(java.io.File(appContext.noBackupFilesDir, "captures.json")))
     val settingsRepository = SettingsRepository(context)
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository)
-    val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry)
+    val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry) {
+        com.bamnat.app.alarm.BootAlarms.RingSettings.of(settingsRepository.current)
+    }
     val payStore = PayStore(appContext)
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore)
     /** [COMM-00] Company settings as a file for coworkers. */
@@ -82,6 +86,11 @@ class AppContainer(context: Context) {
         appScope.launch {
             payStore.profile.map { it?.rules?.annualLeaveDays != null }.distinctUntilChanged()
                 .collect { com.bamnat.app.pay.LeaveReminder.reschedule(appContext, payStore.profile.value) }
+        }
+        // [REL-10] The locked-boot copy carries the ringing settings too, so it follows their changes.
+        appScope.launch {
+            settingsRepository.settings.map { com.bamnat.app.alarm.BootAlarms.RingSettings.of(it) }.distinctUntilChanged().drop(1)
+                .collect { alarmScheduler.saveBootCopy() }
         }
         // Widgets lay out weeks from the user's first day of the week.
         appScope.launch {

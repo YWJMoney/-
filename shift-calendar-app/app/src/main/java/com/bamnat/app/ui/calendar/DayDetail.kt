@@ -224,8 +224,16 @@ fun DayDetail(
         if (settings.sleepTips && (!moneyFirst || shiftsVisible)) {
             val tips = remember(snapshot, date, settings.sleepTargetMinutes) { vm.sleepTips(snapshot, date, settings.sleepTargetMinutes) }
             val log by vm.sleepLog.collectAsStateWithLifecycle()
+            val health by vm.healthSleepState.collectAsStateWithLifecycle()
+            if (date == today) {
+                // Each time the app comes back (after the night's sleep, say) the read is fresh.
+                androidx.lifecycle.compose.LifecycleResumeEffect(settings.healthSleep) {
+                    vm.refreshHealthSleep(settings.healthSleep)
+                    onPauseOrDispose { }
+                }
+            }
             SleepSection(date = date, today = today, tips = tips, log = log, targetMinutes = settings.sleepTargetMinutes,
-                onAsleep = vm::fellAsleep, onAwake = vm::wokeUp)
+                health = health, onAsleep = vm::fellAsleep, onAwake = vm::wokeUp)
         }
 
         if (!moneyFirst) DayMoneySections(date, style, dayBook, vm, memoText)
@@ -656,6 +664,9 @@ private fun AlarmSection(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calen
             initial = custom ?: planned.filter { it.triggerAt.toLocalDate() == day.date }
                 .map { DayAlarm(it.triggerAt.toLocalTime()) },
             suggested = start?.minusHours(1) ?: LocalTime.of(8, 0),
+            // An alarm the evening before cannot be set here; say that saving drops it [QA-01].
+            eveningBefore = if (custom != null) emptyList() else planned.filter { it.triggerAt.toLocalDate().isBefore(day.date) }
+                .map { Fmt.time(it.triggerAt.toLocalTime()) },
             onDismiss = { editing = false },
             onSave = { list ->
                 editing = false
@@ -687,6 +698,7 @@ private fun DayAlarmEditorDialog(
     date: LocalDate,
     initial: List<DayAlarm>,
     suggested: LocalTime,
+    eveningBefore: List<String> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (List<DayAlarm>) -> Unit,
 ) {
@@ -704,6 +716,13 @@ private fun DayAlarmEditorDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (eveningBefore.isNotEmpty()) {
+                    Text(
+                        "저장하면 전날 ${eveningBefore.joinToString(", ")} 알람은 울리지 않아요.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 if (alarms.isEmpty()) {
                     Text("알람이 없어요. 저장하면 이 날은 울리지 않아요.", style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(vertical = 8.dp))
@@ -986,6 +1005,7 @@ private fun SleepSection(
     tips: List<com.bamnat.core.sleep.SleepPlan.Tip>,
     log: List<com.bamnat.core.sleep.SleepEntry>,
     targetMinutes: Int,
+    health: com.bamnat.app.sleep.HealthSleep.State,
     onAsleep: () -> Unit,
     onAwake: () -> Unit,
 ) {
@@ -1032,8 +1052,27 @@ private fun SleepSection(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
             )
+            // [SLP-08] Where the numbers come from once Health Connect is on.
+            val measured = remember(log, today) {
+                log.count { it.imported && it.wakeDate?.let { d -> !d.isBefore(today.minusDays(com.bamnat.core.sleep.SleepDebt.WINDOW_DAYS - 1)) } == true }
+            }
+            healthSleepNote(health, measured)?.let { note ->
+                Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp))
+            }
         }
     }
+}
+
+private fun healthSleepNote(state: com.bamnat.app.sleep.HealthSleep.State, measured: Int): String? = when (state) {
+    com.bamnat.app.sleep.HealthSleep.State.OFF -> null
+    com.bamnat.app.sleep.HealthSleep.State.READY ->
+        if (measured > 0) "헬스 커넥트에서 수면 ${measured}번을 함께 셌어요. 직접 누른 기록과 겹치면 직접 기록을 써요."
+        else "헬스 커넥트에 최근 7일 수면 기록이 없어요. 워치나 수면 앱이 헬스 커넥트에 기록하는지 확인하세요."
+    com.bamnat.app.sleep.HealthSleep.State.NEEDS_PERMISSION -> "헬스 커넥트 수면 읽기 허용이 꺼져 있어요. 설정 > 수면에서 다시 켜 주세요."
+    com.bamnat.app.sleep.HealthSleep.State.NEEDS_UPDATE -> "헬스 커넥트를 업데이트하면 워치 수면 기록을 함께 셀 수 있어요."
+    com.bamnat.app.sleep.HealthSleep.State.UNAVAILABLE -> "이 휴대폰에서는 헬스 커넥트를 쓸 수 없어요."
+    com.bamnat.app.sleep.HealthSleep.State.FAILED -> "헬스 커넥트 수면 기록을 읽지 못했어요. 잠시 뒤 다시 열어 주세요."
 }
 
 private fun hoursText(minutes: Long): String = if (minutes % 60 == 0L) "${minutes / 60}시간" else "${minutes / 60}시간 ${minutes % 60}분"

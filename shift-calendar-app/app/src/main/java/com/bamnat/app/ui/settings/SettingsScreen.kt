@@ -46,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
@@ -92,6 +93,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun cancelSnooze() = container.alarmScheduler.cancelSnooze()
     fun update(transform: (AppSettings) -> AppSettings) = container.settingsRepository.update(transform)
     fun canScheduleExact() = container.alarmScheduler.canScheduleExact()
+
+    /** [SLP-08] Health Connect sleep, turned on only once reading is allowed. */
+    fun healthSdkStatus() = container.healthSleep.sdkStatus()
+    suspend fun healthGranted() = container.healthSleep.granted()
+    fun setHealthSleep(on: Boolean) {
+        update { it.copy(healthSleep = on) }
+        viewModelScope.launch { container.healthSleep.refresh(on, force = true) }
+    }
 
     fun setAlarmsEnabled(on: Boolean) {
         update { it.copy(alarmsEnabled = on) }
@@ -622,6 +631,7 @@ fun SettingsScreen(
             SwitchRow("수면 알림", "잠자리·낮잠·카페인 마지막 시각과 야간 뒤 퇴근길 졸음 주의를 알려줘요", settings.sleepReminders) { v ->
                 vm.update { it.copy(sleepReminders = v) }
             }
+            HealthSleepRow(vm, settings.healthSleep)
             Text("목표 수면 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(6 * 60, 6 * 60 + 30, 7 * 60, 7 * 60 + 30, 8 * 60, 9 * 60).forEach { m ->
@@ -678,6 +688,47 @@ private fun NavRow(title: String, subtitle: String, onClick: () -> Unit) {
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
+    }
+}
+
+/**
+ * [SLP-08] Sleep a watch or the phone measured, through Health Connect. The switch stays off until
+ * "수면 읽기" is allowed; on phones without Health Connect it says so instead of asking.
+ */
+@Composable
+private fun HealthSleepRow(vm: SettingsViewModel, on: Boolean) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var message by remember { mutableStateOf<String?>(null) }
+    val ask = rememberLauncherForActivityResult(
+        androidx.health.connect.client.PermissionController.createRequestPermissionResultContract(),
+    ) { granted ->
+        val ok = granted.containsAll(com.bamnat.app.sleep.HealthSleep.PERMISSIONS)
+        vm.setHealthSleep(ok)
+        message = if (ok) null else "수면 읽기를 허용하지 않아 꺼 두었어요. 다시 켜면 또 물어봐요."
+    }
+    SwitchRow(
+        "워치·휴대폰 수면 기록 함께 보기",
+        "헬스 커넥트에 모인 수면(갤럭시 워치, 삼성 헬스 등)을 읽어 수면 부족 계산에 써요. 읽기만 하고 밖으로 보내지 않아요",
+        on,
+    ) { v ->
+        message = null
+        if (!v) vm.setHealthSleep(false)
+        else when (vm.healthSdkStatus()) {
+            androidx.health.connect.client.HealthConnectClient.SDK_AVAILABLE -> scope.launch {
+                if (vm.healthGranted()) vm.setHealthSleep(true)
+                else runCatching { ask.launch(com.bamnat.app.sleep.HealthSleep.PERMISSIONS) }
+                    .onFailure { message = "헬스 커넥트 허용 화면을 열지 못했어요." }
+            }
+            androidx.health.connect.client.HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> {
+                message = "헬스 커넥트를 설치하거나 업데이트한 뒤 다시 켜 주세요."
+                runCatching { context.startActivity(com.bamnat.app.sleep.HealthSleep.installIntent()) }
+            }
+            else -> message = "이 휴대폰에서는 헬스 커넥트를 쓸 수 없어요. 잠들었어요·깼어요 버튼으로 기록해 주세요."
+        }
+    }
+    message?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
     }
 }
 

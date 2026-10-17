@@ -132,7 +132,12 @@ fun EditValueDialog(
         ScopeKind.RANGE -> EditScope.Range(month, maxOf(month, until))
     }
     val v = value
-    val plan = remember(v, editScope, profile) { v?.let { vm.planEdit(profile, snapshot, target, it, editScope, month) } }
+    // [QA-01] A plan recalculates a year of months; wait for typing to pause and work off the main thread.
+    val plan by androidx.compose.runtime.produceState<com.bamnat.core.pay.EditPlan?>(null, v, editScope, profile) {
+        this.value = null // never apply a plan for a number that has since changed
+        kotlinx.coroutines.delay(250)
+        this.value = v?.let { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.planEdit(profile, snapshot, target, it, editScope, month) } }
+    }
     val name = when (target) {
         ValueTarget.Base -> "기본 금액"
         is ValueTarget.Item -> profile.items.firstOrNull { it.id == target.id }?.name ?: "수당"

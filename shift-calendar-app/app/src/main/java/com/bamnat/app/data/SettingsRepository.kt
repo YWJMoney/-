@@ -59,6 +59,8 @@ data class AppSettings(
     val sleepReminders: Boolean = false,
     /** [SLP-03][SLP-06] Hours of sleep the user aims for. */
     val sleepTargetMinutes: Int = 7 * 60,
+    /** [SLP-08] Read sleep sessions from Health Connect; off until the user allows it. */
+    val healthSleep: Boolean = false,
 ) {
     val limits: HourLimits get() = HourLimits(weeklyLimitHours, averageLimitHours)
 
@@ -128,6 +130,7 @@ class SettingsRepository(context: Context) {
             sleepTips = prefs.getBoolean(K_SLEEP_TIPS, d.sleepTips),
             sleepReminders = prefs.getBoolean(K_SLEEP_REMINDERS, d.sleepReminders),
             sleepTargetMinutes = prefs.getInt(K_SLEEP_TARGET, d.sleepTargetMinutes),
+            healthSleep = prefs.getBoolean(K_HEALTH_SLEEP, d.healthSleep),
         )
     }
 
@@ -161,6 +164,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SLEEP_TIPS, s.sleepTips)
             .putBoolean(K_SLEEP_REMINDERS, s.sleepReminders)
             .putInt(K_SLEEP_TARGET, s.sleepTargetMinutes)
+            .putBoolean(K_HEALTH_SLEEP, s.healthSleep)
             .apply()
     }
 
@@ -193,5 +197,6 @@ class SettingsRepository(context: Context) {
         const val K_SLEEP_TIPS = "sleep_tips"
         const val K_SLEEP_REMINDERS = "sleep_reminders"
         const val K_SLEEP_TARGET = "sleep_target"
+        const val K_HEALTH_SLEEP = "health_sleep"
     }
 }
