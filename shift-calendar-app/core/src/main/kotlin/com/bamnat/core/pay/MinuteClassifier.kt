@@ -303,6 +303,15 @@ class MinuteClassifier(
     internal fun shiftNight(from: LocalDateTime, to: LocalDateTime, paid: Int, breakMinutes: Int, breakStart: LocalTime?, r: Rates): Int =
         split(Piece(-1, 0, from, to, paid, breakMinutes, breakStart, false), r).night
 
+    /**
+     * [EXTRA-08] Minutes worked in [from, to) between the clock times [start] and [end] (past
+     * midnight when [end] is not after [start]), the break taken off as for night minutes.
+     */
+    internal fun windowMinutes(
+        from: LocalDateTime, to: LocalDateTime, paid: Int, breakMinutes: Int, breakStart: LocalTime?,
+        start: LocalTime, end: LocalTime, r: Rates,
+    ): Int = shiftNight(from, to, paid, breakMinutes, breakStart, r.copy(nightStart = start, nightEnd = end))
+
     /** Minutes of [from, to) inside the night window, across any number of midnights. */
     internal fun nightMinutes(from: LocalDateTime, to: LocalDateTime, r: Rates): Int {
         if (!to.isAfter(from)) return 0

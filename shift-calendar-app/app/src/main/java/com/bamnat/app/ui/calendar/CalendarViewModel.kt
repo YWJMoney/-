@@ -284,13 +284,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun isRosterRestDay(day: ResolvedDay, type: ShiftType): Boolean =
         day.source == DaySource.PATTERN && !day.isWorkDay && day.leave == null && type.hasTimes && !type.isOff
 
-    /** The kind for a 대근 of [type]: one made for that shift, else the plain 대근. */
-    fun coverKind(snapshot: ScheduleSnapshot, type: ShiftType): ExtraKind {
-        val shiftKinds = snapshot.kinds.visible().filter { it.timing is ExtraTiming.AsShift }
-        return shiftKinds.firstOrNull { (it.timing as ExtraTiming.AsShift).shiftTypeId == type.id }
-            ?: shiftKinds.firstOrNull { (it.timing as ExtraTiming.AsShift).shiftTypeId == null }
-            ?: snapshot.kinds.of(ExtraKind.COVER_ID)
-    }
+    /** The kind for a 대근 of [type] [EXTRA-07]. */
+    fun coverKind(snapshot: ScheduleSnapshot, type: ShiftType): ExtraKind = ExtraText.coverKind(snapshot.kinds, snapshot.shiftTypes, type)
 
     /** [EXTRA-01] The roster stays a day off and the shift goes in as a 대근 of its hours, said back with undo. */
     fun coverInstead(date: LocalDate, type: ShiftType, snapshot: ScheduleSnapshot) {

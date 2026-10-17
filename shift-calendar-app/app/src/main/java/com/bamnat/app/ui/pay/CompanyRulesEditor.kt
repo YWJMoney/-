@@ -302,7 +302,7 @@ fun CompanyRulesEditor(
             }
 
             // [EXTRA-04] How each kind is paid lives with its times on one screen; here is what it says.
-            SectionCard(title = "잔업 · 특근 · 대근") {
+            SectionCard(title = "휴무일 근무 지정") {
                 kinds.visible(rules.extra.keys + rules.extraByShift.keys).forEach { k ->
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
                         ExtraKindMark(k, size = 22.dp)
@@ -314,9 +314,9 @@ fun CompanyRulesEditor(
                     }
                 }
                 OutlinedButton(onClick = { if (draft != saved) vm.update { draft }; onOpenKinds() }, modifier = Modifier.padding(top = 4.dp)) {
-                    Text("종류·시간·급여 방식 정하기")
+                    Text("종류·시간·가산 정하기")
                 }
-                Hint("대근 1회 기본급의 10%처럼 회사 방식이 있으면 종류마다 정해요." + if (draft != saved) " 여기서 바꾼 내용은 저장하고 넘어가요." else "")
+                Hint("대근 8시간에 기본급 10% + 야간 가산 50%처럼 회사 방식이 있으면 종류마다 체크해요." + if (draft != saved) " 여기서 바꾼 내용은 저장하고 넘어가요." else "")
             }
 
             SectionCard(title = "연장 시간 끝자리") {

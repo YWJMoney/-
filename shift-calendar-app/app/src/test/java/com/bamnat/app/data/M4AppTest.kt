@@ -183,4 +183,34 @@ class M4AppTest {
             settings.update { it.copy(extraKinds = ExtraKinds()) }
         }
     }
+
+    /** [EXTRA-07] A 대근 for 주간 and 야간 names both shifts in the file and finds them on the coworker's phone. */
+    @Test fun aCoverForSeveralShiftsKeepsThemAcrossPhones() = runBlocking {
+        val schedule = ScheduleRepository(db)
+        schedule.ensureDefaults()
+        val types = schedule.snapshot.first().shiftTypes.associateBy { it.name }
+        val both = ExtraKind(101, "교대 대근", "교", 0xFF123456, ExtraTiming.AsShift(setOf(types.getValue("주간").id, types.getValue("야간").id)))
+        settings.update { it.copy(extraKinds = ExtraKinds(ExtraKinds.DEFAULTS + both)) }
+        val store = PayStore(context)
+        val file = CompanyShare(schedule, store, settings, today = { today }).export("2공장", withAmounts = false)
+        val names = JSONObject(file).getJSONObject("extraKindShiftSets").getJSONArray("101")
+        assertEquals(setOf("주간", "야간"), (0 until names.length()).map(names::getString).toSet())
+        // 1.9.0 reads the one-shift key only, so the kind is for every shift there rather than the wrong one.
+        assertFalse(JSONObject(file).getJSONObject("extraKindShifts").has("101"))
+
+        val db2 = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val theirs = ScheduleRepository(db2)
+            theirs.saveShiftType(com.bamnat.core.model.ShiftType(0, "야간", "N", 0xFF000000, LocalTime.of(19, 0), LocalTime.of(7, 0)))
+            theirs.saveShiftType(com.bamnat.core.model.ShiftType(0, "주간", "D", 0xFF000000, LocalTime.of(7, 0), LocalTime.of(19, 0)))
+            settings.update { it.copy(extraKinds = ExtraKinds()) }
+            CompanyShare(theirs, store, settings, today = { today }).apply(file, rotation = false)
+            val mine = theirs.snapshot.first().shiftTypes.associateBy { it.name }
+            val added = settings.current.extraKinds.kinds.single { it.name == "교대 대근" }
+            assertEquals(ExtraTiming.AsShift(setOf(mine.getValue("주간").id, mine.getValue("야간").id)), added.timing)
+        } finally {
+            db2.close()
+            settings.update { it.copy(extraKinds = ExtraKinds()) }
+        }
+    }
 }

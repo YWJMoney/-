@@ -17,6 +17,82 @@ enum class ExtraBasis(val label: String) {
     HOURLY_RATE("통상시급 × 배율"),
     /** 통상시급 × (100% + a premium per block of hours), e.g. 8시간 100%, 다음 4시간 150% [PAYX-07]. */
     TIERED("시간 구간별 가산"),
+    /**
+     * [EXTRA-08] An hour's pay ([ExtraRule.unit]) and each premium the company adds on it, ticked one
+     * by one with its own rate, e.g. 8시간에 기본급 10% + 8시간 넘으면 50% + 야간 50%.
+     */
+    UNIT("단가와 가산"),
+}
+
+/** [EXTRA-08] What one hour of the work is paid at, before premiums. */
+enum class PayUnit(val label: String) {
+    /** 통상시급, as the law pays. */
+    ORDINARY("통상시급"),
+    /** 기본급 × [ExtraRule.percentOfBase] for [ExtraRule.unitMinutes] of work, e.g. 8시간에 기본급의 10%. */
+    BASE_SHARE("기본급 %"),
+    /** [ExtraRule.amount] won an hour. */
+    PER_HOUR("시간당 금액"),
+    /**
+     * [ExtraRule.amount] won each time for [ExtraRule.coverMinutes] of work (every hour when null);
+     * hours beyond it and the premiums are paid on 통상시급.
+     */
+    PER_TIME("1회 금액"),
+}
+
+/** [EXTRA-08] The minutes of a piece of work a premium is paid on. */
+sealed interface PremiumScope {
+    /** Every minute worked. */
+    data object All : PremiumScope
+    /** Minutes of this work beyond [minutes], e.g. 대근 8시간 넘는 시간. */
+    data class Over(val minutes: Int) : PremiumScope
+    /** What the law counts as 연장: beyond 8 hours a day or 40 a week (제53조), the company's day-off rule applied. */
+    data object LegalOvertime : PremiumScope
+    /** Minutes in the night window, the company's or 22~06 (제56조 제3항). */
+    data object Night : PremiumScope
+    /** Minutes between two clock times, e.g. 19:00~23:00; an end at or before the start runs past midnight. */
+    data class Window(val from: java.time.LocalTime, val to: java.time.LocalTime) : PremiumScope
+    /** Minutes on a 공휴일·주휴일·근로자의 날 (휴일근로, 제56조 제2항). */
+    data object Holiday : PremiumScope
+    /** Minutes on a day off that is not a paid holiday (휴무일): no premium by law, some companies pay one. */
+    data object RestDay : PremiumScope
+}
+
+/**
+ * [EXTRA-08] One premium on top of the hour, ticked on or off with its own rate: the four the law
+ * knows (연장, 야간, 휴일, and 휴무일 that it does not) are always listed; companies add their own,
+ * e.g. 심야 19~23시 25%.
+ */
+data class Premium(
+    /** [OVERTIME], [NIGHT], [HOLIDAY], [REST] for the four always listed; "c1", "c2" … for added ones. */
+    val key: String,
+    val name: String,
+    /** On top of 100%: 0.5 = 50%. */
+    val rate: Double,
+    val on: Boolean = true,
+    val scope: PremiumScope,
+    /** Only on a day off or a paid holiday, e.g. 쉬는 날 심야 가산. */
+    val offDaysOnly: Boolean = false,
+) {
+    val custom: Boolean get() = key !in BUILT_IN
+
+    companion object {
+        const val OVERTIME = "overtime"
+        const val NIGHT = "night"
+        const val HOLIDAY = "holiday"
+        const val REST = "rest"
+        val BUILT_IN = listOf(OVERTIME, NIGHT, HOLIDAY, REST)
+        const val MAX_CUSTOM = 6
+        const val MAX_RATE = 3.0
+        const val MAX_NAME = 12
+
+        /** One of the four always listed, by [key], at [rate] (50% when unset) and ticked when [on]. */
+        fun builtIn(key: String, rate: Double = 0.5, on: Boolean = false): Premium = when (key) {
+            OVERTIME -> Premium(OVERTIME, "연장 가산", rate, on, PremiumScope.LegalOvertime)
+            NIGHT -> Premium(NIGHT, "야간 가산", rate, on, PremiumScope.Night)
+            HOLIDAY -> Premium(HOLIDAY, "휴일 가산", rate, on, PremiumScope.Holiday)
+            else -> Premium(REST, "휴무일 가산", rate, on, PremiumScope.RestDay)
+        }
+    }
 }
 
 /** [minutes] of work, in shift order, paid with [premium] on top of 100% (0.5 = 150%). */
@@ -52,12 +128,26 @@ data class ExtraRule(
     val dayTiers: List<Tier> = DEFAULT_DAY_TIERS,
     /** For [ExtraBasis.TIERED]: blocks when the work is a night shift (at least half in 22~06). */
     val nightTiers: List<Tier> = DEFAULT_NIGHT_TIERS,
+    /** [EXTRA-08] For [ExtraBasis.UNIT]: what an hour is paid at. */
+    val unit: PayUnit = PayUnit.ORDINARY,
+    /** [EXTRA-08] For [PayUnit.BASE_SHARE]: the minutes [percentOfBase] of 기본급 pays for, e.g. 8시간. */
+    val unitMinutes: Int = 8 * 60,
+    /** [EXTRA-08] For [ExtraBasis.UNIT]: the premiums, the four always listed first, then the company's own. */
+    val premiums: List<Premium> = emptyList(),
 ) {
     /** By law with nothing on top: the same as having no rule. */
     val isLegal: Boolean get() = basis == ExtraBasis.LEGAL && bonus <= 0
 
     /** A payment each time that stands for some hours of work. */
     val perTime: Boolean get() = basis == ExtraBasis.FIXED_PER_TIME || basis == ExtraBasis.PERCENT_OF_BASE
+
+    /** [EXTRA-08] The rule pays the night minutes itself, so they leave the month's night line. */
+    val ownsNight: Boolean get() = basis == ExtraBasis.UNIT || !nightPremium
+
+    fun premium(key: String): Premium? = premiums.firstOrNull { it.key == key }
+
+    /** [EXTRA-08] The premiums that count, in the order they are paid. */
+    val ticked: List<Premium> get() = premiums.filter { it.on && it.rate > 0 }
 
     /** Money for [minutes] of this work at [hourly], by the tiers for a day or night shift. */
     fun tieredAmount(minutes: Int, hourly: Long, night: Boolean): Long {
@@ -81,6 +171,26 @@ data class ExtraRule(
         val DEFAULT_DAY_TIERS = listOf(Tier(480, 0.0), Tier(240, 0.5))
         val DEFAULT_NIGHT_TIERS = listOf(Tier(240, 0.5), Tier(240, 0.75), Tier(240, 1.0))
 
+        /**
+         * [EXTRA-08] The ticks that say what the law pays, to start the company's own way from:
+         * 연장, 야간 and 휴일 at the premiums in force ([overtime], [night], [holiday]; 0 under 5
+         * employees, shown unticked at 50%), and 휴무일 only when the company pays a day off as a holiday.
+         */
+        fun lawUnit(overtime: Double, night: Double, holiday: Double, restAsHoliday: Boolean, bonus: Long = 0, minMinutes: Int = 0): ExtraRule {
+            fun rate(p: Double) = if (p > 0) p else 0.5
+            return ExtraRule(
+                basis = ExtraBasis.UNIT,
+                bonus = bonus,
+                minMinutes = minMinutes,
+                premiums = listOf(
+                    Premium.builtIn(Premium.OVERTIME, rate(overtime), overtime > 0),
+                    Premium.builtIn(Premium.NIGHT, rate(night), night > 0),
+                    Premium.builtIn(Premium.HOLIDAY, rate(holiday), holiday > 0),
+                    Premium.builtIn(Premium.REST, rate(holiday), restAsHoliday && holiday > 0),
+                ),
+            )
+        }
+
         /** 0.1 → "10%", 0.125 → "12.5%". */
         fun percent(share: Double): String {
             val p = share * 100
@@ -96,12 +206,22 @@ data class ExtraRule(
         ExtraBasis.PERCENT_OF_BASE -> "1회 기본급의 ${percent(percentOfBase)}"
         ExtraBasis.FIXED_PER_HOUR -> "시간당 ${won(amount)}"
         ExtraBasis.TIERED -> "주간 ${describeTiers(false)} · 야간 ${describeTiers(true)}"
+        ExtraBasis.UNIT -> describeUnit()
     } + (if (perTime && coverMinutes != null) " (${PayCalculator.hours(coverMinutes)}까지)" else "")
 
+    /** [EXTRA-08] "8시간에 기본급의 10%", "통상시급", "1회 80,000원 (8시간까지)". */
+    fun describeUnit(): String = when (unit) {
+        PayUnit.ORDINARY -> "통상시급"
+        PayUnit.BASE_SHARE -> "${PayCalculator.hours(unitMinutes)}에 기본급의 ${percent(percentOfBase)}"
+        PayUnit.PER_HOUR -> "시간당 ${won(amount)}"
+        PayUnit.PER_TIME -> "1회 ${won(amount)}" + (coverMinutes?.let { " (${PayCalculator.hours(it)}까지)" } ?: "")
+    }
+
     fun describe(): String = describeBase() +
+        (if (basis == ExtraBasis.UNIT) ticked.joinToString("") { " + ${it.name.removeSuffix(" 가산")} ${percent(it.rate)}" } else "") +
         (if (minMinutes > 0) ", 최소 ${PayCalculator.hours(minMinutes)} 인정" else "") +
-        (if (basis != ExtraBasis.LEGAL && legalPremiums) " + 연장·휴일 가산" else "") +
-        (if (basis != ExtraBasis.LEGAL && !nightPremium) ", 야간 가산 없음" else "") +
+        (if (basis != ExtraBasis.LEGAL && basis != ExtraBasis.UNIT && legalPremiums) " + 연장·휴일 가산" else "") +
+        (if (basis != ExtraBasis.LEGAL && basis != ExtraBasis.UNIT && !nightPremium) ", 야간 가산 없음" else "") +
         (if (bonus > 0) " + 1회 ${won(bonus)}" else "")
 }
 

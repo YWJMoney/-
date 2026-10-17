@@ -58,6 +58,13 @@ class CompanyShare(
             .put("extraKindShifts", JSONObject().apply {
                 kinds.kinds.forEach { k -> (k.timing as? ExtraTiming.AsShift)?.shiftTypeId?.let(names::get)?.let { put(k.id.toString(), it) } }
             })
+            // [EXTRA-07] A 대근 for several shifts (모닝·나이트) lists them all; 1.9.0 reads it as every shift.
+            .put("extraKindShiftSets", JSONObject().apply {
+                kinds.kinds.forEach { k ->
+                    val set = (k.timing as? ExtraTiming.AsShift)?.shiftTypeIds?.takeIf { it.size > 1 } ?: return@forEach
+                    put(k.id.toString(), JSONArray(set.mapNotNull(names::get)))
+                }
+            })
         (PatternTimeline.current(snapshot.patterns, today()) as? WorkPattern.Rotation)?.let { r ->
             root.put("rotation", JSONObject()
                 .put("anchor", r.anchorDate.toString())
@@ -135,7 +142,8 @@ class CompanyShare(
         // [EXTRA-01] Kinds merge like shift types: 잔업·특근·대근 by id, the company's own by name.
         var kindIds: Map<Long, Long> = emptyMap()
         root.optString("extraKinds").takeIf { it.isNotEmpty() }?.let { encoded ->
-            val (merged, map) = mergeKinds(settings.current.extraKinds, ExtraKinds.decode(encoded), root.optJSONObject("extraKindShifts"), ids)
+            val (merged, map) = mergeKinds(settings.current.extraKinds, ExtraKinds.decode(encoded), root.optJSONObject("extraKindShifts"),
+                root.optJSONObject("extraKindShiftSets"), ids)
             kindIds = map
             settings.update { it.copy(extraKinds = merged) }
         }
@@ -242,13 +250,18 @@ class CompanyShare(
      * times, a kind of the company's own replaces the user's of the same name or is added. Days
      * already marked keep their kind. Returns the kinds and each file id's id on this phone.
      */
-    private fun mergeKinds(mine: ExtraKinds, incoming: ExtraKinds, shifts: JSONObject?, ids: Map<String, Long>): Pair<ExtraKinds, Map<Long, Long>> {
+    private fun mergeKinds(
+        mine: ExtraKinds, incoming: ExtraKinds, shifts: JSONObject?, sets: JSONObject?, ids: Map<String, Long>,
+    ): Pair<ExtraKinds, Map<Long, Long>> {
         var merged = mine
         val map = HashMap<Long, Long>()
         for (k in incoming.kinds) {
-            val timing = (k.timing as? ExtraTiming.AsShift)
-                ?.let { ExtraTiming.AsShift(shifts?.optString(k.id.toString())?.takeIf { it.isNotEmpty() }?.let { ids[it.take(MAX_NAME)] }) }
-                ?: k.timing
+            val timing = (k.timing as? ExtraTiming.AsShift)?.let {
+                val key = k.id.toString()
+                val named = sets?.optJSONArray(key)?.let { a -> (0 until a.length()).map { i -> a.optString(i) } }
+                    ?: listOfNotNull(shifts?.optString(key)?.takeIf { it.isNotEmpty() })
+                ExtraTiming.AsShift(named.mapNotNull { ids[it.take(MAX_NAME)] }.toSet())
+            } ?: k.timing
             val target = if (k.isBuiltIn) merged.byId(k.id) else merged.kinds.firstOrNull { !it.isBuiltIn && it.name == k.name }
             val id = target?.id ?: if (k.isBuiltIn) k.id else merged.nextId()
             merged = merged.put(k.copy(id = id, timing = timing))

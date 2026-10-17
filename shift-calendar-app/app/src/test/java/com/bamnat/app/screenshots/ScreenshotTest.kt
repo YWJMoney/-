@@ -473,9 +473,18 @@ class ScreenshotTest {
     }
 
     /** [EXTRA-03] 대근 1회 기본급의 10% for 8 hours with the 연장·야간 가산 on top, 특근 a fixed amount. */
+    /** [EXTRA-08] 대근 as the thread's company pays it: 8시간에 기본급 10%, 이 일 8시간 넘으면 50%, 야간 50%. */
+    private val companyCover = ExtraRule.lawUnit(overtime = 0.5, night = 0.5, holiday = 0.5, restAsHoliday = false).let { law ->
+        law.copy(unit = com.bamnat.core.pay.PayUnit.BASE_SHARE, percentOfBase = 0.1, unitMinutes = 480, premiums = law.premiums.map {
+            if (it.key == com.bamnat.core.pay.Premium.OVERTIME) it.copy(scope = com.bamnat.core.pay.PremiumScope.Over(480)) else it
+        })
+    }
+    /** How 1.8 and 1.9.0 stored the same 대근, before the boxes. */
+    private val legacyCover = ExtraRule(ExtraBasis.PERCENT_OF_BASE, percentOfBase = 0.1, coverMinutes = 480, legalPremiums = true)
     private val companyRules = CompanyRules(
         extra = mapOf(
-            ExtraKind.COVER_ID to ExtraRule(ExtraBasis.PERCENT_OF_BASE, percentOfBase = 0.1, coverMinutes = 480, legalPremiums = true),
+            ExtraKind.COVER_ID to companyCover,
+            // A way from 1.9.0, kept as it was.
             ExtraKind.SPECIAL_ID to ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 150_000),
         ),
         annualLeaveDays = 15.0,
@@ -604,7 +613,7 @@ class ScreenshotTest {
     @Test fun foldedCoverDay() = shoot("98_folded_cover_day", FOLDED) { openDay(coverDay) }
     @Test fun foldedRulesKinds() = shoot("99_folded_rules_kinds", FOLDED) {
         rulesEditor { companyRules }.invoke(this)
-        reveal("종류·시간·급여 방식 정하기", exact = true)
+        reveal("종류·시간·가산 정하기", exact = true)
     }
     @Test fun foldedRulesRestDay() = shoot("100_folded_rules_rest_day", FOLDED) {
         rulesEditor { companyRules.copy(weeklyHoliday = com.bamnat.core.pay.WeeklyHoliday.Fixed(java.time.DayOfWeek.SUNDAY)) }.invoke(this)
@@ -612,7 +621,9 @@ class ScreenshotTest {
     }
     /** A 1.8 user kept on 휴일근로로 sees once what 법대로 would pay. */
     @Test fun foldedPayRestCompare() = shoot("101_folded_pay_rest_compare", FOLDED) {
-        payScreen(Tier.PRO, withProfile = true, adjust = { it.copy(rules = it.rules.copy(restDayWork = RestDayWork.HOLIDAY)) }).invoke(this)
+        payScreen(Tier.PRO, withProfile = true, adjust = {
+            it.copy(rules = it.rules.copy(restDayWork = RestDayWork.HOLIDAY, extra = it.rules.extra + (ExtraKind.COVER_ID to legacyCover)))
+        }).invoke(this)
         reveal("쉬는 날 근무, 법대로와 비교해 보세요", exact = true)
     }
     /** [EXTRA-05] A record carried over from 1.8 without times asks for one look. */
@@ -647,7 +658,8 @@ class ScreenshotTest {
     }
     @Test fun foldedRulesPerShift() = shoot("74_folded_rules_cover_per_shift", FOLDED) {
         kindsScreen { night ->
-            companyRules.copy(extraByShift = mapOf(ExtraKind.COVER_ID to mapOf(night to ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 100_000))))
+            companyRules.copy(extraByShift = mapOf(ExtraKind.COVER_ID to mapOf(night to
+                companyCover.copy(unit = com.bamnat.core.pay.PayUnit.PER_TIME, amount = 100_000, coverMinutes = 480))))
         }.invoke(this)
         tapText("대근", exact = true)
         tapText("야간 ·", prefix = true)
@@ -655,7 +667,46 @@ class ScreenshotTest {
     }
     @Test fun foldedExtraKinds() = shoot("76_folded_extra_kinds", FOLDED) {
         tab(4, wide = false)
-        tapText("잔업 · 특근 · 대근", exact = true)
+        tapText("휴무일 근무 지정", exact = true)
+    }
+    // ---- [EXTRA-07][EXTRA-08] 휴무일 근무 지정 ----
+    @Test fun foldedKindPremiums() = shoot("108_folded_kind_premiums", FOLDED) {
+        kindsScreen().invoke(this)
+        tapText("대근", exact = true)
+        reveal("가산 · 체크한 것만 더해요", exact = true)
+    }
+    @Test fun foldedKindCustomPremium() = shoot("109_folded_kind_custom_premium", FOLDED) {
+        kindsScreen().invoke(this)
+        tapText("대근", exact = true)
+        tapText("가산 직접 추가", exact = true)
+        check(shownDialogs().isNotEmpty()) { "가산 추가 창이 열리지 않았어요" }
+    }
+    @Test fun foldedKindRate() = shoot("110_folded_kind_rate", FOLDED) {
+        kindsScreen().invoke(this)
+        tapText("대근", exact = true)
+        tapText("연장 가산 비율 바꾸기", exact = true)
+        check(shownDialogs().isNotEmpty()) { "비율 창이 열리지 않았어요" }
+    }
+    @Test fun foldedKindShifts() = shoot("111_folded_kind_several_shifts", FOLDED) {
+        val c = app.container
+        val types = runBlocking { c.scheduleRepository.snapshot.first().shiftTypes.associateBy { it.name } }
+        c.settingsRepository.update { s ->
+            s.copy(extraKinds = s.extraKinds.put(s.extraKinds.of(ExtraKind.COVER_ID).copy(
+                timing = com.bamnat.core.model.ExtraTiming.AsShift(setOf(types.getValue("주간").id, types.getValue("야간").id)))))
+        }
+        kindsScreen().invoke(this)
+        tapText("대근", exact = true)
+        reveal("어느 근무를 대신하나요? (여러 개 고를 수 있어요)", exact = true)
+    }
+    @Test fun foldedKindLegacy() = shoot("112_folded_kind_way_from_before", FOLDED) {
+        kindsScreen().invoke(this)
+        tapText("특근", exact = true)
+        reveal("예전 방식으로 계산해요", exact = true)
+    }
+    @Test fun foldedKindLaw() = shoot("113_folded_kind_by_law", FOLDED) {
+        kindsScreen { CompanyRules() }.invoke(this)
+        tapText("잔업", exact = true)
+        reveal("법대로 계산해요", exact = true)
     }
     @Test fun foldedFieldDayShifts() = shoot("77_folded_field_day_shifts_toggle", FOLDED, style(WorkStyle.FIELD) { openDay(dayCell); reveal("근무", exact = true) })
 
