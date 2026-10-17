@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.intl.LocaleList
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bamnat.app.data.ThemeMode
@@ -103,6 +105,11 @@ data class CalendarColors(
     val alarmOff: Color = Color(0xFFD92D20),
     /** [VIS-01] A day the user changed by hand. */
     val changed: Color = Color(0xFFB45309),
+    /** [SLP-14] Sleep and naps on the today strip, and the button that starts a sleep. */
+    val sleep: Color = Color(0xFF4F5BD5),
+    val nap: Color = Color(0xFFA5ADF0),
+    val sleepContainer: Color = Color(0xFFCDD1FB),
+    val onSleepContainer: Color = Color(0xFF1F287A),
 )
 
 // [VIS-01] Weekend numbers and the extra-hours text reach 4.5:1 on white and on a shift's tint.
@@ -126,17 +133,40 @@ private val DarkCalendarColors = CalendarColors(
     expense = Color(0xFFFF8F8F),
     alarmOff = Color(0xFFFF8A80),
     changed = Color(0xFFFFB783),
+    sleep = Color(0xFF9AA5FF),
+    nap = Color(0xFF5A64B8),
+    sleepContainer = Color(0xFF323A7A),
+    onSleepContainer = Color(0xFFDFE1FF),
 )
 
 val LocalCalendarColors = staticCompositionLocalOf { LightCalendarColors }
 
+/**
+ * [VIS-02] Korean wraps between words, never inside one ("꺼져 있어 / 요"): phrase breaking on text
+ * marked Korean, which Android 15 and later follow whatever the phone's language is (earlier versions
+ * wrap as before). Titles also even out their lines.
+ */
+private val Korean = LocaleList("ko-KR")
+private val WordWrap = LineBreak.Simple.copy(wordBreak = LineBreak.WordBreak.Phrase)
+private fun TextStyle.korean(title: Boolean = false) = copy(lineBreak = if (title) LineBreak.Heading else WordWrap, localeList = Korean)
+
 private val AppTypography = Typography().let { t ->
-    t.copy(
-        headlineSmall = t.headlineSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.2).sp),
-        titleLarge = t.titleLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.2).sp),
-        titleMedium = t.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-        titleSmall = t.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-        labelLarge = t.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+    Typography(
+        displayLarge = t.displayLarge.korean(title = true),
+        displayMedium = t.displayMedium.korean(title = true),
+        displaySmall = t.displaySmall.korean(title = true),
+        headlineLarge = t.headlineLarge.korean(title = true),
+        headlineMedium = t.headlineMedium.korean(title = true),
+        headlineSmall = t.headlineSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.2).sp).korean(title = true),
+        titleLarge = t.titleLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.2).sp).korean(title = true),
+        titleMedium = t.titleMedium.copy(fontWeight = FontWeight.SemiBold).korean(title = true),
+        titleSmall = t.titleSmall.copy(fontWeight = FontWeight.SemiBold).korean(title = true),
+        bodyLarge = t.bodyLarge.korean(),
+        bodyMedium = t.bodyMedium.korean(),
+        bodySmall = t.bodySmall.korean(),
+        labelLarge = t.labelLarge.copy(fontWeight = FontWeight.SemiBold).korean(),
+        labelMedium = t.labelMedium.korean(),
+        labelSmall = t.labelSmall.korean(),
     )
 }
 

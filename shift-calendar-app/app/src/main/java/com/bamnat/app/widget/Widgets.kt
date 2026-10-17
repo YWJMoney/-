@@ -12,6 +12,8 @@ import androidx.glance.GlanceTheme
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.SizeMode
+import androidx.glance.LocalSize
 import androidx.glance.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
@@ -36,6 +38,7 @@ import com.bamnat.app.MainActivity
 import com.bamnat.app.ui.Fmt
 import com.bamnat.core.schedule.CalendarGrid
 import com.bamnat.core.schedule.ResolvedDay
+import com.bamnat.core.sleep.TodayFlow
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
@@ -47,6 +50,9 @@ import java.time.YearMonth
  */
 
 class TodayWidget : GlanceAppWidget() {
+    // [SLP-14] Laid out for its real size, so a short widget keeps the line of 오늘의 흐름 over 내일.
+    override val sizeMode: SizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val data = WidgetData.load(context)
         provideContent { GlanceTheme { WidgetFrame { TodayContent(data) } } }
@@ -99,8 +105,21 @@ private fun TodayContent(data: WidgetData) {
             return@Column
         }
         DayLine("오늘", data.day(data.today), big = true)
-        Spacer(GlanceModifier.height(8.dp))
-        DayLine("내일", data.day(data.today.plusDays(1)), big = false)
+        val line = data.flow?.line
+        if (line != null) {
+            Spacer(GlanceModifier.height(4.dp))
+            val warn = data.flow.state == TodayFlow.State.ALARM_OFF || data.flow.state == TodayFlow.State.FORGOT_WAKE
+            Text(
+                "${flowMark(data.flow)} $line",
+                style = TextStyle(color = if (warn) GlanceTheme.colors.error else GlanceTheme.colors.primary, fontSize = 13.sp, fontWeight = FontWeight.Medium),
+                maxLines = 1,
+            )
+        }
+        // Room for 내일 too, unless the widget is short and has the flow's line to show instead.
+        if (line == null || LocalSize.current.height >= 150.dp) {
+            Spacer(GlanceModifier.height(8.dp))
+            DayLine("내일", data.day(data.today.plusDays(1)), big = false)
+        }
         data.nextAlarm?.let { alarm ->
             Spacer(GlanceModifier.height(6.dp))
             val at = alarm.triggerAt
@@ -112,6 +131,16 @@ private fun TodayContent(data: WidgetData) {
             Text("⏰ $dayLabel ${Fmt.time(at.toLocalTime())}", style = small(GlanceTheme.colors.primary))
         }
     }
+}
+
+/** [SLP-14] A mark for the kind of line: sleep, nap, coffee, an alarm to check, waking. */
+private fun flowMark(card: TodayFlow.Card): String = when (card.state) {
+    TodayFlow.State.ALARM_OFF, TodayFlow.State.FORGOT_WAKE -> "⚠"
+    TodayFlow.State.NAP -> "💤"
+    TodayFlow.State.SLEEPING -> "🌙"
+    TodayFlow.State.AWAKE -> "☀"
+    TodayFlow.State.ON_SHIFT -> if (card.line?.startsWith("커피") == true) "☕" else "🛏"
+    else -> if (card.line?.startsWith("낮잠") == true) "💤" else "🛏"
 }
 
 @Composable

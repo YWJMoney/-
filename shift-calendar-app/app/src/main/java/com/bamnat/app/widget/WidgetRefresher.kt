@@ -9,9 +9,13 @@ import androidx.glance.appwidget.updateAll
 import com.bamnat.app.appContainer
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.ZoneId
 
-/** Redraws every widget and keeps a wake-up for the next midnight so the date moves on [REL-03]. */
+/**
+ * Redraws every widget and keeps a wake-up for the next midnight so the date moves on [REL-03], or
+ * sooner when the line of 오늘의 흐름 changes before then [SLP-14].
+ */
 object WidgetRefresher {
     suspend fun refresh(context: Context) {
         val app = context.applicationContext
@@ -20,14 +24,16 @@ object WidgetRefresher {
             WeekWidget().updateAll(app)
             MonthWidget().updateAll(app)
         }
-        scheduleMidnight(app)
+        val flowChanges = runCatching { WidgetData.load(app).flow?.changesAt }.getOrNull()
+        scheduleNext(app, flowChanges)
     }
 
     /** An inexact, non-waking alarm: widgets are only seen with the screen on, so a few minutes late is fine. */
-    private fun scheduleMidnight(context: Context) {
+    private fun scheduleNext(context: Context, flowChanges: LocalDateTime?) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         val zone = ZoneId.systemDefault()
-        val at = LocalDate.now(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() + 5_000
+        val midnight = LocalDate.now(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() + 5_000
+        val at = flowChanges?.atZone(zone)?.toInstant()?.toEpochMilli()?.plus(5_000)?.coerceAtMost(midnight) ?: midnight
         val pi = PendingIntent.getBroadcast(
             context, REQ_MIDNIGHT,
             Intent(context, MidnightReceiver::class.java),

@@ -147,7 +147,7 @@ class BackupManager(
                 .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoFirst).put("calendarMemos", s.calendarMemos)
                 .put("restCheck", s.restCheck)
                 .put("strictRest", s.strictRest).put("sleepTips", s.sleepTips).put("sleepReminders", s.sleepReminders)
-                .put("sleepTarget", s.sleepTargetMinutes),
+                .put("sleepTarget", s.sleepTargetMinutes).put("commute", s.commuteMinutes),
         )
         return root.toString(1)
     }
@@ -308,6 +308,7 @@ class BackupManager(
                     sleepTips = o.optBoolean("sleepTips", s.sleepTips),
                     sleepReminders = o.optBoolean("sleepReminders", s.sleepReminders),
                     sleepTargetMinutes = o.optInt("sleepTarget", s.sleepTargetMinutes).coerceIn(4 * 60, 10 * 60),
+                    commuteMinutes = o.optInt("commute", s.commuteMinutes).coerceIn(0, MAX_COMMUTE_MINUTES),
                     // Old records came back with the backup; offer to fix them again.
                     swapCoversAnswered = s.swapCoversAnswered && extras != null,
                 )
@@ -372,6 +373,8 @@ class BackupManager(
         const val FORMAT_VERSION = 2
         const val MIME_TYPE = "application/json"
         const val SEALED_FORMAT = "bamnat-enc"
+        /** [SLP-14] The longest way home a backup may set. */
+        const val MAX_COMMUTE_MINUTES = 180
         /** A file asking for more work than this is not ours (and would freeze the phone). */
         private const val MAX_ITERATIONS = 5_000_000
     }

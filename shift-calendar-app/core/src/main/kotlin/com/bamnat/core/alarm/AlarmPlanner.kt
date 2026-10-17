@@ -64,10 +64,11 @@ object AlarmPlanner {
     /**
      * Every alarm belonging to [date], earliest first, ignoring whether it is in the past.
      * Alarms set by hand for the date replace the shift's own alarms on that day.
+     * [includeSkipped] gives what a day with its alarms turned off would ring [SLP-14].
      */
-    fun alarmsOn(resolver: ScheduleResolver, date: LocalDate): List<PlannedAlarm> {
+    fun alarmsOn(resolver: ScheduleResolver, date: LocalDate, includeSkipped: Boolean = false): List<PlannedAlarm> {
         val day = resolver.resolve(date)
-        if (day.alarmSkipped) return emptyList()
+        if (day.alarmSkipped && !includeSkipped) return emptyList()
         val type = day.shiftType?.takeIf { day.isWorkDay }
         val start = day.start
         val custom = day.entry?.customAlarms

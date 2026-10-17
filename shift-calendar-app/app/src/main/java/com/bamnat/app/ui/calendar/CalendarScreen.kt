@@ -338,6 +338,10 @@ fun CalendarScreen(
                 },
             )
         }
+        // [SLP-14] 오늘의 흐름 while this month is on screen, for work that comes in shifts and hours.
+        if (settings.sleepTips && settings.workStyle?.usesPayEngine != false && !snap.isEmpty && visibleMonth == YearMonth.from(today)) {
+            TodayFlowSection(vm, snap, settings, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        }
         if (swapCovers.isNotEmpty()) {
             ExtraReviewCard(
                 title = "쉬는 날 대근 ${swapCovers.size}일을 고쳐 주세요",

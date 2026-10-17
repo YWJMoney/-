@@ -75,6 +75,7 @@ import java.io.File
 import androidx.glance.appwidget.compose
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxSize
 import java.time.LocalDate
 import java.time.LocalTime
 import com.bamnat.core.money.DailySales
@@ -657,6 +658,45 @@ class ScreenshotTest {
         tapText("잔업 · 특근 · 대근", exact = true)
     }
     @Test fun foldedFieldDayShifts() = shoot("77_folded_field_day_shifts_toggle", FOLDED, style(WorkStyle.FIELD) { openDay(dayCell); reveal("근무", exact = true) })
+
+    /** [SLP-14] 오늘의 흐름 through a first night and the day after, at fixed times. */
+    private fun flowCards(vararg cards: com.bamnat.core.sleep.TodayFlow.Card): Screen.() -> Unit = {
+        content {
+            androidx.compose.material3.Surface(color = androidx.compose.material3.MaterialTheme.colorScheme.background) {
+                androidx.compose.foundation.layout.Column(
+                    androidx.compose.ui.Modifier.fillMaxSize().padding(16.dp),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
+                ) {
+                    cards.forEach { com.bamnat.app.ui.calendar.TodayFlowCard(it, 420, 60, null, { _, _ -> }, {}, { _, _ -> }, {}) }
+                }
+            }
+        }
+    }
+    private val flowResolver by lazy {
+        val d = ShiftType(11, "주간", "주", 0xFF2F80ED, LocalTime.of(7, 0), LocalTime.of(19, 0), breakMinutes = 60,
+            alarmEnabled = true, alarms = listOf(AlarmSpec(90)))
+        val n = ShiftType(12, "야간", "야", 0xFF6C5CE7, LocalTime.of(19, 0), LocalTime.of(7, 0), breakMinutes = 60,
+            alarmEnabled = true, alarms = listOf(AlarmSpec(90)))
+        val o = ShiftType(13, "휴무", "휴", 0xFF8E9AAF, null, null, isOff = true)
+        com.bamnat.core.schedule.ScheduleResolver(listOf(d, n, o),
+            WorkPattern.Rotation(LocalDate.of(2026, 11, 2), listOf(d.id, n.id, n.id, o.id, o.id)),
+            listOf(com.bamnat.core.model.DayEntry(LocalDate.of(2026, 11, 12), alarmSkipped = true)))
+    }
+    private fun flowAt(d: Int, h: Int, m: Int, log: List<com.bamnat.core.sleep.SleepEntry> = emptyList()) =
+        com.bamnat.core.sleep.TodayFlow.of(java.time.LocalDateTime.of(2026, 11, d, h, m), flowResolver, true, log)
+    @Test fun foldedTodayFlowNight() = shoot("105_folded_today_flow_night", FOLDED, flowCards(
+        flowAt(3, 14, 30), flowAt(4, 1, 0), flowAt(4, 7, 20), flowAt(6, 10, 0),
+    ))
+    @Test fun foldedTodayFlowSleep() = shoot("106_folded_today_flow_sleep", FOLDED, flowCards(
+        flowAt(4, 11, 0, listOf(com.bamnat.core.sleep.SleepEntry(1, java.time.LocalDateTime.of(2026, 11, 4, 8, 12), null))),
+        flowAt(4, 14, 40, listOf(com.bamnat.core.sleep.SleepEntry(1, java.time.LocalDateTime.of(2026, 11, 4, 8, 12), java.time.LocalDateTime.of(2026, 11, 4, 14, 22)))),
+        flowAt(11, 10, 0),
+        flowAt(5, 2, 0, listOf(com.bamnat.core.sleep.SleepEntry(1, java.time.LocalDateTime.of(2026, 11, 4, 8, 12), null))),
+    ))
+    @Test fun foldedTodayFlowDark() = shoot("107_folded_today_flow_dark", "w369dp-h905dp-port-night-420dpi", flowCards(
+        flowAt(3, 14, 30), flowAt(4, 7, 20), flowAt(6, 21, 45),
+    ))
+
 
     @Test fun monthImage() = runBlocking {
         val snap = app.container.scheduleRepository.snapshot.first()

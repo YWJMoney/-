@@ -614,7 +614,8 @@ fun SettingsScreen(
 
         // [SLP-03][SLP-04][SLP-06][SLP-07] Sleep that fits the schedule. Suggestions, not treatment.
         SectionCard(title = "수면") {
-            SwitchRow("수면 시간 제안", "날짜를 누르면 근무에 맞춘 낮잠·잠자리 시각과 수면 기록이 보여요", settings.sleepTips) { v ->
+            // [SLP-14]
+            SwitchRow("오늘의 흐름", "달력 맨 위에 지금 할 일 하나와 잘 시간·다음 근무를 보여 줘요. 날짜를 누르면 그날의 수면 제안도 보여요", settings.sleepTips) { v ->
                 vm.update { it.copy(sleepTips = v) }
             }
             SwitchRow("수면 알림", "잠자리·낮잠·카페인 마지막 시각과 야간 뒤 퇴근길 졸음 주의를 알려줘요", settings.sleepReminders) { v ->
@@ -628,6 +629,17 @@ fun SettingsScreen(
                         selected = settings.sleepTargetMinutes == m,
                         onClick = { vm.update { it.copy(sleepTargetMinutes = m) } },
                         label = { Text(if (m % 60 == 0) "${m / 60}시간" else "${m / 60}시간 반") },
+                    )
+                }
+            }
+            // [SLP-14] Sleep after work starts once the user is home.
+            Text("퇴근 후 잠들기까지", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(0, 30, 60, 90, 120).forEach { m ->
+                    FilterChip(
+                        selected = settings.commuteMinutes == m,
+                        onClick = { vm.update { it.copy(commuteMinutes = m) } },
+                        label = { Text(if (m == 0) "바로" else if (m % 60 == 0) "${m / 60}시간" else if (m < 60) "${m}분" else "${m / 60}시간 반") },
                     )
                 }
             }
