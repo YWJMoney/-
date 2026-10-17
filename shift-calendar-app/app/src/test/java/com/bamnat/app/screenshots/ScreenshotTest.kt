@@ -27,12 +27,16 @@ import com.bamnat.app.ui.pay.EditValueDialog
 import com.bamnat.core.pay.CompanyRules
 import com.bamnat.core.pay.ExtraBasis
 import com.bamnat.core.pay.ExtraRule
+import com.bamnat.core.pay.RestDayWork
+import com.bamnat.app.ui.settings.ExtraKindsScreen
+import com.bamnat.app.ui.settings.ExtraKindsViewModel
 import com.bamnat.app.ui.pay.LineDetailDialog
 import com.bamnat.app.ui.pay.PayScreen
 import com.bamnat.app.ui.pay.PayViewModel
 import com.bamnat.app.ui.pay.RaiseDialog
 import com.bamnat.app.ui.pay.ValueTarget
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.snapshots.Snapshot
 import com.bamnat.core.diag.DiagEvents
 import com.bamnat.core.diag.EventBook
 import com.bamnat.core.memo.ChecklistItem
@@ -40,7 +44,19 @@ import com.bamnat.core.memo.Memo
 import com.bamnat.core.money.FixedCost
 import com.bamnat.core.model.AlarmSpec
 import com.bamnat.core.model.DayAlarm
-import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.model.ExtraKind
+import com.bamnat.core.model.ShiftType
+import com.bamnat.app.ui.Fmt
+import android.view.View
+import android.view.ViewGroup
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.ViewRootForTest
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getAllSemanticsNodes
+import androidx.compose.ui.semantics.getOrNull
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.WorkPattern
 import kotlinx.coroutines.flow.first
@@ -76,6 +92,15 @@ class ScreenshotTest {
 
     private val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()
     private val today = LocalDate.now()
+    /** The day most day screenshots open: 잔업 2시간 and a memo with an amount. */
+    private val dayCell = today.minusDays(2)
+    /** 특근 09–18 on a day off, before today; 야간 대근 on a day off after it. */
+    private lateinit var restDayExtra: LocalDate
+    private lateinit var coverDay: LocalDate
+
+    /** A 대근 of [t]: that shift's hours, as the calendar adds it. */
+    private fun cover(t: ShiftType) =
+        ExtraEntry(ExtraKind.COVER_ID, t.start, t.end, t.breakMinutes, t.breakStart.takeIf { t.breakMinutes > 0 }, coveredShiftId = t.id)
 
     @Before
     fun seed() = runBlocking<Unit> {
@@ -94,15 +119,16 @@ class ScreenshotTest {
         val off = types.getValue("휴무").id
         repo.savePattern(WorkPattern.Rotation(LocalDate.of(2026, 7, 1), listOf(day, day, night, night, off)))
 
-        // A swapped shift, overtime, a day of holiday work and a skipped alarm this month.
+        // A swapped shift, 잔업, 특근 and a 야간 대근 on days off, and a skipped alarm this month [EXTRA-01].
         repo.setOverride(today.plusDays(3), ShiftOverride.Shift(evening))
-        repo.setOvertime(today.minusDays(2), 120)
+        repo.addExtra(dayCell, ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120))
         val pattern = WorkPattern.Rotation(LocalDate.of(2026, 7, 1), listOf(day, day, night, night, off))
-        val nextOff = (1..10).map { today.minusDays(it.toLong()) }.first { pattern.shiftTypeIdOn(it) == off }
-        repo.setExtraWork(nextOff, ExtraWork.SPECIAL, 8 * 60, workDay = false)
-        val laterOff = (1..10).map { today.plusDays(it.toLong()) }.first { pattern.shiftTypeIdOn(it) == off }
-        repo.setExtraWork(laterOff, ExtraWork.COVER, 12 * 60, workDay = false)
-        repo.setExtraWork(today.plusDays(1), ExtraWork.OVERTIME, 2 * 60, workDay = true)
+        val nightType = repo.shiftTypes.first().first { it.id == night }
+        restDayExtra = (1..10).map { today.minusDays(it.toLong()) }.first { pattern.shiftTypeIdOn(it) == off }
+        repo.addExtra(restDayExtra, ExtraEntry(ExtraKind.SPECIAL_ID, LocalTime.of(9, 0), LocalTime.of(18, 0), 60, LocalTime.of(12, 0)))
+        coverDay = (1..10).map { today.plusDays(it.toLong()) }.first { pattern.shiftTypeIdOn(it) == off }
+        repo.addExtra(coverDay, cover(nightType))
+        repo.addExtra((1..6).map { today.plusDays(it.toLong()) }.first { pattern.shiftTypeIdOn(it) != off }, ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120))
         repo.setAlarmSkipped(today.plusDays(6), true)
         // [FEAT-10] 반차 today and a whole day of 연차 for the check-up on the first working day after it.
         repo.setLeave(today, Leave(LeaveKind.ANNUAL, 2))
@@ -110,8 +136,7 @@ class ScreenshotTest {
         repo.setLeave(checkUp, Leave())
         // [FEAT-02] 주간 then a 야간 대근 on the next working day after the check-up.
         val doubleDay = (1..6).map { checkUp.plusDays(it.toLong()) }.first { pattern.shiftTypeIdOn(it) == day }
-        repo.setSecondShift(doubleDay, night)
-        repo.setExtraWork(doubleDay, ExtraWork.COVER, 0, workDay = true)
+        repo.addExtra(doubleDay, cover(nightType))
         repo.setDayAlarms(today, listOf(DayAlarm(LocalTime.of(6, 10)), DayAlarm(LocalTime.of(6, 30), enabled = false)))
 
         val memos = c.memoRepository
@@ -175,9 +200,8 @@ class ScreenshotTest {
                 bmp = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
                 val canvas = Canvas(bmp)
                 view.draw(canvas)
-                // Dialogs live in their own window, so they are drawn on top by hand.
-                val dialog = ShadowDialog.getLatestDialog()
-                if (dialog != null && dialog.isShowing) {
+                // Dialogs and sheets live in their own windows, so they are drawn on top by hand, oldest first.
+                for (dialog in shownDialogs()) {
                     canvas.drawColor(0x66000000)
                     val dv = dialog.window!!.decorView
                     canvas.save()
@@ -191,27 +215,136 @@ class ScreenshotTest {
         }
     }
 
-    /** Lets Room deliver on its background threads and the UI draw, then finishes animations. */
+    /** Dialogs still open, oldest first: a time picker over a sheet is two. */
+    private fun shownDialogs() = ShadowDialog.getShownDialogs().filter { it.isShowing }.distinct()
+
+    /**
+     * Lets Room deliver on its background threads and the UI draw, then finishes animations. State
+     * written outside composition (a tap, new content) is applied by hand: after many tests in one
+     * JVM, Compose's own apply loop can stop being run by the reset main looper, and then a tap or a
+     * new screen is never drawn.
+     */
     private fun settle() {
         repeat(20) {
             Thread.sleep(50)
+            Snapshot.sendApplyNotifications()
             shadowOf(Looper.getMainLooper()).idle()
             compose.mainClock.advanceTimeBy(100)
         }
     }
 
     /**
-     * Touches go straight to the window: looking nodes up in the semantics tree of the
-     * 2400-page month pager is too slow under Robolectric. Points are in px of the window.
+     * Touches go straight to the window. [QA-02] Taps find their target by the words on it in the
+     * topmost window (a dialog or sheet when one is open), scrolling until it shows, so a layout
+     * change can no longer land a tap on something else; only the tab bar and drags use points.
      */
     inner class Screen(private val scenario: ActivityScenario<MainActivity>) {
+        private fun topWindow(activity: MainActivity): View = shownDialogs().lastOrNull()?.window?.decorView ?: activity.window.decorView
+
+        private fun rootOf(v: View): ViewRootForTest? {
+            if (v is ViewRootForTest) return v
+            if (v is ViewGroup) for (i in 0 until v.childCount) rootOf(v.getChildAt(i))?.let { return it }
+            return null
+        }
+
+        private fun SemanticsNode.words(): List<String> =
+            config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } +
+                config.getOrNull(SemanticsProperties.ContentDescription).orEmpty() +
+                listOfNotNull(config.getOrNull(SemanticsProperties.EditableText)?.text)
+
+        /** The first node on screen showing [text] (whole words with [exact], the start with [prefix]): clickable ones first. */
+        private fun find(text: String, exact: Boolean, prefix: Boolean): SemanticsNode? {
+            var found: SemanticsNode? = null
+            scenario.onActivity { activity ->
+                val root = rootOf(topWindow(activity)) ?: return@onActivity
+                val shown = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true).filter { n ->
+                    val b = n.boundsInWindow
+                    b.width > 1f && b.height > 1f && n.words().any { w -> if (exact) w == text else if (prefix) w.startsWith(text) else text in w }
+                }
+                found = shown.firstOrNull { it.config.contains(SemanticsActions.OnClick) } ?: shown.firstOrNull()
+            }
+            return found
+        }
+
+        /** Scrolls the content up until [text] shows, and returns where it is. */
+        private fun reach(text: String, exact: Boolean, prefix: Boolean, scrolls: Int, across: Float): SemanticsNode {
+            repeat(scrolls + 1) { i ->
+                find(text, exact, prefix)?.let { return it }
+                if (i < scrolls) scrollUp(350, across)
+            }
+            error("화면에서 ‘$text’를 찾지 못했어요. 보이는 글자: " + shownWords().joinToString(" | ").take(1500))
+        }
+
+        /** Every word on screen, for a failure message that says what was there instead. */
+        private fun shownWords(): List<String> {
+            val words = mutableListOf<String>()
+            scenario.onActivity { activity ->
+                val root = rootOf(topWindow(activity)) ?: return@onActivity
+                root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true)
+                    .filter { it.boundsInWindow.width > 1f && it.boundsInWindow.height > 1f }
+                    .forEach { words += it.words() }
+            }
+            return words
+        }
+
+        private fun touch(at: Offset, hold: Int = 1) {
+            scenario.onActivity { activity ->
+                val target = topWindow(activity)
+                val start = SystemClock.uptimeMillis()
+                val n = hold + 1
+                repeat(n) { i ->
+                    val action = when (i) { 0 -> MotionEvent.ACTION_DOWN; n - 1 -> MotionEvent.ACTION_UP; else -> MotionEvent.ACTION_MOVE }
+                    target.dispatchTouchEvent(MotionEvent.obtain(start, start + i * 16L, action, at.x, at.y, 0))
+                    shadowOf(Looper.getMainLooper()).idle()
+                    compose.mainClock.advanceTimeBy(16)
+                }
+            }
+            settle()
+        }
+
+        /** [QA-02] Taps what shows [text], scrolling down to it first when it is below. */
+        fun tapText(text: String, exact: Boolean = false, prefix: Boolean = false, scrolls: Int = 8, across: Float = 0.5f) {
+            reach(text, exact, prefix, scrolls, across)
+            // Where it is once a scroll or late data has stopped moving things.
+            settle()
+            touch(reach(text, exact, prefix, 0, across).boundsInWindow.center)
+        }
+
+        /** Scrolls until [text] shows near the top of the screen, without tapping it. */
+        fun reveal(text: String, exact: Boolean = false, across: Float = 0.5f) {
+            val node = reach(text, exact, prefix = false, scrolls = 10, across = across)
+            // Bring it up from the bottom edge so what follows it shows too, below a sheet's fixed day header.
+            val dp = app.resources.displayMetrics.density
+            val y = node.boundsInWindow.top / dp
+            val to = app.resources.configuration.screenHeightDp / 3
+            if (y > to + 80) scrollUp((y - to).toInt(), across)
+        }
+
+        /** [DAY-02] Opens a day group when it is closed; a group with something to say may already be open. */
+        fun openGroup(title: String) {
+            val node = reach(title, exact = true, prefix = false, scrolls = 10, across = 0.5f)
+            if (node.config.getOrNull(SemanticsActions.OnClick)?.label == "펼치기") touch(node.boundsInWindow.center)
+        }
+
+        /** Holds a finger on what shows [text], for its quick menu. */
+        fun longPressText(text: String, prefix: Boolean = false) = touch(reach(text, false, prefix, 0, 0.5f).boundsInWindow.center, hold = 40)
+
+        /** [DAY-01] Opens a day: a tap selects it and shows its preview, a tap on the chosen day opens it whole. */
+        fun openDay(date: LocalDate) {
+            val title = Fmt.dayTitle(date)
+            if (find(title, exact = false, prefix = true)?.config?.getOrNull(SemanticsProperties.Selected) != true) tapText(title, prefix = true, scrolls = 0)
+            tapText(title, prefix = true, scrolls = 0)
+        }
+
+        /** Selects a day without opening it. */
+        fun selectDay(date: LocalDate) = tapText(Fmt.dayTitle(date), prefix = true, scrolls = 0)
+
         private fun gesture(points: (width: Int, height: Int, density: Float) -> List<Pair<Float, Float>>) {
             scenario.onActivity { activity ->
                 val view = activity.window.decorView
                 val path = points(view.width, view.height, activity.resources.displayMetrics.density)
                 // An open dialog takes the touches; its window is centered on the screen.
-                val dialog = ShadowDialog.getLatestDialog()?.takeIf { it.isShowing }
-                val target = dialog?.window?.decorView ?: view
+                val target = topWindow(activity)
                 val dx = (view.width - target.width) / 2f
                 val dy = (view.height - target.height) / 2f
                 val start = SystemClock.uptimeMillis()
@@ -238,12 +371,12 @@ class ScreenshotTest {
             listOf(p, p)
         }
 
-        /** Taps a point given in dp from the top-left, or from the right edge when [fromRight]. */
         /** Replaces the activity's content, for screens that are slow to reach by touch. */
         fun content(body: @androidx.compose.runtime.Composable () -> Unit) {
             scenario.onActivity { activity -> activity.setContent { BamnatTheme { body() } } }
         }
 
+        /** Taps a point given in dp from the top-left, or from the right edge when [fromRight]. */
         fun tap(xDp: Float, yDp: Float, fromRight: Boolean = false) = gesture { w, _, d ->
             val p = (if (fromRight) w - xDp * d else xDp * d) to yDp * d
             listOf(p, p)
@@ -264,25 +397,25 @@ class ScreenshotTest {
     }
 
     @Test fun foldedCalendar() = shoot("1_folded_calendar", FOLDED)
-    @Test fun foldedDayDetail() = shoot("2_folded_day_sheet", FOLDED) { tap(DAY_X, DAY_Y) }
+    @Test fun foldedDayDetail() = shoot("2_folded_day_sheet", FOLDED) { openDay(dayCell) }
     @Test fun foldedDaySheetScrolled() = shoot("2b_folded_day_sheet_extra", FOLDED) {
-        tap(DAY_X, DAY_Y)
-        scrollUp(500)
+        openDay(dayCell)
+        reveal("메모", exact = true)
     }
     @Test fun foldedExtraWorkDay() = shoot("19_folded_extra_work_day", FOLDED) {
-        tap(EXTRA_DAY_X, DAY_Y)
-        scrollUp(250)
+        openDay(restDayExtra)
+        reveal("추가 근무", exact = true)
     }
     @Test fun foldedTimeWheel() = shoot("20_folded_time_wheel", FOLDED) {
         tab(4, wide = false)
-        tap(180f, SETTINGS_SHIFT_TYPES_Y)
-        tap(150f, 270f)
-        tap(100f, 470f)
+        tapText("근무 유형", exact = true)
+        tapText("주간", exact = true)
+        tapText("시작", exact = true)
     }
     @Test fun foldedPatternChange() = shoot("21_folded_pattern_change", FOLDED) {
         tab(4, wide = false)
-        tap(180f, SETTINGS_PATTERN_Y)
-        tap(30f, 32f, fromRight = true)
+        tapText("근무 패턴", exact = true)
+        tapText("저장", exact = true)
     }
     @Test fun foldedStats() = shoot("3_folded_stats", FOLDED) { tab(3, wide = false) }
     @Test fun foldedSettings() = shoot("4_folded_settings", FOLDED) { tab(4, wide = false) }
@@ -294,38 +427,38 @@ class ScreenshotTest {
     @Test fun foldedCalendarMemos() = shoot("9_folded_memos_calendar", FOLDED) { tab(2, wide = false) }
     @Test fun foldedGeneralMemos() = shoot("10_folded_memos_general", FOLDED) {
         tab(2, wide = false)
-        tap(276f, TAB_ROW_Y)
+        tapText("일반 메모", prefix = true)
     }
     @Test fun foldedTrash() = shoot("11_folded_trash", FOLDED) {
         tab(2, wide = false)
-        tap(28f, 32f, fromRight = true)
+        tapText("휴지통", exact = true)
     }
     @Test fun unfoldedMemos() = shoot("12_unfolded_memos", UNFOLDED) { tab(2, wide = true) }
     @Test fun foldedShiftTypes() = shoot("13_folded_shift_types", FOLDED) {
         tab(4, wide = false)
-        tap(180f, SETTINGS_SHIFT_TYPES_Y)
+        tapText("근무 유형", exact = true)
     }
     @Test fun foldedPattern() = shoot("14_folded_pattern", FOLDED) {
         tab(4, wide = false)
-        tap(180f, SETTINGS_PATTERN_Y)
+        tapText("근무 패턴", exact = true)
     }
     @Test fun foldedDayAlarmEditor() = shoot("15_folded_day_alarm_editor", FOLDED) {
-        tap(DAY_X, DAY_Y)
-        scrollUp(DAY_ALARM_SCROLL)
-        tap(180f, DAY_ALARM_EDIT_Y)
+        openDay(dayCell)
+        openGroup("알람")
+        tapText("이 날만 알람")
     }
 
     @Test fun foldedShiftTypeEditor() = shoot("16_folded_shift_type_editor", FOLDED) {
         tab(4, wide = false)
-        tap(180f, SETTINGS_SHIFT_TYPES_Y)
-        tap(150f, 270f)
+        tapText("근무 유형", exact = true)
+        tapText("주간", exact = true)
     }
 
     @Test fun foldedShiftTypeAlarms() = shoot("17_folded_shift_type_alarms", FOLDED) {
         tab(4, wide = false)
-        tap(180f, SETTINGS_SHIFT_TYPES_Y)
-        tap(150f, 270f)
-        scrollUp(600)
+        tapText("근무 유형", exact = true)
+        tapText("주간", exact = true)
+        reveal("알람 추가")
     }
     @Test fun foldedDiagnostics() = shoot("22_folded_diagnostics", FOLDED) {
         val c = app.container
@@ -338,11 +471,11 @@ class ScreenshotTest {
         content { DiagnosticsScreen(vm, onBack = {}) }
     }
 
-    /** 대근 at 200% with 8 hours credited, 특근 at a fixed amount: a typical company setup. */
+    /** [EXTRA-03] 대근 1회 기본급의 10% for 8 hours with the 연장·야간 가산 on top, 특근 a fixed amount. */
     private val companyRules = CompanyRules(
         extra = mapOf(
-            ExtraWork.COVER to ExtraRule(ExtraBasis.HOURLY_RATE, multiplier = 2.0, minMinutes = 480),
-            ExtraWork.SPECIAL to ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 150_000),
+            ExtraKind.COVER_ID to ExtraRule(ExtraBasis.PERCENT_OF_BASE, percentOfBase = 0.1, coverMinutes = 480, legalPremiums = true),
+            ExtraKind.SPECIAL_ID to ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 150_000),
         ),
         annualLeaveDays = 15.0,
     )
@@ -366,19 +499,20 @@ class ScreenshotTest {
         c.settingsRepository.update { it.copy(tier = Tier.PRO) }
         runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(rules = companyRules), keepUndo = false) }
         settle()
-        tap(EXTRA_DAY_X, DAY_Y)
-        scrollUp(560)
+        openDay(restDayExtra)
+        openGroup("돈")
+        reveal("돈", exact = true)
     }
     @Test fun foldedCompanyRules() = shoot("34_folded_company_rules", FOLDED, payScreen(Tier.PRO, withProfile = true) { vm ->
         val profile = vm.profile.collectAsState().value
         val snap = vm.snapshot.collectAsState().value
-        if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {})
+        if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {}, onOpenKinds = {})
     })
     @Test fun foldedCompanyRulesExtra() = shoot("35_folded_company_rules_extra", FOLDED) {
         payScreen(Tier.PRO, withProfile = true) { vm ->
             val profile = vm.profile.collectAsState().value
             val snap = vm.snapshot.collectAsState().value
-            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {})
+            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {}, onOpenKinds = {})
         }.invoke(this)
         scrollUp(700)
     }
@@ -388,14 +522,13 @@ class ScreenshotTest {
     }
 
     @Test fun foldedLeaveDay() = shoot("37_folded_leave_day", FOLDED) {
-        tap(DAY_X + 51f, DAY_Y)
-        scrollUp(500)
-        scrollUp(420)
+        openDay(today)
+        reveal("휴가", exact = true)
     }
     @Test fun foldedShiftIcons() = shoot("38_folded_shift_icons", FOLDED) {
         tab(4, wide = false)
-        tap(180f, SETTINGS_SHIFT_TYPES_Y)
-        tap(150f, 270f)
+        tapText("근무 유형", exact = true)
+        tapText("주간", exact = true)
         scrollUp(330)
     }
     @Test fun foldedPayLeave() = shoot("39_folded_pay_leave", FOLDED) {
@@ -408,15 +541,15 @@ class ScreenshotTest {
     }
     @Test fun foldedBreakStart() = shoot("42_folded_break_start", FOLDED) {
         tab(4, wide = false)
-        tap(180f, SETTINGS_SHIFT_TYPES_Y)
-        tap(150f, 270f)
+        tapText("근무 유형", exact = true)
+        tapText("주간", exact = true)
         scrollUp(150)
     }
     @Test fun foldedRulesLeave() = shoot("43_folded_rules_leave", FOLDED) {
         payScreen(Tier.PRO, withProfile = true) { vm ->
             val profile = vm.profile.collectAsState().value
             val snap = vm.snapshot.collectAsState().value
-            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {})
+            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {}, onOpenKinds = {})
         }.invoke(this)
         scrollUp(800)
         scrollUp(800)
@@ -436,9 +569,70 @@ class ScreenshotTest {
         content {
             val profile = vm.profile.collectAsState().value
             val snap = vm.snapshot.collectAsState().value
-            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {})
+            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {}, onOpenKinds = {})
         }
         settle()
+    }
+    // ---- M9 [EXTRA-01..06][DAY-01..03][VIS-01] ----
+    /** The 잔업·특근·대근 screen with pay set up, so the editor shows the company's way and the preview. */
+    private fun kindsScreen(rules: (nightId: Long) -> CompanyRules = { companyRules }): Screen.() -> Unit = {
+        val c = app.container
+        c.settingsRepository.update { it.copy(tier = Tier.PRO) }
+        val nightId = runBlocking { c.scheduleRepository.snapshot.first().shiftTypes.first { it.name == "야간" }.id }
+        runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(rules = rules(nightId)), keepUndo = false) }
+        settle()
+        val vm = ExtraKindsViewModel(c)
+        content { ExtraKindsScreen(vm, onBack = {}, onOpenPay = {}) }
+        settle()
+    }
+    @Test fun foldedKindEditor() = shoot("94_folded_kind_editor", FOLDED) {
+        kindsScreen().invoke(this)
+        tapText("대근", exact = true)
+    }
+    @Test fun foldedKindPay() = shoot("95_folded_kind_pay_preview", FOLDED) {
+        kindsScreen().invoke(this)
+        tapText("대근", exact = true)
+        reveal("회사는 대근을 어떻게 계산하나요?", exact = true)
+        tapText("한 번 하면", scrolls = 0)
+    }
+    @Test fun foldedKindTemplates() = shoot("96_folded_kind_templates", FOLDED) {
+        kindsScreen().invoke(this)
+        tapText("종류 추가", exact = true, scrolls = 0)
+    }
+    @Test fun foldedDayPreview() = shoot("97_folded_day_preview", FOLDED) { selectDay(dayCell) }
+    @Test fun foldedCoverDay() = shoot("98_folded_cover_day", FOLDED) { openDay(coverDay) }
+    @Test fun foldedRulesKinds() = shoot("99_folded_rules_kinds", FOLDED) {
+        rulesEditor { companyRules }.invoke(this)
+        reveal("종류·시간·급여 방식 정하기", exact = true)
+    }
+    @Test fun foldedRulesRestDay() = shoot("100_folded_rules_rest_day", FOLDED) {
+        rulesEditor { companyRules.copy(weeklyHoliday = com.bamnat.core.pay.WeeklyHoliday.Fixed(java.time.DayOfWeek.SUNDAY)) }.invoke(this)
+        reveal("쉬는 날(휴무일)에 일하면", exact = true)
+    }
+    /** A 1.8 user kept on 휴일근로로 sees once what 법대로 would pay. */
+    @Test fun foldedPayRestCompare() = shoot("101_folded_pay_rest_compare", FOLDED) {
+        payScreen(Tier.PRO, withProfile = true, adjust = { it.copy(rules = it.rules.copy(restDayWork = RestDayWork.HOLIDAY)) }).invoke(this)
+        reveal("쉬는 날 근무, 법대로와 비교해 보세요", exact = true)
+    }
+    /** [EXTRA-05] A record carried over from 1.8 without times asks for one look. */
+    @Test fun foldedExtraReviewCard() = shoot("102_folded_extra_review_card", FOLDED) {
+        runBlocking { app.container.scheduleRepository.addExtra(today.minusDays(5), ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 90, needsReview = true)) }
+        settle()
+    }
+    @Test fun foldedExtraReviewDialog() = shoot("102b_folded_extra_review_dialog", FOLDED) {
+        runBlocking { app.container.scheduleRepository.addExtra(today.minusDays(5), ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 90, needsReview = true)) }
+        settle()
+        tapText("확인하기", exact = true, scrolls = 0)
+        check(shownDialogs().isNotEmpty()) { "확인 창이 열리지 않았어요" }
+    }
+    @Test fun foldedKindReport() = shoot("103_folded_kind_report", FOLDED) {
+        kindsScreen().invoke(this)
+        tapText("대근", exact = true)
+        tapText("회사 방식 알려 주기", exact = true)
+    }
+    @Test fun unfoldedKindEditor() = shoot("104_unfolded_kind_editor", UNFOLDED) {
+        kindsScreen().invoke(this)
+        tapText("대근", exact = true)
     }
     @Test fun foldedMemoFirstCalendar() = shoot("71_folded_memo_first_calendar", FOLDED) {
         app.container.settingsRepository.update { it.copy(memoFirst = true) }
@@ -451,18 +645,18 @@ class ScreenshotTest {
         scrollUp(800)
     }
     @Test fun foldedRulesPerShift() = shoot("74_folded_rules_cover_per_shift", FOLDED) {
-        rulesEditor { night ->
-            companyRules.copy(extraByShift = mapOf(ExtraWork.COVER to mapOf(night to ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 100_000))))
+        kindsScreen { night ->
+            companyRules.copy(extraByShift = mapOf(ExtraKind.COVER_ID to mapOf(night to ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 100_000))))
         }.invoke(this)
-        repeat(3) { scrollUp(800) }
+        tapText("대근", exact = true)
+        tapText("야간 ·", prefix = true)
+        reveal("야간 대근", exact = true)
     }
-    @Test fun foldedExtraKinds() = shoot("76_folded_extra_kinds", FOLDED, payScreen(Tier.PRO, withProfile = true) { _ ->
-        com.bamnat.app.ui.settings.ExtraKindsDialog(
-            com.bamnat.core.model.ExtraKinds(names = mapOf(ExtraWork.OVERTIME to "조출"), minutes = mapOf(ExtraWork.COVER to 720)),
-            onDismiss = {}, onSave = {},
-        )
-    })
-    @Test fun foldedFieldDayShifts() = shoot("77_folded_field_day_shifts_toggle", FOLDED, style(WorkStyle.FIELD) { tap(DAY_X, DAY_Y); scrollUp(600) })
+    @Test fun foldedExtraKinds() = shoot("76_folded_extra_kinds", FOLDED) {
+        tab(4, wide = false)
+        tapText("잔업 · 특근 · 대근", exact = true)
+    }
+    @Test fun foldedFieldDayShifts() = shoot("77_folded_field_day_shifts_toggle", FOLDED, style(WorkStyle.FIELD) { openDay(dayCell); reveal("근무", exact = true) })
 
     @Test fun monthImage() = runBlocking {
         val snap = app.container.scheduleRepository.snapshot.first()
@@ -505,7 +699,7 @@ class ScreenshotTest {
     @Test fun unfoldedMoney() = shoot("53_unfolded_money", UNFOLDED) { tab(1, wide = true) }
     // [WORK-02] Field work: jobs on the calendar and owed money.
     @Test fun foldedFieldCalendar() = shoot("54_folded_field_calendar", FOLDED, style(WorkStyle.FIELD))
-    @Test fun foldedFieldDay() = shoot("55_folded_field_day", FOLDED, style(WorkStyle.FIELD) { tap(DAY_X, DAY_Y) })
+    @Test fun foldedFieldDay() = shoot("55_folded_field_day", FOLDED, style(WorkStyle.FIELD) { openDay(dayCell) })
     @Test fun foldedFieldMoney() = shoot("56_folded_field_money", FOLDED, style(WorkStyle.FIELD) { tab(1, wide = false) })
     @Test fun foldedJobDialog() = shoot("57_folded_job_dialog", FOLDED) {
         content { com.bamnat.app.ui.money.JobDialog(today, null, onSave = {}, onDismiss = {}) }
@@ -519,7 +713,7 @@ class ScreenshotTest {
         scrollUp(500, across = 0.5f)
     }
     // [LEDG-01] A shift worker's day: the side-job chip sits with the spend/income chips.
-    @Test fun foldedShiftDayMoney() = shoot("64_folded_shift_day_money", FOLDED) { tap(DAY_X, DAY_Y); repeat(3) { scrollUp(700, across = 0.5f) } }
+    @Test fun foldedShiftDayMoney() = shoot("64_folded_shift_day_money", FOLDED) { openDay(dayCell); openGroup("돈"); reveal("돈", exact = true) }
     // [LEDG-02][LEDG-05] The money tab with new lines from notifications and what leaves this week.
     @Test fun foldedMoneyNew() = shoot("65_folded_money_new_records", FOLDED) { tab(1, wide = false) }
     @Test fun foldedMoneyAuto() = shoot("66_folded_money_auto_record", FOLDED) { tab(1, wide = false); repeat(2) { scrollUp(700, across = 0.3f) } }
@@ -538,9 +732,9 @@ class ScreenshotTest {
         content { com.bamnat.app.ui.money.FixedCostDialog(null, onSave = {}, onDelete = {}, onDismiss = {}) }
     }
     // [WORK-05] "+50,000" in the day's memo is offered as income.
-    @Test fun foldedMemoAmount() = shoot("69_folded_memo_amount", FOLDED) { tap(DAY_X, DAY_Y); repeat(3) { scrollUp(700, across = 0.5f) } }
+    @Test fun foldedMemoAmount() = shoot("69_folded_memo_amount", FOLDED) { openDay(dayCell); openGroup("돈"); reveal("돈", exact = true) }
     // [WORK-03] A shop's day and month.
-    @Test fun foldedBusinessDay() = shoot("58_folded_business_day", FOLDED, style(WorkStyle.BUSINESS) { tap(DAY_X, DAY_Y) })
+    @Test fun foldedBusinessDay() = shoot("58_folded_business_day", FOLDED, style(WorkStyle.BUSINESS) { openDay(dayCell) })
     @Test fun foldedBusinessMoney() = shoot("59_folded_business_money", FOLDED, style(WorkStyle.BUSINESS) { tab(1, wide = false) })
     @Test fun foldedEntryDialog() = shoot("60_folded_entry_dialog", FOLDED) {
         content { com.bamnat.app.ui.money.EntryDialog(today, null, onSave = {}, onDismiss = {}) }
@@ -562,10 +756,10 @@ class ScreenshotTest {
         settle()
     }
     @Test fun foldedDayRestWarning() = shoot("78_folded_day_rest_warning", FOLDED) {
-        nightIntoDay().invoke(this); tap(DAY_X, DAY_Y)
+        nightIntoDay().invoke(this); openDay(today.minusDays(3)); reveal("몸", exact = true)
     }
     @Test fun foldedDayHistory() = shoot("79_folded_day_change_history", FOLDED) {
-        nightIntoDay().invoke(this); tap(DAY_X, DAY_Y); repeat(5) { scrollUp(800, across = 0.5f) }
+        nightIntoDay().invoke(this); openDay(today.minusDays(3)); openGroup("기록"); reveal("기록", exact = true)
     }
     @Test fun foldedMonthRest() = shoot("80_folded_month_rest_check", FOLDED) { nightIntoDay().invoke(this); scrollUp(700) }
     @Test fun foldedLeaveCarry() = shoot("81_folded_rules_leave_carry", FOLDED) {
@@ -599,9 +793,9 @@ class ScreenshotTest {
             repo.setOverride(today.minusDays(3), ShiftOverride.Shift(types.getValue("야간").id))
         }
         settle()
-        tap(DAY_X, DAY_Y)
-        scrollUp(800, across = 0.5f)
-        scrollUp(500, across = 0.5f)
+        openDay(dayCell)
+        openGroup("몸")
+        reveal("몸", exact = true)
     }
     @Test fun foldedTodaySleepLog() = shoot("86_folded_today_sleep_log", FOLDED) {
         runBlocking {
@@ -613,9 +807,9 @@ class ScreenshotTest {
             dao.insert(com.bamnat.app.data.db.SleepLogEntity(startMillis = ms(1, 22), endMillis = ms(0, 4)))
         }
         settle()
-        tap(TODAY_X, DAY_Y)
-        scrollUp(800, across = 0.5f)
-        scrollUp(450, across = 0.5f)
+        openDay(today)
+        openGroup("몸")
+        reveal("몸", exact = true)
     }
     @Test fun foldedStrictRest() = shoot("87_folded_month_rest_strict", FOLDED) {
         app.container.settingsRepository.update { it.copy(strictRest = true) }
@@ -637,7 +831,8 @@ class ScreenshotTest {
             app.container.database.sleepDao().insert(com.bamnat.app.data.db.SleepLogEntity(startMillis = ms(2, 23, 30), endMillis = ms(1, 7)))
         }
         settle()
-        tap(TODAY_X, DAY_Y)
+        openDay(today)
+        openGroup("몸")
         fun at(d: Long, h: Int, m: Int = 0) = today.minusDays(d).atTime(h, m)
         app.container.healthSleep.showForTest(com.bamnat.app.sleep.HealthSleep.State.READY, listOf(
             com.bamnat.core.sleep.SleepEntry(start = at(5, 8, 40), end = at(5, 14, 10), imported = true),
@@ -647,8 +842,7 @@ class ScreenshotTest {
             com.bamnat.core.sleep.SleepEntry(start = at(1, 22, 30), end = at(0, 4, 50), imported = true),
         ))
         settle()
-        scrollUp(800, across = 0.5f)
-        scrollUp(450, across = 0.5f)
+        reveal("몸", exact = true)
     }
 
     // ---- M7 [PAYX-14][PAYX-15][UX-01] ----
@@ -659,7 +853,7 @@ class ScreenshotTest {
         payScreen(Tier.PRO, withProfile = true, adjust = closeOn20) { vm ->
             val profile = vm.profile.collectAsState().value
             val snap = vm.snapshot.collectAsState().value
-            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {})
+            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {}, onOpenKinds = {})
         }.invoke(this)
         scrollUp(RULES_PERIOD_SCROLL)
     }
@@ -763,28 +957,16 @@ class ScreenshotTest {
         }
     }
 
-    @Test fun foldedDayAlarmNotice() = shoot("18_folded_day_alarm_notice", FOLDED) {
-        tap(DAY_X, DAY_Y)
-        scrollUp(DAY_ALARM_SCROLL)
-        tap(180f, DAY_ALARM_EDIT_Y)
-        tap(315f, 578f)
+    /** [DAY-02] The day's own alarms with the line that says what they replace; the old notice dialog is gone. */
+    @Test fun foldedDayAlarmGroup() = shoot("18_folded_day_alarm_group", FOLDED) {
+        openDay(today)
+        openGroup("알람")
+        reveal("알람", exact = true)
     }
 
     private companion object {
-        // Touch points in dp, read off the folded screenshots.
-        const val TAB_ROW_Y = 148f
-        const val SETTINGS_SHIFT_TYPES_Y = 206f
-        const val SETTINGS_PATTERN_Y = 139f
-        const val DAY_ALARM_EDIT_Y = 519f
-        const val DAY_ALARM_SCROLL = 600
         const val SETTINGS_SLEEP_SCROLLS = 4
         const val RULES_PERIOD_SCROLL = 420
-        // Today's cell in the folded calendar (row 3, Wednesday).
-        const val DAY_X = 135f
-        const val DAY_Y = 290f
-        /** Today's cell (10/17) on the same row. */
-        const val TODAY_X = 286f
-        const val EXTRA_DAY_X = 84f
 
         // Galaxy Z Fold6: cover screen 968x2376 px and main screen 1856x2160 px at 420 dpi.
         const val FOLDED = "w369dp-h905dp-port-420dpi"
