@@ -112,14 +112,8 @@ class AlarmService : Service() {
 
     private fun startInForeground(ring: RingRequest?) {
         val notification = buildNotification(ring)
-        val media = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
         try {
-            // [OPS-10] The alarm-app type where it exists; mediaPlayback if the system refuses it.
-            val exempted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && runCatching {
-                ServiceCompat.startForeground(this, Notifications.ALARM_NOTIFICATION_ID, notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED)
-            }.isSuccess
-            if (!exempted) ServiceCompat.startForeground(this, Notifications.ALARM_NOTIFICATION_ID, notification, media)
+            ServiceCompat.startForeground(this, Notifications.ALARM_NOTIFICATION_ID, notification, FOREGROUND_TYPE)
         } catch (e: RuntimeException) {
             // Only exact alarms may start a foreground service from the background. If exact alarms
             // were revoked, still show the alarm notification and ring for as long as the system allows.
@@ -258,6 +252,13 @@ class AlarmService : Service() {
         const val ACTION_START = "com.bamnat.app.alarm.START"
         const val ACTION_DISMISS = "com.bamnat.app.alarm.DISMISS"
         const val ACTION_SNOOZE = "com.bamnat.app.alarm.SNOOZE"
+
+        /**
+         * [OPS-10] The alarm-app type on Android 14+, open to apps holding USE_EXACT_ALARM; older
+         * versions need no type. No mediaPlayback, so Play asks for no media playback declaration.
+         */
+        val FOREGROUND_TYPE: Int
+            get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED else 0
 
         private const val REQ_FULL_SCREEN = 2001
         private const val REQ_SNOOZE = 2002

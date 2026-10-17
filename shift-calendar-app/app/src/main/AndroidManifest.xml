@@ -12,7 +12,6 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- [SLP-08] Read only: sleep sessions a watch or the phone wrote to Health Connect. -->
@@ -68,13 +67,14 @@
             android:taskAffinity=""
             android:theme="@style/Theme.Bamnat" />
 
-        <!-- [OPS-10] An alarm app holding USE_EXACT_ALARM rings as systemExempted on Android 14+;
-             mediaPlayback stays for older versions. [REL-10] directBootAware: rings before the first unlock. -->
+        <!-- [OPS-10] An alarm app holding USE_EXACT_ALARM rings as systemExempted on Android 14+, and
+             older versions need no type, so no mediaPlayback (and no Play media playback declaration).
+             [REL-10] directBootAware: rings before the first unlock. -->
         <service
             android:name=".alarm.AlarmService"
             android:directBootAware="true"
             android:exported="false"
-            android:foregroundServiceType="mediaPlayback|systemExempted" />
+            android:foregroundServiceType="systemExempted" />
 
         <receiver
             android:name=".alarm.AlarmReceiver"

@@ -97,7 +97,7 @@ OPS-06,"타깃 API 36, 연장 최종일 2026-11-01 → 즉시",0,완료,,app/bui
 OPS-07,PBL 8 [충돌] → 결제 도입 때 PBL 8 이상으로 시작,2,대기,,
 OPS-08,16KB 페이지 [충돌] → zipalign -c -P 16으로 지금 확인,0,완료,,zipalign -c -P 16 통과(2026-10-14)
 OPS-09,신규 개인 계정 12명×14일 비공개 테스트 → 출시 3주 전 시작,0,대기,G0,
-OPS-10,"정확 알람·전체 화면 알림·포그라운드 서비스 선언, Data safety, 건강 앱 선언 → 심사 전 제출(건강은 수면 기능…","0, 2",진행 중,,"M6: 매니페스트 선언 정리(USE_EXACT_ALARM, 전체 화면 알림, 포그라운드 서비스 mediaPlayback·systemExempted, health.READ_SLEEP). Play Console 제출(포그라운드 서비스·건강 앱 선언, Data safety)은 정식 출시 때; Play 답안 1.7(release/play-console-answers.md): 건강 앱 선언 수면 관리, Health Connect 사용 이유, systemExempted 설명 추가"
+OPS-10,"정확 알람·전체 화면 알림·포그라운드 서비스 선언, Data safety, 건강 앱 선언 → 심사 전 제출(건강은 수면 기능…","0, 2",진행 중,,"M6: 매니페스트 선언 정리(USE_EXACT_ALARM, 전체 화면 알림, 포그라운드 서비스 mediaPlayback·systemExempted, health.READ_SLEEP). Play Console 제출(포그라운드 서비스·건강 앱 선언, Data safety)은 정식 출시 때; Play 답안 1.7(release/play-console-answers.md): 건강 앱 선언 수면 관리, Health Connect 사용 이유, systemExempted 설명 추가; 1.7.1: mediaPlayback·FOREGROUND_SERVICE_MEDIA_PLAYBACK 제거, Android 14+ systemExempted만·13 이하 유형 없음(AlarmService.FOREGROUND_TYPE, AlarmFgsTypeTest)"
 OPS-11,"Android vitals(비정상 종료 1.09%, ANR 0.47%) → 월간 점검, 내부 목표는 더 낮게",상시,대기,G0,
 OPS-12,"API 36 동작 변경(edge-to-edge, 큰 화면 방향 제한 무시, 예측형 뒤로가기) → 폴드·위젯·설정 화면 점검",0,진행 중,,"edge-to-edge·예측형 뒤로가기·resizeable 설정 확인, 실기기 폴드 점검 남음"
 OPS-13,"개인정보 보호법 2026-09-11 시행(72시간 통지, 보호책임자), 처리방침 → 처리방침·보호책임자·유출 대응 절차 문서화",0,완료,,"1.0판 처리방침 게시 https://ywjmoney.github.io/-/privacy/ (운영자 GoodMan_JW, 시행 2026-10-15). 인터넷 권한 없음 → 수집 없음. 수집 기능 추가 시 개정; 1.3판(앱 1.7 기준, 시행 2026-10-24): 수면 기록·Health Connect 수면 읽기·변경 이력·정산 기간·암호 백업·회사 설정 공유·권한 표 반영"
