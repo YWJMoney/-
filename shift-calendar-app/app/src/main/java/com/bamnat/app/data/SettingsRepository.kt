@@ -51,6 +51,14 @@ data class AppSettings(
     val calendarMemos: Boolean = true,
     /** [SLP-01][MKT-07] Rest-gap signs on the calendar and the day view. */
     val restCheck: Boolean = true,
+    /** [MKT-11] Delphi rules on top: at most 2 nights in a row, 2 days off after nights. */
+    val strictRest: Boolean = false,
+    /** [SLP-03] Sleep times that fit the schedule, in the day view. */
+    val sleepTips: Boolean = true,
+    /** [SLP-04][SLP-07] Notifications for those times; off until the user turns them on. */
+    val sleepReminders: Boolean = false,
+    /** [SLP-03][SLP-06] Hours of sleep the user aims for. */
+    val sleepTargetMinutes: Int = 7 * 60,
 ) {
     val limits: HourLimits get() = HourLimits(weeklyLimitHours, averageLimitHours)
 
@@ -116,6 +124,10 @@ class SettingsRepository(context: Context) {
             memoFirst = prefs.getBoolean(K_MEMO_FIRST, d.memoFirst),
             calendarMemos = prefs.getBoolean(K_CAL_MEMOS, d.calendarMemos),
             restCheck = prefs.getBoolean(K_REST_CHECK, d.restCheck),
+            strictRest = prefs.getBoolean(K_STRICT_REST, d.strictRest),
+            sleepTips = prefs.getBoolean(K_SLEEP_TIPS, d.sleepTips),
+            sleepReminders = prefs.getBoolean(K_SLEEP_REMINDERS, d.sleepReminders),
+            sleepTargetMinutes = prefs.getInt(K_SLEEP_TARGET, d.sleepTargetMinutes),
         )
     }
 
@@ -145,6 +157,10 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_MEMO_FIRST, s.memoFirst)
             .putBoolean(K_CAL_MEMOS, s.calendarMemos)
             .putBoolean(K_REST_CHECK, s.restCheck)
+            .putBoolean(K_STRICT_REST, s.strictRest)
+            .putBoolean(K_SLEEP_TIPS, s.sleepTips)
+            .putBoolean(K_SLEEP_REMINDERS, s.sleepReminders)
+            .putInt(K_SLEEP_TARGET, s.sleepTargetMinutes)
             .apply()
     }
 
@@ -173,5 +189,9 @@ class SettingsRepository(context: Context) {
         const val K_MEMO_FIRST = "memo_first"
         const val K_CAL_MEMOS = "calendar_memos"
         const val K_REST_CHECK = "rest_check"
+        const val K_STRICT_REST = "strict_rest"
+        const val K_SLEEP_TIPS = "sleep_tips"
+        const val K_SLEEP_REMINDERS = "sleep_reminders"
+        const val K_SLEEP_TARGET = "sleep_target"
     }
 }

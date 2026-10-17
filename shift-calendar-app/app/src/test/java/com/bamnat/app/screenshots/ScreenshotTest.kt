@@ -586,6 +586,39 @@ class ScreenshotTest {
         settle()
     }
 
+    // ---- M5 [SLP-03][SLP-04][SLP-06][MKT-11] ----
+    @Test fun foldedDaySleepTips() = shoot("85_folded_day_sleep_tips", FOLDED) {
+        val repo = app.container.scheduleRepository
+        runBlocking {
+            val types = repo.shiftTypes.first().associateBy { it.name }
+            repo.setOverride(today.minusDays(4), ShiftOverride.Shift(types.getValue("휴무").id))
+            repo.setOverride(today.minusDays(3), ShiftOverride.Shift(types.getValue("야간").id))
+        }
+        settle()
+        tap(DAY_X, DAY_Y)
+        scrollUp(800, across = 0.5f)
+        scrollUp(500, across = 0.5f)
+    }
+    @Test fun foldedTodaySleepLog() = shoot("86_folded_today_sleep_log", FOLDED) {
+        runBlocking {
+            val dao = app.container.database.sleepDao()
+            val zone = java.time.ZoneId.systemDefault()
+            fun ms(d: Long, h: Int, m: Int = 0) = today.minusDays(d).atTime(h, m).atZone(zone).toInstant().toEpochMilli()
+            dao.insert(com.bamnat.app.data.db.SleepLogEntity(startMillis = ms(3, 23), endMillis = ms(2, 5, 30)))
+            dao.insert(com.bamnat.app.data.db.SleepLogEntity(startMillis = ms(2, 23, 30), endMillis = ms(1, 7)))
+            dao.insert(com.bamnat.app.data.db.SleepLogEntity(startMillis = ms(1, 22), endMillis = ms(0, 4)))
+        }
+        settle()
+        tap(TODAY_X, DAY_Y)
+        scrollUp(800, across = 0.5f)
+        scrollUp(450, across = 0.5f)
+    }
+    @Test fun foldedStrictRest() = shoot("87_folded_month_rest_strict", FOLDED) {
+        app.container.settingsRepository.update { it.copy(strictRest = true) }
+        settle()
+        scrollUp(700)
+    }
+
     private fun fresh(s: WorkStyle?, then: Screen.() -> Unit = {}): Screen.() -> Unit {
         runBlocking { app.container.scheduleRepository.clearPattern() }
         app.container.settingsRepository.update { it.copy(workStyle = s) }
@@ -690,6 +723,8 @@ class ScreenshotTest {
         // Today's cell in the folded calendar (row 3, Wednesday).
         const val DAY_X = 135f
         const val DAY_Y = 290f
+        /** Today's cell (10/17) on the same row. */
+        const val TODAY_X = 286f
         const val EXTRA_DAY_X = 84f
 
         // Galaxy Z Fold6: cover screen 968x2376 px and main screen 1856x2160 px at 420 dpi.

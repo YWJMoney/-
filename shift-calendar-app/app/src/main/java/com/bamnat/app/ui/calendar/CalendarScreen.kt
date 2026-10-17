@@ -331,7 +331,7 @@ fun CalendarScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
             if (settings.restCheck) {
-                val rest = remember(snap, visibleMonth) { vm.restIssues(snap, visibleMonth) }
+                val rest = remember(snap, visibleMonth, settings.strictRest) { vm.restIssues(snap, visibleMonth, settings.strictRest) }
                 MonthRestCard(rest, onPick = vm::select, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp))
             }
         }

@@ -113,6 +113,10 @@ class BackupManager(
         root.put("rules", JSONArray().apply {
             money.allRules().forEach { r -> put(JSONObject().put("merchant", r.merchant).put("category", r.category)) }
         })
+        // [SLP-06] The sleep log goes with the rest of the user's data.
+        root.put("sleep", JSONArray().apply {
+            db.sleepDao().all().forEach { l -> put(JSONObject().put("start", l.startMillis).putOpt("end", l.endMillis)) }
+        })
         val s = settings.current
         root.put(
             "settings",
@@ -124,7 +128,9 @@ class BackupManager(
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmsOn", s.alarmsEnabled)
                 .putOpt("workStyle", s.workStyle?.name)
                 .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoFirst).put("calendarMemos", s.calendarMemos)
-                .put("restCheck", s.restCheck),
+                .put("restCheck", s.restCheck)
+                .put("strictRest", s.strictRest).put("sleepTips", s.sleepTips).put("sleepReminders", s.sleepReminders)
+                .put("sleepTarget", s.sleepTargetMinutes),
         )
         return root.toString(1)
     }
@@ -199,6 +205,9 @@ class BackupManager(
                 o.optString("category"), o.optBoolean("remind", true))
         }
         val rules = root.optJSONArray("rules")?.objects()?.map { o -> CategoryRuleEntity(o.getString("merchant"), o.optString("category")) }
+        val sleep = root.optJSONArray("sleep")?.objects()?.map { o ->
+            com.bamnat.app.data.db.SleepLogEntity(startMillis = o.getLong("start"), endMillis = if (o.has("end") && !o.isNull("end")) o.getLong("end") else null)
+        }
         val jobs = root.optJSONArray("jobs")?.objects()?.map { o ->
             JobEntity(
                 id = o.getLong("id"), epochDay = o.getLong("day"), title = o.optString("title"), client = o.optString("client"),
@@ -220,6 +229,8 @@ class BackupManager(
             sales?.let { list -> money.clearSales(); list.forEach { money.upsertSales(it) } }
             fixed?.let { list -> money.clearFixed(); list.forEach { money.restoreFixed(it) } }
             rules?.let { list -> money.clearRules(); list.forEach { money.upsertRule(it) } }
+            // Backups from before version 11 carry no sleep log; the one on the phone then stays.
+            sleep?.let { list -> db.sleepDao().clear(); list.forEach { db.sleepDao().insert(it) } }
             db.memoDao().clear()
             db.dayChangeDao().clear() // the log described the days being replaced [MKT-08]
             db.dayEntryDao().clear()
@@ -251,6 +262,10 @@ class BackupManager(
                     memoFirst = o.optBoolean("memoFirst", s.memoFirst),
                     calendarMemos = o.optBoolean("calendarMemos", s.calendarMemos),
                     restCheck = o.optBoolean("restCheck", s.restCheck),
+                    strictRest = o.optBoolean("strictRest", s.strictRest),
+                    sleepTips = o.optBoolean("sleepTips", s.sleepTips),
+                    sleepReminders = o.optBoolean("sleepReminders", s.sleepReminders),
+                    sleepTargetMinutes = o.optInt("sleepTarget", s.sleepTargetMinutes).coerceIn(4 * 60, 10 * 60),
                 )
             }
         }

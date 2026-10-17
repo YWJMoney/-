@@ -595,6 +595,37 @@ fun SettingsScreen(
             SwitchRow("휴식 점검", "근무 사이 휴식이 11시간보다 짧거나 야간이 4일 이어지면 알려줘요", settings.restCheck) { v ->
                 vm.update { it.copy(restCheck = v) }
             }
+            // [MKT-11]
+            if (settings.restCheck) {
+                SwitchRow("휴식 점검 엄격 기준", "연속 야간 3일부터, 야간 뒤 쉬는 날이 2일보다 적으면 알려줘요 (델파이 합의 기준)", settings.strictRest) { v ->
+                    vm.update { it.copy(strictRest = v) }
+                }
+            }
+        }
+
+        // [SLP-03][SLP-04][SLP-06][SLP-07] Sleep that fits the schedule. Suggestions, not treatment.
+        SectionCard(title = "수면") {
+            SwitchRow("수면 시간 제안", "날짜를 누르면 근무에 맞춘 낮잠·잠자리 시각과 수면 기록이 보여요", settings.sleepTips) { v ->
+                vm.update { it.copy(sleepTips = v) }
+            }
+            SwitchRow("수면 알림", "잠자리·낮잠·카페인 마지막 시각과 야간 뒤 퇴근길 졸음 주의를 알려줘요", settings.sleepReminders) { v ->
+                vm.update { it.copy(sleepReminders = v) }
+            }
+            Text("목표 수면 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(6 * 60, 6 * 60 + 30, 7 * 60, 7 * 60 + 30, 8 * 60, 9 * 60).forEach { m ->
+                    FilterChip(
+                        selected = settings.sleepTargetMinutes == m,
+                        onClick = { vm.update { it.copy(sleepTargetMinutes = m) } },
+                        label = { Text(if (m % 60 == 0) "${m / 60}시간" else "${m / 60}시간 반") },
+                    )
+                }
+            }
+            Text(
+                "야간 뒤에는 목표가 짧아도 6시간 이상 이어서 자도록 제안해요. 진단이나 치료가 아닌 일정에 맞춘 참고 정보예요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         SectionCard(title = "개인정보") {

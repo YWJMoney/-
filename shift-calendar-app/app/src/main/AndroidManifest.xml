@@ -78,6 +78,11 @@
             android:name=".pay.LeaveReminderReceiver"
             android:exported="false" />
 
+        <!-- [SLP-04][SLP-07] Sleep times and the drowsy-driving reminder, when turned on. -->
+        <receiver
+            android:name=".sleep.SleepReminderReceiver"
+            android:exported="false" />
+
         <!-- [LEDG-02] Payment notifications. Off until the user turns it on in the app and grants
              notification access; only texts with an amount and a payment word are read. -->
         <service

@@ -1,5 +1,6 @@
 package com.bamnat.app.alarm
 
+import kotlinx.coroutines.flow.first
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -87,6 +88,7 @@ class SystemEventReceiver : BroadcastReceiver() {
                     com.bamnat.app.money.JobReminderScheduler.reschedule(context, com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed()))
                 }
                 com.bamnat.app.pay.LeaveReminder.reschedule(context, container.payStore.profile.value)
+                com.bamnat.app.sleep.SleepReminder.reschedule(context, container.scheduleRepository.snapshot.first(), container.settingsRepository.current)
                 // A new date or time zone changes what "today" is on the widgets.
                 WidgetRefresher.refresh(context)
             } finally {

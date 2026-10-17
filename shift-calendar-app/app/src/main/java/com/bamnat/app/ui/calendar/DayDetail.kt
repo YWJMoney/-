@@ -127,7 +127,9 @@ fun DayDetail(
         val settings by vm.settings.collectAsStateWithLifecycle()
         DayHeader(day = day, isToday = date == today, showLunar = settings.showLunar)
         // [SLP-01][MKT-07] Too little rest before this day, as a reference sign.
-        val rest = remember(snapshot, date, settings.restCheck) { if (settings.restCheck) vm.restIssuesOn(snapshot, date) else emptyList() }
+        val rest = remember(snapshot, date, settings.restCheck, settings.strictRest) {
+            if (settings.restCheck) vm.restIssuesOn(snapshot, date, settings.strictRest) else emptyList()
+        }
         if (rest.isNotEmpty()) RestWarning(rest)
 
         // [WORK-01] Field and shop work lead with money; shift details stay one tap away.
@@ -216,6 +218,14 @@ fun DayDetail(
             DayPaySection(day = day, snapshot = snapshot, vm = vm, onOpenPay = onOpenPay)
 
             AlarmSection(day = day, snapshot = snapshot, vm = vm, onOpenShiftTypes = onOpenShiftTypes)
+        }
+
+        // [SLP-03][SLP-06] Sleep times that fit the schedule, and today's two-tap sleep log.
+        if (settings.sleepTips && (!moneyFirst || shiftsVisible)) {
+            val tips = remember(snapshot, date, settings.sleepTargetMinutes) { vm.sleepTips(snapshot, date, settings.sleepTargetMinutes) }
+            val log by vm.sleepLog.collectAsStateWithLifecycle()
+            SleepSection(date = date, today = today, tips = tips, log = log, targetMinutes = settings.sleepTargetMinutes,
+                onAsleep = vm::fellAsleep, onAwake = vm::wokeUp)
         }
 
         if (!moneyFirst) DayMoneySections(date, style, dayBook, vm, memoText)
@@ -963,3 +973,77 @@ private fun ChangeHistory(changes: List<com.bamnat.app.data.DayChange>) {
 }
 
 private const val HISTORY_ROWS = 3
+
+/**
+ * [SLP-03][SLP-05][SLP-06][SLP-13] Sleep times that fit this day's shifts, each with how strong its
+ * basis is, and on today a two-tap sleep log with the week's shortfall. Wording stays at
+ * "일정에 맞춘 수면 시간 제안": nothing here diagnoses or treats.
+ */
+@Composable
+private fun SleepSection(
+    date: LocalDate,
+    today: LocalDate,
+    tips: List<com.bamnat.core.sleep.SleepPlan.Tip>,
+    log: List<com.bamnat.core.sleep.SleepEntry>,
+    targetMinutes: Int,
+    onAsleep: () -> Unit,
+    onAwake: () -> Unit,
+) {
+    val isToday = date == today
+    if (tips.isEmpty() && !isToday) return
+    SectionCard(title = "수면") {
+        for (tip in tips) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                Text(
+                    sleepTime(tip, date),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.width(104.dp),
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(tip.kind.label, style = MaterialTheme.typography.bodyMedium)
+                    Text("${tip.text} · ${tip.basis.label}", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        if (tips.isNotEmpty()) {
+            Text("일정에 맞춘 수면 시간 제안이에요. 몸 상태와 회사 사정에 맞게 조절하세요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp))
+        }
+        if (isToday) {
+            if (tips.isNotEmpty()) HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            val open = log.firstOrNull { it.end == null }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (open != null) "${"%02d:%02d".format(open.start.hour, open.start.minute)}부터 자는 중" else "수면 기록",
+                    style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f),
+                )
+                if (open == null) OutlinedButton(onClick = onAsleep) { Text("잠들었어요") }
+                else androidx.compose.material3.Button(onClick = onAwake) { Text("깼어요") }
+            }
+            val debt = remember(log, today, targetMinutes) { com.bamnat.core.sleep.SleepDebt.of(log, today, targetMinutes) }
+            Text(
+                if (debt.days == 0) "잠들 때와 깼을 때 한 번씩 누르면 최근 7일 수면을 보여 줘요. 기록은 이 휴대폰에만 남아요."
+                else "최근 7일 중 ${debt.days}일 기록 · 평균 ${hoursText(debt.averageMinutes)}" +
+                    if (debt.shortMinutes > 0) " · 목표보다 ${hoursText(debt.shortMinutes)} 부족" else " · 목표만큼 잤어요",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+    }
+}
+
+private fun hoursText(minutes: Long): String = if (minutes % 60 == 0L) "${minutes / 60}시간" else "${minutes / 60}시간 ${minutes % 60}분"
+
+private fun sleepTime(tip: com.bamnat.core.sleep.SleepPlan.Tip, date: LocalDate): String {
+    fun hm(x: java.time.LocalDateTime) = "%02d:%02d".format(x.hour, x.minute)
+    val day = when (tip.at.toLocalDate()) {
+        date -> ""
+        date.plusDays(1) -> "다음 날 "
+        else -> "${tip.at.monthValue}/${tip.at.dayOfMonth} "
+    }
+    return day + hm(tip.at) + (tip.until?.let { "–" + hm(it) } ?: "")
+}
