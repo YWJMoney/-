@@ -66,14 +66,23 @@ class AlarmService : Service() {
             ACTION_SNOOZE -> {
                 val ring = _ringing.value
                 if (ring != null) {
-                    appContainer.alarmScheduler.scheduleSnooze(ring, appContainer.settingsRepository.current.snoozeMinutes)
-                    appContainer.telemetry.event(DiagEvents.ALARM_SNOOZED)
+                    val minutes = BootAlarms.ringSettings(this).snoozeMinutes
+                    if (BootAlarms.isLocked(this)) {
+                        // [REL-10] Still locked after a reboot: the snooze lives only in the device-protected copy.
+                        val at = System.currentTimeMillis() + minutes.coerceAtLeast(1) * 60_000L
+                        val snoozed = ring.copy(isSnooze = true)
+                        AlarmScheduler.setAlarm(this, getSystemService(android.app.AlarmManager::class.java), at, AlarmScheduler.snoozeIntent(this, snoozed))
+                        BootAlarms.saveSnooze(this, snoozed, at)
+                    } else {
+                        appContainer.alarmScheduler.scheduleSnooze(ring, minutes)
+                        appContainer.telemetry.event(DiagEvents.ALARM_SNOOZED)
+                    }
                 }
                 finish()
             }
             else -> {
                 // ACTION_DISMISS, or a restart with no intent
-                if (intent?.action == ACTION_DISMISS && _ringing.value != null) {
+                if (intent?.action == ACTION_DISMISS && _ringing.value != null && !BootAlarms.isLocked(this)) {
                     appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED)
                 }
                 finish()
@@ -87,26 +96,30 @@ class AlarmService : Service() {
         _ringing.value = ring
         startInForeground(ring)
 
-        val settings = appContainer.settingsRepository.current
-        val sound = ring.soundUri ?: settings.defaultAlarmSound
+        val settings = BootAlarms.ringSettings(this)
+        val sound = ring.soundUri ?: settings.defaultSound
         if (sound != AppSettings.SILENT_SOUND) {
             requestFocus()
             playSound(candidateUris(sound), settings.gradualVolume)
         }
         if (settings.vibrate || sound == AppSettings.SILENT_SOUND) startVibration()
 
-        handler.postDelayed({ appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED, "auto_stop"); finish() }, settings.ringMinutes.coerceIn(1, 60) * 60_000L)
+        handler.postDelayed({
+            if (!BootAlarms.isLocked(this)) appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED, "auto_stop")
+            finish()
+        }, settings.ringMinutes.coerceIn(1, 60) * 60_000L)
     }
 
     private fun startInForeground(ring: RingRequest?) {
         val notification = buildNotification(ring)
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-        } else {
-            0
-        }
+        val media = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
         try {
-            ServiceCompat.startForeground(this, Notifications.ALARM_NOTIFICATION_ID, notification, type)
+            // [OPS-10] The alarm-app type where it exists; mediaPlayback if the system refuses it.
+            val exempted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && runCatching {
+                ServiceCompat.startForeground(this, Notifications.ALARM_NOTIFICATION_ID, notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED)
+            }.isSuccess
+            if (!exempted) ServiceCompat.startForeground(this, Notifications.ALARM_NOTIFICATION_ID, notification, media)
         } catch (e: RuntimeException) {
             // Only exact alarms may start a foreground service from the background. If exact alarms
             // were revoked, still show the alarm notification and ring for as long as the system allows.
@@ -125,7 +138,7 @@ class AlarmService : Service() {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val snoozeMinutes = appContainer.settingsRepository.current.snoozeMinutes
+        val snoozeMinutes = BootAlarms.ringSettings(this).snoozeMinutes
         val builder = NotificationCompat.Builder(this, Notifications.ALARM_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_ALARM)

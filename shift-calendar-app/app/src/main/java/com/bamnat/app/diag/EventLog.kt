@@ -12,28 +12,31 @@ import java.io.File
  */
 class EventLog(context: Context) {
     private val file = File(context.filesDir, "diag/events.log")
+    /** File work runs here, in order, so logging a screen change never touches the disk on the main thread. */
+    private val io = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "bamnat-eventlog").apply { isDaemon = true } }
 
-    @Synchronized
     fun append(name: String, detail: String = "", atMillis: Long = System.currentTimeMillis()) {
-        runCatching {
-            file.parentFile?.mkdirs()
-            file.appendText(EventBook.encode(DiagEvent(atMillis, name, detail)) + "\n")
-            appendsSinceTrim++
-            // Counting lines on every write would be wasteful; check now and then.
-            if (appendsSinceTrim >= 50) {
-                appendsSinceTrim = 0
-                EventBook.trimmed(file.readLines())?.let { kept -> file.writeText(kept.joinToString("\n", postfix = "\n")) }
+        io.execute {
+            runCatching {
+                file.parentFile?.mkdirs()
+                file.appendText(EventBook.encode(DiagEvent(atMillis, name, detail)) + "\n")
+                appendsSinceTrim++
+                // Counting lines on every write would be wasteful; check now and then.
+                if (appendsSinceTrim >= 50) {
+                    appendsSinceTrim = 0
+                    EventBook.trimmed(file.readLines())?.let { kept -> file.writeText(kept.joinToString("\n", postfix = "\n")) }
+                }
             }
         }
     }
 
-    @Synchronized
-    fun read(): List<DiagEvent> =
+    /** Waits for writes already queued, so what was just logged is in the result. */
+    fun read(): List<DiagEvent> = io.submit<List<DiagEvent>> {
         runCatching { if (file.exists()) EventBook.decodeAll(file.readText()) else emptyList() }.getOrDefault(emptyList())
+    }.get()
 
-    @Synchronized
     fun clear() {
-        runCatching { file.delete() }
+        io.submit { runCatching { file.delete() } }.get()
     }
 
     private var appendsSinceTrim = 0

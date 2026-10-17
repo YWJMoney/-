@@ -14,12 +14,25 @@ import java.time.LocalDateTime
 /** Receives the shift alarm and snooze alarms set by [AlarmScheduler]. */
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val container = context.appContainer
         val ring = RingRequest.fromIntent(intent)
+        if (BootAlarms.isLocked(context)) {
+            // [REL-10] Rebooted and not unlocked yet: ring from the intent and line up the next one
+            // from the device-protected copy; the full re-plan runs once the phone is unlocked.
+            when (intent.action) {
+                ACTION_SHIFT_ALARM -> if (ring != null && System.currentTimeMillis() - ring.triggerAtMillis < STALE_AFTER_MILLIS) {
+                    startRinging(context, ring)
+                }
+                ACTION_SNOOZE_ALARM -> { BootAlarms.saveSnooze(context, null, 0L); ring?.let { startRinging(context, it) } }
+            }
+            BootAlarms.registerNext(context, after = ring?.triggerAtMillis ?: System.currentTimeMillis())
+            return
+        }
+        val container = context.appContainer
         when (intent.action) {
             ACTION_SHIFT_ALARM -> {
                 val now = System.currentTimeMillis()
                 val firedAt = maxOf(ring?.triggerAtMillis ?: now, now)
+                ring?.let { container.alarmScheduler.markFired(it.triggerAtMillis) }
                 val pending = goAsync()
                 // A delivery hours late (device was off, clock jumped) is not worth waking anyone for.
                 if (ring != null && now - ring.triggerAtMillis < STALE_AFTER_MILLIS) {
@@ -64,7 +77,7 @@ class AlarmReceiver : BroadcastReceiver() {
         try {
             AlarmService.start(context, ring)
         } catch (e: RuntimeException) {
-            context.appContainer.telemetry.event(
+            if (!BootAlarms.isLocked(context)) context.appContainer.telemetry.event(
                 DiagEvents.ALARM_FALLBACK,
                 EventBook.triggerDetail(ring.triggerAtMillis, e.javaClass.simpleName),
             )

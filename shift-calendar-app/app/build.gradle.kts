@@ -15,8 +15,8 @@ android {
         applicationId = "com.bamnat.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.5.1"
+        versionCode = 11
+        versionName = "1.6.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // [MKT-09] Link sharing server (server/share-worker). Blank hides '링크로 공유'.
         val shareBaseUrl = (project.findProperty("bamnat.shareBaseUrl") as String?).orEmpty()
@@ -121,6 +121,9 @@ dependencies {
     ksp("androidx.room:room-compiler:2.7.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+
+    // [SLP-08] Sleep a watch or the phone measured, read only from Health Connect on the phone.
+    implementation("androidx.health.connect:connect-client:1.1.0")
 
     testImplementation("junit:junit:4.13.2")
     // Screenshot tests: the real app rendered on the JVM, no emulator needed.

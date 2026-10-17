@@ -41,7 +41,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.bamnat.app.appContainer
 import com.bamnat.app.data.ThemeMode
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.theme.NumberStyle
@@ -64,7 +63,7 @@ class AlarmActivity : ComponentActivity() {
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enableEdgeToEdge()
-        val snoozeMinutes = appContainer.settingsRepository.current.snoozeMinutes
+        val snoozeMinutes = BootAlarms.ringSettings(this).snoozeMinutes
 
         setContent {
             BamnatTheme(themeMode = ThemeMode.DARK) {
