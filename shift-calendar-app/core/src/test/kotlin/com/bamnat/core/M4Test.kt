@@ -3,7 +3,8 @@ package com.bamnat.core
 import com.bamnat.core.backup.BackupCrypto
 import com.bamnat.core.model.DayChanges
 import com.bamnat.core.model.DayEntry
-import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.Leave
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.WorkPattern
@@ -45,7 +46,7 @@ class M4Test {
     fun `overtime shortens the rest before the next shift`() {
         val d = Fixtures.day.id; val o = Fixtures.off.id
         // 주간 09–18 + 잔업 6시간 → 24:00, next 주간 09:00: 9 hours off.
-        val issues = RestCheck.check(days(List(5) { d } + List(2) { o }, DayEntry(monday, overtimeMinutes = 360, extraWork = ExtraWork.OVERTIME)))
+        val issues = RestCheck.check(days(List(5) { d } + List(2) { o }, DayEntry(monday, extras = listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 360)))))
         assertEquals(listOf(RestCheck.Kind.SHORT_REST), issues.map { it.kind })
         assertEquals(monday.plusDays(1), issues.single().date)
     }
@@ -54,9 +55,9 @@ class M4Test {
     fun `day changes read as words`() {
         val names = mapOf(Fixtures.day.id to "주간", Fixtures.night.id to "야간")
         val before = DayEntry(monday, override = ShiftOverride.Shift(Fixtures.day.id))
-        val after = before.copy(override = ShiftOverride.Shift(Fixtures.night.id), overtimeMinutes = 120, extraWork = ExtraWork.OVERTIME)
+        val after = before.copy(override = ShiftOverride.Shift(Fixtures.night.id), extras = listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120)))
         assertEquals("근무 → 야간, 잔업 2시간", DayChanges.describe(before, after, { names.getValue(it) }))
-        assertEquals("조출 2시간", DayChanges.describe(null, DayEntry(monday, overtimeMinutes = 120, extraWork = ExtraWork.OVERTIME), { "" }, { "조출" }))
+        assertEquals("조출 2시간", DayChanges.describe(null, DayEntry(monday, extras = listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120))), { "" }, { "조출" }))
         assertEquals("연차", DayChanges.describe(null, DayEntry(monday, leave = Leave()), { "" }))
         assertEquals("바꾼 내용 모두 지움", DayChanges.describe(after, DayEntry(monday), { "" }))
         assertEquals("시간 08:00–17:00", DayChanges.describe(null, DayEntry(monday, customStart = LocalTime.of(8, 0), customEnd = LocalTime.of(17, 0)), { "" }))

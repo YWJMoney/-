@@ -66,7 +66,7 @@ object SleepPlan {
             tips += Tip(Kind.CAFFEINE, sleep.minusHours(CAFFEINE_GAP_HOURS), null,
                 "잠들기 ${CAFFEINE_GAP_HOURS}시간 전부터는 커피·에너지 음료 줄이기", Basis.LOW)
         } else if (next != null) {
-            val tomorrow = shift(next)
+            val tomorrow = shift(next, first = true)
             if (tomorrow != null && !isNight(tomorrow) && tomorrow.first.toLocalTime() < EARLY_START &&
                 tomorrow.first.toLocalDate() == day.date.plusDays(1)
             ) {
@@ -83,14 +83,14 @@ object SleepPlan {
         return tips.sortedBy { it.at }
     }
 
-    private fun shift(day: ResolvedDay): Pair<LocalDateTime, LocalDateTime>? {
-        if (!day.isWorkDay || day.leave?.isFullDay == true) return null
-        val s = day.start ?: return null
-        val e = day.end ?: return null
-        val from = day.date.atTime(s)
-        val sameDay = day.date.atTime(e)
-        val to = (if (sameDay.isAfter(from)) sameDay else sameDay.plusDays(1)).plusMinutes(day.overtimeMinutes.toLong())
-        return from to to
+    /**
+     * The day's work that sleep plans around [EXTRA-01]: the last block of the day, so a 야간 대근 after
+     * a day shift (or on a day off) is planned as a night. [first] picks the earliest, for a next day.
+     */
+    private fun shift(day: ResolvedDay, first: Boolean = false): Pair<LocalDateTime, LocalDateTime>? {
+        val blocks = RestCheck.blocks(day)
+        val b = (if (first) blocks.firstOrNull() else blocks.lastOrNull()) ?: return null
+        return b.from to b.to
     }
 
     private fun isNight(shift: Pair<LocalDateTime, LocalDateTime>): Boolean {

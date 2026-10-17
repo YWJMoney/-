@@ -7,6 +7,8 @@ import com.bamnat.core.hours.HourLimits
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.hours.WorkHoursCalculator
 import com.bamnat.core.model.DayEntry
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.schedule.ScheduleResolver
@@ -21,6 +23,8 @@ import java.time.YearMonth
 class WorkHoursCalculatorTest {
     // 2026-10-05 is a Monday.
     private val monday = LocalDate.of(2026, 10, 5)
+
+    private fun special(minutes: Int) = ExtraEntry(ExtraKind.SPECIAL_ID, minutes = minutes)
 
     /** Monday–Friday 주간 (8h), weekends off: 40h a week. */
     private fun fiveDay(start: LocalDate = LocalDate.of(2026, 1, 1)) =
@@ -53,16 +57,18 @@ class WorkHoursCalculatorTest {
     }
 
     @Test
-    fun holidayWorkAndOvertimeIncludedInWeek() {
+    fun extraWorkIncludedInWeek() {
         val entries = listOf(
-            DayEntry(monday, overtimeMinutes = 120),
-            DayEntry(monday.plusDays(5), holidayWorkMinutes = 6 * 60), // Saturday
+            DayEntry(monday, extras = listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120))),
+            DayEntry(monday.plusDays(5), extras = listOf(special(6 * 60))), // Saturday
         )
         val w = calc(fiveDay(), entries).week(monday)
         assertEquals((40 + 2 + 6) * 60, w.totalMinutes)
-        assertEquals(120, w.overtimeMinutes)
-        assertEquals(360, w.holidayWorkMinutes)
+        assertEquals(40 * 60, w.scheduledMinutes)
+        assertEquals(480, w.extraMinutes)
+        assertEquals(360, w.restDayExtraMinutes)
         assertEquals(6, w.workDays)
+        assertEquals(0, w.overLegalMinutes)
     }
 
     @Test
@@ -73,12 +79,12 @@ class WorkHoursCalculatorTest {
 
         val exactly64 = WorkPattern.Weekly.fromSteps(LocalDate.of(2026, 1, 1),
             listOf(long.id, long.id, long.id, long.id, null, null, null))
-        val entries = listOf(DayEntry(monday.plusDays(5), holidayWorkMinutes = 16 * 60))
+        val entries = listOf(DayEntry(monday.plusDays(5), extras = listOf(special(16 * 60))))
         val w = calc(exactly64, entries).week(monday)
         assertEquals(64 * 60, w.totalMinutes)
         assertFalse(w.overLimit)
 
-        val oneMore = entries + DayEntry(monday.plusDays(6), holidayWorkMinutes = 1)
+        val oneMore = entries + DayEntry(monday.plusDays(6), extras = listOf(special(1)))
         assertTrue(calc(exactly64, oneMore).week(monday).overLimit)
     }
 
@@ -111,15 +117,19 @@ class WorkHoursCalculatorTest {
     }
 
     @Test
-    fun monthCountsHolidayWorkDays() {
+    fun monthCountsWorkOnDaysOff() {
         val entries = listOf(
-            DayEntry(LocalDate.of(2026, 10, 3), holidayWorkMinutes = 240),
-            DayEntry(LocalDate.of(2026, 10, 4), holidayWorkMinutes = 180),
-            DayEntry(LocalDate.of(2026, 11, 1), holidayWorkMinutes = 600), // other month
+            DayEntry(LocalDate.of(2026, 10, 3), extras = listOf(special(240))),
+            DayEntry(LocalDate.of(2026, 10, 4), extras = listOf(ExtraEntry(ExtraKind.COVER_ID, minutes = 180))),
+            DayEntry(LocalDate.of(2026, 11, 1), extras = listOf(special(600))), // other month
         )
         val m = calc(fiveDay(), entries).month(YearMonth.of(2026, 10))
-        assertEquals(2, m.holidayWorkDays)
-        assertEquals(420, m.holidayWorkMinutes)
+        assertEquals(2, m.restDayWorkDays)
+        assertEquals(420, m.restDayExtraMinutes)
+        assertEquals(420, m.extraMinutes)
+        assertEquals(22 * 480, m.scheduledMinutes)
+        assertEquals(mapOf(ExtraKind.SPECIAL_ID to 240, ExtraKind.COVER_ID to 180), m.extraByKind)
+        assertEquals(mapOf(ExtraKind.SPECIAL_ID to 1, ExtraKind.COVER_ID to 1), m.extraCountByKind)
         assertEquals(22 * 480 + 420, m.totalMinutes)
     }
 
@@ -143,7 +153,7 @@ class WorkHoursCalculatorTest {
         val start = LocalDate.of(2026, 8, 1)
         val saturdays = generateSequence(LocalDate.of(2026, 8, 1)) { it.plusWeeks(1) } // 8/1 is Saturday
             .takeWhile { !it.isAfter(LocalDate.of(2026, 10, 31)) }
-            .map { DayEntry(it, holidayWorkMinutes = 13 * 60) }
+            .map { DayEntry(it, extras = listOf(special(13 * 60))) }
             .toList()
         assertEquals(DayOfWeek.SATURDAY, start.dayOfWeek)
         val t = calc(fiveDay(), saturdays).threeMonths(YearMonth.of(2026, 10))

@@ -1,6 +1,8 @@
 package com.bamnat.core
 
 import com.bamnat.core.model.DayEntry
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.Leave
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
@@ -59,7 +61,7 @@ class ReviewFixTest {
     fun `a cover shift on a day of annual leave is not holiday work`() {
         val wed = LocalDate.of(2026, 10, 14)
         val r = ScheduleResolver(listOf(day, night, off), WorkPattern.Rotation(LocalDate.of(2026, 10, 12), List(5) { day.id } + List(2) { off.id }),
-            listOf(DayEntry(wed, leave = Leave(), secondShiftId = night.id)))
+            listOf(DayEntry(wed, leave = Leave(), extras = listOf(ExtraEntry(ExtraKind.COVER_ID, coveredShiftId = night.id)))))
         val p = PayProfile(Occupation.CUSTOM, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(since, 2_500_000))))
         val m = PayCalculator().calculate(p, YearMonth.of(2026, 10), r::resolve).minutes.single { it.date == wed }
         assertEquals(0, m.holidayWithin8h + m.holidayOver8h)

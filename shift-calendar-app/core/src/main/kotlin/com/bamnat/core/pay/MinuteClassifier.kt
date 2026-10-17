@@ -1,5 +1,6 @@
 package com.bamnat.core.pay
 
+import com.bamnat.core.model.OffDayTreatment
 import com.bamnat.core.schedule.ResolvedDay
 import java.time.DayOfWeek
 import java.time.Duration
@@ -9,23 +10,60 @@ import java.time.LocalTime
 import java.time.temporal.TemporalAdjusters
 import kotlin.math.roundToInt
 
+/** Minutes of one piece of work (the day's shift, or one piece of extra work) by how the law pays them [PAY-01]. */
+data class WorkMinutes(
+    /**
+     * Within 8 hours a day and 40 a week: 소정근로 for the day's shift, 소정 외 근로 for extra work
+     * (paid 100% on top of a monthly salary) [EXTRA-02].
+     */
+    val regular: Int = 0,
+    /** Beyond 8 hours a day or 40 a week, or extra work the company counts as 연장. */
+    val overtime: Int = 0,
+    /** Work on a paid holiday (주휴일·공휴일·근로자의 날), first 8 hours. */
+    val holidayWithin8h: Int = 0,
+    val holidayOver8h: Int = 0,
+    /** [EXTRA-02] Work on a day off the company treats as a holiday (휴무일이지만 휴일근로로 대우), first 8 hours. */
+    val restWithin8h: Int = 0,
+    val restOver8h: Int = 0,
+    /** Minutes inside the night window; overlaps the categories above (a premium on top). */
+    val night: Int = 0,
+) {
+    val worked: Int get() = regular + overtime + holidayWithin8h + holidayOver8h + restWithin8h + restOver8h
+
+    operator fun plus(o: WorkMinutes) = WorkMinutes(
+        regular + o.regular, overtime + o.overtime, holidayWithin8h + o.holidayWithin8h, holidayOver8h + o.holidayOver8h,
+        restWithin8h + o.restWithin8h, restOver8h + o.restOver8h, night + o.night,
+    )
+}
+
+/** [EXTRA-02] Minutes of the piece of extra work at [index] in the day's [ResolvedDay.extras]. */
+data class ExtraMinutes(val index: Int, val kindId: Long, val minutes: WorkMinutes, val estimated: Boolean = false)
+
 /** Minutes of one day sorted into the categories the law pays differently [PAY-01]. */
 data class DayMinutes(
     val date: LocalDate,
-    /** Paid minutes within the daily and weekly limits on a normal day. */
-    val regular: Int = 0,
-    /** Beyond 8 hours a day, 40 hours a week, or extra hours the user entered. */
-    val overtime: Int = 0,
-    /** Work on a holiday, first 8 hours. */
-    val holidayWithin8h: Int = 0,
-    /** Work on a holiday beyond 8 hours. */
-    val holidayOver8h: Int = 0,
-    /** 22:00~06:00 minutes; overlaps the categories above (an extra premium on top). */
-    val night: Int = 0,
-    /** True when a guess was needed, e.g. no clock times for holiday work. */
+    /** The day's own shift. */
+    val shift: WorkMinutes = WorkMinutes(),
+    /** Each piece of extra work, in the order it was counted (by its time on the clock). */
+    val extras: List<ExtraMinutes> = emptyList(),
+    /** True when a guess was needed, e.g. extra work with no clock times. */
     val estimated: Boolean = false,
 ) {
-    val worked: Int get() = regular + overtime + holidayWithin8h + holidayOver8h
+    val total: WorkMinutes get() = extras.fold(shift) { a, e -> a + e.minutes }
+
+    /** 소정근로 minutes of the shift within the daily and weekly limits. */
+    val regular: Int get() = shift.regular
+    /** [EXTRA-02] Extra work within 8 hours a day and 40 a week: 100%, not 연장. */
+    val extraRegular: Int get() = extras.sumOf { it.minutes.regular }
+    val overtime: Int get() = total.overtime
+    val holidayWithin8h: Int get() = total.holidayWithin8h
+    val holidayOver8h: Int get() = total.holidayOver8h
+    val restWithin8h: Int get() = total.restWithin8h
+    val restOver8h: Int get() = total.restOver8h
+    val night: Int get() = total.night
+    val worked: Int get() = total.worked
+
+    fun extra(index: Int): ExtraMinutes? = extras.firstOrNull { it.index == index }
 }
 
 /** Company choices that change how minutes are sorted, all with legal defaults. */
@@ -34,12 +72,12 @@ data class ClassifyOptions(
     val dailyLimitMinutes: Int? = 8 * 60,
     val weeklyLimitMinutes: Int? = 40 * 60,
     val weekStart: DayOfWeek = DayOfWeek.MONDAY,
-    /** Work on a day off counts as holiday work; false makes all of it overtime [PAYX-07]. */
-    val offDayWorkIsHoliday: Boolean = true,
+    /** [EXTRA-02] Work on a day off that is not a paid holiday: by law, as 휴일근로, or all 연장. */
+    val restDayWork: RestDayWork = RestDayWork.LAW,
     /**
      * [PAYX-07] Every scheduled minute is regular work, however long the shift (4조2교대 12시간
-     * 근무처럼 근무표 시간이 기본급에 들어 있는 경우). Only extra hours the user records, and a
-     * second shift on a working day, count as overtime; the daily and weekly limits are not used.
+     * 근무처럼 근무표 시간이 기본급에 들어 있는 경우). Extra work beyond the plan is overtime; the
+     * daily and weekly limits are not used.
      */
     val scheduleIsRegular: Boolean = false,
     /**
@@ -65,11 +103,20 @@ enum class FlexPeriod(val label: String, val months: Int) {
 }
 
 /**
- * Sorts each day's minutes [PAY-01]. A shift that runs past midnight is kept on the day it started
- * on; whether its minutes are holiday work follows the clock unless the company counts by the
- * start day [PAYX-14].
- * A break with a known start time comes off the clock where it is (근로기준법 제54조); one without
- * is taken out evenly across the shift, so night minutes shrink in proportion (an estimate).
+ * Sorts each day's minutes [PAY-01, EXTRA-02]. Work belongs to the day it started on (a night shift
+ * and the 잔업 after it count on the night's date); minutes on a paid holiday follow the clock unless
+ * the company counts by the start day [PAYX-14].
+ *
+ * The law, piece by piece:
+ * - Paid holiday (주휴일·공휴일·근로자의 날): 휴일근로, 8 hours then beyond (제56조 제2항), never also 연장.
+ * - A day off (휴무일) is not a holiday: its work is 연장 only beyond 8 hours that day or 40 that week
+ *   (제50조, hours actually worked), unless the company treats it as 휴일근로 or all as 연장.
+ * - Each day has 8 hours; the shift fills them first and extra work takes what is left (100%), the
+ *   rest is 연장. Each week has 40 hours; the shifts fill them first, then extra work in date order.
+ *   Extra work is always the last hours, so a shift already in the salary is never paid again.
+ * - Night minutes are counted on the clock, whatever else the minute is.
+ * A break with a known start comes off the clock where it is (제54조); one without is taken out
+ * evenly, so night minutes shrink in proportion (an estimate).
  */
 class MinuteClassifier(
     private val rates: (LocalDate) -> Rates,
@@ -77,29 +124,143 @@ class MinuteClassifier(
 ) {
     /**
      * Classifies [days] in date order. [isHoliday] says whether a date is a paid holiday
-     * (주휴일·공휴일); days the user marked as extra work on a day off count as holidays too.
-     * Days before the first full week only feed the weekly count; pass a whole week range.
+     * (주휴일·공휴일·근로자의 날). Days before the first full week only feed the weekly count, and a
+     * week cut off at the end is settled with the days it has; pass whole weeks.
      */
     fun classify(days: List<ResolvedDay>, isHoliday: (LocalDate) -> Boolean): List<DayMinutes> {
-        val sorted = days.sortedBy { it.date }
-        val weeklyRegular = HashMap<LocalDate, Int>()
+        val daily = days.sortedBy { it.date }.map { classifyOne(it, isHoliday) }
+        val weekly = if (options.scheduleIsRegular || options.weeklyLimitMinutes == null) daily else settleWeeks(daily, options.weeklyLimitMinutes)
         val flex = options.flexPeriod?.takeIf { options.scheduleIsRegular }
-        return sorted.map { day ->
-            // A full-day 연차 is leave, not a day off: a second shift on it is ordinary work.
-            val offDayWork = day.holidayWorkMinutes > 0 || (day.second != null && !day.isWorkDay && day.leave == null)
-            val offDay = offDayWork && options.offDayWorkIsHoliday
-            val startHoliday = isHoliday(day.date)
-            val raw = (if (options.holidayByClock && !offDay && startHoliday != isHoliday(day.date.plusDays(1))) {
-                classifyAcrossMidnight(day, startHoliday)
-            } else null) ?: classifyDay(day, startHoliday || offDay)
-            if (options.scheduleIsRegular) return@map raw
-            val limit = options.weeklyLimitMinutes ?: return@map raw
-            val week = day.date.with(TemporalAdjusters.previousOrSame(options.weekStart))
-            val before = weeklyRegular[week] ?: 0
-            val over = (before + raw.regular - limit).coerceAtLeast(0).coerceAtMost(raw.regular)
-            weeklyRegular[week] = before + raw.regular - over
-            if (over == 0) raw else raw.copy(regular = raw.regular - over, overtime = raw.overtime + over)
-        }.let { if (flex == null) it else settleFlex(it, flex) }
+        return if (flex == null) weekly else settleFlex(weekly, flex)
+    }
+
+    /** One day on its own, as a paid holiday when [holiday]; no weekly limit. */
+    fun classifyDay(day: ResolvedDay, holiday: Boolean): DayMinutes = classifyOne(day) { holiday }
+
+    /** A piece of work: its clock span (null when unknown), paid minutes and break. */
+    private class Piece(
+        val index: Int,
+        val kindId: Long,
+        val from: LocalDateTime?,
+        val to: LocalDateTime?,
+        val paid: Int,
+        val breakMinutes: Int,
+        val breakStart: LocalTime?,
+        val restAsHoliday: Boolean,
+    )
+
+    private fun classifyOne(day: ResolvedDay, isHoliday: (LocalDate) -> Boolean): DayMinutes {
+        val r = rates(day.date)
+        val restDay = day.isRestDay
+        val pieces = buildList {
+            if (day.isWorkDay && day.scheduledMinutes > 0) {
+                add(Piece(-1, 0, day.shiftFrom, day.shiftTo, day.scheduledMinutes, day.breakMinutes, day.breakStart, false))
+            }
+            day.extras.withIndex()
+                // Extra work after the shift, by its place on the clock; pieces without times last.
+                .sortedWith(compareBy({ it.value.from == null }, { it.value.from }))
+                .forEach { (i, e) ->
+                    val asHoliday = restDay && (options.restDayWork == RestDayWork.HOLIDAY || e.kind.offDay == OffDayTreatment.HOLIDAY)
+                    add(Piece(i, e.kind.id, e.from, e.to, e.minutes, e.breakMinutes, e.breakStart, asHoliday))
+                }
+        }
+        var slot = options.dailyLimitMinutes ?: Int.MAX_VALUE
+        var holidayUsed = 0
+        var restUsed = 0
+        val holiday8h = r.dailyLimitMinutes
+        var shift = WorkMinutes()
+        val extras = mutableListOf<ExtraMinutes>()
+        var estimated = false
+        for (p in pieces) {
+            val split = split(p, r)
+            if (p.from == null) estimated = true
+            // Paid-holiday minutes: on the clock, or the whole piece by the day it belongs to.
+            val onHoliday = if (options.holidayByClock && split.date != null) {
+                (if (isHoliday(split.date)) split.onFirst else 0) + (if (isHoliday(split.date.plusDays(1))) split.onNext else 0)
+            } else if (isHoliday(day.date)) p.paid else 0
+            var left = p.paid - onHoliday
+            val hWithin = minOf(onHoliday, (holiday8h - holidayUsed).coerceAtLeast(0))
+            holidayUsed += onHoliday
+            var rWithin = 0
+            var rOver = 0
+            if (p.restAsHoliday && left > 0) {
+                rWithin = minOf(left, (holiday8h - restUsed).coerceAtLeast(0))
+                rOver = left - rWithin
+                restUsed += left
+                left = 0
+            }
+            val isShift = p.index < 0
+            val regular: Int
+            val overtime: Int
+            when {
+                isShift && options.scheduleIsRegular -> { regular = left; overtime = 0 }
+                // Work beyond the plan, or on a day off the company counts as 연장, is all overtime.
+                !isShift && (options.scheduleIsRegular || restDay && options.restDayWork == RestDayWork.OVERTIME) -> { regular = 0; overtime = left }
+                else -> { regular = minOf(left, slot); overtime = left - regular; slot -= regular }
+            }
+            val m = WorkMinutes(regular, overtime, hWithin, onHoliday - hWithin, rWithin, rOver, split.night)
+            if (isShift) shift = m else extras += ExtraMinutes(p.index, p.kindId, m, estimated = p.from == null)
+        }
+        return DayMinutes(day.date, shift, extras, estimated)
+    }
+
+    /** Paid minutes of a piece on the date it starts and on the next date, and its night minutes. */
+    private class Split(val date: LocalDate?, val onFirst: Int, val onNext: Int, val night: Int)
+
+    private fun split(p: Piece, r: Rates): Split {
+        val from = p.from
+        val to = p.to
+        if (from == null || to == null) return Split(null, p.paid, 0, 0)
+        val gross = Duration.between(from, to).toMinutes().toInt()
+        if (gross <= 0 || p.paid <= 0) return Split(from.toLocalDate(), 0, 0, 0)
+        val midnight = from.toLocalDate().plusDays(1).atStartOfDay()
+        val grossNext = minutesAfter(from, to, midnight)
+        val nightGross = nightMinutes(from, to, r)
+        if (p.breakStart != null && p.breakMinutes > 0) {
+            var bFrom = from.toLocalDate().atTime(p.breakStart)
+            if (bFrom.isBefore(from)) bFrom = bFrom.plusDays(1)
+            val bTo = bFrom.plusMinutes(p.breakMinutes.toLong())
+            if (!bTo.isAfter(to)) {
+                val next = (grossNext - minutesAfter(bFrom, bTo, midnight)).coerceIn(0, p.paid)
+                return Split(from.toLocalDate(), p.paid - next, next, nightGross - nightMinutes(bFrom, bTo, r))
+            }
+        }
+        val next = (grossNext * p.paid.toDouble() / gross).roundToInt().coerceIn(0, p.paid)
+        return Split(from.toLocalDate(), p.paid - next, next, (nightGross * p.paid.toDouble() / gross).roundToInt())
+    }
+
+    private fun minutesAfter(from: LocalDateTime, to: LocalDateTime, at: LocalDateTime): Int {
+        val s = maxOf(from, at)
+        return if (to.isAfter(s)) Duration.between(s, to).toMinutes().toInt() else 0
+    }
+
+    /**
+     * 주 40시간 (제50조 제1항), on hours actually worked: the week's shifts count first, in date order,
+     * and past 40 hours a shift's 소정 minutes are 연장 on the later days. Extra work then takes what is
+     * left of the 40 hours in date order, and the rest of it is 연장. Leave and holidays are not work.
+     */
+    private fun settleWeeks(list: List<DayMinutes>, limit: Int): List<DayMinutes> {
+        val out = list.toMutableList()
+        list.indices.groupBy { list[it].date.with(TemporalAdjusters.previousOrSame(options.weekStart)) }.values.forEach { week ->
+            var used = 0
+            for (i in week) {
+                val d = out[i]
+                val over = (used + d.shift.regular - limit).coerceIn(0, d.shift.regular)
+                used += d.shift.regular - over
+                if (over > 0) out[i] = d.copy(shift = d.shift.copy(regular = d.shift.regular - over, overtime = d.shift.overtime + over))
+            }
+            for (i in week) {
+                val d = out[i]
+                if (d.extras.none { it.minutes.regular > 0 }) continue
+                out[i] = d.copy(extras = d.extras.map { e ->
+                    val keep = minOf(e.minutes.regular, (limit - used).coerceAtLeast(0))
+                    used += keep
+                    val move = e.minutes.regular - keep
+                    if (move == 0) e else e.copy(minutes = e.minutes.copy(regular = keep, overtime = e.minutes.overtime + move))
+                })
+            }
+        }
+        return out
     }
 
     /**
@@ -127,113 +288,11 @@ class MinuteClassifier(
                 val d = out[i]
                 if (d.date.isBefore(start) || d.date.isAfter(end) || d.regular == 0) continue
                 val take = minOf(left, d.regular)
-                out[i] = d.copy(regular = d.regular - take, overtime = d.overtime + take)
+                out[i] = d.copy(shift = d.shift.copy(regular = d.shift.regular - take, overtime = d.shift.overtime + take))
                 left -= take
             }
         }
         return out
-    }
-
-    fun classifyDay(day: ResolvedDay, holiday: Boolean): DayMinutes {
-        val first = classifyFirst(day, holiday)
-        val second = day.second ?: return first
-        // [FEAT-02] The second shift keeps its own clock, so its night minutes are its own.
-        val r = rates(day.date)
-        val from = day.date.atTime(second.start)
-        val to = if (second.end.isAfter(second.start)) day.date.atTime(second.end) else day.date.plusDays(1).atTime(second.end)
-        val minutes = second.minutes
-        val night = shiftNight(from, to, minutes, second.breakMinutes, second.breakStart, r)
-        if (holiday) return holidaySplit(day.date, first.worked + minutes, first.night + night, r, first.estimated)
-        // On a working day it fills what is left of the daily limit, then is overtime; on a day
-        // off counted as 연장 by company rule all of it is overtime.
-        val room = if (!day.isWorkDay || options.scheduleIsRegular) 0 else options.dailyLimitMinutes?.let { (it - first.regular - first.overtime).coerceAtLeast(0) } ?: minutes
-        val regular = minOf(minutes, room)
-        return first.copy(regular = first.regular + regular, overtime = first.overtime + minutes - regular, night = first.night + night)
-    }
-
-    private fun classifyFirst(day: ResolvedDay, holiday: Boolean): DayMinutes {
-        val r = rates(day.date)
-        val start = day.start
-        val end = day.end
-        val scheduled = if (day.isWorkDay) day.scheduledMinutes else 0
-        val extra = day.overtimeMinutes
-        val holidayOnly = day.holidayWorkMinutes
-
-        if (start == null || end == null) {
-            // Extra work on a day off with no clock times: count it, assume daytime.
-            val minutes = scheduled + extra + holidayOnly
-            if (minutes == 0) return DayMinutes(day.date)
-            if (holiday) return holidaySplit(day.date, minutes, 0, r, estimated = true)
-            // A day off worked as 연장 by company rule: every minute is overtime.
-            return if (holidayOnly > 0 && scheduled == 0) DayMinutes(day.date, overtime = minutes, estimated = true)
-            else DayMinutes(day.date, regular = minutes - extra, overtime = extra, estimated = true)
-        }
-
-        val from = day.date.atTime(start)
-        var to = if (end.isAfter(start)) day.date.atTime(end) else day.date.plusDays(1).atTime(end)
-        val gross = Duration.between(from, to).toMinutes().toInt()
-        val paidScheduled = scheduled.coerceAtMost(gross)
-        // Extra hours run on after the shift ends.
-        val extraEnd = to.plusMinutes((extra + holidayOnly).toLong())
-        val night = shiftNight(from, to, paidScheduled, day.breakMinutes, day.breakStart, r) +
-            nightMinutes(to, extraEnd, r)
-        to = extraEnd
-        val total = paidScheduled + extra + holidayOnly
-
-        if (holiday) return holidaySplit(day.date, total, night, r, estimated = false)
-        val limit = options.dailyLimitMinutes.takeUnless { options.scheduleIsRegular }
-        val dailyOver = if (limit == null) 0 else (paidScheduled - limit).coerceAtLeast(0)
-        return DayMinutes(
-            date = day.date,
-            regular = paidScheduled - dailyOver,
-            overtime = dailyOver + extra + holidayOnly,
-            night = night,
-        )
-    }
-
-    /**
-     * [PAYX-14] A shift that crosses midnight where exactly one of the two days is a holiday: only
-     * the minutes on the holiday side of midnight are holiday work. A known break comes off where it
-     * falls, otherwise in proportion. Null when the shift stays on one day, has no clock times or
-     * carries a second shift; those are counted whole by the start day.
-     */
-    private fun classifyAcrossMidnight(day: ResolvedDay, startHoliday: Boolean): DayMinutes? {
-        if (day.second != null) return null
-        val start = day.start ?: return null
-        val end = day.end ?: return null
-        val r = rates(day.date)
-        val scheduled = if (day.isWorkDay) day.scheduledMinutes else 0
-        val extra = day.overtimeMinutes + day.holidayWorkMinutes
-        val from = day.date.atTime(start)
-        val to = if (end.isAfter(start)) day.date.atTime(end) else day.date.plusDays(1).atTime(end)
-        val gross = Duration.between(from, to).toMinutes().toInt()
-        val paid = scheduled.coerceAtMost(gross)
-        val extraEnd = to.plusMinutes(extra.toLong())
-        val midnight = day.date.plusDays(1).atStartOfDay()
-        if (!extraEnd.isAfter(midnight)) return null
-
-        fun after(a: LocalDateTime, b: LocalDateTime) = if (b.isAfter(maxOf(a, midnight))) Duration.between(maxOf(a, midnight), b).toMinutes().toInt() else 0
-        var paidAfter = if (gross <= 0) 0 else (after(from, to) * paid.toDouble() / gross).roundToInt()
-        if (day.breakStart != null && day.breakMinutes > 0) {
-            var bFrom = day.date.atTime(day.breakStart)
-            if (bFrom.isBefore(from)) bFrom = bFrom.plusDays(1)
-            val bTo = bFrom.plusMinutes(day.breakMinutes.toLong())
-            if (!bTo.isAfter(to)) paidAfter = (after(from, to) - after(bFrom, bTo)).coerceIn(0, paid)
-        }
-        val extraAfter = after(to, extraEnd)
-        val holidayMinutes = if (startHoliday) paid - paidAfter + extra - extraAfter else paidAfter + extraAfter
-        val workSched = if (startHoliday) paidAfter else paid - paidAfter
-        val workExtra = if (startHoliday) extraAfter else extra - extraAfter
-        val limit = options.dailyLimitMinutes.takeUnless { options.scheduleIsRegular }
-        val dailyOver = if (limit == null) 0 else (workSched - limit).coerceAtLeast(0)
-        val night = shiftNight(from, to, paid, day.breakMinutes, day.breakStart, r) + nightMinutes(to, extraEnd, r)
-        return holidaySplit(day.date, holidayMinutes, night, r, estimated = false)
-            .copy(regular = workSched - dailyOver, overtime = dailyOver + workExtra)
-    }
-
-    private fun holidaySplit(date: LocalDate, minutes: Int, night: Int, r: Rates, estimated: Boolean): DayMinutes {
-        val within = minutes.coerceAtMost(r.dailyLimitMinutes)
-        return DayMinutes(date, holidayWithin8h = within, holidayOver8h = minutes - within, night = night, estimated = estimated)
     }
 
     /**
@@ -241,18 +300,8 @@ class MinuteClassifier(
      * that starts at [breakStart] and fits inside the shift is taken off where it falls; otherwise
      * the break comes off in proportion.
      */
-    internal fun shiftNight(from: LocalDateTime, to: LocalDateTime, paid: Int, breakMinutes: Int, breakStart: LocalTime?, r: Rates): Int {
-        val gross = Duration.between(from, to).toMinutes().toInt()
-        if (gross <= 0) return 0
-        val nightGross = nightMinutes(from, to, r)
-        if (breakStart != null && breakMinutes > 0) {
-            var bFrom = from.toLocalDate().atTime(breakStart)
-            if (bFrom.isBefore(from)) bFrom = bFrom.plusDays(1)
-            val bTo = bFrom.plusMinutes(breakMinutes.toLong())
-            if (!bTo.isAfter(to)) return nightGross - nightMinutes(bFrom, bTo, r)
-        }
-        return (nightGross * paid.toDouble() / gross).roundToInt()
-    }
+    internal fun shiftNight(from: LocalDateTime, to: LocalDateTime, paid: Int, breakMinutes: Int, breakStart: LocalTime?, r: Rates): Int =
+        split(Piece(-1, 0, from, to, paid, breakMinutes, breakStart, false), r).night
 
     /** Minutes of [from, to) inside the night window, across any number of midnights. */
     internal fun nightMinutes(from: LocalDateTime, to: LocalDateTime, r: Rates): Int {

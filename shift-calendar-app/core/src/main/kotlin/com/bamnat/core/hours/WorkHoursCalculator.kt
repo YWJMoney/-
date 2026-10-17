@@ -13,17 +13,24 @@ data class HourLimits(
     val weeklyLimitHours: Int = 64,
     /** The weekly average over three months above this is flagged (3개월 평균 주 52시간). */
     val threeMonthAverageLimitHours: Int = 52,
+    /** [EXTRA-02] 주 52시간 (제53조: 40시간 + 연장 12시간); a week above it is pointed out, softer than [weeklyLimitHours]. */
+    val legalWeeklyHours: Int = 52,
 )
 
 data class WeekSummary(
     val start: LocalDate,
     val end: LocalDate,
     val totalMinutes: Int,
+    /** Hours on the roster. */
     val scheduledMinutes: Int,
-    val overtimeMinutes: Int,
-    val holidayWorkMinutes: Int,
+    /** [EXTRA-01] Extra work: 잔업, 특근, 대근 … on working days and days off. */
+    val extraMinutes: Int,
+    /** The part of [extraMinutes] worked on days off. */
+    val restDayExtraMinutes: Int,
     val workDays: Int,
     val overLimit: Boolean,
+    /** [EXTRA-02] Minutes past 주 52시간 (제53조), 0 when within. */
+    val overLegalMinutes: Int = 0,
 ) {
     fun contains(date: LocalDate): Boolean = !date.isBefore(start) && !date.isAfter(end)
 }
@@ -32,14 +39,19 @@ data class MonthSummary(
     val month: YearMonth,
     val totalMinutes: Int,
     val scheduledMinutes: Int,
-    val overtimeMinutes: Int,
-    val holidayWorkMinutes: Int,
+    val extraMinutes: Int,
+    val restDayExtraMinutes: Int,
     val workDays: Int,
-    val holidayWorkDays: Int,
+    /** Days off with extra work on them. */
+    val restDayWorkDays: Int,
+    /** [EXTRA-01] Minutes and pieces of extra work by kind id. */
+    val extraByKind: Map<Long, Int> = emptyMap(),
+    val extraCountByKind: Map<Long, Int> = emptyMap(),
     /** Every week that touches this month, each counted over its full seven days. */
     val weeks: List<WeekSummary>,
 ) {
     val weeksOverLimit: List<WeekSummary> get() = weeks.filter { it.overLimit }
+    val weeksOverLegal: List<WeekSummary> get() = weeks.filter { it.overLegalMinutes > 0 }
 }
 
 data class ThreeMonthSummary(
@@ -60,8 +72,8 @@ data class ThreeMonthSummary(
  * Week, month and three-month totals.
  *
  * Every minute of a shift is counted on the date the shift starts, so an overnight shift
- * from Sunday 22:00 to Monday 07:00 belongs to Sunday's week. Overtime and work on days
- * off are always included.
+ * from Sunday 22:00 to Monday 07:00 belongs to Sunday's week. Extra work on working days and
+ * days off is always included.
  */
 class WorkHoursCalculator(
     private val resolver: ScheduleResolver,
@@ -81,10 +93,11 @@ class WorkHoursCalculator(
             end = end,
             totalMinutes = total,
             scheduledMinutes = days.sumOf { it.scheduledMinutes },
-            overtimeMinutes = days.sumOf { it.overtimeMinutes },
-            holidayWorkMinutes = days.sumOf { it.holidayWorkMinutes },
+            extraMinutes = days.sumOf { it.extraMinutes },
+            restDayExtraMinutes = days.filter { it.isRestDay }.sumOf { it.extraMinutes },
             workDays = days.count { it.totalMinutes > 0 },
             overLimit = total > limits.weeklyLimitHours * 60,
+            overLegalMinutes = (total - limits.legalWeeklyHours * 60).coerceAtLeast(0),
         )
     }
 
@@ -98,10 +111,12 @@ class WorkHoursCalculator(
             month = month,
             totalMinutes = days.sumOf { it.totalMinutes },
             scheduledMinutes = days.sumOf { it.scheduledMinutes },
-            overtimeMinutes = days.sumOf { it.overtimeMinutes },
-            holidayWorkMinutes = days.sumOf { it.holidayWorkMinutes },
+            extraMinutes = days.sumOf { it.extraMinutes },
+            restDayExtraMinutes = days.filter { it.isRestDay }.sumOf { it.extraMinutes },
             workDays = days.count { it.totalMinutes > 0 },
-            holidayWorkDays = days.count { it.isHolidayWork },
+            restDayWorkDays = days.count { it.isRestDay && it.extraMinutes > 0 },
+            extraByKind = days.flatMap { it.extras }.groupBy { it.kind.id }.mapValues { (_, l) -> l.sumOf { it.minutes } },
+            extraCountByKind = days.flatMap { it.extras }.groupingBy { it.kind.id }.eachCount(),
             weeks = weeks,
         )
     }

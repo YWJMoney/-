@@ -1,6 +1,8 @@
 package com.bamnat.core
 
 import com.bamnat.core.model.DayEntry
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.pay.DatedValue
@@ -85,14 +87,16 @@ class M7Test {
     }
 
     @Test
-    fun overtimeAfterTheCloseCountsInNextMonthsPay() {
+    fun extraWorkAfterTheCloseCountsInNextMonthsPay() {
         val p = profile.copy(period = PayPeriod(endDay = 20, payDay = 25))
         val d = LocalDate.of(2026, 10, 26)
-        val r = ScheduleResolver(listOf(dayShift, off), WorkPattern.Rotation(d, listOf(off.id)), listOf(DayEntry(d, overtimeMinutes = 120)))
+        val r = ScheduleResolver(listOf(dayShift, off), WorkPattern.Rotation(d, listOf(off.id)),
+            listOf(DayEntry(d, extras = listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120)))))
         val october = PayCalculator().calculate(p, oct, r::resolve)
         val november = PayCalculator().calculate(p, oct.plusMonths(1), r::resolve)
-        assertEquals(0, october.sum(LineKind.OVERTIME))
-        assertTrue(november.sum(LineKind.OVERTIME) > 0)
+        // [EXTRA-02] Two hours on a day off are 소정 외 근로 (100%), paid with the period that holds the day.
+        assertEquals(0, october.sum(LineKind.EXTRA_HOURS))
+        assertTrue(november.sum(LineKind.EXTRA_HOURS) > 0)
         assertTrue(november.days.any { it.date == d })
         assertTrue(october.days.none { it.date == d })
         // The whole period, from 9/21, is in October's days.

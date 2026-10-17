@@ -1,9 +1,12 @@
 package com.bamnat.core
 
 import com.bamnat.core.model.DayEntry
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.pay.Cadence
+import com.bamnat.core.pay.CompanyRules
 import com.bamnat.core.pay.DatedValue
 import com.bamnat.core.pay.PayItem
 import com.bamnat.core.pay.StandardHours
@@ -15,10 +18,12 @@ import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.ValueTimeline
 import com.bamnat.core.pay.WageType
+import com.bamnat.core.pay.WeeklyHoliday
 import com.bamnat.core.schedule.ScheduleResolver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
@@ -33,6 +38,14 @@ class PayGoldenTest {
     private val nov = YearMonth.of(2026, 11)
     private val monday = LocalDate.of(2026, 11, 2)
     private val saturday = LocalDate.of(2026, 11, 7)
+    private val sunday = LocalDate.of(2026, 11, 8)
+
+    /** [EXTRA-01] 잔업 of [minutes] after the shift, as hours only. */
+    private fun overtime(date: LocalDate, minutes: Int) = DayEntry(date, extras = listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = minutes)))
+    private fun special(date: LocalDate, minutes: Int) = DayEntry(date, extras = listOf(ExtraEntry(ExtraKind.SPECIAL_ID, minutes = minutes)))
+
+    /** [EXTRA-02] Sunday is the 주휴일, so work on it is 휴일근로; Saturday stays a 휴무일. */
+    private val sundayOff = CompanyRules(weeklyHoliday = WeeklyHoliday.Fixed(DayOfWeek.SUNDAY))
 
     private fun type(id: Long, start: Int, startMin: Int, end: Int, endMin: Int, breakMinutes: Int = 0, breakStart: LocalTime? = null) =
         ShiftType(id, "근무$id", "$id", 0xFF000000, LocalTime.of(start, startMin), LocalTime.of(end, endMin), breakMinutes, breakStart)
@@ -76,7 +89,7 @@ class PayGoldenTest {
 
     @Test
     fun `moel overtime 16 hours is 288,000`() {
-        val ot = listOf(3, 4, 5, 6, 10, 11, 12, 13).map { DayEntry(LocalDate.of(2026, 11, it), overtimeMinutes = 120) }
+        val ot = listOf(3, 4, 5, 6, 10, 11, 12, 13).map { overtime(LocalDate.of(2026, 11, it), 120) }
         val pay = PayCalculator().calculate(moel, nov, weekly(day, *ot.toTypedArray())::resolve)
         assertEquals(12_000, pay.ordinaryHourly)
         assertEquals(288_000, pay.sum(LineKind.OVERTIME))
@@ -85,7 +98,7 @@ class PayGoldenTest {
 
     @Test
     fun `moel overtime 4 hours is 72,000`() {
-        val pay = PayCalculator().calculate(moel, nov, weekly(day, DayEntry(LocalDate.of(2026, 11, 3), overtimeMinutes = 240))::resolve)
+        val pay = PayCalculator().calculate(moel, nov, weekly(day, overtime(LocalDate.of(2026, 11, 3), 240))::resolve)
         assertEquals(72_000, pay.sum(LineKind.OVERTIME))
     }
 
@@ -100,7 +113,7 @@ class PayGoldenTest {
     @Test
     fun `moel overtime at night is 96,000 for 4 hours`() {
         val d = LocalDate.of(2026, 11, 4)
-        val pay = PayCalculator().calculate(moel, nov, oneDay(type(21, 14, 0, 22, 0), d, DayEntry(d, overtimeMinutes = 240))::resolve)
+        val pay = PayCalculator().calculate(moel, nov, oneDay(type(21, 14, 0, 22, 0), d, overtime(d, 240))::resolve)
         assertEquals(72_000, pay.sum(LineKind.OVERTIME))
         assertEquals(24_000, pay.sum(LineKind.NIGHT))
         assertEquals(96_000, pay.day(d)!!.amount)
@@ -108,11 +121,20 @@ class PayGoldenTest {
 
     @Test
     fun `moel holiday work 8 hours is 144,000 and 10 hours is 192,000`() {
-        val eight = PayCalculator().calculate(moel, nov, weekly(day, DayEntry(saturday, holidayWorkMinutes = 480))::resolve)
+        val p = moel.copy(rules = sundayOff)
+        val eight = PayCalculator().calculate(p, nov, weekly(day, special(sunday, 480))::resolve)
         assertEquals(144_000, eight.sum(LineKind.HOLIDAY))
-        val ten = PayCalculator().calculate(moel, nov, weekly(day, DayEntry(saturday, holidayWorkMinutes = 600))::resolve)
+        val ten = PayCalculator().calculate(p, nov, weekly(day, special(sunday, 600))::resolve)
         assertEquals(192_000, ten.sum(LineKind.HOLIDAY))
         assertEquals(0, ten.sum(LineKind.OVERTIME))
+    }
+
+    @Test
+    fun `a day off after a 40 hour week is all overtime, not holiday work`() {
+        // [EXTRA-02] 휴무일 근로 (산술): 주 40시간을 다 채운 뒤라 10시간 모두 연장 150%.
+        val ten = PayCalculator().calculate(moel.copy(rules = sundayOff), nov, weekly(day, special(saturday, 600))::resolve)
+        assertEquals(180_000, ten.sum(LineKind.OVERTIME))
+        assertEquals(0, ten.sum(LineKind.HOLIDAY))
     }
 
     // ---- 야간과 휴게 ----
@@ -121,7 +143,7 @@ class PayGoldenTest {
     fun `evening overtime with one night hour is 65,000 at 10,000 an hour`() {
         // 2차 출처 계산 블로그 (19~23시 연장, 22~23시 야간 겹침), 금액은 산술.
         val d = LocalDate.of(2026, 11, 4)
-        val pay = PayCalculator().calculate(monthly(10_000L * 209), nov, oneDay(type(22, 11, 0, 19, 0), d, DayEntry(d, overtimeMinutes = 240))::resolve)
+        val pay = PayCalculator().calculate(monthly(10_000L * 209), nov, oneDay(type(22, 11, 0, 19, 0), d, overtime(d, 240))::resolve)
         assertEquals(60_000, pay.sum(LineKind.OVERTIME))
         assertEquals(5_000, pay.sum(LineKind.NIGHT))
     }
@@ -191,11 +213,15 @@ class PayGoldenTest {
     fun `under five employees pays only the hours, no premiums`() {
         val small = monthly(12_000L * 209, fiveOrMore = false)
         val d = LocalDate.of(2026, 11, 4)
-        val night = PayCalculator().calculate(small, nov, oneDay(type(21, 14, 0, 22, 0), d, DayEntry(d, overtimeMinutes = 240))::resolve)
+        val night = PayCalculator().calculate(small, nov, oneDay(type(21, 14, 0, 22, 0), d, overtime(d, 240))::resolve)
         assertEquals(48_000, night.sum(LineKind.OVERTIME))
         assertEquals(0, night.sum(LineKind.NIGHT))
-        val sat = PayCalculator().calculate(small, nov, weekly(day, DayEntry(saturday, holidayWorkMinutes = 600))::resolve)
-        assertEquals(120_000, sat.sum(LineKind.HOLIDAY))
+        // The 주휴일 is a paid holiday at every workplace (제55조 제1항), but without the premium.
+        val sun = PayCalculator().calculate(small.copy(rules = sundayOff), nov, weekly(day, special(sunday, 600))::resolve)
+        assertEquals(120_000, sun.sum(LineKind.HOLIDAY))
+        val sat = PayCalculator().calculate(small.copy(rules = sundayOff), nov, weekly(day, special(saturday, 600))::resolve)
+        assertEquals(120_000, sat.sum(LineKind.OVERTIME))
+        assertEquals(0, sat.sum(LineKind.HOLIDAY))
     }
 
     @Test
@@ -307,7 +333,7 @@ class PayGoldenTest {
             Cadence.MONTHLY, fixedOvertimeMinutes = 20 * 60)
         val p = moel.copy(items = listOf(fixed.copy(ordinary = true)))
         fun ot(hours: Int) = (3..20).filter { LocalDate.of(2026, 11, it).dayOfWeek.value <= 5 }.take(hours / 2)
-            .map { DayEntry(LocalDate.of(2026, 11, it), overtimeMinutes = 120) }.toTypedArray()
+            .map { overtime(LocalDate.of(2026, 11, it), 120) }.toTypedArray()
         // 16시간 연장 = 288,000원 (고용노동부 예시) ≤ 360,000원: nothing more, the hourly stays 12,000.
         val within = PayCalculator().calculate(p, nov, weekly(day, *ot(16))::resolve)
         assertEquals(12_000, within.ordinaryHourly)

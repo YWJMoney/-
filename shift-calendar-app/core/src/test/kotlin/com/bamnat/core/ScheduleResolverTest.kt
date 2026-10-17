@@ -4,6 +4,8 @@ import com.bamnat.core.Fixtures.day
 import com.bamnat.core.Fixtures.night
 import com.bamnat.core.Fixtures.off
 import com.bamnat.core.model.DayEntry
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.model.WorkTime
@@ -119,18 +121,23 @@ class ScheduleResolverTest {
     }
 
     @Test
-    fun overtimeAndHolidayWorkAreCounted() {
+    fun extraWorkIsCounted() {
         val entries = listOf(
-            DayEntry(start, overtimeMinutes = 90),
-            DayEntry(start.plusDays(5), holidayWorkMinutes = 300),
-            DayEntry(start.plusDays(4), holidayWorkMinutes = -10), // never negative
+            DayEntry(start, extras = listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 90))),
+            DayEntry(start.plusDays(5), extras = listOf(ExtraEntry(ExtraKind.SPECIAL_ID, minutes = 300))),
+            DayEntry(start.plusDays(4), extras = listOf(ExtraEntry(ExtraKind.SPECIAL_ID, minutes = -10))), // never negative
         )
         val r = ScheduleResolver(Fixtures.all, rotation, entries)
-        assertEquals(570, r.resolve(start).totalMinutes)
-        val holiday = r.resolve(start.plusDays(5))
-        assertTrue(holiday.isOff)
-        assertTrue(holiday.isHolidayWork)
-        assertEquals(300, holiday.totalMinutes)
+        val first = r.resolve(start)
+        assertEquals(570, first.totalMinutes)
+        // [EXTRA-01] 잔업 with only its length follows the shift.
+        assertEquals(first.shiftTo, first.extras.single().from)
+        val restDay = r.resolve(start.plusDays(5))
+        assertTrue(restDay.isOff)
+        assertTrue(restDay.isRestDay && restDay.hasExtraWork)
+        assertEquals(300, restDay.totalMinutes)
+        // No shift to place it next to: no clock times, so night minutes are an estimate.
+        assertTrue(restDay.extras.single().estimated)
         assertEquals(0, r.resolve(start.plusDays(4)).totalMinutes)
     }
 

@@ -2,7 +2,8 @@ package com.bamnat.core
 
 import com.bamnat.core.holiday.KoreanHolidays
 import com.bamnat.core.model.DayEntry
-import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.pay.CompanyRules
 import com.bamnat.core.pay.DatedValue
@@ -11,11 +12,11 @@ import com.bamnat.core.pay.ExtraRule
 import com.bamnat.core.pay.LineKind
 import com.bamnat.core.pay.MinuteRounding
 import com.bamnat.core.pay.Occupation
-import com.bamnat.core.pay.OffDayWork
 import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.PremiumTarget
 import com.bamnat.core.pay.Rounding
+import com.bamnat.core.pay.RestDayWork
 import com.bamnat.core.pay.RuleImport
 import com.bamnat.core.pay.ValueTimeline
 import com.bamnat.core.pay.WageType
@@ -27,7 +28,7 @@ import org.junit.Test
 import java.time.LocalDate
 import java.time.YearMonth
 
-/** Company rules and the calendar's 잔업·특근·대근 marks turned into pay [PAYX-07, PAYX-08]. */
+/** Company rules and the calendar's 잔업·특근·대근 turned into pay [PAYX-07, PAYX-08, EXTRA-02]. */
 class CompanyRulesTest {
     private val nov = YearMonth.of(2026, 11)
     private val monday = LocalDate.of(2026, 11, 2)
@@ -38,8 +39,10 @@ class CompanyRulesTest {
     private fun resolver(vararg entries: DayEntry) =
         ScheduleResolver(Fixtures.all, WorkPattern.Rotation(monday, week), entries.toList())
 
-    private val cover8h = DayEntry(saturday, holidayWorkMinutes = 480, extraWork = ExtraWork.COVER)
-    private val overtime2h = DayEntry(tuesday, overtimeMinutes = 120, extraWork = ExtraWork.OVERTIME)
+    /** Hours only, no clock times, as older versions recorded them. */
+    private fun extra(kind: Long, minutes: Int) = listOf(ExtraEntry(kind, minutes = minutes))
+    private val cover8h = DayEntry(saturday, extras = extra(ExtraKind.COVER_ID, 480))
+    private val overtime2h = DayEntry(tuesday, extras = extra(ExtraKind.OVERTIME_ID, 120))
 
     private val nurse = PayProfile(
         occupation = Occupation.NURSE,
@@ -52,31 +55,32 @@ class CompanyRulesTest {
     fun `calendar extra work is paid by law when the company has no rule`() {
         val pay = calc(nurse, resolver(cover8h, overtime2h))
         assertEquals(14_354, pay.ordinaryHourly)
-        assertEquals(172_248, pay.lines.single { it.kind == LineKind.HOLIDAY }.amount)
-        assertEquals(43_062, pay.lines.single { it.kind == LineKind.OVERTIME }.amount)
+        // [EXTRA-02] A saturday off is a 휴무일, not a holiday: after a 40-hour week all 8 hours are 연장.
+        assertTrue(pay.lines.none { it.kind == LineKind.HOLIDAY })
+        assertEquals(172_248 + 43_062, pay.lines.single { it.kind == LineKind.OVERTIME }.amount)
         // Each calendar day carries what it added.
         assertEquals(172_248, pay.day(saturday)!!.amount)
-        assertEquals(ExtraWork.COVER, pay.day(saturday)!!.extraWork)
+        assertEquals(listOf("대근"), pay.day(saturday)!!.extras)
         assertEquals(43_062, pay.day(tuesday)!!.amount)
         assertEquals(pay.total - 3_000_000, pay.days.sumOf { it.amount })
     }
 
     @Test
     fun `cover at 200 percent of the ordinary hourly with 8 hours credited`() {
-        val rules = CompanyRules(extra = mapOf(ExtraWork.COVER to ExtraRule(ExtraBasis.HOURLY_RATE, multiplier = 2.0, minMinutes = 480)))
-        val pay = calc(nurse.copy(rules = rules), resolver(cover8h.copy(holidayWorkMinutes = 240)))
+        val rules = CompanyRules(extra = mapOf(ExtraKind.COVER_ID to ExtraRule(ExtraBasis.HOURLY_RATE, multiplier = 2.0, minMinutes = 480)))
+        val pay = calc(nurse.copy(rules = rules), resolver(cover8h.copy(extras = extra(ExtraKind.COVER_ID, 240))))
         val cover = pay.lines.single { it.kind == LineKind.EXTRA }
         assertEquals("대근 (회사 규칙)", cover.label)
         assertEquals(480, cover.minutes)
         assertEquals(229_664, cover.amount)
-        assertTrue(pay.lines.none { it.kind == LineKind.HOLIDAY })
+        assertTrue(pay.lines.none { it.kind == LineKind.HOLIDAY || it.kind == LineKind.OVERTIME || it.kind == LineKind.EXTRA_HOURS })
         assertEquals(229_664, pay.day(saturday)!!.amount)
         assertTrue(pay.warnings.isEmpty())
     }
 
     @Test
     fun `a fixed cover amount below the legal pay is flagged`() {
-        val rules = CompanyRules(extra = mapOf(ExtraWork.COVER to ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 50_000)))
+        val rules = CompanyRules(extra = mapOf(ExtraKind.COVER_ID to ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 50_000)))
         val pay = calc(nurse.copy(rules = rules), resolver(cover8h))
         assertEquals(50_000, pay.lines.single { it.kind == LineKind.EXTRA }.amount)
         assertTrue(pay.warnings.any { "172,248원" in it })
@@ -84,18 +88,22 @@ class CompanyRulesTest {
 
     @Test
     fun `per hour amount for special work`() {
-        val special = DayEntry(saturday, holidayWorkMinutes = 300, extraWork = ExtraWork.SPECIAL)
-        val rules = CompanyRules(extra = mapOf(ExtraWork.SPECIAL to ExtraRule(ExtraBasis.FIXED_PER_HOUR, amount = 30_000)))
+        val special = DayEntry(saturday, extras = extra(ExtraKind.SPECIAL_ID, 300))
+        val rules = CompanyRules(extra = mapOf(ExtraKind.SPECIAL_ID to ExtraRule(ExtraBasis.FIXED_PER_HOUR, amount = 30_000)))
         val pay = calc(nurse.copy(rules = rules), resolver(special))
         assertEquals(150_000, pay.lines.single { it.kind == LineKind.EXTRA }.amount)
     }
 
     @Test
-    fun `day off work can count as overtime instead of holiday work`() {
-        val rules = CompanyRules(offDayWork = OffDayWork.OVERTIME)
-        val pay = calc(nurse.copy(rules = rules), resolver(cover8h, overtime2h))
-        assertTrue(pay.lines.none { it.kind == LineKind.HOLIDAY })
-        assertEquals(600, pay.lines.single { it.kind == LineKind.OVERTIME }.minutes)
+    fun `day off work can count as holiday work or all as overtime`() {
+        val overtime = calc(nurse.copy(rules = CompanyRules(restDayWork = RestDayWork.OVERTIME)), resolver(cover8h, overtime2h))
+        assertTrue(overtime.lines.none { it.kind == LineKind.HOLIDAY })
+        assertEquals(600, overtime.lines.single { it.kind == LineKind.OVERTIME }.minutes)
+        val holiday = calc(nurse.copy(rules = CompanyRules(restDayWork = RestDayWork.HOLIDAY)), resolver(cover8h, overtime2h))
+        val asHoliday = holiday.lines.single { it.kind == LineKind.HOLIDAY }
+        assertEquals("쉬는 날 근무 (휴일근로로 대우)", asHoliday.label)
+        assertEquals(172_248, asHoliday.amount)
+        assertEquals(120, holiday.lines.single { it.kind == LineKind.OVERTIME }.minutes)
     }
 
     @Test
@@ -108,7 +116,7 @@ class CompanyRulesTest {
 
     @Test
     fun `overtime minutes are rounded per day the company's way`() {
-        val r = resolver(overtime2h.copy(overtimeMinutes = 50))
+        val r = resolver(overtime2h.copy(extras = extra(ExtraKind.OVERTIME_ID, 50)))
         val down = calc(nurse.copy(rules = CompanyRules(overtimeRounding = MinuteRounding(30, Rounding.DOWN))), r)
         assertEquals(30, down.lines.single { it.kind == LineKind.OVERTIME }.minutes)
         assertTrue(down.warnings.any { "30분 단위" in it })
@@ -162,12 +170,12 @@ class CompanyRulesTest {
             야간 가산 100%
             """.trimIndent(),
         )
-        val cover = found.single { it.extraWork == ExtraWork.COVER }.extraRule!!
+        val cover = found.single { it.extraKind == ExtraKind.COVER_ID }.extraRule!!
         assertEquals(ExtraBasis.HOURLY_RATE, cover.basis)
         assertEquals(2.0, cover.multiplier, 1e-9)
         assertEquals(480, cover.minMinutes)
-        assertEquals(ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 80_000), found.single { it.extraWork == ExtraWork.SPECIAL }.extraRule)
-        assertEquals(ExtraRule(ExtraBasis.FIXED_PER_HOUR, amount = 20_000), found.single { it.extraWork == ExtraWork.OVERTIME }.extraRule)
+        assertEquals(ExtraRule(ExtraBasis.FIXED_PER_TIME, amount = 80_000), found.single { it.extraKind == ExtraKind.SPECIAL_ID }.extraRule)
+        assertEquals(ExtraRule(ExtraBasis.FIXED_PER_HOUR, amount = 20_000), found.single { it.extraKind == ExtraKind.OVERTIME_ID }.extraRule)
         val ot = found.single { it.premiumTarget == PremiumTarget.OVERTIME }
         assertEquals(1.0, ot.premium!!, 1e-9)
         assertEquals(1.0, found.single { it.premiumTarget == PremiumTarget.NIGHT }.premium!!, 1e-9)

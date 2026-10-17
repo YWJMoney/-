@@ -86,21 +86,23 @@ object AlarmPlanner {
                 )
             }
         } else {
-            // [FEAT-02] A second shift rings with its own alarms too.
-            val second = day.second?.let { s ->
-                s.type.activeAlarms.map { spec ->
+            // [FEAT-02][EXTRA-01] A 대근 for one of the user's shifts rings with that shift's alarms.
+            val second = day.extras.flatMap { e ->
+                val t = e.covered ?: return@flatMap emptyList()
+                val at = e.from ?: return@flatMap emptyList()
+                t.activeAlarms.map { spec ->
                     val offset = spec.offsetMinutes.coerceIn(0, MAX_OFFSET_MINUTES)
                     PlannedAlarm(
-                        triggerAt = date.atTime(s.start).minusMinutes(offset.toLong()),
+                        triggerAt = at.minusMinutes(offset.toLong()),
                         shiftDate = date,
-                        shiftStart = s.start,
-                        shiftTypeId = s.type.id,
-                        shiftName = s.type.name,
+                        shiftStart = at.toLocalTime(),
+                        shiftTypeId = t.id,
+                        shiftName = t.name,
                         offsetMinutes = offset,
-                        soundUri = s.type.alarmSoundUri,
+                        soundUri = t.alarmSoundUri,
                     )
                 }
-            }.orEmpty()
+            }
             if (type == null || start == null) return second.distinctBy { it.triggerAt }.sortedBy { it.triggerAt }
             second + type.activeAlarms.map { spec ->
                 val offset = spec.offsetMinutes.coerceIn(0, MAX_OFFSET_MINUTES)
