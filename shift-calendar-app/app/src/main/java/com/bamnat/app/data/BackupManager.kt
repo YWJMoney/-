@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.bamnat.app.data.db.AppDatabase
 import com.bamnat.app.data.db.DailySalesEntity
 import com.bamnat.app.data.db.DayEntryEntity
+import com.bamnat.app.data.db.DayExtraEntity
 import com.bamnat.app.data.db.JobEntity
 import com.bamnat.app.data.db.MoneyEntryEntity
 import com.bamnat.app.data.db.FixedCostEntity
@@ -19,7 +20,7 @@ import java.time.DayOfWeek
 import java.util.Base64
 
 /** What a backup file holds, shown before the user confirms a restore. */
-data class BackupSummary(val shiftTypes: Int, val days: Int, val memos: Int, val exportedAtMillis: Long, val moneyLines: Int = 0)
+data class BackupSummary(val shiftTypes: Int, val days: Int, val memos: Int, val exportedAtMillis: Long, val moneyLines: Int = 0, val extras: Int = 0)
 
 class BackupException(message: String) : Exception(message)
 
@@ -70,12 +71,19 @@ class BackupManager(
                 JSONObject()
                     .put("day", d.epochDay).put("mode", d.overrideMode).putOpt("type", d.overrideShiftTypeId)
                     .putOpt("start", d.customStartMinute).putOpt("end", d.customEndMinute)
-                    .putOpt("break", d.customBreakMinutes).put("overtime", d.overtimeMinutes)
-                    .put("holiday", d.holidayWorkMinutes).put("skip", d.alarmSkipped)
-                    .putOpt("alarms", d.customAlarms).put("extra", d.extraWork).put("leave", d.leave).putOpt("second", d.secondShiftTypeId),
+                    .putOpt("break", d.customBreakMinutes).put("skip", d.alarmSkipped)
+                    .putOpt("alarms", d.customAlarms).put("leave", d.leave),
             )
         }
         root.put("days", days)
+        // [EXTRA-01] Extra work by date (format 2).
+        root.put("extras", JSONArray().apply {
+            db.dayExtraDao().getAll().forEach { x ->
+                put(JSONObject().put("day", x.epochDay).put("kind", x.kindId).putOpt("start", x.startMinute).putOpt("end", x.endMinute)
+                    .put("break", x.breakMinutes).putOpt("breakStart", x.breakStartMinute).put("minutes", x.minutes)
+                    .putOpt("covered", x.coveredShiftTypeId).put("review", x.needsReview).put("pos", x.position))
+            }
+        })
         val memos = JSONArray()
         db.memoDao().getAll().forEach { m ->
             memos.put(
@@ -151,6 +159,7 @@ class BackupManager(
             shiftTypes = root.optJSONArray("shiftTypes")?.length() ?: 0,
             days = root.optJSONArray("days")?.length() ?: 0,
             memos = root.optJSONArray("memos")?.length() ?: 0,
+            extras = root.optJSONArray("extras")?.length() ?: 0,
             exportedAtMillis = root.optLong("exportedAt"),
             moneyLines = (root.optJSONArray("money")?.length() ?: 0) + (root.optJSONArray("jobs")?.length() ?: 0) +
                 (root.optJSONArray("sales")?.length() ?: 0) + (root.optJSONArray("fixed")?.length() ?: 0),
@@ -186,10 +195,21 @@ class BackupManager(
                 epochDay = o.getLong("day"), overrideMode = o.optInt("mode"),
                 overrideShiftTypeId = if (o.isNull("type") || !o.has("type")) null else o.getLong("type"),
                 customStartMinute = o.optIntOrNull("start"), customEndMinute = o.optIntOrNull("end"),
-                customBreakMinutes = o.optIntOrNull("break"), overtimeMinutes = o.optInt("overtime"),
-                holidayWorkMinutes = o.optInt("holiday"), alarmSkipped = o.optBoolean("skip"),
+                customBreakMinutes = o.optIntOrNull("break"),
+                // Format 1 (1.8 and earlier) kept extra work on the day; it moves to day_extras below.
+                overtimeMinutes = o.optInt("overtime").coerceIn(0, 24 * 60),
+                holidayWorkMinutes = o.optInt("holiday").coerceIn(0, 24 * 60), alarmSkipped = o.optBoolean("skip"),
                 customAlarms = o.optStringOrNull("alarms"), extraWork = o.optInt("extra"), leave = o.optInt("leave"),
                 secondShiftTypeId = if (o.has("second") && !o.isNull("second")) o.getLong("second") else null,
+            )
+        }
+        val extras = root.optJSONArray("extras")?.objects()?.map { o ->
+            DayExtraEntity(
+                epochDay = o.getLong("day"), kindId = o.getLong("kind"), startMinute = o.optIntOrNull("start"),
+                endMinute = o.optIntOrNull("end"), breakMinutes = o.optInt("break").coerceIn(0, 24 * 60),
+                breakStartMinute = o.optIntOrNull("breakStart"), minutes = o.optInt("minutes").coerceIn(0, 24 * 60),
+                coveredShiftTypeId = if (o.has("covered") && !o.isNull("covered")) o.getLong("covered") else null,
+                needsReview = o.optBoolean("review"), position = o.optInt("pos"),
             )
         }
         val memos = root.optJSONArray("memos").objects().map { o ->
@@ -246,11 +266,15 @@ class BackupManager(
             db.memoDao().clear()
             db.dayChangeDao().clear() // the log described the days being replaced [MKT-08]
             db.dayEntryDao().clear()
+            db.dayExtraDao().clear()
             db.patternDao().clear()
             db.shiftTypeDao().clear()
             db.shiftTypeDao().insertAll(types)
             db.patternDao().saveAll(patterns)
             db.dayEntryDao().insertAll(days)
+            if (extras != null) db.dayExtraDao().insertAll(extras)
+            // [EXTRA-05] A backup from 1.8 or earlier: the same move as the database upgrade.
+            else com.bamnat.app.data.db.AppDatabase.moveOldExtraWork(db.openHelper.writableDatabase)
             memos.forEach { db.memoDao().restore(it) }
         }
         // The pay setup points at shift types by id, and those ids just changed to the backup's: a
@@ -284,6 +308,8 @@ class BackupManager(
                     sleepTips = o.optBoolean("sleepTips", s.sleepTips),
                     sleepReminders = o.optBoolean("sleepReminders", s.sleepReminders),
                     sleepTargetMinutes = o.optInt("sleepTarget", s.sleepTargetMinutes).coerceIn(4 * 60, 10 * 60),
+                    // Old records came back with the backup; offer to fix them again.
+                    swapCoversAnswered = s.swapCoversAnswered && extras != null,
                 )
             }
         }
@@ -342,7 +368,8 @@ class BackupManager(
         const val APP_ID = "com.bamnat.app"
         /** Backups made before the rename (시프트메이트) restore too [BRAND-03]. */
         val ACCEPTED_APP_IDS = setOf(APP_ID, "com.shiftmate.calendar")
-        const val FORMAT_VERSION = 1
+        /** 2: extra work as its own list [EXTRA-01]. 1.8 and earlier refuse it rather than drop it. */
+        const val FORMAT_VERSION = 2
         const val MIME_TYPE = "application/json"
         const val SEALED_FORMAT = "bamnat-enc"
         /** A file asking for more work than this is not ours (and would freeze the phone). */

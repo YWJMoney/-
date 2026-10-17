@@ -3,6 +3,8 @@ package com.bamnat.app.share
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.core.model.DayEntry
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.Leave
 import com.bamnat.core.model.LeaveKind
 import com.bamnat.core.model.ShiftType
@@ -31,7 +33,8 @@ class ShareLinkTest {
         listOf(
             DayEntry(start, leave = Leave(LeaveKind.ANNUAL, 2)),
             DayEntry(start.plusDays(2), leave = Leave(LeaveKind.UNPAID)),
-            DayEntry(start.plusDays(6), secondShiftId = 2L),
+            // [EXTRA-01] A 대근 of the night shift on a day off shows as its second shift.
+            DayEntry(start.plusDays(6), extras = listOf(ExtraEntry(ExtraKind.COVER_ID, coveredShiftId = 2L), ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 60))),
         ),
     )
 

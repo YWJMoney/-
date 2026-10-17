@@ -12,8 +12,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ShiftTypeEntity::class, PatternEntity::class, DayEntryEntity::class, MemoEntity::class,
         MoneyEntryEntity::class, JobEntity::class, DailySalesEntity::class,
         FixedCostEntity::class, CategoryRuleEntity::class, DayChangeEntity::class, SleepLogEntity::class,
+        DayExtraEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -24,11 +25,12 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun moneyDao(): MoneyDao
     abstract fun dayChangeDao(): DayChangeDao
     abstract fun sleepDao(): SleepDao
+    abstract fun dayExtraDao(): DayExtraDao
 
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "bamnat.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                 .build()
 
         /** Version 2: several alarms per shift, hand-set alarms per day, memo trash. */
@@ -137,6 +139,65 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE TABLE IF NOT EXISTS `sleep_logs` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `startMillis` INTEGER NOT NULL, `endMillis` INTEGER)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_sleep_logs_startMillis` ON `sleep_logs` (`startMillis`)")
             }
+        }
+
+        /** Version 12: extra work as pieces with their own times [EXTRA-01, EXTRA-05]. */
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `day_extras` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `epochDay` INTEGER NOT NULL, " +
+                        "`kindId` INTEGER NOT NULL, `startMinute` INTEGER, `endMinute` INTEGER, `breakMinutes` INTEGER NOT NULL DEFAULT 0, " +
+                        "`breakStartMinute` INTEGER, `minutes` INTEGER NOT NULL DEFAULT 0, `coveredShiftTypeId` INTEGER, " +
+                        "`needsReview` INTEGER NOT NULL DEFAULT 0, `position` INTEGER NOT NULL DEFAULT 0)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_day_extras_epochDay` ON `day_extras` (`epochDay`)")
+                moveOldExtraWork(db)
+            }
+        }
+
+        /**
+         * [EXTRA-05] Moves version 11 extra work (still in day_entries) into day_extras; also run on a
+         * restored backup from 1.8 or earlier. A second shift becomes a piece with that shift's hours
+         * (대근 unless marked otherwise), copied so a later change to the type leaves the day as it was;
+         * minutes on a working day and on a day off become pieces of their length; a mark with no hours
+         * becomes an empty piece to check. Pieces that may hold hours nobody meant (a chip's default
+         * hours next to a second shift) are marked for review. The old columns are 0 afterwards.
+         */
+        fun moveOldExtraWork(db: SupportSQLiteDatabase) {
+            val kind = { fallback: Int -> "CASE WHEN d.extraWork BETWEEN 1 AND 3 THEN d.extraWork ELSE $fallback END" }
+            db.execSQL(
+                "INSERT INTO day_extras (epochDay, kindId, startMinute, endMinute, breakMinutes, breakStartMinute, coveredShiftTypeId, position) " +
+                    "SELECT d.epochDay, ${kind(3)}, s.startMinute, s.endMinute, s.breakMinutes, s.breakStartMinute, d.secondShiftTypeId, 0 " +
+                    "FROM day_entries d JOIN shift_types s ON s.id = d.secondShiftTypeId " +
+                    "WHERE s.isOff = 0 AND s.startMinute IS NOT NULL AND s.endMinute IS NOT NULL",
+            )
+            db.execSQL(
+                "INSERT INTO day_extras (epochDay, kindId, minutes, needsReview, position) " +
+                    "SELECT d.epochDay, ${kind(1)}, d.overtimeMinutes, " +
+                    "CASE WHEN d.secondShiftTypeId IS NOT NULL AND d.extraWork IN (2, 3) THEN 1 ELSE 0 END, 1 " +
+                    "FROM day_entries d WHERE d.overtimeMinutes > 0",
+            )
+            db.execSQL(
+                "INSERT INTO day_extras (epochDay, kindId, minutes, needsReview, position) " +
+                    "SELECT d.epochDay, ${kind(2)}, d.holidayWorkMinutes, " +
+                    "CASE WHEN d.secondShiftTypeId IS NOT NULL THEN 1 ELSE 0 END, 2 " +
+                    "FROM day_entries d WHERE d.holidayWorkMinutes > 0",
+            )
+            // A mark with no hours at all: kept so the calendar still shows it, and asked about once.
+            db.execSQL(
+                "INSERT INTO day_extras (epochDay, kindId, minutes, needsReview, position) " +
+                    "SELECT d.epochDay, d.extraWork, 0, 1, 0 FROM day_entries d " +
+                    "WHERE d.extraWork BETWEEN 1 AND 3 AND d.epochDay NOT IN (SELECT epochDay FROM day_extras)",
+            )
+            db.execSQL(
+                "UPDATE day_entries SET overtimeMinutes = 0, holidayWorkMinutes = 0, extraWork = 0, secondShiftTypeId = NULL " +
+                    "WHERE overtimeMinutes != 0 OR holidayWorkMinutes != 0 OR extraWork != 0 OR secondShiftTypeId IS NOT NULL",
+            )
+            // Rows that held nothing but extra work are now empty; their work lives in day_extras.
+            db.execSQL(
+                "DELETE FROM day_entries WHERE overrideMode = 0 AND customStartMinute IS NULL AND customEndMinute IS NULL " +
+                    "AND customBreakMinutes IS NULL AND alarmSkipped = 0 AND customAlarms IS NULL AND leave = 0",
+            )
         }
     }
 }

@@ -71,6 +71,12 @@ data class ResolvedDay(
     val hasExtraWork: Boolean get() = extras.isNotEmpty()
     val extraMinutes: Int get() = extras.sumOf { it.minutes }
 
+    /** [EXTRA-01] The first shift type some extra work covered (a 대근 for a 나이트), for two-colour cells. */
+    val coveredShift: ShiftType? get() = extras.firstNotNullOfOrNull { it.covered }
+
+    /** [EXTRA-01] Up to [max] marks of the day's kinds of extra work, e.g. "잔대". */
+    fun extraMarks(max: Int = 2): String = extras.map { it.kind.mark }.distinct().take(max).joinToString("")
+
     /** Everything that counts toward weekly / monthly hours. */
     val totalMinutes: Int get() = scheduledMinutes + extraMinutes
 

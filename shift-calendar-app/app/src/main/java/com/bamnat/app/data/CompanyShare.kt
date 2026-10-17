@@ -2,8 +2,9 @@ package com.bamnat.app.data
 
 import com.bamnat.app.pay.PayCodec
 import com.bamnat.app.pay.PayStore
+import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.ExtraKinds
-import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.model.ExtraTiming
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.pay.FlexPeriod
@@ -27,6 +28,8 @@ data class CompanySummary(
     val hasRules: Boolean,
     val items: List<String>,
     val withAmounts: Boolean,
+    /** [EXTRA-01] The kinds of extra work in the file, e.g. 잔업 · 야간 대근. */
+    val extraKinds: List<String> = emptyList(),
 )
 
 /**
@@ -49,7 +52,12 @@ class CompanyShare(
             .put("app", BackupManager.APP_ID).put("format", FORMAT).put("v", VERSION)
             .put("company", company.trim().take(MAX_NAME))
             .put("shiftTypes", JSONArray(snapshot.shiftTypes.map(::typeJson)))
-            .put("extraKinds", settings.current.extraKinds.encode())
+        // [EXTRA-01] Kinds of extra work; the shift a 대근 kind starts from is named, since ids differ.
+        val kinds = settings.current.extraKinds
+        root.put("extraKinds", ExtraKinds(kinds.kinds.map { k -> if (k.timing is ExtraTiming.AsShift) k.copy(timing = ExtraTiming.AsShift()) else k }).encode())
+            .put("extraKindShifts", JSONObject().apply {
+                kinds.kinds.forEach { k -> (k.timing as? ExtraTiming.AsShift)?.shiftTypeId?.let(names::get)?.let { put(k.id.toString(), it) } }
+            })
         (PatternTimeline.current(snapshot.patterns, today()) as? WorkPattern.Rotation)?.let { r ->
             root.put("rotation", JSONObject()
                 .put("anchor", r.anchorDate.toString())
@@ -88,6 +96,8 @@ class CompanyShare(
             hasRules = pay?.has("rules") == true,
             items = pay?.optJSONArray("items").objects().map { it.optString("name") },
             withAmounts = pay?.optBoolean("withAmounts") == true,
+            extraKinds = root.optString("extraKinds").takeIf { it.isNotEmpty() }
+                ?.let { ExtraKinds.decode(it).visible().map(ExtraKind::name) }.orEmpty(),
         )
     }
 
@@ -122,8 +132,12 @@ class CompanyShare(
             }
         }
         existing.forEach { ids.putIfAbsent(it.name, it.id) }
+        // [EXTRA-01] Kinds merge like shift types: 잔업·특근·대근 by id, the company's own by name.
+        var kindIds: Map<Long, Long> = emptyMap()
         root.optString("extraKinds").takeIf { it.isNotEmpty() }?.let { encoded ->
-            settings.update { it.copy(extraKinds = ExtraKinds.decode(encoded)) }
+            val (merged, map) = mergeKinds(settings.current.extraKinds, ExtraKinds.decode(encoded), root.optJSONObject("extraKindShifts"), ids)
+            kindIds = map
+            settings.update { it.copy(extraKinds = merged) }
         }
         var cycle: Int? = null
         root.optJSONObject("rotation")?.takeIf { rotation }?.let { r ->
@@ -140,7 +154,7 @@ class CompanyShare(
         val pay = root.optJSONObject("pay")
         val profile = payStore.profile.value
         if (pay != null && profile != null) {
-            payStore.save(merge(profile, pay, ids))
+            payStore.save(merge(profile, pay, ids, kindIds))
             rules = true
         }
         return Applied(added, cycle, rules, pendingPay = pay != null && profile == null)
@@ -148,10 +162,18 @@ class CompanyShare(
 
     data class Applied(val addedTypes: Int, val cycleDays: Int?, val rules: Boolean, val pendingPay: Boolean)
 
-    private fun merge(p: PayProfile, pay: JSONObject, ids: Map<String, Long>): PayProfile {
+    private fun merge(p: PayProfile, pay: JSONObject, ids: Map<String, Long>, kindIds: Map<Long, Long>): PayProfile {
         val rulesJson = pay.optJSONObject("rules")
-        rulesJson?.optJSONObject("extraByShift")?.let { by -> rulesJson.put("extraByShift", rekey(by) { ids[it.take(MAX_NAME)]?.toString() }) }
+        rulesJson?.optJSONObject("extraByShift")?.let { by -> rulesJson.put("extraByShift", rekeyKinds(rekey(by) { ids[it.take(MAX_NAME)]?.toString() }, kindIds)) }
+        rulesJson?.optJSONObject("extra")?.let { x -> rulesJson.put("extra", rekeyKinds(x, kindIds)) }
+        rulesJson?.optString("publicHolidayAs")?.let(::kindKey)?.let { k -> rulesJson.put("publicHolidayAs", (kindIds[k] ?: k).toString()) }
         val incoming = rulesJson?.let(PayCodec::rulesFrom)
+        // Kinds the file does not have keep the user's own rules.
+        val theirs = kindIds.values.toSet() + incoming?.extra?.keys.orEmpty()
+        val merged = incoming?.copy(
+            extra = p.rules.extra.filterKeys { it !in theirs } + incoming.extra,
+            extraByShift = p.rules.extraByShift.filterKeys { it !in theirs } + incoming.extraByShift,
+        )
         val withAmounts = pay.optBoolean("withAmounts")
         // Allowances the user does not have yet are added; their own amounts are never overwritten.
         val have = p.items.map { it.name }.toSet()
@@ -173,7 +195,7 @@ class CompanyShare(
             period = pay.optJSONObject("period")?.let(PayCodec::periodFrom) ?: p.period,
             items = p.items + items,
             // The user's own leave days stay theirs.
-            rules = incoming?.copy(annualLeaveDays = p.rules.annualLeaveDays, annualLeaveCarry = p.rules.annualLeaveCarry) ?: p.rules,
+            rules = merged?.copy(annualLeaveDays = p.rules.annualLeaveDays, annualLeaveCarry = p.rules.annualLeaveCarry) ?: p.rules,
         )
     }
 
@@ -196,10 +218,43 @@ class CompanyShare(
 
     private fun rekey(o: JSONObject, key: (String) -> String?): JSONObject = JSONObject().apply {
         o.keys().forEach { kind ->
-            if (ExtraWork.entries.none { it.name == kind }) return@forEach
-            val byType = o.getJSONObject(kind)
+            if (kindKey(kind) == null) return@forEach
+            val byType = o.optJSONObject(kind) ?: return@forEach
             put(kind, JSONObject().apply { byType.keys().forEach { k -> key(k)?.let { put(it, byType.get(k)) } } })
         }
+    }
+
+    /** Kind keys of the file to this phone's ids. */
+    private fun rekeyKinds(o: JSONObject, kindIds: Map<Long, Long>): JSONObject = JSONObject().apply {
+        o.keys().forEach { key -> kindKey(key)?.let { id -> put((kindIds[id] ?: id).toString(), o.get(key)) } }
+    }
+
+    /** A kind id in the file, or a name from 1.8 and earlier. */
+    private fun kindKey(key: String): Long? = key.toLongOrNull() ?: when (key) {
+        "OVERTIME" -> ExtraKind.OVERTIME_ID
+        "SPECIAL" -> ExtraKind.SPECIAL_ID
+        "COVER" -> ExtraKind.COVER_ID
+        else -> null
+    }
+
+    /**
+     * The file's kinds merged into the user's: 잔업·특근·대근 (ids 1~3) take the company's names and
+     * times, a kind of the company's own replaces the user's of the same name or is added. Days
+     * already marked keep their kind. Returns the kinds and each file id's id on this phone.
+     */
+    private fun mergeKinds(mine: ExtraKinds, incoming: ExtraKinds, shifts: JSONObject?, ids: Map<String, Long>): Pair<ExtraKinds, Map<Long, Long>> {
+        var merged = mine
+        val map = HashMap<Long, Long>()
+        for (k in incoming.kinds) {
+            val timing = (k.timing as? ExtraTiming.AsShift)
+                ?.let { ExtraTiming.AsShift(shifts?.optString(k.id.toString())?.takeIf { it.isNotEmpty() }?.let { ids[it.take(MAX_NAME)] }) }
+                ?: k.timing
+            val target = if (k.isBuiltIn) merged.byId(k.id) else merged.kinds.firstOrNull { !it.isBuiltIn && it.name == k.name }
+            val id = target?.id ?: if (k.isBuiltIn) k.id else merged.nextId()
+            merged = merged.put(k.copy(id = id, timing = timing))
+            map[k.id] = id
+        }
+        return merged to map
     }
 
     private fun parse(text: String): JSONObject {
@@ -218,7 +273,8 @@ class CompanyShare(
 
     companion object {
         const val FORMAT = "bamnat-company"
-        const val VERSION = 1
+        /** 2: kinds of extra work by id with their times [EXTRA-01]; 1.8 asks to update instead of dropping them. */
+        const val VERSION = 2
         const val MIME_TYPE = "application/json"
         private const val MAX_NAME = 40
 

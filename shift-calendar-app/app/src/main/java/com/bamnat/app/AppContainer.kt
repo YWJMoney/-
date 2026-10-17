@@ -35,13 +35,14 @@ class AppContainer(context: Context) {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val database: AppDatabase = AppDatabase.create(context)
-    val scheduleRepository = ScheduleRepository(database, extraName = { settingsRepository.current.extraKinds.name(it) })
+    val settingsRepository = SettingsRepository(context)
+    val scheduleRepository = ScheduleRepository(database, kinds = settingsRepository.settings.map { it.extraKinds },
+        extraName = { settingsRepository.current.extraKinds.name(it) })
     val memoRepository = MemoRepository(database)
     val sleepRepository = com.bamnat.app.data.SleepRepository(database)
     /** [SLP-08] Sleep measured by a watch or the phone, read from Health Connect. */
     val healthSleep = com.bamnat.app.sleep.HealthSleep(context)
     val moneyRepository = MoneyRepository(database, com.bamnat.app.data.CaptureStore(java.io.File(appContext.noBackupFilesDir, "captures.json")))
-    val settingsRepository = SettingsRepository(context)
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository)
     val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry) {
         com.bamnat.app.alarm.BootAlarms.RingSettings.of(settingsRepository.current)

@@ -1,7 +1,7 @@
 package com.bamnat.app.pay
 
 import android.content.Context
-import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.pay.FlexPeriod
 import com.bamnat.core.pay.CalcSnapshot
 import com.bamnat.core.pay.Cadence
@@ -12,7 +12,8 @@ import com.bamnat.core.pay.CompanyRules
 import com.bamnat.core.pay.ExtraBasis
 import com.bamnat.core.pay.ExtraRule
 import com.bamnat.core.pay.MinuteRounding
-import com.bamnat.core.pay.OffDayWork
+import com.bamnat.core.pay.RestDayWork
+import com.bamnat.core.pay.WeeklyHoliday
 import com.bamnat.core.pay.DatedValue
 import com.bamnat.core.pay.HolidayPayMode
 import com.bamnat.core.pay.Occupation
@@ -146,7 +147,7 @@ object SnapshotCodec {
 /** JSON for [PayProfile]; also used by the full backup file. */
 object PayCodec {
     fun encode(p: PayProfile): JSONObject = JSONObject()
-        .put("v", 1)
+        .put("v", 2)
         .put("occupation", p.occupation.name)
         .put("wageType", p.wageType.name)
         .put("base", timeline(p.base))
@@ -199,24 +200,28 @@ object PayCodec {
     private fun rules(r: CompanyRules): JSONObject = JSONObject()
         .putRate("ot", r.overtimePremium).putRate("night", r.nightPremium)
         .putRate("hw", r.holidayPremiumWithin8h).putRate("ho", r.holidayPremiumOver8h)
-        .put("offDay", r.offDayWork.name)
+        .put("restDay", r.restDayWork.name)
+        // Read by 1.8 and earlier, which knew only these two.
+        .put("offDay", if (r.restDayWork == RestDayWork.OVERTIME) "OVERTIME" else "HOLIDAY")
+        .put("weeklyHolidayDay", weeklyHoliday(r.weeklyHoliday))
         .put("publicHolidays", r.publicHolidaysPaid)
         .put("roundUnit", r.overtimeRounding.unit).put("round", r.overtimeRounding.rounding.name)
         .put("weeklyHoliday", r.weeklyHolidayPay)
         .putRate("annualLeave", r.annualLeaveDays)
         .put("leaveCarry", r.annualLeaveCarry)
-        .putOpt("publicHolidayAs", r.publicHolidayAs?.name)
+        .putOpt("publicHolidayAs", r.publicHolidayAs?.toString())
         .put("holidayLeaveFree", r.holidayLeaveFree)
         .put("holidayByStart", r.holidayByShiftStart)
         .putOpt("nightStart", r.nightStart?.toString()).putOpt("nightEnd", r.nightEnd?.toString())
+        // [EXTRA-03] Keyed by kind id; 1.8 and earlier used OVERTIME / SPECIAL / COVER.
         .put("extraByShift", JSONObject().apply {
             r.extraByShift.forEach { (kind, byType) ->
-                put(kind.name, JSONObject().apply { byType.forEach { (id, e) -> put(id.toString(), extraRule(e)) } })
+                put(kind.toString(), JSONObject().apply { byType.forEach { (id, e) -> put(id.toString(), extraRule(e)) } })
             }
         })
         .put("extra", JSONObject().apply {
             r.extra.forEach { (kind, e) ->
-                put(kind.name, extraRule(e))
+                put(kind.toString(), extraRule(e))
             }
         })
 
@@ -225,7 +230,8 @@ object PayCodec {
         nightPremium = o.rate("night"),
         holidayPremiumWithin8h = o.rate("hw"),
         holidayPremiumOver8h = o.rate("ho"),
-        offDayWork = runCatching { OffDayWork.valueOf(o.getString("offDay")) }.getOrDefault(OffDayWork.HOLIDAY),
+        restDayWork = restDayWork(o),
+        weeklyHoliday = weeklyHolidayFrom(o.optString("weeklyHolidayDay")),
         publicHolidaysPaid = o.optBoolean("publicHolidays", true),
         overtimeRounding = MinuteRounding(
             o.optInt("roundUnit", 1),
@@ -234,12 +240,12 @@ object PayCodec {
         weeklyHolidayPay = o.optBoolean("weeklyHoliday", true),
         annualLeaveDays = o.rate("annualLeave"),
         annualLeaveCarry = o.optDouble("leaveCarry", 0.0),
-        publicHolidayAs = o.optString("publicHolidayAs").takeIf { it.isNotEmpty() }?.let { runCatching { ExtraWork.valueOf(it) }.getOrNull() },
+        publicHolidayAs = o.optString("publicHolidayAs").takeIf { it.isNotEmpty() && it != "null" }?.let(::kindId),
         holidayLeaveFree = o.optBoolean("holidayLeaveFree", false),
         holidayByShiftStart = o.optBoolean("holidayByStart", false),
         extra = o.optJSONObject("extra")?.let { x ->
             x.keys().asSequence().mapNotNull { key ->
-                val kind = runCatching { ExtraWork.valueOf(key) }.getOrNull() ?: return@mapNotNull null
+                val kind = kindId(key) ?: return@mapNotNull null
                 kind to extraRule(x.getJSONObject(key))
             }.toMap()
         } ?: emptyMap(),
@@ -247,7 +253,7 @@ object PayCodec {
         nightEnd = o.optString("nightEnd").takeIf { it.isNotEmpty() }?.let { runCatching { LocalTime.parse(it) }.getOrNull() },
         extraByShift = o.optJSONObject("extraByShift")?.let { x ->
             x.keys().asSequence().mapNotNull { key ->
-                val kind = runCatching { ExtraWork.valueOf(key) }.getOrNull() ?: return@mapNotNull null
+                val kind = kindId(key) ?: return@mapNotNull null
                 val byType = x.getJSONObject(key)
                 kind to byType.keys().asSequence().mapNotNull { id -> id.toLongOrNull()?.let { it to extraRule(byType.getJSONObject(id)) } }.toMap()
             }.toMap()
@@ -256,17 +262,50 @@ object PayCodec {
 
     private fun extraRule(e: ExtraRule): JSONObject = JSONObject().put("basis", e.basis.name).put("multiplier", e.multiplier).put("amount", e.amount)
         .put("min", e.minMinutes).put("night", e.nightPremium)
+        .put("percent", e.percentOfBase).put("cover", e.coverMinutes ?: -1).put("premiums", e.legalPremiums).put("bonus", e.bonus)
         .put("dayTiers", tiers(e.dayTiers)).put("nightTiers", tiers(e.nightTiers))
 
     private fun extraRule(e: JSONObject): ExtraRule = ExtraRule(
+        // A basis this version does not know (a newer file) is paid by law rather than guessed.
         basis = runCatching { ExtraBasis.valueOf(e.getString("basis")) }.getOrDefault(ExtraBasis.LEGAL),
         multiplier = e.optDouble("multiplier", 1.5),
         amount = e.optLong("amount", 0),
         minMinutes = e.optInt("min", 0),
         nightPremium = e.optBoolean("night", true),
+        percentOfBase = e.optDouble("percent", 0.1).takeIf { it.isFinite() && it in 0.0..10.0 } ?: 0.1,
+        coverMinutes = e.optInt("cover", -1).takeIf { it > 0 },
+        legalPremiums = e.optBoolean("premiums", false),
+        bonus = e.optLong("bonus", 0).coerceAtLeast(0),
         dayTiers = e.optJSONArray("dayTiers")?.let(::tiers) ?: ExtraRule.DEFAULT_DAY_TIERS,
         nightTiers = e.optJSONArray("nightTiers")?.let(::tiers) ?: ExtraRule.DEFAULT_NIGHT_TIERS,
     )
+
+    /** [EXTRA-03] A kind id, or a name from 1.8 and earlier. */
+    private fun kindId(key: String): Long? = key.toLongOrNull() ?: when (key) {
+        "OVERTIME" -> ExtraKind.OVERTIME_ID
+        "SPECIAL" -> ExtraKind.SPECIAL_ID
+        "COVER" -> ExtraKind.COVER_ID
+        else -> null
+    }
+
+    /**
+     * [EXTRA-02] Rules saved by 1.8 and earlier knew only 휴일근로 (the default) and 연장근로 for work on
+     * a day off; they keep what they had, so nobody's pay changes without them choosing.
+     */
+    private fun restDayWork(o: JSONObject): RestDayWork =
+        o.optString("restDay").takeIf { it.isNotEmpty() }?.let { n -> RestDayWork.entries.firstOrNull { it.name == n } }
+            ?: if (o.optString("offDay") == "OVERTIME") RestDayWork.OVERTIME else RestDayWork.HOLIDAY
+
+    private fun weeklyHoliday(w: WeeklyHoliday): String = when (w) {
+        is WeeklyHoliday.Fixed -> w.day.name
+        WeeklyHoliday.FirstRestDay -> "FIRST_REST"
+        WeeklyHoliday.Unknown -> "UNKNOWN"
+    }
+
+    private fun weeklyHolidayFrom(s: String): WeeklyHoliday = when (s) {
+        "FIRST_REST" -> WeeklyHoliday.FirstRestDay
+        else -> DayOfWeek.entries.firstOrNull { it.name == s }?.let { WeeklyHoliday.Fixed(it) } ?: WeeklyHoliday.Unknown
+    }
 
     private fun tiers(t: List<Tier>): JSONArray = JSONArray(t.map { JSONObject().put("min", it.minutes).put("premium", it.premium) })
     private fun tiers(a: JSONArray): List<Tier> = (0 until a.length()).map { a.getJSONObject(it) }.map { Tier(it.getInt("min"), it.getDouble("premium")) }
@@ -323,6 +362,5 @@ object PayCodec {
         if (this == null) emptyList() else (0 until length()).map { getJSONObject(it) }
 }
 
-/** [PAYX-09] The profile with the user's own names for 잔업·특근·대근, for labels on pay lines. */
-fun PayProfile.named(kinds: com.bamnat.core.model.ExtraKinds): PayProfile =
-    if (kinds.names.isEmpty()) this else copy(rules = rules.copy(extraNames = kinds.names))
+/** [PAYX-09][EXTRA-01] The profile with the names of the user's kinds of extra work, for labels on pay lines. */
+fun PayProfile.named(kinds: com.bamnat.core.model.ExtraKinds): PayProfile = copy(rules = rules.copy(extraNames = kinds.names))

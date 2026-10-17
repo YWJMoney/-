@@ -14,7 +14,8 @@ object DayChanges {
         extraName: (Long) -> String = { ExtraKinds().name(it) },
     ): String? {
         val b = before ?: DayEntry(after.date)
-        if (!b.isEmpty && after.isEmpty) return "바꾼 내용 모두 지움"
+        // Clearing a day says so; taking off its only extra work says which.
+        if (!b.isEmpty && after.isEmpty && !b.copy(extras = emptyList()).isEmpty) return "바꾼 내용 모두 지움"
         val parts = mutableListOf<String>()
         if (b.override != after.override) parts += when (val o = after.override) {
             ShiftOverride.None -> "패턴대로 되돌림"

@@ -4,6 +4,7 @@ import com.bamnat.app.data.db.DayChangeEntity
 import com.bamnat.core.model.DayChanges
 import androidx.room.withTransaction
 import com.bamnat.app.data.db.AppDatabase
+import com.bamnat.app.data.db.assembleDays
 import com.bamnat.app.data.db.decodeSteps
 import com.bamnat.app.data.db.encodeSteps
 import com.bamnat.app.data.db.toEntity
@@ -11,16 +12,20 @@ import com.bamnat.app.data.db.toModel
 import com.bamnat.core.model.AlarmSpec
 import com.bamnat.core.model.DayAlarm
 import com.bamnat.core.model.DayEntry
-import com.bamnat.core.model.ExtraWork
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.model.ExtraKinds
 import com.bamnat.core.model.Leave
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
+import com.bamnat.core.model.WorkTime
+import com.bamnat.core.schedule.ExtraReview
 import com.bamnat.core.schedule.PatternTimeline
 import com.bamnat.core.schedule.ScheduleResolver
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
 import java.time.LocalTime
@@ -31,11 +36,13 @@ data class ScheduleSnapshot(
     /** Pattern periods, earliest first; more than one after a team change. */
     val patterns: List<WorkPattern>,
     val entries: List<DayEntry>,
+    /** [EXTRA-01] The user's kinds of extra work: where each piece sits on the clock and its name. */
+    val kinds: ExtraKinds = ExtraKinds(),
 ) {
-    constructor(shiftTypes: List<ShiftType>, pattern: WorkPattern?, entries: List<DayEntry>) :
-        this(shiftTypes, listOfNotNull(pattern), entries)
+    constructor(shiftTypes: List<ShiftType>, pattern: WorkPattern?, entries: List<DayEntry>, kinds: ExtraKinds = ExtraKinds()) :
+        this(shiftTypes, listOfNotNull(pattern), entries, kinds)
 
-    val resolver: ScheduleResolver by lazy { ScheduleResolver(shiftTypes, patterns, entries) }
+    val resolver: ScheduleResolver by lazy { ScheduleResolver(shiftTypes, patterns, entries, kinds) }
     val typesById: Map<Long, ShiftType> by lazy { shiftTypes.associateBy { it.id } }
     val isEmpty: Boolean get() = patterns.isEmpty() && entries.isEmpty()
     val hasPattern: Boolean get() = patterns.isNotEmpty()
@@ -43,8 +50,10 @@ data class ScheduleSnapshot(
 
 class ScheduleRepository(
     private val db: AppDatabase,
-    /** [PAYX-09] The user's names for 잔업·특근·대근, used in the change log. */
-    private val extraName: (ExtraWork) -> String = { it.label },
+    /** [EXTRA-01] The user's kinds of extra work, from settings. */
+    private val kinds: Flow<ExtraKinds> = flowOf(ExtraKinds()),
+    /** [PAYX-09] The user's names for each kind, used in the change log. */
+    private val extraName: (Long) -> String = { ExtraKinds().name(it) },
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val changeDao = db.dayChangeDao()
@@ -69,6 +78,7 @@ class ScheduleRepository(
     private val shiftTypeDao = db.shiftTypeDao()
     private val patternDao = db.patternDao()
     private val dayEntryDao = db.dayEntryDao()
+    private val extraDao = db.dayExtraDao()
 
     val shiftTypes: Flow<List<ShiftType>> =
         shiftTypeDao.observeAll().map { list -> list.map { it.toModel() } }.distinctUntilChanged()
@@ -80,10 +90,13 @@ class ScheduleRepository(
     val pattern: Flow<WorkPattern?> = patterns.map { PatternTimeline.current(it, LocalDate.now()) }
 
     val entries: Flow<List<DayEntry>> =
-        dayEntryDao.observeAll().map { list -> list.map { it.toModel() } }.distinctUntilChanged()
+        combine(dayEntryDao.observeAll(), extraDao.observeAll()) { rows, extras -> assembleDays(rows, extras) }.distinctUntilChanged()
 
     val snapshot: Flow<ScheduleSnapshot> =
-        combine(shiftTypes, patterns, entries) { t, p, e -> ScheduleSnapshot(t, p, e) }
+        combine(shiftTypes, patterns, entries, kinds.distinctUntilChanged()) { t, p, e, k -> ScheduleSnapshot(t, p, e, k) }
+
+    /** [EXTRA-05] Pieces of extra work moved from an older record that still need a look. */
+    val extrasToReview: Flow<Int> = extraDao.observeNeedsReview().distinctUntilChanged()
 
     /** Seeds the default shift types on first launch. */
     suspend fun ensureDefaults() {
@@ -159,10 +172,14 @@ class ScheduleRepository(
                 val updated = e.toModel().copy(override = ShiftOverride.None)
                 if (updated.isEmpty) dayEntryDao.delete(e.epochDay) else dayEntryDao.upsert(updated.toEntity())
             }
-            for (e in dayEntryDao.withSecondShift(id)) {
-                val updated = e.toModel().copy(secondShiftId = null)
-                if (updated.isEmpty) dayEntryDao.delete(e.epochDay) else dayEntryDao.upsert(updated.toEntity())
-            }
+            // Work that covered this shift keeps its hours; only the link to the type goes.
+            val type = shiftTypeDao.getAll().firstOrNull { it.id == id }
+            val covering = extraDao.covering(id)
+            if (covering.isNotEmpty()) extraDao.updateAll(covering.map { x ->
+                if (x.startMinute != null && x.endMinute != null || type == null || type.isOff) x.copy(coveredShiftTypeId = null)
+                else x.copy(startMinute = type.startMinute, endMinute = type.endMinute, breakMinutes = type.breakMinutes,
+                    breakStartMinute = type.breakStartMinute, coveredShiftTypeId = null)
+            })
             shiftTypeDao.delete(id)
         }
     }
@@ -210,26 +227,46 @@ class ScheduleRepository(
 
     suspend fun clearPattern() = patternDao.clear()
 
+    /** One day as stored, with its extra work; null when the day follows the pattern untouched. */
+    private suspend fun readDay(epochDay: Long): DayEntry? {
+        val row = dayEntryDao.get(epochDay)
+        val extras = extraDao.onDay(epochDay).map { it.toModel() }
+        return row?.toModel(extras) ?: extras.takeIf { it.isNotEmpty() }?.let { DayEntry(LocalDate.ofEpochDay(epochDay), extras = it) }
+    }
+
+    /** Writes [entry] for its date: the row when anything besides extra work changed, and the extra work in order. */
+    private suspend fun writeDay(entry: DayEntry) {
+        val epochDay = entry.date.toEpochDay()
+        if (entry.copy(extras = emptyList()).isEmpty) dayEntryDao.delete(epochDay) else dayEntryDao.upsert(entry.toEntity())
+        extraDao.deleteDay(epochDay)
+        if (entry.extras.isNotEmpty()) extraDao.insertAll(entry.extras.mapIndexed { i, e -> e.toEntity(epochDay, i) })
+    }
+
     /** Reads, changes and writes one day atomically. Entries that end up empty are removed. */
     suspend fun updateDay(date: LocalDate, transform: (DayEntry) -> DayEntry): DayEntry? =
         db.withTransaction {
-            val epochDay = date.toEpochDay()
-            val before = dayEntryDao.get(epochDay)?.toModel()
+            val before = readDay(date.toEpochDay())
             val changed = transform(before ?: DayEntry(date))
-            val after = changed.copy(
-                date = date,
-                overtimeMinutes = changed.overtimeMinutes.coerceIn(0, MAX_EXTRA_MINUTES),
-                holidayWorkMinutes = changed.holidayWorkMinutes.coerceIn(0, MAX_EXTRA_MINUTES),
-            )
-            if (after.isEmpty) dayEntryDao.delete(epochDay) else dayEntryDao.upsert(after.toEntity())
+            val after = changed.copy(date = date, extras = changed.extras.take(MAX_EXTRAS).map(::clean))
+            writeDay(after)
             logChange(date, before, after)
             before
         }
 
     /** Puts a day back exactly as it was (undo). */
     suspend fun restoreDay(date: LocalDate, entry: DayEntry?) {
-        if (entry == null || entry.isEmpty) dayEntryDao.delete(date.toEpochDay())
-        else dayEntryDao.upsert(entry.copy(date = date).toEntity())
+        db.withTransaction { writeDay(entry?.copy(date = date) ?: DayEntry(date)) }
+    }
+
+    /** A piece of extra work within what one day can hold. */
+    private fun clean(e: ExtraEntry): ExtraEntry {
+        val timed = e.hasTimes
+        return e.copy(
+            start = e.start.takeIf { timed }, end = e.end.takeIf { timed },
+            breakMinutes = if (timed) e.breakMinutes.coerceIn(0, (WorkTime.spanMinutes(e.start!!, e.end!!) - 1).coerceAtLeast(0)) else 0,
+            breakStart = e.breakStart.takeIf { timed && e.breakMinutes > 0 },
+            minutes = if (timed) 0 else e.minutes.coerceIn(0, MAX_EXTRA_MINUTES),
+        )
     }
 
     suspend fun setOverride(date: LocalDate, override: ShiftOverride) =
@@ -238,26 +275,43 @@ class ScheduleRepository(
     suspend fun setCustomTimes(date: LocalDate, start: LocalTime?, end: LocalTime?, breakMinutes: Int?) =
         updateDay(date) { it.copy(customStart = start, customEnd = end, customBreakMinutes = breakMinutes) }
 
-    suspend fun setOvertime(date: LocalDate, minutes: Int) = updateDay(date) { it.copy(overtimeMinutes = minutes) }
+    /** [EXTRA-01] Adds a piece of extra work at the end of the day's list. */
+    suspend fun addExtra(date: LocalDate, entry: ExtraEntry) = updateDay(date) { it.copy(extras = it.extras + entry) }
 
-    suspend fun setHolidayWork(date: LocalDate, minutes: Int) =
-        updateDay(date) { it.copy(holidayWorkMinutes = minutes) }
+    /** [EXTRA-01] Changes the piece at [index]; a piece that changed is no longer one to check. */
+    suspend fun updateExtra(date: LocalDate, index: Int, entry: ExtraEntry) = updateDay(date) { d ->
+        if (index !in d.extras.indices) d else d.copy(extras = d.extras.mapIndexed { i, e -> if (i == index) entry.copy(needsReview = false) else e })
+    }
+
+    suspend fun removeExtra(date: LocalDate, index: Int) = updateDay(date) { d ->
+        d.copy(extras = d.extras.filterIndexed { i, _ -> i != index })
+    }
+
+    /** [EXTRA-05] The day's old pieces are as the user meant them. */
+    suspend fun markExtrasReviewed(date: LocalDate) = extraDao.markReviewed(date.toEpochDay())
+
+    suspend fun markAllExtrasReviewed() = extraDao.markAllReviewed()
 
     /**
-     * Marks extra work on a day: [minutes] go to 연장 on a working day and to 휴일 근무 on a day off,
-     * so they count toward the week either way. A null [kind] with 0 minutes clears it.
+     * [EXTRA-05] Turns each day off that was changed into a shift for a 대근 back into a day off with
+     * a 대근 of that shift's hours. Returns how many days changed.
      */
-    suspend fun setExtraWork(date: LocalDate, kind: ExtraWork?, minutes: Int, workDay: Boolean) =
-        updateDay(date) {
-            if (workDay) it.copy(extraWork = kind, overtimeMinutes = minutes)
-            else it.copy(extraWork = kind, holidayWorkMinutes = minutes)
+    suspend fun convertShiftSwapCovers(dates: Collection<LocalDate>): Int = db.withTransaction {
+        val types = shiftTypeDao.getAll().map { it.toModel() }.associateBy { it.id }
+        var n = 0
+        for (date in dates) {
+            val before = readDay(date.toEpochDay()) ?: continue
+            val type = (before.override as? ShiftOverride.Shift)?.let { types[it.shiftTypeId] } ?: continue
+            val after = ExtraReview.convert(before, type)
+            writeDay(after)
+            logChange(date, before, after)
+            n++
         }
+        n
+    }
 
     /** 연차·반차·반반차 on [date]; null removes it [FEAT-10]. */
     suspend fun setLeave(date: LocalDate, leave: Leave?) = updateDay(date) { it.copy(leave = leave) }
-
-    /** Second shift on [date]; null removes it [FEAT-02]. */
-    suspend fun setSecondShift(date: LocalDate, shiftTypeId: Long?) = updateDay(date) { it.copy(secondShiftId = shiftTypeId) }
 
     suspend fun setAlarmSkipped(date: LocalDate, skipped: Boolean) =
         updateDay(date) { it.copy(alarmSkipped = skipped) }
@@ -277,8 +331,10 @@ class ScheduleRepository(
     companion object {
         const val MAX_LABEL_LENGTH = 2
         const val MAX_ALARMS = 10
-        /** 24 hours: one day cannot hold more extra work than that. */
+        /** 24 hours: one piece of extra work cannot be longer than that. */
         const val MAX_EXTRA_MINUTES = 24 * 60
+        /** Pieces of extra work one day can hold. */
+        const val MAX_EXTRAS = 6
     }
 }
 

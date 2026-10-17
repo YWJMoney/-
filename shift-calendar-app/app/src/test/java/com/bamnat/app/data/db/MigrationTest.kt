@@ -6,15 +6,20 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.core.model.AlarmSpec
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.model.ExtraKind
+import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.WorkPattern
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.time.LocalTime
 
 /**
  * Builds a database exactly as version 1 of the app wrote it, then opens it with the current
@@ -32,7 +37,7 @@ class MigrationTest {
         createVersion1(context.getDatabasePath(name).apply { parentFile?.mkdirs() })
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12)
             .allowMainThreadQueries()
             .build()
         try {
@@ -43,16 +48,16 @@ class MigrationTest {
             assertEquals(true, types.single().alarmEnabled)
             assertNull(types.single().icon)
 
-            val day = db.dayEntryDao().getAll().single().toModel()
-            assertEquals(120, day.overtimeMinutes)
+            // Version 12: the day's 2 hours of 잔업 are a piece of extra work; the day held nothing else.
+            val day = assembleDays(db.dayEntryDao().getAll(), db.dayExtraDao().getAll()).single()
+            assertEquals(listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120)), day.extras)
+            assertTrue(db.dayEntryDao().getAll().isEmpty())
             assertNull(day.customAlarms)
 
             val pattern = db.patternDao().getAll().single().toModel() as WorkPattern.Rotation
             assertEquals(listOf(1L, 1L, null, null), pattern.steps)
             assertEquals(pattern.startDate, pattern.anchorDate)
-            assertNull(day.extraWork)
             assertNull(day.leave)
-            assertNull(day.secondShiftId)
 
             val memo = db.memoDao().getAll().single().toModel()
             assertEquals("인수인계", memo.title)
@@ -86,6 +91,82 @@ class MigrationTest {
             db.close()
             context.deleteDatabase(name)
         }
+    }
+
+    /** [EXTRA-05] T17: every kind of version 11 extra work lands as pieces, and nothing is counted twice. */
+    @Test
+    fun version11ExtraWorkBecomesPieces() = runBlocking {
+        val name = "migration-11.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val sql = createTables(file, 11)
+        // 주간 09–18, 야간 22–07 (휴게 1시간 02:00부터), 휴무.
+        sql.execSQL("INSERT INTO shift_types (id, name, label, colorArgb, startMinute, endMinute, breakMinutes, isOff, alarmEnabled, alarmOffsetMinutes, sortOrder, alarmOffsets, breakStartMinute) VALUES " +
+            "(1, '주간', '주', 0, 540, 1080, 60, 0, 0, 60, 0, '', 720), (2, '야간', '야', 0, 1320, 420, 60, 0, 0, 60, 1, '', 120), (3, '휴무', '휴', 0, NULL, NULL, 0, 1, 0, 60, 2, '', NULL)")
+        fun day(epochDay: Int, values: String) = sql.execSQL(
+            "INSERT INTO day_entries (epochDay, overrideMode, overrideShiftTypeId, customStartMinute, customEndMinute, customBreakMinutes, " +
+                "overtimeMinutes, holidayWorkMinutes, alarmSkipped, customAlarms, extraWork, leave, secondShiftTypeId) VALUES ($epochDay, $values)",
+        )
+        day(20000, "0, NULL, NULL, NULL, NULL, 120, 0, 0, NULL, 1, 0, NULL")   // 잔업 2시간
+        day(20001, "0, NULL, NULL, NULL, NULL, 0, 480, 0, NULL, 2, 0, NULL")   // 쉬는 날 특근 8시간
+        day(20002, "0, NULL, NULL, NULL, NULL, 120, 0, 0, NULL, 3, 0, 2")      // 대근 칩 2시간 + 두 번째 근무 야간
+        day(20003, "2, 2, NULL, NULL, NULL, 0, 0, 0, NULL, 3, 0, NULL")        // 근무를 야간으로 바꾸고 대근 표시만
+        day(20004, "0, NULL, NULL, NULL, NULL, 60, 0, 1, NULL, 0, 0, NULL")    // 알람 끈 날의 1시간
+        day(20005, "1, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, 0, NULL")     // 쉬는 날로 바꾼 날
+        sql.version = 11
+        sql.close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+            .addMigrations(AppDatabase.MIGRATION_11_12).allowMainThreadQueries().build()
+        try {
+            val days = assembleDays(db.dayEntryDao().getAll(), db.dayExtraDao().getAll()).associateBy { it.date.toEpochDay() }
+            assertEquals(listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120)), days.getValue(20000).extras)
+            assertEquals(listOf(ExtraEntry(ExtraKind.SPECIAL_ID, minutes = 480)), days.getValue(20001).extras)
+            // The second shift keeps its own hours; the chip's 2 hours next to it are asked about.
+            assertEquals(
+                listOf(
+                    ExtraEntry(ExtraKind.COVER_ID, LocalTime.of(22, 0), LocalTime.of(7, 0), 60, LocalTime.of(2, 0), coveredShiftId = 2),
+                    ExtraEntry(ExtraKind.COVER_ID, minutes = 120, needsReview = true),
+                ),
+                days.getValue(20002).extras,
+            )
+            // A mark with no hours stays visible and is asked about; the shift change stays.
+            assertEquals(ShiftOverride.Shift(2), days.getValue(20003).override)
+            assertEquals(listOf(ExtraEntry(ExtraKind.COVER_ID, needsReview = true)), days.getValue(20003).extras)
+            assertTrue(days.getValue(20004).alarmSkipped)
+            assertEquals(listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 60)), days.getValue(20004).extras)
+            assertEquals(ShiftOverride.Off, days.getValue(20005).override)
+            assertTrue(days.getValue(20005).extras.isEmpty())
+            assertEquals(2, db.dayExtraDao().observeNeedsReview().first())
+            // The old columns are empty from now on, and days that held only extra work have no row.
+            db.dayEntryDao().getAll().forEach { e ->
+                assertEquals(0, e.overtimeMinutes + e.holidayWorkMinutes + e.extraWork)
+                assertNull(e.secondShiftTypeId)
+            }
+            assertEquals(setOf(20003L, 20004L, 20005L), db.dayEntryDao().getAll().map { it.epochDay }.toSet())
+        } finally {
+            db.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    /** The tables of schema [version] exactly as Room wrote them, empty. */
+    private fun createTables(file: File, version: Int): SQLiteDatabase {
+        val schema = JSONObject(File(SCHEMA_DIR, "$version.json").readText()).getJSONObject("database")
+        val sql = SQLiteDatabase.openOrCreateDatabase(file, null)
+        val entities = schema.getJSONArray("entities")
+        for (i in 0 until entities.length()) {
+            val e = entities.getJSONObject(i)
+            val table = e.getString("tableName")
+            sql.execSQL(e.getString("createSql").replace("\${TABLE_NAME}", table))
+            val indices = e.optJSONArray("indices") ?: continue
+            for (j in 0 until indices.length()) {
+                sql.execSQL(indices.getJSONObject(j).getString("createSql").replace("\${TABLE_NAME}", table))
+            }
+        }
+        val setup = schema.getJSONArray("setupQueries")
+        for (i in 0 until setup.length()) sql.execSQL(setup.getString(i))
+        return sql
     }
 
     private fun createVersion1(file: File) {
