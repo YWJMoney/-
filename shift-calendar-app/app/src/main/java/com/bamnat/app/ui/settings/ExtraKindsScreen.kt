@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -262,6 +263,13 @@ class ExtraKindsViewModel(private val container: AppContainer) : ViewModel() {
     fun runUndo(m: UndoMessage) { m.undo?.let { viewModelScope.launch { it() } } }
 
     fun reported() = container.telemetry.event("extra_kind_report")
+
+    /** [COMM-04] With a company server, a way the app cannot set goes straight to the developer, not by mail. */
+    val companyOn: Boolean get() = container.companyApi.enabled
+
+    /** The company the user set up under, to start the report with. */
+    val companyName: String
+        get() = container.companyStore.applied.value?.company ?: container.companyStore.draft.value?.company.orEmpty()
 
     private suspend fun savePay(transform: (CompanyRules) -> CompanyRules) {
         val p = container.payStore.profile.value ?: return
@@ -756,10 +764,10 @@ private fun KindEditor(
                     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(16.dp)) {
                             Text("회사 방식이 여기 없나요?", style = MaterialTheme.typography.titleSmall)
-                            Text("말과 예시로 적어 보내 주세요. 검토해서 계산 방식에 넣어요.", style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(if (vm.companyOn) "말과 예시로 적어 주시면 개발자가 직접 읽고 답을 드려요." else "말과 예시로 적어 보내 주세요. 검토해서 계산 방식에 넣어요.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             OutlinedButton(onClick = { reporting = true }, modifier = Modifier.padding(top = 8.dp)) {
-                                Icon(Icons.Outlined.Email, null, Modifier.size(18.dp))
+                                Icon(if (vm.companyOn) Icons.AutoMirrored.Outlined.Send else Icons.Outlined.Email, null, Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text("회사 방식 알려 주기")
                             }
@@ -811,7 +819,16 @@ private fun KindEditor(
         )
     }
     if (reporting) {
-        ReportDialog(draft, snapshot, profile, onDismiss = { reporting = false }, onSent = { reporting = false; vm.reported() })
+        if (vm.companyOn) {
+            com.bamnat.app.ui.company.AskDeveloperDialog(
+                company = vm.companyName,
+                onDismiss = { reporting = false },
+                onSent = { reporting = false; vm.reported() },
+                note = { company, how, example -> reportText(draft, snapshot, profile, company, how, example) },
+            )
+        } else {
+            ReportDialog(draft, snapshot, profile, onDismiss = { reporting = false }, onSent = { reporting = false; vm.reported() })
+        }
     }
 }
 

@@ -95,6 +95,21 @@ import com.bamnat.app.ui.stats.StatsViewModel
 import com.bamnat.app.ui.money.MoneyScreen
 import com.bamnat.app.ui.money.MoneyViewModel
 import com.bamnat.app.ui.work.WorkStyleScreen
+import com.bamnat.app.ui.company.CompanyDetailScreen
+import com.bamnat.app.ui.company.CompanyDetailViewModel
+import com.bamnat.app.ui.company.CompanyFindScreen
+import com.bamnat.app.ui.company.CompanyFindViewModel
+import com.bamnat.app.ui.company.CompanyNudgeCards
+import com.bamnat.app.ui.company.CompanyNudgeViewModel
+import com.bamnat.app.ui.company.CompanyPayScreen
+import com.bamnat.app.ui.company.CompanyPayViewModel
+import com.bamnat.app.ui.company.CompanyReportScreen
+import com.bamnat.app.ui.company.CompanyReportViewModel
+import com.bamnat.app.ui.company.CompanySentScreen
+import com.bamnat.app.ui.company.CompanySettingsRows
+import com.bamnat.app.ui.company.FixPlace
+import com.bamnat.app.ui.company.InviteSheet
+import androidx.compose.runtime.rememberCoroutineScope
 import com.bamnat.core.work.WorkStyle
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
@@ -126,6 +141,15 @@ private object Routes {
 
     fun memo(id: Long, date: LocalDate? = null, checklist: Boolean = false) =
         "memo/$id?date=${date?.toString() ?: ""}&checklist=$checklist"
+
+    // [COMM-01][COMM-02] The company rules server: find a company, share a setup, follow what was sent.
+    const val COMPANY_FIND = "company_find?setup={setup}&weekdays={weekdays}"
+    const val COMPANY = "company/{id}?setup={setup}&weekdays={weekdays}"
+    const val COMPANY_REPORT = "company_report"
+    const val COMPANY_SENT = "company_sent"
+
+    fun companyFind(setup: Boolean = false, weekdays: Boolean = false) = "company_find?setup=$setup&weekdays=$weekdays"
+    fun company(id: String, setup: Boolean, weekdays: Boolean) = "company/$id?setup=$setup&weekdays=$weekdays"
 }
 
 @Composable
@@ -157,14 +181,16 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     when (needsWorkStyle) {
         null -> return
         true -> {
-            WorkStyleScreen(current = null, onPick = { style ->
+            WorkStyleScreen(current = null, company = container.companyApi.enabled, onPick = { style ->
                 container.settingsRepository.update { it.copy(workStyle = style) }
                 container.telemetry.event("work_style", style.name)
                 if (style == WorkStyle.HOURLY) container.appScope.launch { container.scheduleRepository.addHourlyTypes() }
+                val company = container.companyApi.enabled
                 pendingRoute = when (style) {
-                    // [PAYX-13] First setup goes on from the kind of work to its cycle, then to pay.
-                    WorkStyle.SHIFT -> Routes.pattern(setup = true)
-                    WorkStyle.DAY -> Routes.pattern(weekdays = true, setup = true)
+                    // [PAYX-13] First setup goes on from the kind of work to its cycle, then to pay;
+                    // [COMM-01] with a company server, a coworker's setup is looked for first.
+                    WorkStyle.SHIFT -> if (company) Routes.companyFind(setup = true) else Routes.pattern(setup = true)
+                    WorkStyle.DAY -> if (company) Routes.companyFind(setup = true, weekdays = true) else Routes.pattern(weekdays = true, setup = true)
                     WorkStyle.HOURLY -> Routes.PAY
                     WorkStyle.FIELD, WorkStyle.BUSINESS -> null
                 }
@@ -289,6 +315,8 @@ private fun AppNavHost(
     snackbar: SnackbarHostState,
     modifier: Modifier = Modifier,
 ) {
+    // Outlives the screen that starts it, e.g. a message shown after 회사 찾기 closes.
+    val scope = rememberCoroutineScope()
     // Screens switch at once, without the default cross-fade.
     NavHost(
         navController = nav,
@@ -347,6 +375,7 @@ private fun AppNavHost(
         }
         composable(TopLevel.SETTINGS.route) {
             val vm = appViewModel { SettingsViewModel(it) }
+            val nudges = appViewModel { CompanyNudgeViewModel(it) }
             SettingsScreen(
                 vm = vm,
                 onOpenShiftTypes = { nav.navigate(Routes.SHIFT_TYPES) { launchSingleTop = true } },
@@ -354,12 +383,126 @@ private fun AppNavHost(
                 onOpenDiagnostics = { nav.navigate(Routes.DIAGNOSTICS) { launchSingleTop = true } },
                 onOpenWorkStyle = { nav.navigate(Routes.WORK_STYLE) { launchSingleTop = true } },
                 onOpenExtraKinds = { nav.navigate(Routes.EXTRA_KINDS) { launchSingleTop = true } },
+                company = if (nudges.enabled) ({
+                    CompanySettingsRows(
+                        nudges,
+                        onFind = { nav.navigate(Routes.companyFind()) { launchSingleTop = true } },
+                        onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
+                        onSent = { nav.navigate(Routes.COMPANY_SENT) { launchSingleTop = true } },
+                        onFix = { nav.fixCompanySetup(it) },
+                    )
+                }) else null,
             )
         }
         composable(Routes.PAY) {
             val vm = appViewModel { PayViewModel(it) }
+            val profile by vm.profile.collectAsStateWithLifecycle()
+            val pendingPay by container.companyStore.pendingPayFlow.collectAsStateWithLifecycle()
+            if (profile == null && pendingPay != null) {
+                // [COMM-01] A coworker's setup came with its pay: only the user's own amounts are left.
+                val companyPay = appViewModel(key = "company-pay-${pendingPay.hashCode()}") { CompanyPayViewModel(it) }
+                CompanyPayScreen(companyPay, onBack = { nav.popFrom(Routes.PAY) }, onByHand = { container.companyStore.pendingPay = null })
+                return@composable
+            }
+            val nudges = appViewModel { CompanyNudgeViewModel(it) }
+            // [COMM-02] Right after a pay setup made by hand under a company's name, the invitation slides up once.
+            var wasEmpty by rememberSaveable { mutableStateOf(profile == null) }
+            var inviting by rememberSaveable { mutableStateOf(false) }
+            LaunchedEffect(profile == null) {
+                if (profile == null) wasEmpty = true
+                else if (wasEmpty) {
+                    wasEmpty = false
+                    if (nudges.invite.value != null) inviting = true
+                }
+            }
             PayScreen(vm = vm, onBack = { nav.popFrom(Routes.PAY) },
-                onOpenExtraKinds = { nav.navigate(Routes.EXTRA_KINDS) { launchSingleTop = true } })
+                onOpenExtraKinds = { nav.navigate(Routes.EXTRA_KINDS) { launchSingleTop = true } },
+                top = {
+                    CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
+                        onFix = { nav.fixCompanySetup(it) })
+                })
+            if (inviting) {
+                InviteSheet(nudges, onShare = { inviting = false; nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
+                    onDismiss = { inviting = false })
+            }
+        }
+        composable(
+            Routes.COMPANY_FIND,
+            arguments = listOf(
+                navArgument("setup") { type = NavType.BoolType; defaultValue = false },
+                navArgument("weekdays") { type = NavType.BoolType; defaultValue = false },
+            ),
+        ) { entry ->
+            val setup = entry.arguments?.getBoolean("setup") ?: false
+            val weekdays = entry.arguments?.getBoolean("weekdays") ?: false
+            val vm = appViewModel { CompanyFindViewModel(it) }
+            val ready = !setup && container.payStore.profile.value != null
+            CompanyFindScreen(
+                vm = vm,
+                setup = setup,
+                ready = ready,
+                onBack = { nav.popFrom(Routes.COMPANY_FIND) },
+                onOpen = { id -> nav.navigate(Routes.company(id, setup, weekdays)) },
+                onByHand = { nav.afterCompanyByHand(setup, weekdays, ready) },
+            )
+        }
+        composable(
+            Routes.COMPANY,
+            arguments = listOf(
+                navArgument("id") { type = NavType.StringType },
+                navArgument("setup") { type = NavType.BoolType; defaultValue = false },
+                navArgument("weekdays") { type = NavType.BoolType; defaultValue = false },
+            ),
+        ) { entry ->
+            val id = entry.arguments?.getString("id").orEmpty()
+            val setup = entry.arguments?.getBoolean("setup") ?: false
+            val weekdays = entry.arguments?.getBoolean("weekdays") ?: false
+            val vm = appViewModel(key = "company-$id") { CompanyDetailViewModel(it, id) }
+            val ready = !setup && container.payStore.profile.value != null
+            CompanyDetailScreen(
+                vm = vm,
+                setup = setup,
+                ready = ready,
+                onBack = { nav.popFrom(Routes.COMPANY) },
+                onApplied = { applied, name ->
+                    scope.launch {
+                        val hasPattern = container.scheduleRepository.patterns.first().isNotEmpty()
+                        val pay = container.payStore.profile.value != null
+                        when {
+                            // A setup without a rotation (요일 고정 회사): the days are still to be set.
+                            !hasPattern -> nav.navigate(Routes.pattern(weekdays = weekdays || applied.cycleDays == null, setup = true)) {
+                                popUpTo(Routes.COMPANY_FIND) { inclusive = true }
+                            }
+                            applied.pendingPay || (setup && !pay) -> nav.navigate(Routes.PAY) {
+                                popUpTo(Routes.COMPANY_FIND) { inclusive = true }
+                                launchSingleTop = true
+                            }
+                            else -> {
+                                nav.popBackStack(Routes.COMPANY_FIND, inclusive = true)
+                                snackbar.showSnackbar("‘$name’ 설정을 넣었어요" + (applied.cycleDays?.let { " · ${it}일 순서" } ?: ""))
+                            }
+                        }
+                    }
+                },
+                onByHand = { nav.afterCompanyByHand(setup, weekdays, ready) },
+            )
+        }
+        composable(Routes.COMPANY_REPORT) {
+            val vm = appViewModel { CompanyReportViewModel(it) }
+            CompanyReportScreen(
+                vm = vm,
+                onBack = { nav.popFrom(Routes.COMPANY_REPORT) },
+                onDone = { nav.popFrom(Routes.COMPANY_REPORT) },
+                onOpenSent = { nav.navigate(Routes.COMPANY_SENT) { popUpTo(Routes.COMPANY_REPORT) { inclusive = true } } },
+            )
+        }
+        composable(Routes.COMPANY_SENT) {
+            val vm = appViewModel { CompanyReportViewModel(it) }
+            CompanySentScreen(
+                vm = vm,
+                onBack = { nav.popFrom(Routes.COMPANY_SENT) },
+                onShare = { nav.navigate(Routes.COMPANY_REPORT) { popUpTo(Routes.COMPANY_SENT) { inclusive = true } } },
+            )
         }
         // [EXTRA-04] Names, hours and pay of each kind of extra work, from settings, a day or the pay rules.
         composable(Routes.EXTRA_KINDS) {
@@ -463,6 +606,28 @@ private fun RingingBanner() {
             TextButton(onClick = { AlarmService.snooze(context) }) { Text("다시 알림") }
             Button(onClick = { AlarmService.dismiss(context) }) { Text("끄기") }
         }
+    }
+}
+
+/**
+ * [COMM-02] The company is not there (or not the user's department): during first setup the work is
+ * set up by hand; once set up, the user's own setup is shared under the company's name.
+ */
+private fun NavHostController.afterCompanyByHand(setup: Boolean, weekdays: Boolean, ready: Boolean) {
+    when {
+        setup -> navigate(Routes.pattern(weekdays = weekdays, setup = true)) { popUpTo(Routes.COMPANY_FIND) { inclusive = true } }
+        ready -> navigate(Routes.COMPANY_REPORT) { popUpTo(Routes.COMPANY_FIND) { inclusive = true } }
+        else -> navigate(Routes.pattern(weekdays = weekdays)) { popUpTo(Routes.COMPANY_FIND) { inclusive = true } }
+    }
+}
+
+/** [COMM-03] After 달라요: where the setup is corrected before the right one is shared. */
+private fun NavHostController.fixCompanySetup(place: FixPlace) {
+    when (place) {
+        FixPlace.PAY -> navigate(Routes.PAY) { launchSingleTop = true }
+        FixPlace.SHIFT_TYPES -> navigate(Routes.SHIFT_TYPES) { launchSingleTop = true }
+        FixPlace.PATTERN -> navigate(Routes.pattern()) { launchSingleTop = true }
+        FixPlace.NONE -> navigate(Routes.COMPANY_REPORT) { launchSingleTop = true }
     }
 }
 

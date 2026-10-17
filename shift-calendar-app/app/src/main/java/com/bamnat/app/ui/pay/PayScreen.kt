@@ -109,7 +109,13 @@ internal fun kindColor(kind: LineKind): Color = when (kind) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PayScreen(vm: PayViewModel, onBack: () -> Unit, onOpenExtraKinds: () -> Unit = {}) {
+fun PayScreen(
+    vm: PayViewModel,
+    onBack: () -> Unit,
+    onOpenExtraKinds: () -> Unit = {},
+    /** [COMM-02][COMM-03] Cards above the result: sharing a hand-made setup, 맞았어요·달라요. */
+    top: @Composable () -> Unit = {},
+) {
     val profile by vm.profile.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val tier by vm.tier.collectAsStateWithLifecycle()
@@ -155,7 +161,7 @@ fun PayScreen(vm: PayViewModel, onBack: () -> Unit, onOpenExtraKinds: () -> Unit
                     val month by vm.month.collectAsStateWithLifecycle()
                     CompanyRulesEditor(vm, profile!!, snap, month, onClose = { editingRules = false }, onOpenKinds = onOpenExtraKinds)
                 }
-                else -> PayResult(vm, profile!!, snap, tier, onEditSetup = { editingSetup = true }, onEditRules = { editingRules = true })
+                else -> PayResult(vm, profile!!, snap, tier, onEditSetup = { editingSetup = true }, onEditRules = { editingRules = true }, top = top)
             }
         }
     }
@@ -170,6 +176,7 @@ private fun PayResult(
     tier: Tier,
     onEditSetup: () -> Unit,
     onEditRules: () -> Unit,
+    top: @Composable () -> Unit = {},
 ) {
     val month by vm.month.collectAsStateWithLifecycle()
     val undo by vm.undoAvailable.collectAsStateWithLifecycle()
@@ -204,6 +211,8 @@ private fun PayResult(
             Text(Fmt.month(month), style = MaterialTheme.typography.titleSmall)
             IconButton(onClick = { vm.moveMonth(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
         }
+
+        top()
 
         TotalCard(shown, unlocked, closed = closedSnap != null)
 

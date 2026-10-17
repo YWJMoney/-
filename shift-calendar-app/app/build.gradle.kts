@@ -21,9 +21,12 @@ android {
         // [MKT-09] Link sharing server (server/share-worker). Blank hides '링크로 공유'.
         val shareBaseUrl = (project.findProperty("bamnat.shareBaseUrl") as String?).orEmpty()
         buildConfigField("String", "SHARE_BASE_URL", "\"$shareBaseUrl\"")
+        // [COMM-04] Company rules server (server/company-worker). Blank hides 회사 찾기 and sending setups.
+        val companyBaseUrl = (project.findProperty("bamnat.companyBaseUrl") as String?).orEmpty()
+        buildConfigField("String", "COMPANY_BASE_URL", "\"$companyBaseUrl\"")
     }
-    // The internet permission comes only with a sharing server, see src/online.
-    if ((project.findProperty("bamnat.shareBaseUrl") as String?).orEmpty().isNotBlank()) {
+    // The internet permission comes only with a server, see src/online.
+    if (listOf("bamnat.shareBaseUrl", "bamnat.companyBaseUrl").any { (project.findProperty(it) as String?).orEmpty().isNotBlank() }) {
         sourceSets.getByName("debug").manifest.srcFile("src/online/AndroidManifest.xml")
         sourceSets.getByName("release").manifest.srcFile("src/online/AndroidManifest.xml")
     }

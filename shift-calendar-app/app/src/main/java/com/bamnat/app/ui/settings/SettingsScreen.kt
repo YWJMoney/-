@@ -297,6 +297,8 @@ fun SettingsScreen(
     onOpenDiagnostics: () -> Unit,
     onOpenWorkStyle: () -> Unit = {},
     onOpenExtraKinds: () -> Unit = {},
+    /** [COMM-01][COMM-02] 회사 찾기·내 설정 나누기·내가 보낸 정보, when the build has a company server. */
+    company: (@Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit)? = null,
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val upcoming by vm.upcoming.collectAsStateWithLifecycle()
@@ -502,7 +504,12 @@ fun SettingsScreen(
         }
 
         // [COMM-00] Coworkers share one setup instead of each typing it in.
-        SectionCard(title = "회사 설정 나누기") {
+        SectionCard(title = if (company != null) "회사 설정" else "회사 설정 나누기") {
+            if (company != null) {
+                company()
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                Text("파일로 주고받기", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+            }
             Text(
                 "근무 유형·주기·급여 규칙을 파일로 동료에게 보내요. 기본급, 입사일, 연차, 달력에 적은 내용은 들어가지 않아요.",
                 style = MaterialTheme.typography.bodySmall,
@@ -679,7 +686,7 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun NavRow(title: String, subtitle: String, onClick: () -> Unit) {
+internal fun NavRow(title: String, subtitle: String, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,

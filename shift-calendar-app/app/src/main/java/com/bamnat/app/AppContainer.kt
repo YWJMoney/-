@@ -51,6 +51,9 @@ class AppContainer(context: Context) {
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore)
     /** [COMM-00] Company settings as a file for coworkers. */
     val companyShare by lazy { com.bamnat.app.data.CompanyShare(scheduleRepository, payStore, settingsRepository) }
+    /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
+    var companyApi: com.bamnat.app.company.CompanyApi = com.bamnat.app.company.CompanyClient()
+    val companyStore by lazy { com.bamnat.app.company.CompanyStore(appContext) }
     val featureGate = FeatureGate(settingsRepository, appScope)
 
     suspend fun rescheduleAlarms(after: LocalDateTime = LocalDateTime.now()) {

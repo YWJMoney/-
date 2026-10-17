@@ -1055,6 +1055,147 @@ class ScreenshotTest {
         reveal("알람", exact = true)
     }
 
+    // ---- M12 [COMM-01][COMM-02][COMM-03][EXTRA-06] 회사 찾기와 나누기, with a made-up company server ----
+    private val company = FakeCompanyApi()
+
+    /** A coworker's setup as the server hands it out: this phone's own schedule and a company's pay, no amounts. */
+    private fun coworkerFile(): String = runBlocking {
+        val c = app.container
+        val night = c.scheduleRepository.shiftTypes.first().first { it.name == "야간" }.id
+        val before = c.payStore.profile.value
+        c.payStore.save(com.bamnat.core.pay.PayProfile(
+            com.bamnat.core.pay.Occupation.MANUFACTURING, com.bamnat.core.pay.WageType.MONTHLY,
+            com.bamnat.core.pay.ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(today, 1))), monthlyHours = 180,
+            items = listOf(
+                com.bamnat.core.pay.PayItem("q", "자격수당", com.bamnat.core.pay.ValueTimeline(), com.bamnat.core.pay.Cadence.MONTHLY),
+                com.bamnat.core.pay.PayItem("n", "야간수당", com.bamnat.core.pay.ValueTimeline(), com.bamnat.core.pay.Cadence.PER_SHIFT_TYPE, shiftTypeIds = setOf(night)),
+                com.bamnat.core.pay.PayItem("b", "상여", com.bamnat.core.pay.ValueTimeline(), com.bamnat.core.pay.Cadence.BONUS,
+                    months = setOf(2, 4, 6, 8, 10, 12), percentOfBase = 1.0),
+            ),
+            rules = companyRules,
+        ), keepUndo = false)
+        val file = c.companyShare.exportForServer().toString()
+        c.payStore.save(before, keepUndo = false)
+        file
+    }
+
+    private fun companyOn(): com.bamnat.app.AppContainer = app.container.also {
+        it.companyApi = company
+        company.file = coworkerFile()
+    }
+
+    /** Lets the view model's own waits pass, e.g. the pause in typing before a search. */
+    private fun waitFor(ms: Long) {
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(ms))
+        settle()
+    }
+    @Test fun foldedCompanyFind() = shoot("114_folded_company_find", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyFindViewModel(companyOn()).apply { query.value = "예시" }
+        content { com.bamnat.app.ui.company.CompanyFindScreen(vm, setup = true, onBack = {}, onOpen = {}, onByHand = {}, focus = false) }
+        waitFor(400)
+    }
+    @Test fun foldedCompanyFirstLook() = shoot("115_folded_company_first_look", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyFindViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyFindScreen(vm, setup = true, onBack = {}, onOpen = {}, onByHand = {}, focus = false) }
+    }
+    @Test fun foldedCompanyNotFound() = shoot("116_folded_company_not_found", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyFindViewModel(companyOn()).apply { query.value = "가나다화학" }
+        content { com.bamnat.app.ui.company.CompanyFindScreen(vm, setup = true, onBack = {}, onOpen = {}, onByHand = {}, focus = false) }
+        waitFor(400)
+    }
+    @Test fun foldedCompanyDetail() = shoot("117_folded_company_detail", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyDetailViewModel(companyOn(), "c1")
+        content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = true, onBack = {}, onApplied = { _, _ -> }, onByHand = {}) }
+        tapText("급여 계산 방식 보기", prefix = true)
+    }
+    @Test fun foldedCompanyToday() = shoot("118_folded_company_today", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyDetailViewModel(companyOn(), "c1")
+        content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = true, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, openPhasesFor = "s1") }
+    }
+    @Test fun foldedCompanyPay() = shoot("119_folded_company_pay", FOLDED) {
+        val c = companyOn()
+        c.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("c1", "(주)예시정밀", "생산팀", "s1", 2, true, java.time.Instant.now()))
+        c.companyStore.pendingPay = company.file
+        val vm = com.bamnat.app.ui.company.CompanyPayViewModel(c)
+        content { com.bamnat.app.ui.company.CompanyPayScreen(vm, onBack = {}, onByHand = {}) }
+    }
+    @Test fun foldedCompanyReport() = shoot("120_folded_company_report", FOLDED) {
+        val c = companyOn()
+        c.companyStore.setDraft(com.bamnat.app.company.CompanyDraft("가나다화학", "품질팀"))
+        runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(rules = companyRules), keepUndo = false) }
+        val vm = com.bamnat.app.ui.company.CompanyReportViewModel(c)
+        content { com.bamnat.app.ui.company.CompanyReportScreen(vm, onBack = {}, onDone = {}, onOpenSent = {}) }
+        scrollUp(600)
+    }
+    @Test fun foldedCompanyReportEnd() = shoot("130_folded_company_report_end", FOLDED) {
+        val c = companyOn()
+        c.companyStore.setDraft(com.bamnat.app.company.CompanyDraft("가나다화학", "품질팀"))
+        runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(rules = companyRules), keepUndo = false) }
+        val vm = com.bamnat.app.ui.company.CompanyReportViewModel(c)
+        content { com.bamnat.app.ui.company.CompanyReportScreen(vm, onBack = {}, onDone = {}, onOpenSent = {}) }
+        reveal("보내기", exact = true)
+    }
+    @Test fun foldedCompanySent() = shoot("121_folded_company_sent", FOLDED) {
+        val c = companyOn()
+        runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(rules = companyRules), keepUndo = false) }
+        val vm = com.bamnat.app.ui.company.CompanyReportViewModel(c)
+        vm.send("가나다화학", "품질팀", true, "")
+        settle()
+        content { com.bamnat.app.ui.company.CompanyReportScreen(vm, onBack = {}, onDone = {}, onOpenSent = {}) }
+    }
+    @Test fun foldedCompanyMine() = shoot("122_folded_company_mine", FOLDED) {
+        val c = companyOn()
+        // Each send goes on top, so the oldest goes in first.
+        company.mine.reversed().forEach { c.companyStore.addSent(com.bamnat.app.company.SentReport(it.id, it.company, it.dept, it.ask, it.createdAt)) }
+        val vm = com.bamnat.app.ui.company.CompanyReportViewModel(c)
+        content { com.bamnat.app.ui.company.CompanySentScreen(vm, onBack = {}, onShare = {}) }
+    }
+    private fun votePay(): Screen.() -> Unit = {
+        val c = companyOn()
+        c.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("c1", "(주)예시정밀", "생산팀", "s1", 2, true, java.time.Instant.now()))
+        val nudges = com.bamnat.app.ui.company.CompanyNudgeViewModel(c)
+        payScreen(Tier.PRO, withProfile = true) { vm ->
+            PayScreen(vm, onBack = {}, top = { com.bamnat.app.ui.company.CompanyNudgeCards(nudges, onShare = {}, onFix = {}) })
+        }.invoke(this)
+    }
+    @Test fun foldedCompanyVote() = shoot("123_folded_company_vote", FOLDED, votePay())
+    @Test fun foldedCompanyWrong() = shoot("124_folded_company_wrong", FOLDED) {
+        votePay().invoke(this)
+        tapText("달라요", exact = true)
+        tapText("급여 계산", exact = true)
+    }
+    @Test fun foldedCompanyPlea() = shoot("125_folded_company_plea", FOLDED) {
+        votePay().invoke(this)
+        tapText("달라요", exact = true)
+        tapText("급여 계산", exact = true)
+        tapText("알려 주기", exact = true)
+    }
+    @Test fun foldedCompanyInvite() = shoot("126_folded_company_invite", FOLDED) {
+        val c = companyOn()
+        c.companyStore.setDraft(com.bamnat.app.company.CompanyDraft("가나다화학"))
+        val nudges = com.bamnat.app.ui.company.CompanyNudgeViewModel(c)
+        payScreen(Tier.PRO, withProfile = true) { vm ->
+            PayScreen(vm, onBack = {}, top = { com.bamnat.app.ui.company.CompanyNudgeCards(nudges, onShare = {}, onFix = {}) })
+            com.bamnat.app.ui.company.InviteSheet(nudges, onShare = {}, onDismiss = {})
+        }.invoke(this)
+    }
+    @Test fun foldedSettingsCompany() = shoot("127_folded_settings_company", FOLDED) {
+        val c = companyOn()
+        c.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("c1", "(주)예시정밀", "생산팀", "s1", 2, true, java.time.Instant.now(), vote = true))
+        tab(4, wide = false)
+        reveal("회사 설정", exact = true)
+    }
+    @Test fun foldedKindAsk() = shoot("128_folded_kind_ask", FOLDED) {
+        companyOn()
+        kindsScreen().invoke(this)
+        tapText("대근", exact = true)
+        tapText("회사 방식 알려 주기", exact = true)
+    }
+    @Test fun unfoldedCompanyDetail() = shoot("129_unfolded_company_detail", UNFOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyDetailViewModel(companyOn(), "c1")
+        content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, ready = true) }
+    }
+
     private companion object {
         const val SETTINGS_SLEEP_SCROLLS = 4
         const val RULES_PERIOD_SCROLL = 420
@@ -1065,3 +1206,56 @@ class ScreenshotTest {
     }
 }
 
+/** [COMM-04] The company rules server for screenshots: made-up companies, answers at once. */
+private class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
+    override val enabled = true
+    var file = "{}"
+    private val now = java.time.Instant.now()
+
+    private fun status(id: String, status: String, company: String, dept: String, points: Int, persons: Int, ask: Boolean = false,
+        review: Boolean = false, reason: String? = null, reward: com.bamnat.app.company.Reward? = null, daysAgo: Long = 0) =
+        com.bamnat.app.company.ReportStatus(id, status, ask, "c-$company", company, dept, if (ask) "" else "s-$id", !ask, points, persons, 3, review,
+            now.minus(java.time.Duration.ofDays(daysAgo)), null, reason, null, reward, 3)
+
+    val mine = listOf(
+        status("r3", "answered", "가나다화학", "", 0, 0, ask = true, reason = "알려 주신 방식을 앱에 넣을게요. 업데이트되면 바로 설정할 수 있어요", daysAgo = 1),
+        status("r2", "pending", "라마바전자", "생산1팀", 2, 1, daysAgo = 3),
+        status("r1", "adopted", "(주)예시정밀", "생산팀", 4, 3, reward = com.bamnat.app.company.Reward(3, "owed"), daysAgo = 20),
+    )
+
+    override suspend fun search(query: String) =
+        if (com.bamnat.app.company.CompanyText.norm(query).let { "예시" in it }) listOf(
+            com.bamnat.app.company.CompanyHit("c1", "(주)예시정밀", null, 1, 1),
+            com.bamnat.app.company.CompanyHit("c2", "예시정밀 2공장", "예시정밀2", 0, 1),
+        ) else emptyList()
+
+    override suspend fun company(id: String): com.bamnat.app.company.CompanyPage {
+        val main = listOf(
+            "근무" to "주간 08:00~20:00 휴게 60분 · 야간 20:00~08:00 휴게 60분 · 오후 14:00~22:00 · 휴무(쉬는 날)",
+            "순서 5일" to "주간 주간 야간 야간 휴무",
+            "연장·휴무일 근무" to "잔업(근무 뒤 2시간) · 특근(09:00~18:00) · 대근(모든 근무 대신)",
+        )
+        val pay = listOf(
+            "사업장" to "5인 이상 · 월 180시간",
+            "가산율" to "법대로",
+            "대근" to "8시간에 기본급 10% + 연장 가산 50%(8시간 넘게) + 야간 가산 50%",
+            "특근" to "1회 정액 (금액은 각자 넣어요)",
+            "수당" to "자격수당(매달) · 야간수당(근무마다) · 상여(2·4·6·8·10·12월 기본급 100%)",
+        )
+        return com.bamnat.app.company.CompanyPage(id, "(주)예시정밀", listOf("예시정밀"), listOf(
+            com.bamnat.app.company.SharedSetup("s1", true, 5, 3, 1, 3, "생산팀", 2, file, main + pay),
+            com.bamnat.app.company.SharedSetup("s2", false, 2, 1, 0, 3, "포장팀", null, file, main.take(2)),
+        ))
+    }
+
+    override suspend fun terms() = com.bamnat.app.company.CompanyTerms(3, 3)
+
+    override suspend fun report(device: String, company: String, dept: String, verified: Boolean, note: String, setup: org.json.JSONObject, ask: Boolean) =
+        status("r9", if (ask) "ask" else "pending", company, dept, if (verified) 2 else 1, 1, ask = ask)
+
+    override suspend fun status(id: String) = mine.firstOrNull { it.id == id }
+    override suspend fun takeBack(device: String, id: String) = Unit
+    override suspend fun forgetMine(device: String) = mine.size
+    override suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean, why: String?) =
+        com.bamnat.app.company.VoteResult(4, 3, 1, 3, true)
+}

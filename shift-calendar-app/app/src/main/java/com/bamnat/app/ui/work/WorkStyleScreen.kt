@@ -44,10 +44,13 @@ fun WorkStyle.icon(): ImageVector = when (this) {
     WorkStyle.BUSINESS -> Icons.Filled.Storefront
 }
 
-/** What happens right after picking, shown under each choice so the next screen is no surprise. */
-fun WorkStyle.nextStep(): String = when (this) {
-    WorkStyle.SHIFT -> "다음: 근무 순서(패턴) 정하기"
-    WorkStyle.DAY -> "다음: 일하는 요일 정하기"
+/**
+ * What happens right after picking, shown under each choice so the next screen is no surprise.
+ * [company]: the build has a company server, so shift and day work start from 회사 찾기 [COMM-01].
+ */
+fun WorkStyle.nextStep(company: Boolean = false): String = when (this) {
+    WorkStyle.SHIFT -> if (company) "다음: 회사 찾기, 없으면 근무 순서 정하기" else "다음: 근무 순서(패턴) 정하기"
+    WorkStyle.DAY -> if (company) "다음: 회사 찾기, 없으면 일하는 요일 정하기" else "다음: 일하는 요일 정하기"
     WorkStyle.HOURLY -> "다음: 시급 정하기"
     WorkStyle.FIELD -> "달력에 일감과 받을 돈을 적어요"
     WorkStyle.BUSINESS -> "달력에 매일 매출과 경비를 적어요"
@@ -58,7 +61,7 @@ fun WorkStyle.nextStep(): String = when (this) {
  * the calendar and money tab show; it can be changed in settings at any time.
  */
 @Composable
-fun WorkStyleScreen(current: WorkStyle?, onPick: (WorkStyle) -> Unit, title: String = "어떻게 일하세요?") {
+fun WorkStyleScreen(current: WorkStyle?, onPick: (WorkStyle) -> Unit, title: String = "어떻게 일하세요?", company: Boolean = false) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
             Column(
@@ -72,14 +75,15 @@ fun WorkStyleScreen(current: WorkStyle?, onPick: (WorkStyle) -> Unit, title: Str
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(6.dp))
-                WorkStyle.entries.forEach { style -> StyleCard(style, selected = style == current) { onPick(style) } }
+                // Changing the kind of work later keeps the setup, so only the first run mentions 회사 찾기.
+                WorkStyle.entries.forEach { style -> StyleCard(style, selected = style == current, company = company && current == null) { onPick(style) } }
             }
         }
     }
 }
 
 @Composable
-private fun StyleCard(style: WorkStyle, selected: Boolean, onClick: () -> Unit) {
+private fun StyleCard(style: WorkStyle, selected: Boolean, company: Boolean, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Surface(
         shape = MaterialTheme.shapes.large,
@@ -96,7 +100,7 @@ private fun StyleCard(style: WorkStyle, selected: Boolean, onClick: () -> Unit) 
                 Text(style.label, style = MaterialTheme.typography.titleMedium)
                 Text(style.description, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
                 Text("예: ${style.examples}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-                Text(style.nextStep(), style = MaterialTheme.typography.labelMedium, color = scheme.primary,
+                Text(style.nextStep(company), style = MaterialTheme.typography.labelMedium, color = scheme.primary,
                     modifier = Modifier.padding(top = 4.dp))
             }
         }
