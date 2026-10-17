@@ -1,0 +1,10 @@
+{
+  "name": "bamnat-company-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test --disable-warning=ExperimentalWarning \"test/*.test.mjs\"",
+    "deploy": "wrangler deploy",
+    "local": "node --disable-warning=ExperimentalWarning test/local-server.mjs"
+  }
+}

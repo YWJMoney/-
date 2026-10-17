@@ -1,0 +1,12 @@
+# [COMM-04] Company rules shared by coworkers, and the developer app at /admin [ADMIN-01].
+# Dashboard deploy: see README.md. CLI deploy: `npx wrangler deploy` with CLOUDFLARE_API_TOKEN set.
+name = "bamnat-company"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "bamnat-company"
+# Filled in after `npx wrangler d1 create bamnat-company`.
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
