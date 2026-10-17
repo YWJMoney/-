@@ -67,7 +67,7 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
 | 요청 | 하는 일 |
 | --- | --- |
 | `GET /api/companies?q=` | 회사 찾기. 띄어쓰기, (주), 주식회사, Co., Ltd.는 빼고 찾아요. 아직 확인 중인 회사는 이름이 똑같을 때만 나와요. |
-| `GET /api/companies/:id` | 회사의 채택된 설정과 확인 중인 설정 |
+| `GET /api/companies/:id` | 회사의 채택된 설정과 확인 중인 설정, 각 설정을 풀어 쓴 줄(`lines`) |
 | `GET /api/terms` | 채택 점수와 채택 보상 기간 (보내기 전에 앱이 보여 줘요) |
 | `POST /api/reports` | 제보 보내기 `{v: 1, device, company, dept, verified, note, setup}`. 앱에 없는 방식이면 `ask: true`와 설명(1500자까지)을 `note`에 |
 | `GET /api/reports/:id` | 제보가 어디까지 왔는지: 점수, 채택, 거절 이유, 보상 |

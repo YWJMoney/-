@@ -752,7 +752,8 @@ async function company(env, id) {
   const setups = [];
   const rules = await all(env, "SELECT * FROM rules WHERE company_id = ? AND withdrawn = 0 AND superseded = 0 ORDER BY dept_norm", c.id);
   for (const r of rules) {
-    setups.push({ ...(await state(env, c.id, r.grp, adoptPoints, true)), dept: r.dept, version: r.version, adoptedAt: iso(r.adopted_at), setup: shared(r.setup, c.name) });
+    setups.push({ ...(await state(env, c.id, r.grp, adoptPoints, true)), dept: r.dept, version: r.version, adoptedAt: iso(r.adopted_at),
+      setup: shared(r.setup, c.name), lines: describe(JSON.parse(r.setup)) });
   }
   const groups = await all(env, `SELECT grp, MAX(created_at) AS last FROM reports WHERE company_id = ? AND status = 'pending'
     GROUP BY grp ORDER BY last DESC LIMIT 30`, c.id);
@@ -774,7 +775,7 @@ async function company(env, id) {
     const n = shown.get(rep.dept_norm) ?? 0;
     if (n >= 3) continue;
     shown.set(rep.dept_norm, n + 1);
-    setups.push({ ...s, dept: rep.dept, setup: shared(rep.setup, c.name) });
+    setups.push({ ...s, dept: rep.dept, setup: shared(rep.setup, c.name), lines: describe(JSON.parse(rep.setup)) });
   }
   return json({ id: c.id, name: c.name, aliases, setups });
 }

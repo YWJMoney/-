@@ -233,6 +233,9 @@ test("a company shows its adopted rule first and what is still being checked", a
   assert.equal(adopted.setup.company, "(주)예시정밀");
   assert.equal(adopted.setup.shiftTypes[0].name, "주간");
   assert.equal(adopted.id, a.data.setup);
+  // In plain words, as the app shows it before anyone applies it.
+  assert.deepEqual(adopted.lines[1], ["순서 8일", "주간 주간 휴무 휴무 야간 야간 휴무 휴무"]);
+  assert.deepEqual(c.data.setups[1].lines[0], ["근무", "주간 07:00~18:00 휴게 60분 · 야간 19:00~07:00 휴게 60분 · 휴무(쉬는 날)"]);
   assert.equal((await call("GET", "/api/companies/AAAAAAAAAAAA")).status, 404);
 });
 
