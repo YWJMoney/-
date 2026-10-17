@@ -13,7 +13,8 @@ import com.bamnat.core.model.WorkPattern
 import java.time.LocalDate
 import java.time.LocalTime
 
-internal fun Int.toLocalTime(): LocalTime = LocalTime.of(this / 60 % 24, this % 60)
+// A bad value from an old or hand-edited backup wraps onto the clock instead of crashing every launch.
+internal fun Int.toLocalTime(): LocalTime = Math.floorMod(this, 24 * 60).let { LocalTime.of(it / 60, it % 60) }
 internal fun LocalTime.toMinuteOfDay(): Int = hour * 60 + minute
 
 fun ShiftTypeEntity.toModel() = ShiftType(

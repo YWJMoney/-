@@ -15,6 +15,8 @@ import com.bamnat.core.money.PaymentParser
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -96,12 +98,19 @@ class MoneyRepository(
      * copy of the same payment is dropped; one the parser cannot finish is kept for the user (30 days).
      * Texts that are not payments are never stored.
      */
-    suspend fun capture(text: String, app: String, postedAt: Long): Outcome {
+    suspend fun capture(text: String, app: String, postedAt: Long, fromMessenger: Boolean = false): Outcome = captureLock.withLock {
+        // One at a time: the card text and the pay-app push for one payment often land together,
+        // and both must not pass the duplicate check before either is saved.
         kept.purge(postedAt - KEEP_MILLIS)
         if (!PaymentParser.looksFinancial(text)) return Outcome.IGNORED
         val arrived = LocalDateTime.ofInstant(Instant.ofEpochMilli(postedAt), ZoneId.systemDefault())
         val result = PaymentParser.parse(text, arrived, rules())
         val parsed = (result as? PaymentParser.Result.Ok)?.parsed
+            // Without a time in the text, the time it arrived keeps two same-amount payments apart.
+            ?.let { if (it.time == null) it.copy(time = arrived.toLocalTime().withSecond(0).withNano(0)) else it }
+        // A chat message ("어제 5,000원 입금했어") is not a bank text: from a messenger only texts that
+        // name a card or bank count, and nothing else from it is ever kept.
+        if (fromMessenger && (parsed == null || (parsed.issuer == null && parsed.last4 == null))) return Outcome.IGNORED
         if (parsed == null || !parsed.confident) {
             if (kept.has(text)) return Outcome.DUPLICATE
             val reason = when {
@@ -126,6 +135,11 @@ class MoneyRepository(
     suspend fun dismissCapture(id: Long) = kept.delete(id)
 
     suspend fun clearCaptures() = kept.clear()
+
+    private val captureLock = Mutex()
+
+    /** Clears kept texts past their 30 days even when no new notification comes. */
+    suspend fun purgeCaptures(now: Long = System.currentTimeMillis()) = kept.purge(now - KEEP_MILLIS)
 
     companion object {
         const val KEEP_MILLIS = 30L * 24 * 60 * 60 * 1000

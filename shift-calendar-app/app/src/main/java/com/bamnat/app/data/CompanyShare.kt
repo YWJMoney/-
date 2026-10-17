@@ -97,6 +97,15 @@ class CompanyShare(
      */
     suspend fun apply(text: String, rotation: Boolean = true): Applied {
         val root = parse(text)
+        // Everything is read once before anything is written, so a broken part changes nothing.
+        runCatching {
+            root.optJSONObject("rotation")?.let { LocalDate.parse(it.getString("anchor")); it.getJSONArray("steps") }
+            root.optJSONObject("pay")?.let { pay ->
+                // Shift types are names in the file; ids are filled in when applied.
+                pay.optJSONObject("rules")?.let { PayCodec.rulesFrom(JSONObject(it.toString()).apply { remove("extraByShift") }) }
+                pay.optJSONArray("items").objects().forEach { PayCodec.itemFrom(JSONObject(it.toString()).put("types", JSONArray())) }
+            }
+        }.onFailure { throw BackupException("회사 설정 파일 일부가 망가져 있어요") }
         val existing = schedule.snapshot.first().shiftTypes
         val ids = mutableMapOf<String, Long>()
         var added = 0
@@ -118,7 +127,7 @@ class CompanyShare(
         var cycle: Int? = null
         root.optJSONObject("rotation")?.takeIf { rotation }?.let { r ->
             val a = r.getJSONArray("steps")
-            val steps = (0 until a.length()).map { i -> if (a.isNull(i)) null else ids[a.getString(i)] }
+            val steps = (0 until a.length()).map { i -> if (a.isNull(i)) null else ids[a.getString(i).take(MAX_NAME)] }
             if (steps.isNotEmpty()) {
                 val pattern = WorkPattern.Rotation(startDate = today(), steps = steps, anchorDate = LocalDate.parse(r.getString("anchor")))
                 if (schedule.snapshot.first().hasPattern) schedule.changePatternFrom(pattern, today())
@@ -140,22 +149,23 @@ class CompanyShare(
 
     private fun merge(p: PayProfile, pay: JSONObject, ids: Map<String, Long>): PayProfile {
         val rulesJson = pay.optJSONObject("rules")
-        rulesJson?.optJSONObject("extraByShift")?.let { by -> rulesJson.put("extraByShift", rekey(by) { ids[it]?.toString() }) }
+        rulesJson?.optJSONObject("extraByShift")?.let { by -> rulesJson.put("extraByShift", rekey(by) { ids[it.take(MAX_NAME)]?.toString() }) }
         val incoming = rulesJson?.let(PayCodec::rulesFrom)
         val withAmounts = pay.optBoolean("withAmounts")
         // Allowances the user does not have yet are added; their own amounts are never overwritten.
         val have = p.items.map { it.name }.toSet()
         val items = pay.optJSONArray("items").objects().mapNotNull { o ->
-            val types = o.optJSONArray("types")?.let { a -> (0 until a.length()).mapNotNull { ids[a.getString(it)] }.toSet() } ?: emptySet()
+            val types = o.optJSONArray("types")?.let { a -> (0 until a.length()).mapNotNull { ids[a.getString(it).take(MAX_NAME)] }.toSet() } ?: emptySet()
             val item = PayCodec.itemFrom(o.put("types", JSONArray())).copy(id = "c" + java.util.UUID.randomUUID().toString().take(8), shiftTypeIds = types)
             if (item.name in have) null else if (withAmounts) item else item.copy(amount = ValueTimeline())
         }
         return p.copy(
             fiveOrMoreEmployees = pay.optBoolean("fiveOrMore", p.fiveOrMoreEmployees),
-            monthlyHours = pay.optInt("monthlyHours", p.monthlyHours),
+            // Values from someone else's file stay within what the pay setup screens allow.
+            monthlyHours = pay.optInt("monthlyHours", p.monthlyHours).takeIf { it in 100..320 } ?: p.monthlyHours,
             holidayPayMode = runCatching { HolidayPayMode.valueOf(pay.getString("holidayMode")) }.getOrDefault(p.holidayPayMode),
-            dailyLimitMinutes = if (pay.has("dailyLimit")) pay.getInt("dailyLimit").takeIf { it >= 0 } else p.dailyLimitMinutes,
-            weeklyLimitMinutes = if (pay.has("weeklyLimit")) pay.getInt("weeklyLimit").takeIf { it >= 0 } else p.weeklyLimitMinutes,
+            dailyLimitMinutes = if (pay.has("dailyLimit")) pay.getInt("dailyLimit").takeIf { it in 1..24 * 60 } else p.dailyLimitMinutes,
+            weeklyLimitMinutes = if (pay.has("weeklyLimit")) pay.getInt("weeklyLimit").takeIf { it in 1..168 * 60 } else p.weeklyLimitMinutes,
             scheduleIsRegular = pay.optBoolean("scheduleIsRegular", p.scheduleIsRegular),
             flexPeriod = pay.optString("flexPeriod").let { n -> FlexPeriod.entries.firstOrNull { it.name == n } },
             weekStart = runCatching { DayOfWeek.valueOf(pay.getString("weekStart")) }.getOrDefault(p.weekStart),

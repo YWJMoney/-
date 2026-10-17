@@ -282,7 +282,7 @@ fun MoneyScreen(
             frequent = vm::frequentAmounts, rules = rules)
     }
     finishing?.let { c ->
-        val draft = remember(c) { c.draft(today) }
+        val draft = remember(c) { c.draft() }
         EntryDialog(draft.date, draft, draft.kind, onSave = { vm.finishCapture(c, it); finishing = null },
             onDismiss = { finishing = null }, frequent = vm::frequentAmounts, rules = rules)
     }

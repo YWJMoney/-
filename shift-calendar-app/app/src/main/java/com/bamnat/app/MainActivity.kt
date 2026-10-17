@@ -23,7 +23,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        HomeRequests.onCreate(restoring = savedInstanceState != null)
+        HomeRequests.onCreate(restoring = savedInstanceState != null, awaitingResult = savedInstanceState?.getBoolean(KEY_AWAITING) == true)
         if (savedInstanceState == null) appContainer.telemetry.event(DiagEvents.APP_OPEN)
         enableEdgeToEdge()
         val container = appContainer
@@ -50,6 +50,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Every ActivityResult launcher (file pickers, permission requests) goes through here.
+    @Deprecated("Called by the ActivityResult API")
+    override fun startActivityForResult(intent: android.content.Intent, requestCode: Int, options: Bundle?) {
+        HomeRequests.awaitingResult = true
+        @Suppress("DEPRECATION")
+        super.startActivityForResult(intent, requestCode, options)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(KEY_AWAITING, HomeRequests.awaitingResult)
+    }
+
     override fun onStart() {
         super.onStart()
         HomeRequests.onStart()
@@ -61,6 +74,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
+        const val KEY_AWAITING = "awaiting_result"
         val LIGHT_SCRIM = Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
         val DARK_SCRIM = Color.argb(0x80, 0x1b, 0x1b, 0x1b)
     }

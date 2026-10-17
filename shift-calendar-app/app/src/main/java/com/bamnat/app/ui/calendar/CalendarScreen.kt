@@ -194,6 +194,18 @@ fun CalendarScreen(
 
     // On phones (and a folded Fold) the day opens in a sheet over the calendar.
     var sheetOpen by remember { mutableStateOf(false) }
+    // Unfolded, the day shows beside the calendar; a sheet left open must not pop up again on folding.
+    LaunchedEffect(wide) { if (wide) sheetOpen = false }
+    // Back ends quick input instead of leaving the app.
+    androidx.activity.compose.BackHandler(enabled = paint != null) { vm.setPaint(null) }
+    // Left open past midnight, the selection moves on with today when it was on today.
+    var lastToday by remember { mutableStateOf(today) }
+    LaunchedEffect(today) {
+        if (today != lastToday) {
+            if (selected == lastToday) vm.select(today)
+            lastToday = today
+        }
+    }
     val onDayClick: (LocalDate) -> Unit = { date ->
         val painting = paint != null
         vm.onDayTapped(date)
@@ -220,7 +232,7 @@ fun CalendarScreen(
     val shareLinks = remember { com.bamnat.app.share.ShareLinkClient().enabled }
     if (showShare) ShareDialog(
         snapshot = snap, month = visibleMonth,
-        onImage = { MonthImage.share(context, snap, visibleMonth, settings.weekStart); vm.logShare() },
+        onImage = { scope.launch { MonthImage.share(context, snap, visibleMonth, settings.weekStart) }; vm.logShare() },
         onDismiss = { showShare = false },
     )
 
@@ -252,7 +264,7 @@ fun CalendarScreen(
                 // [MKT-09] With a link server the icon offers picture or link; without one it sends the picture.
                 if (shareLinks) showShare = true
                 else {
-                    MonthImage.share(context, snap, visibleMonth, settings.weekStart)
+                    scope.launch { MonthImage.share(context, snap, visibleMonth, settings.weekStart) }
                     vm.logShare()
                 }
             },

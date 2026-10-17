@@ -45,7 +45,12 @@ class AlarmReceiver : BroadcastReceiver() {
             ACTION_SNOOZE_ALARM -> {
                 container.alarmScheduler.clearSnoozeState()
                 container.telemetry.event(DiagEvents.SNOOZE_FIRED)
-                if (ring != null) startRinging(context, ring)
+                // A short wake lock carries the phone until the ringing service holds its own.
+                if (ring != null) {
+                    (context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager)
+                        .newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "bamnat:snooze").acquire(10_000L)
+                    startRinging(context, ring)
+                }
             }
         }
     }

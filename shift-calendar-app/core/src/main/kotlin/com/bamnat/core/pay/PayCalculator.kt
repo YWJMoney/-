@@ -116,7 +116,7 @@ class PayCalculator(
         else profile.items.filter { it.ordinary && it.cadence == Cadence.BONUS }
             .sumOf { it.bonusMonthlyShare(base.value, month) }
         val hourly = when (profile.wageType) {
-            WageType.MONTHLY -> ((base.value + ordinaryMonthly + bonusMonthly).toDouble() / profile.monthlyHours).roundToLong()
+            WageType.MONTHLY -> ((base.value + ordinaryMonthly + bonusMonthly).toDouble() / profile.monthlyHours.coerceAtLeast(1)).roundToLong()
             WageType.HOURLY -> base.value
         }
         val hourlyFormula = when (profile.wageType) {
@@ -374,7 +374,7 @@ class PayCalculator(
         }
 
         if (profile.wageType == WageType.HOURLY && rules.weeklyHolidayPay) {
-            weeklyHolidayLine(allMinutes, attendedByDate, from, month, hourly, baseEstimated)?.let { lines += it }
+            weeklyHolidayLine(allMinutes, attendedByDate, weekFrom, month, hourly, baseEstimated)?.let { lines += it }
         }
 
         if (hourly in 1 until rates.minimumHourlyWage) {

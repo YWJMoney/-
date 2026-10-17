@@ -41,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -116,9 +117,16 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         exportPassword = password
     }
 
-    fun exportTo(context: Context, uri: Uri) {
+    fun exportTo(context: Context, uri: Uri, sealed: Boolean = false) {
         val password = exportPassword
         exportPassword = null
+        if (sealed && password == null) {
+            // The app was closed while the picker was open and the password went with it: never fall
+            // back to a file without one. The empty file the picker made is removed.
+            runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
+            _backupMessage.value = "암호가 지워져 저장하지 않았어요. 다시 저장해 주세요"
+            return
+        }
         viewModelScope.launch {
             _backupMessage.value = runCatching {
                 val json = container.backupManager.export()
@@ -293,9 +301,11 @@ fun SettingsScreen(
     val notificationsOk = remember(refresh) { Notifications.canPost(context) }
     val exactOk = remember(refresh) { vm.canScheduleExact() }
     val fullScreenOk = remember(refresh) { Notifications.canUseFullScreen(context) }
+    // Survives the app being closed behind the file picker, unlike the password itself.
+    var sealedExport by rememberSaveable { mutableStateOf(false) }
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(BackupManager.MIME_TYPE),
-    ) { uri -> if (uri != null) vm.exportTo(context, uri) }
+    ) { uri -> if (uri != null) vm.exportTo(context, uri, sealedExport) }
     val icsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/calendar")) { uri ->
         if (uri != null) vm.exportIcs(context, uri)
     }
@@ -316,6 +326,7 @@ fun SettingsScreen(
             onExport = { password ->
                 askingPassword = false
                 vm.prepareExport(password)
+                sealedExport = password != null
                 exportLauncher.launch("밤낮-백업-${LocalDate.now()}.json")
             },
         )

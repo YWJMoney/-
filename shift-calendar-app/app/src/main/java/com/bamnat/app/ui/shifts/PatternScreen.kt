@@ -523,10 +523,12 @@ private fun ChangeFromDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            // A pattern that ends before the new start would apply to no day at all.
+            val endsBefore = draft.endDate?.isBefore(from) == true
+            TextButton(enabled = !endsBefore, onClick = {
                 val pattern = if (rotation != null) rotation.copy(anchorDate = from.minusDays(firstStep.toLong())) else draft
                 onChangeFrom(pattern, from)
-            }) { Text("이날부터 적용") }
+            }) { Text(if (endsBefore) "끝나는 날(${draft.endDate!!.monthValue}/${draft.endDate!!.dayOfMonth}) 뒤라 적용할 수 없어요" else "이날부터 적용") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )

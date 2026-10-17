@@ -78,7 +78,8 @@ class MinuteClassifier(
         val weeklyRegular = HashMap<LocalDate, Int>()
         val flex = options.flexPeriod?.takeIf { options.scheduleIsRegular }
         return sorted.map { day ->
-            val offDayWork = day.holidayWorkMinutes > 0 || (day.second != null && !day.isWorkDay)
+            // A full-day 연차 is leave, not a day off: a second shift on it is ordinary work.
+            val offDayWork = day.holidayWorkMinutes > 0 || (day.second != null && !day.isWorkDay && day.leave == null)
             val raw = classifyDay(day, isHoliday(day.date) || (offDayWork && options.offDayWorkIsHoliday))
             if (options.scheduleIsRegular) return@map raw
             val limit = options.weeklyLimitMinutes ?: return@map raw
@@ -107,9 +108,17 @@ class MinuteClassifier(
             val limit = (days * 40 * 60 / 7.0).roundToInt()
             val excess = period.sumOf { it.regular } - limit
             if (excess <= 0) return@forEach
-            val i = out.indexOfFirst { it.date == end }
-            val d = out[i]
-            out[i] = d.copy(regular = (d.regular - excess).coerceAtLeast(0), overtime = d.overtime + excess)
+            // The excess comes off regular minutes from the period's end backwards, so a day off at
+            // the end does not end up with more overtime than was worked.
+            var left = excess
+            for (i in out.indices.reversed()) {
+                if (left == 0) break
+                val d = out[i]
+                if (d.date.isBefore(start) || d.date.isAfter(end) || d.regular == 0) continue
+                val take = minOf(left, d.regular)
+                out[i] = d.copy(regular = d.regular - take, overtime = d.overtime + take)
+                left -= take
+            }
         }
         return out
     }

@@ -60,6 +60,18 @@ object PaymentParser {
     )
     private val ISSUER_RE = Regex("(${ISSUERS.joinToString("|") { it.first }})(카드|은행|뱅크|체크카드|체크)?")
 
+    /** Plain words that are also bank names: "GS25 우리동네점" is not 우리카드. */
+    private val PLAIN_WORDS = setOf("우리", "하나", "기업", "현대", "대구", "부산", "경남", "광주", "전북", "국민", "삼성", "롯데", "토스", "새마을", "농협", "신한", "수협", "iM")
+
+    /** A bare bank word counts only with 카드/은행 after it, a card number after it, or at the start of the text. */
+    private fun isIssuer(m: MatchResult, src: String): Boolean {
+        if (m.groupValues[2].isNotEmpty() || m.groupValues[1] !in PLAIN_WORDS) return true
+        val after = m.range.last + 1
+        if (Regex("^\\s*\\(?\\s*[*xX]?\\d{4}").containsMatchIn(src.substring(after))) return true
+        val before = src.substring(0, m.range.first)
+        return Regex("^\\s*(\\[[^]]*]\\s*)*$").matches(before) || before.endsWith("\n")
+    }
+
     private val STOPWORDS = setOf(
         "승인", "취소", "사용", "결제", "결제완료", "완료", "일시불", "할부", "체크", "신용", "해외", "국내",
         "카드", "님", "원", "누적", "잔액", "출금", "입금", "이체", "자동이체", "안내", "알림", "이용", "금액",
@@ -88,7 +100,8 @@ object PaymentParser {
         return "기타"
     }
 
-    private fun num(s: String): Long = s.replace(",", "").toLong()
+    // Absurdly long digit runs are not amounts; toLong would throw on them.
+    private fun num(s: String): Long? = s.replace(",", "").toLongOrNull()
     private fun dec(s: String): Double = s.replace(",", "").toDouble()
 
     /** Quick filter for the notification listener: a won/foreign amount next to a payment word. */
@@ -117,11 +130,11 @@ object PaymentParser {
         for (m in Regex("(\\d{1,3}(?:,\\d{3})+|\\d+)\\s*원").findAll(text)) {
             val before = text.substring(maxOf(0, m.range.first - 6), m.range.first)
             if (Regex("(누적|잔액|한도|잔여|포인트|적립|가능)\\s*:?\\s*$").containsMatchIn(before)) continue
-            return Found(num(m.groupValues[1]), m.value)
+            return Found(num(m.groupValues[1]) ?: continue, m.value)
         }
         // 은행 문자는 '출금 50,000'처럼 '원'이 없는 때가 많다.
         val bank = Regex("(출금|입금|이체)\\s*:?\\s*(\\d{1,3}(?:,\\d{3})+|\\d{3,})").find(text) ?: return null
-        return Found(num(bank.groupValues[2]), bank.groupValues[2])
+        return Found(num(bank.groupValues[2]) ?: return null, bank.groupValues[2])
     }
 
     private fun findForeign(text: String): Pair<Foreign, String>? {
@@ -153,7 +166,7 @@ object PaymentParser {
             else -> Type.APPROVAL
         }
 
-        val iss = ISSUER_RE.find(src)
+        val iss = ISSUER_RE.findAll(src).firstOrNull { isIssuer(it, src) }
         val issuer = iss?.let { m -> ISSUERS.first { it.first == m.groupValues[1] }.second }
 
         // 카드 끝 4자리: 신한카드(1234), KB국민카드1234승인, *1234
@@ -165,7 +178,9 @@ object PaymentParser {
 
         var date: LocalDate? = null
         var dateRaw: String? = null
-        for (m in Regex("(?<![\\d,.])(\\d{1,2})\\s*[/.\\-월]\\s*(\\d{1,2})\\s*일?(?![\\d,.])").findAll(src)) {
+        // A foreign amount such as "USD 12.30" is not the 30th of December.
+        val dateSrc = fx?.second?.let { src.replace(it, " ") } ?: src
+        for (m in Regex("(?<![\\d,.])(\\d{1,2})\\s*[/.\\-월]\\s*(\\d{1,2})\\s*일?(?![\\d,.])").findAll(dateSrc)) {
             val mo = m.groupValues[1].toInt()
             val da = m.groupValues[2].toInt()
             if (mo in 1..12 && da in 1..31) {

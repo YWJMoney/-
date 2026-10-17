@@ -42,8 +42,8 @@ class AppContainer(context: Context) {
     val settingsRepository = SettingsRepository(context)
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository)
     val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry)
-    val backupManager = BackupManager(database, settingsRepository)
     val payStore = PayStore(appContext)
+    val backupManager = BackupManager(database, settingsRepository, payStore = payStore)
     /** [COMM-00] Company settings as a file for coworkers. */
     val companyShare by lazy { com.bamnat.app.data.CompanyShare(scheduleRepository, payStore, settingsRepository) }
     val featureGate = FeatureGate(settingsRepository, appScope)
@@ -57,6 +57,7 @@ class AppContainer(context: Context) {
         appScope.launch {
             scheduleRepository.ensureDefaults()
             memoRepository.purgeOldTrash()
+            moneyRepository.purgeCaptures()
             // Any edit to shift types, the pattern, a day or the master switch re-plans the next alarm.
             val enabled = settingsRepository.settings.map { it.alarmsEnabled }.distinctUntilChanged()
             combine(scheduleRepository.snapshot, enabled) { snapshot, on -> snapshot to on }

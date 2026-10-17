@@ -113,6 +113,10 @@ fun PayScreen(vm: PayViewModel, onBack: () -> Unit) {
     val tier by vm.tier.collectAsStateWithLifecycle()
     var editingSetup by rememberSaveable { mutableStateOf(false) }
     var editingRules by rememberSaveable { mutableStateOf(false) }
+    // The back gesture does what the arrow does: close the editor, not the whole pay screen.
+    androidx.activity.compose.BackHandler(enabled = editingSetup || editingRules) {
+        if (editingSetup) editingSetup = false else editingRules = false
+    }
 
     Scaffold(
         topBar = {

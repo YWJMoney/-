@@ -132,13 +132,17 @@ object MonthImage {
     }
 
     /** Writes the image to the share cache and opens the share sheet. */
-    fun share(context: Context, snapshot: ScheduleSnapshot, month: YearMonth, weekStart: DayOfWeek) {
-        val dir = File(context.cacheDir, "share").apply { mkdirs() }
-        dir.listFiles()?.forEach { it.delete() }
-        val file = File(dir, "bamnat-$month.png")
-        val bmp = render(snapshot, month, weekStart)
-        file.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        bmp.recycle()
+    suspend fun share(context: Context, snapshot: ScheduleSnapshot, month: YearMonth, weekStart: DayOfWeek) {
+        // Drawing and compressing a full-size image off the main thread keeps the tap from stuttering.
+        val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val dir = File(context.cacheDir, "share").apply { mkdirs() }
+            dir.listFiles()?.forEach { it.delete() }
+            val file = File(dir, "bamnat-$month.png")
+            val bmp = render(snapshot, month, weekStart)
+            file.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bmp.recycle()
+            file
+        }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.share", file)
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "image/png"
