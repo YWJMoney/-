@@ -81,6 +81,12 @@
             android:directBootAware="true"
             android:exported="false" />
 
+        <!-- [REL-12] 끄기·다시 알림 from the lock screen notification. -->
+        <receiver
+            android:name=".alarm.AlarmActionReceiver"
+            android:directBootAware="true"
+            android:exported="false" />
+
         <!-- [REL-10] After a reboot, before the first unlock: alarms come back from the device-protected copy. -->
         <receiver
             android:name=".alarm.LockedBootReceiver"

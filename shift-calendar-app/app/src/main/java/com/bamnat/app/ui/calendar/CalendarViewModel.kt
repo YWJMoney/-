@@ -69,7 +69,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private var monthPayCache: Pair<List<Any>, com.bamnat.core.pay.MonthPay>? = null
 
     fun dayPay(profile: PayProfile, snapshot: ScheduleSnapshot, date: LocalDate): DayPay? {
-        val month = YearMonth.from(date)
+        val month = profile.period.monthOf(date)
         val kinds = container.settingsRepository.current.extraKinds
         val key = listOf(profile, snapshot, month, kinds)
         val pay = monthPayCache?.takeIf { it.first == key }?.second

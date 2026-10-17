@@ -66,6 +66,7 @@ class CompanyShare(
                 .put("dailyLimit", p.dailyLimitMinutes ?: -1).put("weeklyLimit", p.weeklyLimitMinutes ?: -1)
                 .put("scheduleIsRegular", p.scheduleIsRegular).putOpt("flexPeriod", p.flexPeriod?.name)
                 .put("weekStart", p.weekStart.name)
+                .put("period", PayCodec.period(p.period))
                 .put("rules", rulesJson)
                 .put("withAmounts", withAmounts)
                 .put("items", JSONArray(p.items.map { item ->
@@ -169,6 +170,7 @@ class CompanyShare(
             scheduleIsRegular = pay.optBoolean("scheduleIsRegular", p.scheduleIsRegular),
             flexPeriod = pay.optString("flexPeriod").let { n -> FlexPeriod.entries.firstOrNull { it.name == n } },
             weekStart = runCatching { DayOfWeek.valueOf(pay.getString("weekStart")) }.getOrDefault(p.weekStart),
+            period = pay.optJSONObject("period")?.let(PayCodec::periodFrom) ?: p.period,
             items = p.items + items,
             // The user's own leave days stay theirs.
             rules = incoming?.copy(annualLeaveDays = p.rules.annualLeaveDays, annualLeaveCarry = p.rules.annualLeaveCarry) ?: p.rules,

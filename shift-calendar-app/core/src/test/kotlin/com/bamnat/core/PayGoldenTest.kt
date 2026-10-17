@@ -145,10 +145,16 @@ class PayGoldenTest {
         // 고용노동부 예시의 가산율 조합 (산술): 휴일 14~01시, 18~19시 휴게 → 144,000 + 48,000 + 18,000.
         val d = LocalDate.of(2026, 11, 7)
         val shift = type(24, 14, 0, 1, 0, 60, LocalTime.of(18, 0))
-        val pay = PayCalculator().calculate(moel, nov, oneDay(shift, d)::resolve) { it == d }
+        // [PAYX-14] Counted whole by the start day, the company rule this example assumes.
+        val byStart = moel.copy(rules = moel.rules.copy(holidayByShiftStart = true))
+        val pay = PayCalculator().calculate(byStart, nov, oneDay(shift, d)::resolve) { it == d }
         assertEquals(192_000, pay.sum(LineKind.HOLIDAY))
         assertEquals(18_000, pay.sum(LineKind.NIGHT))
         assertEquals(210_000, pay.day(d)!!.amount)
+        // By the clock (default) the hour after midnight is an ordinary day's work: 9 holiday hours.
+        val clock = PayCalculator().calculate(moel, nov, oneDay(shift, d)::resolve) { it == d }
+        assertEquals(168_000, clock.sum(LineKind.HOLIDAY))
+        assertEquals(18_000, clock.sum(LineKind.NIGHT))
     }
 
     // ---- 공휴일 (임금근로시간과-653, 2021.3.22.) ----

@@ -154,6 +154,47 @@ fun CompanyRulesEditor(
                 }
             }
 
+            // [PAYX-15] The days a month's pay covers and the pay day, e.g. 전월 21일~20일, 25일 지급.
+            SectionCard(title = "정산 기간과 월급날") {
+                val period = draft.period
+                Label("근무를 며칠까지 모아 그 달 급여로 계산하나요?")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = period.endDay == null, onClick = { draft = draft.copy(period = period.copy(endDay = null)) },
+                        label = { Text("말일 (1일~말일)") })
+                    listOf(15, 20).forEach { d ->
+                        FilterChip(selected = period.endDay == d, onClick = { draft = draft.copy(period = period.copy(endDay = d)) },
+                            label = { Text("${d}일") })
+                    }
+                    OutlinedButton(onClick = { draft = draft.copy(period = period.copy(endDay = ((period.endDay ?: 31) - 1).coerceIn(1, 30))) }) { Text("−") }
+                    Text(period.endDay?.let { "${it}일" } ?: "말일", style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.align(Alignment.CenterVertically).widthIn(min = 40.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    OutlinedButton(onClick = {
+                        val next = (period.endDay ?: 30) + 1
+                        draft = draft.copy(period = period.copy(endDay = next.takeIf { it <= 30 }))
+                    }) { Text("+") }
+                }
+                Hint("${month.monthValue}월 급여는 ${period.label(month)} 근무로 계산해요.")
+                Label("월급날")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = period.payDay == null, onClick = { draft = draft.copy(period = period.copy(payDay = null)) },
+                        label = { Text("안 정함") })
+                    listOf(10, 25).forEach { d ->
+                        FilterChip(selected = period.payDay == d, onClick = { draft = draft.copy(period = period.copy(payDay = d)) },
+                            label = { Text("${d}일") })
+                    }
+                    OutlinedButton(onClick = { draft = draft.copy(period = period.copy(payDay = ((period.payDay ?: 26) - 1).coerceIn(1, 31))) }) { Text("−") }
+                    Text(period.payDay?.let { "${it}일" } ?: "−", style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.align(Alignment.CenterVertically).widthIn(min = 40.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    OutlinedButton(onClick = { draft = draft.copy(period = period.copy(payDay = ((period.payDay ?: 24) + 1).coerceIn(1, 31))) }) { Text("+") }
+                }
+                if (period.payDay != null) {
+                    Toggle("마감한 다음 달에 지급", "예: 말일 마감, 다음 달 10일 지급", period.payNextMonth) {
+                        draft = draft.copy(period = period.copy(payNextMonth = it))
+                    }
+                    period.payDate(month)?.let { Hint("${month.monthValue}월 급여는 ${it.monthValue}월 ${it.dayOfMonth}일에 들어와요.") }
+                }
+            }
+
             SectionCard(title = "가산율 (100% 위에 더하는 몫)") {
                 PremiumRow("연장", rules.overtimePremium, 0.5, listOf(0.5, 0.75, 1.0)) { setRules(rules.copy(overtimePremium = it)) }
                 PremiumRow("야간 (${rules.nightLabel(rates)})", rules.nightPremium, 0.5, listOf(0.5, 0.75, 1.0)) { setRules(rules.copy(nightPremium = it)) }
@@ -197,6 +238,10 @@ fun CompanyRulesEditor(
                     }
                     if (rules.publicHolidayAs != null && rules.extraRule(rules.publicHolidayAs) == null) {
                         Hint("아래 ‘${kinds.name(rules.publicHolidayAs!!)}’ 계산 방식을 정해 주세요. 정하지 않으면 법정대로 계산해요.")
+                    }
+                    // [PAYX-14] Overnight shifts across a holiday: by the clock unless the company says otherwise.
+                    Toggle("밤샘 근무는 시작한 날로 휴일 판단", "끄면 공휴일 0시~24시에 일한 시간만 휴일근로예요. 회사가 근무 시작일로 정하면 켜 주세요", rules.holidayByShiftStart) {
+                        setRules(rules.copy(holidayByShiftStart = it))
                     }
                     Toggle("공휴일 연차는 연차 일수에서 안 빠짐", "공휴일 근무일에 쉬어도 연차가 줄지 않는 회사라면 켜 주세요", rules.holidayLeaveFree) {
                         setRules(rules.copy(holidayLeaveFree = it))

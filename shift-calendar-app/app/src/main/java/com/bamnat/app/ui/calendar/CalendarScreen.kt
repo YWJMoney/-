@@ -123,7 +123,11 @@ fun CalendarScreen(
     val context = LocalContext.current
     // Re-checked on every return to the app, since the user may change it in system settings.
     var notificationsAllowed by remember { mutableStateOf(Notifications.canPost(context)) }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { notificationsAllowed = Notifications.canPost(context) }
+    var fullScreenAllowed by remember { mutableStateOf(Notifications.canUseFullScreen(context)) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        notificationsAllowed = Notifications.canPost(context)
+        fullScreenAllowed = Notifications.canUseFullScreen(context)
+    }
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
@@ -283,6 +287,19 @@ fun CalendarScreen(
                 title = "알림이 꺼져 있어 근무 알람을 잠금 화면에서 끌 수 없어요",
                 message = "소리는 울리지만 끄기·다시 울림 버튼이 안 보여요. 눌러서 알림을 허용해 주세요.",
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable(onClick = onOpenSettings),
+            )
+        }
+        // [REL-12] Android 14+ can block the full-screen alarm; then only a small notification shows.
+        if (notificationsAllowed && !fullScreenAllowed && settings.alarmsEnabled && snap.shiftTypes.any { it.alarmEnabled }) {
+            WarningBanner(
+                title = "잠금 화면에 알람 화면이 뜨지 않게 막혀 있어요",
+                message = "알람이 울릴 때 크게 끄기 버튼이 보이도록 눌러서 ‘전체 화면 알림’을 허용해 주세요.",
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable {
+                    if (android.os.Build.VERSION.SDK_INT >= 34) runCatching {
+                        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                            android.net.Uri.parse("package:${context.packageName}")))
+                    }
+                },
             )
         }
         MonthShiftCounts(snap, visibleMonth, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
