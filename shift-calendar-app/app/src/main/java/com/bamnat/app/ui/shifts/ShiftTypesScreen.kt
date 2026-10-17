@@ -316,7 +316,7 @@ private fun OffsetPickerDialog(existing: Set<Int>, onDismiss: () -> Unit, onPick
         title = { Text("알람 추가") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("근무 시작 몇 분 전에 울릴까요?", style = MaterialTheme.typography.bodyMedium)
+                Text("근무 시작 몇 분 전에 울릴까요? 1분 단위로 정할 수 있어요.", style = MaterialTheme.typography.bodyMedium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (m in OffsetChoices) {
                         FilterChip(
@@ -329,7 +329,8 @@ private fun OffsetPickerDialog(existing: Set<Int>, onDismiss: () -> Unit, onPick
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("직접 입력", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    MinutesStepper(minutes = minutes, onChange = { minutes = it }, step = 5, max = 24 * 60,
+                    // [UX-01] To the minute: tap for 1분, hold to run, or tap the value to type it.
+                    MinutesStepper(minutes = minutes, onChange = { minutes = it }, step = 1, max = 24 * 60,
                         dialogTitle = "몇 분 전에 울릴까요?")
                 }
                 if (minutes in existing) {

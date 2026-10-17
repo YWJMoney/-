@@ -347,11 +347,15 @@ class ScreenshotTest {
         annualLeaveDays = 15.0,
     )
 
-    private fun payScreen(tier: Tier, withProfile: Boolean, body: (@androidx.compose.runtime.Composable (PayViewModel) -> Unit)? = null): Screen.() -> Unit = {
+    private fun payScreen(
+        tier: Tier, withProfile: Boolean,
+        adjust: (com.bamnat.core.pay.PayProfile) -> com.bamnat.core.pay.PayProfile = { it },
+        body: (@androidx.compose.runtime.Composable (PayViewModel) -> Unit)? = null,
+    ): Screen.() -> Unit = {
         val c = app.container
         c.settingsRepository.update { it.copy(tier = tier) }
         val vm = PayViewModel(c)
-        runBlocking { c.payStore.save(if (withProfile) vm.sampleProfile().copy(rules = companyRules) else null, keepUndo = false) }
+        runBlocking { c.payStore.save(if (withProfile) adjust(vm.sampleProfile().copy(rules = companyRules)) else null, keepUndo = false) }
         settle()
         content { if (body != null) body(vm) else PayScreen(vm, onBack = {}) }
         settle()
@@ -647,6 +651,31 @@ class ScreenshotTest {
         scrollUp(450, across = 0.5f)
     }
 
+    // ---- M7 [PAYX-14][PAYX-15][UX-01] ----
+    private val closeOn20: (com.bamnat.core.pay.PayProfile) -> com.bamnat.core.pay.PayProfile =
+        { it.copy(period = com.bamnat.core.pay.PayPeriod(endDay = 20, payDay = 25), rules = it.rules.copy(holidayByShiftStart = true)) }
+    @Test fun foldedPayPeriod() = shoot("91_folded_pay_period", FOLDED, payScreen(Tier.PRO, withProfile = true, adjust = closeOn20))
+    @Test fun foldedRulesPeriod() = shoot("92_folded_rules_period", FOLDED) {
+        payScreen(Tier.PRO, withProfile = true, adjust = closeOn20) { vm ->
+            val profile = vm.profile.collectAsState().value
+            val snap = vm.snapshot.collectAsState().value
+            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {})
+        }.invoke(this)
+        scrollUp(RULES_PERIOD_SCROLL)
+    }
+    @Test fun foldedSteppers() = shoot("93_folded_steppers_fixed_width", FOLDED) {
+        content {
+            androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(24.dp)) {
+                for (m in listOf(5, 60, 90, 23 * 60 + 55)) {
+                    androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        androidx.compose.material3.Text("알람", androidx.compose.ui.Modifier.weight(1f))
+                        com.bamnat.app.ui.components.MinutesStepper(minutes = m, onChange = {}, step = 1)
+                    }
+                }
+            }
+        }
+    }
+
     private fun fresh(s: WorkStyle?, then: Screen.() -> Unit = {}): Screen.() -> Unit {
         runBlocking { app.container.scheduleRepository.clearPattern() }
         app.container.settingsRepository.update { it.copy(workStyle = s) }
@@ -749,6 +778,7 @@ class ScreenshotTest {
         const val DAY_ALARM_EDIT_Y = 519f
         const val DAY_ALARM_SCROLL = 600
         const val SETTINGS_SLEEP_SCROLLS = 4
+        const val RULES_PERIOD_SCROLL = 420
         // Today's cell in the folded calendar (row 3, Wednesday).
         const val DAY_X = 135f
         const val DAY_Y = 290f

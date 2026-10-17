@@ -368,8 +368,19 @@ private fun TotalCard(result: MonthPay, unlocked: Boolean, closed: Boolean = fal
             .background(MaterialTheme.colorScheme.primaryContainer).padding(20.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("${result.month.monthValue}월 예상 급여 (세전)", style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                Text("${result.month.monthValue}월 예상 급여 (세전)", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                // [PAYX-15] Which days it covers and when it arrives.
+                val from = result.periodStart
+                val to = result.periodEnd
+                val note = listOfNotNull(
+                    if (from != null && to != null) "${from.monthValue}/${from.dayOfMonth}~${to.monthValue}/${to.dayOfMonth} 근무분" else null,
+                    result.payDate?.let { "${it.monthValue}월 ${it.dayOfMonth}일 지급" },
+                ).joinToString(" · ")
+                if (note.isNotEmpty()) Text(note, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+            }
             if (closed) { EstimatedChip("마감"); Spacer(Modifier.width(6.dp)) }
             if (result.estimated) EstimatedChip()
         }

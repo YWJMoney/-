@@ -161,6 +161,7 @@ object PayCodec {
         .put("flexPeriod", p.flexPeriod?.name)
         .put("weekStart", p.weekStart.name)
         .put("estimated", JSONArray(p.estimatedFields.toList()))
+        .put("period", period(p.period))
         .put("rules", rules(p.rules))
 
     fun decode(o: JSONObject): PayProfile = PayProfile(
@@ -179,6 +180,17 @@ object PayCodec {
         weekStart = runCatching { DayOfWeek.valueOf(o.getString("weekStart")) }.getOrDefault(DayOfWeek.MONDAY),
         estimatedFields = o.optJSONArray("estimated")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet(),
         rules = o.optJSONObject("rules")?.let(::rules) ?: CompanyRules(),
+        period = o.optJSONObject("period")?.let(::periodFrom) ?: com.bamnat.core.pay.PayPeriod(),
+    )
+
+    /** [PAYX-15] Pay period and pay day; values out of range fall back to the calendar month. */
+    fun period(p: com.bamnat.core.pay.PayPeriod): JSONObject = JSONObject()
+        .put("endDay", p.endDay ?: -1).put("payDay", p.payDay ?: -1).put("payNextMonth", p.payNextMonth)
+
+    fun periodFrom(o: JSONObject): com.bamnat.core.pay.PayPeriod = com.bamnat.core.pay.PayPeriod(
+        endDay = o.optInt("endDay", -1).takeIf { it in 1..30 },
+        payDay = o.optInt("payDay", -1).takeIf { it in 1..31 },
+        payNextMonth = o.optBoolean("payNextMonth", false),
     )
 
     private fun JSONObject.putRate(key: String, v: Double?) = put(key, v ?: JSONObject.NULL)
@@ -195,6 +207,7 @@ object PayCodec {
         .put("leaveCarry", r.annualLeaveCarry)
         .putOpt("publicHolidayAs", r.publicHolidayAs?.name)
         .put("holidayLeaveFree", r.holidayLeaveFree)
+        .put("holidayByStart", r.holidayByShiftStart)
         .putOpt("nightStart", r.nightStart?.toString()).putOpt("nightEnd", r.nightEnd?.toString())
         .put("extraByShift", JSONObject().apply {
             r.extraByShift.forEach { (kind, byType) ->
@@ -223,6 +236,7 @@ object PayCodec {
         annualLeaveCarry = o.optDouble("leaveCarry", 0.0),
         publicHolidayAs = o.optString("publicHolidayAs").takeIf { it.isNotEmpty() }?.let { runCatching { ExtraWork.valueOf(it) }.getOrNull() },
         holidayLeaveFree = o.optBoolean("holidayLeaveFree", false),
+        holidayByShiftStart = o.optBoolean("holidayByStart", false),
         extra = o.optJSONObject("extra")?.let { x ->
             x.keys().asSequence().mapNotNull { key ->
                 val kind = runCatching { ExtraWork.valueOf(key) }.getOrNull() ?: return@mapNotNull null

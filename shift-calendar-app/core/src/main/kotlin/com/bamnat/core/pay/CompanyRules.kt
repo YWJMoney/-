@@ -126,6 +126,11 @@ data class CompanyRules(
     val nightEnd: java.time.LocalTime? = null,
     /** [PAYX-09] What this person's company calls each kind (e.g. 잔업 → 조출); filled from settings. */
     val extraNames: Map<ExtraWork, String> = emptyMap(),
+    /**
+     * [PAYX-14] An overnight shift that crosses into or out of a 공휴일·주휴일 counts as holiday work
+     * whole, by the day it started on. Off by default: only the minutes inside the holiday count.
+     */
+    val holidayByShiftStart: Boolean = false,
 ) {
     fun extraRule(kind: ExtraWork?): ExtraRule? = kind?.let { extra[it] }?.takeIf { it.basis != ExtraBasis.LEGAL }
 

@@ -52,6 +52,10 @@ data class MonthPay(
     val minutes: List<DayMinutes>,
     val warnings: List<String>,
     val days: List<DayPay> = emptyList(),
+    /** [PAYX-15] The days this pay covers and when it is paid; null for the calendar month. */
+    val periodStart: LocalDate? = null,
+    val periodEnd: LocalDate? = null,
+    val payDate: LocalDate? = null,
 ) {
     val total: Long get() = lines.sumOf { it.amount }
     val estimated: Boolean get() = lines.any { it.estimated } || minutes.any { it.estimated }
@@ -78,7 +82,11 @@ class PayCalculator(
     ): MonthPay {
         val rules = profile.rules
         // [PAYX-12] The company's night window replaces 22~06 for every shift, base shifts included.
-        val rates = rules.applyNight(RateTable.on(month.atDay(1), rateTable))
+        // [PAYX-15] The days this month's pay covers, e.g. 9/21~10/20 for October.
+        val periodStart = profile.period.start(month)
+        val periodEnd = profile.period.end(month)
+        fun inPeriod(d: LocalDate) = !d.isBefore(periodStart) && !d.isAfter(periodEnd)
+        val rates = rules.applyNight(RateTable.on(periodStart, rateTable))
         val premiums = profile.fiveOrMoreEmployees
         // 공휴일 are paid holidays only at 5인 이상 (근로기준법 제55조 제2항, 시행령 별표1); below that
         // they are ordinary days unless the caller says otherwise.
@@ -90,22 +98,22 @@ class PayCalculator(
             rates = { rules.applyNight(RateTable.on(it, rateTable)) },
             options = ClassifyOptions(profile.dailyLimitMinutes, profile.weeklyLimitMinutes, profile.weekStart,
                 offDayWorkIsHoliday = rules.offDayWork == OffDayWork.HOLIDAY, scheduleIsRegular = profile.scheduleIsRegular,
-                flexPeriod = profile.flexPeriod),
+                flexPeriod = profile.flexPeriod, holidayByClock = !rules.holidayByShiftStart),
         )
         // Start at the week containing the 1st so weekly overtime counts the days before it, or at the
         // 탄력적 근로시간제 period's start so a period ending this month is settled whole.
-        val weekFrom = month.atDay(1).with(TemporalAdjusters.previousOrSame(profile.weekStart))
-        val from = profile.flexPeriod?.takeIf { profile.scheduleIsRegular }?.start(month.atDay(1))
+        val weekFrom = periodStart.with(TemporalAdjusters.previousOrSame(profile.weekStart))
+        val from = profile.flexPeriod?.takeIf { profile.scheduleIsRegular }?.start(periodStart)
             ?.let { minOf(it, weekFrom) } ?: weekFrom
-        val days = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(month.atEndOfMonth()) }
+        val days = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(periodEnd) }
             .map(resolve).toList()
         val allMinutes = classifier.classify(days, holiday).map { m ->
             val rounded = rules.overtimeRounding.apply(m.overtime)
             if (rounded == m.overtime) m else m.copy(overtime = rounded)
         }
-        val minutes = allMinutes.filter { YearMonth.from(it.date) == month }
+        val minutes = allMinutes.filter { inPeriod(it.date) }
         val byDate = minutes.associateBy { it.date }
-        val monthDays = days.filter { YearMonth.from(it.date) == month }
+        val monthDays = days.filter { inPeriod(it.date) }
 
         val base = profile.base.on(month)
         val ordinaryMonthly = profile.items.filter { it.ordinary && it.cadence == Cadence.MONTHLY && !it.isFixedOvertime }
@@ -374,7 +382,7 @@ class PayCalculator(
         }
 
         if (profile.wageType == WageType.HOURLY && rules.weeklyHolidayPay) {
-            weeklyHolidayLine(allMinutes, attendedByDate, weekFrom, month, hourly, baseEstimated)?.let { lines += it }
+            weeklyHolidayLine(allMinutes, attendedByDate, weekFrom, periodStart, periodEnd, hourly, baseEstimated)?.let { lines += it }
         }
 
         if (hourly in 1 until rates.minimumHourlyWage) {
@@ -417,23 +425,26 @@ class PayCalculator(
                 "하루 8시간·주 40시간을 넘는 ${hours(extra)}이 연장근로라 약 ${won(gap)}을 더 받아야 해요. 취업규칙을 확인해 보세요"
         }
 
-        return MonthPay(month, lines, hourly, rates.version, minutes, warnings, dayPays).withHourlyNote(hourlyFormula)
+        return MonthPay(month, lines, hourly, rates.version, minutes, warnings, dayPays,
+            periodStart.takeUnless { profile.period.isCalendarMonth }, periodEnd.takeUnless { profile.period.isCalendarMonth },
+            profile.period.payDate(month)).withHourlyNote(hourlyFormula)
     }
 
     /**
-     * 주휴수당 [PAY-12 선행, 근로기준법 제55조·시행령 제30조]: each week ending in the month with at least
+     * 주휴수당 [PAY-12 선행, 근로기준법 제55조·시행령 제30조]: each week ending in the pay period with at least
      * 15 scheduled hours earns (weekly hours ÷ 40) × 8 hours, at most 8. The calendar is taken as
      * worked in full (개근).
      */
     private fun weeklyHolidayLine(
-        all: List<DayMinutes>, attended: Map<LocalDate, Int>, from: LocalDate, month: YearMonth, hourly: Long, estimated: Boolean,
+        all: List<DayMinutes>, attended: Map<LocalDate, Int>, from: LocalDate, periodStart: LocalDate, periodEnd: LocalDate,
+        hourly: Long, estimated: Boolean,
     ): PayLine? {
         var weekStart = from
         var minutes = 0
         val weeks = mutableListOf<Int>()
-        while (!weekStart.plusDays(6).isAfter(month.atEndOfMonth())) {
+        while (!weekStart.plusDays(6).isAfter(periodEnd)) {
             val end = weekStart.plusDays(6)
-            if (YearMonth.from(end) == month) {
+            if (!end.isBefore(periodStart)) {
                 // Paid leave and paid holidays count as attended hours of the week.
                 val worked = all.filter { !it.date.isBefore(weekStart) && !it.date.isAfter(end) }
                     .sumOf { it.regular + (attended[it.date] ?: 0) }

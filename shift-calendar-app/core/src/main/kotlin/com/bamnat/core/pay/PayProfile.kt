@@ -1,5 +1,7 @@
 package com.bamnat.core.pay
 
+import java.time.YearMonth
+
 import java.time.DayOfWeek
 import java.time.LocalDate
 
@@ -100,6 +102,46 @@ enum class Festival(val label: String, val lunarMonth: Int, val lunarDay: Int) {
 }
 
 /**
+ * [PAYX-15] The days one month's pay covers and when it is paid. Many companies close the month
+ * early, e.g. 전월 21일~이번 달 20일, and pay on the 25th. The pay month is the month the period
+ * ends in, so 9/21~10/20 is October's pay.
+ */
+data class PayPeriod(
+    /** Last day of the period, 1..31 (shorter months use their last day); null = 말일. */
+    val endDay: Int? = null,
+    /** Day of the month pay arrives, 1..31; null when not entered. */
+    val payDay: Int? = null,
+    /** Pay arrives the month after the period ends (e.g. 말일 마감, 다음 달 10일 지급). */
+    val payNextMonth: Boolean = false,
+) {
+    private fun endIn(m: YearMonth): LocalDate = m.atDay(minOf(endDay ?: 31, m.lengthOfMonth()))
+
+    fun start(m: YearMonth): LocalDate = if (endDay == null) m.atDay(1) else endIn(m.minusMonths(1)).plusDays(1)
+    fun end(m: YearMonth): LocalDate = endIn(m)
+    fun contains(m: YearMonth, date: LocalDate): Boolean = !date.isBefore(start(m)) && !date.isAfter(end(m))
+
+    /** The pay month whose period holds [date]. */
+    fun monthOf(date: LocalDate): YearMonth {
+        val m = YearMonth.from(date)
+        return if (date.isAfter(end(m))) m.plusMonths(1) else m
+    }
+
+    /** When [m]'s pay arrives, or null when no pay day was entered. */
+    fun payDate(m: YearMonth): LocalDate? = payDay?.let { d ->
+        val pm = if (payNextMonth) m.plusMonths(1) else m
+        pm.atDay(minOf(d, pm.lengthOfMonth()))
+    }
+
+    val isCalendarMonth: Boolean get() = endDay == null || endDay >= 31
+
+    /** "9/21~10/20" for [m]. */
+    fun label(m: YearMonth): String {
+        val s = start(m); val e = end(m)
+        return "${s.monthValue}/${s.dayOfMonth}~${e.monthValue}/${e.dayOfMonth}"
+    }
+}
+
+/**
  * Everything about the worker's pay that does not change month to month [PAY-10].
  * Values that change over time (base pay, allowances) are [ValueTimeline]s.
  */
@@ -127,4 +169,6 @@ data class PayProfile(
     val estimatedFields: Set<String> = emptySet(),
     /** The company's own rules on top of the law [PAYX-07]. */
     val rules: CompanyRules = CompanyRules(),
+    /** [PAYX-15] The pay period and pay day; the calendar month by default. */
+    val period: PayPeriod = PayPeriod(),
 )

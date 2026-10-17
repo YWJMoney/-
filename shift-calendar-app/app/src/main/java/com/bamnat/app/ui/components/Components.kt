@@ -4,6 +4,7 @@ import com.bamnat.core.model.ShiftIcon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -240,7 +241,11 @@ fun WarningBanner(title: String, message: String, modifier: Modifier = Modifier)
     }
 }
 
-/** − value + control for durations in 30-minute steps. Tapping the value allows exact input. */
+/**
+ * − value + control for durations. [UX-01] The value sits in a fixed-width box, so 1시간 and
+ * 1시간 30분 never move the buttons; holding − or + keeps stepping. Tapping the value allows exact
+ * input to the minute.
+ */
 @Composable
 fun MinutesStepper(
     minutes: Int,
@@ -258,20 +263,26 @@ fun MinutesStepper(
         onChange(v)
     }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        FilledTonalIconButton(onClick = { set((shown - step).coerceAtLeast(0)) }, enabled = shown > 0) {
+        RepeatIconButton(onStep = { set((shown - step).coerceAtLeast(0)) }, enabled = shown > 0) {
             Icon(Icons.Filled.Remove, contentDescription = "줄이기")
         }
-        Text(
-            HoursFormat.korean(shown),
-            style = MaterialTheme.typography.titleMedium.merge(NumberStyle),
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .widthIn(min = 64.dp)
+        val style = MaterialTheme.typography.titleMedium.merge(NumberStyle)
+        Box(
+            Modifier
+                .width(STEPPER_VALUE_WIDTH)
                 .clip(MaterialTheme.shapes.small)
-                .clickable { editing = true }
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-        )
-        FilledTonalIconButton(onClick = { set((shown + step).coerceAtMost(max)) }, enabled = shown < max) {
+                .clickable(onClickLabel = dialogTitle) { editing = true }
+                .padding(vertical = 8.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            BasicText(
+                HoursFormat.korean(shown),
+                style = style.copy(color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center),
+                maxLines = 1,
+                autoSize = TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = style.fontSize),
+            )
+        }
+        RepeatIconButton(onStep = { set((shown + step).coerceAtMost(max)) }, enabled = shown < max) {
             Icon(Icons.Filled.Add, contentDescription = "늘리기")
         }
     }
@@ -287,6 +298,34 @@ fun MinutesStepper(
             },
         )
     }
+}
+
+/** Same width for every value, "0분" to "23시간 59분". */
+private val STEPPER_VALUE_WIDTH = 104.dp
+
+/** A − or + button that steps once on a tap and keeps stepping while held. */
+@Composable
+private fun RepeatIconButton(onStep: () -> Unit, enabled: Boolean, content: @Composable () -> Unit) {
+    val step by androidx.compose.runtime.rememberUpdatedState(onStep)
+    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    // A hold already stepped; the release must not add one more.
+    var repeated by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(pressed, enabled) {
+        if (!pressed || !enabled) return@LaunchedEffect
+        repeated = false
+        kotlinx.coroutines.delay(450)
+        while (true) {
+            repeated = true
+            step()
+            kotlinx.coroutines.delay(90)
+        }
+    }
+    FilledTonalIconButton(
+        onClick = { if (!repeated) step(); repeated = false },
+        enabled = enabled,
+        interactionSource = interaction,
+    ) { content() }
 }
 
 @Composable

@@ -115,3 +115,13 @@ class SystemEventReceiver : BroadcastReceiver() {
         }
     }
 }
+
+/** [REL-12] The ringing notification's 끄기 and 다시 알림 buttons, usable without unlocking. */
+class AlarmActionReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        when (intent.action) {
+            AlarmService.ACTION_DISMISS -> AlarmService.dismiss(context)
+            AlarmService.ACTION_SNOOZE -> AlarmService.snooze(context)
+        }
+    }
+}

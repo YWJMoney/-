@@ -153,8 +153,9 @@ class AlarmService : Service() {
             .setContentText(describe(ring))
             .setContentIntent(fullScreen)
             .setFullScreenIntent(fullScreen, true)
-            .addAction(0, "${snoozeMinutes}분 후 다시", serviceIntent(this, ACTION_SNOOZE, REQ_SNOOZE))
-            .addAction(0, "끄기", serviceIntent(this, ACTION_DISMISS, REQ_DISMISS))
+            // [REL-12] Both buttons work from the lock screen without unlocking the phone.
+            .addAction(lockScreenAction("${snoozeMinutes}분 후 다시", ACTION_SNOOZE, REQ_SNOOZE))
+            .addAction(lockScreenAction("끄기", ACTION_DISMISS, REQ_DISMISS))
             // Swiping the notification away must not leave the alarm ringing with no controls.
             .setDeleteIntent(serviceIntent(this, ACTION_SNOOZE, REQ_DELETE))
             .build()
@@ -296,6 +297,20 @@ class AlarmService : Service() {
         fun snooze(context: Context) {
             context.startService(Intent(context, AlarmService::class.java).setAction(ACTION_SNOOZE))
         }
+
+        /** A notification button that never asks to unlock first (Android 12+ can, per action). */
+        private fun Context.lockScreenAction(title: String, action: String, requestCode: Int): NotificationCompat.Action =
+            NotificationCompat.Action.Builder(0, title, actionIntent(this, action, requestCode))
+                .setAuthenticationRequired(false)
+                .build()
+
+        /** Through [AlarmActionReceiver]: a broadcast always reaches the app from the lock screen. */
+        private fun actionIntent(context: Context, action: String, requestCode: Int): PendingIntent =
+            PendingIntent.getBroadcast(
+                context, requestCode,
+                Intent(context, AlarmActionReceiver::class.java).setAction(action),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
 
         private fun serviceIntent(context: Context, action: String, requestCode: Int): PendingIntent =
             PendingIntent.getService(
