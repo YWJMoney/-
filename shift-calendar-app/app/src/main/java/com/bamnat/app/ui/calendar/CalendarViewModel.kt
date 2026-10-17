@@ -86,17 +86,30 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * [SLP-01][MKT-07] Rest-gap signs for [month]; the days just before it are read too, so a
      * night at the end of last month still counts against the 1st.
      */
-    fun restIssues(snapshot: ScheduleSnapshot, month: YearMonth): List<RestCheck.Issue> {
+    fun restIssues(snapshot: ScheduleSnapshot, month: YearMonth, strict: Boolean = false): List<RestCheck.Issue> {
         val from = month.atDay(1).minusDays(RestCheck.NIGHT_STREAK.toLong())
         val days = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(month.atEndOfMonth()) }
             .map(snapshot.resolver::resolve).toList()
-        return RestCheck.check(days).filter { YearMonth.from(it.date) == month }
+        return RestCheck.check(days, strict).filter { YearMonth.from(it.date) == month }
     }
 
+    /** [SLP-03] Sleep times for [date] from the shifts around it. */
+    fun sleepTips(snapshot: ScheduleSnapshot, date: LocalDate, targetMinutes: Int): List<com.bamnat.core.sleep.SleepPlan.Tip> {
+        val r = snapshot.resolver
+        return com.bamnat.core.sleep.SleepPlan.forDay(r.resolve(date.minusDays(1)), r.resolve(date), r.resolve(date.plusDays(1)), targetMinutes)
+    }
+
+    /** [SLP-06] The sleep log. */
+    val sleepLog: StateFlow<List<com.bamnat.core.sleep.SleepEntry>> =
+        container.sleepRepository.recent().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    fun fellAsleep() { container.appScope.launch { container.sleepRepository.fellAsleep() } }
+    fun wokeUp() { container.appScope.launch { container.sleepRepository.wokeUp() } }
+    fun deleteSleep(id: Long) { container.appScope.launch { container.sleepRepository.delete(id) } }
+
     /** Rest-gap signs that fall on [date]. */
-    fun restIssuesOn(snapshot: ScheduleSnapshot, date: LocalDate): List<RestCheck.Issue> {
+    fun restIssuesOn(snapshot: ScheduleSnapshot, date: LocalDate, strict: Boolean = false): List<RestCheck.Issue> {
         val days = (RestCheck.NIGHT_STREAK.toLong() downTo 0).map { snapshot.resolver.resolve(date.minusDays(it)) }
-        return RestCheck.check(days).filter { it.date == date }
+        return RestCheck.check(days, strict).filter { it.date == date }
     }
 
     /** [FEAT-17] Memos that belong to a date, for the list under the calendar and memo-first cells. */

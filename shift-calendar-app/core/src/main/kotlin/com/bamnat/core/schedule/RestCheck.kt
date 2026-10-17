@@ -17,6 +17,8 @@ object RestCheck {
         SHORT_REST("휴식 11시간 미만"),
         BACKWARD("역순환"),
         NIGHT_STREAK("연속 야간"),
+        /** [MKT-11] Fewer than two days off after a run of nights (strict rules only). */
+        SHORT_RECOVERY("야간 뒤 쉬는 날 부족"),
     }
 
     data class Issue(val date: LocalDate, val kind: Kind, val text: String)
@@ -24,6 +26,9 @@ object RestCheck {
     const val MIN_REST_MINUTES = 11 * 60
     const val AFTER_NIGHT_MINUTES = 24 * 60
     const val NIGHT_STREAK = 4
+    /** [MKT-11] Delphi consensus in the plan (MKT-11): at most 2 nights in a row, 2 days off after nights. */
+    const val STRICT_NIGHT_STREAK = 3
+    const val STRICT_RECOVERY_DAYS = 2
 
     private data class Work(val date: LocalDate, val from: LocalDateTime, val to: LocalDateTime, val name: String) {
         val night: Boolean get() {
@@ -33,7 +38,8 @@ object RestCheck {
     }
 
     /** Issues for [days] (one calendar day each, in order); pass the day before the range too. */
-    fun check(days: List<ResolvedDay>): List<Issue> {
+    fun check(days: List<ResolvedDay>, strict: Boolean = false): List<Issue> {
+        val streakLimit = if (strict) STRICT_NIGHT_STREAK else NIGHT_STREAK
         val work = days.flatMap(::intervals).sortedBy { it.from }
         val issues = mutableListOf<Issue>()
         for ((a, b) in work.zipWithNext()) {
@@ -56,13 +62,25 @@ object RestCheck {
         var prev: LocalDate? = null
         for (d in nightDates) {
             streak = if (prev != null && d == prev.plusDays(1)) streak + 1 else 1
-            if (streak == NIGHT_STREAK) {
+            if (streak == streakLimit) {
                 var len = streak
                 var next = d.plusDays(1)
                 while (next in nightDates) { len++; next = next.plusDays(1) }
-                issues += Issue(d, Kind.NIGHT_STREAK, "야간 ${len}일 연속 (${d.minusDays(NIGHT_STREAK - 1L).monthValue}/${d.minusDays(NIGHT_STREAK - 1L).dayOfMonth}부터)")
+                issues += Issue(d, Kind.NIGHT_STREAK, "야간 ${len}일 연속 (${d.minusDays(streakLimit - 1L).monthValue}/${d.minusDays(streakLimit - 1L).dayOfMonth}부터)")
             }
             prev = d
+        }
+        if (strict) {
+            // A run of nights ends on a night date with no night the day after; the next work
+            // day should leave two whole days off in between.
+            val workDates = work.map { it.date }.distinct().sorted()
+            for (d in nightDates.filter { it.plusDays(1) !in nightDates }) {
+                val next = workDates.firstOrNull { it.isAfter(d) } ?: continue
+                val off = java.time.temporal.ChronoUnit.DAYS.between(d, next) - 1
+                if (off < STRICT_RECOVERY_DAYS) {
+                    issues += Issue(next, Kind.SHORT_RECOVERY, "야간이 끝난 ${d.monthValue}/${d.dayOfMonth} 뒤 쉬는 날 ${off}일")
+                }
+            }
         }
         return issues.sortedWith(compareBy({ it.date }, { it.kind.ordinal }))
     }

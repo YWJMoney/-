@@ -32,7 +32,7 @@ class MigrationTest {
         createVersion1(context.getDatabasePath(name).apply { parentFile?.mkdirs() })
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11)
             .allowMainThreadQueries()
             .build()
         try {
@@ -77,6 +77,11 @@ class MigrationTest {
             val changes = db.dayChangeDao()
             changes.insert(DayChangeEntity(epochDay = 20000, atMillis = 5, text = "잔업 2시간"))
             assertEquals(listOf("잔업 2시간"), changes.observe(20000).first().map { it.text })
+            // Version 11: the sleep log [SLP-06].
+            val sleep = db.sleepDao()
+            val sleepId = sleep.insert(SleepLogEntity(startMillis = 1_000, endMillis = null))
+            sleep.finish(sleepId, 9_000)
+            assertEquals(9_000L, sleep.all().single().endMillis)
         } finally {
             db.close()
             context.deleteDatabase(name)

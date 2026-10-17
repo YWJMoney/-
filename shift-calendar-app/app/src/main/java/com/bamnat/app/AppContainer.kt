@@ -37,6 +37,7 @@ class AppContainer(context: Context) {
     val database: AppDatabase = AppDatabase.create(context)
     val scheduleRepository = ScheduleRepository(database, extraName = { settingsRepository.current.extraKinds.name(it) })
     val memoRepository = MemoRepository(database)
+    val sleepRepository = com.bamnat.app.data.SleepRepository(database)
     val moneyRepository = MoneyRepository(database, com.bamnat.app.data.CaptureStore(java.io.File(appContext.noBackupFilesDir, "captures.json")))
     val settingsRepository = SettingsRepository(context)
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository)
@@ -68,6 +69,13 @@ class AppContainer(context: Context) {
         // [WORK-02] Any change to the booked jobs re-plans the next job reminder.
         appScope.launch {
             moneyRepository.book.debounce(500).collect { JobReminderScheduler.reschedule(appContext, it) }
+        }
+        // [SLP-04][SLP-07] Sleep reminders follow the schedule and their settings.
+        appScope.launch {
+            val sleep = settingsRepository.settings.map { it.sleepReminders to it.sleepTargetMinutes }.distinctUntilChanged()
+            combine(scheduleRepository.snapshot, sleep) { snapshot, _ -> snapshot }
+                .debounce(500)
+                .collect { com.bamnat.app.sleep.SleepReminder.reschedule(appContext, it, settingsRepository.current) }
         }
         // [PAY-12][REL-08] 연차 notices follow whether the user entered their days.
         appScope.launch {
