@@ -65,8 +65,17 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     val tier: StateFlow<Tier> = container.featureGate.tier
     private val payCalculator = PayCalculator()
 
-    fun dayPay(profile: PayProfile, snapshot: ScheduleSnapshot, date: LocalDate): DayPay? =
-        payCalculator.calculate(profile.named(container.settingsRepository.current.extraKinds), YearMonth.from(date), snapshot.resolver::resolve).day(date)
+    // Tapping from day to day in one month reuses that month's result instead of recalculating it.
+    private var monthPayCache: Pair<List<Any>, com.bamnat.core.pay.MonthPay>? = null
+
+    fun dayPay(profile: PayProfile, snapshot: ScheduleSnapshot, date: LocalDate): DayPay? {
+        val month = YearMonth.from(date)
+        val kinds = container.settingsRepository.current.extraKinds
+        val key = listOf(profile, snapshot, month, kinds)
+        val pay = monthPayCache?.takeIf { it.first == key }?.second
+            ?: payCalculator.calculate(profile.named(kinds), month, snapshot.resolver::resolve).also { monthPayCache = key to it }
+        return pay.day(date)
+    }
 
     private val _selected = MutableStateFlow(LocalDate.now())
     val selected: StateFlow<LocalDate> = _selected.asStateFlow()

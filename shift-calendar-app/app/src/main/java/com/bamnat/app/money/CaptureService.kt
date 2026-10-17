@@ -33,7 +33,13 @@ class CaptureService : NotificationListenerService() {
         val messages = ex.getParcelableArray(Notification.EXTRA_MESSAGES)
         if (!messages.isNullOrEmpty()) {
             // A messaging-style notification stacks texts; each is one message (repeats are dropped later).
-            messages.forEach { m -> (m as? Bundle)?.getCharSequence("text")?.toString()?.trim()?.let(bodies::add) }
+            // The whole stack is posted again with each new message, so only recent ones are read; an
+            // old line the user already deleted or fixed must not come back.
+            messages.forEach { m ->
+                val b = m as? Bundle ?: return@forEach
+                val at = b.getLong("time", sbn.postTime)
+                if (at >= sbn.postTime - STACK_WINDOW_MILLIS) b.getCharSequence("text")?.toString()?.trim()?.let(bodies::add)
+            }
         } else {
             val big = ex.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.trim().orEmpty()
             bodies += big.ifEmpty { ex.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty() }
@@ -43,12 +49,24 @@ class CaptureService : NotificationListenerService() {
         val app = runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString() }
             .getOrDefault(sbn.packageName)
         val container = applicationContext.appContainer
+        val messenger = sbn.packageName in MESSENGERS
         container.appScope.launch {
-            texts.forEach { container.moneyRepository.capture(it, app, sbn.postTime) }
+            texts.forEach { text ->
+                // Any text from any app reaches the parser; one it trips on must not take the app down.
+                runCatching { container.moneyRepository.capture(text, app, sbn.postTime, messenger) }
+            }
         }
     }
 
     companion object {
+        private const val STACK_WINDOW_MILLIS = 10L * 60 * 1000
+
+        /** Chat apps: card and bank 알림톡 arrive here too, but so do people's own messages. */
+        private val MESSENGERS = setOf(
+            "com.kakao.talk", "jp.naver.line.android", "org.telegram.messenger", "com.whatsapp",
+            "com.facebook.orca", "com.instagram.android", "com.discord", "com.google.android.apps.dynamite",
+        )
+
         private fun component(context: Context) = ComponentName(context, CaptureService::class.java)
 
         /** Turned on in the app (the service exists) — access may still be missing. */

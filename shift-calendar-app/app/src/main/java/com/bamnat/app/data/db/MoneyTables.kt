@@ -194,7 +194,7 @@ fun MoneyEntryEntity.toModel() = MoneyEntry(
     note = note,
     source = runCatching { MoneySource.valueOf(source) }.getOrDefault(MoneySource.MANUAL),
     merchant = merchant,
-    time = minuteOfDay?.let { LocalTime.of(it / 60, it % 60) },
+    time = minuteOfDay?.let { it.toLocalTime() },
     cardLast4 = cardLast4,
     reviewed = reviewed,
 )
@@ -214,7 +214,7 @@ fun FixedCost.toEntity() = FixedCostEntity(id, name, amount, day, kind.name, cat
 
 fun JobEntity.toModel() = Job(
     id = id, date = LocalDate.ofEpochDay(epochDay), title = title, client = client, place = place,
-    start = startMinute?.let { LocalTime.of(it / 60, it % 60) }, end = endMinute?.let { LocalTime.of(it / 60, it % 60) },
+    start = startMinute?.let { it.toLocalTime() }, end = endMinute?.let { it.toLocalTime() },
     amount = amount, deposit = deposit, depositPaid = depositPaid, balancePaid = balancePaid,
     remindMinutes = remindMinutes, note = note,
     endDate = endEpochDay?.let(LocalDate::ofEpochDay), costs = costs, withholding = withholding,

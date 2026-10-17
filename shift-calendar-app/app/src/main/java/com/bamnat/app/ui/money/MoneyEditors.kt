@@ -130,7 +130,9 @@ fun EntryDialog(
 ) {
     val isNew = initial == null || initial.id == 0L
     var kind by rememberSaveable { mutableStateOf(initial?.kind ?: defaultKind) }
-    var digits by rememberSaveable { mutableStateOf(amountDigits(initial?.amount ?: 0)) }
+    // A cancellation is stored negative (or, from a kept foreign text, still 0 and marked "결제 취소").
+    val cancel = (initial?.amount ?: 0) < 0 || initial?.note?.startsWith("결제 취소") == true
+    var digits by rememberSaveable { mutableStateOf(amountDigits(kotlin.math.abs(initial?.amount ?: 0))) }
     var category by rememberSaveable { mutableStateOf(initial?.category ?: MoneyCategories.of(defaultKind).first()) }
     var categoryTouched by rememberSaveable { mutableStateOf(initial != null) }
     var place by rememberSaveable { mutableStateOf(initial?.merchant?.ifBlank { initial.note }.orEmpty()) }
@@ -201,9 +203,9 @@ fun EntryDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = amount > 0 || (initial?.amount ?: 0) < 0, onClick = {
+            TextButton(enabled = amount > 0, onClick = {
                 // A cancelled payment is stored negative; editing it keeps the sign.
-                val signed = if ((initial?.amount ?: 0) < 0) -amount else amount
+                val signed = if (cancel) -amount else amount
                 val base = initial ?: MoneyEntry(date = onDay, kind = kind, amount = signed, category = category)
                 onSave(base.copy(date = onDay, kind = kind, amount = signed, category = category, merchant = place.trim(),
                     note = if (initial?.merchant.isNullOrBlank()) "" else initial!!.note, reviewed = true))

@@ -32,6 +32,8 @@ class BackupManager(
     private val db: AppDatabase,
     private val settings: SettingsRepository,
     private val clock: () -> Long = System::currentTimeMillis,
+    /** [PAY-10] The pay setup and closed months live in their own file, but belong in the backup. */
+    private val payStore: com.bamnat.app.pay.PayStore? = null,
 ) {
     suspend fun export(): String {
         val root = JSONObject()
@@ -117,6 +119,10 @@ class BackupManager(
         root.put("sleep", JSONArray().apply {
             db.sleepDao().all().forEach { l -> put(JSONObject().put("start", l.startMillis).putOpt("end", l.endMillis)) }
         })
+        payStore?.let { store ->
+            store.profile.value?.let { root.put("pay", com.bamnat.app.pay.PayCodec.encode(it)) }
+            root.put("payClosed", JSONArray(store.closed.value.values.map(com.bamnat.app.pay.SnapshotCodec::encode)))
+        }
         val s = settings.current
         root.put(
             "settings",
@@ -221,6 +227,9 @@ class BackupManager(
         val sales = root.optJSONArray("sales")?.objects()?.map { o ->
             DailySalesEntity(o.getLong("day"), o.optLong("sales"), o.optLong("costs"), o.optString("note"))
         }
+        // Read before anything changes, so a broken pay part leaves the phone as it was.
+        val pay = root.optJSONObject("pay")?.let(com.bamnat.app.pay.PayCodec::decode)
+        val payClosed = root.optJSONArray("payClosed")?.objects()?.map(com.bamnat.app.pay.SnapshotCodec::decode)
         db.withTransaction {
             // Backups from before version 7 carry no money; what is on the phone then stays.
             val money = db.moneyDao()
@@ -241,12 +250,18 @@ class BackupManager(
             db.dayEntryDao().insertAll(days)
             memos.forEach { db.memoDao().restore(it) }
         }
+        // The pay setup points at shift types by id, and those ids just changed to the backup's: a
+        // backup with a pay setup brings it along. Older backups keep the phone's own.
+        payStore?.let { store ->
+            if (pay != null) store.save(pay, keepUndo = false)
+            if (payClosed != null) store.replaceClosed(payClosed.associateBy { it.month })
+        }
         root.optJSONObject("settings")?.let { o ->
             settings.update { s ->
                 s.copy(
                     weekStart = runCatching { DayOfWeek.valueOf(o.getString("weekStart")) }.getOrDefault(s.weekStart),
-                    weeklyLimitHours = o.optInt("weeklyLimit", s.weeklyLimitHours),
-                    averageLimitHours = o.optInt("averageLimit", s.averageLimitHours),
+                    weeklyLimitHours = o.optInt("weeklyLimit", s.weeklyLimitHours).coerceIn(1, 168),
+                    averageLimitHours = o.optInt("averageLimit", s.averageLimitHours).coerceIn(1, 168),
                     themeMode = runCatching { ThemeMode.valueOf(o.getString("theme")) }.getOrDefault(s.themeMode),
                     dynamicColor = o.optBoolean("dynamicColor", s.dynamicColor),
                     showHoursInCells = o.optBoolean("cellHours", s.showHoursInCells),
@@ -254,8 +269,8 @@ class BackupManager(
                     // Sound files from another phone usually do not exist here.
                     vibrate = o.optBoolean("vibrate", s.vibrate),
                     gradualVolume = o.optBoolean("gradual", s.gradualVolume),
-                    snoozeMinutes = o.optInt("snooze", s.snoozeMinutes),
-                    ringMinutes = o.optInt("ring", s.ringMinutes),
+                    snoozeMinutes = o.optInt("snooze", s.snoozeMinutes).coerceIn(1, 60),
+                    ringMinutes = o.optInt("ring", s.ringMinutes).coerceIn(1, 60),
                     alarmsEnabled = o.optBoolean("alarmsOn", s.alarmsEnabled),
                     workStyle = o.optStringOrNull("workStyle")?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } } ?: s.workStyle,
                     extraKinds = o.optStringOrNull("extraKinds")?.let { com.bamnat.core.model.ExtraKinds.decode(it) } ?: s.extraKinds,

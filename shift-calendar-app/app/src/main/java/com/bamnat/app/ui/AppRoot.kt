@@ -190,7 +190,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     LaunchedEffect(homeRequests) {
         if (homeRequests != handledHome) {
             handledHome = homeRequests
-            if (nav.currentBackStackEntry?.destination?.route != TopLevel.CALENDAR.route) {
+            // Only from another tab: an editor the user left open (pay setup, a pattern) keeps their input.
+            val current = nav.currentBackStackEntry?.destination?.route
+            if (current != TopLevel.CALENDAR.route && TopLevel.entries.any { it.route == current }) {
                 nav.navigate(TopLevel.CALENDAR.route) {
                     popUpTo(nav.graph.findStartDestination().id) { inclusive = false }
                     launchSingleTop = true
@@ -413,9 +415,11 @@ private fun AskNotificationPermissionOnce(container: AppContainer) {
     val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     LaunchedEffect(Unit) {
-        val settings = container.settingsRepository
-        if (!settings.current.notificationPermissionAsked && !Notifications.canPost(context)) {
-            settings.update { it.copy(notificationPermissionAsked = true) }
+        // Asked once per phone: the flag lives outside the backed-up settings, so a restore onto a
+        // new phone still asks there (without it, a ringing alarm has no lock-screen controls).
+        val device = context.getSharedPreferences("device", android.content.Context.MODE_PRIVATE)
+        if (!device.getBoolean("notification_asked", false) && !Notifications.canPost(context)) {
+            device.edit().putBoolean("notification_asked", true).apply()
             launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }

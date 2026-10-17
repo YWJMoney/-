@@ -89,6 +89,17 @@ class PayStore(context: Context) {
         }
     }
 
+    /** All closed months at once, from a restored backup. */
+    suspend fun replaceClosed(next: Map<YearMonth, CalcSnapshot>) = withContext(Dispatchers.IO) {
+        synchronized(this@PayStore) {
+            closedFile.parentFile?.mkdirs()
+            val tmp = File(closedFile.parentFile, "closed.json.tmp")
+            tmp.writeText(JSONArray(next.values.map(SnapshotCodec::encode)).toString())
+            tmp.renameTo(closedFile)
+            _closed.value = next
+        }
+    }
+
     private fun readClosed(): Map<YearMonth, CalcSnapshot> = runCatching {
         if (!closedFile.exists()) return@runCatching emptyMap()
         val a = JSONArray(closedFile.readText())

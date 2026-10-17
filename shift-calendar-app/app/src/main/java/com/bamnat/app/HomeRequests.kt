@@ -20,10 +20,17 @@ object HomeRequests {
     private var processStarted = false
     private var stoppedAt = 0L
 
-    fun onCreate(restoring: Boolean) {
+    /**
+     * True while a screen the app opened itself (file picker, permission page) is in front: coming
+     * back from it is not opening the app again, and its result still needs the screen that asked.
+     */
+    var awaitingResult = false
+
+    fun onCreate(restoring: Boolean, awaitingResult: Boolean = false) {
         // Saved state in a fresh process means Android restored the last screen; show the calendar.
-        if (restoring && !processStarted) request()
+        if (restoring && !processStarted && !awaitingResult) request()
         processStarted = true
+        this.awaitingResult = awaitingResult
     }
 
     fun onStop(changingConfigurations: Boolean) {
@@ -31,8 +38,9 @@ object HomeRequests {
     }
 
     fun onStart() {
-        if (stoppedAt > 0 && SystemClock.elapsedRealtime() - stoppedAt >= AWAY_MILLIS) request()
+        if (stoppedAt > 0 && !awaitingResult && SystemClock.elapsedRealtime() - stoppedAt >= AWAY_MILLIS) request()
         stoppedAt = 0L
+        awaitingResult = false
     }
 
     fun request() {

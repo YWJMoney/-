@@ -147,7 +147,8 @@ private fun DayLine(title: String, day: ResolvedDay, big: Boolean) {
 
 @Composable
 private fun WeekContent(data: WidgetData) {
-    val days = CalendarGrid.week(data.today)
+    // "이번 주" starts on the user's first day of the week, like the calendar.
+    val days = CalendarGrid.week(CalendarGrid.weekStartOf(data.today, data.weekStart))
     Column(GlanceModifier.fillMaxSize()) {
         Text("이번 주 근무", style = small(GlanceTheme.colors.onSurfaceVariant))
         Spacer(GlanceModifier.height(6.dp))

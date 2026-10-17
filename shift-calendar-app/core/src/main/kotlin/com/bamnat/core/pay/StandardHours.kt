@@ -36,6 +36,6 @@ object StandardHours {
             }
             total += week.coerceAtMost(40 * 60)
         }
-        return (total / weeks).toInt()
+        return if (weeks <= 0) 0 else (total / weeks).toInt()
     }
 }

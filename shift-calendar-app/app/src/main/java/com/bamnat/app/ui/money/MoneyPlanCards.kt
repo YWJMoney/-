@@ -112,10 +112,13 @@ fun NewRecordsCard(
 }
 
 /** What a kept notification becomes when the user opens it: as much as the parser read. */
-fun Capture.draft(today: LocalDate): MoneyEntry {
-    val parsed = (PaymentParser.parse(text, LocalDateTime.now()) as? PaymentParser.Result.Ok)?.parsed
-    return parsed?.let { PaymentParser.toEntry(it.copy(amount = it.amount ?: 0), today, MoneySource.NOTIFICATION) }?.copy(reviewed = true)
-        ?: MoneyEntry(date = today, kind = MoneyKind.EXPENSE, amount = 0, category = "기타", merchant = text.lines().firstOrNull().orEmpty().take(30),
+fun Capture.draft(): MoneyEntry {
+    // Read as of when it arrived, so a text kept on the 30th lands in that month, not today's.
+    val arrived = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(postedAt), java.time.ZoneId.systemDefault())
+    val day = arrived.toLocalDate()
+    val parsed = (PaymentParser.parse(text, arrived) as? PaymentParser.Result.Ok)?.parsed
+    return parsed?.let { PaymentParser.toEntry(it.copy(amount = it.amount ?: 0), day, MoneySource.NOTIFICATION) }?.copy(reviewed = true)
+        ?: MoneyEntry(date = day, kind = MoneyKind.EXPENSE, amount = 0, category = "기타", merchant = text.lines().firstOrNull().orEmpty().take(30),
             source = MoneySource.NOTIFICATION)
 }
 
@@ -217,6 +220,8 @@ fun PasteDialog(
     val context = LocalContext.current
     var text by rememberSaveable { mutableStateOf(initialText) }
     val rows = remember(text, existing, rules) {
+        // Rows earlier in the same paste count too: the card text and the pay push for one payment.
+        val seen = existing.toMutableList()
         PaymentParser.splitMessages(text).map { chunk ->
             when (val r = PaymentParser.parse(chunk, LocalDateTime.now(), rules)) {
                 is PaymentParser.Result.Fail -> PasteRow(chunk, null, r.reason, false)
@@ -226,8 +231,10 @@ fun PasteDialog(
                     else {
                         val day = p.date ?: today
                         val category = if (p.type == PaymentParser.Type.CANCEL) PaymentParser.findCancelTarget(p, day, existing)?.category ?: p.category else p.category
-                        PasteRow(chunk, PaymentParser.toEntry(p, today, MoneySource.PASTE, category), null,
-                            PaymentParser.findDuplicate(p, day, existing) != null)
+                        val entry = PaymentParser.toEntry(p, today, MoneySource.PASTE, category)
+                        val duplicate = PaymentParser.findDuplicate(p, day, seen) != null
+                        if (entry != null && !duplicate) seen += entry
+                        PasteRow(chunk, entry, null, duplicate)
                     }
                 }
             }
