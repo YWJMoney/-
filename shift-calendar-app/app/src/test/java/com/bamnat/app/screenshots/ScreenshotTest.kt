@@ -98,6 +98,8 @@ class ScreenshotTest {
     /** 특근 09–18 on a day off, before today; 야간 대근 on a day off after it. */
     private lateinit var restDayExtra: LocalDate
     private lateinit var coverDay: LocalDate
+    /** Today, or the next working day when today is off: a day off has no leave to take. */
+    private lateinit var halfDay: LocalDate
 
     /** A 대근 of [t]: that shift's hours, as the calendar adds it. */
     private fun cover(t: ShiftType) =
@@ -131,8 +133,9 @@ class ScreenshotTest {
         repo.addExtra(coverDay, cover(nightType))
         repo.addExtra((1..6).map { today.plusDays(it.toLong()) }.first { pattern.shiftTypeIdOn(it) != off }, ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120))
         repo.setAlarmSkipped(today.plusDays(6), true)
-        // [FEAT-10] 반차 today and a whole day of 연차 for the check-up on the first working day after it.
-        repo.setLeave(today, Leave(LeaveKind.ANNUAL, 2))
+        // [FEAT-10] 반차 on [halfDay] and a whole day of 연차 for the check-up on the first working day after it.
+        halfDay = (0..4).map { today.plusDays(it.toLong()) }.first { pattern.shiftTypeIdOn(it) != off }
+        repo.setLeave(halfDay, Leave(LeaveKind.ANNUAL, 2))
         val checkUp = (5..12).map { today.plusDays(it.toLong()) }.first { pattern.shiftTypeIdOn(it) == day }
         repo.setLeave(checkUp, Leave())
         // [FEAT-02] 주간 then a 야간 대근 on the next working day after the check-up.
@@ -532,7 +535,7 @@ class ScreenshotTest {
     }
 
     @Test fun foldedLeaveDay() = shoot("37_folded_leave_day", FOLDED) {
-        openDay(today)
+        openDay(halfDay)
         reveal("휴가", exact = true)
     }
     @Test fun foldedShiftIcons() = shoot("38_folded_shift_icons", FOLDED) {
@@ -1196,6 +1199,123 @@ class ScreenshotTest {
         content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, ready = true) }
     }
 
+    // [SHR-01][SHR-02][SHR-04] A link with chosen parts, and calendars received from others beside the user's own.
+    private val shares = FakeShareApi()
+    private val minjiId = "Mj7dEfGh5JkLmNoPqRsTuv"
+    private val junhoId = "Jh2kWxYz8AbCdEfGhJkLmN"
+
+    /** 민지's link as the server keeps it: 4조2교대 with a memo, 잔업, 연차 and her pay, from this month. */
+    private fun minjiShare(): com.bamnat.app.share.ReceivedShare {
+        val day = ShiftType(1, "주간", "주", 0xFF1E88E5, LocalTime.of(7, 0), LocalTime.of(19, 0), icon = "sun")
+        val night = ShiftType(2, "야간", "야", 0xFF5E35B1, LocalTime.of(19, 0), LocalTime.of(7, 0), icon = "moon")
+        val off = ShiftType(3, "휴무", "휴", 0xFF9E9E9E, null, null, isOff = true)
+        val from = today.withDayOfMonth(1)
+        val pattern = WorkPattern.Rotation(from.minusDays(3), listOf(1L, 1L, 3L, 3L, 2L, 2L, 3L, 3L))
+        val work = (0..20).map { today.plusDays(it.toLong()) }.filter { pattern.shiftTypeIdOn(it) == 1L }
+        val trip = work.first { it.isAfter(work.first().plusDays(3)) }
+        val snap = com.bamnat.app.data.ScheduleSnapshot(listOf(day, night, off), pattern, listOf(
+            com.bamnat.core.model.DayEntry(trip, leave = Leave()),
+            com.bamnat.core.model.DayEntry(work.first(), extras = listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120))),
+        ))
+        val memos = mapOf(today.plusDays(2) to "치과 2시", trip to "가족 여행 · 강릉")
+        val month = java.time.YearMonth.from(today)
+        val pay = listOf(com.bamnat.app.share.SharedPay(month, 3_412_000, "세전 예상"), com.bamnat.app.share.SharedPay(month.plusMonths(1), 3_268_000, "세전 예상"))
+        val body = com.bamnat.app.share.ShareLinkPayload.build(snap, from, "민지", 30,
+            com.bamnat.app.share.ShareOptions(leaveKinds = true, extras = true, memos = true, pay = true), memos, pay)
+        body.remove("ttlDays")
+        return com.bamnat.app.share.ReceivedShare(body, java.time.Instant.now().plus(java.time.Duration.ofDays(30)), java.time.Instant.now())
+    }
+
+    /** 준호's link from an older app: weekdays 09–18, nothing ticked. */
+    private fun junhoShare(): com.bamnat.app.share.ReceivedShare {
+        val weekday = ShiftType(1, "평일", "평", 0xFF2E7D32, LocalTime.of(9, 0), LocalTime.of(18, 0))
+        val off = ShiftType(2, "휴무", "휴", 0xFF9E9E9E, null, null, isOff = true)
+        val from = today.withDayOfMonth(1)
+        val monday = from.minusDays((from.dayOfWeek.value - 1).toLong())
+        val snap = com.bamnat.app.data.ScheduleSnapshot(listOf(weekday, off), WorkPattern.Rotation(monday, listOf(1L, 1L, 1L, 1L, 1L, 2L, 2L)), emptyList())
+        val body = com.bamnat.app.share.ShareLinkPayload.build(snap, from, "준호", 30)
+        return com.bamnat.app.share.ReceivedShare(body, java.time.Instant.now().plus(java.time.Duration.ofDays(7)), java.time.Instant.now())
+    }
+
+    /** The share server answers at once; 준호 then 민지 were received, unless [minji] is false. */
+    private fun receivedOn(minji: Boolean = true): com.bamnat.app.AppContainer = app.container.also { c ->
+        c.shareApi = shares
+        shares.links[minjiId] = minjiShare()
+        shares.links[junhoId] = junhoShare()
+        c.received.put(junhoId, shares.links.getValue(junhoId))
+        if (minji) c.received.put(minjiId, shares.links.getValue(minjiId))
+    }
+
+    /** A day both are off on in this month's grid, today or later when there is one. */
+    private fun restTogether(): LocalDate {
+        val mine = runBlocking { app.container.scheduleRepository.snapshot.first() }
+        val theirs = com.bamnat.app.share.SharedSchedule.parse(minjiShare().schedule)
+        val days = (1..today.lengthOfMonth()).map { today.withDayOfMonth(it) }.filter { d ->
+            val m = mine.resolver.resolve(d)
+            theirs.isRest(d) == true && (m.isOff || m.leave?.isFullDay == true) && m.extras.isEmpty()
+        }
+        return days.firstOrNull { !it.isBefore(today) } ?: days.first()
+    }
+
+    @Test fun foldedShareSheet() = shoot("131_folded_share_sheet", FOLDED) {
+        val c = receivedOn()
+        runBlocking { c.payStore.save(PayViewModel(c).sampleProfile(), keepUndo = false) }
+        val snap = runBlocking { c.scheduleRepository.snapshot.first() }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}, client = shares, onOpenReceived = {}) }
+        tapText("연장·휴무일 근무", exact = true)
+        tapText("메모", exact = true)
+    }
+    @Test fun foldedShareSheetEnd() = shoot("131b_folded_share_sheet_end", FOLDED) {
+        val c = receivedOn()
+        runBlocking { c.payStore.save(PayViewModel(c).sampleProfile(), keepUndo = false) }
+        val snap = runBlocking { c.scheduleRepository.snapshot.first() }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}, client = shares, onOpenReceived = {}) }
+        tapText("메모", exact = true)
+        tapText("급여", exact = true)
+        reveal("받은 근무표가 있나요?")
+    }
+    @Test fun foldedIdentityBar() = shoot("132_folded_identity_bar", FOLDED) { receivedOn() }
+    @Test fun foldedCalendarSwitcher() = shoot("133_folded_calendar_switcher", FOLDED) {
+        receivedOn()
+        settle()
+        tapText("달력 바꾸기", prefix = true)
+    }
+    @Test fun foldedReceivedCalendar() = shoot("134_folded_received_calendar", FOLDED) {
+        receivedOn()
+        settle()
+        tapText("민지의 근무표 보기", exact = true)
+    }
+    @Test fun foldedReceivedDay() = shoot("135_folded_received_day", FOLDED) {
+        receivedOn()
+        settle()
+        tapText("민지의 근무표 보기", exact = true)
+        tapText(Fmt.dayTitle(restTogether()), prefix = true, scrolls = 0)
+        reveal("둘 다 쉬는 날이에요")
+    }
+    @Test fun unfoldedReceivedCalendar() = shoot("136_unfolded_received_calendar", UNFOLDED) {
+        receivedOn()
+        settle()
+        tapText("민지의 근무표 보기", exact = true)
+        tapText(Fmt.dayTitle(restTogether()), prefix = true, scrolls = 0)
+    }
+    @Test fun foldedReceivedLink() = shoot("137_folded_received_link", FOLDED) {
+        // A link tapped in a message opens the app with it [SHR-02].
+        receivedOn(minji = false).received.open(minjiId)
+        waitFor(300)
+    }
+    @Test fun foldedReceivedGone() = shoot("138_folded_received_gone", FOLDED) {
+        val c = receivedOn()
+        c.received.markGone(junhoId)
+        settle()
+        tapText("달력 바꾸기", prefix = true)
+        tapText("준호의 근무표", exact = true)
+    }
+    @Test fun foldedReceivedDark() = shoot("139_folded_received_dark", "w369dp-h905dp-port-night-420dpi") {
+        receivedOn()
+        settle()
+        tapText("민지의 근무표 보기", exact = true)
+    }
+
     private companion object {
         const val SETTINGS_SLEEP_SCROLLS = 4
         const val RULES_PERIOD_SCROLL = 420
@@ -1204,6 +1324,17 @@ class ScreenshotTest {
         const val FOLDED = "w369dp-h905dp-port-420dpi"
         const val UNFOLDED = "w707dp-h823dp-port-420dpi"
     }
+}
+
+/** [SHR-02] The share server for screenshots: links people sent, answered at once. */
+private class FakeShareApi : com.bamnat.app.share.ShareApi {
+    override val enabled = true
+    val links = mutableMapOf<String, com.bamnat.app.share.ReceivedShare>()
+    override suspend fun create(payload: org.json.JSONObject) = com.bamnat.app.share.ShareLinkState("Ab3dEfGh5JkLmNoPqRsTuv",
+        "https://bamnat-share.example.workers.dev/s/Ab3dEfGh5JkLmNoPqRsTuv", "t", java.time.Instant.now().plus(java.time.Duration.ofDays(30)), payload.optString("title"))
+    override suspend fun update(state: com.bamnat.app.share.ShareLinkState, payload: org.json.JSONObject) = state
+    override suspend fun delete(state: com.bamnat.app.share.ShareLinkState) = Unit
+    override suspend fun read(id: String) = links[id] ?: throw com.bamnat.app.share.ShareLinkException("not_found")
 }
 
 /** [COMM-04] The company rules server for screenshots: made-up companies, answers at once. */

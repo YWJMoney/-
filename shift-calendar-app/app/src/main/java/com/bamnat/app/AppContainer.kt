@@ -54,6 +54,10 @@ class AppContainer(context: Context) {
     /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
     var companyApi: com.bamnat.app.company.CompanyApi = com.bamnat.app.company.CompanyClient()
     val companyStore by lazy { com.bamnat.app.company.CompanyStore(appContext) }
+    /** [MKT-09][SHR-02] The link server; screenshots and tests put a fake in its place. */
+    var shareApi: com.bamnat.app.share.ShareApi = com.bamnat.app.share.ShareLinkClient()
+    /** [SHR-02] Schedules others shared, kept beside the user's own and never backed up. */
+    val received by lazy { com.bamnat.app.share.ReceivedCalendarStore(java.io.File(appContext.noBackupFilesDir, "received_calendars.json")) }
     val featureGate = FeatureGate(settingsRepository, appScope)
 
     suspend fun rescheduleAlarms(after: LocalDateTime = LocalDateTime.now()) {

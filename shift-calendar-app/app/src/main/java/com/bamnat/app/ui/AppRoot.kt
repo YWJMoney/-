@@ -230,6 +230,19 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
     }
 
+    // [SHR-02] A tapped shared calendar link opens on the calendar. Over an editor it goes on top,
+    // so the editor's input is still there after back.
+    val openingLink by container.received.opening.collectAsStateWithLifecycle()
+    LaunchedEffect(openingLink) {
+        if (openingLink == null) return@LaunchedEffect
+        val current = nav.currentBackStackEntry?.destination?.route
+        when {
+            current == TopLevel.CALENDAR.route -> Unit
+            TopLevel.entries.any { it.route == current } -> nav.navigateTopLevel(TopLevel.CALENDAR.route)
+            else -> nav.navigate(TopLevel.CALENDAR.route) { launchSingleTop = true }
+        }
+    }
+
     // Undo for memo deletion, wherever the memo was deleted from.
     val lastDeleted by container.memoRepository.lastDeleted.collectAsStateWithLifecycle()
     LaunchedEffect(lastDeleted) {
@@ -436,7 +449,8 @@ private fun AppNavHost(
             val setup = entry.arguments?.getBoolean("setup") ?: false
             val weekdays = entry.arguments?.getBoolean("weekdays") ?: false
             val vm = appViewModel { CompanyFindViewModel(it) }
-            val ready = !setup && container.payStore.profile.value != null
+            val profile by container.payStore.profile.collectAsStateWithLifecycle()
+            val ready = !setup && profile != null
             CompanyFindScreen(
                 vm = vm,
                 setup = setup,
@@ -458,7 +472,8 @@ private fun AppNavHost(
             val setup = entry.arguments?.getBoolean("setup") ?: false
             val weekdays = entry.arguments?.getBoolean("weekdays") ?: false
             val vm = appViewModel(key = "company-$id") { CompanyDetailViewModel(it, id) }
-            val ready = !setup && container.payStore.profile.value != null
+            val profile by container.payStore.profile.collectAsStateWithLifecycle()
+            val ready = !setup && profile != null
             CompanyDetailScreen(
                 vm = vm,
                 setup = setup,

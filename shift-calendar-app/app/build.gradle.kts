@@ -1,3 +1,4 @@
+import java.net.URI
 import java.util.Properties
 
 plugins {
@@ -7,6 +8,11 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// [MKT-09] Link sharing server (server/share-worker). Blank hides '링크로 공유'.
+val shareBaseUrl = (project.findProperty("bamnat.shareBaseUrl") as String?).orEmpty().trim()
+// [COMM-04] Company rules server (server/company-worker). Blank hides 회사 찾기 and sending setups.
+val companyBaseUrl = (project.findProperty("bamnat.companyBaseUrl") as String?).orEmpty().trim()
+
 android {
     namespace = "com.bamnat.app"
     compileSdk = 36
@@ -15,20 +21,24 @@ android {
         applicationId = "com.bamnat.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 15
-        versionName = "1.9.0"
+        versionCode = 16
+        versionName = "1.10.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // [MKT-09] Link sharing server (server/share-worker). Blank hides '링크로 공유'.
-        val shareBaseUrl = (project.findProperty("bamnat.shareBaseUrl") as String?).orEmpty()
         buildConfigField("String", "SHARE_BASE_URL", "\"$shareBaseUrl\"")
-        // [COMM-04] Company rules server (server/company-worker). Blank hides 회사 찾기 and sending setups.
-        val companyBaseUrl = (project.findProperty("bamnat.companyBaseUrl") as String?).orEmpty()
         buildConfigField("String", "COMPANY_BASE_URL", "\"$companyBaseUrl\"")
+        // [SHR-02] The share server's host, for its /s/ links to open in the app (src/onlineShare).
+        manifestPlaceholders["shareHost"] = runCatching { URI(shareBaseUrl).host }.getOrNull() ?: "share.invalid"
     }
-    // The internet permission comes only with a server, see src/online.
-    if (listOf("bamnat.shareBaseUrl", "bamnat.companyBaseUrl").any { (project.findProperty(it) as String?).orEmpty().isNotBlank() }) {
-        sourceSets.getByName("debug").manifest.srcFile("src/online/AndroidManifest.xml")
-        sourceSets.getByName("release").manifest.srcFile("src/online/AndroidManifest.xml")
+    // The internet permission comes only with a server, see src/online; with the share server,
+    // tapped schedule links open in the app too (src/onlineShare).
+    val onlineManifest = when {
+        shareBaseUrl.isNotBlank() -> "src/onlineShare/AndroidManifest.xml"
+        companyBaseUrl.isNotBlank() -> "src/online/AndroidManifest.xml"
+        else -> null
+    }
+    if (onlineManifest != null) {
+        sourceSets.getByName("debug").manifest.srcFile(onlineManifest)
+        sourceSets.getByName("release").manifest.srcFile(onlineManifest)
     }
 
     // Fixed debug key kept in the project so every new test APK installs over the old one.

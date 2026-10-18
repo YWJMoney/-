@@ -7,6 +7,7 @@ import com.bamnat.core.model.ExtraEntry
 import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.Leave
 import com.bamnat.core.model.LeaveKind
+import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
 import kotlinx.coroutines.runBlocking
@@ -34,7 +35,8 @@ class ShareLinkTest {
             DayEntry(start, leave = Leave(LeaveKind.ANNUAL, 2)),
             DayEntry(start.plusDays(2), leave = Leave(LeaveKind.UNPAID)),
             // [EXTRA-01] A 대근 of the night shift on a day off shows as its second shift.
-            DayEntry(start.plusDays(6), extras = listOf(ExtraEntry(ExtraKind.COVER_ID, coveredShiftId = 2L), ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 60))),
+            DayEntry(start.plusDays(6), extras = listOf(ExtraEntry(ExtraKind.COVER_ID, LocalTime.of(19, 0), LocalTime.of(7, 0), coveredShiftId = 2L),
+                ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 60))),
         ),
     )
 
@@ -57,6 +59,128 @@ class ShareLinkTest {
         File("build/share-payload.json").writeText(p.toString())
     }
 
+    /** [SHR-04] Days with no work at all say so, for the receiver's 같이 쉬는 날; the day off with a 대근 does not. */
+    @Test fun restDaysAreMarked() {
+        val days = ShareLinkPayload.build(snapshot, start, "", 30).getJSONArray("days")
+        val rest = (0 until days.length()).map { days.getJSONObject(it) }.associate { it.getString("date") to it.optBoolean("rest") }
+        assertEquals(false, rest.getValue(start.toString()))  // 반차 on a 주간 day
+        assertEquals(true, rest.getValue(start.plusDays(2).toString()))  // a whole day of leave
+        assertEquals(true, rest.getValue(start.plusDays(4).toString()))  // 휴무
+        assertEquals(false, rest.getValue(start.plusDays(6).toString()))  // 대근 on top
+    }
+
+    /** [SHR-01] What the sharer ticks goes along; what they leave unticked stays on the phone. */
+    @Test fun tickedPartsGoAlong() {
+        val memoDay = start.plusDays(1)
+        val all = ShareOptions(leaveKinds = true, extras = true, memos = true, pay = true)
+        val pay = listOf(SharedPay(java.time.YearMonth.of(2026, 11), 3_412_000, "세전 예상"))
+        val p = ShareLinkPayload.build(snapshot, start, "민지", 30, all, mapOf(memoDay to "치과 2시"), pay)
+        assertEquals(2, p.getInt("v"))
+        assertEquals(listOf("leaveKinds", "extras", "memos", "pay"), (0 until 4).map { p.getJSONArray("shows").getString(it) })
+        val days = p.getJSONArray("days")
+        assertEquals("치과 2시", days.getJSONObject(1).getString("memo"))
+        assertEquals("무급 휴가", days.getJSONObject(2).getString("leave"))
+        val extras = days.getJSONObject(6).getJSONArray("extras")
+        assertEquals(2, extras.length())
+        assertEquals("야간 대근", extras.getJSONObject(0).getString("name"))
+        assertEquals("19:00-07:00", extras.getJSONObject(0).getString("time"))
+        assertEquals(60, extras.getJSONObject(1).getInt("minutes"))
+        assertEquals(3_412_000L, p.getJSONArray("pay").getJSONObject(0).getLong("amount"))
+
+        // Only memos ticked: no pay, no extras, the kind of leave still private, the memo there.
+        val memosOnly = ShareLinkPayload.build(snapshot, start, "민지", 30, ShareOptions(memos = true), mapOf(memoDay to "치과 2시"), pay)
+        assertEquals(listOf("memos"), (0 until memosOnly.getJSONArray("shows").length()).map { memosOnly.getJSONArray("shows").getString(it) })
+        assertFalse(memosOnly.has("pay"))
+        assertFalse(memosOnly.toString().contains("extras"))
+        assertFalse(memosOnly.toString().contains("무급"))
+        assertTrue(memosOnly.toString().contains("치과 2시"))
+        // Memos given but not ticked never go out.
+        assertFalse(ShareLinkPayload.build(snapshot, start, "", 30, ShareOptions(extras = true), mapOf(memoDay to "치과 2시")).toString().contains("치과"))
+        File("build/share-payload-v2.json").writeText(p.toString())
+    }
+
+    /** [SHR-01] A day with nothing but a memo goes only into a link with memos ticked. */
+    @Test fun dayWithOnlyAMemo() {
+        val noPattern = ScheduleSnapshot(listOf(day, night, off), null as WorkPattern?, listOf(DayEntry(start.plusDays(3), ShiftOverride.Shift(1L))))
+        val memos = mapOf(start.plusDays(5) to "이사")
+        assertEquals(1, ShareLinkPayload.build(noPattern, start, "", 30, ShareOptions(), memos).getJSONArray("days").length())
+        val days = ShareLinkPayload.build(noPattern, start, "", 30, ShareOptions(memos = true), memos).getJSONArray("days")
+        assertEquals(2, days.length())
+        assertFalse(days.getJSONObject(1).has("type"))
+        assertEquals("이사", days.getJSONObject(1).getString("memo"))
+    }
+
+    @Test fun memoLineJoinsAndClips() {
+        val a = com.bamnat.core.memo.Memo(date = start, title = "치과", body = "2시 예약")
+        val b = com.bamnat.core.memo.Memo(date = start, body = "  저녁   약속\n7시 ")
+        val blank = com.bamnat.core.memo.Memo(date = start)
+        assertEquals("치과 · 저녁 약속", ShareLinkPayload.memoLine(listOf(a, b, blank)))
+        assertEquals(null, ShareLinkPayload.memoLine(listOf(blank)))
+        val long = ShareLinkPayload.memoLine(listOf(com.bamnat.core.memo.Memo(date = start, title = "가".repeat(100))))!!
+        assertEquals(ShareLinkPayload.MEMO_CHARS, long.length)
+        assertTrue(long.endsWith("…"))
+    }
+
+    @Test fun pagesMonthsCoverTheLink() {
+        assertEquals(listOf("2026-11", "2026-12", "2027-01"), ShareLinkPayload.months(start).map { it.toString() })
+    }
+
+    /** [SHR-02] The link id in what people paste: the message the app sends, the page address, or the app button's. */
+    @Test fun findsTheLinkId() {
+        val id = "Ab3dEfGh5JkLmNoPqRsTuv"
+        assertEquals(id, ShareLinkId.find("민지의 근무표\nhttps://bamnat-share.example.workers.dev/s/$id"))
+        assertEquals(id, ShareLinkId.find("https://bamnat-share.example.workers.dev/s/$id?x=1"))
+        assertEquals(id, ShareLinkId.find("bamnat://s/$id"))
+        assertEquals(null, ShareLinkId.find("https://bamnat-share.example.workers.dev/s/short"))
+        assertEquals(null, ShareLinkId.find("https://bamnat-share.example.workers.dev/s/${id}${id}"))
+        assertEquals(null, ShareLinkId.find("https://example.com/x/$id"))
+        assertEquals(null, ShareLinkId.find(null))
+    }
+
+    /** [SHR-02][SHR-04] What a received link reads as: its shifts, what came with it, and the days off. */
+    @Test fun receivedScheduleReadsBack() {
+        val all = ShareOptions(leaveKinds = true, extras = true, memos = true, pay = true)
+        val p = ShareLinkPayload.build(snapshot, start, "민지", 30, all, mapOf(start.plusDays(1) to "치과 2시"),
+            listOf(SharedPay(java.time.YearMonth.of(2026, 11), 3_412_000, "세전 예상")))
+        val s = SharedSchedule.parse(p)
+        assertEquals("민지", s.title)
+        assertEquals(setOf("leaveKinds", "extras", "memos", "pay"), s.shows)
+        assertEquals(start, s.first)
+        assertEquals(start.plusDays(ShareLinkPayload.DAYS - 1L), s.last)
+        assertEquals("주간", s.type(s.days.getValue(start).type)?.name)
+        assertEquals("치과 2시", s.days.getValue(start.plusDays(1)).memo)
+        assertEquals("야간", s.type(s.days.getValue(start.plusDays(6)).second)?.name)
+        assertEquals(listOf("야간 대근", "잔업"), s.days.getValue(start.plusDays(6)).extras.map { it.name })
+        assertEquals(3_412_000L, s.pay.single().amount)
+        assertEquals(false, s.isRest(start))
+        assertEquals(true, s.isRest(start.plusDays(2)))
+        assertEquals(true, s.isRest(start.plusDays(4)))
+        assertEquals(false, s.isRest(start.plusDays(6)))
+        assertEquals(null, s.isRest(start.minusDays(1)))
+        val shift = s.type(1)!!.asShiftType()
+        assertEquals(LocalTime.of(7, 0), shift.start)
+        assertTrue(shift.id < 0)
+    }
+
+    /** [SHR-04] A link made before 1.10 has no rest marks: days off are worked out from the shifts. */
+    @Test fun olderLinksWorkOutDaysOff() {
+        val o = org.json.JSONObject("""{"v":1,"title":"","types":[{"id":1,"name":"주간","short":"주","color":"#1E88E5","time":"07:00-19:00","off":false},
+            {"id":3,"name":"휴무","short":"휴","color":"#9E9E9E","time":null,"off":true}],
+            "days":[{"date":"2026-11-01","type":1,"second":null,"leave":null},{"date":"2026-11-02","type":1,"second":null,"leave":"연차"},
+            {"date":"2026-11-03","type":1,"second":null,"leave":"반차"},{"date":"2026-11-04","type":3,"second":1,"leave":null},
+            {"date":"2026-11-06","type":3,"second":null,"leave":null}]}""")
+        val s = SharedSchedule.parse(o)
+        assertEquals(false, s.isRest(start))
+        assertEquals(true, s.isRest(start.plusDays(1)))
+        assertEquals(false, s.isRest(start.plusDays(2)))
+        assertEquals(false, s.isRest(start.plusDays(3)))
+        // A day inside the link with no entry at all had no shift.
+        assertEquals(true, s.isRest(start.plusDays(4)))
+        assertEquals(true, s.isRest(start.plusDays(5)))
+        assertEquals(null, s.isRest(start.plusDays(6)))
+        assertTrue(s.shows.isEmpty())
+    }
+
     /** Runs against `npx wrangler dev` or server/share-worker/test/local-server.mjs when SHARE_TEST_URL points at it; skipped otherwise. */
     @Test fun roundTripAgainstTestServer() = runBlocking {
         val base = System.getenv("SHARE_TEST_URL").orEmpty()
@@ -68,8 +192,15 @@ class ShareLinkTest {
         assertTrue(page.contains("민지의 근무표"))
         val updated = client.update(made, ShareLinkPayload.build(snapshot, start, "민지2", 30))
         assertTrue(java.net.URL(updated.url).readText().contains("민지2의 근무표"))
+        // [SHR-02] The app reads the same link back for 받은 달력, with only what was ticked.
+        val read = client.read(made.id)
+        assertEquals("민지2", read.schedule.getString("title"))
+        assertTrue(read.expiresAt.isAfter(java.time.Instant.now()))
+        val v2 = client.update(updated, ShareLinkPayload.build(snapshot, start, "민지3", 30, ShareOptions(memos = true), mapOf(start to "치과")))
+        assertEquals("치과", SharedSchedule.parse(client.read(v2.id).schedule).days.getValue(start).memo)
         client.delete(updated)
         client.delete(updated) // already gone: still fine
+        assertEquals("not_found", runCatching { client.read(made.id) }.exceptionOrNull()?.message)
         val gone = (java.net.URL(made.url).openConnection() as java.net.HttpURLConnection).responseCode
         assertEquals(404, gone)
     }
