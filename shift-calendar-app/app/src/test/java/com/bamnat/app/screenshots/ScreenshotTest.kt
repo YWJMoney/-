@@ -446,14 +446,14 @@ class ScreenshotTest {
         reveal("메모", exact = true)
     }
     // ---- [CAL-03][DAY-04] 그 주만 보기, 하루 화면 순서 ----
-    @Test fun foldedWeekOnly() = shoot("160_folded_week_only", FOLDED) {
+    @Test fun foldedWeekOnly() = shoot("174_folded_week_only", FOLDED) {
         app.container.settingsRepository.update { it.copy(phoneDayView = com.bamnat.app.data.PhoneDayView.WEEK) }
         settle()
         selectDay(dayCell)
         // Fails when the month did not fold to the week.
         reveal("달 전체 보기", exact = true)
     }
-    @Test fun foldedDayGroupOrder() = shoot("161_folded_day_group_order", FOLDED) {
+    @Test fun foldedDayGroupOrder() = shoot("175_folded_day_group_order", FOLDED) {
         app.container.settingsRepository.update { it.copy(dayGroupOrder = listOf("memo", "alarm")) }
         settle()
         openDay(dayCell)
@@ -882,9 +882,9 @@ class ScreenshotTest {
         val snap = runBlocking { app.container.scheduleRepository.snapshot.first() }
         content { com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}) }
     }
-    @Test fun foldedShareLinkBusiness() = shoot("160_folded_share_link_business", FOLDED, shareSheet(WorkStyle.BUSINESS))
-    @Test fun foldedShareLinkField() = shoot("161_folded_share_link_field", FOLDED, shareSheet(WorkStyle.FIELD))
-    @Test fun foldedShareLinkBusinessLargeText() = shoot("162_folded_share_link_business_large_text", FOLDED, 1.5f, shareSheet(WorkStyle.BUSINESS))
+    @Test fun foldedShareLinkBusiness() = shoot("190_folded_share_link_business", FOLDED, shareSheet(WorkStyle.BUSINESS))
+    @Test fun foldedShareLinkField() = shoot("191_folded_share_link_field", FOLDED, shareSheet(WorkStyle.FIELD))
+    @Test fun foldedShareLinkBusinessLargeText() = shoot("192_folded_share_link_business_large_text", FOLDED, 1.5f, shareSheet(WorkStyle.BUSINESS))
     // [WORK-01] First launch: how do you work?
     @Test fun foldedWorkStylePicker() = shoot("49_folded_work_style", FOLDED) {
         content { com.bamnat.app.ui.work.WorkStyleScreen(current = null, onPick = {}) }
