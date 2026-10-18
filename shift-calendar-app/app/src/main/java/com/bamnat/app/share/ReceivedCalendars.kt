@@ -144,7 +144,14 @@ data class ReceivedCalendar(
  * the user's to back up. Which calendar is on screen lives only in memory, so the app always opens
  * on the user's own.
  */
-class ReceivedCalendarStore(private val file: File, private val clock: () -> Instant = Instant::now) {
+class ReceivedCalendarStore(
+    private val file: File,
+    private val clock: () -> Instant = Instant::now,
+    /** [SHR-02] Where the file is written: off the main thread, one write at a time, in order. */
+    private val writer: java.util.concurrent.Executor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "received-calendars").apply { isDaemon = true }
+    },
+) {
     private val _calendars = MutableStateFlow(load())
     val calendars: StateFlow<List<ReceivedCalendar>> = _calendars.asStateFlow()
 
@@ -198,8 +205,22 @@ class ReceivedCalendarStore(private val file: File, private val clock: () -> Ins
         if (_viewing.value == id) _viewing.value = null
     }
 
+    private val pending = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * Updates the list at once and saves it in the background: up to ten schedules serialised on the
+     * main thread froze the calendar while it opened or refreshed. Writes queued close together
+     * collapse into one that saves the latest list.
+     */
     private fun write(list: List<ReceivedCalendar>) {
         _calendars.value = list
+        if (pending.compareAndSet(false, true)) writer.execute {
+            pending.set(false)
+            save(_calendars.value)
+        }
+    }
+
+    private fun save(list: List<ReceivedCalendar>) {
         runCatching {
             file.parentFile?.mkdirs()
             val tmp = File(file.parentFile, file.name + ".tmp")
