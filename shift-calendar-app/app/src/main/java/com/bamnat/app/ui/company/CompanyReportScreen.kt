@@ -349,7 +349,7 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
     if (forgetting) {
         ConfirmDialog(
             title = "보낸 정보를 모두 지울까요?",
-            message = "보낸 설정, 맞았어요·달라요, 받기로 한 보상까지 서버에서 모두 지워요. 이 휴대폰에서 쓰는 설정은 그대로예요.",
+            message = "보낸 설정, 맞았어요·달라요, 토론 글과 신고, 받기로 한 보상까지 서버에서 모두 지워요. 이 휴대폰에서 쓰는 설정은 그대로예요.",
             confirmLabel = "모두 지우기",
             destructive = true,
             onDismiss = { forgetting = false },

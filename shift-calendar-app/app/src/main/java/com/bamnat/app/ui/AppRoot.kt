@@ -102,6 +102,8 @@ import com.bamnat.app.ui.work.WorkStyleScreen
 import com.bamnat.app.ui.setup.SetupHost
 import com.bamnat.app.ui.setup.SetupViewModel
 import com.bamnat.app.ui.setup.SetupPaySheet
+import com.bamnat.app.ui.company.CompanyBoardScreen
+import com.bamnat.app.ui.company.CompanyBoardViewModel
 import com.bamnat.app.ui.company.CompanyDetailScreen
 import com.bamnat.app.ui.company.CompanyDetailViewModel
 import com.bamnat.app.ui.company.CompanyFindScreen
@@ -160,6 +162,8 @@ private object Routes {
     const val COMPANY = "company/{id}?setup={setup}&weekdays={weekdays}"
     const val COMPANY_REPORT = "company_report"
     const val COMPANY_SENT = "company_sent"
+    // [COMM-07] 회사 규칙 광장: every company's rule sets, to vote on, talk over and use.
+    const val COMPANY_BOARD = "company_board"
 
     fun companyFind(setup: Boolean = false, weekdays: Boolean = false) = "company_find?setup=$setup&weekdays=$weekdays"
     fun company(id: String, setup: Boolean, weekdays: Boolean) = "company/$id?setup=$setup&weekdays=$weekdays"
@@ -463,6 +467,7 @@ private fun AppNavHost(
                     CompanySettingsRows(
                         nudges,
                         onFind = { nav.navigate(Routes.companyFind()) { launchSingleTop = true } },
+                        onBoard = { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } },
                         onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                         onSent = { nav.navigate(Routes.COMPANY_SENT) { launchSingleTop = true } },
                         onFix = { nav.fixCompanySetup(it) },
@@ -556,13 +561,23 @@ private fun AppNavHost(
                                 launchSingleTop = true
                             }
                             else -> {
-                                nav.popBackStack(Routes.COMPANY_FIND, inclusive = true)
+                                // From 회사 규칙 광장 there is no 회사 찾기 below: back to the board.
+                                if (!nav.popBackStack(Routes.COMPANY_FIND, inclusive = true)) nav.popFrom(Routes.COMPANY)
                                 snackbar.showSnackbar("‘$name’ 설정을 넣었어요" + (applied.cycleDays?.let { " · ${it}일 순서" } ?: ""))
                             }
                         }
                     }
                 },
                 onByHand = { nav.afterCompanyByHand(setup, weekdays, ready) },
+            )
+        }
+        composable(Routes.COMPANY_BOARD) {
+            val vm = appViewModel { CompanyBoardViewModel(it) }
+            CompanyBoardScreen(
+                vm = vm,
+                onBack = { nav.popFrom(Routes.COMPANY_BOARD) },
+                onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) },
+                onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
             )
         }
         composable(Routes.COMPANY_REPORT) {
