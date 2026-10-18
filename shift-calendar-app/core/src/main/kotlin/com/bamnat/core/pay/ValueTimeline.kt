@@ -95,4 +95,17 @@ data class ValueTimeline(
 }
 
 internal fun won(v: Long): String = "%,d원".format(v)
+
+/**
+ * [word] with the particle that fits its last syllable, for names the user typed: ("수당", "으로", "로")
+ * gives "수당으로", ("교통비", "이", "가") gives "교통비가". A final ㄹ takes 로, not 으로. A word ending in
+ * anything but Hangul takes [afterConsonant].
+ */
+internal fun particle(word: String, afterConsonant: String, afterVowel: String): String {
+    val last = word.trimEnd().lastOrNull() ?: return word
+    if (last !in '가'..'힣') return word + afterConsonant
+    val final = (last - '가') % 28
+    val vowelLike = final == 0 || final == 8 && afterConsonant == "으로"
+    return word + if (vowelLike) afterVowel else afterConsonant
+}
 internal fun trim(d: Double): String = if (d == d.toLong().toDouble()) d.toLong().toString() else d.toString()

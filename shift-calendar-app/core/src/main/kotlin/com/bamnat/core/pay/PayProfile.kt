@@ -5,7 +5,18 @@ import java.time.YearMonth
 import java.time.DayOfWeek
 import java.time.LocalDate
 
-enum class WageType { MONTHLY, HOURLY }
+/** How the base pay is set. */
+enum class WageType {
+    /** A monthly 기본급 that already holds the month's 소정근로 and paid holidays. */
+    MONTHLY,
+    /** 시급: paid by the hour. */
+    HOURLY,
+    /**
+     * [PAYS-03] 일당: one day's pay for [PayProfile.dailyHours] of 소정근로, otherwise paid like an hourly
+     * wage of 일당 ÷ 1일 소정근로시간 (근로기준법 시행령 제6조 제2항 제2호).
+     */
+    DAILY,
+}
 
 /** Job presets [PAYX-01]. Each fills sensible items and defaults; everything stays editable. */
 enum class Occupation(val label: String) {
@@ -61,6 +72,12 @@ data class PayItem(
     val festivals: Set<Festival> = emptySet(),
     /** Pay the 명절상여 in the month before the holiday instead of the holiday's own month. */
     val festivalMonthBefore: Boolean = false,
+    /**
+     * [PAYS-03] The legal premiums this allowance stands in for, e.g. a 야간수당 paid instead of the night
+     * premium: only [LineKind.OVERTIME], [LineKind.NIGHT] and [LineKind.HOLIDAY] mean something. null
+     * takes [defaultCovers], so allowances saved before this field keep their totals.
+     */
+    val covers: Set<LineKind>? = null,
 ) {
     /** How many payments of this bonus fall in [month]: its fixed months plus any 명절 [PAYX-10]. */
     fun timesIn(month: java.time.YearMonth): Int =
@@ -76,6 +93,17 @@ data class PayItem(
 
     val isFixedOvertime: Boolean get() = fixedOvertimeMinutes > 0 && cadence == Cadence.MONTHLY
 
+    /** [PAYS-03] What [covers] is when not set: 연장 for a 고정 연장수당, nothing for any other allowance. */
+    val defaultCovers: Set<LineKind> get() = if (isFixedOvertime) setOf(LineKind.OVERTIME) else emptySet()
+
+    /** [PAYS-03] The premiums this allowance stands in for, as the calculator uses them, in [COVERABLE] order. */
+    val coveredKinds: Set<LineKind> get() = (covers ?: defaultCovers).let { set -> COVERABLE.filter { it in set }.toSet() }
+
+    /** [PAYS-03] Paid for night work (야간·나이트 수당), so it may stand in for the night premium. */
+    val isNightAllowance: Boolean
+        get() = cadence == Cadence.PER_NIGHT_SHIFT ||
+            cadence != Cadence.BONUS && listOf("야간", "심야", "나이트", "night").any { name.contains(it, ignoreCase = true) }
+
     /** One payment of a [Cadence.BONUS] item given the month's 기본급. */
     fun bonusPayment(base: Long, on: java.time.YearMonth): Long =
         percentOfBase?.let { Math.round(base * it) } ?: amount.on(on).value
@@ -87,6 +115,11 @@ data class PayItem(
      */
     fun bonusMonthlyShare(base: Long, on: java.time.YearMonth): Long =
         Math.round(bonusPayment(base, on) * timesInYear(on.year) / 12.0)
+
+    companion object {
+        /** [PAYS-03] The premium lines an allowance can stand in for; company rules for extra work never are. */
+        val COVERABLE: List<LineKind> = listOf(LineKind.OVERTIME, LineKind.NIGHT, LineKind.HOLIDAY)
+    }
 }
 
 /** 명절 that a 명절상여 follows [PAYX-10]: lunar 1/1 and 8/15, converted for each year. */
@@ -148,7 +181,7 @@ data class PayPeriod(
 data class PayProfile(
     val occupation: Occupation,
     val wageType: WageType,
-    /** Monthly base salary, or the hourly wage for [WageType.HOURLY]. */
+    /** Monthly base salary, the hourly wage for [WageType.HOURLY], or the 일당 for [WageType.DAILY]. */
     val base: ValueTimeline,
     val items: List<PayItem> = emptyList(),
     val hireDate: LocalDate? = null,
@@ -165,10 +198,22 @@ data class PayProfile(
     /** [PAYX-07] 탄력적 근로시간제 단위기간, used with [scheduleIsRegular]; null when there is none. */
     val flexPeriod: FlexPeriod? = null,
     val weekStart: DayOfWeek = DayOfWeek.MONDAY,
-    /** Values the user skipped and the app guessed; shown with an "추정" label. */
+    /**
+     * Values the user skipped and the app guessed; shown with an "추정" label. [PAYS-01] Also the
+     * 확인 필요 set: the keys of [Unknowns] for questions answered with 모르겠어요.
+     */
     val estimatedFields: Set<String> = emptySet(),
     /** The company's own rules on top of the law [PAYX-07]. */
     val rules: CompanyRules = CompanyRules(),
     /** [PAYX-15] The pay period and pay day; the calendar month by default. */
     val period: PayPeriod = PayPeriod(),
+    /**
+     * [PAYS-03] For [WageType.DAILY]: minutes of 1일 소정근로 the 일당 pays for, at most 8 hours (480, the
+     * default). The hourly rate is 일당 ÷ these hours.
+     */
+    val dailyHours: Int = 8 * 60,
+    /** [PAYS-03] The 연봉 the monthly 기본급 was worked out from, to show how; kept on the phone only. */
+    val annual: AnnualPay? = null,
+    /** [PAYS-02] The last month matched against a payslip; kept on the phone only. */
+    val verified: PayslipCheck? = null,
 )

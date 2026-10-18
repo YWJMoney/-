@@ -49,6 +49,17 @@ data class DayPay(
     val amount: Long get() = parts.sumOf { it.amount }
 }
 
+/**
+ * [PAYS-01] An allowance whose amount the user does not know (금액 모름, [Unknowns.item]): left out of the
+ * total and listed instead of being dropped without a word, e.g. "야간근무수당 · 금액 모름 · 6회".
+ */
+data class MissingItem(
+    val id: String,
+    val name: String,
+    /** How many times it would have been paid this month; null for a monthly allowance. */
+    val times: Int?,
+)
+
 data class MonthPay(
     val month: YearMonth,
     val lines: List<PayLine>,
@@ -61,6 +72,10 @@ data class MonthPay(
     val periodStart: LocalDate? = null,
     val periodEnd: LocalDate? = null,
     val payDate: LocalDate? = null,
+    /** [PAYS-01] Allowances paid this month whose amount is unknown, not in [total]. */
+    val missing: List<MissingItem> = emptyList(),
+    /** [PAYS-02] How many times each allowance paid per shift came up this month, by [PayItem.id]. */
+    val itemTimes: Map<String, Int> = emptyMap(),
 ) {
     val total: Long get() = lines.sumOf { it.amount }
     val estimated: Boolean get() = lines.any { it.estimated } || minutes.any { it.estimated }
@@ -85,12 +100,21 @@ class PayCalculator(
         profile: PayProfile,
         month: YearMonth,
         resolve: (LocalDate) -> ResolvedDay,
+        /**
+         * [PAYS-01] false leaves out the checks that calculate the month a second time to compare (the
+         * company's night window, 근무표 시간 as 기본 근무, 감시·단속 승인) and their warnings, for
+         * [PayRange] and [PayslipMatcher], which run a month many times. It comes before [isHoliday] so
+         * calls passing [isHoliday] as a trailing lambda keep working.
+         */
+        checks: Boolean = true,
         /** Paid holidays besides the 주휴일; null uses the built-in 공휴일 when the company counts them. */
         isHoliday: ((LocalDate) -> Boolean)? = null,
     ): MonthPay {
         val rules = profile.rules
         // [PAYS-03] 감시·단속 승인 (제63조 제3호): the rules on hours, breaks and holidays (chapter 4) do not apply.
         val supervisory = rules.supervisoryApproved
+        // [PAYS-03] 시급 and 일당 are both paid for the hours worked; only a monthly salary already holds the month.
+        val byHour = profile.wageType != WageType.MONTHLY
         // [PAYX-12] The company's night window replaces 22~06 for every shift, base shifts included.
         // [PAYX-15] The days this month's pay covers, e.g. 9/21~10/20 for October.
         val periodStart = profile.period.start(month)
@@ -135,16 +159,16 @@ class PayCalculator(
         val monthDays = days.filter { inPeriod(it.date) }
 
         val base = profile.base.on(month)
-        val ordinaryMonthly = profile.items.filter { it.ordinary && it.cadence == Cadence.MONTHLY && !it.isFixedOvertime }
-            .sumOf { it.amount.on(month).value }
-        // [PAY-05] Regular bonuses count toward 통상임금 at a year's payments ÷ 12 (시행령 제6조 제2항
-        // 제5호), from 2024-12-19 on: the 전원합의체 ruling of that day applies to later pay only.
-        val bonusMonthly = if (month.atEndOfMonth().isBefore(BONUS_ORDINARY_FROM)) 0L
-        else profile.items.filter { it.ordinary && it.cadence == Cadence.BONUS }
-            .sumOf { it.bonusMonthlyShare(base.value, month) }
+        val ordinary = ordinaryWage(profile, month)
+        val ordinaryMonthly = ordinary.allowances
+        val bonusMonthly = ordinary.bonuses
+        // [PAYS-03] The minutes of 소정근로 one 일당 pays for.
+        val dailyMinutes = profile.dailyHours.coerceIn(1, 8 * 60)
         val hourly = when (profile.wageType) {
-            WageType.MONTHLY -> ((base.value + ordinaryMonthly + bonusMonthly).toDouble() / profile.monthlyHours.coerceAtLeast(1)).roundToLong()
+            WageType.MONTHLY -> (ordinary.total.toDouble() / profile.monthlyHours.coerceAtLeast(1)).roundToLong()
             WageType.HOURLY -> base.value
+            // [PAYS-03] 일급 금액 ÷ 1일 소정근로시간 (시행령 제6조 제2항 제2호).
+            WageType.DAILY -> (base.value * 60.0 / dailyMinutes).roundToLong()
         }
         val hourlyFormula = when (profile.wageType) {
             WageType.MONTHLY -> "(기본급 ${won(base.value)}" +
@@ -152,13 +176,17 @@ class PayCalculator(
                 (if (bonusMonthly > 0) " + 상여금 월할 ${won(bonusMonthly)}" else "") +
                 ") ÷ ${profile.monthlyHours}시간"
             WageType.HOURLY -> "시급"
+            WageType.DAILY -> "일당 ${won(base.value)} ÷ ${hours(dailyMinutes)}"
         }
-        // [EXTRA-03] 기본급 for a rule paid as a share of it; hourly pay counts a month of 소정 hours.
+        // [EXTRA-03] 기본급 for a rule paid as a share of it; hourly and daily pay count a month of 소정 hours.
         val monthlyBase = when (profile.wageType) {
             WageType.MONTHLY -> base.value
-            WageType.HOURLY -> base.value * profile.monthlyHours
+            WageType.HOURLY, WageType.DAILY -> hourly * profile.monthlyHours
         }
-        val baseLabel = if (profile.wageType == WageType.MONTHLY) "기본급" else "시급 × ${profile.monthlyHours}시간"
+        val baseLabel = when (profile.wageType) {
+            WageType.MONTHLY -> "기본급"
+            WageType.HOURLY, WageType.DAILY -> "시급 × ${profile.monthlyHours}시간"
+        }
 
         fun legal(p: Double) = if (premiums) p else 0.0
         // [PAYS-03] An approved 감시·단속 worker has no legal 연장·휴일 premium (제63조); the night premium stays.
@@ -169,7 +197,7 @@ class PayCalculator(
             holidayWithin8h = rules.holidayPremiumWithin8h ?: legalHours(rates.holidayPremiumWithin8h),
             holidayOver8h = rules.holidayPremiumOver8h ?: legalHours(rates.holidayPremiumOver8h),
             // [EXTRA-02] '가산만' is about a paid holiday already in the salary; a day off never is.
-            holidayBase = if (profile.wageType == WageType.HOURLY) 1.0 else profile.holidayPayMode.baseMultiplier,
+            holidayBase = if (byHour) 1.0 else profile.holidayPayMode.baseMultiplier,
         )
         val law = Premiums(legalHours(rates.overtimePremium), legal(rates.nightPremium), legalHours(rates.holidayPremiumWithin8h),
             legalHours(rates.holidayPremiumOver8h), pr.holidayBase)
@@ -179,6 +207,10 @@ class PayCalculator(
         val mRw = 1.0 + pr.holidayWithin8h
         val mRo = 1.0 + pr.holidayOver8h
         fun money(min: Int, rate: Double) = (min / 60.0 * hourly * rate).roundToLong()
+        // [PAYS-03] 100% of 소정 minutes: a day of [dailyMinutes] pays exactly the 일당, whatever the
+        // rounding of the hourly rate.
+        fun basePay(min: Int): Long =
+            if (profile.wageType == WageType.DAILY) (min.toDouble() * base.value / dailyMinutes).roundToLong() else money(min, 1.0)
 
         val lines = mutableListOf<PayLine>()
         val warnings = mutableListOf<String>()
@@ -200,10 +232,10 @@ class PayCalculator(
         // Monthly pay already includes it. The 주휴일 (Sundays when it is not set) is left out: 주휴수당 covers it.
         val weeklyHolidayDay = (rules.weeklyHoliday as? WeeklyHoliday.Fixed)?.day ?: DayOfWeek.SUNDAY.takeIf { rules.weeklyHoliday == WeeklyHoliday.Unknown }
         fun paidHolidayMinutes(day: ResolvedDay): Int =
-            if (profile.wageType != WageType.HOURLY || !publicHoliday(day.date) || day.date.dayOfWeek == weeklyHolidayDay || day.date in weeklyHolidays) 0
+            if (!byHour || !publicHoliday(day.date) || day.date.dayOfWeek == weeklyHolidayDay || day.date in weeklyHolidays) 0
             else (day.scheduledMinutes + day.leaveMinutes).coerceAtMost(rates.dailyLimitMinutes)
         var paidHoliday = 0
-        // [PAYS-03] Paid breaks of hourly pay; a monthly salary already holds them.
+        // [PAYS-03] Paid breaks of hourly and daily pay; a monthly salary already holds them.
         var paidBreak = 0
         // The week's 소정근로 for 주휴 counts paid leave and paid holidays as attended.
         val attendedByDate = days.associate { it.date to (paidLeaveByDate[it.date] ?: 0) + paidHolidayMinutes(it) }
@@ -261,9 +293,11 @@ class PayCalculator(
 
             regular += reg; extraRegular += xr; overtime += ot; night += n
             hWithin += hw; hOver += ho; rWithin += rw; rOver += ro
-            if (profile.wageType == WageType.HOURLY && reg > 0) {
-                parts.add(0, DayPart(LineKind.BASE, "기본", money(reg, 1.0), "${hours(reg)} × ${won(hourly)}"))
-            }
+            if (byHour && reg > 0) parts.add(0, when (profile.wageType) {
+                WageType.DAILY -> DayPart(LineKind.BASE, "일당", basePay(reg),
+                    if (reg == dailyMinutes) "일당 ${won(base.value)}" else "일당 ${won(base.value)} × ${hours(reg)} ÷ ${hours(dailyMinutes)}")
+                else -> DayPart(LineKind.BASE, "기본", money(reg, 1.0), "${hours(reg)} × ${won(hourly)}")
+            })
             if (xr > 0) parts += DayPart(LineKind.EXTRA_HOURS, "소정 외 근로", money(xr, 1.0), "${hours(xr)} × ${won(hourly)} (8·40시간 이내)")
             if (ot > 0) parts += DayPart(LineKind.OVERTIME, "연장", money(ot, mOt), "${hours(ot)} × ${pct(mOt)}")
             if (n > 0 && pr.night > 0) parts += DayPart(LineKind.NIGHT, "야간 가산", money(n, pr.night), "${hours(n)} × ${pct(pr.night)} (${rules.nightLabel(rates)})")
@@ -272,7 +306,7 @@ class PayCalculator(
             if (rw > 0) parts += DayPart(LineKind.HOLIDAY, "쉬는 날 근무", money(rw, mRw), "${hours(rw)} × ${pct(mRw)} (휴일근로로 대우)")
             if (ro > 0) parts += DayPart(LineKind.HOLIDAY, "쉬는 날 8시간 초과", money(ro, mRo), "${hours(ro)} × ${pct(mRo)} (휴일근로로 대우)")
             // [PAYS-03] A paid break is free time paid at 100%, never 연장 or 주휴 hours.
-            if (profile.wageType == WageType.HOURLY && rules.breakPay == BreakPay.PAID) {
+            if (byHour && rules.breakPay == BreakPay.PAID) {
                 val brk = (if (day.isWorkDay) day.breakMinutes else 0) + day.extras.sumOf { it.breakMinutes }
                 if (brk > 0) {
                     paidBreak += brk
@@ -287,7 +321,7 @@ class PayCalculator(
             day.leave?.let { leave ->
                 val mins = day.leaveMinutes
                 val (amount, formula) = when {
-                    leave.kind.paid && profile.wageType == WageType.HOURLY -> money(mins, 1.0) to "${hours(mins)} × ${won(hourly)} (유급)"
+                    leave.kind.paid && byHour -> money(mins, 1.0) to "${hours(mins)} × ${won(hourly)} (유급)"
                     leave.kind.paid -> 0L to "기본급에 포함 (유급, ${hours(mins)})"
                     profile.wageType == WageType.MONTHLY -> -money(mins, 1.0) to "${hours(mins)} × ${won(hourly)} 공제 (무급)"
                     else -> 0L to "무급 ${hours(mins)}"
@@ -340,6 +374,16 @@ class PayCalculator(
                 estimated = baseEstimated,
             )
             WageType.HOURLY -> lines += line(LineKind.BASE, "기본 근무", regular, hourly, 1.0, "소정근로 시간 × 시급", "", baseEstimated)
+            // [PAYS-03] A day of 소정근로 is one 일당; a shorter day is its share.
+            WageType.DAILY -> lines += PayLine(
+                LineKind.BASE, "일당", basePay(regular),
+                formula = "일당 ${won(base.value)} × " +
+                    if (regular % dailyMinutes == 0) "${regular / dailyMinutes}일" else "${hours(regular)} ÷ ${hours(dailyMinutes)}",
+                minutes = regular, hourly = hourly, multiplier = 1.0,
+                basis = "하루 소정근로 ${hours(dailyMinutes)}, 일당 ${won(base.value)} ÷ ${hours(dailyMinutes)} = 시급 ${won(hourly)}" +
+                    " (근로기준법 시행령 제6조 제2항 제2호)",
+                estimated = baseEstimated,
+            )
         }
         if (paidBreak > 0) lines += line(
             LineKind.BASE, "유급 휴게", paidBreak, hourly, 1.0,
@@ -404,7 +448,7 @@ class PayCalculator(
             }
         }
 
-        if (paidLeave > 0 && profile.wageType == WageType.HOURLY) lines += line(
+        if (paidLeave > 0 && byHour) lines += line(
             LineKind.LEAVE, "유급 휴가", paidLeave, hourly, 1.0,
             "연차·유급 휴가로 쉰 근무시간", "근로기준법 제60조 (연차 유급휴가)", baseEstimated,
         )
@@ -418,11 +462,20 @@ class PayCalculator(
             "무급으로 쉰 근무시간", "결근·무급 휴가는 일한 만큼만 지급", baseEstimated,
         )
 
+        // [PAYS-01] 금액 모름: an allowance the user marked unknown and left at 0 is listed, not added.
+        val missing = mutableListOf<MissingItem>()
+        fun unknownAmount(item: PayItem) = Unknowns.item(item.id) in profile.estimatedFields
+        // What each allowance paid this month, for the premiums it stands in for [PAYS-03].
+        val allowancePaid = HashMap<String, Long>()
         for (item in profile.items) {
             if (item.cadence == Cadence.BONUS) {
                 val times = item.timesIn(month)
                 if (times == 0) continue
                 val once = item.bonusPayment(base.value, month)
+                if (once == 0L && unknownAmount(item)) {
+                    missing += MissingItem(item.id, item.name, times)
+                    continue
+                }
                 // [PAYX-10] Name the 명절 that falls this year so the moving month is explained.
                 val festivals = item.festivals.mapNotNull { f ->
                     listOf(month.year, month.year + 1).firstNotNullOfOrNull { y ->
@@ -444,34 +497,23 @@ class PayCalculator(
             }
             val amount = item.amount.on(month)
             val count = if (item.cadence == Cadence.MONTHLY) 1 else itemCounts[item.id] ?: 0
+            if (count > 0 && amount.value == 0L && unknownAmount(item)) {
+                missing += MissingItem(item.id, item.name, count.takeUnless { item.cadence == Cadence.MONTHLY })
+            }
             if (count == 0 || amount.value == 0L) continue
+            allowancePaid[item.id] = amount.value * count
             lines += PayLine(
                 LineKind.ALLOWANCE, item.name, amount.value * count,
                 formula = if (count == 1) "${item.cadence.label} ${won(amount.value)}" else "${won(amount.value)} × ${count}회",
                 basis = if (item.ordinary) "통상임금에 포함" else "",
-                estimated = amount.source == ValueSource.RAISED || item.id in profile.estimatedFields,
+                estimated = amount.source == ValueSource.RAISED || item.id in profile.estimatedFields || unknownAmount(item),
             )
         }
 
-        // [PAY-05] 고정 연장수당 already pays overtime up to its amount; only what the hours earn
-        // beyond it is owed on top, and a shortfall is never taken back.
-        val fixedOt = profile.items.filter { it.isFixedOvertime }
-        if (fixedOt.isNotEmpty()) {
-            val prepaid = fixedOt.sumOf { it.amount.on(month).value }
-            val earned = lines.filter { it.kind == LineKind.OVERTIME }.sumOf { it.amount }
-            val covered = minOf(prepaid, earned)
-            if (covered > 0) lines += PayLine(
-                LineKind.OVERTIME, "고정 연장수당으로 이미 받은 몫", -covered,
-                formula = "연장근로 ${won(earned)} 중 고정 연장수당 ${won(prepaid)}만큼",
-                multiplier = -1.0,
-                basis = "고정 연장수당은 정한 시간까지의 연장수당을 미리 주는 것이라 겹쳐 받지 않아요",
-            )
-            if (earned > prepaid) warnings += "이번 달 연장수당이 ${won(earned)}으로 고정 연장수당 ${won(prepaid)}보다 " +
-                "${won(earned - prepaid)} 많아요. 차액은 따로 받아야 해요"
-        }
+        coverPremiums(profile, lines, allowancePaid, warnings)
 
         // [PAYS-03] An approved 감시·단속 worker has no 주휴 (제55조 is in chapter 4).
-        if (profile.wageType == WageType.HOURLY && rules.weeklyHolidayPay && !supervisory) {
+        if (byHour && rules.weeklyHolidayPay && !supervisory) {
             weeklyHolidayLine(allMinutes, attendedByDate, weekFrom, periodStart, periodEnd, hourly, baseEstimated)?.let { lines += it }
         }
 
@@ -497,8 +539,8 @@ class PayCalculator(
         }
 
         // [PAYX-12] A company window that leaves out part of 22~06 can pay less than the law.
-        if (premiums && rules.hasNightWindow) {
-            val legalPay = calculate(profile.copy(rules = rules.copy(nightStart = null, nightEnd = null)), month, resolve, isHoliday)
+        if (checks && premiums && rules.hasNightWindow) {
+            val legalPay = calculate(profile.copy(rules = rules.copy(nightStart = null, nightEnd = null)), month, resolve, checks = false, isHoliday = isHoliday)
             val legalNight = legalPay.lines.filter { it.kind == LineKind.NIGHT }.sumOf { it.amount }
             val mine = lines.filter { it.kind == LineKind.NIGHT }.sumOf { it.amount }
             if (legalNight > mine) warnings += "회사 야간 시간 ${rules.nightLabel(rates)}로 계산한 야간 가산 ${won(mine)}이 법정 22~06시 기준 " +
@@ -507,9 +549,9 @@ class PayCalculator(
 
         // [PAYX-07] Scheduled hours over 8 a day are 연장 by law unless 탄력적 근로시간제 (제51조) is in
         // place, so the difference to the legal count is shown rather than silently dropped.
-        if (profile.scheduleIsRegular && profile.flexPeriod == null && premiums && !supervisory) {
+        if (checks && profile.scheduleIsRegular && profile.flexPeriod == null && premiums && !supervisory) {
             val legalPay = calculate(profile.copy(scheduleIsRegular = false, dailyLimitMinutes = 8 * 60, weeklyLimitMinutes = 40 * 60),
-                month, resolve, isHoliday)
+                month, resolve, checks = false, isHoliday = isHoliday)
             val gap = legalPay.total - lines.sumOf { it.amount }
             val extra = legalPay.minutes.sumOf { it.overtime } - minutes.sumOf { it.overtime }
             if (gap > 0 && extra > 0) warnings += "근무표 시간을 모두 기본 근무로 계산했어요. 탄력적 근로시간제가 아니라면 법으로는 " +
@@ -518,15 +560,59 @@ class PayCalculator(
 
         // [PAYS-03] The approval is the employer's to get from 고용노동부; without it the month pays what the law
         // gives everyone, so that figure is shown next to this one.
-        if (supervisory) {
-            val without = calculate(profile.copy(rules = rules.copy(supervisoryApproved = false)), month, resolve, isHoliday)
+        if (checks && supervisory) {
+            val without = calculate(profile.copy(rules = rules.copy(supervisoryApproved = false)), month, resolve, checks = false, isHoliday = isHoliday)
             if (without.total != lines.sumOf { it.amount }) warnings += "감시·단속 승인이 없으면 이 달은 ${won(without.total)}이에요. " +
                 "승인은 고용노동부 지방관서에서 받아야 해요"
         }
 
         return MonthPay(month, lines, hourly, rates.version, minutes, warnings, dayPays,
             periodStart.takeUnless { profile.period.isCalendarMonth }, periodEnd.takeUnless { profile.period.isCalendarMonth },
-            profile.period.payDate(month)).withHourlyNote(hourlyFormula)
+            profile.period.payDate(month), missing, itemCounts.toMap()).withHourlyNote(hourlyFormula)
+    }
+
+    /**
+     * [PAY-05][PAYS-03] An allowance that stands in for 연장·야간·휴일 premiums (a 고정 연장수당, or a 야간수당
+     * paid instead of the night premium) already pays them up to what it paid this month: only what the law
+     * gives beyond that is owed on top, and a shortfall is never taken back. So the month holds the larger of
+     * the two. Allowances standing in for the same premiums share one line; company rules for extra work
+     * (EXTRA lines) are never covered.
+     */
+    private fun coverPremiums(profile: PayProfile, lines: MutableList<PayLine>, paid: Map<String, Long>, warnings: MutableList<String>) {
+        val covering = profile.items.filter { it.cadence != Cadence.BONUS && it.coveredKinds.isNotEmpty() }
+        if (covering.isEmpty()) return
+        // The legal premium lines each group can still take from; a premium is never covered twice.
+        val left = PayItem.COVERABLE.associateWith { k -> lines.filter { it.kind == k && it.amount > 0 }.sumOf { it.amount } }.toMutableMap()
+        covering.groupBy { it.coveredKinds }.forEach { (kinds, group) ->
+            val prepaid = group.sumOf { paid[it.id] ?: 0L }
+            val earned = kinds.sumOf { left.getValue(it) }
+            val covered = minOf(prepaid, earned)
+            var take = covered
+            for (k in kinds) {
+                val t = minOf(take, left.getValue(k))
+                left[k] = left.getValue(k) - t
+                take -= t
+            }
+            // A 고정 연장수당 that covers 연장 only reads as it always has.
+            val fixedOt = kinds == setOf(LineKind.OVERTIME) && group.all { it.isFixedOvertime }
+            val names = if (fixedOt) "고정 연장수당" else group.joinToString("·") { it.name }
+            val what = kinds.joinToString("·") { coverName(it) } + "수당"
+            if (covered > 0) lines += PayLine(
+                kinds.first(), "${particle(names, "으로", "로")} 이미 받은 몫", -covered,
+                formula = if (fixedOt) "연장근로 ${won(earned)} 중 고정 연장수당 ${won(prepaid)}만큼" else "$what ${won(earned)} 중 $names ${won(prepaid)}만큼",
+                multiplier = -1.0,
+                basis = if (fixedOt) "고정 연장수당은 정한 시간까지의 연장수당을 미리 주는 것이라 겹쳐 받지 않아요"
+                else "${particle(names, "은", "는")} 법정 ${what}을 대신해 주는 것이라 겹쳐 받지 않아요",
+            )
+            if (prepaid > 0 && earned > prepaid) warnings += "이번 달 ${particle(what, "이", "가")} ${won(earned)}으로 $names ${won(prepaid)}보다 " +
+                "${won(earned - prepaid)} 많아요. 차액은 따로 받아야 해요"
+        }
+    }
+
+    private fun coverName(kind: LineKind): String = when (kind) {
+        LineKind.OVERTIME -> "연장"
+        LineKind.NIGHT -> "야간"
+        else -> "휴일"
     }
 
     /** What a company rule pays for one piece of work, how, and what the law would pay for it. */
@@ -759,7 +845,32 @@ class PayCalculator(
         extras = extras.map { it.copy(minutes = it.minutes + it.breakMinutes, breakMinutes = 0, breakStart = null) },
     )
 
+    /** [PAY-05] A month's 통상임금 before it is divided by 월 소정근로시간 (monthly pay). */
+    class OrdinaryWage(
+        val base: Long,
+        /** Monthly allowances in 통상임금; one standing in for premiums never is. */
+        val allowances: Long,
+        /** Regular bonuses in 통상임금: a year's payments ÷ 12. */
+        val bonuses: Long,
+    ) {
+        val total: Long get() = base + allowances + bonuses
+    }
+
     companion object {
+        /**
+         * [PAY-05][PAYS-02] The 통상임금 of [month] for monthly pay: 기본급, the monthly allowances that count and
+         * the monthly share of regular bonuses. Bonuses count at a year's payments ÷ 12 (시행령 제6조 제2항 제5호)
+         * from 2024-12-19 on: the 전원합의체 ruling of that day applies to later pay only.
+         */
+        fun ordinaryWage(profile: PayProfile, month: YearMonth): OrdinaryWage {
+            val base = profile.base.on(month).value
+            val allowances = profile.items.filter { it.ordinary && it.cadence == Cadence.MONTHLY && !it.isFixedOvertime && it.coveredKinds.isEmpty() }
+                .sumOf { it.amount.on(month).value }
+            val bonuses = if (month.atEndOfMonth().isBefore(BONUS_ORDINARY_FROM)) 0L
+            else profile.items.filter { it.ordinary && it.cadence == Cadence.BONUS }.sumOf { it.bonusMonthlyShare(base, month) }
+            return OrdinaryWage(base, allowances, bonuses)
+        }
+
         fun hours(minutes: Int): String =
             if (minutes % 60 == 0) "${minutes / 60}시간" else "${minutes / 60}시간 ${minutes % 60}분"
 
