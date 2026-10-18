@@ -223,6 +223,8 @@ fun CalendarScreen(
         }
     }
 
+    LaunchedEffect(vm) { vm.openMemo.collect { onOpenMemo(it) } }
+
     val snap = snapshot
     if (snap == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }

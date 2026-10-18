@@ -20,6 +20,10 @@ data class Memo(
     val updatedAtMillis: Long = 0,
     /** Set while the memo is in the trash. */
     val deletedAtMillis: Long? = null,
+    /** [SCHED-01] Set when the memo is a schedule that rings or notifies. */
+    val reminder: MemoReminder? = null,
+    /** [SCHED-01] The [MemoTime.Found.key] the user last answered about, so it is asked once. */
+    val reminderAsked: String? = null,
 ) {
     val inTrash: Boolean get() = deletedAtMillis != null
 

@@ -100,6 +100,8 @@ import com.bamnat.app.ui.money.MoneyScreen
 import com.bamnat.app.ui.money.MoneyViewModel
 import com.bamnat.app.ui.work.WorkStyleScreen
 import com.bamnat.app.ui.setup.SetupHost
+import com.bamnat.app.ui.onboarding.ConsentPages
+import com.bamnat.app.ui.onboarding.NewConsentPrompt
 import com.bamnat.app.ui.setup.SetupViewModel
 import com.bamnat.app.ui.setup.SetupPaySheet
 import com.bamnat.app.ui.company.CompanyDetailScreen
@@ -195,10 +197,16 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             else -> true
         }
     }
+    // [ONBOARD-01] A new phone sees what the app may ask for, and why, before the first setup.
+    val consentSeen by container.consentStore.seen.collectAsStateWithLifecycle()
     when (needsSetup) {
         null -> return
         // "나중에" opens the calendar with a card to go on from where the user stopped.
         true -> if (setupDraft?.later != true) {
+            if (consentSeen == null && setupDraft == null) {
+                ConsentPages(container, onDone = {})
+                return
+            }
             SetupHost(appViewModel { SetupViewModel(it) })
             return
         }
@@ -247,6 +255,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 }
             }
             NoticeLinks.Target.MONEY -> { nav.navigateTopLevel(TopLevel.MONEY.route); NoticeLinks.consume(target) }
+            NoticeLinks.Target.MEMOS -> { nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target) }
             NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.PAY) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [SET-01] Settings takes the target itself, to open on the alarm's state from wherever it was.
             NoticeLinks.Target.ALARM_CHECK -> {
@@ -348,6 +357,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
         }
     }
+
+    // [ONBOARD-01] A phone set up before the consent pages is asked only about what is new since.
+    NewConsentPrompt(container)
 
     // [SETUP-01] Right after the first setup, once: the pay comes next for work paid by the hour or month.
     val justSaved by container.firstSetup.saved.collectAsStateWithLifecycle()

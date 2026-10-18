@@ -95,7 +95,10 @@ class BackupManager(
                     .put("id", m.id).putOpt("day", m.epochDay).put("title", m.title).put("body", m.body)
                     .put("checklist", m.checklist).put("isChecklist", m.isChecklist).put("color", m.colorIndex)
                     .put("pinned", m.pinned).put("created", m.createdAt).put("updated", m.updatedAt)
-                    .putOpt("deleted", m.deletedAt),
+                    .putOpt("deleted", m.deletedAt)
+                    // [SCHED-01] Version 13. Older apps ignore these keys and keep the memo plain.
+                    .putOpt("remindAt", m.remindAt).put("remindRing", m.remindRing).put("remindNotify", m.remindNotify)
+                    .putOpt("remindAsked", m.remindAsked),
             )
         }
         root.put("memos", memos)
@@ -230,6 +233,8 @@ class BackupManager(
                 isChecklist = o.optBoolean("isChecklist"), colorIndex = o.optInt("color"), pinned = o.optBoolean("pinned"),
                 createdAt = o.optLong("created"), updatedAt = o.optLong("updated"),
                 deletedAt = if (o.isNull("deleted") || !o.has("deleted")) null else o.getLong("deleted"),
+                remindAt = o.optStringOrNull("remindAt"), remindRing = o.optBoolean("remindRing"),
+                remindNotify = o.optBoolean("remindNotify"), remindAsked = o.optStringOrNull("remindAsked"),
             )
         }
         val entries = root.optJSONArray("money")?.objects()?.map { o ->

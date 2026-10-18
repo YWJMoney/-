@@ -5,6 +5,7 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.bamnat.core.memo.MemoReminder
 import com.bamnat.core.model.AlarmSpec
 import com.bamnat.core.model.ExtraEntry
 import com.bamnat.core.model.ExtraKind
@@ -37,7 +38,7 @@ class MigrationTest {
         createVersion1(context.getDatabasePath(name).apply { parentFile?.mkdirs() })
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13)
             .allowMainThreadQueries()
             .build()
         try {
@@ -117,7 +118,7 @@ class MigrationTest {
         sql.close()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_11_12).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13).allowMainThreadQueries().build()
         try {
             val days = assembleDays(db.dayEntryDao().getAll(), db.dayExtraDao().getAll()).associateBy { it.date.toEpochDay() }
             assertEquals(listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120)), days.getValue(20000).extras)
@@ -144,6 +145,40 @@ class MigrationTest {
                 assertNull(e.secondShiftTypeId)
             }
             assertEquals(setOf(20003L, 20004L, 20005L), db.dayEntryDao().getAll().map { it.epochDay }.toSet())
+        } finally {
+            db.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    /** [SCHED-01] Version 12 memos stay plain memos, and can become schedules afterwards. */
+    @Test
+    fun version12MemosStayPlainAndCanBecomeSchedules() = runBlocking {
+        val name = "migration-12.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val sql = createTables(file, 12)
+        sql.execSQL(
+            "INSERT INTO memos (id, epochDay, title, body, checklist, isChecklist, colorIndex, pinned, createdAt, updatedAt, deletedAt) " +
+                "VALUES (1, 20000, '치과', '내일 오후 3시', '', 0, 2, 1, 1, 2, NULL)",
+        )
+        sql.version = 12
+        sql.close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+            .addMigrations(AppDatabase.MIGRATION_12_13).allowMainThreadQueries().build()
+        try {
+            val memo = db.memoDao().get(1)!!.toModel()
+            assertEquals("내일 오후 3시", memo.body)
+            assertEquals(2, memo.colorIndex)
+            assertTrue(memo.pinned)
+            assertNull(memo.reminder)
+            assertNull(memo.reminderAsked)
+            val at = java.time.LocalDateTime.of(2026, 10, 19, 15, 0)
+            db.memoDao().update(memo.copy(reminder = MemoReminder(at, ring = true, notify = false), reminderAsked = at.toString()).toEntity())
+            val stored = db.memoDao().get(1)!!.toModel()
+            assertEquals(MemoReminder(at, ring = true, notify = false), stored.reminder)
+            assertEquals("2026-10-19T15:00", stored.reminderAsked)
         } finally {
             db.close()
             context.deleteDatabase(name)
