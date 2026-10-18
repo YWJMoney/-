@@ -64,7 +64,10 @@ object MoneyAlerts {
     val NUDGE_AT: LocalTime = LocalTime.of(10, 0)
     val BILL_AT: LocalTime = LocalTime.of(9, 0)
 
-    fun all(jobs: List<Job>, costs: List<FixedCost>, entries: List<MoneyEntry>, today: LocalDate): List<Alert> = buildList {
+    fun all(
+        jobs: List<Job>, costs: List<FixedCost>, entries: List<MoneyEntry>, today: LocalDate,
+        receivables: List<Receivable> = emptyList(),
+    ): List<Alert> = buildList {
         for (j in jobs) {
             val start = j.start
             val before = j.remindMinutes
@@ -86,18 +89,29 @@ object MoneyAlerts {
             add(Alert(due.minusDays(3).atTime(BILL_AT), "bill-${c.id}-$m-3", "3일 뒤 나갈 돈", "${c.name} ${won(c.amount)} · ${due.monthValue}/${due.dayOfMonth}"))
             add(Alert(due.atTime(BILL_AT), "bill-${c.id}-$m-0", "오늘 나갈 돈", "${c.name} ${won(c.amount)}"))
         }
+        // [RECV-03] Money owed to the user: the promised day and a week after it.
+        for (r in receivables) for ((n, at) in ReceivableAlerts.of(r).withIndex()) {
+            val who = r.who.trim().takeIf { it.isNotBlank() && it != r.name }?.let { " ($it)" } ?: ""
+            add(Alert(at.first.atTime(NUDGE_AT), "owed-${r.id}-$n", at.second, "${r.name}$who · ${won(r.left)}"))
+        }
     }
 
     /** The alerts at the earliest time strictly after [now]; empty when none is ahead. */
-    fun next(jobs: List<Job>, costs: List<FixedCost>, entries: List<MoneyEntry>, now: LocalDateTime): List<Alert> {
-        val ahead = all(jobs, costs, entries, now.toLocalDate()).filter { it.at.isAfter(now) }
+    fun next(
+        jobs: List<Job>, costs: List<FixedCost>, entries: List<MoneyEntry>, now: LocalDateTime,
+        receivables: List<Receivable> = emptyList(),
+    ): List<Alert> {
+        val ahead = all(jobs, costs, entries, now.toLocalDate(), receivables).filter { it.at.isAfter(now) }
         val first = ahead.minOfOrNull { it.at } ?: return emptyList()
         return ahead.filter { it.at == first }.sortedBy { it.key }
     }
 
     /** The alerts set for exactly [at], read again when the alarm fires so edits since are respected. */
-    fun dueAt(jobs: List<Job>, costs: List<FixedCost>, entries: List<MoneyEntry>, at: LocalDateTime): List<Alert> =
-        all(jobs, costs, entries, at.toLocalDate()).filter { it.at == at }.sortedBy { it.key }
+    fun dueAt(
+        jobs: List<Job>, costs: List<FixedCost>, entries: List<MoneyEntry>, at: LocalDateTime,
+        receivables: List<Receivable> = emptyList(),
+    ): List<Alert> =
+        all(jobs, costs, entries, at.toLocalDate(), receivables).filter { it.at == at }.sortedBy { it.key }
 
     private fun won(v: Long) = "%,d원".format(v)
 }

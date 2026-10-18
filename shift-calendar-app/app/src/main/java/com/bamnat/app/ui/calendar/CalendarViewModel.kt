@@ -180,7 +180,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** [SLP-14] 오늘의 흐름 at [now]. */
     fun todayFlow(snapshot: ScheduleSnapshot, settings: AppSettings, log: List<SleepEntry>, now: LocalDateTime): TodayFlow.Card =
         TodayFlow.of(now, snapshot.resolver, settings.alarmsEnabled, log, settings.sleepTargetMinutes, settings.commuteMinutes,
-            settings.restCheck, settings.strictRest)
+            settings.restCheck, settings.strictRest,
+            // [SLP-16] The way-home card speaks from the user's own sleeps after night work.
+            afterNightMinutes = com.bamnat.core.sleep.SleepInsights.afterNightAverage(log, snapshot.resolver, now.toLocalDate()))
 
     /** [SLP-14] The two numbers the sleep times rest on, changed from the card's ⓘ. */
     fun setSleepNumbers(targetMinutes: Int, commuteMinutes: Int) {

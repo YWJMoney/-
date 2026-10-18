@@ -212,9 +212,13 @@ data class MoneyBook(
     val jobs: List<Job> = emptyList(),
     val sales: List<DailySales> = emptyList(),
     val fixed: List<FixedCost> = emptyList(),
+    /** [RECV-01] Money others owe the user. */
+    val receivables: List<Receivable> = emptyList(),
 ) {
     fun month(month: YearMonth, payEstimate: Long? = null) = MoneyCalculator.month(month, entries, jobs, sales, payEstimate)
     fun days(month: YearMonth) = MoneyCalculator.days(month, entries, jobs, sales)
+    /** [RECV-02] Everything still owed, written down or left on a job. */
+    fun owed(today: LocalDate) = Receivables.owed(receivables, jobs, today)
     fun on(date: LocalDate) = DayBook(entries.filter { it.date == date }, jobs.filter { it.covers(date) }, sales.firstOrNull { it.date == date })
 
     companion object { val EMPTY = MoneyBook() }

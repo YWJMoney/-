@@ -22,7 +22,8 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 
 /**
- * [WORK-02][LEDG-05] Money notifications: a job about to start, money still owed after a job, and
+ * [WORK-02][LEDG-05] Money notifications: a job about to start, money still owed after a job or on a
+ * receivable [RECV-03], and
  * fixed costs three days ahead and on the day. One alarm is set for the earliest of them, exact
  * when the user allows it so a 30-minute heads-up is not pushed back by Doze.
  * [SLP-15] Money due or owed waits while the user sleeps; a job never does. Several at once come
@@ -40,7 +41,7 @@ object JobReminderScheduler {
 
     fun reschedule(context: Context, book: MoneyBook, settings: AppSettings, now: LocalDateTime = LocalDateTime.now()) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
-        val next = MoneyAlerts.all(book.jobs, book.fixed, book.entries, now.toLocalDate())
+        val next = MoneyAlerts.all(book.jobs, book.fixed, book.entries, now.toLocalDate(), book.receivables)
             .filter { it.at.isAfter(now) && wanted(it, settings) }.minOfOrNull { it.at }
         if (next == null) {
             am.cancel(pending(context, 0L))
@@ -63,8 +64,8 @@ object JobReminderScheduler {
 
     /** What is due at [at], read again now so a job paid or a bill recorded since is not announced. */
     internal suspend fun dueAt(money: MoneyRepository, settings: AppSettings, at: LocalDateTime): List<MoneyAlerts.Alert> {
-        val book = MoneyBook(money.allEntries(), money.allJobs(), emptyList(), money.allFixed())
-        return MoneyAlerts.dueAt(book.jobs, book.fixed, book.entries, at).filter { wanted(it, settings) }
+        val book = MoneyBook(money.allEntries(), money.allJobs(), emptyList(), money.allFixed(), money.allReceivables())
+        return MoneyAlerts.dueAt(book.jobs, book.fixed, book.entries, at, book.receivables).filter { wanted(it, settings) }
     }
 
     /** [SLP-15] Money held while the user slept, now that they are up. */
@@ -119,7 +120,7 @@ class JobReminderReceiver : BroadcastReceiver() {
                     }
                 }
                 // Plan the next one after this moment, so the same alert never repeats.
-                val book = MoneyBook(money.allEntries(), money.allJobs(), emptyList(), money.allFixed())
+                val book = MoneyBook(money.allEntries(), money.allJobs(), emptyList(), money.allFixed(), money.allReceivables())
                 JobReminderScheduler.reschedule(context, book, settings, LocalDateTime.now().plusSeconds(1))
             } finally {
                 pending.finish()

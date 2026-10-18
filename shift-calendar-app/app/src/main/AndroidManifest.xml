@@ -16,6 +16,8 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- [SLP-08] Read only: sleep sessions a watch or the phone wrote to Health Connect. -->
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <!-- [IMPORT-01] Read only, asked when the user opens 캘린더에서 가져오기; nothing read leaves the phone. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
 
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
