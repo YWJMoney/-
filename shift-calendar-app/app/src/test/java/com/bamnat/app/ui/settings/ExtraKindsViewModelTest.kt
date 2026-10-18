@@ -5,14 +5,20 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.BamnatApp
 import com.bamnat.app.ui.UndoMessage
+import com.bamnat.app.ui.calendar.ExtraText
 import com.bamnat.app.ui.pay.PayViewModel
 import com.bamnat.app.ui.pay.payText
+import com.bamnat.app.ui.pay.scopeText
 import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.ExtraTiming
+import com.bamnat.core.model.OffDayTreatment
 import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.pay.CompanyRules
 import com.bamnat.core.pay.ExtraBasis
 import com.bamnat.core.pay.ExtraRule
+import com.bamnat.core.pay.PayUnit
+import com.bamnat.core.pay.Premium
+import com.bamnat.core.pay.PremiumScope
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
@@ -187,6 +193,69 @@ class ExtraKindsViewModelTest {
         )
         assertEquals("${tenPercent.describe()} · 근무별 1개", rules.payText(ExtraKind.COVER_ID))
         assertEquals("법대로", rules.payText(ExtraKind.OVERTIME_ID))
+    }
+
+    /** [EXTRA-07] One 대근 for 주간 and 야간: a day offers each but the shift it works, and turning a day off into one picks it. */
+    @Test fun aCoverForSeveralShiftsOffersEachOfThem() = runBlocking {
+        val repo = c.scheduleRepository
+        val types = repo.shiftTypes.first().associateBy { it.name }
+        val day = types.getValue("주간")
+        val evening = types.getValue("오후")
+        val night = types.getValue("야간")
+        val off = types.getValue("휴무").id
+        repo.savePattern(WorkPattern.Rotation(LocalDate.of(2026, 10, 1), listOf(day.id, day.id, off, off)))
+        settle()
+        val both = ExtraKind(101, "교대 대근", "교", 0xFF123456, ExtraTiming.AsShift(setOf(day.id, night.id)))
+        val snapshot = repo.snapshot.first().let { it.copy(kinds = it.kinds.put(both)) }
+        val all = snapshot.shiftTypes
+        assertEquals("주간·야간 근무 시간 그대로", timingText(both, snapshot.typesById))
+
+        // A day off offers both shifts of the kind, the plain 대근 every shift.
+        val rest = snapshot.resolver.resolve(LocalDate.of(2026, 10, 3))
+        val restChoices = ExtraText.choices(snapshot.kinds, all, rest)
+        assertEquals(setOf(day.id, night.id), restChoices.filter { it.kind.id == 101L }.map { it.entry.coveredShiftId }.toSet())
+        assertEquals(3, restChoices.count { it.kind.id == ExtraKind.COVER_ID })
+        // A 주간 day offers only the other one.
+        val work = snapshot.resolver.resolve(LocalDate.of(2026, 10, 1))
+        assertEquals(listOf(night.id), ExtraText.choices(snapshot.kinds, all, work).filter { it.kind.id == 101L }.map { it.entry.coveredShiftId })
+
+        // A day off turned into 야간 is a 대근 of the kind made for the fewest shifts with it.
+        assertEquals(101L, ExtraText.coverKind(snapshot.kinds, all, night).id)
+        assertEquals(ExtraKind.COVER_ID, ExtraText.coverKind(snapshot.kinds, all, evening).id)
+        val nightOnly = ExtraKind(102, "야간 대근", "야대", 0xFF654321, ExtraTiming.AsShift(night.id))
+        assertEquals(102L, ExtraText.coverKind(snapshot.kinds.put(nightOnly), all, night).id)
+        // Its shifts deleted, the kind stands for every shift again.
+        val gone = both.copy(timing = ExtraTiming.AsShift(setOf(990L, 991L)))
+        assertEquals(3, ExtraText.choices(snapshot.kinds.put(gone), all, rest).count { it.kind.id == 101L })
+
+        // The preview takes the shift asked for when the kind covers it, else its first.
+        val profile = c.payStore.profile.value!!
+        val today = LocalDate.of(2026, 10, 17)
+        assertTrue(vm.preview(KindDraft(both), snapshot.kinds, profile, snapshot, today, shiftId = night.id)!!.piece.startsWith("야간"))
+        assertTrue(vm.preview(KindDraft(both), snapshot.kinds, profile, snapshot, today, shiftId = evening.id)!!.piece.startsWith("주간"))
+    }
+
+    /** [EXTRA-08] The boxes open as the law pays: 연장·야간·휴일 ticked, 휴무일 only for a day off paid as a holiday. */
+    @Test fun theBoxesOpenAsTheLawPays() {
+        val profile = c.payStore.profile.value!!
+        val cover = kinds().byId(ExtraKind.COVER_ID)!!
+        val today = LocalDate.of(2026, 10, 17)
+        val law = lawStart(cover, profile, today)
+        assertEquals(ExtraBasis.UNIT, law.basis)
+        assertEquals(listOf(true, true, true, false), Premium.BUILT_IN.map { law.premium(it)!!.on })
+        assertTrue(lawStart(cover.copy(offDay = OffDayTreatment.HOLIDAY), profile, today).premium(Premium.REST)!!.on)
+        // Under 5 employees nothing is ticked, each box ready at 50%.
+        val small = lawStart(cover, profile.copy(fiveOrMoreEmployees = false), today)
+        assertTrue(small.ticked.isEmpty())
+        assertEquals(0.5, small.premium(Premium.OVERTIME)!!.rate, 1e-9)
+
+        // The way from the thread, saved and read back in a line.
+        val company = law.copy(unit = PayUnit.BASE_SHARE, percentOfBase = 0.1, unitMinutes = 480,
+            premiums = law.premiums.map { if (it.key == Premium.OVERTIME) it.copy(scope = PremiumScope.Over(480)) else it })
+        assertEquals("8시간에 기본급의 10% + 연장 50% + 야간 50% + 휴일 50%",
+            CompanyRules(extra = mapOf(ExtraKind.COVER_ID to company)).payText(ExtraKind.COVER_ID))
+        assertEquals("이 일 8시간 넘는 시간", scopeText(PremiumScope.Over(480), "22~06시"))
+        assertEquals("19~23시", scopeText(PremiumScope.Window(LocalTime.of(19, 0), LocalTime.of(23, 0)), "22~06시"))
     }
 
     @Test fun timingReadsLikeTheClock() {

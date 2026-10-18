@@ -63,6 +63,18 @@ object ExtraText {
     fun cover(kind: ExtraKind, type: ShiftType): ExtraEntry =
         ExtraEntry(kind.id, type.start, type.end, type.breakMinutes, type.breakStart.takeIf { type.breakMinutes > 0 }, coveredShiftId = type.id)
 
+    /**
+     * The kind for a 대근 of [type]: one made for that shift, else one for a few shifts with it
+     * (모닝·나이트 대근) [EXTRA-07], else the plain 대근.
+     */
+    fun coverKind(kinds: ExtraKinds, types: List<ShiftType>, type: ShiftType): ExtraKind {
+        val timed = types.filter { !it.isOff && it.hasTimes }
+        return kinds.visible()
+            .mapNotNull { k -> (k.timing as? ExtraTiming.AsShift)?.shifts(timed)?.takeIf { s -> s.any { it.id == type.id } }?.let { k to it.size } }
+            .minByOrNull { it.second }?.first
+            ?: kinds.of(ExtraKind.COVER_ID)
+    }
+
     /** The piece one tap adds for a kind with fixed hours or a length. */
     fun default(kind: ExtraKind): ExtraEntry? = when (val t = kind.timing) {
         is ExtraTiming.Band -> ExtraEntry(kind.id, t.start, t.end, t.breakMinutes, t.breakStart.takeIf { t.breakMinutes > 0 })
@@ -90,9 +102,10 @@ object ExtraText {
                 }
                 is ExtraTiming.Band -> bands += ExtraChoice(k, "${k.name} ${span(t.start, t.end)}", k.name, default(k)!!)
                 is ExtraTiming.AsShift -> {
-                    // A kind for one shift offers that shift; the plain 대근 offers each other shift.
+                    // A kind for one shift offers that shift; one for several (모닝·나이트) or every shift
+                    // offers each of them but the one the day already works [EXTRA-07].
                     val shifts = t.shiftTypeId?.let { id -> timed.filter { it.id == id } }
-                        ?: timed.filter { !(hasShift && it.id == day.shiftType?.id) }
+                        ?: t.shifts(timed).filter { !(hasShift && it.id == day.shiftType?.id) }
                     for (s in shifts) covers += ExtraChoice(k, "${coverName(k, s)} ${span(s.start!!, s.end!!)}", coverName(k, s), cover(k, s))
                     // Without shifts that have times there is nothing to copy: a day's hours to start from.
                     if (timed.isEmpty()) bands += ExtraChoice(k, "${k.name} 09–18", k.name, ExtraEntry(k.id, NINE, SIX_PM, 60, NOON))

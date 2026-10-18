@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -39,8 +40,23 @@ class M5AppTest {
         sleep.wokeUp()
         val log = sleep.recent(days = 3650).first()
         assertEquals(435L, log.single().minutes)
-        // A second "잠들었어요" without "깼어요" replaces the open one rather than piling up.
-        sleep.fellAsleep(); sleep.fellAsleep()
+        // [SLP-14] A second "잠들었어요" keeps the sleep already open, and when it began, rather than piling up or starting over.
+        now = millis(LocalDateTime.of(2026, 11, 4, 23, 0))
+        assertTrue(sleep.fellAsleep().started)
+        now = millis(LocalDateTime.of(2026, 11, 4, 23, 20))
+        val again = sleep.fellAsleep()
+        assertFalse(again.started)
+        assertEquals(LocalDateTime.of(2026, 11, 4, 23, 0), again.entry.start)
+        assertEquals(1, sleep.recent(days = 3650).first().count { it.end == null })
+        // Woke at a time given later; undoing "깼어요" opens the same sleep again.
+        now = millis(LocalDateTime.of(2026, 11, 5, 9, 0))
+        val woke = sleep.wokeUp(millis(LocalDateTime.of(2026, 11, 5, 6, 30)))!!
+        assertEquals(450L, woke.minutes)
+        sleep.reopen(woke.id)
+        assertEquals(LocalDateTime.of(2026, 11, 4, 23, 0), sleep.recent(days = 3650).first().single { it.end == null }.start)
+        // Left open past 16 hours, the next "잠들었어요" closes it where it stands and starts anew.
+        now = millis(LocalDateTime.of(2026, 11, 5, 17, 0))
+        assertTrue(sleep.fellAsleep().started)
         assertEquals(1, sleep.recent(days = 3650).first().count { it.end == null })
 
         val settings = SettingsRepository(context)
@@ -49,7 +65,7 @@ class M5AppTest {
         val json = backups.export()
         db.sleepDao().clear()
         backups.restore(json)
-        assertEquals(2, db.sleepDao().all().size)
+        assertEquals(3, db.sleepDao().all().size)
     }
 
     @Test fun remindersFollowTheScheduleAndStayOffUntilTurnedOn() = runBlocking {

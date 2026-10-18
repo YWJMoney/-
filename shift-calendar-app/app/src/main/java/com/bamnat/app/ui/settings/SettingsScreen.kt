@@ -297,6 +297,8 @@ fun SettingsScreen(
     onOpenDiagnostics: () -> Unit,
     onOpenWorkStyle: () -> Unit = {},
     onOpenExtraKinds: () -> Unit = {},
+    /** [COMM-01][COMM-02] 회사 찾기·내 설정 나누기·내가 보낸 정보, when the build has a company server. */
+    company: (@Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit)? = null,
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val upcoming by vm.upcoming.collectAsStateWithLifecycle()
@@ -395,8 +397,8 @@ fun SettingsScreen(
             HorizontalDivider()
             NavRow("근무 유형", "이름, 시간, 색상, 근무별 알람", onOpenShiftTypes)
             HorizontalDivider()
-            // [EXTRA-04] Each company names, times and pays extra work its own way.
-            NavRow("잔업 · 특근 · 대근", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·급여 방식", onOpenExtraKinds)
+            // [EXTRA-04][EXTRA-07] Each company names, times and pays work on a day off and extra hours its own way.
+            NavRow("연장 휴무일 근무 지정", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·가산 임금", onOpenExtraKinds)
         }
 
         SectionCard(title = "알람") {
@@ -502,7 +504,12 @@ fun SettingsScreen(
         }
 
         // [COMM-00] Coworkers share one setup instead of each typing it in.
-        SectionCard(title = "회사 설정 나누기") {
+        SectionCard(title = if (company != null) "회사 설정" else "회사 설정 나누기") {
+            if (company != null) {
+                company()
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                Text("파일로 주고받기", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+            }
             Text(
                 "근무 유형·주기·급여 규칙을 파일로 동료에게 보내요. 기본급, 입사일, 연차, 달력에 적은 내용은 들어가지 않아요.",
                 style = MaterialTheme.typography.bodySmall,
@@ -614,7 +621,8 @@ fun SettingsScreen(
 
         // [SLP-03][SLP-04][SLP-06][SLP-07] Sleep that fits the schedule. Suggestions, not treatment.
         SectionCard(title = "수면") {
-            SwitchRow("수면 시간 제안", "날짜를 누르면 근무에 맞춘 낮잠·잠자리 시각과 수면 기록이 보여요", settings.sleepTips) { v ->
+            // [SLP-14]
+            SwitchRow("오늘의 흐름", "달력 맨 위에 지금 할 일 하나와 잘 시간·다음 근무를 보여 줘요. 날짜를 누르면 그날의 수면 제안도 보여요", settings.sleepTips) { v ->
                 vm.update { it.copy(sleepTips = v) }
             }
             SwitchRow("수면 알림", "잠자리·낮잠·카페인 마지막 시각과 야간 뒤 퇴근길 졸음 주의를 알려줘요", settings.sleepReminders) { v ->
@@ -628,6 +636,17 @@ fun SettingsScreen(
                         selected = settings.sleepTargetMinutes == m,
                         onClick = { vm.update { it.copy(sleepTargetMinutes = m) } },
                         label = { Text(if (m % 60 == 0) "${m / 60}시간" else "${m / 60}시간 반") },
+                    )
+                }
+            }
+            // [SLP-14] Sleep after work starts once the user is home.
+            Text("퇴근 후 잠들기까지", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(0, 30, 60, 90, 120).forEach { m ->
+                    FilterChip(
+                        selected = settings.commuteMinutes == m,
+                        onClick = { vm.update { it.copy(commuteMinutes = m) } },
+                        label = { Text(if (m == 0) "바로" else if (m % 60 == 0) "${m / 60}시간" else if (m < 60) "${m}분" else "${m / 60}시간 반") },
                     )
                 }
             }
@@ -667,7 +686,7 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun NavRow(title: String, subtitle: String, onClick: () -> Unit) {
+internal fun NavRow(title: String, subtitle: String, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,

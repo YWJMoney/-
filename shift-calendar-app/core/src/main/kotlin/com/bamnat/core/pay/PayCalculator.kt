@@ -205,10 +205,10 @@ class PayCalculator(
             fun takeOut(w: WorkMinutes, rule: ExtraRule, shiftPart: Boolean) {
                 if (shiftPart) reg -= w.regular else xr -= w.regular
                 ot -= w.overtime; hw -= w.holidayWithin8h; ho -= w.holidayOver8h; rw -= w.restWithin8h; ro -= w.restOver8h
-                if (!rule.nightPremium) n -= w.night
+                if (rule.ownsNight) n -= w.night
             }
-            fun pay(key: Triple<Long, Long?, Boolean>, name: String, rule: ExtraRule, w: WorkMinutes) {
-                val r = applyRule(rule, w, hourly, monthlyBase, baseLabel, pr, law)
+            fun pay(key: Triple<Long, Long?, Boolean>, name: String, rule: ExtraRule, w: WorkMinutes, piece: PieceAt) {
+                val r = applyRule(rule, w, piece, hourly, monthlyBase, baseLabel, pr, law, rates)
                 extraTotals.getOrPut(key) { ExtraTotal(rule, name, key.first) }.apply {
                     amount += r.amount; this.minutes += r.credited; times++; legal += r.legal
                 }
@@ -225,7 +225,10 @@ class PayCalculator(
                     night = if (s.worked > 0) (s.night * (s.holidayWithin8h + s.holidayOver8h).toDouble() / s.worked).roundToLong().toInt() else 0)
                 if (w.worked > 0) {
                     if (shiftRule.basis != ExtraBasis.LEGAL) takeOut(w, shiftRule, shiftPart = true)
-                    pay(Triple(shiftKind, null, true), "${rules.extraName(shiftKind)} 방식 (공휴일 근무)", shiftRule, w)
+                    // Clock-time premiums count the shift's span, in the share of it that is holiday work.
+                    val at = PieceAt(false, day.shiftFrom, day.shiftTo, s.worked, day.breakMinutes, day.breakStart,
+                        share = if (s.worked > 0) w.worked.toDouble() / s.worked else 0.0)
+                    pay(Triple(shiftKind, null, true), "${rules.extraName(shiftKind)} 방식 (공휴일 근무)", shiftRule, w, at)
                 }
             }
 
@@ -238,7 +241,8 @@ class PayCalculator(
                 val rule = rules.extraRule(e.kind.id, covered?.id) ?: continue
                 val name = rules.extraName(e.kind.id) + if (perShift != null) " · ${covered!!.name}" else ""
                 if (rule.basis != ExtraBasis.LEGAL) takeOut(em.minutes, rule, shiftPart = false)
-                pay(Triple(e.kind.id, perShift?.let { covered!!.id }, false), name, rule, em.minutes)
+                pay(Triple(e.kind.id, perShift?.let { covered!!.id }, false), name, rule, em.minutes,
+                    PieceAt(day.isRestDay, e.from, e.to, e.minutes, e.breakMinutes, e.breakStart))
             }
             if (day.isRestDay && day.extras.isNotEmpty()) restDayWorked = true
 
@@ -364,7 +368,8 @@ class PayCalculator(
                 hourly = if (rule.basis == ExtraBasis.HOURLY_RATE) hourly else 0,
                 multiplier = if (rule.basis == ExtraBasis.HOURLY_RATE) rule.multiplier else 0.0,
                 basis = "달력에 ‘${rules.extraName(t.kind)}’로 넣은 근무",
-                estimated = baseEstimated && (rule.basis == ExtraBasis.HOURLY_RATE || rule.basis == ExtraBasis.LEGAL || rule.legalPremiums),
+                estimated = baseEstimated && (rule.basis == ExtraBasis.HOURLY_RATE || rule.basis == ExtraBasis.LEGAL || rule.legalPremiums ||
+                    rule.basis == ExtraBasis.UNIT && (rule.unit != PayUnit.PER_HOUR && rule.unit != PayUnit.PER_TIME || rule.ticked.isNotEmpty())),
             )
             if (premiums && t.amount < t.legal) {
                 warnings += "${t.label}을 회사 방식으로 계산하면 ${won(t.amount)}인데 법정 기준으로는 ${won(t.legal)}이에요. " +
@@ -490,23 +495,39 @@ class PayCalculator(
     /** What a company rule pays for one piece of work, how, and what the law would pay for it. */
     private class RuleResult(val amount: Long, val formula: String, val credited: Int, val legal: Long)
 
+    /** [EXTRA-08] Where a piece of work sits: on a day off or not, and on the clock (null when unknown). */
+    private class PieceAt(
+        val restDay: Boolean,
+        val from: LocalDateTime?,
+        val to: LocalDateTime?,
+        val paid: Int,
+        val breakMinutes: Int,
+        val breakStart: java.time.LocalTime?,
+        /** The part of the span the rule pays, for a 공휴일 shift paid only for its holiday minutes. */
+        val share: Double = 1.0,
+    )
+
     /**
      * [EXTRA-03] One piece of work paid by [rule]: the base part, the hours a per-time payment does not
      * cover at 100%, the legal 연장·휴일 premiums when the company adds them, and the amount on top.
      * Night stays with the night line unless the rule leaves it out.
      */
-    private fun applyRule(rule: ExtraRule, w: WorkMinutes, hourly: Long, monthlyBase: Long, baseLabel: String, pr: Premiums, law: Premiums): RuleResult {
+    private fun applyRule(
+        rule: ExtraRule, w: WorkMinutes, piece: PieceAt, hourly: Long, monthlyBase: Long, baseLabel: String,
+        pr: Premiums, law: Premiums, rates: Rates,
+    ): RuleResult {
         fun money(min: Int, rate: Double) = (min / 60.0 * hourly * rate).roundToLong()
         val worked = w.worked
-        // What the law pays these hours, to compare: 100% plus premiums, night too when the rule drops it.
+        // What the law pays these hours, to compare: 100% plus premiums, night too when the rule pays it itself.
         val legal = money(w.regular, 1.0) + money(w.overtime, 1.0 + law.overtime) +
             money(w.holidayWithin8h, law.holidayBase + law.holidayWithin8h) + money(w.holidayOver8h, law.holidayBase + law.holidayOver8h) +
             money(w.restWithin8h, 1.0 + law.holidayWithin8h) + money(w.restOver8h, 1.0 + law.holidayOver8h) +
-            (if (rule.nightPremium) 0 else money(w.night, law.night))
+            (if (rule.ownsNight) money(w.night, law.night) else 0)
         if (rule.basis == ExtraBasis.LEGAL) {
             // By law with an amount on top: the hours stay in the legal lines.
             return RuleResult(rule.bonus, "법대로 계산하고 1회 ${won(rule.bonus)} 더함", 0, 0)
         }
+        if (rule.basis == ExtraBasis.UNIT) return applyUnit(rule, w, piece, hourly, monthlyBase, baseLabel, rates, legal)
         val credited = maxOf(worked, rule.minMinutes)
         val night = worked > 0 && w.night * 2 >= worked
         val parts = mutableListOf<String>()
@@ -518,7 +539,7 @@ class PayCalculator(
             ExtraBasis.FIXED_PER_HOUR -> (credited / 60.0 * rule.amount).roundToLong().also { parts += "${hours(credited)} × ${won(rule.amount)}" }
             ExtraBasis.TIERED -> rule.tieredAmount(credited, hourly, night)
                 .also { parts += "${if (night) "야간" else "주간"} ${rule.describeTiers(night)} · ${hours(credited)}" }
-            ExtraBasis.LEGAL -> 0L
+            ExtraBasis.LEGAL, ExtraBasis.UNIT -> 0L
         }
         // Hours beyond what one payment covers are paid like any other hour.
         val uncovered = rule.coverMinutes?.takeIf { rule.perTime }?.let { (credited - it).coerceAtLeast(0) } ?: 0
@@ -541,6 +562,69 @@ class PayCalculator(
         if (rule.bonus > 0) parts += "1회 ${won(rule.bonus)}"
         val formula = parts.joinToString(" + ") + if (credited > worked) " (최소 ${hours(rule.minMinutes)} 인정)" else ""
         return RuleResult(basePart + uncoveredPay + premiumPay + rule.bonus, formula, credited, legal)
+    }
+
+    /**
+     * [EXTRA-08] One piece paid as an hour's pay ([ExtraRule.unit]) plus each ticked premium on the
+     * minutes it names. Premiums are on that hour, or on 통상시급 for a payment each time; nothing
+     * the rule does not tick is added, and the month's warnings say when that is below the law.
+     */
+    private fun applyUnit(rule: ExtraRule, w: WorkMinutes, piece: PieceAt, hourly: Long, monthlyBase: Long, baseLabel: String, rates: Rates, legal: Long): RuleResult {
+        val worked = w.worked
+        val credited = maxOf(worked, rule.minMinutes)
+        val unitHourly = when (rule.unit) {
+            PayUnit.ORDINARY, PayUnit.PER_TIME -> hourly.toDouble()
+            PayUnit.BASE_SHARE -> monthlyBase * rule.percentOfBase * 60.0 / rule.unitMinutes.coerceAtLeast(1)
+            PayUnit.PER_HOUR -> rule.amount.toDouble()
+        }
+        fun money(min: Int, rate: Double) = (min / 60.0 * unitHourly * rate).roundToLong()
+        val unitText = when (rule.unit) {
+            PayUnit.ORDINARY, PayUnit.PER_TIME -> won(hourly)
+            PayUnit.BASE_SHARE -> "${won(unitHourly.roundToLong())}($baseLabel ${won(monthlyBase)} × ${ExtraRule.percent(rule.percentOfBase)} ÷ ${hours(rule.unitMinutes)})"
+            PayUnit.PER_HOUR -> won(rule.amount)
+        }
+        val parts = mutableListOf<String>()
+        val basePart = if (rule.unit == PayUnit.PER_TIME) {
+            val uncovered = rule.coverMinutes?.let { (credited - it).coerceAtLeast(0) } ?: 0
+            val beyond = money(uncovered, 1.0)
+            parts += "1회 ${won(rule.amount)}"
+            if (uncovered > 0) parts += "${hours(rule.coverMinutes!!)} 넘는 ${hours(uncovered)} × $unitText = ${won(beyond)}"
+            rule.amount + beyond
+        } else {
+            money(credited, 1.0).also { parts += "${hours(credited)} × $unitText = ${won(it)}" }
+        }
+        val holiday = w.holidayWithin8h + w.holidayOver8h
+        val holidayTicked = rule.ticked.any { it.key == Premium.HOLIDAY }
+        val offDay = piece.restDay || holiday > 0
+        var premiumPay = 0L
+        for (p in rule.ticked) {
+            if (p.offDaysOnly && !offDay) continue
+            val m = when (val sc = p.scope) {
+                PremiumScope.All -> worked
+                is PremiumScope.Over -> (worked - sc.minutes).coerceAtLeast(0)
+                PremiumScope.LegalOvertime -> w.overtime + w.holidayOver8h + w.restOver8h
+                PremiumScope.Night -> w.night
+                is PremiumScope.Window -> windowMinutes(piece, sc, rates)
+                PremiumScope.Holiday -> holiday
+                // A day off that is also a paid holiday takes the 휴일 premium when that is ticked, not both.
+                PremiumScope.RestDay -> if (piece.restDay) worked - (if (holidayTicked) holiday else 0) else 0
+            }
+            if (m <= 0) continue
+            val v = money(m, p.rate)
+            premiumPay += v
+            parts += "${p.name} ${hours(m)} × ${pct(p.rate)} = ${won(v)}"
+        }
+        if (rule.bonus > 0) parts += "1회 ${won(rule.bonus)}"
+        val formula = parts.joinToString(" + ") + if (credited > worked) " (최소 ${hours(rule.minMinutes)} 인정)" else ""
+        return RuleResult(basePart + premiumPay + rule.bonus, formula, credited, legal)
+    }
+
+    /** [EXTRA-08] Minutes of [piece] between the scope's clock times; none when it has no clock times. */
+    private fun windowMinutes(piece: PieceAt, w: PremiumScope.Window, rates: Rates): Int {
+        val from = piece.from ?: return 0
+        val to = piece.to ?: return 0
+        val m = MinuteClassifier({ rates }).windowMinutes(from, to, piece.paid, piece.breakMinutes, piece.breakStart, w.from, w.to, rates)
+        return (m * piece.share).roundToLong().toInt()
     }
 
     /** [EXTRA-02] Dates that are the 주휴일 among [days]. */

@@ -25,9 +25,20 @@ sealed interface ExtraTiming {
 
     /**
      * A whole shift of one of the user's shift types, worked for someone else (대근): the times
-     * come from the shift picked each time, [shiftTypeId] being picked first.
+     * come from the shift picked each time. [shiftTypeIds] are the shifts it can be, every shift
+     * when empty, so one 대근 holds 모닝 대근 and 나이트 대근 alike [EXTRA-07].
      */
-    data class AsShift(val shiftTypeId: Long? = null) : ExtraTiming
+    data class AsShift(val shiftTypeIds: Set<Long> = emptySet()) : ExtraTiming {
+        constructor(shiftTypeId: Long?) : this(setOfNotNull(shiftTypeId))
+
+        /** The one shift this kind is for, when it is for exactly one (a 야간 대근 of its own). */
+        val shiftTypeId: Long? get() = shiftTypeIds.singleOrNull()
+
+        fun covers(id: Long): Boolean = shiftTypeIds.isEmpty() || id in shiftTypeIds
+
+        /** The shifts of [timed] it can be; all of them when none of its own is left (a deleted shift). */
+        fun shifts(timed: List<ShiftType>): List<ShiftType> = timed.filter { covers(it.id) }.ifEmpty { timed }
+    }
 }
 
 /** [EXTRA-02] Work of a kind on a day off: by the company's rest-day rule, or always as 휴일근로 (단체협약 등). */
@@ -190,7 +201,7 @@ data class ExtraKinds(val kinds: List<ExtraKind> = DEFAULTS) {
             is ExtraTiming.Band -> listOf("B", t.start.toString(), t.end.toString(), t.breakMinutes.toString(), t.breakStart?.toString() ?: "-").joinToString(",")
             is ExtraTiming.AfterShift -> "A,${t.minutes}"
             is ExtraTiming.BeforeShift -> "P,${t.minutes}"
-            is ExtraTiming.AsShift -> "S,${t.shiftTypeId ?: "-"}"
+            is ExtraTiming.AsShift -> "S," + t.shiftTypeIds.sorted().joinToString(";").ifEmpty { "-" }
         }
 
         private fun timingFrom(s: String): ExtraTiming? {
@@ -204,7 +215,8 @@ data class ExtraKinds(val kinds: List<ExtraKind> = DEFAULTS) {
                 }
                 "A" -> f.getOrNull(1)?.toIntOrNull()?.takeIf { it > 0 }?.let { ExtraTiming.AfterShift(it.coerceAtMost(24 * 60)) }
                 "P" -> f.getOrNull(1)?.toIntOrNull()?.takeIf { it > 0 }?.let { ExtraTiming.BeforeShift(it.coerceAtMost(24 * 60)) }
-                "S" -> ExtraTiming.AsShift(f.getOrNull(1)?.toLongOrNull())
+                // One id, several joined by ';' [EXTRA-07], or '-' for every shift.
+                "S" -> ExtraTiming.AsShift(f.getOrNull(1)?.split(';')?.mapNotNull { it.toLongOrNull() }?.toSet().orEmpty())
                 else -> null
             }
         }

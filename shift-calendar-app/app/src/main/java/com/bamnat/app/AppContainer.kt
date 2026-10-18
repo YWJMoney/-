@@ -51,6 +51,13 @@ class AppContainer(context: Context) {
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore)
     /** [COMM-00] Company settings as a file for coworkers. */
     val companyShare by lazy { com.bamnat.app.data.CompanyShare(scheduleRepository, payStore, settingsRepository) }
+    /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
+    var companyApi: com.bamnat.app.company.CompanyApi = com.bamnat.app.company.CompanyClient()
+    val companyStore by lazy { com.bamnat.app.company.CompanyStore(appContext) }
+    /** [MKT-09][SHR-02] The link server; screenshots and tests put a fake in its place. */
+    var shareApi: com.bamnat.app.share.ShareApi = com.bamnat.app.share.ShareLinkClient()
+    /** [SHR-02] Schedules others shared, kept beside the user's own and never backed up. */
+    val received by lazy { com.bamnat.app.share.ReceivedCalendarStore(java.io.File(appContext.noBackupFilesDir, "received_calendars.json")) }
     val featureGate = FeatureGate(settingsRepository, appScope)
 
     suspend fun rescheduleAlarms(after: LocalDateTime = LocalDateTime.now()) {
@@ -96,6 +103,15 @@ class AppContainer(context: Context) {
         // Widgets lay out weeks from the user's first day of the week.
         appScope.launch {
             settingsRepository.settings.map { it.weekStart }.distinctUntilChanged().drop(1)
+                .collect { WidgetRefresher.refresh(appContext) }
+        }
+        // [SLP-14] The today widget's line of 오늘의 흐름 follows the sleep log and the settings it reads.
+        appScope.launch {
+            val reads = settingsRepository.settings.map {
+                listOf(it.sleepTips, it.sleepTargetMinutes, it.commuteMinutes, it.restCheck, it.strictRest, it.workStyle)
+            }.distinctUntilChanged()
+            combine(sleepRepository.recent(days = 2), reads) { log, r -> log to r }
+                .drop(1).debounce(500)
                 .collect { WidgetRefresher.refresh(appContext) }
         }
     }

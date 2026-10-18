@@ -14,16 +14,21 @@ import com.bamnat.core.pay.HolidayPayMode
 import com.bamnat.core.pay.Occupation
 import com.bamnat.core.pay.PayItem
 import com.bamnat.core.pay.PayProfile
+import com.bamnat.core.pay.PayUnit
+import com.bamnat.core.pay.Premium
+import com.bamnat.core.pay.PremiumScope
 import com.bamnat.core.pay.RaiseRule
 import com.bamnat.core.pay.Rounding
 import com.bamnat.core.pay.ValueTimeline
 import com.bamnat.core.pay.WageType
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalTime
 
 /** The saved pay setup survives a round trip unchanged [PAY-10, PAYX-02]. */
 @RunWith(AndroidJUnit4::class)
@@ -65,6 +70,49 @@ class PayCodecTest {
         )
         assertEquals(p, PayCodec.decode(PayCodec.encode(p)))
         assertEquals(WeeklyHoliday.FirstRestDay, PayCodec.rulesFrom(PayCodec.rulesJson(CompanyRules(weeklyHoliday = WeeklyHoliday.FirstRestDay))).weeklyHoliday)
+    }
+
+    /** [EXTRA-08] An hour's pay and its ticked premiums, the company's own among them, come back as saved. */
+    @Test fun premiumsRoundTrip() {
+        val law = ExtraRule.lawUnit(overtime = 0.5, night = 0.5, holiday = 0.5, restAsHoliday = false)
+        val company = law.copy(
+            unit = PayUnit.BASE_SHARE, percentOfBase = 0.1, unitMinutes = 480, minMinutes = 240, bonus = 30_000,
+            premiums = law.premiums.map { if (it.key == Premium.OVERTIME) it.copy(scope = PremiumScope.Over(480)) else it } + listOf(
+                Premium("c1", "심야 가산", 0.25, true, PremiumScope.Window(LocalTime.of(19, 0), LocalTime.of(23, 30)), offDaysOnly = true),
+                Premium("c2", "대근 가산", 0.1, false, PremiumScope.All),
+            ),
+        )
+        val perTime = law.copy(unit = PayUnit.PER_TIME, amount = 80_000, coverMinutes = 480)
+        val rules = CompanyRules(extra = mapOf(ExtraKind.COVER_ID to company, ExtraKind.SPECIAL_ID to perTime),
+            extraByShift = mapOf(ExtraKind.COVER_ID to mapOf(3L to company.copy(unit = PayUnit.PER_HOUR, amount = 20_000))))
+        assertEquals(rules, PayCodec.rulesFrom(PayCodec.rulesJson(rules)))
+    }
+
+    /** [EXTRA-08] A shared file cannot widen a premium: rates, names, the count and the four boxes stay in bounds. */
+    @Test fun premiumsFromAFileStayInBounds() {
+        fun add(key: String, scope: String, rate: Double = 0.5, name: String = "가산") =
+            "{\"key\":\"$key\",\"name\":\"$name\",\"rate\":$rate,\"on\":true,\"scope\":\"$scope\"}"
+        val adds = listOf(
+            add("night", "all"), add("overtime", "over:600"), add("holiday", "later"),
+            add("c1", "window:19:00-23:00", rate = 99.0, name = "아주아주아주아주긴이름가산입니다"),
+            add("c1", "all"), add("c2", "someday"), add("c3", "window:19:00-19:00"),
+        ) + (4..12).map { add("c$it", "all") }
+        val o = JSONObject("{\"extra\":{\"3\":{\"basis\":\"UNIT\",\"unit\":\"LATER\",\"unitMin\":5,\"adds\":[${adds.joinToString(",")}]}}}")
+        val r = PayCodec.rulesFrom(o).extra.getValue(3L)
+        assertEquals(PayUnit.ORDINARY, r.unit)
+        assertEquals(30, r.unitMinutes)
+        // The four keep what they are for; only 연장 can be counted another way.
+        assertEquals(PremiumScope.Night, r.premium(Premium.NIGHT)!!.scope)
+        assertEquals(PremiumScope.Over(600), r.premium(Premium.OVERTIME)!!.scope)
+        assertEquals(PremiumScope.Holiday, r.premium(Premium.HOLIDAY)!!.scope)
+        val c1 = r.premium("c1")!!
+        assertEquals(Premium.MAX_RATE, c1.rate, 1e-9)
+        assertEquals(Premium.MAX_NAME, c1.name.length)
+        assertEquals(PremiumScope.Window(LocalTime.of(19, 0), LocalTime.of(23, 0)), c1.scope)
+        // Hours it cannot read, or none at all, are left out rather than guessed.
+        assertNull(r.premium("c2"))
+        assertNull(r.premium("c3"))
+        assertEquals(Premium.MAX_CUSTOM, r.premiums.count { it.custom })
     }
 
     @Test fun rulesFrom18KeepTheirRestDayRuleAndKinds() {

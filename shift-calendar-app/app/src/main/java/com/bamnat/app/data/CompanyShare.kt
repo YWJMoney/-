@@ -58,6 +58,13 @@ class CompanyShare(
             .put("extraKindShifts", JSONObject().apply {
                 kinds.kinds.forEach { k -> (k.timing as? ExtraTiming.AsShift)?.shiftTypeId?.let(names::get)?.let { put(k.id.toString(), it) } }
             })
+            // [EXTRA-07] A 대근 for several shifts (모닝·나이트) lists them all; 1.9.0 reads it as every shift.
+            .put("extraKindShiftSets", JSONObject().apply {
+                kinds.kinds.forEach { k ->
+                    val set = (k.timing as? ExtraTiming.AsShift)?.shiftTypeIds?.takeIf { it.size > 1 } ?: return@forEach
+                    put(k.id.toString(), JSONArray(set.mapNotNull(names::get)))
+                }
+            })
         (PatternTimeline.current(snapshot.patterns, today()) as? WorkPattern.Rotation)?.let { r ->
             root.put("rotation", JSONObject()
                 .put("anchor", r.anchorDate.toString())
@@ -85,6 +92,24 @@ class CompanyShare(
         return root.toString(1)
     }
 
+    /**
+     * [COMM-02] The file as the company server takes it: no company name (the report carries it), no
+     * allowance amounts, and the won amounts typed into extra-work rules (1회·시간당 정액, 1회 수당) at 0.
+     * The server refuses a file with any amount in it rather than dropping it, so none may slip through.
+     */
+    suspend fun exportForServer(): JSONObject {
+        val root = JSONObject(export("", withAmounts = false))
+        root.optJSONObject("pay")?.optJSONObject("rules")?.let { r ->
+            r.optJSONObject("extra")?.let(::withoutAmounts)
+            r.optJSONObject("extraByShift")?.let { by -> by.keys().forEach { k -> by.optJSONObject(k)?.let(::withoutAmounts) } }
+        }
+        return root
+    }
+
+    private fun withoutAmounts(rules: JSONObject) {
+        rules.keys().forEach { k -> rules.optJSONObject(k)?.put("amount", 0)?.put("bonus", 0) }
+    }
+
     /** Reads a file without changing anything; throws [BackupException] for one that is not ours. */
     fun summarize(text: String): CompanySummary {
         val root = parse(text)
@@ -105,8 +130,10 @@ class CompanyShare(
      * Applies the file: shift types merge by name (alarms and colors the user set stay), the
      * rotation takes over from today with earlier days kept, and the pay rules replace the
      * company part of the user's pay setup. Returns what was applied, for the message.
+     * [todayStep] is the step of the rotation the user works today [COMM-01]: a coworker on another
+     * team shares the same order on other days. Without it the file's own start day is kept.
      */
-    suspend fun apply(text: String, rotation: Boolean = true): Applied {
+    suspend fun apply(text: String, rotation: Boolean = true, todayStep: Int? = null): Applied {
         val root = parse(text)
         // Everything is read once before anything is written, so a broken part changes nothing.
         runCatching {
@@ -135,7 +162,8 @@ class CompanyShare(
         // [EXTRA-01] Kinds merge like shift types: 잔업·특근·대근 by id, the company's own by name.
         var kindIds: Map<Long, Long> = emptyMap()
         root.optString("extraKinds").takeIf { it.isNotEmpty() }?.let { encoded ->
-            val (merged, map) = mergeKinds(settings.current.extraKinds, ExtraKinds.decode(encoded), root.optJSONObject("extraKindShifts"), ids)
+            val (merged, map) = mergeKinds(settings.current.extraKinds, ExtraKinds.decode(encoded), root.optJSONObject("extraKindShifts"),
+                root.optJSONObject("extraKindShiftSets"), ids)
             kindIds = map
             settings.update { it.copy(extraKinds = merged) }
         }
@@ -144,7 +172,8 @@ class CompanyShare(
             val a = r.getJSONArray("steps")
             val steps = (0 until a.length()).map { i -> if (a.isNull(i)) null else ids[a.getString(i).take(MAX_NAME)] }
             if (steps.isNotEmpty()) {
-                val pattern = WorkPattern.Rotation(startDate = today(), steps = steps, anchorDate = LocalDate.parse(r.getString("anchor")))
+                val anchor = todayStep?.let { today().minusDays(Math.floorMod(it, steps.size).toLong()) } ?: LocalDate.parse(r.getString("anchor"))
+                val pattern = WorkPattern.Rotation(startDate = today(), steps = steps, anchorDate = anchor)
                 if (schedule.snapshot.first().hasPattern) schedule.changePatternFrom(pattern, today())
                 else schedule.setFirstPattern(pattern, today())
                 cycle = steps.size
@@ -161,6 +190,77 @@ class CompanyShare(
     }
 
     data class Applied(val addedTypes: Int, val cycleDays: Int?, val rules: Boolean, val pendingPay: Boolean)
+
+    /** [COMM-01] One amount a shared setup leaves to each person: an allowance or a fixed extra-work rule. */
+    data class AmountNeed(val key: String, val label: String, val hint: String)
+
+    /** What the user still types after applying [text]: amounts only, everything else came with it. */
+    fun amountNeeds(text: String): List<AmountNeed> {
+        val root = parse(text)
+        val pay = root.optJSONObject("pay") ?: return emptyList()
+        val kinds = root.optString("extraKinds").takeIf { it.isNotEmpty() }?.let(ExtraKinds::decode)
+        val kindName = { key: String -> kindKey(key)?.let { id -> (kinds ?: ExtraKinds()).name(id) } ?: "추가 근무" }
+        val items = pay.optJSONArray("items").objects().mapNotNull { o ->
+            val item = runCatching { PayCodec.itemFrom(JSONObject(o.toString()).put("types", JSONArray())) }.getOrNull() ?: return@mapNotNull null
+            // A bonus paid as a share of 기본급 needs no amount of its own.
+            if (item.cadence == com.bamnat.core.pay.Cadence.BONUS && item.percentOfBase != null) null
+            else AmountNeed("item:${item.name}", item.name, item.cadence.label)
+        }
+        val rules = pay.optJSONObject("rules")?.optJSONObject("extra")?.let { x ->
+            x.keys().asSequence().mapNotNull { key ->
+                val rule = x.optJSONObject(key) ?: return@mapNotNull null
+                val basis = rule.optString("basis")
+                val unit = rule.optString("unit")
+                val hint = when {
+                    basis == "FIXED_PER_TIME" || (basis == "UNIT" && unit == "PER_TIME") -> "1회 금액"
+                    basis == "FIXED_PER_HOUR" || (basis == "UNIT" && unit == "PER_HOUR") -> "시간당 금액"
+                    else -> return@mapNotNull null
+                }
+                AmountNeed("rule:$key", kindName(key), hint)
+            }.toList()
+        }.orEmpty()
+        return items + rules
+    }
+
+    /**
+     * [COMM-01] The first pay setup from a shared setup: its rules and allowances with the user's own
+     * base pay and amounts. Amounts left out stay 0 and are marked as guesses until filled in.
+     */
+    suspend fun createPay(
+        text: String, wageType: com.bamnat.core.pay.WageType, base: Long?, since: java.time.YearMonth, amounts: Map<String, Long>,
+    ): PayProfile {
+        val root = parse(text)
+        val pay = root.optJSONObject("pay") ?: throw BackupException("급여 계산 방식이 없는 설정이에요")
+        val from = since.atDay(1)
+        val start = PayProfile(com.bamnat.core.pay.Occupation.CUSTOM, wageType, ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(from, base ?: 0))))
+        val ids = schedule.snapshot.first().shiftTypes.associate { it.name to it.id }
+        // Kinds were merged by apply: 잔업·특근·대근 keep their ids, the company's own are found by name.
+        val mine = settings.current.extraKinds
+        val kindIds = root.optString("extraKinds").takeIf { it.isNotEmpty() }?.let { encoded ->
+            ExtraKinds.decode(encoded).kinds.mapNotNull { k ->
+                val id = if (k.isBuiltIn) k.id else mine.kinds.firstOrNull { !it.isBuiltIn && it.name == k.name }?.id
+                id?.let { k.id to it }
+            }.toMap()
+        }.orEmpty()
+        val merged = merge(start, JSONObject(pay.toString()), ids, kindIds)
+        val guessed = mutableSetOf<String>()
+        if (base == null) guessed += "base"
+        val items = merged.items.map { item ->
+            val amount = amounts["item:${item.name}"]
+            when {
+                amount != null -> item.copy(amount = ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(from, amount))))
+                item.cadence == com.bamnat.core.pay.Cadence.BONUS && item.percentOfBase != null -> item
+                else -> item.also { guessed += it.id }
+            }
+        }
+        val extra = merged.rules.extra.mapValues { (id, rule) ->
+            val key = kindIds.entries.firstOrNull { it.value == id }?.key ?: id
+            amounts["rule:$key"]?.let { rule.copy(amount = it) } ?: rule
+        }
+        val profile = merged.copy(items = items, rules = merged.rules.copy(extra = extra), estimatedFields = guessed)
+        payStore.save(profile, keepUndo = false)
+        return profile
+    }
 
     private fun merge(p: PayProfile, pay: JSONObject, ids: Map<String, Long>, kindIds: Map<Long, Long>): PayProfile {
         val rulesJson = pay.optJSONObject("rules")
@@ -242,13 +342,18 @@ class CompanyShare(
      * times, a kind of the company's own replaces the user's of the same name or is added. Days
      * already marked keep their kind. Returns the kinds and each file id's id on this phone.
      */
-    private fun mergeKinds(mine: ExtraKinds, incoming: ExtraKinds, shifts: JSONObject?, ids: Map<String, Long>): Pair<ExtraKinds, Map<Long, Long>> {
+    private fun mergeKinds(
+        mine: ExtraKinds, incoming: ExtraKinds, shifts: JSONObject?, sets: JSONObject?, ids: Map<String, Long>,
+    ): Pair<ExtraKinds, Map<Long, Long>> {
         var merged = mine
         val map = HashMap<Long, Long>()
         for (k in incoming.kinds) {
-            val timing = (k.timing as? ExtraTiming.AsShift)
-                ?.let { ExtraTiming.AsShift(shifts?.optString(k.id.toString())?.takeIf { it.isNotEmpty() }?.let { ids[it.take(MAX_NAME)] }) }
-                ?: k.timing
+            val timing = (k.timing as? ExtraTiming.AsShift)?.let {
+                val key = k.id.toString()
+                val named = sets?.optJSONArray(key)?.let { a -> (0 until a.length()).map { i -> a.optString(i) } }
+                    ?: listOfNotNull(shifts?.optString(key)?.takeIf { it.isNotEmpty() })
+                ExtraTiming.AsShift(named.mapNotNull { ids[it.take(MAX_NAME)] }.toSet())
+            } ?: k.timing
             val target = if (k.isBuiltIn) merged.byId(k.id) else merged.kinds.firstOrNull { !it.isBuiltIn && it.name == k.name }
             val id = target?.id ?: if (k.isBuiltIn) k.id else merged.nextId()
             merged = merged.put(k.copy(id = id, timing = timing))

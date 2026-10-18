@@ -63,6 +63,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -86,6 +87,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.Fmt
+import com.bamnat.app.ui.appViewModel
 import com.bamnat.app.ui.components.ShiftBadge
 import com.bamnat.app.ui.components.StatTile
 import com.bamnat.app.ui.components.WarningBanner
@@ -100,14 +102,14 @@ import com.bamnat.app.ui.theme.LocalCalendarColors
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 
-private const val PAGE_COUNT = 2400
-private const val CENTER_PAGE = PAGE_COUNT / 2
+internal const val PAGE_COUNT = 2400
+internal const val CENTER_PAGE = PAGE_COUNT / 2
 
 /** Fixed, so a saved pager page always maps back to the same month (even after a restart). */
-private val BASE_MONTH: YearMonth = YearMonth.of(2026, 1)
+internal val BASE_MONTH: YearMonth = YearMonth.of(2026, 1)
 
-private fun pageToMonth(base: YearMonth, page: Int): YearMonth = base.plusMonths((page - CENTER_PAGE).toLong())
-private fun monthToPage(base: YearMonth, month: YearMonth): Int =
+internal fun pageToMonth(base: YearMonth, page: Int): YearMonth = base.plusMonths((page - CENTER_PAGE).toLong())
+internal fun monthToPage(base: YearMonth, month: YearMonth): Int =
     (CENTER_PAGE + ChronoUnit.MONTHS.between(base, month)).toInt().coerceIn(0, PAGE_COUNT - 1)
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -141,6 +143,20 @@ fun CalendarScreen(
     val memoDates by vm.memoDates.collectAsStateWithLifecycle()
     val moneyBook by vm.moneyBook.collectAsStateWithLifecycle()
     val datedMemos by vm.datedMemos.collectAsStateWithLifecycle()
+    // [SHR-02] Calendars others shared, switched to like accounts.
+    val received = appViewModel { ReceivedViewModel(it) }
+    val receivedList by received.calendars.collectAsStateWithLifecycle()
+    val viewingReceived by received.viewing.collectAsStateWithLifecycle()
+    val openingLink by received.opening.collectAsStateWithLifecycle()
+    var switching by remember { mutableStateOf(false) }
+    // A link id to open, "" to paste one, null when closed.
+    var adding by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(openingLink) {
+        openingLink?.let { id ->
+            adding = id
+            received.consumeOpening()
+        }
+    }
     // [FEAT-17] Memo-first cells show the start of the day's first memo.
     val memoTexts = remember(datedMemos, settings.memoFirst) {
         if (!settings.memoFirst) emptyMap()
@@ -272,7 +288,21 @@ fun CalendarScreen(
         snapshot = snap, month = visibleMonth,
         onImage = { scope.launch { MonthImage.share(context, snap, visibleMonth, settings.weekStart) }; vm.logShare() },
         onDismiss = { showShare = false },
+        onOpenReceived = { showShare = false; adding = "" },
     )
+    // [SHR-02] Whose calendar is on screen, once one was received.
+    val identityBar: @Composable () -> Unit = {
+        if (receivedList.isNotEmpty() && received.enabled) {
+            CalendarIdentityBar(
+                calendars = receivedList,
+                viewing = viewingReceived,
+                onOpenSwitcher = { switching = true },
+                onView = { id -> vm.setPaint(null); received.view(id) },
+            )
+        }
+    }
+    // Back from someone's calendar returns to the user's own, like leaving another account.
+    androidx.activity.compose.BackHandler(enabled = viewingReceived != null) { received.view(null) }
 
     val memoPart: @Composable () -> Unit = {
         if (settings.calendarMemos) {
@@ -294,6 +324,7 @@ fun CalendarScreen(
     val fabExpanded by remember { derivedStateOf { !pageScroll.canScrollForward } }
 
     val calendarPart: @Composable () -> Unit = {
+        identityBar()
         CalendarHeader(
             month = visibleMonth,
             onPrev = { goToMonth(visibleMonth.minusMonths(1)) },
@@ -337,6 +368,10 @@ fun CalendarScreen(
                     }
                 },
             )
+        }
+        // [SLP-14] 오늘의 흐름 while this month is on screen, for work that comes in shifts and hours.
+        if (settings.sleepTips && settings.workStyle?.usesPayEngine != false && !snap.isEmpty && visibleMonth == YearMonth.from(today)) {
+            TodayFlowSection(vm, snap, settings, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         }
         if (swapCovers.isNotEmpty()) {
             ExtraReviewCard(
@@ -484,7 +519,22 @@ fun CalendarScreen(
             )
         }
     }
-    Box(Modifier.fillMaxSize()) {
+    val them = viewingReceived
+    if (them != null) {
+        // Each received calendar opens on its own month and day, not the last one's.
+        key(them.id) {
+            ReceivedCalendarView(
+                vm = received,
+                cal = them,
+                mine = snap,
+                weekStart = settings.weekStart,
+                wide = wide,
+                today = today,
+                startMonth = visibleMonth,
+                identityBar = identityBar,
+            )
+        }
+    } else Box(Modifier.fillMaxSize()) {
         if (wide) {
             Row(Modifier.fillMaxSize()) {
                 Box(Modifier.weight(1.05f).fillMaxHeight()) {
@@ -546,6 +596,26 @@ fun CalendarScreen(
             onConvert = { explainingSwap = false; vm.convertSwapCovers(swapCovers) },
             onKeep = { explainingSwap = false; vm.keepSwapCovers() },
             onDismiss = { explainingSwap = false },
+        )
+    }
+
+    if (switching) {
+        CalendarSwitcherSheet(
+            calendars = receivedList,
+            viewingId = viewingReceived?.id,
+            onPick = { id -> switching = false; vm.setPaint(null); received.view(id) },
+            onAdd = { switching = false; adding = "" },
+            onRemove = { cal -> received.remove(cal.id) },
+            onDismiss = { switching = false },
+        )
+    }
+    adding?.let { start ->
+        AddReceivedSheet(
+            vm = received,
+            startId = start.ifEmpty { null },
+            today = today,
+            onDismiss = { adding = null },
+            onAdded = { adding = null; vm.setPaint(null) },
         )
     }
 

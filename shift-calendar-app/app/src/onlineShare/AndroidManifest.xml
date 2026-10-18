@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [MKT-09][SHR-02] Builds with the share server (bamnat.shareBaseUrl): the internet, as in src/online,
+     and schedule links that open in the app. bamnat://s/<id> comes from the shared page's
+     '밤낮 앱에서 보기' button; https links open directly once the server's assetlinks.json names
+     this app's signing key (ANDROID_CERT_SHA256), otherwise Android asks or uses the browser. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application>
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="bamnat" android:host="s" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="${shareHost}" android:pathPrefix="/s/" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

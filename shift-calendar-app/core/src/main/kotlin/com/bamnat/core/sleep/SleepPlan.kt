@@ -1,8 +1,7 @@
 package com.bamnat.core.sleep
 
 import com.bamnat.core.schedule.ResolvedDay
-import com.bamnat.core.schedule.RestCheck
-import java.time.Duration
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
@@ -11,19 +10,21 @@ import java.time.LocalTime
  * shifts around a day. Wording follows the plan's rules: "일정에 맞춘 수면 시간 제안", no claim
  * to diagnose, prevent or treat anything. Each tip says how strong its basis is.
  *
- * Rules (app defaults, to be checked by an occupational or sleep physician before release):
- * - After a night shift: sleep from an hour after it ends (the way home), at least 6 hours in one
- *   go (KOSHA guidance in the plan), or the user's target if longer.
+ * Rules (app defaults, to be checked by an occupational or sleep physician before release), worked
+ * out in [SleepSchedule]:
+ * - After work that runs overnight (a night, a 24-hour duty): sleep from the way home after it ends,
+ *   at least 6 hours in one go (KOSHA guidance in the plan), or the user's target if longer.
  * - Before the first night of a run: a nap of up to 90 minutes in the afternoon, ending 2.5 hours
  *   before the shift.
- * - Before an early day shift: in bed early enough for the target, waking 90 minutes before it.
+ * - Before an early start: in bed early enough for the target, waking at its alarm (or 90 minutes
+ *   before it without one).
  * - Caffeine: none in the 6 hours before a planned sleep (general information, low evidence).
- * - Drowsy driving: one reminder when a night shift ends.
+ * - Drowsy driving: one reminder when overnight work ends.
  */
 object SleepPlan {
     enum class Kind(val label: String) {
         NAP("야간 전 낮잠"),
-        SLEEP_AFTER_NIGHT("야간 뒤 잠"),
+        SLEEP_AFTER_NIGHT("퇴근 뒤 잠"),
         BEDTIME("잠자리"),
         CAFFEINE("카페인 마지막"),
         DROWSY("퇴근길 졸음 주의"),
@@ -47,56 +48,42 @@ object SleepPlan {
     /** Day shifts starting before this need an early night. */
     val EARLY_START: LocalTime = LocalTime.of(10, 0)
 
-    /** Tips for [day], given the day before and after it; sorted by time. */
-    fun forDay(prev: ResolvedDay?, day: ResolvedDay, next: ResolvedDay?, targetMinutes: Int = DEFAULT_TARGET_MINUTES): List<Tip> {
+    /** Tips for [day], given the day before and after it, without alarms; sorted by time. */
+    fun forDay(prev: ResolvedDay?, day: ResolvedDay, next: ResolvedDay?, targetMinutes: Int = DEFAULT_TARGET_MINUTES): List<Tip> =
+        tips(SleepSchedule.of(listOfNotNull(prev, day, next), emptyList(), targetMinutes), day.date)
+
+    /**
+     * [SLP-14] The tips for [date] from the plan the today card reads too: around the day's own work
+     * (a nap before a first night, the way home and the sleep after work that ran overnight), and the
+     * night before an early start the next day.
+     */
+    fun tips(schedule: SleepSchedule, date: LocalDate): List<Tip> {
         val tips = mutableListOf<Tip>()
-        val shift = shift(day)
-        if (shift != null && isNight(shift)) {
-            val (from, to) = shift
-            if (prev == null || shift(prev)?.let(::isNight) != true) {
-                val napEnd = from.minusMinutes(NAP_GAP_MINUTES)
-                tips += Tip(Kind.NAP, napEnd.minusMinutes(NAP_MINUTES), napEnd,
-                    "첫 야간 전에 ${NAP_MINUTES}분 안쪽으로 짧게 자 두기", Basis.GENERAL)
+        for (w in schedule.work.filter { it.date == date }) {
+            schedule.napBefore(w)?.let { n ->
+                tips += Tip(Kind.NAP, n.from, n.to, "첫 야간 전에 ${n.minutes}분 안쪽으로 짧게 자 두기", Basis.GENERAL)
             }
-            val sleep = to.plusMinutes(COMMUTE_MINUTES)
-            val length = maxOf(targetMinutes, MIN_AFTER_NIGHT_MINUTES).toLong()
-            tips += Tip(Kind.DROWSY, to, null, "야간을 마친 직후라 졸릴 수 있어요. 운전은 쉬고 나서", Basis.GENERAL)
-            tips += Tip(Kind.SLEEP_AFTER_NIGHT, sleep, sleep.plusMinutes(length),
-                "퇴근하고 바로 ${hours(length)} 이상 이어서 자기 (암막, 휴대폰 무음)", Basis.GUIDANCE)
-            tips += Tip(Kind.CAFFEINE, sleep.minusHours(CAFFEINE_GAP_HOURS), null,
-                "잠들기 ${CAFFEINE_GAP_HOURS}시간 전부터는 커피·에너지 음료 줄이기", Basis.LOW)
-        } else if (next != null) {
-            val tomorrow = shift(next, first = true)
-            if (tomorrow != null && !isNight(tomorrow) && tomorrow.first.toLocalTime() < EARLY_START &&
-                tomorrow.first.toLocalDate() == day.date.plusDays(1)
-            ) {
-                val wake = tomorrow.first.minusMinutes(WAKE_BEFORE_MINUTES)
-                val bed = wake.minusMinutes(targetMinutes.toLong())
-                // Only when today's own work is over by then.
-                if (shift == null || !shift.second.isAfter(bed)) {
-                    tips += Tip(Kind.BEDTIME, bed, wake, "내일 ${t(tomorrow.first)} 근무라 ${t(bed)}쯤 잠자리에 들기", Basis.GENERAL)
-                    tips += Tip(Kind.CAFFEINE, bed.minusHours(CAFFEINE_GAP_HOURS), null,
-                        "잠들기 ${CAFFEINE_GAP_HOURS}시간 전부터는 커피·에너지 음료 줄이기", Basis.LOW)
-                }
+            if (!w.overnight) continue
+            tips += Tip(Kind.DROWSY, w.to, null, "밤새 일한 직후라 졸릴 수 있어요. 운전은 쉬고 나서", Basis.GENERAL)
+            schedule.sleepAfter(w)?.let { s ->
+                tips += Tip(Kind.SLEEP_AFTER_NIGHT, s.from, s.to,
+                    if (s.short) "다음 근무까지 쉴 틈이 짧아요. 퇴근하고 바로 자기 (암막, 휴대폰 무음)"
+                    else "퇴근하고 바로 ${hours(s.minutes)} 이상 이어서 자기 (암막, 휴대폰 무음)", Basis.GUIDANCE)
+                tips += caffeine(s.from)
             }
+        }
+        for (s in schedule.sleeps) {
+            val w = s.before?.takeIf { s.after == null && it.date == date.plusDays(1) } ?: continue
+            tips += Tip(Kind.BEDTIME, s.from, s.to,
+                if (s.short) "내일 ${t(w.from)} 근무라 쉴 틈이 짧아요. ${t(s.from)}엔 잠자리에 들기"
+                else "내일 ${t(w.from)} 근무라 ${t(s.from)}쯤 잠자리에 들기", Basis.GENERAL)
+            tips += caffeine(s.from)
         }
         return tips.sortedBy { it.at }
     }
 
-    /**
-     * The day's work that sleep plans around [EXTRA-01]: the last block of the day, so a 야간 대근 after
-     * a day shift (or on a day off) is planned as a night. [first] picks the earliest, for a next day.
-     */
-    private fun shift(day: ResolvedDay, first: Boolean = false): Pair<LocalDateTime, LocalDateTime>? {
-        val blocks = RestCheck.blocks(day)
-        val b = (if (first) blocks.firstOrNull() else blocks.lastOrNull()) ?: return null
-        return b.from to b.to
-    }
-
-    private fun isNight(shift: Pair<LocalDateTime, LocalDateTime>): Boolean {
-        val total = Duration.between(shift.first, shift.second).toMinutes()
-        return total > 0 && RestCheck.nightMinutes(shift.first, shift.second) * 2 >= total
-    }
+    private fun caffeine(sleep: LocalDateTime) =
+        Tip(Kind.CAFFEINE, sleep.minusHours(CAFFEINE_GAP_HOURS), null, "잠들기 ${CAFFEINE_GAP_HOURS}시간 전부터는 커피·에너지 음료 줄이기", Basis.LOW)
 
     private fun t(x: LocalDateTime) = "%02d:%02d".format(x.hour, x.minute)
     private fun hours(m: Long) = if (m % 60 == 0L) "${m / 60}시간" else "${m / 60}시간 ${m % 60}분"

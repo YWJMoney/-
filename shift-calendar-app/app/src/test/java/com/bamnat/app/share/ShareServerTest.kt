@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.ui.calendar.SHARE_SERVER_NOTICE
+import com.bamnat.app.ui.calendar.partNames
 import com.bamnat.app.ui.settings.REPORT_EMAIL
 import com.bamnat.app.ui.settings.REPORT_NOTICE
 import org.junit.Assert.assertEquals
@@ -17,7 +18,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 
-/** [MKT-09][OPS-13] 1.8.0 talks to the live link server, and the dialog and privacy policy say so. */
+/** [MKT-09][OPS-13] The app talks to the live link server, and the share sheet and privacy policy say so. */
 @RunWith(AndroidJUnit4::class)
 class ShareServerTest {
     private val context: Application = ApplicationProvider.getApplicationContext()
@@ -42,7 +43,7 @@ class ShareServerTest {
         val policy = File("../../privacy/index.html")
         assumeTrue(policy.exists())
         val text = policy.readText()
-        assertTrue(text.contains("처리방침 1.5"))
+        assertTrue(text.contains("처리방침 1.6"))
         assertTrue(text.contains("Cloudflare, Inc."))
         assertTrue(text.contains("<td>인터넷</td>"))
         assertTrue(text.contains("7일·30일·90일"))
@@ -51,6 +52,40 @@ class ShareServerTest {
         // The day counts the policy states are the ones the app sends.
         assertTrue(text.contains("${ShareLinkPayload.DAYS}일"))
         assertEquals(listOf(7, 30, 90), ShareLinkPayload.TTL_DAYS)
+    }
+
+    /**
+     * [SHR-01][SHR-02] What a link carries only when ticked, in the numbers the app uses, and received
+     * calendars kept on the receiver's phone until the sharer cuts the link.
+     */
+    @Test fun thePrivacyPolicyCoversChosenPartsAndReceivedCalendars() {
+        val policy = File("../../privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        assertTrue(text.contains("‘보여 줄 것’에서 고른 것만"))
+        assertTrue(text.contains("하루 ${ShareLinkPayload.EXTRAS_PER_DAY}개까지"))
+        assertTrue(text.contains("하루 ${ShareLinkPayload.MEMO_CHARS}자 이내"))
+        assertTrue(text.contains("세전 급여 총액 하나"))
+        assertTrue(text.contains("처음에는 아무것도 골라져 있지 않습니다"))
+        assertFalse(ShareOptions().any)
+        assertTrue(text.contains("받은 근무표"))
+        assertTrue(text.contains("받는 사람의 휴대폰에서도 지움"))
+        // The share sheet names the same parts the policy does.
+        listOf("휴가 종류", "연장·휴무일 근무", "메모", "급여").forEach { part ->
+            assertTrue(part, ShareOptions(true, true, true, true).partNames().contains(part))
+            assertTrue(part, text.contains(part))
+        }
+    }
+
+    /** [COMM-04] The company server's section names what goes and what never does, as the server enforces. */
+    @Test fun thePrivacyPolicyCoversTheCompanyServer() {
+        val policy = File("../../privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        assertTrue(text.contains("1-2. 회사 찾기"))
+        assertTrue(text.contains("기본급, 수당 금액, 1회 정액, 입사일, 연차, 알람, 달력 날짜, 이름, 연락처는 보내지 않습니다"))
+        assertTrue(text.contains("IP 주소를 저장하지 않으며"))
+        assertTrue(text.contains("이 휴대폰이 보낸 정보 모두 지우기"))
     }
 
     /** [EXTRA-06] A company-rule report goes by the user's mail app to the policy's contact, and both say what goes. */

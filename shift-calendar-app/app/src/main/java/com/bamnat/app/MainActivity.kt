@@ -1,5 +1,6 @@
 package com.bamnat.app
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -14,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.data.ThemeMode
+import com.bamnat.app.share.ShareLinkId
 import com.bamnat.app.ui.AppRoot
 import com.bamnat.app.ui.theme.BamnatTheme
 import com.bamnat.core.diag.DiagEvents
@@ -24,7 +26,10 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         HomeRequests.onCreate(restoring = savedInstanceState != null, awaitingResult = savedInstanceState?.getBoolean(KEY_AWAITING) == true)
-        if (savedInstanceState == null) appContainer.telemetry.event(DiagEvents.APP_OPEN)
+        if (savedInstanceState == null) {
+            appContainer.telemetry.event(DiagEvents.APP_OPEN)
+            openLink(intent)
+        }
         enableEdgeToEdge()
         val container = appContainer
         setContent {
@@ -56,6 +61,20 @@ class MainActivity : ComponentActivity() {
         HomeRequests.awaitingResult = true
         @Suppress("DEPRECATION")
         super.startActivityForResult(intent, requestCode, options)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openLink(intent)
+    }
+
+    /** [SHR-02] A shared calendar link tapped in a message or on the shared page: the calendar offers it. */
+    private fun openLink(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW || !appContainer.shareApi.enabled) return
+        // Reopened from Recents, Android hands back the link the app was first opened with: it was offered then.
+        if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        ShareLinkId.find(intent.dataString)?.let(appContainer.received::open)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

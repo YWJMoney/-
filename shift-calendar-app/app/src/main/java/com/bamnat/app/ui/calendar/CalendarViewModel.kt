@@ -36,6 +36,11 @@ import com.bamnat.core.pay.WageType
 import com.bamnat.core.schedule.DaySource
 import com.bamnat.core.schedule.ResolvedDay
 import com.bamnat.core.schedule.RestCheck
+import com.bamnat.core.sleep.SleepDebt
+import com.bamnat.core.sleep.SleepEntry
+import com.bamnat.core.sleep.SleepPlan
+import com.bamnat.core.sleep.SleepSchedule
+import com.bamnat.core.sleep.TodayFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,6 +53,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.YearMonth
 
@@ -150,10 +156,30 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         return RestCheck.check(days, strict).filter { YearMonth.from(it.date) == month }
     }
 
-    /** [SLP-03] Sleep times for [date] from the shifts around it. */
-    fun sleepTips(snapshot: ScheduleSnapshot, date: LocalDate, targetMinutes: Int): List<com.bamnat.core.sleep.SleepPlan.Tip> {
-        val r = snapshot.resolver
-        return com.bamnat.core.sleep.SleepPlan.forDay(r.resolve(date.minusDays(1)), r.resolve(date), r.resolve(date.plusDays(1)), targetMinutes)
+    /**
+     * [SLP-03][SLP-14] Sleep times for [date] from the same plan as 오늘의 흐름: the work on the clock,
+     * the alarms that will ring and the way home.
+     */
+    fun sleepTips(snapshot: ScheduleSnapshot, date: LocalDate, settings: AppSettings): List<SleepPlan.Tip> =
+        SleepPlan.tips(SleepSchedule.of(snapshot.resolver, date, date.plusDays(1), settings.alarmsEnabled,
+            settings.sleepTargetMinutes, settings.commuteMinutes), date)
+
+    /** [SLP-14] 오늘의 흐름 at [now]. */
+    fun todayFlow(snapshot: ScheduleSnapshot, settings: AppSettings, log: List<SleepEntry>, now: LocalDateTime): TodayFlow.Card =
+        TodayFlow.of(now, snapshot.resolver, settings.alarmsEnabled, log, settings.sleepTargetMinutes, settings.commuteMinutes,
+            settings.restCheck, settings.strictRest)
+
+    /** [SLP-14] The two numbers the sleep times rest on, changed from the card's ⓘ. */
+    fun setSleepNumbers(targetMinutes: Int, commuteMinutes: Int) {
+        container.settingsRepository.update { it.copy(sleepTargetMinutes = targetMinutes, commuteMinutes = commuteMinutes) }
+    }
+
+    /** [SLP-14] Takes 오늘의 흐름 off the calendar, with a way back. */
+    fun hideTodayFlow() {
+        container.settingsRepository.update { it.copy(sleepTips = false) }
+        _messages.tryEmit(UndoMessage("오늘의 흐름을 숨겼어요. 설정에서 다시 켤 수 있어요") {
+            container.settingsRepository.update { it.copy(sleepTips = true) }
+        })
     }
 
     /** [SLP-06] The sleep log, with [SLP-08] sleep measured by a watch or the phone merged in. */
@@ -164,8 +190,29 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     val healthSleepState: StateFlow<com.bamnat.app.sleep.HealthSleep.State> = container.healthSleep.state
     /** [SLP-08] Reads Health Connect again while the day view is on screen. */
     fun refreshHealthSleep(enabled: Boolean) { viewModelScope.launch { container.healthSleep.refresh(enabled) } }
-    fun fellAsleep() { container.appScope.launch { container.sleepRepository.fellAsleep() } }
-    fun wokeUp() { container.appScope.launch { container.sleepRepository.wokeUp() } }
+    /** [SLP-06][SLP-14] "잠들었어요", said back with a way to take it back. */
+    fun fellAsleep() {
+        container.appScope.launch {
+            val asleep = container.sleepRepository.fellAsleep()
+            val at = Fmt.time(asleep.entry.start.toLocalTime())
+            _messages.emit(
+                if (asleep.started) UndoMessage("${at}부터 자는 중으로 적었어요") { container.sleepRepository.delete(asleep.entry.id) }
+                else UndoMessage("이미 ${at}부터 자는 중이에요"),
+            )
+        }
+    }
+
+    /** [SLP-06][SLP-14] "깼어요" now, or at [at] when the user says later when they woke. */
+    fun wokeUp(at: LocalDateTime? = null) {
+        container.appScope.launch {
+            val millis = at?.atZone(java.time.ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
+            val sleep = container.sleepRepository.wokeUp(millis) ?: return@launch
+            val minutes = sleep.minutes ?: 0
+            val text = if (minutes > SleepDebt.MAX_SLEEP_MINUTES) "16시간이 넘게 열려 있던 기록이라 수면 통계에서 뺐어요"
+            else "${HoursFormat.korean(minutes.toInt())} 잤어요"
+            _messages.emit(UndoMessage(text) { container.sleepRepository.reopen(sleep.id) })
+        }
+    }
     fun deleteSleep(id: Long) { container.appScope.launch { container.sleepRepository.delete(id) } }
 
     /** Rest-gap signs that fall on [date]. */
@@ -237,13 +284,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun isRosterRestDay(day: ResolvedDay, type: ShiftType): Boolean =
         day.source == DaySource.PATTERN && !day.isWorkDay && day.leave == null && type.hasTimes && !type.isOff
 
-    /** The kind for a 대근 of [type]: one made for that shift, else the plain 대근. */
-    fun coverKind(snapshot: ScheduleSnapshot, type: ShiftType): ExtraKind {
-        val shiftKinds = snapshot.kinds.visible().filter { it.timing is ExtraTiming.AsShift }
-        return shiftKinds.firstOrNull { (it.timing as ExtraTiming.AsShift).shiftTypeId == type.id }
-            ?: shiftKinds.firstOrNull { (it.timing as ExtraTiming.AsShift).shiftTypeId == null }
-            ?: snapshot.kinds.of(ExtraKind.COVER_ID)
-    }
+    /** The kind for a 대근 of [type] [EXTRA-07]. */
+    fun coverKind(snapshot: ScheduleSnapshot, type: ShiftType): ExtraKind = ExtraText.coverKind(snapshot.kinds, snapshot.shiftTypes, type)
 
     /** [EXTRA-01] The roster stays a day off and the shift goes in as a 대근 of its hours, said back with undo. */
     fun coverInstead(date: LocalDate, type: ShiftType, snapshot: ScheduleSnapshot) {

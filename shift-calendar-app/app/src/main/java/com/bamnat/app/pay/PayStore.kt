@@ -19,6 +19,9 @@ import com.bamnat.core.pay.HolidayPayMode
 import com.bamnat.core.pay.Occupation
 import com.bamnat.core.pay.PayItem
 import com.bamnat.core.pay.PayProfile
+import com.bamnat.core.pay.PayUnit
+import com.bamnat.core.pay.Premium
+import com.bamnat.core.pay.PremiumScope
 import com.bamnat.core.pay.RaiseRule
 import com.bamnat.core.pay.Rounding
 import com.bamnat.core.pay.ValueTimeline
@@ -264,6 +267,7 @@ object PayCodec {
         .put("min", e.minMinutes).put("night", e.nightPremium)
         .put("percent", e.percentOfBase).put("cover", e.coverMinutes ?: -1).put("premiums", e.legalPremiums).put("bonus", e.bonus)
         .put("dayTiers", tiers(e.dayTiers)).put("nightTiers", tiers(e.nightTiers))
+        .put("unit", e.unit.name).put("unitMin", e.unitMinutes).put("adds", premiums(e.premiums))
 
     private fun extraRule(e: JSONObject): ExtraRule = ExtraRule(
         // A basis this version does not know (a newer file) is paid by law rather than guessed.
@@ -278,7 +282,61 @@ object PayCodec {
         bonus = e.optLong("bonus", 0).coerceAtLeast(0),
         dayTiers = e.optJSONArray("dayTiers")?.let(::tiers) ?: ExtraRule.DEFAULT_DAY_TIERS,
         nightTiers = e.optJSONArray("nightTiers")?.let(::tiers) ?: ExtraRule.DEFAULT_NIGHT_TIERS,
+        unit = runCatching { PayUnit.valueOf(e.optString("unit")) }.getOrDefault(PayUnit.ORDINARY),
+        unitMinutes = e.optInt("unitMin", 8 * 60).coerceIn(30, 24 * 60),
+        premiums = e.optJSONArray("adds")?.let(::premiums).orEmpty(),
     )
+
+    private fun premiums(p: List<Premium>): JSONArray = JSONArray(p.map {
+        JSONObject().put("key", it.key).put("name", it.name).put("rate", it.rate).put("on", it.on)
+            .put("scope", scope(it.scope)).put("offDays", it.offDaysOnly)
+    })
+
+    /**
+     * [EXTRA-08] Premiums from a file or a shared company: the four always listed keep the kind of
+     * hours they are for, one added by the company whose hours this version cannot read is left out
+     * rather than guessed, and names, rates and the count stay within what the editor allows.
+     */
+    private fun premiums(a: JSONArray): List<Premium> {
+        val read = a.objects().mapNotNull { o ->
+            val key = o.optString("key").trim().takeIf { it.isNotEmpty() && it.length <= 8 } ?: return@mapNotNull null
+            val scope = scopeFrom(o.optString("scope"))
+            val rate = o.optDouble("rate", 0.0).takeIf { it.isFinite() }?.coerceIn(0.0, Premium.MAX_RATE) ?: 0.0
+            val on = o.optBoolean("on", false)
+            if (key in Premium.BUILT_IN) {
+                val law = Premium.builtIn(key, rate, on)
+                // Only 연장 can be counted another way (이 일 N시간 넘는 시간); the others are what they say.
+                if (key == Premium.OVERTIME && scope is PremiumScope.Over) law.copy(scope = scope) else law
+            } else {
+                val name = o.optString("name").trim().take(Premium.MAX_NAME).ifEmpty { return@mapNotNull null }
+                Premium(key, name, rate, on, scope ?: return@mapNotNull null, o.optBoolean("offDays", false))
+            }
+        }.distinctBy { it.key }
+        return read.filter { !it.custom } + read.filter { it.custom }.take(Premium.MAX_CUSTOM)
+    }
+
+    private fun scope(s: PremiumScope): String = when (s) {
+        PremiumScope.All -> "all"
+        is PremiumScope.Over -> "over:${s.minutes}"
+        PremiumScope.LegalOvertime -> "law"
+        PremiumScope.Night -> "night"
+        is PremiumScope.Window -> "window:${s.from}-${s.to}"
+        PremiumScope.Holiday -> "holiday"
+        PremiumScope.RestDay -> "rest"
+    }
+
+    private fun scopeFrom(s: String): PremiumScope? = when {
+        s == "all" -> PremiumScope.All
+        s == "law" -> PremiumScope.LegalOvertime
+        s == "night" -> PremiumScope.Night
+        s == "holiday" -> PremiumScope.Holiday
+        s == "rest" -> PremiumScope.RestDay
+        s.startsWith("over:") -> s.removePrefix("over:").toIntOrNull()?.takeIf { it in 0..24 * 60 }?.let { PremiumScope.Over(it) }
+        s.startsWith("window:") -> s.removePrefix("window:").split('-').takeIf { it.size == 2 }?.let { (a, b) ->
+            runCatching { PremiumScope.Window(LocalTime.parse(a), LocalTime.parse(b)) }.getOrNull()?.takeIf { it.from != it.to }
+        }
+        else -> null
+    }
 
     /** [EXTRA-03] A kind id, or a name from 1.8 and earlier. */
     private fun kindId(key: String): Long? = key.toLongOrNull() ?: when (key) {

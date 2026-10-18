@@ -91,24 +91,29 @@ object RestCheck {
      */
     private fun intervals(day: ResolvedDay): List<Work> = blocks(day).map { Work(day.date, it.from, it.to, it.name) }
 
-    /** One stretch of work on the clock, named after the shift or the kind of extra work. */
-    data class Block(val from: LocalDateTime, val to: LocalDateTime, val name: String)
+    /**
+     * One stretch of work on the clock, named after the shift or the kind of extra work ("야간 대근" for
+     * a 대근 of a 야간), in the colour the calendar gives it [SLP-14].
+     */
+    data class Block(val from: LocalDateTime, val to: LocalDateTime, val name: String, val colorArgb: Long? = null)
 
     /** [EXTRA-01] [day]'s work on the clock, earliest first; pieces without times are left out. */
     fun blocks(day: ResolvedDay): List<Block> {
         val out = mutableListOf<Block>()
         val shiftFrom = day.shiftFrom?.takeIf { day.isWorkDay && day.leave?.isFullDay != true }
         val shiftTo = day.shiftTo
-        var main = if (shiftFrom != null && shiftTo != null) Block(shiftFrom, shiftTo, day.shiftType?.name ?: "근무") else null
+        var main = if (shiftFrom != null && shiftTo != null) Block(shiftFrom, shiftTo, day.shiftType?.name ?: "근무", day.shiftType?.colorArgb) else null
         for (e in day.extras) {
             val from = e.from ?: continue
             val to = e.to ?: continue
             val nextToShift = e.kind.timing is ExtraTiming.AfterShift || e.kind.timing is ExtraTiming.BeforeShift
+            val name = e.covered?.name?.takeUnless { it in e.kind.name }?.let { "$it ${e.kind.name}" } ?: e.kind.name
+            val piece = Block(from, to, name, e.covered?.colorArgb ?: e.kind.colorArgb)
             val m = main
             main = if (nextToShift && m != null && !from.isAfter(m.to) && !to.isBefore(m.from)) {
                 m.copy(from = minOf(m.from, from), to = maxOf(m.to, to))
             } else {
-                if (nextToShift && m == null) Block(from, to, e.kind.name) else { out += Block(from, to, e.kind.name); m }
+                if (nextToShift && m == null) piece else { out += piece; m }
             }
         }
         main?.let { out += it }

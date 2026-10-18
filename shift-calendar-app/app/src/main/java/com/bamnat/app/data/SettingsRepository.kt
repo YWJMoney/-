@@ -53,12 +53,14 @@ data class AppSettings(
     val restCheck: Boolean = true,
     /** [MKT-11] Delphi rules on top: at most 2 nights in a row, 2 days off after nights. */
     val strictRest: Boolean = false,
-    /** [SLP-03] Sleep times that fit the schedule, in the day view. */
+    /** [SLP-03][SLP-14] 오늘의 흐름 on the calendar, and sleep times that fit the schedule in the day view. */
     val sleepTips: Boolean = true,
     /** [SLP-04][SLP-07] Notifications for those times; off until the user turns them on. */
     val sleepReminders: Boolean = false,
     /** [SLP-03][SLP-06] Hours of sleep the user aims for. */
     val sleepTargetMinutes: Int = 7 * 60,
+    /** [SLP-14] Minutes from the end of work to bed: the way home. */
+    val commuteMinutes: Int = 60,
     /** [SLP-08] Read sleep sessions from Health Connect; off until the user allows it. */
     val healthSleep: Boolean = false,
     /** [EXTRA-05] The user answered the offer to turn old shift-swap 대근 into 대근 with times. */
@@ -134,6 +136,7 @@ class SettingsRepository(context: Context) {
             sleepTips = prefs.getBoolean(K_SLEEP_TIPS, d.sleepTips),
             sleepReminders = prefs.getBoolean(K_SLEEP_REMINDERS, d.sleepReminders),
             sleepTargetMinutes = prefs.getInt(K_SLEEP_TARGET, d.sleepTargetMinutes),
+            commuteMinutes = prefs.getInt(K_COMMUTE, d.commuteMinutes),
             healthSleep = prefs.getBoolean(K_HEALTH_SLEEP, d.healthSleep),
             swapCoversAnswered = prefs.getBoolean(K_SWAP_COVERS, d.swapCoversAnswered),
             restDayCompared = prefs.getBoolean(K_REST_COMPARED, d.restDayCompared),
@@ -170,6 +173,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SLEEP_TIPS, s.sleepTips)
             .putBoolean(K_SLEEP_REMINDERS, s.sleepReminders)
             .putInt(K_SLEEP_TARGET, s.sleepTargetMinutes)
+            .putInt(K_COMMUTE, s.commuteMinutes)
             .putBoolean(K_HEALTH_SLEEP, s.healthSleep)
             .putBoolean(K_SWAP_COVERS, s.swapCoversAnswered)
             .putBoolean(K_REST_COMPARED, s.restDayCompared)
@@ -205,6 +209,7 @@ class SettingsRepository(context: Context) {
         const val K_SLEEP_TIPS = "sleep_tips"
         const val K_SLEEP_REMINDERS = "sleep_reminders"
         const val K_SLEEP_TARGET = "sleep_target"
+        const val K_COMMUTE = "commute_minutes"
         const val K_HEALTH_SLEEP = "health_sleep"
         const val K_SWAP_COVERS = "swap_covers_answered"
         const val K_REST_COMPARED = "rest_day_compared"
