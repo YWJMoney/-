@@ -46,4 +46,9 @@ object HomeRequests {
     fun request() {
         _count.value += 1
     }
+
+    /** [SLP-15] The app comes forward for a tapped notice, which says where to go. */
+    fun followingLink() {
+        stoppedAt = 0L
+    }
 }

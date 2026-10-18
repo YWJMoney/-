@@ -119,6 +119,8 @@ class AlarmScheduler(
             .putString(K_SNOOZE_PAYLOAD, snoozed.encode())
             .apply()
         _snoozeAt.value = triggerAt
+        // [SLP-15] A quiet notice says when it rings again, with 지금 끄기.
+        Notifications.postSnoozeWaiting(context, snoozed, triggerAt)
     }
 
     fun cancelSnooze() {
@@ -130,6 +132,7 @@ class AlarmScheduler(
         BootAlarms.saveSnooze(context, null, 0L)
         prefs.edit().remove(K_SNOOZE_AT).remove(K_SNOOZE_PAYLOAD).apply()
         _snoozeAt.value = null
+        Notifications.cancel(context, Notifications.SNOOZE_NOTIFICATION_ID)
     }
 
     /** Alarms do not survive a reboot; put a pending snooze back if it is still in the future. */
@@ -148,6 +151,7 @@ class AlarmScheduler(
             return
         }
         setAlarm(at, snoozeIntent(ring))
+        Notifications.postSnoozeWaiting(context, ring, at)
     }
 
     private fun setAlarm(triggerAt: Long, operation: PendingIntent): Boolean = setAlarm(context, alarmManager, triggerAt, operation)

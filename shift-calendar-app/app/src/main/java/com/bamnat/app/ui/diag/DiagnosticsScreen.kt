@@ -79,9 +79,9 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
         val am = context.getSystemService(ActivityManager::class.java)
         val alarm = buildList {
             add("알람 사용: ${onOff(settings.alarmsEnabled)}")
-            add("다음 알람: " + (next?.let { "${stamp(it.triggerAtMillis)} · ${it.plan.shiftName.ifBlank { "직접 정한 알람" }} · " +
+            add("다음 알람: " + (next?.let { "${stamp(it.triggerAtMillis)} · ${it.plan.shiftName.ifBlank { "이 날 알람" }} · " +
                 if (it.exact) "정확" else "근사(정확한 알람 권한 없음)" } ?: "없음"))
-            add("다시 알림: " + (snoozeAt.value?.let(::stamp) ?: "없음"))
+            add("다시 울림: " + (snoozeAt.value?.let(::stamp) ?: "없음"))
             val missed = EventBook.possiblyMissed(events, now)
             add("놓쳤을 수 있는 알람: " + if (missed.isEmpty()) "없음" else missed.joinToString { stamp(it) })
         }

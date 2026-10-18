@@ -32,7 +32,6 @@ data class AppSettings(
     val snoozeMinutes: Int = 5,
     /** The alarm stops by itself after this many minutes. */
     val ringMinutes: Int = 10,
-    val notificationPermissionAsked: Boolean = false,
     /** Master switch: off silences every alarm without losing any alarm settings. */
     val alarmsEnabled: Boolean = true,
     /** The user ticked "다시 표시하지 않기" on the notice shown when saving a day's alarms. */
@@ -55,8 +54,23 @@ data class AppSettings(
     val strictRest: Boolean = false,
     /** [SLP-03][SLP-14] 오늘의 흐름 on the calendar, and sleep times that fit the schedule in the day view. */
     val sleepTips: Boolean = true,
-    /** [SLP-04][SLP-07] Notifications for those times; off until the user turns them on. */
-    val sleepReminders: Boolean = false,
+    /**
+     * [SLP-15] 하루 브리핑: one silent notice for work that needs planning. Off until the user turns it
+     * on; on for those who had the sleep notices of 1.10 and before on.
+     */
+    val briefing: Boolean = false,
+    /** [SLP-15] 퇴근길 안전: the one sound when a night or a 24-hour duty ends. Like [briefing]. */
+    val commuteNotice: Boolean = false,
+    /** [SLP-15] 잘 준비: a silent notice 30 minutes before the night before an early start; off unless asked for. */
+    val bedtimeNotice: Boolean = false,
+    /** [SLP-15] 자는 중: after "잠들었어요", a notice that stays with the 깼어요 button. */
+    val sleepingNotice: Boolean = true,
+    /** [SLP-15] Money and 연차 notices due while the user sleeps come 30 minutes after waking. */
+    val quietWhileAsleep: Boolean = true,
+    /** [SLP-15] 나갈 돈·받을 돈 notices; each fixed cost and job still has its own switch. */
+    val moneyNotices: Boolean = true,
+    /** [SLP-15][PAY-12] 연차 소멸 안내 on 11/1 and 12/1. */
+    val leaveNotice: Boolean = true,
     /** [SLP-03][SLP-06] Hours of sleep the user aims for. */
     val sleepTargetMinutes: Int = 7 * 60,
     /** [SLP-14] Minutes from the end of work to bed: the way home. */
@@ -122,7 +136,6 @@ class SettingsRepository(context: Context) {
             gradualVolume = prefs.getBoolean(K_GRADUAL, d.gradualVolume),
             snoozeMinutes = prefs.getInt(K_SNOOZE, d.snoozeMinutes),
             ringMinutes = prefs.getInt(K_RING, d.ringMinutes),
-            notificationPermissionAsked = prefs.getBoolean(K_NOTIF_ASKED, false),
             alarmsEnabled = prefs.getBoolean(K_ALARMS_ON, d.alarmsEnabled),
             hideDayAlarmNotice = prefs.getBoolean(K_HIDE_DAY_NOTICE, d.hideDayAlarmNotice),
             shareUsageStats = prefs.getBoolean(K_SHARE_STATS, d.shareUsageStats),
@@ -134,7 +147,14 @@ class SettingsRepository(context: Context) {
             restCheck = prefs.getBoolean(K_REST_CHECK, d.restCheck),
             strictRest = prefs.getBoolean(K_STRICT_REST, d.strictRest),
             sleepTips = prefs.getBoolean(K_SLEEP_TIPS, d.sleepTips),
-            sleepReminders = prefs.getBoolean(K_SLEEP_REMINDERS, d.sleepReminders),
+            // The sleep notices of 1.10 and before carry over to the briefing and the commute notice.
+            briefing = prefs.getBoolean(K_BRIEFING, prefs.getBoolean(K_SLEEP_REMINDERS, d.briefing)),
+            commuteNotice = prefs.getBoolean(K_COMMUTE_NOTICE, prefs.getBoolean(K_SLEEP_REMINDERS, d.commuteNotice)),
+            bedtimeNotice = prefs.getBoolean(K_BEDTIME_NOTICE, d.bedtimeNotice),
+            sleepingNotice = prefs.getBoolean(K_SLEEPING_NOTICE, d.sleepingNotice),
+            quietWhileAsleep = prefs.getBoolean(K_QUIET, d.quietWhileAsleep),
+            moneyNotices = prefs.getBoolean(K_MONEY_NOTICES, d.moneyNotices),
+            leaveNotice = prefs.getBoolean(K_LEAVE_NOTICE, d.leaveNotice),
             sleepTargetMinutes = prefs.getInt(K_SLEEP_TARGET, d.sleepTargetMinutes),
             commuteMinutes = prefs.getInt(K_COMMUTE, d.commuteMinutes),
             healthSleep = prefs.getBoolean(K_HEALTH_SLEEP, d.healthSleep),
@@ -159,7 +179,6 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_GRADUAL, s.gradualVolume)
             .putInt(K_SNOOZE, s.snoozeMinutes)
             .putInt(K_RING, s.ringMinutes)
-            .putBoolean(K_NOTIF_ASKED, s.notificationPermissionAsked)
             .putBoolean(K_ALARMS_ON, s.alarmsEnabled)
             .putBoolean(K_HIDE_DAY_NOTICE, s.hideDayAlarmNotice)
             .putBoolean(K_SHARE_STATS, s.shareUsageStats)
@@ -171,7 +190,13 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_REST_CHECK, s.restCheck)
             .putBoolean(K_STRICT_REST, s.strictRest)
             .putBoolean(K_SLEEP_TIPS, s.sleepTips)
-            .putBoolean(K_SLEEP_REMINDERS, s.sleepReminders)
+            .putBoolean(K_BRIEFING, s.briefing)
+            .putBoolean(K_COMMUTE_NOTICE, s.commuteNotice)
+            .putBoolean(K_BEDTIME_NOTICE, s.bedtimeNotice)
+            .putBoolean(K_SLEEPING_NOTICE, s.sleepingNotice)
+            .putBoolean(K_QUIET, s.quietWhileAsleep)
+            .putBoolean(K_MONEY_NOTICES, s.moneyNotices)
+            .putBoolean(K_LEAVE_NOTICE, s.leaveNotice)
             .putInt(K_SLEEP_TARGET, s.sleepTargetMinutes)
             .putInt(K_COMMUTE, s.commuteMinutes)
             .putBoolean(K_HEALTH_SLEEP, s.healthSleep)
@@ -195,7 +220,6 @@ class SettingsRepository(context: Context) {
         const val K_GRADUAL = "gradual"
         const val K_SNOOZE = "snooze"
         const val K_RING = "ring_minutes"
-        const val K_NOTIF_ASKED = "notif_asked"
         const val K_ALARMS_ON = "alarms_on"
         const val K_HIDE_DAY_NOTICE = "hide_day_alarm_notice"
         const val K_SHARE_STATS = "share_usage_stats"
@@ -207,7 +231,15 @@ class SettingsRepository(context: Context) {
         const val K_REST_CHECK = "rest_check"
         const val K_STRICT_REST = "strict_rest"
         const val K_SLEEP_TIPS = "sleep_tips"
+        /** 1.10 and before: one switch for all sleep notices, read once to carry it over. */
         const val K_SLEEP_REMINDERS = "sleep_reminders"
+        const val K_BRIEFING = "notice_briefing"
+        const val K_COMMUTE_NOTICE = "notice_commute"
+        const val K_BEDTIME_NOTICE = "notice_bedtime"
+        const val K_SLEEPING_NOTICE = "notice_sleeping"
+        const val K_QUIET = "notice_quiet_asleep"
+        const val K_MONEY_NOTICES = "notice_money"
+        const val K_LEAVE_NOTICE = "notice_leave"
         const val K_SLEEP_TARGET = "sleep_target"
         const val K_COMMUTE = "commute_minutes"
         const val K_HEALTH_SLEEP = "health_sleep"

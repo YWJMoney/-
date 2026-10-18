@@ -20,7 +20,11 @@ import java.time.DayOfWeek
 import java.util.Base64
 
 /** What a backup file holds, shown before the user confirms a restore. */
-data class BackupSummary(val shiftTypes: Int, val days: Int, val memos: Int, val exportedAtMillis: Long, val moneyLines: Int = 0, val extras: Int = 0)
+data class BackupSummary(
+    val shiftTypes: Int, val days: Int, val memos: Int, val exportedAtMillis: Long, val moneyLines: Int = 0, val extras: Int = 0,
+    /** [SET-01] The rest of what a restore replaces, said before it does. */
+    val sleeps: Int = 0, val hasPay: Boolean = false,
+)
 
 class BackupException(message: String) : Exception(message)
 
@@ -146,7 +150,12 @@ class BackupManager(
                 .putOpt("workStyle", s.workStyle?.name)
                 .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoFirst).put("calendarMemos", s.calendarMemos)
                 .put("restCheck", s.restCheck)
-                .put("strictRest", s.strictRest).put("sleepTips", s.sleepTips).put("sleepReminders", s.sleepReminders)
+                .put("strictRest", s.strictRest).put("sleepTips", s.sleepTips)
+                // 1.10 and before read one switch for all sleep notices.
+                .put("sleepReminders", s.briefing || s.commuteNotice)
+                .put("briefing", s.briefing).put("commuteNotice", s.commuteNotice).put("bedtimeNotice", s.bedtimeNotice)
+                .put("sleepingNotice", s.sleepingNotice).put("quietWhileAsleep", s.quietWhileAsleep)
+                .put("moneyNotices", s.moneyNotices).put("leaveNotice", s.leaveNotice)
                 .put("sleepTarget", s.sleepTargetMinutes).put("commute", s.commuteMinutes),
         )
         return root.toString(1)
@@ -163,6 +172,8 @@ class BackupManager(
             exportedAtMillis = root.optLong("exportedAt"),
             moneyLines = (root.optJSONArray("money")?.length() ?: 0) + (root.optJSONArray("jobs")?.length() ?: 0) +
                 (root.optJSONArray("sales")?.length() ?: 0) + (root.optJSONArray("fixed")?.length() ?: 0),
+            sleeps = root.optJSONArray("sleep")?.length() ?: 0,
+            hasPay = root.has("pay"),
         )
     }
 
@@ -179,7 +190,7 @@ class BackupManager(
                 breakStartMinute = o.optIntOrNull("breakStart"),
             )
         }
-        if (types.isEmpty()) throw BackupException("근무 유형이 없는 백업 파일이에요")
+        if (types.isEmpty()) throw BackupException("근무 종류가 없는 백업 파일이에요")
         // Older backups held one "pattern" object instead of the "patterns" history.
         val patternObjects = root.optJSONArray("patterns")?.objects()
             ?: listOfNotNull(root.optJSONObject("pattern"))
@@ -306,7 +317,13 @@ class BackupManager(
                     restCheck = o.optBoolean("restCheck", s.restCheck),
                     strictRest = o.optBoolean("strictRest", s.strictRest),
                     sleepTips = o.optBoolean("sleepTips", s.sleepTips),
-                    sleepReminders = o.optBoolean("sleepReminders", s.sleepReminders),
+                    briefing = o.optBoolean("briefing", o.optBoolean("sleepReminders", s.briefing)),
+                    commuteNotice = o.optBoolean("commuteNotice", o.optBoolean("sleepReminders", s.commuteNotice)),
+                    bedtimeNotice = o.optBoolean("bedtimeNotice", s.bedtimeNotice),
+                    sleepingNotice = o.optBoolean("sleepingNotice", s.sleepingNotice),
+                    quietWhileAsleep = o.optBoolean("quietWhileAsleep", s.quietWhileAsleep),
+                    moneyNotices = o.optBoolean("moneyNotices", s.moneyNotices),
+                    leaveNotice = o.optBoolean("leaveNotice", s.leaveNotice),
                     sleepTargetMinutes = o.optInt("sleepTarget", s.sleepTargetMinutes).coerceIn(4 * 60, 10 * 60),
                     commuteMinutes = o.optInt("commute", s.commuteMinutes).coerceIn(0, MAX_COMMUTE_MINUTES),
                     // Old records came back with the backup; offer to fix them again.

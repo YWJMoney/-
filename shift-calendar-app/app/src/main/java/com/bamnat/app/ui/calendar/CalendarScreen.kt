@@ -91,6 +91,10 @@ import com.bamnat.app.ui.appViewModel
 import com.bamnat.app.ui.components.ShiftBadge
 import com.bamnat.app.ui.components.StatTile
 import com.bamnat.app.ui.components.WarningBanner
+import com.bamnat.app.ui.components.SystemSettings
+import com.bamnat.app.ui.components.rememberNotificationAsk
+import com.bamnat.app.NoticeLinks
+import com.bamnat.core.alarm.AlarmPlanner
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.hours.WorkHoursCalculator
 import com.bamnat.app.review.InAppReview
@@ -103,6 +107,8 @@ import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 
 internal const val PAGE_COUNT = 2400
+/** [CAL-01] Alarm warnings show while an alarm is due within this many days. */
+private const val ALARM_WARNING_DAYS = 7L
 internal const val CENTER_PAGE = PAGE_COUNT / 2
 
 /** Fixed, so a saved pager page always maps back to the same month (even after a restart). */
@@ -131,6 +137,7 @@ fun CalendarScreen(
     val context = LocalContext.current
     // Re-checked on every return to the app, since the user may change it in system settings.
     var notificationsAllowed by remember { mutableStateOf(Notifications.canPost(context)) }
+    val askNotifications = rememberNotificationAsk()
     var fullScreenAllowed by remember { mutableStateOf(Notifications.canUseFullScreen(context)) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         notificationsAllowed = Notifications.canPost(context)
@@ -323,6 +330,23 @@ fun CalendarScreen(
     val pageScroll = rememberScrollState()
     val fabExpanded by remember { derivedStateOf { !pageScroll.canScrollForward } }
 
+    // [SLP-15] A tapped day notice opens on today: the user's own calendar, this month, the page's top.
+    val noticeTarget by NoticeLinks.target.collectAsStateWithLifecycle()
+    LaunchedEffect(noticeTarget) {
+        if (noticeTarget != NoticeLinks.Target.TODAY) return@LaunchedEffect
+        NoticeLinks.consume(NoticeLinks.Target.TODAY)
+        received.view(null)
+        vm.setPaint(null)
+        sheetOpen = false
+        vm.select(LocalDate.now())
+        pagerState.scrollToPage(monthToPage(baseMonth, YearMonth.now()))
+        pageScroll.scrollTo(0)
+    }
+    // [CAL-01] An alarm due within a week, whether or not the master switch lets it ring.
+    val alarmSoon = remember(snap, today) {
+        AlarmPlanner.nextAlarm(snap.resolver, java.time.LocalDateTime.now(), lookaheadDays = ALARM_WARNING_DAYS) != null
+    }
+
     val calendarPart: @Composable () -> Unit = {
         identityBar()
         CalendarHeader(
@@ -348,25 +372,36 @@ fun CalendarScreen(
         if (snap.isEmpty && settings.workStyle?.usesPattern != false) {
             EmptyPatternCard(onOpenPattern)
         }
-        // [REL-11] Without notifications an alarm still sounds, but nothing on the lock screen stops it.
-        if (!notificationsAllowed && settings.alarmsEnabled && snap.shiftTypes.any { it.alarmEnabled }) {
-            WarningBanner(
-                title = "알림이 꺼져 있어 근무 알람을 잠금 화면에서 끌 수 없어요",
-                message = "소리는 울리지만 끄기·다시 울림 버튼이 안 보여요. 눌러서 알림을 허용해 주세요.",
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable(onClick = onOpenSettings),
+        // [CAL-01] What keeps an alarm from working, one line each, only while one is due within a week.
+        if (alarmSoon) when {
+            // [SET-01] With the master switch off nothing rings: said where the user looks first.
+            !settings.alarmsEnabled -> WarningBanner(
+                title = "알람이 모두 꺼져 있어요",
+                message = "근무 알람도 이 날 알람도 울리지 않아요.",
+                action = "켜기",
+                onAction = { vm.setAlarmsEnabled(true) },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
-        }
-        // [REL-12] Android 14+ can block the full-screen alarm; then only a small notification shows.
-        if (notificationsAllowed && !fullScreenAllowed && settings.alarmsEnabled && snap.shiftTypes.any { it.alarmEnabled }) {
-            WarningBanner(
-                title = "잠금 화면에 알람 화면이 뜨지 않게 막혀 있어요",
-                message = "알람이 울릴 때 크게 끄기 버튼이 보이도록 눌러서 ‘전체 화면 알림’을 허용해 주세요.",
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable {
-                    if (android.os.Build.VERSION.SDK_INT >= 34) runCatching {
-                        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+            // [REL-11][SLP-15] Without notifications an alarm still sounds, but nothing on the lock
+            // screen stops it. Asked here, where it is needed, instead of on the first start.
+            !notificationsAllowed -> WarningBanner(
+                title = "잠금 화면에서 알람을 끄려면 알림 허용이 필요해요",
+                message = "허용하지 않으면 소리는 울려도 끄기·다시 울림 버튼이 안 보여요.",
+                action = "허용",
+                onAction = askNotifications,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            // [REL-12] Android 14+ can block the full-screen alarm; then only a small notification shows.
+            !fullScreenAllowed -> WarningBanner(
+                title = "잠금 화면에 알람 화면이 뜨지 않아요",
+                message = "알람이 울릴 때 큰 끄기 버튼이 보이게 ‘전체 화면 알림’을 허용해 주세요.",
+                action = "허용",
+                onAction = {
+                    if (android.os.Build.VERSION.SDK_INT >= 34) SystemSettings.open(context,
+                        android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
                             android.net.Uri.parse("package:${context.packageName}")))
-                    }
                 },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
         // [SLP-14] 오늘의 흐름 while this month is on screen, for work that comes in shifts and hours.

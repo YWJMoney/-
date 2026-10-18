@@ -1,19 +1,19 @@
 package com.bamnat.app.money
 
 import android.app.AlarmManager
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
-import com.bamnat.app.MainActivity
+import com.bamnat.app.NoticeLinks
 import com.bamnat.app.R
 import com.bamnat.app.alarm.Notifications
 import com.bamnat.app.appContainer
+import com.bamnat.app.data.AppSettings
+import com.bamnat.app.data.MoneyRepository
+import com.bamnat.app.sleep.QuietHold
 import com.bamnat.core.money.MoneyAlerts
 import com.bamnat.core.money.MoneyBook
 import kotlinx.coroutines.launch
@@ -25,22 +25,28 @@ import java.time.ZoneId
  * [WORK-02][LEDG-05] Money notifications: a job about to start, money still owed after a job, and
  * fixed costs three days ahead and on the day. One alarm is set for the earliest of them, exact
  * when the user allows it so a 30-minute heads-up is not pushed back by Doze.
+ * [SLP-15] Money due or owed waits while the user sleeps; a job never does. Several at once come
+ * as one notice per kind.
  */
 object JobReminderScheduler {
-    private const val JOB_CHANNEL = "job_reminder_v1"
-    private const val MONEY_CHANNEL = "money_alert_v1"
     private const val REQUEST = 3101
     private const val NOTIFICATION_BASE = 7100
     const val EXTRA_AT = "at"
 
-    fun reschedule(context: Context, book: MoneyBook, now: LocalDateTime = LocalDateTime.now()) {
+    private fun isJob(a: MoneyAlerts.Alert) = a.key.startsWith("job-")
+
+    /** Alerts the user wants: a job's own reminder, and money only while 나갈 돈·받을 돈 is on. */
+    private fun wanted(a: MoneyAlerts.Alert, settings: AppSettings) = isJob(a) || settings.moneyNotices
+
+    fun reschedule(context: Context, book: MoneyBook, settings: AppSettings, now: LocalDateTime = LocalDateTime.now()) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
-        val next = MoneyAlerts.next(book.jobs, book.fixed, book.entries, now).firstOrNull()
+        val next = MoneyAlerts.all(book.jobs, book.fixed, book.entries, now.toLocalDate())
+            .filter { it.at.isAfter(now) && wanted(it, settings) }.minOfOrNull { it.at }
         if (next == null) {
             am.cancel(pending(context, 0L))
             return
         }
-        val at = next.at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val at = next.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val op = pending(context, at)
         if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) {
             am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, op)
@@ -55,31 +61,42 @@ object JobReminderScheduler {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    fun post(context: Context, alert: MoneyAlerts.Alert) {
-        if (!Notifications.canPost(context)) return
-        val nm = context.getSystemService(NotificationManager::class.java)
-        val job = alert.key.startsWith("job-")
-        nm.createNotificationChannel(
-            if (job) NotificationChannel(JOB_CHANNEL, "일감 알림", NotificationManager.IMPORTANCE_HIGH)
-                .apply { description = "잡아 둔 일정이 다가오면 알려요" }
-            else NotificationChannel(MONEY_CHANNEL, "돈 알림", NotificationManager.IMPORTANCE_DEFAULT)
-                .apply { description = "곧 나갈 돈과 아직 못 받은 돈을 알려요" },
-        )
-        val open = PendingIntent.getActivity(
-            context, 3102, Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val notification = NotificationCompat.Builder(context, if (job) JOB_CHANNEL else MONEY_CHANNEL)
+    /** What is due at [at], read again now so a job paid or a bill recorded since is not announced. */
+    internal suspend fun dueAt(money: MoneyRepository, settings: AppSettings, at: LocalDateTime): List<MoneyAlerts.Alert> {
+        val book = MoneyBook(money.allEntries(), money.allJobs(), emptyList(), money.allFixed())
+        return MoneyAlerts.dueAt(book.jobs, book.fixed, book.entries, at).filter { wanted(it, settings) }
+    }
+
+    /** [SLP-15] Money held while the user slept, now that they are up. */
+    suspend fun postMoneyDue(context: Context, at: LocalDateTime) {
+        val c = context.appContainer
+        postMoney(context, dueAt(c.moneyRepository, c.settingsRepository.current, at).filterNot(::isJob))
+    }
+
+    fun postJob(context: Context, alert: MoneyAlerts.Alert) {
+        val notification = NotificationCompat.Builder(context, Notifications.JOB_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setContentTitle(alert.title)
             .setContentText(alert.text)
-            .setContentIntent(open)
+            .setContentIntent(Notifications.open(context, NoticeLinks.Target.MONEY, 3102))
             .setAutoCancel(true)
             .build()
-        try {
-            NotificationManagerCompat.from(context).notify(NOTIFICATION_BASE + (alert.key.hashCode() and 0x3ff), notification)
-        } catch (e: SecurityException) {
-            // Notifications were turned off in the meantime.
+        Notifications.post(context, NOTIFICATION_BASE + (alert.key.hashCode() and 0x3ff), notification)
+    }
+
+    /** One notice per kind ("오늘 나갈 돈 2건"), the lines under it. */
+    fun postMoney(context: Context, alerts: List<MoneyAlerts.Alert>) {
+        for ((title, list) in alerts.groupBy { it.title }) {
+            val builder = NotificationCompat.Builder(context, Notifications.MONEY_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setCategory(NotificationCompat.CATEGORY_REMINDER)
+                .setContentTitle(if (list.size == 1) title else "$title ${list.size}건")
+                .setContentText(list.joinToString(" · ") { it.text })
+                .setContentIntent(Notifications.open(context, NoticeLinks.Target.MONEY, 3103))
+                .setAutoCancel(true)
+            if (list.size > 1) builder.setStyle(NotificationCompat.InboxStyle().also { s -> list.forEach { s.addLine(it.text) } })
+            Notifications.post(context, NOTIFICATION_BASE + 0x400 + (title.hashCode() and 0xff), builder.build())
         }
     }
 }
@@ -92,14 +109,18 @@ class JobReminderReceiver : BroadcastReceiver() {
         container.appScope.launch {
             try {
                 val money = container.moneyRepository
-                val book = MoneyBook(money.allEntries(), money.allJobs(), emptyList(), money.allFixed())
+                val settings = container.settingsRepository.current
                 if (atMillis != 0L) {
                     val at = LocalDateTime.ofInstant(Instant.ofEpochMilli(atMillis), ZoneId.systemDefault())
-                    // Read again now, so a job paid or a bill recorded since is not announced.
-                    MoneyAlerts.dueAt(book.jobs, book.fixed, book.entries, at).forEach { JobReminderScheduler.post(context, it) }
+                    val (jobs, rest) = JobReminderScheduler.dueAt(money, settings, at).partition { it.key.startsWith("job-") }
+                    jobs.forEach { JobReminderScheduler.postJob(context, it) }
+                    if (rest.isNotEmpty() && !QuietHold.holdIfAsleep(context, QuietHold.Source.MONEY, at)) {
+                        JobReminderScheduler.postMoney(context, rest)
+                    }
                 }
                 // Plan the next one after this moment, so the same alert never repeats.
-                JobReminderScheduler.reschedule(context, book, LocalDateTime.now().plusSeconds(1))
+                val book = MoneyBook(money.allEntries(), money.allJobs(), emptyList(), money.allFixed())
+                JobReminderScheduler.reschedule(context, book, settings, LocalDateTime.now().plusSeconds(1))
             } finally {
                 pending.finish()
             }

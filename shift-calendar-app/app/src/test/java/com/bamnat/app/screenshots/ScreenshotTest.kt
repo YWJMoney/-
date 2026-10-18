@@ -110,7 +110,6 @@ class ScreenshotTest {
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.USE_FULL_SCREEN_INTENT)
         ShadowAlarmManager.setCanScheduleExactAlarms(true)
         val c = app.container
-        c.settingsRepository.update { it.copy(notificationPermissionAsked = true) }
         val repo = c.scheduleRepository
         repo.ensureDefaults()
         val types = repo.shiftTypes.first().associateBy { it.name }

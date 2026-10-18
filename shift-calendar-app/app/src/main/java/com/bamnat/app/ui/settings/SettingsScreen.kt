@@ -415,7 +415,7 @@ fun SettingsScreen(
                     next == null -> "예정된 알람이 없어요"
                     else -> "다음 알람: ${Fmt.dayTitle(AlarmScheduler.millisToLocal(next.triggerAtMillis).toLocalDate())} " +
                         "${Fmt.time(AlarmScheduler.millisToLocal(next.triggerAtMillis).toLocalTime())} · " +
-                        next.plan.shiftName.ifBlank { "직접 정한 알람" }
+                        next.plan.shiftName.ifBlank { "이 날 알람" }
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (settings.alarmsEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -423,7 +423,7 @@ fun SettingsScreen(
             snoozeAt?.let { at ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "다시 알림 ${Fmt.time(AlarmScheduler.millisToLocal(at).toLocalTime())}에 울려요",
+                        "${Fmt.time(AlarmScheduler.millisToLocal(at).toLocalTime())}에 다시 울려요",
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f),
                     )
@@ -481,7 +481,7 @@ fun SettingsScreen(
             SwitchRow("점점 크게", "작은 소리로 시작해 20초 동안 커져요", settings.gradualVolume) { v ->
                 vm.update { it.copy(gradualVolume = v) }
             }
-            Text("다시 알림 간격", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 8.dp))
+            Text("다시 울림 간격", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (m in listOf(3, 5, 10, 15, 20)) {
                     FilterChip(
@@ -625,8 +625,12 @@ fun SettingsScreen(
             SwitchRow("오늘의 흐름", "달력 맨 위에 지금 할 일 하나와 잘 시간·다음 근무를 보여 줘요. 날짜를 누르면 그날의 수면 제안도 보여요", settings.sleepTips) { v ->
                 vm.update { it.copy(sleepTips = v) }
             }
-            SwitchRow("수면 알림", "잠자리·낮잠·카페인 마지막 시각과 야간 뒤 퇴근길 졸음 주의를 알려줘요", settings.sleepReminders) { v ->
-                vm.update { it.copy(sleepReminders = v) }
+            // [SLP-15] Moves to the 알림 page with SET-01.
+            SwitchRow("하루 브리핑", "근무 전에 커피·잠·알람 시각을 소리 없이 알려 줘요", settings.briefing) { v ->
+                vm.update { it.copy(briefing = v) }
+            }
+            SwitchRow("퇴근길 안전", "야간이 끝날 때 한 번, 졸리면 쉬어 가라고 알려 줘요", settings.commuteNotice) { v ->
+                vm.update { it.copy(commuteNotice = v) }
             }
             HealthSleepRow(vm, settings.healthSleep)
             Text("목표 수면 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 8.dp))

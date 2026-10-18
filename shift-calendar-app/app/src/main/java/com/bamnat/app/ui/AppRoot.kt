@@ -1,15 +1,13 @@
 package com.bamnat.app.ui
 
 import com.bamnat.app.HomeRequests
+import com.bamnat.app.NoticeLinks
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.EnterTransition
-import android.Manifest
 import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import com.bamnat.app.alarm.AlarmService
 import androidx.compose.ui.Alignment
@@ -206,8 +204,6 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
     }
 
-    AskNotificationPermissionOnce(container)
-
     // Which screens get used decides what is worth building next [MEAS-03].
     LaunchedEffect(route) {
         route?.let { container.telemetry.event(DiagEvents.SCREEN, it.substringBefore('/').substringBefore('?')) }
@@ -220,13 +216,34 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         if (homeRequests != handledHome) {
             handledHome = homeRequests
             // Only from another tab: an editor the user left open (pay setup, a pattern) keeps their input.
+            // A tapped notice says where to go instead [SLP-15].
             val current = nav.currentBackStackEntry?.destination?.route
-            if (current != TopLevel.CALENDAR.route && TopLevel.entries.any { it.route == current }) {
+            if (NoticeLinks.target.value == null && current != TopLevel.CALENDAR.route && TopLevel.entries.any { it.route == current }) {
                 nav.navigate(TopLevel.CALENDAR.route) {
                     popUpTo(nav.graph.findStartDestination().id) { inclusive = false }
                     launchSingleTop = true
                 }
             }
+        }
+    }
+
+    // [SLP-15] A tapped notice opens the screen it is about. The calendar finds today itself.
+    val noticeTarget by NoticeLinks.target.collectAsStateWithLifecycle()
+    LaunchedEffect(noticeTarget) {
+        val target = noticeTarget ?: return@LaunchedEffect
+        when (target) {
+            // Over an editor the calendar goes on top, so the editor's input is still there after back.
+            NoticeLinks.Target.TODAY -> {
+                val current = nav.currentBackStackEntry?.destination?.route
+                when {
+                    current == TopLevel.CALENDAR.route -> Unit
+                    TopLevel.entries.any { it.route == current } -> nav.navigateTopLevel(TopLevel.CALENDAR.route)
+                    else -> nav.navigate(TopLevel.CALENDAR.route) { launchSingleTop = true }
+                }
+            }
+            NoticeLinks.Target.MONEY -> { nav.navigateTopLevel(TopLevel.MONEY.route); NoticeLinks.consume(target) }
+            NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.PAY) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.ALARM_CHECK -> { nav.navigateTopLevel(TopLevel.SETTINGS.route); NoticeLinks.consume(target) }
         }
     }
 
@@ -579,23 +596,6 @@ private fun AppNavHost(
     }
 }
 
-/** Asks for notification permission once on first launch so shift alarms can show. */
-@Composable
-private fun AskNotificationPermissionOnce(container: AppContainer) {
-    if (Build.VERSION.SDK_INT < 33) return
-    val context = LocalContext.current
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    LaunchedEffect(Unit) {
-        // Asked once per phone: the flag lives outside the backed-up settings, so a restore onto a
-        // new phone still asks there (without it, a ringing alarm has no lock-screen controls).
-        val device = context.getSharedPreferences("device", android.content.Context.MODE_PRIVATE)
-        if (!device.getBoolean("notification_asked", false) && !Notifications.canPost(context)) {
-            device.edit().putBoolean("notification_asked", true).apply()
-            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }
-}
-
 /**
  * Controls for a ringing alarm inside the app. The notification normally offers them, but it can
  * be hidden (notifications turned off), so the app itself must always be able to stop the sound.
@@ -618,7 +618,7 @@ private fun RingingBanner() {
                 Text(AlarmService.describe(current), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer)
             }
-            TextButton(onClick = { AlarmService.snooze(context) }) { Text("다시 알림") }
+            TextButton(onClick = { AlarmService.snooze(context) }) { Text("다시 울림") }
             Button(onClick = { AlarmService.dismiss(context) }) { Text("끄기") }
         }
     }

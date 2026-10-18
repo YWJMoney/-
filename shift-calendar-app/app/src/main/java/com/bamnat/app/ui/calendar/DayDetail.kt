@@ -702,7 +702,7 @@ private fun AlarmContent(
     }
     Text(
         when {
-            custom != null -> "이 날만 직접 정한 알람이에요. 근무 알람 대신 울려요."
+            custom != null -> "이 날 알람이에요. 근무 알람 대신 울려요."
             day.alarmSkipped -> "이 날은 알람이 울리지 않아요. 위 스위치로 다시 켤 수 있어요."
             type != null && type.alarmEnabled -> "${type.name} 근무 알람 설정을 따라요."
             type != null -> "${type.name} 근무는 알람이 꺼져 있어요."

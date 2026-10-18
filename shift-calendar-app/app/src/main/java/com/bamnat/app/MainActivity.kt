@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) {
             appContainer.telemetry.event(DiagEvents.APP_OPEN)
             openLink(intent)
+            NoticeLinks.read(intent)
         }
         enableEdgeToEdge()
         val container = appContainer
@@ -67,6 +68,8 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         openLink(intent)
+        // [SLP-15] A tapped notice opens its own screen, so coming back is not sent to the calendar.
+        if (NoticeLinks.read(intent)) HomeRequests.followingLink()
     }
 
     /** [SHR-02] A shared calendar link tapped in a message or on the shared page: the calendar offers it. */

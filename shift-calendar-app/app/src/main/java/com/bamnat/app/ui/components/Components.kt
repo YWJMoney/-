@@ -251,14 +251,21 @@ fun StatTile(
 }
 
 @Composable
-fun WarningBanner(title: String, message: String, modifier: Modifier = Modifier) {
+fun WarningBanner(
+    title: String,
+    message: String,
+    modifier: Modifier = Modifier,
+    /** [SLP-15] One button that fixes it, at the end of the banner. */
+    action: String? = null,
+    onAction: () -> Unit = {},
+) {
     val cal = LocalCalendarColors.current
     Row(
         modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .background(cal.warningContainer)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(start = 14.dp, end = if (action != null) 4.dp else 14.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Filled.WarningAmber, contentDescription = null, tint = cal.warning)
@@ -267,6 +274,7 @@ fun WarningBanner(title: String, message: String, modifier: Modifier = Modifier)
             Text(title, style = MaterialTheme.typography.titleSmall, color = cal.warning)
             Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
         }
+        if (action != null) TextButton(onClick = onAction) { Text(action) }
     }
 }
 
