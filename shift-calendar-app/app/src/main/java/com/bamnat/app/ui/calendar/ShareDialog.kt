@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -113,7 +114,7 @@ fun ShareDialog(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("근무표 공유", style = MaterialTheme.typography.titleLarge)
-            OutlinedButton(onClick = { onImage(); onDismiss() }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+            OutlinedButton(onClick = { onImage(); onDismiss() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Icon(Icons.Outlined.Image, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("이 달 이미지로 보내기")
@@ -135,7 +136,7 @@ fun ShareDialog(
                     Text("만든 링크: ${made.url}\n${expiryText(made)}까지 열려요.", style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.fillMaxWidth().padding(12.dp))
                 }
-                Button(enabled = !busy, onClick = { send(context, made) }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("이 링크 다시 보내기") }
+                Button(enabled = !busy, onClick = { send(context, made) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 링크 다시 보내기") }
             }
 
             Text("보여 줄 것", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
@@ -172,7 +173,7 @@ fun ShareDialog(
                         container.telemetry.event("share_link_create", chosen().shows.joinToString(",").ifEmpty { "shifts" })
                         send(context, made)
                     }
-                }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("링크 만들어 보내기")
                 }
             } else {
@@ -185,7 +186,7 @@ fun ShareDialog(
                         val updated = client.update(current, payload())
                         store.save(updated); store.saveOptions(chosen()); saved = chosen(); link = updated
                     }
-                }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("지금 근무표로 고치기")
                 }
                 TextButton(enabled = !busy, onClick = {

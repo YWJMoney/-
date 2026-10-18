@@ -1424,6 +1424,22 @@ class ScreenshotTest {
     }
     /** [CAL-01][VIS-02] At 130% text the dates and the line under them stop growing before the cell does. */
     @Test fun foldedCalendarLargeText() = shoot("148_folded_calendar_large_text", FOLDED, fontScale = 1.3f)
+
+    // ---- [SCALE-01] Any phone, any text size: a common phone, a small one, the smallest and the largest text ----
+    @Test fun phoneCalendar() = shoot("160_phone_calendar", PHONE)
+    @Test fun smallPhoneCalendar() = shoot("161_small_phone_calendar", SMALL_PHONE)
+    @Test fun smallPhoneDaySheet() = shoot("162_small_phone_day_sheet", SMALL_PHONE) { openDay(dayCell) }
+    @Test fun phoneCalendarSmallText() = shoot("163_phone_calendar_small_text", PHONE, fontScale = 0.85f)
+    @Test fun phoneCalendarHugeText() = shoot("164_phone_calendar_huge_text", PHONE, fontScale = 2f)
+    @Test fun phoneDaySheetHugeText() = shoot("165_phone_day_sheet_huge_text", PHONE, fontScale = 2f) { openDay(dayCell) }
+    @Test fun phoneSettingsHugeText() = shoot("166_phone_settings_huge_text", PHONE, fontScale = 2f) { tab(4, wide = false) }
+    @Test fun phoneStatsHugeText() = shoot("167_phone_stats_huge_text", PHONE, fontScale = 2f) { tab(3, wide = false) }
+    @Test fun phoneMoneyLargeText() = shoot("168_phone_money_large_text", PHONE, fontScale = 1.5f) { tab(1, wide = false) }
+    @Test fun phonePayLargeText() = shoot("169_phone_pay_large_text", PHONE, fontScale = 1.5f, payScreen(Tier.PRO, withProfile = true))
+    @Test fun phonePayWizardHugeText() = shoot("170_phone_pay_wizard_huge_text", PHONE, fontScale = 2f, payScreen(Tier.PRO, withProfile = false))
+    @Test fun phoneMemosHugeText() = shoot("171_phone_memos_huge_text", PHONE, fontScale = 2f) { tab(2, wide = false) }
+    @Test fun unfoldedCalendarHugeText() = shoot("172_unfolded_calendar_huge_text", UNFOLDED, fontScale = 2f)
+    @Test fun phoneLandscapeCalendar() = shoot("173_phone_landscape_calendar", PHONE_LANDSCAPE)
     @Test fun foldedStatsSameMonth() = shoot("147_folded_stats_same_month", FOLDED) {
         tapText("이전 달", exact = true, scrolls = 0)
         tab(3, wide = false)
@@ -1439,6 +1455,10 @@ class ScreenshotTest {
         // Galaxy Z Fold6: cover screen 968x2376 px and main screen 1856x2160 px at 420 dpi.
         const val FOLDED = "w369dp-h905dp-port-420dpi"
         const val UNFOLDED = "w707dp-h823dp-port-420dpi"
+        // [SCALE-01] A common phone (Galaxy S24 at 1080x2340), a small one (720x1280 class) and a phone on its side.
+        const val PHONE = "w360dp-h780dp-port-450dpi"
+        const val SMALL_PHONE = "w320dp-h568dp-port-xhdpi"
+        const val PHONE_LANDSCAPE = "w780dp-h360dp-land-450dpi"
     }
 }
 

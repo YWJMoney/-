@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.ui.components.labelWidth
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -67,6 +68,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
@@ -294,7 +297,8 @@ fun CalendarScreen(
         if (m != visibleMonth) slideToMonth(m)
     }
     val groups = rememberDayGroupState()
-    var memoFocus by remember { mutableIntStateOf(0) }
+    // [STAB-01] Counted across a font or theme change too, so a memo tap from before does not open the keyboard again.
+    var memoFocus by rememberSaveable { mutableIntStateOf(0) }
     val onMemo: () -> Unit = {
         memoFocus++
         if (!wide) sheetOpen = true
@@ -717,6 +721,9 @@ fun CalendarScreen(
 @Composable
 private fun DaySheet(snackbar: SnackbarHostState, onDismiss: () -> Unit, content: @Composable () -> Unit) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // [STAB-01] A message still showing here when the sheet closes is closed with it: otherwise it waits for
+    // a host that is gone, and every later message (되돌리기 and the rest) stops appearing.
+    DisposableEffect(snackbar) { onDispose { snackbar.currentSnackbarData?.dismiss() } }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state) {
         Box(Modifier.fillMaxWidth()) {
             content()
@@ -1109,7 +1116,7 @@ private fun MonthPickerDialog(initial: YearMonth, onDismiss: () -> Unit, onPick:
                         shape = MaterialTheme.shapes.medium,
                         color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
                         contentColor = if (isCurrent) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.height(40.dp),
+                        modifier = Modifier.heightIn(min = 40.dp),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text("${m}월", fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal)
@@ -1168,7 +1175,7 @@ private fun MonthMemoCard(
                         "${d.dayOfMonth}일 ${d.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.KOREAN)}",
                         style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.width(56.dp),
+                        modifier = Modifier.labelWidth(56.dp),
                     )
                     Column(Modifier.weight(1f)) {
                         val title = m.title.ifBlank { m.preview }
@@ -1219,7 +1226,7 @@ private fun MonthRestCard(issues: List<com.bamnat.core.schedule.RestCheck.Issue>
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("${issue.date.dayOfMonth}일", style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
-                        color = MaterialTheme.colorScheme.error, modifier = Modifier.width(40.dp))
+                        color = MaterialTheme.colorScheme.error, modifier = Modifier.labelWidth(40.dp))
                     Column(Modifier.weight(1f)) {
                         Text(issue.kind.label, style = MaterialTheme.typography.bodyMedium)
                         Text(issue.text, style = MaterialTheme.typography.bodySmall,

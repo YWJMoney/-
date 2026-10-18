@@ -109,13 +109,20 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private val payCalculator = PayCalculator()
 
     // Moving from day to day in one month reuses that month's result instead of recalculating it.
-    private var monthPayCache: Pair<List<Any>, MonthPay>? = null
+    @Volatile private var monthPayCache: Pair<List<Any>, MonthPay>? = null
 
-    private fun monthPay(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): MonthPay = synchronized(this) {
+    /**
+     * [STAB-01] No lock around the calculation: a run left over from a day already passed held it, and every
+     * newer run waited on it with a whole background thread, until saves and taps waited too.
+     */
+    private fun monthPay(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): MonthPay {
         val key = listOf(profile, snapshot, month)
-        monthPayCache?.takeIf { it.first == key }?.second
-            ?: payCalculator.calculate(profile, month, snapshot.resolver::resolve).also { monthPayCache = key to it }
+        monthPayCache?.takeIf { it.first == key }?.let { return it.second }
+        return payCalculator.calculate(profile, month, snapshot.resolver::resolve).also { monthPayCache = key to it }
     }
+
+    /** [STAB-01] The last tap on 메모 the day's memo field has acted on. */
+    var memoFocusUsed = 0
 
     /**
      * [EXTRA-02][EXTRA-03] The day's minutes by category and, with a pay setup, its pay and what each

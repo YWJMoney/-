@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.ui.components.labelWidth
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
@@ -245,7 +246,10 @@ private fun DayGroups(
     val unlocked = FeatureGate.allows(tier, Feature.PAY_ENGINE)
     // [EXTRA-02][EXTRA-03] Minutes and pay are worked out off the main thread, for this date only.
     val insightFor by produceState<Pair<LocalDate, DayInsight>?>(null, profile, snapshot, date, unlocked) {
-        value = date to withContext(Dispatchers.Default) { vm.dayInsight(profile, snapshot, date, unlocked) }
+        // [STAB-01] Days passed by quickly, or a stepper held down, start no calculation that is thrown away.
+        delay(INSIGHT_SETTLE_MILLIS)
+        value = date to (runCatching { withContext(Dispatchers.Default) { vm.dayInsight(profile, snapshot, date, unlocked) } }
+            .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull() ?: DayInsight())
     }
     val insight = insightFor?.takeIf { it.first == date }?.second ?: DayInsight()
     val alarms = remember(snapshot, date) { plannedAlarms(snapshot, day) }
@@ -842,7 +846,10 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
     var deleting by remember { mutableStateOf<Memo?>(null) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(memoFocus) {
-        if (memoFocus > 0) {
+        // [STAB-01] Each tap on 메모 focuses once: the field made again (the sheet reopened, the groups moved)
+        // must not open the keyboard by itself and push the screen under the finger.
+        if (memoFocus > 0 && memoFocus != vm.memoFocusUsed) {
+            vm.memoFocusUsed = memoFocus
             // After the sheet has slid up, so the keyboard does not fight the animation.
             delay(350)
             runCatching { focus.requestFocus() }
@@ -1032,7 +1039,7 @@ private fun ChangeHistory(changes: List<com.bamnat.app.data.DayChange>) {
                     java.time.Instant.ofEpochMilli(c.atMillis).atZone(zone).format(fmt),
                     style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.width(84.dp),
+                    modifier = Modifier.labelWidth(84.dp),
                 )
                 Text(c.text, style = MaterialTheme.typography.bodyMedium)
             }
@@ -1044,6 +1051,9 @@ private fun ChangeHistory(changes: List<com.bamnat.app.data.DayChange>) {
 }
 
 private const val HISTORY_ROWS = 3
+
+/** [STAB-01] How long the day must stay put before its pay is worked out. */
+private const val INSIGHT_SETTLE_MILLIS = 120L
 
 /**
  * [SLP-03][SLP-05][SLP-06][SLP-13] Sleep times that fit this day's shifts, each with how strong its

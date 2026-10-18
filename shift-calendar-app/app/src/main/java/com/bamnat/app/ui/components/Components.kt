@@ -47,6 +47,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -67,6 +68,22 @@ import com.bamnat.core.model.ShiftType
 import java.time.LocalTime
 
 fun Long.asColor(): Color = Color(this.toInt())
+
+/**
+ * [SCALE-01] The width of a label column beside its value ("6/12 (토)", "기본급"), grown with the phone's
+ * text size so the label does not break into a tower at 150%, but never past [MAX_LABEL_SHARE] of the row,
+ * so the value beside it keeps its room on a small phone.
+ */
+fun Modifier.labelWidth(width: Dp): Modifier = layout { measurable, constraints ->
+    val grown = (width * fontScale.coerceIn(1f, MAX_LABEL_GROWTH)).roundToPx()
+    val cap = if (constraints.hasBoundedWidth) (constraints.maxWidth * MAX_LABEL_SHARE).toInt() else grown
+    val w = maxOf(width.roundToPx(), minOf(grown, cap)).coerceIn(constraints.minWidth, constraints.maxWidth)
+    val placeable = measurable.measure(constraints.copy(minWidth = w, maxWidth = w))
+    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+}
+
+private const val MAX_LABEL_GROWTH = 1.7f
+private const val MAX_LABEL_SHARE = 0.42f
 
 private val DarkInk = Color(0xFF151927)
 
@@ -305,10 +322,23 @@ fun MinutesStepper(
 ) {
     var editing by remember { mutableStateOf(false) }
     // Shown value runs ahead of the database so quick repeated taps all count.
-    var shown by remember(minutes) { mutableStateOf(minutes) }
+    var shown by remember { mutableStateOf(minutes) }
+    // [STAB-01] Steps are written once the taps pause, not on every step of a hold (eleven a second):
+    // each write redrew the calendar and recalculated pay until taps stopped answering.
+    var unsaved by remember { mutableStateOf<Int?>(null) }
+    val save by androidx.compose.runtime.rememberUpdatedState(onChange)
+    androidx.compose.runtime.LaunchedEffect(minutes) { if (unsaved == null) shown = minutes }
+    androidx.compose.runtime.LaunchedEffect(unsaved) {
+        val v = unsaved ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(STEPPER_SAVE_DELAY_MILLIS)
+        unsaved = null
+        save(v)
+    }
+    // Leaving the screen right after a step still keeps it.
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { unsaved?.let { save(it) } } }
     val set: (Int) -> Unit = { v ->
         shown = v
-        onChange(v)
+        unsaved = v
     }
     val haptics = LocalHapticFeedback.current
     // [VIS-02] A light tick per step, and a firmer one where it cannot go further.
@@ -347,7 +377,9 @@ fun MinutesStepper(
             maxMinutes = max,
             onDismiss = { editing = false },
             onConfirm = {
-                set(it)
+                shown = it
+                unsaved = null
+                onChange(it)
                 editing = false
             },
         )
@@ -356,6 +388,8 @@ fun MinutesStepper(
 
 /** Same width for every value, "0분" to "23시간 59분". */
 private val STEPPER_VALUE_WIDTH = 104.dp
+
+private const val STEPPER_SAVE_DELAY_MILLIS = 350L
 
 /** A − or + button that steps once on a tap and keeps stepping while held. */
 @Composable

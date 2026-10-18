@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -610,7 +611,7 @@ fun ShiftTypeEditorDialog(
                     Button(
                         onClick = { onSave(draft) },
                         enabled = draft.name.isNotBlank(),
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                     ) { Text("저장") }
                     if (onDelete != null) {
                         TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {

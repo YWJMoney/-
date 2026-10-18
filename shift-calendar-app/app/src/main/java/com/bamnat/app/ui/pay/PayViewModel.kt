@@ -133,8 +133,7 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
     fun undo() = viewModelScope.launch { container.payStore.undo() }
 
     fun update(transform: (PayProfile) -> PayProfile) = viewModelScope.launch {
-        val p = profile.value ?: return@launch
-        container.payStore.save(transform(p))
+        container.payStore.update(transform)
     }
 
     // ---- values over time ----

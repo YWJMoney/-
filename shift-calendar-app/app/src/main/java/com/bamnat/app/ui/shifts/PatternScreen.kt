@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -372,7 +373,7 @@ fun PatternScreen(
             Button(
                 onClick = save,
                 enabled = valid,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
             ) { Text(if (existing == null) "저장하고 달력에 적용" else "저장 (조 변경 / 수정)") }
             if (existing != null) {
                 TextButton(onClick = { confirmClear = true }, modifier = Modifier.fillMaxWidth()) {

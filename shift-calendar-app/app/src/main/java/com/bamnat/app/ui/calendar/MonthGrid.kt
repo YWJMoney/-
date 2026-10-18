@@ -174,28 +174,34 @@ fun MonthGrid(
             if (p.x < bar || p.y < 0f || row !in 0 until GRID_ROWS || col !in 0..6) return null
             return firstCell.plusDays(row * 7L + col)
         }
-        detectDragGestures(
-            onDragStart = { p ->
-                dragged = listOfNotNull(dateAt(p))
-                // [VIS-02] Felt when the finger starts painting, a tick per day, and a firmer one when it is written.
-                haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
-            },
-            onDragEnd = {
-                val days = dragged
-                dragged = emptyList()
-                if (days.isNotEmpty()) {
-                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                    paint?.invoke(days)
+        // [STAB-01] Quick input closed in the middle of a drag cancels it without onDragCancel; the days
+        // already lit would stay lit.
+        try {
+            detectDragGestures(
+                onDragStart = { p ->
+                    dragged = listOfNotNull(dateAt(p))
+                    // [VIS-02] Felt when the finger starts painting, a tick per day, and a firmer one when it is written.
+                    haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                },
+                onDragEnd = {
+                    val days = dragged
+                    dragged = emptyList()
+                    if (days.isNotEmpty()) {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        paint?.invoke(days)
+                    }
+                },
+                onDragCancel = { dragged = emptyList() },
+            ) { change, _ ->
+                change.consume()
+                val d = dateAt(change.position)
+                if (d != null && d !in dragged) {
+                    dragged = dragged + d
+                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                 }
-            },
-            onDragCancel = { dragged = emptyList() },
-        ) { change, _ ->
-            change.consume()
-            val d = dateAt(change.position)
-            if (d != null && d !in dragged) {
-                dragged = dragged + d
-                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
             }
+        } finally {
+            dragged = emptyList()
         }
     }
     Column(modifier.fillMaxWidth().then(painting)) {

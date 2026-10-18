@@ -1,5 +1,7 @@
 package com.bamnat.app.data
 
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import com.bamnat.app.data.db.AppDatabase
 import com.bamnat.app.data.db.CategoryRuleEntity
 import com.bamnat.app.data.db.toEntity
@@ -36,13 +38,14 @@ class MoneyRepository(
 ) {
     private val dao = db.moneyDao()
 
-    val entries: Flow<List<MoneyEntry>> = dao.observeEntries().map { list -> list.map { it.toModel() } }
+    val entries: Flow<List<MoneyEntry>> = dao.observeEntries().map { list -> list.map { it.toModel() } }.flowOn(Dispatchers.Default)
     val jobs: Flow<List<Job>> = dao.observeJobs().map { list -> list.map { it.toModel() } }
     val sales: Flow<List<DailySales>> = dao.observeSales().map { list -> list.map { it.toModel() } }
     val fixed: Flow<List<FixedCost>> = dao.observeFixed().map { list -> list.map { it.toModel() } }
     val rules: Flow<Map<String, String>> = dao.observeRules().map { list -> list.associate { it.merchant to it.category } }
     val captures: Flow<List<Capture>> = kept.captures
-    val book: Flow<MoneyBook> = combine(entries, jobs, sales, fixed) { e, j, s, f -> MoneyBook(e, j, s, f) }
+    /** [STAB-01] Every ledger row is turned into a line off the main thread. */
+    val book: Flow<MoneyBook> = combine(entries, jobs, sales, fixed) { e, j, s, f -> MoneyBook(e, j, s, f) }.flowOn(Dispatchers.Default)
 
     /**
      * Inserts a new line or replaces the one with the same id; returns it with its id. When the user

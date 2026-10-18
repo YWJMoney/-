@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.money
 
+import com.bamnat.app.ui.components.labelWidth
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -434,7 +435,7 @@ private fun StatsCard(m: MonthMoney, prev: MonthMoney?, trend: List<MonthMoney>,
 private fun TrendRow(t: MonthMoney, max: Long) {
     val cal = LocalCalendarColors.current
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(Fmt.monthShort(t.month), style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(40.dp))
+        Text(Fmt.monthShort(t.month), style = MaterialTheme.typography.labelMedium, modifier = Modifier.labelWidth(40.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Track(t.income.toFloat() / max, cal.income)
             Track(t.expenses.toFloat() / max, cal.expense)

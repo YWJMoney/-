@@ -1,5 +1,7 @@
 package com.bamnat.app.data
 
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import com.bamnat.app.data.db.DayChangeEntity
 import com.bamnat.core.model.DayChanges
 import androidx.room.withTransaction
@@ -83,19 +85,25 @@ class ScheduleRepository(
     private val extraDao = db.dayExtraDao()
 
     val shiftTypes: Flow<List<ShiftType>> =
-        shiftTypeDao.observeAll().map { list -> list.map { it.toModel() } }.distinctUntilChanged()
+        shiftTypeDao.observeAll().map { list -> list.map { it.toModel() } }.distinctUntilChanged().flowOn(Dispatchers.Default)
 
     val patterns: Flow<List<WorkPattern>> =
-        patternDao.observeAll().map { list -> list.mapNotNull { it.toModel() } }.distinctUntilChanged()
+        patternDao.observeAll().map { list -> list.mapNotNull { it.toModel() } }.distinctUntilChanged().flowOn(Dispatchers.Default)
 
     /** The period being worked now (or the latest one), shown in the pattern editor. */
     val pattern: Flow<WorkPattern?> = patterns.map { PatternTimeline.current(it, LocalDate.now()) }
 
     val entries: Flow<List<DayEntry>> =
         combine(dayEntryDao.observeAll(), extraDao.observeAll()) { rows, extras -> assembleDays(rows, extras) }.distinctUntilChanged()
+            .flowOn(Dispatchers.Default)
 
+    /**
+     * [STAB-01] Turning rows into days and comparing whole lists runs off the main thread: with years of
+     * days it was long enough, on every edit and for every screen watching, to make taps stop answering.
+     */
     val snapshot: Flow<ScheduleSnapshot> =
         combine(shiftTypes, patterns, entries, kinds.distinctUntilChanged()) { t, p, e, k -> ScheduleSnapshot(t, p, e, k) }
+            .flowOn(Dispatchers.Default)
 
     /** [EXTRA-05] Pieces of extra work moved from an older record that still need a look. */
     val extrasToReview: Flow<Int> = extraDao.observeNeedsReview().distinctUntilChanged()

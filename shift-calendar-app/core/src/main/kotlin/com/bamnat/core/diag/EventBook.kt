@@ -24,6 +24,8 @@ object DiagEvents {
     const val COMPANY_SHARE = "company_share"
     const val COMPANY_IMPORT = "company_import"
     const val SCREEN = "screen"
+    /** [STAB-01] A background job failed and was tried again; the detail is the job and the error's class. */
+    const val JOB_FAILED = "job_failed"
 }
 
 /** Text codec, trimming and summaries for the event log. No Android code, so it is unit tested. */

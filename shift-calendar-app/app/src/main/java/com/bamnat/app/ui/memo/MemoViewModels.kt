@@ -177,6 +177,8 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
         clearSelection()
     }
     fun setQuery(text: String) = q.update { it.copy(query = text) }
+    /** [STAB-01] What the search box shows, apart from the list that is built off the main thread. */
+    val query: StateFlow<String> = q.map { it.query }.stateIn(viewModelScope, SharingStarted.Eagerly, "")
     fun setCalendarFilter(f: CalendarFilter) = q.update { it.copy(calendarFilter = f) }
     fun setGeneralFilter(f: GeneralFilter) = q.update { it.copy(generalFilter = f) }
     fun setSort(sort: MemoSort) = q.update { it.copy(sort = sort) }

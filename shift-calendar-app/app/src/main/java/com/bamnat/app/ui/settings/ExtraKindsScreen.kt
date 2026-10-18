@@ -436,7 +436,9 @@ fun ExtraKindsScreen(vm: ExtraKindsViewModel, onBack: () -> Unit, onOpenPay: () 
     val profile by vm.profile.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val tier by vm.tier.collectAsStateWithLifecycle()
-    val edit by vm.editing.collectAsStateWithLifecycle()
+    // [STAB-01] Read at once, on the same frame as the key: a text box one frame behind the keyboard
+    // doubles or drops half-built Korean letters and moves the cursor.
+    val edit by vm.editing.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
     val kinds = settings.extraKinds
     var adding by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }

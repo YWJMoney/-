@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -340,7 +341,7 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
                 )
                 if (preview !is ReceivedViewModel.Preview.Ready) {
                     Button(onClick = { vm.preview(text) }, enabled = text.isNotBlank() && preview != ReceivedViewModel.Preview.Loading,
-                        modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("불러오기") }
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("불러오기") }
                 }
             }
             AnimatedContent(preview, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "preview") { p ->
@@ -359,7 +360,7 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
                         val color = calendars.firstOrNull { it.id == p.id }?.color
                             ?: ReceivedCalendar.COLORS[calendars.size % ReceivedCalendar.COLORS.size]
                         PreviewCard(p.schedule, color.asColor(), p.share.expiresAt, today)
-                        Button(onClick = { if (vm.add(p)) onAdded() }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                        Button(onClick = { if (vm.add(p)) onAdded() }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                             Text(if (p.existing) "새로 받아 보기" else "내 달력 옆에 두고 보기")
                         }
                         Text("읽기 전용이에요. 보낸 분이 근무표를 고치면 열 때마다 새로 받아요.",

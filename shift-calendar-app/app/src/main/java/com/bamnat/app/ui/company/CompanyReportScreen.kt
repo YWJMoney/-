@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -163,7 +164,7 @@ fun CompanyReportScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onDone: 
                         Button(
                             onClick = { vm.send(company, dept, verified, note) },
                             enabled = s != CompanyReportViewModel.Sending.Busy && company.trim().length >= 2,
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                         ) {
                             if (s == CompanyReportViewModel.Sending.Busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                             else Text(if (fix) "맞는 설정 보내기" else "보내기")
@@ -265,7 +266,7 @@ private fun SentPanel(status: ReportStatus, onDone: () -> Unit, onOpenSent: () -
         }
         Text("같은 회사 동료에게 밤낮을 알려 주면 더 빨리 채택돼요", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-        Button(onClick = onDone, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("확인") }
+        Button(onClick = onDone, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("확인") }
         OutlinedButton(onClick = onOpenSent, modifier = Modifier.fillMaxWidth()) { Text("내가 보낸 정보 보기") }
     }
 }
