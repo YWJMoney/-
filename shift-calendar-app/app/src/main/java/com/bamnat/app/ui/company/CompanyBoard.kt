@@ -1,6 +1,8 @@
 package com.bamnat.app.ui.company
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,8 +26,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.AlertDialog
@@ -63,11 +67,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.company.BoardItem
 import com.bamnat.app.company.TalkPost
+import kotlinx.coroutines.Dispatchers
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -90,6 +97,9 @@ fun CompanyBoardScreen(
     val voting by vm.voting.collectAsStateWithLifecycle()
     val chosen by vm.chosen.collectAsStateWithLifecycle()
     val terms by vm.terms.collectAsStateWithLifecycle()
+    // [STAB-01] Read on the key's own frame, or half-built Korean letters double or drop.
+    val query by vm.query.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
+    val keyboard = LocalSoftwareKeyboardController.current
     val tab = if (adopted) chosen else voting
     val list = rememberLazyListState()
     val nearEnd by remember { derivedStateOf { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index?.let { it >= list.layoutInfo.totalItemsCount - 3 } ?: false } }
@@ -120,6 +130,23 @@ fun CompanyBoardScreen(
                     }
                 }
                 item {
+                    // [COMM-07] Any company's rules by name, adopted or still being voted on.
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { vm.query.value = it.take(40) },
+                        placeholder = { Text("회사 이름으로 찾기") },
+                        leadingIcon = { Icon(Icons.Outlined.Search, null) },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) IconButton(onClick = { vm.query.value = "" }) { Icon(Icons.Filled.Close, "지우기") }
+                        },
+                        singleLine = true,
+                        shape = MaterialTheme.shapes.extraLarge,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
+                }
+                item {
                     Text(
                         if (adopted) "같은 회사 분들이 맞다고 했거나 개발자가 확인한 규칙이에요. 누구나 그대로 가져다 쓸 수 있어요. 금액은 각자 넣어요."
                         else "같은 회사 분들이 올린 규칙이에요. 다니는 회사라면 맞는지 알려 주세요. 맞았어요가 ${terms?.agree ?: 75}% 이상이고 " +
@@ -139,7 +166,12 @@ fun CompanyBoardScreen(
                             OutlinedButton(onClick = vm::refresh, modifier = Modifier.padding(top = 8.dp)) { Text("다시 불러오기") }
                         }
                         tab.items.isEmpty() -> Text(
-                            if (adopted) "아직 채택된 규칙이 없어요." else "지금 투표 중인 규칙이 없어요. 우리 회사 규칙을 처음 올려 주세요!",
+                            when {
+                                query.isNotBlank() && adopted -> "‘${query.trim()}’의 채택된 규칙은 아직 없어요. 투표 중 탭도 봐 주세요."
+                                query.isNotBlank() -> "‘${query.trim()}’의 투표 중인 규칙이 없어요. 우리 회사 규칙을 처음 올려 주세요!"
+                                adopted -> "아직 채택된 규칙이 없어요."
+                                else -> "지금 투표 중인 규칙이 없어요. 우리 회사 규칙을 처음 올려 주세요!"
+                            },
                             style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 24.dp),
                         )
                         else -> Unit

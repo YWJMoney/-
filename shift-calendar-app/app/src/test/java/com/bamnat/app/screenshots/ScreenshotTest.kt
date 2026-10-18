@@ -1341,6 +1341,15 @@ class ScreenshotTest {
         val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
         content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
     }
+    @Test fun foldedCompanyBoardSearch() = shoot("195_folded_company_board_search", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
+        tapText("채택됨", exact = true)
+        vm.query.value = "예시"
+        // Past the pause the board waits for typing to stop.
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(400))
+        settle()
+    }
     @Test fun foldedCompanyTalk() = shoot("193_folded_company_talk", FOLDED) {
         val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
         content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
@@ -1629,15 +1638,15 @@ private class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
         "c-$id", company, "s-$id", dept, adopted, points, persons, bad, 3, trust, agree, posts, if (adopted) 1 else null,
         now.minus(java.time.Duration.ofHours(hours)), gist, cycle, true)
 
-    override suspend fun board(adopted: Boolean, from: Int) = com.bamnat.app.company.Board(
-        if (adopted) listOf(
+    override suspend fun board(adopted: Boolean, from: Int, q: String) = com.bamnat.app.company.Board(
+        (if (adopted) listOf(
             item("a1", "(주)예시정밀", "생산팀", true, 5, 3, 1, 75, 75, 4, 30, "주간 08:00~20:00 · 야간 20:00~08:00 · 휴무(쉬는 날)", "순서 5일"),
             item("a2", "사아자물류", "", true, 4, 3, 0, 100, 100, 0, 80, "주간 09:00~18:00 · 휴무(쉬는 날)", "순서 7일"),
         ) else listOf(
             item("v1", "가나다화학", "품질팀", false, 2, 2, 0, 67, 100, 3, 1, "주간 08:30~17:30 휴게 60분 · 휴일(쉬는 날)", "순서 7일"),
             item("v2", "라마바전자", "생산1팀", false, 3, 2, 1, 67, 67, 5, 5, "주간 07:00~19:00 · 야간 19:00~07:00 · 휴무(쉬는 날)", "순서 8일"),
             item("v3", "예시정밀 2공장", "", false, 1, 1, 0, 33, 100, 0, 26, "오전 06:00~14:00 · 오후 14:00~22:00 · 야간 22:00~06:00", "순서 6일"),
-        ),
+        )).filter { q.isBlank() || it.company.contains(q.trim()) },
         null,
     )
 

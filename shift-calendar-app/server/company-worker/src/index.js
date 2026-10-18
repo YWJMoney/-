@@ -8,7 +8,7 @@
 // DELETE /api/reports/:id         header X-Device: the sender takes their report back
 // DELETE /api/mine                header X-Device: everything this install sent, gone
 // POST   /api/votes               맞았어요 / 달라요 on a setup [COMM-03]
-// GET    /api/board?tab=           every company's rule sets: ones still being voted on, or adopted [COMM-07]
+// GET    /api/board?tab=&q=        every company's rule sets: ones still being voted on, or adopted; q finds a company [COMM-07]
 // GET    /api/companies/:id/setups/:setup/posts   the talk on one rule set [COMM-06]
 // POST   /api/posts               a post in that talk; DELETE /api/posts/:id takes it back (header X-Device)
 // POST   /api/posts/:id/flag      신고: three people hide a post until the developer looks
@@ -1252,20 +1252,24 @@ async function board(env, url) {
   const offset = Math.min(600, Math.max(0, Number.parseInt(url.searchParams.get("from") ?? "0", 10) || 0));
   const size = 20;
   const { adoptPoints } = await settings(env);
+  // A company's name or another name for it, written any way 회사 찾기 accepts; one letter finds nothing.
+  const q = normName(url.searchParams.get("q")).slice(0, 40);
+  const like = q.length < 2 ? "" : `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const named = `(?3 = '' OR c.norm LIKE ?3 ESCAPE '\\' OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.norm LIKE ?3 ESCAPE '\\'))`;
   const rows = tab === "adopted"
     ? await all(env, `SELECT r.company_id, r.grp, r.dept, r.setup, r.version, r.adopted_at AS at, c.name
         FROM rules r JOIN companies c ON c.id = r.company_id
-        WHERE r.withdrawn = 0 AND r.superseded = 0 AND c.hidden = 0 AND c.merged_into IS NULL
-        ORDER BY r.adopted_at DESC LIMIT ? OFFSET ?`, size + 1, offset)
+        WHERE r.withdrawn = 0 AND r.superseded = 0 AND c.hidden = 0 AND c.merged_into IS NULL AND ${named}
+        ORDER BY r.adopted_at DESC LIMIT ?1 OFFSET ?2`, size + 1, offset, like)
     : await all(env, `SELECT p.company_id, p.grp, c.name,
           MAX(MAX(p.created_at),
             COALESCE((SELECT MAX(v.at) FROM votes v WHERE v.company_id = p.company_id AND v.grp = p.grp), 0),
             COALESCE((SELECT MAX(t.created_at) FROM posts t WHERE t.company_id = p.company_id AND t.grp = p.grp AND t.status = 'shown'), 0)) AS at
         FROM reports p JOIN companies c ON c.id = p.company_id
-        WHERE p.status = 'pending' AND c.hidden = 0 AND c.merged_into IS NULL
+        WHERE p.status = 'pending' AND c.hidden = 0 AND c.merged_into IS NULL AND ${named}
           AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = p.company_id AND x.grp = p.grp AND x.status = 'rejected')
           AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = p.company_id AND w.grp = p.grp AND (w.withdrawn = 1 OR w.superseded = 0))
-        GROUP BY p.company_id, p.grp ORDER BY at DESC LIMIT ? OFFSET ?`, size + 1, offset);
+        GROUP BY p.company_id, p.grp ORDER BY at DESC LIMIT ?1 OFFSET ?2`, size + 1, offset, like);
   const items = [];
   for (const r of rows.slice(0, size)) {
     const rep = tab === "adopted" ? r : await representative(env, r.company_id, r.grp);
@@ -1284,7 +1288,7 @@ async function board(env, url) {
       pay: lines.some(([label]) => label === "사업장"),
     });
   }
-  return { tab, items, next: rows.length > size ? offset + size : null, threshold: adoptPoints };
+  return { tab, ...(like ? { q } : {}), items, next: rows.length > size ? offset + size : null, threshold: adoptPoints };
 }
 
 /** A rule set people may talk about: adopted and in use, or still gathering votes. */
