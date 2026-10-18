@@ -538,7 +538,7 @@ function adminApp() {
     me: null, overview: null, health: null,
     route: { name: "home", id: null },
     data: {}, // per screen
-    reviewFilter: "all", inquiryStatus: "open", rewardTab: "owed", query: "", postFilter: "flagged",
+    reviewFilter: "all", inquiryStatus: "open", inquiryTopic: "", rewardTab: "owed", query: "", postFilter: "flagged",
     draft: null, loginMode: "account", error: "", busy: 0, online: navigator.onLine,
     join: null, // invite info on the join page
     installPrompt: null, installed: matchMedia("(display-mode: standalone)").matches || navigator.standalone === true,
@@ -671,7 +671,7 @@ function adminApp() {
 
   async function loadInquiries() {
     try {
-      S.data.inquiries = await api(`/inquiries?status=${S.inquiryStatus}`);
+      S.data.inquiries = await api(`/inquiries?status=${S.inquiryStatus}${S.inquiryTopic ? `&topic=${S.inquiryTopic}` : ""}`);
       S.data.inquiriesMissing = false;
     } catch (e) {
       // The server has no inquiry box yet: the screen says so instead of failing.
@@ -998,6 +998,16 @@ function adminApp() {
 
   // ---- inquiries ----
 
+  /** [ADMIN-02] The server sorts each question by topic; a chip shows one topic, with how many there are. */
+  function topicChips(d) {
+    const topics = d?.topics ?? {};
+    const names = d?.topicNames ?? {};
+    const keys = Object.keys(names).filter((k) => topics[k] || k === S.inquiryTopic);
+    if (!keys.length) return "";
+    const chip = (key, label, n) => `<button type="button" class="chip pick" data-act="inquiry-topic" data-key="${key}" aria-pressed="${S.inquiryTopic === key}">${esc(label)}${n ? ` ${n}` : ""}</button>`;
+    return `<div class="chips" role="group" aria-label="주제">${chip("", "전체")}${keys.map((k) => chip(k, names[k], topics[k])).join("")}</div>`;
+  }
+
   function inquiriesView() {
     if (S.data.inquiriesMissing) {
       return empty("문의함이 아직 서버에 없어요", "앱 안 문의가 켜진 서버로 업데이트하면 여기서 바로 답할 수 있어요.");
@@ -1006,13 +1016,13 @@ function adminApp() {
     const counts = d?.counts ?? {};
     const head = `<div class="segmented" role="group" aria-label="문의 상태">
       ${seg("inquiry-status", "open", S.inquiryStatus, "답 대기", counts.open)}${seg("inquiry-status", "answered", S.inquiryStatus, "답함", counts.answered)}
-      ${seg("inquiry-status", "closed", S.inquiryStatus, "닫힘", counts.closed)}</div>`;
+      ${seg("inquiry-status", "closed", S.inquiryStatus, "닫힘", counts.closed)}</div>${topicChips(d)}`;
     if (!d) return head + skeleton();
     if (!d.inquiries.length) {
       return head + empty(S.inquiryStatus === "open" ? "답을 기다리는 문의가 없어요" : "목록이 비어 있어요", "앱에서 문의가 오면 여기와 메뉴에 숫자로 보여요.");
     }
     return head + `<ul class="rows">${d.inquiries.map((q) => `<li><a class="row${q.waiting ? " unread" : ""}" href="${href("inquiries", q.id)}">
-      <span class="row-main"><b>${esc(KIND_NAMES[q.kind] ?? "문의")}${q.appVersion ? ` <span class="meta">앱 ${esc(q.appVersion)}</span>` : ""}</b>
+      <span class="row-main"><b>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}${q.appVersion ? ` <span class="meta">앱 ${esc(q.appVersion)}</span>` : ""}</b>
         <span class="preview">${esc(q.preview)}</span></span>
       <span class="row-side"><span>${esc(ago(q.updatedAt ?? q.createdAt))}</span>${q.count > 1 ? `<span class="pill">${q.count}</span>` : ""}</span>
       ${icon(P.chevron)}</a></li>`).join("")}</ul>`;
@@ -1031,7 +1041,7 @@ function adminApp() {
     const status = { open: ["warn", "답 대기"], answered: ["ok", "답함"], closed: ["", "닫힘"] }[q.status] ?? ["", q.status];
     return `<div class="cols">
       <section>
-        <div class="card"><div class="card-head"><h2>${esc(KIND_NAMES[q.kind] ?? "문의")}</h2><span class="pill ${status[0]}">${status[1]}</span></div>
+        <div class="card"><div class="card-head"><h2>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}</h2><span class="pill ${status[0]}">${status[1]}</span></div>
           <div class="thread">${thread}</div></div>
         ${editable && q.status !== "closed" ? `<form class="composer" data-form="reply">
           <label class="sr" for="reply">답</label>
@@ -1575,6 +1585,12 @@ function adminApp() {
     },
     "inquiry-status": ({ key }) => {
       S.inquiryStatus = key;
+      S.data.inquiries = null;
+      render();
+      load();
+    },
+    "inquiry-topic": ({ key }) => {
+      S.inquiryTopic = key;
       S.data.inquiries = null;
       render();
       load();
