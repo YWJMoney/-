@@ -32,7 +32,7 @@ fun CompanyShareDialog(hasPay: Boolean, onDismiss: () -> Unit, onShare: (String,
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(name, { name = it.take(40) }, label = { Text("회사·부서 이름 (선택)") }, singleLine = true)
-                Text("들어가는 것: 근무 유형과 시간, 근무 주기, 잔업·특근 이름" + if (hasPay) ", 회사 급여 규칙, 수당 이름" else "",
+                Text("들어가는 것: 근무 종류와 시간, 근무 주기, 잔업·특근 이름" + if (hasPay) ", 회사 급여 규칙, 수당 이름" else "",
                     style = MaterialTheme.typography.bodySmall)
                 Text("안 들어가는 것: 기본급, 입사일, 연차 일수, 알람, 달력에 적은 내용과 메모",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -62,7 +62,7 @@ fun CompanyImportDialog(summary: CompanySummary, hasPay: Boolean, onDismiss: () 
         title = { Text(if (summary.company.isNotBlank()) "${summary.company} 설정을 넣을까요?" else "회사 설정을 넣을까요?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("근무 유형 ${summary.shiftTypes.size}개: ${summary.shiftTypes.joinToString(", ")}", style = MaterialTheme.typography.bodyMedium)
+                Text("근무 종류 ${summary.shiftTypes.size}개: ${summary.shiftTypes.joinToString(", ")}", style = MaterialTheme.typography.bodyMedium)
                 Text("같은 이름은 시간만 맞추고, 알람과 색은 그대로 둬요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 summary.cycleDays?.let { days ->
@@ -80,7 +80,7 @@ fun CompanyImportDialog(summary: CompanySummary, hasPay: Boolean, onDismiss: () 
                         if (hasPay) "회사 급여 규칙" + (if (summary.items.isNotEmpty()) "과 수당 ${summary.items.size}개" else "") +
                             "를 넣어요. 기본급과 연차, 이미 있는 수당 금액은 그대로예요." +
                             (if (!summary.withAmounts && summary.items.isNotEmpty()) " 새 수당 금액은 직접 넣어 주세요." else "")
-                        else "급여 규칙은 급여 설정을 마친 뒤에 넣을 수 있어요. 근무 유형과 주기만 먼저 넣어요.",
+                        else "급여 규칙은 급여 설정을 마친 뒤에 넣을 수 있어요. 근무 종류와 주기만 먼저 넣어요.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }

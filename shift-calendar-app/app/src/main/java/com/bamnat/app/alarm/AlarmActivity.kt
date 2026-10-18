@@ -139,7 +139,7 @@ private fun RingingScreen(
                 modifier = Modifier.fillMaxWidth().height(60.dp),
             ) {
                 Icon(Icons.Filled.Snooze, contentDescription = null)
-                Text("  ${snoozeMinutes}분 후 다시 알림", style = MaterialTheme.typography.titleMedium)
+                Text("  ${snoozeMinutes}분 뒤 다시 울림", style = MaterialTheme.typography.titleMedium)
             }
             Button(
                 onClick = onDismiss,

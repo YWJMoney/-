@@ -85,6 +85,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -178,10 +180,15 @@ fun DayPanel(
     onMemo: () -> Unit = {},
     /** Room under the last group, e.g. for the floating button beside the unfolded calendar. */
     bottomPadding: androidx.compose.ui.unit.Dp = 24.dp,
+    /** [CAL-01] The week of this day over the hour limit, in one line. */
+    weekNote: String? = null,
+    /** [CAL-01] Beside the unfolded calendar the panel is narrow, so the title is smaller. */
+    compact: Boolean = false,
 ) {
     val day = remember(snapshot, date) { snapshot.resolver.resolve(date) }
     Column(modifier) {
-        DayHeader(day, today, snapshot, vm, onDateChange, onMemo, Modifier.padding(bottom = 8.dp))
+        DayHeader(day, today, snapshot, vm, onDateChange, onMemo, Modifier.padding(bottom = 8.dp), compact = compact)
+        weekNote?.let { WeekNoteLine(it, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
         Column(
             Modifier
@@ -227,6 +234,7 @@ private fun DayGroups(
 ) {
     val date = day.date
     val cal = LocalCalendarColors.current
+    val haptics = LocalHapticFeedback.current
     val settings by vm.settings.collectAsStateWithLifecycle()
     val memos by remember(date) { vm.memosOn(date) }.collectAsStateWithLifecycle(emptyList())
     val changes by remember(date) { vm.changesOn(date) }.collectAsStateWithLifecycle(emptyList())
@@ -316,16 +324,21 @@ private fun DayGroups(
                     G.ALARM -> {
                         val custom = day.entry?.customAlarms != null
                         val off = day.alarmSkipped || !settings.alarmsEnabled
+                        val summary = alarmSummary(day, alarms, settings) + if (custom) " · 직접 정함" else ""
                         DayGroup(
                             title = "알람", icon = Icons.Outlined.Alarm,
-                            summary = alarmSummary(day, alarms, settings) + if (custom) " · 직접 정함" else "",
+                            summary = summary,
                             summaryColor = if (off && alarms.isNotEmpty()) cal.alarmOff else null,
                             open = groups.isOpen(key, custom), onToggle = { groups.toggle(key, custom) },
                             trailing = if (alarms.isNotEmpty()) ({
                                 Switch(
                                     checked = !day.alarmSkipped,
-                                    onCheckedChange = { vm.setAlarmSkipped(date, !it) },
-                                    modifier = Modifier.semantics { contentDescription = "이 날 알람" },
+                                    onCheckedChange = {
+                                        haptics.performHapticFeedback(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+                                        vm.setAlarmSkipped(date, !it)
+                                    },
+                                    // [VIS-02] Read with what it does: "이 날 알람, 06:10에 울려요, 켜짐".
+                                    modifier = Modifier.semantics { contentDescription = "이 날 알람, $summary" },
                                 )
                             }) else null,
                         ) { AlarmContent(day, snapshot, vm, alarms, settings, onOpenShiftTypes) }
@@ -702,7 +715,7 @@ private fun AlarmContent(
     }
     Text(
         when {
-            custom != null -> "이 날만 직접 정한 알람이에요. 근무 알람 대신 울려요."
+            custom != null -> "이 날 알람이에요. 근무 알람 대신 울려요."
             day.alarmSkipped -> "이 날은 알람이 울리지 않아요. 위 스위치로 다시 켤 수 있어요."
             type != null && type.alarmEnabled -> "${type.name} 근무 알람 설정을 따라요."
             type != null -> "${type.name} 근무는 알람이 꺼져 있어요."

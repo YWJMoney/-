@@ -6,6 +6,14 @@ import com.bamnat.core.model.LeaveKind
 import com.bamnat.core.model.Leave
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
@@ -77,6 +85,20 @@ import java.time.YearMonth
 
 const val GRID_ROWS = 6
 
+/** [CAL-01] Room left of each week for the bar that marks a week over the hour limit. */
+val WEEK_BAR_SPACE = 5.dp
+
+/**
+ * [VIS-02] What a bigger system font adds to a day cell. The date and the badges keep their size; only
+ * the line under the badge grows, up to 13dp, so the cell grows by that much.
+ */
+@Composable
+internal fun cellTextGrowth(): Dp = with(LocalDensity.current) {
+    ((minOf(11.sp.toDp(), 13.dp) - 11.dp) * FOOTER_LINE).coerceAtLeast(0.dp)
+}
+
+private const val FOOTER_LINE = 1.15f
+
 @Composable
 fun WeekdayHeader(weekStart: DayOfWeek, modifier: Modifier = Modifier) {
     val cal = LocalCalendarColors.current
@@ -129,25 +151,73 @@ fun MonthGrid(
     showMoney: Boolean = false,
     /** [FEAT-17] Memo-first: the start of each day's memo in place of the hours. */
     memoTexts: Map<LocalDate, String> = emptyMap(),
+    /** [CAL-01] With a stamp chosen in quick input, a finger dragged over days paints them all at once. */
+    onPaint: ((List<LocalDate>) -> Unit)? = null,
+    /** The hour limit a week over it is marked against, said to TalkBack at the week's first day. */
+    weeklyLimitHours: Int = com.bamnat.core.hours.HourLimits().weeklyLimitHours,
 ) {
     val cal = LocalCalendarColors.current
+    val haptics = LocalHapticFeedback.current
     val dayMoney = remember(money, month, showMoney) { if (showMoney) money.days(month) else emptyMap() }
     val firstCell = remember(month, calculator) { calculator.weekStartOf(month.atDay(1)) }
-    Column(modifier.fillMaxWidth()) {
+    // Days under the finger while painting, shown at once and written when it lifts.
+    var dragged by remember { mutableStateOf<List<LocalDate>>(emptyList()) }
+    val paint by rememberUpdatedState(onPaint)
+    val painting = Modifier.pointerInput(firstCell, cellHeight, onPaint != null) {
+        if (paint == null) return@pointerInput
+        val bar = WEEK_BAR_SPACE.toPx()
+        fun dateAt(p: Offset): LocalDate? {
+            val row = (p.y / cellHeight.toPx()).toInt()
+            val col = ((p.x - bar) / ((size.width - bar) / 7f)).toInt()
+            if (p.x < bar || p.y < 0f || row !in 0 until GRID_ROWS || col !in 0..6) return null
+            return firstCell.plusDays(row * 7L + col)
+        }
+        detectDragGestures(
+            onDragStart = { p ->
+                dragged = listOfNotNull(dateAt(p))
+                // [VIS-02] Felt when the finger starts painting, a tick per day, and a firmer one when it is written.
+                haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+            },
+            onDragEnd = {
+                val days = dragged
+                dragged = emptyList()
+                if (days.isNotEmpty()) {
+                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                    paint?.invoke(days)
+                }
+            },
+            onDragCancel = { dragged = emptyList() },
+        ) { change, _ ->
+            change.consume()
+            val d = dateAt(change.position)
+            if (d != null && d !in dragged) {
+                dragged = dragged + d
+                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+            }
+        }
+    }
+    Column(modifier.fillMaxWidth().then(painting)) {
         for (row in 0 until GRID_ROWS) {
             val rowStart = firstCell.plusWeeks(row.toLong())
             val week = remember(calculator, rowStart) { calculator.week(rowStart) }
+            // [CAL-01] A week over the limit gets a bar at its left instead of a tint that mixes with the shifts' colors.
+            val barColor = cal.warning
             Row(
                 Modifier
                     .fillMaxWidth()
                     .height(cellHeight)
-                    .then(
+                    .drawBehind {
                         if (week.overLimit) {
-                            Modifier.background(cal.warningContainer.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
-                        } else {
-                            Modifier
-                        },
-                    ),
+                            val inset = 6.dp.toPx()
+                            drawRoundRect(
+                                barColor,
+                                topLeft = Offset(0f, inset),
+                                size = Size(3.dp.toPx(), size.height - inset * 2),
+                                cornerRadius = CornerRadius(1.5.dp.toPx()),
+                            )
+                        }
+                    }
+                    .padding(start = WEEK_BAR_SPACE),
             ) {
                 for (col in 0 until 7) {
                     val date = rowStart.plusDays(col.toLong())
@@ -157,7 +227,7 @@ fun MonthGrid(
                         snapshot = snapshot,
                         inMonth = date.year == month.year && date.month == month.month,
                         isToday = date == today,
-                        isSelected = date == selected,
+                        isSelected = date == selected || date in dragged,
                         hasMemo = date in memoDates,
                         money = dayMoney[date],
                         memoText = memoTexts[date],
@@ -166,6 +236,11 @@ fun MonthGrid(
                         onClick = { onDayClick(date) },
                         onQuickAction = { onQuickAction(date, it) },
                         modifier = Modifier.weight(1f).fillMaxHeight(),
+                        weekNote = if (col == 0 && week.overLimit) {
+                            "이 주 ${HoursFormat.hours(week.totalMinutes.toDouble())}시간, ${weeklyLimitHours}시간 넘음"
+                        } else {
+                            null
+                        },
                     )
                 }
             }
@@ -189,12 +264,17 @@ private fun DayCell(
     onClick: () -> Unit,
     onQuickAction: (QuickAction) -> Unit,
     modifier: Modifier = Modifier,
+    weekNote: String? = null,
 ) {
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
     var menu by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(10.dp)
+    // [CAL-01] Date 14sp and the line under it 11sp, growing with the font setting only as far as the cell holds.
+    val density = LocalDensity.current
+    val dateSize = with(density) { minOf(14.sp.toDp(), 17.dp).toSp() }
+    val footerSize = with(density) { minOf(11.sp.toDp(), 13.dp).toSp() }
     val date = day.date
     val type = day.shiftType
     val holidayName = KoreanHolidays.nameOf(date)
@@ -224,13 +304,15 @@ private fun DayCell(
             if (e.entry.hasTimes || e.covered != null) append(" ").append(HoursFormat.korean(e.minutes))
         }
         if (day.source == DaySource.OVERRIDE || day.hasCustomTimes) append(", 직접 바꿈")
-        if (day.alarmSkipped) append(", 알람 끔")
+        // [VIS-02] Said the way the day screen says it.
+        if (day.alarmSkipped) append(", 알람 꺼짐")
         if (hasMemo) append(", 메모 있음")
         money?.let { m ->
             if (m.jobs > 0) append(", 일감 ${m.jobs}건")
             if (m.income != 0L) append(", 수입 ").append(Fmt.won(m.income))
             if (m.unpaid > 0) append(", 받을 돈 ").append(Fmt.won(m.unpaid))
         }
+        weekNote?.let { append(", ").append(it) }
     }
 
     Box(
@@ -278,34 +360,24 @@ private fun DayCell(
                         style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
                         fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.SemiBold,
                         color = if (isToday) scheme.onPrimary else numberColor,
-                        fontSize = 13.sp,
+                        fontSize = dateSize,
+                        lineHeight = dateSize,
                     )
                 }
-                val leave = day.leave
-                // [EXTRA-01] The kinds of extra work on the day: the first top right, a second top left.
-                val kinds = day.extras.map { it.kind }.distinctBy { it.id }
-                val covered = day.coveredShift
-                // On a day off with a 대근 the covered shift is the badge, so the cell reads "야간, 대근".
-                val kindIsBadge = !day.isWorkDay && covered == null && kinds.isNotEmpty() && day.leave == null
-                val marks = if (kindIsBadge) kinds.drop(1) else kinds
+                // [CAL-01] Two corners, filled in order: 알람 꺼짐 (always top left, so it is never pushed out),
+                // then the kinds of extra work, a part-day leave, a day changed by hand. What does not fit
+                // is still read out and shown under the calendar.
+                val marks = remember(day) { cornerMarks(day) }
+                val alarmOff = day.alarmSkipped
                 val topEnd = marks.firstOrNull()
-                when {
-                    topEnd != null -> Box(Modifier.align(Alignment.TopEnd)) { ExtraKindMark(topEnd, size = 13.dp) }
-                    leave != null && !leave.isFullDay -> Box(Modifier.align(Alignment.TopEnd)) { LeaveMark(leave, size = 13.dp) }
-                    day.source == DaySource.OVERRIDE || day.hasCustomTimes -> Box(
-                        // Marks days the user changed by hand.
-                        Modifier.align(Alignment.TopEnd).padding(2.dp).size(5.dp).clip(CircleShape).background(cal.changed),
-                    )
-                }
-                // [DAY-03] A day whose alarm was turned off says so, so a missed alarm is never a surprise.
-                if (day.alarmSkipped) {
+                val topStart = if (alarmOff) null else marks.getOrNull(1)
+                topEnd?.let { Box(Modifier.align(Alignment.TopEnd)) { CornerMark(it) } }
+                if (alarmOff) {
+                    // [DAY-03] A day whose alarm was turned off says so, so a missed alarm is never a surprise.
                     Icon(Icons.Filled.AlarmOff, contentDescription = null, tint = cal.alarmOff,
-                        modifier = Modifier.align(Alignment.TopStart).size(12.dp))
-                } else {
-                    marks.getOrNull(1)?.let { second ->
-                        Box(Modifier.align(Alignment.TopStart)) { ExtraKindMark(second, size = 13.dp) }
-                    }
+                        modifier = Modifier.align(Alignment.TopStart).size(13.dp))
                 }
+                topStart?.let { Box(Modifier.align(Alignment.TopStart)) { CornerMark(it) } }
             }
             val fullLeave = day.leave?.takeIf { it.isFullDay }
             val covered = day.coveredShift
@@ -347,8 +419,8 @@ private fun DayCell(
                 }
                 Text(
                     footer,
-                    fontSize = 9.sp,
-                    lineHeight = 10.sp,
+                    fontSize = footerSize,
+                    lineHeight = footerSize * FOOTER_LINE,
                     maxLines = 1,
                     overflow = TextOverflow.Clip,
                     color = when {
@@ -439,5 +511,32 @@ private fun JobBadge(count: Int, owed: Boolean) {
     ) {
         Text(if (count > 1) "일$count" else "일", fontSize = 11.sp, fontWeight = FontWeight.Bold,
             color = if (owed) LocalCalendarColors.current.warning else scheme.onSecondaryContainer, maxLines = 1)
+    }
+}
+
+/** [CAL-01] What a cell's corners can show, most important first. */
+private sealed interface Corner {
+    data class Kind(val kind: com.bamnat.core.model.ExtraKind) : Corner
+    data class PartLeave(val leave: Leave) : Corner
+    data object Changed : Corner
+}
+
+/** The corner marks of a day, in order; 알람 꺼짐 has its own place and is not among them. */
+private fun cornerMarks(day: ResolvedDay): List<Corner> = buildList {
+    // [EXTRA-01] On a day off whose only work is extra work, the first kind is the day's badge, not a corner.
+    val kinds = day.extras.map { it.kind }.distinctBy { it.id }
+    val kindIsBadge = !day.isWorkDay && day.coveredShift == null && kinds.isNotEmpty() && day.leave == null
+    (if (kindIsBadge) kinds.drop(1) else kinds).forEach { add(Corner.Kind(it)) }
+    day.leave?.takeIf { !it.isFullDay }?.let { add(Corner.PartLeave(it)) }
+    if (day.source == DaySource.OVERRIDE || day.hasCustomTimes) add(Corner.Changed)
+}
+
+@Composable
+private fun CornerMark(mark: Corner) {
+    when (mark) {
+        is Corner.Kind -> ExtraKindMark(mark.kind, size = 13.dp)
+        is Corner.PartLeave -> LeaveMark(mark.leave, size = 13.dp)
+        // Days the user changed by hand.
+        Corner.Changed -> Box(Modifier.padding(2.dp).size(5.dp).clip(CircleShape).background(LocalCalendarColors.current.changed))
     }
 }

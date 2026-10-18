@@ -899,7 +899,7 @@ private fun TimingContent(kind: ExtraKind, timed: List<ShiftType>, snapshot: Sch
         }
         is ExtraTiming.AsShift -> {
             if (timed.isEmpty()) {
-                Hint("시간이 있는 근무 유형이 없어요. 근무 유형을 만들면 그 시간이 그대로 들어가요. 지금은 09:00–18:00으로 넣어요.")
+                Hint("시간이 있는 근무 종류가 없어요. 근무 종류를 만들면 그 시간이 그대로 들어가요. 지금은 09:00–18:00으로 넣어요.")
             } else {
                 // [EXTRA-07] Several shifts at once: one 대근 for 모닝 and 나이트 alike. A shift deleted since is left out.
                 val picked = t.shiftTypeIds.filter { id -> timed.any { it.id == id } }.toSet()

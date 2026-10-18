@@ -10,10 +10,15 @@ import com.bamnat.app.data.SettingsRepository
 import com.bamnat.app.data.db.AppDatabase
 import com.bamnat.app.diag.EventLog
 import com.bamnat.app.money.JobReminderScheduler
+import com.bamnat.app.pay.LeaveReminder
 import com.bamnat.app.pay.PayStore
+import com.bamnat.app.sleep.DayNoticeScheduler
+import com.bamnat.app.sleep.QuietHold
+import com.bamnat.app.sleep.SleepingNotice
 import com.bamnat.app.tier.FeatureGate
 import com.bamnat.app.diag.Telemetry
 import com.bamnat.app.widget.WidgetRefresher
+import com.bamnat.core.sleep.SleepDebt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -25,6 +30,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import java.time.Duration
 import java.time.LocalDateTime
 
 /** Manual dependency container, created once in [BamnatApp]. */
@@ -49,6 +55,8 @@ class AppContainer(context: Context) {
     }
     val payStore = PayStore(appContext)
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore)
+    /** [SET-01] The data as it was before the last import, to take the import back. */
+    val importUndo by lazy { com.bamnat.app.data.ImportUndo(java.io.File(appContext.noBackupFilesDir, "before_import.json"), backupManager) }
     /** [COMM-00] Company settings as a file for coworkers. */
     val companyShare by lazy { com.bamnat.app.data.CompanyShare(scheduleRepository, payStore, settingsRepository) }
     /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
@@ -59,6 +67,13 @@ class AppContainer(context: Context) {
     /** [SHR-02] Schedules others shared, kept beside the user's own and never backed up. */
     val received by lazy { com.bamnat.app.share.ReceivedCalendarStore(java.io.File(appContext.noBackupFilesDir, "received_calendars.json")) }
     val featureGate = FeatureGate(settingsRepository, appScope)
+    /** [NAV-01] The month the calendar, 돈 and 근무·급여 show together. */
+    val shownMonth = com.bamnat.app.ui.ShownMonth()
+
+    private companion object {
+        /** A shorter sleep (a tap and an undo, a doze) gets no "잤어요" line. */
+        const val WOKE_SUMMARY_MINUTES = 20L
+    }
 
     suspend fun rescheduleAlarms(after: LocalDateTime = LocalDateTime.now()) {
         alarmScheduler.reschedule(scheduleRepository.snapshot.first(), settingsRepository.current.alarmsEnabled, after)
@@ -80,20 +95,56 @@ class AppContainer(context: Context) {
                 }
         }
         // [WORK-02] Any change to the booked jobs re-plans the next job reminder.
+        // [SLP-15] So does the 나갈 돈·받을 돈 switch.
         appScope.launch {
-            moneyRepository.book.debounce(500).collect { JobReminderScheduler.reschedule(appContext, it) }
+            val on = settingsRepository.settings.map { it.moneyNotices }.distinctUntilChanged()
+            combine(moneyRepository.book, on) { book, _ -> book }.debounce(500)
+                .collect { JobReminderScheduler.reschedule(appContext, it, settingsRepository.current) }
         }
-        // [SLP-04][SLP-07] Sleep reminders follow the schedule and their settings.
+        // [SLP-15] 하루 브리핑, 퇴근길 and 잘 준비 follow the schedule, the alarms and their settings.
         appScope.launch {
-            val sleep = settingsRepository.settings.map { it.sleepReminders to it.sleepTargetMinutes }.distinctUntilChanged()
-            combine(scheduleRepository.snapshot, sleep) { snapshot, _ -> snapshot }
+            val reads = settingsRepository.settings.map {
+                listOf(it.briefing, it.commuteNotice, it.bedtimeNotice, it.sleepTargetMinutes, it.commuteMinutes, it.alarmsEnabled, it.workStyle)
+            }.distinctUntilChanged()
+            combine(scheduleRepository.snapshot, reads) { snapshot, _ -> snapshot }
                 .debounce(500)
-                .collect { com.bamnat.app.sleep.SleepReminder.reschedule(appContext, it, settingsRepository.current) }
+                .collect { DayNoticeScheduler.reschedule(appContext, it, settingsRepository.current) }
         }
-        // [PAY-12][REL-08] 연차 notices follow whether the user entered their days.
+        // [PAY-12][REL-08] 연차 notices follow whether the user entered their days, and their switch.
         appScope.launch {
-            payStore.profile.map { it?.rules?.annualLeaveDays != null }.distinctUntilChanged()
-                .collect { com.bamnat.app.pay.LeaveReminder.reschedule(appContext, payStore.profile.value) }
+            val entered = payStore.profile.map { it?.rules?.annualLeaveDays != null }.distinctUntilChanged()
+            val on = settingsRepository.settings.map { it.leaveNotice }.distinctUntilChanged()
+            combine(entered, on) { a, b -> a to b }
+                .collect { LeaveReminder.reschedule(appContext, payStore.profile.value, settingsRepository.current) }
+        }
+        // [SLP-15] 자는 중 follows the sleep log, and a sleep that just ended says how long it was.
+        // What waited while the user slept is planned again from the log.
+        appScope.launch {
+            var openId: Long? = null
+            val on = settingsRepository.settings.map { it.sleepingNotice }.distinctUntilChanged()
+            combine(sleepRepository.recent(days = 2), on, alarmScheduler.upcoming) { log, show, next -> Triple(log, show, next) }
+                .collect { (log, show, next) ->
+                    val now = LocalDateTime.now()
+                    val open = log.firstOrNull {
+                        it.end == null && !it.imported && Duration.between(it.start, now).toMinutes() < SleepDebt.MAX_SLEEP_MINUTES
+                    }
+                    when {
+                        open != null && show ->
+                            SleepingNotice.show(appContext, open, next?.let { AlarmScheduler.millisToLocal(it.triggerAtMillis) }, now)
+                        openId != null -> {
+                            // The sleep shown a moment ago ended (or was deleted).
+                            val ended = log.firstOrNull { it.id == openId && it.end != null }
+                            if (show && ended != null && (ended.minutes ?: 0) >= WOKE_SUMMARY_MINUTES) {
+                                SleepingNotice.woke(appContext, ended, SleepingNotice.nextWork(scheduleRepository.snapshot.first().resolver, now))
+                            } else {
+                                SleepingNotice.cancel(appContext)
+                            }
+                        }
+                        !show -> SleepingNotice.cancel(appContext)
+                    }
+                    openId = open?.id
+                    QuietHold.release(appContext)
+                }
         }
         // [REL-10] The locked-boot copy carries the ringing settings too, so it follows their changes.
         appScope.launch {

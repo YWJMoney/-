@@ -22,7 +22,11 @@ class AlarmReceiver : BroadcastReceiver() {
                 ACTION_SHIFT_ALARM -> if (ring != null && System.currentTimeMillis() - ring.triggerAtMillis < STALE_AFTER_MILLIS) {
                     startRinging(context, ring)
                 }
-                ACTION_SNOOZE_ALARM -> { BootAlarms.saveSnooze(context, null, 0L); ring?.let { startRinging(context, it) } }
+                ACTION_SNOOZE_ALARM -> {
+                    BootAlarms.saveSnooze(context, null, 0L)
+                    Notifications.cancel(context, Notifications.SNOOZE_NOTIFICATION_ID)
+                    ring?.let { startRinging(context, it) }
+                }
             }
             BootAlarms.registerNext(context, after = ring?.triggerAtMillis ?: System.currentTimeMillis())
             return
@@ -102,11 +106,15 @@ class SystemEventReceiver : BroadcastReceiver() {
             try {
                 container.rescheduleAlarms(LocalDateTime.now())
                 container.alarmScheduler.restoreSnooze()
+                val settings = container.settingsRepository.current
                 container.moneyRepository.let { m ->
-                    com.bamnat.app.money.JobReminderScheduler.reschedule(context, com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed()))
+                    com.bamnat.app.money.JobReminderScheduler.reschedule(context,
+                        com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed()), settings)
                 }
-                com.bamnat.app.pay.LeaveReminder.reschedule(context, container.payStore.profile.value)
-                com.bamnat.app.sleep.SleepReminder.reschedule(context, container.scheduleRepository.snapshot.first(), container.settingsRepository.current)
+                com.bamnat.app.pay.LeaveReminder.reschedule(context, container.payStore.profile.value, settings)
+                com.bamnat.app.sleep.DayNoticeScheduler.reschedule(context, container.scheduleRepository.snapshot.first(), settings)
+                // [SLP-15] What waited while the user slept: its alarm did not survive the reboot either.
+                com.bamnat.app.sleep.QuietHold.release(context)
                 // A new date or time zone changes what "today" is on the widgets.
                 WidgetRefresher.refresh(context)
             } finally {
@@ -116,12 +124,27 @@ class SystemEventReceiver : BroadcastReceiver() {
     }
 }
 
-/** [REL-12] The ringing notification's 끄기 and 다시 알림 buttons, usable without unlocking. */
+/**
+ * [REL-12] The ringing notification's 끄기 and 다시 울림 buttons, usable without unlocking.
+ * [SLP-15] And 지금 끄기 on the notice of a snooze still to ring.
+ */
 class AlarmActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             AlarmService.ACTION_DISMISS -> AlarmService.dismiss(context)
             AlarmService.ACTION_SNOOZE -> AlarmService.snooze(context)
+            ACTION_CANCEL_SNOOZE -> if (BootAlarms.isLocked(context)) {
+                // [REL-10] Still locked after a reboot: the snooze lives only in the device-protected copy.
+                context.getSystemService(android.app.AlarmManager::class.java)?.cancel(AlarmScheduler.snoozeIntent(context, null))
+                BootAlarms.saveSnooze(context, null, 0L)
+                Notifications.cancel(context, Notifications.SNOOZE_NOTIFICATION_ID)
+            } else {
+                context.appContainer.alarmScheduler.cancelSnooze()
+            }
         }
+    }
+
+    companion object {
+        const val ACTION_CANCEL_SNOOZE = "com.bamnat.app.alarm.CANCEL_SNOOZE"
     }
 }

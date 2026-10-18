@@ -27,10 +27,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,7 +59,10 @@ import kotlinx.coroutines.flow.stateIn
 import java.time.DayOfWeek
 import java.time.YearMonth
 
-class StatsViewModel(container: AppContainer) : ViewModel() {
+class StatsViewModel(private val container: AppContainer) : ViewModel() {
+    /** [NAV-01] The month shown here, the calendar's and 돈's too. */
+    val shownMonth: StateFlow<YearMonth> = container.shownMonth.month
+    fun showMonth(month: YearMonth) = container.shownMonth.show(month)
     val snapshot: StateFlow<ScheduleSnapshot?> =
         container.scheduleRepository.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val settings: StateFlow<AppSettings> = container.settingsRepository.settings
@@ -80,8 +80,10 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
     val payProfile by vm.payProfile.collectAsStateWithLifecycle()
     val tier by vm.tier.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
-    var monthText by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
-    val month = remember(monthText) { YearMonth.parse(monthText) }
+    // [NAV-01] The same month as the calendar and 돈.
+    val month by vm.shownMonth.collectAsStateWithLifecycle()
+    // [NAV-01] Work paid by the hour or the shift reads its pay here; field and shop work have 돈 for it.
+    val pays = settings.workStyle?.usesPayEngine != false
 
     val snap = snapshot
     if (snap == null) {
@@ -103,12 +105,12 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("근무 통계", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-            IconButton(onClick = { monthText = month.minusMonths(1).toString() }) {
+            Text(if (pays) "근무·급여" else "근무 통계", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+            IconButton(onClick = { vm.showMonth(month.minusMonths(1)) }) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달")
             }
             Text(Fmt.month(month), style = MaterialTheme.typography.titleMedium)
-            IconButton(onClick = { monthText = month.plusMonths(1).toString() }) {
+            IconButton(onClick = { vm.showMonth(month.plusMonths(1)) }) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달")
             }
         }
@@ -129,6 +131,18 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                 row.forEach { tile -> tile(Modifier.weight(1f)) }
                 repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
             }
+        }
+
+        // [NAV-01] 근무·급여: the month's pay right under its hours.
+        if (pays) {
+            PayEntryCard(
+                month = month,
+                total = remember(payProfile, snap, month, tier) {
+                    payProfile?.takeIf { FeatureGate.allows(tier, Feature.PAY_ENGINE) }?.let { vm.payTotal(it, snap, month) }
+                },
+                hasProfile = payProfile != null,
+                onClick = onOpenPay,
+            )
         }
 
         // [EXTRA-02] 주 52시간 (제53조), 64 under 탄력적 근로시간제; it does not apply under 5 employees.
@@ -161,15 +175,6 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                 }
             }
         }
-
-        PayEntryCard(
-            month = month,
-            total = remember(payProfile, snap, month, tier) {
-                payProfile?.takeIf { FeatureGate.allows(tier, Feature.PAY_ENGINE) }?.let { vm.payTotal(it, snap, month) }
-            },
-            hasProfile = payProfile != null,
-            onClick = onOpenPay,
-        )
 
         SectionCard(title = "3개월 평균 (${three.firstMonth.monthValue}월–${three.lastMonth.monthValue}월)") {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

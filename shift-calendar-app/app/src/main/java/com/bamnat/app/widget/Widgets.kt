@@ -101,7 +101,7 @@ private fun WidgetFrame(content: @Composable () -> Unit) {
 private fun TodayContent(data: WidgetData) {
     Column(GlanceModifier.fillMaxSize()) {
         if (!data.hasPattern) {
-            Text("근무 패턴을 정하면 여기에 오늘 근무가 보여요", style = small(GlanceTheme.colors.onSurfaceVariant))
+            Text("근무 주기를 정하면 여기에 오늘 근무가 보여요", style = small(GlanceTheme.colors.onSurfaceVariant))
             return@Column
         }
         DayLine("오늘", data.day(data.today), big = true)

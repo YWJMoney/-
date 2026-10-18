@@ -110,7 +110,6 @@ class ScreenshotTest {
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.USE_FULL_SCREEN_INTENT)
         ShadowAlarmManager.setCanScheduleExactAlarms(true)
         val c = app.container
-        c.settingsRepository.update { it.copy(notificationPermissionAsked = true) }
         val repo = c.scheduleRepository
         repo.ensureDefaults()
         val types = repo.shiftTypes.first().associateBy { it.name }
@@ -190,8 +189,12 @@ class ScreenshotTest {
         memos.consumeLastDeleted()
     }
 
-    private fun shoot(name: String, qualifiers: String, actions: Screen.() -> Unit = {}) {
+    private fun shoot(name: String, qualifiers: String, actions: Screen.() -> Unit = {}) = shoot(name, qualifiers, 1f, actions)
+
+    /** [VIS-02] With the phone's text size at [fontScale]. */
+    private fun shoot(name: String, qualifiers: String, fontScale: Float, actions: Screen.() -> Unit = {}) {
         RuntimeEnvironment.setQualifiers(qualifiers)
+        RuntimeEnvironment.setFontScale(fontScale)
         // The calendar re-reads the date every minute forever, so the clock is driven by hand.
         compose.mainClock.autoAdvance = false
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
@@ -343,6 +346,13 @@ class ScreenshotTest {
         /** Selects a day without opening it. */
         fun selectDay(date: LocalDate) = tapText(Fmt.dayTitle(date), prefix = true, scrolls = 0)
 
+        /** [CAL-01] Drags a finger from one day to another, slowly, as quick input's painting stroke. */
+        fun dragDays(from: LocalDate, to: LocalDate) {
+            val a = reach(Fmt.dayTitle(from), exact = false, prefix = true, scrolls = 0, across = 0.5f).boundsInWindow.center
+            val b = reach(Fmt.dayTitle(to), exact = false, prefix = true, scrolls = 0, across = 0.5f).boundsInWindow.center
+            gesture { _, _, _ -> (0..24).map { i -> (a.x + (b.x - a.x) * i / 24) to (a.y + (b.y - a.y) * i / 24) } }
+        }
+
         private fun gesture(points: (width: Int, height: Int, density: Float) -> List<Pair<Float, Float>>) {
             scenario.onActivity { activity ->
                 val view = activity.window.decorView
@@ -373,6 +383,12 @@ class ScreenshotTest {
             val p = if (wide) 40 * d to (45 + index * 62) * d
             else w * (index + 0.5f) / 5 to h - 40 * d
             listOf(p, p)
+        }
+
+        /** [SET-01] Opens a group from the settings list. */
+        fun settingsPage(title: String, wide: Boolean = false) {
+            tab(4, wide)
+            tapText(title, exact = true)
         }
 
         /** Replaces the activity's content, for screens that are slow to reach by touch. */
@@ -411,14 +427,14 @@ class ScreenshotTest {
         reveal("추가 근무", exact = true)
     }
     @Test fun foldedTimeWheel() = shoot("20_folded_time_wheel", FOLDED) {
-        tab(4, wide = false)
-        tapText("근무 유형", exact = true)
+        settingsPage("내 근무")
+        tapText("근무 종류와 시간", exact = true)
         tapText("주간", exact = true)
         tapText("시작", exact = true)
     }
     @Test fun foldedPatternChange() = shoot("21_folded_pattern_change", FOLDED) {
-        tab(4, wide = false)
-        tapText("근무 패턴", exact = true)
+        settingsPage("내 근무")
+        tapText("근무 주기", exact = true)
         tapText("저장", exact = true)
     }
     @Test fun foldedStats() = shoot("3_folded_stats", FOLDED) { tab(3, wide = false) }
@@ -439,12 +455,12 @@ class ScreenshotTest {
     }
     @Test fun unfoldedMemos() = shoot("12_unfolded_memos", UNFOLDED) { tab(2, wide = true) }
     @Test fun foldedShiftTypes() = shoot("13_folded_shift_types", FOLDED) {
-        tab(4, wide = false)
-        tapText("근무 유형", exact = true)
+        settingsPage("내 근무")
+        tapText("근무 종류와 시간", exact = true)
     }
     @Test fun foldedPattern() = shoot("14_folded_pattern", FOLDED) {
-        tab(4, wide = false)
-        tapText("근무 패턴", exact = true)
+        settingsPage("내 근무")
+        tapText("근무 주기", exact = true)
     }
     @Test fun foldedDayAlarmEditor() = shoot("15_folded_day_alarm_editor", FOLDED) {
         openDay(dayCell)
@@ -453,14 +469,14 @@ class ScreenshotTest {
     }
 
     @Test fun foldedShiftTypeEditor() = shoot("16_folded_shift_type_editor", FOLDED) {
-        tab(4, wide = false)
-        tapText("근무 유형", exact = true)
+        settingsPage("내 근무")
+        tapText("근무 종류와 시간", exact = true)
         tapText("주간", exact = true)
     }
 
     @Test fun foldedShiftTypeAlarms() = shoot("17_folded_shift_type_alarms", FOLDED) {
-        tab(4, wide = false)
-        tapText("근무 유형", exact = true)
+        settingsPage("내 근무")
+        tapText("근무 종류와 시간", exact = true)
         tapText("주간", exact = true)
         reveal("알람 추가")
     }
@@ -539,8 +555,8 @@ class ScreenshotTest {
         reveal("휴가", exact = true)
     }
     @Test fun foldedShiftIcons() = shoot("38_folded_shift_icons", FOLDED) {
-        tab(4, wide = false)
-        tapText("근무 유형", exact = true)
+        settingsPage("내 근무")
+        tapText("근무 종류와 시간", exact = true)
         tapText("주간", exact = true)
         scrollUp(330)
     }
@@ -553,8 +569,8 @@ class ScreenshotTest {
         scrollUp(330)
     }
     @Test fun foldedBreakStart() = shoot("42_folded_break_start", FOLDED) {
-        tab(4, wide = false)
-        tapText("근무 유형", exact = true)
+        settingsPage("내 근무")
+        tapText("근무 종류와 시간", exact = true)
         tapText("주간", exact = true)
         scrollUp(150)
     }
@@ -669,7 +685,7 @@ class ScreenshotTest {
         reveal("야간 대근", exact = true)
     }
     @Test fun foldedExtraKinds() = shoot("76_folded_extra_kinds", FOLDED) {
-        tab(4, wide = false)
+        settingsPage("내 근무")
         tapText("연장 휴무일 근무 지정", exact = true)
     }
     // ---- [EXTRA-07][EXTRA-08] 연장 휴무일 근무 지정 ----
@@ -913,8 +929,8 @@ class ScreenshotTest {
 
     // ---- M6 [SLP-08][QA-01] ----
     @Test fun foldedSettingsHealthSleep() = shoot("89_folded_settings_health_sleep", FOLDED) {
-        tab(4, wide = false)
-        repeat(SETTINGS_SLEEP_SCROLLS) { scrollUp(800, across = 0.5f) }
+        settingsPage("잠과 휴식")
+        reveal("워치·휴대폰 수면 기록 함께 보기", exact = true)
     }
     @Test fun foldedTodayHealthSleep() = shoot("90_folded_today_health_sleep", FOLDED) {
         app.container.settingsRepository.update { it.copy(healthSleep = true) }
@@ -1185,8 +1201,8 @@ class ScreenshotTest {
     @Test fun foldedSettingsCompany() = shoot("127_folded_settings_company", FOLDED) {
         val c = companyOn()
         c.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("c1", "(주)예시정밀", "생산팀", "s1", 2, true, java.time.Instant.now(), vote = true))
-        tab(4, wide = false)
-        reveal("회사 설정", exact = true)
+        settingsPage("급여와 연차")
+        reveal("같은 회사 사람들과", exact = true)
     }
     @Test fun foldedKindAsk() = shoot("128_folded_kind_ask", FOLDED) {
         companyOn()
@@ -1316,8 +1332,29 @@ class ScreenshotTest {
         tapText("민지의 근무표 보기", exact = true)
     }
 
+    // ---- M10 [SET-01][SLP-15] Settings in groups ----
+    @Test fun foldedSettingsAlarm() = shoot("140_folded_settings_alarm", FOLDED) { settingsPage("알람") }
+    @Test fun foldedSettingsNotices() = shoot("141_folded_settings_notices", FOLDED) { settingsPage("알림") }
+    @Test fun foldedSettingsRest() = shoot("142_folded_settings_rest", FOLDED) { settingsPage("잠과 휴식") }
+    @Test fun unfoldedSettingsNotices() = shoot("143_unfolded_settings_notices", UNFOLDED) { settingsPage("알림", wide = true) }
+    @Test fun foldedQuickInput() = shoot("145_folded_quick_input", FOLDED) { tapText("빠른 입력", exact = true, scrolls = 0) }
+    @Test fun foldedQuickInputDrag() = shoot("146_folded_quick_input_drag", FOLDED) {
+        tapText("빠른 입력", exact = true, scrolls = 0)
+        tapText("야간 칠하기", exact = true, scrolls = 0)
+        dragDays(dayCell, today)
+    }
+    /** [CAL-01][VIS-02] At 130% text the dates and the line under them stop growing before the cell does. */
+    @Test fun foldedCalendarLargeText() = shoot("148_folded_calendar_large_text", FOLDED, fontScale = 1.3f)
+    @Test fun foldedStatsSameMonth() = shoot("147_folded_stats_same_month", FOLDED) {
+        tapText("이전 달", exact = true, scrolls = 0)
+        tab(3, wide = false)
+    }
+    @Test fun foldedSettingsDataUndo() = shoot("144_folded_settings_data_undo", FOLDED) {
+        runBlocking { app.container.importUndo.save() }
+        settingsPage("데이터")
+    }
+
     private companion object {
-        const val SETTINGS_SLEEP_SCROLLS = 4
         const val RULES_PERIOD_SCROLL = 420
 
         // Galaxy Z Fold6: cover screen 968x2376 px and main screen 1856x2160 px at 420 dpi.

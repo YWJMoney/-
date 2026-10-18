@@ -60,7 +60,10 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
         container.scheduleRepository.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     // [PAYX-15] Opens on the pay month today belongs to: after a 20일 close, 10/25 is November's pay.
-    private val _month = MutableStateFlow(container.payStore.profile.value?.period?.monthOf(java.time.LocalDate.now()) ?: YearMonth.now())
+    // [NAV-01] Opened while the calendar or 근무·급여 shows another month, pay opens on that month;
+    // on this month, on the pay period running now.
+    private val _month = MutableStateFlow(container.shownMonth.month.value.takeIf { it != YearMonth.now() }
+        ?: container.payStore.profile.value?.period?.monthOf(java.time.LocalDate.now()) ?: YearMonth.now())
     val month: StateFlow<YearMonth> = _month.asStateFlow()
     fun moveMonth(by: Long) { _month.value = _month.value.plusMonths(by) }
 

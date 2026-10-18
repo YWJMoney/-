@@ -73,6 +73,7 @@ class AlarmService : Service() {
                         val snoozed = ring.copy(isSnooze = true)
                         AlarmScheduler.setAlarm(this, getSystemService(android.app.AlarmManager::class.java), at, AlarmScheduler.snoozeIntent(this, snoozed))
                         BootAlarms.saveSnooze(this, snoozed, at)
+                        Notifications.postSnoozeWaiting(this, snoozed, at)
                     } else {
                         appContainer.alarmScheduler.scheduleSnooze(ring, minutes)
                         appContainer.telemetry.event(DiagEvents.ALARM_SNOOZED)
@@ -148,7 +149,7 @@ class AlarmService : Service() {
             .setContentIntent(fullScreen)
             .setFullScreenIntent(fullScreen, true)
             // [REL-12] Both buttons work from the lock screen without unlocking the phone.
-            .addAction(lockScreenAction("${snoozeMinutes}분 후 다시", ACTION_SNOOZE, REQ_SNOOZE))
+            .addAction(lockScreenAction("${snoozeMinutes}분 뒤 다시 울림", ACTION_SNOOZE, REQ_SNOOZE))
             .addAction(lockScreenAction("끄기", ACTION_DISMISS, REQ_DISMISS))
             // Swiping the notification away must not leave the alarm ringing with no controls.
             .setDeleteIntent(serviceIntent(this, ACTION_SNOOZE, REQ_DELETE))
@@ -278,10 +279,10 @@ class AlarmService : Service() {
             val start = ring.shiftStart.format(timeFormat)
             val work = ring.shiftName.isNotBlank()
             return when {
-                ring.isSnooze && work -> "$start 근무 시작 · 다시 알림"
-                ring.isSnooze -> "다시 알림"
-                ring.custom && work -> "$start 근무 시작 · 직접 설정한 알람"
-                ring.custom -> "직접 설정한 알람"
+                ring.isSnooze && work -> "$start 근무 시작 · 다시 울림"
+                ring.isSnooze -> "다시 울림"
+                ring.custom && work -> "$start 근무 시작 · 이 날 알람"
+                ring.custom -> "이 날 알람"
                 else -> "$start 근무 시작 · ${ring.offsetMinutes}분 전 알람"
             }
         }

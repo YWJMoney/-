@@ -5,9 +5,10 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.db.AppDatabase
-import com.bamnat.app.sleep.SleepReminder
+import com.bamnat.app.sleep.DayNoticeScheduler
 import com.bamnat.core.model.ShiftOverride
-import com.bamnat.core.sleep.SleepPlan
+import com.bamnat.core.notify.DayNotices
+import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -68,7 +69,7 @@ class M5AppTest {
         assertEquals(3, db.sleepDao().all().size)
     }
 
-    @Test fun remindersFollowTheScheduleAndStayOffUntilTurnedOn() = runBlocking {
+    @Test fun dayNoticesFollowTheScheduleAndStayOffUntilTurnedOn() = runBlocking {
         val schedule = ScheduleRepository(db)
         schedule.ensureDefaults()
         val night = schedule.snapshot.first().shiftTypes.first { it.name == "야간" }
@@ -76,11 +77,15 @@ class M5AppTest {
         schedule.setOverride(day, ShiftOverride.Shift(night.id))
         val snapshot = schedule.snapshot.first()
         val now = day.atTime(12, 0)
-        val tips = SleepReminder.upcoming(snapshot, AppSettings(sleepReminders = true), now)
-        // 야간 22:00–07:00: nap, last coffee, drowsy reminder at 07:00, sleep from 08:00.
-        assertEquals(SleepPlan.Kind.NAP, tips.first().kind)
-        assertTrue(tips.any { it.kind == SleepPlan.Kind.DROWSY && it.at == day.plusDays(1).atTime(7, 0) })
-        assertTrue(tips.all { it.at.isAfter(now) })
-        assertEquals(tips.sortedBy { it.at }, tips)
+        // [SLP-15] Off until turned on.
+        assertTrue(DayNoticeScheduler.plan(snapshot, AppSettings(), now).isEmpty())
+        val on = AppSettings(briefing = true, commuteNotice = true)
+        val notices = DayNoticeScheduler.plan(snapshot, on, now).filter { it.at.isAfter(now) }
+        // 야간 22:00–07:00: a quiet briefing before it, and one notice with sound when it ends.
+        assertEquals(DayNotices.Kind.BRIEFING, notices.first().kind)
+        assertEquals(listOf(day.plusDays(1).atTime(7, 0)), notices.filter { it.kind == DayNotices.Kind.COMMUTE }.map { it.at })
+        assertEquals(notices.sortedBy { it.at }, notices)
+        // Work that is not in shifts and hours has no sleep plan, so no notices.
+        assertTrue(DayNoticeScheduler.plan(snapshot, on.copy(workStyle = WorkStyle.FIELD), now).isEmpty())
     }
 }

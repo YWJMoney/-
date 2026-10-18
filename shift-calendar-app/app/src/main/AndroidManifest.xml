@@ -83,7 +83,7 @@
             android:directBootAware="true"
             android:exported="false" />
 
-        <!-- [REL-12] 끄기·다시 알림 from the lock screen notification. -->
+        <!-- [REL-12] 끄기·다시 울림 from the lock screen notification; [SLP-15] 지금 끄기 for a waiting snooze. -->
         <receiver
             android:name=".alarm.AlarmActionReceiver"
             android:directBootAware="true"
@@ -108,9 +108,19 @@
             android:name=".pay.LeaveReminderReceiver"
             android:exported="false" />
 
-        <!-- [SLP-04][SLP-07] Sleep times and the drowsy-driving reminder, when turned on. -->
+        <!-- [SLP-15] 하루 브리핑, 퇴근길 안전 and 잘 준비; the name stays from 1.10 so its alarms still land. -->
         <receiver
             android:name=".sleep.SleepReminderReceiver"
+            android:exported="false" />
+
+        <!-- [SLP-15] 잠들었어요·깼어요 on a notice, usable from the lock screen. -->
+        <receiver
+            android:name=".sleep.SleepActionReceiver"
+            android:exported="false" />
+
+        <!-- [SLP-15] Money and 연차 notices held while the user sleeps come 30 minutes after waking. -->
+        <receiver
+            android:name=".sleep.QuietHoldReceiver"
             android:exported="false" />
 
         <!-- [LEDG-02] Payment notifications. Off until the user turns it on in the app and grants

@@ -366,7 +366,7 @@ class CompanyShare(
         val root = runCatching { JSONObject(text) }.getOrNull() ?: throw BackupException("회사 설정 파일을 읽을 수 없어요")
         if (root.optString("format") != FORMAT) throw BackupException("밤낮 회사 설정 파일이 아니에요")
         if (root.optInt("v") > VERSION) throw BackupException("더 새로운 버전에서 만든 파일이에요. 앱을 업데이트해 주세요")
-        if (root.optJSONArray("shiftTypes").objects().isEmpty()) throw BackupException("근무 유형이 없는 파일이에요")
+        if (root.optJSONArray("shiftTypes").objects().isEmpty()) throw BackupException("근무 종류가 없는 파일이에요")
         return root
     }
 

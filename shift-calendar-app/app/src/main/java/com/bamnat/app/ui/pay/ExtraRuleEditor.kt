@@ -42,7 +42,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.Fmt
@@ -276,12 +280,12 @@ private fun UnitNumbers(r: ExtraRule, money: UnitMoney?, set: (ExtraRule) -> Uni
                 }
             }
             // In steps of 0.5%, kept on the step so 10% stays exactly 10%.
-            Stepper(ExtraRule.percent(r.percentOfBase),
+            Stepper(ExtraRule.percent(r.percentOfBase), name = "기본급 비율",
                 onMinus = { set(r.copy(percentOfBase = ((Math.round(r.percentOfBase * 200) - 1).coerceIn(1L, 200L)) / 200.0)) },
                 onPlus = { set(r.copy(percentOfBase = ((Math.round(r.percentOfBase * 200) + 1).coerceIn(1L, 200L)) / 200.0)) })
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
                 Text("기준 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                Stepper(PayCalculator.hours(r.unitMinutes), label = null,
+                Stepper(PayCalculator.hours(r.unitMinutes), label = null, name = "기준 시간",
                     onMinus = { set(r.copy(unitMinutes = (r.unitMinutes - 60).coerceAtLeast(60))) },
                     onPlus = { set(r.copy(unitMinutes = (r.unitMinutes + 60).coerceAtMost(24 * 60))) })
             }
@@ -359,7 +363,7 @@ private fun RateChips(rate: Double, onRate: (Double) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         RATES.forEach { p -> FilterChip(selected = abs(rate - p) < 1e-9, onClick = { onRate(p) }, label = { Text(ExtraRule.percent(p)) }) }
     }
-    Stepper(ExtraRule.percent(rate), onMinus = { onRate(stepRate(rate, -1)) }, onPlus = { onRate(stepRate(rate, 1)) })
+    Stepper(ExtraRule.percent(rate), name = "가산율", onMinus = { onRate(stepRate(rate, -1)) }, onPlus = { onRate(stepRate(rate, 1)) })
 }
 
 @Composable
@@ -453,7 +457,7 @@ private fun CustomPremiumDialog(
                 when (kind) {
                     "over" -> Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("이 일", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                        Stepper(PayCalculator.hours(over), label = null,
+                        Stepper(PayCalculator.hours(over), label = null, name = "넘는 시간",
                             onMinus = { over = (over - 60).coerceAtLeast(60) }, onPlus = { over = (over + 60).coerceAtMost(23 * 60) })
                         Text(" 넘는 시간", style = MaterialTheme.typography.bodyLarge)
                     }
@@ -506,13 +510,21 @@ private fun CustomPremiumDialog(
     }
 }
 
+/** [VIS-02] − value +: each step ticks, and TalkBack hears what [name] goes up or down. */
 @Composable
-private fun Stepper(value: String, onMinus: () -> Unit, onPlus: () -> Unit, label: String? = "직접") {
+private fun Stepper(value: String, onMinus: () -> Unit, onPlus: () -> Unit, name: String, label: String? = "직접") {
+    val haptics = LocalHapticFeedback.current
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         if (label != null) Text(label, style = MaterialTheme.typography.labelLarge)
-        OutlinedButton(onClick = onMinus) { Text("−") }
+        OutlinedButton(
+            onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick); onMinus() },
+            modifier = Modifier.semantics { contentDescription = "$name 줄이기" },
+        ) { Text("−") }
         Text(value, style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center, modifier = Modifier.widthIn(min = 56.dp))
-        OutlinedButton(onClick = onPlus) { Text("+") }
+        OutlinedButton(
+            onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick); onPlus() },
+            modifier = Modifier.semantics { contentDescription = "$name 늘리기" },
+        ) { Text("+") }
     }
 }
 
