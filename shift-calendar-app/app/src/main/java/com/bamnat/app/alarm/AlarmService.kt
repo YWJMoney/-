@@ -279,6 +279,9 @@ class AlarmService : Service() {
             val start = ring.shiftStart.format(timeFormat)
             val work = ring.shiftName.isNotBlank()
             return when {
+                // [SCHED-01] A memo's schedule: when it is.
+                ring.label != null && ring.isSnooze -> "$start 일정 · 다시 울림"
+                ring.label != null -> "$start 일정"
                 ring.isSnooze && work -> "$start 근무 시작 · 다시 울림"
                 ring.isSnooze -> "다시 울림"
                 ring.custom && work -> "$start 근무 시작 · 이 날 알람"

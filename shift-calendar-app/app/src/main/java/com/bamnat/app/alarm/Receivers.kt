@@ -112,6 +112,8 @@ class SystemEventReceiver : BroadcastReceiver() {
                         com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed()), settings)
                 }
                 com.bamnat.app.pay.LeaveReminder.reschedule(context, container.payStore.profile.value, settings)
+                // [SCHED-01] Memo schedules did not survive the reboot either.
+                com.bamnat.app.memo.MemoScheduleAlarm.reschedule(context, container.memoRepository.memos.first())
                 com.bamnat.app.sleep.DayNoticeScheduler.reschedule(context, container.scheduleRepository.snapshot.first(), settings)
                 // [SLP-15] What waited while the user slept: its alarm did not survive the reboot either.
                 com.bamnat.app.sleep.QuietHold.release(context)

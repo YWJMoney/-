@@ -39,6 +39,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.snapshots.Snapshot
 import com.bamnat.core.diag.DiagEvents
 import com.bamnat.core.diag.EventBook
+import com.bamnat.core.consent.ConsentItem
 import com.bamnat.core.memo.ChecklistItem
 import com.bamnat.core.memo.Memo
 import com.bamnat.core.money.FixedCost
@@ -110,6 +111,8 @@ class ScreenshotTest {
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.USE_FULL_SCREEN_INTENT)
         ShadowAlarmManager.setCanScheduleExactAlarms(true)
         val c = app.container
+        // [ONBOARD-01] Through the consent pages already; the shots of them start over.
+        c.consentStore.markSeen(ConsentItem.entries)
         val repo = c.scheduleRepository
         repo.ensureDefaults()
         val types = repo.shiftTypes.first().associateBy { it.name }
@@ -435,6 +438,21 @@ class ScreenshotTest {
         openDay(dayCell)
         reveal("메모", exact = true)
     }
+    // ---- [CAL-03][DAY-04] 그 주만 보기, 하루 화면 순서 ----
+    @Test fun foldedWeekOnly() = shoot("160_folded_week_only", FOLDED) {
+        app.container.settingsRepository.update { it.copy(phoneDayView = com.bamnat.app.data.PhoneDayView.WEEK) }
+        settle()
+        selectDay(dayCell)
+        // Fails when the month did not fold to the week.
+        reveal("달 전체 보기", exact = true)
+    }
+    @Test fun foldedDayGroupOrder() = shoot("161_folded_day_group_order", FOLDED) {
+        app.container.settingsRepository.update { it.copy(dayGroupOrder = listOf("memo", "alarm")) }
+        settle()
+        openDay(dayCell)
+        tapText("순서 바꾸기", exact = true)
+        check(shownDialogs().isNotEmpty()) { "순서 창이 열리지 않았어요" }
+    }
     @Test fun foldedExtraWorkDay() = shoot("19_folded_extra_work_day", FOLDED) {
         openDay(restDayExtra)
         reveal("추가 근무", exact = true)
@@ -679,7 +697,7 @@ class ScreenshotTest {
         tapText("대근", exact = true)
     }
     @Test fun foldedMemoFirstCalendar() = shoot("71_folded_memo_first_calendar", FOLDED) {
-        app.container.settingsRepository.update { it.copy(memoFirst = true) }
+        app.container.settingsRepository.update { it.copy(memoInCells = true) }
         settle()
         scrollUp(450)
     }
@@ -1431,6 +1449,44 @@ class ScreenshotTest {
     @Test fun foldedSettingsDataUndo() = shoot("144_folded_settings_data_undo", FOLDED) {
         runBlocking { app.container.importUndo.save() }
         settingsPage("데이터")
+    }
+
+    // ---- [ONBOARD-01][ONBOARD-02] First-start consent pages ----
+    private fun consent(items: Set<ConsentItem> = ConsentItem.entries.toSet(), then: Screen.() -> Unit = {}): Screen.() -> Unit {
+        val c = app.container
+        c.consentStore.forget()
+        c.consentStore.availableForTest = items
+        return fresh(null, then)
+    }
+
+    @Test fun foldedConsentIntro() = shoot("180_folded_consent_intro", FOLDED, consent())
+    @Test fun unfoldedConsentIntro() = shoot("181_unfolded_consent_intro", UNFOLDED, consent())
+    @Test fun foldedConsentNotifications() = shoot("182_folded_consent_notifications", FOLDED, run {
+        shadowOf(app.getSystemService(android.app.NotificationManager::class.java)).setNotificationsEnabled(false)
+        consent { tapText("하나씩 알아보기") }
+    })
+    @Test fun foldedConsentSleepAsk() = shoot("183_folded_consent_sleep_ask", FOLDED,
+        consent(setOf(ConsentItem.SLEEP, ConsentItem.CALENDAR)) { tapText("하나씩 알아보기") })
+    @Test fun foldedConsentSleepHealth() = shoot("184_folded_consent_sleep_health", FOLDED,
+        consent(setOf(ConsentItem.SLEEP, ConsentItem.CALENDAR)) { tapText("하나씩 알아보기"); tapText("네, 차고 자요") })
+    @Test fun foldedConsentSleepNone() = shoot("185_folded_consent_sleep_none", FOLDED,
+        consent(setOf(ConsentItem.SLEEP, ConsentItem.CALENDAR)) { tapText("하나씩 알아보기"); tapText("아니요, 없어요") })
+    @Test fun foldedConsentCalendar() = shoot("186_folded_consent_calendar", FOLDED,
+        consent(setOf(ConsentItem.CALENDAR)) { tapText("하나씩 알아보기") })
+    @Test fun consentPagesLeadToTheFirstSetup() = shoot("187_folded_consent_then_setup", FOLDED,
+        consent(setOf(ConsentItem.CALENDAR)) {
+            tapText("하나씩 알아보기"); tapText("나중에 할게요")
+            // The first setup comes next, and the pages do not come back.
+            tapText("순서가 돌아가요")
+            assertTrue(app.container.consentStore.seen.value!!.contains(ConsentItem.CALENDAR))
+        })
+
+    // ---- [SCHED-01] A memo that names a time ----
+    @Test fun foldedMemoScheduleOffer() = shoot("188_folded_memo_schedule_offer", FOLDED) {
+        tab(2, wide = false); tapText("건강검진 오전 9시")
+    }
+    @Test fun foldedMemoScheduleDialog() = shoot("189_folded_memo_schedule_dialog", FOLDED) {
+        tab(2, wide = false); tapText("건강검진 오전 9시"); tapText("일정으로 넣기", exact = true)
     }
 
     private companion object {

@@ -272,6 +272,12 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
         p
     }
 
+    /** [PAYS-06] Changes read from rules in words, from [from] on; one tap on 되돌리기 brings the old setup back. */
+    fun applyRuleChanges(changes: List<com.bamnat.core.pay.RuleChange>, from: YearMonth) {
+        update { com.bamnat.core.pay.RuleText.apply(it, changes, from) }
+        container.telemetry.event("pay_rule_text", "changes=${changes.size}")
+    }
+
     // ---- off the main thread [PAYS-01][PAYS-02] ----
 
     /** The month for the pay screen, with the range and the figures the cards compare. */

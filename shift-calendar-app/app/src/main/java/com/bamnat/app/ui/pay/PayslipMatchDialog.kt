@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -72,6 +73,8 @@ import com.bamnat.core.pay.PayItem
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.Payslip
 import com.bamnat.core.pay.PayslipMatch
+import com.bamnat.core.pay.PayslipRead
+import com.bamnat.core.pay.SlipRole
 import com.bamnat.core.pay.ValueTimeline
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -112,6 +115,23 @@ private class SlipForm {
     val extras: Int get() = listOfNotNull(base).size + premiums.count { it.amount != null } +
         items.values.count { it != null } + others.count { it.amount != null && it.name.isNotBlank() }
 
+    /** [PAYS-05] Fills the form from a payslip read from a photo or text; the user can still correct every field. */
+    fun fill(read: PayslipRead, profile: PayProfile) {
+        read.gross?.let { gross = it }
+        read.amount(SlipRole.BASE)?.let { base = it }
+        listOf(overtime to SlipRole.OVERTIME, night to SlipRole.NIGHT, holiday to SlipRole.HOLIDAY).forEach { (p, role) ->
+            read.amount(role)?.let { p.amount = it }
+            read.minutes(role)?.let { m -> p.hours = if (m % 60 == 0) "${m / 60}" else "%.2f".format(m / 60.0).trimEnd('0').trimEnd('.') }
+        }
+        others.clear()
+        fun norm(n: String) = n.filterNot { it.isWhitespace() }.lowercase()
+        read.allowances.forEach { (name, amount) ->
+            val item = profile.items.firstOrNull { norm(it.name) == norm(name) }
+            if (item != null) items[item.id] = amount
+            else if (others.size < MAX_OTHERS) others += OtherLine().also { it.name = name.take(20); it.amount = amount }
+        }
+    }
+
     fun payslip(profile: PayProfile): Payslip = Payslip(
         gross = gross ?: 0,
         base = base,
@@ -151,6 +171,18 @@ fun PayslipMatchDialog(
     val added = remember { mutableStateListOf<PayItem>() }
     val scope = rememberCoroutineScope()
     val appTotal by produceState<Long?>(null, chosen) { value = null; value = vm.calculateOff(profile, snapshot, chosen).total }
+    // [PAYS-05] 명세서 사진으로 채우기, and what it filled.
+    var scanning by remember { mutableStateOf(false) }
+    var filled by remember { mutableStateOf<String?>(null) }
+    if (scanning) PayslipFillDialog("명세서 사진으로 채우기", onDismiss = { scanning = false }) { read ->
+        form.fill(read, profile)
+        more = true
+        val moved = read.month?.takeIf { !it.isAfter(latest) && it != chosen }
+        moved?.let { chosen = it }
+        filled = "명세서에서 ${read.lines.count { it.isEarning || it.role == SlipRole.GROSS || it.role == SlipRole.TOTAL }}줄을 채웠어요" +
+            (moved?.let { " · ${it.monthValue}월 명세서로 맞춰 볼게요" } ?: "") + ". 틀린 칸은 고쳐 주세요."
+        scanning = false
+    }
 
     fun startMatch() {
         val slip = form.payslip(profile)
@@ -232,7 +264,7 @@ fun PayslipMatchDialog(
                                     stage = if (same) MatchStage.AMOUNTS else MatchStage.ROSTER
                                 }
                                 MatchStage.ROSTER -> RosterStage(onFix = onDismiss, onAnyway = { stage = MatchStage.AMOUNTS })
-                                MatchStage.AMOUNTS -> AmountsStage(profile, chosen, form, appTotal, more, { more = it }, failed)
+                                MatchStage.AMOUNTS -> AmountsStage(profile, chosen, form, appTotal, more, { more = it }, failed, filled) { scanning = true }
                                 MatchStage.WORKING -> Working()
                                 MatchStage.RESULT -> match?.let { m ->
                                     ResultStage(m, added) { names ->
@@ -299,7 +331,27 @@ private fun ColumnScope.AmountsStage(
     more: Boolean,
     onMore: (Boolean) -> Unit,
     failed: Boolean,
+    filled: String?,
+    onScan: () -> Unit,
 ) {
+    // [PAYS-04][PAYS-05] The easiest way first: one photo fills every field below.
+    Surface(
+        onClick = onScan,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.PhotoCamera, null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(28.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("명세서 사진으로 한 번에 채우기", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text("사진이나 캡처 한 장이면 아래 칸을 앱이 채워요. 휴대폰 안에서만 읽어요.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+        }
+    }
+    filled?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
     StepTitle("${month.monthValue}월 명세서의 지급 총액을 넣어 주세요", "세금과 4대보험을 빼기 전 금액이에요. ‘지급 합계’나 ‘지급액 계’로 적혀 있기도 해요.")
     MoneyField("지급 총액", form.gross, { form.gross = it })
     val gross = form.gross

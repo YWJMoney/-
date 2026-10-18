@@ -117,6 +117,11 @@ import com.bamnat.app.ui.theme.LocalCalendarColors
 import java.time.YearMonth
 import com.bamnat.core.model.ShiftOverride
 import java.time.temporal.ChronoUnit
+import java.time.DayOfWeek
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.input.pointer.pointerInput
+import com.bamnat.app.data.PhoneDayView
 
 internal const val PAGE_COUNT = 2400
 /** [CAL-01] Alarm warnings show while an alarm is due within this many days. */
@@ -124,6 +129,8 @@ private const val ALARM_WARNING_DAYS = 7L
 internal const val CENTER_PAGE = PAGE_COUNT / 2
 /** [VIS-02] A month slides this long after ‹ ›. */
 private const val MONTH_SLIDE_MILLIS = 220
+/** [CAL-03] How far a finger goes sideways on the week before it turns. */
+private val WEEK_SWIPE = 48.dp
 /** [CAL-01] The unfolded day panel: room for "10월 18일 (일) 오늘" and its arrows, never most of the screen. */
 private val DAY_PANEL_MIN_WIDTH = 280.dp
 private val DAY_PANEL_MAX_WIDTH = 420.dp
@@ -182,9 +189,9 @@ fun CalendarScreen(
             received.consumeOpening()
         }
     }
-    // [FEAT-17] Memo-first cells show the start of the day's first memo.
-    val memoTexts = remember(datedMemos, settings.memoFirst) {
-        if (!settings.memoFirst) emptyMap()
+    // [FEAT-17][DAY-04] Cells can show the start of the day's first memo under the date.
+    val memoTexts = remember(datedMemos, settings.memoInCells) {
+        if (!settings.memoInCells) emptyMap()
         else datedMemos.groupBy { it.date!! }.mapValues { (_, l) -> l.first().let { m -> m.title.ifBlank { m.preview } }.trim().take(4) }
             .filterValues { it.isNotEmpty() }
     }
@@ -209,6 +216,10 @@ fun CalendarScreen(
 
     // On phones the day opens in a sheet over the calendar.
     var sheetOpen by remember { mutableStateOf(false) }
+    // [CAL-03] On phones set to 그 주만 보기, a tapped date folds the month to its week with the day under it.
+    var weekOnly by rememberSaveable { mutableStateOf(false) }
+    val selectedNow: () -> LocalDate = { vm.selected.value }
+    val dayView = settings.phoneDayView
     // [DAY-03] While the sheet is open its own snackbar says what happened, above the sheet, not hidden under it.
     val sheetSnackbar = remember { SnackbarHostState() }
     val messageHost by rememberUpdatedState(if (sheetOpen && !wide) sheetSnackbar else snackbarHostState)
@@ -222,6 +233,8 @@ fun CalendarScreen(
             if (result == SnackbarResult.ActionPerformed) vm.runUndo(msg)
         }
     }
+
+    LaunchedEffect(vm) { vm.openMemo.collect { onOpenMemo(it) } }
 
     val snap = snapshot
     if (snap == null) {
@@ -267,7 +280,17 @@ fun CalendarScreen(
         if (pageToMonth(baseMonth, pagerState.settledPage) != shownMonth) pagerState.scrollToPage(monthToPage(baseMonth, shownMonth))
     }
     // Unfolded, the day shows beside the calendar; a sheet left open must not pop up again on folding.
-    LaunchedEffect(wide) { if (wide) sheetOpen = false }
+    LaunchedEffect(wide) { if (wide) { sheetOpen = false; weekOnly = false } }
+    LaunchedEffect(dayView) { if (dayView != PhoneDayView.WEEK) weekOnly = false }
+    // [CAL-03] Back to the month, it opens on the month of the day picked in the week.
+    LaunchedEffect(weekOnly) {
+        if (!weekOnly) {
+            val m = YearMonth.from(vm.selected.value)
+            if (pageToMonth(baseMonth, pagerState.currentPage) != m) pagerState.scrollToPage(monthToPage(baseMonth, m))
+        }
+    }
+    // [CAL-03] Back opens the whole month again.
+    androidx.activity.compose.BackHandler(enabled = weekOnly && !wide && paint == null) { weekOnly = false }
     // Back ends quick input instead of leaving the app.
     androidx.activity.compose.BackHandler(enabled = paint != null) { vm.setPaint(null) }
     // Left open past midnight, the selection moves on with today when it was on today.
@@ -284,20 +307,27 @@ fun CalendarScreen(
         val again = date == selected
         vm.onDayTapped(date)
         val m = YearMonth.from(date)
-        if (m != visibleMonth) slideToMonth(m)
-        if (!wide && !painting && again) sheetOpen = true
+        if (m != visibleMonth && !weekOnly) slideToMonth(m)
+        if (!wide && !painting) when (dayView) {
+            PhoneDayView.PREVIEW -> if (again) sheetOpen = true
+            PhoneDayView.SHEET -> sheetOpen = true
+            PhoneDayView.WEEK -> weekOnly = true
+        }
     }
     // [DAY-01] ‹ › and swipes in the day header move the calendar along.
     val onDateChange: (LocalDate) -> Unit = { date ->
         vm.select(date)
         val m = YearMonth.from(date)
-        if (m != visibleMonth) slideToMonth(m)
+        // [CAL-03] The month is not on screen in the week view; it is put right when it comes back.
+        if (m != visibleMonth && !(weekOnly && !wide)) slideToMonth(m)
     }
     val groups = rememberDayGroupState()
     var memoFocus by remember { mutableIntStateOf(0) }
+    // In the week view the whole day is on the page already.
+    val showsDay = wide || weekOnly
     val onMemo: () -> Unit = {
         memoFocus++
-        if (!wide) sheetOpen = true
+        if (!showsDay) sheetOpen = true
     }
     val onQuickAction: (LocalDate, QuickAction) -> Unit = { date, action ->
         val day = snap.resolver.resolve(date)
@@ -308,7 +338,7 @@ fun CalendarScreen(
             is QuickAction.Alarm -> vm.setAlarmSkipped(date, action.skipped, announce = true)
             QuickAction.Open -> {
                 vm.select(date)
-                if (!wide) sheetOpen = true
+                if (!showsDay) sheetOpen = true
             }
         }
     }
@@ -350,7 +380,7 @@ fun CalendarScreen(
             MonthMemoCard(
                 month = visibleMonth,
                 memos = remember(datedMemos, visibleMonth) { datedMemos.filter { YearMonth.from(it.date!!) == visibleMonth } },
-                memoFirst = settings.memoFirst,
+                showEmpty = settings.memoInCells,
                 onOpen = onOpenMemo,
                 onNew = { onNewMemo(if (YearMonth.from(selected) == visibleMonth) selected else visibleMonth.atDay(1)) },
                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -386,17 +416,90 @@ fun CalendarScreen(
         AlarmPlanner.nextAlarm(snap.resolver, java.time.LocalDateTime.now(), lookaheadDays = ALARM_WARNING_DAYS) != null
     }
 
+    // [CAL-03] The tapped date's week, Monday to Sunday, and the whole day under it: no sheet over the
+    // calendar, and the rest of the week a tap away. A sideways swipe goes a week back or on.
+    val weekPart: @Composable () -> Unit = {
+        val monday = selected.minusDays((selected.dayOfWeek.value - 1).toLong())
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "${Fmt.monthDay(monday)} ~ ${Fmt.monthDay(monday.plusDays(6))}",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = { weekOnly = false }) { Text("달 전체 보기") }
+        }
+        WeekdayHeader(DayOfWeek.MONDAY, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+            val cellHeight = (maxWidth / 7 * 1.3f).coerceIn(66.dp, 100.dp) + cellTextGrowth()
+            val swipe = with(androidx.compose.ui.platform.LocalDensity.current) { WEEK_SWIPE.toPx() }
+            val turnTo by rememberUpdatedState(onDateChange)
+            WeekStrip(
+                monday = monday,
+                snapshot = snap,
+                selected = selected,
+                today = today,
+                memoDates = memoDates,
+                showHours = settings.showHoursInCells,
+                showLunar = settings.showLunar,
+                cellHeight = cellHeight,
+                onDayClick = onDayClick,
+                onQuickAction = onQuickAction,
+                money = moneyBook,
+                showMoney = settings.workStyle?.usesPayEngine == false,
+                memoTexts = memoTexts,
+                modifier = Modifier.pointerInput(Unit) {
+                    var dragged = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragged = 0f },
+                        onDragEnd = {
+                            if (dragged > swipe) turnTo(selectedNow().minusWeeks(1))
+                            else if (dragged < -swipe) turnTo(selectedNow().plusWeeks(1))
+                        },
+                    ) { change, amount ->
+                        change.consume()
+                        dragged += amount
+                    }
+                },
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        DayPanel(
+            date = selected,
+            today = today,
+            snapshot = snap,
+            vm = vm,
+            groups = groups,
+            onDateChange = onDateChange,
+            onOpenMemo = onOpenMemo,
+            onNewMemo = onNewMemo,
+            onOpenShiftTypes = onOpenShiftTypes,
+            onOpenPay = onOpenPay,
+            onOpenExtraKinds = onOpenExtraKinds,
+            memoFocus = memoFocus,
+            onMemo = onMemo,
+            bottomPadding = 12.dp,
+            weekNote = weekNote,
+            scrollGroups = false,
+        )
+    }
+
     val calendarPart: @Composable () -> Unit = {
         identityBar()
         CalendarHeader(
-            month = visibleMonth,
-            onPrev = { slideToMonth(headingMonth().minusMonths(1)) },
-            onNext = { slideToMonth(headingMonth().plusMonths(1)) },
+            month = if (weekOnly && !wide) YearMonth.from(selected) else visibleMonth,
+            // [CAL-03] With one week on screen, ‹ › go a week back or on.
+            onPrev = { if (weekOnly) onDateChange(selected.minusWeeks(1)) else slideToMonth(headingMonth().minusMonths(1)) },
+            onNext = { if (weekOnly) onDateChange(selected.plusWeeks(1)) else slideToMonth(headingMonth().plusMonths(1)) },
             onToday = {
                 vm.select(LocalDate.now())
                 slideToMonth(YearMonth.now())
             },
             onPickMonth = { showMonthPicker = true },
+            byWeek = weekOnly,
             onShare = {
                 // [MKT-09] With a link server the icon offers picture or link; without one it sends the picture.
                 if (shareLinks) showShare = true
@@ -460,91 +563,94 @@ fun CalendarScreen(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
-        MonthShiftCounts(snap, visibleMonth, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-        WeekdayHeader(settings.weekStart, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
-        BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-            val cellHeight = (maxWidth / 7 * 1.3f).coerceIn(66.dp, 100.dp) + cellTextGrowth()
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxWidth().height(cellHeight * GRID_ROWS),
-                beyondViewportPageCount = 1,
-                key = { it },
-                // [CAL-01] With a stamp chosen, a sideways drag paints days instead of turning the month.
-                userScrollEnabled = paint == null || paint == PaintTool.Pick,
-            ) { page ->
-                MonthGrid(
-                    month = pageToMonth(baseMonth, page),
-                    snapshot = snap,
-                    calculator = calculator,
-                    selected = selected,
-                    today = today,
-                    memoDates = memoDates,
-                    showHours = settings.showHoursInCells,
-                    showLunar = settings.showLunar,
-                    cellHeight = cellHeight,
-                    onDayClick = onDayClick,
-                    onQuickAction = onQuickAction,
-                    money = moneyBook,
-                    showMoney = settings.workStyle?.usesPayEngine == false,
-                    memoTexts = memoTexts,
-                    onPaint = if (paint != null && paint != PaintTool.Pick) vm::paintDays else null,
-                    weeklyLimitHours = settings.weeklyLimitHours,
-                )
-            }
-        }
-        // [FEAT-17] Memo-first puts the month's memos right under the grid.
-        if (settings.memoFirst) memoPart()
-        Spacer(Modifier.height(12.dp))
-        val moneyFirst = settings.workStyle?.usesPayEngine == false
-        if (!wide) {
-            if (moneyFirst) {
-                MoneyDayCard(
-                    date = selected,
-                    isToday = selected == today,
-                    day = remember(moneyBook, selected) { moneyBook.on(selected) },
-                    memoCount = if (selected in memoDates) 1 else 0,
-                    onOpen = { sheetOpen = true },
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    memoPreview = remember(datedMemos, selected) { datedMemos.firstOrNull { it.date == selected }?.let { it.title.ifBlank { it.preview } } },
-                )
-            } else {
-                DayPreview(
-                    day = remember(snap, selected) { snap.resolver.resolve(selected) },
-                    today = today,
-                    snapshot = snap,
-                    vm = vm,
-                    onDateChange = onDateChange,
-                    onOpen = { sheetOpen = true },
-                    onMemo = onMemo,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    weekNote = weekNote,
-                )
+        // [CAL-03] One week and the whole day under it, or the month.
+        if (weekOnly && !wide) {
+            weekPart()
+        } else {
+            MonthShiftCounts(snap, visibleMonth, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            WeekdayHeader(settings.weekStart, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
+            BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                val cellHeight = (maxWidth / 7 * 1.3f).coerceIn(66.dp, 100.dp) + cellTextGrowth()
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxWidth().height(cellHeight * GRID_ROWS),
+                    beyondViewportPageCount = 1,
+                    key = { it },
+                    // [CAL-01] With a stamp chosen, a sideways drag paints days instead of turning the month.
+                    userScrollEnabled = paint == null || paint == PaintTool.Pick,
+                ) { page ->
+                    MonthGrid(
+                        month = pageToMonth(baseMonth, page),
+                        snapshot = snap,
+                        calculator = calculator,
+                        selected = selected,
+                        today = today,
+                        memoDates = memoDates,
+                        showHours = settings.showHoursInCells,
+                        showLunar = settings.showLunar,
+                        cellHeight = cellHeight,
+                        onDayClick = onDayClick,
+                        onQuickAction = onQuickAction,
+                        money = moneyBook,
+                        showMoney = settings.workStyle?.usesPayEngine == false,
+                        memoTexts = memoTexts,
+                        onPaint = if (paint != null && paint != PaintTool.Pick) vm::paintDays else null,
+                        weeklyLimitHours = settings.weeklyLimitHours,
+                    )
+                }
             }
             Spacer(Modifier.height(12.dp))
-        }
-        if (moneyFirst) {
-            // [WORK-04] Field and shop work care about the month's money, not weekly hour limits.
-            MonthMoneyCard(
-                month = remember(moneyBook, visibleMonth) { moneyBook.month(visibleMonth) },
-                unpaid = remember(moneyBook, today) { com.bamnat.core.money.MoneyCalculator.unpaid(moneyBook.jobs, today).sumOf { it.unpaid } },
-                onOpen = onOpenMoney,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-        } else {
-            HoursLine(
-                calculator = calculator,
-                limits = settings.limits,
-                selected = selected,
-                month = visibleMonth,
-                onOpenStats = onOpenStats,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-            if (settings.restCheck) {
-                val rest = remember(snap, visibleMonth, settings.strictRest) { vm.restIssues(snap, visibleMonth, settings.strictRest) }
-                MonthRestCard(rest, onPick = vm::select, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp))
+            val moneyFirst = settings.workStyle?.usesPayEngine == false
+            if (!wide) {
+                if (moneyFirst) {
+                    MoneyDayCard(
+                        date = selected,
+                        isToday = selected == today,
+                        day = remember(moneyBook, selected) { moneyBook.on(selected) },
+                        memoCount = if (selected in memoDates) 1 else 0,
+                        onOpen = { sheetOpen = true },
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        memoPreview = remember(datedMemos, selected) { datedMemos.firstOrNull { it.date == selected }?.let { it.title.ifBlank { it.preview } } },
+                    )
+                } else {
+                    DayPreview(
+                        day = remember(snap, selected) { snap.resolver.resolve(selected) },
+                        today = today,
+                        snapshot = snap,
+                        vm = vm,
+                        onDateChange = onDateChange,
+                        onOpen = { sheetOpen = true },
+                        onMemo = onMemo,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        weekNote = weekNote,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
             }
+            if (moneyFirst) {
+                // [WORK-04] Field and shop work care about the month's money, not weekly hour limits.
+                MonthMoneyCard(
+                    month = remember(moneyBook, visibleMonth) { moneyBook.month(visibleMonth) },
+                    unpaid = remember(moneyBook, today) { com.bamnat.core.money.MoneyCalculator.unpaid(moneyBook.jobs, today).sumOf { it.unpaid } },
+                    onOpen = onOpenMoney,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            } else {
+                HoursLine(
+                    calculator = calculator,
+                    limits = settings.limits,
+                    selected = selected,
+                    month = visibleMonth,
+                    onOpenStats = onOpenStats,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                if (settings.restCheck) {
+                    val rest = remember(snap, visibleMonth, settings.strictRest) { vm.restIssues(snap, visibleMonth, settings.strictRest) }
+                    MonthRestCard(rest, onPick = vm::select, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp))
+                }
+            }
+            memoPart()
         }
-        if (!settings.memoFirst) memoPart()
     }
 
     val detailPart: @Composable (Modifier, androidx.compose.ui.unit.Dp) -> Unit = { m, bottom ->
@@ -830,6 +936,8 @@ private fun CalendarHeader(
     onPickMonth: () -> Unit,
     onOpenPattern: () -> Unit,
     onShare: () -> Unit = {},
+    /** [CAL-03] ‹ › step a week while one week is on screen. */
+    byWeek: Boolean = false,
 ) {
     // [QA-01] A cover screen (~344dp) cannot fit four icons, the month and 오늘: share and pattern
     // go into a menu there instead of being squeezed off the edge.
@@ -840,7 +948,7 @@ private fun CalendarHeader(
         Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onPrev) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
+        IconButton(onClick = onPrev) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, if (byWeek) "이전 주" else "이전 달") }
         // [VIS-02] The month opens the month list: 48dp tall, with ▾ to show it can be tapped.
         Row(
             Modifier
@@ -853,7 +961,7 @@ private fun CalendarHeader(
             Text(Fmt.month(month), style = if (narrow) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge)
             Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        IconButton(onClick = onNext) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
+        IconButton(onClick = onNext) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, if (byWeek) "다음 주" else "다음 달") }
         Spacer(Modifier.weight(1f))
         TextButton(onClick = onToday) { Text("오늘") }
         if (narrow) {
@@ -1133,12 +1241,13 @@ private fun MonthPickerDialog(initial: YearMonth, onDismiss: () -> Unit, onPick:
 private fun MonthMemoCard(
     month: YearMonth,
     memos: List<com.bamnat.core.memo.Memo>,
-    memoFirst: Boolean,
+    /** [DAY-04] With memos under the dates, the card stays to say where the month's memos gather. */
+    showEmpty: Boolean,
     onOpen: (Long) -> Unit,
     onNew: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (memos.isEmpty() && !memoFirst) return
+    if (memos.isEmpty() && !showEmpty) return
     var all by remember(month) { mutableStateOf(false) }
     val shown = if (all) memos else memos.take(MEMO_PREVIEW_ROWS)
     Surface(

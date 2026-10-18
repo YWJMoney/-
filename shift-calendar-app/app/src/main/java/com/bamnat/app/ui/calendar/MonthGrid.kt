@@ -251,6 +251,55 @@ fun MonthGrid(
     }
 }
 
+/**
+ * [CAL-03] One week, Monday to Sunday, for the phone view that folds the month to the tapped date's week.
+ * The same cells as the month, so a day looks and answers alike in both.
+ */
+@Composable
+fun WeekStrip(
+    monday: LocalDate,
+    snapshot: ScheduleSnapshot,
+    selected: LocalDate,
+    today: LocalDate,
+    memoDates: Set<LocalDate>,
+    showHours: Boolean,
+    showLunar: Boolean,
+    cellHeight: Dp,
+    onDayClick: (LocalDate) -> Unit,
+    onQuickAction: (LocalDate, QuickAction) -> Unit,
+    modifier: Modifier = Modifier,
+    money: MoneyBook = MoneyBook.EMPTY,
+    showMoney: Boolean = false,
+    memoTexts: Map<LocalDate, String> = emptyMap(),
+) {
+    val month = YearMonth.from(selected)
+    val dayMoney = remember(money, monday, showMoney) {
+        if (showMoney) money.days(YearMonth.from(monday)) + money.days(YearMonth.from(monday.plusDays(6))) else emptyMap()
+    }
+    Row(modifier.fillMaxWidth().height(cellHeight).padding(start = WEEK_BAR_SPACE)) {
+        for (col in 0 until 7) {
+            val date = monday.plusDays(col.toLong())
+            val day = remember(snapshot, date) { snapshot.resolver.resolve(date) }
+            DayCell(
+                day = day,
+                snapshot = snapshot,
+                // Days of the next or last month in this week are dimmed as in the month.
+                inMonth = YearMonth.from(date) == month,
+                isToday = date == today,
+                isSelected = date == selected,
+                hasMemo = date in memoDates,
+                money = dayMoney[date],
+                memoText = memoTexts[date],
+                showHours = showHours,
+                showLunar = showLunar,
+                onClick = { onDayClick(date) },
+                onQuickAction = { onQuickAction(date, it) },
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DayCell(

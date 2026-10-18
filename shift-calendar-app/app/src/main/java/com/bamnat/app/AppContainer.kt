@@ -46,6 +46,8 @@ class AppContainer(context: Context) {
         extraName = { settingsRepository.current.extraKinds.name(it) })
     val memoRepository = MemoRepository(database)
     val sleepRepository = com.bamnat.app.data.SleepRepository(database)
+    /** [ONBOARD-01] What this phone was told about on the first-start consent pages. */
+    val consentStore by lazy { com.bamnat.app.data.ConsentStore(appContext) }
     /** [SLP-08] Sleep measured by a watch or the phone, read from Health Connect. */
     val healthSleep = com.bamnat.app.sleep.HealthSleep(context)
     val moneyRepository = MoneyRepository(database, com.bamnat.app.data.CaptureStore(java.io.File(appContext.noBackupFilesDir, "captures.json")))
@@ -110,6 +112,13 @@ class AppContainer(context: Context) {
             val on = settingsRepository.settings.map { it.moneyNotices }.distinctUntilChanged()
             combine(moneyRepository.book, on) { book, _ -> book }.debounce(500)
                 .collect { JobReminderScheduler.reschedule(appContext, it, settingsRepository.current) }
+        }
+        // [SCHED-01] A memo saved, moved to the trash, restored or brought back from a backup re-plans the next schedule.
+        appScope.launch {
+            memoRepository.memos.map { list -> list.filter { it.reminder != null } }
+                .distinctUntilChanged { a, b -> a.map { it.id to it.reminder } == b.map { it.id to it.reminder } }
+                .debounce(300)
+                .collect { com.bamnat.app.memo.MemoScheduleAlarm.reschedule(appContext, it) }
         }
         // [SLP-15] 하루 브리핑, 퇴근길 and 잘 준비 follow the schedule, the alarms and their settings.
         appScope.launch {
