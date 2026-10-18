@@ -882,9 +882,9 @@ class ScreenshotTest {
         val snap = runBlocking { app.container.scheduleRepository.snapshot.first() }
         content { com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}) }
     }
-    @Test fun foldedShareLinkBusiness() = shoot("190_folded_share_link_business", FOLDED, shareSheet(WorkStyle.BUSINESS))
-    @Test fun foldedShareLinkField() = shoot("191_folded_share_link_field", FOLDED, shareSheet(WorkStyle.FIELD))
-    @Test fun foldedShareLinkBusinessLargeText() = shoot("192_folded_share_link_business_large_text", FOLDED, 1.5f, shareSheet(WorkStyle.BUSINESS))
+    @Test fun foldedShareLinkBusiness() = shoot("200_folded_share_link_business", FOLDED, shareSheet(WorkStyle.BUSINESS))
+    @Test fun foldedShareLinkField() = shoot("201_folded_share_link_field", FOLDED, shareSheet(WorkStyle.FIELD))
+    @Test fun foldedShareLinkBusinessLargeText() = shoot("202_folded_share_link_business_large_text", FOLDED, 1.5f, shareSheet(WorkStyle.BUSINESS))
     // [WORK-01] First launch: how do you work?
     @Test fun foldedWorkStylePicker() = shoot("49_folded_work_style", FOLDED) {
         content { com.bamnat.app.ui.work.WorkStyleScreen(current = null, onPick = {}) }
