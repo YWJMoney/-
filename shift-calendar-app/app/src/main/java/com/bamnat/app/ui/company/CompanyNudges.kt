@@ -34,6 +34,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SheetState
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -42,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -168,7 +171,7 @@ private fun VoteCard(a: AppliedSetup, onRight: () -> Unit, onWrong: () -> Unit, 
 private fun RightSheet(a: AppliedSetup, onDismiss: () -> Unit, onVote: (Boolean, (Boolean) -> Unit) -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = busySheetState(busy)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("좋아요! 무엇과 맞춰 보셨어요?", style = MaterialTheme.typography.titleLarge)
             Text("${a.company} 분들이 이 설정을 믿고 쓸 수 있게 점수로 쌓여요.", style = MaterialTheme.typography.bodyMedium,
@@ -199,7 +202,7 @@ private fun WrongSheet(vm: CompanyNudgeViewModel, a: AppliedSetup, onDismiss: ()
     var busy by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
     var asking by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = busySheetState(busy)) {
         AnimatedContent(told, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "wrong-plea") { plea ->
             Column(
                 Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
@@ -397,4 +400,15 @@ fun ColumnScope.CompanySettingsRows(vm: CompanyNudgeViewModel, onFind: () -> Uni
     com.bamnat.app.ui.settings.NavRow("회사 찾기", "같은 회사 분들이 맞춘 근무표와 계산 방식을 가져와요", onFind)
     com.bamnat.app.ui.settings.NavRow("내 설정 나누기", "금액 없이 보내요. 채택되면 보상을 드려요", onShare)
     com.bamnat.app.ui.settings.NavRow("내가 보낸 정보", "보낸 설정이 어떻게 됐는지, 개발자의 답, 거두기", onSent)
+}
+
+/**
+ * A sheet that cannot be swiped away while [busy]: a swipe while sending would leave its scrim catching
+ * taps until the answer comes.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun busySheetState(busy: Boolean): SheetState {
+    val sending by rememberUpdatedState(busy)
+    return rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { it != SheetValue.Hidden || !sending })
 }

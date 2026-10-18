@@ -54,6 +54,7 @@ internal fun ColumnScope.SettingsPageContent(
     onOpenPay: () -> Unit,
     company: (@Composable ColumnScope.() -> Unit)?,
     onOpenPage: (SettingsPage) -> Unit,
+    onOpenInquiry: () -> Unit = {},
 ) {
     when (page) {
         SettingsPage.WORK -> WorkPage(vm, settings, onOpenWorkStyle, onOpenPattern, onOpenShiftTypes, onOpenExtraKinds)
@@ -64,7 +65,7 @@ internal fun ColumnScope.SettingsPageContent(
         SettingsPage.CALENDAR -> CalendarPage(vm, settings)
         SettingsPage.DATA -> DataPage(vm, files)
         SettingsPage.PRIVACY -> PrivacyPage(vm, settings, refresh, askNotifications, onOpenPage)
-        SettingsPage.ABOUT -> AboutPage(onOpenDiagnostics)
+        SettingsPage.ABOUT -> AboutPage(vm, onOpenDiagnostics, onOpenInquiry)
     }
 }
 
@@ -419,12 +420,18 @@ private fun PrivacyPage(
 }
 
 @Composable
-private fun AboutPage(onOpenDiagnostics: (Boolean) -> Unit) {
+private fun AboutPage(vm: SettingsViewModel, onOpenDiagnostics: (Boolean) -> Unit, onOpenInquiry: () -> Unit) {
     val context = LocalContext.current
+    val unread by vm.inquiryUnread.collectAsStateWithLifecycle()
     SectionCard(title = null) {
-        NavRow("알람 점검", "알람이 안 울리거나 늦을 때 원인을 찾고, 문의에 붙일 기록을 복사해요") { onOpenDiagnostics(false) }
+        NavRow("알람 점검", "알람이 안 울리거나 늦을 때 원인을 찾아요") { onOpenDiagnostics(false) }
         HorizontalDivider()
-        NavRow("문의하기", "메일로 보내요. 휴대폰 기종과 앱 버전이 함께 적혀요") { writeToUs(context) }
+        // [ADMIN-02] In the app, answered in the app; a build without the company server writes a mail.
+        if (vm.inquiryOn) {
+            NavRow("문의하기", if (unread > 0) "개발자 답이 ${unread}개 왔어요" else "앱 안에서 보내고, 답도 여기서 받아요") { onOpenInquiry() }
+        } else {
+            NavRow("문의하기", "메일로 보내요. 휴대폰 기종과 앱 버전이 함께 적혀요") { writeToUs(context) }
+        }
         HorizontalDivider()
         NavRow("개인정보 처리방침", null) { openPrivacy(context) }
     }
@@ -432,14 +439,15 @@ private fun AboutPage(onOpenDiagnostics: (Boolean) -> Unit) {
         color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
-private const val PRIVACY_URL = "https://ywjmoney.github.io/-/privacy.html"
+// [ADMIN-02] The 밤낮 policy; privacy.html at the site root is another app's.
+private const val PRIVACY_URL = "https://ywjmoney.github.io/-/privacy/"
 
 private fun openPrivacy(context: android.content.Context) {
     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
 
 /** A mail to the developer with what helps answer it; nothing from the calendar goes in. */
-private fun writeToUs(context: android.content.Context) {
+internal fun writeToUs(context: android.content.Context) {
     val body = "\n\n---\n앱: 밤낮 ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n기기: ${Build.MANUFACTURER} ${Build.MODEL}\n" +
         "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})"
     val mail = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$REPORT_EMAIL")).apply {

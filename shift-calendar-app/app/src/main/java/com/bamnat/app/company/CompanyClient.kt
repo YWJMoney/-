@@ -1,15 +1,18 @@
 package com.bamnat.app.company
 
 import com.bamnat.app.BuildConfig
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.text.Normalizer
+import java.time.DateTimeException
 import java.time.Instant
 
 /** A company found by name [COMM-01]: how many setups coworkers agreed on and how many are being checked. */
@@ -98,8 +101,8 @@ interface CompanyApi {
 class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : CompanyApi {
     override val enabled: Boolean get() = baseUrl.isNotBlank()
 
-    override suspend fun search(query: String): List<CompanyHit> = withContext(Dispatchers.IO) {
-        if (CompanyText.norm(query).length < 2) return@withContext emptyList()
+    override suspend fun search(query: String): List<CompanyHit> = serverCall {
+        if (CompanyText.norm(query).length < 2) return@serverCall emptyList()
         val o = request("GET", "/api/companies?q=" + URLEncoder.encode(query.trim().take(40), "UTF-8"))
         o.optJSONArray("companies").objects().map { c ->
             CompanyHit(c.getString("id"), c.getString("name"), c.optStringOrNull("alias"), c.optInt("adopted"), c.optInt("pending"))
@@ -107,7 +110,7 @@ class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
     }
 
     /** A company and its setups; one merged into another opens as that one. */
-    override suspend fun company(id: String): CompanyPage = withContext(Dispatchers.IO) {
+    override suspend fun company(id: String): CompanyPage = serverCall {
         var o = request("GET", "/api/companies/$id")
         o.optStringOrNull("mergedInto")?.let { o = request("GET", "/api/companies/$it") }
         CompanyPage(
@@ -133,7 +136,7 @@ class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
         )
     }
 
-    override suspend fun terms(): CompanyTerms = withContext(Dispatchers.IO) {
+    override suspend fun terms(): CompanyTerms = serverCall {
         val o = request("GET", "/api/terms")
         CompanyTerms(o.optInt("threshold", 3), o.optInt("rewardMonths", 0))
     }
@@ -141,7 +144,7 @@ class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
     /** Sends a setup for coworkers, or with [ask] a way the app cannot set yet for the developer to read. */
     override suspend fun report(
         device: String, company: String, dept: String, verified: Boolean, note: String, setup: JSONObject, ask: Boolean,
-    ): ReportStatus = withContext(Dispatchers.IO) {
+    ): ReportStatus = serverCall {
         val body = JSONObject()
             .put("v", 1).put("device", device).put("company", company.trim()).put("dept", dept.trim())
             .put("verified", verified).put("note", note.trim()).put("setup", setup)
@@ -150,7 +153,7 @@ class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
     }
 
     /** Null when the server no longer has it: taken back, or deleted with everything this phone sent. */
-    override suspend fun status(id: String): ReportStatus? = withContext(Dispatchers.IO) {
+    override suspend fun status(id: String): ReportStatus? = serverCall {
         try {
             status(request("GET", "/api/reports/$id"))
         } catch (e: CompanyException) {
@@ -159,7 +162,7 @@ class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
     }
 
     /** Takes a report back with its reward; one already gone counts as taken back. */
-    override suspend fun takeBack(device: String, id: String) = withContext(Dispatchers.IO) {
+    override suspend fun takeBack(device: String, id: String) = serverCall {
         try {
             request("DELETE", "/api/reports/$id", device = device)
         } catch (e: CompanyException) {
@@ -169,13 +172,13 @@ class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
     }
 
     /** Deletes everything this install sent: reports, rewards not yet given, 맞았어요·달라요. */
-    override suspend fun forgetMine(device: String): Int = withContext(Dispatchers.IO) {
+    override suspend fun forgetMine(device: String): Int = serverCall {
         request("DELETE", "/api/mine", device = device).optInt("reports")
     }
 
     /** 맞았어요 ([ok]) or 달라요 with what was wrong: wrong, old or name. */
     override suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean, why: String?): VoteResult =
-        withContext(Dispatchers.IO) {
+        serverCall {
             val body = JSONObject().put("device", device).put("company", company).put("setup", setup).put("ok", ok)
             if (ok && verified) body.put("verified", true)
             if (!ok && why != null) body.put("why", why)
@@ -208,37 +211,58 @@ class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
         )
     }
 
-    private fun request(method: String, path: String, body: JSONObject? = null, device: String? = null): JSONObject {
-        val conn = try {
-            URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
-        } catch (e: IOException) {
-            throw CompanyException("offline")
+    private fun request(method: String, path: String, body: JSONObject? = null, device: String? = null): JSONObject =
+        serverRequest(baseUrl, method, path, body, device)
+}
+
+/**
+ * Runs a server call off the main thread. An answer that is not what the app expects (a Wi-Fi sign-in
+ * page in place of JSON, a missing field) is [CompanyException] "bad_response", never a crash.
+ */
+internal suspend fun <T> serverCall(block: suspend CoroutineScope.() -> T): T = withContext(Dispatchers.IO) {
+    try {
+        block()
+    } catch (e: JSONException) {
+        throw CompanyException("bad_response")
+    } catch (e: DateTimeException) {
+        throw CompanyException("bad_response")
+    }
+}
+
+/**
+ * One call to the company server; [device] goes in the X-Device header. A refusal comes back as
+ * [CompanyException] with the server's error word, no connection as "offline". [ADMIN-02] shares it.
+ */
+internal fun serverRequest(baseUrl: String, method: String, path: String, body: JSONObject? = null, device: String? = null): JSONObject {
+    val conn = try {
+        URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
+    } catch (e: IOException) {
+        throw CompanyException("offline")
+    }
+    try {
+        conn.requestMethod = method
+        conn.connectTimeout = 10_000
+        conn.readTimeout = 15_000
+        conn.setRequestProperty("Accept", "application/json")
+        device?.let { conn.setRequestProperty("X-Device", it) }
+        if (body != null) {
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
         }
-        try {
-            conn.requestMethod = method
-            conn.connectTimeout = 10_000
-            conn.readTimeout = 15_000
-            conn.setRequestProperty("Accept", "application/json")
-            device?.let { conn.setRequestProperty("X-Device", it) }
-            if (body != null) {
-                conn.doOutput = true
-                conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            }
-            val code = conn.responseCode
-            val text = (if (code < 400) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code >= 400) {
-                val err = runCatching { JSONObject(text) }.getOrNull()
-                throw CompanyException(err?.optString("error")?.takeIf { it.isNotEmpty() } ?: "http_$code", err?.optStringOrNull("field"))
-            }
-            return if (text.isBlank()) JSONObject() else JSONObject(text)
-        } catch (e: CompanyException) {
-            throw e
-        } catch (e: IOException) {
-            throw CompanyException("offline")
-        } finally {
-            conn.disconnect()
+        val code = conn.responseCode
+        val text = (if (code < 400) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+        if (code >= 400) {
+            val err = runCatching { JSONObject(text) }.getOrNull()
+            throw CompanyException(err?.optString("error")?.takeIf { it.isNotEmpty() } ?: "http_$code", err?.optStringOrNull("field"))
         }
+        return if (text.isBlank()) JSONObject() else JSONObject(text)
+    } catch (e: CompanyException) {
+        throw e
+    } catch (e: IOException) {
+        throw CompanyException("offline")
+    } finally {
+        conn.disconnect()
     }
 }
 
