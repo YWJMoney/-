@@ -317,7 +317,10 @@ test("맞았어요 adds a coworker; 달라요 takes theirs away", async () => {
   v = await call("POST", "/api/votes", body(2, { ok: false, why: "old" }), from(2));
   assert.deepEqual([v.data.persons, v.data.points, v.data.bad], [1, 1, 1]);
   v = await call("POST", "/api/votes", body(3, { ok: true, verified: true }), from(3));
-  assert.deepEqual([v.data.status, v.data.persons, v.data.points], ["adopted", 2, 3]);
+  // [COMM-07] 3 points, but 2 of 3 voters (67%) are fewer than the 75% it takes on its own.
+  assert.deepEqual([v.data.status, v.data.persons, v.data.points, v.data.agree, v.data.trust], ["pending", 2, 3, 67, 67]);
+  v = await call("POST", "/api/votes", body(6, { ok: true }), from(6));
+  assert.deepEqual([v.data.status, v.data.persons, v.data.points, v.data.agree, v.data.trust], ["adopted", 3, 4, 75, 75]);
   // Votes on a rule in use are kept for the developer.
   v = await call("POST", "/api/votes", body(4, { ok: false, why: "nonsense" }), from(4));
   assert.deepEqual([v.data.status, v.data.bad], ["adopted", 2]);
@@ -349,7 +352,7 @@ test("everything one install sent can be deleted", async () => {
   await call("POST", "/api/votes", { device: device(1), company: b.data.company.id, setup: b.data.setup, ok: true }, from(1));
   assert.equal((await call("DELETE", "/api/mine")).status, 400);
   const gone = await call("DELETE", "/api/mine", undefined, { "x-device": device(1) });
-  assert.deepEqual(gone.data, { reports: 2, votes: 1 });
+  assert.deepEqual(gone.data, { reports: 2, votes: 1, posts: 0 });
   assert.ok(!DB.dump().includes(sha(`device|${device(1)}`).slice(0, 40)));
   assert.equal((await call("GET", `/api/reports/${a.data.id}`)).status, 404);
 });
@@ -409,7 +412,7 @@ test("a way the app cannot set yet goes to the developer only", async () => {
 
 test("the app can say what adoption takes and earns", async () => {
   const { call } = server();
-  assert.deepEqual((await call("GET", "/api/terms")).data, { threshold: 3, rewardMonths: 3 });
+  assert.deepEqual((await call("GET", "/api/terms")).data, { threshold: 3, rewardMonths: 3, agree: 75 });
 });
 
 test("bodies that are not a report are refused", async () => {

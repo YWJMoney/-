@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { server, report, from, signIn, ORIGIN } from "./helpers.mjs";
 
 const APP = { "x-admin": "1", origin: ORIGIN };
-const REVIEWER = { review: "edit", inquiries: "none", companies: "view", rewards: "none", settings: "none", audit: "none" };
+const REVIEWER = { review: "edit", inquiries: "none", companies: "view", rewards: "none", settings: "none", community: "edit", audit: "none" };
 const PASSWORD = "minji-review-2026";
 
 const token = (link) => link.split("#")[1];

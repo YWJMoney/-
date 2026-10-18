@@ -8,6 +8,10 @@
 // DELETE /api/reports/:id         header X-Device: the sender takes their report back
 // DELETE /api/mine                header X-Device: everything this install sent, gone
 // POST   /api/votes               맞았어요 / 달라요 on a setup [COMM-03]
+// GET    /api/board?tab=           every company's rule sets: ones still being voted on, or adopted [COMM-07]
+// GET    /api/companies/:id/setups/:setup/posts   the talk on one rule set [COMM-06]
+// POST   /api/posts               a post in that talk; DELETE /api/posts/:id takes it back (header X-Device)
+// POST   /api/posts/:id/flag      신고: three people hide a post until the developer looks
 // GET    /admin/                  the developer app, installable on a phone [ADMIN-01][ADMIN-03]
 // GET    /admin/join#<invite>     an invited admin installs the app and makes an account [ADMIN-04]
 // *      /api/admin/*             behind a sign-in: the owner's password (secret ADMIN_PASSWORD), or an
@@ -32,6 +36,13 @@ const LIMITS = {
   note: 500,
   // A way of paying the app cannot set yet needs room to explain it and give an example.
   ask: 1500,
+  // [COMM-06] A post in the talk on a rule set.
+  post: 500,
+  postsPerDay: 20,
+  postsPerNetworkDay: 60,
+  flagsToHide: 3,
+  muteDays: 30,
+  hiddenPostDays: 90,
   loginFailures: 5,
   lockMs: 60 * 60 * 1000,
   sessionMs: 7 * 24 * 60 * 60 * 1000,
@@ -45,7 +56,8 @@ const LIMITS = {
 };
 
 /** Until changed in the developer app. */
-const DEFAULTS = { adoptPoints: 3, rewardMonths: 3 };
+// [COMM-07] adoptAgree: the share of 맞았어요 among everyone who voted that a rule set needs to be adopted on its own.
+const DEFAULTS = { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75 };
 
 /** The newest company settings file this server reads (CompanyShare.VERSION in the app). */
 // [PAYS-03] 3 carries 감시·단속 승인, 5인 미만 공휴일, 유급 휴게 and allowances paid instead of a premium.
@@ -82,15 +94,17 @@ const AREAS = {
   companies: "회사·규칙",
   rewards: "보상",
   settings: "채택 설정",
+  // [COMM-06] The talk on rule sets: what people flagged, hiding, showing again and muting a writer.
+  community: "토론",
   audit: "활동 기록",
 };
 const LEVELS = ["none", "view", "edit"];
 const VIEW_ONLY = ["audit"];
 const PRESETS = {
-  manager: { name: "운영 관리자", perms: { review: "edit", inquiries: "edit", companies: "edit", rewards: "edit", settings: "edit", audit: "view" } },
-  reviewer: { name: "검토 담당", perms: { review: "edit", inquiries: "none", companies: "view", rewards: "none", settings: "none", audit: "none" } },
-  support: { name: "문의 담당", perms: { review: "view", inquiries: "edit", companies: "view", rewards: "none", settings: "none", audit: "none" } },
-  viewer: { name: "보기 전용", perms: { review: "view", inquiries: "view", companies: "view", rewards: "view", settings: "view", audit: "view" } },
+  manager: { name: "운영 관리자", perms: { review: "edit", inquiries: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit", audit: "view" } },
+  reviewer: { name: "검토 담당", perms: { review: "edit", inquiries: "none", companies: "view", rewards: "none", settings: "none", community: "edit", audit: "none" } },
+  support: { name: "문의 담당", perms: { review: "view", inquiries: "edit", companies: "view", rewards: "none", settings: "none", community: "view", audit: "none" } },
+  viewer: { name: "보기 전용", perms: { review: "view", inquiries: "view", companies: "view", rewards: "view", settings: "view", community: "view", audit: "view" } },
 };
 const OWNER = { id: "owner", name: "최고 관리자", email: "", owner: true, perms: Object.fromEntries(Object.keys(AREAS).map((a) => [a, VIEW_ONLY.includes(a) ? "view" : "edit"])) };
 
@@ -129,6 +143,13 @@ async function route(request, env) {
   if (m && method === "DELETE") return takeBack(request, env, m[1]);
   if (path === "/api/mine" && method === "DELETE") return forgetMine(request, env);
   if (path === "/api/votes" && method === "POST") return vote(request, env);
+  if (path === "/api/board" && method === "GET") return json(await board(env, url));
+  m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})\/setups\/([0-9a-f]{16})\/posts$/);
+  if (m && method === "GET") return talk(request, env, m[1], m[2]);
+  if (path === "/api/posts" && method === "POST") return post(request, env);
+  m = path.match(/^\/api\/posts\/(p[A-Za-z0-9]{15})(\/flag)?$/);
+  if (m && method === "DELETE" && !m[2]) return takePostBack(request, env, m[1]);
+  if (m && method === "POST" && m[2]) return flag(request, env, m[1]);
   return json({ error: "not_found" }, 404);
 }
 
@@ -171,6 +192,17 @@ const SCHEMA = [
   "CREATE INDEX IF NOT EXISTS admin_sessions_admin ON admin_sessions (admin)",
   `CREATE TABLE IF NOT EXISTS codes (email TEXT PRIMARY KEY, code TEXT NOT NULL, expires INTEGER NOT NULL,
     tries INTEGER NOT NULL DEFAULT 0)`,
+  // [COMM-06] The talk on a rule set. A writer is kept as the install's hash only, shown to others as 참여자 N
+  // of that one talk, so posts in two talks cannot be tied together by anyone reading them.
+  `CREATE TABLE IF NOT EXISTS posts (id TEXT PRIMARY KEY, company_id TEXT NOT NULL, grp TEXT NOT NULL, device TEXT NOT NULL,
+    body TEXT NOT NULL, status TEXT NOT NULL, flags INTEGER NOT NULL DEFAULT 0, kept INTEGER NOT NULL DEFAULT 0,
+    hide_reason TEXT, created_at INTEGER NOT NULL, hidden_at INTEGER)`,
+  "CREATE INDEX IF NOT EXISTS posts_talk ON posts (company_id, grp, created_at)",
+  "CREATE INDEX IF NOT EXISTS posts_status ON posts (status, flags)",
+  "CREATE INDEX IF NOT EXISTS posts_device ON posts (device)",
+  `CREATE TABLE IF NOT EXISTS post_flags (post_id TEXT NOT NULL, device TEXT NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL,
+    PRIMARY KEY (post_id, device))`,
+  "CREATE TABLE IF NOT EXISTS muted (device TEXT PRIMARY KEY, until INTEGER NOT NULL, reason TEXT NOT NULL)",
   // Sign-ins before admin accounts kept only a token; they end once, and the owner signs in again.
   "DROP TABLE IF EXISTS sessions",
 ];
@@ -209,12 +241,13 @@ const all = async (env, sql, ...params) => (await stmt(env, sql, ...params).all(
 const run = (env, sql, ...params) => stmt(env, sql, ...params).run();
 
 async function settings(env) {
-  const rows = await all(env, "SELECT key, value FROM settings WHERE key IN ('adopt_points', 'reward_months')");
+  const rows = await all(env, "SELECT key, value FROM settings WHERE key IN ('adopt_points', 'reward_months', 'adopt_agree')");
   const read = (key, fallback) => {
     const n = Number(rows.find((r) => r.key === key)?.value);
     return Number.isInteger(n) ? n : fallback;
   };
-  return { adoptPoints: read("adopt_points", DEFAULTS.adoptPoints), rewardMonths: read("reward_months", DEFAULTS.rewardMonths) };
+  return { adoptPoints: read("adopt_points", DEFAULTS.adoptPoints), rewardMonths: read("reward_months", DEFAULTS.rewardMonths),
+    adoptAgree: read("adopt_agree", DEFAULTS.adoptAgree) };
 }
 
 async function salt(env) {
@@ -805,8 +838,8 @@ function diffLines(before, after) {
 
 /** What the app tells someone before they send: the points a setup needs and the reward once it is adopted. */
 async function terms(env) {
-  const { adoptPoints, rewardMonths } = await settings(env);
-  return { threshold: adoptPoints, rewardMonths };
+  const { adoptPoints, rewardMonths, adoptAgree } = await settings(env);
+  return { threshold: adoptPoints, rewardMonths, agree: adoptAgree };
 }
 
 async function search(env, url) {
@@ -875,7 +908,19 @@ const shared = (text, name) => ({ ...JSON.parse(text), company: name });
 
 async function state(env, companyId, grp, threshold, adopted) {
   const s = await score(env, companyId, grp);
-  return { id: grp, status: adopted ? "adopted" : "pending", points: s.points, persons: s.persons, bad: s.bad, threshold };
+  const posts = await one(env, "SELECT COUNT(*) AS n FROM posts WHERE company_id = ? AND grp = ? AND status = 'shown'", companyId, grp);
+  return { id: grp, status: adopted ? "adopted" : "pending", points: s.points, persons: s.persons, bad: s.bad, threshold,
+    ...trust(s, threshold), posts: posts.n };
+}
+
+/**
+ * [COMM-07] How far people trust a rule set, 0 to 100: the share who said 맞았어요 among all who voted,
+ * times how much of the adoption points it has. [agree] is that share alone, as a percent.
+ */
+export function trust(s, threshold) {
+  const voters = s.persons + s.bad;
+  const agree = voters ? s.persons / voters : 0;
+  return { trust: Math.round(100 * agree * Math.min(1, s.points / threshold)), agree: Math.round(100 * agree) };
 }
 
 async function report(request, env) {
@@ -996,9 +1041,11 @@ const activeRule = (env, companyId, deptNorm) => one(env, `SELECT * FROM rules W
 
 /** [COMM-03] Adopts a setup once different people agree on it, unless it is the developer's call. */
 async function settle(env, companyId, grp, now) {
-  const { adoptPoints } = await settings(env);
+  const { adoptPoints, adoptAgree } = await settings(env);
   const s = await score(env, companyId, grp);
   if (s.persons < 2 || s.points < adoptPoints || s.networks < 2) return;
+  // [COMM-07] Too many 달라요 for the 맞았어요: the developer decides, however many points it has.
+  if (s.persons * 100 < adoptAgree * (s.persons + s.bad)) return;
   const rep = await representative(env, companyId, grp);
   if (!rep || (await blocker(env, companyId, grp, rep.dept_norm))) return;
   await adopt(env, companyId, grp, "auto", now);
@@ -1089,13 +1136,17 @@ async function forgetMine(request, env) {
   const device = deviceId(request.headers.get("x-device"));
   if (!device) return json({ error: "device", field: "device" }, 400);
   const dev = await deviceHash(device);
-  const [, reports, votes] = await env.DB.batch([
+  const [, reports, votes, , posts] = await env.DB.batch([
     stmt(env, "DELETE FROM rewards WHERE device = ?", dev),
     stmt(env, "DELETE FROM reports WHERE device = ?", dev),
     stmt(env, "DELETE FROM votes WHERE device = ?", dev),
-    stmt(env, "DELETE FROM counters WHERE key = ?", `report|${dev}`),
+    stmt(env, "DELETE FROM counters WHERE key IN (?, ?)", `report|${dev}`, `post|${dev}`),
+    // [COMM-06] Their posts and their 신고 go too; a post they flagged counts one fewer.
+    stmt(env, "DELETE FROM posts WHERE device = ?", dev),
+    stmt(env, "UPDATE posts SET flags = flags - 1 WHERE id IN (SELECT post_id FROM post_flags WHERE device = ?)", dev),
+    stmt(env, "DELETE FROM post_flags WHERE device = ? OR post_id NOT IN (SELECT id FROM posts)", dev),
   ]);
-  return json({ reports: reports.meta.changes, votes: votes.meta.changes });
+  return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes });
 }
 
 async function vote(request, env) {
@@ -1125,6 +1176,191 @@ async function vote(request, env) {
   if (body.ok && !rule) await settle(env, c.id, grp, now);
   const adopted = rule ?? (await one(env, "SELECT id FROM rules WHERE company_id = ? AND grp = ? AND withdrawn = 0 AND superseded = 0", c.id, grp));
   return json(await state(env, c.id, grp, (await settings(env)).adoptPoints, Boolean(adopted)));
+}
+
+// ---- rule sets everyone can see, vote on and talk about [COMM-06][COMM-07] ----
+
+/** Why a post is flagged, as the app offers it. */
+const FLAGS = {
+  abuse: "욕설·비방",
+  personal: "개인 정보가 있어요",
+  spam: "광고·도배",
+  false: "일부러 틀린 정보",
+};
+
+/** Why the developer hid a post, as its writer's app shows it. */
+const HIDE_REASONS = {
+  abuse: "욕설이나 비방이 있어요",
+  personal: "개인 정보가 있어요",
+  spam: "광고나 도배예요",
+  offtopic: "이 규칙과 상관없는 글이에요",
+  flags: "신고가 모여 개발자가 확인하고 있어요",
+};
+
+/**
+ * [COMM-07] Every company's rule sets in one list: ones people are still voting on (newest activity
+ * first), or adopted ones anyone can use (newest first). What the developer turned down or took down,
+ * and hidden companies, are not here.
+ */
+async function board(env, url) {
+  const tab = url.searchParams.get("tab") === "adopted" ? "adopted" : "voting";
+  const offset = Math.min(600, Math.max(0, Number.parseInt(url.searchParams.get("from") ?? "0", 10) || 0));
+  const size = 20;
+  const { adoptPoints } = await settings(env);
+  const rows = tab === "adopted"
+    ? await all(env, `SELECT r.company_id, r.grp, r.dept, r.setup, r.version, r.adopted_at AS at, c.name
+        FROM rules r JOIN companies c ON c.id = r.company_id
+        WHERE r.withdrawn = 0 AND r.superseded = 0 AND c.hidden = 0 AND c.merged_into IS NULL
+        ORDER BY r.adopted_at DESC LIMIT ? OFFSET ?`, size + 1, offset)
+    : await all(env, `SELECT p.company_id, p.grp, c.name,
+          MAX(MAX(p.created_at),
+            COALESCE((SELECT MAX(v.at) FROM votes v WHERE v.company_id = p.company_id AND v.grp = p.grp), 0),
+            COALESCE((SELECT MAX(t.created_at) FROM posts t WHERE t.company_id = p.company_id AND t.grp = p.grp AND t.status = 'shown'), 0)) AS at
+        FROM reports p JOIN companies c ON c.id = p.company_id
+        WHERE p.status = 'pending' AND c.hidden = 0 AND c.merged_into IS NULL
+          AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = p.company_id AND x.grp = p.grp AND x.status = 'rejected')
+          AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = p.company_id AND w.grp = p.grp AND (w.withdrawn = 1 OR w.superseded = 0))
+        GROUP BY p.company_id, p.grp ORDER BY at DESC LIMIT ? OFFSET ?`, size + 1, offset);
+  const items = [];
+  for (const r of rows.slice(0, size)) {
+    const rep = tab === "adopted" ? r : await representative(env, r.company_id, r.grp);
+    if (!rep) continue;
+    const s = await state(env, r.company_id, r.grp, adoptPoints, tab === "adopted");
+    if (s.persons === 0 && tab === "voting") continue;
+    const lines = describe(JSON.parse(rep.setup));
+    items.push({
+      company: { id: r.company_id, name: r.name },
+      dept: rep.dept,
+      ...s,
+      version: r.version ?? null,
+      at: iso(r.at),
+      gist: lines.find(([label]) => label === "근무")?.[1] ?? "",
+      cycle: lines.find(([label]) => label.startsWith("순서"))?.[0] ?? "",
+      pay: lines.some(([label]) => label === "사업장"),
+    });
+  }
+  return { tab, items, next: rows.length > size ? offset + size : null, threshold: adoptPoints };
+}
+
+/** A rule set people may talk about: adopted and in use, or still gathering votes. */
+async function talkable(env, companyId, grp) {
+  const c = await follow(env, companyId);
+  if (!c || c.hidden) return null;
+  const live = await one(env, `SELECT
+      EXISTS (SELECT 1 FROM rules WHERE company_id = ?1 AND grp = ?2 AND withdrawn = 0 AND superseded = 0) AS rule,
+      EXISTS (SELECT 1 FROM reports WHERE company_id = ?1 AND grp = ?2 AND status = 'pending') AS pending`, c.id, grp);
+  return live.rule || live.pending ? c : null;
+}
+
+/**
+ * [COMM-06] The talk on one rule set, oldest first. Each writer is 참여자 N of this talk only, with what
+ * they said about the rule set: 올린 분 (they sent it), 맞았어요 or 달라요. With X-Device, the caller's own
+ * posts are marked, and their own hidden ones show with why.
+ */
+async function talk(request, env, companyId, grp) {
+  const c = await talkable(env, companyId, grp);
+  if (!c) return json({ error: "not_found" }, 404);
+  const device = deviceId(request.headers.get("x-device"));
+  const me = device ? await deviceHash(device) : null;
+  const rows = await all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, id LIMIT 500", c.id, grp);
+  const senders = new Set((await all(env, `SELECT device FROM reports WHERE company_id = ? AND grp = ? AND status IN ('pending', 'adopted')`,
+    c.id, grp)).map((r) => r.device));
+  const votes = new Map((await all(env, "SELECT device, ok, verified FROM votes WHERE company_id = ? AND grp = ?", c.id, grp))
+    .map((v) => [v.device, v]));
+  const verified = new Set((await all(env, "SELECT device FROM reports WHERE company_id = ? AND grp = ? AND verified = 1", c.id, grp))
+    .map((r) => r.device));
+  const numbers = new Map();
+  const posts = [];
+  for (const p of rows) {
+    if (!numbers.has(p.device)) numbers.set(p.device, numbers.size + 1);
+    const mine = p.device === me;
+    if (p.status !== "shown" && !mine) continue;
+    const v = votes.get(p.device);
+    posts.push({
+      id: p.id,
+      who: numbers.get(p.device),
+      stance: senders.has(p.device) ? "sender" : v ? (v.ok ? "ok" : "bad") : null,
+      verified: verified.has(p.device) || v?.verified === 1,
+      body: p.body,
+      at: iso(p.created_at),
+      mine,
+      ...(p.status === "shown" ? {} : { hidden: { code: p.hide_reason ?? "flags", text: HIDE_REASONS[p.hide_reason ?? "flags"] ?? "" } }),
+    });
+  }
+  const muted = me ? await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", me, Date.now()) : null;
+  return json({ company: { id: c.id, name: c.name }, setup: grp, posts, ...(muted ? { mutedUntil: iso(muted.until) } : {}) });
+}
+
+/** [COMM-06] A post in the talk on a rule set: no email, phone number or amount, like everything else sent here. */
+async function post(request, env) {
+  const body = await readJson(request, 4096);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  if (typeof body.company !== "string" || !/^[A-Za-z0-9]{12}$/.test(body.company)) refuse("company", "company");
+  if (typeof body.setup !== "string" || !/^[0-9a-f]{16}$/.test(body.setup)) refuse("setup", "setup");
+  const text = str(body.body, LIMITS.post, "body", { empty: false, lines: true, code: "body" }).trim();
+  if (text.length < 2) refuse("body", "body");
+  const why = personal(text);
+  if (why) refuse(why, "body");
+  const now = Date.now();
+  const dev = await deviceHash(device);
+  const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
+  if (muted) return json({ error: "muted", until: iso(muted.until) }, 403);
+  const c = await talkable(env, body.company, body.setup);
+  if (!c) return json({ error: "not_found" }, 404);
+  const net = await network(request, env, now);
+  if (!(await allow(env, `post|${dev}`, LIMITS.postsPerDay, DAY, now)) ||
+      !(await allow(env, `post|${net.day}`, LIMITS.postsPerNetworkDay, DAY, now))) {
+    return json({ error: "rate_limited" }, 429);
+  }
+  const id = `p${randomId(15)}`;
+  await env.DB.batch([
+    stmt(env, `INSERT INTO posts (id, company_id, grp, device, body, status, flags, kept, hide_reason, created_at, hidden_at)
+      VALUES (?, ?, ?, ?, ?, 'shown', 0, 0, NULL, ?, NULL)`, id, c.id, body.setup, dev, text, now),
+    // A hidden post nobody restored is gone after 90 days.
+    stmt(env, "DELETE FROM post_flags WHERE post_id IN (SELECT id FROM posts WHERE status = 'hidden' AND hidden_at < ?)", now - LIMITS.hiddenPostDays * DAY),
+    stmt(env, "DELETE FROM posts WHERE status = 'hidden' AND hidden_at < ?", now - LIMITS.hiddenPostDays * DAY),
+    stmt(env, "DELETE FROM muted WHERE until < ?", now),
+  ]);
+  return json({ id, at: iso(now) }, 201);
+}
+
+async function takePostBack(request, env, id) {
+  const device = deviceId(request.headers.get("x-device"));
+  const p = await one(env, "SELECT device FROM posts WHERE id = ?", id);
+  if (!p) return json({ error: "not_found" }, 404);
+  if (!device || (await deviceHash(device)) !== p.device) return json({ error: "forbidden" }, 403);
+  await env.DB.batch([stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id), stmt(env, "DELETE FROM posts WHERE id = ?", id)]);
+  return new Response(null, { status: 204 });
+}
+
+/**
+ * [COMM-06] 신고. Each install once per post; enough of them hide it until the developer looks, unless
+ * the developer already looked and kept it.
+ */
+async function flag(request, env, id) {
+  const body = await readJson(request, 1024);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  const reason = Object.hasOwn(FLAGS, body.reason) ? body.reason : "abuse";
+  const now = Date.now();
+  const net = await network(request, env, now);
+  if (!(await allow(env, `vote|${net.now}`, LIMITS.votesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
+  const dev = await deviceHash(device);
+  const p = await one(env, "SELECT * FROM posts WHERE id = ?", id);
+  if (!p || p.status !== "shown") return json({ error: "not_found" }, 404);
+  if (p.device === dev) return json({ error: "own" }, 400);
+  const added = await run(env, "INSERT OR IGNORE INTO post_flags (post_id, device, reason, at) VALUES (?, ?, ?, ?)", id, dev, reason, now);
+  if (added.meta.changes) {
+    await run(env, `UPDATE posts SET flags = flags + 1,
+        status = CASE WHEN kept = 0 AND flags + 1 >= ?2 THEN 'hidden' ELSE status END,
+        hide_reason = CASE WHEN kept = 0 AND flags + 1 >= ?2 THEN 'flags' ELSE hide_reason END,
+        hidden_at = CASE WHEN kept = 0 AND flags + 1 >= ?2 THEN ?3 ELSE hidden_at END
+      WHERE id = ?1`, id, LIMITS.flagsToHide, now);
+    const after = await one(env, "SELECT status FROM posts WHERE id = ?", id);
+    if (after.status === "hidden") await audit(env, now, "post_autohide", id, `${p.company_id}/${p.grp}`);
+  }
+  return json({ ok: true });
 }
 
 // ---- the developer app's API [ADMIN-01] ----
@@ -1160,6 +1396,7 @@ function areaFor(path) {
   if (path.startsWith("/companies") || path.startsWith("/rules/")) return "companies";
   if (path.startsWith("/rewards")) return "rewards";
   if (path === "/settings") return "settings";
+  if (path.startsWith("/posts")) return "community";
   if (path === "/audit") return "audit";
   return "owner";
 }
@@ -1227,6 +1464,9 @@ async function admin(request, env, url) {
   m = path.match(/^\/rewards\/(w[A-Za-z0-9]{22})$/);
   if (m && method === "POST") return setReward(request, env, m[1], now);
   if (path === "/settings" && method === "POST") return saveSettings(request, env, now);
+  if (path === "/posts" && method === "GET") return json(await postList(env, url));
+  m = path.match(/^\/posts\/(p[A-Za-z0-9]{15})$/);
+  if (m && method === "POST") return moderate(request, env, m[1], now);
   return json({ error: "not_found" }, 404);
 }
 
@@ -1588,7 +1828,8 @@ async function auditLog(env, url) {
 /** The home screen's numbers, only for the areas this admin can see. */
 async function overview(env, actor) {
   const count = async (sql) => (await one(env, sql)).n;
-  const out = { me: me(actor), settings: await settings(env), reasons: REASONS, answers: ANSWERS, salt: secretIssue(env, "RATE_SALT", 1) === null };
+  const out = { me: me(actor), settings: await settings(env), reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS, flagReasons: FLAGS,
+    salt: secretIssue(env, "RATE_SALT", 1) === null };
   if (can(actor, "review")) {
     out.pending = await count("SELECT COUNT(*) AS n FROM (SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending')");
     out.asks = await count("SELECT COUNT(*) AS n FROM reports WHERE status = 'ask'");
@@ -1597,6 +1838,11 @@ async function overview(env, actor) {
     out.reports = await count("SELECT COUNT(*) AS n FROM reports");
   }
   if (can(actor, "rewards")) out.owed = await count("SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'");
+  if (can(actor, "community")) {
+    // [COMM-06] Flagged posts still shown, and ones the flags hid that nobody has looked at yet.
+    out.flaggedPosts = await count("SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')");
+    out.posts = await count("SELECT COUNT(*) AS n FROM posts WHERE status = 'shown'");
+  }
   if (can(actor, "companies")) {
     out.companies = await count("SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL");
     out.rules = await count("SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0");
@@ -1607,7 +1853,7 @@ async function overview(env, actor) {
 
 /** Setups waiting for a decision, the ones with most behind them first, and rules people doubt. */
 async function queue(env) {
-  const { adoptPoints } = await settings(env);
+  const { adoptPoints, adoptAgree } = await settings(env);
   const groups = await all(env, `SELECT company_id, grp, MAX(created_at) AS last FROM reports WHERE status = 'pending'
     GROUP BY company_id, grp ORDER BY last DESC LIMIT 60`);
   const out = [];
@@ -1629,9 +1875,13 @@ async function queue(env) {
       networks: s.networks,
       bad: s.bad,
       threshold: adoptPoints,
-      // Enough points, but another rule is in use, this one was turned down or everyone sent it from one
-      // network: only the developer decides.
-      blocked: (Boolean(why) || s.networks < 2) && s.persons >= 2 && s.points >= adoptPoints,
+      ...trust(s, adoptPoints),
+      // [COMM-07] More 달라요 than the setting allows: auto adoption waits for the developer.
+      doubted: s.persons * 100 < adoptAgree * (s.persons + s.bad),
+      posts: (await one(env, "SELECT COUNT(*) AS n FROM posts WHERE company_id = ? AND grp = ? AND status = 'shown'", g.company_id, g.grp)).n,
+      // Enough points, but another rule is in use, this one was turned down, everyone sent it from one
+      // network or too many say 달라요: only the developer decides.
+      blocked: (Boolean(why) || s.networks < 2 || s.persons * 100 < adoptAgree * (s.persons + s.bad)) && s.persons >= 2 && s.points >= adoptPoints,
       turnedDown: why === "withdrawn" || why === "rejected" ? why : null,
       replaces: active ? { id: active.id, version: active.version } : null,
       reports: reports.map((r) => ({ id: r.id, verified: r.verified === 1, note: r.note, at: iso(r.created_at) })),
@@ -1887,16 +2137,106 @@ async function saveSettings(request, env, now) {
   const body = await readJson(request, 1024);
   if (!Number.isInteger(body.adoptPoints) || body.adoptPoints < 2 || body.adoptPoints > 20) refuse("adoptPoints", "adoptPoints");
   if (!Number.isInteger(body.rewardMonths) || body.rewardMonths < 0 || body.rewardMonths > 24) refuse("rewardMonths", "rewardMonths");
+  // [COMM-07] Left out by a developer app from before it, the agreement share stays as it was.
+  const agree = body.adoptAgree ?? (await settings(env)).adoptAgree;
+  if (!Number.isInteger(agree) || agree < 50 || agree > 100) refuse("adoptAgree", "adoptAgree");
   await env.DB.batch([
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('adopt_points', ?)", String(body.adoptPoints)),
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('reward_months', ?)", String(body.rewardMonths)),
+    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('adopt_agree', ?)", String(agree)),
   ]);
   // A lower bar may already be met.
   for (const g of await all(env, "SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending' LIMIT 200")) {
     await settle(env, g.company_id, g.grp, now);
   }
-  await audit(env, now, "settings", "", `${body.adoptPoints}/${body.rewardMonths}`);
+  await audit(env, now, "settings", "", `${body.adoptPoints}/${body.rewardMonths}/${agree}%`);
   return json(await settings(env));
+}
+
+// ---- the talk on rule sets, for the developer [COMM-06] ----
+
+/**
+ * Posts to look at: "flagged" (신고가 있거나 신고로 가려졌는데 아직 아무도 안 본 것, the most flagged first),
+ * "hidden", or "all" newest first; with company and setup, one talk whole. A writer shows as the first
+ * six letters of the install's hash, enough to see the same writer again and nothing more.
+ */
+async function postList(env, url) {
+  const status = ["flagged", "hidden", "all"].includes(url.searchParams.get("status")) ? url.searchParams.get("status") : "flagged";
+  const company = url.searchParams.get("company");
+  const grp = url.searchParams.get("setup");
+  const one_talk = company && /^[A-Za-z0-9]{12}$/.test(company) && grp && /^[0-9a-f]{16}$/.test(grp);
+  const rows = one_talk
+    ? await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
+        WHERE p.company_id = ? AND p.grp = ? ORDER BY p.created_at LIMIT 500`, company, grp)
+    : status === "flagged"
+      ? await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
+          WHERE p.kept = 0 AND (p.flags > 0 OR p.hide_reason = 'flags') ORDER BY p.flags DESC, p.created_at DESC LIMIT 100`)
+      : await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
+          ${status === "hidden" ? "WHERE p.status = 'hidden'" : ""} ORDER BY p.created_at DESC LIMIT 100`);
+  const out = [];
+  const depts = new Map();
+  for (const p of rows) {
+    const key = `${p.company_id}/${p.grp}`;
+    if (!depts.has(key)) {
+      const r = (await one(env, "SELECT dept FROM rules WHERE company_id = ? AND grp = ? ORDER BY version DESC LIMIT 1", p.company_id, p.grp))
+        ?? (await one(env, "SELECT dept FROM reports WHERE company_id = ? AND grp = ? LIMIT 1", p.company_id, p.grp));
+      depts.set(key, r?.dept ?? "");
+    }
+    const reasons = await all(env, "SELECT reason, COUNT(*) AS n FROM post_flags WHERE post_id = ? GROUP BY reason ORDER BY n DESC, reason", p.id);
+    const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", p.device, Date.now());
+    out.push({
+      id: p.id,
+      company: { id: p.company_id, name: p.name },
+      setup: p.grp,
+      dept: depts.get(key),
+      body: p.body,
+      writer: p.device.slice(0, 6),
+      at: iso(p.created_at),
+      status: p.status,
+      kept: p.kept === 1,
+      flags: p.flags,
+      reasons: reasons.map((r) => ({ code: r.reason, text: FLAGS[r.reason] ?? r.reason, n: r.n })),
+      hidden: p.status === "hidden" ? { code: p.hide_reason, text: HIDE_REASONS[p.hide_reason] ?? "", at: p.hidden_at ? iso(p.hidden_at) : null } : null,
+      mutedUntil: muted ? iso(muted.until) : null,
+    });
+  }
+  return { status: one_talk ? "talk" : status, posts: out };
+}
+
+/**
+ * hide (with a reason the writer's app shows), show (kept: flags no longer hide it), delete, or mute:
+ * the writer cannot post for 30 days, and their post is hidden.
+ */
+async function moderate(request, env, id, now) {
+  const body = await readJson(request, 1024);
+  const p = await one(env, "SELECT * FROM posts WHERE id = ?", id);
+  if (!p) return json({ error: "not_found" }, 404);
+  const target = `${p.company_id}/${p.grp}/${id}`;
+  if (body.action === "hide" || body.action === "mute") {
+    const reason = Object.hasOwn(HIDE_REASONS, body.reason) && body.reason !== "flags" ? body.reason : "abuse";
+    const stmts = [stmt(env, "UPDATE posts SET status = 'hidden', hide_reason = ?, hidden_at = ?, kept = 1 WHERE id = ?", reason, now, id)];
+    if (body.action === "mute") {
+      stmts.push(stmt(env, `INSERT INTO muted (device, until, reason) VALUES (?, ?, ?)
+        ON CONFLICT (device) DO UPDATE SET until = excluded.until, reason = excluded.reason`, p.device, now + LIMITS.muteDays * DAY, reason));
+    }
+    await env.DB.batch(stmts);
+    await audit(env, now, body.action === "mute" ? "post_mute" : "post_hide", target, reason);
+  } else if (body.action === "show") {
+    await env.DB.batch([
+      stmt(env, "UPDATE posts SET status = 'shown', hide_reason = NULL, hidden_at = NULL, kept = 1, flags = 0 WHERE id = ?", id),
+      stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id),
+      stmt(env, "DELETE FROM muted WHERE device = ?", p.device),
+    ]);
+    await audit(env, now, "post_show", target);
+  } else if (body.action === "delete") {
+    await env.DB.batch([stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id), stmt(env, "DELETE FROM posts WHERE id = ?", id)]);
+    await audit(env, now, "post_delete", target);
+    return json({ deleted: true });
+  } else {
+    refuse("action", "action");
+  }
+  const after = await one(env, "SELECT id, status, hide_reason, kept FROM posts WHERE id = ?", id);
+  return json({ id, status: after.status, kept: after.kept === 1, hidden: after.hide_reason });
 }
 
 // ---- input and output ----
