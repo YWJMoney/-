@@ -22,7 +22,10 @@ import com.bamnat.app.BuildConfig
 import com.bamnat.app.alarm.AlarmScheduler
 import com.bamnat.app.alarm.Notifications
 import com.bamnat.app.data.AppSettings
+import com.bamnat.app.data.PhoneDayView
 import com.bamnat.app.data.ThemeMode
+import com.bamnat.app.ui.calendar.DayGroupKey
+import com.bamnat.app.ui.calendar.DayGroupOrderDialog
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.ConfirmDialog
 import com.bamnat.app.ui.components.SectionCard
@@ -290,7 +293,7 @@ private fun PayPage(vm: SettingsViewModel, files: SettingsFiles, onOpenPay: () -
 }
 
 private enum class CellLine { NONE, HOURS, LUNAR }
-private enum class MemoView { PLAIN, BELOW, FIRST }
+private enum class MemoView { PLAIN, BELOW, CELLS }
 
 @Composable
 private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings) {
@@ -303,7 +306,8 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings) {
         }
     }
     SectionCard(title = "달력") {
-        ChoiceRow("한 주의 시작", "주 근무시간도 이 요일부터 세요", listOf(DayOfWeek.MONDAY to "월요일", DayOfWeek.SUNDAY to "일요일"), settings.weekStart) { d ->
+        // [CAL-02] Sunday first, as most Korean calendars are.
+        ChoiceRow("한 주의 시작", "주 근무시간도 이 요일부터 세요", listOf(DayOfWeek.SUNDAY to "일요일", DayOfWeek.MONDAY to "월요일"), settings.weekStart) { d ->
             vm.update { it.copy(weekStart = d) }
         }
         // One choice: before, two switches quietly took each other's place.
@@ -312,14 +316,34 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings) {
             listOf(CellLine.NONE to "비움", CellLine.HOURS to "근무시간 (8h)", CellLine.LUNAR to "음력 (8.24)"), line) { l ->
             vm.update { it.copy(showHoursInCells = l == CellLine.HOURS, showLunar = l == CellLine.LUNAR) }
         }
-        // [FEAT-17] For people who keep their days in notes.
-        val memo = when { settings.memoFirst -> MemoView.FIRST; settings.calendarMemos -> MemoView.BELOW; else -> MemoView.PLAIN }
+        // [FEAT-17][DAY-04] For people who keep their days in notes. Where 메모 sits in the day is the order below.
+        val memo = when { settings.memoInCells -> MemoView.CELLS; settings.calendarMemos -> MemoView.BELOW; else -> MemoView.PLAIN }
         ChoiceRow("메모 보기", when (memo) {
             MemoView.PLAIN -> "메모는 날짜를 누르면 보여요"
             MemoView.BELOW -> "이번 달 메모를 달력 아래에 날짜순으로 짧게 보여 줘요"
-            MemoView.FIRST -> "날짜를 누르면 메모가 맨 위에 나오고, 달력 칸에 메모 첫 글자가 보여요"
-        }, listOf(MemoView.PLAIN to "기본", MemoView.BELOW to "달력 아래 목록", MemoView.FIRST to "메모 중심"), memo) { m ->
-            vm.update { it.copy(calendarMemos = m != MemoView.PLAIN, memoFirst = m == MemoView.FIRST) }
+            MemoView.CELLS -> "날짜 밑에 그날 메모 첫 글자가 보이고, 이번 달 메모도 달력 아래에 모여요"
+        }, listOf(MemoView.PLAIN to "기본", MemoView.BELOW to "달력 아래 목록", MemoView.CELLS to "날짜 밑 메모"), memo) { m ->
+            vm.update { it.copy(calendarMemos = m != MemoView.PLAIN, memoInCells = m == MemoView.CELLS) }
+        }
+        // [CAL-03] Unfolded, the day is always beside the calendar; this is for the cover screen and phones.
+        ChoiceRow("날짜를 누르면", "접은 화면과 일반 휴대폰에서 " + when (settings.phoneDayView) {
+            PhoneDayView.PREVIEW -> "달력 아래에 짧게 보이고, 한 번 더 누르면 크게 열려요"
+            PhoneDayView.SHEET -> "하루 화면이 바로 크게 열려요"
+            PhoneDayView.WEEK -> "그 주(월~일)만 남고, 아래에 하루 화면이 펼쳐져요"
+        }, listOf(PhoneDayView.PREVIEW to "미리보기 먼저", PhoneDayView.SHEET to "바로 크게", PhoneDayView.WEEK to "그 주만 보기"), settings.phoneDayView) { v ->
+            vm.update { it.copy(phoneDayView = v) }
+        }
+        // [DAY-04] The day's groups in the user's order, beside the unfolded calendar and in the sheet alike.
+        var ordering by remember { mutableStateOf(false) }
+        val moneyFirst = settings.workStyle?.usesPayEngine == false
+        NavRow("하루 화면 순서", DayGroupKey.order(settings.dayGroupOrder, moneyFirst).joinToString(" · ") { DayGroupKey.label(it) }) { ordering = true }
+        if (ordering) {
+            DayGroupOrderDialog(
+                custom = settings.dayGroupOrder,
+                moneyFirst = moneyFirst,
+                onChange = { o -> vm.update { it.copy(dayGroupOrder = o) } },
+                onDismiss = { ordering = false },
+            )
         }
     }
 }

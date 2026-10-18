@@ -484,6 +484,12 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     fun setAlarmsEnabled(on: Boolean) = container.settingsRepository.update { it.copy(alarmsEnabled = on) }
 
+    /** [DAY-04] The day view's groups in the user's order; empty goes back to the default. */
+    fun setDayGroupOrder(order: List<String>) = container.settingsRepository.update { it.copy(dayGroupOrder = order) }
+
+    /** [CAL-03] What a tap on a date does on a phone. */
+    fun setPhoneDayView(view: com.bamnat.app.data.PhoneDayView) = container.settingsRepository.update { it.copy(phoneDayView = view) }
+
     fun deleteMemo(memo: Memo) {
         viewModelScope.launch { memoRepo.delete(memo) }
     }

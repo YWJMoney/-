@@ -435,6 +435,21 @@ class ScreenshotTest {
         openDay(dayCell)
         reveal("메모", exact = true)
     }
+    // ---- [CAL-03][DAY-04] 그 주만 보기, 하루 화면 순서 ----
+    @Test fun foldedWeekOnly() = shoot("160_folded_week_only", FOLDED) {
+        app.container.settingsRepository.update { it.copy(phoneDayView = com.bamnat.app.data.PhoneDayView.WEEK) }
+        settle()
+        selectDay(dayCell)
+        // Fails when the month did not fold to the week.
+        reveal("달 전체 보기", exact = true)
+    }
+    @Test fun foldedDayGroupOrder() = shoot("161_folded_day_group_order", FOLDED) {
+        app.container.settingsRepository.update { it.copy(dayGroupOrder = listOf("memo", "alarm")) }
+        settle()
+        openDay(dayCell)
+        tapText("순서 바꾸기", exact = true)
+        check(shownDialogs().isNotEmpty()) { "순서 창이 열리지 않았어요" }
+    }
     @Test fun foldedExtraWorkDay() = shoot("19_folded_extra_work_day", FOLDED) {
         openDay(restDayExtra)
         reveal("추가 근무", exact = true)
@@ -679,7 +694,7 @@ class ScreenshotTest {
         tapText("대근", exact = true)
     }
     @Test fun foldedMemoFirstCalendar() = shoot("71_folded_memo_first_calendar", FOLDED) {
-        app.container.settingsRepository.update { it.copy(memoFirst = true) }
+        app.container.settingsRepository.update { it.copy(memoInCells = true) }
         settle()
         scrollUp(450)
     }
