@@ -8,6 +8,7 @@
 // DELETE /api/reports/:id         header X-Device: the sender takes their report back
 // DELETE /api/mine                header X-Device: everything this install sent, gone
 // POST   /api/votes               맞았어요 / 달라요 on a setup [COMM-03]
+// *      /api/inquiries...        header X-Device: questions and problem reports from the app [ADMIN-02]
 // GET    /admin/                  the developer app, installable on a phone [ADMIN-01]
 // *      /api/admin/*             behind the admin password (secret ADMIN_PASSWORD)
 //
@@ -95,6 +96,7 @@ async function route(request, env) {
   if (m && method === "DELETE") return takeBack(request, env, m[1]);
   if (path === "/api/mine" && method === "DELETE") return forgetMine(request, env);
   if (path === "/api/votes" && method === "POST") return vote(request, env);
+  if (path === "/api/inquiries" || path.startsWith("/api/inquiries/")) return inquiries(request, env, path);
   return json({ error: "not_found" }, 404);
 }
 
@@ -128,6 +130,14 @@ const SCHEMA = [
   "CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, expires INTEGER NOT NULL)",
   `CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, action TEXT NOT NULL,
     target TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '')`,
+  // [ADMIN-02] Questions from the app and the developer's answers.
+  `CREATE TABLE IF NOT EXISTS inquiries (id TEXT PRIMARY KEY, device TEXT NOT NULL, kind TEXT NOT NULL, info TEXT NOT NULL,
+    status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+  "CREATE INDEX IF NOT EXISTS inquiries_device ON inquiries (device, updated_at)",
+  "CREATE INDEX IF NOT EXISTS inquiries_status ON inquiries (status, updated_at)",
+  `CREATE TABLE IF NOT EXISTS inquiry_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, inquiry_id TEXT NOT NULL,
+    sender TEXT NOT NULL, text TEXT NOT NULL, by TEXT, at INTEGER NOT NULL)`,
+  "CREATE INDEX IF NOT EXISTS inquiry_messages_inquiry ON inquiry_messages (inquiry_id, id)",
 ];
 
 const schemas = new WeakMap();
@@ -1028,13 +1038,15 @@ async function forgetMine(request, env) {
   const device = deviceId(request.headers.get("x-device"));
   if (!device) return json({ error: "device", field: "device" }, 400);
   const dev = await deviceHash(device);
-  const [, reports, votes] = await env.DB.batch([
+  const [, reports, votes, , , asked] = await env.DB.batch([
     stmt(env, "DELETE FROM rewards WHERE device = ?", dev),
     stmt(env, "DELETE FROM reports WHERE device = ?", dev),
     stmt(env, "DELETE FROM votes WHERE device = ?", dev),
     stmt(env, "DELETE FROM counters WHERE key = ?", `report|${dev}`),
+    stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE device = ?)", dev),
+    stmt(env, "DELETE FROM inquiries WHERE device = ?", dev),
   ]);
-  return json({ reports: reports.meta.changes, votes: votes.meta.changes });
+  return json({ reports: reports.meta.changes, votes: votes.meta.changes, inquiries: asked.meta.changes });
 }
 
 async function vote(request, env) {
@@ -1064,6 +1076,221 @@ async function vote(request, env) {
   if (body.ok && !rule) await settle(env, c.id, grp, now);
   const adopted = rule ?? (await one(env, "SELECT id FROM rules WHERE company_id = ? AND grp = ? AND withdrawn = 0 AND superseded = 0", c.id, grp));
   return json(await state(env, c.id, grp, (await settings(env)).adoptPoints, Boolean(adopted)));
+}
+
+// ---- questions from the app [ADMIN-02] ----
+//
+// 설정 > 문의하기 sends here instead of opening a mail app, and the developer answers in /admin; the
+// answer shows in the app. Like a report it carries no amount, contact or name: those are refused, not
+// cleaned. What goes with it (app version, phone model, Android, the alarm check if the user ticks it)
+// is shown in the app before sending. Only the install's hash is kept, so only that phone sees the
+// thread, and a thread with nothing new for 180 days is deleted.
+
+const INQUIRY = {
+  kinds: ["question", "bug", "idea"],
+  text: 2000,
+  diag: 6000,
+  bytes: 16 * 1024,
+  perDay: 5,
+  perNetworkDay: 20,
+  messagesPerHour: 20,
+  // Each side of a thread; a longer back and forth is better as a new question.
+  messages: 40,
+  keepMs: 180 * DAY,
+};
+
+/** What the app may send with a question, as the developer app shows it: label, field, longest. */
+const INQUIRY_INFO = [
+  ["앱", "app", 40],
+  ["기기", "model", 80],
+  ["Android", "android", 40],
+  ["알람 점검", "diag", INQUIRY.diag],
+];
+
+async function inquiries(request, env, path) {
+  const method = request.method;
+  const device = deviceId(request.headers.get("x-device"));
+  if (path === "/api/inquiries" && method === "POST") return ask(request, env);
+  if (!device) return json({ error: "device", field: "device" }, 400);
+  const dev = await deviceHash(device);
+  if (path === "/api/inquiries" && method === "GET") {
+    const rows = await all(env, "SELECT * FROM inquiries WHERE device = ? ORDER BY updated_at DESC LIMIT 50", dev);
+    const out = [];
+    for (const r of rows) out.push(await inquiryView(env, r));
+    return json({ inquiries: out });
+  }
+  const m = path.match(/^\/api\/inquiries\/([A-Za-z0-9]{22})(\/messages)?$/);
+  if (!m) return json({ error: "not_found" }, 404);
+  const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", m[1]);
+  // Someone else's question reads as missing, so ids cannot be tried out.
+  if (!row || row.device !== dev) return json({ error: "not_found" }, 404);
+  if (!m[2] && method === "GET") return json(await inquiryView(env, row));
+  if (!m[2] && method === "DELETE") {
+    await env.DB.batch([
+      stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id = ?", row.id),
+      stmt(env, "DELETE FROM inquiries WHERE id = ?", row.id),
+    ]);
+    return new Response(null, { status: 204 });
+  }
+  if (m[2] && method === "POST") {
+    const body = await readJson(request, INQUIRY.bytes);
+    const text = inquiryText(body.text);
+    const now = Date.now();
+    if (!(await allow(env, `inquiry_msg|${dev}`, INQUIRY.messagesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
+    const count = await one(env, "SELECT COUNT(*) AS n FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'user'", row.id);
+    if (count.n >= INQUIRY.messages) return json({ error: "too_many", field: "text" }, 409);
+    await env.DB.batch([
+      stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", row.id, text, now),
+      stmt(env, "UPDATE inquiries SET status = 'open', updated_at = ? WHERE id = ?", now, row.id),
+    ]);
+    return json(await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", row.id)), 201);
+  }
+  return json({ error: "not_found" }, 404);
+}
+
+/** A new question: what the user typed, and what they agreed to send with it. */
+async function ask(request, env) {
+  const body = await readJson(request, INQUIRY.bytes);
+  if (body.v !== 1) refuse("version", "v");
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  if (!INQUIRY.kinds.includes(body.kind)) refuse("kind", "kind");
+  const text = inquiryText(body.text);
+  const info = inquiryInfo(body.info);
+  const now = Date.now();
+  const net = await network(request, env, now);
+  const dev = await deviceHash(device);
+  if (!(await allow(env, `inquiry|${dev}`, INQUIRY.perDay, DAY, now)) ||
+      !(await allow(env, `inquiry|${net.day}`, INQUIRY.perNetworkDay, DAY, now))) {
+    return json({ error: "rate_limited" }, 429);
+  }
+  const id = randomId(22);
+  await env.DB.batch([
+    stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'open', ?, ?)",
+      id, dev, body.kind, JSON.stringify(info), now, now),
+    stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, text, now),
+    // Threads with nothing new for half a year go, answers and all.
+    stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
+    stmt(env, "DELETE FROM inquiries WHERE updated_at < ?", now - INQUIRY.keepMs),
+  ]);
+  return json(await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id)), 201);
+}
+
+/** What the user typed: up to 2000 characters, without an email, phone number or amount. */
+function inquiryText(v) {
+  if (typeof v !== "string") refuse("text", "text");
+  const text = v.normalize("NFC").replace(/\r\n?/g, "\n").trim();
+  if (!text || [...text].length > INQUIRY.text) refuse("text", "text");
+  const why = personal(text);
+  if (why) refuse(why, "text");
+  return text;
+}
+
+/**
+ * What goes with a question, only the fields the app shows before sending. The alarm check is made by
+ * the app, not typed: its times and shift names are what it is for, so only its length is checked.
+ */
+function inquiryInfo(v) {
+  if (v === undefined || v === null) return {};
+  if (typeof v !== "object" || Array.isArray(v)) refuse("info", "info");
+  const out = {};
+  for (const [, key, longest] of INQUIRY_INFO) {
+    const x = v[key];
+    if (x === undefined || x === null || x === "") continue;
+    if (typeof x !== "string" || [...x].length > longest) refuse("info", key);
+    if (key !== "diag" && personal(x) === "email") refuse("info", key);
+    out[key] = x.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
+  }
+  return out;
+}
+
+const messagesOf = (env, id) => all(env, "SELECT sender, text, by, at FROM inquiry_messages WHERE inquiry_id = ? ORDER BY id", id);
+
+/** A question as the app sees it; [admin] adds what was sent with it and who answered. */
+async function inquiryView(env, row, admin = false) {
+  const messages = await messagesOf(env, row.id);
+  const view = {
+    id: row.id,
+    kind: row.kind,
+    status: row.status,
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
+    messages: messages.map((m) => ({ from: m.sender, text: m.text, at: iso(m.at), ...(admin && m.by ? { by: m.by } : {}) })),
+  };
+  if (!admin) return view;
+  const info = JSON.parse(row.info);
+  const context = {};
+  for (const [label, key] of INQUIRY_INFO) if (info[key]) context[label] = info[key];
+  return { ...view, appVersion: info.app ?? null, context };
+}
+
+/** Who answered: the signed-in admin's name once there are admin accounts, else "admin". */
+function actorName(env) {
+  const a = env.actor;
+  const name = typeof a === "string" ? a : a && typeof a === "object" ? a.name : null;
+  return typeof name === "string" && name ? name.slice(0, 40) : "admin";
+}
+
+/** /api/admin/inquiries: the list, one thread, an answer and open or closed. */
+async function adminInquiries(request, env, url, path, now) {
+  const method = request.method;
+  if (path === "/inquiries" && method === "GET") return json(await inquiryList(env, url.searchParams));
+  const m = path.match(/^\/inquiries\/([A-Za-z0-9]{22})(\/reply|\/status)?$/);
+  if (!m) return json({ error: "not_found" }, 404);
+  const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", m[1]);
+  if (!row) return json({ error: "not_found" }, 404);
+  if (!m[2] && method === "GET") return json(await inquiryView(env, row, true));
+  if (method !== "POST" || !m[2]) return json({ error: "not_found" }, 404);
+  const body = await readJson(request, INQUIRY.bytes);
+  if (m[2] === "/reply") {
+    if (typeof body.text !== "string" || !body.text.trim() || [...body.text.trim()].length > INQUIRY.text) refuse("text", "text");
+    const status = body.close === true ? "closed" : "answered";
+    await env.DB.batch([
+      stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)",
+        row.id, body.text.normalize("NFC").replace(/\r\n?/g, "\n").trim(), actorName(env), now),
+      stmt(env, "UPDATE inquiries SET status = ?, updated_at = ? WHERE id = ?", status, now, row.id),
+    ]);
+    await audit(env, now, "inquiry_reply", row.id, status);
+  } else {
+    if (!["open", "closed"].includes(body.status)) refuse("status", "status");
+    // Opening or closing is the developer's bookkeeping; it does not keep a thread from its 180 days.
+    await run(env, "UPDATE inquiries SET status = ? WHERE id = ?", body.status, row.id);
+    await audit(env, now, "inquiry_status", row.id, body.status);
+  }
+  return json(await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", row.id), true));
+}
+
+/** Questions waiting first, then the newest; [q] finds words in what was asked or answered. */
+async function inquiryList(env, params) {
+  const status = ["open", "answered", "closed"].includes(params.get("status")) ? params.get("status") : null;
+  const q = String(params.get("q") ?? "").trim().slice(0, 40);
+  const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const rows = await all(env, `SELECT i.*,
+      (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id) AS count,
+      (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
+      (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last
+    FROM inquiries i
+    WHERE (?1 IS NULL OR i.status = ?1)
+      AND (?2 = '' OR EXISTS (SELECT 1 FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.text LIKE ?3 ESCAPE '\\'))
+    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 200`, status, q, like);
+  const counts = { open: 0, answered: 0, closed: 0 };
+  for (const r of await all(env, "SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status")) {
+    if (Object.hasOwn(counts, r.status)) counts[r.status] = r.n;
+  }
+  return {
+    counts,
+    inquiries: rows.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      status: r.status,
+      preview: [...(r.first ?? "")].slice(0, 120).join(""),
+      count: r.count,
+      waiting: r.last === "user",
+      appVersion: JSON.parse(r.info).app ?? null,
+      createdAt: iso(r.created_at),
+      updatedAt: iso(r.updated_at),
+    })),
+  };
 }
 
 // ---- the developer app's API [ADMIN-01] ----
@@ -1122,6 +1349,7 @@ async function admin(request, env, url) {
   }
   m = path.match(/^\/rules\/([A-Za-z0-9]{16})$/);
   if (m && method === "POST") return setRule(request, env, m[1], now);
+  if (path === "/inquiries" || path.startsWith("/inquiries/")) return adminInquiries(request, env, url, path, now);
   if (path === "/rewards" && method === "GET") return json(await rewards(env, url.searchParams.get("status")));
   m = path.match(/^\/rewards\/(w[A-Za-z0-9]{22})$/);
   if (m && method === "POST") return setReward(request, env, m[1], now);
@@ -1176,6 +1404,7 @@ async function overview(env) {
     flagged: await count(`SELECT COUNT(*) AS n FROM rules r WHERE r.withdrawn = 0 AND r.superseded = 0
       AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0)`),
     owed: await count("SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'"),
+    inquiries: await count("SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open'"),
     companies: await count("SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL"),
     rules: await count("SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0"),
     reports: await count("SELECT COUNT(*) AS n FROM reports"),

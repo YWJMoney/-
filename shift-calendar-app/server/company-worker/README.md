@@ -1,7 +1,7 @@
 # 밤낮 회사 규칙 서버 (bamnat-company)
 
 같은 회사 사람들이 근무 설정과 급여 계산 방식을 나눠 쓰는 서버예요. 금액은 오가지 않아요.
-개발자 앱은 같은 주소의 `/admin/`에 있어요 [COMM-04][COMM-01][COMM-02][COMM-03][ADMIN-01].
+개발자 앱은 같은 주소의 `/admin/`에 있어요 [COMM-04][COMM-01][COMM-02][COMM-03][ADMIN-01]. 앱 문의도 이 서버로 와요 [ADMIN-02].
 
 Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-worker`)와는 따로 올려요.
 
@@ -82,6 +82,20 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
 | `DELETE /api/reports/:id` | 제보 되돌리기 (헤더 `X-Device`) |
 | `DELETE /api/mine` | 이 설치가 보낸 것 전부 지우기 (헤더 `X-Device`) |
 | `POST /api/votes` | 맞았어요·달라요 `{device, company, setup, ok, verified?, why?}` |
+| `POST /api/inquiries` | 앱 문의 보내기 `{v: 1, device, kind, text, info}` [ADMIN-02]. `kind`는 `question`(질문), `bug`(앱 문제), `idea`(제안). `info`는 앱이 보내기 전에 보여 준 것만: `app`, `model`, `android`, 고를 때만 `diag`(알람 점검) |
+| `GET /api/inquiries` | 이 휴대폰이 보낸 문의와 답 (헤더 `X-Device`) |
+| `GET /api/inquiries/:id` | 문의 하나와 답 (헤더 `X-Device`, 다른 휴대폰에는 없는 것으로 보여요) |
+| `POST /api/inquiries/:id/messages` | 같은 문의에 더 묻기 `{text}` (헤더 `X-Device`). 다시 답을 기다리는 상태가 돼요 |
+| `DELETE /api/inquiries/:id` | 문의 지우기 (헤더 `X-Device`). `DELETE /api/mine`도 문의를 함께 지워요 |
+
+## 앱 문의 [ADMIN-02]
+
+- 설정 > 문의하기가 메일 대신 이 서버로 보내요. 개발자 앱에서 답하면 보낸 휴대폰의 문의하기 화면에 답이 보여요.
+- 문의 글에 메일 주소, 전화번호, 금액이 보이면 거절해요(제보와 같은 규칙). 앱이 보내기 전에 먼저 알려 줘요.
+- 함께 가는 정보는 앱 버전, 휴대폰 기종, Android 버전이고, 알람 점검 기록은 사용자가 내용을 보고 고를 때만 가요.
+- 휴대폰마다 하루 5건, 네트워크마다 하루 20건, 더 묻기는 1시간에 20건까지예요. 마지막 활동 뒤 180일이 지나면 답과 함께 지워요.
+- 개발자 앱 API: `GET /api/admin/inquiries?status=open|answered|closed&q=`(목록과 상태별 수), `GET /api/admin/inquiries/:id`(함께 온 정보 `context` 포함),
+  `POST /api/admin/inquiries/:id/reply {text, close?}`, `POST /api/admin/inquiries/:id/status {status: open|closed}`. 개요(`/api/admin/overview`)의 `inquiries`는 답을 기다리는 수예요.
 
 설정 파일은 버전 3까지 받아요. 감시·단속 승인, 5인 미만 공휴일, 유급 휴게, 가산 대신 받는 수당을 쓴 설정만 3이 되고, 나머지는 예전 앱도 읽는 2로 남아요.
 
