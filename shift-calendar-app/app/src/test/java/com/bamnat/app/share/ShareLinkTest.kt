@@ -154,7 +154,7 @@ class ShareLinkTest {
     @Test fun fieldAndShopLinks() {
         val empty = ScheduleSnapshot(emptyList(), null as WorkPattern?, emptyList())
         val jobDay = start.plusDays(2)
-        val jobs = mapOf(jobDay to listOf(SharedJob("욕실 시공 가나다아파트", "09:00-17:00"), SharedJob(" ", null)))
+        val jobs = mapOf(jobDay to listOf(SharedJob("욕실 시공 가나다아파트 101동", "09:00-17:00"), SharedJob(" ", null)))
         val income = listOf(SharedPay(java.time.YearMonth.of(2026, 11), 870_300, "일감 1건"))
         val field = ShareLinkPayload.build(empty, start, "준호", 30, ShareOptions(jobs = true, pay = true), pay = income,
             payKind = com.bamnat.core.work.MoneyShare.JOBS, jobs = jobs)
@@ -163,7 +163,7 @@ class ShareLinkTest {
         val days = field.getJSONArray("days")
         assertEquals(1, days.length())
         val booked = days.getJSONObject(0).getJSONArray("jobs")
-        assertEquals("욕실 시공 가나다아파", booked.getJSONObject(0).getString("name"))
+        assertEquals("욕실 시공 가나다아파트", booked.getJSONObject(0).getString("name"))
         assertEquals(ShareLinkPayload.JOB_CHARS, booked.getJSONObject(0).getString("name").length)
         assertEquals("일감", booked.getJSONObject(1).getString("name"))
         assertFalse(days.getJSONObject(0).getBoolean("rest"))
@@ -183,7 +183,7 @@ class ShareLinkTest {
         assertEquals(com.bamnat.core.work.MoneyShare.SALES, read.payKind)
         assertEquals(18_450_000L, read.pay.single().amount)
         // The receiver sees the jobs where extra work shows.
-        assertEquals(listOf("욕실 시공 가나다아파", "일감"), SharedSchedule.parse(field).days.getValue(jobDay).extras.map { it.name })
+        assertEquals(listOf("욕실 시공 가나다아파트", "일감"), SharedSchedule.parse(field).days.getValue(jobDay).extras.map { it.name })
         assertEquals(false, SharedSchedule.parse(field).isRest(jobDay))
     }
 
