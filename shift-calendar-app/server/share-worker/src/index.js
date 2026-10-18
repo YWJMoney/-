@@ -18,6 +18,8 @@ export const LIMITS = {
   types: 24,
   text: 20,
   title: 30,
+  // 연차, 반차 … up to "0.75일 무급 휴가".
+  leave: 12,
   ttlDays: [7, 30, 90],
   createsPerHour: 20,
   // [SHR-01] What a sharer may add to v2 links.
@@ -31,6 +33,17 @@ export const LIMITS = {
 
 /** [SHR-01] The parts a sharer can tick on top of the shifts. */
 export const SHOWS = ["leaveKinds", "extras", "memos", "pay"];
+
+/** [SHR-01] Leave as it shows without 휴가 종류 ticked: 연차 as it is, any other kind only by how much of the day is off. */
+const PLAIN_LEAVE = ["연차", "반차", "반반차", "0.75일 연차", "휴가", "0.75일 휴가"];
+
+export function plainLeave(label) {
+  if (PLAIN_LEAVE.includes(label)) return label;
+  if (label.includes("반반")) return "반반차";
+  if (label.includes("반")) return "반차";
+  if (label.startsWith("0.75")) return "0.75일 휴가";
+  return "휴가";
+}
 
 const ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
 
@@ -149,7 +162,8 @@ async function readSchedule(request) {
 /**
  * Keeps only the fields the page uses, in the shapes it expects; anything else is refused.
  * v1 is shifts and leave; v2 [SHR-01] may add what the sharer ticked: leave kinds, extra work,
- * memos and pay. A v2 field the sharer did not tick in `shows` is dropped, not stored.
+ * memos and pay. A v2 field the sharer did not tick in `shows` is dropped, not stored, and
+ * without 휴가 종류 a leave keeps only how much of the day it takes.
  */
 export function validate(body) {
   if (!body || typeof body !== "object" || (body.v !== 1 && body.v !== 2)) return { error: "version" };
@@ -178,15 +192,16 @@ export function validate(body) {
   const days = [];
   const seen = new Set();
   for (const d of body.days) {
-    // v2 days may carry only a memo or extra work, with no shift of their own.
-    if (!isDate(d?.date) || seen.has(d.date) || !(ids.has(d?.type) || (v2 && d?.type == null))) return { error: "day" };
+    // A day may have no shift of its own: a 대근 on a day off, or in v2 only a memo or extra work.
+    if (!isDate(d?.date) || seen.has(d.date) || (d?.type != null && !ids.has(d.type))) return { error: "day" };
     seen.add(d.date);
     if (d.second != null && !ids.has(d.second)) return { error: "day_second" };
-    const leave = d.leave == null ? null : cleanText(d.leave, 6);
+    let leave = d.leave == null ? null : cleanText(d.leave, LIMITS.leave);
     if (leave === null && d.leave != null) return { error: "day_leave" };
+    if (leave && !shows.includes("leaveKinds")) leave = plainLeave(leave);
     const day = { date: d.date, type: d.type ?? null, second: d.second ?? null, leave };
-    // [SHR-04] The sharer's app marks days with no work at all, for 같이 쉬는 날.
-    if (d.rest === true) day.rest = true;
+    // [SHR-04] The sharer's app says whether the day has no work at all as far as the link shows, for 같이 쉬는 날.
+    if (typeof d.rest === "boolean") day.rest = d.rest;
     if (shows.includes("memos") && d.memo != null) {
       const memo = cleanText(d.memo, LIMITS.memo);
       if (memo === null) return { error: "day_memo" };

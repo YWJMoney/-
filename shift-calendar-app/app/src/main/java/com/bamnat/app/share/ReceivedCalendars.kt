@@ -31,9 +31,12 @@ data class SharedDay(
     val leave: String?,
     val memo: String?,
     val extras: List<SharedExtra>,
-    /** Set by the sharer's app when the day has no work at all [SHR-04]; null on links made before 1.10. */
+    /** Whether the day has no work at all as the sharer's app sees it [SHR-04]; null on links made before 1.10. */
     val rest: Boolean?,
-)
+) {
+    /** Leave for the whole day: 반차, 반반차 and 0.75일 leave part of it for work. */
+    val fullLeave: Boolean get() = leave != null && !leave.contains("반") && !leave.startsWith("0.75")
+}
 
 /** [SHR-02] Someone's shared schedule: the shifts, and what else they ticked [SHR-01]. */
 data class SharedSchedule(
@@ -61,7 +64,7 @@ data class SharedSchedule(
         val d = days[date] ?: return true
         d.rest?.let { return it }
         if (d.second != null || d.extras.isNotEmpty()) return false
-        if (d.leave != null && !d.leave.contains("반")) return true
+        if (d.fullLeave) return true
         return d.type == null || type(d.type)?.off == true
     }
 
@@ -160,6 +163,9 @@ class ReceivedCalendarStore(private val file: File, private val clock: () -> Ins
         _opening.value = id
     }
 
+    /** Brings a kept calendar up to date; null when it was taken out meanwhile, which it stays. */
+    fun update(id: String, share: ReceivedShare): ReceivedCalendar? = if (get(id) == null) null else put(id, share)
+
     /** Adds the link, or brings an existing one up to date, and returns it. */
     fun put(id: String, share: ReceivedShare): ReceivedCalendar {
         val now = clock()
@@ -178,8 +184,7 @@ class ReceivedCalendarStore(private val file: File, private val clock: () -> Ins
     }
 
     /** Clears what ran out by the phone's own clock, even with no internet to ask. */
-    fun expire() {
-        val now = clock()
+    fun expire(now: Instant = clock()) {
         if (_calendars.value.any { !it.gone && it.expiresAt?.isBefore(now) == true }) {
             write(_calendars.value.map { if (!it.gone && it.expiresAt?.isBefore(now) == true) it.copy(raw = null) else it })
         }

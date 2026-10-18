@@ -63,6 +63,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -520,16 +521,19 @@ fun CalendarScreen(
     }
     val them = viewingReceived
     if (them != null) {
-        ReceivedCalendarView(
-            vm = received,
-            cal = them,
-            mine = snap,
-            weekStart = settings.weekStart,
-            wide = wide,
-            today = today,
-            startMonth = visibleMonth,
-            identityBar = identityBar,
-        )
+        // Each received calendar opens on its own month and day, not the last one's.
+        key(them.id) {
+            ReceivedCalendarView(
+                vm = received,
+                cal = them,
+                mine = snap,
+                weekStart = settings.weekStart,
+                wide = wide,
+                today = today,
+                startMonth = visibleMonth,
+                identityBar = identityBar,
+            )
+        }
     } else Box(Modifier.fillMaxSize()) {
         if (wide) {
             Row(Modifier.fillMaxSize()) {

@@ -72,6 +72,8 @@ class MainActivity : ComponentActivity() {
     /** [SHR-02] A shared calendar link tapped in a message or on the shared page: the calendar offers it. */
     private fun openLink(intent: Intent?) {
         if (intent?.action != Intent.ACTION_VIEW || !appContainer.shareApi.enabled) return
+        // Reopened from Recents, Android hands back the link the app was first opened with: it was offered then.
+        if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
         ShareLinkId.find(intent.dataString)?.let(appContainer.received::open)
     }
 

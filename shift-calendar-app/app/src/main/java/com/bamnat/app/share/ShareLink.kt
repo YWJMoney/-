@@ -5,17 +5,22 @@ import com.bamnat.app.BuildConfig
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.calendar.ExtraText
 import com.bamnat.core.memo.Memo
+import com.bamnat.core.model.Leave
 import com.bamnat.core.model.LeaveKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.format.DateTimeParseException
 
 /**
  * Read-only web links to the schedule [MKT-09]. The server (server/share-worker) keeps only what
@@ -58,15 +63,33 @@ object ShareLinkPayload {
     fun months(from: LocalDate): List<YearMonth> =
         generateSequence(YearMonth.from(from)) { it.plusMonths(1) }.takeWhile { !it.atDay(1).isAfter(from.plusDays(DAYS - 1L)) }.toList()
 
-    /** [SHR-01] A day's memos as one line of at most 80 characters, the way the page shows them. */
+    /** [SHR-01] A day's memos as one line of at most 80 characters, the way the page shows them: each memo's first line only. */
     fun memoLine(memos: List<Memo>): String? {
-        val line = memos.map { m -> m.title.ifBlank { m.preview }.replace(Regex("\\s+"), " ").trim() }
+        val line = memos.map { m -> m.firstLine().replace(Regex("\\s+"), " ").trim() }
             .filter { it.isNotEmpty() }.joinToString(" · ")
         if (line.isEmpty()) return null
         return if (line.length <= MEMO_CHARS) line else line.take(MEMO_CHARS - 1).trimEnd() + "…"
     }
 
+    /** The title, else the body's first line or a checklist's first item, never the rest of it. */
+    private fun Memo.firstLine(): String {
+        fun first(text: String) = text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }
+        return first(title) ?: if (isChecklist) checklist.firstOrNull { it.text.isNotBlank() }?.text.orEmpty() else first(body).orEmpty()
+    }
+
     const val MEMO_CHARS = 80
+    /** Up to "0.75일 무급 휴가", as the server takes it. */
+    const val LEAVE_CHARS = 12
+
+    /**
+     * [SHR-01] A day's leave as a link shows it: 연차 as it is, another kind by name only when 휴가 종류
+     * is ticked, else only how much of the day is off.
+     */
+    fun leaveLabel(leave: Leave, kinds: Boolean): String = (
+        if (kinds || leave.kind == LeaveKind.ANNUAL) leave.label
+        else when (leave.quarters) { 4 -> "휴가"; 2 -> "반차"; 1 -> "반반차"; else -> "0.75일 휴가" }
+    ).take(LEAVE_CHARS)
+
     /** [SHR-01] Extra work a link carries for one day, as the server takes it. */
     const val EXTRAS_PER_DAY = 4
 
@@ -89,20 +112,21 @@ object ShareLinkPayload {
             val type = day.shiftType
             val memo = memos[d]?.takeIf { options.memos }
             val extras = if (options.extras) day.extras.take(EXTRAS_PER_DAY) else emptyList()
-            // A day with no shift goes only into a v2 link, and only with something ticked on it.
-            if (type == null && (!options.any || (memo == null && extras.isEmpty()))) continue
-            type?.let { used[it.id] = it }
             // [EXTRA-01] A 대근 of another shift shows as the day's second shift; other extra work stays private unless ticked.
             val second = day.coveredShift
+            // A day with no shift goes in only with something on it: a 대근, or a memo or extra work that was ticked.
+            if (type == null && second == null && memo == null && extras.isEmpty()) continue
+            type?.let { used[it.id] = it }
             second?.let { used[it.id] = it }
             days.put(JSONObject().apply {
                 put("date", d.toString())
                 if (type != null) put("type", type.id)
                 second?.let { put("second", it.id) }
-                // The kind of leave (병가, 경조사 …) is private unless ticked; family only needs to know it is a day off.
-                day.leave?.let { put("leave", if (options.leaveKinds || it.kind == LeaveKind.ANNUAL) it.label.take(6) else "휴가") }
-                // [SHR-04] No work at all, for the receiver's 같이 쉬는 날.
-                if ((day.isOff || day.leave?.isFullDay == true) && day.extras.isEmpty()) put("rest", true)
+                // The kind of leave (유급·무급 휴가) is private unless ticked; family only needs to know how much of the day is off.
+                day.leave?.let { put("leave", leaveLabel(it, options.leaveKinds)) }
+                // [SHR-04] No work at all as far as the link shows, for the receiver's 같이 쉬는 날: extra work
+                // the sharer did not tick stays out of it too, only a 대근 counts.
+                put("rest", (day.isOff || day.leave?.isFullDay == true) && (if (options.extras) day.extras.isEmpty() else second == null))
                 memo?.let { put("memo", it) }
                 if (extras.isNotEmpty()) put("extras", JSONArray().apply {
                     extras.forEach { e ->
@@ -205,13 +229,15 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
 
     override suspend fun create(payload: JSONObject): ShareLinkState = withContext(Dispatchers.IO) {
         val o = request("POST", "/api/share", payload, null)
-        ShareLinkState(o.getString("id"), o.getString("url"), o.getString("deleteToken"),
-            Instant.parse(o.getString("expiresAt")), payload.optString("title"))
+        readable {
+            ShareLinkState(o.getString("id"), o.getString("url"), o.getString("deleteToken"),
+                Instant.parse(o.getString("expiresAt")), payload.optString("title"))
+        }
     }
 
     override suspend fun update(state: ShareLinkState, payload: JSONObject): ShareLinkState = withContext(Dispatchers.IO) {
         val o = request("PUT", "/api/share/${state.id}", payload, state.deleteToken)
-        state.copy(url = o.getString("url"), expiresAt = Instant.parse(o.getString("expiresAt")), title = payload.optString("title"))
+        readable { state.copy(url = o.getString("url"), expiresAt = Instant.parse(o.getString("expiresAt")), title = payload.optString("title")) }
     }
 
     /** Cuts the link. A link the server no longer has counts as cut. */
@@ -226,8 +252,10 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
 
     override suspend fun read(id: String): ReceivedShare = withContext(Dispatchers.IO) {
         val o = request("GET", "/api/share/$id", null, null)
-        ReceivedShare(o.getJSONObject("schedule"), Instant.parse(o.getString("expiresAt")),
-            o.optString("updatedAt").takeIf { it.isNotEmpty() && it != "null" }?.let { runCatching { Instant.parse(it) }.getOrNull() })
+        readable {
+            ReceivedShare(o.getJSONObject("schedule"), Instant.parse(o.getString("expiresAt")),
+                o.optString("updatedAt").takeIf { it.isNotEmpty() && it != "null" }?.let { runCatching { Instant.parse(it) }.getOrNull() })
+        }
     }
 
     private fun request(method: String, path: String, body: JSONObject?, token: String?): JSONObject {
@@ -243,11 +271,37 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
                 conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             }
             val code = conn.responseCode
-            val text = (if (code < 400) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+            val text = (if (code < 400) conn.inputStream else conn.errorStream)?.use { it.readCapped() }.orEmpty()
             if (code >= 400) throw ShareLinkException(runCatching { JSONObject(text).getString("error") }.getOrDefault("http_$code"))
-            return if (text.isBlank()) JSONObject() else JSONObject(text)
+            return if (text.isBlank()) JSONObject() else readable { JSONObject(text) }
         } finally {
             conn.disconnect()
         }
+    }
+
+    /** A reply the app cannot read (a page from a wrong address, a login portal) fails like a lost connection, never crashes. */
+    private inline fun <T> readable(block: () -> T): T = try {
+        block()
+    } catch (e: JSONException) {
+        throw ShareLinkException("bad_response")
+    } catch (e: DateTimeParseException) {
+        throw ShareLinkException("bad_response")
+    }
+
+    /** The server answers in a few kilobytes and takes 64 KB at most; anything far larger is not it. */
+    private fun InputStream.readCapped(): String {
+        val out = ByteArrayOutputStream()
+        val buf = ByteArray(8 * 1024)
+        while (true) {
+            val n = read(buf)
+            if (n < 0) break
+            out.write(buf, 0, n)
+            if (out.size() > MAX_REPLY_BYTES) throw ShareLinkException("too_large")
+        }
+        return String(out.toByteArray(), Charsets.UTF_8)
+    }
+
+    private companion object {
+        const val MAX_REPLY_BYTES = 256 * 1024
     }
 }

@@ -161,11 +161,34 @@ test("v2 parts are checked like the rest", () => {
   assert.equal(day({ date: "2026-11-01", type: 1, extras: [{ name: "잔업", minutes: 0 }] }), "day_extra");
   assert.equal(day({ date: "2026-11-01", type: 1, extras: Array(5).fill({ name: "잔업" }) }), "day_extras");
   assert.equal(day({ date: "2026-11-01" }), "day", "a day with nothing on it");
-  assert.equal(validate({ ...sample, days: [{ date: "2026-11-01" }] }).error, "day", "v1 days need a shift");
+  assert.equal(validate({ ...sample, days: [{ date: "2026-11-01" }] }).error, "day", "v1 days need a shift or a 대근");
   assert.equal(validate({ ...full, days: [full.days[0], full.days[0]] }).error, "day", "one entry a date");
   assert.equal(validate({ ...full, pay: [{ month: "2026-13", amount: 1 }] }).error, "pay");
   assert.equal(validate({ ...full, pay: [{ month: "2026-11", amount: -1 }] }).error, "pay");
   assert.equal(validate({ ...full, pay: [{ month: "2026-11", amount: 1.5 }] }).error, "pay");
+});
+
+test("rest is kept either way, and a 대근 on a day with no shift goes in v1 too", () => {
+  const out = validate({ ...sample, days: [
+    { date: "2026-11-01", type: 1, rest: false },
+    { date: "2026-11-02", type: 3, rest: true },
+    { date: "2026-11-07", second: 2, rest: false },
+    { date: "2026-11-08", type: 3, rest: "yes" },
+  ] });
+  assert.equal(out.error, undefined);
+  assert.deepEqual(out.schedule.days.map((d) => d.rest), [false, true, false, undefined]);
+  assert.equal(out.schedule.days[2].type, null);
+  assert.equal(out.schedule.days[2].second, 2);
+});
+
+test("without 휴가 종류 ticked a leave keeps only how much of the day it takes", () => {
+  const leaves = ["연차", "0.75일 연차", "유급 휴가", "유급 휴가 반차", "무급 휴가 반반차", "0.75일 무급 휴가", "병가"];
+  const days = leaves.map((leave, i) => ({ date: `2026-11-0${i + 1}`, type: 1, leave }));
+  assert.deepEqual(validate({ ...sample, days }).schedule.days.map((d) => d.leave),
+    ["연차", "0.75일 연차", "휴가", "반차", "반반차", "0.75일 휴가", "휴가"]);
+  assert.deepEqual(validate({ ...full, shows: ["memos"], days }).schedule.days.map((d) => d.leave)[3], "반차");
+  assert.deepEqual(validate({ ...full, days }).schedule.days.map((d) => d.leave), leaves);
+  assert.equal(validate({ ...sample, days: [{ date: "2026-11-01", type: 1, leave: "x".repeat(13) }] }).error, "day_leave");
 });
 
 test("the page shows ticked parts, escaped", async () => {

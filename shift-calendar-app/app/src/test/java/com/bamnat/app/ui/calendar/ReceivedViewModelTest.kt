@@ -9,6 +9,7 @@ import com.bamnat.app.share.ReceivedShare
 import com.bamnat.app.share.ShareApi
 import com.bamnat.app.share.ShareLinkException
 import com.bamnat.app.share.ShareLinkState
+import kotlinx.coroutines.CompletableDeferred
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -35,12 +36,15 @@ class ReceivedViewModelTest {
         override val enabled = true
         val shares = mutableMapOf<String, ReceivedShare>()
         var failure: IOException? = null
+        /** Holds every read until completed, like a slow network. */
+        var gate: CompletableDeferred<Unit>? = null
         var reads = 0
         override suspend fun create(payload: JSONObject) = error("not used")
         override suspend fun update(state: ShareLinkState, payload: JSONObject) = error("not used")
         override suspend fun delete(state: ShareLinkState) = Unit
         override suspend fun read(id: String): ReceivedShare {
             reads++
+            gate?.await()
             failure?.let { throw it }
             return shares[id] ?: throw ShareLinkException("not_found")
         }
@@ -115,6 +119,37 @@ class ReceivedViewModelTest {
         settle()
         assertFalse(c.received.get(id)!!.gone)
         assertEquals(ReceivedViewModel.Refresh.Offline(id), vm.refresh.value)
+        // So does an answer the app cannot read.
+        api.failure = ShareLinkException("bad_response")
+        vm.refresh(id)
+        settle()
+        assertFalse(c.received.get(id)!!.gone)
+        assertEquals(ReceivedViewModel.Refresh.Offline(id), vm.refresh.value)
+    }
+
+    /** Taken out while it was loading: it stays out when the answer comes. */
+    @Test fun aLateRefreshDoesNotBringItBack() {
+        c.received.put(id, share("민지"))
+        val vm = ReceivedViewModel(c)
+        val gate = CompletableDeferred<Unit>()
+        api.gate = gate
+        vm.refresh(id)
+        settle()
+        vm.remove(id)
+        gate.complete(Unit)
+        settle()
+        assertEquals(null, c.received.get(id))
+        assertEquals(ReceivedViewModel.Refresh.Idle, vm.refresh.value)
+    }
+
+    /** Looking at a kept link again after it was cut clears the kept copy too. */
+    @Test fun aCutLinkSeenAgainGoesToo() {
+        c.received.put(id, share("민지"))
+        api.shares.remove(id)
+        val vm = ReceivedViewModel(c)
+        vm.previewId(id)
+        settle()
+        assertTrue(c.received.get(id)!!.gone)
     }
 
     @Test fun switchingFetchesOnlyWhenTheCopyIsOld() {
@@ -133,6 +168,19 @@ class ReceivedViewModelTest {
     @Test fun expiredOnesGoWhenTheAppOpens() {
         c.received.put(id, share("민지", expires = Instant.now().minusSeconds(60)))
         ReceivedViewModel(c)
+        assertTrue(c.received.get(id)!!.gone)
+    }
+
+    /** Ran out while the app stayed open: gone the next time it shows, even with no internet to ask. */
+    @Test fun expiredWhileOpenGoesWhenItShows() {
+        var now = Instant.now()
+        c.received.put(id, share("민지", expires = now.plus(Duration.ofDays(7))))
+        val vm = ReceivedViewModel(c) { now }
+        assertFalse(c.received.get(id)!!.gone)
+        now = now.plus(Duration.ofDays(8))
+        api.failure = IOException("offline")
+        vm.view(id)
+        settle()
         assertTrue(c.received.get(id)!!.gone)
     }
 

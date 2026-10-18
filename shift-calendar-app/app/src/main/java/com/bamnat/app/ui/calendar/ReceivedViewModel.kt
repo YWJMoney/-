@@ -55,11 +55,13 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
     private var previewJob: Job? = null
 
     init {
-        c.received.expire()
+        c.received.expire(clock())
     }
 
     /** Switches the calendar to [id], or back to the user's own with null. */
     fun view(id: String?) {
+        // What ran out while the app stayed open goes before it shows.
+        c.received.expire(clock())
         c.received.view(id)
         if (id != null) {
             c.telemetry.event("received_view")
@@ -69,6 +71,7 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
 
     /** Fetches again when the copy is older than a few minutes, so switching feels instant but stays current. */
     fun refreshIfStale(id: String) {
+        c.received.expire(clock())
         val cal = c.received.get(id) ?: return
         if (cal.gone) return
         val age = cal.fetchedAt?.let { Duration.between(it, clock()) }
@@ -80,7 +83,8 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
         _refresh.value = Refresh.Loading(id)
         viewModelScope.launch {
             _refresh.value = try {
-                c.received.put(id, c.shareApi.read(id))
+                // Taken out while this was loading: it stays out.
+                c.received.update(id, c.shareApi.read(id))
                 Refresh.Idle
             } catch (e: ShareLinkException) {
                 // Cut or run out: what the sharer took back goes from this phone too.
@@ -110,6 +114,8 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
                 val share = c.shareApi.read(id)
                 Preview.Ready(id, share, SharedSchedule.parse(share.schedule), existing = c.received.get(id) != null)
             } catch (e: ShareLinkException) {
+                // A kept calendar whose link is gone loses its schedule here too.
+                if (e.message == "not_found" && c.received.get(id) != null) c.received.markGone(id)
                 Preview.Failed(
                     if (e.message == "not_found") "이 링크는 끊겼거나 기간이 지났어요. 보낸 분께 새 링크를 부탁해 보세요."
                     else "근무표를 받지 못했어요 (${e.message}). 잠시 뒤 다시 해 주세요.",

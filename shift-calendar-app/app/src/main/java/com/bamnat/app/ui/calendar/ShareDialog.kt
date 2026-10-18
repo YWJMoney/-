@@ -143,7 +143,7 @@ fun ShareDialog(
                 Column(Modifier.padding(vertical = 4.dp)) {
                     PartRow("근무", "이름·색·시간, 늘 들어가요", checked = true, enabled = false) {}
                     PartRow("휴가 종류", "끄면 연차·반차 말고는 '휴가'로만 보여요", options.leaveKinds) { options = options.copy(leaveKinds = it) }
-                    PartRow("연장·휴무일 근무", "근무 이름과 시간, 날마다 ${ShareLinkPayload.EXTRAS_PER_DAY}개까지", options.extras) { options = options.copy(extras = it) }
+                    PartRow("연장·휴무일 근무", "이름과 시간, 날마다 ${ShareLinkPayload.EXTRAS_PER_DAY}개까지. 끄면 대근만 근무로 보여요", options.extras) { options = options.copy(extras = it) }
                     PartRow("메모", "날짜마다 첫 줄, ${ShareLinkPayload.MEMO_CHARS}자까지", options.memos) { options = options.copy(memos = it) }
                     PartRow(
                         "급여",

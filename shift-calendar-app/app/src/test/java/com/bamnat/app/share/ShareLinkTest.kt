@@ -69,6 +69,43 @@ class ShareLinkTest {
         assertEquals(false, rest.getValue(start.plusDays(6).toString()))  // 대근 on top
     }
 
+    /**
+     * [SHR-04] Rest marks follow only what the link shows: 특근 on a day off stays private and the day reads
+     * as off until 연장·휴무일 근무 is ticked, and a 대근 on a day with no shift goes in as that shift.
+     */
+    @Test fun restFollowsWhatTheLinkShows() {
+        fun dayOf(p: org.json.JSONObject, d: LocalDate) = p.getJSONArray("days").let { a ->
+            (0 until a.length()).map { a.getJSONObject(it) }.first { it.getString("date") == d.toString() }
+        }
+        val offDay = start.plusDays(4)
+        val special = DayEntry(offDay, extras = listOf(ExtraEntry(ExtraKind.SPECIAL_ID, LocalTime.of(9, 0), LocalTime.of(13, 0))))
+        val withSpecial = ScheduleSnapshot(listOf(day, night, off), WorkPattern.Rotation(start, listOf(1L, 1L, 2L, 2L, 3L, 3L)), listOf(special))
+        val plain = dayOf(ShareLinkPayload.build(withSpecial, start, "", 30), offDay)
+        assertTrue(plain.getBoolean("rest"))
+        assertFalse(plain.has("extras"))
+        assertFalse(dayOf(ShareLinkPayload.build(withSpecial, start, "", 30, ShareOptions(extras = true)), offDay).getBoolean("rest"))
+
+        val empty = start.plusDays(3)
+        val cover = DayEntry(empty, extras = listOf(ExtraEntry(ExtraKind.COVER_ID, LocalTime.of(19, 0), LocalTime.of(7, 0), coveredShiftId = 2L)))
+        val p = ShareLinkPayload.build(ScheduleSnapshot(listOf(day, night, off), null as WorkPattern?, listOf(cover)), start, "", 30)
+        assertEquals(1, p.getInt("v"))
+        val covered = dayOf(p, empty)
+        assertFalse(covered.has("type"))
+        assertEquals(2, covered.getInt("second"))
+        assertFalse(covered.getBoolean("rest"))
+        assertEquals(false, SharedSchedule.parse(p).isRest(empty))
+    }
+
+    /** [SHR-01] Leave keeps its whole name when 휴가 종류 is ticked, and otherwise only how much of the day is off. */
+    @Test fun leaveLabels() {
+        val leaves = listOf(Leave(LeaveKind.ANNUAL, 3), Leave(LeaveKind.PAID, 2), Leave(LeaveKind.UNPAID, 1), Leave(LeaveKind.UNPAID, 3), Leave(LeaveKind.PAID))
+        assertEquals(listOf("0.75일 연차", "반차", "반반차", "0.75일 휴가", "휴가"), leaves.map { ShareLinkPayload.leaveLabel(it, kinds = false) })
+        assertEquals(listOf("0.75일 연차", "유급 휴가 반차", "무급 휴가 반반차", "0.75일 무급 휴가", "유급 휴가"),
+            leaves.map { ShareLinkPayload.leaveLabel(it, kinds = true) })
+        // Every label fits whole in what the server takes.
+        assertTrue(LeaveKind.entries.flatMap { k -> (1..4).map { q -> Leave(k, q).label } }.all { it.length <= ShareLinkPayload.LEAVE_CHARS })
+    }
+
     /** [SHR-01] What the sharer ticks goes along; what they leave unticked stays on the phone. */
     @Test fun tickedPartsGoAlong() {
         val memoDay = start.plusDays(1)
@@ -116,6 +153,10 @@ class ShareLinkTest {
         val blank = com.bamnat.core.memo.Memo(date = start)
         assertEquals("치과 · 저녁 약속", ShareLinkPayload.memoLine(listOf(a, b, blank)))
         assertEquals(null, ShareLinkPayload.memoLine(listOf(blank)))
+        // A checklist sends its first item only, not every line on it.
+        val list = com.bamnat.core.memo.Memo(date = start, isChecklist = true, checklist = listOf(
+            com.bamnat.core.memo.ChecklistItem(" "), com.bamnat.core.memo.ChecklistItem("산부인과 검진"), com.bamnat.core.memo.ChecklistItem("대출 상환 300만원")))
+        assertEquals("산부인과 검진", ShareLinkPayload.memoLine(listOf(list)))
         val long = ShareLinkPayload.memoLine(listOf(com.bamnat.core.memo.Memo(date = start, title = "가".repeat(100))))!!
         assertEquals(ShareLinkPayload.MEMO_CHARS, long.length)
         assertTrue(long.endsWith("…"))

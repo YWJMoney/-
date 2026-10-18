@@ -89,6 +89,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleStartEffect
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.share.ReceivedCalendar
 import com.bamnat.app.share.SharedDay
@@ -415,9 +416,9 @@ private fun DayBadge(s: SharedSchedule, day: SharedDay?, size: Dp, inRange: Bool
     }
     val type = s.type(day?.type)?.asShiftType()
     val second = s.type(day?.second)?.asShiftType()
-    val leave = day?.leave
+    val leave = day?.leave?.takeIf { day.fullLeave }
     when {
-        leave != null && !leave.contains("반") -> LeaveChip(leave, size)
+        leave != null -> LeaveChip(leave, size)
         type != null && second != null -> Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             ShiftBadge(type = type, size = size * 0.82f, outlined = type.isOff, showIcon = false)
             ShiftBadge(type = second, size = size * 0.82f, showIcon = false)
@@ -473,7 +474,11 @@ fun ReceivedCalendarView(
     modifier: Modifier = Modifier,
 ) {
     val refresh by vm.refresh.collectAsState()
-    LaunchedEffect(cal.id) { vm.refreshIfStale(cal.id) }
+    // Each time the app comes back too, so a link that ran out or changed meanwhile shows as it is now.
+    LifecycleStartEffect(cal.id) {
+        vm.refreshIfStale(cal.id)
+        onStopOrDispose { }
+    }
     val schedule = cal.schedule
     if (schedule == null) {
         Column(modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -673,7 +678,7 @@ private fun ReceivedDayCell(
         date.dayOfWeek == DayOfWeek.SATURDAY -> cal.saturday
         else -> scheme.onSurface
     }
-    val fullLeave = day?.leave?.takeIf { !it.contains("반") }
+    val fullLeave = day?.leave?.takeIf { day.fullLeave }
     val dark = isDarkSurface()
     val tint = when {
         together -> TogetherColor.copy(alpha = if (dark) 0.24f else 0.13f)
@@ -688,9 +693,11 @@ private fun ReceivedDayCell(
         holiday?.let { append(", ").append(it) }
         if (!inRange) append(", 받은 근무표에 없는 날")
         else {
-            append(", ").append(type?.name ?: "근무 없음")
-            type?.time?.takeIf { !type.off }?.let { append(" ").append(it.replace("-", "부터 ")).append("까지") }
-            second?.let { append(", ").append(it.name).append(" 더") }
+            // A 대근 on a day with no shift of its own is that day's work.
+            val main = type ?: second
+            append(", ").append(main?.name ?: "근무 없음")
+            main?.time?.takeIf { !main.off }?.let { append(" ").append(it.replace("-", "부터 ")).append("까지") }
+            second?.takeIf { type != null }?.let { append(", ").append(it.name).append(" 더") }
             day?.leave?.let { append(", ").append(it) }
             day?.extras?.forEach { append(", ").append(it.name) }
             day?.memo?.let { append(", 메모 ").append(it) }
@@ -789,19 +796,22 @@ private fun ReceivedDayCard(
                         Text("이 날은 받은 근무표에 없어요", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
                         val type = schedule.type(day?.type)
+                        val second = schedule.type(day?.second)
+                        // A 대근 on a day with no shift of its own is that day's work.
+                        val main = type ?: second
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             DayBadge(schedule, day, size = 22.dp)
                             Spacer(Modifier.width(8.dp))
                             Text(
                                 when {
-                                    type == null -> "근무 없음"
-                                    type.off -> type.name
-                                    else -> type.name + (type.time?.let { " " + it.replace("-", "~") } ?: "")
+                                    main == null -> "근무 없음"
+                                    main.off -> main.name
+                                    else -> main.name + (main.time?.let { " " + it.replace("-", "~") } ?: "")
                                 },
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                         }
-                        schedule.type(day?.second)?.let { s ->
+                        second?.takeIf { type != null }?.let { s ->
                             Text("${s.name} 더 해요" + (s.time?.let { " (${it.replace("-", "~")})" } ?: ""), style = MaterialTheme.typography.bodyMedium)
                         }
                         day?.leave?.let { Text("휴가: $it", style = MaterialTheme.typography.bodyMedium) }
