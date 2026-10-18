@@ -158,7 +158,7 @@ async function route(request, env) {
     return new Response("User-agent: *\nDisallow: /\n", { headers: { "content-type": "text/plain; charset=utf-8" } });
   }
   if (path === "/admin") return Response.redirect(`${url.origin}/admin/`, 301);
-  if (path.startsWith("/admin/")) return adminFile(path);
+  if (path.startsWith("/admin/")) return adminFile(path, request);
   if (path === "/api/admin/health" && method === "GET") return json(health(env));
   if (!env.DB) return json({ error: "no_database" }, 503);
   await ready(env);
@@ -253,11 +253,24 @@ const COLUMNS = [
 
 const schemas = new WeakMap();
 
-/** Tables are made on first use, so setting up the server is binding an empty D1 database. */
+/** Changes whenever SCHEMA or COLUMNS does, so a server made by this code skips making tables again. */
+const SCHEMA_VERSION = (() => {
+  let h = 5381;
+  for (const c of [...SCHEMA, ...COLUMNS].join("\n")) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0;
+  return h.toString(36);
+})();
+
+/**
+ * Tables are made on first use, so setting up the server is binding an empty D1 database. A fresh copy of
+ * the worker starts often (a quiet server is woken by each visit), so once the tables match this code it
+ * only reads one setting instead of going over every table again.
+ */
 function ready(env) {
   let done = schemas.get(env.DB);
   if (!done) {
-    done = env.DB.batch(SCHEMA.map((sql) => env.DB.prepare(sql))).then(async () => {
+    done = env.DB.prepare("SELECT value FROM settings WHERE key = 'schema'").first("value").catch(() => null).then(async (made) => {
+      if (made === SCHEMA_VERSION) return;
+      await env.DB.batch(SCHEMA.map((sql) => env.DB.prepare(sql)));
       for (const sql of COLUMNS) {
         try {
           await env.DB.prepare(sql).run();
@@ -265,6 +278,7 @@ function ready(env) {
           if (!/duplicate column/i.test(String(e?.message ?? e))) throw e;
         }
       }
+      await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema', ?)").bind(SCHEMA_VERSION).run();
     }).catch((e) => {
       schemas.delete(env.DB);
       throw e;
@@ -280,7 +294,10 @@ const all = async (env, sql, ...params) => (await stmt(env, sql, ...params).all(
 const run = (env, sql, ...params) => stmt(env, sql, ...params).run();
 
 async function settings(env) {
-  const rows = await all(env, "SELECT key, value FROM settings WHERE key IN ('adopt_points', 'reward_months', 'adopt_agree')");
+  return readSettings(await all(env, "SELECT key, value FROM settings WHERE key IN ('adopt_points', 'reward_months', 'adopt_agree')"));
+}
+
+function readSettings(rows) {
   const read = (key, fallback) => {
     const n = Number(rows.find((r) => r.key === key)?.value);
     return Number.isInteger(n) ? n : fallback;
@@ -1063,8 +1080,16 @@ async function score(env, companyId, grp) {
     SELECT device, points, cluster FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted')
     UNION ALL
     SELECT device, CASE WHEN verified = 1 THEN 2 ELSE 1 END, cluster FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1`, companyId, grp);
-  const doubters = new Set((await all(env, "SELECT device FROM votes WHERE company_id = ? AND grp = ? AND ok = 0", companyId, grp))
-    .map((v) => v.device));
+  const doubters = (await all(env, "SELECT device FROM votes WHERE company_id = ? AND grp = ? AND ok = 0", companyId, grp)).map((v) => v.device);
+  return tally(rows, doubters);
+}
+
+/**
+ * The score from what was sent and voted, read for many setups at once: [rows] are the reports still
+ * pending or adopted and the 맞았어요 votes (device, points, cluster), [doubterDevices] the 달라요 votes.
+ */
+function tally(rows, doubterDevices) {
+  const doubters = new Set(doubterDevices);
   const people = new Map();
   const networks = new Set();
   for (const r of rows) {
@@ -1590,16 +1615,17 @@ async function inquiryList(env, params) {
   const status = ["open", "answered", "closed"].includes(params.get("status")) ? params.get("status") : null;
   const q = String(params.get("q") ?? "").trim().slice(0, 40);
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-  const rows = await all(env, `SELECT i.*,
+  const [rows, statusRows] = (await env.DB.batch([stmt(env, `SELECT i.*,
       (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id) AS count,
       (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
       (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last
     FROM inquiries i
     WHERE (?1 IS NULL OR i.status = ?1)
       AND (?2 = '' OR EXISTS (SELECT 1 FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.text LIKE ?3 ESCAPE '\\'))
-    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 200`, status, q, like);
+    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 200`, status, q, like),
+  stmt(env, "SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status")])).map((r) => r.results);
   const counts = { open: 0, answered: 0, closed: 0 };
-  for (const r of await all(env, "SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status")) {
+  for (const r of statusRows) {
     if (Object.hasOwn(counts, r.status)) counts[r.status] = r.n;
   }
   return {
@@ -1790,12 +1816,12 @@ async function signedIn(request, env, now) {
   const token = (request.headers.get("cookie") ?? "").split(/;\s*/).find((c) => c.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1);
   if (!token || !/^[A-Za-z0-9]{40}$/.test(token)) return null;
   const hash = await sha256(`session|${token}`);
-  const row = await one(env, "SELECT admin, expires FROM admin_sessions WHERE token = ?", hash);
-  if (!row || row.expires <= now) return null;
-  if (row.admin === OWNER.id) return { token: hash, actor: OWNER };
-  // Read on every call, so a pause or a change of permissions applies at once.
-  const account = await one(env, "SELECT * FROM admins WHERE id = ? AND status = 'active'", row.admin);
-  return account ? { token: hash, actor: actorOf(account) } : null;
+  // The account is read with the session on every call, so a pause or a change of permissions applies at once.
+  const row = await one(env, `SELECT s.admin AS session_admin, s.expires AS session_expires, a.* FROM admin_sessions s
+    LEFT JOIN admins a ON a.id = s.admin AND a.status = 'active' WHERE s.token = ?`, hash);
+  if (!row || row.session_expires <= now) return null;
+  if (row.session_admin === OWNER.id) return { token: hash, actor: OWNER };
+  return row.id ? { token: hash, actor: actorOf(row) } : null;
 }
 
 const actorOf = (a) => ({ id: a.id, name: a.name, email: a.email, owner: false, perms: readPerms(a.perms) });
@@ -2083,45 +2109,128 @@ async function auditLog(env, url) {
 
 /** The home screen's numbers, only for the areas this admin can see. */
 async function overview(env, actor) {
-  const count = async (sql) => (await one(env, sql)).n;
-  const out = { me: me(actor), settings: await settings(env), reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS, flagReasons: FLAGS,
-    salt: secretIssue(env, "RATE_SALT", 1) === null };
+  // One trip to the database for every number: the home screen waits on this call.
+  const counts = { settings: "SELECT key, value FROM settings WHERE key IN ('adopt_points', 'reward_months', 'adopt_agree')" };
   if (can(actor, "review")) {
-    out.pending = await count("SELECT COUNT(*) AS n FROM (SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending')");
-    out.asks = await count("SELECT COUNT(*) AS n FROM reports WHERE status = 'ask'");
-    out.flagged = await count(`SELECT COUNT(*) AS n FROM rules r WHERE r.withdrawn = 0 AND r.superseded = 0
-      AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0)`);
-    out.reports = await count("SELECT COUNT(*) AS n FROM reports");
+    counts.pending = "SELECT COUNT(*) AS n FROM (SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending')";
+    counts.asks = "SELECT COUNT(*) AS n FROM reports WHERE status = 'ask'";
+    counts.flagged = `SELECT COUNT(*) AS n FROM rules r WHERE r.withdrawn = 0 AND r.superseded = 0
+      AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0)`;
+    counts.reports = "SELECT COUNT(*) AS n FROM reports";
   }
-  if (can(actor, "inquiries")) out.inquiries = await count("SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open'");
-  if (can(actor, "rewards")) out.owed = await count("SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'");
+  if (can(actor, "inquiries")) counts.inquiries = "SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open'";
+  if (can(actor, "rewards")) counts.owed = "SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'";
   if (can(actor, "community")) {
     // [COMM-06] Flagged posts still shown, and ones the flags hid that nobody has looked at yet.
-    out.flaggedPosts = await count("SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')");
-    out.posts = await count("SELECT COUNT(*) AS n FROM posts WHERE status = 'shown'");
+    counts.flaggedPosts = "SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')";
+    counts.posts = "SELECT COUNT(*) AS n FROM posts WHERE status = 'shown'";
   }
   if (can(actor, "companies")) {
-    out.companies = await count("SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL");
-    out.rules = await count("SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0");
+    counts.companies = "SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL";
+    counts.rules = "SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0";
   }
-  if (actor.owner) out.admins = { waiting: await count("SELECT COUNT(*) AS n FROM admins WHERE status = 'pending'") };
+  if (actor.owner) counts.waiting = "SELECT COUNT(*) AS n FROM admins WHERE status = 'pending'";
+  const keys = Object.keys(counts);
+  const results = await env.DB.batch(keys.map((k) => env.DB.prepare(counts[k])));
+  const got = Object.fromEntries(keys.map((k, i) => [k, results[i].results]));
+  const out = { me: me(actor), settings: readSettings(got.settings), reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS,
+    flagReasons: FLAGS, salt: secretIssue(env, "RATE_SALT", 1) === null };
+  for (const k of keys) {
+    if (k === "settings" || k === "waiting") continue;
+    out[k] = got[k][0].n;
+  }
+  if (actor.owner) out.admins = { waiting: got.waiting[0].n };
   return out;
 }
 
-/** Setups waiting for a decision, the ones with most behind them first, and rules people doubt. */
+/** Rows of [list] grouped by company and setup. */
+function byGroup(list) {
+  const out = new Map();
+  for (const r of list) {
+    const key = `${r.company_id}/${r.grp}`;
+    if (!out.has(key)) out.set(key, []);
+    out.get(key).push(r);
+  }
+  return out;
+}
+
+/** The score of each setup in [reports] (pending or adopted) and [votes], keyed company/setup. */
+function tallies(reports, votes) {
+  const sent = byGroup(reports);
+  const voted = byGroup(votes);
+  const keys = new Set([...sent.keys(), ...voted.keys()]);
+  const out = new Map();
+  for (const key of keys) {
+    const v = voted.get(key) ?? [];
+    const rows = [...(sent.get(key) ?? []).map((r) => ({ device: r.device, points: r.points, cluster: r.cluster })),
+      ...v.filter((x) => x.ok === 1).map((x) => ({ device: x.device, points: x.verified === 1 ? 2 : 1, cluster: x.cluster }))];
+    out.set(key, tally(rows, v.filter((x) => x.ok === 0).map((x) => x.device)));
+  }
+  return out;
+}
+
+const NO_SCORE = { points: 0, persons: 0, networks: 0, bad: 0 };
+
+/**
+ * Setups waiting for a decision, the ones with most behind them first, and rules people doubt. Everything
+ * is read in one trip to the database, however many setups wait.
+ */
 async function queue(env) {
-  const { adoptPoints, adoptAgree } = await settings(env);
-  const groups = await all(env, `SELECT company_id, grp, MAX(created_at) AS last FROM reports WHERE status = 'pending'
-    GROUP BY company_id, grp ORDER BY last DESC LIMIT 60`);
+  // The same 60 setups in every statement: one order with nothing left to chance, read in one batch.
+  const waiting = `WITH g AS (SELECT company_id, grp, MAX(created_at) AS last FROM reports WHERE status = 'pending'
+    GROUP BY company_id, grp ORDER BY last DESC, company_id, grp LIMIT 60)`;
+  const doubted = `WITH f AS (SELECT r.id FROM rules r WHERE r.withdrawn = 0 AND r.superseded = 0
+    AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0) ORDER BY r.id LIMIT 30),
+    fg AS (SELECT DISTINCT r.company_id, r.grp FROM rules r JOIN f ON f.id = r.id)`;
+  const [settingRows, groups, companyRows, reports, votes, posts, ruleRows, rejected, flaggedRows, flaggedReports, flaggedVotes, askRows] =
+    (await env.DB.batch([
+      env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('adopt_points', 'reward_months', 'adopt_agree')"),
+      env.DB.prepare(`${waiting} SELECT * FROM g`),
+      env.DB.prepare(`${waiting} SELECT id, name, hidden FROM companies WHERE id IN (SELECT company_id FROM g)`),
+      env.DB.prepare(`${waiting} SELECT r.* FROM reports r JOIN g ON g.company_id = r.company_id AND g.grp = r.grp
+        WHERE r.status IN ('pending', 'adopted')`),
+      env.DB.prepare(`${waiting} SELECT v.company_id, v.grp, v.device, v.ok, v.verified, v.cluster FROM votes v
+        JOIN g ON g.company_id = v.company_id AND g.grp = v.grp`),
+      env.DB.prepare(`${waiting} SELECT p.company_id, p.grp, COUNT(*) AS n FROM posts p JOIN g ON g.company_id = p.company_id AND g.grp = p.grp
+        WHERE p.status = 'shown' GROUP BY p.company_id, p.grp`),
+      env.DB.prepare(`${waiting} SELECT id, company_id, dept_norm, grp, version, setup, withdrawn, superseded FROM rules
+        WHERE company_id IN (SELECT company_id FROM g)`),
+      env.DB.prepare(`${waiting} SELECT DISTINCT r.company_id, r.grp FROM reports r JOIN g ON g.company_id = r.company_id AND g.grp = r.grp
+        WHERE r.status = 'rejected'`),
+      env.DB.prepare(`${doubted}
+        SELECT r.id, r.company_id, r.grp, r.dept, r.version, r.setup, c.name,
+          SUM(CASE WHEN v.ok = 0 AND v.why = 'name' THEN 1 ELSE 0 END) AS names,
+          SUM(CASE WHEN v.ok = 0 AND v.why = 'old' THEN 1 ELSE 0 END) AS old
+        FROM f JOIN rules r ON r.id = f.id JOIN companies c ON c.id = r.company_id
+          JOIN votes v ON v.company_id = r.company_id AND v.grp = r.grp
+        GROUP BY r.id`),
+      env.DB.prepare(`${doubted} SELECT r.company_id, r.grp, r.device, r.points, r.cluster FROM reports r
+        JOIN fg ON fg.company_id = r.company_id AND fg.grp = r.grp WHERE r.status IN ('pending', 'adopted')`),
+      env.DB.prepare(`${doubted} SELECT v.company_id, v.grp, v.device, v.ok, v.verified, v.cluster FROM votes v
+        JOIN fg ON fg.company_id = v.company_id AND fg.grp = v.grp`),
+      env.DB.prepare(`SELECT p.id, p.company_id, p.dept, p.note, p.verified, p.setup, p.created_at, c.name
+        FROM reports p JOIN companies c ON c.id = p.company_id WHERE p.status = 'ask' ORDER BY p.created_at LIMIT 60`),
+    ])).map((r) => r.results);
+  const { adoptPoints, adoptAgree } = readSettings(settingRows);
+  const companiesById = new Map(companyRows.map((c) => [c.id, c]));
+  const sent = byGroup(reports);
+  const scores = tallies(reports, votes);
+  const postCounts = new Map(posts.map((p) => [`${p.company_id}/${p.grp}`, p.n]));
+  const turnedDown = new Set(rejected.map((r) => `${r.company_id}/${r.grp}`));
   const out = [];
   for (const g of groups) {
-    const c = await one(env, "SELECT id, name, hidden FROM companies WHERE id = ?", g.company_id);
-    const rep = await representative(env, g.company_id, g.grp);
-    const s = await score(env, g.company_id, g.grp);
-    const reports = await all(env, `SELECT id, verified, note, created_at FROM reports WHERE company_id = ? AND grp = ? AND status = 'pending'
-      ORDER BY created_at`, g.company_id, g.grp);
-    const active = await activeRule(env, g.company_id, rep.dept_norm);
-    const why = await blocker(env, g.company_id, g.grp, rep.dept_norm);
+    const key = `${g.company_id}/${g.grp}`;
+    const c = companiesById.get(g.company_id);
+    const mine = sent.get(key) ?? [];
+    // The report a setup is shown and adopted from, as representative() picks it.
+    const rep = [...mine].sort((a, b) => b.verified - a.verified || b.created_at - a.created_at)[0];
+    const s = scores.get(key) ?? NO_SCORE;
+    const pending = mine.filter((r) => r.status === "pending").sort((a, b) => a.created_at - b.created_at);
+    const rules = ruleRows.filter((r) => r.company_id === g.company_id);
+    const active = rules.filter((r) => r.dept_norm === rep.dept_norm && r.withdrawn === 0 && r.superseded === 0)
+      .sort((a, b) => b.version - a.version)[0] ?? null;
+    // As blocker() decides it.
+    const why = active ? "active" : rules.some((r) => r.grp === g.grp && r.withdrawn === 1) ? "withdrawn" : turnedDown.has(key) ? "rejected" : null;
     const lines = describe(JSON.parse(rep.setup));
     out.push({
       company: { id: c.id, name: c.name, hidden: c.hidden === 1 },
@@ -2135,33 +2244,26 @@ async function queue(env) {
       ...trust(s, adoptPoints),
       // [COMM-07] More 달라요 than the setting allows: auto adoption waits for the developer.
       doubted: s.persons * 100 < adoptAgree * (s.persons + s.bad),
-      posts: (await one(env, "SELECT COUNT(*) AS n FROM posts WHERE company_id = ? AND grp = ? AND status = 'shown'", g.company_id, g.grp)).n,
+      posts: postCounts.get(key) ?? 0,
       // Enough points, but another rule is in use, this one was turned down, everyone sent it from one
       // network or too many say 달라요: only the developer decides.
       blocked: (Boolean(why) || s.networks < 2 || s.persons * 100 < adoptAgree * (s.persons + s.bad)) && s.persons >= 2 && s.points >= adoptPoints,
       turnedDown: why === "withdrawn" || why === "rejected" ? why : null,
       replaces: active ? { id: active.id, version: active.version } : null,
-      reports: reports.map((r) => ({ id: r.id, verified: r.verified === 1, note: r.note, at: iso(r.created_at) })),
+      reports: pending.map((r) => ({ id: r.id, verified: r.verified === 1, note: r.note, at: iso(r.created_at) })),
       lines,
       changes: active ? diffLines(describe(JSON.parse(active.setup)), lines) : null,
     });
   }
   out.sort((a, b) => b.blocked - a.blocked || b.points - a.points || cmp(a.reports[0].at, b.reports[0].at));
-  const flagged = [];
-  for (const r of await all(env, `
-    SELECT r.id, r.company_id, r.grp, r.dept, r.version, r.setup, c.name,
-      SUM(CASE WHEN v.ok = 0 AND v.why = 'name' THEN 1 ELSE 0 END) AS names,
-      SUM(CASE WHEN v.ok = 0 AND v.why = 'old' THEN 1 ELSE 0 END) AS old
-    FROM rules r JOIN companies c ON c.id = r.company_id JOIN votes v ON v.company_id = r.company_id AND v.grp = r.grp
-    WHERE r.withdrawn = 0 AND r.superseded = 0
-    GROUP BY r.id HAVING SUM(CASE WHEN v.ok = 0 THEN 1 ELSE 0 END) > 0 LIMIT 30`)) {
-    const s = await score(env, r.company_id, r.grp);
-    flagged.push({ rule: r.id, company: { id: r.company_id, name: r.name }, dept: r.dept, version: r.version, good: s.persons, bad: s.bad,
-      names: r.names, old: r.old, lines: describe(JSON.parse(r.setup)) });
-  }
+  const flaggedScores = tallies(flaggedReports, flaggedVotes);
+  const flagged = flaggedRows.map((r) => {
+    const s = flaggedScores.get(`${r.company_id}/${r.grp}`) ?? NO_SCORE;
+    return { rule: r.id, company: { id: r.company_id, name: r.name }, dept: r.dept, version: r.version, good: s.persons, bad: s.bad,
+      names: r.names, old: r.old, lines: describe(JSON.parse(r.setup)) };
+  });
   flagged.sort((a, b) => b.bad - a.bad);
-  const asks = (await all(env, `SELECT p.id, p.company_id, p.dept, p.note, p.verified, p.setup, p.created_at, c.name
-    FROM reports p JOIN companies c ON c.id = p.company_id WHERE p.status = 'ask' ORDER BY p.created_at LIMIT 60`)).map((a) => ({
+  const asks = askRows.map((a) => ({
     id: a.id, company: { id: a.company_id, name: a.name }, dept: a.dept, note: a.note, verified: a.verified === 1, at: iso(a.created_at),
     lines: describe(JSON.parse(a.setup)),
   }));
@@ -2226,19 +2328,27 @@ async function companies(env, query) {
 }
 
 async function companyInfo(env, id) {
-  const c = await one(env, "SELECT * FROM companies WHERE id = ?", id);
+  // One trip for the whole page, however many rules the company has.
+  const [[c], intoRows, aliasRows, ruleRows, reports, votes, [pending]] = (await env.DB.batch([
+    stmt(env, "SELECT * FROM companies WHERE id = ?", id),
+    stmt(env, "SELECT m.id, m.name FROM companies c JOIN companies m ON m.id = c.merged_into WHERE c.id = ?", id),
+    stmt(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", id),
+    stmt(env, "SELECT * FROM rules WHERE company_id = ? ORDER BY dept_norm, version DESC", id),
+    stmt(env, "SELECT company_id, grp, device, points, cluster FROM reports WHERE company_id = ? AND status IN ('pending', 'adopted')", id),
+    stmt(env, "SELECT company_id, grp, device, ok, verified, cluster FROM votes WHERE company_id = ?", id),
+    stmt(env, "SELECT COUNT(DISTINCT grp) AS n FROM reports WHERE company_id = ? AND status = 'pending'", id),
+  ])).map((r) => r.results);
   if (!c) return json({ error: "not_found" }, 404);
-  const into = c.merged_into ? await one(env, "SELECT id, name FROM companies WHERE id = ?", c.merged_into) : null;
-  const aliases = (await all(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", id)).map((a) => a.name);
-  const rules = [];
-  for (const r of await all(env, "SELECT * FROM rules WHERE company_id = ? ORDER BY dept_norm, version DESC", id)) {
-    const s = await score(env, id, r.grp);
-    rules.push({
+  const into = intoRows[0] ?? null;
+  const aliases = aliasRows.map((a) => a.name);
+  const scores = tallies(reports, votes);
+  const rules = ruleRows.map((r) => {
+    const s = scores.get(`${id}/${r.grp}`) ?? NO_SCORE;
+    return {
       id: r.id, dept: r.dept, version: r.version, source: r.source, adoptedAt: iso(r.adopted_at), withdrawn: r.withdrawn === 1,
       superseded: r.superseded === 1, ok: s.persons, bad: s.bad, lines: describe(JSON.parse(r.setup)),
-    });
-  }
-  const pending = await one(env, "SELECT COUNT(DISTINCT grp) AS n FROM reports WHERE company_id = ? AND status = 'pending'", id);
+    };
+  });
   return json({
     id: c.id, name: c.name, hidden: c.hidden === 1, mergedInto: into, createdAt: iso(c.created_at), aliases, rules, pending: pending.n,
   });
@@ -2430,22 +2540,36 @@ async function postList(env, url) {
           WHERE p.kept = 0 AND (p.flags > 0 OR p.hide_reason = 'flags') ORDER BY p.flags DESC, p.created_at DESC LIMIT 100`)
       : await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
           ${status === "hidden" ? "WHERE p.status = 'hidden'" : ""} ORDER BY p.created_at DESC LIMIT 100`);
-  const out = [];
+  // What each post needs besides itself, for all of them in one trip.
+  const ids = JSON.stringify(rows.map((p) => p.id));
+  const talks = JSON.stringify([...new Map(rows.map((p) => [`${p.company_id}/${p.grp}`, [p.company_id, p.grp]])).values()]);
+  const pairs = "SELECT json_extract(value, '$[0]') AS company_id, json_extract(value, '$[1]') AS grp FROM json_each(?)";
+  const [ruleDepts, reportDepts, flagRows, mutedRows] = rows.length ? (await env.DB.batch([
+    stmt(env, `SELECT r.company_id, r.grp, r.dept FROM rules r JOIN (${pairs}) t ON t.company_id = r.company_id AND t.grp = r.grp
+      ORDER BY r.version DESC`, talks),
+    stmt(env, `SELECT r.company_id, r.grp, r.dept FROM reports r JOIN (${pairs}) t ON t.company_id = r.company_id AND t.grp = r.grp`, talks),
+    stmt(env, `SELECT post_id, reason, COUNT(*) AS n FROM post_flags WHERE post_id IN (SELECT value FROM json_each(?))
+      GROUP BY post_id, reason ORDER BY n DESC, reason`, ids),
+    stmt(env, `SELECT device, until FROM muted WHERE until > ? AND device IN (SELECT value FROM json_each(?))`, Date.now(),
+      JSON.stringify([...new Set(rows.map((p) => p.device))])),
+  ])).map((r) => r.results) : [[], [], [], []];
   const depts = new Map();
+  // The newest rule's department, else any report's, as before.
+  for (const r of [...ruleDepts, ...reportDepts]) {
+    const key = `${r.company_id}/${r.grp}`;
+    if (!depts.has(key)) depts.set(key, r.dept);
+  }
+  const mutedUntil = new Map(mutedRows.map((m) => [m.device, m.until]));
+  const out = [];
   for (const p of rows) {
     const key = `${p.company_id}/${p.grp}`;
-    if (!depts.has(key)) {
-      const r = (await one(env, "SELECT dept FROM rules WHERE company_id = ? AND grp = ? ORDER BY version DESC LIMIT 1", p.company_id, p.grp))
-        ?? (await one(env, "SELECT dept FROM reports WHERE company_id = ? AND grp = ? LIMIT 1", p.company_id, p.grp));
-      depts.set(key, r?.dept ?? "");
-    }
-    const reasons = await all(env, "SELECT reason, COUNT(*) AS n FROM post_flags WHERE post_id = ? GROUP BY reason ORDER BY n DESC, reason", p.id);
-    const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", p.device, Date.now());
+    const reasons = flagRows.filter((f) => f.post_id === p.id);
+    const muted = mutedUntil.has(p.device) ? { until: mutedUntil.get(p.device) } : null;
     out.push({
       id: p.id,
       company: { id: p.company_id, name: p.name },
       setup: p.grp,
-      dept: depts.get(key),
+      dept: depts.get(key) ?? "",
       body: p.body,
       writer: p.device.slice(0, 6),
       at: iso(p.created_at),
