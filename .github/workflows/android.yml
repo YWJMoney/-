@@ -2,9 +2,9 @@ name: Android (밤낮)
 on:
   push:
     branches: [main]
-    paths: ["shift-calendar-app/**", ".github/workflows/android.yml"]
+    paths: ["shift-calendar-app/**", "privacy/**", ".github/workflows/android.yml"]
   pull_request:
-    paths: ["shift-calendar-app/**", ".github/workflows/android.yml"]
+    paths: ["shift-calendar-app/**", "privacy/**", ".github/workflows/android.yml"]
 concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true

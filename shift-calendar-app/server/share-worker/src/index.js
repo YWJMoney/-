@@ -8,7 +8,8 @@
 // GET    /.well-known/assetlinks.json   lets Android open /s/ links in the app (ANDROID_CERT_SHA256)
 //
 // Only what the page shows is stored: dates, shift names, colours and times, and since v2 [SHR-01]
-// only what the sharer ticked of 휴가 종류, 연장·휴무일 근무, 메모 and 급여. The server keeps no IP
+// only what the sharer ticked of 휴가 종류, 연장·휴무일 근무, 메모 and 급여, and since 1.13 [SHR-11] 일정 (a
+// freelancer's job titles and times) and the money in the sharer's own kind (급여, 일감 수입 or 매출). The server keeps no IP
 // addresses (the rate limit key is hashed and expires within the hour). Each link deletes itself
 // when it expires.
 
@@ -29,10 +30,16 @@ export const LIMITS = {
   payMonths: 6,
   payLabel: 10,
   payAmount: 10_000_000_000,
+  // [SHR-11] A freelancer's jobs on a day: title and time only.
+  jobs: 4,
+  jobName: 12,
 };
 
 /** [SHR-01] The parts a sharer can tick on top of the shifts. */
-export const SHOWS = ["leaveKinds", "extras", "memos", "pay"];
+export const SHOWS = ["leaveKinds", "extras", "memos", "pay", "jobs"];
+
+/** [SHR-11] What the money in `pay` is: an employee's pay, a freelancer's job income, a shop's sales. */
+export const PAY_KINDS = { pay: "급여", jobs: "일감 수입", sales: "매출" };
 
 /** [SHR-01] Leave as it shows without 휴가 종류 ticked: 연차 as it is, any other kind only by how much of the day is off. */
 const PLAIN_LEAVE = ["연차", "반차", "반반차", "0.75일 연차", "휴가", "0.75일 휴가"];
@@ -188,7 +195,10 @@ export function validate(body) {
     types.push({ id: t.id, name, short, color: t.color, time: t.time ?? null, off: t.off === true, icon: t.icon ?? null });
   }
   const ids = new Set(types.map((t) => t.id));
-  if (!Array.isArray(body.days) || body.days.length === 0 || body.days.length > LIMITS.days) return { error: "days" };
+  if (!Array.isArray(body.days) || body.days.length > LIMITS.days) return { error: "days" };
+  // [SHR-11] A shop or a freelancer may have no shifts at all and send only the months' money.
+  const moneyOnly = v2 && shows.includes("pay") && Array.isArray(body.pay) && body.pay.length > 0;
+  if (body.days.length === 0 && !moneyOnly) return { error: "days" };
   const days = [];
   const seen = new Set();
   for (const d of body.days) {
@@ -219,7 +229,18 @@ export function validate(body) {
       }
       if (extras.length) day.extras = extras;
     }
-    if (day.type == null && day.second == null && !day.leave && !day.memo && !day.extras) return { error: "day" };
+    if (shows.includes("jobs") && d.jobs != null) {
+      if (!Array.isArray(d.jobs) || d.jobs.length > LIMITS.jobs) return { error: "day_jobs" };
+      const jobs = [];
+      for (const j of d.jobs) {
+        const name = cleanText(j?.name, LIMITS.jobName);
+        if (!name) return { error: "day_job" };
+        if (j.time != null && !isTimeRange(j.time)) return { error: "day_job" };
+        jobs.push({ name, time: j.time ?? null });
+      }
+      if (jobs.length) day.jobs = jobs;
+    }
+    if (day.type == null && day.second == null && !day.leave && !day.memo && !day.extras && !day.jobs) return { error: "day" };
     days.push(day);
   }
   days.sort((a, b) => a.date.localeCompare(b.date));
@@ -238,6 +259,9 @@ export function validate(body) {
       }
       pay.sort((a, b) => a.month.localeCompare(b.month));
       schedule.pay = pay;
+      const payKind = body.payKind ?? "pay";
+      if (!Object.hasOwn(PAY_KINDS, payKind)) return { error: "pay_kind" };
+      schedule.payKind = payKind;
     }
   }
   return { schedule, ttlDays };
@@ -316,7 +340,14 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
 /** [SHR-01] The words for each part a sharer can tick, in the order the page lists them. */
-const SHOW_NAMES = { leaveKinds: "휴가 종류", extras: "연장·휴무일 근무", memos: "메모", pay: "급여" };
+const SHOW_NAMES = { jobs: "일정", leaveKinds: "휴가 종류", extras: "연장·휴무일 근무", memos: "메모", pay: "급여" };
+
+/** [SHR-11] How the page explains the money, by what it is. */
+const PAY_NOTES = {
+  pay: "보낸 사람의 앱이 계산한 예상 금액이라 실제 명세서와 다를 수 있어요.",
+  jobs: "보낸 사람이 앱에 적은 일감 금액을 달마다 더했어요. 3.3%를 뗀 금액이에요.",
+  sales: "보낸 사람이 앱에 적은 매출을 달마다 더했어요. 경비는 빼지 않은 금액이에요.",
+};
 
 const won = (n) => `${String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}원`;
 
@@ -349,6 +380,7 @@ export function renderSchedule(schedule, expiresAt, appId = null) {
           (t ? `<span class="chip" style="background:${t.color}">${esc(t.short)}</span>` : "") +
           (s ? `<span class="chip" style="background:${s.color}">${esc(s.short)}</span>` : "") +
           (entry?.leave ? `<span class="leave">${esc(entry.leave)}</span>` : "") +
+          (entry?.jobs ?? []).map((j) => `<span class="extra job">${esc(j.name)}${j.time ? ` ${esc(j.time.slice(0, 5))}` : ""}</span>`).join("") +
           (entry?.extras ?? []).map((e) => `<span class="extra">${esc(e.name)}${e.minutes ? ` ${esc(hours(e.minutes))}` : ""}</span>`).join("") +
           (entry?.memo ? `<span class="memo">${esc(entry.memo)}</span>` : "") +
           `</div>`,
@@ -362,13 +394,15 @@ export function renderSchedule(schedule, expiresAt, appId = null) {
   ).join("");
   const until = new Date(Date.parse(expiresAt) + 9 * 3600 * 1000).toISOString().slice(0, 10);
   const title = schedule.title ? `${schedule.title}의 근무표` : "근무표";
-  const shows = (schedule.shows ?? []).map((k) => SHOW_NAMES[k]).filter(Boolean);
+  const payKind = Object.hasOwn(PAY_KINDS, schedule.payKind ?? "") ? schedule.payKind : "pay";
+  const shows = Object.keys(SHOW_NAMES).filter((k) => (schedule.shows ?? []).includes(k))
+    .map((k) => (k === "pay" ? PAY_KINDS[payKind] : SHOW_NAMES[k]));
   const has = shows.length ? `<p class="muted">근무와 함께 보낸 것: ${esc(shows.join(", "))}</p>` : "";
   const pay = schedule.pay?.length
-    ? `<section class="pay"><h2>함께 보낸 급여</h2><ul>${schedule.pay.map((p) => {
+    ? `<section class="pay"><h2>함께 보낸 ${PAY_KINDS[payKind]}</h2><ul>${schedule.pay.map((p) => {
         const [y, m] = p.month.split("-").map(Number);
         return `<li><span>${y}년 ${m}월${p.label ? ` <span class="muted">${esc(p.label)}</span>` : ""}</span><b>${won(p.amount)}</b></li>`;
-      }).join("")}</ul><p class="muted">보낸 사람의 앱이 계산한 예상 금액이라 실제 명세서와 다를 수 있어요.</p></section>`
+      }).join("")}</ul><p class="muted">${PAY_NOTES[payKind]}</p></section>`
     : "";
   const app = appId
     ? `<p class="app"><a href="${esc(appLink(appId))}">밤낮 앱에서 보기</a><span class="muted">앱에서는 내 달력과 바꿔 가며 볼 수 있어요</span></p>`
@@ -397,7 +431,7 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .num{font-size:12px;color:var(--muted)}.sun{color:var(--sun)}.sat{color:var(--sat)}
 .chip{display:inline-block;min-width:24px;padding:1px 6px;border-radius:8px;color:#fff;font-weight:700;font-size:13px;text-align:center;text-shadow:0 0 2px rgba(0,0,0,.35)}
 .leave{font-size:11px;color:var(--muted)}.extra{font-size:10px;line-height:1.2;color:var(--fg);background:var(--line);border-radius:6px;padding:0 4px;text-align:center}
-.memo{font-size:10px;line-height:1.25;color:var(--muted);text-align:center;word-break:break-all;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.job{background:#C2A36B33}.memo{font-size:10px;line-height:1.25;color:var(--muted);text-align:center;word-break:break-all;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .app{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0 0 8px}.app a{display:inline-block;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none}
 .pay ul{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.pay li{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}.pay li:first-child{border-top:none}
 .legend{list-style:none;padding:0;margin:20px 0 0;display:flex;flex-wrap:wrap;gap:8px 16px}

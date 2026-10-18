@@ -133,6 +133,45 @@ class MoneyTest {
         assertTrue(WorkStyle.FIELD.usesJobs && !WorkStyle.FIELD.usesPayEngine)
         assertTrue(WorkStyle.BUSINESS.usesSales && !WorkStyle.BUSINESS.usesJobs)
     }
+
+    /** [SHR-11] A link's money follows the work: pay for employees, job income for field work, sales for a shop. */
+    @Test
+    fun linkMoneyFollowsTheWork() {
+        assertEquals(com.bamnat.core.work.MoneyShare.PAY, com.bamnat.core.work.MoneyShare.of(null))
+        assertEquals(com.bamnat.core.work.MoneyShare.PAY, com.bamnat.core.work.MoneyShare.of(WorkStyle.HOURLY))
+        assertEquals(com.bamnat.core.work.MoneyShare.JOBS, com.bamnat.core.work.MoneyShare.of(WorkStyle.FIELD))
+        assertEquals(com.bamnat.core.work.MoneyShare.SALES, com.bamnat.core.work.MoneyShare.of(WorkStyle.BUSINESS))
+        assertEquals(com.bamnat.core.work.MoneyShare.SALES, com.bamnat.core.work.MoneyShare.ofKey("sales"))
+        assertEquals(com.bamnat.core.work.MoneyShare.PAY, com.bamnat.core.work.MoneyShare.ofKey(null))
+
+        val nov = java.time.YearMonth.of(2026, 11)
+        val months = listOf(nov, nov.plusMonths(1), nov.plusMonths(2))
+        val f = com.bamnat.core.work.MoneyShareFigures
+        val sales = listOf(
+            com.bamnat.core.money.DailySales(nov.atDay(1), 600_000, costs = 200_000),
+            com.bamnat.core.money.DailySales(nov.atDay(2), 400_000),
+            com.bamnat.core.money.DailySales(nov.plusMonths(1).atDay(1), 0, costs = 50_000),
+            com.bamnat.core.money.DailySales(nov.minusMonths(1).atDay(30), 999_000),
+        )
+        // 매출 before costs; a month with only costs, and months outside the link, are left out.
+        assertEquals(listOf(com.bamnat.core.work.MonthFigure(nov, 1_000_000, "매출")), f.sales(months, sales))
+
+        val jobs = listOf(
+            com.bamnat.core.money.Job(date = nov.atDay(3), endDate = nov.atDay(5), title = "욕실", amount = 900_000, withholding = true),
+            com.bamnat.core.money.Job(date = nov.atDay(9), title = "상담", amount = 0),
+            com.bamnat.core.money.Job(date = nov.plusMonths(2).atDay(1), title = "도배", amount = 300_000),
+        )
+        assertEquals(listOf(com.bamnat.core.work.MonthFigure(nov, 870_300, "일감 1건"), com.bamnat.core.work.MonthFigure(nov.plusMonths(2), 300_000, "일감 1건")),
+            f.jobs(months, jobs))
+
+        val ledger = listOf(
+            com.bamnat.core.money.MoneyEntry(date = nov.atDay(10), kind = com.bamnat.core.money.MoneyKind.INCOME, amount = 2_800_000, category = "급여"),
+            com.bamnat.core.money.MoneyEntry(date = nov.atDay(11), kind = com.bamnat.core.money.MoneyKind.INCOME, amount = 50_000, category = "용돈"),
+            com.bamnat.core.money.MoneyEntry(date = nov.atDay(12), kind = com.bamnat.core.money.MoneyKind.EXPENSE, amount = 9_000, category = "급여"),
+        )
+        assertEquals(listOf(com.bamnat.core.work.MonthFigure(nov, 2_800_000, "받은 급여")), f.recordedPay(months, ledger))
+        assertTrue(f.sales(months, emptyList()).isEmpty())
+    }
 }
 
 class JobRemindersTest {

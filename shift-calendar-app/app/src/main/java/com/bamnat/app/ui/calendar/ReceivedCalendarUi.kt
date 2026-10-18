@@ -294,10 +294,11 @@ private fun ReceivedCalendar.summary(): String {
 /** [SHR-01] The parts the sharer ticked, in the share sheet's words; null when only shifts came. */
 private fun SharedSchedule.showsText(): String? =
     listOfNotNull(
+        "일정".takeIf { "jobs" in shows },
         "휴가 종류".takeIf { "leaveKinds" in shows },
         "연장·휴무일 근무".takeIf { "extras" in shows },
         "메모".takeIf { "memos" in shows },
-        "급여".takeIf { "pay" in shows },
+        payKind.label.takeIf { "pay" in shows },
     ).takeIf { it.isNotEmpty() }?.joinToString(", ")
 
 /**
@@ -559,7 +560,7 @@ fun ReceivedCalendarView(
     val detailPart: @Composable (Modifier) -> Unit = { m ->
         Column(m, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ReceivedDayCard(selected, today, cal, schedule, mine.resolver.resolve(selected).takeIf { canCompare }, restTogether(selected))
-            schedule.pay.firstOrNull { it.month == month }?.let { PayCard(cal, it) }
+            schedule.pay.firstOrNull { it.month == month }?.let { PayCard(cal, it, schedule.payKind) }
             Text("${cal.expiresAt?.let(::expiry) ?: "기간 끝"}까지 볼 수 있어요 · 받은 달력은 이 휴대폰에만 있어요",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 4.dp))
@@ -871,16 +872,17 @@ private fun ReceivedDayCard(
 }
 
 @Composable
-private fun PayCard(cal: ReceivedCalendar, pay: com.bamnat.app.share.SharedPay) {
+private fun PayCard(cal: ReceivedCalendar, pay: com.bamnat.app.share.SharedPay, kind: com.bamnat.core.work.MoneyShare) {
     Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(cal.title.trim().takeIf { it.isNotEmpty() }?.let { "$it 님이 함께 보낸 급여" } ?: "함께 받은 급여", style = MaterialTheme.typography.labelLarge,
+            Text(cal.title.trim().takeIf { it.isNotEmpty() }?.let { "$it 님이 함께 보낸 ${kind.label}" } ?: "함께 받은 ${kind.label}", style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.Bottom) {
                 Text("${pay.month.monthValue}월", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 Text(Fmt.won(pay.amount), style = MaterialTheme.typography.headlineSmall.merge(NumberStyle), fontWeight = FontWeight.Bold)
             }
-            Text((pay.label.ifBlank { "예상" }) + " · 보낸 분의 앱이 계산한 금액이라 명세서와 다를 수 있어요",
+            // [SHR-11] Pay is the sender's estimate; job income and sales are what the sender wrote down.
+            Text((pay.label.ifBlank { "예상" }) + " · " + if (kind == com.bamnat.core.work.MoneyShare.PAY && pay.label != "받은 급여") "보낸 분의 앱이 계산한 금액이라 명세서와 다를 수 있어요" else "보낸 분이 앱에 적은 금액을 달마다 더했어요",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

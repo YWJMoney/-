@@ -50,7 +50,7 @@ class ShareServerTest {
         val policy = File("../../privacy/index.html")
         assumeTrue(policy.exists())
         val text = policy.readText()
-        assertTrue(text.contains("처리방침 1.8"))
+        assertTrue(text.contains("처리방침 1.9"))
         assertTrue(text.contains("Cloudflare, Inc."))
         assertTrue(text.contains("<td>인터넷</td>"))
         assertTrue(text.contains("7일·30일·90일"))
@@ -73,6 +73,10 @@ class ShareServerTest {
         assertTrue(text.contains("하루 ${ShareLinkPayload.EXTRAS_PER_DAY}개까지"))
         assertTrue(text.contains("하루 ${ShareLinkPayload.MEMO_CHARS}자 이내"))
         assertTrue(text.contains("세전 급여 총액 하나"))
+        // [SHR-11] The money in each kind of work, and a freelancer's jobs without client, place or price.
+        assertTrue(text.contains("달마다 일감 수입 합계 하나"))
+        assertTrue(text.contains("달마다 매출 합계 하나"))
+        assertTrue(text.contains("일감의 이름·시간(하루 ${ShareLinkPayload.JOBS_PER_DAY}개까지, 고객·장소·일감별 금액 없이)"))
         assertTrue(text.contains("처음에는 아무것도 골라져 있지 않습니다"))
         assertFalse(ShareOptions().any)
         assertTrue(text.contains("받은 근무표"))
@@ -81,6 +85,10 @@ class ShareServerTest {
         listOf("휴가 종류", "연장·휴무일 근무", "메모", "급여").forEach { part ->
             assertTrue(part, ShareOptions(true, true, true, true).partNames().contains(part))
             assertTrue(part, text.contains(part))
+        }
+        com.bamnat.core.work.MoneyShare.entries.forEach { kind ->
+            assertTrue(kind.label, ShareOptions(pay = true).partNames(kind).contains(kind.label))
+            assertTrue(kind.label, text.contains(kind.label))
         }
     }
 
