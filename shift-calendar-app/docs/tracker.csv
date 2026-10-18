@@ -200,3 +200,9 @@ COMM-05,"회사 검색 없이 처음부터 직접 입력 → 회사 찾기 화�
 COMM-06,"사용자 커뮤니티: 회사·직군별로 근무표와 급여 규칙을 묻고 답하는 곳, 모인 내용을 근거로 회사 규칙 만들기, 신고·숨기기·운영 규칙(Play 사용자 제작 콘텐츠 정책)",확장 M12 (서버),대기,G-SERVER,
 ADMIN-02,"앱 문의·문제 신고를 개발자 앱으로 받기(2026-10-18 요청): 설정 > 문의하기(지금은 메일)를 앱 안 문의로, 개발자 앱에서 답하면 앱에 보임, 함께 보낼 정보는 보내기 전에 보여 주고 동의, 금액·이름·연락처는 보내지 않음, 처리방침·Play 데이터 보안 같이 고침",확장 M12 (서버),대기,G-SERVER,
 ADMIN-03,"개발자 앱을 최상의 엔터프라이즈급 디자인과 편의로(2026-10-18 요청), 범위는 사용자와 정함",확장 M12 (서버),대기,G-SERVER,
+SLP-16,"수면 기록을 쓰는 곳이 없음(2026-10-18 요청) → 수면 기록 화면: 기록이 어디에 쓰이는지 안내, 근무별 평균(야간 뒤·아침 출근 전·근무일·쉬는 날), 이번 주와 지난주, 2주 막대, 직접 추가·고치기, 퇴근길 카드가 내 평균으로 말함",확장 M12,진행 중,,"core SleepInsights(SleepInsightsTest), TodayFlow afterNightMinutes; 앱 SleepScreen, 하루 화면·설정 > 쉬기에서 열기, OwedAppTest(수면 추가·고치기)"
+IMPORT-01,"삼성 캘린더 일정을 밤낮으로 가져오기(2026-10-18 요청) → 캘린더 읽기 권한(READ_CALENDAR, 쓸 때 물음), 고른 캘린더만, 근무 이름·시간으로 근무/쉬는 날, 나머지는 메모, 공휴일·생일 캘린더는 기본 제외, 이미 가져온 것은 건너뜀, 한 번에 되돌리기",확장 M12,진행 중,,"core CalendarImport(CalendarImportTest); 앱 DeviceCalendars·CalendarImporter·CalendarImportScreen, DB 13 imported_events, CalendarImporterTest, MigrationTest"
+IMPORT-02,"새 일정 자동 확인 → 켜 두면 앱을 열 때 고른 캘린더의 새 일정(7일 전~60일 뒤)을 알려 주고 '가져오기' 한 번으로 엶, 기본은 꺼짐",확장 M12,진행 중,,"CalendarImporter.countNew, AppRoot 스낵바"
+RECV-01,"미수금 기능(2026-10-18 요청) → 받을 돈 적기(누가·얼마·종류·약속일), 나눠 받기, 받은 돈을 수입으로 적을지 선택(판매·빌려준 돈은 기본 끔), 받지 않기로, 지우기·되돌리기, 백업 포함",확장 M12,진행 중,,"core Receivables(ReceivablesTest); 앱 DB 13 receivables·receivable_payments, MoneyRepository, BackupManager owed·owedPaid, OwedAppTest, MigrationTest"
+RECV-02,"받을 돈 한눈에 → 돈 화면 카드와 받을 돈 화면: 합계, 약속일 지남·곧, 사람별, 기간별(30일·60일·90일), 일한 뒤 못 받은 돈도 같이",확장 M12,진행 중,,"Receivables.owed·summary; OwedScreen, MoneyScreen OwedCard"
+RECV-03,"받을 돈 알림 → 약속일 당일, 3일·7일 지남, 약속일이 없으면 한 달째에 오전 10시 한 번씩, 돈과 휴가 채널",확장 M12,진행 중,,"ReceivableAlerts(ReceivablesTest), MoneyAlerts receivables, JobReminderScheduler"

@@ -170,6 +170,10 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
             vm.update { it.copy(commuteMinutes = m) }
         }
         HealthSleepRow(vm, settings.healthSleep)
+        // [SLP-16] Where the taps go, and what they say about the user's own sleep.
+        NavRow("수면 기록 보기", "근무별 평균, 내 기록에서 보이는 것, 기록 고치기·추가") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SLEEP)
+        }
         Note("야간 뒤에는 목표가 짧아도 6시간 이상 이어서 자도록 제안해요. 진단이나 치료가 아닌 일정에 맞춘 참고 정보예요.")
     }
     // [SLP-01][MKT-07][MKT-11]
@@ -350,7 +354,12 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
             NavRow("불러오기 전으로 되돌리기", "$savedLabel 불러오기 전 데이터로 돌아가요") { confirmUndo = true }
         }
     }
-    SectionCard(title = "다른 앱으로") {
+    SectionCard(title = "다른 캘린더 앱과") {
+        // [IMPORT-01]
+        NavRow("캘린더에서 가져오기", "삼성·구글 캘린더 일정을 읽어 근무와 메모로 옮겨요") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.CALENDAR_IMPORT)
+        }
+        HorizontalDivider()
         // [REL-04]
         NavRow("캘린더 앱으로 내보내기", "구글·삼성 캘린더에 근무를 넣는 파일을 만들어요 (3개월 전부터 1년 뒤까지)", files.exportIcs)
     }

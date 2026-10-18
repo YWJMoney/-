@@ -72,6 +72,11 @@ class AppContainer(context: Context) {
     /** [SHR-02] Schedules others shared, kept beside the user's own and never backed up. */
     val received by lazy { com.bamnat.app.share.ReceivedCalendarStore(java.io.File(appContext.noBackupFilesDir, "received_calendars.json")) }
     val featureGate = FeatureGate(settingsRepository, appScope)
+    /** [IMPORT-01] Samsung Calendar and the phone's other calendars, brought in on request. */
+    val calendarImporter by lazy {
+        com.bamnat.app.imports.CalendarImporter(appContext, com.bamnat.app.imports.DeviceCalendars(appContext), scheduleRepository,
+            memoRepository, database.importedEventDao())
+    }
     /** [NAV-01] The month the calendar, 돈 and 근무·급여 show together. */
     val shownMonth = com.bamnat.app.ui.ShownMonth()
 

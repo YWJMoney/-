@@ -130,6 +130,20 @@ class BackupManager(
         root.put("rules", JSONArray().apply {
             money.allRules().forEach { r -> put(JSONObject().put("merchant", r.merchant).put("category", r.category)) }
         })
+        // [RECV-01] Money others owe, with what came back (version 13). Older apps ignore these keys.
+        val owed = db.receivableDao()
+        root.put("owed", JSONArray().apply {
+            owed.all().forEach { r ->
+                put(JSONObject().put("id", r.id).put("who", r.who).put("title", r.title).put("amount", r.amount).put("day", r.epochDay)
+                    .putOpt("due", r.dueEpochDay).put("kind", r.kind).put("note", r.note).put("income", r.countAsIncome)
+                    .putOpt("closed", r.closedEpochDay).put("created", r.createdAt))
+            }
+        })
+        root.put("owedPaid", JSONArray().apply {
+            owed.allPayments().forEach { p ->
+                put(JSONObject().put("id", p.id).put("owed", p.receivableId).put("day", p.epochDay).put("amount", p.amount).putOpt("entry", p.entryId))
+            }
+        })
         // [SLP-06] The sleep log goes with the rest of the user's data.
         root.put("sleep", JSONArray().apply {
             db.sleepDao().all().forEach { l -> put(JSONObject().put("start", l.startMillis).putOpt("end", l.endMillis)) }
@@ -171,7 +185,8 @@ class BackupManager(
             extras = root.optJSONArray("extras")?.length() ?: 0,
             exportedAtMillis = root.optLong("exportedAt"),
             moneyLines = (root.optJSONArray("money")?.length() ?: 0) + (root.optJSONArray("jobs")?.length() ?: 0) +
-                (root.optJSONArray("sales")?.length() ?: 0) + (root.optJSONArray("fixed")?.length() ?: 0),
+                (root.optJSONArray("sales")?.length() ?: 0) + (root.optJSONArray("fixed")?.length() ?: 0) +
+                (root.optJSONArray("owed")?.length() ?: 0),
             sleeps = root.optJSONArray("sleep")?.length() ?: 0,
             hasPay = root.has("pay"),
         )
@@ -258,6 +273,18 @@ class BackupManager(
                 costs = o.optLong("costs"), withholding = o.optBoolean("withholding"),
             )
         }
+        val owed = root.optJSONArray("owed")?.objects()?.map { o ->
+            com.bamnat.app.data.db.ReceivableEntity(
+                id = o.getLong("id"), who = o.optString("who"), title = o.optString("title"), amount = o.optLong("amount"),
+                epochDay = o.getLong("day"), dueEpochDay = if (o.has("due") && !o.isNull("due")) o.getLong("due") else null,
+                kind = o.optString("kind", "OTHER"), note = o.optString("note"), countAsIncome = o.optBoolean("income"),
+                closedEpochDay = if (o.has("closed") && !o.isNull("closed")) o.getLong("closed") else null, createdAt = o.optLong("created"),
+            )
+        }
+        val owedPaid = root.optJSONArray("owedPaid")?.objects()?.map { o ->
+            com.bamnat.app.data.db.ReceivablePaymentEntity(o.getLong("id"), o.getLong("owed"), o.getLong("day"), o.optLong("amount"),
+                if (o.has("entry") && !o.isNull("entry")) o.getLong("entry") else null)
+        }
         val sales = root.optJSONArray("sales")?.objects()?.map { o ->
             DailySalesEntity(o.getLong("day"), o.optLong("sales"), o.optLong("costs"), o.optString("note"))
         }
@@ -272,6 +299,13 @@ class BackupManager(
             sales?.let { list -> money.clearSales(); list.forEach { money.upsertSales(it) } }
             fixed?.let { list -> money.clearFixed(); list.forEach { money.restoreFixed(it) } }
             rules?.let { list -> money.clearRules(); list.forEach { money.upsertRule(it) } }
+            // Backups from before version 13 carry no receivables; the ones on the phone then stay.
+            owed?.let { list ->
+                val dao = db.receivableDao()
+                dao.clearPayments(); dao.clear()
+                list.forEach { dao.restore(it) }
+                owedPaid?.forEach { dao.restorePayment(it) }
+            }
             // Backups from before version 11 carry no sleep log; the one on the phone then stays.
             sleep?.let { list -> db.sleepDao().clear(); list.forEach { db.sleepDao().insert(it) } }
             db.memoDao().clear()

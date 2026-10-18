@@ -1118,13 +1118,18 @@ private fun SleepSection(
             }
             val debt = remember(log, today, targetMinutes) { com.bamnat.core.sleep.SleepDebt.of(log, today, targetMinutes) }
             Text(
-                if (debt.days == 0) "잠들 때와 깼을 때 한 번씩 누르면 최근 7일 수면을 보여 줘요. 기록은 이 휴대폰과 백업 파일에만 남아요."
+                if (debt.days == 0) "잠들 때와 깼을 때 한 번씩 누르면 최근 7일 수면과 근무별 평균(야간 뒤·쉬는 날)을 보여 줘요. 기록은 이 휴대폰과 백업 파일에만 남아요."
                 else "최근 7일 중 ${debt.days}일 기록 · 평균 ${hoursText(debt.averageMinutes)}" +
                     if (debt.shortMinutes > 0) " · 목표보다 ${hoursText(debt.shortMinutes)} 부족" else " · 목표만큼 잤어요",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
             )
+            // [SLP-16] The log, the user's own averages and fixing a record are one tap away.
+            androidx.compose.material3.TextButton(
+                onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SLEEP) },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp),
+            ) { Text(if (debt.days == 0) "수면 기록은 어디에 쓰이나요?" else "수면 기록 보기 · 고치기") }
             // [SLP-08] Where the numbers come from once Health Connect is on.
             val measured = remember(log, today) {
                 log.count { it.imported && it.wakeDate?.let { d -> !d.isBefore(today.minusDays(com.bamnat.core.sleep.SleepDebt.WINDOW_DAYS - 1)) } == true }

@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.money
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,7 +56,6 @@ import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.money.DailySales
 import com.bamnat.core.money.Job
 import com.bamnat.core.money.MoneyBook
-import com.bamnat.core.money.MoneyCalculator
 import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MonthMoney
 import com.bamnat.core.money.MoneyKind
@@ -216,7 +216,7 @@ fun MoneyScreen(
             }
         }
     }
-    val unpaid = remember(book, today) { MoneyCalculator.unpaid(book.jobs, today) }
+    val owed = remember(book, today) { book.owed(today) }
     val monthEntries = remember(book, month) { book.entries.filter { YearMonth.from(it.date) == month } }
     val shownEntries = remember(monthEntries, place) {
         place?.let { p -> monthEntries.filter { it.merchant.ifBlank { it.note }.trim() == p } } ?: monthEntries
@@ -233,7 +233,13 @@ fun MoneyScreen(
         UpcomingCard(upcoming, book.fixed, leftFixed, onRecord = { vm.recordFixed(it, today) },
             onEdit = { c -> if (c == null) addingFixed = true else editingFixed = c })
         IncomeCard(m, style, hasProfile = profile != null, onOpenPay = onOpenPay)
-        if (unpaid.isNotEmpty()) UnpaidCard(unpaid) { editingJob = it }
+        // [RECV-02] Money owed: receivables and unpaid jobs together, the whole list one tap away.
+        OwedCard(owed, today, onOpenAll = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.OWED) }) { o ->
+            when (o) {
+                is com.bamnat.core.money.Owed.FromJob -> editingJob = o.job
+                is com.bamnat.core.money.Owed.Written -> com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.OWED)
+            }
+        }
         // [LEDG-02] Next to the totals, so typing less is found before scrolling through records.
         AutoRecordCard(onPaste = { pasting = true })
     }
@@ -368,16 +374,45 @@ private fun Line(label: String, value: String, muted: Boolean = false, strong: B
     }
 }
 
-/** [WORK-02] Work done but not fully paid; the real worry of field work. */
+/** [WORK-02][RECV-02] Work done but not fully paid, and money written down as owed; the real worry of field work and shops. */
 @Composable
-private fun UnpaidCard(jobs: List<Job>, onOpen: (Job) -> Unit) {
-    SectionCard(title = "받을 돈 ${Fmt.won(jobs.sumOf { it.unpaid })}") {
-        jobs.take(8).forEachIndexed { i, j ->
-            if (i > 0) HorizontalDivider(Modifier.padding(vertical = 4.dp))
-            JobRow(j, showDate = true) { onOpen(j) }
+private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, onOpenAll: () -> Unit, onOpen: (com.bamnat.core.money.Owed) -> Unit) {
+    val cal = LocalCalendarColors.current
+    val overdue = owed.filter { it.status(today) == com.bamnat.core.money.ReceivableStatus.OVERDUE }
+    SectionCard(
+        title = if (owed.isEmpty()) "받을 돈 (미수금)" else "받을 돈 ${Fmt.won(owed.sumOf { it.left })}",
+        trailing = { TextButton(onClick = onOpenAll) { Text(if (owed.isEmpty()) "적기" else "모두 보기") } },
+    ) {
+        if (owed.isEmpty()) {
+            Text("외상, 밀린 일당, 빌려준 돈처럼 아직 못 받은 돈을 적어 두면 약속일에 알려 줘요.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            return@SectionCard
         }
-        if (jobs.size > 8) {
-            Text("그 밖에 ${jobs.size - 8}건", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (overdue.isNotEmpty()) {
+            Text("약속일 지난 돈 ${overdue.size}건 · ${Fmt.won(overdue.sumOf { it.left })}", style = MaterialTheme.typography.bodyMedium,
+                color = cal.warning, modifier = Modifier.padding(bottom = 4.dp))
+        }
+        owed.take(4).forEachIndexed { i, o ->
+            if (i > 0) HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            when (o) {
+                is com.bamnat.core.money.Owed.FromJob -> JobRow(o.job, showDate = true) { onOpen(o) }
+                is com.bamnat.core.money.Owed.Written -> Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onOpen(o) }.padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(o.name, style = MaterialTheme.typography.bodyLarge)
+                        Text(listOfNotNull(o.who.takeIf { it.isNotBlank() && it != o.name }, o.status(today).label,
+                            o.due?.let { "약속 ${Fmt.shortDate(it)}" }).joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text(Fmt.won(o.left), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold,
+                        color = if (o.status(today) == com.bamnat.core.money.ReceivableStatus.OVERDUE) cal.warning else MaterialTheme.colorScheme.onSurface)
+                }
+            }
+        }
+        if (owed.size > 4) {
+            Text("그 밖에 ${owed.size - 4}건", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

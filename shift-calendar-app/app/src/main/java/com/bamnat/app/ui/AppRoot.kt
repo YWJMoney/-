@@ -161,6 +161,11 @@ private object Routes {
     const val COMPANY_REPORT = "company_report"
     const val COMPANY_SENT = "company_sent"
 
+    // [SLP-16][RECV-02][IMPORT-01] The sleep log, money owed, and bringing in the phone's calendar.
+    const val SLEEP = "sleep"
+    const val OWED = "owed"
+    const val CALENDAR_IMPORT = "calendar_import"
+
     fun companyFind(setup: Boolean = false, weekdays: Boolean = false) = "company_find?setup=$setup&weekdays=$weekdays"
     fun company(id: String, setup: Boolean, weekdays: Boolean) = "company/$id?setup=$setup&weekdays=$weekdays"
 }
@@ -232,6 +237,15 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
     }
 
+    // [IMPORT-02] When the user asked for it, new events in the chosen calendars are offered on opening the app.
+    LaunchedEffect(homeRequests) {
+        val count = runCatching { container.calendarImporter.countNew(LocalDate.now()) }.getOrDefault(0)
+        if (count > 0 && snackbar.showSnackbar("캘린더에 새 일정 ${count}개가 있어요", actionLabel = "가져오기",
+                duration = androidx.compose.material3.SnackbarDuration.Long) == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+            NoticeLinks.open(NoticeLinks.Target.CALENDAR_IMPORT)
+        }
+    }
+
     // [SLP-15] A tapped notice opens the screen it is about. The calendar finds today itself.
     val noticeTarget by NoticeLinks.target.collectAsStateWithLifecycle()
     LaunchedEffect(noticeTarget) {
@@ -248,6 +262,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             NoticeLinks.Target.MONEY -> { nav.navigateTopLevel(TopLevel.MONEY.route); NoticeLinks.consume(target) }
             NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.PAY) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.SLEEP -> { nav.navigate(Routes.SLEEP) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.OWED -> { nav.navigate(Routes.OWED) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.CALENDAR_IMPORT -> { nav.navigate(Routes.CALENDAR_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [SET-01] Settings takes the target itself, to open on the alarm's state from wherever it was.
             NoticeLinks.Target.ALARM_CHECK -> {
                 val current = nav.currentBackStackEntry?.destination?.route
@@ -583,6 +600,18 @@ private fun AppNavHost(
             )
         }
         // [EXTRA-04] Names, hours and pay of each kind of extra work, from settings, a day or the pay rules.
+        composable(Routes.SLEEP) {
+            val vm = appViewModel { com.bamnat.app.ui.sleep.SleepViewModel(it) }
+            com.bamnat.app.ui.sleep.SleepScreen(vm = vm, wide = wide, onBack = { nav.popFrom(Routes.SLEEP) })
+        }
+        composable(Routes.OWED) {
+            val vm = appViewModel { com.bamnat.app.ui.money.OwedViewModel(it) }
+            com.bamnat.app.ui.money.OwedScreen(vm = vm, wide = wide, onBack = { nav.popFrom(Routes.OWED) })
+        }
+        composable(Routes.CALENDAR_IMPORT) {
+            val vm = appViewModel { com.bamnat.app.ui.imports.CalendarImportViewModel(it) }
+            com.bamnat.app.ui.imports.CalendarImportScreen(vm = vm, onBack = { nav.popFrom(Routes.CALENDAR_IMPORT) })
+        }
         composable(Routes.EXTRA_KINDS) {
             val vm = appViewModel { ExtraKindsViewModel(it) }
             ExtraKindsScreen(vm = vm, onBack = { nav.popFrom(Routes.EXTRA_KINDS) },

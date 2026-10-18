@@ -109,7 +109,7 @@ class SystemEventReceiver : BroadcastReceiver() {
                 val settings = container.settingsRepository.current
                 container.moneyRepository.let { m ->
                     com.bamnat.app.money.JobReminderScheduler.reschedule(context,
-                        com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed()), settings)
+                        com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed(), m.allReceivables()), settings)
                 }
                 com.bamnat.app.pay.LeaveReminder.reschedule(context, container.payStore.profile.value, settings)
                 com.bamnat.app.sleep.DayNoticeScheduler.reschedule(context, container.scheduleRepository.snapshot.first(), settings)

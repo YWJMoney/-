@@ -101,6 +101,8 @@ object TodayFlow {
         commuteMinutes: Int = SleepPlan.COMMUTE_MINUTES.toInt(),
         restCheck: Boolean = true,
         strictRest: Boolean = false,
+        /** [SLP-16] How long the user's own sleeps after night work have been, from [SleepInsights.afterNightAverage]. */
+        afterNightMinutes: Long? = null,
     ): Card {
         val today = now.toLocalDate()
         val end = now.plusHours(SPAN_HOURS)
@@ -188,7 +190,11 @@ object TodayFlow {
             work.lastOrNull { !it.to.isAfter(now) && it.overnight }?.let { w ->
                 val s = plan.sleepAfter(w) ?: return@let
                 if (now.isBefore(s.from) && !slept(w.to, s.to)) {
-                    return@run Pick(State.AFTER_SHIFT, sleepHead(s), "수고했어요. 졸리면 운전 전에 쉬어 가요", Action.ASLEEP, line = sleepLine(s))
+                    // [SLP-16] The user's own past sleeps after night work, said once there are a few.
+                    val past = afterNightMinutes?.let { m ->
+                        "지난 야간 뒤엔 평균 ${t.hours(m)} 잤어요" + if (s.minutes - m >= SleepInsights.SHORT_MINUTES) " · 오늘은 ${t.hm(s.to)}까지 누워 있어 봐요" else ""
+                    }
+                    return@run Pick(State.AFTER_SHIFT, sleepHead(s), past ?: "수고했어요. 졸리면 운전 전에 쉬어 가요", Action.ASLEEP, line = sleepLine(s))
                 }
             }
             plan.sleeps.firstOrNull { s ->

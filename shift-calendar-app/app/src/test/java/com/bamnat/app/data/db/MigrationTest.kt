@@ -37,7 +37,7 @@ class MigrationTest {
         createVersion1(context.getDatabasePath(name).apply { parentFile?.mkdirs() })
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13)
             .allowMainThreadQueries()
             .build()
         try {
@@ -87,6 +87,16 @@ class MigrationTest {
             val sleepId = sleep.insert(SleepLogEntity(startMillis = 1_000, endMillis = null))
             sleep.finish(sleepId, 9_000)
             assertEquals(9_000L, sleep.all().single().endMillis)
+            // Version 13: money owed, paid back in parts [RECV-01], and events brought in from the calendar [IMPORT-01].
+            val owed = db.receivableDao()
+            val owedId = owed.insert(com.bamnat.core.money.Receivable(who = "가나다화학", amount = 300_000, date = java.time.LocalDate.of(2026, 11, 3),
+                due = java.time.LocalDate.of(2026, 11, 30)).toEntity())
+            owed.insertPayment(com.bamnat.core.money.ReceivablePayment(receivableId = owedId, date = java.time.LocalDate.of(2026, 11, 10), amount = 100_000).toEntity())
+            val back = owed.all().single().toModel(owed.allPayments())
+            assertEquals(200_000L, back.left)
+            assertEquals(java.time.LocalDate.of(2026, 11, 30), back.due)
+            db.importedEventDao().upsert(ImportedEventEntity("7@2026-11-03T19:00", 20760, null, 1))
+            assertEquals(listOf("7@2026-11-03T19:00"), db.importedEventDao().keys())
         } finally {
             db.close()
             context.deleteDatabase(name)
@@ -117,7 +127,7 @@ class MigrationTest {
         sql.close()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_11_12).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13).allowMainThreadQueries().build()
         try {
             val days = assembleDays(db.dayEntryDao().getAll(), db.dayExtraDao().getAll()).associateBy { it.date.toEpochDay() }
             assertEquals(listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120)), days.getValue(20000).extras)
@@ -144,6 +154,32 @@ class MigrationTest {
                 assertNull(e.secondShiftTypeId)
             }
             assertEquals(setOf(20003L, 20004L, 20005L), db.dayEntryDao().getAll().map { it.epochDay }.toSet())
+        } finally {
+            db.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    /** [RECV-01][IMPORT-01] Version 12 data stays as it was; the new tables arrive empty. */
+    @Test
+    fun version12KeepsEverythingAndAddsOwed() = runBlocking {
+        val name = "migration-12.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val sql = createTables(file, 12)
+        sql.execSQL("INSERT INTO jobs (id, epochDay, title, client, place, startMinute, endMinute, amount, deposit, depositPaid, balancePaid, " +
+            "remindMinutes, note, endEpochDay, costs, withholding) VALUES (1, 20760, '도배', '준호', '', NULL, NULL, 500000, 0, 0, 0, NULL, '', NULL, 0, 0)")
+        sql.execSQL("INSERT INTO sleep_logs (id, startMillis, endMillis) VALUES (1, 1000, 9000)")
+        sql.version = 12
+        sql.close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+            .addMigrations(AppDatabase.MIGRATION_12_13).allowMainThreadQueries().build()
+        try {
+            assertEquals("도배", db.moneyDao().allJobs().single().title)
+            assertEquals(9_000L, db.sleepDao().all().single().endMillis)
+            assertTrue(db.receivableDao().all().isEmpty())
+            assertTrue(db.importedEventDao().keys().isEmpty())
         } finally {
             db.close()
             context.deleteDatabase(name)
