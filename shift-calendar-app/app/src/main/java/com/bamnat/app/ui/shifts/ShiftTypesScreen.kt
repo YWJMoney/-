@@ -13,10 +13,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.AlarmAdd
-import android.Manifest
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -83,7 +79,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.ui.components.rememberNotificationAsk
+import com.bamnat.app.ui.settings.WarningLine
 import com.bamnat.app.alarm.Notifications
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.ConfirmDialog
@@ -109,7 +109,7 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("근무 유형") },
+                title = { Text("근무 종류와 시간") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
@@ -357,7 +357,10 @@ fun ShiftTypeEditorDialog(
     var pickBreak by remember { mutableStateOf(false) }
     var addingAlarm by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    // [SLP-15] Turning an alarm on is when the notification permission is explained and asked for.
+    val askNotifications = rememberNotificationAsk()
+    var canPost by remember { mutableStateOf(Notifications.canPost(context)) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { canPost = Notifications.canPost(context) }
 
     // Leaving with changes keeps them: alarms added or times picked are never lost to a back press.
     val close: () -> Unit = {
@@ -560,10 +563,11 @@ fun ShiftTypeEditorDialog(
                                         alarmEnabled = on,
                                         alarms = if (on && draft.alarms.isEmpty()) listOf(AlarmSpec(60)) else draft.alarms,
                                     )
-                                    if (on && Build.VERSION.SDK_INT >= 33 && !Notifications.canPost(context)) {
-                                        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                    }
+                                    if (on && !canPost) askNotifications()
                                 })
+                            }
+                            if (draft.alarmEnabled && !canPost) {
+                                WarningLine("알림이 꺼져 있어 잠금 화면에서 알람을 끌 수 없어요", "허용", askNotifications)
                             }
                             if (draft.alarmEnabled) {
                                 Spacer(Modifier.height(4.dp))
@@ -608,7 +612,7 @@ fun ShiftTypeEditorDialog(
                     ) { Text("저장") }
                     if (onDelete != null) {
                         TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
-                            Text("이 근무 유형 삭제", color = MaterialTheme.colorScheme.error)
+                            Text("이 근무 종류 삭제", color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }

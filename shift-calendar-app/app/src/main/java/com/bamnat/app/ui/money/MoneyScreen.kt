@@ -88,6 +88,9 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 class MoneyViewModel(private val container: AppContainer) : ViewModel(), MoneyActions {
+    /** [NAV-01] The month shown here, the calendar's and 근무·급여's too. */
+    val shownMonth: StateFlow<YearMonth> = container.shownMonth.month
+    fun showMonth(month: YearMonth) = container.shownMonth.show(month)
     private val money = container.moneyRepository
     val book: StateFlow<MoneyBook?> = money.book.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val snapshot: StateFlow<ScheduleSnapshot?> =
@@ -183,8 +186,8 @@ fun MoneyScreen(
     val settings by vm.settings.collectAsStateWithLifecycle()
     val profile by vm.payProfile.collectAsStateWithLifecycle()
     val tier by vm.tier.collectAsStateWithLifecycle()
-    var monthText by rememberSaveable { mutableStateOf(YearMonth.from(today).toString()) }
-    val month = remember(monthText) { YearMonth.parse(monthText) }
+    // [NAV-01] The same month as the calendar and 근무·급여.
+    val month by vm.shownMonth.collectAsStateWithLifecycle()
     var adding by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<MoneyEntry?>(null) }
     var editingJob by remember { mutableStateOf<Job?>(null) }
@@ -243,11 +246,11 @@ fun MoneyScreen(
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("돈 관리", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-                IconButton(onClick = { monthText = month.minusMonths(1).toString() }) {
+                IconButton(onClick = { vm.showMonth(month.minusMonths(1)) }) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달")
                 }
                 Text(Fmt.month(month), style = MaterialTheme.typography.titleMedium)
-                IconButton(onClick = { monthText = month.plusMonths(1).toString() }) {
+                IconButton(onClick = { vm.showMonth(month.plusMonths(1)) }) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달")
                 }
             }

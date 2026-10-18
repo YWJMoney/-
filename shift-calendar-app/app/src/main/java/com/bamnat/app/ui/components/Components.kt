@@ -46,6 +46,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -54,6 +56,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.MemoPaletteDark
@@ -123,11 +126,16 @@ fun ShiftBadge(
                 Icon(icon.vector, contentDescription = null, tint = fg, modifier = Modifier.size(size * 0.5f))
                 Spacer(Modifier.width(1.dp))
             }
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val textSize = size * 0.52f
             Text(
                 text = label,
                 color = fg,
                 // [VIS-01] Sized to the badge, so a big system font cannot push it out of the cell.
-                fontSize = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.52f).toSp() },
+                fontSize = with(density) { textSize.toSp() },
+                // [VIS-02] The line too: the theme's 24sp line grew with the font and made the badge taller.
+                // Counted from the text itself (em), as Android 14 scales big sp less than small ones.
+                lineHeight = (BADGE_LINE / textSize).em,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Clip,
@@ -135,6 +143,9 @@ fun ShiftBadge(
         }
     }
 }
+
+/** The badge's line, as tall as the theme's body line at the normal font size. */
+private val BADGE_LINE = 24.dp
 
 @Composable
 fun ColorDot(color: Color, modifier: Modifier = Modifier, size: Dp = 10.dp) {
@@ -299,8 +310,14 @@ fun MinutesStepper(
         shown = v
         onChange(v)
     }
+    val haptics = LocalHapticFeedback.current
+    // [VIS-02] A light tick per step, and a firmer one where it cannot go further.
+    val stepTo: (Int) -> Unit = { v ->
+        haptics.performHapticFeedback(if (v == 0 || v == max) HapticFeedbackType.Reject else HapticFeedbackType.SegmentFrequentTick)
+        set(v)
+    }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        RepeatIconButton(onStep = { set((shown - step).coerceAtLeast(0)) }, enabled = shown > 0) {
+        RepeatIconButton(onStep = { stepTo((shown - step).coerceAtLeast(0)) }, enabled = shown > 0) {
             Icon(Icons.Filled.Remove, contentDescription = "$dialogTitle ${HoursFormat.korean(step)} 줄이기")
         }
         val style = MaterialTheme.typography.titleMedium.merge(NumberStyle)
@@ -319,7 +336,7 @@ fun MinutesStepper(
                 autoSize = TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = style.fontSize),
             )
         }
-        RepeatIconButton(onStep = { set((shown + step).coerceAtMost(max)) }, enabled = shown < max) {
+        RepeatIconButton(onStep = { stepTo((shown + step).coerceAtMost(max)) }, enabled = shown < max) {
             Icon(Icons.Filled.Add, contentDescription = "$dialogTitle ${HoursFormat.korean(step)} 늘리기")
         }
     }

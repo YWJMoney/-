@@ -1,97 +1,150 @@
 package com.bamnat.app.ui.settings
 
-import androidx.compose.runtime.mutableStateOf
-
-import android.Manifest
-import android.content.ActivityNotFoundException
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AlarmOff
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material.icons.outlined.Alarm
+import androidx.compose.material.icons.outlined.Bedtime
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Payments
+import androidx.compose.material.icons.outlined.PrivacyTip
+import androidx.compose.material.icons.outlined.SettingsBackupRestore
+import androidx.compose.material.icons.outlined.WorkOutline
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
 import com.bamnat.app.BuildConfig
+import com.bamnat.app.NoticeLinks
 import com.bamnat.app.alarm.AlarmScheduler
-import com.bamnat.app.alarm.UpcomingAlarm
 import com.bamnat.app.alarm.Notifications
+import com.bamnat.app.alarm.UpcomingAlarm
 import com.bamnat.app.data.AppSettings
-import com.bamnat.app.data.ThemeMode
-import com.bamnat.core.diag.DiagEvents
-import com.bamnat.core.schedule.IcsWriter
-import kotlinx.coroutines.flow.first
-import java.time.ZoneId
-import com.bamnat.app.ui.Fmt
-import com.bamnat.app.ui.components.MinutesStepper
-import com.bamnat.app.ui.components.SectionCard
-import com.bamnat.app.ui.components.SoundPickerRow
-import kotlinx.coroutines.flow.StateFlow
-import java.time.DayOfWeek
-import android.widget.Toast
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Upload
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.viewModelScope
 import com.bamnat.app.data.BackupException
 import com.bamnat.app.data.BackupManager
 import com.bamnat.app.data.BackupSummary
+import com.bamnat.app.data.ScheduleSnapshot
+import com.bamnat.app.data.ThemeMode
+import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.ConfirmDialog
+import com.bamnat.app.ui.components.SystemSettings
+import com.bamnat.app.ui.components.rememberNotificationAsk
+import com.bamnat.app.ui.theme.LocalCalendarColors
+import com.bamnat.core.diag.DiagEvents
+import com.bamnat.core.diag.EventBook
+import com.bamnat.core.schedule.IcsWriter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import java.time.ZoneId
+
+/** [SET-01] The settings in nine groups, in the order people look for them, under the alarm's state. */
+enum class SettingsPage(val title: String, val icon: ImageVector) {
+    WORK("내 근무", Icons.Outlined.WorkOutline),
+    ALARM("알람", Icons.Outlined.Alarm),
+    REST("잠과 휴식", Icons.Outlined.Bedtime),
+    NOTICES("알림", Icons.Outlined.Notifications),
+    PAY("급여와 연차", Icons.Outlined.Payments),
+    CALENDAR("달력 화면", Icons.Outlined.CalendarMonth),
+    DATA("데이터", Icons.Outlined.SettingsBackupRestore),
+    PRIVACY("개인정보와 권한", Icons.Outlined.PrivacyTip),
+    ABOUT("앱 정보", Icons.Outlined.Info),
+}
+
+/** A result to show once; [undo] offers to take an import back. */
+data class SettingsMessage(val text: String, val undo: Boolean = false)
 
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val settings: StateFlow<AppSettings> = container.settingsRepository.settings
     val upcoming: StateFlow<UpcomingAlarm?> = container.alarmScheduler.upcoming
     val snoozeAt: StateFlow<Long?> = container.alarmScheduler.snoozeAt
+    val snapshot: StateFlow<ScheduleSnapshot?> = container.scheduleRepository.snapshot
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     fun cancelSnooze() = container.alarmScheduler.cancelSnooze()
     fun update(transform: (AppSettings) -> AppSettings) = container.settingsRepository.update(transform)
     fun canScheduleExact() = container.alarmScheduler.canScheduleExact()
+
+    private val _missed = MutableStateFlow(0)
+    /** [SET-01] Alarms the log planned that never rang, over the last week. */
+    val missed: StateFlow<Int> = _missed.asStateFlow()
+
+    /** Reads the log off the main thread; called each time settings comes back to the front. */
+    fun recheckMissed(now: Long = System.currentTimeMillis()) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _missed.value = EventBook.possiblyMissed(container.telemetry.log.read(), now).count { it > now - MISSED_WINDOW_MILLIS }
+        }
+    }
 
     /** [SLP-08] Health Connect sleep, turned on only once reading is allowed. */
     fun healthSdkStatus() = container.healthSleep.sdkStatus()
@@ -106,11 +159,23 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         if (!on) container.alarmScheduler.cancelSnooze()
     }
 
-    private val _backupMessage = MutableStateFlow<String?>(null)
-    /** Result of the last backup or restore, shown once. */
-    val backupMessage: StateFlow<String?> = _backupMessage.asStateFlow()
-    fun consumeBackupMessage() {
-        _backupMessage.value = null
+    private val _message = MutableStateFlow<SettingsMessage?>(null)
+    /** Result of the last backup, import or undo, shown once. */
+    val message: StateFlow<SettingsMessage?> = _message.asStateFlow()
+    fun consumeMessage() {
+        _message.value = null
+    }
+
+    /** [SET-01] When the data before the last import was kept, while it can still be put back. */
+    val importSavedAt: StateFlow<Long?> = container.importUndo.savedAt
+
+    fun undoImport() {
+        container.appScope.launch {
+            _message.value = SettingsMessage(runCatching {
+                container.importUndo.undo()
+                "불러오기 전으로 되돌렸어요"
+            }.getOrElse { e -> (e as? BackupException)?.message ?: "되돌리지 못했어요. 지금 데이터는 그대로예요" })
+        }
     }
 
     /** A backup read and checked, waiting for the user to confirm the restore. */
@@ -132,11 +197,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             // The app was closed while the picker was open and the password went with it: never fall
             // back to a file without one. The empty file the picker made is removed.
             runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
-            _backupMessage.value = "암호가 지워져 저장하지 않았어요. 다시 저장해 주세요"
+            _message.value = SettingsMessage("암호가 지워져 저장하지 않았어요. 다시 저장해 주세요")
             return
         }
         viewModelScope.launch {
-            _backupMessage.value = runCatching {
+            _message.value = SettingsMessage(runCatching {
                 val json = container.backupManager.export()
                 val text = if (password == null) json else withContext(Dispatchers.Default) { container.backupManager.seal(json, password) }
                 withContext(Dispatchers.IO) {
@@ -144,7 +209,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 }
                 container.telemetry.event(DiagEvents.BACKUP_EXPORT)
                 if (password == null) "백업 파일을 저장했어요" else "암호 건 백업을 저장했어요. 암호를 잊으면 열 수 없어요"
-            }.getOrElse { "백업을 저장하지 못했어요" }
+            }.getOrElse { "백업을 저장하지 못했어요" })
             password?.fill(' ')
         }
     }
@@ -190,26 +255,15 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     java.io.File(dir, "밤낮-회사설정-${company.trim().ifEmpty { "우리회사" }.replace(Regex("[\\\\/:*?\"<>|]"), "_")}.json").apply { writeText(text) }
                 }
                 val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.share", file)
-                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                val send = Intent(Intent.ACTION_SEND).apply {
                     type = com.bamnat.app.data.CompanyShare.MIME_TYPE
-                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                    putExtra(android.content.Intent.EXTRA_TEXT, "밤낮 앱 설정 > 회사 설정 불러오기에서 이 파일을 열면 근무 주기와 급여 규칙이 들어가요.")
-                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_TEXT, "밤낮 앱 설정 > 데이터 > 파일 불러오기에서 이 파일을 열면 근무 주기와 급여 규칙이 들어가요.")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-                context.startActivity(android.content.Intent.createChooser(send, "회사 설정 보내기"))
+                context.startActivity(Intent.createChooser(send, "회사 설정 보내기"))
                 container.telemetry.event(DiagEvents.COMPANY_SHARE)
-            }.onFailure { _backupMessage.value = "회사 설정 파일을 만들지 못했어요" }
-        }
-    }
-
-    fun readCompany(context: Context, uri: Uri) {
-        viewModelScope.launch {
-            runCatching {
-                val text = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)!!.use { it.readBytes().decodeToString() }
-                }
-                _pendingCompany.value = text to container.companyShare.summarize(text)
-            }.onFailure { e -> _backupMessage.value = (e as? BackupException)?.message ?: "회사 설정 파일을 읽을 수 없어요" }
+            }.onFailure { _message.value = SettingsMessage("회사 설정 파일을 만들지 못했어요") }
         }
     }
 
@@ -221,24 +275,26 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         val text = _pendingCompany.value?.first ?: return
         _pendingCompany.value = null
         container.appScope.launch {
-            _backupMessage.value = runCatching {
+            _message.value = runCatching {
+                // [SET-01] Kept first, so the company's setup can be taken back.
+                container.importUndo.save()
                 val done = container.companyShare.apply(text, rotation)
                 container.telemetry.event(DiagEvents.COMPANY_IMPORT)
-                buildList {
+                SettingsMessage(buildList {
                     add("회사 설정을 넣었어요")
-                    if (done.addedTypes > 0) add("근무 유형 ${done.addedTypes}개 추가")
+                    if (done.addedTypes > 0) add("근무 종류 ${done.addedTypes}개 추가")
                     done.cycleDays?.let { add("${it}일 주기 적용") }
                     if (done.rules) add("급여 규칙 적용")
                     if (done.pendingPay) add("급여 규칙은 급여 설정을 마친 뒤 다시 불러오세요")
-                }.joinToString(" · ")
-            }.getOrElse { e -> (e as? BackupException)?.message ?: "회사 설정을 넣지 못했어요" }
+                }.joinToString(" · "), undo = true)
+            }.getOrElse { e -> SettingsMessage((e as? BackupException)?.message ?: "회사 설정을 넣지 못했어요") }
         }
     }
 
     /** Writes work days from three months ago to a year ahead as a calendar file [REL-04]. */
     fun exportIcs(context: Context, uri: Uri) {
         viewModelScope.launch {
-            _backupMessage.value = runCatching {
+            _message.value = SettingsMessage(runCatching {
                 val snapshot = container.scheduleRepository.snapshot.first()
                 val (from, to) = IcsWriter.defaultRange(LocalDate.now())
                 val ics = withContext(Dispatchers.Default) {
@@ -249,11 +305,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 }
                 container.telemetry.event(DiagEvents.ICS_EXPORT)
                 "캘린더 파일을 저장했어요. 구글·삼성 캘린더에서 가져오기로 불러오세요"
-            }.getOrElse { "캘린더 파일을 저장하지 못했어요" }
+            }.getOrElse { "캘린더 파일을 저장하지 못했어요" })
         }
     }
 
-    fun readBackup(context: Context, uri: Uri) {
+    /** [SET-01] One way in for both kinds of file: a backup, or a company setup from a coworker. */
+    fun readFile(context: Context, uri: Uri) {
         viewModelScope.launch {
             runCatching {
                 val json = withContext(Dispatchers.IO) {
@@ -266,7 +323,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 if (container.backupManager.isSealed(json)) _locked.value = LockedBackup(json)
                 else _pendingRestore.value = json to container.backupManager.summarize(json)
             }.onFailure { e ->
-                _backupMessage.value = (e as? BackupException)?.message ?: "백업 파일을 읽을 수 없어요"
+                _message.value = SettingsMessage((e as? BackupException)?.message ?: "파일을 읽을 수 없어요")
             }
         }
     }
@@ -279,55 +336,353 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         val json = _pendingRestore.value?.first ?: return
         _pendingRestore.value = null
         container.appScope.launch {
-            _backupMessage.value = runCatching {
+            _message.value = runCatching {
+                // [SET-01] Kept first: without the copy nothing is replaced.
+                container.importUndo.save()
                 container.backupManager.restore(json)
                 container.telemetry.event(DiagEvents.BACKUP_RESTORE)
-                "백업을 불러왔어요"
-            }.getOrElse { e -> (e as? BackupException)?.message ?: "백업을 불러오지 못했어요. 기존 데이터는 그대로예요" }
+                SettingsMessage("백업을 불러왔어요", undo = true)
+            }.getOrElse { e -> SettingsMessage((e as? BackupException)?.message ?: "백업을 불러오지 못했어요. 지금 데이터는 그대로예요") }
         }
+    }
+
+    private companion object {
+        const val MISSED_WINDOW_MILLIS = 7 * 24 * 60 * 60 * 1000L
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * [SET-01] Settings: the alarm's state on top, then nine groups. Folded, a group opens over the
+ * list; unfolded, the list stays on the left and the group shows beside it.
+ */
 @Composable
 fun SettingsScreen(
     vm: SettingsViewModel,
     onOpenShiftTypes: () -> Unit,
     onOpenPattern: () -> Unit,
-    onOpenDiagnostics: () -> Unit,
+    /** The alarm check; [testing] adds the testers' switches, reached only by the version taps. */
+    onOpenDiagnostics: (testing: Boolean) -> Unit,
     onOpenWorkStyle: () -> Unit = {},
     onOpenExtraKinds: () -> Unit = {},
+    onOpenPay: () -> Unit = {},
+    wide: Boolean = false,
+    snackbar: SnackbarHostState? = null,
     /** [COMM-01][COMM-02] 회사 찾기·내 설정 나누기·내가 보낸 정보, when the build has a company server. */
-    company: (@Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit)? = null,
+    company: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val upcoming by vm.upcoming.collectAsStateWithLifecycle()
-    val snoozeAt by vm.snoozeAt.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     // Permission states can change in system settings; re-check whenever we come back.
     var refresh by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh++ }
+    val askNotifications = rememberNotificationAsk()
+
+    var page by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
+    val hubScroll = rememberScrollState()
+    // [SLP-15] The notice about an alarm that may be late opens here, on the alarm's state.
+    val noticeTarget by NoticeLinks.target.collectAsStateWithLifecycle()
+    LaunchedEffect(noticeTarget) {
+        if (noticeTarget != NoticeLinks.Target.ALARM_CHECK) return@LaunchedEffect
+        NoticeLinks.consume(NoticeLinks.Target.ALARM_CHECK)
+        page = if (wide) SettingsPage.ALARM else null
+        hubScroll.scrollTo(0)
+    }
+
+    val files = rememberSettingsFiles(vm)
+    val message by vm.message.collectAsStateWithLifecycle()
+    LaunchedEffect(message) {
+        val m = message ?: return@LaunchedEffect
+        vm.consumeMessage()
+        if (snackbar == null) {
+            android.widget.Toast.makeText(context, m.text, android.widget.Toast.LENGTH_SHORT).show()
+            return@LaunchedEffect
+        }
+        val result = snackbar.showSnackbar(m.text, actionLabel = if (m.undo) "되돌리기" else null,
+            duration = if (m.undo) SnackbarDuration.Long else SnackbarDuration.Short)
+        if (result == SnackbarResult.ActionPerformed) vm.undoImport()
+    }
+
+    val pageContent: @Composable ColumnScope.(SettingsPage) -> Unit = { p ->
+        SettingsPageContent(
+            page = p, vm = vm, settings = settings, refresh = refresh, files = files, askNotifications = askNotifications,
+            onOpenShiftTypes = onOpenShiftTypes, onOpenPattern = onOpenPattern, onOpenDiagnostics = onOpenDiagnostics,
+            onOpenWorkStyle = onOpenWorkStyle, onOpenExtraKinds = onOpenExtraKinds, onOpenPay = onOpenPay, company = company,
+            onOpenPage = { page = it },
+        )
+    }
+    val hub: @Composable (Modifier, SettingsPage?) -> Unit = { modifier, selected ->
+        SettingsHub(vm, settings, refresh, askNotifications, selected, hubScroll, modifier,
+            onOpen = { page = it }, onOpenDiagnostics = onOpenDiagnostics, onOpenShiftTypes = onOpenShiftTypes)
+    }
+
+    if (wide) {
+        val shown = page ?: SettingsPage.WORK
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+        // The list takes two fifths: its lines are short, the group's explanations are long.
+        val hubWidth = (maxWidth * 0.4f).coerceIn(HUB_MIN_WIDTH, HUB_MAX_WIDTH)
+        Row(Modifier.fillMaxSize()) {
+            hub(Modifier.width(hubWidth).fillMaxHeight(), shown)
+            VerticalDivider()
+            AnimatedContent(
+                targetState = shown,
+                transitionSpec = { fadeIn(tween(PAGE_MILLIS)) togetherWith fadeOut(tween(PAGE_MILLIS)) },
+                label = "settings-page",
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            ) { p -> PageColumn(p, onBack = null) { pageContent(p) } }
+        }
+        }
+        return
+    }
+    BackHandler(enabled = page != null) { page = null }
+    AnimatedContent(
+        targetState = page,
+        transitionSpec = {
+            val opening = targetState != null
+            (slideInHorizontally(tween(PAGE_MILLIS)) { w -> if (opening) w / 4 else -w / 4 } + fadeIn(tween(PAGE_MILLIS))) togetherWith
+                (slideOutHorizontally(tween(PAGE_MILLIS)) { w -> if (opening) -w / 4 else w / 4 } + fadeOut(tween(PAGE_MILLIS)))
+        },
+        label = "settings-page",
+    ) { p ->
+        if (p == null) hub(Modifier.fillMaxSize(), null)
+        else PageColumn(p, onBack = { page = null }) { pageContent(p) }
+    }
+}
+
+/** [VIS-02] A group opens in this long; the list and the group slide a quarter of the way. */
+private const val PAGE_MILLIS = 250
+private val HUB_MIN_WIDTH = 260.dp
+private val HUB_MAX_WIDTH = 360.dp
+
+/** A group's page: its title (with back when folded), then its sections, scrolling. */
+@Composable
+private fun PageColumn(page: SettingsPage, onBack: (() -> Unit)?, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (onBack != null) {
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "설정으로") }
+                Spacer(Modifier.width(4.dp))
+            }
+            Text(page.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+        }
+        content()
+        Spacer(Modifier.size(24.dp))
+    }
+}
+
+/** The list of groups, with the alarm's state above it and the version under it. */
+@Composable
+private fun SettingsHub(
+    vm: SettingsViewModel,
+    settings: AppSettings,
+    refresh: Int,
+    askNotifications: () -> Unit,
+    selected: SettingsPage?,
+    scroll: ScrollState,
+    modifier: Modifier,
+    onOpen: (SettingsPage) -> Unit,
+    onOpenDiagnostics: (Boolean) -> Unit,
+    onOpenShiftTypes: () -> Unit,
+) {
+    val context = LocalContext.current
+    val snapshot by vm.snapshot.collectAsStateWithLifecycle()
+    val profile by vm.hasPayProfile.collectAsStateWithLifecycle()
     val notificationsOk = remember(refresh) { Notifications.canPost(context) }
-    val exactOk = remember(refresh) { vm.canScheduleExact() }
-    val fullScreenOk = remember(refresh) { Notifications.canUseFullScreen(context) }
+    Column(modifier.verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("설정", style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp).semantics { heading() })
+        AlarmReadyCard(vm, settings, refresh, askNotifications, onOpenDiagnostics, onOpenShiftTypes)
+        Spacer(Modifier.size(8.dp))
+        for (p in SettingsPage.entries) {
+            GroupRow(p.icon, p.title, summary(p, settings, snapshot, profile != null, notificationsOk), selected == p) { onOpen(p) }
+        }
+        VersionLine(onOpenDiagnostics)
+    }
+}
+
+/** How each group stands now, in a few words. */
+private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapshot?, hasPay: Boolean, notificationsOk: Boolean): String = when (page) {
+    SettingsPage.WORK -> listOfNotNull(
+        s.workStyle?.label ?: "일하는 방식 정하기",
+        snapshot?.shiftTypes?.count { !it.isOff }?.takeIf { it > 0 }?.let { "근무 ${it}가지" },
+    ).joinToString(" · ")
+    SettingsPage.ALARM -> if (s.alarmsEnabled) "켜짐 · 다시 울림 ${s.snoozeMinutes}분 · ${s.ringMinutes}분 뒤 꺼짐" else "모두 꺼짐"
+    SettingsPage.REST -> listOfNotNull(
+        "오늘의 흐름".takeIf { s.sleepTips },
+        "목표 ${sleepHours(s.sleepTargetMinutes)}",
+        "휴식 점검".takeIf { s.restCheck },
+    ).joinToString(" · ")
+    SettingsPage.NOTICES -> if (!notificationsOk) "알림이 꺼져 있어요" else listOfNotNull(
+        "하루 브리핑".takeIf { s.briefing }, "퇴근길 안전".takeIf { s.commuteNotice }, "잘 준비".takeIf { s.bedtimeNotice },
+        "자는 중".takeIf { s.sleepingNotice }, "돈".takeIf { s.moneyNotices }, "연차".takeIf { s.leaveNotice },
+    ).ifEmpty { listOf("근무 알람만 와요") }.joinToString(" · ")
+    SettingsPage.PAY -> if (hasPay) "급여 계산 · 연차 · 회사 설정 주고받기" else "급여 계산 시작하기 · 회사 설정 주고받기"
+    SettingsPage.CALENDAR -> listOf(
+        when (s.themeMode) { ThemeMode.SYSTEM -> "휴대폰 테마"; ThemeMode.LIGHT -> "밝게"; ThemeMode.DARK -> "어둡게" },
+        "날짜 칸 아래 " + when { s.showLunar -> "음력"; s.showHoursInCells -> "근무시간"; else -> "비움" },
+    ).joinToString(" · ")
+    SettingsPage.DATA -> "백업 저장 · 불러오기 · 캘린더 앱으로 내보내기"
+    SettingsPage.PRIVACY -> "사용 통계 ${if (s.shareUsageStats) "보냄" else "안 보냄"} · 권한 확인"
+    SettingsPage.ABOUT -> "밤낮 ${BuildConfig.VERSION_NAME} · 문의하기 · 처리방침"
+}
+
+/** "7시간", "6시간 반". */
+internal fun sleepHours(m: Int): String = if (m % 60 == 0) "${m / 60}시간" else if (m % 60 == 30) "${m / 60}시간 반" else "${m / 60}시간 ${m % 60}분"
+
+/** Seven taps on the version open the alarm check with the testers' switches [MEAS-04]. */
+@Composable
+private fun VersionLine(onOpenDiagnostics: (Boolean) -> Unit) {
+    var taps by remember { mutableIntStateOf(0) }
+    Text(
+        "밤낮 ${BuildConfig.VERSION_NAME}",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                taps++
+                if (taps >= 7) {
+                    taps = 0
+                    onOpenDiagnostics(true)
+                }
+            }
+            .padding(top = 16.dp, bottom = 24.dp),
+    )
+}
+
+/**
+ * [SET-01] 알람 준비: when the next alarm rings, and anything that would keep it from ringing on time
+ * or from being stopped on the lock screen, each with the one button that fixes it. All fine, it is
+ * one line.
+ */
+@Composable
+private fun AlarmReadyCard(
+    vm: SettingsViewModel,
+    settings: AppSettings,
+    refresh: Int,
+    askNotifications: () -> Unit,
+    onOpenDiagnostics: (Boolean) -> Unit,
+    onOpenShiftTypes: () -> Unit,
+) {
+    val context = LocalContext.current
+    val upcoming by vm.upcoming.collectAsStateWithLifecycle()
+    val snoozeAt by vm.snoozeAt.collectAsStateWithLifecycle()
+    val missed by vm.missed.collectAsStateWithLifecycle()
+    LaunchedEffect(refresh) { vm.recheckMissed() }
+    val fixes = remember(refresh, settings.alarmsEnabled, missed) { alarmFixes(context, vm, settings, missed, askNotifications, onOpenDiagnostics) }
+    val cal = LocalCalendarColors.current
+    val next = upcoming
+    val (icon, headline, tint) = when {
+        !settings.alarmsEnabled -> Triple(Icons.Filled.AlarmOff, "알람이 모두 꺼져 있어요", MaterialTheme.colorScheme.error)
+        fixes.isNotEmpty() -> Triple(Icons.Filled.WarningAmber, "알람 확인이 필요해요", cal.warning)
+        next == null -> Triple(Icons.Outlined.Alarm, "울릴 알람이 없어요", MaterialTheme.colorScheme.onSurfaceVariant)
+        else -> Triple(Icons.Filled.CheckCircle, "알람 준비 완료", MaterialTheme.colorScheme.secondary)
+    }
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = if (fixes.isNotEmpty() || !settings.alarmsEnabled) cal.warningContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 14.dp, bottom = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, null, tint = tint)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(headline, style = MaterialTheme.typography.titleMedium)
+                    val line = when {
+                        !settings.alarmsEnabled -> "근무 알람도 이 날 알람도 울리지 않아요"
+                        next == null -> "근무 종류에서 근무 전 알람을 켜면 울려요"
+                        else -> AlarmScheduler.millisToLocal(next.triggerAtMillis).let { at ->
+                            "다음 알람 ${Fmt.dayTitle(at.toLocalDate())} ${Fmt.time(at.toLocalTime())} · " + next.plan.shiftName.ifBlank { "이 날 알람" }
+                        }
+                    }
+                    Text(line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                when {
+                    !settings.alarmsEnabled -> TextButton(onClick = { vm.setAlarmsEnabled(true) }) { Text("켜기") }
+                    next == null && fixes.isEmpty() -> TextButton(onClick = onOpenShiftTypes) { Text("근무 종류") }
+                }
+            }
+            snoozeAt?.let { at ->
+                Row(Modifier.padding(start = 36.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${Fmt.time(AlarmScheduler.millisToLocal(at).toLocalTime())}에 다시 울려요",
+                        style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = vm::cancelSnooze) { Text("지금 끄기") }
+                }
+            }
+            for (fix in fixes) {
+                Row(Modifier.padding(start = 36.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(fix.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = fix.onFix) { Text(fix.label) }
+                }
+            }
+        }
+    }
+}
+
+private class AlarmFix(val text: String, val label: String, val onFix: () -> Unit)
+
+/** What keeps the alarm from working, most serious first. Nothing while every alarm is off on purpose. */
+private fun alarmFixes(
+    context: Context,
+    vm: SettingsViewModel,
+    settings: AppSettings,
+    missed: Int,
+    askNotifications: () -> Unit,
+    onOpenDiagnostics: (Boolean) -> Unit,
+): List<AlarmFix> {
+    if (!settings.alarmsEnabled) return emptyList()
+    val pkg = Uri.parse("package:${context.packageName}")
+    val canPost = Notifications.canPost(context)
+    return buildList {
+        if (!canPost) add(AlarmFix("알림이 꺼져 있어 잠금 화면에서 알람을 끌 수 없어요", "허용", askNotifications))
+        else if (!Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID)) {
+            add(AlarmFix("휴대폰 설정에서 근무 알람 알림이 꺼져 있어요", "켜기") { SystemSettings.channel(context, Notifications.ALARM_CHANNEL_ID) })
+        }
+        if (canPost && !Notifications.canUseFullScreen(context) && Build.VERSION.SDK_INT >= 34) {
+            add(AlarmFix("잠금 화면에 알람 화면이 뜨지 않아요", "허용") {
+                SystemSettings.open(context, Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg))
+            })
+        }
+        if (!vm.canScheduleExact() && Build.VERSION.SDK_INT >= 31) {
+            add(AlarmFix("알람이 몇 분 늦게 울릴 수 있어요", "허용") {
+                SystemSettings.open(context, Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))
+            })
+        }
+        if (Build.VERSION.SDK_INT >= 28 && context.getSystemService(ActivityManager::class.java)?.isBackgroundRestricted == true) {
+            add(AlarmFix("배터리 설정이 밤낮을 막고 있어 알람이 늦을 수 있어요", "풀기") {
+                SystemSettings.open(context, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg))
+            })
+        }
+        if (missed > 0) add(AlarmFix("지난 7일에 울리지 않았을 수 있는 알람이 ${missed}번 있어요", "보기") { onOpenDiagnostics(false) })
+    }
+}
+
+/** The file pickers and the dialogs around backups and company files, kept while the user moves between groups. */
+internal class SettingsFiles(
+    val saveBackup: () -> Unit,
+    val openFile: () -> Unit,
+    val exportIcs: () -> Unit,
+    val shareCompany: () -> Unit,
+)
+
+@Composable
+private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
+    val context = LocalContext.current
     // Survives the app being closed behind the file picker, unlike the password itself.
     var sealedExport by rememberSaveable { mutableStateOf(false) }
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument(BackupManager.MIME_TYPE),
-    ) { uri -> if (uri != null) vm.exportTo(context, uri, sealedExport) }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BackupManager.MIME_TYPE)) { uri ->
+        if (uri != null) vm.exportTo(context, uri, sealedExport)
+    }
     val icsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/calendar")) { uri ->
         if (uri != null) vm.exportIcs(context, uri)
     }
-    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) vm.readBackup(context, uri)
-    }
-    val backupMessage by vm.backupMessage.collectAsStateWithLifecycle()
-    LaunchedEffect(backupMessage) {
-        backupMessage?.let {
-            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
-            vm.consumeBackupMessage()
-        }
+    val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.readFile(context, uri)
     }
     var askingPassword by remember { mutableStateOf(false) }
     if (askingPassword) {
@@ -341,21 +696,18 @@ fun SettingsScreen(
             },
         )
     }
-    val companyImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) vm.readCompany(context, uri)
-    }
     var sharingCompany by remember { mutableStateOf(false) }
+    val profile by vm.hasPayProfile.collectAsStateWithLifecycle()
     if (sharingCompany) {
         CompanyShareDialog(
-            hasPay = vm.hasPayProfile.collectAsStateWithLifecycle().value != null,
+            hasPay = profile != null,
             onDismiss = { sharingCompany = false },
             onShare = { name, amounts -> sharingCompany = false; vm.shareCompany(context, name, amounts) },
         )
     }
     val pendingCompany by vm.pendingCompany.collectAsStateWithLifecycle()
     pendingCompany?.let { (_, summary) ->
-        CompanyImportDialog(summary, hasPay = vm.hasPayProfile.collectAsStateWithLifecycle().value != null,
-            onDismiss = vm::cancelCompany, onApply = vm::applyCompany)
+        CompanyImportDialog(summary, hasPay = profile != null, onDismiss = vm::cancelCompany, onApply = vm::applyCompany)
     }
     val locked by vm.locked.collectAsStateWithLifecycle()
     locked?.let { UnlockBackupDialog(it, onUnlock = vm::unlock, onDismiss = vm::cancelUnlock) }
@@ -363,447 +715,34 @@ fun SettingsScreen(
     pendingRestore?.let { (_, summary) ->
         ConfirmDialog(
             title = "백업을 불러올까요?",
-            message = "들어 있는 것: 근무 유형 ${summary.shiftTypes}개, 바꾼 날짜 ${summary.days}일, 메모 ${summary.memos}개" +
-                (if (summary.moneyLines > 0) ", 돈 기록 ${summary.moneyLines}건" else "") +
-                (if (summary.exportedAtMillis > 0) " (${Fmt.dayTitle(AlarmScheduler.millisToLocal(summary.exportedAtMillis).toLocalDate())} 저장)" else "") +
-                ".\n지금 앱에 있는 데이터는 이 백업으로 바뀌어요.",
+            message = restoreMessage(summary),
             confirmLabel = "불러오기",
             destructive = true,
             onDismiss = vm::cancelRestore,
             onConfirm = vm::confirmRestore,
         )
     }
-
-    // After two denials Android stops showing the dialog, so a refusal opens the app's settings instead.
-    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (!granted) openAppNotificationSettings(context)
-        refresh++
-    }
-
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text("설정", style = MaterialTheme.typography.headlineSmall)
-
-        SectionCard(title = "근무") {
-            // [WORK-01] Changing the kind of work keeps every record; it only changes what screens show.
-            NavRow("근무 형태", settings.workStyle?.label ?: "정하지 않음", onOpenWorkStyle)
-            HorizontalDivider()
-            NavRow("근무 패턴", "교대 순서, 요일별 근무, 시작일", onOpenPattern)
-            HorizontalDivider()
-            NavRow("근무 유형", "이름, 시간, 색상, 근무별 알람", onOpenShiftTypes)
-            HorizontalDivider()
-            // [EXTRA-04][EXTRA-07] Each company names, times and pays work on a day off and extra hours its own way.
-            NavRow("연장 휴무일 근무 지정", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·가산 임금", onOpenExtraKinds)
-        }
-
-        SectionCard(title = "알람") {
-            SwitchRow(
-                "알람 사용",
-                if (settings.alarmsEnabled) "근무 알람과 날짜별로 정한 알람이 울려요"
-                else "모든 알람이 꺼져 있어요. 알람 설정은 그대로 남아요",
-                settings.alarmsEnabled,
-            ) { on -> vm.setAlarmsEnabled(on) }
-            val next = upcoming
-            Text(
-                when {
-                    !settings.alarmsEnabled -> "울릴 알람이 없어요"
-                    next == null -> "예정된 알람이 없어요"
-                    else -> "다음 알람: ${Fmt.dayTitle(AlarmScheduler.millisToLocal(next.triggerAtMillis).toLocalDate())} " +
-                        "${Fmt.time(AlarmScheduler.millisToLocal(next.triggerAtMillis).toLocalTime())} · " +
-                        next.plan.shiftName.ifBlank { "이 날 알람" }
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (settings.alarmsEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            snoozeAt?.let { at ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "${Fmt.time(AlarmScheduler.millisToLocal(at).toLocalTime())}에 다시 울려요",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = vm::cancelSnooze) { Text("취소") }
-                }
-            }
-            Spacer(Modifier.padding(top = 8.dp))
-            PermissionRow(
-                ok = notificationsOk,
-                title = "알림 허용",
-                fixLabel = "허용",
-                onFix = {
-                    if (Build.VERSION.SDK_INT >= 33) {
-                        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    } else {
-                        openAppNotificationSettings(context)
-                    }
-                },
-            )
-            PermissionRow(
-                ok = exactOk,
-                title = "정확한 시간에 울리기",
-                fixLabel = "설정",
-                onFix = {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        launchSafely(context, Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                            Uri.parse("package:${context.packageName}")))
-                    }
-                },
-            )
-            PermissionRow(
-                ok = fullScreenOk,
-                title = "잠금 화면에 알람 띄우기",
-                fixLabel = "설정",
-                onFix = {
-                    if (Build.VERSION.SDK_INT >= 34) {
-                        launchSafely(context, Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
-                            Uri.parse("package:${context.packageName}")))
-                    }
-                },
-            )
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            SoundPickerRow(
-                sound = settings.defaultAlarmSound,
-                defaultLabel = "휴대폰 기본 알람음",
-                onPicked = { s -> vm.update { it.copy(defaultAlarmSound = s) } },
-            )
-            Text(
-                "근무 유형마다 다른 소리를 정할 수도 있어요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
-            )
-            SwitchRow("진동", "소리와 함께 진동", settings.vibrate) { v -> vm.update { it.copy(vibrate = v) } }
-            SwitchRow("점점 크게", "작은 소리로 시작해 20초 동안 커져요", settings.gradualVolume) { v ->
-                vm.update { it.copy(gradualVolume = v) }
-            }
-            Text("다시 울림 간격", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (m in listOf(3, 5, 10, 15, 20)) {
-                    FilterChip(
-                        selected = settings.snoozeMinutes == m,
-                        onClick = { vm.update { it.copy(snoozeMinutes = m) } },
-                        label = { Text("${m}분") },
-                    )
-                }
-            }
-            Text("자동으로 끄기", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (m in listOf(1, 3, 5, 10, 20, 30)) {
-                    FilterChip(
-                        selected = settings.ringMinutes == m,
-                        onClick = { vm.update { it.copy(ringMinutes = m) } },
-                        label = { Text("${m}분 후") },
-                    )
-                }
-            }
-        }
-
-        // [COMM-00] Coworkers share one setup instead of each typing it in.
-        SectionCard(title = if (company != null) "회사 설정" else "회사 설정 나누기") {
-            if (company != null) {
-                company()
-                HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                Text("파일로 주고받기", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
-            }
-            Text(
-                "근무 유형·주기·급여 규칙을 파일로 동료에게 보내요. 기본급, 입사일, 연차, 달력에 적은 내용은 들어가지 않아요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            NavRow("회사 설정 보내기", "카카오톡·메일 등으로 파일을 보내요") { sharingCompany = true }
-            NavRow("회사 설정 불러오기", "동료에게 받은 파일을 열어 넣어요") {
-                companyImport.launch(arrayOf(com.bamnat.app.data.CompanyShare.MIME_TYPE, "text/plain", "application/octet-stream"))
-            }
-        }
-
-        SectionCard(title = "백업") {
-            Text(
-                "근무 유형, 패턴, 바꾼 날짜, 메모, 설정을 파일 하나로 저장해요. 휴대폰을 바꾸거나 앱을 다시 설치할 때 불러오세요. 암호를 걸면 파일을 남이 열어 볼 수 없어요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                OutlinedButton(onClick = { askingPassword = true }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.Upload, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("백업 저장")
-                }
-                OutlinedButton(onClick = {
-                    importLauncher.launch(arrayOf(BackupManager.MIME_TYPE, "text/plain", "application/octet-stream"))
-                }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.Download, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("불러오기")
-                }
-            }
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            NavRow(
-                "캘린더 파일로 내보내기",
-                "근무를 .ics 파일로 저장해 구글·삼성 캘린더에 넣어요 (3개월 전부터 1년 뒤까지)",
-            ) { icsLauncher.launch("밤낮-근무-${LocalDate.now()}.ics") }
-        }
-
-        SectionCard(title = "근무시간 계산") {
-            Text("한 주의 시작", style = MaterialTheme.typography.bodyLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = settings.weekStart == DayOfWeek.MONDAY,
-                    onClick = { vm.update { it.copy(weekStart = DayOfWeek.MONDAY) } },
-                    label = { Text("월요일") },
-                )
-                FilterChip(
-                    selected = settings.weekStart == DayOfWeek.SUNDAY,
-                    onClick = { vm.update { it.copy(weekStart = DayOfWeek.SUNDAY) } },
-                    label = { Text("일요일") },
-                )
-            }
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            LimitRow(
-                title = "주 근무 경고",
-                subtitle = "한 주가 이 시간을 넘으면 빨갛게 표시",
-                hours = settings.weeklyLimitHours,
-            ) { h -> vm.update { it.copy(weeklyLimitHours = h) } }
-            LimitRow(
-                title = "3개월 평균 경고",
-                subtitle = "3개월 주평균이 이 시간을 넘으면 경고",
-                hours = settings.averageLimitHours,
-            ) { h -> vm.update { it.copy(averageLimitHours = h) } }
-            TextButton(onClick = {
-                vm.update { it.copy(weeklyLimitHours = AppSettings().weeklyLimitHours, averageLimitHours = AppSettings().averageLimitHours) }
-            }) { Text("기본값 (주 64시간 · 평균 52시간)") }
-        }
-
-        SectionCard(title = "화면") {
-            Text("테마", style = MaterialTheme.typography.bodyLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for ((mode, label) in listOf(ThemeMode.SYSTEM to "시스템", ThemeMode.LIGHT to "밝게", ThemeMode.DARK to "어둡게")) {
-                    FilterChip(
-                        selected = settings.themeMode == mode,
-                        onClick = { vm.update { it.copy(themeMode = mode) } },
-                        label = { Text(label) },
-                    )
-                }
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                SwitchRow("배경화면 색 사용", "Material You 색상", settings.dynamicColor) { v ->
-                    vm.update { it.copy(dynamicColor = v) }
-                }
-            }
-            SwitchRow("달력에 근무시간 표시", "날짜 칸 아래에 8h처럼 표시", settings.showHoursInCells) { v ->
-                vm.update { it.copy(showHoursInCells = v) }
-            }
-            SwitchRow("음력 날짜 표시", "날짜 칸 아래에 음력(8.24)을 근무시간 대신 보여줘요", settings.showLunar) { v ->
-                vm.update { it.copy(showLunar = v) }
-            }
-            // [FEAT-17] For people who keep their days in notes.
-            SwitchRow("달력 아래 메모 보기", "이번 달 메모를 날짜순으로 짧게 보여줘요", settings.calendarMemos) { v ->
-                vm.update { it.copy(calendarMemos = v) }
-            }
-            SwitchRow("메모 중심으로 보기", "날짜를 누르면 메모가 맨 위에 나오고, 달력 칸에 메모 첫 글자가 보여요", settings.memoFirst) { v ->
-                vm.update { it.copy(memoFirst = v, calendarMemos = if (v) true else it.calendarMemos) }
-            }
-            // [SLP-01][MKT-07]
-            SwitchRow("휴식 점검", "근무 사이 휴식이 11시간보다 짧거나 야간이 4일 이어지면 알려줘요", settings.restCheck) { v ->
-                vm.update { it.copy(restCheck = v) }
-            }
-            // [MKT-11]
-            if (settings.restCheck) {
-                SwitchRow("휴식 점검 엄격 기준", "연속 야간 3일부터, 야간 뒤 쉬는 날이 2일보다 적으면 알려줘요 (델파이 합의 기준)", settings.strictRest) { v ->
-                    vm.update { it.copy(strictRest = v) }
-                }
-            }
-        }
-
-        // [SLP-03][SLP-04][SLP-06][SLP-07] Sleep that fits the schedule. Suggestions, not treatment.
-        SectionCard(title = "수면") {
-            // [SLP-14]
-            SwitchRow("오늘의 흐름", "달력 맨 위에 지금 할 일 하나와 잘 시간·다음 근무를 보여 줘요. 날짜를 누르면 그날의 수면 제안도 보여요", settings.sleepTips) { v ->
-                vm.update { it.copy(sleepTips = v) }
-            }
-            // [SLP-15] Moves to the 알림 page with SET-01.
-            SwitchRow("하루 브리핑", "근무 전에 커피·잠·알람 시각을 소리 없이 알려 줘요", settings.briefing) { v ->
-                vm.update { it.copy(briefing = v) }
-            }
-            SwitchRow("퇴근길 안전", "야간이 끝날 때 한 번, 졸리면 쉬어 가라고 알려 줘요", settings.commuteNotice) { v ->
-                vm.update { it.copy(commuteNotice = v) }
-            }
-            HealthSleepRow(vm, settings.healthSleep)
-            Text("목표 수면 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(6 * 60, 6 * 60 + 30, 7 * 60, 7 * 60 + 30, 8 * 60, 9 * 60).forEach { m ->
-                    FilterChip(
-                        selected = settings.sleepTargetMinutes == m,
-                        onClick = { vm.update { it.copy(sleepTargetMinutes = m) } },
-                        label = { Text(if (m % 60 == 0) "${m / 60}시간" else "${m / 60}시간 반") },
-                    )
-                }
-            }
-            // [SLP-14] Sleep after work starts once the user is home.
-            Text("퇴근 후 잠들기까지", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(0, 30, 60, 90, 120).forEach { m ->
-                    FilterChip(
-                        selected = settings.commuteMinutes == m,
-                        onClick = { vm.update { it.copy(commuteMinutes = m) } },
-                        label = { Text(if (m == 0) "바로" else if (m % 60 == 0) "${m / 60}시간" else if (m < 60) "${m}분" else "${m / 60}시간 반") },
-                    )
-                }
-            }
-            Text(
-                "야간 뒤에는 목표가 짧아도 6시간 이상 이어서 자도록 제안해요. 진단이나 치료가 아닌 일정에 맞춘 참고 정보예요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        SectionCard(title = "개인정보") {
-            SwitchRow(
-                "사용 통계 보내기",
-                "어떤 기능을 얼마나 쓰는지 익명으로 보내 앱 개선에 써요. 메모와 근무 내용은 보내지 않아요",
-                settings.shareUsageStats,
-            ) { v -> vm.update { it.copy(shareUsageStats = v) } }
-        }
-
-        // Seven taps on the version open the hidden alarm diagnostics [MEAS-04].
-        var versionTaps by remember { mutableIntStateOf(0) }
-        Text(
-            "밤낮 ${BuildConfig.VERSION_NAME}",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier
-                .align(Alignment.CenterHorizontally)
-                .clickable {
-                    versionTaps++
-                    if (versionTaps >= 7) {
-                        versionTaps = 0
-                        onOpenDiagnostics()
-                    }
-                }
-                .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 24.dp),
+    return remember(exportLauncher, icsLauncher, openLauncher) {
+        SettingsFiles(
+            saveBackup = { askingPassword = true },
+            openFile = { openLauncher.launch(arrayOf(BackupManager.MIME_TYPE, com.bamnat.app.data.CompanyShare.MIME_TYPE, "text/plain", "application/octet-stream")) },
+            exportIcs = { icsLauncher.launch("밤낮-근무-${LocalDate.now()}.ics") },
+            shareCompany = { sharingCompany = true },
         )
     }
 }
 
-@Composable
-internal fun NavRow(title: String, subtitle: String, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
+/** [SET-01] Everything a restore replaces, and that the data before it is kept. */
+private fun restoreMessage(s: BackupSummary): String {
+    val parts = buildList {
+        add("근무 종류 ${s.shiftTypes}개")
+        add("바꾼 날짜 ${s.days}일")
+        add("메모 ${s.memos}개")
+        if (s.moneyLines > 0) add("돈 기록 ${s.moneyLines}건")
+        if (s.sleeps > 0) add("수면 기록 ${s.sleeps}개")
+        if (s.hasPay) add("급여 설정")
     }
-}
-
-/**
- * [SLP-08] Sleep a watch or the phone measured, through Health Connect. The switch stays off until
- * "수면 읽기" is allowed; on phones without Health Connect it says so instead of asking.
- */
-@Composable
-private fun HealthSleepRow(vm: SettingsViewModel, on: Boolean) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var message by remember { mutableStateOf<String?>(null) }
-    val ask = rememberLauncherForActivityResult(
-        androidx.health.connect.client.PermissionController.createRequestPermissionResultContract(),
-    ) { granted ->
-        val ok = granted.containsAll(com.bamnat.app.sleep.HealthSleep.PERMISSIONS)
-        vm.setHealthSleep(ok)
-        message = if (ok) null else "수면 읽기를 허용하지 않아 꺼 두었어요. 다시 켜면 또 물어봐요."
-    }
-    SwitchRow(
-        "워치·휴대폰 수면 기록 함께 보기",
-        "헬스 커넥트에 모인 수면(갤럭시 워치, 삼성 헬스 등)을 읽어 수면 부족 계산에 써요. 읽기만 하고 밖으로 보내지 않아요",
-        on,
-    ) { v ->
-        message = null
-        if (!v) vm.setHealthSleep(false)
-        else when (vm.healthSdkStatus()) {
-            androidx.health.connect.client.HealthConnectClient.SDK_AVAILABLE -> scope.launch {
-                if (vm.healthGranted()) vm.setHealthSleep(true)
-                else runCatching { ask.launch(com.bamnat.app.sleep.HealthSleep.PERMISSIONS) }
-                    .onFailure { message = "헬스 커넥트 허용 화면을 열지 못했어요." }
-            }
-            androidx.health.connect.client.HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> {
-                message = "헬스 커넥트를 설치하거나 업데이트한 뒤 다시 켜 주세요."
-                runCatching { context.startActivity(com.bamnat.app.sleep.HealthSleep.installIntent()) }
-            }
-            else -> message = "이 휴대폰에서는 헬스 커넥트를 쓸 수 없어요. 잠들었어요·깼어요 버튼으로 기록해 주세요."
-        }
-    }
-    message?.let {
-        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-    }
-}
-
-@Composable
-private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Switch(checked = checked, onCheckedChange = onChange)
-    }
-}
-
-@Composable
-private fun PermissionRow(ok: Boolean, title: String, fixLabel: String, onFix: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            if (ok) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
-            contentDescription = if (ok) "허용됨" else "허용 안 됨",
-            tint = if (ok) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error,
-        )
-        Spacer(Modifier.width(10.dp))
-        Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        if (!ok) TextButton(onClick = onFix) { Text(fixLabel) }
-    }
-}
-
-@Composable
-private fun LimitRow(title: String, subtitle: String, hours: Int, onChange: (Int) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        MinutesStepper(
-            minutes = hours * 60,
-            onChange = { m -> onChange((m / 60).coerceIn(1, 168)) },
-            step = 60,
-            max = 168 * 60,
-            dialogTitle = title,
-            modifier = Modifier.widthIn(min = 0.dp),
-        )
-    }
-}
-
-private fun openAppNotificationSettings(context: Context) {
-    launchSafely(
-        context,
-        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
-    )
-}
-
-private fun launchSafely(context: Context, intent: Intent) {
-    try {
-        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    } catch (e: ActivityNotFoundException) {
-        context.startActivity(
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
-    }
+    val saved = if (s.exportedAtMillis > 0) " (${Fmt.dayTitle(AlarmScheduler.millisToLocal(s.exportedAtMillis).toLocalDate())} 저장)" else ""
+    return "들어 있는 것: ${parts.joinToString(", ")}$saved.\n" +
+        "지금 앱의 데이터가 이 백업으로 바뀌어요. 바뀌기 전 데이터는 남겨 두어 ${com.bamnat.app.data.ImportUndo.KEEP_DAYS}일 안에 되돌릴 수 있어요."
 }

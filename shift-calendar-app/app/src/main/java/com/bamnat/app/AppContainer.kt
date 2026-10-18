@@ -67,6 +67,8 @@ class AppContainer(context: Context) {
     /** [SHR-02] Schedules others shared, kept beside the user's own and never backed up. */
     val received by lazy { com.bamnat.app.share.ReceivedCalendarStore(java.io.File(appContext.noBackupFilesDir, "received_calendars.json")) }
     val featureGate = FeatureGate(settingsRepository, appScope)
+    /** [NAV-01] The month the calendar, 돈 and 근무·급여 show together. */
+    val shownMonth = com.bamnat.app.ui.ShownMonth()
 
     private companion object {
         /** A shorter sleep (a tap and an undo, a doze) gets no "잤어요" line. */

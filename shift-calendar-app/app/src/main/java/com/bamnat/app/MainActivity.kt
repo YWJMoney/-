@@ -25,7 +25,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        HomeRequests.onCreate(restoring = savedInstanceState != null, awaitingResult = savedInstanceState?.getBoolean(KEY_AWAITING) == true)
+        HomeRequests.onCreate(
+            restoring = savedInstanceState != null,
+            awaitingResult = savedInstanceState?.getBoolean(KEY_AWAITING) == true,
+            leftAt = savedInstanceState?.getLong(KEY_LEFT_AT) ?: 0L,
+        )
         if (savedInstanceState == null) {
             appContainer.telemetry.event(DiagEvents.APP_OPEN)
             openLink(intent)
@@ -83,6 +87,8 @@ class MainActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putBoolean(KEY_AWAITING, HomeRequests.awaitingResult)
+        // [NAV-01] When the app went to the background, so a return soon after keeps this screen.
+        outState.putLong(KEY_LEFT_AT, HomeRequests.leftAt)
     }
 
     override fun onStart() {
@@ -97,6 +103,7 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val KEY_AWAITING = "awaiting_result"
+        const val KEY_LEFT_AT = "left_at"
         val LIGHT_SCRIM = Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
         val DARK_SCRIM = Color.argb(0x80, 0x1b, 0x1b, 0x1b)
     }

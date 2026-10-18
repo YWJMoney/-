@@ -258,6 +258,10 @@ class ScheduleRepository(
         db.withTransaction { writeDay(entry?.copy(date = date) ?: DayEntry(date)) }
     }
 
+    /** [CAL-01] Several days changed in one write, e.g. quick input dragged over them; returns each as it was. */
+    suspend fun updateDays(dates: List<LocalDate>, transform: (DayEntry) -> DayEntry): Map<LocalDate, DayEntry?> =
+        db.withTransaction { dates.associateWith { updateDay(it, transform) } }
+
     /** A piece of extra work within what one day can hold. */
     private fun clean(e: ExtraEntry): ExtraEntry {
         val timed = e.hasTimes

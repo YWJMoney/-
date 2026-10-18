@@ -133,12 +133,13 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
 }
 
 /**
- * Hidden alarm diagnostics, opened by tapping the version in Settings seven times
- * [MEAS-04, OPS-19, SHR-08]. Shows why an alarm may not ring and lets the user copy a report.
+ * Alarm diagnostics [MEAS-04, OPS-19, SHR-08]: why an alarm may not ring, and a report to copy.
+ * [SET-01] Reached from settings › 알람 and 앱 정보; the testers' tier switch shows only when it was
+ * opened by tapping the version seven times ([testing]), or in a debug build.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit) {
+fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boolean = false) {
     val context = LocalContext.current
     val upcoming by vm.upcoming.collectAsStateWithLifecycle()
     val snoozeAt by vm.snoozeAt.collectAsStateWithLifecycle()
@@ -177,7 +178,7 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            item {
+            if (testing || BuildConfig.DEBUG) item {
                 val tier by vm.tier.collectAsStateWithLifecycle()
                 SectionCard(title = "테스트용 등급") {
                     Text("결제가 열리기 전까지 등급별 화면을 확인하는 스위치예요.",

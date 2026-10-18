@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -134,7 +135,7 @@ fun PatternScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (setup) "1/2 근무 주기" else "근무 패턴") },
+                title = { Text(if (setup) "1/2 근무 주기" else "근무 주기") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 actions = {
                     TextButton(onClick = save, enabled = valid) { Text(if (setup && existing == null) "다음" else "저장") }
@@ -247,7 +248,7 @@ fun PatternScreen(
                             OutlinedButton(onClick = { put(null) }) { Text("쉬는 날") }
                         }
                     }
-                    TextButton(onClick = onOpenShiftTypes) { Text("근무 유형 추가·수정") }
+                    TextButton(onClick = onOpenShiftTypes) { Text("근무 종류 추가·수정") }
                 }
 
                 // Right under the input so each tap shows its effect on the calendar at once.
@@ -554,6 +555,8 @@ private fun ChangeFromDialog(
 private fun StepCell(index: Int, type: ShiftType?, selected: Boolean, onClick: () -> Unit) {
     Column(
         Modifier
+            // [VIS-02] 48dp to the finger, though the badge is smaller.
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .clip(MaterialTheme.shapes.small)
             .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small) else Modifier)
             .clickable(onClick = onClick)

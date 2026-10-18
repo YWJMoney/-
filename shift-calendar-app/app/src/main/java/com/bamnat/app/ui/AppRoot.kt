@@ -5,8 +5,14 @@ import com.bamnat.app.NoticeLinks
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.navigation.NavBackStackEntry
 import android.os.Build
 import androidx.compose.foundation.layout.Column
 import com.bamnat.app.alarm.AlarmService
@@ -121,8 +127,12 @@ private enum class TopLevel(val route: String, val label: String, val icon: Imag
     /** [WORK-06] Income, spending and what is left, for every kind of work. */
     MONEY("money", "돈", Icons.Outlined.AccountBalanceWallet, Icons.Filled.AccountBalanceWallet),
     MEMOS("memos", "메모", Icons.AutoMirrored.Outlined.StickyNote2, Icons.AutoMirrored.Filled.StickyNote2),
-    STATS("stats", "통계", Icons.Outlined.Insights, Icons.Filled.Insights),
+    /** [NAV-01] Hours and pay of the month together; field and shop work, paid in 돈, keep 통계. */
+    STATS("stats", "근무·급여", Icons.Outlined.Insights, Icons.Filled.Insights),
     SETTINGS("settings", "설정", Icons.Outlined.Settings, Icons.Filled.Settings),
+    ;
+
+    fun labelFor(style: WorkStyle?): String = if (this == STATS && style?.usesPayEngine == false) "통계" else label
 }
 
 private object Routes {
@@ -132,7 +142,9 @@ private object Routes {
 
     fun pattern(weekdays: Boolean = false, setup: Boolean = false) = "pattern?weekdays=$weekdays&setup=$setup"
     const val MEMO_TRASH = "memo_trash"
-    const val DIAGNOSTICS = "diagnostics"
+    const val DIAGNOSTICS = "diagnostics?testing={testing}"
+
+    fun diagnostics(testing: Boolean) = "diagnostics?testing=$testing"
     const val PAY = "pay"
     const val EXTRA_KINDS = "extra_kinds"
     const val MEMO = "memo/{id}?date={date}&checklist={checklist}"
@@ -211,10 +223,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 
     // Opening the app (again) always lands on the calendar.
     val homeRequests by HomeRequests.count.collectAsStateWithLifecycle()
-    var handledHome by rememberSaveable { mutableStateOf(homeRequests) }
     LaunchedEffect(homeRequests) {
-        if (homeRequests != handledHome) {
-            handledHome = homeRequests
+        // Kept per process with the count: a screen rebuilt (a fold, a restore) does not take one twice or miss one.
+        if (homeRequests != HomeRequests.handled) {
+            HomeRequests.handled = homeRequests
             // Only from another tab: an editor the user left open (pay setup, a pattern) keeps their input.
             // A tapped notice says where to go instead [SLP-15].
             val current = nav.currentBackStackEntry?.destination?.route
@@ -223,6 +235,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     popUpTo(nav.graph.findStartDestination().id) { inclusive = false }
                     launchSingleTop = true
                 }
+            }
+            // [NAV-01] Away long enough to count as opening the app again: this month, like a fresh start.
+            if (NoticeLinks.target.value == null && TopLevel.entries.any { it.route == current }) {
+                container.shownMonth.show(java.time.YearMonth.now())
             }
         }
     }
@@ -243,7 +259,15 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             NoticeLinks.Target.MONEY -> { nav.navigateTopLevel(TopLevel.MONEY.route); NoticeLinks.consume(target) }
             NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.PAY) { launchSingleTop = true }; NoticeLinks.consume(target) }
-            NoticeLinks.Target.ALARM_CHECK -> { nav.navigateTopLevel(TopLevel.SETTINGS.route); NoticeLinks.consume(target) }
+            // [SET-01] Settings takes the target itself, to open on the alarm's state from wherever it was.
+            NoticeLinks.Target.ALARM_CHECK -> {
+                val current = nav.currentBackStackEntry?.destination?.route
+                when {
+                    current == TopLevel.SETTINGS.route -> Unit
+                    TopLevel.entries.any { it.route == current } -> nav.navigateTopLevel(TopLevel.SETTINGS.route)
+                    else -> nav.navigate(TopLevel.SETTINGS.route) { launchSingleTop = true }
+                }
+            }
         }
     }
 
@@ -293,7 +317,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                         selected = selected,
                         onClick = { navigateTop(dest) },
                         icon = { Icon(if (selected) dest.selectedIcon else dest.icon, contentDescription = null) },
-                        label = { Text(dest.label) },
+                        label = { Text(dest.labelFor(settingsNow.workStyle), maxLines = 1) },
                     )
                 }
             }
@@ -314,7 +338,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                     selected = selected,
                                     onClick = { navigateTop(dest) },
                                     icon = { Icon(if (selected) dest.selectedIcon else dest.icon, contentDescription = null) },
-                                    label = { Text(dest.label) },
+                                    label = { Text(dest.labelFor(settingsNow.workStyle), maxLines = 1) },
                                 )
                             }
                         }
@@ -347,15 +371,26 @@ private fun AppNavHost(
 ) {
     // Outlives the screen that starts it, e.g. a message shown after 회사 찾기 closes.
     val scope = rememberCoroutineScope()
-    // Screens switch at once, without the default cross-fade.
+    // [VIS-02] Short, quiet motion: tabs fade through each other, a screen opened from one slides in a
+    // little and fades. The system's "remove animations" setting turns both off.
     NavHost(
         navController = nav,
         startDestination = TopLevel.CALENDAR.route,
         modifier = modifier,
-        enterTransition = { EnterTransition.None },
-        exitTransition = { ExitTransition.None },
-        popEnterTransition = { EnterTransition.None },
-        popExitTransition = { ExitTransition.None },
+        enterTransition = {
+            if (betweenTabs()) fadeIn(tween(TAB_IN_MILLIS, delayMillis = TAB_OUT_MILLIS))
+            else slideInHorizontally(tween(SCREEN_MILLIS, easing = FastOutSlowInEasing)) { it / 4 } + fadeIn(tween(SCREEN_MILLIS))
+        },
+        exitTransition = {
+            if (betweenTabs()) fadeOut(tween(TAB_OUT_MILLIS)) else fadeOut(tween(SCREEN_MILLIS / 2))
+        },
+        popEnterTransition = {
+            if (betweenTabs()) fadeIn(tween(TAB_IN_MILLIS, delayMillis = TAB_OUT_MILLIS)) else fadeIn(tween(SCREEN_MILLIS))
+        },
+        popExitTransition = {
+            if (betweenTabs()) fadeOut(tween(TAB_OUT_MILLIS))
+            else slideOutHorizontally(tween(SCREEN_MILLIS, easing = FastOutSlowInEasing)) { it / 4 } + fadeOut(tween(SCREEN_MILLIS))
+        },
     ) {
         composable(TopLevel.CALENDAR.route) {
             val vm = appViewModel { CalendarViewModel(it) }
@@ -410,9 +445,12 @@ private fun AppNavHost(
                 vm = vm,
                 onOpenShiftTypes = { nav.navigate(Routes.SHIFT_TYPES) { launchSingleTop = true } },
                 onOpenPattern = { nav.navigate(Routes.pattern()) { launchSingleTop = true } },
-                onOpenDiagnostics = { nav.navigate(Routes.DIAGNOSTICS) { launchSingleTop = true } },
+                onOpenDiagnostics = { testing -> nav.navigate(Routes.diagnostics(testing)) { launchSingleTop = true } },
                 onOpenWorkStyle = { nav.navigate(Routes.WORK_STYLE) { launchSingleTop = true } },
                 onOpenExtraKinds = { nav.navigate(Routes.EXTRA_KINDS) { launchSingleTop = true } },
+                onOpenPay = { nav.navigate(Routes.PAY) { launchSingleTop = true } },
+                wide = wide,
+                snackbar = snackbar,
                 company = if (nudges.enabled) ({
                     CompanySettingsRows(
                         nudges,
@@ -543,9 +581,12 @@ private fun AppNavHost(
                 // Back to the pay screen when it opened this one, so the stack does not grow.
                 onOpenPay = { if (!nav.popBackStack(Routes.PAY, inclusive = false)) nav.navigate(Routes.PAY) { launchSingleTop = true } })
         }
-        composable(Routes.DIAGNOSTICS) {
+        composable(
+            Routes.DIAGNOSTICS,
+            arguments = listOf(navArgument("testing") { type = NavType.BoolType; defaultValue = false }),
+        ) { entry ->
             val vm = appViewModel { DiagnosticsViewModel(it) }
-            DiagnosticsScreen(vm = vm, onBack = { nav.popFrom(Routes.DIAGNOSTICS) })
+            DiagnosticsScreen(vm = vm, testing = entry.arguments?.getBoolean("testing") == true, onBack = { nav.popFrom(Routes.DIAGNOSTICS) })
         }
         composable(Routes.SHIFT_TYPES) {
             val vm = appViewModel { ShiftsViewModel(it) }
@@ -661,3 +702,13 @@ private fun NavHostController.navigateTopLevel(route: String) {
 private fun NavHostController.popFrom(route: String) {
     if (currentBackStackEntry?.destination?.route == route) popBackStack()
 }
+
+/** [VIS-02] Tabs fade in over 150 ms after the old one fades out over 90 ms; other screens move over 250 ms. */
+private const val TAB_IN_MILLIS = 150
+private const val TAB_OUT_MILLIS = 90
+private const val SCREEN_MILLIS = 250
+
+/** Both ends of the move are tabs, so it is a tab switch, not a screen opened from one. */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.betweenTabs(): Boolean =
+    TopLevel.entries.any { it.route == initialState.destination.route } &&
+        TopLevel.entries.any { it.route == targetState.destination.route }

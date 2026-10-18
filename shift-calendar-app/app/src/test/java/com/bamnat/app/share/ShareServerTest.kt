@@ -43,7 +43,7 @@ class ShareServerTest {
         val policy = File("../../privacy/index.html")
         assumeTrue(policy.exists())
         val text = policy.readText()
-        assertTrue(text.contains("처리방침 1.6"))
+        assertTrue(text.contains("처리방침 1.7"))
         assertTrue(text.contains("Cloudflare, Inc."))
         assertTrue(text.contains("<td>인터넷</td>"))
         assertTrue(text.contains("7일·30일·90일"))

@@ -36,7 +36,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -140,8 +144,15 @@ private fun Wheel(count: Int, value: Int, jump: Int, label: String, onValue: (In
                 ?: (middle + value)
         }
     }
+    val haptics = LocalHapticFeedback.current
     LaunchedEffect(state) {
-        snapshotFlow { selected }.collect { onValue(Math.floorMod(it, count)) }
+        var first = true
+        snapshotFlow { selected }.collect {
+            onValue(Math.floorMod(it, count))
+            // [VIS-02] A light tick for each number that passes the middle, like a real wheel.
+            if (!first) haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
+            first = false
+        }
     }
     // A shortcut moved the time: show it on the wheel.
     LaunchedEffect(jump) {
@@ -156,7 +167,15 @@ private fun Wheel(count: Int, value: Int, jump: Int, label: String, onValue: (In
         modifier = Modifier
             .width(72.dp)
             .height(ITEM_HEIGHT * VISIBLE_ITEMS)
-            .semantics { contentDescription = "$value$label" },
+            .semantics {
+                contentDescription = "$value$label"
+                // [VIS-02] TalkBack moves the wheel one step at a time, not only a page.
+                val unit = if (label == "시") "1시간" else "1$label"
+                customActions = listOf(
+                    CustomAccessibilityAction("$unit 늘리기") { scope.launch { state.animateScrollToItem(selected + 1) }; true },
+                    CustomAccessibilityAction("$unit 줄이기") { scope.launch { state.animateScrollToItem(selected - 1) }; true },
+                )
+            },
         contentPadding = PaddingValues(vertical = ITEM_HEIGHT * (VISIBLE_ITEMS / 2)),
     ) {
         items(count * LOOPS) { i ->

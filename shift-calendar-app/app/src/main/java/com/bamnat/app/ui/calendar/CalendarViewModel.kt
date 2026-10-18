@@ -59,6 +59,8 @@ import java.time.YearMonth
 
 /** Quick-input tool: tap days to stamp a shift on them. */
 sealed interface PaintTool {
+    /** [CAL-01] Quick input is on and nothing is chosen yet, so a stray tap paints nothing. */
+    data object Pick : PaintTool
     data class Shift(val shiftTypeId: Long) : PaintTool
     /** A day off when the user has no off-type shift. */
     data object Off : PaintTool
@@ -133,6 +135,10 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     private val _selected = MutableStateFlow(LocalDate.now())
     val selected: StateFlow<LocalDate> = _selected.asStateFlow()
+
+    /** [NAV-01] The month on screen, shared with 돈 and 근무·급여. */
+    val shownMonth: StateFlow<YearMonth> = container.shownMonth.month
+    fun showMonth(month: YearMonth) = container.shownMonth.show(month)
 
     private val _paint = MutableStateFlow<PaintTool?>(null)
     val paint: StateFlow<PaintTool?> = _paint.asStateFlow()
@@ -234,20 +240,68 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     fun setPaint(tool: PaintTool?) {
         _paint.value = tool
+        _lastPaint.value = null
     }
 
-    /** A tap on a calendar cell: selects it, and stamps it when quick input is on. */
+    /** A tap on a calendar cell: selects it, and stamps it when quick input has a stamp chosen. */
     fun onDayTapped(date: LocalDate) {
         _selected.value = date
-        val tool = _paint.value ?: return
-        val target = when (tool) {
-            is PaintTool.Shift -> ShiftOverride.Shift(tool.shiftTypeId)
-            PaintTool.Off -> ShiftOverride.Off
-            PaintTool.Clear -> ShiftOverride.None
-        }
+        val target = _paint.value?.let(::stampOf) ?: return
+        _lastPaint.value = null
         // Stamping the same shift twice undoes it, so a mis-tap is fixed with one more tap.
         // Decided inside the write so quick double taps see each other's result.
         viewModelScope.launch { changeShift(date) { current -> if (current == target) ShiftOverride.None else target } }
+    }
+
+    /**
+     * [CAL-01] The last drag in quick input, said back in the bar itself: a snackbar would cover the
+     * bar and the chips under the finger.
+     */
+    data class PaintUndo(val text: String, val undo: suspend () -> Unit)
+
+    private val _lastPaint = MutableStateFlow<PaintUndo?>(null)
+    val lastPaint: StateFlow<PaintUndo?> = _lastPaint.asStateFlow()
+
+    /**
+     * [CAL-01] Quick input dragged over [dates]: every one gets the chosen stamp (a drag never takes
+     * one off), in one write, said back with undo.
+     */
+    fun paintDays(dates: List<LocalDate>) {
+        val tool = _paint.value ?: return
+        val target = stampOf(tool) ?: return
+        val name = when (tool) {
+            is PaintTool.Shift -> snapshot.value?.typesById?.get(tool.shiftTypeId)?.name ?: return
+            PaintTool.Off -> "쉬는 날"
+            else -> null
+        }
+        viewModelScope.launch {
+            val before = schedule.updateDays(dates.distinct()) { entry -> nextShift(entry, target) }
+            val what = if (before.size == 1) Fmt.monthDay(before.keys.first()) + "을" else "${before.size}일을"
+            _lastPaint.value = PaintUndo(
+                if (name == null) "$what 패턴대로 되돌렸어요" else "$what $name${Fmt.ro(name)} 칠했어요",
+                // Only the shift goes back: a memo or alarm changed on those days since stays.
+                undo = {
+                    schedule.updateDays(before.keys.toList()) { now ->
+                        val was = before[now.date] ?: DayEntry(now.date)
+                        now.copy(override = was.override, customStart = was.customStart, customEnd = was.customEnd, customBreakMinutes = was.customBreakMinutes)
+                    }
+                },
+            )
+        }
+    }
+
+    /** [CAL-01] Takes the last drag back; once, so a second tap cannot undo something else. */
+    fun undoLastPaint() {
+        val last = _lastPaint.value ?: return
+        _lastPaint.value = null
+        viewModelScope.launch { last.undo() }
+    }
+
+    private fun stampOf(tool: PaintTool): ShiftOverride? = when (tool) {
+        PaintTool.Pick -> null
+        is PaintTool.Shift -> ShiftOverride.Shift(tool.shiftTypeId)
+        PaintTool.Off -> ShiftOverride.Off
+        PaintTool.Clear -> ShiftOverride.None
     }
 
     /** Sets the shift for a day. Choosing what the pattern already gives stores nothing. */
@@ -293,23 +347,21 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         addExtra(date, ExtraText.cover(kind, type), ExtraText.coverName(kind, type))
     }
 
-    private suspend fun changeShift(date: LocalDate, choose: (ShiftOverride) -> ShiftOverride): DayEntry? {
-        val pattern = snapshot.value?.resolver?.patternOn(date)
-        return schedule.updateDay(date) { entry ->
-            val patternId = pattern?.shiftTypeIdOn(date)
-            val patternCovers = pattern != null
-            val next = when (val o = choose(entry.override)) {
-                is ShiftOverride.Shift -> if (patternCovers && patternId == o.shiftTypeId) ShiftOverride.None else o
-                ShiftOverride.Off -> if (patternCovers && patternId == null) ShiftOverride.None else o
-                ShiftOverride.None -> o
-            }
-            if (next == entry.override) {
-                entry
-            } else {
-                // Times set for the old shift do not carry over to a different one.
-                entry.copy(override = next, customStart = null, customEnd = null, customBreakMinutes = null)
-            }
+    private suspend fun changeShift(date: LocalDate, choose: (ShiftOverride) -> ShiftOverride): DayEntry? =
+        schedule.updateDay(date) { entry -> nextShift(entry, choose(entry.override)) }
+
+    /** The day with [chosen] as its shift; choosing what the pattern already gives stores nothing. */
+    private fun nextShift(entry: DayEntry, chosen: ShiftOverride): DayEntry {
+        val pattern = snapshot.value?.resolver?.patternOn(entry.date)
+        val patternId = pattern?.shiftTypeIdOn(entry.date)
+        val patternCovers = pattern != null
+        val next = when (chosen) {
+            is ShiftOverride.Shift -> if (patternCovers && patternId == chosen.shiftTypeId) ShiftOverride.None else chosen
+            ShiftOverride.Off -> if (patternCovers && patternId == null) ShiftOverride.None else chosen
+            ShiftOverride.None -> chosen
         }
+        // Times set for the old shift do not carry over to a different one.
+        return if (next == entry.override) entry else entry.copy(override = next, customStart = null, customEnd = null, customBreakMinutes = null)
     }
 
     fun setCustomTimes(date: LocalDate, start: LocalTime, end: LocalTime) {

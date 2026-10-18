@@ -531,7 +531,7 @@ fun ReceivedCalendarView(
         }
         WeekdayHeader(weekStart, Modifier.padding(horizontal = 8.dp))
         BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-            val cellHeight = (maxWidth / 7 * 1.3f).coerceIn(66.dp, 100.dp)
+            val cellHeight = (maxWidth / 7 * 1.3f).coerceIn(66.dp, 100.dp) + cellTextGrowth()
             HorizontalPager(state = pager, modifier = Modifier.fillMaxWidth().height(cellHeight * GRID_ROWS), beyondViewportPageCount = 1, key = { it }) { page ->
                 ReceivedMonthGrid(
                     month = pageToMonth(BASE_MONTH, page),

@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.AlarmOff
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -77,7 +78,6 @@ import com.bamnat.core.alarm.PlannedAlarm
 import com.bamnat.core.holiday.KoreanHolidays
 import com.bamnat.core.holiday.KoreanLunar
 import com.bamnat.core.hours.HoursFormat
-import com.bamnat.core.hours.WorkHoursCalculator
 import com.bamnat.core.model.Leave
 import com.bamnat.core.model.LeaveKind
 import com.bamnat.core.schedule.DaySource
@@ -150,6 +150,8 @@ fun DayHeader(
     modifier: Modifier = Modifier,
     /** Shown in the calendar's preview card: the sheet opens with [onOpen]. */
     onOpen: (() -> Unit)? = null,
+    /** [CAL-01] The smaller title, for the preview card and the narrow unfolded panel. */
+    compact: Boolean = onOpen != null,
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     var dragged by remember { mutableFloatStateOf(0f) }
@@ -192,7 +194,7 @@ fun DayHeader(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             Fmt.dayTitle(d),
-                            style = if (onOpen != null) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                            style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false).semantics { heading() },
@@ -299,9 +301,6 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
     val rest = remember(snapshot, day.date, settings.restCheck, settings.strictRest) {
         if (settings.restCheck) vm.restIssuesOn(snapshot, day.date, settings.strictRest) else emptyList()
     }
-    val week = remember(snapshot, day.date, settings.weekStart, settings.limits) {
-        WorkHoursCalculator(snapshot.resolver, settings.weekStart, settings.limits).week(day.date)
-    }
     return buildList {
         if (alarms.isNotEmpty() && (day.alarmSkipped || !settings.alarmsEnabled)) add(DayToken("알람 끔", DayToken.Tone.ERROR))
         else if (alarms.isNotEmpty()) {
@@ -312,7 +311,7 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
         if (day.source == DaySource.OVERRIDE || day.hasCustomTimes) add(DayToken("직접 바꿈", DayToken.Tone.ACCENT))
         if (memoCount > 0) add(DayToken("메모 $memoCount", DayToken.Tone.PLAIN))
         rest.firstOrNull()?.let { add(DayToken(it.kind.label, DayToken.Tone.WARNING)) }
-        if (week.overLimit) add(DayToken("이 주 ${HoursFormat.hours(week.totalMinutes.toDouble())}시간", DayToken.Tone.WARNING))
+        // [CAL-01] A week over the limit is said in its own line under the header, with the limit.
     }
 }
 
@@ -449,6 +448,8 @@ fun DayPreview(
     onOpen: () -> Unit,
     onMemo: () -> Unit,
     modifier: Modifier = Modifier,
+    /** [CAL-01] The week of this day over the hour limit, in one line. */
+    weekNote: String? = null,
 ) {
     Surface(
         onClick = onOpen,
@@ -457,6 +458,21 @@ fun DayPreview(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = modifier.fillMaxWidth(),
     ) {
-        DayHeader(day, today, snapshot, vm, onDateChange, onMemo, Modifier.padding(top = 4.dp, bottom = 10.dp), onOpen = onOpen)
+        Column {
+            DayHeader(day, today, snapshot, vm, onDateChange, onMemo,
+                Modifier.padding(top = 4.dp, bottom = if (weekNote != null) 4.dp else 10.dp), onOpen = onOpen)
+            weekNote?.let { WeekNoteLine(it, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) }
+        }
+    }
+}
+
+/** [CAL-01] "이 주 73.5시간 · 64시간 넘음": the line that goes with the bar beside an over-limit week. */
+@Composable
+internal fun WeekNoteLine(text: String, modifier: Modifier = Modifier) {
+    val warning = LocalCalendarColors.current.warning
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Filled.WarningAmber, null, tint = warning, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = warning)
     }
 }

@@ -1,16 +1,23 @@
 package com.bamnat.app.ui.calendar
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.schedule.ResolvedDay
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -35,6 +42,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EditCalendar
 import androidx.compose.material.icons.filled.Add
@@ -47,6 +55,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.WarningAmber
 import com.bamnat.app.share.MonthImage
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
@@ -77,6 +86,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.bamnat.app.alarm.Notifications
@@ -84,13 +98,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.appViewModel
 import com.bamnat.app.ui.components.ShiftBadge
-import com.bamnat.app.ui.components.StatTile
-import com.bamnat.app.ui.components.WarningBanner
 import com.bamnat.app.ui.components.SystemSettings
 import com.bamnat.app.ui.components.rememberNotificationAsk
 import com.bamnat.app.NoticeLinks
@@ -110,6 +121,11 @@ internal const val PAGE_COUNT = 2400
 /** [CAL-01] Alarm warnings show while an alarm is due within this many days. */
 private const val ALARM_WARNING_DAYS = 7L
 internal const val CENTER_PAGE = PAGE_COUNT / 2
+/** [VIS-02] A month slides this long after ‹ ›. */
+private const val MONTH_SLIDE_MILLIS = 220
+/** [CAL-01] The unfolded day panel: room for "10월 18일 (일) 오늘" and its arrows, never most of the screen. */
+private val DAY_PANEL_MIN_WIDTH = 280.dp
+private val DAY_PANEL_MAX_WIDTH = 420.dp
 
 /** Fixed, so a saved pager page always maps back to the same month (even after a restart). */
 internal val BASE_MONTH: YearMonth = YearMonth.of(2026, 1)
@@ -147,6 +163,7 @@ fun CalendarScreen(
     val settings by vm.settings.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val paint by vm.paint.collectAsStateWithLifecycle()
+    val lastPaint by vm.lastPaint.collectAsStateWithLifecycle()
     val memoDates by vm.memoDates.collectAsStateWithLifecycle()
     val moneyBook by vm.moneyBook.collectAsStateWithLifecycle()
     val datedMemos by vm.datedMemos.collectAsStateWithLifecycle()
@@ -215,16 +232,26 @@ fun CalendarScreen(
     }
 
     val baseMonth = BASE_MONTH
-    val pagerState = rememberPagerState(initialPage = monthToPage(baseMonth, YearMonth.from(selected))) { PAGE_COUNT }
+    val shownMonth by vm.shownMonth.collectAsStateWithLifecycle()
+    val pagerState = rememberPagerState(initialPage = monthToPage(baseMonth, shownMonth)) { PAGE_COUNT }
     val visibleMonth = pageToMonth(baseMonth, pagerState.currentPage)
     val scope = rememberCoroutineScope()
-    // Jumps without a sliding animation: buttons should feel instant.
+    // A month picked from the list is there at once.
     val goToMonth: (YearMonth) -> Unit = { m -> scope.launch { pagerState.scrollToPage(monthToPage(baseMonth, m)) } }
+    // [VIS-02] ‹ ›, 오늘 and a day of the next month slide over 220 ms, so it is clear which way it went.
+    // Counted from where a slide is heading, so quick taps on › each move a month.
+    val headingMonth = { pageToMonth(baseMonth, pagerState.targetPage) }
+    val slideToMonth: (YearMonth) -> Unit = { m ->
+        scope.launch {
+            pagerState.animateScrollToPage(monthToPage(baseMonth, m), animationSpec = tween(MONTH_SLIDE_MILLIS, easing = FastOutSlowInEasing))
+        }
+    }
 
     // After swiping to another month, select today (if shown) or the 1st so the detail follows.
     LaunchedEffect(pagerState, baseMonth) {
         androidx.compose.runtime.snapshotFlow { pagerState.settledPage }.collect { page ->
             val m = pageToMonth(baseMonth, page)
+            vm.showMonth(m)
             val sel = vm.selected.value
             if (YearMonth.from(sel) != m) {
                 val now = LocalDate.now()
@@ -233,6 +260,10 @@ fun CalendarScreen(
         }
     }
 
+    // [NAV-01] Turned in 돈 or 근무·급여, the month is the one shown here on coming back.
+    LaunchedEffect(shownMonth) {
+        if (pageToMonth(baseMonth, pagerState.settledPage) != shownMonth) pagerState.scrollToPage(monthToPage(baseMonth, shownMonth))
+    }
     // Unfolded, the day shows beside the calendar; a sheet left open must not pop up again on folding.
     LaunchedEffect(wide) { if (wide) sheetOpen = false }
     // Back ends quick input instead of leaving the app.
@@ -251,14 +282,14 @@ fun CalendarScreen(
         val again = date == selected
         vm.onDayTapped(date)
         val m = YearMonth.from(date)
-        if (m != visibleMonth) goToMonth(m)
+        if (m != visibleMonth) slideToMonth(m)
         if (!wide && !painting && again) sheetOpen = true
     }
     // [DAY-01] ‹ › and swipes in the day header move the calendar along.
     val onDateChange: (LocalDate) -> Unit = { date ->
         vm.select(date)
         val m = YearMonth.from(date)
-        if (m != visibleMonth) goToMonth(m)
+        if (m != visibleMonth) slideToMonth(m)
     }
     val groups = rememberDayGroupState()
     var memoFocus by remember { mutableIntStateOf(0) }
@@ -342,6 +373,12 @@ fun CalendarScreen(
         pagerState.scrollToPage(monthToPage(baseMonth, YearMonth.now()))
         pageScroll.scrollTo(0)
     }
+    // [CAL-01] The picked day's week over the hour limit, said in one line under the calendar.
+    val weekNote = remember(calculator, selected, settings.weeklyLimitHours) {
+        calculator.week(selected).takeIf { it.overLimit }?.let {
+            "이 주 ${HoursFormat.hours(it.totalMinutes.toDouble())}시간 · ${settings.weeklyLimitHours}시간 넘음"
+        }
+    }
     // [CAL-01] An alarm due within a week, whether or not the master switch lets it ring.
     val alarmSoon = remember(snap, today) {
         AlarmPlanner.nextAlarm(snap.resolver, java.time.LocalDateTime.now(), lookaheadDays = ALARM_WARNING_DAYS) != null
@@ -351,11 +388,11 @@ fun CalendarScreen(
         identityBar()
         CalendarHeader(
             month = visibleMonth,
-            onPrev = { goToMonth(visibleMonth.minusMonths(1)) },
-            onNext = { goToMonth(visibleMonth.plusMonths(1)) },
+            onPrev = { slideToMonth(headingMonth().minusMonths(1)) },
+            onNext = { slideToMonth(headingMonth().plusMonths(1)) },
             onToday = {
                 vm.select(LocalDate.now())
-                goToMonth(YearMonth.now())
+                slideToMonth(YearMonth.now())
             },
             onPickMonth = { showMonthPicker = true },
             onShare = {
@@ -372,37 +409,21 @@ fun CalendarScreen(
         if (snap.isEmpty && settings.workStyle?.usesPattern != false) {
             EmptyPatternCard(onOpenPattern)
         }
-        // [CAL-01] What keeps an alarm from working, one line each, only while one is due within a week.
+        // [CAL-01] What keeps an alarm from working, the most serious one in a single line, only while
+        // one is due within a week. The whole line is the button that fixes it.
+        val linePlace = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
         if (alarmSoon) when {
             // [SET-01] With the master switch off nothing rings: said where the user looks first.
-            !settings.alarmsEnabled -> WarningBanner(
-                title = "알람이 모두 꺼져 있어요",
-                message = "근무 알람도 이 날 알람도 울리지 않아요.",
-                action = "켜기",
-                onAction = { vm.setAlarmsEnabled(true) },
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
+            !settings.alarmsEnabled -> AlarmWarningLine("알람이 모두 꺼져 있어요", "켜기", { vm.setAlarmsEnabled(true) }, linePlace)
             // [REL-11][SLP-15] Without notifications an alarm still sounds, but nothing on the lock
             // screen stops it. Asked here, where it is needed, instead of on the first start.
-            !notificationsAllowed -> WarningBanner(
-                title = "잠금 화면에서 알람을 끄려면 알림 허용이 필요해요",
-                message = "허용하지 않으면 소리는 울려도 끄기·다시 울림 버튼이 안 보여요.",
-                action = "허용",
-                onAction = askNotifications,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
+            !notificationsAllowed -> AlarmWarningLine("알림을 허용해야 알람을 끌 수 있어요", "허용", askNotifications, linePlace)
             // [REL-12] Android 14+ can block the full-screen alarm; then only a small notification shows.
-            !fullScreenAllowed -> WarningBanner(
-                title = "잠금 화면에 알람 화면이 뜨지 않아요",
-                message = "알람이 울릴 때 큰 끄기 버튼이 보이게 ‘전체 화면 알림’을 허용해 주세요.",
-                action = "허용",
-                onAction = {
-                    if (android.os.Build.VERSION.SDK_INT >= 34) SystemSettings.open(context,
-                        android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
-                            android.net.Uri.parse("package:${context.packageName}")))
-                },
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
+            !fullScreenAllowed -> AlarmWarningLine("잠금 화면에 알람 화면이 안 떠요", "허용", {
+                if (android.os.Build.VERSION.SDK_INT >= 34) SystemSettings.open(context,
+                    android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                        android.net.Uri.parse("package:${context.packageName}")))
+            }, linePlace)
         }
         // [SLP-14] 오늘의 흐름 while this month is on screen, for work that comes in shifts and hours.
         if (settings.sleepTips && settings.workStyle?.usesPayEngine != false && !snap.isEmpty && visibleMonth == YearMonth.from(today)) {
@@ -427,14 +448,16 @@ fun CalendarScreen(
             )
         }
         MonthShiftCounts(snap, visibleMonth, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-        WeekdayHeader(settings.weekStart, Modifier.padding(horizontal = 8.dp))
+        WeekdayHeader(settings.weekStart, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
         BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-            val cellHeight = (maxWidth / 7 * 1.3f).coerceIn(66.dp, 100.dp)
+            val cellHeight = (maxWidth / 7 * 1.3f).coerceIn(66.dp, 100.dp) + cellTextGrowth()
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxWidth().height(cellHeight * GRID_ROWS),
                 beyondViewportPageCount = 1,
                 key = { it },
+                // [CAL-01] With a stamp chosen, a sideways drag paints days instead of turning the month.
+                userScrollEnabled = paint == null || paint == PaintTool.Pick,
             ) { page ->
                 MonthGrid(
                     month = pageToMonth(baseMonth, page),
@@ -451,6 +474,8 @@ fun CalendarScreen(
                     money = moneyBook,
                     showMoney = settings.workStyle?.usesPayEngine == false,
                     memoTexts = memoTexts,
+                    onPaint = if (paint != null && paint != PaintTool.Pick) vm::paintDays else null,
+                    weeklyLimitHours = settings.weeklyLimitHours,
                 )
             }
         }
@@ -479,6 +504,7 @@ fun CalendarScreen(
                     onOpen = { sheetOpen = true },
                     onMemo = onMemo,
                     modifier = Modifier.padding(horizontal = 16.dp),
+                    weekNote = weekNote,
                 )
             }
             Spacer(Modifier.height(12.dp))
@@ -492,9 +518,9 @@ fun CalendarScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
         } else {
-            HoursSummary(
+            HoursLine(
                 calculator = calculator,
-                settings = settings,
+                limits = settings.limits,
                 selected = selected,
                 month = visibleMonth,
                 onOpenStats = onOpenStats,
@@ -525,6 +551,8 @@ fun CalendarScreen(
             memoFocus = memoFocus,
             onMemo = onMemo,
             bottomPadding = bottom,
+            weekNote = weekNote,
+            compact = wide,
         )
     }
 
@@ -544,9 +572,9 @@ fun CalendarScreen(
                 modifier = place,
             )
         } else if (paint == null) {
-            val first = snap.shiftTypes.firstOrNull()
             ExtendedFloatingActionButton(
-                onClick = { vm.setPaint(first?.let { PaintTool.Shift(it.id) } ?: PaintTool.Clear) },
+                // [CAL-01] Nothing is chosen yet, so the first tap cannot paint a day by surprise.
+                onClick = { vm.setPaint(PaintTool.Pick) },
                 icon = { Icon(Icons.Filled.EditCalendar, contentDescription = "빠른 입력") },
                 text = { Text("빠른 입력") },
                 expanded = fabExpanded,
@@ -571,19 +599,24 @@ fun CalendarScreen(
         }
     } else Box(Modifier.fillMaxSize()) {
         if (wide) {
-            Row(Modifier.fillMaxSize()) {
-                Box(Modifier.weight(1.05f).fillMaxHeight()) {
-                    Column(
-                        Modifier
-                            .fillMaxSize()
-                            .verticalScroll(pageScroll)
-                            .padding(bottom = bottomSpace),
-                    ) { calendarPart() }
-                    fab()
+            // [CAL-01] About 3:2, so the unfolded calendar's days are as big as on the cover screen; the
+            // day panel keeps the room its title and switches need.
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val panelWidth = (maxWidth * 0.4f).coerceIn(DAY_PANEL_MIN_WIDTH, DAY_PANEL_MAX_WIDTH)
+                Row(Modifier.fillMaxSize()) {
+                    Box(Modifier.weight(1f).fillMaxHeight()) {
+                        Column(
+                            Modifier
+                                .fillMaxSize()
+                                .verticalScroll(pageScroll)
+                                .padding(bottom = bottomSpace),
+                        ) { calendarPart() }
+                        fab()
+                    }
+                    VerticalDivider()
+                    // [DAY-01] The same day panel as the sheet: the header stays, the groups scroll.
+                    detailPart(Modifier.width(panelWidth).fillMaxHeight().padding(top = 4.dp), bottomSpace)
                 }
-                VerticalDivider()
-                // [DAY-01] The same day panel as the sheet: the header stays, the groups scroll.
-                detailPart(Modifier.weight(1f).fillMaxHeight().padding(top = 4.dp), bottomSpace)
             }
         } else {
             Column(
@@ -600,7 +633,7 @@ fun CalendarScreen(
         if (!wide) fab()
         if (paint != null) {
             Box(Modifier.align(Alignment.BottomCenter)) {
-                PaintBar(snapshot = snap, tool = paint, onTool = vm::setPaint)
+                PaintBar(snapshot = snap, tool = paint, last = lastPaint, onTool = vm::setPaint, onUndo = vm::undoLastPaint)
             }
         }
     }
@@ -795,14 +828,18 @@ private fun CalendarHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onPrev) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
-        Text(
-            Fmt.month(month),
-            style = if (narrow) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
-            modifier = Modifier
+        // [VIS-02] The month opens the month list: 48dp tall, with ▾ to show it can be tapped.
+        Row(
+            Modifier
+                .heightIn(min = 48.dp)
                 .clip(MaterialTheme.shapes.small)
-                .clickable(onClick = onPickMonth)
-                .padding(horizontal = 6.dp, vertical = 4.dp),
-        )
+                .clickable(onClickLabel = "달 고르기", role = Role.Button, onClick = onPickMonth)
+                .padding(start = 6.dp, end = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(Fmt.month(month), style = if (narrow) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge)
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         IconButton(onClick = onNext) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
         Spacer(Modifier.weight(1f))
         TextButton(onClick = onToday) { Text("오늘") }
@@ -812,13 +849,13 @@ private fun CalendarHeader(
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(text = { Text("근무표 공유") }, leadingIcon = { Icon(Icons.Filled.Share, null) },
                         onClick = { menu = false; onShare() })
-                    DropdownMenuItem(text = { Text("근무 패턴 설정") }, leadingIcon = { Icon(Icons.Filled.EventRepeat, null) },
+                    DropdownMenuItem(text = { Text("근무 주기 설정") }, leadingIcon = { Icon(Icons.Filled.EventRepeat, null) },
                         onClick = { menu = false; onOpenPattern() })
                 }
             }
         } else {
             IconButton(onClick = onShare) { Icon(Icons.Filled.Share, "근무표 공유") }
-            IconButton(onClick = onOpenPattern) { Icon(Icons.Filled.EventRepeat, "근무 패턴 설정") }
+            IconButton(onClick = onOpenPattern) { Icon(Icons.Filled.EventRepeat, "근무 주기 설정") }
         }
     }
     }
@@ -832,7 +869,7 @@ private fun EmptyPatternCard(onOpenPattern: () -> Unit) {
         color = MaterialTheme.colorScheme.primaryContainer,
     ) {
         Column(Modifier.padding(16.dp)) {
-            Text("근무 패턴을 등록해 보세요", style = MaterialTheme.typography.titleMedium,
+            Text("근무 주기를 등록해 보세요", style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer)
             Text(
                 "주주야야비휴 같은 교대 순서나 요일별 근무를 한 번만 입력하면 달력이 자동으로 채워져요.",
@@ -843,16 +880,22 @@ private fun EmptyPatternCard(onOpenPattern: () -> Unit) {
             Button(onClick = onOpenPattern) {
                 Icon(Icons.Filled.Autorenew, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
-                Text("패턴 설정하기")
+                Text("근무 주기 정하기")
             }
         }
     }
 }
 
+/**
+ * [CAL-01] The hours in one line under the calendar: the picked week, the month, the three-month
+ * average. A number over its limit is marked in words and color; the week's own warning is the bar
+ * beside it and the line under the day. A tap opens 근무·급여.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun HoursSummary(
+private fun HoursLine(
     calculator: WorkHoursCalculator,
-    settings: AppSettings,
+    limits: com.bamnat.core.hours.HourLimits,
     selected: LocalDate,
     month: YearMonth,
     onOpenStats: () -> Unit,
@@ -861,60 +904,69 @@ private fun HoursSummary(
     val week = remember(calculator, selected) { calculator.week(selected) }
     val monthSummary = remember(calculator, month) { calculator.month(month) }
     val three = remember(calculator, month) { calculator.threeMonths(month) }
-
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatTile(
-                label = "선택한 주",
-                value = HoursFormat.hours(week.totalMinutes.toDouble()) + "시간",
-                caption = "${Fmt.shortDate(week.start)}–${Fmt.shortDate(week.end)}",
-                warning = week.overLimit,
-                onClick = onOpenStats,
-                modifier = Modifier.weight(1f),
-            )
-            StatTile(
-                label = "${month.monthValue}월 합계",
-                value = HoursFormat.hours(monthSummary.totalMinutes.toDouble()) + "시간",
-                caption = "근무 ${monthSummary.workDays}일",
-                onClick = onOpenStats,
-                modifier = Modifier.weight(1f),
-            )
-            StatTile(
-                label = "3개월 주평균",
-                value = HoursFormat.hours(three.averageWeeklyMinutes) + "시간",
-                caption = "${three.firstMonth.monthValue}–${three.lastMonth.monthValue}월",
-                warning = three.overLimit,
-                onClick = onOpenStats,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        if (week.overLimit) {
-            WarningBanner(
-                title = "주 ${settings.weeklyLimitHours}시간 초과",
-                message = "${Fmt.shortDate(week.start)}–${Fmt.shortDate(week.end)} 근무가 " +
-                    "${HoursFormat.korean(week.totalMinutes)}이에요.",
-            )
-        } else {
-            val others = monthSummary.weeksOverLimit
-            if (others.isNotEmpty()) {
-                WarningBanner(
-                    title = "주 ${settings.weeklyLimitHours}시간 초과 주가 있어요",
-                    message = others.joinToString(", ") { "${Fmt.shortDate(it.start)}주 ${HoursFormat.hours(it.totalMinutes.toDouble())}시간" },
-                )
+    val cal = LocalCalendarColors.current
+    Surface(
+        onClick = onOpenStats,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = modifier.fillMaxWidth().heightIn(min = 48.dp),
+    ) {
+        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                HoursPart("이 주", HoursFormat.hours(week.totalMinutes.toDouble()) + "시간",
+                    limits.weeklyLimitHours.takeIf { week.overLimit }, cal.warning)
+                HoursPart("${month.monthValue}월", HoursFormat.hours(monthSummary.totalMinutes.toDouble()) + "시간", null, cal.warning)
+                // Its own limit (52), not the week's (64), so the number it is over is said.
+                HoursPart("3개월 주평균", HoursFormat.hours(three.averageWeeklyMinutes) + "시간",
+                    limits.threeMonthAverageLimitHours.takeIf { three.overLimit }, cal.warning)
             }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "근무·급여 열기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (three.overLimit) {
-            WarningBanner(
-                title = "3개월 평균 주 ${settings.averageLimitHours}시간 초과",
-                message = "${three.firstMonth.monthValue}–${three.lastMonth.monthValue}월 평균이 " +
-                    "주 ${HoursFormat.hours(three.averageWeeklyMinutes)}시간이에요.",
-            )
+    }
+}
+
+/** "이 주 73.5시간", and "· 64시간 넘음" in the warning color when it is over [overLimit] hours. */
+@Composable
+private fun HoursPart(label: String, value: String, overLimit: Int?, warning: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("$label ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.titleSmall.merge(NumberStyle),
+            color = if (overLimit != null) warning else MaterialTheme.colorScheme.onSurface)
+        if (overLimit != null) {
+            Text(" · ${overLimit}시간 넘음", style = MaterialTheme.typography.labelMedium, color = warning, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+/** [CAL-01] One line about what keeps an alarm due this week from working; the whole line fixes it. */
+@Composable
+private fun AlarmWarningLine(text: String, action: String, onAction: () -> Unit, modifier: Modifier = Modifier) {
+    val cal = LocalCalendarColors.current
+    Surface(
+        onClick = onAction,
+        shape = MaterialTheme.shapes.medium,
+        color = cal.warningContainer,
+        modifier = modifier.fillMaxWidth().heightIn(min = 48.dp),
+    ) {
+        Row(Modifier.padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.WarningAmber, null, tint = cal.warning, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(10.dp))
+            Text(text, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text(action, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 8.dp))
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
         }
     }
 }
 
 @Composable
-private fun PaintBar(snapshot: ScheduleSnapshot, tool: PaintTool?, onTool: (PaintTool?) -> Unit) {
+private fun PaintBar(
+    snapshot: ScheduleSnapshot,
+    tool: PaintTool?,
+    last: CalendarViewModel.PaintUndo?,
+    onTool: (PaintTool?) -> Unit,
+    onUndo: () -> Unit,
+) {
     Surface(
         modifier = Modifier.fillMaxWidth().padding(12.dp),
         shape = MaterialTheme.shapes.extraLarge,
@@ -926,39 +978,49 @@ private fun PaintBar(snapshot: ScheduleSnapshot, tool: PaintTool?, onTool: (Pain
             Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("빠른 입력", style = MaterialTheme.typography.titleSmall)
+                    // [CAL-01] One line: what to do now, or what the last drag did.
                     Text(
-                        "날짜를 누르면 바로 들어가요. 같은 근무를 한 번 더 누르면 취소돼요.",
+                        last?.text ?: if (tool == PaintTool.Pick) "근무를 고르고 날짜를 누르거나 끌어서 칠하세요"
+                        else "누르거나 끌어서 칠해요 · 다시 누르면 취소",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (last != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
                 }
+                if (last != null) TextButton(onClick = onUndo) { Text("되돌리기") }
                 IconButton(onClick = { onTool(null) }) { Icon(Icons.Filled.Close, "빠른 입력 끝내기") }
             }
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                // The chips say what a tap on the calendar will do, for TalkBack.
                 for (type in snapshot.shiftTypes) {
                     val t = PaintTool.Shift(type.id)
                     FilterChip(
                         selected = tool == t,
-                        onClick = { onTool(t) },
+                        onClick = { onTool(if (tool == t) PaintTool.Pick else t) },
                         label = { Text(type.name) },
                         leadingIcon = { ShiftBadge(type, size = 18.dp, outlined = type.isOff) },
+                        modifier = Modifier.semantics { contentDescription = "${type.name} 칠하기" },
                     )
                 }
                 if (snapshot.shiftTypes.none { it.isOff }) {
                     FilterChip(
                         selected = tool == PaintTool.Off,
-                        onClick = { onTool(PaintTool.Off) },
+                        onClick = { onTool(if (tool == PaintTool.Off) PaintTool.Pick else PaintTool.Off) },
                         label = { Text("쉬는 날") },
+                        modifier = Modifier.semantics { contentDescription = "쉬는 날 칠하기" },
                     )
                 }
                 FilterChip(
                     selected = tool == PaintTool.Clear,
-                    onClick = { onTool(PaintTool.Clear) },
+                    onClick = { onTool(if (tool == PaintTool.Clear) PaintTool.Pick else PaintTool.Clear) },
                     label = { Text("패턴대로") },
                     leadingIcon = { Icon(Icons.Filled.Autorenew, contentDescription = null) },
+                    modifier = Modifier.semantics { contentDescription = "패턴대로 되돌리기" },
                 )
             }
         }
@@ -1044,7 +1106,7 @@ private fun MonthMemoCard(
             for (m in shown) {
                 val d = m.date!!
                 Row(
-                    Modifier.fillMaxWidth().clickable { onOpen(m.id) }.padding(horizontal = 16.dp, vertical = 7.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onOpen(m.id) }.padding(horizontal = 16.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -1098,7 +1160,7 @@ private fun MonthRestCard(issues: List<com.bamnat.core.schedule.RestCheck.Issue>
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
             for (issue in shown) {
                 Row(
-                    Modifier.fillMaxWidth().clickable { onPick(issue.date) }.padding(horizontal = 16.dp, vertical = 6.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onPick(issue.date) }.padding(horizontal = 16.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("${issue.date.dayOfMonth}일", style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
