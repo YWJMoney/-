@@ -213,6 +213,158 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
 
     /** The company found, but not the user's own department: they set up by hand under its name. */
     fun byHand(page: CompanyPage) = c.companyStore.setDraft(CompanyDraft(page.name))
+
+    /** [COMM-07] What this phone said about each setup on this screen: 맞았어요 (true) or 달라요. */
+    private val _votes = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    val votes: StateFlow<Map<String, Boolean>> = _votes.asStateFlow()
+
+    /** 맞았어요 or 달라요 on any setup here, applied or not; the page comes back with the new points and trust. */
+    fun vote(page: CompanyPage, setup: SharedSetup, ok: Boolean, why: String? = null, done: (String?) -> Unit = {}) {
+        viewModelScope.launch {
+            val error = try {
+                c.companyApi.vote(c.companyStore.device, page.id, setup.id, ok, why = why)
+                _votes.value = _votes.value + (setup.id to ok)
+                if (c.companyStore.applied.value?.setup == setup.id) c.companyStore.voted(ok)
+                c.telemetry.event("company_vote", if (ok) "ok_board" else why ?: "wrong")
+                _state.value = runCatching { State.Loaded(c.companyApi.company(id)) }.getOrDefault(_state.value)
+                null
+            } catch (e: CompanyException) {
+                companyProblem(e.code, e.field)
+            }
+            done(error)
+        }
+    }
+
+    /** [COMM-06] The talk on one setup, while its sheet is open. */
+    val talk = TalkHolder(c, viewModelScope)
+}
+
+/**
+ * [COMM-06] The talk on one rule set: its posts, writing one, taking one's own back and 신고. Shared by
+ * the company screen and 회사 규칙 광장.
+ */
+class TalkHolder(private val c: AppContainer, private val scope: kotlinx.coroutines.CoroutineScope) {
+    data class Open(val company: String, val setup: String, val title: String, val talk: com.bamnat.app.company.Talk? = null, val error: String? = null)
+
+    private val _open = MutableStateFlow<Open?>(null)
+    val open: StateFlow<Open?> = _open.asStateFlow()
+
+    fun show(company: String, setup: String, title: String) {
+        _open.value = Open(company, setup, title)
+        reload()
+    }
+
+    fun close() {
+        _open.value = null
+    }
+
+    fun reload() {
+        val o = _open.value ?: return
+        scope.launch {
+            val next = try {
+                o.copy(talk = c.companyApi.talk(c.companyStore.device, o.company, o.setup), error = null)
+            } catch (e: CompanyException) {
+                o.copy(error = companyProblem(e.code, e.field))
+            }
+            if (_open.value?.setup == o.setup) _open.value = next
+        }
+    }
+
+    /** Sends a post; [done] gets what to tell the user when it was not taken. */
+    fun send(text: String, done: (String?) -> Unit) {
+        val o = _open.value ?: return done(null)
+        CompanyText.personal(text)?.let { return done(talkProblem(it)) }
+        scope.launch {
+            val error = try {
+                c.companyApi.post(c.companyStore.device, o.company, o.setup, text)
+                c.telemetry.event("company_post", "sent")
+                null
+            } catch (e: CompanyException) {
+                talkProblem(e.code)
+            }
+            if (error == null) reload()
+            done(error)
+        }
+    }
+
+    fun delete(id: String) {
+        scope.launch {
+            runCatching { c.companyApi.deletePost(c.companyStore.device, id) }
+            reload()
+        }
+    }
+
+    fun flag(id: String, reason: String, done: (String?) -> Unit) {
+        scope.launch {
+            val error = try {
+                c.companyApi.flag(c.companyStore.device, id, reason)
+                null
+            } catch (e: CompanyException) {
+                talkProblem(e.code)
+            }
+            done(error)
+            reload()
+        }
+    }
+}
+
+/** What to say when a post is refused. */
+fun talkProblem(code: String): String = when (code) {
+    "amount" -> "금액은 빼 주세요. ‘기본급의 10%’, ‘1.5배’처럼 비율로 적으면 돼요"
+    "phone" -> "전화번호는 빼 주세요"
+    "email" -> "메일 주소는 빼 주세요"
+    "body" -> "두 글자 이상, 500자 안으로 적어 주세요"
+    "muted" -> "운영 원칙을 지키지 않은 글이 있어 지금은 글을 쓸 수 없어요"
+    "rate_limited" -> "오늘은 글을 더 쓸 수 없어요. 내일 다시 써 주세요"
+    "own" -> "내 글은 신고할 수 없어요"
+    else -> companyProblem(code)
+}
+
+/** [COMM-07] 회사 규칙 광장: every company's rule sets, ones being voted on or adopted ones, a page at a time. */
+class CompanyBoardViewModel(private val c: AppContainer) : ViewModel() {
+    data class Tab(val items: List<com.bamnat.app.company.BoardItem> = emptyList(), val next: Int? = 0, val loading: Boolean = false, val error: String? = null)
+
+    val enabled: Boolean = c.companyApi.enabled
+    private val _adopted = MutableStateFlow(false)
+    val adopted: StateFlow<Boolean> = _adopted.asStateFlow()
+    private val tabs = mapOf(false to MutableStateFlow(Tab()), true to MutableStateFlow(Tab()))
+    val voting: StateFlow<Tab> = tabs.getValue(false).asStateFlow()
+    val chosen: StateFlow<Tab> = tabs.getValue(true).asStateFlow()
+    private val _terms = MutableStateFlow(TermsCache.value)
+    val terms: StateFlow<CompanyTerms?> = _terms.asStateFlow()
+    val talk = TalkHolder(c, viewModelScope)
+
+    init {
+        viewModelScope.launch { _terms.value = c.loadTerms() }
+        more(false)
+    }
+
+    fun pick(adopted: Boolean) {
+        _adopted.value = adopted
+        if (tabs.getValue(adopted).value.items.isEmpty()) more(adopted)
+    }
+
+    fun refresh() {
+        val a = _adopted.value
+        tabs.getValue(a).value = Tab()
+        more(a)
+    }
+
+    /** The next page of a tab; nothing when it is loading or has no more. */
+    fun more(adopted: Boolean = _adopted.value) {
+        val f = tabs.getValue(adopted)
+        val from = f.value.next ?: return
+        if (f.value.loading) return
+        f.value = f.value.copy(loading = true, error = null)
+        viewModelScope.launch {
+            f.value = try {
+                val b = c.companyApi.board(adopted, from)
+                f.value.copy(items = f.value.items + b.items, next = b.next, loading = false)
+            } catch (e: CompanyException) {
+                f.value.copy(loading = false, error = companyProblem(e.code, e.field))
+            }
+        }
+    }
 }
 
 /** [COMM-01] The first pay setup from a shared setup: only the user's own amounts are asked. */

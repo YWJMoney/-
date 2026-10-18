@@ -378,7 +378,14 @@ fun AskDeveloperDialog(
 
 /** [COMM-01][COMM-02] The company part of settings when the server is there: what is in use and the ways in. */
 @Composable
-fun ColumnScope.CompanySettingsRows(vm: CompanyNudgeViewModel, onFind: () -> Unit, onShare: () -> Unit, onSent: () -> Unit, onFix: (FixPlace) -> Unit) {
+fun ColumnScope.CompanySettingsRows(
+    vm: CompanyNudgeViewModel,
+    onFind: () -> Unit,
+    onShare: () -> Unit,
+    onSent: () -> Unit,
+    onFix: (FixPlace) -> Unit,
+    onBoard: () -> Unit = {},
+) {
     val applied by vm.applied.collectAsStateWithLifecycle()
     applied?.let { a ->
         SoftCard(highlighted = true, modifier = Modifier.padding(vertical = 4.dp)) {
@@ -399,6 +406,8 @@ fun ColumnScope.CompanySettingsRows(vm: CompanyNudgeViewModel, onFind: () -> Uni
     }
     CompanyNudgeCards(vm, onShare = onShare, onFix = onFix)
     com.bamnat.app.ui.settings.NavRow("회사 찾기", "같은 회사 분들이 맞춘 근무표와 계산 방식을 가져와요", onFind)
+    // [COMM-07]
+    com.bamnat.app.ui.settings.NavRow("회사 규칙 광장", "여러 회사가 올린 근무표·급여 규칙을 보고, 맞는지 투표하고 토론해요", onBoard)
     com.bamnat.app.ui.settings.NavRow("내 설정 나누기", "금액 없이 보내요. 채택되면 보상을 드려요", onShare)
     com.bamnat.app.ui.settings.NavRow("내가 보낸 정보", "보낸 설정이 어떻게 됐는지, 개발자의 답, 거두기", onSent)
 }

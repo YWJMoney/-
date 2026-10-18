@@ -1327,6 +1327,32 @@ class ScreenshotTest {
         content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, ready = true) }
     }
 
+    // [COMM-06][COMM-07] 회사 규칙 광장: every company's rule sets to vote on, the talk on one, and 맞았어요·달라요 on the company screen.
+    @Test fun foldedCompanyBoard() = shoot("190_folded_company_board", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
+    }
+    @Test fun foldedCompanyBoardAdopted() = shoot("191_folded_company_board_adopted", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
+        tapText("채택됨", exact = true)
+    }
+    @Test fun unfoldedCompanyBoard() = shoot("192_unfolded_company_board", UNFOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
+    }
+    @Test fun foldedCompanyTalk() = shoot("193_folded_company_talk", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
+        vm.talk.show("c-v1", "s-v1", "가나다화학 · 품질팀")
+        settle()
+    }
+    @Test fun foldedCompanyVoteAnySetup() = shoot("194_folded_company_vote_any", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyDetailViewModel(companyOn(), "c1")
+        content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, ready = true) }
+        reveal("다니는 회사라면 이 규칙이 맞는지 알려 주세요")
+    }
+
     // [SHR-01][SHR-02][SHR-04] A link with chosen parts, and calendars received from others beside the user's own.
     private val shares = FakeShareApi()
     private val minjiId = "Mj7dEfGh5JkLmNoPqRsTuv"
@@ -1581,8 +1607,8 @@ private class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
             "수당" to "자격수당(매달) · 야간수당(근무마다) · 상여(2·4·6·8·10·12월 기본급 100%)",
         )
         return com.bamnat.app.company.CompanyPage(id, "(주)예시정밀", listOf("예시정밀"), listOf(
-            com.bamnat.app.company.SharedSetup("s1", true, 5, 3, 1, 3, "생산팀", 2, file, main + pay),
-            com.bamnat.app.company.SharedSetup("s2", false, 2, 1, 0, 3, "포장팀", null, file, main.take(2)),
+            com.bamnat.app.company.SharedSetup("s1", true, 5, 3, 1, 3, "생산팀", 2, file, main + pay, trust = 75, agree = 75, posts = 4),
+            com.bamnat.app.company.SharedSetup("s2", false, 2, 1, 0, 3, "포장팀", null, file, main.take(2), trust = 67, agree = 100),
         ))
     }
 
@@ -1596,4 +1622,29 @@ private class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
     override suspend fun forgetMine(device: String) = mine.size
     override suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean, why: String?) =
         com.bamnat.app.company.VoteResult(4, 3, 1, 3, true)
+
+    // [COMM-06][COMM-07] 회사 규칙 광장 and the talk on a rule set.
+    private fun item(id: String, company: String, dept: String, adopted: Boolean, points: Int, persons: Int, bad: Int, trust: Int, agree: Int,
+        posts: Int, hours: Long, gist: String, cycle: String) = com.bamnat.app.company.BoardItem(
+        "c-$id", company, "s-$id", dept, adopted, points, persons, bad, 3, trust, agree, posts, if (adopted) 1 else null,
+        now.minus(java.time.Duration.ofHours(hours)), gist, cycle, true)
+
+    override suspend fun board(adopted: Boolean, from: Int) = com.bamnat.app.company.Board(
+        if (adopted) listOf(
+            item("a1", "(주)예시정밀", "생산팀", true, 5, 3, 1, 75, 75, 4, 30, "주간 08:00~20:00 · 야간 20:00~08:00 · 휴무(쉬는 날)", "순서 5일"),
+            item("a2", "사아자물류", "", true, 4, 3, 0, 100, 100, 0, 80, "주간 09:00~18:00 · 휴무(쉬는 날)", "순서 7일"),
+        ) else listOf(
+            item("v1", "가나다화학", "품질팀", false, 2, 2, 0, 67, 100, 3, 1, "주간 08:30~17:30 휴게 60분 · 휴일(쉬는 날)", "순서 7일"),
+            item("v2", "라마바전자", "생산1팀", false, 3, 2, 1, 67, 67, 5, 5, "주간 07:00~19:00 · 야간 19:00~07:00 · 휴무(쉬는 날)", "순서 8일"),
+            item("v3", "예시정밀 2공장", "", false, 1, 1, 0, 33, 100, 0, 26, "오전 06:00~14:00 · 오후 14:00~22:00 · 야간 22:00~06:00", "순서 6일"),
+        ),
+        null,
+    )
+
+    override suspend fun talk(device: String, company: String, setup: String) = com.bamnat.app.company.Talk(listOf(
+        com.bamnat.app.company.TalkPost("p1", 1, "sender", true, "저희 품질팀은 이렇게 돌아요. 10월 명세서랑 맞춰 봤어요.", now.minus(java.time.Duration.ofHours(20)), false),
+        com.bamnat.app.company.TalkPost("p2", 2, "ok", false, "저도 같은 팀인데 맞아요. 격주 토요일은 특근으로 넣고 있어요.", now.minus(java.time.Duration.ofHours(6)), false),
+        com.bamnat.app.company.TalkPost("p3", 3, "bad", false, "올해부터 야간 시작이 18:30으로 바뀌었어요. 확인해 주세요!", now.minus(java.time.Duration.ofHours(2)), false),
+        com.bamnat.app.company.TalkPost("p4", 4, null, false, "18:30은 2공장 이야기 같아요. 본사는 그대로예요.", now.minus(java.time.Duration.ofMinutes(12)), true),
+    ))
 }

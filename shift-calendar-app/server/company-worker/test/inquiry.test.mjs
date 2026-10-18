@@ -146,7 +146,7 @@ test("a phone sends a few questions a day, and deletes them with or without the 
   assert.equal((await call("DELETE", `/api/inquiries/${ids[0]}`, undefined, mine(1))).status, 204);
   assert.equal((await call("GET", "/api/inquiries", undefined, mine(1))).data.inquiries.length, 4);
   const gone = await call("DELETE", "/api/mine", undefined, mine(1));
-  assert.deepEqual(gone.data, { reports: 0, votes: 0, inquiries: 4 });
+  assert.deepEqual(gone.data, { reports: 0, votes: 0, posts: 0, inquiries: 4 });
   assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM inquiry_messages").get().n, 0);
 });
 
