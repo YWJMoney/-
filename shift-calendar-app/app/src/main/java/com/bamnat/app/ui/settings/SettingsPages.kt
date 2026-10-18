@@ -367,8 +367,8 @@ private fun PrivacyPage(
     val context = LocalContext.current
     val pkg = Uri.parse("package:${context.packageName}")
     SectionCard(title = "개인정보") {
-        SwitchRow("사용 통계 보내기", "어떤 기능을 얼마나 쓰는지 익명으로 보내 앱 개선에 써요. 메모와 근무 내용은 보내지 않아요",
-            settings.shareUsageStats) { v -> vm.update { it.copy(shareUsageStats = v) } }
+        // [STAB-01] No '사용 통계 보내기' switch: the app sends no usage statistics anywhere, so it promised
+        // something it does not do. It comes back only with a real place to send them (Telemetry sinks).
         NavRow("개인정보 처리방침", "무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
     }
     SectionCard(title = "권한") {

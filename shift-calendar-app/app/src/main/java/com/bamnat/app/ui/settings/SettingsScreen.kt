@@ -535,7 +535,7 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
         "날짜 칸 아래 " + when { s.showLunar -> "음력"; s.showHoursInCells -> "근무시간"; else -> "비움" },
     ).joinToString(" · ")
     SettingsPage.DATA -> "백업 저장 · 불러오기 · 캘린더 앱으로 내보내기"
-    SettingsPage.PRIVACY -> "사용 통계 ${if (s.shareUsageStats) "보냄" else "안 보냄"} · 권한 확인"
+    SettingsPage.PRIVACY -> "개인정보 처리방침 · 권한 확인"
     SettingsPage.ABOUT -> "밤낮 ${BuildConfig.VERSION_NAME} · 문의하기 · 처리방침"
 }
 

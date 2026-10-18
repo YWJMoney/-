@@ -110,7 +110,6 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
             "기기: ${Build.MANUFACTURER} ${Build.MODEL}",
             "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
             "시간대: ${ZoneId.systemDefault()}",
-            "사용 통계 보내기: ${onOff(settings.shareUsageStats)}",
         )
         val usage = EventBook.counts(events, now - 30L * 24 * 60 * 60 * 1000).map { (name, n) -> "$name: $n" }
             .ifEmpty { listOf("기록 없음") }
