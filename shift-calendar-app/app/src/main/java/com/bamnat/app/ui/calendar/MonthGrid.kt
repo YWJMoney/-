@@ -470,7 +470,10 @@ private fun DayCell(
                     showHours && day.scheduledMinutes > 0 -> HoursFormat.short(day.scheduledMinutes)
                     else -> ""
                 }
-                Text(
+                // [CAL-04] A red day says which day it is, unless the user wrote a memo there.
+                if (holidayName != null && memoText == null) {
+                    HolidayLabel(holidayName, footerSize, cal.sunday, footerSize * FOOTER_LINE, Modifier.weight(1f, fill = false))
+                } else Text(
                     footer,
                     fontSize = footerSize,
                     lineHeight = footerSize * FOOTER_LINE,
@@ -486,7 +489,7 @@ private fun DayCell(
                     style = NumberStyle,
                 )
                 if (hasMemo && memoText == null) {
-                    if (footer.isNotEmpty()) Spacer(Modifier.width(2.dp))
+                    if (footer.isNotEmpty() || holidayName != null) Spacer(Modifier.width(2.dp))
                     ColorDot(cal.memoDot, size = 5.dp)
                 }
             }

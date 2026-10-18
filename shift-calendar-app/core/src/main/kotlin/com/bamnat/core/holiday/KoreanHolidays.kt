@@ -64,6 +64,29 @@ object KoreanHolidays {
     fun isHoliday(date: LocalDate): Boolean = nameOf(date) != null
 
     /**
+     * [CAL-04] Ways to write [name] under a date, longest first: the name as it is, then shortened
+     * (대체공휴일 → 대체휴일, 부처님오신날 → 부처님날), then only the first of two holidays on one day.
+     * A day cell shows the first that fits its width.
+     */
+    fun labels(name: String): List<String> {
+        val parts = name.split('·')
+        val short = parts.map { SHORT[it] ?: it }
+        return listOf(name, short.joinToString("·"), short.first()).distinct()
+    }
+
+    private val SHORT = mapOf(
+        "설날 연휴" to "설 연휴",
+        "추석 연휴" to "추석연휴",
+        "대체공휴일" to "대체휴일",
+        "임시공휴일" to "임시휴일",
+        "부처님오신날" to "부처님날",
+        "근로자의 날" to "근로자날",
+        "대통령 선거일" to "선거일",
+        "지방선거일" to "선거일",
+        "국회의원 선거일" to "선거일",
+    )
+
+    /**
      * 5월 1일 노동절(2025년까지 근로자의 날) [PAYX-07]. A paid holiday by its own law at every
      * workplace, 5인 미만 included, and it cannot be swapped for another day (휴일 대체).
      */
