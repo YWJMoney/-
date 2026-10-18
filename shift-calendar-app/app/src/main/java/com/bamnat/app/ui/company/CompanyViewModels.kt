@@ -204,6 +204,9 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
                 done(result)
             } catch (e: BackupException) {
                 failed(e.message ?: "설정을 넣지 못했어요")
+            } catch (e: org.json.JSONException) {
+                // A setup the server sent that this app cannot read is a message, not a crash.
+                failed("이 설정을 읽지 못했어요. 앱을 업데이트한 뒤 다시 해 주세요")
             }
         }
     }
@@ -348,6 +351,9 @@ class CompanyReportViewModel(private val c: AppContainer) : ViewModel() {
             if (ok) {
                 c.companyStore.forgetSent()
                 _statuses.value = emptyMap()
+                // [ADMIN-02] The server deleted this phone's questions with the rest.
+                c.inquiryStore.update(emptyList())
+                c.inquiryStore.asked = false
             }
             done(ok)
         }

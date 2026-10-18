@@ -182,7 +182,70 @@ class CompanyAppTest {
      * The app's own file against the real server code (server/company-worker on Node with SQLite):
      * a format drift on either side fails here, not on a user's phone. Skipped where Node is missing.
      */
-    @Test fun theServerTakesWhatTheAppSends() = runBlocking {
+    @Test fun theServerTakesWhatTheAppSends() = withServer { base ->
+        val api = CompanyClient(base)
+        val share = CompanyShare(senderSetup(), store, settings, today = { today })
+        val sent = api.report("app-test-device-0001", "(주)예시정밀", "생산 2팀", true, "야간 가산은 22시부터예요", share.exportForServer())
+        assertEquals("pending", sent.status)
+        assertEquals(2, sent.points)
+        assertEquals("생산 2팀", sent.dept)
+
+        val hit = api.search("예시 정밀").single()
+        val page = api.company(hit.id)
+        val setup = page.setups.single()
+        assertFalse(setup.adopted)
+        assertTrue(setup.lines.isNotEmpty())
+        assertTrue(setup.hasPay)
+        // What comes back reads as a company file and asks for the same amounts.
+        assertEquals(8, share.summarize(setup.text).cycleDays)
+        assertEquals(listOf("item:자격수당", "rule:${ExtraKind.SPECIAL_ID}"), share.amountNeeds(setup.text).map { it.key })
+
+        // The same setup again from the same phone counts once.
+        assertTrue(api.report("app-test-device-0001", "예시정밀", "생산 2팀", true, "", share.exportForServer()).again)
+        val vote = api.vote("app-test-device-0002", page.id, setup.id, ok = true, verified = true)
+        assertEquals(2, vote.persons)
+
+        // A way the app cannot set yet waits for the developer and is never scored.
+        val ask = api.report("app-test-device-0003", "예시정밀", "", false, "어떻게: 대근 4시간도 기본급 10%", share.exportForServer(), ask = true)
+        assertEquals("ask", ask.status)
+        assertEquals(0, ask.points)
+        assertNotNull(api.status(ask.id))
+
+        api.takeBack("app-test-device-0003", ask.id)
+        assertNull(api.status(ask.id))
+        assertEquals(1, api.forgetMine("app-test-device-0001"))
+        assertNull(api.status(sent.id))
+        assertEquals(3, api.terms().threshold)
+    }
+
+    /** [ADMIN-02] 문의하기 against the real server code: a question, its follow-up, and deleting it. */
+    @Test fun theServerTakesTheAppsQuestions() = withServer { base ->
+        val api = InquiryClient(base)
+        val info = InquiryInfo(app = "1.12.0 (18)", model = "samsung SM-F956N", android = "16 (API 36)", diag = "알람 사용: 켬")
+        val sent = api.send("app-test-device-0011", InquiryKind.BUG, "잠금 화면에서 알람 소리가 안 나요", info)
+        assertEquals(InquiryKind.BUG, sent.kind)
+        assertTrue(sent.waiting)
+        assertEquals(listOf(false), sent.messages.map { it.fromDeveloper })
+        assertEquals(listOf(sent.id), api.mine("app-test-device-0011").map { it.id })
+        assertTrue(api.mine("app-test-device-0012").isEmpty())
+
+        val more = api.more("app-test-device-0011", sent.id, "배터리 최적화는 꺼 뒀어요")
+        assertEquals(2, more.messages.size)
+        // What the phone already stops is refused by the server too.
+        val refused = runCatching { api.more("app-test-device-0011", sent.id, "기본급 250만원 기준이에요") }.exceptionOrNull()
+        assertEquals("amount", (refused as CompanyException).code)
+
+        api.delete("app-test-device-0011", sent.id)
+        assertTrue(api.mine("app-test-device-0011").isEmpty())
+        // One already gone counts as deleted.
+        api.delete("app-test-device-0011", sent.id)
+    }
+
+    /**
+     * Runs server/company-worker on Node with SQLite for [block], given its address. Skipped where Node
+     * is missing.
+     */
+    private fun withServer(block: suspend (String) -> Unit) = runBlocking {
         val dir = File("../server/company-worker")
         assumeTrue(dir.resolve("test/local-server.mjs").exists())
         assumeTrue(runCatching { ProcessBuilder("node", "--version").start().waitFor(10, TimeUnit.SECONDS) }.getOrDefault(false))
@@ -195,39 +258,7 @@ class CompanyAppTest {
                 val line = out.readLine() ?: break
                 if ("company worker on" in line) break
             }
-            val api = CompanyClient("http://127.0.0.1:$port")
-            val share = CompanyShare(senderSetup(), store, settings, today = { today })
-            val sent = api.report("app-test-device-0001", "(주)예시정밀", "생산 2팀", true, "야간 가산은 22시부터예요", share.exportForServer())
-            assertEquals("pending", sent.status)
-            assertEquals(2, sent.points)
-            assertEquals("생산 2팀", sent.dept)
-
-            val hit = api.search("예시 정밀").single()
-            val page = api.company(hit.id)
-            val setup = page.setups.single()
-            assertFalse(setup.adopted)
-            assertTrue(setup.lines.isNotEmpty())
-            assertTrue(setup.hasPay)
-            // What comes back reads as a company file and asks for the same amounts.
-            assertEquals(8, share.summarize(setup.text).cycleDays)
-            assertEquals(listOf("item:자격수당", "rule:${ExtraKind.SPECIAL_ID}"), share.amountNeeds(setup.text).map { it.key })
-
-            // The same setup again from the same phone counts once.
-            assertTrue(api.report("app-test-device-0001", "예시정밀", "생산 2팀", true, "", share.exportForServer()).again)
-            val vote = api.vote("app-test-device-0002", page.id, setup.id, ok = true, verified = true)
-            assertEquals(2, vote.persons)
-
-            // A way the app cannot set yet waits for the developer and is never scored.
-            val ask = api.report("app-test-device-0003", "예시정밀", "", false, "어떻게: 대근 4시간도 기본급 10%", share.exportForServer(), ask = true)
-            assertEquals("ask", ask.status)
-            assertEquals(0, ask.points)
-            assertNotNull(api.status(ask.id))
-
-            api.takeBack("app-test-device-0003", ask.id)
-            assertNull(api.status(ask.id))
-            assertEquals(1, api.forgetMine("app-test-device-0001"))
-            assertNull(api.status(sent.id))
-            assertEquals(3, api.terms().threshold)
+            block("http://127.0.0.1:$port")
         } finally {
             node.destroy()
             node.waitFor(5, TimeUnit.SECONDS)

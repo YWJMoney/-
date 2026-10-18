@@ -89,6 +89,8 @@ import com.bamnat.app.ui.memo.MemoTrashScreen
 import com.bamnat.app.ui.memo.MemoTrashViewModel
 import com.bamnat.app.ui.settings.ExtraKindsScreen
 import com.bamnat.app.ui.settings.ExtraKindsViewModel
+import com.bamnat.app.ui.settings.InquiryScreen
+import com.bamnat.app.ui.settings.InquiryViewModel
 import com.bamnat.app.ui.settings.SettingsScreen
 import com.bamnat.app.ui.settings.SettingsViewModel
 import com.bamnat.app.ui.shifts.PatternScreen
@@ -160,6 +162,8 @@ private object Routes {
     const val COMPANY = "company/{id}?setup={setup}&weekdays={weekdays}"
     const val COMPANY_REPORT = "company_report"
     const val COMPANY_SENT = "company_sent"
+    /** [ADMIN-02] 설정 > 문의하기. */
+    const val INQUIRY = "inquiry"
 
     fun companyFind(setup: Boolean = false, weekdays: Boolean = false) = "company_find?setup=$setup&weekdays=$weekdays"
     fun company(id: String, setup: Boolean, weekdays: Boolean) = "company/$id?setup=$setup&weekdays=$weekdays"
@@ -468,7 +472,12 @@ private fun AppNavHost(
                         onFix = { nav.fixCompanySetup(it) },
                     )
                 }) else null,
+                onOpenInquiry = { nav.navigate(Routes.INQUIRY) { launchSingleTop = true } },
             )
+        }
+        composable(Routes.INQUIRY) {
+            val vm = appViewModel { InquiryViewModel(it) }
+            InquiryScreen(vm = vm, onBack = { nav.popFrom(Routes.INQUIRY) })
         }
         composable(Routes.PAY) {
             val vm = appViewModel { PayViewModel(it) }

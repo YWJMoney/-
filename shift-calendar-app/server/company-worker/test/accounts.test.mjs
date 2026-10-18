@@ -2,6 +2,7 @@
 // account from that link, the owner approves it, and the account sees and changes only what it was given.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import worker from "../src/index.js";
 import { server, report, from, signIn, ORIGIN } from "./helpers.mjs";
 
 const APP = { "x-admin": "1", origin: ORIGIN };
@@ -256,4 +257,22 @@ test("the bundled worker.js for the dashboard is one file that works the same", 
   const res = await worker.fetch(new Request(`${ORIGIN}/admin/join`), {});
   assert.equal(res.status, 200);
   assert.match(await res.text(), /밤낮 관리자/);
+});
+
+test("the hourly clean-up deletes spent sign-ins, unused invites and codes, and keeps used invites", async (t) => {
+  const { call, env, DB } = server();
+  const owner = await signIn(call);
+  await member(call, owner);
+  await call("POST", "/api/admin/invites", { email: "junho@example.com", perms: REVIEWER }, owner);
+  DB.db.prepare("INSERT INTO codes (email, code, expires, tries) VALUES (?, ?, ?, 0)").run("junho@example.com", "x", Date.now() + 60000);
+  const later = Date.now() + 120 * 24 * 60 * 60 * 1000;
+  t.mock.timers.enable({ apis: ["Date"], now: later });
+  const waits = [];
+  await worker.scheduled({ cron: "17 * * * *", scheduledTime: later }, env, { waitUntil: (p) => waits.push(p) });
+  await Promise.all(waits);
+  const n = (sql) => DB.db.prepare(sql).get().n;
+  assert.equal(n("SELECT COUNT(*) AS n FROM admin_sessions"), 0);
+  assert.equal(n("SELECT COUNT(*) AS n FROM codes"), 0);
+  assert.deepEqual(DB.db.prepare("SELECT email FROM invites").all().map((r) => r.email), ["minji@example.com"]);
+  assert.equal(n("SELECT COUNT(*) AS n FROM admins"), 1);
 });
