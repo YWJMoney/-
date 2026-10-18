@@ -348,6 +348,9 @@ class CompanyReportViewModel(private val c: AppContainer) : ViewModel() {
             if (ok) {
                 c.companyStore.forgetSent()
                 _statuses.value = emptyMap()
+                // [ADMIN-02] The server deleted this phone's questions with the rest.
+                c.inquiryStore.update(emptyList())
+                c.inquiryStore.asked = false
             }
             done(ok)
         }

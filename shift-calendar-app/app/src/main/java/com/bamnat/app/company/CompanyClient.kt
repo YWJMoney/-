@@ -208,37 +208,44 @@ class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
         )
     }
 
-    private fun request(method: String, path: String, body: JSONObject? = null, device: String? = null): JSONObject {
-        val conn = try {
-            URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
-        } catch (e: IOException) {
-            throw CompanyException("offline")
+    private fun request(method: String, path: String, body: JSONObject? = null, device: String? = null): JSONObject =
+        serverRequest(baseUrl, method, path, body, device)
+}
+
+/**
+ * One call to the company server; [device] goes in the X-Device header. A refusal comes back as
+ * [CompanyException] with the server's error word, no connection as "offline". [ADMIN-02] shares it.
+ */
+internal fun serverRequest(baseUrl: String, method: String, path: String, body: JSONObject? = null, device: String? = null): JSONObject {
+    val conn = try {
+        URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
+    } catch (e: IOException) {
+        throw CompanyException("offline")
+    }
+    try {
+        conn.requestMethod = method
+        conn.connectTimeout = 10_000
+        conn.readTimeout = 15_000
+        conn.setRequestProperty("Accept", "application/json")
+        device?.let { conn.setRequestProperty("X-Device", it) }
+        if (body != null) {
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
         }
-        try {
-            conn.requestMethod = method
-            conn.connectTimeout = 10_000
-            conn.readTimeout = 15_000
-            conn.setRequestProperty("Accept", "application/json")
-            device?.let { conn.setRequestProperty("X-Device", it) }
-            if (body != null) {
-                conn.doOutput = true
-                conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            }
-            val code = conn.responseCode
-            val text = (if (code < 400) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code >= 400) {
-                val err = runCatching { JSONObject(text) }.getOrNull()
-                throw CompanyException(err?.optString("error")?.takeIf { it.isNotEmpty() } ?: "http_$code", err?.optStringOrNull("field"))
-            }
-            return if (text.isBlank()) JSONObject() else JSONObject(text)
-        } catch (e: CompanyException) {
-            throw e
-        } catch (e: IOException) {
-            throw CompanyException("offline")
-        } finally {
-            conn.disconnect()
+        val code = conn.responseCode
+        val text = (if (code < 400) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+        if (code >= 400) {
+            val err = runCatching { JSONObject(text) }.getOrNull()
+            throw CompanyException(err?.optString("error")?.takeIf { it.isNotEmpty() } ?: "http_$code", err?.optStringOrNull("field"))
         }
+        return if (text.isBlank()) JSONObject() else JSONObject(text)
+    } catch (e: CompanyException) {
+        throw e
+    } catch (e: IOException) {
+        throw CompanyException("offline")
+    } finally {
+        conn.disconnect()
     }
 }
 

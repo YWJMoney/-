@@ -31,6 +31,13 @@ class ShareServerTest {
         assertTrue(requested.contains(Manifest.permission.INTERNET))
     }
 
+    /** [COMM-04][ADMIN-02] 회사 찾기 and 문의하기 reach the live company server. */
+    @Test fun companyAndInquiriesGoToTheLiveServerOverHttps() {
+        assertTrue(BuildConfig.COMPANY_BASE_URL, BuildConfig.COMPANY_BASE_URL.matches(Regex("https://[a-z0-9-]+\\.[a-z0-9-]+\\.workers\\.dev")))
+        assertTrue(com.bamnat.app.company.CompanyClient().enabled)
+        assertTrue(com.bamnat.app.company.InquiryClient().enabled)
+    }
+
     @Test fun theDialogSaysWhereTheScheduleGoesAndWhoCanSeeIt() {
         assertTrue(SHARE_SERVER_NOTICE.contains("Cloudflare"))
         assertTrue(SHARE_SERVER_NOTICE.contains("미국"))

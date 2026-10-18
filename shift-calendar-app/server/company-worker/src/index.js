@@ -1172,6 +1172,7 @@ async function ask(request, env) {
     // Threads with nothing new for half a year go, answers and all.
     stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
     stmt(env, "DELETE FROM inquiries WHERE updated_at < ?", now - INQUIRY.keepMs),
+    stmt(env, "DELETE FROM counters WHERE expires < ?", now),
   ]);
   return json(await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id)), 201);
 }

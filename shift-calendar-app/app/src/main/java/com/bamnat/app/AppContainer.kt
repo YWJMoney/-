@@ -62,6 +62,9 @@ class AppContainer(context: Context) {
     /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
     var companyApi: com.bamnat.app.company.CompanyApi = com.bamnat.app.company.CompanyClient()
     val companyStore by lazy { com.bamnat.app.company.CompanyStore(appContext) }
+    /** [ADMIN-02] 설정 > 문의하기 through the company server; screenshots and tests put a fake in its place. */
+    var inquiryApi: com.bamnat.app.company.InquiryApi = com.bamnat.app.company.InquiryClient()
+    val inquiryStore by lazy { com.bamnat.app.company.InquiryStore(appContext) }
     /** [SETUP-01] The first setup's answers until it saves, on this phone only. */
     val setupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "setup_draft.json")) }
     val firstSetup by lazy {
