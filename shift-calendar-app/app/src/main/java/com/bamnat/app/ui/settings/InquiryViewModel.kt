@@ -44,6 +44,9 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         android = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
     )
 
+    /** [ADMIN-02] Opened from 계산이 이상해요: the pay check to send, and the form comes first. */
+    val payCheck: String? = c.pendingPayCheck.also { c.pendingPayCheck = null }
+
     fun refresh() {
         viewModelScope.launch {
             // Nothing to look up before this phone has asked anything.
@@ -81,8 +84,8 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         else -> CompanyText.personal(text)?.let(::personalProblem)
     }
 
-    fun send(kind: InquiryKind, text: String, diag: String?, done: (Inquiry?, String?) -> Unit) = act(done) {
-        c.inquiryApi.send(device, kind, text, info.copy(diag = diag)).also {
+    fun send(kind: InquiryKind, text: String, diag: String?, pay: String?, done: (Inquiry?, String?) -> Unit) = act(done) {
+        c.inquiryApi.send(device, kind, text, info.copy(diag = diag, pay = pay)).also {
             c.inquiryStore.asked = true
             _list.value = listOf(it) + _list.value.orEmpty().filter { o -> o.id != it.id }
         }

@@ -1414,6 +1414,7 @@ const INQUIRY = {
   kinds: ["question", "bug", "idea"],
   text: 2000,
   diag: 6000,
+  pay: 3000,
   bytes: 16 * 1024,
   perDay: 5,
   perNetworkDay: 20,
@@ -1429,6 +1430,8 @@ const INQUIRY_INFO = [
   ["기기", "model", 80],
   ["Android", "android", 40],
   ["알람 점검", "diag", INQUIRY.diag],
+  // 급여 > 계산이 이상해요: the month's rules and each line's hours and rate, never an amount.
+  ["급여 계산", "pay", INQUIRY.pay],
 ];
 
 async function inquiries(request, env, path) {
@@ -1524,6 +1527,7 @@ function inquiryInfo(v) {
     if (x === undefined || x === null || x === "") continue;
     if (typeof x !== "string" || [...x].length > longest) refuse("info", key);
     if (key !== "diag" && personal(x) === "email") refuse("info", key);
+    if (key === "pay" && personal(x)) refuse("info", key);
     out[key] = x.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
   }
   return out;

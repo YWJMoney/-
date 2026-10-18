@@ -50,6 +50,7 @@ test("contacts and amounts are refused with the field; so is anything it does no
     [{ info: "1.12.0" }, "info", "info"],
     [{ info: { model: "a".repeat(81) } }, "info", "model"],
     [{ info: { app: "me@example.com" } }, "info", "app"],
+    [{ info: { pay: "기본급: 2,500,000원" } }, "info", "pay"],
   ];
   for (const [change, error, field] of cases) {
     const res = await call("POST", "/api/inquiries", question(1, change));
@@ -178,4 +179,14 @@ test("the hourly clean-up deletes what is only kept for a while, with nobody sen
   assert.equal(n("SELECT COUNT(*) AS n FROM inquiry_messages"), 0);
   // The report itself stays: only its network link went.
   assert.equal(n("SELECT COUNT(*) AS n FROM reports"), 1);
+});
+
+test("계산이 이상해요 sends the pay check without amounts, and the developer app shows it", async () => {
+  const { call } = server();
+  const pay = "월: 2026-10 · 요율 2026.1\n야간수당: 48시간 · 50%\n규칙: 연장 가산 50%";
+  const q = (await call("POST", "/api/inquiries", question(1, { text: "야간수당이 명세서보다 4시간만큼 적어요", info: { app: "1.13.1 (20)", pay } }))).data;
+  const admin = await signIn(call);
+  const detail = (await call("GET", `/api/admin/inquiries/${q.id}`, undefined, admin)).data;
+  assert.equal(detail.context["급여 계산"], pay);
+  assert.equal((await call("POST", "/api/inquiries", question(2, { info: { pay: "가".repeat(3001) } }))).status, 400);
 });

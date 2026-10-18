@@ -77,6 +77,8 @@ class AppContainer(context: Context) {
     val companyStore by lazy { com.bamnat.app.company.CompanyStore(appContext) }
     /** [ADMIN-02] 설정 > 문의하기 through the company server; screenshots and tests put a fake in its place. */
     var inquiryApi: com.bamnat.app.company.InquiryApi = com.bamnat.app.company.InquiryClient()
+    /** [ADMIN-02] The pay check 계산이 이상해요 hands to 문의하기; the next 문의하기 screen takes it once. */
+    var pendingPayCheck: String? = null
     val inquiryStore by lazy { com.bamnat.app.company.InquiryStore(appContext) }
     /** [SETUP-01] The first setup's answers until it saves, on this phone only. */
     val setupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "setup_draft.json")) }
