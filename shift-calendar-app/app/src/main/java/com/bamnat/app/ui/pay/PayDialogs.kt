@@ -15,7 +15,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -26,8 +25,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.Fmt
 import com.bamnat.core.pay.Cadence
-import com.bamnat.core.pay.CandidateKind
 import com.bamnat.core.pay.EditScope
 import com.bamnat.core.pay.MonthPay
 import com.bamnat.core.pay.PayCalculator
@@ -46,7 +44,6 @@ import com.bamnat.core.pay.PayLine
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.RaiseRule
 import com.bamnat.core.pay.Rounding
-import com.bamnat.core.pay.RuleCandidate
 import java.time.YearMonth
 import kotlin.math.abs
 
@@ -65,7 +62,8 @@ internal fun MoneyField(
         label = { Text(label) },
         placeholder = if (placeholder.isNotEmpty()) ({ Text(placeholder) }) else null,
         suffix = { Text("원") },
-        supportingText = value?.let { { Text(won(it)) } },
+        // [PAYS-04] Read back in words (250만 8천원) so a missing or extra zero shows at a glance.
+        supportingText = value?.let { { Text("${won(it)} · ${com.bamnat.core.pay.wonWords(it)}") } },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         modifier = modifier.fillMaxWidth(),
@@ -274,86 +272,33 @@ fun RaiseDialog(vm: PayViewModel, profile: PayProfile, target: ValueTarget, onDi
     )
 }
 
-private fun CandidateKind.label() = when (this) {
-    CandidateKind.BASE_SALARY -> "기본급"
-    CandidateKind.HOURLY_WAGE -> "시급"
-    CandidateKind.ALLOWANCE -> "수당"
-    CandidateKind.MULTIPLIER -> "회사 가산율"
-    CandidateKind.RAISE -> "인상률"
-    CandidateKind.EXTRA_RULE -> "회사 규칙"
-}
-
 /**
- * Fills values from pasted pay rules [PAYX-04]. Each line becomes a suggestion shown next to the
- * sentence it came from; nothing changes until the user ticks and applies.
+ * Fills values from pay rules written in words [PAYX-04][PAYS-06]: typed, pasted or read from a photo. Each
+ * sentence becomes a change shown next to it; nothing changes until the user ticks and applies, from [month] on.
  */
 @Composable
 fun RuleImportDialog(vm: PayViewModel, month: YearMonth, onDismiss: () -> Unit) {
-    var text by remember { mutableStateOf("") }
-    val candidates = remember { mutableStateListOf<Pair<RuleCandidate, Boolean>>() }
-    var read by remember { mutableStateOf(false) }
+    val snapshot by vm.snapshot.collectAsState()
+    val settings by vm.settings.collectAsState()
+    val profile by vm.profile.collectAsState()
     var from by remember { mutableStateOf(month) }
-
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (!read) "규칙 글로 채우기" else "찾은 값 ${candidates.size}개") },
+        title = { Text("규칙을 말로 적기") },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                if (!read) {
-                    Text("급여명세서나 취업규칙의 문장을 붙여 넣으세요. 한 줄에 하나씩이면 가장 잘 읽어요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    OutlinedTextField(
-                        value = text, onValueChange = { text = it },
-                        placeholder = { Text("예)\n기본급 3,100,000원\n나이트 수당 1회 35,000원\n대근은 통상시급의 200%, 최소 8시간\n매년 3월 3.5% 인상") },
-                        minLines = 5, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    )
-                    Text("휴대폰 안에서만 읽고 어디에도 보내지 않아요. 사진으로 읽기는 다음 업데이트에서 열려요.",
-                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
-                } else {
-                    if (candidates.isEmpty()) Text("읽을 수 있는 금액이나 비율을 못 찾았어요. ‘나이트 수당 30,000원’처럼 이름과 금액을 같이 적어 주세요.")
-                    candidates.forEachIndexed { i, (c, on) ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
-                            Checkbox(checked = on, onCheckedChange = { candidates[i] = c to it })
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    "${c.kind.label()} · ${c.name} " + when {
-                                        c.extraRule != null -> c.extraRule!!.describe()
-                                        c.premiumTarget != null && c.premium != null ->
-                                            "${c.premiumTarget!!.label} 가산 ${com.bamnat.core.pay.PayCalculator.pct(c.premium!!)}"
-                                        c.amount != null -> won(c.amount!!)
-                                        c.percent != null -> "${c.percent}%"
-                                        else -> ""
-                                    } + (c.cadence?.takeIf { c.kind == CandidateKind.ALLOWANCE }?.let { " · ${it.label}" } ?: ""),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                )
-                                Text("“${c.sourceLine}”", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                if (c.confidence < 0.6) Text("확실하지 않아요. 맞는지 확인해 주세요.",
-                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
-                            }
-                        }
-                    }
-                    if (candidates.isNotEmpty()) {
-                        Text("언제부터 적용할까요?", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
-                        MonthStepper(from, { from = it })
-                    }
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("취업규칙, 근로계약서, 동료에게 들은 말 그대로 적어도 돼요. 정해진 방식이 아니어도 규칙대로 계산해요. 휴대폰 안에서만 읽어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("언제부터 적용할까요?", style = MaterialTheme.typography.titleSmall)
+                MonthStepper(from, { from = it })
+                RuleSentenceBox(settings.extraKinds.kinds, snapshot?.shiftTypes.orEmpty(), profile?.fiveOrMoreEmployees ?: true) { changes ->
+                    vm.applyRuleChanges(changes, from)
+                    onDismiss()
                 }
             }
         },
-        confirmButton = {
-            if (!read) {
-                Button(onClick = {
-                    candidates.clear()
-                    candidates += vm.readRules(text).map { it to (it.confidence >= 0.6) }
-                    read = true
-                }, enabled = text.isNotBlank()) { Text("읽기") }
-            } else {
-                val chosen = candidates.filter { it.second }.map { it.first }
-                Button(onClick = { vm.applyCandidates(chosen, from); onDismiss() }, enabled = chosen.isNotEmpty()) { Text("${chosen.size}개 적용") }
-            }
-        },
-        dismissButton = {
-            if (read) TextButton(onClick = { read = false }) { Text("다시 쓰기") } else TextButton(onClick = onDismiss) { Text("취소") }
-        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }
 

@@ -331,4 +331,25 @@ class PayRulesTest {
         assertEquals(200_000L, m.gap)
         assertNotNull(m.hints.firstOrNull { it.key == "unmatched:식대" })
     }
+
+    @Test
+    fun `W1 amounts read in the units people say`() {
+        assertEquals("250만 8천원", com.bamnat.core.pay.wonWords(2_508_000))
+        assertEquals("300만원", com.bamnat.core.pay.wonWords(3_000_000))
+        assertEquals("1만 320원", com.bamnat.core.pay.wonWords(10_320))
+        assertEquals("1억 5,000만원", com.bamnat.core.pay.wonWords(150_000_000))
+        assertEquals("5천원", com.bamnat.core.pay.wonWords(5_000))
+    }
+
+    @Test
+    fun `P5 lines recognised a column at a time go back on their rows`() {
+        val text = com.bamnat.core.pay.OcrRows.join(listOf(
+            com.bamnat.core.pay.OcrLine("기본급", 10, 100, 80, 120),
+            com.bamnat.core.pay.OcrLine("연장근로수당", 10, 130, 120, 150),
+            com.bamnat.core.pay.OcrLine("2,508,000", 300, 102, 380, 121),
+            com.bamnat.core.pay.OcrLine("288,000", 300, 131, 370, 149),
+        ))
+        assertEquals("기본급  2,508,000\n연장근로수당  288,000", text)
+        assertEquals(288_000L, PayslipReader.read(text).amount(SlipRole.OVERTIME))
+    }
 }
