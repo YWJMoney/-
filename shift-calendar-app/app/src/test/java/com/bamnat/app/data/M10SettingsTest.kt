@@ -107,7 +107,8 @@ class M10SettingsTest {
         val policy = File("../../privacy/index.html")
         assumeTrue(policy.exists())
         val text = policy.readText()
-        assertTrue(text.contains("처리방침 1.7"))
+        // Later versions keep the 1.7 change note; the version itself is checked in ShareServerTest.
+        assertTrue(text.contains("1.7에서 바뀐 점"))
         assertTrue(text.contains("불러오기 직전의 데이터를 휴대폰 안에 ${ImportUndo.KEEP_DAYS}일 동안"))
         assertTrue(text.contains("불러오기 직전 데이터의 사본은 백업에서 뺍니다"))
     }
