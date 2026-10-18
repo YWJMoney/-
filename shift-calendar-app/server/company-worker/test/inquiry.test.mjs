@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import worker from "../src/index.js";
-import { server, device, from, signIn, report } from "./helpers.mjs";
+import { server, device, from, signIn, report, ORIGIN } from "./helpers.mjs";
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 
@@ -87,7 +87,7 @@ test("the developer answers in the developer app and the phone sees the answer",
     { text: "배터리 최적화에서 밤낮을 빼 주세요. 다음 업데이트에서 고칠게요" }, admin);
   assert.equal(answered.status, 200);
   assert.equal(answered.data.status, "answered");
-  assert.deepEqual(answered.data.messages.map((m) => [m.from, m.by ?? null]), [["user", null], ["admin", "admin"]]);
+  assert.deepEqual(answered.data.messages.map((m) => [m.from, m.by ?? null]), [["user", null], ["admin", "최고 관리자"]]);
 
   const seen = (await call("GET", `/api/inquiries/${q.id}`, undefined, mine(1))).data;
   assert.equal(seen.status, "answered");
@@ -110,11 +110,26 @@ test("the developer answers in the developer app and the phone sees the answer",
   assert.equal((await call("GET", `/api/admin/inquiries/${"A".repeat(22)}`, undefined, admin)).status, 404);
 });
 
-test("the answer names the admin who wrote it once admins have names", async () => {
-  const { call } = server({ actor: { name: "준호" } });
+test("the answer names the admin who wrote it, and only admins given inquiries see them", async () => {
+  const { call } = server();
   const q = (await call("POST", "/api/inquiries", question(1))).data;
-  const admin = await signIn(call);
-  const res = await call("POST", `/api/admin/inquiries/${q.id}/reply`, { text: "확인했어요" }, admin);
+  const owner = await signIn(call);
+  const app = { "x-admin": "1", origin: ORIGIN };
+  const account = async (email, name, inquiries) => {
+    const perms = { review: "none", inquiries, companies: "none", rewards: "none", settings: "none", audit: "none" };
+    const link = (await call("POST", "/api/admin/invites", { email, perms }, owner)).data.link;
+    assert.equal((await call("POST", "/api/admin/join", { token: link.split("#")[1], name, password: "support-desk-2026" }, app)).status, 201);
+    const id = (await call("GET", "/api/admin/admins", undefined, owner)).data.admins.find((a) => a.email === email).id;
+    await call("POST", `/api/admin/admins/${id}`, { status: "active" }, owner);
+    const res = await call("POST", "/api/admin/login", { email, password: "support-desk-2026" }, app);
+    return { cookie: res.headers.get("set-cookie").split(";")[0], ...app };
+  };
+  const junho = await account("junho@example.com", "준호", "edit");
+  const seojin = await account("seojin@example.com", "서진", "none");
+  assert.equal((await call("GET", "/api/admin/inquiries", undefined, seojin)).status, 403);
+  assert.equal((await call("GET", "/api/admin/overview", undefined, seojin)).data.inquiries, undefined);
+  assert.equal((await call("GET", "/api/admin/overview", undefined, junho)).data.inquiries, 1);
+  const res = await call("POST", `/api/admin/inquiries/${q.id}/reply`, { text: "확인했어요" }, junho);
   assert.equal(res.data.messages[1].by, "준호");
 });
 
@@ -158,7 +173,7 @@ test("the hourly clean-up deletes what is only kept for a while, with nobody sen
   const n = (sql) => DB.db.prepare(sql).get().n;
   assert.equal(n("SELECT COUNT(*) AS n FROM reports WHERE net IS NOT NULL"), 0);
   assert.equal(n("SELECT COUNT(*) AS n FROM counters"), 0);
-  assert.equal(n("SELECT COUNT(*) AS n FROM sessions"), 0);
+  assert.equal(n("SELECT COUNT(*) AS n FROM admin_sessions"), 0);
   assert.equal(n("SELECT COUNT(*) AS n FROM inquiries"), 0);
   assert.equal(n("SELECT COUNT(*) AS n FROM inquiry_messages"), 0);
   // The report itself stays: only its network link went.
