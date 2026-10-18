@@ -122,6 +122,18 @@ class PayslipMatchTest {
     }
 
     @Test
+    fun `a legal fact that only comes closer does not say it matches`() {
+        // 5인 미만 comes to 2,700,000; the payslip says 20,000원 more, which nothing in the app explains.
+        val fewer = total(salary.copy(fiveOrMoreEmployees = false), withOvertime)
+        val m = PayslipMatcher.match(salary, nov, withOvertime::resolve, Payslip(fewer + 20_000, overtimePay = 192_000, overtimeMinutes = 16 * 60))
+        assertFalse(m.matched)
+        val hint = m.hints.first()
+        assertEquals(Unknowns.FIVE_OR_MORE, hint.key)
+        assertEquals("직원이 5명 미만이면 명세서에 더 가까워요. 회사에 확인해 보세요", hint.text)
+        assertEquals(fewer, hint.total)
+    }
+
+    @Test
     fun `a guard roster can be told it looks like approved supervisory work`() {
         // 24시간 격일제, 시급 10,700원, 승인 있는 회사의 명세서 (2027년 1월, 14번 근무 × 192,600).
         val guard = ShiftType(30, "당직", "당", 0xFF000000, t(9), t(9), 480, t(18))

@@ -34,6 +34,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -205,7 +206,8 @@ internal fun CompanySearchDialog(vm: SetupViewModel, initialQuery: String, onDis
             val id = openId
             if (id == null) {
                 val find = appViewModel { CompanyFindViewModel(it) }
-                remember(find) { if (find.query.value.isBlank()) find.query.value = initialQuery.trim() }
+                // The name typed so far, once each time the search opens; never over what the user typed.
+                LaunchedEffect(find) { if (find.query.value.isBlank()) find.query.value = initialQuery.trim() }
                 CompanyFindScreen(
                     vm = find,
                     setup = true,

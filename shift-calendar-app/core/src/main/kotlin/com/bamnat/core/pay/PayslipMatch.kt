@@ -253,7 +253,9 @@ object PayslipMatcher {
                 val (key, text, other) = flip
                 val start = before.getOrNull(i)?.takeIf { it.first == key && it.second == text }?.third
                 val total = listOfNotNull(other, start).distinct().map { run(it).total }.minBy { abs(target - it) }
-                if (abs(target - total) * 2 <= left) hints += MatchHint(key, text, total)
+                // "맞아요" only when the flip lands on the payslip; one that only comes most of the way is "더 가까워요".
+                val lands = if (abs(target - total) <= tolerance) "명세서와 맞아요" else "명세서에 더 가까워요"
+                if (abs(target - total) * 2 <= left) hints += MatchHint(key, "$text $lands. 회사에 확인해 보세요", total)
             }
             hints.sortBy { abs(target - it.total) }
         }
@@ -281,26 +283,25 @@ object PayslipMatcher {
     private fun perHour(pay: Long?, minutes: Int?, rate: Double): Long? =
         if (pay == null || minutes == null || minutes <= 0 || rate <= 0) null else (pay / (minutes / 60.0 * rate)).roundToLong()
 
-    /** Each legal fact flipped alone, with what to tell the user; 감시·단속 only when [guardLike]. */
+    /** Each legal fact flipped alone, with the condition to tell the user; 감시·단속 only when [guardLike]. */
     private fun legalFlips(p: PayProfile, guardLike: Boolean): List<Triple<String, String, PayProfile>> {
-        val ask = "회사에 확인해 보세요"
         val r = p.rules
         return buildList {
             add(Triple(Unknowns.FIVE_OR_MORE,
-                "직원이 5명 ${if (p.fiveOrMoreEmployees) "미만" else "이상"}이면 명세서와 맞아요. $ask", p.copy(fiveOrMoreEmployees = !p.fiveOrMoreEmployees)))
+                "직원이 5명 ${if (p.fiveOrMoreEmployees) "미만" else "이상"}이면", p.copy(fiveOrMoreEmployees = !p.fiveOrMoreEmployees)))
             if (p.fiveOrMoreEmployees) add(Triple(Unknowns.PUBLIC_HOLIDAYS,
-                (if (r.publicHolidaysPaid) "공휴일을 다른 날과 바꿔 쉬는 회사(휴일 대체)라면" else "공휴일이 유급휴일이라면") + " 명세서와 맞아요. $ask",
+                if (r.publicHolidaysPaid) "공휴일을 다른 날과 바꿔 쉬는 회사(휴일 대체)라면" else "공휴일이 유급휴일이라면",
                 p.withRules { it.copy(publicHolidaysPaid = !r.publicHolidaysPaid) }))
             else add(Triple(Unknowns.PUBLIC_HOLIDAYS,
-                "회사가 공휴일을 유급휴일로 ${if (r.holidaysUnderFive) "주지 않는다면" else "준다면"} 명세서와 맞아요. $ask",
+                "회사가 공휴일을 유급휴일로 ${if (r.holidaysUnderFive) "주지 않는다면" else "준다면"}",
                 p.withRules { it.copy(holidaysUnderFive = !r.holidaysUnderFive) }))
             if (guardLike) add(Triple(Unknowns.SUPERVISORY,
-                (if (r.supervisoryApproved) "감시·단속 승인이 없다면" else "감시·단속 승인을 받은 회사라면") + " 명세서와 맞아요. $ask",
+                if (r.supervisoryApproved) "감시·단속 승인이 없다면" else "감시·단속 승인을 받은 회사라면",
                 p.withRules { it.copy(supervisoryApproved = !r.supervisoryApproved) }))
             if (p.flexPeriod == null) FlexPeriod.entries.forEach { f ->
-                add(Triple("flexPeriod", "탄력적 근로시간제(${f.months}개월 단위)를 쓰는 회사라면 명세서와 맞아요. $ask",
+                add(Triple("flexPeriod", "탄력적 근로시간제(${f.months}개월 단위)를 쓰는 회사라면",
                     p.copy(scheduleIsRegular = true, flexPeriod = f)))
-            } else add(Triple("flexPeriod", "탄력적 근로시간제가 아니라면 명세서와 맞아요. $ask", p.copy(scheduleIsRegular = false, flexPeriod = null)))
+            } else add(Triple("flexPeriod", "탄력적 근로시간제가 아니라면", p.copy(scheduleIsRegular = false, flexPeriod = null)))
         }
     }
 
