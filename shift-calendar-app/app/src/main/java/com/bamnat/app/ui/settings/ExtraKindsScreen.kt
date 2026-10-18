@@ -131,6 +131,7 @@ import com.bamnat.core.pay.PayUnit
 import com.bamnat.core.pay.RateTable
 import com.bamnat.core.pay.RestDayWork
 import com.bamnat.core.pay.WageType
+import com.bamnat.app.ui.pay.wageLabel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -336,8 +337,13 @@ class ExtraKindsViewModel(private val container: AppContainer) : ViewModel() {
         val month = profile.period.monthOf(today)
         val hourly = calculator.calculate(profile.named(snapshot.kinds), month, snapshot.resolver::resolve).ordinaryHourly
         val base = profile.base.on(month).value
-        return if (profile.wageType == WageType.MONTHLY) UnitMoney(hourly, base, "기본급")
-        else UnitMoney(hourly, base * profile.monthlyHours, "시급 × ${profile.monthlyHours}시간")
+        return when (profile.wageType) {
+            WageType.MONTHLY -> UnitMoney(hourly, base, "기본급")
+            WageType.HOURLY -> UnitMoney(hourly, base * profile.monthlyHours, "시급 × ${profile.monthlyHours}시간")
+            // [PAYS-03] 일당 ÷ 1일 소정근로시간 is the 시급, as the calculator has it.
+            WageType.DAILY -> UnitMoney(hourly, Math.round(base * 60.0 / profile.dailyHours.coerceIn(1, 8 * 60)) * profile.monthlyHours,
+                "일당의 시급 × ${profile.monthlyHours}시간")
+        }
     }
 
     /** What the piece added to the day, part by part, with each part's formula. */
@@ -1050,7 +1056,7 @@ private fun PreviewBar(
                     p.lines.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
                     Text(
                         "내 기본급과 근무표로 계산한 예상이에요. 그 주에 일한 시간에 따라 달라질 수 있어요." +
-                            if (profile.wageType == WageType.HOURLY) "" else " 기본급은 이미 받는 몫이라 빠져 있어요.",
+                            if (profile.wageType != WageType.MONTHLY) "" else " 기본급은 이미 받는 몫이라 빠져 있어요.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -1109,7 +1115,7 @@ private fun reportText(draft: KindDraft, snapshot: ScheduleSnapshot, profile: Pa
     appendLine("지금 설정: ${draft.rule.shareText(night)}")
     draft.byShift.forEach { (id, r) -> appendLine("  ${snapshot.typesById[id]?.name ?: "근무"}: ${r.shareText(night)}") }
     profile?.let { p ->
-        appendLine("사업장: ${if (p.fiveOrMoreEmployees) "5인 이상" else "5인 미만"} · ${if (p.wageType == WageType.MONTHLY) "월급제" else "시급제"} · " +
+        appendLine("사업장: ${if (p.fiveOrMoreEmployees) "5인 이상" else "5인 미만"} · ${p.wageLabel()} · " +
             "쉬는 날 근무 ${p.rules.restDayWork.label}")
     }
     appendLine()

@@ -99,6 +99,9 @@ import com.bamnat.app.ui.stats.StatsViewModel
 import com.bamnat.app.ui.money.MoneyScreen
 import com.bamnat.app.ui.money.MoneyViewModel
 import com.bamnat.app.ui.work.WorkStyleScreen
+import com.bamnat.app.ui.setup.SetupHost
+import com.bamnat.app.ui.setup.SetupViewModel
+import com.bamnat.app.ui.setup.SetupPaySheet
 import com.bamnat.app.ui.company.CompanyDetailScreen
 import com.bamnat.app.ui.company.CompanyDetailViewModel
 import com.bamnat.app.ui.company.CompanyFindScreen
@@ -173,47 +176,33 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val wide = windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
     val snackbar = remember { SnackbarHostState() }
 
-    // [WORK-01] First launch asks how the user works. Phones that already have a pattern were
-    // set up before this question existed, so they are shift workers and are not asked.
+    // [SETUP-01] First launch asks how the user works and sets it all up before the calendar. Phones
+    // that already have a pattern were set up before this question existed, so they are shift workers
+    // and are not asked; a setup on its way (or being saved) is never taken for one of those.
     val settingsNow by container.settingsRepository.settings.collectAsStateWithLifecycle()
-    val needsWorkStyle by produceState<Boolean?>(if (settingsNow.workStyle != null) false else null, settingsNow.workStyle) {
-        value = if (settingsNow.workStyle != null) {
-            false
-        } else if (container.scheduleRepository.patterns.first().isNotEmpty()) {
-            container.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
-            false
-        } else {
-            true
+    val setupDraft by container.setupDrafts.draft.collectAsStateWithLifecycle()
+    val needsSetup by produceState<Boolean?>(if (settingsNow.workStyle != null) false else null, settingsNow.workStyle, setupDraft == null) {
+        value = when {
+            settingsNow.workStyle != null -> {
+                // Set some other way meanwhile (a backup restored in settings): the setup left is not needed.
+                if (setupDraft?.committing == false) container.setupDrafts.clear()
+                false
+            }
+            setupDraft == null && container.scheduleRepository.patterns.first().isNotEmpty() -> {
+                container.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
+                false
+            }
+            else -> true
         }
     }
-    // The first setup screen opens once the navigation graph exists.
-    var pendingRoute by rememberSaveable { mutableStateOf<String?>(null) }
-    when (needsWorkStyle) {
+    when (needsSetup) {
         null -> return
-        true -> {
-            WorkStyleScreen(current = null, company = container.companyApi.enabled, onPick = { style ->
-                container.settingsRepository.update { it.copy(workStyle = style) }
-                container.telemetry.event("work_style", style.name)
-                if (style == WorkStyle.HOURLY) container.appScope.launch { container.scheduleRepository.addHourlyTypes() }
-                val company = container.companyApi.enabled
-                pendingRoute = when (style) {
-                    // [PAYX-13] First setup goes on from the kind of work to its cycle, then to pay;
-                    // [COMM-01] with a company server, a coworker's setup is looked for first.
-                    WorkStyle.SHIFT -> if (company) Routes.companyFind(setup = true) else Routes.pattern(setup = true)
-                    WorkStyle.DAY -> if (company) Routes.companyFind(setup = true, weekdays = true) else Routes.pattern(weekdays = true, setup = true)
-                    WorkStyle.HOURLY -> Routes.PAY
-                    WorkStyle.FIELD, WorkStyle.BUSINESS -> null
-                }
-            })
+        // "나중에" opens the calendar with a card to go on from where the user stopped.
+        true -> if (setupDraft?.later != true) {
+            SetupHost(appViewModel { SetupViewModel(it) })
             return
         }
         false -> Unit
-    }
-    LaunchedEffect(pendingRoute) {
-        pendingRoute?.let { r ->
-            pendingRoute = null
-            nav.navigate(r) { launchSingleTop = true }
-        }
     }
 
     // Which screens get used decides what is worth building next [MEAS-03].
@@ -357,6 +346,25 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 )
                 if (wide && showNav) AdSlot()
             }
+        }
+    }
+
+    // [SETUP-01] Right after the first setup, once: the pay comes next for work paid by the hour or month.
+    val justSaved by container.firstSetup.saved.collectAsStateWithLifecycle()
+    val saved = justSaved
+    if (saved != null) {
+        val payProfile by container.payStore.profile.collectAsStateWithLifecycle()
+        if (saved.style?.usesPayEngine != true || payProfile != null) {
+            LaunchedEffect(saved) { container.firstSetup.consumeSaved() }
+        } else {
+            SetupPaySheet(
+                companyPay = container.companyStore.pendingPay != null,
+                onNow = {
+                    container.firstSetup.consumeSaved()
+                    nav.navigate(Routes.PAY) { launchSingleTop = true }
+                },
+                onLater = { container.firstSetup.consumeSaved() },
+            )
         }
     }
 }

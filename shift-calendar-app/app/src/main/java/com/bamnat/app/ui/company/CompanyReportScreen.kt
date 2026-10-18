@@ -84,7 +84,8 @@ fun CompanyReportScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onDone: 
     val fix = vm.start?.fix == true
     var company by rememberSaveable { mutableStateOf(vm.start?.company.orEmpty()) }
     var dept by rememberSaveable { mutableStateOf(vm.start?.dept.orEmpty()) }
-    var verified by rememberSaveable { mutableStateOf(false) }
+    val payslipMonth = vm.payslipMonth
+    var verified by rememberSaveable { mutableStateOf(payslipMonth != null) }
     var note by rememberSaveable { mutableStateOf("") }
 
     Scaffold(
@@ -139,7 +140,8 @@ fun CompanyReportScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onDone: 
                             Checkbox(checked = verified, onCheckedChange = null, modifier = Modifier.padding(horizontal = 8.dp))
                             Column(Modifier.weight(1f)) {
                                 Text("급여 명세서와 맞춰 봤어요", style = MaterialTheme.typography.bodyLarge)
-                                Text("명세서로 확인한 설정은 2점이라 더 빨리 채택돼요", style = MaterialTheme.typography.bodySmall,
+                                Text((payslipMonth?.let { "${it.monthValue}월 명세서로 맞춰 본 기록이 있어요. " } ?: "") + "명세서로 확인한 설정은 2점이라 더 빨리 채택돼요",
+                                    style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
@@ -257,7 +259,7 @@ private fun SentPanel(status: ReportStatus, onDone: () -> Unit, onOpenSent: () -
                 Text(status.detail(), style = MaterialTheme.typography.bodyMedium)
                 if (status.status == "pending" && !status.review) PointsBar(status.points, status.threshold)
                 if (status.rewardMonths > 0 && status.status == "pending") {
-                    RewardPill("채택되면 프로 ${status.rewardMonths}개월을 드려요")
+                    RewardPill(rewardText(status.rewardMonths))
                 }
             }
         }

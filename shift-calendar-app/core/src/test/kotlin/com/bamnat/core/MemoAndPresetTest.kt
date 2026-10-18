@@ -60,6 +60,6 @@ class MemoAndPresetTest {
         // Without an off type and without an evening type, those steps become plain days off.
         val limited = Fixtures.all.filter { !it.isOff && it.id != 2L }
         assertEquals(listOf(1L, 1L, null, null, 3L, 3L, null, null), PatternPresets.toSteps(preset, limited))
-        assertTrue(PatternPresets.all.all { p -> p.codes.all { it in "DENXO" } })
+        assertTrue(PatternPresets.all.all { p -> p.codes.all { it in "DENXBO" } })
     }
 }

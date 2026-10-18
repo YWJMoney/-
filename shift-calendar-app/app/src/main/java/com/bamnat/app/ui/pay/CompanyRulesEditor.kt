@@ -44,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,10 +52,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.components.SectionCard
+import com.bamnat.core.pay.BreakPay
 import com.bamnat.core.pay.CompanyRules
 import com.bamnat.core.pay.ExtraBasis
 import com.bamnat.core.pay.ExtraRule
 import com.bamnat.core.pay.HolidayPayMode
+import com.bamnat.core.pay.LineKind
+import com.bamnat.core.pay.MonthPay
+import com.bamnat.core.pay.PayItem
+import com.bamnat.core.pay.PaySetupQuestions
+import com.bamnat.core.pay.SetupQuestion
+import com.bamnat.core.pay.Unknowns
+import com.bamnat.core.schedule.PatternTimeline
 import com.bamnat.core.pay.MinuteRounding
 import com.bamnat.core.pay.RestDayWork
 import com.bamnat.core.pay.WeeklyHoliday
@@ -88,9 +97,17 @@ fun CompanyRulesEditor(
     val rates = remember(month) { com.bamnat.core.pay.RateTable.on(month.atDay(1)) }
     var pickHire by remember { mutableStateOf(false) }
     val rules = draft.rules
-    fun setRules(r: CompanyRules) { draft = draft.copy(rules = r) }
-    val before = remember(saved, snapshot, month) { vm.calculate(saved, snapshot, month).total }
-    val after = remember(draft, snapshot, month) { vm.calculate(draft, snapshot, month) }
+    // [PAYS-01] A choice made here settles that question's 확인 필요.
+    fun setRules(r: CompanyRules, vararg settled: String) { draft = draft.copy(rules = r, estimatedFields = draft.estimatedFields - settled.toSet()) }
+    fun PayProfile.settled(vararg keys: String) = copy(estimatedFields = estimatedFields - keys.toSet())
+    // Worked out off the main thread, so a toggle never waits for the month [PAYS-01].
+    val before by produceState<Long?>(null, saved, snapshot, month) { value = vm.calculateOff(saved, snapshot, month).total }
+    val after by produceState<MonthPay?>(null, draft, snapshot, month) { value = vm.calculateOff(draft, snapshot, month) }
+    // [PAYS-03] The newer choices show where setup would ask them, or once they are set.
+    val asked = remember(draft.items, draft.occupation, draft.fiveOrMoreEmployees, snapshot) {
+        PaySetupQuestions.applicable(draft, snapshot.shiftTypes, PatternTimeline.current(snapshot.patterns, LocalDate.now()))
+    }
+    val askedKinds = asked.map { it.question }.toSet()
 
     if (pickHire) {
         val state = rememberDatePickerState(
@@ -124,18 +141,23 @@ fun CompanyRulesEditor(
 
             SectionCard(title = "기본") {
                 Toggle("5인 이상 사업장", "아니면 법정 가산이 없어요. 회사가 주는 가산은 아래에서 따로 넣어요", draft.fiveOrMoreEmployees) {
-                    draft = draft.copy(fiveOrMoreEmployees = it)
+                    draft = draft.copy(fiveOrMoreEmployees = it).settled(Unknowns.FIVE_OR_MORE)
                 }
                 if (!draft.fiveOrMoreEmployees) {
                     // [EXTRA-02] 근로기준법 시행령 제7조 별표 1: these do not apply under five employees.
                     Hint("5인 미만 사업장은 연장·야간·휴일 가산, 주 40시간·52시간, 연차가 법으로 정해져 있지 않아요(근로기준법 시행령 제7조 별표 1). " +
                         "회사가 주는 가산이 있으면 아래 가산율에서 골라 주세요.")
                 }
+                if (SetupQuestion.SUPERVISORY in askedKinds || rules.supervisoryApproved) {
+                    // [PAYS-03] 근로기준법 제63조 제3호: hours, breaks and holidays do not apply once approved.
+                    Toggle("감시·단속 근로 승인", "경비·시설처럼 대기가 많은 일로 고용노동부 승인을 받았으면 켜요. 연장·휴일 가산과 주휴가 없고 야간 가산은 받아요(근로기준법 제63조)",
+                        rules.supervisoryApproved) { setRules(rules.copy(supervisoryApproved = it), Unknowns.SUPERVISORY) }
+                }
                 Toggle("근무표 시간은 모두 기본 근무", "12시간 교대처럼 근무표대로 일한 시간이 기본급에 들어 있으면 켜 주세요. 잔업으로 적은 시간만 연장이 돼요",
                     draft.scheduleIsRegular) {
-                    draft = draft.copy(scheduleIsRegular = it, flexPeriod = if (it) draft.flexPeriod else null)
+                    draft = draft.copy(scheduleIsRegular = it, flexPeriod = if (it) draft.flexPeriod else null).settled(Unknowns.SCHEDULE_IS_REGULAR)
                 }
-                if (draft.scheduleIsRegular) FlexPicker(draft.flexPeriod) { draft = draft.copy(flexPeriod = it) }
+                if (draft.scheduleIsRegular) FlexPicker(draft.flexPeriod) { draft = draft.copy(flexPeriod = it).settled(Unknowns.SCHEDULE_IS_REGULAR) }
                 if (!draft.scheduleIsRegular) {
                     Toggle("하루 8시간 넘으면 연장", "탄력적·선택적 근로시간제라면 꺼 주세요", draft.dailyLimitMinutes != null) {
                         draft = draft.copy(dailyLimitMinutes = if (it) 480 else null)
@@ -144,16 +166,31 @@ fun CompanyRulesEditor(
                         draft = draft.copy(weeklyLimitMinutes = if (it) 2400 else null)
                     }
                 }
+                if (SetupQuestion.BREAK_PAY in askedKinds || rules.breakPay != BreakPay.UNPAID) {
+                    // [PAYS-03] 근로기준법 제54조: a break is free time; 대기 under direction is work (제50조 제3항).
+                    Label("휴게 시간")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        BreakPay.entries.forEach { b ->
+                            FilterChip(selected = rules.breakPay == b, onClick = { setRules(rules.copy(breakPay = b), Unknowns.BREAK_PAY) },
+                                label = { Text(when (b) { BreakPay.UNPAID -> "무급 (법정)"; BreakPay.PAID -> "유급"; BreakPay.AS_WORK -> "일한 시간으로" }) })
+                        }
+                    }
+                    Hint(when (rules.breakPay) {
+                        BreakPay.UNPAID -> "법으로 휴게는 일한 시간이 아니라 무급이에요(근로기준법 제54조)."
+                        BreakPay.PAID -> "휴게에도 돈은 나오지만 일한 시간으로는 치지 않아 연장·야간은 그대로예요."
+                        BreakPay.AS_WORK -> "자리를 지키며 대기하는 휴게라 일한 시간으로 쳐요. 연장·야간도 그만큼 늘어요."
+                    })
+                }
                 if (draft.wageType == WageType.MONTHLY) {
                     Label("월 소정근로시간 (통상시급을 나누는 시간)")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf(209, 226, 243).forEach { h ->
-                            FilterChip(selected = draft.monthlyHours == h, onClick = { draft = draft.copy(monthlyHours = h) },
+                            FilterChip(selected = draft.monthlyHours == h, onClick = { draft = draft.copy(monthlyHours = h).settled(Unknowns.MONTHLY_HOURS) },
                                 label = { Text("${h}시간") })
                         }
-                        OutlinedButton(onClick = { draft = draft.copy(monthlyHours = (draft.monthlyHours - 1).coerceAtLeast(100)) }) { Text("−") }
+                        OutlinedButton(onClick = { draft = draft.copy(monthlyHours = (draft.monthlyHours - 1).coerceAtLeast(100)).settled(Unknowns.MONTHLY_HOURS) }) { Text("−") }
                         Text("${draft.monthlyHours}시간", style = MaterialTheme.typography.titleSmall, modifier = Modifier.align(Alignment.CenterVertically))
-                        OutlinedButton(onClick = { draft = draft.copy(monthlyHours = (draft.monthlyHours + 1).coerceAtMost(320)) }) { Text("+") }
+                        OutlinedButton(onClick = { draft = draft.copy(monthlyHours = (draft.monthlyHours + 1).coerceAtMost(320)).settled(Unknowns.MONTHLY_HOURS) }) { Text("+") }
                     }
                     Hint("주 40시간이면 209시간이 보통이에요. 토요일 4시간 유급이면 226시간, 8시간 유급이면 243시간이에요.")
                     // [PAY-04] The same formula on the user's own roster (시행령 제6조 제2항).
@@ -166,7 +203,7 @@ fun CompanyRulesEditor(
                                 Text("1년 평균 주 ${HoursFormat.korean(weekly)} 소정근로 + 주휴. 계약서에 적힌 시간이 있으면 그것을 쓰세요.",
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            OutlinedButton(onClick = { draft = draft.copy(monthlyHours = fromRoster) }) { Text("적용") }
+                            OutlinedButton(onClick = { draft = draft.copy(monthlyHours = fromRoster).settled(Unknowns.MONTHLY_HOURS) }) { Text("적용") }
                         }
                     }
                 }
@@ -229,13 +266,26 @@ fun CompanyRulesEditor(
                     "회사 야간 시간이 이 시간을 덜 덮으면 아래에 알려 드려요.")
             }
 
+            // [PAYS-03] Allowances paid instead of a premium: a 야간수당 or a 고정 연장수당 that holds the premiums.
+            val coverable = draft.items.filter { it.isFixedOvertime || it.isNightAllowance || it.coveredKinds != it.defaultCovers }
+            if (coverable.isNotEmpty()) {
+                SectionCard(title = "가산 대신 받는 수당") {
+                    coverable.forEach { item ->
+                        CoversRow(item) { set ->
+                            draft = draft.copy(items = draft.items.map { if (it.id == item.id) it.copy(covers = set) else it }).settled(Unknowns.covers(item.id))
+                        }
+                    }
+                    Hint("대신 주는 수당이면 그 가산과 겹치지 않게 빼요. 실제 가산이 수당보다 많으면 차액을 알려 드려요. 명세서에 가산이 따로 찍히는지 보면 알 수 있어요.")
+                }
+            }
+
             SectionCard(title = "쉬는 날과 공휴일") {
                 // [EXTRA-02] 휴무일 work is not 휴일근로 by law; the company may still pay it so.
                 Label("쉬는 날(휴무일)에 일하면")
                 RestDayWork.entries.forEach { mode ->
                     val selected = rules.restDayWork == mode
                     Row(
-                        Modifier.fillMaxWidth().selectable(selected = selected, role = Role.RadioButton) { setRules(rules.copy(restDayWork = mode)) }
+                        Modifier.fillMaxWidth().selectable(selected = selected, role = Role.RadioButton) { setRules(rules.copy(restDayWork = mode), Unknowns.REST_DAY_WORK) }
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -264,10 +314,17 @@ fun CompanyRulesEditor(
                 if (fixed != null) WeekdayPicker(fixed.day) { setRules(rules.copy(weeklyHoliday = WeeklyHoliday.Fixed(it))) }
                 Hint("주휴일에 일하면 위 방식과 상관없이 휴일근로예요(근로기준법 제55조). 교대 근무는 따로 정하지 않은 곳이 많아요. " +
                     "모르면 ‘정해지지 않음’으로 두면 쉬는 날을 모두 휴무일로 계산해요.")
-                Toggle("공휴일 근무는 휴일근로", "근무표에서 공휴일을 다른 날로 바꿔 주는 회사(휴일 대체)라면 꺼 주세요", rules.publicHolidaysPaid) {
-                    setRules(rules.copy(publicHolidaysPaid = it))
+                if (draft.fiveOrMoreEmployees) {
+                    Toggle("공휴일 근무는 휴일근로", "근무표에서 공휴일을 다른 날로 바꿔 주는 회사(휴일 대체)라면 꺼 주세요", rules.publicHolidaysPaid) {
+                        setRules(rules.copy(publicHolidaysPaid = it), Unknowns.PUBLIC_HOLIDAYS)
+                    }
+                } else {
+                    // [PAYS-03] 제55조 제2항 applies from five employees; below that it is the company's choice.
+                    Toggle("공휴일을 유급휴일로 줘요", "5명 미만 회사는 공휴일이 법으로 정해져 있지 않아요. 쉬어도 그날 급여가 나오면 켜 주세요", rules.holidaysUnderFive) {
+                        setRules(rules.copy(holidaysUnderFive = it), Unknowns.PUBLIC_HOLIDAYS)
+                    }
                 }
-                if (rules.publicHolidaysPaid) {
+                if (if (draft.fiveOrMoreEmployees) rules.publicHolidaysPaid else rules.holidaysUnderFive) {
                     // [PAYX-07] Some companies pay a 공휴일 shift exactly like a 대근.
                     Label("공휴일에 근무표대로 일하면")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -294,7 +351,7 @@ fun CompanyRulesEditor(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         HolidayPayMode.entries.forEach { mode ->
                             FilterChip(selected = draft.holidayPayMode == mode,
-                                onClick = { draft = draft.copy(holidayPayMode = mode, estimatedFields = draft.estimatedFields - "holidayPayMode") },
+                                onClick = { draft = draft.copy(holidayPayMode = mode).settled(Unknowns.HOLIDAY_PAY_MODE) },
                                 label = { Text(mode.label) })
                         }
                     }
@@ -339,8 +396,8 @@ fun CompanyRulesEditor(
                 Hint("하루마다 연장 시간에 적용해요. 버림은 일한 시간보다 적게 계산될 수 있어요.")
             }
 
-            if (draft.wageType == WageType.HOURLY) {
-                SectionCard(title = "시급제") {
+            if (draft.wageType != WageType.MONTHLY) {
+                SectionCard(title = draft.wageLabel()) {
                     Toggle("주휴수당", "주 15시간 이상이면 주마다 (주 근무시간 ÷ 40) × 8시간을 더 받아요", rules.weeklyHolidayPay) {
                         setRules(rules.copy(weeklyHolidayPay = it))
                     }
@@ -394,14 +451,21 @@ fun CompanyRulesEditor(
 
         Surface(tonalElevation = 3.dp) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
-                val delta = after.total - before
-                Text(
-                    "${month.monthValue}월 합계 ${won(before)}" + if (delta != 0L) " → ${won(after.total)} (${if (delta > 0) "+" else "−"}${won(kotlin.math.abs(delta))})" else "",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = if (delta == 0L) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
-                )
-                after.warnings.firstOrNull { "법정" in it || "버리" in it }?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                val was = before
+                val now = after
+                if (was == null || now == null) {
+                    Text("${month.monthValue}월 합계를 계산하고 있어요", style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    val delta = now.total - was
+                    Text(
+                        "${month.monthValue}월 합계 ${won(was)}" + if (delta != 0L) " → ${won(now.total)} (${if (delta > 0) "+" else "−"}${won(kotlin.math.abs(delta))})" else "",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = if (delta == 0L) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+                    )
+                    now.warnings.firstOrNull { "법정" in it || "버리" in it }?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
                 }
                 Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                     OutlinedButton(onClick = onClose) { Text("취소") }
@@ -436,7 +500,15 @@ fun CompanyRules.summary(profile: PayProfile): List<String> = buildList {
         WeeklyHoliday.FirstRestDay -> add("주휴일은 주마다 첫 쉬는 날")
         is WeeklyHoliday.Fixed -> add("주휴일 ${Fmt.dayOfWeekShort(w.day)}요일")
     }
-    if (!publicHolidaysPaid) add("공휴일은 휴일 대체")
+    if (supervisoryApproved) add("감시·단속 승인")
+    if (profile.fiveOrMoreEmployees && !publicHolidaysPaid) add("공휴일은 휴일 대체")
+    if (!profile.fiveOrMoreEmployees && holidaysUnderFive) add("공휴일 유급 (5인 미만)")
+    when (breakPay) {
+        BreakPay.UNPAID -> Unit
+        BreakPay.PAID -> add("휴게 유급")
+        BreakPay.AS_WORK -> add("휴게도 일한 시간")
+    }
+    profile.items.filter { it.coveredKinds != it.defaultCovers }.forEach { add("‘${it.name}’ ${it.coversText()}") }
     extra.forEach { (kind, r) -> add("${extraName(kind)}: ${r.describe()}") }
     extraByShift.forEach { (kind, byType) -> if (byType.isNotEmpty()) add("${extraName(kind)}: 근무별 ${byType.size}개") }
     if (hasNightWindow) add("야간 시간 ${nightLabel(com.bamnat.core.pay.RateTable.on(java.time.LocalDate.now()))}")
@@ -444,9 +516,37 @@ fun CompanyRules.summary(profile: PayProfile): List<String> = buildList {
         add("연장 ${overtimeRounding.unit}분 단위 " + when (overtimeRounding.rounding) { Rounding.UP -> "올림"; Rounding.NEAREST -> "반올림"; Rounding.DOWN -> "버림" })
     }
     if (profile.wageType == WageType.MONTHLY && profile.monthlyHours != 209) add("월 소정근로 ${profile.monthlyHours}시간")
-    if (profile.wageType == WageType.HOURLY && !weeklyHolidayPay) add("주휴수당 없음")
+    if (profile.wageType != WageType.MONTHLY && !weeklyHolidayPay) add("주휴수당 없음")
     annualLeaveDays?.let { add("연차 ${LeaveBook.days(it)}" + if (annualLeaveCarry > 0) " + 이월 ${LeaveBook.days(annualLeaveCarry)}" else "") }
 }
+
+/** [PAYS-03] Which premiums [item] stands in for: a night allowance either way, a 고정 연장수당 up to all three. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CoversRow(item: PayItem, onChange: (Set<LineKind>) -> Unit) {
+    val now = item.coveredKinds
+    Text(item.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 4.dp))
+    val options = if (item.isFixedOvertime) {
+        listOf(setOf(LineKind.OVERTIME), setOf(LineKind.OVERTIME, LineKind.NIGHT), setOf(LineKind.OVERTIME, LineKind.NIGHT, LineKind.HOLIDAY))
+    } else listOf(emptySet(), setOf(LineKind.NIGHT))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        (options + listOfNotNull(now.takeIf { it !in options })).forEach { set ->
+            FilterChip(selected = now == set, onClick = { onChange(set) }, label = { Text(coversLabel(set)) })
+        }
+    }
+}
+
+private fun coversLabel(set: Set<LineKind>): String =
+    if (set.isEmpty()) "가산과 따로 받음" else PayItem.COVERABLE.filter { it in set }.joinToString("·") { kindName(it) } + " 가산 대신"
+
+private fun kindName(kind: LineKind): String = when (kind) {
+    LineKind.OVERTIME -> "연장"
+    LineKind.NIGHT -> "야간"
+    else -> "휴일"
+}
+
+/** "야간 가산 대신" or "가산과 따로 받음", for the summary. */
+internal fun PayItem.coversText(): String = coversLabel(coveredKinds)
 
 /** [PAYX-12] The company's night window: the law's, a common alternative, or any hours. */
 @OptIn(ExperimentalLayoutApi::class)

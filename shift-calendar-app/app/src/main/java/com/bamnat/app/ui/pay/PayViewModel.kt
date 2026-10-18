@@ -14,7 +14,6 @@ import com.bamnat.core.pay.BulkEditPlanner
 import com.bamnat.core.pay.CalcSnapshot
 import com.bamnat.core.pay.Cadence
 import com.bamnat.core.pay.CompanyRules
-import com.bamnat.core.pay.MinuteRounding
 import com.bamnat.core.pay.RestDayWork
 import com.bamnat.core.pay.PremiumTarget
 import com.bamnat.core.pay.CandidateKind
@@ -33,6 +32,15 @@ import com.bamnat.core.pay.RuleCandidate
 import com.bamnat.core.pay.RuleImport
 import com.bamnat.core.pay.ValueTimeline
 import com.bamnat.core.pay.WageType
+import com.bamnat.core.pay.LineKind
+import com.bamnat.core.pay.PayRange
+import com.bamnat.core.pay.Payslip
+import com.bamnat.core.pay.PayslipMatch
+import com.bamnat.core.pay.PayslipMatcher
+import com.bamnat.core.pay.StandardHours
+import com.bamnat.core.pay.Unknowns
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -41,7 +49,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
-import kotlin.math.abs
 
 /** Which value a change is about: the base pay or one allowance. */
 sealed interface ValueTarget {
@@ -49,8 +56,21 @@ sealed interface ValueTarget {
     data class Item(val id: String) : ValueTarget
 }
 
-/** Another way the company might calculate, and what the month would come to [PAYX-05 명세서 대조]. */
-data class Alternative(val label: String, val profile: PayProfile, val total: Long)
+/**
+ * [PAYS-01] One month for the pay screen, worked out on a background thread so the screen never waits
+ * on it: the result, the range over the 확인 필요 answers and the figures the cards around it compare.
+ */
+data class PayView(
+    val result: MonthPay,
+    /** The month over the 확인 필요 answers; null when nothing is left 확인 필요. */
+    val range: PayRange?,
+    /** This and the next 11 months, closed ones as they were closed. */
+    val year: List<Pair<YearMonth, Long>>,
+    /** [EXTRA-05] The month with 쉬는 날 근무 by law, while 1.8's way is kept and not yet compared. */
+    val restDayLaw: Long?,
+    /** [PAY-06] The month with each 휴일 급여 방식, for 월급제 with holiday work. */
+    val holidayModes: List<Pair<HolidayPayMode, Long>>,
+)
 
 class PayViewModel(private val container: AppContainer) : ViewModel() {
     val profile: StateFlow<PayProfile?> = container.payStore.profile
@@ -125,10 +145,10 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun PayProfile.withTimeline(target: ValueTarget, t: ValueTimeline): PayProfile = when (target) {
-        ValueTarget.Base -> copy(base = t, estimatedFields = estimatedFields - "base")
+        ValueTarget.Base -> copy(base = t, estimatedFields = estimatedFields - Unknowns.BASE)
         is ValueTarget.Item -> copy(
             items = items.map { if (it.id == target.id) it.copy(amount = t) else it },
-            estimatedFields = estimatedFields - target.id,
+            estimatedFields = estimatedFields - target.id - Unknowns.item(target.id),
         )
     }
 
@@ -149,11 +169,25 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
     fun setRaise(target: ValueTarget, rule: RaiseRule?) =
         update { it.withTimeline(target, timelineOf(it, target).copy(raise = rule)) }
 
-    fun addItem(name: String, amount: Long, cadence: Cadence, ordinary: Boolean, from: YearMonth, fixedOvertimeMinutes: Int = 0) = update { p ->
+    /** [PAYS-01] With no [amount] the allowance is 금액 모름: left out of the total and listed until it is known. */
+    fun addItem(name: String, amount: Long?, cadence: Cadence, ordinary: Boolean, from: YearMonth, fixedOvertimeMinutes: Int = 0) = update { p ->
         val id = "item-" + System.currentTimeMillis()
-        p.copy(items = p.items + PayItem(id, name.trim().ifEmpty { "수당" }, ValueTimeline(listOf(DatedValue(from.atDay(1), amount))), cadence,
-            ordinary = ordinary, fixedOvertimeMinutes = fixedOvertimeMinutes))
+        val value = if (amount == null) ValueTimeline() else ValueTimeline(listOf(DatedValue(p.period.start(from), amount)))
+        p.copy(items = p.items + PayItem(id, name.trim().ifEmpty { "수당" }, value, cadence,
+            ordinary = ordinary, fixedOvertimeMinutes = fixedOvertimeMinutes),
+            estimatedFields = if (amount == null) p.estimatedFields + Unknowns.item(id) else p.estimatedFields)
     }
+
+    /** [PAYS-01] The amount of an allowance that was 금액 모름, from [month]'s pay period on. */
+    fun setItemAmount(id: String, amount: Long, month: YearMonth) = update { p ->
+        val from = p.period.start(month)
+        Unknowns.answered(p, Unknowns.item(id)).let { q ->
+            q.copy(items = q.items.map { if (it.id == id) it.copy(amount = it.amount.with(DatedValue(from, amount))) else it })
+        }
+    }
+
+    /** [PAYS-01] A 확인 필요 answer settled: [change] gives the answer (none keeps the assumed one). */
+    fun answer(key: String, change: (PayProfile) -> PayProfile = { it }) = update { p -> Unknowns.answered(change(p), key) }
 
     /** [EXTRA-05] The 1.8 way of paying a day off was shown next to the law's once; it is not shown again. */
     fun restDayCompared() = container.settingsRepository.update { it.copy(restDayCompared = true) }
@@ -238,35 +272,56 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
         p
     }
 
-    // ---- matching the pay slip ----
+    // ---- off the main thread [PAYS-01][PAYS-02] ----
 
-    /** Company choices that might explain a different total, closest to [received] first. */
-    fun alternatives(p: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth, received: Long): List<Alternative> {
-        val options = buildList {
-            if (p.wageType == WageType.MONTHLY) {
-                val other = if (p.holidayPayMode == HolidayPayMode.FULL) HolidayPayMode.PREMIUM_ONLY else HolidayPayMode.FULL
-                add("휴일 근무를 ‘${other.label}’으로 계산" to p.copy(holidayPayMode = other))
-            }
-            add((if (p.scheduleIsRegular) "근무표에서 8시간 넘는 시간을 연장으로 계산" else "근무표 시간은 모두 기본 근무로 계산 (12시간 교대 등)") to
-                p.copy(scheduleIsRegular = !p.scheduleIsRegular))
-            add((if (p.dailyLimitMinutes == null) "하루 8시간 넘으면 연장으로 계산" else "하루 8시간 기준 끄기 (탄력적 근로시간제)") to
-                p.copy(dailyLimitMinutes = if (p.dailyLimitMinutes == null) 480 else null))
-            add((if (p.fiveOrMoreEmployees) "5인 미만 사업장으로 계산 (가산 없음)" else "5인 이상 사업장으로 계산") to
-                p.copy(fiveOrMoreEmployees = !p.fiveOrMoreEmployees))
-            val r = p.rules
-            // [EXTRA-02] Each other way a company may pay work on a day off.
-            RestDayWork.entries.filter { it != r.restDayWork }.forEach { mode ->
-                add("쉬는 날 근무를 ${mode.label} 계산 (${mode.detail})" to p.copy(rules = r.copy(restDayWork = mode)))
-            }
-            add((if (r.publicHolidaysPaid) "공휴일 근무를 평일처럼 계산 (휴일 대체)" else "공휴일 근무를 휴일근로로 계산") to
-                p.copy(rules = r.copy(publicHolidaysPaid = !r.publicHolidaysPaid)))
-            if (r.overtimeRounding.unit > 1) add("연장 시간을 1분 단위로 계산" to p.copy(rules = r.copy(overtimeRounding = MinuteRounding())))
-            p.items.filter { !it.ordinary && it.cadence == Cadence.MONTHLY && !it.isFixedOvertime }.forEach { item ->
-                add("‘${item.name}’을 통상임금에 포함" to p.copy(items = p.items.map { if (it.id == item.id) it.copy(ordinary = true) else it }))
-            }
+    /** The month for the pay screen, with the range and the figures the cards compare. */
+    suspend fun view(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): PayView = withContext(Dispatchers.Default) {
+        val p = profile.named(settings.value.extraKinds)
+        val resolve = snapshot.resolver::resolve
+        val result = calculator.calculate(p, month, resolve)
+        val range = if (Unknowns.of(p).isEmpty()) null else PayRange.of(p, month, resolve, calculator = calculator, rosterHours = rosterHours(p, snapshot, month))
+        val closedNow = closed.value
+        val year = (0L until 12L).map { month.plusMonths(it) }.map { m ->
+            m to (closedNow[m]?.total ?: if (m == month) result.total else calculator.calculate(p, m, resolve, checks = false).total)
         }
-        container.telemetry.event("pay_reconcile")
-        return options.map { (label, alt) -> Alternative(label, alt, calculate(alt, snapshot, month).total) }
-            .sortedBy { abs(it.total - received) }
+        val restDayLaw = if (p.rules.restDayWork == RestDayWork.HOLIDAY && !settings.value.restDayCompared) {
+            calculator.calculate(p.copy(rules = p.rules.copy(restDayWork = RestDayWork.LAW)), month, resolve, checks = false).total
+        } else null
+        val holidayModes = if (p.wageType == WageType.MONTHLY && result.lines.any { it.kind == LineKind.HOLIDAY }) {
+            HolidayPayMode.entries.map { m ->
+                m to if (m == p.holidayPayMode) result.total else calculator.calculate(p.copy(holidayPayMode = m), month, resolve, checks = false).total
+            }
+        } else emptyList()
+        PayView(result, range, year, restDayLaw, holidayModes)
+    }
+
+    /** One month on a background thread, for editors that show the total as it changes. */
+    suspend fun calculateOff(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): MonthPay =
+        withContext(Dispatchers.Default) { calculate(profile, snapshot, month) }
+
+    /** [PAYS-01] The month a setup being answered comes to, as a range over its 모르겠어요 answers. */
+    suspend fun preview(draft: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): PayRange = withContext(Dispatchers.Default) {
+        val p = draft.named(settings.value.extraKinds)
+        PayRange.of(p, month, snapshot.resolver::resolve, calculator = calculator, rosterHours = rosterHours(p, snapshot, month))
+    }
+
+    /** The roster's 월 소정근로시간, for a 월 소정근로시간 left 모르겠어요; null when the calendar has no work. */
+    private fun rosterHours(p: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): Int? =
+        if (Unknowns.MONTHLY_HOURS !in p.estimatedFields) null
+        else StandardHours.averageWeekly(p.period.start(month), resolve = snapshot.resolver::resolve).takeIf { it > 0 }?.let(StandardHours::monthly)
+
+    /** [PAYS-02] The settings closest to [payslip]; nothing is saved until [applyMatch]. */
+    suspend fun match(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth, payslip: Payslip): PayslipMatch {
+        val match = withContext(Dispatchers.Default) {
+            PayslipMatcher.match(profile.named(settings.value.extraKinds), month, snapshot.resolver::resolve, payslip, calculator = calculator)
+        }
+        container.telemetry.event("pay_payslip_match", if (match.matched) "matched" else "gap")
+        return match
+    }
+
+    /** [PAYS-02] Keeps the matched settings and the check; one tap on 되돌리기 brings the old ones back. */
+    fun applyMatch(match: PayslipMatch) = update { p ->
+        val v = match.verifiedProfile(System.currentTimeMillis())
+        v.copy(rules = v.rules.copy(extraNames = p.rules.extraNames))
     }
 }

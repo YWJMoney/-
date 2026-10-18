@@ -147,7 +147,7 @@ class BackupManager(
                 .put("dynamicColor", s.dynamicColor).put("cellHours", s.showHoursInCells).put("lunar", s.showLunar)
                 .putOpt("sound", s.defaultAlarmSound).put("vibrate", s.vibrate).put("gradual", s.gradualVolume)
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmsOn", s.alarmsEnabled)
-                .putOpt("workStyle", s.workStyle?.name)
+                .putOpt("workStyle", s.workStyle?.name).put("rosterMonthly", s.rosterMonthly)
                 .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoFirst).put("calendarMemos", s.calendarMemos)
                 .put("restCheck", s.restCheck)
                 .put("strictRest", s.strictRest).put("sleepTips", s.sleepTips)
@@ -310,7 +310,10 @@ class BackupManager(
                     snoozeMinutes = o.optInt("snooze", s.snoozeMinutes).coerceIn(1, 60),
                     ringMinutes = o.optInt("ring", s.ringMinutes).coerceIn(1, 60),
                     alarmsEnabled = o.optBoolean("alarmsOn", s.alarmsEnabled),
-                    workStyle = o.optStringOrNull("workStyle")?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } } ?: s.workStyle,
+                    // [SETUP-01] A backup from before the question with a pattern in it is shift work, as on the phone.
+                    workStyle = o.optStringOrNull("workStyle")?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } } ?: s.workStyle
+                        ?: WorkStyle.SHIFT.takeIf { patterns.isNotEmpty() },
+                    rosterMonthly = o.optBoolean("rosterMonthly", s.rosterMonthly),
                     extraKinds = o.optStringOrNull("extraKinds")?.let { com.bamnat.core.model.ExtraKinds.decode(it) } ?: s.extraKinds,
                     memoFirst = o.optBoolean("memoFirst", s.memoFirst),
                     calendarMemos = o.optBoolean("calendarMemos", s.calendarMemos),

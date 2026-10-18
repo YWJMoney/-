@@ -1,0 +1,148 @@
+# 밤낮 인수인계 (다른 계정에서 이어 가기)
+
+마지막 정리 2026-10-18, 앱 1.12.0(versionCode 18) 기준이에요.
+
+이 저장소는 공개예요(GitHub Pages로 처리방침을 올려요). 그래서 이 문서에는 비밀값, 서명 키, 사용자 개인 정보를 적지 않아요.
+그런 것은 사용자가 새 프로젝트에 파일로 따로 올려요(7항). 새 계정의 Claude는 이 문서와 그 비공개 메모를 먼저 읽고 시작해요.
+
+## 1. 지금 상태
+
+- 안드로이드 전용 앱이에요. 갤럭시 폴드의 접은 화면과 펼친 화면을 둘 다 맞추고, 첫 화면은 달력이에요.
+- Kotlin, Compose BOM 2025.05.00, Room v12, minSdk 26, targetSdk 36, Robolectric 4.14.1.
+- 버전별로 들어간 큰 줄기
+
+| 버전 | 단계 | 들어간 것 |
+| --- | --- | --- |
+| 1.8.0 | M8 | 근무표 링크 공유(공유 서버) 등 |
+| 1.9.0 | M9 | 잔업·특근·대근(연장·휴무일 근무) 종류와 시간대, 급여 계산 |
+| 1.10.0 | M12 일부, 공유 MVP, M10 일부 | 링크에 보여 줄 것 고르기, 받은 근무표 넣기, 내 달력과 받은 달력 바꿔 보기, 달력 맨 위 오늘 카드, 회사 찾기·제보 앱 코드(서버 주소가 비어 꺼짐) |
+| 1.11.0 | M10 | 수면 알림 정리, 설정 9묶음, 달력·빠른 입력, 같은 달 보기, 움직임·접근성 |
+| 1.12.0 | M11 | 질문형 첫 설정, 질문형 급여 설정, 확인 필요와 금액 범위, 명세서로 맞춰 보기, 회사 방식(감시·단속, 5인 미만, 휴게, 일당·연봉, 가산 대신 받는 수당), 회사 찾기 먼저 |
+
+- 서버 두 개가 사용자의 Cloudflare 계정에 있어요.
+  - 공유 서버(`server/share-worker`, KV): 켜져 있고 앱이 써요(`gradle.properties`의 `bamnat.shareBaseUrl`).
+  - 회사 서버(`server/company-worker`, D1): 2026-10-18에 배포했고 개발자 앱(`/admin/`) 로그인까지 돼요.
+    **앱은 아직 연결하지 않았어요**(`bamnat.companyBaseUrl`이 비어 있음). 그래서 지금 앱의 회사 찾기는 앱 안 업종 일반형 9가지만 나오고,
+    회사 설정 보내기는 파일로, '회사 방식 알려 주기'는 메일로만 가요. 개발자 앱에는 아직 아무것도 들어오지 않아요.
+- 설정 > 문의하기는 메일 앱을 여는 방식(`SettingsPages.kt`의 `writeToUs`, 주소는 `REPORT_EMAIL`)이에요.
+- 사용자가 1.11.0에서 링크 공유와 달력 바꿔 보기를 못 찾았어요. 위치는 달력 위 공유 버튼(좁은 화면은 ⋮ 더 보기 → 근무표 공유)이고,
+  바꿔 보기 막대는 받은 근무표가 하나라도 있을 때만 보여요(`CalendarScreen.kt`의 `receivedList.isNotEmpty() && received.enabled`).
+
+## 2. 다음에 할 일 (2026-10-18 사용자 요청과 남은 일)
+
+1번이 2번의 바탕이라 이 순서를 권해요.
+
+1. **앱을 회사 서버에 연결** [COMM-01][COMM-02][COMM-04][ADMIN-01]
+   - 사용자는 앱 문의와 제보를 개발자 앱으로 받고 싶어 해요. 그러려면 이 연결이 먼저예요.
+   - `gradle.properties`의 `bamnat.companyBaseUrl`에 회사 서버의 workers.dev 주소를 넣고 빌드해요. 주소는 사용자가 이미 알려 줬어요(비공개 메모).
+   - 연결하면 회사 이름 검색, 앱 안 제보, '회사 방식 알려 주기'가 개발자 앱의 검토 탭으로 가요.
+   - 처리방침은 이미 회사 서버를 적어 두었어요(1-2항, "회사 찾기가 보이는 버전부터").
+   - Play Console 데이터 보안에 두 줄을 더한 뒤에 올려야 해요: '앱 활동 > 기타 사용자 제작 콘텐츠'(회사·부서 이름, 금액 없는 규칙, 말로 적은 회사 방식)와
+     '기기 또는 기타 ID'(설치마다 만든 무작위 ID, 서버에는 해시로만). Play 답안 파일(`play-console-answers.md`, 7항 묶음)의 1.10 메모에 있어요. 올리기 전에 사용자에게 이 두 줄을 알려 줘요.
+2. **앱 문의를 개발자 앱으로 받기** [ADMIN-02]
+   - 설정 > 문의하기(지금은 메일)와 앱 문제 신고를 앱 안에서 보내고, 개발자 앱에서 답하면 그 답이 앱에 보이게 해요.
+   - 무엇을 함께 보낼지(앱 버전, 기기, 알람 점검 정보 등)는 보내기 전에 보여 주고 동의를 받아요. 처리방침과 데이터 보안 답도 같이 고쳐요.
+   - 금액, 이름, 연락처는 보내지 않는다는 원칙은 그대로예요. 서버는 이미 제보에서 전화번호·이메일·금액이 보이면 거절해요.
+3. **개발자 앱을 엔터프라이즈급으로** [ADMIN-03]
+   - 사용자의 말 그대로: "관리자 어플 또한 최상의 엔터프라이즈급으로 만들어야해". 무엇을 더할지는 새 계정에서 사용자와 정해요.
+   - 지금 개발자 앱은 검토·회사·보상·설정 4탭의 웹앱(PWA)이에요. ADMIN-01에 남은 것: 커뮤니티 관리(COMM-06), 앱 공지·기능 켜고 끄기, 실제 프로 기간 지급(결제가 생긴 뒤).
+4. 급여 엔진은 사용자가 실제 명세서와 대 보고 다르면 고치기로 했어요. 엔진이 "확인 필요"로 남긴 곳은 세 군데예요.
+   - 감시·단속 승인자의 근로자의 날: 가산 없이 유급 하루로 둠
+   - 22~06시 안의 유급 휴게: 야간 가산 없음
+   - 연봉 ÷ 13: 퇴직금이 들어 있을 수 있어 노무사나 1350 상담을 안내
+5. 받은 근무표가 없을 때도 바꿔 보기를 찾기 쉽게 할지는 아직 정하지 않았어요. 사용자가 못 찾은 일이 있었다는 것만 기록해 둬요.
+
+추적표(`docs/tracker.csv`)에서 남은 일 전체를 볼 수 있어요: `python3 tools/check_tracker.py`.
+
+## 3. 일하는 방식 (사용자가 정한 것)
+
+- 사용자에게는 한국어로, 쉬운 말로 답해요. 결론부터 말하고, 확인한 근거(파일, 테스트, 화면)를 함께 적어요.
+- 요구사항 ID를 코드 주석과 커밋 메시지에 `[PAYS-02]`처럼 적어요. 새 ID는 먼저 추적표에 넣어요(검사 스크립트가 없는 ID를 오류로 봐요).
+- 문서는 바뀐 부분만 고치거나 더해요. 처음부터 다시 쓰지 않아요.
+- 회사 정보는 근거가 있는 것만 써요. 예시에는 가상의 이름만 써요(예시정밀, 가나다화학, 라마바전자, 사아자물류, 사람은 민지·준호).
+- 한 단계 개발이 끝나면 main으로 PR을 열어 merge commit으로 합치고, 작업 브랜치를 main에서 다시 시작해요(force-with-lease).
+- 서버 연결은 단계를 마칠 때 사용자에게 묻고, workers.dev 주소만 받아요.
+- 화면은 디자인과 성능을 최고로, 버그 없이. 고친 화면은 스크린샷 테스트로 접은 화면과 펼친 화면을 둘 다 확인해요.
+
+## 4. 지켜야 할 보안·정책 규칙
+
+- 토큰, 비밀번호, `RATE_SALT`, 관리자 비밀번호를 채팅에 붙여 달라고 하지 않아요. Cloudflare는 workers.dev 주소만 받아요.
+- 회사 서버의 `ADMIN_PASSWORD`와 `RATE_SALT`는 사용자가 Cloudflare 대시보드에서 직접 넣어요. 채팅으로 받지 않아요.
+- 서명 키(`*.jks`)와 `keystore.properties`는 git에 넣지 않아요(`.gitignore`에 있음). 빌드할 때 `BAMNAT_KEYSTORE_PROPERTIES`로 파일 위치만 알려 줘요.
+- 비밀값이 보이는 화면 사진은 보내지 않아요. `.claude/` 폴더는 커밋하지 않아요.
+- Google Play는 리뷰 대가 보상을 금지해요. 정보 나누기 보상을 스토어 리뷰와 묶지 않아요.
+- 회사 설정 제보에는 금액이 든 정보(기본급, 수당 금액, 1회 정액, 입사일, 이름, 연락처)를 넣지 않아요.
+- 명세서 금액, 연봉(`annual`), 명세서 확인 기록(`verified`)은 휴대폰 안에만 둬요. 회사 설정 파일과 서버에는 넣지 않고, 제보에는 맞춰 봤는지(참·거짓)만 보내요.
+- 링크 공유: 메모와 급여는 사용자가 고를 때만 서버로 가요. 받은 근무표는 `noBackupFilesDir`에 두고 링크가 끊기거나 만료되면 지워요.
+  링크의 '쉬는 날' 표시는 링크에 보이는 것만으로 계산하고, 고르지 않은 연장 근무는 드러내지 않아요(대근만 `second`로 근무로 셈).
+- 공유 서버의 `ANDROID_CERT_SHA256`은 공개값이고 사용자가 대시보드에서 넣어요.
+- 처리방침(`privacy/index.html`)은 서버로 가는 정보가 바뀔 때마다 판을 올리고, 테스트(`ShareServerTest`)가 문구를 확인해요.
+
+## 5. 빌드·테스트·서명
+
+모두 `shift-calendar-app/`에서 실행해요. JDK 17 이상, Android SDK가 필요해요.
+
+```bash
+sh ./gradlew -p core test                                  # 급여·근무 계산 (1.12.0: 289개)
+sh ./gradlew :app:testDebugUnitTest :app:lintDebug --continue   # 앱 테스트·스크린샷·린트 (280개, 서버 연결 1개 건너뜀)
+python3 tools/check_tracker.py                             # 추적표 검사
+(cd server/company-worker && npm test)                     # 회사 서버 (45개)
+(cd server/share-worker && npm test)                       # 공유 서버 (16개)
+```
+
+- 앱 테스트 결과는 `app/build/test-results/testDebugUnitTest`, 화면 사진은 `app/build/screenshots`, 린트는 `app/build/intermediates/lint_intermediate_text_report/`에 나와요.
+- 저장소 맨 위의 `npm test`(GitHub Actions CI)는 같은 저장소에 있는 다른 웹앱(살림왕) 테스트예요.
+- 서명한 출시 파일
+
+```bash
+BAMNAT_KEYSTORE_PROPERTIES=<keystore.properties 위치> sh ./gradlew :app:bundleRelease :app:assembleRelease
+apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
+```
+
+  인증서 SHA-256은 `8e7891b3e37e27c3911dcd83c87f647e6c83c8c631b248b6b694040910a97acb`이어야 해요(1.1.0부터 같은 업로드 키).
+  결과물은 `app/build/outputs/apk/release/app-release.apk`와 `app/build/outputs/bundle/release/app-release.aab`이고, `Bamnat-<버전>-release.apk`, `Bamnat-<버전>.aab`로 이름을 바꿔 보관해요.
+- 버전은 `app/build.gradle.kts`의 `versionCode`와 `versionName`을 올려요. DB를 바꾸면 Room 마이그레이션과 테스트를 같이 만들어요.
+
+## 6. 코드 구조
+
+```
+shift-calendar-app/
+  core/    안드로이드 없는 순수 Kotlin (JVM 테스트)
+    pay/       급여 엔진 (PayCalculator, PayProfile, Unknowns, PayRange, PayslipMatch)
+    setup/     첫 설정 (SetupDraft, TodayQuestion, CompanyTemplates)
+    schedule/  근무 주기와 근무 묶음 (ShiftBundles)
+    hours/ alarm/ sleep/ notify/ work/ money/ holiday/ memo/ backup/ diag/ model/
+  app/     안드로이드 앱
+    ui/setup/      질문형 첫 설정 (SetupHost)
+    ui/pay/        급여 화면, 질문형 급여 설정 (PayWizard), 명세서로 맞춰 보기 (PayslipMatchDialog), 회사 규칙 편집기
+    ui/calendar/   달력, 공유 (ShareDialog), 받은 근무표 (ReceivedCalendarUi)
+    ui/company/    회사 찾기·제보 (CompanyNudges의 AskDeveloperDialog 등)
+    company/       회사 서버 클라이언트 (CompanyClient, 주소가 비면 꺼짐)
+    share/ data/ alarm/ widget/ ...
+    src/online*/   서버 주소를 넣은 빌드에만 붙는 매니페스트(인터넷 권한)
+  server/
+    share-worker/    공유 서버 (Cloudflare Worker + KV)
+    company-worker/  회사 서버와 개발자 앱 /admin/ (Cloudflare Worker + D1), 설명은 그 폴더 README
+  docs/    추적표, 급여 골든 사례, 스크린샷 일부, 이 문서
+```
+
+- 서버 코드를 고친 뒤에는 사용자가 Cloudflare 대시보드에서 Worker 코드를 다시 붙여 넣고 배포해요(각 서버 README의 3단계).
+  Claude는 Cloudflare 토큰이 없고, 토큰을 받지도 않아요. 출시용 `worker.js`는 그 서버의 `src/index.js`와 같은 내용이에요.
+
+## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
+
+이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.
+
+- 인수인계 묶음: 비공개 메모(사용자 근무·급여 조건, 서버 주소, 결정 기록), 개발 계획서 내보낸 파일, 법·Play 준비 메모, UX 리뷰,
+  서버 배포 안내서와 출시용 `worker.js`, Play Console 답안, 처리방침 사본, 스토어 이미지 안내
+- 서명 키 묶음: `bamnat-upload.jks`, `keystore.properties`. 비밀이에요. git과 채팅에 넣지 않고, 내용을 화면에 출력하지 않아요.
+- 출시 파일(APK, AAB)은 키가 있으면 다시 만들 수 있어서 옮기지 않아도 돼요.
+- 개발 계획서는 Claude Docs 문서였어요. 새 계정에서는 내보낸 파일을 보고, 필요하면 새 문서로 다시 만들어요.
+- Cloudflare 계정, Google Play Console, GitHub 저장소는 그대로예요. 옮길 것이 없어요.
+
+## 8. 새 계정의 Claude가 처음 할 일
+
+1. 이 문서와 비공개 메모를 읽어요. 압축 파일이 올라와 있으면 풀어서 위치를 확인해요(서명 키는 내용을 열어 보지 않아요).
+2. `git log --oneline -5`로 main이 1.12.0 병합 상태인지 확인해요.
+3. core 테스트를 한 번 돌려 기준을 확인해요.
+4. 2항의 순서대로 할지 사용자에게 한 번 확인하고 시작해요.

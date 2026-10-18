@@ -21,8 +21,11 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,20 +49,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.pay.MoneyField
 import com.bamnat.app.ui.pay.MonthStepper
+import com.bamnat.app.ui.pay.baseName
+import com.bamnat.app.ui.pay.won
+import com.bamnat.core.pay.RateTable
 import com.bamnat.core.pay.WageType
+import java.time.LocalDate
 import java.time.YearMonth
 
 /**
  * [COMM-01] The pay setup after a coworker's setup was applied: the rules, allowances and bonus are
- * already in, so only what differs from person to person is asked. Anything left blank is a guess
- * marked 추정 on the pay screen, so the user never has to stop here.
+ * already in, so only what differs from person to person is asked. Only the 기본급 is needed; an
+ * allowance left blank is 금액 모름 on the pay screen [PAYS-01], so the user never has to stop here.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -> Unit) {
     var wageType by rememberSaveable { mutableStateOf(WageType.MONTHLY) }
     var base by rememberSaveable { mutableStateOf<Long?>(null) }
-    var since by remember { mutableStateOf(YearMonth.now()) }
+    var rough by rememberSaveable { mutableStateOf(false) }
+    var dailyHours by rememberSaveable { mutableStateOf(8) }
+    // A year back, so the months already worked come to an amount too [PAYS-01].
+    var since by remember { mutableStateOf(YearMonth.now().minusMonths(12)) }
     val amounts = remember { mutableStateMapOf<String, Long>() }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -97,21 +107,40 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
                 }
 
                 Text("급여 형태", style = MaterialTheme.typography.titleSmall)
+                val wages = listOf(WageType.MONTHLY to "월급", WageType.HOURLY to "시급", WageType.DAILY to "일당")
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    SegmentedButton(selected = wageType == WageType.MONTHLY, onClick = { wageType = WageType.MONTHLY },
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)) { Text("월급제") }
-                    SegmentedButton(selected = wageType == WageType.HOURLY, onClick = { wageType = WageType.HOURLY },
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)) { Text("시급제") }
+                    wages.forEachIndexed { i, (type, label) ->
+                        SegmentedButton(selected = wageType == type, onClick = { wageType = type },
+                            shape = SegmentedButtonDefaults.itemShape(index = i, count = wages.size)) { Text(label) }
+                    }
                 }
                 MoneyField(
-                    label = if (wageType == WageType.MONTHLY) "내 기본급" else "내 시급",
+                    label = "내 ${wageType.baseName()}",
                     value = base,
                     onChange = { base = it },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = "명세서의 기본급",
+                    placeholder = "명세서나 계약서의 ${wageType.baseName()}",
                 )
+                FilterChip(selected = rough, onClick = { rough = !rough }, label = { Text("대략이에요") })
+                if (wageType == WageType.DAILY) {
+                    // [PAYS-03] 일당 ÷ 하루 소정근로시간 is the hourly rate premiums are paid on.
+                    Text("일당은 하루 몇 시간 일하는 값인가요?", style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        (4..8).forEach { h ->
+                            FilterChip(selected = dailyHours == h, onClick = { dailyHours = h }, label = { Text("${h}시간") })
+                        }
+                    }
+                    base?.let { b ->
+                        val hourly = b / dailyHours
+                        val minimum = remember { RateTable.on(LocalDate.now()).minimumHourlyWage }
+                        Text("시간당 ${won(hourly)}" + if (hourly < minimum) " · 최저임금(${won(minimum)})보다 적어요" else "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (hourly < minimum) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("이 기본급을 받기 시작한 달", style = MaterialTheme.typography.bodyMedium,
+                    Text("이 금액을 받기 시작한 달", style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     MonthStepper(since, { since = it })
                 }
@@ -132,17 +161,19 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
                     Note("상여는 기본급으로 저절로 계산돼요: $note")
                 }
                 Note(
-                    if (base == null) "기본급을 넣어야 금액이 나와요. 모르는 수당은 비워 두면 ‘추정’으로 표시하고, 급여 화면에서 언제든 넣을 수 있어요."
-                    else "모르는 수당은 비워 두면 ‘추정’으로 표시해요. 급여 화면에서 언제든 넣을 수 있어요.",
+                    (if (base == null) "${wageType.baseName()}만 넣으면 시작할 수 있어요. " else "") +
+                        "모르는 수당은 비워 두면 ‘금액 모름’으로 표시하고 합계에서 빼 둬요. 급여 화면에서 언제든 넣을 수 있어요.",
                 )
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
                 Button(
                     onClick = {
+                        val b = base ?: return@Button
                         saving = true
                         error = null
-                        vm.save(wageType, base, since, amounts.toMap(), done = { saving = false }, failed = { saving = false; error = it })
+                        vm.save(wageType, b, rough, dailyHours * 60, since, amounts.toMap(),
+                            done = { saving = false }, failed = { saving = false; error = it })
                     },
-                    enabled = !saving,
+                    enabled = !saving && (base ?: 0) > 0,
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                 ) {
                     if (saving) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("계산 시작")

@@ -36,7 +36,8 @@ const LIMITS = {
 const DEFAULTS = { adoptPoints: 3, rewardMonths: 3 };
 
 /** The newest company settings file this server reads (CompanyShare.VERSION in the app). */
-const SETUP_VERSION = 2;
+// [PAYS-03] 3 carries 감시·단속 승인, 5인 미만 공휴일, 유급 휴게 and allowances paid instead of a premium.
+const SETUP_VERSION = 3;
 
 /** Why a report was not adopted, as the sender's app shows it. */
 const REASONS = {
@@ -159,7 +160,7 @@ async function settings(env) {
 }
 
 async function salt(env) {
-  if (env.RATE_SALT) return env.RATE_SALT;
+  if (typeof env.RATE_SALT === "string" && env.RATE_SALT) return env.RATE_SALT;
   // Until the secret is set the server keeps a salt of its own; the developer app asks for RATE_SALT.
   await run(env, "INSERT OR IGNORE INTO settings (key, value) VALUES ('salt', ?)", randomId(32));
   return (await one(env, "SELECT value FROM settings WHERE key = 'salt'")).value;
@@ -244,6 +245,9 @@ const DAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"
 const BASES = ["LEGAL", "FIXED_PER_TIME", "PERCENT_OF_BASE", "FIXED_PER_HOUR", "HOURLY_RATE", "TIERED", "UNIT"];
 const UNITS = ["ORDINARY", "BASE_SHARE", "PER_HOUR", "PER_TIME"];
 const CADENCES = ["MONTHLY", "PER_WORK_DAY", "PER_NIGHT_SHIFT", "PER_SHIFT_TYPE", "BONUS"];
+const BREAK_PAY = ["UNPAID", "PAID", "AS_WORK"];
+/** The premiums an allowance can stand in for, in the app's order. */
+const COVERABLE = ["OVERTIME", "NIGHT", "HOLIDAY"];
 const KIND_KEY = /^(\d{1,6}|OVERTIME|SPECIAL|COVER)$/;
 const LEGACY_KINDS = { OVERTIME: "1", SPECIAL: "2", COVER: "3" };
 const SCOPE = /^(all|over:\d{1,4}|law|night|window:([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d|holiday|rest)$/;
@@ -371,7 +375,15 @@ export function cleanSetup(raw, texts = []) {
     if (given(p.rules)) pay.rules = rules(p.rules, names, kindIds, say);
     setup.pay = pay;
   }
+  // [PAYS-03] Only a setup that uses the newer choices is 3, so apps before them can still read the rest.
+  setup.v = usesNewer(setup.pay) ? 3 : Math.min(setup.v, 2);
   return setup;
+}
+
+/** Whether [pay] keeps any choice only version 3 of the file has. */
+function usesNewer(pay) {
+  const r = pay?.rules;
+  return Boolean(r && (r.supervisory || r.holidaysU5 || r.breakPay) || pay?.items.some((i) => i.covers));
 }
 
 function period(raw) {
@@ -414,6 +426,11 @@ function rules(raw, names, kindIds, say) {
     extraByShift: {},
     extra: {},
   };
+  // [PAYS-03] Kept only when set, so a setup without them keeps its fingerprint and reads as before.
+  if (bool(r.supervisory ?? false, "rules")) out.supervisory = true;
+  if (bool(r.holidaysU5 ?? false, "rules")) out.holidaysU5 = true;
+  const breakPay = oneOf(r.breakPay ?? "UNPAID", BREAK_PAY, "rules");
+  if (breakPay !== "UNPAID") out.breakPay = breakPay;
   if (given(r.publicHolidayAs)) {
     const kind = kindRef(String(r.publicHolidayAs), kindIds);
     if (kind) out.publicHolidayAs = kind;
@@ -503,6 +520,14 @@ function item(raw, names, say) {
   };
   // Left out when there is none: the app reads a present value as a number.
   if (given(i.percentOfBase)) out.percentOfBase = real(i.percentOfBase, 0, 50, "items");
+  // [PAYS-03] The premiums it is paid instead of; kept only when not what the app assumes anyway
+  // (a 고정 연장수당 stands in for 연장, any other allowance for none).
+  if (given(i.covers)) {
+    const picked = new Set(list(i.covers, COVERABLE.length, "items").map((k) => oneOf(k, COVERABLE, "items")));
+    const covers = COVERABLE.filter((k) => picked.has(k));
+    const usual = out.fixedOvertime > 0 && out.cadence === "MONTHLY" ? ["OVERTIME"] : [];
+    if (covers.join() !== usual.join()) out.covers = covers;
+  }
   return out;
 }
 
@@ -581,6 +606,8 @@ function canonical(setup) {
         festivals: [...i.festivals].sort(),
         festivalBefore: i.festivalBefore,
         types: i.types.map(sig).sort(),
+        // Only when set, so allowances from before version 3 keep their fingerprint.
+        ...(i.covers ? { covers: i.covers } : {}),
       })).sort((a, b) => cmp(stable(a), stable(b))),
     } : null,
   };
@@ -639,9 +666,11 @@ export function describe(setup) {
   const p = setup.pay;
   if (p) {
     add("사업장", [p.fiveOrMore ? "5인 이상" : "5인 미만", `월 ${p.monthlyHours}시간`,
-      p.flexPeriod ? `탄력 ${p.flexPeriod === "MONTH" ? "1개월" : "3개월"}` : ""].filter(Boolean).join(" · "));
+      p.flexPeriod ? `탄력 ${p.flexPeriod === "MONTH" ? "1개월" : "3개월"}` : "", p.rules?.supervisory ? "감시·단속 승인" : ""].filter(Boolean).join(" · "));
     const r = p.rules;
     if (r) {
+      if (!p.fiveOrMore && r.holidaysU5) add("공휴일", "유급휴일로 줌 (5인 미만)");
+      if (r.breakPay) add("휴게", r.breakPay === "PAID" ? "유급 (일한 시간은 아님)" : "일한 시간으로 침");
       add("가산율", [["연장", r.ot], ["야간", r.night], ["휴일", r.hw], ["휴일 8시간 넘게", r.ho]]
         .filter(([, v]) => v !== null).map(([n, v]) => `${n} ${pct(v)}`).join(" · ") || "법대로");
       if (r.nightStart && r.nightEnd) add("야간 시간", `${r.nightStart}~${r.nightEnd}`);
@@ -699,7 +728,8 @@ function itemText(i) {
     PER_SHIFT_TYPE: `${i.types.join("·") || "정한 근무"}마다`,
     BONUS: i.months.length ? `${i.months.join("·")}월` : "정한 달",
   }[i.cadence];
-  const parts = [how, given(i.percentOfBase) ? `기본급 ${pct(i.percentOfBase)}` : "", i.festivals.map((f) => (f === "SEOLLAL" ? "설" : "추석")).join("·")];
+  const covers = i.covers ? (i.covers.length ? `${i.covers.map((k) => ({ OVERTIME: "연장", NIGHT: "야간", HOLIDAY: "휴일" })[k]).join("·")} 가산 대신` : "가산과 따로") : "";
+  const parts = [how, given(i.percentOfBase) ? `기본급 ${pct(i.percentOfBase)}` : "", i.festivals.map((f) => (f === "SEOLLAL" ? "설" : "추석")).join("·"), covers];
   return `${i.name}(${parts.filter(Boolean).join(" ")})`;
 }
 
@@ -1041,13 +1071,21 @@ async function vote(request, env) {
 const COOKIE = "__Host-bamnat_admin";
 const cookie = (value, maxAge) => `${COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
 
-/** What is still missing on a new server, shown on the login screen. */
+/** What is still missing on a new server, shown on the login screen, with why; never a name or value that was set. */
 function health(env) {
-  return {
-    database: Boolean(env.DB),
-    password: typeof env.ADMIN_PASSWORD === "string" && env.ADMIN_PASSWORD.length >= 10,
-    salt: Boolean(env.RATE_SALT),
-  };
+  const why = { password: secretIssue(env, "ADMIN_PASSWORD", 10), salt: secretIssue(env, "RATE_SALT", 1) };
+  return { database: Boolean(env.DB), password: why.password === null, salt: why.salt === null, why };
+}
+
+/**
+ * Why a secret is not usable: "short", "store" (a Secrets Store binding, not a runtime secret), "name"
+ * (set under a name that differs only in case or spaces) or "missing"; null when it is fine.
+ */
+function secretIssue(env, name, least) {
+  const v = env[name];
+  if (typeof v === "string") return v.length >= least ? null : "short";
+  if (v && typeof v === "object" && typeof v.get === "function") return "store";
+  return Object.keys(env).some((k) => k !== name && k.replace(/\s+/g, "").toUpperCase() === name) ? "name" : "missing";
 }
 
 async function admin(request, env, url) {
@@ -1144,7 +1182,7 @@ async function overview(env) {
     settings: await settings(env),
     reasons: REASONS,
     answers: ANSWERS,
-    salt: Boolean(env.RATE_SALT),
+    salt: secretIssue(env, "RATE_SALT", 1) === null,
   };
 }
 
@@ -1880,10 +1918,18 @@ function adminApp() {
   function healthList() {
     const h = S.health;
     if (!h) return "";
+    // What to do, by why the server could not read it (older servers send no why).
+    const todo = (name, why, missing) => ({
+      short: `${name}가 10자보다 짧아요. 10자 이상으로 다시 넣고 Add variable and deploy를 눌러 주세요`,
+      name: `이름이 조금 달라요. 대문자와 밑줄 그대로 ${name}로 다시 넣어 주세요`,
+      store: `Secrets Store가 아니라 Worker → 설정 → 런타임 변수에 Secret으로 넣어 주세요`,
+    })[why] ?? missing;
     const rows = [
       [h.database, "데이터베이스(D1)가 연결돼 있어요", "D1 데이터베이스를 변수 이름 DB로 연결해 주세요 (Worker → 설정 → 바인딩)"],
-      [h.password, "관리자 비밀번호가 정해져 있어요", "변수 및 비밀에 ADMIN_PASSWORD를 비밀 유형으로, 10자 이상 넣어 주세요"],
-      [h.salt, "RATE_SALT가 정해져 있어요", "변수 및 비밀에 RATE_SALT를 비밀 유형으로 넣어 주세요 (아무 긴 글자)"],
+      [h.password, "관리자 비밀번호가 정해져 있어요", todo("ADMIN_PASSWORD", h.why?.password,
+        "Worker → 설정 → 런타임 변수에 ADMIN_PASSWORD를 Secret으로, 10자 이상 넣고 Add variable and deploy를 눌러 주세요")],
+      [h.salt, "RATE_SALT가 정해져 있어요", todo("RATE_SALT", h.why?.salt,
+        "같은 곳에 RATE_SALT를 Secret으로 넣어 주세요 (아무 긴 글자). 넣은 뒤 이 화면을 새로 고쳐요")],
     ];
     return `<ul class="checks">${rows.map(([ok, good, todo]) =>
       `<li class="${ok ? "ok" : "todo"}"><span aria-hidden="true">${ok ? "✓" : "!"}</span>${esc(ok ? good : todo)}</li>`).join("")}</ul>`;
@@ -1897,6 +1943,7 @@ function adminApp() {
       <form class="card" data-form="login">
         <label for="password">관리자 비밀번호</label>
         <input id="password" name="password" type="password" autocomplete="current-password" required${usable ? "" : " disabled"}>
+        ${usable ? "" : '<p class="hint">서버가 관리자 비밀번호를 읽으면 입력할 수 있어요. 아래 서버 준비를 마친 뒤 새로 고쳐 주세요.</p>'}
         <p class="error" role="alert">${esc(S.error)}</p>
         <button class="btn primary wide" type="submit"${usable ? "" : " disabled"}>로그인</button>
       </form>

@@ -26,6 +26,9 @@ import com.bamnat.core.pay.RaiseRule
 import com.bamnat.core.pay.Rounding
 import com.bamnat.core.pay.ValueTimeline
 import com.bamnat.core.pay.WageType
+import com.bamnat.core.pay.AnnualPay
+import com.bamnat.core.pay.BreakPay
+import com.bamnat.core.pay.PayslipCheck
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -167,10 +170,15 @@ object PayCodec {
         .put("estimated", JSONArray(p.estimatedFields.toList()))
         .put("period", period(p.period))
         .put("rules", rules(p.rules))
+        // [PAYS-03] 일당's hours, the 연봉 behind the 기본급 and the last payslip check; the last two never leave the phone.
+        .put("dailyHours", p.dailyHours)
+        .putOpt("annual", p.annual?.let(::annual))
+        .putOpt("verified", p.verified?.let(::verified))
 
     fun decode(o: JSONObject): PayProfile = PayProfile(
-        occupation = Occupation.valueOf(o.getString("occupation")),
-        wageType = WageType.valueOf(o.getString("wageType")),
+        // [PAYS-03] A job or wage type from a newer version reads as 직접 설정 and 월급제 rather than failing the file.
+        occupation = runCatching { Occupation.valueOf(o.getString("occupation")) }.getOrDefault(Occupation.CUSTOM),
+        wageType = runCatching { WageType.valueOf(o.getString("wageType")) }.getOrDefault(WageType.MONTHLY),
         base = timeline(o.getJSONObject("base")),
         items = o.optJSONArray("items").objects().map(::item),
         hireDate = o.optString("hireDate").takeIf { it.isNotEmpty() && it != "null" }?.let(LocalDate::parse),
@@ -185,7 +193,33 @@ object PayCodec {
         estimatedFields = o.optJSONArray("estimated")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet(),
         rules = o.optJSONObject("rules")?.let(::rules) ?: CompanyRules(),
         period = o.optJSONObject("period")?.let(::periodFrom) ?: com.bamnat.core.pay.PayPeriod(),
+        dailyHours = o.optInt("dailyHours", 8 * 60).coerceIn(30, 8 * 60),
+        annual = o.optJSONObject("annual")?.let(::annualFrom),
+        verified = o.optJSONObject("verified")?.let(::verifiedFrom),
     )
+
+    /** [PAYS-03] 연봉 as the contract states it; a missing or broken one is dropped, the 기본급 stays. */
+    private fun annual(a: AnnualPay): JSONObject = JSONObject()
+        .put("yearly", a.yearly).put("split", a.split).put("fixedOvertimeMonthly", a.fixedOvertimeMonthly)
+        .put("regularBonusYearly", a.regularBonusYearly).put("otherMonthly", a.otherMonthly)
+
+    private fun annualFrom(o: JSONObject): AnnualPay? = o.optLong("yearly", -1).takeIf { it > 0 }?.let { yearly ->
+        AnnualPay(
+            yearly = yearly,
+            split = if (o.optInt("split", 12) == 13) 13 else 12,
+            fixedOvertimeMonthly = o.optLong("fixedOvertimeMonthly", 0).coerceAtLeast(0),
+            regularBonusYearly = o.optLong("regularBonusYearly", 0).coerceAtLeast(0),
+            otherMonthly = o.optLong("otherMonthly", 0).coerceAtLeast(0),
+        )
+    }
+
+    /** [PAYS-02] The last month matched against a payslip. */
+    private fun verified(v: PayslipCheck): JSONObject = JSONObject()
+        .put("month", v.month.toString()).put("gross", v.gross).put("appTotal", v.appTotal).put("atMillis", v.atMillis)
+
+    private fun verifiedFrom(o: JSONObject): PayslipCheck? = runCatching {
+        PayslipCheck(YearMonth.parse(o.getString("month")), o.getLong("gross"), o.getLong("appTotal"), o.optLong("atMillis"))
+    }.getOrNull()
 
     /** [PAYX-15] Pay period and pay day; values out of range fall back to the calendar month. */
     fun period(p: com.bamnat.core.pay.PayPeriod): JSONObject = JSONObject()
@@ -216,6 +250,8 @@ object PayCodec {
         .put("holidayLeaveFree", r.holidayLeaveFree)
         .put("holidayByStart", r.holidayByShiftStart)
         .putOpt("nightStart", r.nightStart?.toString()).putOpt("nightEnd", r.nightEnd?.toString())
+        // [PAYS-03] 감시·단속 승인, 5인 미만 회사가 주는 공휴일, 휴게 처리.
+        .put("supervisory", r.supervisoryApproved).put("holidaysU5", r.holidaysUnderFive).put("breakPay", r.breakPay.name)
         // [EXTRA-03] Keyed by kind id; 1.8 and earlier used OVERTIME / SPECIAL / COVER.
         .put("extraByShift", JSONObject().apply {
             r.extraByShift.forEach { (kind, byType) ->
@@ -246,6 +282,9 @@ object PayCodec {
         publicHolidayAs = o.optString("publicHolidayAs").takeIf { it.isNotEmpty() && it != "null" }?.let(::kindId),
         holidayLeaveFree = o.optBoolean("holidayLeaveFree", false),
         holidayByShiftStart = o.optBoolean("holidayByStart", false),
+        supervisoryApproved = o.optBoolean("supervisory", false),
+        holidaysUnderFive = o.optBoolean("holidaysU5", false),
+        breakPay = o.optString("breakPay").let { n -> BreakPay.entries.firstOrNull { it.name == n } } ?: BreakPay.UNPAID,
         extra = o.optJSONObject("extra")?.let { x ->
             x.keys().asSequence().mapNotNull { key ->
                 val kind = kindId(key) ?: return@mapNotNull null
@@ -400,6 +439,8 @@ object PayCodec {
         .put("months", JSONArray(i.months.sorted())).putOpt("percentOfBase", i.percentOfBase)
         .put("fixedOvertime", i.fixedOvertimeMinutes)
         .put("festivals", JSONArray(i.festivals.map { it.name })).put("festivalBefore", i.festivalMonthBefore)
+        // [PAYS-03] Only when chosen: without it the allowance keeps its default (연장 for a 고정 연장수당).
+        .putOpt("covers", i.covers?.let { c -> JSONArray(PayItem.COVERABLE.filter { it in c }.map { it.name }) })
 
     private fun item(o: JSONObject): PayItem = PayItem(
         id = o.getString("id"),
@@ -414,6 +455,9 @@ object PayCodec {
         fixedOvertimeMinutes = o.optInt("fixedOvertime", 0),
         festivals = o.optJSONArray("festivals")?.let { a -> (0 until a.length()).mapNotNull { n -> Festival.entries.firstOrNull { it.name == a.getString(n) } }.toSet() } ?: emptySet(),
         festivalMonthBefore = o.optBoolean("festivalBefore", false),
+        covers = o.optJSONArray("covers")?.let { a ->
+            (0 until a.length()).mapNotNull { n -> PayItem.COVERABLE.firstOrNull { it.name == a.optString(n) } }.toSet()
+        },
     )
 
     private fun JSONArray?.objects(): List<JSONObject> =

@@ -43,7 +43,7 @@ class ShareServerTest {
         val policy = File("../../privacy/index.html")
         assumeTrue(policy.exists())
         val text = policy.readText()
-        assertTrue(text.contains("처리방침 1.7"))
+        assertTrue(text.contains("처리방침 1.8"))
         assertTrue(text.contains("Cloudflare, Inc."))
         assertTrue(text.contains("<td>인터넷</td>"))
         assertTrue(text.contains("7일·30일·90일"))
@@ -83,9 +83,21 @@ class ShareServerTest {
         assumeTrue(policy.exists())
         val text = policy.readText()
         assertTrue(text.contains("1-2. 회사 찾기"))
-        assertTrue(text.contains("기본급, 수당 금액, 1회 정액, 입사일, 연차, 알람, 달력 날짜, 이름, 연락처는 보내지 않습니다"))
+        assertTrue(text.contains("기본급, 연봉, 수당 금액, 1회 정액, 명세서 금액, 입사일, 연차, 알람, 달력 날짜, 이름, 연락처는 보내지 않습니다"))
+        assertTrue(text.contains("감시·단속 근로 승인 여부"))
         assertTrue(text.contains("IP 주소를 저장하지 않으며"))
         assertTrue(text.contains("이 휴대폰이 보낸 정보 모두 지우기"))
+    }
+
+    /** [PAYS-02][SETUP-01] The payslip a user matched and the unfinished first setup stay on the phone, as the policy says. */
+    @Test fun thePrivacyPolicyCoversPayslipsAndTheFirstSetup() {
+        val policy = File("../../privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        assertTrue(text.contains("명세서로 맞춰 본 달과 그 달 지급 총액"))
+        assertTrue(text.contains("첫 설정에서 아직 저장하지 않은 답"))
+        assertTrue(text.contains("이용자가 적을 때만 조 이름"))
+        assertTrue(text.contains("연봉과 명세서 금액은 운영자에게 보내지 않으며"))
     }
 
     /** [EXTRA-06] A company-rule report goes by the user's mail app to the policy's contact, and both say what goes. */

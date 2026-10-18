@@ -4,7 +4,7 @@ import com.bamnat.core.model.ShiftType
 
 /**
  * Common Korean rotation patterns [MKT-04]. Codes: D = 주간, E = 오후(초번), N = 야간,
- * X = 24시간 당번, O = 휴무/비번.
+ * X = 24시간 당번, B = 비번 (the day after a 당번), O = 휴무 [SETUP-02].
  */
 data class PatternPreset(val name: String, val description: String, val codes: String)
 
@@ -21,37 +21,57 @@ object PatternPresets {
         PatternPreset("5조 3교대", "주주오오야야휴휴휴휴", "DDEENNOOOO"),
         PatternPreset("4조 2교대 8일", "주주야야휴휴휴휴", "DDNNOOOO"),
         PatternPreset("4조 2교대 8일 (주휴야휴)", "주주휴휴야야휴휴", "DDOONNOO"),
-        PatternPreset("24시간 격일 맞교대", "당번 · 비번 반복", "XO"),
-        PatternPreset("24시간 3조 맞교대", "당번 · 비번 · 휴무", "XOO"),
-        PatternPreset("24시간 4조 맞교대", "당번 · 비번 · 당번 · 비번 · 휴무 · 휴무 · 휴무 · 휴무", "XOXOOOOO"),
+        PatternPreset("24시간 격일 맞교대", "당번 · 비번 반복", "XB"),
+        PatternPreset("24시간 3조 맞교대", "당번 · 비번 · 휴무", "XBO"),
+        PatternPreset("24시간 4조 맞교대", "당번 · 비번 · 당번 · 비번 · 휴무 · 휴무 · 휴무 · 휴무", "XBXBOOOO"),
     )
+
+    /** The work codes of [preset], e.g. D and N for 주주야야휴휴. */
+    fun workCodes(preset: PatternPreset): Set<Char> = preset.codes.filter { it != 'O' && it != 'B' }.toSet()
+
+    /** [SETUP-02] The presets a bundle with exactly these work codes can fill, e.g. 4조 2교대 for D and N. */
+    fun forCodes(codes: Set<Char>): List<PatternPreset> = all.filter { workCodes(it) == codes }
 
     private val nameHints: Map<Char, List<String>> = mapOf(
         'D' to listOf("주간", "주", "D", "데이"),
         'E' to listOf("오후", "초번", "오", "E", "이브닝"),
         'N' to listOf("야간", "야", "N", "나이트"),
         'X' to listOf("당번", "당직", "24시간", "당", "X"),
+        'B' to listOf("비번", "비", "B"),
     )
 
     /**
      * Turns preset codes into shift type ids using the user's types.
      * A code with no matching type becomes null (a plain day off), as does 'O'
      * unless the user has an off type, in which case that type is used so it shows on the calendar.
+     * 'B' takes an off type named 비번 when there is one, else the same day off as 'O'.
      */
     fun toSteps(preset: PatternPreset, types: List<ShiftType>): List<Long?> {
-        val offType = types.firstOrNull { it.isOff }
+        val offTypes = types.filter { it.isOff }
+        val offType = offTypes.firstOrNull { o -> nameHints.getValue('B').none { it == o.name } } ?: offTypes.firstOrNull()
         val workTypes = types.filter { !it.isOff }
-        val byCode = nameHints.mapValues { (_, hints) ->
+        val byCode = nameHints.mapValues { (code, hints) ->
+            val pool = if (code == 'B') offTypes else workTypes
             hints.firstNotNullOfOrNull { hint ->
-                workTypes.firstOrNull { it.name == hint || it.label.equals(hint, ignoreCase = true) }
+                pool.firstOrNull { it.name == hint || it.label.equals(hint, ignoreCase = true) }
             }?.id
         }
         return preset.codes.map { code ->
             when (code) {
                 'O' -> offType?.id
+                'B' -> byCode['B'] ?: offType?.id
                 else -> byCode[code]
             }
         }
+    }
+
+    /**
+     * [SETUP-02] Preset codes to the ids of a bundle's shifts by the part each plays; 'B' falls back to
+     * the day off. A code no shift plays becomes null.
+     */
+    fun toSteps(preset: PatternPreset, roles: Map<Long, ShiftRole>): List<Long?> {
+        val byCode = roles.entries.groupBy({ it.value.code }, { it.key }).mapValues { it.value.first() }
+        return preset.codes.map { code -> byCode[code] ?: if (code == 'B') byCode['O'] else null }
     }
 }
 

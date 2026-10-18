@@ -358,63 +358,6 @@ fun RuleImportDialog(vm: PayViewModel, month: YearMonth, onDismiss: () -> Unit) 
 }
 
 /**
- * 명세서와 대조 [PAYX-05]: the user enters what the pay slip says; the app shows the gap and which
- * company choice would explain it, closest first, and can switch to it.
- */
-@Composable
-fun ReconcileDialog(
-    vm: PayViewModel,
-    profile: PayProfile,
-    snapshot: ScheduleSnapshot,
-    month: YearMonth,
-    total: Long,
-    onDismiss: () -> Unit,
-) {
-    var received by remember { mutableStateOf<Long?>(null) }
-    val r = received
-    val alternatives = remember(r, profile, month) { r?.let { vm.alternatives(profile, snapshot, month, it) } ?: emptyList() }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("${month.monthValue}월 명세서와 대조") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text("명세서의 ‘지급 합계’(세금 빼기 전)를 넣어 주세요.", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                MoneyField("명세서 지급 합계", received, { received = it }, Modifier.padding(top = 8.dp))
-                if (r != null && r > 0) {
-                    val diff = r - total
-                    Fact("앱 계산", won(total))
-                    Fact("차이", if (diff == 0L) "같아요" else signed(diff))
-                    if (r < total * 0.85) {
-                        Text("세금과 4대보험을 뺀 실수령액을 넣으셨다면, 명세서 위쪽의 지급 합계로 바꿔 넣어 주세요.",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(vertical = 4.dp))
-                    }
-                    if (diff != 0L && alternatives.isNotEmpty()) {
-                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                        Text("이렇게 계산하면 더 가까워요", style = MaterialTheme.typography.titleSmall)
-                        alternatives.take(4).forEach { alt ->
-                            val gap = r - alt.total
-                            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(alt.label, style = MaterialTheme.typography.bodyMedium)
-                                    Text("${won(alt.total)} · 차이 ${if (gap == 0L) "없음" else signed(gap)}", style = MaterialTheme.typography.bodySmall,
-                                        color = if (abs(gap) < abs(diff)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                if (abs(gap) < abs(diff)) OutlinedButton(onClick = { vm.update { alt.profile }; onDismiss() }) { Text("바꾸기") }
-                            }
-                        }
-                        Text("그래도 다르면 명세서의 수당 이름과 금액을 ‘내 급여 값’에 맞춰 주세요.",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
-    )
-}
-
-/**
  * A bonus [PAY-05]: paid in chosen months, as a percent of 기본급 or a fixed amount. Counted in
  * 통상임금 by default, since a regular bonus is 통상임금 even with an employment condition
  * (대법원 2024.12.19. 2020다247190 전원합의체).
@@ -526,10 +469,13 @@ fun AddBonusDialog(
     )
 }
 
-/** A new allowance from this month on [PAYX-03]. */
+/**
+ * A new allowance from this month on [PAYX-03]. [PAYS-01] With [allowUnknownAmount] it can be added as
+ * 금액 모름 (null), left out of the total until the amount is known.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun AddItemDialog(onDismiss: () -> Unit, onAdd: (String, Long, Cadence, Boolean, Int) -> Unit) {
+fun AddItemDialog(onDismiss: () -> Unit, allowUnknownAmount: Boolean = false, onAdd: (String, Long?, Cadence, Boolean, Int) -> Unit) {
     var name by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf<Long?>(null) }
     var cadence by remember { mutableStateOf(Cadence.MONTHLY) }
@@ -542,7 +488,8 @@ fun AddItemDialog(onDismiss: () -> Unit, onAdd: (String, Long, Cadence, Boolean,
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedTextField(value = name, onValueChange = { name = it.take(20) }, label = { Text("이름") },
                     placeholder = { Text("예: 나이트 수당") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                MoneyField(if (cadence == Cadence.MONTHLY) "한 달 금액" else "1회 금액", amount, { amount = it })
+                MoneyField(if (cadence == Cadence.MONTHLY) "한 달 금액" else "1회 금액", amount, { amount = it },
+                    placeholder = if (allowUnknownAmount) "모르면 비워 두세요" else "")
                 Text("언제 받나요?", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(Cadence.MONTHLY, Cadence.PER_WORK_DAY, Cadence.PER_NIGHT_SHIFT).forEach { c ->
@@ -574,7 +521,10 @@ fun AddItemDialog(onDismiss: () -> Unit, onAdd: (String, Long, Cadence, Boolean,
             }
         },
         confirmButton = {
-            Button(onClick = { onAdd(name, amount ?: 0, cadence, ordinary && fixedOtHours == 0, if (cadence == Cadence.MONTHLY) fixedOtHours * 60 else 0) }, enabled = name.isNotBlank() && (amount ?: 0) > 0) { Text("추가") }
+            Button(
+                onClick = { onAdd(name, amount?.takeIf { it > 0 }, cadence, ordinary && fixedOtHours == 0, if (cadence == Cadence.MONTHLY) fixedOtHours * 60 else 0) },
+                enabled = name.isNotBlank() && (allowUnknownAmount || (amount ?: 0) > 0),
+            ) { Text("추가") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )

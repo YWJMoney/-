@@ -278,6 +278,8 @@ fun CompanyDetailScreen(
     openPhasesFor: String? = null,
     /** The user's own setup is already in: "우리 부서 설정이 없나요?" leads to sharing it. */
     ready: Boolean = false,
+    /** [SETUP-01] In the first setup a setup is only chosen here; it is saved with all the other answers. */
+    onPick: ((CompanyPage, SharedSetup) -> Unit)? = null,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val applied by vm.applied.collectAsStateWithLifecycle()
@@ -293,6 +295,7 @@ fun CompanyDetailScreen(
         vm.apply(p, s, step, done = { r -> applying = false; choosing = null; onApplied(r, p.name) }, failed = { applying = false; error = it })
     }
     fun start(p: CompanyPage, s: SharedSetup) {
+        if (onPick != null) return onPick(p, s)
         scope.launch {
             val phases = vm.phases(s)
             if (phases != null && phases.options.size > 1) choosing = s to phases else use(p, s, if (phases != null) 0 else null)
@@ -428,16 +431,21 @@ private fun SetupCard(s: SharedSetup, applied: AppliedSetup?, onUse: () -> Unit)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PhaseSheet(phases: Phases, replacing: Boolean, busy: Boolean, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
-    var picked by remember(phases) { mutableStateOf(phases.current) }
+internal fun PhaseSheet(phases: Phases, replacing: Boolean, busy: Boolean, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
+    var picked by remember(phases) { mutableStateOf(phases.current ?: phases.sent) }
     val today = remember { LocalDate.now() }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 20.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("오늘은 어떤 근무예요?", style = MaterialTheme.typography.titleLarge)
+            // [SETUP-02] A coworker on another 조 shares the order on other days: the sender's row is only a start.
+            val sender = phases.team?.let { "보낸 분($it)" } ?: "보낸 분"
             Text(
-                if (phases.current != null) "${Fmt.dayTitle(today)} · ${phases.cycle}일 순서예요. 지금 달력과 같은 줄을 골라 두었어요."
-                else "${Fmt.dayTitle(today)} · ${phases.cycle}일 순서예요. 다음 일주일이 내 근무와 같은 줄을 골라 주세요.",
+                "${Fmt.dayTitle(today)} · ${phases.cycle}일 순서예요. " + when {
+                    phases.current != null -> "지금 달력과 같은 줄을 골라 두었어요."
+                    phases.sent != null -> "${sender}의 오늘 줄을 골라 두었어요. 조가 다르면 내 근무와 같은 줄로 바꿔 주세요."
+                    else -> "다음 일주일이 내 근무와 같은 줄을 골라 주세요."
+                },
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(Modifier.fillMaxWidth().padding(start = 52.dp, end = 8.dp, top = 4.dp)) {

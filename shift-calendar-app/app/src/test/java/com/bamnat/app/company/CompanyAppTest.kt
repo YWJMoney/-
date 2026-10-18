@@ -24,6 +24,7 @@ import com.bamnat.core.pay.PayUnit
 import com.bamnat.core.pay.Premium
 import com.bamnat.core.pay.PremiumScope
 import com.bamnat.core.pay.ValueTimeline
+import com.bamnat.core.pay.Unknowns
 import com.bamnat.core.pay.WageType
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -138,22 +139,29 @@ class CompanyAppTest {
             assertEquals(applied.cycleDays, share.apply(file, rotation = true, todayStep = 12).cycleDays)
             assertEquals("야간", theirs.snapshot.first().resolver.resolve(today).shiftType?.name)
 
-            val profile = share.createPay(file, WageType.MONTHLY, 2_508_000, YearMonth.of(2026, 10), mapOf("rule:${ExtraKind.SPECIAL_ID}" to 90_000))
+            val profile = share.createPay(file, WageType.MONTHLY, 2_508_000, rough = false, dailyHours = 480, YearMonth.of(2026, 10),
+                mapOf("rule:${ExtraKind.SPECIAL_ID}" to 90_000))
             assertEquals(2_508_000L, profile.base.on(today).value)
             assertEquals(180, profile.monthlyHours)
             assertEquals(90_000L, profile.rules.extra.getValue(ExtraKind.SPECIAL_ID).amount)
             val cover = profile.rules.extra.getValue(ExtraKind.COVER_ID)
             assertEquals(PayUnit.BASE_SHARE, cover.unit)
             assertEquals(setOf("c1", Premium.NIGHT), cover.ticked.map { it.key }.toSet())
-            // Left blank: kept as a guess to fill in later, never someone else's amount.
+            // Left blank: 금액 모름, out of the total until filled in, never someone else's amount [PAYS-01].
             val license = profile.items.single { it.name == "자격수당" }
             assertEquals(0L, license.amount.on(today).value)
-            assertTrue(license.id in profile.estimatedFields)
+            assertTrue(Unknowns.item(license.id) in profile.estimatedFields)
+            assertFalse(license.id in profile.estimatedFields)
             val bonus = profile.items.single { it.name == "상여" }
             assertEquals(1.0, bonus.percentOfBase!!, 0.0)
             assertFalse(bonus.id in profile.estimatedFields)
             assertFalse("base" in profile.estimatedFields)
             assertEquals(profile, store.profile.value)
+            // 대략 marks the 기본급 확인 필요; 일당 keeps its hours.
+            val daily = share.createPay(file, WageType.DAILY, 120_000, rough = true, dailyHours = 360, YearMonth.of(2026, 10), emptyMap())
+            assertEquals(WageType.DAILY, daily.wageType)
+            assertEquals(360, daily.dailyHours)
+            assertTrue(Unknowns.BASE in daily.estimatedFields)
         } finally {
             db2.close()
         }

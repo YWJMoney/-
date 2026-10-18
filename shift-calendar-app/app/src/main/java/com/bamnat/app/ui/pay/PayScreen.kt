@@ -45,6 +45,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -56,6 +57,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -83,6 +85,8 @@ import com.bamnat.core.pay.MonthPay
 import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayLine
 import com.bamnat.core.pay.PayProfile
+import com.bamnat.core.pay.PayRange
+import com.bamnat.core.pay.Unknowns
 import com.bamnat.core.pay.RestDayWork
 import com.bamnat.core.pay.ValueSource
 import com.bamnat.core.pay.WageType
@@ -152,11 +156,18 @@ fun PayScreen(
         Box(Modifier.fillMaxSize().padding(padding)) {
             when {
                 snap == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                profile == null || editingSetup -> PayWizard(
-                    initial = profile,
-                    onCancel = if (profile != null) ({ editingSetup = false }) else null,
-                    onDone = { p -> vm.saveSetup(p); editingSetup = false },
-                )
+                profile == null || editingSetup -> {
+                    val month by vm.month.collectAsStateWithLifecycle()
+                    val settings by vm.settings.collectAsStateWithLifecycle()
+                    PayWizard(
+                        initial = profile,
+                        onCancel = if (profile != null) ({ editingSetup = false }) else null,
+                        onDone = { p -> vm.saveSetup(p); editingSetup = false },
+                        snapshot = snap,
+                        preview = { draft -> vm.preview(draft, snap, month) },
+                        suggestedWage = if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) WageType.HOURLY else null,
+                    )
+                }
                 editingRules -> {
                     val month by vm.month.collectAsStateWithLifecycle()
                     CompanyRulesEditor(vm, profile!!, snap, month, onClose = { editingRules = false }, onOpenKinds = onOpenExtraKinds)
@@ -182,20 +193,33 @@ private fun PayResult(
     val undo by vm.undoAvailable.collectAsStateWithLifecycle()
     val unlocked = vm.canUse(Feature.PAY_ENGINE, tier)
     val closed by vm.closed.collectAsStateWithLifecycle()
-    val result = remember(profile, snapshot, month) { vm.calculate(profile, snapshot, month) }
-    val closedSnap = closed[month]
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    // [PAYS-01] Worked out on a background thread; the month shown stays until the next one is ready.
+    val view by produceState<PayView?>(null, profile, snapshot, month, closed, settings.extraKinds, settings.restDayCompared) {
+        value = vm.view(profile, snapshot, month)
+    }
+    val v = view
+    if (v == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        return
+    }
+    val result = v.result
+    val closedSnap = closed[result.month]
     // A closed month shows what was saved, not today's recalculation [PAYX-03].
     val shown = remember(result, closedSnap) {
         closedSnap?.let { result.copy(lines = it.lines, ratesVersion = it.ratesVersion) } ?: result
     }
-    val year = remember(profile, snapshot, month, closed) { (0L until 12L).map { month.plusMonths(it) }.map { it to vm.totalFor(profile, snapshot, it) } }
+    val year = v.year
+    val range = v.range.takeIf { closedSnap == null }
     val context = LocalContext.current
 
     var detail by remember { mutableStateOf<PayLine?>(null) }
     var editTarget by remember { mutableStateOf<ValueTarget?>(null) }
     var raiseTarget by remember { mutableStateOf<ValueTarget?>(null) }
     var importing by remember { mutableStateOf(false) }
-    var reconciling by remember { mutableStateOf(false) }
+    var matching by remember { mutableStateOf(false) }
+    var checking by remember { mutableStateOf(false) }
+    var amountFor by remember { mutableStateOf<com.bamnat.core.pay.MissingItem?>(null) }
     var addingItem by remember { mutableStateOf(false) }
     var addingBonus by remember { mutableStateOf(false) }
     var walkthrough by rememberSaveable { mutableStateOf(true) }
@@ -205,25 +229,42 @@ private fun PayResult(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("${profile.occupation.label} · ${if (profile.wageType == WageType.MONTHLY) "월급제" else "시급제"}",
+            Text("${profile.occupation.label} · ${profile.wageLabel()}",
                 style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             IconButton(onClick = { vm.moveMonth(-1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
             Text(Fmt.month(month), style = MaterialTheme.typography.titleSmall)
             IconButton(onClick = { vm.moveMonth(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
         }
+        // The month asked for is still being worked out; the one before stays meanwhile.
+        if (result.month != month) LinearProgressIndicator(Modifier.fillMaxWidth())
 
         top()
 
-        TotalCard(shown, unlocked, closed = closedSnap != null)
+        TotalCard(shown, range, unlocked, closed = closedSnap != null, onChecks = { checking = true })
+
+        // [PAYS-01] Allowances whose amount is not known are in no figure; each says how often it came up.
+        if (closedSnap == null && result.missing.isNotEmpty()) {
+            SectionCard(title = "합계에 넣지 않은 수당") {
+                result.missing.forEach { m ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("${m.name} · 금액 모름" + (m.times?.let { " · ${it}회" } ?: ""), style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f))
+                        TextButton(onClick = { amountFor = m }, enabled = unlocked) { Text("금액 넣기") }
+                    }
+                }
+                Text("금액을 넣으면 합계에 더해요. 명세서로 맞춰 보면 한 번에 채울 수도 있어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
 
         if (!unlocked) {
             LockedCard()
         }
 
         // [EXTRA-05] 1.8 paid a day off as 휴일근로; the law's way is shown next to it once.
-        val settings by vm.settings.collectAsStateWithLifecycle()
-        if (unlocked && closedSnap == null && profile.rules.restDayWork == RestDayWork.HOLIDAY && !settings.restDayCompared) {
-            RestDayCompare(vm, profile, snapshot, month, result.total)
+        val law = v.restDayLaw
+        if (unlocked && closedSnap == null && law != null && law != result.total) {
+            RestDayCompare(vm, result.month, result.total, law)
         }
 
         if (walkthrough && unlocked) {
@@ -241,8 +282,8 @@ private fun PayResult(
 
         LeaveCard(profile, snapshot, month, onEditRules = onEditRules)
 
-        if (unlocked && profile.wageType == WageType.MONTHLY && closedSnap == null && result.lines.any { it.kind == LineKind.HOLIDAY }) {
-            HolidayModes(vm, profile, snapshot, month)
+        if (unlocked && closedSnap == null && v.holidayModes.isNotEmpty()) {
+            HolidayModes(vm, profile, v.holidayModes)
         }
 
         if (unlocked && !month.isAfter(YearMonth.now())) {
@@ -273,10 +314,10 @@ private fun PayResult(
 
         SectionCard(title = "내 급여 값") {
             ValueRow(
-                title = if (profile.wageType == WageType.MONTHLY) "기본급" else "시급",
+                title = profile.wageType.baseName() + if (profile.wageType == WageType.DAILY) " (하루 ${PayCalculator.hours(profile.dailyHours)})" else "",
                 value = profile.base.on(month),
-                raise = profile.base.raise?.describe(),
-                estimated = "base" in profile.estimatedFields,
+                raise = profile.base.raise?.describe() ?: profile.annual?.let { "연봉 ${won(it.yearly)}에서 계산 (÷${it.divisor})" },
+                estimated = Unknowns.BASE in profile.estimatedFields,
                 enabled = unlocked,
                 onEdit = { editTarget = ValueTarget.Base },
                 onRaise = { raiseTarget = ValueTarget.Base },
@@ -294,6 +335,7 @@ private fun PayResult(
                     value = item.amount.on(month),
                     raise = item.amount.raise?.describe(),
                     estimated = item.id in profile.estimatedFields,
+                    unknownAmount = Unknowns.item(item.id) in profile.estimatedFields,
                     enabled = unlocked,
                     onEdit = { editTarget = ValueTarget.Item(item.id) },
                     onRaise = { raiseTarget = ValueTarget.Item(item.id) },
@@ -324,9 +366,16 @@ private fun PayResult(
                 (if (profile.fiveOrMoreEmployees) "5인 이상" else "5인 미만") +
                     (if (profile.scheduleIsRegular) " · 근무표 시간은 기본 근무" + (profile.flexPeriod?.let { " (탄력제 ${it.months}개월)" } ?: "")
                     else if (profile.dailyLimitMinutes == null) " · 하루 8시간 기준 없음" else "") +
-                    (if (profile.wageType == WageType.MONTHLY) " · 월급제 휴일 ${profile.holidayPayMode.label} · 월 ${profile.monthlyHours}시간" else ""),
+                    (if (profile.wageType == WageType.MONTHLY) " · 월급제 휴일 ${profile.holidayPayMode.label} · 월 ${profile.monthlyHours}시간" else "") +
+                    (if (profile.wageType == WageType.DAILY) " · 일당은 하루 ${PayCalculator.hours(profile.dailyHours)}분" else ""),
                 style = MaterialTheme.typography.bodyMedium,
             )
+            // [PAYS-02] The last payslip check, kept on the phone only.
+            profile.verified?.let { c ->
+                val gap = c.gross - c.appTotal
+                Text("${Fmt.month(c.month)} 명세서와 맞춰 봤어요" + if (gap == 0L) "" else " (그때 차이 ${if (gap > 0) "+" else "−"}${won(kotlin.math.abs(gap))})",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
             // [PAY-05] The regular bonus decides the hourly rate, so it is shown next to the hours.
             profile.items.filter { it.cadence == Cadence.BONUS }.forEach { b ->
                 val yearly = b.percentOfBase?.let { "연 ${PayCalculator.pct(it * b.yearlyTimes)}" } ?: "${b.yearlyTimes}번"
@@ -340,8 +389,8 @@ private fun PayResult(
                 summary.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                OutlinedButton(onClick = { reconciling = true }, enabled = unlocked) {
-                    Icon(Icons.Filled.ReceiptLong, null); Text(" 명세서와 대조")
+                OutlinedButton(onClick = { matching = true }, enabled = unlocked) {
+                    Icon(Icons.Filled.ReceiptLong, null); Text(" 명세서로 맞춰 보기")
                 }
                 TextButton(onClick = onEditSetup) { Icon(Icons.Filled.Edit, null); Text(" 처음부터 설정") }
             }
@@ -367,22 +416,39 @@ private fun PayResult(
         RaiseDialog(vm, profile, target, onDismiss = { raiseTarget = null })
     }
     if (importing) RuleImportDialog(vm, month, onDismiss = { importing = false })
-    if (reconciling) ReconcileDialog(vm, profile, snapshot, month, result.total, onDismiss = { reconciling = false })
+    if (matching) PayslipMatchDialog(vm, profile, snapshot, result.month, onDismiss = { matching = false })
+    if (checking && range != null) UnknownsSheet(vm, range, profile, result.month,
+        onMatch = { checking = false; matching = true },
+        onEdit = { target -> checking = false; editTarget = target },
+        onDismiss = { checking = false })
+    amountFor?.let { m ->
+        AmountDialog("${m.name} 금액", if (m.times == null) "한 달 금액" else "1회 금액", onDismiss = { amountFor = null }) { amount ->
+            vm.setItemAmount(m.id, amount, result.month)
+            amountFor = null
+        }
+    }
     if (addingBonus) AddBonusDialog(onDismiss = { addingBonus = false }) { name, months, percent, amount, ordinary, festivals, before ->
         vm.addBonus(name, months, percent, amount, ordinary, month, festivals, before)
         addingBonus = false
     }
-    if (addingItem) AddItemDialog(onDismiss = { addingItem = false }) { name, amount, cadence, ordinary, fixedOt ->
+    if (addingItem) AddItemDialog(onDismiss = { addingItem = false }, allowUnknownAmount = true) { name, amount, cadence, ordinary, fixedOt ->
         vm.addItem(name, amount, cadence, ordinary, month, fixedOt)
         addingItem = false
     }
 }
 
+/**
+ * The month's total [PAY-09]. [PAYS-01] While answers are 모르겠어요 it is a range, "약 312만~341만 원",
+ * with how many answers need checking; tapping it shows what each one changes.
+ */
 @Composable
-private fun TotalCard(result: MonthPay, unlocked: Boolean, closed: Boolean = false) {
+private fun TotalCard(result: MonthPay, range: PayRange?, unlocked: Boolean, closed: Boolean = false, onChecks: () -> Unit = {}) {
+    val checks = range?.effects?.size ?: 0
     Column(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large)
-            .background(MaterialTheme.colorScheme.primaryContainer).padding(20.dp),
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .clickable(enabled = unlocked && checks > 0, onClickLabel = "확인 필요한 답 보기", onClick = onChecks)
+            .padding(20.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -399,20 +465,119 @@ private fun TotalCard(result: MonthPay, unlocked: Boolean, closed: Boolean = fal
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
             }
             if (closed) { EstimatedChip("마감"); Spacer(Modifier.width(6.dp)) }
-            if (result.estimated) EstimatedChip()
+            if (checks > 0) EstimatedChip("확인 필요 $checks") else if (result.estimated) EstimatedChip()
         }
+        val spread = range != null && !range.exact
         val target = if (unlocked) result.total.toFloat() else 0f
         val shown by animateFloatAsState(target, tween(700), label = "total")
         // Locked: the digits are never drawn, only their shape, so screen readers cannot read them either.
+        val text = when {
+            !unlocked -> won(result.total).replace(Regex("\\d"), "●")
+            spread -> rangeText(range!!.low, range.high)
+            else -> won(shown.toLong())
+        }
         Text(
-            if (unlocked) won(shown.toLong()) else won(result.total).replace(Regex("\\d"), "●"),
-            style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Bold),
+            text,
+            style = (if (spread) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.displaySmall).copy(fontWeight = FontWeight.Bold),
             color = MaterialTheme.colorScheme.onPrimaryContainer,
             modifier = if (unlocked || Build.VERSION.SDK_INT < 31) Modifier else Modifier.blur(6.dp),
         )
+        if (spread && unlocked) {
+            Text("지금 답으로는 ${won(result.total)} · 눌러서 확인 필요 ${checks}개 보기", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer)
+        } else if (checks > 0 && unlocked) {
+            Text("눌러서 확인 필요 ${checks}개 보기", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+        }
         Text("통상시급 ${if (unlocked) won(result.ordinaryHourly) else "●●,●●●원"}",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
     }
+}
+
+/**
+ * [PAYS-01] Every 확인 필요 answer: what the app assumes, how far the month moves with the other answers,
+ * and the question again, so one tap settles it.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun UnknownsSheet(
+    vm: PayViewModel,
+    range: PayRange,
+    profile: PayProfile,
+    month: YearMonth,
+    onMatch: () -> Unit,
+    onEdit: (ValueTarget) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("확인이 필요한 답 ${range.effects.size}개", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                if (range.exact) "답을 몰라도 이번 달 금액은 같아요. 아는 대로 골라 두면 다음 달부터 더 정확해져요."
+                else "답에 따라 이번 달이 ${won(range.low)}~${won(range.high)}까지 달라져요. 아는 답을 고르면 범위가 좁아져요.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            range.effects.forEach { e ->
+                val key = e.key
+                androidx.compose.material3.Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(e.unknown.label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                            Text(effectText(e), style = MaterialTheme.typography.labelMedium,
+                                color = if (e.moves) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text(e.unknown.assumed, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val item = profile.items.firstOrNull { Unknowns.item(it.id) == key || it.id == key }
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            when {
+                                key.startsWith(Unknowns.item("")) && item != null -> {
+                                    OutlinedButton(onClick = { onEdit(ValueTarget.Item(item.id)) }) { Text("금액 넣기") }
+                                }
+                                key == Unknowns.BASE || item != null -> {
+                                    OutlinedButton(onClick = { vm.answer(key) }) { Text("이 금액이 맞아요") }
+                                    TextButton(onClick = { onEdit(if (item != null) ValueTarget.Item(item.id) else ValueTarget.Base) }) { Text("금액 고치기") }
+                                }
+                                else -> {
+                                    OutlinedButton(onClick = { vm.answer(key) }) { Text("지금대로 맞아요") }
+                                    e.unknown.answers.forEach { a ->
+                                        OutlinedButton(onClick = { vm.answer(key, a.apply) }) { Text(a.label) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            OutlinedButton(onClick = onMatch, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Filled.ReceiptLong, null); Text(" 명세서로 한 번에 맞춰 보기")
+            }
+            Text("명세서 금액은 이 휴대폰에만 남아요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** "−8.3만~+4.1만 원", "최대 +4.1만 원", or that the month does not move. */
+private fun effectText(e: com.bamnat.core.pay.UnknownEffect): String = when {
+    !e.moves -> "금액 변화 없음"
+    e.down < 0 && e.up > 0 -> "−${manwon(-e.down)}~+${manwon(e.up)} 원"
+    e.up > 0 -> "최대 +${manwon(e.up)} 원"
+    else -> "최대 −${manwon(-e.down)} 원"
+}
+
+/** [PAYS-01] An amount for an allowance that had none. */
+@Composable
+private fun AmountDialog(title: String, label: String, onDismiss: () -> Unit, onSave: (Long) -> Unit) {
+    var amount by remember { mutableStateOf<Long?>(null) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { MoneyField(label, amount, { amount = it }) },
+        confirmButton = { Button(onClick = { amount?.let(onSave) }, enabled = (amount ?: 0) > 0) { Text("넣기") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
 }
 
 @Composable
@@ -544,16 +709,19 @@ private fun ValueRow(
     ordinary: Boolean? = null,
     onOrdinary: ((Boolean) -> Unit)? = null,
     onRemove: (() -> Unit)? = null,
+    /** [PAYS-01] 금액 모름: left out of the total. */
+    unknownAmount: Boolean = false,
 ) {
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(title, style = MaterialTheme.typography.bodyLarge)
-                    if (estimated) { Spacer(Modifier.width(6.dp)); EstimatedChip() }
+                    if (unknownAmount) { Spacer(Modifier.width(6.dp)); EstimatedChip("확인 필요") }
+                    else if (estimated) { Spacer(Modifier.width(6.dp)); EstimatedChip() }
                 }
                 Text(
-                    won(value.value) + when (value.source) {
+                    if (unknownAmount) "금액 모름 · 합계에서 뺐어요" else won(value.value) + when (value.source) {
                         ValueSource.RAISED -> " (인상 ${value.raisesApplied}회 반영)"
                         else -> ""
                     },
@@ -618,6 +786,7 @@ private fun Glossary() {
         "소정근로시간" to "근로계약으로 정한 일하는 시간. 주 40시간이면 한 달 209시간(주휴 포함)으로 봐요.",
         "가산" to "법이 정한 추가분. 연장·야간·휴일 근무에 통상시급의 50%(휴일 8시간 초과는 100%)를 더해요.",
         "추정" to "입력하지 않은 값을 앱이 짐작해 넣은 부분이에요. 실제 값으로 바꾸면 사라져요.",
+        "확인 필요" to "‘모르겠어요’로 둔 답이에요. 흔한 값으로 계산하고, 답에 따라 달라지는 범위를 함께 보여 줘요.",
     )
     var open by remember { mutableStateOf<String?>(null) }
     SectionCard(title = "용어 풀이") {
@@ -681,11 +850,7 @@ private fun DayLedger(result: MonthPay, unlocked: Boolean) {
  * shown once when the month differs. The user keeps their way or moves to the law's; either is final.
  */
 @Composable
-private fun RestDayCompare(vm: PayViewModel, profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth, now: Long) {
-    val law = remember(profile, snapshot, month) {
-        vm.calculate(profile.copy(rules = profile.rules.copy(restDayWork = RestDayWork.LAW)), snapshot, month).total
-    }
-    if (law == now) return
+private fun RestDayCompare(vm: PayViewModel, month: YearMonth, now: Long, law: Long) {
     androidx.compose.material3.Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.tertiaryContainer,
@@ -724,10 +889,7 @@ private fun RestDayCompare(vm: PayViewModel, profile: PayProfile, snapshot: Sche
 
 /** Both readings of 월급제 휴일 근무 side by side, the chosen one marked [PAY-06]. */
 @Composable
-private fun HolidayModes(vm: PayViewModel, profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth) {
-    val totals = remember(profile, snapshot, month) {
-        HolidayPayMode.entries.map { it to vm.calculate(profile.copy(holidayPayMode = it), snapshot, month).total }
-    }
+private fun HolidayModes(vm: PayViewModel, profile: PayProfile, totals: List<Pair<HolidayPayMode, Long>>) {
     SectionCard(title = "휴일 근무, 두 가지 해석") {
         Text("월급제 휴일 근무는 회사마다 계산이 달라요. 명세서와 맞는 쪽을 고르세요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -735,7 +897,7 @@ private fun HolidayModes(vm: PayViewModel, profile: PayProfile, snapshot: Schedu
             totals.forEach { (mode, total) ->
                 val chosen = profile.holidayPayMode == mode
                 androidx.compose.material3.Surface(
-                    onClick = { vm.update { it.copy(holidayPayMode = mode, estimatedFields = it.estimatedFields - "holidayPayMode") } },
+                    onClick = { vm.update { it.copy(holidayPayMode = mode, estimatedFields = it.estimatedFields - Unknowns.HOLIDAY_PAY_MODE) } },
                     shape = MaterialTheme.shapes.medium,
                     color = if (chosen) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
                     modifier = Modifier.weight(1f),
@@ -842,7 +1004,7 @@ private fun reportProblem(context: android.content.Context, profile: PayProfile,
     val text = buildString {
         appendLine("[밤낮 급여 계산 오류 제보]")
         appendLine("월: ${result.month} · 요율 ${result.ratesVersion} · 공휴일 ${KoreanHolidays.VERSION} · 앱 ${com.bamnat.app.BuildConfig.VERSION_NAME}")
-        appendLine("직군: ${profile.occupation.label} · ${if (profile.wageType == WageType.MONTHLY) "월급제" else "시급제"} · " +
+        appendLine("직군: ${profile.occupation.label} · ${profile.wageLabel()} · " +
             "${if (profile.fiveOrMoreEmployees) "5인 이상" else "5인 미만"} · 소정 ${profile.monthlyHours}시간")
         profile.rules.summary(profile).forEach { appendLine("규칙: $it") }
         appendLine()

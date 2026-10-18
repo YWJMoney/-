@@ -244,6 +244,19 @@ sealed interface WeeklyHoliday {
     data object Unknown : WeeklyHoliday
 }
 
+/** [PAYS-03] How a company treats break time (휴게시간). */
+enum class BreakPay(val label: String) {
+    /** 근로기준법 제54조: free time, neither paid nor work. */
+    UNPAID("무급"),
+    /** Paid at 100% but still free time, so it never makes 연장, 야간 or 주휴 hours. */
+    PAID("유급"),
+    /**
+     * Not free in practice (대기시간 under the employer's direction, 제50조 제3항): counted as work before
+     * anything is sorted, so it can make 연장, 야간 and 주휴 hours.
+     */
+    AS_WORK("근무시간"),
+}
+
 /** Rounding of overtime minutes per day, e.g. 30분 단위 버림. */
 data class MinuteRounding(val unit: Int = 1, val rounding: Rounding = Rounding.DOWN) {
     fun apply(minutes: Int): Int {
@@ -306,6 +319,19 @@ data class CompanyRules(
      * whole, by the day it started on. Off by default: only the minutes inside the holiday count.
      */
     val holidayByShiftStart: Boolean = false,
+    /**
+     * [PAYS-03] 감시·단속적 근로자 승인 from 고용노동부 (근로기준법 제63조 제3호): no 연장 from the 8시간·40시간
+     * limits, no legal 연장·휴일 premiums (the company's own rates still apply), no 주휴 and no paid 공휴일.
+     * The night premium (5인 이상) and 연차 stay.
+     */
+    val supervisoryApproved: Boolean = false,
+    /**
+     * [PAYS-03] A workplace under 5 employees that still gives 공휴일 as paid holidays, which the law does not
+     * require there (시행령 별표1). [publicHolidaysPaid] stays the 5인 이상 setting.
+     */
+    val holidaysUnderFive: Boolean = false,
+    /** [PAYS-03] How breaks are treated; unpaid, as the law has it, by default. */
+    val breakPay: BreakPay = BreakPay.UNPAID,
 ) {
     fun extraRule(kind: Long?): ExtraRule? = kind?.let { extra[it] }?.takeUnless { it.isLegal }
 

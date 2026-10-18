@@ -61,6 +61,15 @@ object Fmt {
     /** [DAY-03] "으로" or "로" after [word]: 야간으로, 데이로, 10월 17일로. */
     fun ro(word: String): String = batchim(word).let { if (it == 0 || it == RIEUL) "로" else "으로" }
 
+    /** [SETUP-01] "이에요" or "예요" after [word]: 야간이에요, 데이예요. */
+    fun ieyo(word: String): String = if (batchim(word) != 0) "이에요" else "예요"
+
+    /** [SETUP-01] "은" or "는" after [word]: 오늘은, 10월 17일은. */
+    fun eun(word: String): String = if (batchim(word) != 0) "은" else "는"
+
+    /** [SETUP-01] "이" or "가" after [word]: 야간이, 데이가. */
+    fun iga(word: String): String = if (batchim(word) != 0) "이" else "가"
+
     private const val RIEUL = 8
 
     /** The final consonant index of [word]'s last sound (0 for none), reading digits and a few letters as Korean says them. */
