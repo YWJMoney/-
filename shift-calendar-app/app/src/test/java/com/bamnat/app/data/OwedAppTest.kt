@@ -60,6 +60,8 @@ class OwedAppTest {
     }
 
     @Test fun owedGoesIntoTheBackupAndComesBack() = runBlocking {
+        // A backup needs the shift types, as on a real phone.
+        ScheduleRepository(db).ensureDefaults()
         val r = money.save(Receivable(who = "가나다화학", title = "10월 납품", amount = 500_000, date = day, due = day.plusDays(14)))
         money.receive(r, 200_000, day.plusDays(3))
         val backups = BackupManager(db, SettingsRepository(context))
