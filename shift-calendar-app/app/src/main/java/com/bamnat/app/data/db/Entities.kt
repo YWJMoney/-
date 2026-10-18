@@ -118,4 +118,10 @@ data class MemoEntity(
     val updatedAt: Long,
     /** When the memo went to the trash; null for live memos. */
     @ColumnInfo(defaultValue = "NULL") val deletedAt: Long? = null,
+    /** [SCHED-01] When the memo's schedule is, as a local date and time ("2026-10-20T15:00"); null for a plain memo. */
+    @ColumnInfo(defaultValue = "NULL") val remindAt: String? = null,
+    @ColumnInfo(defaultValue = "0") val remindRing: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val remindNotify: Boolean = false,
+    /** [SCHED-01] The found time the user last answered about. */
+    @ColumnInfo(defaultValue = "NULL") val remindAsked: String? = null,
 )

@@ -3,6 +3,8 @@ package com.bamnat.app.data.db
 import com.bamnat.core.alarm.AlarmCodec
 import com.bamnat.core.memo.ChecklistCodec
 import com.bamnat.core.memo.Memo
+import com.bamnat.core.memo.MemoReminder
+import java.time.LocalDateTime
 import com.bamnat.core.model.AlarmSpec
 import com.bamnat.core.model.DayEntry
 import com.bamnat.core.model.ExtraEntry
@@ -167,7 +169,16 @@ fun MemoEntity.toModel() = Memo(
     createdAtMillis = createdAt,
     updatedAtMillis = updatedAt,
     deletedAtMillis = deletedAt,
+    reminder = memoReminder(remindAt, remindRing, remindNotify),
+    reminderAsked = remindAsked,
 )
+
+/** [SCHED-01] A stored schedule, or null when it is unreadable or neither rings nor notifies. */
+fun memoReminder(at: String?, ring: Boolean, notify: Boolean): MemoReminder? {
+    if (at == null || !(ring || notify)) return null
+    val time = runCatching { LocalDateTime.parse(at) }.getOrNull() ?: return null
+    return MemoReminder(time, ring, notify)
+}
 
 fun Memo.toEntity() = MemoEntity(
     id = id,
@@ -181,4 +192,8 @@ fun Memo.toEntity() = MemoEntity(
     createdAt = createdAtMillis,
     updatedAt = updatedAtMillis,
     deletedAt = deletedAtMillis,
+    remindAt = reminder?.at?.toString(),
+    remindRing = reminder?.ring == true,
+    remindNotify = reminder?.notify == true,
+    remindAsked = reminderAsked,
 )

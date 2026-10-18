@@ -216,4 +216,6 @@ data class PayProfile(
     val annual: AnnualPay? = null,
     /** [PAYS-02] The last month matched against a payslip; kept on the phone only. */
     val verified: PayslipCheck? = null,
+    /** [PAYS-06] Rules the user stated in their own words, paid on top of everything else. */
+    val customRules: List<CustomRule> = emptyList(),
 )

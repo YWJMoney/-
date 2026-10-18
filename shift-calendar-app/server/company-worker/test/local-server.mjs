@@ -77,7 +77,16 @@ async function seed() {
     await send(`/api/posts/${rude.id}/flag`, { device: `seed-device-0000003${n}`, reason: "abuse" }, `10.0.2.${n}`);
   }
   await send(`/api/posts/${odd2.id}/flag`, { device: "seed-device-00000038", reason: "spam" }, "10.0.2.8");
-  console.log("seeded: 1 adopted rule, 1 new version, 2 waiting, 1 turned down, 1 way the app cannot set, a talk with 2 flagged posts");
+  // [ADMIN-02] Questions from the app: one with the alarm check attached, one idea.
+  await send("/api/inquiries", {
+    v: 1, device: "seed-device-00000011", kind: "bug", text: "잠금 화면에서 알람 소리가 가끔 안 나요. 진동만 와요",
+    info: { app: "1.12.0 (18)", model: "samsung SM-S928N", android: "16 (API 36)", diag: "알람 사용: 켬\n놓쳤을 수 있는 알람: 10.17 06:00" },
+  }, "10.0.0.11");
+  await send("/api/inquiries", {
+    v: 1, device: "seed-device-00000012", kind: "idea", text: "달력이 일요일부터 시작하면 좋겠어요",
+    info: { app: "1.12.0 (18)" },
+  }, "10.0.0.12");
+  console.log("seeded: 1 adopted rule, 1 new version, 2 waiting, 1 turned down, 1 way the app cannot set, a talk with 2 flagged posts, 2 questions");
 }
 
 /** [ADMIN-04] One approved admin (minji@example.com, password minji-review-2026), one waiting, one invite out. */

@@ -89,6 +89,8 @@ import com.bamnat.app.ui.memo.MemoTrashScreen
 import com.bamnat.app.ui.memo.MemoTrashViewModel
 import com.bamnat.app.ui.settings.ExtraKindsScreen
 import com.bamnat.app.ui.settings.ExtraKindsViewModel
+import com.bamnat.app.ui.settings.InquiryScreen
+import com.bamnat.app.ui.settings.InquiryViewModel
 import com.bamnat.app.ui.settings.SettingsScreen
 import com.bamnat.app.ui.settings.SettingsViewModel
 import com.bamnat.app.ui.shifts.PatternScreen
@@ -100,6 +102,8 @@ import com.bamnat.app.ui.money.MoneyScreen
 import com.bamnat.app.ui.money.MoneyViewModel
 import com.bamnat.app.ui.work.WorkStyleScreen
 import com.bamnat.app.ui.setup.SetupHost
+import com.bamnat.app.ui.onboarding.ConsentPages
+import com.bamnat.app.ui.onboarding.NewConsentPrompt
 import com.bamnat.app.ui.setup.SetupViewModel
 import com.bamnat.app.ui.setup.SetupPaySheet
 import com.bamnat.app.ui.company.CompanyBoardScreen
@@ -164,6 +168,8 @@ private object Routes {
     const val COMPANY_SENT = "company_sent"
     // [COMM-07] 회사 규칙 광장: every company's rule sets, to vote on, talk over and use.
     const val COMPANY_BOARD = "company_board"
+    /** [ADMIN-02] 설정 > 문의하기. */
+    const val INQUIRY = "inquiry"
 
     fun companyFind(setup: Boolean = false, weekdays: Boolean = false) = "company_find?setup=$setup&weekdays=$weekdays"
     fun company(id: String, setup: Boolean, weekdays: Boolean) = "company/$id?setup=$setup&weekdays=$weekdays"
@@ -199,10 +205,16 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             else -> true
         }
     }
+    // [ONBOARD-01] A new phone sees what the app may ask for, and why, before the first setup.
+    val consentSeen by container.consentStore.seen.collectAsStateWithLifecycle()
     when (needsSetup) {
         null -> return
         // "나중에" opens the calendar with a card to go on from where the user stopped.
         true -> if (setupDraft?.later != true) {
+            if (consentSeen == null && setupDraft == null) {
+                ConsentPages(container, onDone = {})
+                return
+            }
             SetupHost(appViewModel { SetupViewModel(it) })
             return
         }
@@ -251,6 +263,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 }
             }
             NoticeLinks.Target.MONEY -> { nav.navigateTopLevel(TopLevel.MONEY.route); NoticeLinks.consume(target) }
+            NoticeLinks.Target.MEMOS -> { nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target) }
             NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.PAY) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [SET-01] Settings takes the target itself, to open on the alarm's state from wherever it was.
             NoticeLinks.Target.ALARM_CHECK -> {
@@ -352,6 +365,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
         }
     }
+
+    // [ONBOARD-01] A phone set up before the consent pages is asked only about what is new since.
+    NewConsentPrompt(container)
 
     // [SETUP-01] Right after the first setup, once: the pay comes next for work paid by the hour or month.
     val justSaved by container.firstSetup.saved.collectAsStateWithLifecycle()
@@ -473,7 +489,12 @@ private fun AppNavHost(
                         onFix = { nav.fixCompanySetup(it) },
                     )
                 }) else null,
+                onOpenInquiry = { nav.navigate(Routes.INQUIRY) { launchSingleTop = true } },
             )
+        }
+        composable(Routes.INQUIRY) {
+            val vm = appViewModel { InquiryViewModel(it) }
+            InquiryScreen(vm = vm, onBack = { nav.popFrom(Routes.INQUIRY) })
         }
         composable(Routes.PAY) {
             val vm = appViewModel { PayViewModel(it) }

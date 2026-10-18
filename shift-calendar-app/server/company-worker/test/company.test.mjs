@@ -352,7 +352,7 @@ test("everything one install sent can be deleted", async () => {
   await call("POST", "/api/votes", { device: device(1), company: b.data.company.id, setup: b.data.setup, ok: true }, from(1));
   assert.equal((await call("DELETE", "/api/mine")).status, 400);
   const gone = await call("DELETE", "/api/mine", undefined, { "x-device": device(1) });
-  assert.deepEqual(gone.data, { reports: 2, votes: 1, posts: 0 });
+  assert.deepEqual(gone.data, { reports: 2, votes: 1, posts: 0, inquiries: 0 });
   assert.ok(!DB.dump().includes(sha(`device|${device(1)}`).slice(0, 40)));
   assert.equal((await call("GET", `/api/reports/${a.data.id}`)).status, 404);
 });

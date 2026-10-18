@@ -103,6 +103,11 @@
             android:name=".money.JobReminderReceiver"
             android:exported="false" />
 
+        <!-- [SCHED-01] A memo that is a schedule: its notice or its alarm at that minute. -->
+        <receiver
+            android:name=".memo.MemoScheduleReceiver"
+            android:exported="false" />
+
         <!-- [PAY-12][REL-08] 연차 lapse notice on 11/1 and 12/1. -->
         <receiver
             android:name=".pay.LeaveReminderReceiver"

@@ -19,6 +19,8 @@ object NoticeLinks {
         LEAVE,
         /** Where the alarm's permissions are checked and fixed. */
         ALARM_CHECK,
+        /** [SCHED-01] The memos, from a memo schedule's notice. */
+        MEMOS,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"

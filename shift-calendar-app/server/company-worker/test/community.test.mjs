@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { trust } from "../src/index.js";
+import { trust, prune } from "../src/index.js";
 import { server, report, device, from, signIn, ORIGIN } from "./helpers.mjs";
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
@@ -168,6 +168,24 @@ test("three 신고 hide a post until the developer looks; the developer keeps, h
 
   const log = (await call("GET", "/api/admin/audit", undefined, h2)).data.entries.map((e) => e.action);
   for (const a of ["post_autohide", "post_show", "post_hide", "post_mute", "post_delete"]) assert.ok(log.includes(a), a);
+});
+
+test("the hourly clean-up deletes hidden posts after 90 days and ends 쓰기 막기", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-18T09:00:00Z") });
+  const { call, DB, env } = server();
+  const h = await signIn(call);
+  const { say } = await oneRuleSet(call);
+  const hidden = (await say(2, "광고 글이에요")).data.id;
+  const kept = (await say(3, "보이는 글이에요")).data.id;
+  await call("POST", `/api/admin/posts/${hidden}`, { action: "mute", reason: "spam" }, h);
+  await call("POST", `/api/posts/${kept}/flag`, { device: device(4), reason: "spam" }, from(4));
+  const n = (sql) => DB.db.prepare(sql).get().n;
+  await prune(env, Date.now() + 89 * 24 * 60 * 60 * 1000);
+  assert.equal(n("SELECT COUNT(*) AS n FROM posts"), 2);
+  assert.equal(n("SELECT COUNT(*) AS n FROM muted"), 0);
+  await prune(env, Date.now() + 91 * 24 * 60 * 60 * 1000);
+  assert.deepEqual(DB.db.prepare("SELECT id FROM posts").all().map((r) => r.id), [kept]);
+  assert.equal(n("SELECT COUNT(*) AS n FROM post_flags"), 1);
 });
 
 test("one talk whole, for the developer reviewing a rule set", async () => {

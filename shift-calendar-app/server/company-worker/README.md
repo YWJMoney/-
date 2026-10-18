@@ -1,7 +1,7 @@
 # 밤낮 회사 규칙 서버 (bamnat-company)
 
 같은 회사 사람들이 근무 설정과 급여 계산 방식을 나눠 쓰는 서버예요. 금액은 오가지 않아요.
-개발자 앱은 같은 주소의 `/admin/`에 있어요 [COMM-04][COMM-01][COMM-02][COMM-03][ADMIN-01].
+개발자 앱은 같은 주소의 `/admin/`에 있어요 [COMM-04][COMM-01][COMM-02][COMM-03][ADMIN-01]. 앱 문의도 이 서버로 와요 [ADMIN-02].
 
 Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-worker`)와는 따로 올려요.
 
@@ -33,6 +33,9 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
    같은 설정 화면 아래쪽 빌드(Build)의 변수 칸이나 왼쪽 메뉴의 Secrets Store에 넣은 값은 서버가 읽지 못해요.
    서버가 비밀번호를 읽기 전에는 로그인 화면의 입력칸이 잠겨 있어요.
    두 값 모두 채팅이나 메신저로 보내지 마세요.
+5-1. **매시간 정리 켜기** [ADMIN-02]
+   `bamnat-company` Worker → 설정(Settings) → 트리거(Triggers) → 크론 트리거 추가(Add Cron Trigger)에서 `17 * * * *`(매시 17분)를 넣어요.
+   아무도 보내지 않는 시간에도 네트워크 해시(2시간), 다 쓴 제한과 로그인, 180일 지난 문의, 1년 지난 기록이 제때 지워져요.
 6. **확인**
    휴대폰 크롬 주소창에 `https://bamnat-company.<계정 이름>.workers.dev/admin/`을 그대로 입력해요. 검색으로는 나오지 않아요.
    `<계정 이름>`은 비밀값이 아니라 Cloudflare가 정한 workers.dev 이름이에요. 공유 링크 서버 주소(`bamnat-share.<계정 이름>.workers.dev`)의 가운데와 같고,
@@ -42,7 +45,7 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
 7. **주소 알려 주기**
    workers.dev 주소만 Claude에게 알려 주세요. 앱 연결은 Claude가 해요. 비밀번호와 RATE_SALT는 알려 주지 않아요.
 
-코드를 고친 뒤에는 3번만 다시 하면 돼요. 데이터베이스와 비밀값은 그대로 남아요.
+코드를 고친 뒤에는 3번만 다시 하면 돼요. 데이터베이스와 비밀값, 크론 트리거는 그대로 남아요.
 
 ## 개발자 앱 (/admin)
 
@@ -98,7 +101,7 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
 - IP 주소는 저장하지 않아요. 보내기 제한과 "같은 네트워크" 판단에는 RATE_SALT를 섞은 해시만 쓰고 2시간 안에 지워요. 그 뒤에는 같은 네트워크에서 1시간 안에 보낸 것끼리 묶는 무작위 표시만 남아요.
 - 앱 설치 ID는 해시로만 남겨요. 보낸 분은 앱에서 제보를 되돌리거나 보낸 것 전부를 지울 수 있어요.
 - 토론 글: 다른 사용자에게는 그 토론 안의 "참여자 N"과 올린 분·맞았어요·달라요·명세서 확인 표시만 보여요. 설치 해시는 개발자 앱에 앞 6자만 보여요.
-  이메일·전화번호·금액이 보이는 글은 거절해요. 서로 다른 3명이 신고하면 개발자가 볼 때까지 가려지고, 가린 글은 90일 뒤 지워요. 내 데이터 지우기는 글과 신고도 지워요.
+  이메일·전화번호·금액이 보이는 글은 거절해요. 서로 다른 3명이 신고하면 개발자가 볼 때까지 가려지고, 가린 글은 90일 뒤 매시간 정리 작업(`prune`)에서 지워요. 내 데이터 지우기는 글과 신고도 지워요.
 - 제한: 토론 글은 설치마다 하루 20개, 네트워크마다 60개. 설치마다 하루 10건, 네트워크마다 하루 30건, 투표는 1시간에 60건, 제보 하나는 32KB까지예요. 관리자 비밀번호를 5번 틀리면 그 네트워크는 1시간 동안 잠겨요.
 
 ## 앱이 쓰는 API
@@ -118,6 +121,20 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
 | `POST /api/posts` | 토론 글 `{device, company, setup, body}` (500자까지) |
 | `DELETE /api/posts/:id` | 내 글 지우기 (헤더 `X-Device`) |
 | `POST /api/posts/:id/flag` | 신고 `{device, reason: abuse\|personal\|spam\|false}` |
+| `POST /api/inquiries` | 앱 문의 보내기 `{v: 1, device, kind, text, info}` [ADMIN-02]. `kind`는 `question`(질문), `bug`(앱 문제), `idea`(제안). `info`는 앱이 보내기 전에 보여 준 것만: `app`, `model`, `android`, 고를 때만 `diag`(알람 점검) |
+| `GET /api/inquiries` | 이 휴대폰이 보낸 문의와 답 (헤더 `X-Device`) |
+| `GET /api/inquiries/:id` | 문의 하나와 답 (헤더 `X-Device`, 다른 휴대폰에는 없는 것으로 보여요) |
+| `POST /api/inquiries/:id/messages` | 같은 문의에 더 묻기 `{text}` (헤더 `X-Device`). 다시 답을 기다리는 상태가 돼요 |
+| `DELETE /api/inquiries/:id` | 문의 지우기 (헤더 `X-Device`). `DELETE /api/mine`도 문의를 함께 지워요 |
+
+## 앱 문의 [ADMIN-02]
+
+- 설정 > 문의하기가 메일 대신 이 서버로 보내요. 개발자 앱에서 답하면 보낸 휴대폰의 문의하기 화면에 답이 보여요.
+- 문의 글에 메일 주소, 전화번호, 금액이 보이면 거절해요(제보와 같은 규칙). 앱이 보내기 전에 먼저 알려 줘요.
+- 함께 가는 정보는 앱 버전, 휴대폰 기종, Android 버전이고, 알람 점검 기록은 사용자가 내용을 보고 고를 때만 가요.
+- 휴대폰마다 하루 5건, 네트워크마다 하루 20건, 더 묻기는 1시간에 20건까지예요. 마지막 활동 뒤 180일이 지나면 답과 함께 지워요.
+- 개발자 앱 API: `GET /api/admin/inquiries?status=open|answered|closed&q=`(목록과 상태별 수), `GET /api/admin/inquiries/:id`(함께 온 정보 `context` 포함),
+  `POST /api/admin/inquiries/:id/reply {text, close?}`, `POST /api/admin/inquiries/:id/status {status: open|closed}`. 개요(`/api/admin/overview`)의 `inquiries`는 답을 기다리는 수예요.
 
 설정 파일은 버전 3까지 받아요. 감시·단속 승인, 5인 미만 공휴일, 유급 휴게, 가산 대신 받는 수당을 쓴 설정만 3이 되고, 나머지는 예전 앱도 읽는 2로 남아요.
 

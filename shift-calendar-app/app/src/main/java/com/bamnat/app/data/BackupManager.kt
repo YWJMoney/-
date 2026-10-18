@@ -95,7 +95,10 @@ class BackupManager(
                     .put("id", m.id).putOpt("day", m.epochDay).put("title", m.title).put("body", m.body)
                     .put("checklist", m.checklist).put("isChecklist", m.isChecklist).put("color", m.colorIndex)
                     .put("pinned", m.pinned).put("created", m.createdAt).put("updated", m.updatedAt)
-                    .putOpt("deleted", m.deletedAt),
+                    .putOpt("deleted", m.deletedAt)
+                    // [SCHED-01] Version 13. Older apps ignore these keys and keep the memo plain.
+                    .putOpt("remindAt", m.remindAt).put("remindRing", m.remindRing).put("remindNotify", m.remindNotify)
+                    .putOpt("remindAsked", m.remindAsked),
             )
         }
         root.put("memos", memos)
@@ -148,7 +151,8 @@ class BackupManager(
                 .putOpt("sound", s.defaultAlarmSound).put("vibrate", s.vibrate).put("gradual", s.gradualVolume)
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmsOn", s.alarmsEnabled)
                 .putOpt("workStyle", s.workStyle?.name).put("rosterMonthly", s.rosterMonthly)
-                .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoFirst).put("calendarMemos", s.calendarMemos)
+                .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoInCells).put("calendarMemos", s.calendarMemos)
+                .put("phoneDayView", s.phoneDayView.name).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
                 .put("restCheck", s.restCheck)
                 .put("strictRest", s.strictRest).put("sleepTips", s.sleepTips)
                 // 1.10 and before read one switch for all sleep notices.
@@ -230,6 +234,8 @@ class BackupManager(
                 isChecklist = o.optBoolean("isChecklist"), colorIndex = o.optInt("color"), pinned = o.optBoolean("pinned"),
                 createdAt = o.optLong("created"), updatedAt = o.optLong("updated"),
                 deletedAt = if (o.isNull("deleted") || !o.has("deleted")) null else o.getLong("deleted"),
+                remindAt = o.optStringOrNull("remindAt"), remindRing = o.optBoolean("remindRing"),
+                remindNotify = o.optBoolean("remindNotify"), remindAsked = o.optStringOrNull("remindAsked"),
             )
         }
         val entries = root.optJSONArray("money")?.objects()?.map { o ->
@@ -315,7 +321,11 @@ class BackupManager(
                         ?: WorkStyle.SHIFT.takeIf { patterns.isNotEmpty() },
                     rosterMonthly = o.optBoolean("rosterMonthly", s.rosterMonthly),
                     extraKinds = o.optStringOrNull("extraKinds")?.let { com.bamnat.core.model.ExtraKinds.decode(it) } ?: s.extraKinds,
-                    memoFirst = o.optBoolean("memoFirst", s.memoFirst),
+                    memoInCells = o.optBoolean("memoFirst", s.memoInCells),
+                    // [CAL-03][DAY-04] Added in 1.13; older backups keep what this phone has.
+                    phoneDayView = runCatching { PhoneDayView.valueOf(o.getString("phoneDayView")) }.getOrDefault(s.phoneDayView),
+                    dayGroupOrder = o.optStringOrNull("dayGroupOrder")?.let(::decodeGroupOrder)
+                        ?: if (o.optBoolean("memoFirst", false)) listOf("memo") else s.dayGroupOrder,
                     calendarMemos = o.optBoolean("calendarMemos", s.calendarMemos),
                     restCheck = o.optBoolean("restCheck", s.restCheck),
                     strictRest = o.optBoolean("strictRest", s.strictRest),

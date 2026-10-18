@@ -18,9 +18,11 @@ data class RingRequest(
     val isSnooze: Boolean = false,
     /** Set by hand for that date from the calendar. */
     val custom: Boolean = false,
+    /** [SCHED-01] A memo's schedule rings under the memo's own words instead of a shift's name. */
+    val label: String? = null,
 ) {
-    /** "주간 근무 알람", or just "알람" for a hand-set alarm on a day without work. */
-    val title: String get() = if (shiftName.isBlank()) "알람" else "$shiftName 근무 알람"
+    /** "주간 근무 알람", "알람" for a hand-set alarm on a day without work, or a memo schedule's words. */
+    val title: String get() = label ?: if (shiftName.isBlank()) "알람" else "$shiftName 근무 알람"
 
     fun putInto(intent: Intent): Intent = intent
         .putExtra(X_NAME, shiftName)
@@ -31,6 +33,7 @@ data class RingRequest(
         .putExtra(X_TRIGGER, triggerAtMillis)
         .putExtra(X_SNOOZE, isSnooze)
         .putExtra(X_CUSTOM, custom)
+        .putExtra(X_LABEL, label)
 
     fun encode(): String = JSONObject()
         .put(X_NAME, shiftName)
@@ -41,6 +44,7 @@ data class RingRequest(
         .put(X_TRIGGER, triggerAtMillis)
         .put(X_SNOOZE, isSnooze)
         .put(X_CUSTOM, custom)
+        .put(X_LABEL, label ?: JSONObject.NULL)
         .toString()
 
     companion object {
@@ -52,6 +56,7 @@ data class RingRequest(
         private const val X_TRIGGER = "ring_trigger"
         private const val X_SNOOZE = "ring_snooze"
         private const val X_CUSTOM = "ring_custom"
+        private const val X_LABEL = "ring_label"
 
         fun from(plan: PlannedAlarm, triggerAtMillis: Long) = RingRequest(
             shiftName = plan.shiftName,
@@ -74,6 +79,7 @@ data class RingRequest(
                 triggerAtMillis = intent.getLongExtra(X_TRIGGER, System.currentTimeMillis()),
                 isSnooze = intent.getBooleanExtra(X_SNOOZE, false),
                 custom = intent.getBooleanExtra(X_CUSTOM, false),
+                label = intent.getStringExtra(X_LABEL),
             )
         }
 
@@ -90,6 +96,7 @@ data class RingRequest(
                     triggerAtMillis = o.getLong(X_TRIGGER),
                     isSnooze = o.optBoolean(X_SNOOZE, false),
                     custom = o.optBoolean(X_CUSTOM, false),
+                    label = if (o.isNull(X_LABEL)) null else o.optString(X_LABEL),
                 )
             }.getOrNull()
         }
