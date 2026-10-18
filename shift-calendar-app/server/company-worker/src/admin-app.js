@@ -10,35 +10,55 @@ const ADMIN_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-
 /** The pages the app answers on: the app itself, the invite link, and the page that explains installing. */
 const PAGES = ["/admin/", "/admin/join", "/admin/install"];
 
-export function adminFile(path) {
+export function adminFile(path, request) {
   const png = ICONS[path];
   if (png) {
     return new Response(Uint8Array.from(atob(png), (c) => c.charCodeAt(0)), {
       headers: { "content-type": "image/png", "cache-control": "public, max-age=86400", "x-content-type-options": "nosniff" },
     });
   }
-  const files = {
-    "/admin/app.js": [`(${adminApp})();\n`, "text/javascript; charset=utf-8"],
-    "/admin/sw.js": [`(${adminWorker})();\n`, "text/javascript; charset=utf-8"],
+  const file = adminFiles()[path];
+  if (!file) return new Response("Not found", { status: 404 });
+  const headers = {
+    "content-type": file.type,
+    // Checked each time, but an unchanged file is answered with 304 and no body (ETag).
+    "cache-control": "no-cache",
+    etag: file.etag,
+    "content-security-policy": ADMIN_CSP,
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+    "x-robots-tag": "noindex, nofollow",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "x-frame-options": "DENY",
+  };
+  const asked = request?.headers.get("if-none-match");
+  if (asked && asked.split(/\s*,\s*/).some((t) => t.replace(/^W\//, "") === file.etag)) return new Response(null, { status: 304, headers });
+  return new Response(file.body, { headers });
+}
+
+const hashText = (text) => {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+};
+
+let builtFiles = null;
+
+/** The app's files with their tags, made once per worker copy. The phone keeps the app's own files under a name that changes with them. */
+function adminFiles() {
+  if (builtFiles) return builtFiles;
+  const app = `(${adminApp})();\n`;
+  const version = hashText(app + ADMIN_CSS + ADMIN_HTML + JSON.stringify(MANIFEST));
+  const list = {
+    "/admin/app.js": [app, "text/javascript; charset=utf-8"],
+    "/admin/sw.js": [`(${adminWorker})(${JSON.stringify(version)});\n`, "text/javascript; charset=utf-8"],
     "/admin/app.css": [ADMIN_CSS, "text/css; charset=utf-8"],
     "/admin/manifest.webmanifest": [JSON.stringify(MANIFEST), "application/manifest+json; charset=utf-8"],
     "/admin/icon.svg": [ICON_SVG, "image/svg+xml"],
   };
-  for (const page of PAGES) files[page] = [ADMIN_HTML, "text/html; charset=utf-8"];
-  const file = files[path];
-  if (!file) return new Response("Not found", { status: 404 });
-  return new Response(file[0], {
-    headers: {
-      "content-type": file[1],
-      "cache-control": "no-cache",
-      "content-security-policy": ADMIN_CSP,
-      "x-content-type-options": "nosniff",
-      "referrer-policy": "no-referrer",
-      "x-robots-tag": "noindex, nofollow",
-      "permissions-policy": "camera=(), microphone=(), geolocation=()",
-      "x-frame-options": "DENY",
-    },
-  });
+  for (const page of PAGES) list[page] = [ADMIN_HTML, "text/html; charset=utf-8"];
+  builtFiles = Object.fromEntries(Object.entries(list).map(([p, [body, type]]) => [p, { body, type, etag: `"${hashText(body)}"` }]));
+  return builtFiles;
 }
 
 const MANIFEST = {
@@ -639,11 +659,11 @@ function adminApp() {
   }
 
   /** Fetches what the current screen shows; the home numbers come along so badges stay right. */
-  async function load({ quiet = false } = {}) {
+  async function load({ quiet = false, overview = true } = {}) {
     const { name, id } = S.route;
     const key = `${name}/${id ?? ""}`;
     try {
-      const jobs = [api("/overview").then((o) => { S.overview = o; S.me = o.me; })];
+      const jobs = overview ? [api("/overview").then((o) => { S.overview = o; S.me = o.me; })] : [];
       if (name === "home" && can("audit")) jobs.push(api("/audit").then((d) => { S.data.feed = d; }));
       if (name === "review") jobs.push(api("/queue").then((d) => { S.data.queue = d; }));
       if (name === "inquiries" && !id) jobs.push(loadInquiries());
@@ -1955,14 +1975,27 @@ function adminApp() {
     S.installPrompt = null;
   });
 
+  /**
+   * Opens the app. The home screen's recent activity is asked for together with the numbers rather than
+   * after them; an admin who may not see it simply gets no feed. The numbers just came, so the screen's
+   * own data is all that is fetched after.
+   */
   async function enter() {
+    const home = (location.hash.replace(/^#\/?/, "").split("/")[0] || "home") === "home";
+    const feed = home ? api("/audit").catch(() => null) : null;
     S.overview = await api("/overview");
     S.me = S.overview.me;
     S.phase = "app";
     S.route = readRoute();
     if (!location.hash) history.replaceState(null, "", `/admin/${href(S.route.name)}`);
     render();
-    load({ quiet: true });
+    if (feed && S.route.name === "home") {
+      const d = await feed;
+      if (d && can("audit")) S.data.feed = d;
+      if (S.route.name === "home" && S.phase === "app") render({ keepScroll: true });
+    } else {
+      load({ quiet: true, overview: false });
+    }
   }
 
   (async () => {
@@ -1986,22 +2019,28 @@ function adminApp() {
       render();
       return;
     }
-    S.health = await health();
+    // What the server still lacks only shows on the login screen, so it is not waited for before signing in.
+    const checked = health().then((h) => { S.health = h; return h; });
     try {
       await enter();
     } catch {
+      await checked;
       S.phase = "login";
       render();
     }
   })();
 }
 
-/** The developer app's service worker: the newest files from the network, saved copies without one. */
-function adminWorker() {
-  const CACHE = "bamnat-admin-2";
+/**
+ * The developer app's service worker. The app's own files open from the phone at once and are refreshed
+ * in the background for the next time, so opening the app does not wait on the network; a new version
+ * of the app changes [version], and the phone then fetches every file again. What the API says is never kept.
+ */
+function adminWorker(version) {
+  const CACHE = `bamnat-admin-${version}`;
   const SHELL = ["/admin/", "/admin/app.js", "/admin/app.css", "/admin/icon.svg", "/admin/manifest.webmanifest", "/admin/install"];
   self.addEventListener("install", (event) => {
-    event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+    event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));
   });
   self.addEventListener("activate", (event) => {
     event.waitUntil(caches.keys()
@@ -2010,15 +2049,14 @@ function adminWorker() {
   });
   self.addEventListener("fetch", (event) => {
     const url = new URL(event.request.url);
-    // Only the app's own files; what the API says is never kept on the phone.
     if (event.request.method !== "GET" || url.origin !== self.location.origin || !url.pathname.startsWith("/admin/")) return;
-    event.respondWith(fetch(event.request).then((res) => {
-      if (res.ok) {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(event.request, copy));
-      }
+    const fresh = fetch(event.request).then(async (res) => {
+      if (res.ok) await caches.open(CACHE).then((c) => c.put(event.request, res.clone()));
       return res;
-    }).catch(() => caches.match(event.request).then((hit) => hit ?? caches.match("/admin/"))));
+    });
+    event.waitUntil(fresh.catch(() => {}));
+    event.respondWith(caches.open(CACHE).then((c) => c.match(event.request, { ignoreSearch: true }))
+      .then((hit) => hit ?? fresh.catch(() => caches.match("/admin/"))));
   });
 }
 
