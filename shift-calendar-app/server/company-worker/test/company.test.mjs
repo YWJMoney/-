@@ -77,11 +77,52 @@ test("anything carrying money is refused, not dropped", () => {
   refused((s) => { s.pay.items[1].amount = { entries: [], raise: { month: 3, percent: 0.03 } }; }, "amount", "items");
   refused((s) => { s.shiftTypes.push({ name: "교육 2,500,000", start: "09:00", end: "18:00", break: 60, off: false }); }, "amount", "shiftTypes");
   refused((s) => { s.pay.items[1].name = "010-1234-5678"; }, "phone", "items");
-  refused((s) => { s.v = 3; }, "setup_version", "v");
+  refused((s) => { s.v = 4; }, "setup_version", "v");
   refused((s) => { s.format = "bamnat-backup"; }, "setup", "format");
   refused((s) => { s.rotation.steps[0] = "오후"; }, "setup", "rotation");
   refused((s) => { s.shiftTypes[0].start = "7시"; }, "setup", "shiftTypes");
   refused((s) => { s.pay.rules.extra[3].adds[0].scope = "sometimes"; }, "setup", "rules");
+});
+
+test("newer pay choices travel when set, and a file without them stays version 2", async () => {
+  // [PAYS-03] 감시·단속 승인, 5인 미만 공휴일, 유급 휴게 and an allowance paid instead of the night premium.
+  const s = setup();
+  s.v = 3;
+  s.pay.fiveOrMore = false;
+  Object.assign(s.pay.rules, { supervisory: true, holidaysU5: true, breakPay: "AS_WORK" });
+  s.pay.items[2].covers = ["NIGHT"];
+  const clean = cleanSetup(s);
+  assert.equal(clean.v, 3);
+  assert.equal(clean.pay.rules.supervisory, true);
+  assert.equal(clean.pay.rules.holidaysU5, true);
+  assert.equal(clean.pay.rules.breakPay, "AS_WORK");
+  assert.deepEqual(clean.pay.items[2].covers, ["NIGHT"]);
+  const lines = Object.fromEntries(words(clean));
+  assert.equal(lines["사업장"], "5인 미만 · 월 180시간 · 감시·단속 승인");
+  assert.equal(lines["공휴일"], "유급휴일로 줌 (5인 미만)");
+  assert.equal(lines["휴게"], "일한 시간으로 침");
+  assert.match(lines["수당"], /야간수당\(야간마다 야간 가산 대신\)/);
+
+  // Choices left as the app assumes anyway are dropped: the file reads as version 2, with the same fingerprint.
+  const plain = setup();
+  plain.v = 3;
+  Object.assign(plain.pay.rules, { supervisory: false, holidaysU5: false, breakPay: "UNPAID" });
+  plain.pay.items[1].covers = [];
+  const same = cleanSetup(plain);
+  assert.equal(same.v, 2);
+  for (const k of ["supervisory", "holidaysU5", "breakPay"]) assert.equal(k in same.pay.rules, false, k);
+  assert.equal("covers" in same.pay.items[1], false);
+  assert.equal(await fingerprint(same), await fingerprint(cleanSetup(setup())));
+  assert.notEqual(await fingerprint(clean), await fingerprint(same));
+
+  const bad = (change, field) => {
+    const t = setup();
+    change(t);
+    assert.throws(() => cleanSetup(t), (e) => e.code === "setup" && e.field === field);
+  };
+  bad((t) => { t.pay.rules.breakPay = "SOMETIMES"; }, "rules");
+  bad((t) => { t.pay.items[0].covers = ["BASE"]; }, "items");
+  bad((t) => { t.pay.rules.supervisory = "yes"; }, "rules");
 });
 
 test("kinds of extra work are kept only when the file lists them", () => {
@@ -403,5 +444,5 @@ test("without a database the server says so", async () => {
   const { call } = server({ DB: undefined });
   assert.equal((await call("GET", "/api/companies?q=예시")).status, 503);
   const health = await call("GET", "/api/admin/health");
-  assert.deepEqual(health.data, { database: false, password: true, salt: true });
+  assert.deepEqual(health.data, { database: false, password: true, salt: true, why: { password: null, salt: null } });
 });
