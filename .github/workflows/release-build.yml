@@ -1,0 +1,38 @@
+name: Release build (밤낮, unsigned)
+# Builds the release AAB and APK without the upload key. The key never leaves the release manager's machine,
+# where these files are signed with jarsigner (AAB) and apksigner (APK) before the Play upload.
+on:
+  push:
+    branches: ["claude/release-**"]
+    paths: ["shift-calendar-app/**", ".github/workflows/release-build.yml"]
+  workflow_dispatch:
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: shift-calendar-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: sh ./gradlew :app:bundleRelease :app:assembleRelease
+      # 16 KB page alignment of native libraries, required for API 35+ on Play.
+      - run: |
+          za=$(ls "$ANDROID_HOME"/build-tools/*/zipalign | sort -V | tail -1)
+          "$za" -c -P 16 -v 4 app/build/outputs/apk/release/app-release-unsigned.apk > /dev/null && echo "16 KB aligned"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-unsigned
+          path: |
+            shift-calendar-app/app/build/outputs/bundle/release/app-release.aab
+            shift-calendar-app/app/build/outputs/apk/release/app-release-unsigned.apk
+            shift-calendar-app/app/build/outputs/mapping/release/mapping.txt
+          retention-days: 14
