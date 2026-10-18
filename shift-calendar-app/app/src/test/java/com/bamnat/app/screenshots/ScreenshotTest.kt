@@ -356,6 +356,13 @@ class ScreenshotTest {
             tapText(title, prefix = true, scrolls = 0)
         }
 
+        /** [SCALE-01] [openDay] on a screen too short to show the whole month: scrolls down to the day first. */
+        fun openDayBelow(date: LocalDate) {
+            val title = Fmt.dayTitle(date)
+            tapText(title, prefix = true, scrolls = 6)
+            tapText(title, prefix = true, scrolls = 6)
+        }
+
         /** Selects a day without opening it. */
         fun selectDay(date: LocalDate) = tapText(Fmt.dayTitle(date), prefix = true, scrolls = 0)
 
@@ -1428,10 +1435,10 @@ class ScreenshotTest {
     // ---- [SCALE-01] Any phone, any text size: a common phone, a small one, the smallest and the largest text ----
     @Test fun phoneCalendar() = shoot("160_phone_calendar", PHONE)
     @Test fun smallPhoneCalendar() = shoot("161_small_phone_calendar", SMALL_PHONE)
-    @Test fun smallPhoneDaySheet() = shoot("162_small_phone_day_sheet", SMALL_PHONE) { openDay(dayCell) }
+    @Test fun smallPhoneDaySheet() = shoot("162_small_phone_day_sheet", SMALL_PHONE) { openDayBelow(dayCell) }
     @Test fun phoneCalendarSmallText() = shoot("163_phone_calendar_small_text", PHONE, fontScale = 0.85f)
     @Test fun phoneCalendarHugeText() = shoot("164_phone_calendar_huge_text", PHONE, fontScale = 2f)
-    @Test fun phoneDaySheetHugeText() = shoot("165_phone_day_sheet_huge_text", PHONE, fontScale = 2f) { openDay(dayCell) }
+    @Test fun phoneDaySheetHugeText() = shoot("165_phone_day_sheet_huge_text", PHONE, fontScale = 2f) { openDayBelow(dayCell) }
     @Test fun phoneSettingsHugeText() = shoot("166_phone_settings_huge_text", PHONE, fontScale = 2f) { tab(4, wide = false) }
     @Test fun phoneStatsHugeText() = shoot("167_phone_stats_huge_text", PHONE, fontScale = 2f) { tab(3, wide = false) }
     @Test fun phoneMoneyLargeText() = shoot("168_phone_money_large_text", PHONE, fontScale = 1.5f) { tab(1, wide = false) }
