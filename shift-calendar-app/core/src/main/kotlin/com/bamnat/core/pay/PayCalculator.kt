@@ -68,7 +68,7 @@ data class MonthPay(
 }
 
 /**
- * Turns a month of calendar days into pay [PAY-01, PAY-04..06, PAYX-07, PAYX-08, EXTRA-02, EXTRA-03].
+ * Turns a month of calendar days into pay [PAY-01, PAY-04..06, PAYX-07, PAYX-08, EXTRA-02, EXTRA-03, PAYS-03].
  * Pure: everything comes in through the arguments, so the same inputs always give the same result
  * (see [CalcSnapshot]). The calendar is the input: each shift, piece of extra work and holiday on it
  * becomes minutes, then money by the law and the company's [CompanyRules].
@@ -89,6 +89,8 @@ class PayCalculator(
         isHoliday: ((LocalDate) -> Boolean)? = null,
     ): MonthPay {
         val rules = profile.rules
+        // [PAYS-03] 감시·단속 승인 (제63조 제3호): the rules on hours, breaks and holidays (chapter 4) do not apply.
+        val supervisory = rules.supervisoryApproved
         // [PAYX-12] The company's night window replaces 22~06 for every shift, base shifts included.
         // [PAYX-15] The days this month's pay covers, e.g. 9/21~10/20 for October.
         val periodStart = profile.period.start(month)
@@ -97,28 +99,35 @@ class PayCalculator(
         val rates = rules.applyNight(RateTable.on(periodStart, rateTable))
         val premiums = profile.fiveOrMoreEmployees
         // 공휴일 are paid holidays only at 5인 이상 (근로기준법 제55조 제2항, 시행령 별표1); below that
-        // they are ordinary days unless the caller says otherwise.
+        // they are ordinary days unless the company grants them [PAYS-03] or the caller says otherwise.
         // [PAYX-07] 노동절 is a paid holiday at every workplace and cannot be swapped, so it skips both checks.
+        // [PAYS-03] An approved 감시·단속 worker has no paid 공휴일 (제55조 is in chapter 4).
+        // verify: 노동절 for an approved 감시·단속 worker; kept as a paid day under its own law, with no premium.
         val publicHoliday = isHoliday ?: { d: LocalDate ->
-            KoreanHolidays.isLaborDay(d) || premiums && rules.publicHolidaysPaid && KoreanHolidays.isHoliday(d)
+            KoreanHolidays.isLaborDay(d) ||
+                !supervisory && (if (premiums) rules.publicHolidaysPaid else rules.holidaysUnderFive) && KoreanHolidays.isHoliday(d)
         }
+        // [PAYX-07] 탄력적 근로시간제 settles scheduled hours over its period; an approved 감시·단속 worker has no limits to settle.
+        val flex = profile.flexPeriod?.takeIf { profile.scheduleIsRegular && !supervisory }
         // Start at the week containing the 1st so weekly overtime counts the days before it, or at the
         // 탄력적 근로시간제 period's start so a period ending this month is settled whole. End with the
         // week holding the last day: extra work is the week's last hours, so the whole week decides.
         val weekFrom = periodStart.with(TemporalAdjusters.previousOrSame(profile.weekStart))
-        val from = profile.flexPeriod?.takeIf { profile.scheduleIsRegular }?.start(periodStart)
-            ?.let { minOf(it, weekFrom) } ?: weekFrom
+        val from = flex?.start(periodStart)?.let { minOf(it, weekFrom) } ?: weekFrom
         val to = periodEnd.with(TemporalAdjusters.nextOrSame(profile.weekStart.minus(1)))
+        // [PAYS-03] A break counted as work is work from the start: it can make 연장, 야간 and 주휴 hours.
         val days = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }
-            .map(resolve).toList()
-        // [EXTRA-02] The 주휴일 is a paid holiday under every company rule (제55조 제1항).
-        val weeklyHolidays = weeklyHolidays(rules.weeklyHoliday, days, profile.weekStart)
+            .map(resolve).map { if (rules.breakPay == BreakPay.AS_WORK) it.breaksAsWork() else it }.toList()
+        // [EXTRA-02] The 주휴일 is a paid holiday under every company rule (제55조 제1항), except for an
+        // approved 감시·단속 worker, who has none [PAYS-03].
+        val weeklyHolidays = if (supervisory) emptySet() else weeklyHolidays(rules.weeklyHoliday, days, profile.weekStart)
         val holiday = { d: LocalDate -> d in weeklyHolidays || publicHoliday(d) }
         val classifier = MinuteClassifier(
             rates = { rules.applyNight(RateTable.on(it, rateTable)) },
-            options = ClassifyOptions(profile.dailyLimitMinutes, profile.weeklyLimitMinutes, profile.weekStart,
-                restDayWork = rules.restDayWork, scheduleIsRegular = profile.scheduleIsRegular,
-                flexPeriod = profile.flexPeriod, holidayByClock = !rules.holidayByShiftStart),
+            // [PAYS-03] No 8시간·40시간 for an approved 감시·단속 worker: every hour is paid at 100%.
+            options = ClassifyOptions(profile.dailyLimitMinutes.takeUnless { supervisory }, profile.weeklyLimitMinutes.takeUnless { supervisory },
+                profile.weekStart, restDayWork = rules.restDayWork, scheduleIsRegular = profile.scheduleIsRegular,
+                flexPeriod = flex, holidayByClock = !rules.holidayByShiftStart),
         )
         val allMinutes = classifier.classify(days, holiday).map { roundOvertime(it, rules.overtimeRounding) }
         val minutes = allMinutes.filter { inPeriod(it.date) }
@@ -152,16 +161,18 @@ class PayCalculator(
         val baseLabel = if (profile.wageType == WageType.MONTHLY) "기본급" else "시급 × ${profile.monthlyHours}시간"
 
         fun legal(p: Double) = if (premiums) p else 0.0
+        // [PAYS-03] An approved 감시·단속 worker has no legal 연장·휴일 premium (제63조); the night premium stays.
+        fun legalHours(p: Double) = if (supervisory) 0.0 else legal(p)
         val pr = Premiums(
-            overtime = rules.overtimePremium ?: legal(rates.overtimePremium),
+            overtime = rules.overtimePremium ?: legalHours(rates.overtimePremium),
             night = rules.nightPremium ?: legal(rates.nightPremium),
-            holidayWithin8h = rules.holidayPremiumWithin8h ?: legal(rates.holidayPremiumWithin8h),
-            holidayOver8h = rules.holidayPremiumOver8h ?: legal(rates.holidayPremiumOver8h),
+            holidayWithin8h = rules.holidayPremiumWithin8h ?: legalHours(rates.holidayPremiumWithin8h),
+            holidayOver8h = rules.holidayPremiumOver8h ?: legalHours(rates.holidayPremiumOver8h),
             // [EXTRA-02] '가산만' is about a paid holiday already in the salary; a day off never is.
             holidayBase = if (profile.wageType == WageType.HOURLY) 1.0 else profile.holidayPayMode.baseMultiplier,
         )
-        val law = Premiums(legal(rates.overtimePremium), legal(rates.nightPremium), legal(rates.holidayPremiumWithin8h),
-            legal(rates.holidayPremiumOver8h), pr.holidayBase)
+        val law = Premiums(legalHours(rates.overtimePremium), legal(rates.nightPremium), legalHours(rates.holidayPremiumWithin8h),
+            legalHours(rates.holidayPremiumOver8h), pr.holidayBase)
         val mOt = 1.0 + pr.overtime
         val mHw = pr.holidayBase + pr.holidayWithin8h
         val mHo = pr.holidayBase + pr.holidayOver8h
@@ -192,6 +203,8 @@ class PayCalculator(
             if (profile.wageType != WageType.HOURLY || !publicHoliday(day.date) || day.date.dayOfWeek == weeklyHolidayDay || day.date in weeklyHolidays) 0
             else (day.scheduledMinutes + day.leaveMinutes).coerceAtMost(rates.dailyLimitMinutes)
         var paidHoliday = 0
+        // [PAYS-03] Paid breaks of hourly pay; a monthly salary already holds them.
+        var paidBreak = 0
         // The week's 소정근로 for 주휴 counts paid leave and paid holidays as attended.
         val attendedByDate = days.associate { it.date to (paidLeaveByDate[it.date] ?: 0) + paidHolidayMinutes(it) }
             .filterValues { it > 0 }
@@ -258,6 +271,14 @@ class PayCalculator(
             if (ho > 0) parts += DayPart(LineKind.HOLIDAY, "휴일 8시간 초과", money(ho, mHo), "${hours(ho)} × ${pct(mHo)}")
             if (rw > 0) parts += DayPart(LineKind.HOLIDAY, "쉬는 날 근무", money(rw, mRw), "${hours(rw)} × ${pct(mRw)} (휴일근로로 대우)")
             if (ro > 0) parts += DayPart(LineKind.HOLIDAY, "쉬는 날 8시간 초과", money(ro, mRo), "${hours(ro)} × ${pct(mRo)} (휴일근로로 대우)")
+            // [PAYS-03] A paid break is free time paid at 100%, never 연장 or 주휴 hours.
+            if (profile.wageType == WageType.HOURLY && rules.breakPay == BreakPay.PAID) {
+                val brk = (if (day.isWorkDay) day.breakMinutes else 0) + day.extras.sumOf { it.breakMinutes }
+                if (brk > 0) {
+                    paidBreak += brk
+                    parts += DayPart(LineKind.BASE, "유급 휴게", money(brk, 1.0), "${hours(brk)} × ${won(hourly)}")
+                }
+            }
 
             paidHolidayMinutes(day).takeIf { it > 0 }?.let { mins ->
                 paidHoliday += mins
@@ -320,6 +341,12 @@ class PayCalculator(
             )
             WageType.HOURLY -> lines += line(LineKind.BASE, "기본 근무", regular, hourly, 1.0, "소정근로 시간 × 시급", "", baseEstimated)
         }
+        if (paidBreak > 0) lines += line(
+            LineKind.BASE, "유급 휴게", paidBreak, hourly, 1.0,
+            "회사가 임금을 주는 휴게시간 (연장·주휴 시간에는 넣지 않아요)",
+            // verify: whether a paid break inside 22~06 also earns the night premium; taken as no, since it is not work.
+            "취업규칙·근로계약 (휴게시간은 근로시간이 아님, 근로기준법 제54조)", baseEstimated,
+        )
         val companyNote = { custom: Boolean -> if (custom) " (회사 규칙)" else "" }
         // [EXTRA-02] Without a 주휴일 every day off is a 휴무일; say so where its hours are paid.
         val restNote = if (restDayWorked && rules.weeklyHoliday == WeeklyHoliday.Unknown && rules.restDayWork != RestDayWork.HOLIDAY)
@@ -443,7 +470,8 @@ class PayCalculator(
                 "${won(earned - prepaid)} 많아요. 차액은 따로 받아야 해요"
         }
 
-        if (profile.wageType == WageType.HOURLY && rules.weeklyHolidayPay) {
+        // [PAYS-03] An approved 감시·단속 worker has no 주휴 (제55조 is in chapter 4).
+        if (profile.wageType == WageType.HOURLY && rules.weeklyHolidayPay && !supervisory) {
             weeklyHolidayLine(allMinutes, attendedByDate, weekFrom, periodStart, periodEnd, hourly, baseEstimated)?.let { lines += it }
         }
 
@@ -451,13 +479,14 @@ class PayCalculator(
             warnings += "통상시급 ${won(hourly)}이 ${month.year}년 최저임금 ${won(rates.minimumHourlyWage)}보다 낮아요. 입력값을 확인해 주세요"
         }
         if (premiums) {
+            // Compared with what the law gives here: no 연장·휴일 premium for an approved 감시·단속 worker [PAYS-03].
             listOf(
-                Triple("연장 가산", rules.overtimePremium, rates.overtimePremium),
-                Triple("야간 가산", rules.nightPremium, rates.nightPremium),
-                Triple("휴일 가산(8시간 이내)", rules.holidayPremiumWithin8h, rates.holidayPremiumWithin8h),
-                Triple("휴일 가산(8시간 초과)", rules.holidayPremiumOver8h, rates.holidayPremiumOver8h),
-            ).forEach { (name, company, law) ->
-                if (company != null && company < law) warnings += "회사 $name ${pct(company)}가 법정 ${pct(law)}보다 낮아요"
+                Triple("연장 가산", rules.overtimePremium, law.overtime),
+                Triple("야간 가산", rules.nightPremium, law.night),
+                Triple("휴일 가산(8시간 이내)", rules.holidayPremiumWithin8h, law.holidayWithin8h),
+                Triple("휴일 가산(8시간 초과)", rules.holidayPremiumOver8h, law.holidayOver8h),
+            ).forEach { (name, company, legalRate) ->
+                if (company != null && company < legalRate) warnings += "회사 $name ${pct(company)}가 법정 ${pct(legalRate)}보다 낮아요"
             }
         } else {
             warnings += "5인 미만 사업장이라 회사 규칙에 넣지 않은 연장·야간·휴일 가산은 계산하지 않았어요"
@@ -478,13 +507,21 @@ class PayCalculator(
 
         // [PAYX-07] Scheduled hours over 8 a day are 연장 by law unless 탄력적 근로시간제 (제51조) is in
         // place, so the difference to the legal count is shown rather than silently dropped.
-        if (profile.scheduleIsRegular && profile.flexPeriod == null && premiums) {
+        if (profile.scheduleIsRegular && profile.flexPeriod == null && premiums && !supervisory) {
             val legalPay = calculate(profile.copy(scheduleIsRegular = false, dailyLimitMinutes = 8 * 60, weeklyLimitMinutes = 40 * 60),
                 month, resolve, isHoliday)
             val gap = legalPay.total - lines.sumOf { it.amount }
             val extra = legalPay.minutes.sumOf { it.overtime } - minutes.sumOf { it.overtime }
             if (gap > 0 && extra > 0) warnings += "근무표 시간을 모두 기본 근무로 계산했어요. 탄력적 근로시간제가 아니라면 법으로는 " +
                 "하루 8시간·주 40시간을 넘는 ${hours(extra)}이 연장근로라 약 ${won(gap)}을 더 받아야 해요. 취업규칙을 확인해 보세요"
+        }
+
+        // [PAYS-03] The approval is the employer's to get from 고용노동부; without it the month pays what the law
+        // gives everyone, so that figure is shown next to this one.
+        if (supervisory) {
+            val without = calculate(profile.copy(rules = rules.copy(supervisoryApproved = false)), month, resolve, isHoliday)
+            if (without.total != lines.sumOf { it.amount }) warnings += "감시·단속 승인이 없으면 이 달은 ${won(without.total)}이에요. " +
+                "승인은 고용노동부 지방관서에서 받아야 해요"
         }
 
         return MonthPay(month, lines, hourly, rates.version, minutes, warnings, dayPays,
@@ -713,6 +750,14 @@ class PayCalculator(
         val night = MinuteClassifier({ rates }).nightMinutes(from, to, rates)
         return total > 0 && night * 2 >= total
     }
+
+    /** [PAYS-03] The day with its breaks counted as work (대기시간, 근로기준법 제50조 제3항), the day's shift and extra work alike. */
+    private fun ResolvedDay.breaksAsWork(): ResolvedDay = copy(
+        scheduledMinutes = scheduledMinutes + breakMinutes,
+        breakMinutes = 0,
+        breakStart = null,
+        extras = extras.map { it.copy(minutes = it.minutes + it.breakMinutes, breakMinutes = 0, breakStart = null) },
+    )
 
     companion object {
         fun hours(minutes: Int): String =
