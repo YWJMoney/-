@@ -1314,7 +1314,7 @@ class ScreenshotTest {
         vm.talk.show("c-v1", "s-v1", "가나다화학 · 품질팀")
         settle()
     }
-    @Test fun foldedCompanyVote() = shoot("194_folded_company_vote", FOLDED) {
+    @Test fun foldedCompanyVoteAnySetup() = shoot("194_folded_company_vote_any", FOLDED) {
         val vm = com.bamnat.app.ui.company.CompanyDetailViewModel(companyOn(), "c1")
         content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, ready = true) }
         reveal("다니는 회사라면 이 규칙이 맞는지 알려 주세요")
