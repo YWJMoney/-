@@ -59,7 +59,18 @@ class SleepRepository(
 
     suspend fun delete(id: Long) = dao.delete(id)
 
+    /** [SLP-16] A sleep the user forgot to tap, written in afterwards; returns its id. */
+    suspend fun add(start: LocalDateTime, end: LocalDateTime): Long =
+        dao.insert(SleepLogEntity(startMillis = millis(start), endMillis = millis(end)))
+
+    /** [SLP-16] Moves a logged sleep's times; an open one may stay open. */
+    suspend fun edit(id: Long, start: LocalDateTime, end: LocalDateTime?) = dao.update(id, millis(start), end?.let(::millis))
+
+    /** Puts back a sleep deleted a moment ago (undo). */
+    suspend fun restore(entry: SleepEntry): Long = dao.insert(SleepLogEntity(startMillis = millis(entry.start), endMillis = entry.end?.let(::millis)))
+
     private fun SleepLogEntity.toModel() = SleepEntry(id, local(startMillis), endMillis?.let(::local))
+    private fun millis(t: LocalDateTime): Long = t.atZone(zone()).toInstant().toEpochMilli()
     private fun local(millis: Long): LocalDateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), zone())
 
     private companion object {

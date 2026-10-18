@@ -29,6 +29,11 @@ import com.bamnat.core.pay.WageType
 import com.bamnat.core.pay.AnnualPay
 import com.bamnat.core.pay.BreakPay
 import com.bamnat.core.pay.PayslipCheck
+import com.bamnat.core.pay.CustomRule
+import com.bamnat.core.pay.RuleDayKind
+import com.bamnat.core.pay.RulePay
+import com.bamnat.core.pay.RulePieces
+import com.bamnat.core.pay.RuleWhen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -57,16 +62,26 @@ class PayStore(context: Context) {
     val canUndo: StateFlow<PayProfile?> = _undo.asStateFlow()
 
     suspend fun save(profile: PayProfile?, keepUndo: Boolean = true) = withContext(Dispatchers.IO) {
-        synchronized(this@PayStore) {
-            if (keepUndo) _undo.value = _profile.value
-            if (profile == null) file.delete() else {
-                file.parentFile?.mkdirs()
-                val tmp = File(file.parentFile, "profile.json.tmp")
-                tmp.writeText(PayCodec.encode(profile).toString())
-                tmp.renameTo(file)
-            }
-            _profile.value = profile
+        synchronized(this@PayStore) { write(profile, keepUndo) }
+    }
+
+    /**
+     * [STAB-01] Changes the saved profile in one step: two quick taps (two answers, two switches) each start
+     * from the other's result, instead of the second one undoing the first.
+     */
+    suspend fun update(transform: (PayProfile) -> PayProfile) = withContext(Dispatchers.IO) {
+        synchronized(this@PayStore) { _profile.value?.let { write(transform(it), keepUndo = true) } }
+    }
+
+    private fun write(profile: PayProfile?, keepUndo: Boolean) {
+        if (keepUndo) _undo.value = _profile.value
+        if (profile == null) file.delete() else {
+            file.parentFile?.mkdirs()
+            val tmp = File(file.parentFile, "profile.json.tmp")
+            tmp.writeText(PayCodec.encode(profile).toString())
+            tmp.renameTo(file)
         }
+        _profile.value = profile
     }
 
     suspend fun undo() {
@@ -174,6 +189,8 @@ object PayCodec {
         .put("dailyHours", p.dailyHours)
         .putOpt("annual", p.annual?.let(::annual))
         .putOpt("verified", p.verified?.let(::verified))
+        // [PAYS-06] Rules in the user's own words; an empty list is left out so older files stay the same.
+        .apply { if (p.customRules.isNotEmpty()) put("customRules", JSONArray(p.customRules.map(::customRule))) }
 
     fun decode(o: JSONObject): PayProfile = PayProfile(
         // [PAYS-03] A job or wage type from a newer version reads as 직접 설정 and 월급제 rather than failing the file.
@@ -196,7 +213,60 @@ object PayCodec {
         dailyHours = o.optInt("dailyHours", 8 * 60).coerceIn(30, 8 * 60),
         annual = o.optJSONObject("annual")?.let(::annualFrom),
         verified = o.optJSONObject("verified")?.let(::verifiedFrom),
+        customRules = o.optJSONArray("customRules").objects().mapNotNull(::customRuleFrom).take(CustomRule.MAX),
     )
+
+    /** [PAYS-06] One of the user's own rules. */
+    private fun customRule(r: CustomRule): JSONObject {
+        val w = r.whenever
+        val pay = when (val p = r.pay) {
+            is RulePay.PerHour -> JSONObject().put("type", "perHour").put("amount", p.amount)
+            is RulePay.OfHourly -> JSONObject().put("type", "ofHourly").put("rate", p.rate)
+            is RulePay.OfBase -> JSONObject().put("type", "ofBase").put("share", p.share).put("per", p.perMinutes)
+            is RulePay.PerTime -> JSONObject().put("type", "perTime").put("amount", p.amount)
+        }
+        return JSONObject()
+            .put("id", r.id).put("name", r.name).put("on", r.on).put("source", r.source)
+            .put("dayKind", w.dayKind.name)
+            .put("days", JSONArray(w.daysOfWeek.map { it.name }))
+            .put("shiftTypes", JSONArray(w.shiftTypeIds.toList()))
+            .put("pieces", w.pieces.name)
+            .put("extraKinds", JSONArray(w.extraKinds.toList()))
+            .put("from", w.from?.toString() ?: JSONObject.NULL).put("to", w.to?.toString() ?: JSONObject.NULL)
+            .put("over", w.overMinutes).put("min", w.minMinutes)
+            .put("pay", pay)
+    }
+
+    /** A rule this version cannot read (a newer kind of pay) is dropped rather than failing the file. */
+    private fun customRuleFrom(o: JSONObject): CustomRule? = runCatching {
+        val p = o.getJSONObject("pay")
+        val pay: RulePay = when (p.getString("type")) {
+            "perHour" -> RulePay.PerHour(p.getLong("amount"))
+            "ofHourly" -> RulePay.OfHourly(p.getDouble("rate").coerceIn(0.0, Premium.MAX_RATE))
+            "ofBase" -> RulePay.OfBase(p.getDouble("share"), p.optInt("per", 480).coerceAtLeast(1))
+            "perTime" -> RulePay.PerTime(p.getLong("amount"))
+            else -> return null
+        }
+        fun longs(key: String) = o.optJSONArray(key)?.let { a -> (0 until a.length()).map { a.getLong(it) }.toSet() } ?: emptySet()
+        fun time(key: String) = if (!o.has(key) || o.isNull(key)) null else runCatching { LocalTime.parse(o.getString(key)) }.getOrNull()
+        CustomRule(
+            id = o.getString("id"),
+            name = o.optString("name").ifBlank { "회사 규칙" }.take(CustomRule.MAX_NAME),
+            whenever = RuleWhen(
+                dayKind = RuleDayKind.entries.firstOrNull { it.name == o.optString("dayKind") } ?: RuleDayKind.ANY,
+                daysOfWeek = o.optJSONArray("days")?.let { a -> (0 until a.length()).mapNotNull { n -> DayOfWeek.entries.firstOrNull { it.name == a.getString(n) } }.toSet() } ?: emptySet(),
+                shiftTypeIds = longs("shiftTypes"),
+                pieces = RulePieces.entries.firstOrNull { it.name == o.optString("pieces") } ?: RulePieces.ALL,
+                extraKinds = longs("extraKinds"),
+                from = time("from"), to = time("to"),
+                overMinutes = o.optInt("over", 0).coerceAtLeast(0),
+                minMinutes = o.optInt("min", 0).coerceAtLeast(0),
+            ),
+            pay = pay,
+            on = o.optBoolean("on", true),
+            source = o.optString("source"),
+        )
+    }.getOrNull()
 
     /** [PAYS-03] 연봉 as the contract states it; a missing or broken one is dropped, the 기본급 stays. */
     private fun annual(a: AnnualPay): JSONObject = JSONObject()

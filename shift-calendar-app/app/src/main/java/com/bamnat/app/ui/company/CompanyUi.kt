@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.company
 
+import com.bamnat.app.ui.components.labelWidth
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -118,7 +119,7 @@ fun PointsBar(points: Int, threshold: Int, modifier: Modifier = Modifier) {
 fun SetupLine(label: String, text: String) {
     Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(92.dp))
+            modifier = Modifier.labelWidth(92.dp))
         Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
     }
 }

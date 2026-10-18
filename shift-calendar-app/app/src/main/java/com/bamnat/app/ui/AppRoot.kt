@@ -89,6 +89,8 @@ import com.bamnat.app.ui.memo.MemoTrashScreen
 import com.bamnat.app.ui.memo.MemoTrashViewModel
 import com.bamnat.app.ui.settings.ExtraKindsScreen
 import com.bamnat.app.ui.settings.ExtraKindsViewModel
+import com.bamnat.app.ui.settings.InquiryScreen
+import com.bamnat.app.ui.settings.InquiryViewModel
 import com.bamnat.app.ui.settings.SettingsScreen
 import com.bamnat.app.ui.settings.SettingsViewModel
 import com.bamnat.app.ui.shifts.PatternScreen
@@ -99,9 +101,14 @@ import com.bamnat.app.ui.stats.StatsViewModel
 import com.bamnat.app.ui.money.MoneyScreen
 import com.bamnat.app.ui.money.MoneyViewModel
 import com.bamnat.app.ui.work.WorkStyleScreen
+import com.bamnat.app.ui.work.changedMessage
 import com.bamnat.app.ui.setup.SetupHost
+import com.bamnat.app.ui.onboarding.ConsentPages
+import com.bamnat.app.ui.onboarding.NewConsentPrompt
 import com.bamnat.app.ui.setup.SetupViewModel
 import com.bamnat.app.ui.setup.SetupPaySheet
+import com.bamnat.app.ui.company.CompanyBoardScreen
+import com.bamnat.app.ui.company.CompanyBoardViewModel
 import com.bamnat.app.ui.company.CompanyDetailScreen
 import com.bamnat.app.ui.company.CompanyDetailViewModel
 import com.bamnat.app.ui.company.CompanyFindScreen
@@ -117,6 +124,7 @@ import com.bamnat.app.ui.company.CompanySettingsRows
 import com.bamnat.app.ui.company.FixPlace
 import com.bamnat.app.ui.company.InviteSheet
 import androidx.compose.runtime.rememberCoroutineScope
+import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.work.WorkStyle
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
@@ -160,6 +168,15 @@ private object Routes {
     const val COMPANY = "company/{id}?setup={setup}&weekdays={weekdays}"
     const val COMPANY_REPORT = "company_report"
     const val COMPANY_SENT = "company_sent"
+    // [COMM-07] 회사 규칙 광장: every company's rule sets, to vote on, talk over and use.
+    const val COMPANY_BOARD = "company_board"
+    /** [ADMIN-02] 설정 > 문의하기. */
+    const val INQUIRY = "inquiry"
+
+    // [SLP-16][RECV-02][IMPORT-01] The sleep log, money owed, and bringing in the phone's calendar.
+    const val SLEEP = "sleep"
+    const val OWED = "owed"
+    const val CALENDAR_IMPORT = "calendar_import"
 
     fun companyFind(setup: Boolean = false, weekdays: Boolean = false) = "company_find?setup=$setup&weekdays=$weekdays"
     fun company(id: String, setup: Boolean, weekdays: Boolean) = "company/$id?setup=$setup&weekdays=$weekdays"
@@ -195,10 +212,16 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             else -> true
         }
     }
+    // [ONBOARD-01] A new phone sees what the app may ask for, and why, before the first setup.
+    val consentSeen by container.consentStore.seen.collectAsStateWithLifecycle()
     when (needsSetup) {
         null -> return
         // "나중에" opens the calendar with a card to go on from where the user stopped.
         true -> if (setupDraft?.later != true) {
+            if (consentSeen == null && setupDraft == null) {
+                ConsentPages(container, onDone = {})
+                return
+            }
             SetupHost(appViewModel { SetupViewModel(it) })
             return
         }
@@ -232,6 +255,15 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
     }
 
+    // [IMPORT-02] When the user asked for it, new events in the chosen calendars are offered on opening the app.
+    LaunchedEffect(homeRequests) {
+        val count = runCatching { container.calendarImporter.countNew(LocalDate.now()) }.getOrDefault(0)
+        if (count > 0 && snackbar.showSnackbar("캘린더에 새 일정 ${count}개가 있어요", actionLabel = "가져오기",
+                duration = androidx.compose.material3.SnackbarDuration.Long) == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+            NoticeLinks.open(NoticeLinks.Target.CALENDAR_IMPORT)
+        }
+    }
+
     // [SLP-15] A tapped notice opens the screen it is about. The calendar finds today itself.
     val noticeTarget by NoticeLinks.target.collectAsStateWithLifecycle()
     LaunchedEffect(noticeTarget) {
@@ -247,7 +279,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 }
             }
             NoticeLinks.Target.MONEY -> { nav.navigateTopLevel(TopLevel.MONEY.route); NoticeLinks.consume(target) }
+            NoticeLinks.Target.MEMOS -> { nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target) }
             NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.PAY) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.SLEEP -> { nav.navigate(Routes.SLEEP) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.OWED -> { nav.navigate(Routes.OWED) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.CALENDAR_IMPORT -> { nav.navigate(Routes.CALENDAR_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [SET-01] Settings takes the target itself, to open on the alarm's state from wherever it was.
             NoticeLinks.Target.ALARM_CHECK -> {
                 val current = nav.currentBackStackEntry?.destination?.route
@@ -349,6 +385,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
     }
 
+    // [ONBOARD-01] A phone set up before the consent pages is asked only about what is new since.
+    NewConsentPrompt(container)
+
     // [SETUP-01] Right after the first setup, once: the pay comes next for work paid by the hour or month.
     val justSaved by container.firstSetup.saved.collectAsStateWithLifecycle()
     val saved = justSaved
@@ -424,9 +463,27 @@ private fun AppNavHost(
         composable(Routes.WORK_STYLE) {
             val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()
             WorkStyleScreen(current = settings.workStyle, title = "근무 형태 바꾸기", onPick = { style ->
+                val before = settings.workStyle
                 container.settingsRepository.update { it.copy(workStyle = style) }
-                if (style == WorkStyle.HOURLY) container.appScope.launch { container.scheduleRepository.addHourlyTypes() }
-                nav.popFrom(Routes.WORK_STYLE)
+                // [WORK-07] A new kind of work goes straight on to what it still needs, as its card said
+                // ("다음: …"): the order for shift work, the days for weekday work, the wage for hourly work.
+                // What it already has is kept, so switching back and forth never asks twice.
+                scope.launch {
+                    if (style == WorkStyle.HOURLY) container.scheduleRepository.addHourlyTypes()
+                    val patterns = container.scheduleRepository.patterns.first()
+                    val pay = container.payStore.profile.value != null
+                    fun go(route: String) = nav.navigate(route) { popUpTo(Routes.WORK_STYLE) { inclusive = true }; launchSingleTop = true }
+                    when {
+                        style == before -> nav.popFrom(Routes.WORK_STYLE)
+                        style == WorkStyle.SHIFT && patterns.none { it is WorkPattern.Rotation } -> go(Routes.pattern(weekdays = false, setup = !pay))
+                        style == WorkStyle.DAY && patterns.none { it is WorkPattern.Weekly } -> go(Routes.pattern(weekdays = true, setup = !pay))
+                        style == WorkStyle.HOURLY && !pay -> go(Routes.PAY)
+                        else -> {
+                            nav.popFrom(Routes.WORK_STYLE)
+                            snackbar.showSnackbar(style.changedMessage())
+                        }
+                    }
+                }
             })
         }
         composable(TopLevel.MEMOS.route) {
@@ -463,12 +520,18 @@ private fun AppNavHost(
                     CompanySettingsRows(
                         nudges,
                         onFind = { nav.navigate(Routes.companyFind()) { launchSingleTop = true } },
+                        onBoard = { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } },
                         onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                         onSent = { nav.navigate(Routes.COMPANY_SENT) { launchSingleTop = true } },
                         onFix = { nav.fixCompanySetup(it) },
                     )
                 }) else null,
+                onOpenInquiry = { nav.navigate(Routes.INQUIRY) { launchSingleTop = true } },
             )
+        }
+        composable(Routes.INQUIRY) {
+            val vm = appViewModel { InquiryViewModel(it) }
+            InquiryScreen(vm = vm, onBack = { nav.popFrom(Routes.INQUIRY) })
         }
         composable(Routes.PAY) {
             val vm = appViewModel { PayViewModel(it) }
@@ -556,13 +619,23 @@ private fun AppNavHost(
                                 launchSingleTop = true
                             }
                             else -> {
-                                nav.popBackStack(Routes.COMPANY_FIND, inclusive = true)
+                                // From 회사 규칙 광장 there is no 회사 찾기 below: back to the board.
+                                if (!nav.popBackStack(Routes.COMPANY_FIND, inclusive = true)) nav.popFrom(Routes.COMPANY)
                                 snackbar.showSnackbar("‘$name’ 설정을 넣었어요" + (applied.cycleDays?.let { " · ${it}일 순서" } ?: ""))
                             }
                         }
                     }
                 },
                 onByHand = { nav.afterCompanyByHand(setup, weekdays, ready) },
+            )
+        }
+        composable(Routes.COMPANY_BOARD) {
+            val vm = appViewModel { CompanyBoardViewModel(it) }
+            CompanyBoardScreen(
+                vm = vm,
+                onBack = { nav.popFrom(Routes.COMPANY_BOARD) },
+                onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) },
+                onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
             )
         }
         composable(Routes.COMPANY_REPORT) {
@@ -583,6 +656,18 @@ private fun AppNavHost(
             )
         }
         // [EXTRA-04] Names, hours and pay of each kind of extra work, from settings, a day or the pay rules.
+        composable(Routes.SLEEP) {
+            val vm = appViewModel { com.bamnat.app.ui.sleep.SleepViewModel(it) }
+            com.bamnat.app.ui.sleep.SleepScreen(vm = vm, wide = wide, onBack = { nav.popFrom(Routes.SLEEP) })
+        }
+        composable(Routes.OWED) {
+            val vm = appViewModel { com.bamnat.app.ui.money.OwedViewModel(it) }
+            com.bamnat.app.ui.money.OwedScreen(vm = vm, wide = wide, onBack = { nav.popFrom(Routes.OWED) })
+        }
+        composable(Routes.CALENDAR_IMPORT) {
+            val vm = appViewModel { com.bamnat.app.ui.imports.CalendarImportViewModel(it) }
+            com.bamnat.app.ui.imports.CalendarImportScreen(vm = vm, onBack = { nav.popFrom(Routes.CALENDAR_IMPORT) })
+        }
         composable(Routes.EXTRA_KINDS) {
             val vm = appViewModel { ExtraKindsViewModel(it) }
             ExtraKindsScreen(vm = vm, onBack = { nav.popFrom(Routes.EXTRA_KINDS) },

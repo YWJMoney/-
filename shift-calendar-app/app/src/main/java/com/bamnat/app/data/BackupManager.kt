@@ -95,7 +95,10 @@ class BackupManager(
                     .put("id", m.id).putOpt("day", m.epochDay).put("title", m.title).put("body", m.body)
                     .put("checklist", m.checklist).put("isChecklist", m.isChecklist).put("color", m.colorIndex)
                     .put("pinned", m.pinned).put("created", m.createdAt).put("updated", m.updatedAt)
-                    .putOpt("deleted", m.deletedAt),
+                    .putOpt("deleted", m.deletedAt)
+                    // [SCHED-01] Version 13. Older apps ignore these keys and keep the memo plain.
+                    .putOpt("remindAt", m.remindAt).put("remindRing", m.remindRing).put("remindNotify", m.remindNotify)
+                    .putOpt("remindAsked", m.remindAsked),
             )
         }
         root.put("memos", memos)
@@ -130,6 +133,20 @@ class BackupManager(
         root.put("rules", JSONArray().apply {
             money.allRules().forEach { r -> put(JSONObject().put("merchant", r.merchant).put("category", r.category)) }
         })
+        // [RECV-01] Money others owe, with what came back (version 13). Older apps ignore these keys.
+        val owed = db.receivableDao()
+        root.put("owed", JSONArray().apply {
+            owed.all().forEach { r ->
+                put(JSONObject().put("id", r.id).put("who", r.who).put("title", r.title).put("amount", r.amount).put("day", r.epochDay)
+                    .putOpt("due", r.dueEpochDay).put("kind", r.kind).put("note", r.note).put("income", r.countAsIncome)
+                    .putOpt("closed", r.closedEpochDay).put("created", r.createdAt))
+            }
+        })
+        root.put("owedPaid", JSONArray().apply {
+            owed.allPayments().forEach { p ->
+                put(JSONObject().put("id", p.id).put("owed", p.receivableId).put("day", p.epochDay).put("amount", p.amount).putOpt("entry", p.entryId))
+            }
+        })
         // [SLP-06] The sleep log goes with the rest of the user's data.
         root.put("sleep", JSONArray().apply {
             db.sleepDao().all().forEach { l -> put(JSONObject().put("start", l.startMillis).putOpt("end", l.endMillis)) }
@@ -148,7 +165,8 @@ class BackupManager(
                 .putOpt("sound", s.defaultAlarmSound).put("vibrate", s.vibrate).put("gradual", s.gradualVolume)
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmsOn", s.alarmsEnabled)
                 .putOpt("workStyle", s.workStyle?.name).put("rosterMonthly", s.rosterMonthly)
-                .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoFirst).put("calendarMemos", s.calendarMemos)
+                .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoInCells).put("calendarMemos", s.calendarMemos)
+                .put("phoneDayView", s.phoneDayView.name).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
                 .put("restCheck", s.restCheck)
                 .put("strictRest", s.strictRest).put("sleepTips", s.sleepTips)
                 // 1.10 and before read one switch for all sleep notices.
@@ -171,7 +189,8 @@ class BackupManager(
             extras = root.optJSONArray("extras")?.length() ?: 0,
             exportedAtMillis = root.optLong("exportedAt"),
             moneyLines = (root.optJSONArray("money")?.length() ?: 0) + (root.optJSONArray("jobs")?.length() ?: 0) +
-                (root.optJSONArray("sales")?.length() ?: 0) + (root.optJSONArray("fixed")?.length() ?: 0),
+                (root.optJSONArray("sales")?.length() ?: 0) + (root.optJSONArray("fixed")?.length() ?: 0) +
+                (root.optJSONArray("owed")?.length() ?: 0),
             sleeps = root.optJSONArray("sleep")?.length() ?: 0,
             hasPay = root.has("pay"),
         )
@@ -230,6 +249,8 @@ class BackupManager(
                 isChecklist = o.optBoolean("isChecklist"), colorIndex = o.optInt("color"), pinned = o.optBoolean("pinned"),
                 createdAt = o.optLong("created"), updatedAt = o.optLong("updated"),
                 deletedAt = if (o.isNull("deleted") || !o.has("deleted")) null else o.getLong("deleted"),
+                remindAt = o.optStringOrNull("remindAt"), remindRing = o.optBoolean("remindRing"),
+                remindNotify = o.optBoolean("remindNotify"), remindAsked = o.optStringOrNull("remindAsked"),
             )
         }
         val entries = root.optJSONArray("money")?.objects()?.map { o ->
@@ -258,6 +279,18 @@ class BackupManager(
                 costs = o.optLong("costs"), withholding = o.optBoolean("withholding"),
             )
         }
+        val owed = root.optJSONArray("owed")?.objects()?.map { o ->
+            com.bamnat.app.data.db.ReceivableEntity(
+                id = o.getLong("id"), who = o.optString("who"), title = o.optString("title"), amount = o.optLong("amount"),
+                epochDay = o.getLong("day"), dueEpochDay = if (o.has("due") && !o.isNull("due")) o.getLong("due") else null,
+                kind = o.optString("kind", "OTHER"), note = o.optString("note"), countAsIncome = o.optBoolean("income"),
+                closedEpochDay = if (o.has("closed") && !o.isNull("closed")) o.getLong("closed") else null, createdAt = o.optLong("created"),
+            )
+        }
+        val owedPaid = root.optJSONArray("owedPaid")?.objects()?.map { o ->
+            com.bamnat.app.data.db.ReceivablePaymentEntity(o.getLong("id"), o.getLong("owed"), o.getLong("day"), o.optLong("amount"),
+                if (o.has("entry") && !o.isNull("entry")) o.getLong("entry") else null)
+        }
         val sales = root.optJSONArray("sales")?.objects()?.map { o ->
             DailySalesEntity(o.getLong("day"), o.optLong("sales"), o.optLong("costs"), o.optString("note"))
         }
@@ -272,6 +305,13 @@ class BackupManager(
             sales?.let { list -> money.clearSales(); list.forEach { money.upsertSales(it) } }
             fixed?.let { list -> money.clearFixed(); list.forEach { money.restoreFixed(it) } }
             rules?.let { list -> money.clearRules(); list.forEach { money.upsertRule(it) } }
+            // Backups from before version 13 carry no receivables; the ones on the phone then stay.
+            owed?.let { list ->
+                val dao = db.receivableDao()
+                dao.clearPayments(); dao.clear()
+                list.forEach { dao.restore(it) }
+                owedPaid?.forEach { dao.restorePayment(it) }
+            }
             // Backups from before version 11 carry no sleep log; the one on the phone then stays.
             sleep?.let { list -> db.sleepDao().clear(); list.forEach { db.sleepDao().insert(it) } }
             db.memoDao().clear()
@@ -315,7 +355,11 @@ class BackupManager(
                         ?: WorkStyle.SHIFT.takeIf { patterns.isNotEmpty() },
                     rosterMonthly = o.optBoolean("rosterMonthly", s.rosterMonthly),
                     extraKinds = o.optStringOrNull("extraKinds")?.let { com.bamnat.core.model.ExtraKinds.decode(it) } ?: s.extraKinds,
-                    memoFirst = o.optBoolean("memoFirst", s.memoFirst),
+                    memoInCells = o.optBoolean("memoFirst", s.memoInCells),
+                    // [CAL-03][DAY-04] Added in 1.13; older backups keep what this phone has.
+                    phoneDayView = runCatching { PhoneDayView.valueOf(o.getString("phoneDayView")) }.getOrDefault(s.phoneDayView),
+                    dayGroupOrder = o.optStringOrNull("dayGroupOrder")?.let(::decodeGroupOrder)
+                        ?: if (o.optBoolean("memoFirst", false)) listOf("memo") else s.dayGroupOrder,
                     calendarMemos = o.optBoolean("calendarMemos", s.calendarMemos),
                     restCheck = o.optBoolean("restCheck", s.restCheck),
                     strictRest = o.optBoolean("strictRest", s.strictRest),

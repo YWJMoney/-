@@ -376,6 +376,23 @@ fun CompanyRulesEditor(
                 Hint("대근 8시간에 기본급 10% + 야간 가산 50%처럼 회사 방식이 있으면 종류마다 체크해요." + if (draft != saved) " 여기서 바꾼 내용은 저장하고 넘어가요." else "")
             }
 
+            // [PAYS-06] Anything the choices above cannot say, in the company's own words; the total above follows each one.
+            SectionCard(title = "회사만의 규칙") {
+                Hint("위에 없는 방식은 말로 적어 주세요. ‘토요일 근무는 50% 더’, ‘19~23시 25% 가산’처럼 적으면 그대로 계산해요. " +
+                    "가산율이나 대근 방식처럼 위에 있는 것도 적으면 알아서 맞춰 넣어요.")
+                if (draft.customRules.isNotEmpty()) {
+                    CustomRuleList(
+                        draft.customRules,
+                        shiftNames = snapshot.shiftTypes.associate { it.id to it.name },
+                        extraNames = kinds.names,
+                        onChange = { draft = draft.copy(customRules = it) },
+                    )
+                }
+                RuleSentenceBox(kinds.kinds, snapshot.shiftTypes, draft.fiveOrMoreEmployees) { changes ->
+                    draft = com.bamnat.core.pay.RuleText.apply(draft, changes, month)
+                }
+            }
+
             SectionCard(title = "연장 시간 끝자리") {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(1, 10, 15, 30, 60).forEach { u ->

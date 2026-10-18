@@ -247,6 +247,19 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val pendingCompany: StateFlow<Pair<String, com.bamnat.app.data.CompanySummary>?> = _pendingCompany.asStateFlow()
     val hasPayProfile: StateFlow<com.bamnat.core.pay.PayProfile?> = container.payStore.profile
 
+    /** [ADMIN-02] 문의하기 in the app when the build has the company server, else by mail. */
+    val inquiryOn: Boolean get() = container.inquiryApi.enabled
+    /** Answers from the developer not yet opened. */
+    val inquiryUnread: StateFlow<Int> get() = container.inquiryStore.unread
+
+    /** Looks for new answers, only once this phone has asked something. */
+    fun checkInquiries() {
+        if (!inquiryOn || !container.inquiryStore.asked) return
+        viewModelScope.launch {
+            runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess { container.inquiryStore.update(it) }
+        }
+    }
+
     /** [COMM-00] Writes the company file to the share cache and opens the share sheet. */
     fun shareCompany(context: Context, company: String, withAmounts: Boolean, team: String = "") {
         viewModelScope.launch {
@@ -379,6 +392,8 @@ fun SettingsScreen(
     snackbar: SnackbarHostState? = null,
     /** [COMM-01][COMM-02] 회사 찾기·내 설정 나누기·내가 보낸 정보, when the build has a company server. */
     company: (@Composable ColumnScope.() -> Unit)? = null,
+    /** [ADMIN-02] 문의하기 in the app. */
+    onOpenInquiry: () -> Unit = {},
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -418,7 +433,7 @@ fun SettingsScreen(
             page = p, vm = vm, settings = settings, refresh = refresh, files = files, askNotifications = askNotifications,
             onOpenShiftTypes = onOpenShiftTypes, onOpenPattern = onOpenPattern, onOpenDiagnostics = onOpenDiagnostics,
             onOpenWorkStyle = onOpenWorkStyle, onOpenExtraKinds = onOpenExtraKinds, onOpenPay = onOpenPay, company = company,
-            onOpenPage = { page = it },
+            onOpenPage = { page = it }, onOpenInquiry = onOpenInquiry,
         )
     }
     val hub: @Composable (Modifier, SettingsPage?) -> Unit = { modifier, selected ->
@@ -501,13 +516,18 @@ private fun SettingsHub(
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val profile by vm.hasPayProfile.collectAsStateWithLifecycle()
     val notificationsOk = remember(refresh) { Notifications.canPost(context) }
+    val unread by vm.inquiryUnread.collectAsStateWithLifecycle()
+    LaunchedEffect(refresh) { vm.checkInquiries() }
     Column(modifier.verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("설정", style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp).semantics { heading() })
         AlarmReadyCard(vm, settings, refresh, askNotifications, onOpenDiagnostics, onOpenShiftTypes)
         Spacer(Modifier.size(8.dp))
         for (p in SettingsPage.entries) {
-            GroupRow(p.icon, p.title, summary(p, settings, snapshot, profile != null, notificationsOk), selected == p) { onOpen(p) }
+            val line = summary(p, settings, snapshot, profile != null, notificationsOk)
+            // [ADMIN-02] An answer from the developer shows on the group before it is opened.
+            GroupRow(p.icon, p.title, if (p == SettingsPage.ABOUT && unread > 0) "문의에 답이 ${unread}개 왔어요 · $line" else line,
+                selected == p) { onOpen(p) }
         }
         VersionLine(onOpenDiagnostics)
     }
@@ -534,8 +554,8 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
         when (s.themeMode) { ThemeMode.SYSTEM -> "휴대폰 테마"; ThemeMode.LIGHT -> "밝게"; ThemeMode.DARK -> "어둡게" },
         "날짜 칸 아래 " + when { s.showLunar -> "음력"; s.showHoursInCells -> "근무시간"; else -> "비움" },
     ).joinToString(" · ")
-    SettingsPage.DATA -> "백업 저장 · 불러오기 · 캘린더 앱으로 내보내기"
-    SettingsPage.PRIVACY -> "사용 통계 ${if (s.shareUsageStats) "보냄" else "안 보냄"} · 권한 확인"
+    SettingsPage.DATA -> "백업 저장 · 불러오기 · 캘린더 가져오기·내보내기"
+    SettingsPage.PRIVACY -> "개인정보 처리방침 · 권한 확인"
     SettingsPage.ABOUT -> "밤낮 ${BuildConfig.VERSION_NAME} · 문의하기 · 처리방침"
 }
 

@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -289,7 +290,13 @@ private fun alarmSummary(type: ShiftType): String {
 }
 
 @Composable
-private fun AlarmSpecRow(alarm: AlarmSpec, ringsAt: LocalTime, onToggle: (Boolean) -> Unit, onRemove: () -> Unit) {
+private fun AlarmSpecRow(
+    alarm: AlarmSpec,
+    ringsAt: LocalTime,
+    onEdit: () -> Unit,
+    onToggle: (Boolean) -> Unit,
+    onRemove: () -> Unit,
+) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
         Icon(
             if (alarm.enabled) Icons.Filled.Alarm else Icons.Filled.AlarmOff,
@@ -297,9 +304,16 @@ private fun AlarmSpecRow(alarm: AlarmSpec, ringsAt: LocalTime, onToggle: (Boolea
             tint = if (alarm.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
         )
         Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
+        // [UX-02] Tapping the alarm changes when it rings, instead of deleting and adding it again.
+        Column(
+            Modifier
+                .weight(1f)
+                .clip(MaterialTheme.shapes.small)
+                .clickable(onClickLabel = "알람 시각 바꾸기", onClick = onEdit)
+                .padding(vertical = 4.dp),
+        ) {
             Text("근무 ${Fmt.offset(alarm.offsetMinutes)}", style = MaterialTheme.typography.bodyLarge)
-            Text("${Fmt.time(ringsAt)}에 울려요", style = MaterialTheme.typography.bodySmall,
+            Text("${Fmt.time(ringsAt)}에 울려요 · 눌러서 바꾸기", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = alarm.enabled, onCheckedChange = onToggle)
@@ -309,11 +323,18 @@ private fun AlarmSpecRow(alarm: AlarmSpec, ringsAt: LocalTime, onToggle: (Boolea
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun OffsetPickerDialog(existing: Set<Int>, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
-    var minutes by remember { mutableIntStateOf(OffsetChoices.firstOrNull { it !in existing } ?: 45) }
+private fun OffsetPickerDialog(
+    existing: Set<Int>,
+    start: LocalTime,
+    onDismiss: () -> Unit,
+    /** The alarm being changed; null when adding a new one. */
+    initial: Int? = null,
+    onPick: (Int) -> Unit,
+) {
+    var minutes by remember { mutableIntStateOf(initial ?: OffsetChoices.firstOrNull { it !in existing } ?: 45) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("알람 추가") },
+        title = { Text(if (initial != null) "알람 시각 바꾸기" else "알람 추가") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("근무 시작 몇 분 전에 울릴까요? 1분 단위로 정할 수 있어요.", style = MaterialTheme.typography.bodyMedium)
@@ -335,10 +356,15 @@ private fun OffsetPickerDialog(existing: Set<Int>, onDismiss: () -> Unit, onPick
                 }
                 if (minutes in existing) {
                     Text("이미 있는 알람이에요", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Text("${Fmt.time(start.minusMinutes(minutes.toLong()))}에 울려요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onPick(minutes) }, enabled = minutes !in existing) { Text("추가") } },
+        confirmButton = {
+            TextButton(onClick = { onPick(minutes) }, enabled = minutes !in existing) { Text(if (initial != null) "바꾸기" else "추가") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }
@@ -358,6 +384,7 @@ fun ShiftTypeEditorDialog(
     var pickEnd by remember { mutableStateOf(false) }
     var pickBreak by remember { mutableStateOf(false) }
     var addingAlarm by remember { mutableStateOf(false) }
+    var editingAlarm by remember { mutableStateOf<AlarmSpec?>(null) }
     val context = LocalContext.current
     // [SLP-15] Turning an alarm on is when the notification permission is explained and asked for.
     val askNotifications = rememberNotificationAsk()
@@ -578,6 +605,7 @@ fun ShiftTypeEditorDialog(
                                     AlarmSpecRow(
                                         alarm = alarm,
                                         ringsAt = start.minusMinutes(alarm.offsetMinutes.toLong()),
+                                        onEdit = { editingAlarm = alarm },
                                         onToggle = { on ->
                                             draft = draft.copy(alarms = draft.alarms.map { if (it == alarm) it.copy(enabled = on) else it })
                                         },
@@ -610,7 +638,7 @@ fun ShiftTypeEditorDialog(
                     Button(
                         onClick = { onSave(draft) },
                         enabled = draft.name.isNotBlank(),
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                     ) { Text("저장") }
                     if (onDelete != null) {
                         TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
@@ -644,10 +672,24 @@ fun ShiftTypeEditorDialog(
     if (addingAlarm) {
         OffsetPickerDialog(
             existing = draft.alarms.map { it.offsetMinutes }.toSet(),
+            start = draft.start ?: LocalTime.of(9, 0),
             onDismiss = { addingAlarm = false },
             onPick = { m ->
                 if (draft.alarms.none { it.offsetMinutes == m }) draft = draft.copy(alarms = draft.alarms + AlarmSpec(m))
                 addingAlarm = false
+            },
+        )
+    }
+    editingAlarm?.let { old ->
+        OffsetPickerDialog(
+            existing = draft.alarms.map { it.offsetMinutes }.toSet() - old.offsetMinutes,
+            start = draft.start ?: LocalTime.of(9, 0),
+            initial = old.offsetMinutes,
+            onDismiss = { editingAlarm = null },
+            onPick = { m ->
+                // A changed alarm rings again, even if it was switched off before.
+                draft = draft.copy(alarms = draft.alarms.map { if (it == old) AlarmSpec(m, enabled = true) else it })
+                editingAlarm = null
             },
         )
     }

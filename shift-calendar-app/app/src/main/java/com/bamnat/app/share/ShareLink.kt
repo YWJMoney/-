@@ -34,7 +34,10 @@ data class ShareOptions(
     val leaveKinds: Boolean = false,
     val extras: Boolean = false,
     val memos: Boolean = false,
+    /** [SHR-11] The month's money in the user's own kind: pay, job income or sales, see [com.bamnat.core.work.MoneyShare]. */
     val pay: Boolean = false,
+    /** [SHR-11] Booked jobs by title and time, for field and freelance work; never the client, place or price. */
+    val jobs: Boolean = false,
 ) {
     /** The server's names for the ticked parts, in its order. */
     val shows: List<String>
@@ -43,16 +46,21 @@ data class ShareOptions(
             if (extras) add("extras")
             if (memos) add("memos")
             if (pay) add("pay")
+            if (jobs) add("jobs")
         }
     val any: Boolean get() = shows.isNotEmpty()
 
     companion object {
-        fun of(shows: Collection<String>) = ShareOptions("leaveKinds" in shows, "extras" in shows, "memos" in shows, "pay" in shows)
+        fun of(shows: Collection<String>) =
+            ShareOptions("leaveKinds" in shows, "extras" in shows, "memos" in shows, "pay" in shows, "jobs" in shows)
     }
 }
 
-/** [SHR-01] One month's expected pay as the sharer's app worked it out. */
+/** [SHR-01] One month's expected pay as the sharer's app worked it out; [SHR-11] or their job income or sales. */
 data class SharedPay(val month: YearMonth, val amount: Long, val label: String)
+
+/** [SHR-11] A booked job as a link shows it: what and when, nothing about who or how much. */
+data class SharedJob(val name: String, val time: String?)
 
 object ShareLinkPayload {
     /** Days a link covers, from the first day of the month shown: about three months. */
@@ -92,6 +100,13 @@ object ShareLinkPayload {
 
     /** [SHR-01] Extra work a link carries for one day, as the server takes it. */
     const val EXTRAS_PER_DAY = 4
+    /** [SHR-11] Jobs a link carries for one day, and the characters of each title, as the server takes them. */
+    const val JOBS_PER_DAY = 4
+    const val JOB_CHARS = 12
+
+    /** [SHR-11] Whether a payload has anything to show: a server refuses a link with no days and no money. */
+    fun hasContent(payload: JSONObject): Boolean =
+        (payload.optJSONArray("days")?.length() ?: 0) > 0 || (payload.optJSONArray("pay")?.length() ?: 0) > 0
 
     fun build(
         snapshot: ScheduleSnapshot,
@@ -103,6 +118,10 @@ object ShareLinkPayload {
         memos: Map<LocalDate, String> = emptyMap(),
         /** [SHR-01] Sent only with [ShareOptions.pay]. */
         pay: List<SharedPay> = emptyList(),
+        /** [SHR-11] What [pay] is: the server and the receiving app name it by this. */
+        payKind: com.bamnat.core.work.MoneyShare = com.bamnat.core.work.MoneyShare.PAY,
+        /** [SHR-11] Each day's jobs; sent only with [ShareOptions.jobs]. */
+        jobs: Map<LocalDate, List<SharedJob>> = emptyMap(),
     ): JSONObject {
         val dates = (0 until DAYS).map { from.plusDays(it.toLong()) }
         val days = JSONArray()
@@ -112,10 +131,11 @@ object ShareLinkPayload {
             val type = day.shiftType
             val memo = memos[d]?.takeIf { options.memos }
             val extras = if (options.extras) day.extras.take(EXTRAS_PER_DAY) else emptyList()
+            val booked = if (options.jobs) jobs[d].orEmpty().take(JOBS_PER_DAY) else emptyList()
             // [EXTRA-01] A 대근 of another shift shows as the day's second shift; other extra work stays private unless ticked.
             val second = day.coveredShift
-            // A day with no shift goes in only with something on it: a 대근, or a memo or extra work that was ticked.
-            if (type == null && second == null && memo == null && extras.isEmpty()) continue
+            // A day with no shift goes in only with something on it: a 대근, or a memo, extra work or job that was ticked.
+            if (type == null && second == null && memo == null && extras.isEmpty() && booked.isEmpty()) continue
             type?.let { used[it.id] = it }
             second?.let { used[it.id] = it }
             days.put(JSONObject().apply {
@@ -126,7 +146,8 @@ object ShareLinkPayload {
                 day.leave?.let { put("leave", leaveLabel(it, options.leaveKinds)) }
                 // [SHR-04] No work at all as far as the link shows, for the receiver's 같이 쉬는 날: extra work
                 // the sharer did not tick stays out of it too, only a 대근 counts.
-                put("rest", (day.isOff || day.leave?.isFullDay == true) && (if (options.extras) day.extras.isEmpty() else second == null))
+                // [SHR-11] A booked job is work too, when the sharer shows jobs.
+                put("rest", (day.isOff || day.leave?.isFullDay == true) && (if (options.extras) day.extras.isEmpty() else second == null) && booked.isEmpty())
                 memo?.let { put("memo", it) }
                 if (extras.isNotEmpty()) put("extras", JSONArray().apply {
                     extras.forEach { e ->
@@ -134,6 +155,14 @@ object ShareLinkPayload {
                             put("name", (e.covered?.let { c -> ExtraText.coverName(e.kind, c) } ?: e.kind.name).take(10))
                             if (e.entry.hasTimes && e.start != null && e.end != null) put("time", "${e.start}-${e.end}")
                             if (e.minutes in 1..1440) put("minutes", e.minutes)
+                        })
+                    }
+                })
+                if (booked.isNotEmpty()) put("jobs", JSONArray().apply {
+                    booked.forEach { j ->
+                        put(JSONObject().apply {
+                            put("name", j.name.trim().take(JOB_CHARS).ifEmpty { "일감" })
+                            j.time?.let { put("time", it) }
                         })
                     }
                 })
@@ -159,6 +188,7 @@ object ShareLinkPayload {
             put("types", types)
             put("days", days)
             if (options.any) put("shows", JSONArray(options.shows))
+            if (options.pay && pay.isNotEmpty()) put("payKind", payKind.key)
             if (options.pay && pay.isNotEmpty()) put("pay", JSONArray().apply {
                 pay.take(6).forEach { p ->
                     put(JSONObject().apply {

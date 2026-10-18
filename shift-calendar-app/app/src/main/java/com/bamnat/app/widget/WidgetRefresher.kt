@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.updateAll
 import com.bamnat.app.appContainer
 import kotlinx.coroutines.launch
@@ -19,6 +20,12 @@ import java.time.ZoneId
 object WidgetRefresher {
     suspend fun refresh(context: Context) {
         val app = context.applicationContext
+        // [STAB-01] Every edit asks for this; with no widget on the home screen there is nothing to draw or wake for.
+        val placed = runCatching {
+            val manager = GlanceAppWidgetManager(app)
+            listOf(TodayWidget::class.java, WeekWidget::class.java, MonthWidget::class.java).any { manager.getGlanceIds(it).isNotEmpty() }
+        }.getOrDefault(true)
+        if (!placed) return
         runCatching {
             TodayWidget().updateAll(app)
             WeekWidget().updateAll(app)

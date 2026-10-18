@@ -13,8 +13,19 @@ import java.time.DayOfWeek
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
+/** [CAL-03] What a tap on a date does on a phone-sized screen (unfolded, the day is always beside the calendar). */
+enum class PhoneDayView {
+    /** The day in short under the calendar; a second tap opens it all in a sheet. As before 1.13. */
+    PREVIEW,
+    /** The whole day in a sheet at once. */
+    SHEET,
+    /** The month folds to the tapped date's week, Monday to Sunday, with the whole day under it. */
+    WEEK,
+}
+
 data class AppSettings(
-    val weekStart: DayOfWeek = DayOfWeek.MONDAY,
+    /** [CAL-02] Sunday first, like a paper calendar; the user can still pick Monday. */
+    val weekStart: DayOfWeek = DayOfWeek.SUNDAY,
     val weeklyLimitHours: Int = 64,
     val averageLimitHours: Int = 52,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -49,8 +60,11 @@ data class AppSettings(
     val rosterMonthly: Boolean = false,
     /** [PAYX-09][EXTRA-01] The kinds of extra work this person's company has, with their times. */
     val extraKinds: ExtraKinds = ExtraKinds(),
-    /** [FEAT-17] Memos come first in the day view, for people who live by their notes. */
-    val memoFirst: Boolean = false,
+    /**
+     * [FEAT-17][DAY-04] The start of the day's first memo under the date in each calendar cell. Up to 1.12 this
+     * also put 메모 first in the day view; that is now the user's own [dayGroupOrder].
+     */
+    val memoInCells: Boolean = false,
     /** [FEAT-17] The month's memos in short under the calendar. */
     val calendarMemos: Boolean = true,
     /** [SLP-01][MKT-07] Rest-gap signs on the calendar and the day view. */
@@ -86,6 +100,13 @@ data class AppSettings(
     val swapCoversAnswered: Boolean = false,
     /** [EXTRA-05] The user saw what the law would pay for work on days off and chose. */
     val restDayCompared: Boolean = false,
+    /** [CAL-03] What a tap on a date does on a phone. */
+    val phoneDayView: PhoneDayView = PhoneDayView.PREVIEW,
+    /**
+     * [DAY-04] The day view's groups in the user's own order, by key ("work", "memo", ...); empty means the
+     * order that fits [workStyle]. Keys the app does not know are skipped, missing ones go at the end.
+     */
+    val dayGroupOrder: List<String> = emptyList(),
 ) {
     val limits: HourLimits get() = HourLimits(weeklyLimitHours, averageLimitHours)
 
@@ -93,6 +114,9 @@ data class AppSettings(
         const val SILENT_SOUND = "silent"
     }
 }
+
+/** [DAY-04] "memo,work" back to its keys; blank parts are dropped. */
+fun decodeGroupOrder(text: String): List<String> = text.split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
 
 /**
  * Small settings store on SharedPreferences. Reads are synchronous so the very first frame
@@ -125,7 +149,9 @@ class SettingsRepository(context: Context) {
     private fun read(): AppSettings {
         val d = AppSettings()
         return AppSettings(
-            weekStart = runCatching { DayOfWeek.valueOf(prefs.getString(K_WEEK_START, null) ?: "") }
+            // [CAL-02] Up to 1.12 every save wrote Monday, chosen or not, so the old key is not read: everyone
+            // starts on Sunday once, and Monday stays for those who pick it again.
+            weekStart = runCatching { DayOfWeek.valueOf(prefs.getString(K_WEEK_START_V2, null) ?: "") }
                 .getOrDefault(d.weekStart),
             weeklyLimitHours = prefs.getInt(K_WEEKLY_LIMIT, d.weeklyLimitHours),
             averageLimitHours = prefs.getInt(K_AVG_LIMIT, d.averageLimitHours),
@@ -148,7 +174,7 @@ class SettingsRepository(context: Context) {
             workStyle = prefs.getString(K_WORK_STYLE, null)?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } },
             rosterMonthly = prefs.getBoolean(K_ROSTER_MONTHLY, d.rosterMonthly),
             extraKinds = ExtraKinds.decode(prefs.getString(K_EXTRA_KINDS, null)),
-            memoFirst = prefs.getBoolean(K_MEMO_FIRST, d.memoFirst),
+            memoInCells = prefs.getBoolean(K_MEMO_FIRST, d.memoInCells),
             calendarMemos = prefs.getBoolean(K_CAL_MEMOS, d.calendarMemos),
             restCheck = prefs.getBoolean(K_REST_CHECK, d.restCheck),
             strictRest = prefs.getBoolean(K_STRICT_REST, d.strictRest),
@@ -166,12 +192,17 @@ class SettingsRepository(context: Context) {
             healthSleep = prefs.getBoolean(K_HEALTH_SLEEP, d.healthSleep),
             swapCoversAnswered = prefs.getBoolean(K_SWAP_COVERS, d.swapCoversAnswered),
             restDayCompared = prefs.getBoolean(K_REST_COMPARED, d.restDayCompared),
+            phoneDayView = runCatching { PhoneDayView.valueOf(prefs.getString(K_PHONE_DAY_VIEW, null) ?: "") }
+                .getOrDefault(d.phoneDayView),
+            // [DAY-04] 메모 중심 of 1.12 and before put 메모 first; that carries over as the user's own order.
+            dayGroupOrder = prefs.getString(K_DAY_GROUP_ORDER, null)?.let(::decodeGroupOrder)
+                ?: if (prefs.getBoolean(K_MEMO_FIRST, false)) listOf("memo") else d.dayGroupOrder,
         )
     }
 
     private fun write(s: AppSettings) {
         prefs.edit()
-            .putString(K_WEEK_START, s.weekStart.name)
+            .putString(K_WEEK_START_V2, s.weekStart.name)
             .putInt(K_WEEKLY_LIMIT, s.weeklyLimitHours)
             .putInt(K_AVG_LIMIT, s.averageLimitHours)
             .putString(K_THEME, s.themeMode.name)
@@ -192,7 +223,7 @@ class SettingsRepository(context: Context) {
             .putString(K_WORK_STYLE, s.workStyle?.name)
             .putBoolean(K_ROSTER_MONTHLY, s.rosterMonthly)
             .putString(K_EXTRA_KINDS, s.extraKinds.encode())
-            .putBoolean(K_MEMO_FIRST, s.memoFirst)
+            .putBoolean(K_MEMO_FIRST, s.memoInCells)
             .putBoolean(K_CAL_MEMOS, s.calendarMemos)
             .putBoolean(K_REST_CHECK, s.restCheck)
             .putBoolean(K_STRICT_REST, s.strictRest)
@@ -209,11 +240,16 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_HEALTH_SLEEP, s.healthSleep)
             .putBoolean(K_SWAP_COVERS, s.swapCoversAnswered)
             .putBoolean(K_REST_COMPARED, s.restDayCompared)
+            .putString(K_PHONE_DAY_VIEW, s.phoneDayView.name)
+            .putString(K_DAY_GROUP_ORDER, s.dayGroupOrder.joinToString(","))
             .apply()
     }
 
     private companion object {
-        const val K_WEEK_START = "week_start"
+        /** [CAL-02] Replaces "week_start", where 1.12 and before wrote Monday on every save. */
+        const val K_WEEK_START_V2 = "week_start_v2"
+        const val K_PHONE_DAY_VIEW = "phone_day_view"
+        const val K_DAY_GROUP_ORDER = "day_group_order"
         const val K_WEEKLY_LIMIT = "weekly_limit"
         const val K_AVG_LIMIT = "average_limit"
         const val K_THEME = "theme"

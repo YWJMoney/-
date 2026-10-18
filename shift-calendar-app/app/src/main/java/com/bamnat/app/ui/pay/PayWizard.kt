@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.app.ui.components.labelWidth
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -77,6 +79,8 @@ import com.bamnat.core.pay.PayItem
 import com.bamnat.core.pay.PayPresets
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.PayRange
+import com.bamnat.core.pay.PayslipRead
+import com.bamnat.core.pay.SlipRole
 import com.bamnat.core.pay.PaySetupQuestion
 import com.bamnat.core.pay.PaySetupQuestions
 import com.bamnat.core.pay.RateTable
@@ -224,6 +228,51 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
     fun addRow(name: String, amount: Long?, cadence: Cadence, ordinary: Boolean, fixedOvertimeMinutes: Int) {
         rows += ItemRow("custom-" + System.currentTimeMillis(), name.trim().ifEmpty { "수당" }, cadence, ordinary, "", 0, true, amount,
             fixedOvertimeMinutes = fixedOvertimeMinutes)
+    }
+
+    /**
+     * [PAYS-04][PAYS-05] Fills the pay and allowances from a payslip read from a photo or text, and returns what it
+     * filled in words. 연장·야간·휴일 and 잔업·특근·대근 pay are left out: the app works them out from the calendar.
+     */
+    fun fillFrom(read: PayslipRead): String {
+        val hourly = read.amount(SlipRole.HOURLY)
+        val base = read.amount(SlipRole.BASE)
+        when {
+            hourly != null && hourly < 100_000 -> { wage = Wage.HOURLY; amount = hourly }
+            base != null -> { wage = Wage.MONTHLY; amount = base }
+        }
+        if (hourly != null || base != null) { wageChosen = true; rough = false }
+        read.month?.let { since = it }
+        fun norm(n: String) = n.filterNot { it.isWhitespace() }.lowercase()
+        val added = mutableListOf<String>()
+        read.lines.filter { it.role == SlipRole.ALLOWANCE && it.amount != null }.forEach { line ->
+            val existing = rows.firstOrNull { norm(it.name) == norm(line.name) }
+            if (existing != null) {
+                existing.checked = true
+                existing.amount = line.amount
+                existing.guessed = false
+            } else {
+                val fixedOt = Regex("고정.*(연장|시간외|OT)", RegexOption.IGNORE_CASE).containsMatchIn(line.name)
+                val welfare = Regex("식대|식비|교통|차량|복지|통신|자녀|가족|학자").containsMatchIn(line.name)
+                val id = "custom-" + System.nanoTime()
+                rows += ItemRow(id, line.name.take(20), Cadence.MONTHLY, ordinary = !welfare && !fixedOt, hint = "명세서에서", suggested = 0,
+                    checked = true, amount = line.amount)
+                if (fixedOt) covers[id] = setOf(LineKind.OVERTIME)
+            }
+            added += line.name
+        }
+        val skipped = read.lines.filter { it.role in setOf(SlipRole.OVERTIME, SlipRole.NIGHT, SlipRole.HOLIDAY, SlipRole.WEEKLY_HOLIDAY, SlipRole.EXTRA_WORK) }
+        val bonuses = read.lines.filter { it.role == SlipRole.BONUS }
+        return buildList {
+            when {
+                hourly != null && hourly < 100_000 -> add("시급 ${won(hourly)}")
+                base != null -> add("기본급 ${won(base)}")
+            }
+            if (added.isNotEmpty()) add("수당 ${added.size}개(${added.joinToString(", ")})")
+        }.joinToString(", ").ifEmpty { "읽은 금액이 없어요" }.let { "명세서에서 $it 채웠어요." } +
+            (if (skipped.isNotEmpty()) " ${skipped.joinToString("·") { it.name }}은 달력 근무로 계산해요." else "") +
+            (if (bonuses.isNotEmpty()) " 상여는 수당 단계에서 받는 달과 함께 넣어 주세요." else "") +
+            " 끝나면 ‘명세서로 맞춰 보기’로 한 번에 확인할 수 있어요."
     }
 
     fun annualPay(): AnnualPay? = yearly?.takeIf { it > 0 }?.let {
@@ -402,6 +451,15 @@ fun PayWizard(
         busy = false
     }
 
+    // [PAYS-04][PAYS-05] 명세서로 한 번에 채우기, and what it filled.
+    var slipFill by remember { mutableStateOf(false) }
+    var slipNote by remember { mutableStateOf<String?>(null) }
+    if (slipFill) PayslipFillDialog("명세서로 한 번에 채우기", onDismiss = { slipFill = false }) { read ->
+        slipNote = s.fillFrom(read)
+        slipFill = false
+        go(AMOUNT)
+    }
+
     val question = questions.firstOrNull { it.key == step }
     Column(Modifier.fillMaxSize()) {
         LinearProgressIndicator(progress = { (index + 1) / steps.size.toFloat() }, modifier = Modifier.fillMaxWidth())
@@ -421,8 +479,8 @@ fun PayWizard(
             ) { key ->
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     when {
-                        key == WAGE -> WageStep(s) { w -> answerAndGo { s.wage = w; s.wageChosen = true } }
-                        key == AMOUNT -> AmountStep(s, today)
+                        key == WAGE -> WageStep(s, onSlip = { slipFill = true }) { w -> answerAndGo { s.wage = w; s.wageChosen = true } }
+                        key == AMOUNT -> AmountStep(s, today, slipNote)
                         key == ITEMS -> ItemsStep(s)
                         key == SUMMARY -> SummaryStep(s, draft, questions, range, snapshot) { go(it) }
                         else -> questions.firstOrNull { it.key == key }?.let { q ->
@@ -464,7 +522,24 @@ internal fun StepTitle(title: String, body: String? = null) {
 }
 
 @Composable
-private fun WageStep(s: PaySetupState, onPick: (Wage) -> Unit) {
+private fun WageStep(s: PaySetupState, onSlip: () -> Unit, onPick: (Wage) -> Unit) {
+    // [PAYS-04] The easiest way first: a payslip photo fills the pay and the allowances in one go.
+    Surface(
+        onClick = onSlip,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.PhotoCamera, null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(28.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("명세서로 한 번에 채우기", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text("가장 쉬워요. 명세서 사진이나 캡처 한 장으로 기본급과 수당을 채워요.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+        }
+    }
     StepTitle("급여를 어떻게 받나요?", "계약서나 급여명세서에 적힌 대로 골라 주세요. 나중에 언제든 바꿀 수 있어요.")
     Wage.entries.forEach { w -> ChoiceCard(w.title, w.subtitle, s.wageChosen && s.wage == w) { onPick(w) } }
     // Out of scope, said plainly [PAY-07].
@@ -474,8 +549,13 @@ private fun WageStep(s: PaySetupState, onPick: (Wage) -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AmountStep(s: PaySetupState, today: LocalDate) {
+private fun AmountStep(s: PaySetupState, today: LocalDate, slipNote: String?) {
     val rates = remember(today) { RateTable.on(today) }
+    slipNote?.let { note ->
+        Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+            Text(note, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.padding(14.dp))
+        }
+    }
     when (s.wage) {
         Wage.MONTHLY -> StepTitle("기본급이 얼마예요?", "급여명세서의 ‘기본급’만 넣어 주세요. 수당은 다음에 따로 넣어요.")
         Wage.HOURLY -> StepTitle("시급이 얼마예요?", "계약서의 시급을 넣어 주세요. ${today.year}년 최저시급은 ${won(rates.minimumHourlyWage)}이에요.")
@@ -798,7 +878,7 @@ private fun SummaryRow(label: String, value: String, check: Boolean = false, onC
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(112.dp))
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.labelWidth(112.dp))
         Text(value, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         if (check) { Spacer(Modifier.width(6.dp)); EstimatedChip("확인 필요") }
     }

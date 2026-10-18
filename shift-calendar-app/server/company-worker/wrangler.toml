@@ -5,6 +5,10 @@ main = "src/index.js"
 compatibility_date = "2026-09-01"
 workers_dev = true
 
+# Clears network hashes, spent limits and old questions on time even when nobody sends anything.
+[triggers]
+crons = ["17 * * * *"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "bamnat-company"

@@ -223,6 +223,10 @@ class PayCalculator(
         var restDayWorked = false
         val itemCounts = HashMap<String, Int>()
         val dayPays = mutableListOf<DayPay>()
+        // [PAYS-06] What each of the user's own rules paid this month, by [CustomRule.id].
+        val customTotals = linkedMapOf<String, CustomTotal>()
+        val shiftNames = HashMap<Long, String>()
+        val extraKindNames = HashMap<Long, String>(rules.extraNames)
         // Leave [FEAT-10]: minutes by kind, and paid leave per date for 주휴 weeks.
         var paidLeave = 0; var unpaidLeave = 0
         val paidLeaveByDate = days.filter { it.leave?.kind?.paid == true }.associate { it.date to it.leaveMinutes }
@@ -346,6 +350,15 @@ class PayCalculator(
                 val v = item.amount.on(day.date).value
                 if (v > 0) parts += DayPart(LineKind.ALLOWANCE, item.name, v * times, if (times > 1) "${item.cadence.label} × $times" else item.cadence.label)
             }
+            // [PAYS-06] The user's own rules, on the minutes each one names.
+            day.shiftType?.let { shiftNames[it.id] = it.name }
+            day.extras.forEach { e -> e.covered?.let { shiftNames[it.id] = it.name }; extraKindNames.getOrPut(e.kind.id) { rules.extraName(e.kind.id) } }
+            for (rule in profile.customRules) {
+                if (!rule.on) continue
+                val r = customRule(rule, day, m, holiday(day.date), hourly, monthlyBase, baseLabel, rates) ?: continue
+                customTotals.getOrPut(rule.id) { CustomTotal(rule) }.apply { amount += r.amount; this.minutes += r.credited; times++ }
+                parts += DayPart(LineKind.ALLOWANCE, rule.name, r.amount, r.formula)
+            }
             // "야간 대근": the covered shift goes first unless the kind's own name already says it.
             val extraNames = day.extras.map { e ->
                 val name = rules.extraName(e.kind.id)
@@ -446,6 +459,21 @@ class PayCalculator(
                 warnings += "${t.label}을 회사 방식으로 계산하면 ${won(t.amount)}인데 법정 기준으로는 ${won(t.legal)}이에요. " +
                     "법정보다 적게 받고 있다면 근로기준법 제56조 위반일 수 있어요"
             }
+        }
+
+        for ((_, t) in customTotals) {
+            val rule = t.rule
+            val pay = rule.pay
+            lines += PayLine(
+                LineKind.ALLOWANCE, "${rule.name} (회사 규칙)", t.amount,
+                formula = "${rule.describe(shiftNames, extraKindNames)}: ${t.times}일" +
+                    (if (pay !is RulePay.PerTime && t.minutes > 0) ", ${hours(t.minutes)}" else ""),
+                minutes = t.minutes,
+                hourly = if (pay is RulePay.OfHourly) hourly else 0,
+                multiplier = if (pay is RulePay.OfHourly) pay.rate else 0.0,
+                basis = "직접 넣은 회사 규칙" + (rule.source.takeIf { it.isNotBlank() }?.let { " “$it”" } ?: "") + " · 통상임금 제외",
+                estimated = baseEstimated && pay.followsWage,
+            )
         }
 
         if (paidLeave > 0 && byHour) lines += line(
@@ -740,6 +768,53 @@ class PayCalculator(
         if (rule.bonus > 0) parts += "1회 ${won(rule.bonus)}"
         val formula = parts.joinToString(" + ") + if (credited > worked) " (최소 ${hours(rule.minMinutes)} 인정)" else ""
         return RuleResult(basePart + premiumPay + rule.bonus, formula, credited, legal)
+    }
+
+    private class CustomTotal(val rule: CustomRule, var amount: Long = 0, var minutes: Int = 0, var times: Int = 0)
+
+    /**
+     * [PAYS-06] What one of the user's own rules pays for [day], or null when nothing on it matches. The day's
+     * shift and each piece of extra work are checked one by one; minutes in a clock window are counted on the
+     * clock, the break taken off as for night minutes, and a piece with no clock times has none.
+     */
+    private fun customRule(
+        rule: CustomRule, day: ResolvedDay, m: DayMinutes, holiday: Boolean, hourly: Long, monthlyBase: Long, baseLabel: String, rates: Rates,
+    ): RuleResult? {
+        val w = rule.whenever
+        val dayFits = when (w.dayKind) {
+            RuleDayKind.ANY -> true
+            RuleDayKind.WORK_DAY -> day.isWorkDay
+            RuleDayKind.OFF_DAY -> day.isRestDay
+            RuleDayKind.HOLIDAY -> holiday
+        }
+        if (!dayFits || w.daysOfWeek.isNotEmpty() && day.date.dayOfWeek !in w.daysOfWeek) return null
+        val classifier = MinuteClassifier({ rates })
+        fun minutesOf(from: LocalDateTime?, to: LocalDateTime?, paid: Int, breakMinutes: Int, breakStart: java.time.LocalTime?): Int = when {
+            paid <= 0 -> 0
+            !w.hasWindow -> paid
+            from == null || to == null -> 0
+            else -> classifier.windowMinutes(from, to, paid, breakMinutes, breakStart, w.from!!, w.to!!, rates)
+        }
+        var matched = 0
+        if (w.pieces != RulePieces.EXTRA && day.isWorkDay && (w.shiftTypeIds.isEmpty() || day.shiftType?.id in w.shiftTypeIds)) {
+            matched += minutesOf(day.shiftFrom, day.shiftTo, m.shift.worked, day.breakMinutes, day.breakStart)
+        }
+        if (w.pieces != RulePieces.SHIFT) for ((i, e) in day.extras.withIndex()) {
+            if (w.extraKinds.isNotEmpty() && e.kind.id !in w.extraKinds) continue
+            val covered = e.covered?.id ?: day.shiftType?.takeIf { day.isWorkDay }?.id
+            if (w.shiftTypeIds.isNotEmpty() && covered !in w.shiftTypeIds) continue
+            matched += minutesOf(e.from, e.to, m.extra(i)?.minutes?.worked ?: 0, e.breakMinutes, e.breakStart)
+        }
+        val minutes = (matched - w.overMinutes).coerceAtLeast(0)
+        if (minutes <= 0 || matched < w.minMinutes) return null
+        val (amount, formula) = when (val pay = rule.pay) {
+            is RulePay.PerHour -> (minutes / 60.0 * pay.amount).roundToLong() to "${hours(minutes)} × ${won(pay.amount)}"
+            is RulePay.OfHourly -> (minutes / 60.0 * hourly * pay.rate).roundToLong() to "${hours(minutes)} × ${won(hourly)} × ${pct(pay.rate)}"
+            is RulePay.OfBase -> (monthlyBase * pay.share * minutes / pay.perMinutes.coerceAtLeast(1)).roundToLong() to
+                "$baseLabel ${won(monthlyBase)} × ${ExtraRule.percent(pay.share)} × ${hours(minutes)} ÷ ${hours(pay.perMinutes)}"
+            is RulePay.PerTime -> pay.amount to "1회 ${won(pay.amount)}"
+        }
+        return RuleResult(amount, formula, if (rule.pay is RulePay.PerTime) 0 else minutes, 0)
     }
 
     /** [EXTRA-08] Minutes of [piece] between the scope's clock times; none when it has no clock times. */

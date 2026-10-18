@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -34,6 +35,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SheetState
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -42,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -168,7 +172,7 @@ private fun VoteCard(a: AppliedSetup, onRight: () -> Unit, onWrong: () -> Unit, 
 private fun RightSheet(a: AppliedSetup, onDismiss: () -> Unit, onVote: (Boolean, (Boolean) -> Unit) -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = busySheetState(busy)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("좋아요! 무엇과 맞춰 보셨어요?", style = MaterialTheme.typography.titleLarge)
             Text("${a.company} 분들이 이 설정을 믿고 쓸 수 있게 점수로 쌓여요.", style = MaterialTheme.typography.bodyMedium,
@@ -199,7 +203,7 @@ private fun WrongSheet(vm: CompanyNudgeViewModel, a: AppliedSetup, onDismiss: ()
     var busy by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
     var asking by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = busySheetState(busy)) {
         AnimatedContent(told, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "wrong-plea") { plea ->
             Column(
                 Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
@@ -224,7 +228,7 @@ private fun WrongSheet(vm: CompanyNudgeViewModel, a: AppliedSetup, onDismiss: ()
                             }
                         },
                         enabled = wrong != null && !busy,
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                     ) { if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("알려 주기") }
                 } else {
                     val w = wrong ?: Wrong.PAY
@@ -243,7 +247,7 @@ private fun WrongSheet(vm: CompanyNudgeViewModel, a: AppliedSetup, onDismiss: ()
                         color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                     rewardLine(terms)?.let { RewardPill(it, Modifier.align(Alignment.CenterHorizontally)) }
                     if (w.place != FixPlace.NONE) {
-                        Button(onClick = { onFix(w.place) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                        Button(onClick = { onFix(w.place) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                             Text(when (w.place) {
                                 FixPlace.SHIFT_TYPES -> "근무 시간 고치러 가기"
                                 FixPlace.PATTERN -> "근무 순서 고치러 가기"
@@ -252,7 +256,7 @@ private fun WrongSheet(vm: CompanyNudgeViewModel, a: AppliedSetup, onDismiss: ()
                         }
                         OutlinedButton(onClick = onShare, modifier = Modifier.fillMaxWidth()) { Text("이미 고쳤어요, 바로 보낼게요") }
                     } else {
-                        Button(onClick = onShare, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("내 회사로 나누기") }
+                        Button(onClick = onShare, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("내 회사로 나누기") }
                     }
                     TextButton(onClick = { asking = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
                         Text("앱으로는 맞출 수 없는 방식이에요")
@@ -302,7 +306,7 @@ fun InviteSheet(vm: CompanyNudgeViewModel, onShare: () -> Unit, onDismiss: () ->
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             HowAdopted(terms?.threshold ?: 3, rewardLine(terms))
-            Button(onClick = onShare, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("나눠 볼게요") }
+            Button(onClick = onShare, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("나눠 볼게요") }
             TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("나중에") }
         }
     }
@@ -374,7 +378,14 @@ fun AskDeveloperDialog(
 
 /** [COMM-01][COMM-02] The company part of settings when the server is there: what is in use and the ways in. */
 @Composable
-fun ColumnScope.CompanySettingsRows(vm: CompanyNudgeViewModel, onFind: () -> Unit, onShare: () -> Unit, onSent: () -> Unit, onFix: (FixPlace) -> Unit) {
+fun ColumnScope.CompanySettingsRows(
+    vm: CompanyNudgeViewModel,
+    onFind: () -> Unit,
+    onShare: () -> Unit,
+    onSent: () -> Unit,
+    onFix: (FixPlace) -> Unit,
+    onBoard: () -> Unit = {},
+) {
     val applied by vm.applied.collectAsStateWithLifecycle()
     applied?.let { a ->
         SoftCard(highlighted = true, modifier = Modifier.padding(vertical = 4.dp)) {
@@ -395,6 +406,19 @@ fun ColumnScope.CompanySettingsRows(vm: CompanyNudgeViewModel, onFind: () -> Uni
     }
     CompanyNudgeCards(vm, onShare = onShare, onFix = onFix)
     com.bamnat.app.ui.settings.NavRow("회사 찾기", "같은 회사 분들이 맞춘 근무표와 계산 방식을 가져와요", onFind)
+    // [COMM-07]
+    com.bamnat.app.ui.settings.NavRow("회사 규칙 광장", "여러 회사가 올린 근무표·급여 규칙을 보고, 맞는지 투표하고 토론해요", onBoard)
     com.bamnat.app.ui.settings.NavRow("내 설정 나누기", "금액 없이 보내요. 채택되면 보상을 드려요", onShare)
     com.bamnat.app.ui.settings.NavRow("내가 보낸 정보", "보낸 설정이 어떻게 됐는지, 개발자의 답, 거두기", onSent)
+}
+
+/**
+ * A sheet that cannot be swiped away while [busy]: a swipe while sending would leave its scrim catching
+ * taps until the answer comes.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun busySheetState(busy: Boolean): SheetState {
+    val sending by rememberUpdatedState(busy)
+    return rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { it != SheetValue.Hidden || !sending })
 }

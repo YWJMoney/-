@@ -29,6 +29,8 @@ object Notifications {
     const val JOB_CHANNEL_ID = "job_reminder_v1"
     const val MONEY_CHANNEL_ID = "money_alert_v1"
     const val LEAVE_CHANNEL_ID = "leave_notice_v1"
+    /** [SCHED-01] A memo that is a schedule, when it comes. */
+    const val MEMO_CHANNEL_ID = "memo_schedule_v1"
     /** Before 1.11 every sleep tip made a sound here; a channel's importance cannot be lowered, so it goes. */
     private const val OLD_SLEEP_CHANNEL_ID = "sleep_tips_v1"
 
@@ -99,7 +101,12 @@ object Notifications {
             description = "올해 안 쓰면 없어지는 연차를 11월과 12월 첫날에 알려요"
             group = GROUP_MONEY
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave))
+        val memo = NotificationChannel(MEMO_CHANNEL_ID, "메모 일정", NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "일정으로 넣은 메모를 그 시각에 알림창에 띄워요"
+            group = GROUP_DAY
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
+        }
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
     }
 

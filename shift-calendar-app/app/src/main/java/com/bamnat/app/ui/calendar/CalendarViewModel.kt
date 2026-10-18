@@ -109,13 +109,20 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private val payCalculator = PayCalculator()
 
     // Moving from day to day in one month reuses that month's result instead of recalculating it.
-    private var monthPayCache: Pair<List<Any>, MonthPay>? = null
+    @Volatile private var monthPayCache: Pair<List<Any>, MonthPay>? = null
 
-    private fun monthPay(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): MonthPay = synchronized(this) {
+    /**
+     * [STAB-01] No lock around the calculation: a run left over from a day already passed held it, and every
+     * newer run waited on it with a whole background thread, until saves and taps waited too.
+     */
+    private fun monthPay(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): MonthPay {
         val key = listOf(profile, snapshot, month)
-        monthPayCache?.takeIf { it.first == key }?.second
-            ?: payCalculator.calculate(profile, month, snapshot.resolver::resolve).also { monthPayCache = key to it }
+        monthPayCache?.takeIf { it.first == key }?.let { return it.second }
+        return payCalculator.calculate(profile, month, snapshot.resolver::resolve).also { monthPayCache = key to it }
     }
+
+    /** [STAB-01] The last tap on 메모 the day's memo field has acted on. */
+    var memoFocusUsed = 0
 
     /**
      * [EXTRA-02][EXTRA-03] The day's minutes by category and, with a pay setup, its pay and what each
@@ -180,7 +187,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** [SLP-14] 오늘의 흐름 at [now]. */
     fun todayFlow(snapshot: ScheduleSnapshot, settings: AppSettings, log: List<SleepEntry>, now: LocalDateTime): TodayFlow.Card =
         TodayFlow.of(now, snapshot.resolver, settings.alarmsEnabled, log, settings.sleepTargetMinutes, settings.commuteMinutes,
-            settings.restCheck, settings.strictRest)
+            settings.restCheck, settings.strictRest,
+            // [SLP-16] The way-home card speaks from the user's own sleeps after night work.
+            afterNightMinutes = com.bamnat.core.sleep.SleepInsights.afterNightAverage(log, snapshot.resolver, now.toLocalDate()))
 
     /** [SLP-14] The two numbers the sleep times rest on, changed from the card's ⓘ. */
     fun setSleepNumbers(targetMinutes: Int, commuteMinutes: Int) {
@@ -484,12 +493,29 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     fun setAlarmsEnabled(on: Boolean) = container.settingsRepository.update { it.copy(alarmsEnabled = on) }
 
+    /** [DAY-04] The day view's groups in the user's order; empty goes back to the default. */
+    fun setDayGroupOrder(order: List<String>) = container.settingsRepository.update { it.copy(dayGroupOrder = order) }
+
+    /** [CAL-03] What a tap on a date does on a phone. */
+    fun setPhoneDayView(view: com.bamnat.app.data.PhoneDayView) = container.settingsRepository.update { it.copy(phoneDayView = view) }
+
     fun deleteMemo(memo: Memo) {
         viewModelScope.launch { memoRepo.delete(memo) }
     }
 
+    private val _openMemo = MutableSharedFlow<Long>(extraBufferCapacity = 1)
+    /** [SCHED-01] A memo to open in the editor, from the snackbar's 일정으로 넣기. */
+    val openMemo: SharedFlow<Long> = _openMemo.asSharedFlow()
+
     fun addQuickMemo(date: LocalDate, text: String) {
-        viewModelScope.launch { memoRepo.addQuick(date, text) }
+        viewModelScope.launch {
+            val memo = memoRepo.addQuick(date, text) ?: return@launch
+            // [SCHED-01] A quick line that names a time is asked about, like a memo written in the editor.
+            val found = com.bamnat.core.memo.MemoTime.find(memo, java.time.LocalDateTime.now()) ?: return@launch
+            _messages.tryEmit(UndoMessage("‘${found.phrase}’, 일정으로 넣을까요?", actionLabel = "일정으로 넣기") {
+                _openMemo.tryEmit(memo.id)
+            })
+        }
     }
 
     /** [WORK-06] Ledger, jobs and sales for the calendar's day sections and cells. */

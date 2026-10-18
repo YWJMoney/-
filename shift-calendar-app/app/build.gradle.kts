@@ -21,8 +21,8 @@ android {
         applicationId = "com.bamnat.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 18
-        versionName = "1.12.0"
+        versionCode = 19
+        versionName = "1.13.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SHARE_BASE_URL", "\"$shareBaseUrl\"")
         buildConfigField("String", "COMPANY_BASE_URL", "\"$companyBaseUrl\"")
@@ -106,6 +106,8 @@ dependencies {
     implementation("com.bamnat:core")
     // [OPS-20] Google Play in-app review, asked once at a happy moment.
     implementation("com.google.android.play:review-ktx:2.0.2")
+    // [PAYS-05][PAYX-04] Payslip and rule photos read on the phone; the Korean model is bundled, nothing is downloaded or sent.
+    implementation("com.google.mlkit:text-recognition-korean:16.0.1")
 
     val composeBom = platform("androidx.compose:compose-bom:2025.05.00")
     implementation(composeBom)

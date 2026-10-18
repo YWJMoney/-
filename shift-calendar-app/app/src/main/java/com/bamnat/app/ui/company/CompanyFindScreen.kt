@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.company
 
+import kotlinx.coroutines.Dispatchers
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -105,7 +106,9 @@ fun CompanyFindScreen(
     /** The user's own setup is already in, so a company that is not here leads to sharing it. */
     ready: Boolean = false,
 ) {
-    val query by vm.query.collectAsStateWithLifecycle()
+    // [STAB-01] Read at once, on the same frame as the key: a text box one frame behind the keyboard
+    // doubles or drops half-built Korean letters and moves the cursor.
+    val query by vm.query.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
     val result by vm.result.collectAsStateWithLifecycle()
     val terms by vm.terms.collectAsStateWithLifecycle()
     val focusRequester = remember { FocusRequester() }
@@ -284,6 +287,7 @@ fun CompanyDetailScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val applied by vm.applied.collectAsStateWithLifecycle()
     val hasPattern by vm.hasPattern.collectAsStateWithLifecycle()
+    val votes by vm.votes.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var choosing by remember { mutableStateOf<Pair<SharedSetup, Phases>?>(null) }
     var applying by remember { mutableStateOf(false) }
@@ -341,7 +345,13 @@ fun CompanyDetailScreen(
                         Text("아직 볼 수 있는 설정이 없어요.", style = MaterialTheme.typography.bodyLarge)
                     }
                     p.setups.forEach { su ->
-                        SetupCard(su, applied?.takeIf { it.companyId == p.id && it.setup == su.id }, onUse = { start(p, su) })
+                        SetupCard(
+                            su, applied?.takeIf { it.companyId == p.id && it.setup == su.id }, onUse = { start(p, su) },
+                            // [COMM-06][COMM-07] Anyone who knows the company can vote and talk it over, using it or not.
+                            vote = votes[su.id] ?: applied?.takeIf { it.companyId == p.id && it.setup == su.id }?.vote,
+                            onVote = { ok, why -> vm.vote(p, su, ok, why) { e -> error = e } },
+                            onTalk = { vm.talk.show(p.id, su.id, "${p.name} · ${su.dept.ifEmpty { "회사 전체" }}") },
+                        )
                     }
                     SoftCard {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -366,6 +376,7 @@ fun CompanyDetailScreen(
         }
     }
 
+    TalkSheet(vm.talk)
     val pick = choosing
     if (pick != null && page != null) {
         PhaseSheet(
@@ -379,7 +390,14 @@ fun CompanyDetailScreen(
 }
 
 @Composable
-private fun SetupCard(s: SharedSetup, applied: AppliedSetup?, onUse: () -> Unit) {
+private fun SetupCard(
+    s: SharedSetup,
+    applied: AppliedSetup?,
+    onUse: () -> Unit,
+    vote: Boolean? = null,
+    onVote: ((Boolean, String?) -> Unit)? = null,
+    onTalk: (() -> Unit)? = null,
+) {
     var more by rememberSaveable(s.id) { mutableStateOf(false) }
     val main = s.lines.filter { (label, _) -> label == "근무" || label.startsWith("순서") || label == "연장·휴무일 근무" }
     val pay = s.lines - main.toSet()
@@ -389,13 +407,7 @@ private fun SetupCard(s: SharedSetup, applied: AppliedSetup?, onUse: () -> Unit)
                 Text(s.dept.ifEmpty { "회사 전체" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 if (s.adopted) StatusChip("채택${s.version?.let { " v$it" } ?: ""}", Tone.GOOD) else StatusChip("확인 중", Tone.WAIT)
             }
-            Text(
-                buildString {
-                    append(if (s.persons > 0) "같은 회사 ${s.persons}명이 맞다고 했어요" else "아직 확인한 분이 없어요")
-                    if (s.bad > 0) append(" · 달라요 ${s.bad}명")
-                },
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            TrustLine(s.trust, s.agree, s.persons, s.bad, s.adopted)
             if (!s.adopted) PointsBar(s.points, s.threshold)
             main.forEach { (label, text) -> SetupLine(label, text) }
             if (pay.isNotEmpty()) {
@@ -421,6 +433,16 @@ private fun SetupCard(s: SharedSetup, applied: AppliedSetup?, onUse: () -> Unit)
             }
             if (s.adopted) Button(onClick = onUse, modifier = Modifier.fillMaxWidth()) { Text(if (applied != null) "다시 넣기" else "이 설정 쓰기") }
             else FilledTonalButton(onClick = onUse, modifier = Modifier.fillMaxWidth()) { Text("확인 중이지만 써 보기") }
+            if (onVote != null) {
+                Text("다니는 회사라면 이 규칙이 맞는지 알려 주세요", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                VoteButtons(vote, onVote)
+            }
+            if (onTalk != null) {
+                TextButton(onClick = onTalk, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                    Text(if (s.posts > 0) "토론 ${s.posts}개 보기" else "토론 열기")
+                }
+            }
         }
     }
 }

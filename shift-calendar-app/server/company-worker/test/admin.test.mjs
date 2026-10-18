@@ -70,14 +70,14 @@ test("without a password set, sign-in says what is missing", async () => {
   const { call } = server({ ADMIN_PASSWORD: "short", RATE_SALT: undefined });
   assert.deepEqual((await call("POST", "/api/admin/login", { password: "short" }, APP)).data, { error: "not_set" });
   assert.deepEqual((await call("GET", "/api/admin/health")).data,
-    { database: true, password: false, salt: false, why: { password: "short", salt: "missing" } });
+    { database: true, password: false, salt: false, mail: false, why: { password: "short", salt: "missing" } });
 });
 
 test("the setup screen says why a secret is not read, never what it is", async () => {
   // Typed under a slightly different name, and bound from the Secrets Store instead of set on the Worker.
   const { call } = server({ ADMIN_PASSWORD: undefined, " admin_password": "a-long-password", RATE_SALT: { get: async () => "x" } });
   const h = (await call("GET", "/api/admin/health")).data;
-  assert.deepEqual(h, { database: true, password: false, salt: false, why: { password: "name", salt: "store" } });
+  assert.deepEqual(h, { database: true, password: false, salt: false, mail: false, why: { password: "name", salt: "store" } });
   assert.equal(JSON.stringify(h).includes("a-long-password"), false);
 });
 
@@ -116,7 +116,7 @@ test("the developer adopts or turns down what coworkers sent", async () => {
   assert.equal((await call("POST", `/api/admin/groups/${a.data.company.id}/${a.data.setup}/adopt`, {}, h)).status, 404);
   const o = (await call("GET", "/api/admin/overview", undefined, h)).data;
   assert.deepEqual([o.pending, o.flagged, o.owed, o.companies, o.rules, o.reports], [0, 0, 1, 2, 1, 2]);
-  assert.deepEqual(o.settings, { adoptPoints: 3, rewardMonths: 3 });
+  assert.deepEqual(o.settings, { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75 });
   assert.equal(o.reasons.wrong, "실제와 다른 정보로 보여요");
 });
 
@@ -226,11 +226,14 @@ test("a lower bar adopts what already meets it", async () => {
   assert.equal((await call("POST", "/api/admin/settings", { adoptPoints: 1, rewardMonths: 3 }, h)).data.error, "adoptPoints");
   assert.equal((await call("POST", "/api/admin/settings", { adoptPoints: 3, rewardMonths: 25 }, h)).data.error, "rewardMonths");
   const saved = await call("POST", "/api/admin/settings", { adoptPoints: 2, rewardMonths: 6 }, h);
-  assert.deepEqual(saved.data, { adoptPoints: 2, rewardMonths: 6 });
+  assert.deepEqual(saved.data, { adoptPoints: 2, rewardMonths: 6, adoptAgree: 75 });
   const mine = (await call("GET", `/api/reports/${a.data.id}`)).data;
   assert.deepEqual([mine.status, mine.threshold, mine.rewardMonths], ["adopted", 2, 6]);
   assert.deepEqual(mine.reward, { months: 6, status: "owed" });
-  assert.deepEqual((await call("GET", "/api/terms")).data, { threshold: 2, rewardMonths: 6 });
+  assert.deepEqual((await call("GET", "/api/terms")).data, { threshold: 2, rewardMonths: 6, agree: 75 });
+  // [COMM-07] The agreement share it takes on its own, from half to everyone.
+  assert.equal((await call("POST", "/api/admin/settings", { adoptPoints: 2, rewardMonths: 6, adoptAgree: 40 }, h)).data.error, "adoptAgree");
+  assert.equal((await call("POST", "/api/admin/settings", { adoptPoints: 2, rewardMonths: 6, adoptAgree: 90 }, h)).data.adoptAgree, 90);
 
   // With no reward set, adoption records none.
   await call("POST", "/api/admin/settings", { adoptPoints: 2, rewardMonths: 0 }, h);

@@ -149,6 +149,7 @@ test("v2 keeps only the parts the sharer ticked", () => {
   assert.equal(all.days[1].rest, undefined);
   assert.equal(validate({ ...full, types: [{ ...full.types[0], icon: "<svg>" }] }).error, "type_icon");
   assert.deepEqual(all.shows, ["leaveKinds", "extras", "memos", "pay"]);
+  assert.equal(all.payKind, "pay");
   assert.deepEqual(all.days[0].extras, [{ name: "잔업", time: "19:00-21:00", minutes: 120 }]);
   assert.equal(all.days[3].type, null);
   assert.deepEqual(all.pay, [{ month: "2026-11", amount: 3120000, label: "세전 예상" }]);
@@ -166,6 +167,38 @@ test("v2 parts are checked like the rest", () => {
   assert.equal(validate({ ...full, pay: [{ month: "2026-13", amount: 1 }] }).error, "pay");
   assert.equal(validate({ ...full, pay: [{ month: "2026-11", amount: -1 }] }).error, "pay");
   assert.equal(validate({ ...full, pay: [{ month: "2026-11", amount: 1.5 }] }).error, "pay");
+});
+
+// [SHR-11] A shop or a freelancer: money in their own kind, a freelancer's jobs, and links with no shifts at all.
+test("money keeps its kind, and jobs show by title and time only", () => {
+  const shop = validate({ v: 2, title: "가나다식당", ttlDays: 30, shows: ["pay"], payKind: "sales", types: [], days: [],
+    pay: [{ month: "2026-11", amount: 18450000, label: "매출" }] });
+  assert.equal(shop.error, undefined);
+  assert.equal(shop.schedule.payKind, "sales");
+  assert.deepEqual(shop.schedule.days, []);
+  assert.equal(validate({ ...full, payKind: "profit" }).error, "pay_kind");
+  assert.equal(validate({ ...full }).schedule.payKind, "pay", "links from before 1.13 are pay");
+  assert.equal(validate({ v: 2, title: "", ttlDays: 30, shows: ["pay"], types: [], days: [], pay: [] }).error, "days", "nothing to show");
+  assert.equal(validate({ ...sample, days: [] }).error, "days");
+
+  const field = { v: 2, title: "준호", ttlDays: 30, shows: ["jobs", "pay"], payKind: "jobs", types: [],
+    days: [{ date: "2026-11-03", rest: false, jobs: [{ name: "욕실 시공", time: "09:00-17:00", client: "김", amount: 900000 }] }],
+    pay: [{ month: "2026-11", amount: 870300, label: "일감 1건" }] };
+  const out = validate(field).schedule;
+  assert.deepEqual(out.days[0].jobs, [{ name: "욕실 시공", time: "09:00-17:00" }]);
+  assert.ok(!JSON.stringify(out).includes("900000"), "a job's price never goes in");
+  assert.equal(validate({ ...field, shows: ["pay"] }).error, "day", "jobs not ticked are dropped");
+  assert.equal(validate({ ...field, days: [{ date: "2026-11-03", jobs: Array(5).fill({ name: "a" }) }] }).error, "day_jobs");
+  assert.equal(validate({ ...field, days: [{ date: "2026-11-03", jobs: [{ name: "x".repeat(13) }] }] }).error, "day_job");
+
+  const shopPage = renderSchedule(shop.schedule, new Date(Date.now() + 86400000).toISOString());
+  assert.match(shopPage, /함께 보낸 매출/);
+  assert.match(shopPage, /18,450,000원/);
+  assert.match(shopPage, /근무와 함께 보낸 것: 매출/);
+  assert.ok(!shopPage.includes("명세서"));
+  const fieldPage = renderSchedule(out, new Date(Date.now() + 86400000).toISOString());
+  assert.match(fieldPage, /근무와 함께 보낸 것: 일정, 일감 수입/);
+  assert.match(fieldPage, /욕실 시공 09:00/);
 });
 
 test("rest is kept either way, and a 대근 on a day with no shift goes in v1 too", () => {
@@ -258,14 +291,14 @@ test("asset links name the app only once a certificate is set", async () => {
 
 // [SHR-01] What the app's ShareLinkTest wrote (app/build), when it ran first: the server takes the
 // app's own payloads whole and keeps what the sharer ticked.
-for (const name of ["share-payload.json", "share-payload-v2.json"]) {
+for (const name of ["share-payload.json", "share-payload-v2.json", "share-payload-field.json"]) {
   const file = new URL(`../../../app/build/${name}`, import.meta.url);
   test(`the app's ${name} passes`, { skip: !existsSync(file) && "run the app's ShareLinkTest first" }, () => {
     const body = JSON.parse(readFileSync(file, "utf8"));
     const out = validate(body);
     assert.equal(out.error, undefined, `error ${out.error}`);
     assert.equal(out.schedule.days.length, body.days.length);
-    for (const key of ["memo", "extras", "rest"]) {
+    for (const key of ["memo", "extras", "rest", "jobs"]) {
       assert.equal(out.schedule.days.filter((d) => d[key] != null).length, body.days.filter((d) => d[key] != null).length, key);
     }
     assert.deepEqual(out.schedule.pay ?? [], body.pay ?? []);

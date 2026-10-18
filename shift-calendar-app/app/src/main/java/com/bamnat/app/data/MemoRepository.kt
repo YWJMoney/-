@@ -1,5 +1,7 @@
 package com.bamnat.app.data
 
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import com.bamnat.app.data.db.AppDatabase
 import com.bamnat.app.data.db.toEntity
 import com.bamnat.app.data.db.toModel
@@ -25,9 +27,10 @@ data class DeletedMemos(val memos: List<Memo>) {
 class MemoRepository(private val db: AppDatabase, private val clock: () -> Long = System::currentTimeMillis) {
     private val dao = db.memoDao()
 
-    val memos: Flow<List<Memo>> = dao.observeAll().map { list -> list.map { it.toModel() } }
+    /** [STAB-01] Decoded off the main thread: checklists and all, for every memo. */
+    val memos: Flow<List<Memo>> = dao.observeAll().map { list -> list.map { it.toModel() } }.flowOn(Dispatchers.Default)
 
-    val trash: Flow<List<Memo>> = dao.observeTrash().map { list -> list.map { it.toModel() } }
+    val trash: Flow<List<Memo>> = dao.observeTrash().map { list -> list.map { it.toModel() } }.flowOn(Dispatchers.Default)
 
     val datesWithMemos: Flow<Set<LocalDate>> =
         dao.observeDatesWithMemos().map { days -> days.mapTo(HashSet()) { LocalDate.ofEpochDay(it) } }
@@ -62,7 +65,9 @@ class MemoRepository(private val db: AppDatabase, private val clock: () -> Long 
     }
 
     /** Copies a memo (as a new, unpinned memo) and returns the copy. */
-    suspend fun duplicate(memo: Memo): Memo = save(memo.copy(id = 0, pinned = false, deletedAtMillis = null))
+    suspend fun duplicate(memo: Memo): Memo =
+        // [SCHED-01] A copy does not ring a second time for the same plan.
+        save(memo.copy(id = 0, pinned = false, deletedAtMillis = null, reminder = null))
 
     suspend fun setPinned(memo: Memo, pinned: Boolean) = setPinned(listOf(memo.id), pinned)
 

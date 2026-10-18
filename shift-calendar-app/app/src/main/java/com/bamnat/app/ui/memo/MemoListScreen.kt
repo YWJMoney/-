@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.memo
 
+import kotlinx.coroutines.Dispatchers
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -35,7 +36,9 @@ import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
@@ -101,6 +104,9 @@ fun MemoListScreen(
     onOpenTrash: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    // [STAB-01] Read at once, on the same frame as the key: a text box one frame behind the keyboard
+    // doubles or drops half-built Korean letters and moves the cursor.
+    val query by vm.query.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
     BackHandler(enabled = state.selecting) { vm.clearSelection() }
     val today = LocalDate.now()
     val open: (Memo) -> Unit = { memo -> if (state.selecting) vm.toggleSelected(memo.id) else onOpen(memo.id) }
@@ -127,7 +133,7 @@ fun MemoListScreen(
                 Header(state, onSort = vm::setSort, onOpenTrash = onOpenTrash)
             }
             OutlinedTextField(
-                value = state.query,
+                value = query,
                 onValueChange = vm::setQuery,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                 placeholder = { Text("제목, 내용, #태그 검색") },
@@ -507,7 +513,8 @@ private fun Footer(memo: Memo, showDate: Boolean) {
     val date = memo.date?.takeIf { showDate }
     val tags = memo.tags
     val progress = memo.isChecklist && memo.itemCount > 0
-    if (date == null && tags.isEmpty() && !progress) return
+    val reminder = memo.reminder
+    if (date == null && tags.isEmpty() && !progress && reminder == null) return
     Row(
         Modifier.padding(top = 10.dp).horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
@@ -522,6 +529,17 @@ private fun Footer(memo: Memo, showDate: Boolean) {
                 Icon(Icons.Filled.Event, null, Modifier.size(12.dp))
                 Spacer(Modifier.width(3.dp))
                 Text(Fmt.dayTitle(date), style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        // [SCHED-01] A memo that is a schedule says when it rings or notifies.
+        if (reminder != null) {
+            Row(
+                Modifier.clip(MaterialTheme.shapes.small).background(pillColor).padding(horizontal = 6.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(if (reminder.ring) Icons.Filled.Alarm else Icons.Filled.EventAvailable, null, Modifier.size(12.dp))
+                Spacer(Modifier.width(3.dp))
+                Text(scheduleText(reminder.at), style = MaterialTheme.typography.labelSmall)
             }
         }
         for (tag in tags.take(3)) {
