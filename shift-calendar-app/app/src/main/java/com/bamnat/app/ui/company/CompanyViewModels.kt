@@ -232,11 +232,14 @@ class CompanyPayViewModel(private val c: AppContainer) : ViewModel() {
         }.getOrNull()
     }
 
-    fun save(wageType: WageType, base: Long?, since: YearMonth, amounts: Map<String, Long>, done: () -> Unit, failed: (String) -> Unit) {
+    fun save(
+        wageType: WageType, base: Long, rough: Boolean, dailyHours: Int, since: YearMonth, amounts: Map<String, Long>,
+        done: () -> Unit, failed: (String) -> Unit,
+    ) {
         val t = text ?: return failed("설정을 다시 골라 주세요")
         viewModelScope.launch {
             try {
-                c.companyShare.createPay(t, wageType, base, since, amounts)
+                c.companyShare.createPay(t, wageType, base, rough, dailyHours, since, amounts)
                 c.companyStore.pendingPay = null
                 c.telemetry.event("pay_setup_done", "COMPANY")
                 done()
@@ -264,6 +267,8 @@ class CompanyReportViewModel(private val c: AppContainer) : ViewModel() {
     private val _sending = MutableStateFlow<Sending>(Sending.Idle)
     val sending: StateFlow<Sending> = _sending.asStateFlow()
     val draft: StateFlow<CompanyDraft?> = c.companyStore.draft
+    /** [PAYS-02] The month a payslip was matched on this phone; only the yes or no goes out, never the figures. */
+    val payslipMonth: java.time.YearMonth? get() = c.payStore.profile.value?.verified?.month
     val applied: StateFlow<AppliedSetup?> = c.companyStore.applied
     val sent: StateFlow<List<SentReport>> = c.companyStore.sent
     private val _statuses = MutableStateFlow<Map<String, ReportStatus?>>(emptyMap())

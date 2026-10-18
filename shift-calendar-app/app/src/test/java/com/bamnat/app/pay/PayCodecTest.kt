@@ -132,4 +132,50 @@ class PayCodecTest {
         // A new setup is by law.
         assertEquals(RestDayWork.LAW, PayCodec.rulesFrom(PayCodec.rulesJson(CompanyRules())).restDayWork)
     }
+
+    /**
+     * [PAYS-01][PAYS-02][PAYS-03] 일당 and its hours, the 연봉 behind the 기본급, the payslip check, the new
+     * company rules, an allowance in place of a premium and the 확인 필요 keys all come back as saved.
+     */
+    @Test fun newPaySetupFieldsRoundTrip() {
+        val p = PayProfile(
+            occupation = Occupation.SECURITY,
+            wageType = WageType.DAILY,
+            base = ValueTimeline(listOf(DatedValue(LocalDate.of(2025, 11, 1), 120_000))),
+            items = listOf(
+                PayItem("night", "야간수당", ValueTimeline(), Cadence.PER_NIGHT_SHIFT,
+                    covers = setOf(com.bamnat.core.pay.LineKind.NIGHT)),
+                PayItem("fixed", "고정 연장수당", ValueTimeline(listOf(DatedValue(LocalDate.of(2025, 11, 1), 200_000))), Cadence.MONTHLY,
+                    fixedOvertimeMinutes = 20 * 60, covers = emptySet()),
+            ),
+            dailyHours = 6 * 60,
+            annual = com.bamnat.core.pay.AnnualPay(39_000_000, split = 13, fixedOvertimeMonthly = 200_000, regularBonusYearly = 0, otherMonthly = 100_000),
+            verified = com.bamnat.core.pay.PayslipCheck(java.time.YearMonth.of(2026, 9), 3_120_000, 3_118_500, 1_760_000_000_000),
+            estimatedFields = setOf(com.bamnat.core.pay.Unknowns.FIVE_OR_MORE, com.bamnat.core.pay.Unknowns.item("night")),
+            rules = CompanyRules(supervisoryApproved = true, holidaysUnderFive = true, breakPay = com.bamnat.core.pay.BreakPay.AS_WORK),
+        )
+        val back = PayCodec.decode(PayCodec.encode(p))
+        assertEquals(p, back)
+        // An allowance with no choice keeps none, so it takes its default again.
+        assertNull(PayCodec.decode(PayCodec.encode(p.copy(items = listOf(p.items[1].copy(covers = null))))).items[0].covers)
+    }
+
+    /** [PAYS-03] A file from 1.11 reads with the new fields at their defaults; values from a newer version do not fail it. */
+    @Test fun olderAndNewerFilesStillRead() {
+        val json = PayCodec.encode(PayProfile(Occupation.NURSE, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_500_000)))))
+        listOf("dailyHours", "annual", "verified").forEach(json::remove)
+        json.getJSONObject("rules").apply { remove("supervisory"); remove("holidaysU5"); remove("breakPay") }
+        val old = PayCodec.decode(json)
+        assertEquals(8 * 60, old.dailyHours)
+        assertNull(old.annual)
+        assertNull(old.verified)
+        assertEquals(CompanyRules(), old.rules.copy(extraNames = emptyMap()))
+        json.put("occupation", "PILOT").put("wageType", "WEEKLY").put("dailyHours", 99_999)
+        json.getJSONObject("rules").put("breakPay", "SOMETIMES")
+        val newer = PayCodec.decode(json)
+        assertEquals(Occupation.CUSTOM, newer.occupation)
+        assertEquals(WageType.MONTHLY, newer.wageType)
+        assertEquals(8 * 60, newer.dailyHours)
+        assertEquals(com.bamnat.core.pay.BreakPay.UNPAID, newer.rules.breakPay)
+    }
 }

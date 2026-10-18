@@ -287,13 +287,15 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 // [SET-01] Kept first, so the company's setup can be taken back.
                 container.importUndo.save()
                 val done = container.companyShare.apply(text, rotation, todayStep)
+                // [COMM-01] With no pay setup yet, the pay screen asks only for the user's own amounts.
+                if (done.pendingPay) container.companyStore.pendingPay = text
                 container.telemetry.event(DiagEvents.COMPANY_IMPORT)
                 SettingsMessage(buildList {
                     add("회사 설정을 넣었어요")
                     if (done.addedTypes > 0) add("근무 종류 ${done.addedTypes}개 추가")
                     done.cycleDays?.let { add("${it}일 주기 적용") }
                     if (done.rules) add("급여 규칙 적용")
-                    if (done.pendingPay) add("급여 규칙은 급여 설정을 마친 뒤 다시 불러오세요")
+                    if (done.pendingPay) add("급여 화면에서 내 금액만 넣으면 돼요")
                 }.joinToString(" · "), undo = true)
             }.getOrElse { e -> SettingsMessage((e as? BackupException)?.message ?: "회사 설정을 넣지 못했어요") }
         }

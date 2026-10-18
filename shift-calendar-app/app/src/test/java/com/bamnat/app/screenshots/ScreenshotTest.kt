@@ -333,6 +333,19 @@ class ScreenshotTest {
             if (node.config.getOrNull(SemanticsActions.OnClick)?.label == "펼치기") touch(node.boundsInWindow.center)
         }
 
+        /** Types [text] into the field labelled [label], as the keyboard would. */
+        fun typeInto(label: String, text: String) {
+            reach(label, exact = true, prefix = false, scrolls = 4, across = 0.5f)
+            scenario.onActivity { activity ->
+                val root = rootOf(topWindow(activity)) ?: return@onActivity
+                val field = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true)
+                    .firstOrNull { n -> n.config.contains(SemanticsActions.SetText) && n.words().any { it == label } }
+                    ?: error("‘$label’ 입력칸을 찾지 못했어요")
+                field.config[SemanticsActions.SetText].action?.invoke(androidx.compose.ui.text.AnnotatedString(text))
+            }
+            settle()
+        }
+
         /** Holds a finger on what shows [text], for its quick menu. */
         fun longPressText(text: String, prefix: Boolean = false) = touch(reach(text, false, prefix, 0, 0.5f).boundsInWindow.center, hold = 40)
 
@@ -779,14 +792,57 @@ class ScreenshotTest {
     @Test fun foldedPayWizard() = shoot("26_folded_pay_wizard", FOLDED, payScreen(Tier.PRO, withProfile = false))
     @Test fun foldedPayResult() = shoot("27_folded_pay_result", FOLDED, payScreen(Tier.PRO, withProfile = true))
     @Test fun unfoldedPayResult() = shoot("28_unfolded_pay_result", UNFOLDED, payScreen(Tier.PRO, withProfile = true))
+    // [PAYS-01] The allowances step ends with the bonus; the questions follow the user's own roster.
     @Test fun foldedPayWizardBonus() = shoot("45_folded_pay_wizard_bonus", FOLDED) {
-        content { com.bamnat.app.ui.pay.PayWizard(null, null, {}, startStep = 3) }
+        content { com.bamnat.app.ui.pay.PayWizard(null, null, {}, scrollToEnd = true, startAt = "items") }
     }
     @Test fun foldedPayWizardHours() = shoot("46_folded_pay_wizard_hours", FOLDED) {
-        content { com.bamnat.app.ui.pay.PayWizard(null, null, {}, startStep = 4) }
+        val snap = runBlocking { app.container.scheduleRepository.snapshot.first() }
+        content { com.bamnat.app.ui.pay.PayWizard(null, null, {}, snapshot = snap, startAt = com.bamnat.core.pay.Unknowns.MONTHLY_HOURS) }
     }
     @Test fun foldedPayWizardSchedule() = shoot("47_folded_pay_wizard_schedule", FOLDED) {
-        content { com.bamnat.app.ui.pay.PayWizard(null, null, {}, startStep = 4, scrollToEnd = true) }
+        val snap = runBlocking { app.container.scheduleRepository.snapshot.first() }
+        content { com.bamnat.app.ui.pay.PayWizard(null, null, {}, snapshot = snap, startAt = com.bamnat.core.pay.Unknowns.SCHEDULE_IS_REGULAR) }
+    }
+    @Test fun foldedPayWizardSummary() = shoot("149_folded_pay_wizard_summary", FOLDED) {
+        val c = app.container
+        val vm = PayViewModel(c)
+        val snap = runBlocking { c.scheduleRepository.snapshot.first() }
+        val month = java.time.YearMonth.now()
+        val sample = vm.sampleProfile().copy(estimatedFields = setOf(com.bamnat.core.pay.Unknowns.FIVE_OR_MORE))
+        content {
+            com.bamnat.app.ui.pay.PayWizard(sample, {}, {}, snapshot = snap, preview = { vm.preview(it, snap, month) }, startAt = "summary")
+        }
+        // The month is worked out off the main thread.
+        repeat(3) { settle() }
+    }
+    // [PAYS-01] Answers left 모르겠어요 show as a range, and the sheet says what each one moves.
+    private val unknownAnswers = setOf(
+        com.bamnat.core.pay.Unknowns.FIVE_OR_MORE, com.bamnat.core.pay.Unknowns.REST_DAY_WORK, com.bamnat.core.pay.Unknowns.MONTHLY_HOURS,
+    )
+    @Test fun foldedPayRange() = shoot("150_folded_pay_range", FOLDED,
+        payScreen(Tier.PRO, withProfile = true, adjust = { it.copy(estimatedFields = unknownAnswers) }))
+    @Test fun foldedPayUnknowns() = shoot("151_folded_pay_unknowns", FOLDED) {
+        payScreen(Tier.PRO, withProfile = true, adjust = { it.copy(estimatedFields = unknownAnswers) }).invoke(this)
+        tapText("눌러서 확인 필요")
+    }
+    // [PAYS-02] 명세서로 맞춰 보기: the form, then what the closest settings change.
+    private fun payslipMatch(): Screen.() -> Unit = payScreen(Tier.PRO, withProfile = true) { vm ->
+        val profile = vm.profile.collectAsState().value
+        val snap = vm.snapshot.collectAsState().value
+        if (profile != null && snap != null) com.bamnat.app.ui.pay.PayslipMatchDialog(vm, profile, snap, java.time.YearMonth.now(), onDismiss = {})
+    }
+    @Test fun foldedPayslipMatchForm() = shoot("152_folded_payslip_match_form", FOLDED) {
+        payslipMatch().invoke(this)
+        tapText("네, 같았어요", exact = true)
+        typeInto("지급 총액", "4300000")
+        tapText("더 넣으면 더 정확해요 (선택)", exact = true)
+    }
+    @Test fun foldedPayslipMatchResult() = shoot("153_folded_payslip_match_result", FOLDED) {
+        payslipMatch().invoke(this)
+        tapText("네, 같았어요", exact = true)
+        typeInto("지급 총액", "4300000")
+        tapText("맞춰 보기", exact = true)
     }
     @Test fun foldedShareLink() = shoot("48_folded_share_link", FOLDED) {
         val snap = runBlocking { app.container.scheduleRepository.snapshot.first() }

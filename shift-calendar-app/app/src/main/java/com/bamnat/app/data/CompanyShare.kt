@@ -11,6 +11,7 @@ import com.bamnat.core.pay.FlexPeriod
 import com.bamnat.core.pay.HolidayPayMode
 import com.bamnat.core.pay.PayItem
 import com.bamnat.core.pay.PayProfile
+import com.bamnat.core.pay.Unknowns
 import com.bamnat.core.pay.ValueTimeline
 import com.bamnat.core.schedule.PatternTimeline
 import com.bamnat.core.setup.CompanyTemplate
@@ -52,7 +53,7 @@ class CompanyShare(
         val snapshot = schedule.snapshot.first()
         val names = snapshot.shiftTypes.associate { it.id to it.name }
         val root = JSONObject()
-            .put("app", BackupManager.APP_ID).put("format", FORMAT).put("v", VERSION)
+            .put("app", BackupManager.APP_ID).put("format", FORMAT).put("v", BASE_VERSION)
             .put("company", company.trim().take(MAX_NAME))
             .put("shiftTypes", JSONArray(snapshot.shiftTypes.map(::typeJson)))
         // [EXTRA-01] Kinds of extra work; the shift a 대근 kind starts from is named, since ids differ.
@@ -93,6 +94,8 @@ class CompanyShare(
                     val shared = if (withAmounts) item else item.copy(amount = ValueTimeline())
                     PayCodec.itemJson(shared).put("types", JSONArray(item.shiftTypeIds.mapNotNull(names::get)))
                 })))
+            // [PAYS-03] 1.11 would read these rules without them and come to another month, so it is asked to update.
+            if (usesNewRules(rules, p.items)) root.put("v", VERSION)
         }
         return root.toString(1)
     }
@@ -186,7 +189,7 @@ class CompanyShare(
      */
     fun templateText(t: CompanyTemplate): String {
         val root = JSONObject()
-            .put("app", BackupManager.APP_ID).put("format", FORMAT).put("v", VERSION)
+            .put("app", BackupManager.APP_ID).put("format", FORMAT).put("v", BASE_VERSION)
             .put("company", "").put("template", t.id)
             .put("shiftTypes", JSONArray(t.shifts.map { typeJson(it.type) }))
         if (t.order.isNotEmpty()) root.put("rotation", JSONObject().put("steps", JSONArray(t.orderNames.map { it ?: JSONObject.NULL })))
@@ -300,12 +303,14 @@ class CompanyShare(
      * base pay and amounts. Amounts left out stay 0 and are marked as guesses until filled in.
      */
     suspend fun createPay(
-        text: String, wageType: com.bamnat.core.pay.WageType, base: Long?, since: java.time.YearMonth, amounts: Map<String, Long>,
+        text: String, wageType: com.bamnat.core.pay.WageType, base: Long, rough: Boolean, dailyHours: Int,
+        since: java.time.YearMonth, amounts: Map<String, Long>,
     ): PayProfile {
         val root = parse(text)
         val pay = root.optJSONObject("pay") ?: throw BackupException("급여 계산 방식이 없는 설정이에요")
         val from = since.atDay(1)
-        val start = PayProfile(com.bamnat.core.pay.Occupation.CUSTOM, wageType, ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(from, base ?: 0))))
+        val start = PayProfile(com.bamnat.core.pay.Occupation.CUSTOM, wageType, ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(from, base))),
+            dailyHours = dailyHours.coerceIn(30, 8 * 60))
         val ids = schedule.snapshot.first().shiftTypes.associate { it.name to it.id }
         // Kinds were merged by apply: 잔업·특근·대근 keep their ids, the company's own are found by name.
         val mine = settings.current.extraKinds
@@ -316,14 +321,17 @@ class CompanyShare(
             }.toMap()
         }.orEmpty()
         val merged = merge(start, JSONObject(pay.toString()), ids, kindIds)
+        // [PAYS-01] 대략 marks the 기본급 확인 필요; a blank allowance is 금액 모름 and stays out of the total
+        // until it is known, while one that kept the sender's amount is that amount, marked 추정.
         val guessed = mutableSetOf<String>()
-        if (base == null) guessed += "base"
+        if (rough) guessed += Unknowns.BASE
         val items = merged.items.map { item ->
             val amount = amounts["item:${item.name}"]
             when {
                 amount != null -> item.copy(amount = ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(from, amount))))
                 item.cadence == com.bamnat.core.pay.Cadence.BONUS && item.percentOfBase != null -> item
-                else -> item.also { guessed += it.id }
+                item.amount.entries.isNotEmpty() -> item.also { guessed += it.id }
+                else -> item.also { guessed += Unknowns.item(it.id) }
             }
         }
         val extra = merged.rules.extra.mapValues { (id, rule) ->
@@ -451,8 +459,19 @@ class CompanyShare(
 
     companion object {
         const val FORMAT = "bamnat-company"
-        /** 2: kinds of extra work by id with their times [EXTRA-01]; 1.8 asks to update instead of dropping them. */
-        const val VERSION = 2
+        /**
+         * 2: kinds of extra work by id with their times [EXTRA-01]; 1.8 asks to update instead of dropping them.
+         * 3: [PAYS-03] 감시·단속 승인, 5인 미만 회사의 공휴일, 휴게 처리 or an allowance in place of a premium. Only a
+         * file that uses one is written as 3, so 1.11 still reads every other file.
+         */
+        const val VERSION = 3
+        /** What a file without the [VERSION] 3 rules is written as. */
+        const val BASE_VERSION = 2
+
+        /** [PAYS-03] Whether [rules] or [items] use something 1.11 cannot read. */
+        fun usesNewRules(rules: com.bamnat.core.pay.CompanyRules, items: List<com.bamnat.core.pay.PayItem>): Boolean =
+            rules.supervisoryApproved || rules.holidaysUnderFive || rules.breakPay != com.bamnat.core.pay.BreakPay.UNPAID ||
+                items.any { it.coveredKinds != it.defaultCovers }
         const val MIME_TYPE = "application/json"
         private const val MAX_NAME = 40
         const val MAX_TEAM = 12
