@@ -1252,7 +1252,7 @@ async function board(env, url) {
   const offset = Math.min(600, Math.max(0, Number.parseInt(url.searchParams.get("from") ?? "0", 10) || 0));
   const size = 20;
   const { adoptPoints } = await settings(env);
-  // A company's name or another name for it, written any way 회사 찾기 accepts; one letter finds nothing.
+  // A company's name or another name for it, written any way 회사 찾기 accepts; one letter narrows nothing.
   const q = normName(url.searchParams.get("q")).slice(0, 40);
   const like = q.length < 2 ? "" : `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const named = `(?3 = '' OR c.norm LIKE ?3 ESCAPE '\\' OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.norm LIKE ?3 ESCAPE '\\'))`;
