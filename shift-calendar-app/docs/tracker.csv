@@ -204,3 +204,6 @@ ADMIN-03,"개발자 앱을 최상의 엔터프라이즈급 디자인과 편의�
 DAY-04,"하루 화면(펼친 화면 오른쪽) 묶음 순서를 설정에서 한정적으로만 바꿈 → 사용자가 순서를 직접 바꾸고, 메모 중심 보기는 ‘날짜 밑 메모’로",확장 M12,완료,,"DayGroupOrder.kt(위·아래 버튼, TalkBack 동작, 기본 순서), 하루 화면 ‘순서 바꾸기’와 설정 > 달력 ‘하루 화면 순서’, 1.12 메모 중심은 메모 맨 위 순서와 날짜 밑 메모로 옮김, DayGroupOrderTest·CalendarSettingsTest, 스크린샷 161_folded_day_group_order"
 CAL-02,"한 주가 월~일로 시작함 → 기본을 일~토로, 1.12까지 저장된 월요일은 한 번 일요일로 바꾸고 설정에서 월요일 다시 고를 수 있게",확장 M12,완료,,"SettingsRepository week_start_v2(기본 일요일), 설정 > 달력 ‘한 주의 시작’ 일요일 먼저, CalendarSettingsTest"
 CAL-03,"일반 폰에서 날짜를 누르면 화면이 좁음 → 누를 때 동작을 고르기: 미리보기 먼저(기본, 지금 방식)·바로 크게(창)·그 주만 보기(월~일 한 주와 아래 하루 화면)",확장 M12,완료,,"PhoneDayView, CalendarScreen weekPart·WeekStrip(옆으로 밀면 주 이동, 뒤로 가기·달 전체 보기로 달 복귀), 설정 > 달력 ‘날짜를 누르면’, 스크린샷 160_folded_week_only"
+PAYS-04,"급여 입력이 어렵다는 피드백(2026-10-18) → 명세서 사진이나 글 한 번으로 급여 설정을 채우고, 정확도는 그대로 두되 사용자가 어렵게 느끼지 않게",확장 M13,진행 중,,
+PAYS-05,"명세서 사진·상세 내역을 주면 자동으로 급여 기준을 맞추기 → 기기 안 글자 인식(ML Kit)과 명세서 읽기(PayslipReader)로 맞춰 보기 칸을 채움, 사진과 금액은 휴대폰 밖으로 안 나감",확장 M13,진행 중,,PayslipReader + PayRulesTest P1~P4
+PAYS-06,정해진 방식이 아니어도 규칙만 주면 그 규칙대로 계산 → 규칙 문장 읽기(RuleText)와 범용 회사 규칙(CustomRule: 요일·시간대·근무·초과 시간 × 시간당·통상시급 %·기본급 %·1회 금액),확장 M13,진행 중,,CustomRule·RuleText + PayRulesTest R1~R5·T1~T5

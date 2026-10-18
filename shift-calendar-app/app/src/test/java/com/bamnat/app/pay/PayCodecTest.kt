@@ -178,4 +178,25 @@ class PayCodecTest {
         assertEquals(8 * 60, newer.dailyHours)
         assertEquals(com.bamnat.core.pay.BreakPay.UNPAID, newer.rules.breakPay)
     }
+
+    /** [PAYS-06] The user's own rules survive a round trip; one of a kind this version does not know is dropped. */
+    @Test fun customRulesRoundTrip() {
+        val rules = listOf(
+            com.bamnat.core.pay.CustomRule("sat", "토요일 가산", com.bamnat.core.pay.RuleWhen(daysOfWeek = setOf(DayOfWeek.SATURDAY)),
+                com.bamnat.core.pay.RulePay.OfHourly(0.5), source = "토요일 근무는 50% 더"),
+            com.bamnat.core.pay.CustomRule("late", "심야", com.bamnat.core.pay.RuleWhen(
+                dayKind = com.bamnat.core.pay.RuleDayKind.OFF_DAY, shiftTypeIds = setOf(3L), pieces = com.bamnat.core.pay.RulePieces.EXTRA,
+                extraKinds = setOf(ExtraKind.COVER_ID), from = LocalTime.of(19, 0), to = LocalTime.of(23, 0), overMinutes = 60, minMinutes = 120,
+            ), com.bamnat.core.pay.RulePay.OfBase(0.1, 480), on = false),
+            com.bamnat.core.pay.CustomRule("h", "시간당", com.bamnat.core.pay.RuleWhen(), com.bamnat.core.pay.RulePay.PerHour(2_000)),
+            com.bamnat.core.pay.CustomRule("t", "1회", com.bamnat.core.pay.RuleWhen(), com.bamnat.core.pay.RulePay.PerTime(20_000)),
+        )
+        val p = PayProfile(Occupation.CUSTOM, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_500_000))), customRules = rules)
+        val json = PayCodec.encode(p)
+        assertEquals(p, PayCodec.decode(json))
+        json.getJSONArray("customRules").getJSONObject(0).getJSONObject("pay").put("type", "perMoon")
+        assertEquals(rules.drop(1), PayCodec.decode(json).customRules)
+        // No rules, no key: files without them stay as they were.
+        assertEquals(false, PayCodec.encode(p.copy(customRules = emptyList())).has("customRules"))
+    }
 }
