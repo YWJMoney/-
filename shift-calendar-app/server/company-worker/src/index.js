@@ -8,14 +8,24 @@
 // DELETE /api/reports/:id         header X-Device: the sender takes their report back
 // DELETE /api/mine                header X-Device: everything this install sent, gone
 // POST   /api/votes               맞았어요 / 달라요 on a setup [COMM-03]
-// GET    /admin/                  the developer app, installable on a phone [ADMIN-01]
-// *      /api/admin/*             behind the admin password (secret ADMIN_PASSWORD)
+// GET    /api/board?tab=           every company's rule sets: ones still being voted on, or adopted [COMM-07]
+// GET    /api/companies/:id/setups/:setup/posts   the talk on one rule set [COMM-06]
+// POST   /api/posts               a post in that talk; DELETE /api/posts/:id takes it back (header X-Device)
+// POST   /api/posts/:id/flag      신고: three people hide a post until the developer looks
+// *      /api/inquiries...        header X-Device: questions and problem reports from the app [ADMIN-02]
+// GET    /admin/                  the developer app, installable on a phone [ADMIN-01][ADMIN-03]
+// GET    /admin/join#<invite>     an invited admin installs the app and makes an account [ADMIN-04]
+// *      /api/admin/*             behind a sign-in: the owner's password (secret ADMIN_PASSWORD), or an
+//                                 admin account the owner invited by email and approved, with only the
+//                                 permissions the owner gave it
 //
 // A report carries no pay amounts, names or contacts; one that looks like it does is refused, not
 // cleaned. No IP address is stored: limits and "the same network within an hour" use hashes salted
 // with the secret RATE_SALT, cleared within two hours; what stays is a random mark shared by sends
 // from one network within the hour. The app's install id is kept only as a hash, so a sender counts
 // once and can take a report back.
+
+import { adminFile } from "./admin-app.js";
 
 const LIMITS = {
   reportBytes: 32 * 1024,
@@ -27,13 +37,28 @@ const LIMITS = {
   note: 500,
   // A way of paying the app cannot set yet needs room to explain it and give an example.
   ask: 1500,
+  // [COMM-06] A post in the talk on a rule set.
+  post: 500,
+  postsPerDay: 20,
+  postsPerNetworkDay: 60,
+  flagsToHide: 3,
+  muteDays: 30,
+  hiddenPostDays: 90,
   loginFailures: 5,
   lockMs: 60 * 60 * 1000,
   sessionMs: 7 * 24 * 60 * 60 * 1000,
+  // [ADMIN-04] An invite link works for a week; a mailed code for 15 minutes and five tries.
+  inviteMs: 7 * 24 * 60 * 60 * 1000,
+  codeMs: 15 * 60 * 1000,
+  codeTries: 5,
+  joinsPerHour: 20,
+  email: 120,
+  adminName: 30,
 };
 
 /** Until changed in the developer app. */
-const DEFAULTS = { adoptPoints: 3, rewardMonths: 3 };
+// [COMM-07] adoptAgree: the share of 맞았어요 among everyone who voted that a rule set needs to be adopted on its own.
+const DEFAULTS = { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75 };
 
 /** The newest company settings file this server reads (CompanyShare.VERSION in the app). */
 // [PAYS-03] 3 carries 감시·단속 승인, 5인 미만 공휴일, 유급 휴게 and allowances paid instead of a premium.
@@ -60,6 +85,30 @@ const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 const ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
 
+/**
+ * [ADMIN-04] What an admin account can be given, area by area: nothing, a look, or changes too. The owner
+ * (signed in with ADMIN_PASSWORD) has everything and alone manages admins. Activity can only be looked at.
+ */
+const AREAS = {
+  review: "검토",
+  inquiries: "문의",
+  companies: "회사·규칙",
+  rewards: "보상",
+  settings: "채택 설정",
+  // [COMM-06] The talk on rule sets: what people flagged, hiding, showing again and muting a writer.
+  community: "토론",
+  audit: "활동 기록",
+};
+const LEVELS = ["none", "view", "edit"];
+const VIEW_ONLY = ["audit"];
+const PRESETS = {
+  manager: { name: "운영 관리자", perms: { review: "edit", inquiries: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit", audit: "view" } },
+  reviewer: { name: "검토 담당", perms: { review: "edit", inquiries: "none", companies: "view", rewards: "none", settings: "none", community: "edit", audit: "none" } },
+  support: { name: "문의 담당", perms: { review: "view", inquiries: "edit", companies: "view", rewards: "none", settings: "none", community: "view", audit: "none" } },
+  viewer: { name: "보기 전용", perms: { review: "view", inquiries: "view", companies: "view", rewards: "view", settings: "view", community: "view", audit: "view" } },
+};
+const OWNER = { id: "owner", name: "최고 관리자", email: "", owner: true, perms: Object.fromEntries(Object.keys(AREAS).map((a) => [a, VIEW_ONLY.includes(a) ? "view" : "edit"])) };
+
 export default {
   async fetch(request, env) {
     try {
@@ -70,7 +119,36 @@ export default {
       return json({ error: "server" }, 500);
     }
   },
+  // Hourly (wrangler.toml [triggers], or the dashboard's Cron Triggers): what is promised to go, goes on
+  // time even when nobody sends anything.
+  async scheduled(event, env, ctx) {
+    if (!env.DB) return;
+    ctx.waitUntil(ready(env).then(() => prune(env, Date.now())));
+  },
 };
+
+/**
+ * Deletes what the server only keeps for a while: network hashes after two hours, spent limits, sign-ins,
+ * invites and codes, questions with nothing new for 180 days, hidden posts after 90 days, ended 쓰기 막기
+ * and the admin log after a year.
+ */
+export async function prune(env, now) {
+  await env.DB.batch([
+    stmt(env, "UPDATE reports SET net = NULL WHERE net IS NOT NULL AND created_at < ?", now - 2 * HOUR),
+    stmt(env, "UPDATE votes SET net = NULL WHERE net IS NOT NULL AND at < ?", now - 2 * HOUR),
+    stmt(env, "DELETE FROM counters WHERE expires < ?", now),
+    stmt(env, "DELETE FROM admin_sessions WHERE expires < ?", now),
+    stmt(env, "DELETE FROM invites WHERE used_at IS NULL AND expires < ?", now),
+    stmt(env, "DELETE FROM codes WHERE expires < ?", now),
+    stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
+    stmt(env, "DELETE FROM inquiries WHERE updated_at < ?", now - INQUIRY.keepMs),
+    // [COMM-06] A hidden post nobody restored is gone after 90 days, and a 30-day 쓰기 막기 when it ends.
+    stmt(env, "DELETE FROM post_flags WHERE post_id IN (SELECT id FROM posts WHERE status = 'hidden' AND hidden_at < ?)", now - LIMITS.hiddenPostDays * DAY),
+    stmt(env, "DELETE FROM posts WHERE status = 'hidden' AND hidden_at < ?", now - LIMITS.hiddenPostDays * DAY),
+    stmt(env, "DELETE FROM muted WHERE until < ?", now),
+    stmt(env, "DELETE FROM audit WHERE at < ?", now - 365 * DAY),
+  ]);
+}
 
 async function route(request, env) {
   const url = new URL(request.url);
@@ -95,6 +173,14 @@ async function route(request, env) {
   if (m && method === "DELETE") return takeBack(request, env, m[1]);
   if (path === "/api/mine" && method === "DELETE") return forgetMine(request, env);
   if (path === "/api/votes" && method === "POST") return vote(request, env);
+  if (path === "/api/board" && method === "GET") return json(await board(env, url));
+  m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})\/setups\/([0-9a-f]{16})\/posts$/);
+  if (m && method === "GET") return talk(request, env, m[1], m[2]);
+  if (path === "/api/posts" && method === "POST") return post(request, env);
+  m = path.match(/^\/api\/posts\/(p[A-Za-z0-9]{15})(\/flag)?$/);
+  if (m && method === "DELETE" && !m[2]) return takePostBack(request, env, m[1]);
+  if (m && method === "POST" && m[2]) return flag(request, env, m[1]);
+  if (path === "/api/inquiries" || path.startsWith("/api/inquiries/")) return inquiries(request, env, path);
   return json({ error: "not_found" }, 404);
 }
 
@@ -125,9 +211,44 @@ const SCHEMA = [
     created_at INTEGER NOT NULL, paid_at INTEGER)`,
   "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS counters (key TEXT PRIMARY KEY, count INTEGER NOT NULL, expires INTEGER NOT NULL)",
-  "CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, expires INTEGER NOT NULL)",
   `CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, action TEXT NOT NULL,
     target TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '')`,
+  // [ADMIN-04] Admin accounts, the emails the owner allowed, and who is signed in (the owner is "owner").
+  `CREATE TABLE IF NOT EXISTS admins (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL, pw TEXT NOT NULL,
+    perms TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, approved_at INTEGER, last_login INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS invites (email TEXT PRIMARY KEY, perms TEXT NOT NULL, note TEXT NOT NULL DEFAULT '',
+    token TEXT NOT NULL UNIQUE, expires INTEGER NOT NULL, created_at INTEGER NOT NULL, used_at INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS admin_sessions (token TEXT PRIMARY KEY, admin TEXT NOT NULL, expires INTEGER NOT NULL,
+    created_at INTEGER NOT NULL)`,
+  "CREATE INDEX IF NOT EXISTS admin_sessions_admin ON admin_sessions (admin)",
+  `CREATE TABLE IF NOT EXISTS codes (email TEXT PRIMARY KEY, code TEXT NOT NULL, expires INTEGER NOT NULL,
+    tries INTEGER NOT NULL DEFAULT 0)`,
+  // [COMM-06] The talk on a rule set. A writer is kept as the install's hash only, shown to others as 참여자 N
+  // of that one talk, so posts in two talks cannot be tied together by anyone reading them.
+  `CREATE TABLE IF NOT EXISTS posts (id TEXT PRIMARY KEY, company_id TEXT NOT NULL, grp TEXT NOT NULL, device TEXT NOT NULL,
+    body TEXT NOT NULL, status TEXT NOT NULL, flags INTEGER NOT NULL DEFAULT 0, kept INTEGER NOT NULL DEFAULT 0,
+    hide_reason TEXT, created_at INTEGER NOT NULL, hidden_at INTEGER)`,
+  "CREATE INDEX IF NOT EXISTS posts_talk ON posts (company_id, grp, created_at)",
+  "CREATE INDEX IF NOT EXISTS posts_status ON posts (status, flags)",
+  "CREATE INDEX IF NOT EXISTS posts_device ON posts (device)",
+  `CREATE TABLE IF NOT EXISTS post_flags (post_id TEXT NOT NULL, device TEXT NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL,
+    PRIMARY KEY (post_id, device))`,
+  "CREATE TABLE IF NOT EXISTS muted (device TEXT PRIMARY KEY, until INTEGER NOT NULL, reason TEXT NOT NULL)",
+  // [ADMIN-02] Questions from the app and the developer's answers.
+  `CREATE TABLE IF NOT EXISTS inquiries (id TEXT PRIMARY KEY, device TEXT NOT NULL, kind TEXT NOT NULL, info TEXT NOT NULL,
+    status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+  "CREATE INDEX IF NOT EXISTS inquiries_device ON inquiries (device, updated_at)",
+  "CREATE INDEX IF NOT EXISTS inquiries_status ON inquiries (status, updated_at)",
+  `CREATE TABLE IF NOT EXISTS inquiry_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, inquiry_id TEXT NOT NULL,
+    sender TEXT NOT NULL, text TEXT NOT NULL, by TEXT, at INTEGER NOT NULL)`,
+  "CREATE INDEX IF NOT EXISTS inquiry_messages_inquiry ON inquiry_messages (inquiry_id, id)",
+  // Sign-ins before admin accounts kept only a token; they end once, and the owner signs in again.
+  "DROP TABLE IF EXISTS sessions",
+];
+
+/** Columns added after a server was first deployed; adding one that is already there is skipped. */
+const COLUMNS = [
+  "ALTER TABLE audit ADD COLUMN actor TEXT NOT NULL DEFAULT ''",
 ];
 
 const schemas = new WeakMap();
@@ -136,7 +257,15 @@ const schemas = new WeakMap();
 function ready(env) {
   let done = schemas.get(env.DB);
   if (!done) {
-    done = env.DB.batch(SCHEMA.map((sql) => env.DB.prepare(sql))).catch((e) => {
+    done = env.DB.batch(SCHEMA.map((sql) => env.DB.prepare(sql))).then(async () => {
+      for (const sql of COLUMNS) {
+        try {
+          await env.DB.prepare(sql).run();
+        } catch (e) {
+          if (!/duplicate column/i.test(String(e?.message ?? e))) throw e;
+        }
+      }
+    }).catch((e) => {
       schemas.delete(env.DB);
       throw e;
     });
@@ -151,12 +280,13 @@ const all = async (env, sql, ...params) => (await stmt(env, sql, ...params).all(
 const run = (env, sql, ...params) => stmt(env, sql, ...params).run();
 
 async function settings(env) {
-  const rows = await all(env, "SELECT key, value FROM settings WHERE key IN ('adopt_points', 'reward_months')");
+  const rows = await all(env, "SELECT key, value FROM settings WHERE key IN ('adopt_points', 'reward_months', 'adopt_agree')");
   const read = (key, fallback) => {
     const n = Number(rows.find((r) => r.key === key)?.value);
     return Number.isInteger(n) ? n : fallback;
   };
-  return { adoptPoints: read("adopt_points", DEFAULTS.adoptPoints), rewardMonths: read("reward_months", DEFAULTS.rewardMonths) };
+  return { adoptPoints: read("adopt_points", DEFAULTS.adoptPoints), rewardMonths: read("reward_months", DEFAULTS.rewardMonths),
+    adoptAgree: read("adopt_agree", DEFAULTS.adoptAgree) };
 }
 
 async function salt(env) {
@@ -195,9 +325,16 @@ const deviceId = (v) => (typeof v === "string" && /^[A-Za-z0-9-]{16,64}$/.test(v
 /** An install as the server keeps it: a hash of the app's random id, never the id itself. */
 const deviceHash = async (id) => (await sha256(`device|${id}`)).slice(0, 40);
 
+/** [ADMIN-04] Who did it comes from the request: admin() puts the signed-in admin on env.actor. */
 async function audit(env, now, action, target, detail = "") {
+  const who = env.actor ? (env.actor.owner ? OWNER.name : `${env.actor.name} <${env.actor.email}>`) : "";
   await env.DB.batch([
-    stmt(env, "INSERT INTO audit (at, action, target, detail) VALUES (?, ?, ?, ?)", now, action, target, String(detail).slice(0, 300)),
+    stmt(env, "INSERT INTO audit (at, action, target, detail, actor) VALUES (?, ?, ?, ?, ?)", now, action, target,
+      String(detail).slice(0, 300), who),
+    // [COMM-06] A hidden post nobody restored is gone after 90 days, and a 30-day 쓰기 막기 when it ends.
+    stmt(env, "DELETE FROM post_flags WHERE post_id IN (SELECT id FROM posts WHERE status = 'hidden' AND hidden_at < ?)", now - LIMITS.hiddenPostDays * DAY),
+    stmt(env, "DELETE FROM posts WHERE status = 'hidden' AND hidden_at < ?", now - LIMITS.hiddenPostDays * DAY),
+    stmt(env, "DELETE FROM muted WHERE until < ?", now),
     stmt(env, "DELETE FROM audit WHERE at < ?", now - 365 * DAY),
   ]);
 }
@@ -744,8 +881,8 @@ function diffLines(before, after) {
 
 /** What the app tells someone before they send: the points a setup needs and the reward once it is adopted. */
 async function terms(env) {
-  const { adoptPoints, rewardMonths } = await settings(env);
-  return { threshold: adoptPoints, rewardMonths };
+  const { adoptPoints, rewardMonths, adoptAgree } = await settings(env);
+  return { threshold: adoptPoints, rewardMonths, agree: adoptAgree };
 }
 
 async function search(env, url) {
@@ -814,7 +951,19 @@ const shared = (text, name) => ({ ...JSON.parse(text), company: name });
 
 async function state(env, companyId, grp, threshold, adopted) {
   const s = await score(env, companyId, grp);
-  return { id: grp, status: adopted ? "adopted" : "pending", points: s.points, persons: s.persons, bad: s.bad, threshold };
+  const posts = await one(env, "SELECT COUNT(*) AS n FROM posts WHERE company_id = ? AND grp = ? AND status = 'shown'", companyId, grp);
+  return { id: grp, status: adopted ? "adopted" : "pending", points: s.points, persons: s.persons, bad: s.bad, threshold,
+    ...trust(s, threshold), posts: posts.n };
+}
+
+/**
+ * [COMM-07] How far people trust a rule set, 0 to 100: the share who said 맞았어요 among all who voted,
+ * times how much of the adoption points it has. [agree] is that share alone, as a percent.
+ */
+export function trust(s, threshold) {
+  const voters = s.persons + s.bad;
+  const agree = voters ? s.persons / voters : 0;
+  return { trust: Math.round(100 * agree * Math.min(1, s.points / threshold)), agree: Math.round(100 * agree) };
 }
 
 async function report(request, env) {
@@ -935,9 +1084,11 @@ const activeRule = (env, companyId, deptNorm) => one(env, `SELECT * FROM rules W
 
 /** [COMM-03] Adopts a setup once different people agree on it, unless it is the developer's call. */
 async function settle(env, companyId, grp, now) {
-  const { adoptPoints } = await settings(env);
+  const { adoptPoints, adoptAgree } = await settings(env);
   const s = await score(env, companyId, grp);
   if (s.persons < 2 || s.points < adoptPoints || s.networks < 2) return;
+  // [COMM-07] Too many 달라요 for the 맞았어요: the developer decides, however many points it has.
+  if (s.persons * 100 < adoptAgree * (s.persons + s.bad)) return;
   const rep = await representative(env, companyId, grp);
   if (!rep || (await blocker(env, companyId, grp, rep.dept_norm))) return;
   await adopt(env, companyId, grp, "auto", now);
@@ -1028,13 +1179,19 @@ async function forgetMine(request, env) {
   const device = deviceId(request.headers.get("x-device"));
   if (!device) return json({ error: "device", field: "device" }, 400);
   const dev = await deviceHash(device);
-  const [, reports, votes] = await env.DB.batch([
+  const [, reports, votes, , posts, , , , asked] = await env.DB.batch([
     stmt(env, "DELETE FROM rewards WHERE device = ?", dev),
     stmt(env, "DELETE FROM reports WHERE device = ?", dev),
     stmt(env, "DELETE FROM votes WHERE device = ?", dev),
-    stmt(env, "DELETE FROM counters WHERE key = ?", `report|${dev}`),
+    stmt(env, "DELETE FROM counters WHERE key IN (?, ?)", `report|${dev}`, `post|${dev}`),
+    // [COMM-06] Their posts and their 신고 go too; a post they flagged counts one fewer.
+    stmt(env, "DELETE FROM posts WHERE device = ?", dev),
+    stmt(env, "UPDATE posts SET flags = flags - 1 WHERE id IN (SELECT post_id FROM post_flags WHERE device = ?)", dev),
+    stmt(env, "DELETE FROM post_flags WHERE device = ? OR post_id NOT IN (SELECT id FROM posts)", dev),
+    stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE device = ?)", dev),
+    stmt(env, "DELETE FROM inquiries WHERE device = ?", dev),
   ]);
-  return json({ reports: reports.meta.changes, votes: votes.meta.changes });
+  return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes });
 }
 
 async function vote(request, env) {
@@ -1066,6 +1223,401 @@ async function vote(request, env) {
   return json(await state(env, c.id, grp, (await settings(env)).adoptPoints, Boolean(adopted)));
 }
 
+// ---- rule sets everyone can see, vote on and talk about [COMM-06][COMM-07] ----
+
+/** Why a post is flagged, as the app offers it. */
+const FLAGS = {
+  abuse: "욕설·비방",
+  personal: "개인 정보가 있어요",
+  spam: "광고·도배",
+  false: "일부러 틀린 정보",
+};
+
+/** Why the developer hid a post, as its writer's app shows it. */
+const HIDE_REASONS = {
+  abuse: "욕설이나 비방이 있어요",
+  personal: "개인 정보가 있어요",
+  spam: "광고나 도배예요",
+  offtopic: "이 규칙과 상관없는 글이에요",
+  flags: "신고가 모여 개발자가 확인하고 있어요",
+};
+
+/**
+ * [COMM-07] Every company's rule sets in one list: ones people are still voting on (newest activity
+ * first), or adopted ones anyone can use (newest first). What the developer turned down or took down,
+ * and hidden companies, are not here.
+ */
+async function board(env, url) {
+  const tab = url.searchParams.get("tab") === "adopted" ? "adopted" : "voting";
+  const offset = Math.min(600, Math.max(0, Number.parseInt(url.searchParams.get("from") ?? "0", 10) || 0));
+  const size = 20;
+  const { adoptPoints } = await settings(env);
+  const rows = tab === "adopted"
+    ? await all(env, `SELECT r.company_id, r.grp, r.dept, r.setup, r.version, r.adopted_at AS at, c.name
+        FROM rules r JOIN companies c ON c.id = r.company_id
+        WHERE r.withdrawn = 0 AND r.superseded = 0 AND c.hidden = 0 AND c.merged_into IS NULL
+        ORDER BY r.adopted_at DESC LIMIT ? OFFSET ?`, size + 1, offset)
+    : await all(env, `SELECT p.company_id, p.grp, c.name,
+          MAX(MAX(p.created_at),
+            COALESCE((SELECT MAX(v.at) FROM votes v WHERE v.company_id = p.company_id AND v.grp = p.grp), 0),
+            COALESCE((SELECT MAX(t.created_at) FROM posts t WHERE t.company_id = p.company_id AND t.grp = p.grp AND t.status = 'shown'), 0)) AS at
+        FROM reports p JOIN companies c ON c.id = p.company_id
+        WHERE p.status = 'pending' AND c.hidden = 0 AND c.merged_into IS NULL
+          AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = p.company_id AND x.grp = p.grp AND x.status = 'rejected')
+          AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = p.company_id AND w.grp = p.grp AND (w.withdrawn = 1 OR w.superseded = 0))
+        GROUP BY p.company_id, p.grp ORDER BY at DESC LIMIT ? OFFSET ?`, size + 1, offset);
+  const items = [];
+  for (const r of rows.slice(0, size)) {
+    const rep = tab === "adopted" ? r : await representative(env, r.company_id, r.grp);
+    if (!rep) continue;
+    const s = await state(env, r.company_id, r.grp, adoptPoints, tab === "adopted");
+    if (s.persons === 0 && tab === "voting") continue;
+    const lines = describe(JSON.parse(rep.setup));
+    items.push({
+      company: { id: r.company_id, name: r.name },
+      dept: rep.dept,
+      ...s,
+      version: r.version ?? null,
+      at: iso(r.at),
+      gist: lines.find(([label]) => label === "근무")?.[1] ?? "",
+      cycle: lines.find(([label]) => label.startsWith("순서"))?.[0] ?? "",
+      pay: lines.some(([label]) => label === "사업장"),
+    });
+  }
+  return { tab, items, next: rows.length > size ? offset + size : null, threshold: adoptPoints };
+}
+
+/** A rule set people may talk about: adopted and in use, or still gathering votes. */
+async function talkable(env, companyId, grp) {
+  const c = await follow(env, companyId);
+  if (!c || c.hidden) return null;
+  const live = await one(env, `SELECT
+      EXISTS (SELECT 1 FROM rules WHERE company_id = ?1 AND grp = ?2 AND withdrawn = 0 AND superseded = 0) AS rule,
+      EXISTS (SELECT 1 FROM reports WHERE company_id = ?1 AND grp = ?2 AND status = 'pending') AS pending`, c.id, grp);
+  return live.rule || live.pending ? c : null;
+}
+
+/**
+ * [COMM-06] The talk on one rule set, oldest first. Each writer is 참여자 N of this talk only, with what
+ * they said about the rule set: 올린 분 (they sent it), 맞았어요 or 달라요. With X-Device, the caller's own
+ * posts are marked, and their own hidden ones show with why.
+ */
+async function talk(request, env, companyId, grp) {
+  const c = await talkable(env, companyId, grp);
+  if (!c) return json({ error: "not_found" }, 404);
+  const device = deviceId(request.headers.get("x-device"));
+  const me = device ? await deviceHash(device) : null;
+  const rows = await all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, id LIMIT 500", c.id, grp);
+  const senders = new Set((await all(env, `SELECT device FROM reports WHERE company_id = ? AND grp = ? AND status IN ('pending', 'adopted')`,
+    c.id, grp)).map((r) => r.device));
+  const votes = new Map((await all(env, "SELECT device, ok, verified FROM votes WHERE company_id = ? AND grp = ?", c.id, grp))
+    .map((v) => [v.device, v]));
+  const verified = new Set((await all(env, "SELECT device FROM reports WHERE company_id = ? AND grp = ? AND verified = 1", c.id, grp))
+    .map((r) => r.device));
+  const numbers = new Map();
+  const posts = [];
+  for (const p of rows) {
+    if (!numbers.has(p.device)) numbers.set(p.device, numbers.size + 1);
+    const mine = p.device === me;
+    if (p.status !== "shown" && !mine) continue;
+    const v = votes.get(p.device);
+    posts.push({
+      id: p.id,
+      who: numbers.get(p.device),
+      stance: senders.has(p.device) ? "sender" : v ? (v.ok ? "ok" : "bad") : null,
+      verified: verified.has(p.device) || v?.verified === 1,
+      body: p.body,
+      at: iso(p.created_at),
+      mine,
+      ...(p.status === "shown" ? {} : { hidden: { code: p.hide_reason ?? "flags", text: HIDE_REASONS[p.hide_reason ?? "flags"] ?? "" } }),
+    });
+  }
+  const muted = me ? await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", me, Date.now()) : null;
+  return json({ company: { id: c.id, name: c.name }, setup: grp, posts, ...(muted ? { mutedUntil: iso(muted.until) } : {}) });
+}
+
+/** [COMM-06] A post in the talk on a rule set: no email, phone number or amount, like everything else sent here. */
+async function post(request, env) {
+  const body = await readJson(request, 4096);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  if (typeof body.company !== "string" || !/^[A-Za-z0-9]{12}$/.test(body.company)) refuse("company", "company");
+  if (typeof body.setup !== "string" || !/^[0-9a-f]{16}$/.test(body.setup)) refuse("setup", "setup");
+  const text = str(body.body, LIMITS.post, "body", { empty: false, lines: true, code: "body" }).trim();
+  if (text.length < 2) refuse("body", "body");
+  const why = personal(text);
+  if (why) refuse(why, "body");
+  const now = Date.now();
+  const dev = await deviceHash(device);
+  const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
+  if (muted) return json({ error: "muted", until: iso(muted.until) }, 403);
+  const c = await talkable(env, body.company, body.setup);
+  if (!c) return json({ error: "not_found" }, 404);
+  const net = await network(request, env, now);
+  if (!(await allow(env, `post|${dev}`, LIMITS.postsPerDay, DAY, now)) ||
+      !(await allow(env, `post|${net.day}`, LIMITS.postsPerNetworkDay, DAY, now))) {
+    return json({ error: "rate_limited" }, 429);
+  }
+  const id = `p${randomId(15)}`;
+  await run(env, `INSERT INTO posts (id, company_id, grp, device, body, status, flags, kept, hide_reason, created_at, hidden_at)
+    VALUES (?, ?, ?, ?, ?, 'shown', 0, 0, NULL, ?, NULL)`, id, c.id, body.setup, dev, text, now);
+  return json({ id, at: iso(now) }, 201);
+}
+
+async function takePostBack(request, env, id) {
+  const device = deviceId(request.headers.get("x-device"));
+  const p = await one(env, "SELECT device FROM posts WHERE id = ?", id);
+  if (!p) return json({ error: "not_found" }, 404);
+  if (!device || (await deviceHash(device)) !== p.device) return json({ error: "forbidden" }, 403);
+  await env.DB.batch([stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id), stmt(env, "DELETE FROM posts WHERE id = ?", id)]);
+  return new Response(null, { status: 204 });
+}
+
+/**
+ * [COMM-06] 신고. Each install once per post; enough of them hide it until the developer looks, unless
+ * the developer already looked and kept it.
+ */
+async function flag(request, env, id) {
+  const body = await readJson(request, 1024);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  const reason = Object.hasOwn(FLAGS, body.reason) ? body.reason : "abuse";
+  const now = Date.now();
+  const net = await network(request, env, now);
+  if (!(await allow(env, `vote|${net.now}`, LIMITS.votesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
+  const dev = await deviceHash(device);
+  const p = await one(env, "SELECT * FROM posts WHERE id = ?", id);
+  if (!p || p.status !== "shown") return json({ error: "not_found" }, 404);
+  if (p.device === dev) return json({ error: "own" }, 400);
+  const added = await run(env, "INSERT OR IGNORE INTO post_flags (post_id, device, reason, at) VALUES (?, ?, ?, ?)", id, dev, reason, now);
+  if (added.meta.changes) {
+    await run(env, `UPDATE posts SET flags = flags + 1,
+        status = CASE WHEN kept = 0 AND flags + 1 >= ?2 THEN 'hidden' ELSE status END,
+        hide_reason = CASE WHEN kept = 0 AND flags + 1 >= ?2 THEN 'flags' ELSE hide_reason END,
+        hidden_at = CASE WHEN kept = 0 AND flags + 1 >= ?2 THEN ?3 ELSE hidden_at END
+      WHERE id = ?1`, id, LIMITS.flagsToHide, now);
+    const after = await one(env, "SELECT status FROM posts WHERE id = ?", id);
+    if (after.status === "hidden") await audit(env, now, "post_autohide", id, `${p.company_id}/${p.grp}`);
+  }
+  return json({ ok: true });
+}
+
+// ---- questions from the app [ADMIN-02] ----
+//
+// 설정 > 문의하기 sends here instead of opening a mail app, and the developer answers in /admin; the
+// answer shows in the app. Like a report it carries no amount, contact or name: those are refused, not
+// cleaned. What goes with it (app version, phone model, Android, the alarm check if the user ticks it)
+// is shown in the app before sending. Only the install's hash is kept, so only that phone sees the
+// thread, and a thread with nothing new for 180 days is deleted.
+
+const INQUIRY = {
+  kinds: ["question", "bug", "idea"],
+  text: 2000,
+  diag: 6000,
+  bytes: 16 * 1024,
+  perDay: 5,
+  perNetworkDay: 20,
+  messagesPerHour: 20,
+  // Each side of a thread; a longer back and forth is better as a new question.
+  messages: 40,
+  keepMs: 180 * DAY,
+};
+
+/** What the app may send with a question, as the developer app shows it: label, field, longest. */
+const INQUIRY_INFO = [
+  ["앱", "app", 40],
+  ["기기", "model", 80],
+  ["Android", "android", 40],
+  ["알람 점검", "diag", INQUIRY.diag],
+];
+
+async function inquiries(request, env, path) {
+  const method = request.method;
+  const device = deviceId(request.headers.get("x-device"));
+  if (path === "/api/inquiries" && method === "POST") return ask(request, env);
+  if (!device) return json({ error: "device", field: "device" }, 400);
+  const dev = await deviceHash(device);
+  if (path === "/api/inquiries" && method === "GET") {
+    const rows = await all(env, "SELECT * FROM inquiries WHERE device = ? ORDER BY updated_at DESC LIMIT 50", dev);
+    const out = [];
+    for (const r of rows) out.push(await inquiryView(env, r));
+    return json({ inquiries: out });
+  }
+  const m = path.match(/^\/api\/inquiries\/([A-Za-z0-9]{22})(\/messages)?$/);
+  if (!m) return json({ error: "not_found" }, 404);
+  const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", m[1]);
+  // Someone else's question reads as missing, so ids cannot be tried out.
+  if (!row || row.device !== dev) return json({ error: "not_found" }, 404);
+  if (!m[2] && method === "GET") return json(await inquiryView(env, row));
+  if (!m[2] && method === "DELETE") {
+    await env.DB.batch([
+      stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id = ?", row.id),
+      stmt(env, "DELETE FROM inquiries WHERE id = ?", row.id),
+    ]);
+    return new Response(null, { status: 204 });
+  }
+  if (m[2] && method === "POST") {
+    const body = await readJson(request, INQUIRY.bytes);
+    const text = inquiryText(body.text);
+    const now = Date.now();
+    if (!(await allow(env, `inquiry_msg|${dev}`, INQUIRY.messagesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
+    const count = await one(env, "SELECT COUNT(*) AS n FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'user'", row.id);
+    if (count.n >= INQUIRY.messages) return json({ error: "too_many", field: "text" }, 409);
+    await env.DB.batch([
+      stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", row.id, text, now),
+      stmt(env, "UPDATE inquiries SET status = 'open', updated_at = ? WHERE id = ?", now, row.id),
+    ]);
+    return json(await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", row.id)), 201);
+  }
+  return json({ error: "not_found" }, 404);
+}
+
+/** A new question: what the user typed, and what they agreed to send with it. */
+async function ask(request, env) {
+  const body = await readJson(request, INQUIRY.bytes);
+  if (body.v !== 1) refuse("version", "v");
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  if (!INQUIRY.kinds.includes(body.kind)) refuse("kind", "kind");
+  const text = inquiryText(body.text);
+  const info = inquiryInfo(body.info);
+  const now = Date.now();
+  const net = await network(request, env, now);
+  const dev = await deviceHash(device);
+  if (!(await allow(env, `inquiry|${dev}`, INQUIRY.perDay, DAY, now)) ||
+      !(await allow(env, `inquiry|${net.day}`, INQUIRY.perNetworkDay, DAY, now))) {
+    return json({ error: "rate_limited" }, 429);
+  }
+  const id = randomId(22);
+  await env.DB.batch([
+    stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'open', ?, ?)",
+      id, dev, body.kind, JSON.stringify(info), now, now),
+    stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, text, now),
+    // Threads with nothing new for half a year go, answers and all.
+    stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
+    stmt(env, "DELETE FROM inquiries WHERE updated_at < ?", now - INQUIRY.keepMs),
+    stmt(env, "DELETE FROM counters WHERE expires < ?", now),
+  ]);
+  return json(await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id)), 201);
+}
+
+/** What the user typed: up to 2000 characters, without an email, phone number or amount. */
+function inquiryText(v) {
+  if (typeof v !== "string") refuse("text", "text");
+  const text = v.normalize("NFC").replace(/\r\n?/g, "\n").trim();
+  if (!text || [...text].length > INQUIRY.text) refuse("text", "text");
+  const why = personal(text);
+  if (why) refuse(why, "text");
+  return text;
+}
+
+/**
+ * What goes with a question, only the fields the app shows before sending. The alarm check is made by
+ * the app, not typed: its times and shift names are what it is for, so only its length is checked.
+ */
+function inquiryInfo(v) {
+  if (v === undefined || v === null) return {};
+  if (typeof v !== "object" || Array.isArray(v)) refuse("info", "info");
+  const out = {};
+  for (const [, key, longest] of INQUIRY_INFO) {
+    const x = v[key];
+    if (x === undefined || x === null || x === "") continue;
+    if (typeof x !== "string" || [...x].length > longest) refuse("info", key);
+    if (key !== "diag" && personal(x) === "email") refuse("info", key);
+    out[key] = x.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
+  }
+  return out;
+}
+
+const messagesOf = (env, id) => all(env, "SELECT sender, text, by, at FROM inquiry_messages WHERE inquiry_id = ? ORDER BY id", id);
+
+/** A question as the app sees it; [admin] adds what was sent with it and who answered. */
+async function inquiryView(env, row, admin = false) {
+  const messages = await messagesOf(env, row.id);
+  const view = {
+    id: row.id,
+    kind: row.kind,
+    status: row.status,
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
+    messages: messages.map((m) => ({ from: m.sender, text: m.text, at: iso(m.at), ...(admin && m.by ? { by: m.by } : {}) })),
+  };
+  if (!admin) return view;
+  const info = JSON.parse(row.info);
+  const context = {};
+  for (const [label, key] of INQUIRY_INFO) if (info[key]) context[label] = info[key];
+  return { ...view, appVersion: info.app ?? null, context };
+}
+
+/** Who answered: the signed-in admin's name once there are admin accounts, else "admin". */
+function actorName(env) {
+  const a = env.actor;
+  const name = typeof a === "string" ? a : a && typeof a === "object" ? a.name : null;
+  return typeof name === "string" && name ? name.slice(0, 40) : "admin";
+}
+
+/** /api/admin/inquiries: the list, one thread, an answer and open or closed. */
+async function adminInquiries(request, env, url, path, now) {
+  const method = request.method;
+  if (path === "/inquiries" && method === "GET") return json(await inquiryList(env, url.searchParams));
+  const m = path.match(/^\/inquiries\/([A-Za-z0-9]{22})(\/reply|\/status)?$/);
+  if (!m) return json({ error: "not_found" }, 404);
+  const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", m[1]);
+  if (!row) return json({ error: "not_found" }, 404);
+  if (!m[2] && method === "GET") return json(await inquiryView(env, row, true));
+  if (method !== "POST" || !m[2]) return json({ error: "not_found" }, 404);
+  const body = await readJson(request, INQUIRY.bytes);
+  if (m[2] === "/reply") {
+    if (typeof body.text !== "string" || !body.text.trim() || [...body.text.trim()].length > INQUIRY.text) refuse("text", "text");
+    const status = body.close === true ? "closed" : "answered";
+    await env.DB.batch([
+      stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)",
+        row.id, body.text.normalize("NFC").replace(/\r\n?/g, "\n").trim(), actorName(env), now),
+      stmt(env, "UPDATE inquiries SET status = ?, updated_at = ? WHERE id = ?", status, now, row.id),
+    ]);
+    await audit(env, now, "inquiry_reply", row.id, status);
+  } else {
+    if (!["open", "closed"].includes(body.status)) refuse("status", "status");
+    // Opening or closing is the developer's bookkeeping; it does not keep a thread from its 180 days.
+    await run(env, "UPDATE inquiries SET status = ? WHERE id = ?", body.status, row.id);
+    await audit(env, now, "inquiry_status", row.id, body.status);
+  }
+  return json(await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", row.id), true));
+}
+
+/** Questions waiting first, then the newest; [q] finds words in what was asked or answered. */
+async function inquiryList(env, params) {
+  const status = ["open", "answered", "closed"].includes(params.get("status")) ? params.get("status") : null;
+  const q = String(params.get("q") ?? "").trim().slice(0, 40);
+  const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const rows = await all(env, `SELECT i.*,
+      (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id) AS count,
+      (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
+      (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last
+    FROM inquiries i
+    WHERE (?1 IS NULL OR i.status = ?1)
+      AND (?2 = '' OR EXISTS (SELECT 1 FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.text LIKE ?3 ESCAPE '\\'))
+    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 200`, status, q, like);
+  const counts = { open: 0, answered: 0, closed: 0 };
+  for (const r of await all(env, "SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status")) {
+    if (Object.hasOwn(counts, r.status)) counts[r.status] = r.n;
+  }
+  return {
+    counts,
+    inquiries: rows.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      status: r.status,
+      preview: [...(r.first ?? "")].slice(0, 120).join(""),
+      count: r.count,
+      waiting: r.last === "user",
+      appVersion: JSON.parse(r.info).app ?? null,
+      createdAt: iso(r.created_at),
+      updatedAt: iso(r.updated_at),
+    })),
+  };
+}
+
 // ---- the developer app's API [ADMIN-01] ----
 
 const COOKIE = "__Host-bamnat_admin";
@@ -1074,7 +1626,7 @@ const cookie = (value, maxAge) => `${COOKIE}=${value}; Path=/; Secure; HttpOnly;
 /** What is still missing on a new server, shown on the login screen, with why; never a name or value that was set. */
 function health(env) {
   const why = { password: secretIssue(env, "ADMIN_PASSWORD", 10), salt: secretIssue(env, "RATE_SALT", 1) };
-  return { database: Boolean(env.DB), password: why.password === null, salt: why.salt === null, why };
+  return { database: Boolean(env.DB), password: why.password === null, salt: why.salt === null, mail: mailReady(env), why };
 }
 
 /**
@@ -1088,6 +1640,24 @@ function secretIssue(env, name, least) {
   return Object.keys(env).some((k) => k !== name && k.replace(/\s+/g, "").toUpperCase() === name) ? "name" : "missing";
 }
 
+/**
+ * [ADMIN-04] Which area a developer-app call belongs to: null for what every signed-in admin may do,
+ * "owner" for managing admins and anything not listed, so a new route stays the owner's until it is.
+ */
+function areaFor(path) {
+  if (path === "/overview" || path === "/logout" || path.startsWith("/me")) return null;
+  if (path === "/queue" || path.startsWith("/groups/") || path.startsWith("/asks/")) return "review";
+  if (path.startsWith("/inquiries")) return "inquiries";
+  if (path.startsWith("/companies") || path.startsWith("/rules/")) return "companies";
+  if (path.startsWith("/rewards")) return "rewards";
+  if (path === "/settings") return "settings";
+  if (path.startsWith("/posts")) return "community";
+  if (path === "/audit") return "audit";
+  return "owner";
+}
+
+const can = (actor, area, level = "view") => actor.owner || (LEVELS.indexOf(actor.perms[area] ?? "none") >= LEVELS.indexOf(level));
+
 async function admin(request, env, url) {
   const path = url.pathname.slice("/api/admin".length);
   const method = request.method;
@@ -1098,15 +1668,38 @@ async function admin(request, env, url) {
     if (request.headers.get("x-admin") !== "1" || (origin && origin !== url.origin)) return json({ error: "forbidden" }, 403);
   }
   if (path === "/login" && method === "POST") return login(request, env, now);
+  if (path === "/join" && method === "GET") return inviteInfo(request, env, url, now);
+  if (path === "/join/code" && method === "POST") return joinCode(request, env, now);
+  if (path === "/join" && method === "POST") return join(request, env, now);
   const session = await signedIn(request, env, now);
   if (!session) return json({ error: "login" }, 401);
+  const actor = session.actor;
+  const area = areaFor(path);
+  if (area === "owner" ? !actor.owner : area && !can(actor, area, method === "GET" ? "view" : "edit")) {
+    return json({ error: "no_permission", area }, 403);
+  }
+  // Every change below is recorded under the admin who made it (audit reads env.actor).
+  env = Object.assign(Object.create(env), { actor });
   if (path === "/logout" && method === "POST") {
-    await run(env, "DELETE FROM sessions WHERE token = ?", session);
+    await run(env, "DELETE FROM admin_sessions WHERE token = ?", session.token);
     return json({ ok: true }, 200, { "set-cookie": cookie("", 0) });
   }
-  if (path === "/overview" && method === "GET") return json(await overview(env));
+  if (path === "/me" && method === "GET") return json(me(actor));
+  if (path === "/me/password" && method === "POST") return changePassword(request, env, actor, session.token, now);
+  if (path === "/me/logout-all" && method === "POST") {
+    await run(env, "DELETE FROM admin_sessions WHERE admin = ?", actor.id);
+    await audit(env, now, "logout_all", actor.id);
+    return json({ ok: true }, 200, { "set-cookie": cookie("", 0) });
+  }
+  if (path === "/overview" && method === "GET") return json(await overview(env, actor));
+  if (path === "/audit" && method === "GET") return json(await auditLog(env, url));
+  if (path === "/admins" && method === "GET") return json(await adminList(env));
+  if (path === "/invites" && method === "POST") return invite(request, env, url, now);
+  if (path === "/invites/remove" && method === "POST") return removeInvite(request, env, now);
+  let m = path.match(/^\/admins\/(a[A-Za-z0-9]{15})(\/remove)?$/);
+  if (m && method === "POST") return m[2] ? removeAdmin(env, m[1], now) : updateAdmin(request, env, m[1], now);
   if (path === "/queue" && method === "GET") return json(await queue(env));
-  let m = path.match(/^\/groups\/([A-Za-z0-9]{12})\/([0-9a-f]{16})\/(adopt|reject)$/);
+  m = path.match(/^\/groups\/([A-Za-z0-9]{12})\/([0-9a-f]{16})\/(adopt|reject)$/);
   if (m && method === "POST") return decide(request, env, m[1], m[2], m[3], now);
   m = path.match(/^\/asks\/([A-Za-z0-9]{22})$/);
   if (m && method === "POST") return answer(request, env, m[1], now);
@@ -1122,73 +1715,402 @@ async function admin(request, env, url) {
   }
   m = path.match(/^\/rules\/([A-Za-z0-9]{16})$/);
   if (m && method === "POST") return setRule(request, env, m[1], now);
+  if (path === "/inquiries" || path.startsWith("/inquiries/")) return adminInquiries(request, env, url, path, now);
   if (path === "/rewards" && method === "GET") return json(await rewards(env, url.searchParams.get("status")));
   m = path.match(/^\/rewards\/(w[A-Za-z0-9]{22})$/);
   if (m && method === "POST") return setReward(request, env, m[1], now);
   if (path === "/settings" && method === "POST") return saveSettings(request, env, now);
+  if (path === "/posts" && method === "GET") return json(await postList(env, url));
+  m = path.match(/^\/posts\/(p[A-Za-z0-9]{15})$/);
+  if (m && method === "POST") return moderate(request, env, m[1], now);
   return json({ error: "not_found" }, 404);
 }
 
-/** Five wrong passwords from one network lock it out for an hour from the fifth. */
+/**
+ * Five wrong passwords from one network lock it out for an hour from the fifth; for an admin account,
+ * five on that account lock the account too, from any network. With an email it is an admin account,
+ * without one the owner's password.
+ */
 async function login(request, env, now) {
-  const password = env.ADMIN_PASSWORD;
-  if (typeof password !== "string" || password.length < 10) return json({ error: "not_set" }, 503);
-  const net = await network(request, env, now);
-  const key = `login|${net.login}`;
-  const failed = await one(env, "SELECT count, expires FROM counters WHERE key = ? AND expires > ?", key, now);
-  const everyone = await one(env, "SELECT count FROM counters WHERE key = 'login|all' AND expires > ?", now);
-  if ((failed?.count ?? 0) >= LIMITS.loginFailures || (everyone?.count ?? 0) >= 10 * LIMITS.loginFailures) {
-    return json({ error: "locked", until: iso(failed?.expires ?? now + LIMITS.lockMs) }, 429);
-  }
   const body = await readJson(request, 1024);
-  if (typeof body.password !== "string" || !(await sameSecret(body.password, password))) {
-    await allow(env, key, Infinity, LIMITS.lockMs, now);
+  const net = await network(request, env, now);
+  const keys = [`login|${net.login}`];
+  const email = body.email === undefined ? null : cleanEmail(body.email);
+  if (email) keys.push(`login|mail|${(await sha256(`mail|${email}`)).slice(0, 32)}`);
+  else if (body.email !== undefined) return json({ error: "email" }, 400);
+  const password = env.ADMIN_PASSWORD;
+  if (!email && (typeof password !== "string" || password.length < 10)) return json({ error: "not_set" }, 503);
+  let worst = null;
+  for (const key of keys) {
+    const row = await one(env, "SELECT count, expires FROM counters WHERE key = ? AND expires > ?", key, now);
+    if (row && (!worst || row.count > worst.count)) worst = row;
+  }
+  const everyone = await one(env, "SELECT count FROM counters WHERE key = 'login|all' AND expires > ?", now);
+  if ((worst?.count ?? 0) >= LIMITS.loginFailures || (everyone?.count ?? 0) >= 10 * LIMITS.loginFailures) {
+    return json({ error: "locked", until: iso(worst?.expires ?? now + LIMITS.lockMs) }, 429);
+  }
+  let account = null;
+  let right = false;
+  if (email) {
+    account = await one(env, "SELECT * FROM admins WHERE email = ?", email);
+    // A made-up email takes as long as a real one, so the time says nothing about who has an account.
+    right = await checkPassword(typeof body.password === "string" ? body.password : "", account?.pw ?? DUMMY_HASH) && Boolean(account);
+  } else {
+    right = typeof body.password === "string" && (await sameSecret(body.password, password));
+  }
+  if (!right) {
+    let count = 0;
+    for (const key of keys) {
+      await allow(env, key, Infinity, LIMITS.lockMs, now);
+      const row = await one(env, "SELECT count FROM counters WHERE key = ?", key);
+      if (row.count >= LIMITS.loginFailures) await run(env, "UPDATE counters SET expires = ? WHERE key = ?", now + LIMITS.lockMs, key);
+      count = Math.max(count, row.count);
+    }
     await allow(env, "login|all", Infinity, LIMITS.lockMs, now);
-    const count = (failed?.count ?? 0) + 1;
-    if (count >= LIMITS.loginFailures) await run(env, "UPDATE counters SET expires = ? WHERE key = ?", now + LIMITS.lockMs, key);
-    await audit(env, now, "login_failed", "");
+    await audit(env, now, "login_failed", email ?? "");
     return json({ error: count >= LIMITS.loginFailures ? "locked" : "wrong", left: Math.max(0, LIMITS.loginFailures - count) }, 401);
   }
+  // A right password on an account the owner has not approved, or has paused, still does not get in.
+  if (account && account.status !== "active") return json({ error: account.status === "pending" ? "pending" : "suspended" }, 403);
   const token = randomId(40);
+  const who = account ? account.id : OWNER.id;
   await env.DB.batch([
-    stmt(env, "DELETE FROM counters WHERE key = ?", key),
-    stmt(env, "DELETE FROM sessions WHERE expires < ?", now),
-    stmt(env, "INSERT INTO sessions (token, expires) VALUES (?, ?)", await sha256(`session|${token}`), now + LIMITS.sessionMs),
+    ...keys.map((key) => stmt(env, "DELETE FROM counters WHERE key = ?", key)),
+    stmt(env, "DELETE FROM admin_sessions WHERE expires < ?", now),
+    stmt(env, "INSERT INTO admin_sessions (token, admin, expires, created_at) VALUES (?, ?, ?, ?)",
+      await sha256(`session|${token}`), who, now + LIMITS.sessionMs, now),
+    ...(account ? [stmt(env, "UPDATE admins SET last_login = ? WHERE id = ?", now, account.id)] : []),
   ]);
-  await audit(env, now, "login", "");
+  await audit(Object.assign(Object.create(env), { actor: account ? actorOf(account) : OWNER }), now, "login", "");
   return json({ ok: true }, 200, { "set-cookie": cookie(token, LIMITS.sessionMs / 1000) });
 }
 
-/** The session's stored hash when the cookie holds a live session. */
+/** The session and who it belongs to, when the cookie holds a live one of an active admin. */
 async function signedIn(request, env, now) {
   const token = (request.headers.get("cookie") ?? "").split(/;\s*/).find((c) => c.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1);
   if (!token || !/^[A-Za-z0-9]{40}$/.test(token)) return null;
   const hash = await sha256(`session|${token}`);
-  const row = await one(env, "SELECT expires FROM sessions WHERE token = ?", hash);
-  return row && row.expires > now ? hash : null;
+  const row = await one(env, "SELECT admin, expires FROM admin_sessions WHERE token = ?", hash);
+  if (!row || row.expires <= now) return null;
+  if (row.admin === OWNER.id) return { token: hash, actor: OWNER };
+  // Read on every call, so a pause or a change of permissions applies at once.
+  const account = await one(env, "SELECT * FROM admins WHERE id = ? AND status = 'active'", row.admin);
+  return account ? { token: hash, actor: actorOf(account) } : null;
 }
 
-async function overview(env) {
-  const count = async (sql) => (await one(env, sql)).n;
+const actorOf = (a) => ({ id: a.id, name: a.name, email: a.email, owner: false, perms: readPerms(a.perms) });
+
+const me = (actor) => ({ id: actor.id, name: actor.name, email: actor.email, owner: actor.owner, perms: actor.perms, areas: AREAS });
+
+// ---- admin accounts [ADMIN-04] ----
+
+const EMAIL = /^[^\s@<>()",;:]{1,64}@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
+
+function cleanEmail(v) {
+  const email = typeof v === "string" ? v.trim().toLowerCase() : "";
+  return email.length <= LIMITS.email && EMAIL.test(email) ? email : null;
+}
+
+/** Permissions as stored and as sent: every area present, unknown areas and levels dropped. */
+function readPerms(raw) {
+  let p = raw;
+  if (typeof raw === "string") {
+    try {
+      p = JSON.parse(raw);
+    } catch {
+      p = {};
+    }
+  }
+  const out = {};
+  for (const area of Object.keys(AREAS)) {
+    const level = p && LEVELS.includes(p[area]) ? p[area] : "none";
+    out[area] = VIEW_ONLY.includes(area) && level === "edit" ? "view" : level;
+  }
+  return out;
+}
+
+function permsFrom(body) {
+  if (!body.perms || typeof body.perms !== "object" || Array.isArray(body.perms)) refuse("perms", "perms");
+  for (const [area, level] of Object.entries(body.perms)) {
+    if (!Object.hasOwn(AREAS, area) || !LEVELS.includes(level)) refuse("perms", area);
+  }
+  return readPerms(body.perms);
+}
+
+function adminName(v) {
+  const name = typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f<>]/g, "").trim() : "";
+  if (!name || name.length > LIMITS.adminName) refuse("name", "name");
+  return name;
+}
+
+/** At least 10 letters, not one letter over and over, and not the email itself. */
+function newPassword(v, email) {
+  if (typeof v !== "string" || v.length < 10 || v.length > 200) refuse("password", "password");
+  if (new Set(v).size < 4 || v.toLowerCase() === email || v.toLowerCase() === email.split("@")[0]) refuse("weak_password", "password");
+  return v;
+}
+
+// PBKDF2 at a cost a Worker's CPU limit allows; the count is stored with each hash so it can rise later.
+const PBKDF2_ROUNDS = 20000;
+const b64 = (bytes) => btoa(String.fromCharCode(...bytes));
+
+async function pbkdf2(password, saltBytes, rounds) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: saltBytes, iterations: rounds }, key, 256);
+  return new Uint8Array(bits);
+}
+
+async function hashPassword(password) {
+  const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+  return `pbkdf2$${PBKDF2_ROUNDS}$${b64(saltBytes)}$${b64(await pbkdf2(password, saltBytes, PBKDF2_ROUNDS))}`;
+}
+
+const DUMMY_HASH = `pbkdf2$${PBKDF2_ROUNDS}$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=`;
+
+async function checkPassword(password, stored) {
+  const [kind, rounds, saltText, hashText] = String(stored).split("$");
+  if (kind !== "pbkdf2") return false;
+  const got = await pbkdf2(password, Uint8Array.from(atob(saltText), (c) => c.charCodeAt(0)), Number(rounds));
+  const want = Uint8Array.from(atob(hashText), (c) => c.charCodeAt(0));
+  let diff = got.length ^ want.length;
+  for (let i = 0; i < Math.min(got.length, want.length); i++) diff |= got[i] ^ want[i];
+  return diff === 0;
+}
+
+function mailReady(env) {
+  return typeof env.MAIL_API_KEY === "string" && env.MAIL_API_KEY.length > 0 && Boolean(cleanEmail(String(env.MAIL_FROM ?? "").replace(/^.*<|>$/g, "")));
+}
+
+/**
+ * Sends one plain mail through Resend when MAIL_API_KEY and MAIL_FROM are set; false when mail is off or
+ * the send failed. Nothing else on the server sends mail.
+ */
+async function sendMail(env, to, subject, text) {
+  if (!mailReady(env)) return false;
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { authorization: `Bearer ${env.MAIL_API_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({ from: env.MAIL_FROM, to: [to], subject, text }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function adminList(env) {
+  const admins = await all(env, "SELECT id, email, name, perms, status, created_at, approved_at, last_login FROM admins ORDER BY created_at DESC");
+  const invites = await all(env, "SELECT email, perms, note, expires, created_at, used_at FROM invites ORDER BY created_at DESC");
+  const now = Date.now();
   return {
-    pending: await count("SELECT COUNT(*) AS n FROM (SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending')"),
-    asks: await count("SELECT COUNT(*) AS n FROM reports WHERE status = 'ask'"),
-    flagged: await count(`SELECT COUNT(*) AS n FROM rules r WHERE r.withdrawn = 0 AND r.superseded = 0
-      AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0)`),
-    owed: await count("SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'"),
-    companies: await count("SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL"),
-    rules: await count("SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0"),
-    reports: await count("SELECT COUNT(*) AS n FROM reports"),
-    settings: await settings(env),
-    reasons: REASONS,
-    answers: ANSWERS,
-    salt: secretIssue(env, "RATE_SALT", 1) === null,
+    admins: admins.map((a) => ({
+      id: a.id, email: a.email, name: a.name, perms: readPerms(a.perms), status: a.status, createdAt: iso(a.created_at),
+      approvedAt: a.approved_at ? iso(a.approved_at) : null, lastLogin: a.last_login ? iso(a.last_login) : null,
+    })),
+    invites: invites.map((i) => ({
+      email: i.email, perms: readPerms(i.perms), note: i.note, createdAt: iso(i.created_at), expiresAt: iso(i.expires),
+      state: i.used_at ? "joined" : i.expires <= now ? "expired" : "waiting",
+    })),
+    areas: AREAS,
+    viewOnly: VIEW_ONLY,
+    presets: PRESETS,
+    mail: mailReady(env),
   };
+}
+
+/**
+ * The owner allows one email, with the permissions its account will start with. The link is shown
+ * once; the owner sends it to that email, and only that email can make an account with it.
+ */
+async function invite(request, env, url, now) {
+  const body = await readJson(request, 2048);
+  const email = cleanEmail(body.email);
+  if (!email) refuse("email", "email");
+  const perms = permsFrom(body);
+  const note = typeof body.note === "string" ? body.note.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 100) : "";
+  if (await one(env, "SELECT id FROM admins WHERE email = ?", email)) return json({ error: "exists" }, 409);
+  const token = randomId(32);
+  await run(env, `INSERT INTO invites (email, perms, note, token, expires, created_at, used_at) VALUES (?, ?, ?, ?, ?, ?, NULL)
+    ON CONFLICT (email) DO UPDATE SET perms = excluded.perms, note = excluded.note, token = excluded.token, expires = excluded.expires,
+      created_at = excluded.created_at, used_at = NULL`,
+    email, JSON.stringify(perms), note, await sha256(`invite|${token}`), now + LIMITS.inviteMs, now);
+  await audit(env, now, "invite", email, Object.entries(perms).filter(([, l]) => l !== "none").map(([a, l]) => `${a}:${l}`).join(" "));
+  return json({ email, perms, expiresAt: iso(now + LIMITS.inviteMs), link: `${url.origin}/admin/join#${token}`, mail: mailReady(env) }, 201);
+}
+
+async function removeInvite(request, env, now) {
+  const email = cleanEmail((await readJson(request, 1024)).email);
+  const r = email ? await run(env, "DELETE FROM invites WHERE email = ? AND used_at IS NULL", email) : null;
+  if (!r?.meta.changes) return json({ error: "not_found" }, 404);
+  await audit(env, now, "invite_remove", email);
+  return json({ ok: true });
+}
+
+async function inviteFor(env, token, now) {
+  if (typeof token !== "string" || !/^[A-Za-z0-9]{32}$/.test(token)) return null;
+  const row = await one(env, "SELECT * FROM invites WHERE token = ?", await sha256(`invite|${token}`));
+  return row && !row.used_at && row.expires > now ? row : null;
+}
+
+/** Too many tries at invite links from one network in an hour, so links cannot be guessed. */
+async function joinLimited(request, env, now) {
+  const net = await network(request, env, now);
+  return !(await allow(env, `join|${net.now}`, LIMITS.joinsPerHour, HOUR, now));
+}
+
+/** What the person who opened an invite link sees before making an account. */
+async function inviteInfo(request, env, url, now) {
+  if (await joinLimited(request, env, now)) return json({ error: "rate_limited" }, 429);
+  const row = await inviteFor(env, url.searchParams.get("t"), now);
+  if (!row) return json({ error: "invite" }, 404);
+  return json({ email: row.email, perms: readPerms(row.perms), areas: AREAS, expiresAt: iso(row.expires), mail: mailReady(env) });
+}
+
+/** With mail set up, a six-digit code goes to the invited email, so the account is made from that mailbox. */
+async function joinCode(request, env, now) {
+  if (await joinLimited(request, env, now)) return json({ error: "rate_limited" }, 429);
+  const body = await readJson(request, 1024);
+  const row = await inviteFor(env, body.token, now);
+  if (!row) return json({ error: "invite" }, 404);
+  if (!mailReady(env)) return json({ error: "no_mail" }, 409);
+  const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, "0");
+  await run(env, `INSERT INTO codes (email, code, expires, tries) VALUES (?, ?, ?, 0)
+    ON CONFLICT (email) DO UPDATE SET code = excluded.code, expires = excluded.expires, tries = 0`,
+    row.email, await sha256(`code|${row.email}|${code}`), now + LIMITS.codeMs);
+  const sent = await sendMail(env, row.email, "[밤낮 관리자] 메일 확인 코드",
+    `밤낮 관리자 계정을 만들려면 아래 코드를 입력해 주세요.\n\n${code}\n\n15분 동안 쓸 수 있어요. 직접 요청하지 않았다면 이 메일은 지워 주세요.`);
+  if (!sent) return json({ error: "mail_failed" }, 502);
+  return json({ ok: true, expiresAt: iso(now + LIMITS.codeMs) });
+}
+
+/**
+ * An invited person makes their account. It waits for the owner's approval before it can sign in, and
+ * starts with the permissions the owner chose when inviting.
+ */
+async function join(request, env, now) {
+  if (await joinLimited(request, env, now)) return json({ error: "rate_limited" }, 429);
+  const body = await readJson(request, 2048);
+  const row = await inviteFor(env, body.token, now);
+  if (!row) return json({ error: "invite" }, 404);
+  const name = adminName(body.name);
+  const password = newPassword(body.password, row.email);
+  if (mailReady(env)) {
+    const c = await one(env, "SELECT * FROM codes WHERE email = ?", row.email);
+    if (!c || c.expires <= now || c.tries >= LIMITS.codeTries) return json({ error: "code_expired" }, 400);
+    if (typeof body.code !== "string" || (await sha256(`code|${row.email}|${body.code.trim()}`)) !== c.code) {
+      await run(env, "UPDATE codes SET tries = tries + 1 WHERE email = ?", row.email);
+      return json({ error: "code", left: Math.max(0, LIMITS.codeTries - c.tries - 1) }, 400);
+    }
+  }
+  if (await one(env, "SELECT id FROM admins WHERE email = ?", row.email)) return json({ error: "exists" }, 409);
+  const id = `a${randomId(15)}`;
+  await env.DB.batch([
+    stmt(env, `INSERT INTO admins (id, email, name, pw, perms, status, created_at, approved_at, last_login)
+      VALUES (?, ?, ?, ?, ?, 'pending', ?, NULL, NULL)`, id, row.email, name, await hashPassword(password), row.perms, now),
+    stmt(env, "UPDATE invites SET used_at = ? WHERE email = ?", now, row.email),
+    stmt(env, "DELETE FROM codes WHERE email = ?", row.email),
+  ]);
+  await audit(Object.assign(Object.create(env), { actor: { name, email: row.email } }), now, "join", row.email);
+  const owner = cleanEmail(env.OWNER_EMAIL);
+  if (owner) await sendMail(env, owner, "[밤낮 관리자] 승인을 기다리는 관리자", `${name} (${row.email}) 님이 관리자 계정을 만들었어요. 개발자 앱의 관리자 화면에서 승인해 주세요.`);
+  return json({ ok: true, status: "pending" }, 201);
+}
+
+/** The owner approves, pauses, resumes or changes what an admin can do; it applies on their next call. */
+async function updateAdmin(request, env, id, now) {
+  const body = await readJson(request, 2048);
+  const a = await one(env, "SELECT * FROM admins WHERE id = ?", id);
+  if (!a) return json({ error: "not_found" }, 404);
+  const stmts = [];
+  const notes = [];
+  if (body.perms !== undefined) {
+    const perms = permsFrom(body);
+    stmts.push(stmt(env, "UPDATE admins SET perms = ? WHERE id = ?", JSON.stringify(perms), id));
+    notes.push(Object.entries(perms).filter(([, l]) => l !== "none").map(([k, l]) => `${k}:${l}`).join(" ") || "none");
+  }
+  if (body.status !== undefined) {
+    if (!["active", "suspended"].includes(body.status)) refuse("status", "status");
+    if (body.status === "active" && a.status === "pending") stmts.push(stmt(env, "UPDATE admins SET approved_at = ? WHERE id = ?", now, id));
+    stmts.push(stmt(env, "UPDATE admins SET status = ? WHERE id = ?", body.status, id));
+    if (body.status === "suspended") stmts.push(stmt(env, "DELETE FROM admin_sessions WHERE admin = ?", id));
+    notes.push(body.status === "active" ? (a.status === "pending" ? "approve" : "resume") : "suspend");
+  }
+  if (!stmts.length) refuse("status", "status");
+  await env.DB.batch(stmts);
+  await audit(env, now, "admin_update", a.email, notes.join(" / "));
+  return json(await adminList(env));
+}
+
+async function removeAdmin(env, id, now) {
+  const a = await one(env, "SELECT email FROM admins WHERE id = ?", id);
+  if (!a) return json({ error: "not_found" }, 404);
+  await env.DB.batch([
+    stmt(env, "DELETE FROM admin_sessions WHERE admin = ?", id),
+    stmt(env, "DELETE FROM admins WHERE id = ?", id),
+    // The email can be invited again later.
+    stmt(env, "DELETE FROM invites WHERE email = ?", a.email),
+  ]);
+  await audit(env, now, "admin_remove", a.email);
+  return json(await adminList(env));
+}
+
+/** An admin changes their own password; their other sign-ins end. The owner's lives in Cloudflare. */
+async function changePassword(request, env, actor, token, now) {
+  if (actor.owner) return json({ error: "owner_password" }, 409);
+  const body = await readJson(request, 1024);
+  const a = await one(env, "SELECT * FROM admins WHERE id = ?", actor.id);
+  if (typeof body.current !== "string" || !(await checkPassword(body.current, a.pw))) return json({ error: "wrong" }, 400);
+  const next = newPassword(body.next, a.email);
+  await env.DB.batch([
+    stmt(env, "UPDATE admins SET pw = ? WHERE id = ?", await hashPassword(next), a.id),
+    stmt(env, "DELETE FROM admin_sessions WHERE admin = ? AND token != ?", a.id, token),
+  ]);
+  await audit(env, now, "password", a.id);
+  return json({ ok: true });
+}
+
+/** Activity, newest first, 50 at a time; [before] continues from an entry's id. */
+async function auditLog(env, url) {
+  const before = Number(url.searchParams.get("before"));
+  const rows = await all(env, `SELECT id, at, action, target, detail, actor FROM audit WHERE id < ? ORDER BY id DESC LIMIT 51`,
+    Number.isInteger(before) && before > 0 ? before : Number.MAX_SAFE_INTEGER);
+  return {
+    entries: rows.slice(0, 50).map((r) => ({ id: r.id, at: iso(r.at), action: r.action, target: r.target, detail: r.detail, actor: r.actor })),
+    more: rows.length > 50,
+  };
+}
+
+/** The home screen's numbers, only for the areas this admin can see. */
+async function overview(env, actor) {
+  const count = async (sql) => (await one(env, sql)).n;
+  const out = { me: me(actor), settings: await settings(env), reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS, flagReasons: FLAGS,
+    salt: secretIssue(env, "RATE_SALT", 1) === null };
+  if (can(actor, "review")) {
+    out.pending = await count("SELECT COUNT(*) AS n FROM (SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending')");
+    out.asks = await count("SELECT COUNT(*) AS n FROM reports WHERE status = 'ask'");
+    out.flagged = await count(`SELECT COUNT(*) AS n FROM rules r WHERE r.withdrawn = 0 AND r.superseded = 0
+      AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0)`);
+    out.reports = await count("SELECT COUNT(*) AS n FROM reports");
+  }
+  if (can(actor, "inquiries")) out.inquiries = await count("SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open'");
+  if (can(actor, "rewards")) out.owed = await count("SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'");
+  if (can(actor, "community")) {
+    // [COMM-06] Flagged posts still shown, and ones the flags hid that nobody has looked at yet.
+    out.flaggedPosts = await count("SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')");
+    out.posts = await count("SELECT COUNT(*) AS n FROM posts WHERE status = 'shown'");
+  }
+  if (can(actor, "companies")) {
+    out.companies = await count("SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL");
+    out.rules = await count("SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0");
+  }
+  if (actor.owner) out.admins = { waiting: await count("SELECT COUNT(*) AS n FROM admins WHERE status = 'pending'") };
+  return out;
 }
 
 /** Setups waiting for a decision, the ones with most behind them first, and rules people doubt. */
 async function queue(env) {
-  const { adoptPoints } = await settings(env);
+  const { adoptPoints, adoptAgree } = await settings(env);
   const groups = await all(env, `SELECT company_id, grp, MAX(created_at) AS last FROM reports WHERE status = 'pending'
     GROUP BY company_id, grp ORDER BY last DESC LIMIT 60`);
   const out = [];
@@ -1210,9 +2132,13 @@ async function queue(env) {
       networks: s.networks,
       bad: s.bad,
       threshold: adoptPoints,
-      // Enough points, but another rule is in use, this one was turned down or everyone sent it from one
-      // network: only the developer decides.
-      blocked: (Boolean(why) || s.networks < 2) && s.persons >= 2 && s.points >= adoptPoints,
+      ...trust(s, adoptPoints),
+      // [COMM-07] More 달라요 than the setting allows: auto adoption waits for the developer.
+      doubted: s.persons * 100 < adoptAgree * (s.persons + s.bad),
+      posts: (await one(env, "SELECT COUNT(*) AS n FROM posts WHERE company_id = ? AND grp = ? AND status = 'shown'", g.company_id, g.grp)).n,
+      // Enough points, but another rule is in use, this one was turned down, everyone sent it from one
+      // network or too many say 달라요: only the developer decides.
+      blocked: (Boolean(why) || s.networks < 2 || s.persons * 100 < adoptAgree * (s.persons + s.bad)) && s.persons >= 2 && s.points >= adoptPoints,
       turnedDown: why === "withdrawn" || why === "rejected" ? why : null,
       replaces: active ? { id: active.id, version: active.version } : null,
       reports: reports.map((r) => ({ id: r.id, verified: r.verified === 1, note: r.note, at: iso(r.created_at) })),
@@ -1468,16 +2394,106 @@ async function saveSettings(request, env, now) {
   const body = await readJson(request, 1024);
   if (!Number.isInteger(body.adoptPoints) || body.adoptPoints < 2 || body.adoptPoints > 20) refuse("adoptPoints", "adoptPoints");
   if (!Number.isInteger(body.rewardMonths) || body.rewardMonths < 0 || body.rewardMonths > 24) refuse("rewardMonths", "rewardMonths");
+  // [COMM-07] Left out by a developer app from before it, the agreement share stays as it was.
+  const agree = body.adoptAgree ?? (await settings(env)).adoptAgree;
+  if (!Number.isInteger(agree) || agree < 50 || agree > 100) refuse("adoptAgree", "adoptAgree");
   await env.DB.batch([
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('adopt_points', ?)", String(body.adoptPoints)),
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('reward_months', ?)", String(body.rewardMonths)),
+    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('adopt_agree', ?)", String(agree)),
   ]);
   // A lower bar may already be met.
   for (const g of await all(env, "SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending' LIMIT 200")) {
     await settle(env, g.company_id, g.grp, now);
   }
-  await audit(env, now, "settings", "", `${body.adoptPoints}/${body.rewardMonths}`);
+  await audit(env, now, "settings", "", `${body.adoptPoints}/${body.rewardMonths}/${agree}%`);
   return json(await settings(env));
+}
+
+// ---- the talk on rule sets, for the developer [COMM-06] ----
+
+/**
+ * Posts to look at: "flagged" (신고가 있거나 신고로 가려졌는데 아직 아무도 안 본 것, the most flagged first),
+ * "hidden", or "all" newest first; with company and setup, one talk whole. A writer shows as the first
+ * six letters of the install's hash, enough to see the same writer again and nothing more.
+ */
+async function postList(env, url) {
+  const status = ["flagged", "hidden", "all"].includes(url.searchParams.get("status")) ? url.searchParams.get("status") : "flagged";
+  const company = url.searchParams.get("company");
+  const grp = url.searchParams.get("setup");
+  const one_talk = company && /^[A-Za-z0-9]{12}$/.test(company) && grp && /^[0-9a-f]{16}$/.test(grp);
+  const rows = one_talk
+    ? await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
+        WHERE p.company_id = ? AND p.grp = ? ORDER BY p.created_at LIMIT 500`, company, grp)
+    : status === "flagged"
+      ? await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
+          WHERE p.kept = 0 AND (p.flags > 0 OR p.hide_reason = 'flags') ORDER BY p.flags DESC, p.created_at DESC LIMIT 100`)
+      : await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
+          ${status === "hidden" ? "WHERE p.status = 'hidden'" : ""} ORDER BY p.created_at DESC LIMIT 100`);
+  const out = [];
+  const depts = new Map();
+  for (const p of rows) {
+    const key = `${p.company_id}/${p.grp}`;
+    if (!depts.has(key)) {
+      const r = (await one(env, "SELECT dept FROM rules WHERE company_id = ? AND grp = ? ORDER BY version DESC LIMIT 1", p.company_id, p.grp))
+        ?? (await one(env, "SELECT dept FROM reports WHERE company_id = ? AND grp = ? LIMIT 1", p.company_id, p.grp));
+      depts.set(key, r?.dept ?? "");
+    }
+    const reasons = await all(env, "SELECT reason, COUNT(*) AS n FROM post_flags WHERE post_id = ? GROUP BY reason ORDER BY n DESC, reason", p.id);
+    const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", p.device, Date.now());
+    out.push({
+      id: p.id,
+      company: { id: p.company_id, name: p.name },
+      setup: p.grp,
+      dept: depts.get(key),
+      body: p.body,
+      writer: p.device.slice(0, 6),
+      at: iso(p.created_at),
+      status: p.status,
+      kept: p.kept === 1,
+      flags: p.flags,
+      reasons: reasons.map((r) => ({ code: r.reason, text: FLAGS[r.reason] ?? r.reason, n: r.n })),
+      hidden: p.status === "hidden" ? { code: p.hide_reason, text: HIDE_REASONS[p.hide_reason] ?? "", at: p.hidden_at ? iso(p.hidden_at) : null } : null,
+      mutedUntil: muted ? iso(muted.until) : null,
+    });
+  }
+  return { status: one_talk ? "talk" : status, posts: out };
+}
+
+/**
+ * hide (with a reason the writer's app shows), show (kept: flags no longer hide it), delete, or mute:
+ * the writer cannot post for 30 days, and their post is hidden.
+ */
+async function moderate(request, env, id, now) {
+  const body = await readJson(request, 1024);
+  const p = await one(env, "SELECT * FROM posts WHERE id = ?", id);
+  if (!p) return json({ error: "not_found" }, 404);
+  const target = `${p.company_id}/${p.grp}/${id}`;
+  if (body.action === "hide" || body.action === "mute") {
+    const reason = Object.hasOwn(HIDE_REASONS, body.reason) && body.reason !== "flags" ? body.reason : "abuse";
+    const stmts = [stmt(env, "UPDATE posts SET status = 'hidden', hide_reason = ?, hidden_at = ?, kept = 1 WHERE id = ?", reason, now, id)];
+    if (body.action === "mute") {
+      stmts.push(stmt(env, `INSERT INTO muted (device, until, reason) VALUES (?, ?, ?)
+        ON CONFLICT (device) DO UPDATE SET until = excluded.until, reason = excluded.reason`, p.device, now + LIMITS.muteDays * DAY, reason));
+    }
+    await env.DB.batch(stmts);
+    await audit(env, now, body.action === "mute" ? "post_mute" : "post_hide", target, reason);
+  } else if (body.action === "show") {
+    await env.DB.batch([
+      stmt(env, "UPDATE posts SET status = 'shown', hide_reason = NULL, hidden_at = NULL, kept = 1, flags = 0 WHERE id = ?", id),
+      stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id),
+      stmt(env, "DELETE FROM muted WHERE device = ?", p.device),
+    ]);
+    await audit(env, now, "post_show", target);
+  } else if (body.action === "delete") {
+    await env.DB.batch([stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id), stmt(env, "DELETE FROM posts WHERE id = ?", id)]);
+    await audit(env, now, "post_delete", target);
+    return json({ deleted: true });
+  } else {
+    refuse("action", "action");
+  }
+  const after = await one(env, "SELECT id, status, hide_reason, kept FROM posts WHERE id = ?", id);
+  return json({ id, status: after.status, kept: after.kept === 1, hidden: after.hide_reason });
 }
 
 // ---- input and output ----
@@ -1526,945 +2542,3 @@ async function sameSecret(given, secret) {
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
 }
-
-// ---- the developer app's files [ADMIN-01] ----
-
-const ADMIN_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
-  "manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
-
-function adminFile(path) {
-  const png = ICONS[path];
-  if (png) {
-    return new Response(Uint8Array.from(atob(png), (c) => c.charCodeAt(0)), {
-      headers: { "content-type": "image/png", "cache-control": "public, max-age=86400", "x-content-type-options": "nosniff" },
-    });
-  }
-  const files = {
-    "/admin/": [ADMIN_HTML, "text/html; charset=utf-8"],
-    "/admin/app.js": [`(${adminApp})();\n`, "text/javascript; charset=utf-8"],
-    "/admin/sw.js": [`(${adminWorker})();\n`, "text/javascript; charset=utf-8"],
-    "/admin/app.css": [ADMIN_CSS, "text/css; charset=utf-8"],
-    "/admin/manifest.webmanifest": [JSON.stringify(MANIFEST), "application/manifest+json; charset=utf-8"],
-    "/admin/icon.svg": [ICON_SVG, "image/svg+xml"],
-  };
-  const file = files[path];
-  if (!file) return new Response("Not found", { status: 404 });
-  return new Response(file[0], {
-    headers: {
-      "content-type": file[1],
-      "cache-control": "no-cache",
-      "content-security-policy": ADMIN_CSP,
-      "x-content-type-options": "nosniff",
-      "referrer-policy": "no-referrer",
-      "x-robots-tag": "noindex, nofollow",
-      "permissions-policy": "camera=(), microphone=(), geolocation=()",
-    },
-  });
-}
-
-const MANIFEST = {
-  name: "밤낮 관리자",
-  short_name: "밤낮 관리",
-  description: "회사 정보 제보를 검토하고 관리해요",
-  lang: "ko",
-  start_url: "/admin/",
-  scope: "/admin/",
-  display: "standalone",
-  background_color: "#15192B",
-  theme_color: "#15192B",
-  icons: [
-    { src: "/admin/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-    { src: "/admin/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-    { src: "/admin/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
-    { src: "/admin/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
-  ],
-};
-
-const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#15192B"/>` +
-  `<mask id="m"><rect width="512" height="512" fill="#fff"/><circle cx="302" cy="220" r="120" fill="#000"/></mask>` +
-  `<circle cx="241" cy="271" r="138" fill="#C2A36B" mask="url(#m)"/><circle cx="348" cy="169" r="18" fill="#C2A36B"/></svg>`;
-
-const ADMIN_HTML = `<!doctype html>
-<html lang="ko">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="robots" content="noindex,nofollow">
-<meta name="theme-color" content="#15192B">
-<meta name="color-scheme" content="light dark">
-<title>밤낮 관리자</title>
-<link rel="manifest" href="/admin/manifest.webmanifest">
-<link rel="icon" href="/admin/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/admin/icon-192.png">
-<link rel="stylesheet" href="/admin/app.css">
-<script src="/admin/app.js" defer></script>
-</head>
-<body>
-<div id="app"><div class="center"><div class="spinner" role="progressbar" aria-label="불러오는 중"></div></div></div>
-<div id="toast" class="toast" role="status" aria-live="polite"></div>
-<dialog id="dialog"></dialog>
-<noscript>이 화면은 자바스크립트가 켜져 있어야 열려요.</noscript>
-</body>
-</html>
-`;
-
-const ADMIN_CSS = `
-:root{--bg:#F7F4EE;--card:#fff;--fg:#15192B;--muted:#5d6176;--line:#e4dfd4;--soft:#f0ebe1;--accent:#2F5BEA;--on-accent:#fff;--gold:#C2A36B;
---ok:#1b7a47;--ok-bg:#e2f3e9;--warn:#8f5600;--warn-bg:#fcefd6;--bad:#c0392b;--bad-bg:#fbe6e3;--shadow:0 1px 2px rgba(21,25,43,.05),0 6px 20px rgba(21,25,43,.06)}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1220;--card:#191e31;--fg:#f2ece1;--muted:#a3a6b6;--line:#2a3048;--soft:#222842;--accent:#8ea8ff;
---on-accent:#0c1022;--ok:#7fd6a5;--ok-bg:#14322a;--warn:#f2c374;--warn-bg:#3a2d12;--bad:#ff8f84;--bad-bg:#3b1c1b;--shadow:none}}
-*{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%;color-scheme:light dark}
-body{margin:0;min-height:100vh;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
--webkit-tap-highlight-color:transparent;word-break:keep-all;overflow-wrap:anywhere}
-button,input,textarea{font:inherit;color:inherit}
-h1,h2,h3{margin:0;line-height:1.3}
-svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.top{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(12px);
--webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top)}
-.bar{display:flex;align-items:center;gap:8px;max-width:760px;margin:0 auto;padding:8px 10px;min-height:60px}
-.bar h1{flex:1;font-size:19px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mark{width:34px;height:34px;margin:0 6px;border-radius:10px}
-.progress{height:2px;overflow:hidden}
-.progress.on{background:linear-gradient(90deg,transparent,var(--accent),transparent) no-repeat;background-size:50% 100%;animation:slide 1s linear infinite}
-@keyframes slide{from{background-position:-50% 0}to{background-position:150% 0}}
-.main{max-width:760px;margin:0 auto;padding:14px 16px calc(100px + env(safe-area-inset-bottom))}
-.tabs{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;justify-content:center;background:var(--card);border-top:1px solid var(--line);
-padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
-.tab{position:relative;flex:1;max-width:160px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px;border:0;background:none;
-color:var(--muted);font-size:12px;font-weight:700;cursor:pointer}
-.tab svg{width:24px;height:24px;padding:4px 18px;box-sizing:content-box;border-radius:999px;transition:background .2s}
-.tab.on{color:var(--fg)}
-.tab.on svg{background:var(--soft)}
-.badge{position:absolute;top:0;left:calc(50% + 10px);min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--bad);color:#fff;
-font-size:11px;line-height:20px;text-align:center}
-.icon-btn{display:inline-grid;place-items:center;width:44px;height:44px;border:0;border-radius:14px;background:none;cursor:pointer;font-size:22px;flex:none}
-.icon-btn svg{width:24px;height:24px}
-.icon-btn:active,.btn:active,.row:active,.seg:active{transform:scale(.97)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:16px;margin:0 0 12px;box-shadow:var(--shadow)}
-.card h2{font-size:16px;margin-bottom:6px}
-.card h3{font-size:17px}
-.head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
-.head>:first-child{flex:1;min-width:0}
-.dept{font-weight:500;color:var(--muted);font-size:15px}
-.ver{font-size:13px;color:var(--muted);font-weight:700}
-.meta{margin:2px 0 0;font-size:13px;color:var(--muted)}
-.gist{margin:10px 0 0;font-size:14px}
-.hint{margin:2px 0 12px;font-size:14px;color:var(--muted)}
-.section{font-size:15px;margin:24px 4px 10px;color:var(--muted)}
-.pill{flex:none;display:inline-block;padding:4px 10px;border-radius:999px;background:var(--soft);color:var(--muted);font-size:12px;font-weight:800;white-space:nowrap}
-.pill.warn{background:var(--warn-bg);color:var(--warn)}
-.pill.ok{background:var(--ok-bg);color:var(--ok)}
-.pill.bad{background:var(--bad-bg);color:var(--bad)}
-.score{display:flex;align-items:center;gap:10px;margin:14px 0 4px}
-.score b{font-size:14px;white-space:nowrap}
-meter{flex:1;height:10px;-webkit-appearance:none;appearance:none;border:0;border-radius:99px;background:var(--soft);overflow:hidden}
-meter::-webkit-meter-bar{height:10px;border:0;border-radius:99px;background:var(--soft)}
-meter::-webkit-meter-optimum-value,meter::-webkit-meter-suboptimum-value,meter::-webkit-meter-even-less-good-value{background:var(--gold);border-radius:99px}
-meter::-moz-meter-bar{background:var(--gold);border-radius:99px}
-details{margin:12px 0 0;border-top:1px solid var(--line);padding-top:8px}
-summary{cursor:pointer;font-size:14px;font-weight:700;color:var(--accent);padding:6px 0;list-style:none}
-summary::-webkit-details-marker{display:none}
-summary::after{content:" ▾"}
-details[open]>summary::after{content:" ▴"}
-.lines{margin:6px 0 0;display:grid;gap:6px}
-.lines div{display:grid;grid-template-columns:7.5em 1fr;gap:10px;font-size:14px}
-.lines dt{color:var(--muted)}
-.lines dd{margin:0;word-break:keep-all;overflow-wrap:anywhere}
-.diff{margin:12px 0 0;padding:10px 12px;border-radius:14px;background:var(--soft)}
-.diff-title{margin:0 0 6px;font-size:13px;font-weight:800;color:var(--muted)}
-.diff ul{margin:0;padding:0;list-style:none;display:grid;gap:4px}
-.diff li{display:flex;gap:6px;font-size:14px}
-.diff .sign{flex:none;width:16px;text-align:center;font-weight:900}
-.diff .add .sign{color:var(--ok)}
-.diff .del{color:var(--muted)}
-.diff .del .sign{color:var(--bad)}
-blockquote{margin:12px 0 0;padding:10px 12px;border-left:3px solid var(--gold);background:var(--soft);border-radius:4px 14px 14px 4px;font-size:14px;white-space:pre-wrap}
-cite{display:block;margin-top:4px;font-style:normal;font-size:12px;color:var(--muted)}
-.note{margin:12px 0 0;font-size:13px;padding:8px 10px;border-radius:12px;background:var(--soft)}
-.note.warn{background:var(--warn-bg);color:var(--warn)}
-.note.bad{background:var(--bad-bg);color:var(--bad)}
-.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;flex-wrap:wrap}
-.btn{min-height:44px;padding:0 18px;border-radius:14px;border:1px solid var(--line);background:var(--card);font-weight:800;font-size:15px;cursor:pointer;
-transition:transform .1s,background .2s}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
-.btn.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
-.btn.wide{width:100%}
-.btn:disabled{opacity:.45;cursor:default;transform:none}
-.link{border:0;background:none;padding:0;color:var(--accent);font-weight:800;cursor:pointer;text-decoration:underline}
-input:not([type]),input[type=search],input[type=text],input[type=password]{width:100%;min-height:48px;padding:0 14px;border-radius:14px;border:1px solid var(--line);
-background:var(--card);outline:none}
-input:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 45%,transparent);outline-offset:2px}
-label{display:block;font-size:14px;font-weight:700;margin-bottom:6px}
-.field{display:flex;gap:8px}
-.field input{flex:1;min-width:0}
-.inline{margin:0 0 12px}
-.searchbar{display:flex;gap:8px;margin-bottom:12px}
-.searchbar input{flex:1;min-width:0}
-.rows{list-style:none;margin:0 0 12px;padding:0;background:var(--card);border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:var(--shadow)}
-.rows li+li{border-top:1px solid var(--line)}
-.row{display:flex;align-items:center;gap:10px;width:100%;min-height:64px;padding:12px 16px;border:0;background:none;text-align:left;cursor:pointer}
-.row svg{flex:none;width:20px;height:20px;color:var(--muted)}
-.row-main{flex:1;min-width:0;display:flex;flex-direction:column}
-.row-main b{font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.row-main small{font-size:13px;color:var(--muted)}
-.memo{font-style:italic}
-.reward{display:flex;align-items:center;gap:12px;padding:14px 16px;flex-wrap:wrap}
-.reward .row-main{flex:1 1 14em}
-.reward .actions{margin:0 0 0 auto}
-.chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
-.chip{display:inline-flex;align-items:center;gap:2px;padding:4px 4px 4px 12px;border-radius:999px;background:var(--soft);font-size:14px;font-weight:700}
-.chip button{width:30px;height:30px;border:0;border-radius:50%;background:none;cursor:pointer;font-size:18px;line-height:1;color:var(--muted)}
-.switch{position:relative;display:flex;align-items:center;gap:12px;margin:12px 0 0;font-size:15px;font-weight:700;cursor:pointer}
-.switch input{position:absolute;opacity:0;width:1px;height:1px}
-.track{position:relative;flex:none;width:50px;height:30px;border-radius:99px;background:var(--line);transition:background .2s}
-.track::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);
-transition:transform .2s}
-.switch input:checked+.track{background:var(--accent)}
-.switch input:checked+.track::after{transform:translateX(20px)}
-.switch input:focus-visible+.track{outline:3px solid color-mix(in srgb,var(--accent) 45%,transparent);outline-offset:2px}
-.rule{padding:12px 0;border-top:1px solid var(--line)}
-.rule:first-of-type{border-top:0;padding-top:4px}
-.rule.dim{opacity:.72}
-.segmented{display:flex;gap:4px;padding:4px;border-radius:16px;background:var(--soft);margin-bottom:10px}
-.seg{flex:1;min-height:42px;border:0;border-radius:12px;background:none;font-weight:800;font-size:14px;color:var(--muted);cursor:pointer}
-.seg.on{background:var(--card);color:var(--fg);box-shadow:var(--shadow)}
-.stepper{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0 2px}
-.stepper>span{font-weight:800}
-.stepper-ctl{display:flex;align-items:center;gap:2px;background:var(--soft);border-radius:16px;padding:2px}
-.stepper output{min-width:68px;text-align:center;font-weight:900;font-size:17px}
-.checks{list-style:none;margin:0 0 6px;padding:0;display:grid;gap:10px}
-.checks li{display:flex;gap:10px;font-size:14px;align-items:flex-start}
-.checks span{flex:none;display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;font-size:13px;font-weight:900}
-.checks .ok span{background:var(--ok-bg);color:var(--ok)}
-.checks .todo span{background:var(--warn-bg);color:var(--warn)}
-.empty{text-align:center;padding:48px 16px;color:var(--muted)}
-.empty svg{width:52px;height:52px;color:var(--gold);stroke-width:1.5}
-.empty h2{color:var(--fg);font-size:17px;margin:12px 0 4px}
-.empty p{margin:0;font-size:14px}
-.skeleton{height:150px;background:linear-gradient(90deg,var(--card),var(--soft),var(--card));background-size:200% 100%;animation:shine 1.2s ease-in-out infinite}
-@keyframes shine{from{background-position:100% 0}to{background-position:-100% 0}}
-.center{min-height:100vh;display:grid;place-items:center}
-.spinner{width:32px;height:32px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--gold);animation:spin .8s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.login{max-width:420px;margin:0 auto;padding:calc(56px + env(safe-area-inset-top)) 16px 32px}
-.brand{text-align:center;margin-bottom:24px}
-.brand img{border-radius:22px;box-shadow:var(--shadow)}
-.brand h1{font-size:24px;margin:14px 0 4px}
-.brand p{margin:0;color:var(--muted)}
-.error{min-height:1.5em;margin:8px 0;color:var(--bad);font-size:14px}
-.toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translate(-50%,16px);max-width:min(92vw,520px);padding:12px 18px;
-border-radius:14px;background:var(--fg);color:var(--bg);font-size:14px;font-weight:700;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;
-z-index:20;text-align:center}
-.toast.show{opacity:1;transform:translate(-50%,0)}
-dialog{border:0;padding:0;border-radius:26px;background:var(--card);color:var(--fg);width:min(92vw,440px);box-shadow:0 24px 64px rgba(0,0,0,.3)}
-dialog::backdrop{background:rgba(10,12,22,.5)}
-dialog form{padding:22px 20px 18px}
-dialog h2{font-size:19px;margin-bottom:6px}
-dialog p{margin:0 0 12px;color:var(--muted);font-size:14px}
-.radios{display:grid;gap:8px;margin:6px 0}
-.radio{display:flex;align-items:center;gap:10px;margin:0;padding:12px;border:1px solid var(--line);border-radius:14px;font-weight:600;cursor:pointer}
-.radio input{flex:none;width:20px;height:20px;accent-color:var(--accent)}
-.radio:has(input:checked){border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--card))}
-@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-`;
-
-/**
- * The developer app, sent to the browser as /admin/app.js. It runs there, not in the worker, so it
- * uses nothing from this file: server text such as the reasons for rejecting comes from the API.
- */
-function adminApp() {
-  const app = document.getElementById("app");
-  const toastBox = document.getElementById("toast");
-  const dialog = document.getElementById("dialog");
-  const S = { authed: null, health: null, tab: "queue", overview: null, queue: null, list: null, query: "", company: null, rewards: null,
-    rewardTab: "owed", draft: null, error: "", busy: 0, back: "companies" };
-  const TABS = [
-    ["queue", "검토", '<path d="M4 13h4l2 3h4l2-3h4"/><path d="M5.5 5h13L20 13v6H4v-6z"/>'],
-    ["companies", "회사", '<path d="M4 20V5.5L12 3v17M12 9h8v11M3 20h18M7 8h2M7 12h2M7 16h2M15 13h2M15 17h2"/>'],
-    ["rewards", "보상", '<path d="M4 11h16v9H4zM3 7.5h18V11H3zM12 7.5V20"/><path d="M12 7.5C10.5 4 7 4 7.5 6.5c.3 1 2 1 4.5 1M12 7.5C13.5 4 17 4 16.5 6.5c-.3 1-2 1-4.5 1"/>'],
-    ["settings", "설정", '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>'],
-  ];
-  const ERRORS = {
-    exists: "같은 이름의 회사가 이미 있어요",
-    company: "회사 이름을 두 글자 이상, 40자 안으로 적어 주세요",
-    not_found: "이미 처리됐거나 없는 항목이에요",
-    forbidden: "다시 열어서 해 주세요",
-    merge: "합칠 수 없는 회사예요",
-    active: "이 부서에는 지금 쓰는 규칙이 있어요. 그 규칙을 먼저 내려 주세요",
-    too_large: "내용이 너무 길어요",
-    offline: "인터넷에 연결되지 않았어요",
-    no_database: "데이터베이스가 연결되지 않았어요",
-    server: "서버에 문제가 생겼어요. 잠시 뒤 다시 해 주세요",
-  };
-  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-  const day = (iso) => (iso ? new Date(iso).toLocaleDateString("ko-KR", { month: "long", day: "numeric" }) : "");
-  const moment = (iso) => (iso ? new Date(iso).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }) : "");
-  const icon = (paths) => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;
-  let pendingConfirm = null;
-  let toastTimer = 0;
-  let searchTimer = 0;
-
-  async function api(path, method = "GET", body) {
-    S.busy++;
-    progress();
-    try {
-      let res;
-      try {
-        res = await fetch(`/api/admin${path}`, {
-          method,
-          credentials: "same-origin",
-          headers: method === "GET" ? {} : { "content-type": "application/json", "x-admin": "1" },
-          body: method === "GET" ? undefined : JSON.stringify(body || {}),
-        });
-      } catch {
-        throw Object.assign(new Error("offline"), { data: {} });
-      }
-      const data = await res.json().catch(() => ({}));
-      if (res.status === 401 && data.error === "login") {
-        S.authed = false;
-        render();
-        throw Object.assign(new Error("login"), { quiet: true, data });
-      }
-      if (!res.ok) throw Object.assign(new Error(data.error || "server"), { data });
-      return data;
-    } finally {
-      S.busy--;
-      progress();
-    }
-  }
-
-  async function health() {
-    try {
-      return await (await fetch("/api/admin/health")).json();
-    } catch {
-      return null;
-    }
-  }
-
-  function progress() {
-    document.getElementById("progress")?.classList.toggle("on", S.busy > 0);
-  }
-
-  function toast(text) {
-    toastBox.textContent = text;
-    toastBox.classList.add("show");
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toastBox.classList.remove("show"), 2800);
-  }
-
-  function fail(e) {
-    if (!e.quiet) toast(ERRORS[e.message] || `문제가 생겼어요 (${e.message})`);
-  }
-
-  async function load() {
-    try {
-      S.overview = await api("/overview");
-      if (S.tab === "queue") S.queue = await api("/queue");
-      else if (S.tab === "companies") {
-        if (S.company) S.company = await api(`/companies/${S.company.id}`);
-        else S.list = await api(`/companies?q=${encodeURIComponent(S.query)}`);
-      } else if (S.tab === "rewards") S.rewards = await api(`/rewards?status=${S.rewardTab}`);
-      else S.health = await health();
-    } catch (e) {
-      fail(e);
-    }
-    render();
-  }
-
-  // ---- screens ----
-
-  function render() {
-    if (S.authed === null) return;
-    if (!S.authed) {
-      app.innerHTML = loginView();
-      document.getElementById("password")?.focus();
-      return;
-    }
-    const inCompany = S.tab === "companies" && S.company;
-    const title = inCompany ? S.company.name : TABS.find((t) => t[0] === S.tab)[1];
-    const badge = (key) => (key === "queue" ? (S.overview?.pending ?? 0) + (S.overview?.flagged ?? 0) + (S.overview?.asks ?? 0)
-      : key === "rewards" ? S.overview?.owed ?? 0 : 0);
-    app.innerHTML = `
-      <header class="top">
-        <div class="bar">
-          ${inCompany ? `<button class="icon-btn" data-act="back" aria-label="뒤로">${icon('<path d="M15 5l-7 7 7 7"/>')}</button>`
-            : '<img class="mark" src="/admin/icon.svg" alt="">'}
-          <h1>${esc(title)}</h1>
-          <button class="icon-btn" data-act="refresh" aria-label="새로 고침">${icon('<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/>')}</button>
-        </div>
-        <div id="progress" class="progress${S.busy ? " on" : ""}"></div>
-      </header>
-      <main class="main">${view()}</main>
-      <nav class="tabs" aria-label="메뉴">${TABS.map(([key, label, paths]) => {
-        const n = badge(key);
-        return `<button class="tab${S.tab === key ? " on" : ""}" data-act="tab" data-tab="${key}"${S.tab === key ? ' aria-current="page"' : ""}>
-          ${icon(paths)}<span>${label}</span>${n ? `<b class="badge">${n > 99 ? "99+" : n}</b>` : ""}</button>`;
-      }).join("")}</nav>`;
-  }
-
-  function view() {
-    if (S.tab === "queue") return queueView();
-    if (S.tab === "companies") return S.company ? companyView(S.company) : companiesView();
-    if (S.tab === "rewards") return rewardsView();
-    return settingsView();
-  }
-
-  const empty = (title, text) => `<div class="empty">${icon('<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>')}
-    <h2>${esc(title)}</h2>${text ? `<p>${esc(text)}</p>` : ""}</div>`;
-  const skeleton = () => '<div class="card skeleton"></div><div class="card skeleton"></div>';
-  const lines = (list) => `<dl class="lines">${list.map(([label, text]) => `<div><dt>${esc(label)}</dt><dd>${esc(text)}</dd></div>`).join("")}</dl>`;
-
-  function healthList() {
-    const h = S.health;
-    if (!h) return "";
-    // What to do, by why the server could not read it (older servers send no why).
-    const todo = (name, why, missing) => ({
-      short: `${name}가 10자보다 짧아요. 10자 이상으로 다시 넣고 Add variable and deploy를 눌러 주세요`,
-      name: `이름이 조금 달라요. 대문자와 밑줄 그대로 ${name}로 다시 넣어 주세요`,
-      store: `Secrets Store가 아니라 Worker → 설정 → 런타임 변수에 Secret으로 넣어 주세요`,
-    })[why] ?? missing;
-    const rows = [
-      [h.database, "데이터베이스(D1)가 연결돼 있어요", "D1 데이터베이스를 변수 이름 DB로 연결해 주세요 (Worker → 설정 → 바인딩)"],
-      [h.password, "관리자 비밀번호가 정해져 있어요", todo("ADMIN_PASSWORD", h.why?.password,
-        "Worker → 설정 → 런타임 변수에 ADMIN_PASSWORD를 Secret으로, 10자 이상 넣고 Add variable and deploy를 눌러 주세요")],
-      [h.salt, "RATE_SALT가 정해져 있어요", todo("RATE_SALT", h.why?.salt,
-        "같은 곳에 RATE_SALT를 Secret으로 넣어 주세요 (아무 긴 글자). 넣은 뒤 이 화면을 새로 고쳐요")],
-    ];
-    return `<ul class="checks">${rows.map(([ok, good, todo]) =>
-      `<li class="${ok ? "ok" : "todo"}"><span aria-hidden="true">${ok ? "✓" : "!"}</span>${esc(ok ? good : todo)}</li>`).join("")}</ul>`;
-  }
-
-  function loginView() {
-    const h = S.health;
-    const usable = !h || (h.database && h.password);
-    return `<main class="login">
-      <div class="brand"><img src="/admin/icon.svg" alt="" width="76" height="76"><h1>밤낮 관리자</h1><p>회사 정보 제보를 검토하고 관리해요.</p></div>
-      <form class="card" data-form="login">
-        <label for="password">관리자 비밀번호</label>
-        <input id="password" name="password" type="password" autocomplete="current-password" required${usable ? "" : " disabled"}>
-        ${usable ? "" : '<p class="hint">서버가 관리자 비밀번호를 읽으면 입력할 수 있어요. 아래 서버 준비를 마친 뒤 새로 고쳐 주세요.</p>'}
-        <p class="error" role="alert">${esc(S.error)}</p>
-        <button class="btn primary wide" type="submit"${usable ? "" : " disabled"}>로그인</button>
-      </form>
-      ${h && !(h.database && h.password && h.salt) ? `<section class="card"><h2>서버 준비</h2>${healthList()}</section>` : ""}
-    </main>`;
-  }
-
-  function queueView() {
-    const q = S.queue;
-    const points = S.overview?.settings?.adoptPoints ?? 3;
-    const head = `<p class="hint">같은 규칙을 서로 다른 2명 이상이 보내 ${points}점이 되면 자동으로 채택돼요. 명세서로 맞춰 본 제보는 2점이에요.</p>`;
-    if (!q) return head + skeleton();
-    const asks = q.asks ?? [];
-    if (!q.groups.length && !q.flagged.length && !asks.length) return head + empty("검토할 제보가 없어요", "새 제보가 오면 여기에 보여요.");
-    // With many waiting, each card shows the gist and opens on a tap.
-    return head + q.groups.map((g) => groupCard(g, !g.changes && q.groups.length <= 2)).join("") +
-      (asks.length ? `<h2 class="section">앱에 없는 방식</h2><p class="hint">앱으로 설정하지 못한 방식이에요. 답을 고르면 보낸 분 앱에 보여요.</p>${asks.map(askCard).join("")}` : "") +
-      (q.flagged.length ? `<h2 class="section">달라요가 있는 규칙</h2>${q.flagged.map(flagCard).join("")}` : "");
-  }
-
-  function askCard(a) {
-    return `<article class="card">
-      <div class="head"><h3>${esc(a.company.name)}${a.dept ? ` <span class="dept">${esc(a.dept)}</span>` : ""}</h3><span class="pill warn">앱에 없는 방식</span></div>
-      <p class="meta">${a.verified ? "명세서 확인 · " : ""}${moment(a.at)}</p>
-      <blockquote>${esc(a.note)}</blockquote>
-      <details><summary>보낸 분이 맞춰 둔 설정</summary>${lines(a.lines)}</details>
-      <div class="actions"><button class="btn primary" data-act="answer" data-id="${a.id}">답하기</button></div>
-    </article>`;
-  }
-
-  function groupCard(g, open) {
-    const verified = g.reports.filter((r) => r.verified).length;
-    const kind = g.blocked && g.replaces ? '<span class="pill warn">새 버전 후보</span>'
-      : g.replaces ? `<span class="pill">지금 v${g.replaces.version}와 달라요</span>` : '<span class="pill">새 규칙</span>';
-    const gist = g.changes ? "" : g.lines.find(([label]) => label === "근무")?.[1];
-    return `<article class="card">
-      <div class="head"><h3>${esc(g.company.name)}${g.dept ? ` <span class="dept">${esc(g.dept)}</span>` : ""}</h3>${kind}</div>
-      <p class="meta">${g.persons}명 · 제보 ${g.reports.length}건${verified ? ` · 명세서 확인 ${verified}건` : ""} · ${day(g.reports[0].at)}</p>
-      ${gist ? `<p class="gist">${esc(gist)}</p>` : ""}
-      <div class="score"><meter min="0" max="${g.threshold}" value="${Math.min(g.points, g.threshold)}" aria-label="채택 점수"></meter><b>${g.points}/${g.threshold}점</b></div>
-      ${g.company.hidden ? '<p class="note warn">숨긴 회사예요. 채택해도 회사 찾기에 나오지 않아요.</p>' : ""}
-      ${g.turnedDown ? `<p class="note warn">${g.turnedDown === "withdrawn" ? "전에 내린 규칙과 같은 설정이에요" : "전에 거절한 설정이에요"}. 자동으로 채택되지 않아요.</p>`
-        : g.persons >= 2 && g.networks < 2 ? '<p class="note warn">모두 1시간 안에 같은 네트워크에서 보냈어요. 한 분이 여러 번 보냈을 수도 있어서 자동으로 채택하지 않았어요.</p>' : ""}
-      ${g.changes ? changes(g.changes) : ""}
-      <details${open ? " open" : ""}><summary>보낸 설정</summary>${lines(g.lines)}</details>
-      ${g.reports.filter((r) => r.note).map((r) => `<blockquote>${esc(r.note)}<cite>${r.verified ? "명세서 확인 · " : ""}${moment(r.at)}</cite></blockquote>`).join("")}
-      ${g.bad ? `<p class="note bad">달라요 ${g.bad}명</p>` : ""}
-      <div class="actions">
-        <button class="btn" data-act="reject" data-company="${g.company.id}" data-setup="${g.setup}">거절</button>
-        <button class="btn primary" data-act="adopt" data-company="${g.company.id}" data-setup="${g.setup}">채택</button>
-      </div>
-    </article>`;
-  }
-
-  function changes(c) {
-    const items = [...c.removed.map((l) => ["del", l]), ...c.added.map((l) => ["add", l])];
-    if (!items.length) return '<p class="note">지금 쓰는 규칙과 내용이 같아요.</p>';
-    return `<div class="diff"><p class="diff-title">지금 쓰는 규칙과 다른 점</p><ul>${items.map(([k, [label, text]]) =>
-      `<li class="${k}"><span class="sign" aria-label="${k === "add" ? "새 값" : "지금 값"}">${k === "add" ? "+" : "−"}</span><span><b>${esc(label)}</b> ${esc(text)}</span></li>`).join("")}</ul></div>`;
-  }
-
-  function flagCard(f) {
-    return `<article class="card">
-      <h3>${esc(f.company.name)}${f.dept ? ` <span class="dept">${esc(f.dept)}</span>` : ""} <span class="ver">v${f.version}</span></h3>
-      <p class="meta">맞았어요 ${f.good}명 · 달라요 ${f.bad}명${f.names ? ` · 이름이 이상해요 ${f.names}` : ""}${f.old ? ` · 예전 정보 ${f.old}` : ""}</p>
-      <details><summary>규칙 내용</summary>${lines(f.lines)}</details>
-      <div class="actions"><button class="btn" data-act="open-company" data-id="${f.company.id}">회사 열기</button>
-        <button class="btn danger" data-act="withdraw-rule" data-id="${f.rule}">규칙 내리기</button></div>
-    </article>`;
-  }
-
-  function companiesView() {
-    return `<div class="searchbar"><input id="search" type="search" placeholder="회사 이름이나 다른 이름" value="${esc(S.query)}" autocomplete="off"
-        enterkeyhint="search" aria-label="회사 찾기"><button class="btn primary" data-act="new-company">회사 만들기</button></div>
-      <div id="company-list">${companyRows()}</div>`;
-  }
-
-  function companyRows() {
-    const list = S.list?.companies;
-    if (!list) return skeleton();
-    if (!list.length) {
-      return empty(S.query ? "찾는 회사가 없어요" : "아직 회사가 없어요", S.query ? "회사 만들기로 직접 만들 수 있어요." : "제보가 오면 회사가 저절로 생겨요.");
-    }
-    return `<ul class="rows">${list.map((c) => `<li><button class="row" data-act="open-company" data-id="${c.id}">
-      <span class="row-main"><b>${esc(c.name)}</b><small>${[c.rules ? `규칙 ${c.rules}` : "규칙 없음", c.pending ? `대기 ${c.pending}` : "", `제보 ${c.reports}`,
-        c.aliases ? `다른 이름 ${c.aliases}` : ""].filter(Boolean).join(" · ")}</small></span>
-      ${c.mergedInto ? '<span class="pill">합쳐짐</span>' : c.hidden ? '<span class="pill">숨김</span>' : ""}${icon('<path d="M9 5l7 7-7 7"/>')}</button></li>`).join("")}</ul>`;
-  }
-
-  function companyView(c) {
-    if (c.mergedInto) {
-      return `<section class="card"><p>이 회사는 <button class="link" data-act="open-company" data-id="${c.mergedInto.id}">${esc(c.mergedInto.name)}</button>에 합쳐졌어요.</p></section>`;
-    }
-    return `
-      <section class="card">
-        <form class="inline" data-form="rename"><label for="name">이름</label>
-          <div class="field"><input id="name" name="name" value="${esc(c.name)}" maxlength="40" required><button class="btn" type="submit">저장</button></div></form>
-        <label class="switch"><input type="checkbox" data-change="hidden"${c.hidden ? " checked" : ""}><span class="track" aria-hidden="true"></span><span>회사 찾기에서 숨기기</span></label>
-        <p class="meta">${day(c.createdAt)}에 생김${c.pending ? ` · 검토 대기 ${c.pending}` : ""}</p>
-      </section>
-      <section class="card">
-        <h2>다른 이름</h2>
-        <p class="hint">영문 이름, 줄임말, 예전 이름처럼 사람들이 찾을 만한 이름을 넣어 두면 회사 찾기에 잡혀요.</p>
-        <div class="chips">${c.aliases.length ? c.aliases.map((a) => `<span class="chip">${esc(a)}<button data-act="remove-alias" data-name="${esc(a)}"
-          aria-label="${esc(a)} 지우기">×</button></span>`).join("") : '<span class="meta">아직 없어요</span>'}</div>
-        <form data-form="alias"><div class="field"><input name="name" placeholder="예: Bamnat Steel, 밤스틸" maxlength="40" required aria-label="다른 이름">
-          <button class="btn" type="submit">추가</button></div></form>
-      </section>
-      <section class="card">
-        <h2>규칙</h2>
-        ${c.rules.length ? c.rules.map(ruleCard).join("") : '<p class="meta">채택된 규칙이 아직 없어요.</p>'}
-      </section>
-      <section class="card">
-        <h2>다른 회사에 합치기</h2>
-        <p class="hint">같은 회사가 다른 이름으로 두 번 생겼을 때 써요. 제보와 규칙이 모두 옮겨지고 이 이름은 다른 이름으로 남아요.</p>
-        <form data-form="merge-search"><div class="field"><input name="q" placeholder="합칠 회사 이름" required aria-label="합칠 회사 이름">
-          <button class="btn" type="submit">찾기</button></div></form>
-        <div id="merge-results"></div>
-      </section>`;
-  }
-
-  function ruleCard(r) {
-    const [tone, label] = r.withdrawn ? ["bad", "내림"] : r.superseded ? ["", "이전 버전"] : ["ok", "쓰는 중"];
-    const action = r.withdrawn ? `<button class="btn" data-act="restore-rule" data-id="${r.id}">다시 올리기</button>`
-      : r.superseded ? "" : `<button class="btn danger" data-act="withdraw-rule" data-id="${r.id}">내리기</button>`;
-    return `<div class="rule${r.withdrawn || r.superseded ? " dim" : ""}">
-      <div class="head"><div><b>${esc(r.dept || "회사 전체")}</b> <span class="ver">v${r.version}</span>
-        <p class="meta">${r.source === "auto" ? "자동 채택" : "직접 채택"} · ${day(r.adoptedAt)} · 맞았어요 ${r.ok} · 달라요 ${r.bad}</p></div>
-        <span class="pill ${tone}">${label}</span></div>
-      <details><summary>내용</summary>${lines(r.lines)}</details>
-      ${action ? `<div class="actions">${action}</div>` : ""}
-    </div>`;
-  }
-
-  function rewardsView() {
-    const r = S.rewards;
-    const counts = r?.counts ?? {};
-    const segs = [["owed", "지급 대기"], ["paid", "지급함"], ["void", "취소"]].map(([key, label]) =>
-      `<button class="seg${S.rewardTab === key ? " on" : ""}" data-act="reward-tab" data-tab="${key}" aria-pressed="${S.rewardTab === key}">${label}${counts[key] ? ` ${counts[key]}` : ""}</button>`).join("");
-    const body = !r ? skeleton() : !r.rewards.length ? empty(S.rewardTab === "owed" ? "드릴 보상이 없어요" : "목록이 비어 있어요", "")
-      : `<ul class="rows">${r.rewards.map((w) => `<li class="reward">
-        <div class="row-main"><b>${esc(w.company.name)}${w.dept ? ` · ${esc(w.dept)}` : ""}</b>
-          <small>프로 ${w.months}개월 · ${day(w.createdAt)} ${w.ask ? "앱에 없는 방식" : "채택"}${w.version ? ` · 규칙 v${w.version}` : ""}${w.paidAt ? ` · ${day(w.paidAt)} 지급` : ""}</small>
-          ${w.memo ? `<small class="memo">${esc(w.memo)}</small>` : ""}</div>
-        <div class="actions">${w.status === "owed" ? `<button class="btn" data-act="reward" data-id="${w.id}" data-status="void">취소</button>
-          <button class="btn primary" data-act="reward" data-id="${w.id}" data-status="paid">지급함</button>`
-          : `<button class="btn" data-act="reward" data-id="${w.id}" data-status="owed">대기로 되돌리기</button>`}</div>
-      </li>`).join("")}</ul>`;
-    return `<div class="segmented" role="group" aria-label="보상 상태">${segs}</div>
-      <p class="hint">채택된 정보를 보낸 분들께 드릴 프로 이용 기간이에요. 유료 기능이 시작되면 앱에서 받게 할 예정이고, 스토어 리뷰와는 묶지 않아요.</p>${body}`;
-  }
-
-  function settingsView() {
-    const s = S.draft ?? S.overview?.settings ?? { adoptPoints: 3, rewardMonths: 3 };
-    return `<section class="card">
-        <h2>자동 채택</h2>
-        ${stepper("adoptPoints", "채택 점수", s.adoptPoints, "점")}
-        <p class="hint">같은 규칙을 서로 다른 2명 이상이 보내 이 점수가 되면 자동으로 채택해요. 명세서로 맞춰 본 제보는 2점, 나머지는 1점이에요.</p>
-        ${stepper("rewardMonths", "채택 보상", s.rewardMonths, "개월")}
-        <p class="hint">채택된 정보를 보낸 분께 드릴 프로 이용 기간이에요. 0개월이면 보상을 기록하지 않아요.</p>
-        <button class="btn primary wide" data-act="save-settings"${S.draft ? "" : " disabled"}>저장</button>
-      </section>
-      <section class="card"><h2>서버 상태</h2>${healthList()}
-        <p class="meta">회사 ${S.overview?.companies ?? 0} · 쓰는 규칙 ${S.overview?.rules ?? 0} · 제보 ${S.overview?.reports ?? 0}</p></section>
-      <section class="card"><h2>휴대폰 홈 화면에 두기</h2>
-        <p class="hint">크롬에서 이 화면을 연 채 메뉴(⋮) → 홈 화면에 추가를 누르면 앱처럼 열려요.</p></section>
-      <button class="btn wide" data-act="logout">로그아웃</button>`;
-  }
-
-  function stepper(key, label, value, unit) {
-    return `<div class="stepper"><span>${label}</span><div class="stepper-ctl">
-      <button class="icon-btn" data-act="step" data-key="${key}" data-d="-1" aria-label="${label} 줄이기">−</button>
-      <output aria-live="polite">${value}${unit}</output>
-      <button class="icon-btn" data-act="step" data-key="${key}" data-d="1" aria-label="${label} 늘리기">+</button></div></div>`;
-  }
-
-  // ---- dialogs ----
-
-  function openDialog(html) {
-    dialog.innerHTML = html;
-    dialog.showModal();
-    dialog.querySelector("input:not([type=radio])")?.focus();
-  }
-
-  function confirmBox(title, text, label, then) {
-    pendingConfirm = then;
-    openDialog(`<form data-form="confirm"><h2>${esc(title)}</h2><p>${esc(text)}</p>
-      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit">${esc(label)}</button></div></form>`);
-  }
-
-  function openReject(company, setup) {
-    const reasons = Object.entries(S.overview?.reasons ?? {});
-    openDialog(`<form data-form="reject" data-company="${company}" data-setup="${setup}"><h2>거절할까요?</h2><p>보낸 분 앱에 이 이유가 보여요.</p>
-      <div class="radios">${reasons.map(([key, text], i) => `<label class="radio"><input type="radio" name="reason" value="${key}"${i === 0 ? " checked" : ""}>
-        <span>${esc(text)}</span></label>`).join("")}</div>
-      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit">거절하기</button></div></form>`);
-  }
-
-  function openAnswer(id) {
-    const answers = Object.entries(S.overview?.answers ?? {});
-    const months = S.overview?.settings?.rewardMonths ?? 0;
-    openDialog(`<form data-form="answer" data-id="${id}"><h2>어떻게 답할까요?</h2><p>보낸 분 앱에 이 답이 보여요.</p>
-      <div class="radios">${answers.map(([key, text], i) => `<label class="radio"><input type="radio" name="answer" value="${key}"${i === 0 ? " checked" : ""}>
-        <span>${esc(text)}</span></label>`).join("")}</div>
-      ${months ? `<label class="switch"><input type="checkbox" name="reward" checked><span class="track" aria-hidden="true"></span>
-        <span>앱에 넣을 방식이면 프로 ${months}개월 보상 기록</span></label>` : ""}
-      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">답하기</button></div></form>`);
-  }
-
-  function openNewCompany() {
-    openDialog(`<form data-form="new-company"><h2>회사 만들기</h2><p>제보가 오기 전에 이름과 다른 이름을 정해 둘 때 써요.</p>
-      <label for="new-name">회사 이름</label><input id="new-name" name="name" maxlength="40" required>
-      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">만들기</button></div></form>`);
-  }
-
-  function openPaid(id) {
-    openDialog(`<form data-form="paid" data-id="${id}"><h2>지급했어요</h2><p>어떻게 드렸는지 적어 두면 나중에 찾기 쉬워요. 보낸 분의 이름이나 연락처는 적지 마세요.</p>
-      <label for="memo">메모 (선택)</label><input id="memo" name="memo" maxlength="200" placeholder="예: 프로 3개월 쿠폰">
-      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">기록하기</button></div></form>`);
-  }
-
-  // ---- what taps do ----
-
-  async function openCompany(id) {
-    try {
-      const c = await api(`/companies/${id}`);
-      if (S.tab === "companies" && S.company) history.replaceState({ company: id }, "");
-      else {
-        // Back returns to the list it was opened from, the review queue included.
-        S.back = S.tab;
-        history.pushState({ company: id }, "");
-      }
-      S.tab = "companies";
-      S.company = c;
-      render();
-      window.scrollTo(0, 0);
-    } catch (e) {
-      fail(e);
-    }
-  }
-
-  async function setRule(id, withdrawn) {
-    try {
-      const c = await api(`/rules/${id}`, "POST", { withdrawn });
-      if (S.company) S.company = c;
-      toast(withdrawn ? "규칙을 내렸어요. 회사 찾기에서 바로 빠져요" : "규칙을 다시 올렸어요");
-    } catch (e) {
-      fail(e);
-    }
-    load();
-  }
-
-  async function setReward(id, status, memo) {
-    try {
-      await api(`/rewards/${id}`, "POST", memo === undefined ? { status } : { status, memo });
-      toast(status === "paid" ? "지급을 기록했어요" : status === "void" ? "보상을 취소했어요" : "대기로 되돌렸어요");
-    } catch (e) {
-      fail(e);
-    }
-    load();
-  }
-
-  const ACTIONS = {
-    tab: ({ tab }) => {
-      if (S.company) history.back();
-      S.tab = tab;
-      S.company = null;
-      render();
-      window.scrollTo(0, 0);
-      load();
-    },
-    refresh: () => load(),
-    back: () => history.back(),
-    close: () => dialog.close(),
-    adopt: async ({ company, setup }) => {
-      try {
-        await api(`/groups/${company}/${setup}/adopt`, "POST");
-        toast("채택했어요. 이제 회사 찾기에 나와요");
-      } catch (e) {
-        fail(e);
-      }
-      load();
-    },
-    reject: ({ company, setup }) => openReject(company, setup),
-    answer: ({ id }) => openAnswer(id),
-    "open-company": ({ id }) => openCompany(id),
-    "new-company": () => openNewCompany(),
-    "remove-alias": async ({ name }) => {
-      try {
-        S.company = await api(`/companies/${S.company.id}/aliases/remove`, "POST", { name });
-        render();
-      } catch (e) {
-        fail(e);
-      }
-    },
-    "withdraw-rule": ({ id }) => confirmBox("이 규칙을 내릴까요?", "회사 찾기에서 바로 빠져요. 나중에 다시 올릴 수 있어요.", "내리기", () => setRule(id, true)),
-    "restore-rule": ({ id }) => setRule(id, false),
-    "merge-into": ({ id, name }) => confirmBox(`${S.company.name}을 ${name}에 합칠까요?`, "제보와 규칙이 모두 옮겨지고 되돌릴 수 없어요.", "합치기", async () => {
-      S.company = await api(`/companies/${S.company.id}/merge`, "POST", { into: id });
-      history.replaceState({ company: S.company.id }, "");
-      toast("합쳤어요");
-      render();
-    }),
-    "reward-tab": ({ tab }) => {
-      S.rewardTab = tab;
-      S.rewards = null;
-      render();
-      load();
-    },
-    reward: ({ id, status }) => (status === "paid" ? openPaid(id) : setReward(id, status)),
-    step: ({ key, d }) => {
-      const s = { ...(S.draft ?? S.overview?.settings ?? { adoptPoints: 3, rewardMonths: 3 }) };
-      const [lo, hi] = key === "adoptPoints" ? [2, 20] : [0, 24];
-      s[key] = Math.min(hi, Math.max(lo, s[key] + Number(d)));
-      S.draft = s;
-      render();
-    },
-    "save-settings": async () => {
-      try {
-        S.overview.settings = await api("/settings", "POST", S.draft);
-        S.draft = null;
-        toast("저장했어요");
-      } catch (e) {
-        fail(e);
-      }
-      render();
-    },
-    logout: async () => {
-      try {
-        await api("/logout", "POST");
-      } catch {
-        // Signed out either way.
-      }
-      S.authed = false;
-      S.error = "";
-      render();
-    },
-  };
-
-  const FORMS = {
-    login: async (form) => {
-      S.error = "";
-      try {
-        await api("/login", "POST", { password: new FormData(form).get("password") });
-        S.authed = true;
-        render();
-        load();
-      } catch (e) {
-        const left = e.data?.left;
-        S.error = e.message === "wrong" ? `비밀번호가 달라요. ${left}번 더 틀리면 1시간 동안 잠겨요.`
-          : e.message === "locked" ? "여러 번 틀려서 1시간 동안 잠겼어요. 나중에 다시 해 주세요."
-          : e.message === "not_set" ? "관리자 비밀번호가 아직 없어요. 아래 서버 준비를 봐 주세요."
-          : ERRORS[e.message] || "로그인하지 못했어요. 잠시 뒤 다시 해 주세요.";
-        render();
-      }
-    },
-    confirm: async () => {
-      const then = pendingConfirm;
-      pendingConfirm = null;
-      dialog.close();
-      try {
-        await then?.();
-      } catch (e) {
-        fail(e);
-      }
-    },
-    reject: async (form) => {
-      const reason = new FormData(form).get("reason");
-      dialog.close();
-      try {
-        await api(`/groups/${form.dataset.company}/${form.dataset.setup}/reject`, "POST", { reason });
-        toast("거절했어요. 보낸 분 앱에 이유가 보여요");
-      } catch (e) {
-        fail(e);
-      }
-      load();
-    },
-    answer: async (form) => {
-      const data = new FormData(form);
-      dialog.close();
-      try {
-        const r = await api(`/asks/${form.dataset.id}`, "POST", { answer: data.get("answer"), reward: data.get("reward") === "on" });
-        toast(r.reward ? "답했어요. 보상 탭에 지급 대기로 올렸어요" : "답했어요. 보낸 분 앱에 보여요");
-      } catch (e) {
-        fail(e);
-      }
-      load();
-    },
-    "new-company": async (form) => {
-      try {
-        const c = await api("/companies", "POST", { name: new FormData(form).get("name") });
-        dialog.close();
-        toast("만들었어요");
-        openCompany(c.id);
-      } catch (e) {
-        fail(e);
-      }
-    },
-    paid: (form) => {
-      dialog.close();
-      setReward(form.dataset.id, "paid", new FormData(form).get("memo"));
-    },
-    rename: async (form) => {
-      try {
-        S.company = await api(`/companies/${S.company.id}`, "POST", { name: new FormData(form).get("name") });
-        toast("이름을 바꿨어요. 예전 이름으로도 찾아져요");
-        render();
-      } catch (e) {
-        fail(e);
-      }
-    },
-    alias: async (form) => {
-      try {
-        S.company = await api(`/companies/${S.company.id}/aliases`, "POST", { name: new FormData(form).get("name") });
-        render();
-      } catch (e) {
-        fail(e);
-      }
-    },
-    "merge-search": async (form) => {
-      const box = document.getElementById("merge-results");
-      try {
-        const r = await api(`/companies?q=${encodeURIComponent(new FormData(form).get("q"))}`);
-        const found = r.companies.filter((c) => c.id !== S.company.id && !c.mergedInto);
-        box.innerHTML = found.length ? `<ul class="rows">${found.map((c) => `<li><button class="row" data-act="merge-into" data-id="${c.id}" data-name="${esc(c.name)}">
-          <span class="row-main"><b>${esc(c.name)}</b><small>규칙 ${c.rules} · 제보 ${c.reports}</small></span><span class="pill">여기로 합치기</span></button></li>`).join("")}</ul>`
-          : '<p class="meta">찾는 회사가 없어요.</p>';
-      } catch (e) {
-        fail(e);
-      }
-    },
-  };
-
-  document.addEventListener("click", (e) => {
-    const el = e.target.closest("[data-act]");
-    if (!el || !ACTIONS[el.dataset.act]) return;
-    e.preventDefault();
-    ACTIONS[el.dataset.act](el.dataset, el);
-  });
-  document.addEventListener("submit", (e) => {
-    const form = e.target.closest("form[data-form]");
-    if (!form) return;
-    e.preventDefault();
-    FORMS[form.dataset.form]?.(form);
-  });
-  document.addEventListener("change", async (e) => {
-    if (e.target.dataset?.change !== "hidden" || !S.company) return;
-    try {
-      S.company = await api(`/companies/${S.company.id}`, "POST", { hidden: e.target.checked });
-      toast(S.company.hidden ? "회사 찾기에서 숨겼어요" : "다시 회사 찾기에 나와요");
-    } catch (err) {
-      fail(err);
-    }
-    render();
-  });
-  document.addEventListener("input", (e) => {
-    if (e.target.id !== "search") return;
-    S.query = e.target.value;
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(async () => {
-      try {
-        S.list = await api(`/companies?q=${encodeURIComponent(S.query)}`);
-      } catch (err) {
-        fail(err);
-      }
-      const box = document.getElementById("company-list");
-      if (box) box.innerHTML = companyRows();
-    }, 250);
-  });
-  dialog.addEventListener("click", (e) => {
-    // A tap outside the box closes it.
-    if (e.target === dialog) dialog.close();
-  });
-  window.addEventListener("popstate", () => {
-    if (!S.company) return;
-    S.company = null;
-    S.tab = S.back;
-    render();
-    load();
-  });
-
-  (async () => {
-    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/admin/sw.js").catch(() => {});
-    S.health = await health();
-    try {
-      S.overview = await api("/overview");
-      S.authed = true;
-    } catch {
-      S.authed = false;
-    }
-    render();
-    if (S.authed) load();
-  })();
-}
-
-/** The developer app's service worker: the newest files from the network, saved copies without one. */
-function adminWorker() {
-  const CACHE = "bamnat-admin-1";
-  const SHELL = ["/admin/", "/admin/app.js", "/admin/app.css", "/admin/icon.svg", "/admin/manifest.webmanifest"];
-  self.addEventListener("install", (event) => {
-    event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
-  });
-  self.addEventListener("activate", (event) => {
-    event.waitUntil(caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim()));
-  });
-  self.addEventListener("fetch", (event) => {
-    const url = new URL(event.request.url);
-    if (event.request.method !== "GET" || url.origin !== self.location.origin || !url.pathname.startsWith("/admin/")) return;
-    event.respondWith(fetch(event.request).then((res) => {
-      if (res.ok) {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(event.request, copy));
-      }
-      return res;
-    }).catch(() => caches.match(event.request)));
-  });
-}
-
-const ICONS = {
-  "/admin/icon-192.png": "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",
-  "/admin/icon-512.png": "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",
-};

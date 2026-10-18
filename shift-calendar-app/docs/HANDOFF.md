@@ -22,9 +22,12 @@
 - 서버 두 개가 사용자의 Cloudflare 계정에 있어요.
   - 공유 서버(`server/share-worker`, KV): 켜져 있고 앱이 써요(`gradle.properties`의 `bamnat.shareBaseUrl`).
   - 회사 서버(`server/company-worker`, D1): 2026-10-18에 배포했고 개발자 앱(`/admin/`) 로그인까지 돼요.
-    **앱은 아직 연결하지 않았어요**(`bamnat.companyBaseUrl`이 비어 있음). 그래서 지금 앱의 회사 찾기는 앱 안 업종 일반형 9가지만 나오고,
-    회사 설정 보내기는 파일로, '회사 방식 알려 주기'는 메일로만 가요. 개발자 앱에는 아직 아무것도 들어오지 않아요.
-- 설정 > 문의하기는 메일 앱을 여는 방식(`SettingsPages.kt`의 `writeToUs`, 주소는 `REPORT_EMAIL`)이에요.
+    1.12.0까지는 앱에 연결하지 않았고(`bamnat.companyBaseUrl`이 비어 있음), ADMIN-02 작업에서 연결했어요. 연결한 빌드부터 회사 이름 검색,
+    회사 설정 보내기, '회사 방식 알려 주기', 설정 > 문의하기가 이 서버로 가요. 비우고 빌드하면 예전처럼 꺼져요.
+- 설정 > 문의하기 [ADMIN-02]: 서버가 있는 빌드는 앱 안 화면(`ui/settings/InquiryScreen.kt`, `company/InquiryClient.kt`)으로 보내고 답도 거기서 받아요.
+  서버가 없는 빌드와 화면의 '메일로 보내고 싶어요'는 메일 앱을 열어요(`SettingsPages.kt`의 `writeToUs`, 주소는 `REPORT_EMAIL`).
+  서버 쪽 API와 저장은 `server/company-worker/README.md`의 '앱 문의'. 개발자 앱의 답장 화면은 ADMIN-03 작업이 만들어요.
+  **서버 코드를 다시 붙여 넣어야(README 3번) 문의 API가 살아나요.** 그 전에는 앱이 문의를 보내면 "보내지 못했어요"가 나와요.
 - 사용자가 1.11.0에서 링크 공유와 달력 바꿔 보기를 못 찾았어요. 위치는 달력 위 공유 버튼(좁은 화면은 ⋮ 더 보기 → 근무표 공유)이고,
   바꿔 보기 막대는 받은 근무표가 하나라도 있을 때만 보여요(`CalendarScreen.kt`의 `receivedList.isNotEmpty() && received.enabled`).
 

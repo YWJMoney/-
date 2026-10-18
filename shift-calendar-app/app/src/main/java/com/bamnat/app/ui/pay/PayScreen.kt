@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.app.ui.components.labelWidth
 import com.bamnat.app.pay.named
 
 import com.bamnat.core.pay.LeaveBook
@@ -196,7 +197,9 @@ private fun PayResult(
     val settings by vm.settings.collectAsStateWithLifecycle()
     // [PAYS-01] Worked out on a background thread; the month shown stays until the next one is ready.
     val view by produceState<PayView?>(null, profile, snapshot, month, closed, settings.extraKinds, settings.restDayCompared) {
-        value = vm.view(profile, snapshot, month)
+        // [STAB-01] A calculation that fails keeps the last month shown instead of closing the app.
+        value = runCatching { vm.view(profile, snapshot, month) }
+            .getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it else value }
     }
     val v = view
     if (v == null) {
@@ -300,7 +303,7 @@ private fun PayResult(
             val max = (year.maxOfOrNull { it.second } ?: 1L).coerceAtLeast(1L)
             year.forEach { (m, total) ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${m.year % 100}.${m.monthValue}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(44.dp))
+                    Text("${m.year % 100}.${m.monthValue}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.labelWidth(44.dp))
                     Box(Modifier.weight(1f).height(10.dp).clip(RoundedCornerShape(5.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
                         Box(Modifier.fillMaxWidth(total.toFloat() / max).height(10.dp).clip(RoundedCornerShape(5.dp)).background(MaterialTheme.colorScheme.primary))
                     }
@@ -817,7 +820,7 @@ private fun DayLedger(result: MonthPay, unlocked: Boolean) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("${d.date.monthValue}/${d.date.dayOfMonth} (${Fmt.dayOfWeekShort(d.date.dayOfWeek)})", style = MaterialTheme.typography.labelLarge,
                         color = if (d.holidayName != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.width(76.dp))
+                        modifier = Modifier.labelWidth(76.dp))
                     Column(Modifier.weight(1f)) {
                         Text(listOfNotNull(d.label, d.holidayName).joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {

@@ -45,6 +45,8 @@ data class SharedSchedule(
     val days: Map<LocalDate, SharedDay>,
     val pay: List<SharedPay>,
     val shows: Set<String>,
+    /** [SHR-11] What [pay] is: 급여, 일감 수입 or 매출. */
+    val payKind: com.bamnat.core.work.MoneyShare = com.bamnat.core.work.MoneyShare.PAY,
 ) {
     private val byId = types.associateBy { it.id }
     fun type(id: Long?): SharedType? = id?.let(byId::get)
@@ -85,9 +87,10 @@ data class SharedSchedule(
                     second = d.long("second"),
                     leave = d.str("leave"),
                     memo = d.str("memo"),
+                    // [SHR-11] A freelancer's jobs show where extra work does: a name and a time on the day.
                     extras = d.optJSONArray("extras").objects().map { e ->
                         SharedExtra(e.optString("name"), e.str("time"), e.optInt("minutes", 0).takeIf { it > 0 })
-                    },
+                    } + d.optJSONArray("jobs").objects().map { j -> SharedExtra(j.optString("name"), j.str("time"), null) },
                     rest = if (d.has("rest")) d.optBoolean("rest") else null,
                 )
             }.associateBy { it.date }
@@ -96,7 +99,7 @@ data class SharedSchedule(
                 SharedPay(month, p.optLong("amount"), p.optString("label"))
             }
             val shows = o.optJSONArray("shows")?.let { a -> (0 until a.length()).map { a.optString(it) }.toSet() }.orEmpty()
-            return SharedSchedule(o.optString("title"), types, days, pay, shows)
+            return SharedSchedule(o.optString("title"), types, days, pay, shows, com.bamnat.core.work.MoneyShare.ofKey(o.str("payKind")))
         }
 
         private fun JSONArray?.objects(): List<JSONObject> =
@@ -141,7 +144,14 @@ data class ReceivedCalendar(
  * the user's to back up. Which calendar is on screen lives only in memory, so the app always opens
  * on the user's own.
  */
-class ReceivedCalendarStore(private val file: File, private val clock: () -> Instant = Instant::now) {
+class ReceivedCalendarStore(
+    private val file: File,
+    private val clock: () -> Instant = Instant::now,
+    /** [SHR-02] Where the file is written: off the main thread, one write at a time, in order. */
+    private val writer: java.util.concurrent.Executor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "received-calendars").apply { isDaemon = true }
+    },
+) {
     private val _calendars = MutableStateFlow(load())
     val calendars: StateFlow<List<ReceivedCalendar>> = _calendars.asStateFlow()
 
@@ -195,8 +205,22 @@ class ReceivedCalendarStore(private val file: File, private val clock: () -> Ins
         if (_viewing.value == id) _viewing.value = null
     }
 
+    private val pending = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * Updates the list at once and saves it in the background: up to ten schedules serialised on the
+     * main thread froze the calendar while it opened or refreshed. Writes queued close together
+     * collapse into one that saves the latest list.
+     */
     private fun write(list: List<ReceivedCalendar>) {
         _calendars.value = list
+        if (pending.compareAndSet(false, true)) writer.execute {
+            pending.set(false)
+            save(_calendars.value)
+        }
+    }
+
+    private fun save(list: List<ReceivedCalendar>) {
         runCatching {
             file.parentFile?.mkdirs()
             val tmp = File(file.parentFile, file.name + ".tmp")

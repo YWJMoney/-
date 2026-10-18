@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.setup
 
+import com.bamnat.app.ui.components.labelWidth
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -279,7 +280,7 @@ private fun WeekDays(d: SetupDraft, onSet: (Int, Long?) -> Unit) {
     WEEK.forEachIndexed { i, day ->
         val current = d.weekly.getOrNull(i)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(Fmt.dayOfWeekShort(day), style = MaterialTheme.typography.titleMedium, modifier = Modifier.width(32.dp))
+            Text(Fmt.dayOfWeekShort(day), style = MaterialTheme.typography.titleMedium, modifier = Modifier.labelWidth(32.dp))
             FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 work.forEach { t ->
                     FilterChip(

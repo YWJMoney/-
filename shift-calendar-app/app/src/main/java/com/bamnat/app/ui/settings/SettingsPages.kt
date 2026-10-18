@@ -22,7 +22,10 @@ import com.bamnat.app.BuildConfig
 import com.bamnat.app.alarm.AlarmScheduler
 import com.bamnat.app.alarm.Notifications
 import com.bamnat.app.data.AppSettings
+import com.bamnat.app.data.PhoneDayView
 import com.bamnat.app.data.ThemeMode
+import com.bamnat.app.ui.calendar.DayGroupKey
+import com.bamnat.app.ui.calendar.DayGroupOrderDialog
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.ConfirmDialog
 import com.bamnat.app.ui.components.SectionCard
@@ -51,6 +54,7 @@ internal fun ColumnScope.SettingsPageContent(
     onOpenPay: () -> Unit,
     company: (@Composable ColumnScope.() -> Unit)?,
     onOpenPage: (SettingsPage) -> Unit,
+    onOpenInquiry: () -> Unit = {},
 ) {
     when (page) {
         SettingsPage.WORK -> WorkPage(vm, settings, onOpenWorkStyle, onOpenPattern, onOpenShiftTypes, onOpenExtraKinds)
@@ -61,7 +65,7 @@ internal fun ColumnScope.SettingsPageContent(
         SettingsPage.CALENDAR -> CalendarPage(vm, settings)
         SettingsPage.DATA -> DataPage(vm, files)
         SettingsPage.PRIVACY -> PrivacyPage(vm, settings, refresh, askNotifications, onOpenPage)
-        SettingsPage.ABOUT -> AboutPage(onOpenDiagnostics)
+        SettingsPage.ABOUT -> AboutPage(vm, onOpenDiagnostics, onOpenInquiry)
     }
 }
 
@@ -170,6 +174,10 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
             vm.update { it.copy(commuteMinutes = m) }
         }
         HealthSleepRow(vm, settings.healthSleep)
+        // [SLP-16] Where the taps go, and what they say about the user's own sleep.
+        NavRow("수면 기록 보기", "근무별 평균, 내 기록에서 보이는 것, 기록 고치기·추가") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SLEEP)
+        }
         Note("야간 뒤에는 목표가 짧아도 6시간 이상 이어서 자도록 제안해요. 진단이나 치료가 아닌 일정에 맞춘 참고 정보예요.")
     }
     // [SLP-01][MKT-07][MKT-11]
@@ -290,7 +298,7 @@ private fun PayPage(vm: SettingsViewModel, files: SettingsFiles, onOpenPay: () -
 }
 
 private enum class CellLine { NONE, HOURS, LUNAR }
-private enum class MemoView { PLAIN, BELOW, FIRST }
+private enum class MemoView { PLAIN, BELOW, CELLS }
 
 @Composable
 private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings) {
@@ -303,7 +311,8 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings) {
         }
     }
     SectionCard(title = "달력") {
-        ChoiceRow("한 주의 시작", "주 근무시간도 이 요일부터 세요", listOf(DayOfWeek.MONDAY to "월요일", DayOfWeek.SUNDAY to "일요일"), settings.weekStart) { d ->
+        // [CAL-02] Sunday first, as most Korean calendars are.
+        ChoiceRow("한 주의 시작", "주 근무시간도 이 요일부터 세요", listOf(DayOfWeek.SUNDAY to "일요일", DayOfWeek.MONDAY to "월요일"), settings.weekStart) { d ->
             vm.update { it.copy(weekStart = d) }
         }
         // One choice: before, two switches quietly took each other's place.
@@ -312,14 +321,34 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings) {
             listOf(CellLine.NONE to "비움", CellLine.HOURS to "근무시간 (8h)", CellLine.LUNAR to "음력 (8.24)"), line) { l ->
             vm.update { it.copy(showHoursInCells = l == CellLine.HOURS, showLunar = l == CellLine.LUNAR) }
         }
-        // [FEAT-17] For people who keep their days in notes.
-        val memo = when { settings.memoFirst -> MemoView.FIRST; settings.calendarMemos -> MemoView.BELOW; else -> MemoView.PLAIN }
+        // [FEAT-17][DAY-04] For people who keep their days in notes. Where 메모 sits in the day is the order below.
+        val memo = when { settings.memoInCells -> MemoView.CELLS; settings.calendarMemos -> MemoView.BELOW; else -> MemoView.PLAIN }
         ChoiceRow("메모 보기", when (memo) {
             MemoView.PLAIN -> "메모는 날짜를 누르면 보여요"
             MemoView.BELOW -> "이번 달 메모를 달력 아래에 날짜순으로 짧게 보여 줘요"
-            MemoView.FIRST -> "날짜를 누르면 메모가 맨 위에 나오고, 달력 칸에 메모 첫 글자가 보여요"
-        }, listOf(MemoView.PLAIN to "기본", MemoView.BELOW to "달력 아래 목록", MemoView.FIRST to "메모 중심"), memo) { m ->
-            vm.update { it.copy(calendarMemos = m != MemoView.PLAIN, memoFirst = m == MemoView.FIRST) }
+            MemoView.CELLS -> "날짜 밑에 그날 메모 첫 글자가 보이고, 이번 달 메모도 달력 아래에 모여요"
+        }, listOf(MemoView.PLAIN to "기본", MemoView.BELOW to "달력 아래 목록", MemoView.CELLS to "날짜 밑 메모"), memo) { m ->
+            vm.update { it.copy(calendarMemos = m != MemoView.PLAIN, memoInCells = m == MemoView.CELLS) }
+        }
+        // [CAL-03] Unfolded, the day is always beside the calendar; this is for the cover screen and phones.
+        ChoiceRow("날짜를 누르면", "접은 화면과 일반 휴대폰에서 " + when (settings.phoneDayView) {
+            PhoneDayView.PREVIEW -> "달력 아래에 짧게 보이고, 한 번 더 누르면 크게 열려요"
+            PhoneDayView.SHEET -> "하루 화면이 바로 크게 열려요"
+            PhoneDayView.WEEK -> "그 주(월~일)만 남고, 아래에 하루 화면이 펼쳐져요"
+        }, listOf(PhoneDayView.PREVIEW to "미리보기 먼저", PhoneDayView.SHEET to "바로 크게", PhoneDayView.WEEK to "그 주만 보기"), settings.phoneDayView) { v ->
+            vm.update { it.copy(phoneDayView = v) }
+        }
+        // [DAY-04] The day's groups in the user's order, beside the unfolded calendar and in the sheet alike.
+        var ordering by remember { mutableStateOf(false) }
+        val moneyFirst = settings.workStyle?.usesPayEngine == false
+        NavRow("하루 화면 순서", DayGroupKey.order(settings.dayGroupOrder, moneyFirst).joinToString(" · ") { DayGroupKey.label(it) }) { ordering = true }
+        if (ordering) {
+            DayGroupOrderDialog(
+                custom = settings.dayGroupOrder,
+                moneyFirst = moneyFirst,
+                onChange = { o -> vm.update { it.copy(dayGroupOrder = o) } },
+                onDismiss = { ordering = false },
+            )
         }
     }
 }
@@ -350,7 +379,12 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
             NavRow("불러오기 전으로 되돌리기", "$savedLabel 불러오기 전 데이터로 돌아가요") { confirmUndo = true }
         }
     }
-    SectionCard(title = "다른 앱으로") {
+    SectionCard(title = "다른 캘린더 앱과") {
+        // [IMPORT-01]
+        NavRow("캘린더에서 가져오기", "삼성·구글 캘린더 일정을 읽어 근무와 메모로 옮겨요") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.CALENDAR_IMPORT)
+        }
+        HorizontalDivider()
         // [REL-04]
         NavRow("캘린더 앱으로 내보내기", "구글·삼성 캘린더에 근무를 넣는 파일을 만들어요 (3개월 전부터 1년 뒤까지)", files.exportIcs)
     }
@@ -367,8 +401,8 @@ private fun PrivacyPage(
     val context = LocalContext.current
     val pkg = Uri.parse("package:${context.packageName}")
     SectionCard(title = "개인정보") {
-        SwitchRow("사용 통계 보내기", "어떤 기능을 얼마나 쓰는지 익명으로 보내 앱 개선에 써요. 메모와 근무 내용은 보내지 않아요",
-            settings.shareUsageStats) { v -> vm.update { it.copy(shareUsageStats = v) } }
+        // [STAB-01] No '사용 통계 보내기' switch: the app sends no usage statistics anywhere, so it promised
+        // something it does not do. It comes back only with a real place to send them (Telemetry sinks).
         NavRow("개인정보 처리방침", "무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
     }
     SectionCard(title = "권한") {
@@ -395,12 +429,18 @@ private fun PrivacyPage(
 }
 
 @Composable
-private fun AboutPage(onOpenDiagnostics: (Boolean) -> Unit) {
+private fun AboutPage(vm: SettingsViewModel, onOpenDiagnostics: (Boolean) -> Unit, onOpenInquiry: () -> Unit) {
     val context = LocalContext.current
+    val unread by vm.inquiryUnread.collectAsStateWithLifecycle()
     SectionCard(title = null) {
-        NavRow("알람 점검", "알람이 안 울리거나 늦을 때 원인을 찾고, 문의에 붙일 기록을 복사해요") { onOpenDiagnostics(false) }
+        NavRow("알람 점검", "알람이 안 울리거나 늦을 때 원인을 찾아요") { onOpenDiagnostics(false) }
         HorizontalDivider()
-        NavRow("문의하기", "메일로 보내요. 휴대폰 기종과 앱 버전이 함께 적혀요") { writeToUs(context) }
+        // [ADMIN-02] In the app, answered in the app; a build without the company server writes a mail.
+        if (vm.inquiryOn) {
+            NavRow("문의하기", if (unread > 0) "개발자 답이 ${unread}개 왔어요" else "앱 안에서 보내고, 답도 여기서 받아요") { onOpenInquiry() }
+        } else {
+            NavRow("문의하기", "메일로 보내요. 휴대폰 기종과 앱 버전이 함께 적혀요") { writeToUs(context) }
+        }
         HorizontalDivider()
         NavRow("개인정보 처리방침", null) { openPrivacy(context) }
     }
@@ -408,6 +448,7 @@ private fun AboutPage(onOpenDiagnostics: (Boolean) -> Unit) {
         color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
+// [ADMIN-02] The 밤낮 policy; privacy.html at the site root is another app's.
 private const val PRIVACY_URL = "https://ywjmoney.github.io/-/privacy/"
 
 private fun openPrivacy(context: android.content.Context) {
@@ -415,7 +456,7 @@ private fun openPrivacy(context: android.content.Context) {
 }
 
 /** A mail to the developer with what helps answer it; nothing from the calendar goes in. */
-private fun writeToUs(context: android.content.Context) {
+internal fun writeToUs(context: android.content.Context) {
     val body = "\n\n---\n앱: 밤낮 ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n기기: ${Build.MANUFACTURER} ${Build.MODEL}\n" +
         "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})"
     val mail = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$REPORT_EMAIL")).apply {

@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.ui.components.labelWidth
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.BeachAccess
 import androidx.compose.material.icons.outlined.Bedtime
@@ -131,6 +133,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalTime
+import com.bamnat.app.ui.calendar.DayGroupKey as G
 
 /** [DAY-02] Which of the day's groups are open: the user's own choice per group, kept from day to day. */
 @Stable
@@ -184,6 +187,11 @@ fun DayPanel(
     weekNote: String? = null,
     /** [CAL-01] Beside the unfolded calendar the panel is narrow, so the title is smaller. */
     compact: Boolean = false,
+    /**
+     * [CAL-03] Off when the panel sits in a page that scrolls already (under the week on a phone): a scroll
+     * inside a scroll has no height to measure against.
+     */
+    scrollGroups: Boolean = true,
 ) {
     val day = remember(snapshot, date) { snapshot.resolver.resolve(date) }
     Column(modifier) {
@@ -191,26 +199,12 @@ fun DayPanel(
         weekNote?.let { WeekNoteLine(it, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
         Column(
-            Modifier
-                .weight(1f, fill = false)
-                .imePadding()
-                .verticalScroll(rememberScrollState())
+            (if (scrollGroups) Modifier.weight(1f, fill = false).imePadding().verticalScroll(rememberScrollState()) else Modifier)
                 .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = bottomPadding),
         ) {
             DayGroups(day, today, snapshot, vm, groups, memoFocus, onOpenMemo, onNewMemo, onOpenShiftTypes, onOpenPay, onOpenExtraKinds)
         }
     }
-}
-
-private object G {
-    const val WORK = "work"
-    const val EXTRA = "extra"
-    const val LEAVE = "leave"
-    const val ALARM = "alarm"
-    const val MEMO = "memo"
-    const val MONEY = "money"
-    const val BODY = "body"
-    const val RECORD = "record"
 }
 
 /**
@@ -245,7 +239,10 @@ private fun DayGroups(
     val unlocked = FeatureGate.allows(tier, Feature.PAY_ENGINE)
     // [EXTRA-02][EXTRA-03] Minutes and pay are worked out off the main thread, for this date only.
     val insightFor by produceState<Pair<LocalDate, DayInsight>?>(null, profile, snapshot, date, unlocked) {
-        value = date to withContext(Dispatchers.Default) { vm.dayInsight(profile, snapshot, date, unlocked) }
+        // [STAB-01] Days passed by quickly, or a stepper held down, start no calculation that is thrown away.
+        delay(INSIGHT_SETTLE_MILLIS)
+        value = date to (runCatching { withContext(Dispatchers.Default) { vm.dayInsight(profile, snapshot, date, unlocked) } }
+            .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull() ?: DayInsight())
     }
     val insight = insightFor?.takeIf { it.first == date }?.second ?: DayInsight()
     val alarms = remember(snapshot, date) { plannedAlarms(snapshot, day) }
@@ -259,11 +256,8 @@ private fun DayGroups(
     val moneyFirst = style != null && !style.usesPayEngine
     var restShift by remember(date) { mutableStateOf<ShiftType?>(null) }
 
-    val order = when {
-        moneyFirst -> listOf(G.MONEY, G.MEMO, G.WORK, G.EXTRA, G.LEAVE, G.ALARM, G.BODY, G.RECORD)
-        settings.memoFirst -> listOf(G.MEMO, G.WORK, G.EXTRA, G.LEAVE, G.ALARM, G.MONEY, G.BODY, G.RECORD)
-        else -> listOf(G.WORK, G.EXTRA, G.LEAVE, G.ALARM, G.MEMO, G.MONEY, G.BODY, G.RECORD)
-    }
+    // [DAY-04] The user's own order, else the one that fits the work style.
+    val order = remember(settings.dayGroupOrder, moneyFirst) { G.order(settings.dayGroupOrder, moneyFirst) }
     val showLeave = day.leave != null || day.isWorkDay && day.shiftType?.hasTimes == true
     val showBody = rest.isNotEmpty() || settings.sleepTips && (tips.isNotEmpty() || date == today)
     val showRecord = changes.isNotEmpty() || day.entry != null
@@ -422,6 +416,22 @@ private fun DayGroups(
                 }
             }
         }
+    }
+
+    // [DAY-04] The order of these groups is the user's; changed here, where it shows.
+    var ordering by remember { mutableStateOf(false) }
+    TextButton(onClick = { ordering = true }, modifier = Modifier.padding(top = 4.dp)) {
+        Icon(Icons.Filled.SwapVert, contentDescription = null, Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text("순서 바꾸기")
+    }
+    if (ordering) {
+        DayGroupOrderDialog(
+            custom = settings.dayGroupOrder,
+            moneyFirst = moneyFirst,
+            onChange = vm::setDayGroupOrder,
+            onDismiss = { ordering = false },
+        )
     }
 
     restShift?.let { type ->
@@ -842,7 +852,10 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
     var deleting by remember { mutableStateOf<Memo?>(null) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(memoFocus) {
-        if (memoFocus > 0) {
+        // [STAB-01] Each tap on 메모 focuses once: the field made again (the sheet reopened, the groups moved)
+        // must not open the keyboard by itself and push the screen under the finger.
+        if (memoFocus > 0 && memoFocus != vm.memoFocusUsed) {
+            vm.memoFocusUsed = memoFocus
             // After the sheet has slid up, so the keyboard does not fight the animation.
             delay(350)
             runCatching { focus.requestFocus() }
@@ -1032,7 +1045,7 @@ private fun ChangeHistory(changes: List<com.bamnat.app.data.DayChange>) {
                     java.time.Instant.ofEpochMilli(c.atMillis).atZone(zone).format(fmt),
                     style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.width(84.dp),
+                    modifier = Modifier.labelWidth(84.dp),
                 )
                 Text(c.text, style = MaterialTheme.typography.bodyMedium)
             }
@@ -1044,6 +1057,9 @@ private fun ChangeHistory(changes: List<com.bamnat.app.data.DayChange>) {
 }
 
 private const val HISTORY_ROWS = 3
+
+/** [STAB-01] How long the day must stay put before its pay is worked out. */
+private const val INSIGHT_SETTLE_MILLIS = 120L
 
 /**
  * [SLP-03][SLP-05][SLP-06][SLP-13] Sleep times that fit this day's shifts, each with how strong its
@@ -1118,13 +1134,18 @@ private fun SleepSection(
             }
             val debt = remember(log, today, targetMinutes) { com.bamnat.core.sleep.SleepDebt.of(log, today, targetMinutes) }
             Text(
-                if (debt.days == 0) "잠들 때와 깼을 때 한 번씩 누르면 최근 7일 수면을 보여 줘요. 기록은 이 휴대폰과 백업 파일에만 남아요."
+                if (debt.days == 0) "잠들 때와 깼을 때 한 번씩 누르면 최근 7일 수면과 근무별 평균(야간 뒤·쉬는 날)을 보여 줘요. 기록은 이 휴대폰과 백업 파일에만 남아요."
                 else "최근 7일 중 ${debt.days}일 기록 · 평균 ${hoursText(debt.averageMinutes)}" +
                     if (debt.shortMinutes > 0) " · 목표보다 ${hoursText(debt.shortMinutes)} 부족" else " · 목표만큼 잤어요",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
             )
+            // [SLP-16] The log, the user's own averages and fixing a record are one tap away.
+            androidx.compose.material3.TextButton(
+                onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SLEEP) },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp),
+            ) { Text(if (debt.days == 0) "수면 기록은 어디에 쓰이나요?" else "수면 기록 보기 · 고치기") }
             // [SLP-08] Where the numbers come from once Health Connect is on.
             val measured = remember(log, today) {
                 log.count { it.imported && it.wakeDate?.let { d -> !d.isBefore(today.minusDays(com.bamnat.core.sleep.SleepDebt.WINDOW_DAYS - 1)) } == true }

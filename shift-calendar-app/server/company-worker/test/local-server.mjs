@@ -40,7 +40,7 @@ async function seed() {
   day.extraKindShiftSets = { 3: ["주간"] };
   day.pay.items = day.pay.items.slice(0, 2);
   day.pay.rules.publicHolidayAs = null;
-  await send("/api/reports", report(5, { company: "가나다화학", dept: "품질팀", setup: day }), "10.0.0.5");
+  const talk = await send("/api/reports", report(5, { company: "가나다화학", dept: "품질팀", setup: day }), "10.0.0.5");
   await send("/api/reports", report(6, { company: "라마바전자", dept: "생산1팀", setup: day, verified: true }), "10.0.0.6");
   // Turned down once, sent again.
   const odd = setup();
@@ -60,12 +60,53 @@ async function seed() {
     }), env);
   }
   await send("/api/reports", report(8, { company: "사아자물류", setup: odd, verified: true }), "10.0.0.8");
+  if (login.ok) await seedAdmins(login.headers.get("set-cookie").split(";")[0]);
   // A way the app cannot set yet.
   await send("/api/reports", report(9, {
     company: "예시정밀", dept: "포장팀", ask: true,
     note: "어떻게: 대근을 4시간만 해도 8시간 근무 뒤에 하면 기본급의 10%가 나와요\n예시: 주간 근무 뒤 19~23시 대근이면 기본급의 10%",
   }), "10.0.0.10");
-  console.log("seeded: 1 adopted rule, 1 new version, 2 waiting, 1 turned down, 1 way the app cannot set");
+  // [COMM-06] A talk on 가나다화학's rule set: one post flagged once, one flagged by three people and hidden.
+  const say = (n, body) => send("/api/posts", { device: `seed-device-0000002${n}`, company: talk.company.id, setup: talk.setup, body }, `10.0.1.${n}`);
+  await say(1, "품질팀은 토요일도 격주로 나와요. 휴일이 하나 더 있어야 할 것 같아요");
+  await send("/api/votes", { device: "seed-device-00000022", company: talk.company.id, setup: talk.setup, ok: true }, "10.0.1.2");
+  await say(2, "저는 이게 맞아요. 격주 토요일은 특근으로 넣고 있어요");
+  const rude = await say(3, "이런 거 올리는 사람들 다 회사 끄나풀임");
+  const odd2 = await say(4, "옆 공장 이야기인데 거기는 4조 3교대래요");
+  for (const n of [5, 6, 7]) {
+    await send(`/api/posts/${rude.id}/flag`, { device: `seed-device-0000003${n}`, reason: "abuse" }, `10.0.2.${n}`);
+  }
+  await send(`/api/posts/${odd2.id}/flag`, { device: "seed-device-00000038", reason: "spam" }, "10.0.2.8");
+  // [ADMIN-02] Questions from the app: one with the alarm check attached, one idea.
+  await send("/api/inquiries", {
+    v: 1, device: "seed-device-00000011", kind: "bug", text: "잠금 화면에서 알람 소리가 가끔 안 나요. 진동만 와요",
+    info: { app: "1.12.0 (18)", model: "samsung SM-S928N", android: "16 (API 36)", diag: "알람 사용: 켬\n놓쳤을 수 있는 알람: 10.17 06:00" },
+  }, "10.0.0.11");
+  await send("/api/inquiries", {
+    v: 1, device: "seed-device-00000012", kind: "idea", text: "달력이 일요일부터 시작하면 좋겠어요",
+    info: { app: "1.12.0 (18)" },
+  }, "10.0.0.12");
+  console.log("seeded: 1 adopted rule, 1 new version, 2 waiting, 1 turned down, 1 way the app cannot set, a talk with 2 flagged posts, 2 questions");
+}
+
+/** [ADMIN-04] One approved admin (minji@example.com, password minji-review-2026), one waiting, one invite out. */
+async function seedAdmins(cookie) {
+  const asOwner = (path, body) => worker.fetch(new Request(`http://localhost:${port}/api/admin${path}`, {
+    method: "POST", headers: { "content-type": "application/json", "x-admin": "1", cookie }, body: JSON.stringify(body),
+  }), env).then((r) => r.json());
+  const reviewer = { review: "edit", inquiries: "edit", companies: "view", rewards: "none", settings: "none", audit: "view" };
+  for (const [email, name, approve] of [["minji@example.com", "민지", true], ["junho@example.com", "준호", false]]) {
+    const inv = await asOwner("/invites", { email, perms: reviewer, note: approve ? "검토 담당" : "" });
+    await worker.fetch(new Request(`http://localhost:${port}/api/admin/join`, {
+      method: "POST", headers: { "content-type": "application/json", "x-admin": "1", "cf-connecting-ip": "10.0.0.20" },
+      body: JSON.stringify({ token: inv.link.split("#")[1], name, password: "minji-review-2026" }),
+    }), env);
+    if (approve) {
+      const list = await worker.fetch(new Request(`http://localhost:${port}/api/admin/admins`, { headers: { cookie } }), env).then((r) => r.json());
+      await asOwner(`/admins/${list.admins.find((a) => a.email === email).id}`, { status: "active" });
+    }
+  }
+  await asOwner("/invites", { email: "seojin@example.com", perms: reviewer, note: "문의 답변" });
 }
 
 if (args.includes("--seed")) await seed();

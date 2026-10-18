@@ -174,28 +174,34 @@ fun MonthGrid(
             if (p.x < bar || p.y < 0f || row !in 0 until GRID_ROWS || col !in 0..6) return null
             return firstCell.plusDays(row * 7L + col)
         }
-        detectDragGestures(
-            onDragStart = { p ->
-                dragged = listOfNotNull(dateAt(p))
-                // [VIS-02] Felt when the finger starts painting, a tick per day, and a firmer one when it is written.
-                haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
-            },
-            onDragEnd = {
-                val days = dragged
-                dragged = emptyList()
-                if (days.isNotEmpty()) {
-                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                    paint?.invoke(days)
+        // [STAB-01] Quick input closed in the middle of a drag cancels it without onDragCancel; the days
+        // already lit would stay lit.
+        try {
+            detectDragGestures(
+                onDragStart = { p ->
+                    dragged = listOfNotNull(dateAt(p))
+                    // [VIS-02] Felt when the finger starts painting, a tick per day, and a firmer one when it is written.
+                    haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                },
+                onDragEnd = {
+                    val days = dragged
+                    dragged = emptyList()
+                    if (days.isNotEmpty()) {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        paint?.invoke(days)
+                    }
+                },
+                onDragCancel = { dragged = emptyList() },
+            ) { change, _ ->
+                change.consume()
+                val d = dateAt(change.position)
+                if (d != null && d !in dragged) {
+                    dragged = dragged + d
+                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                 }
-            },
-            onDragCancel = { dragged = emptyList() },
-        ) { change, _ ->
-            change.consume()
-            val d = dateAt(change.position)
-            if (d != null && d !in dragged) {
-                dragged = dragged + d
-                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
             }
+        } finally {
+            dragged = emptyList()
         }
     }
     Column(modifier.fillMaxWidth().then(painting)) {
@@ -247,6 +253,55 @@ fun MonthGrid(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * [CAL-03] One week, Monday to Sunday, for the phone view that folds the month to the tapped date's week.
+ * The same cells as the month, so a day looks and answers alike in both.
+ */
+@Composable
+fun WeekStrip(
+    monday: LocalDate,
+    snapshot: ScheduleSnapshot,
+    selected: LocalDate,
+    today: LocalDate,
+    memoDates: Set<LocalDate>,
+    showHours: Boolean,
+    showLunar: Boolean,
+    cellHeight: Dp,
+    onDayClick: (LocalDate) -> Unit,
+    onQuickAction: (LocalDate, QuickAction) -> Unit,
+    modifier: Modifier = Modifier,
+    money: MoneyBook = MoneyBook.EMPTY,
+    showMoney: Boolean = false,
+    memoTexts: Map<LocalDate, String> = emptyMap(),
+) {
+    val month = YearMonth.from(selected)
+    val dayMoney = remember(money, monday, showMoney) {
+        if (showMoney) money.days(YearMonth.from(monday)) + money.days(YearMonth.from(monday.plusDays(6))) else emptyMap()
+    }
+    Row(modifier.fillMaxWidth().height(cellHeight).padding(start = WEEK_BAR_SPACE)) {
+        for (col in 0 until 7) {
+            val date = monday.plusDays(col.toLong())
+            val day = remember(snapshot, date) { snapshot.resolver.resolve(date) }
+            DayCell(
+                day = day,
+                snapshot = snapshot,
+                // Days of the next or last month in this week are dimmed as in the month.
+                inMonth = YearMonth.from(date) == month,
+                isToday = date == today,
+                isSelected = date == selected,
+                hasMemo = date in memoDates,
+                money = dayMoney[date],
+                memoText = memoTexts[date],
+                showHours = showHours,
+                showLunar = showLunar,
+                onClick = { onDayClick(date) },
+                onQuickAction = { onQuickAction(date, it) },
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
         }
     }
 }
@@ -421,7 +476,10 @@ private fun DayCell(
                     showHours && day.scheduledMinutes > 0 -> HoursFormat.short(day.scheduledMinutes)
                     else -> ""
                 }
-                Text(
+                // [CAL-04] A red day says which day it is, unless the user wrote a memo there.
+                if (holidayName != null && memoText == null) {
+                    HolidayLabel(holidayName, footerSize, cal.sunday, footerSize * FOOTER_LINE, Modifier.weight(1f, fill = false))
+                } else Text(
                     footer,
                     fontSize = footerSize,
                     lineHeight = footerSize * FOOTER_LINE,
@@ -437,7 +495,7 @@ private fun DayCell(
                     style = NumberStyle,
                 )
                 if (hasMemo && memoText == null) {
-                    if (footer.isNotEmpty()) Spacer(Modifier.width(2.dp))
+                    if (footer.isNotEmpty() || holidayName != null) Spacer(Modifier.width(2.dp))
                     ColorDot(cal.memoDot, size = 5.dp)
                 }
             }

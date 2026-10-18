@@ -37,6 +37,10 @@ interface SleepDao {
     @Query("UPDATE sleep_logs SET endMillis = NULL WHERE id = :id")
     suspend fun reopen(id: Long)
 
+    /** [SLP-16] A sleep the user corrects by hand. */
+    @Query("UPDATE sleep_logs SET startMillis = :startMillis, endMillis = :endMillis WHERE id = :id")
+    suspend fun update(id: Long, startMillis: Long, endMillis: Long?)
+
     @Query("DELETE FROM sleep_logs WHERE id = :id")
     suspend fun delete(id: Long)
 

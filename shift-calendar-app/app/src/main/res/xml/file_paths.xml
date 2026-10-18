@@ -2,4 +2,6 @@
 <paths>
     <!-- Month images made for sharing; cleared with the cache. -->
     <cache-path name="share" path="share/" />
+    <!-- [PAYS-05] A payslip photo taken to be read on the phone; deleted once read. -->
+    <cache-path name="scan" path="scan/" />
 </paths>

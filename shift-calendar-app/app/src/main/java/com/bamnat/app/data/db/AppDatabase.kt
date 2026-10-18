@@ -12,9 +12,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ShiftTypeEntity::class, PatternEntity::class, DayEntryEntity::class, MemoEntity::class,
         MoneyEntryEntity::class, JobEntity::class, DailySalesEntity::class,
         FixedCostEntity::class, CategoryRuleEntity::class, DayChangeEntity::class, SleepLogEntity::class,
-        DayExtraEntity::class,
+        DayExtraEntity::class, ReceivableEntity::class, ReceivablePaymentEntity::class, ImportedEventEntity::class,
     ],
-    version = 12,
+    version = 14,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -26,11 +26,13 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun dayChangeDao(): DayChangeDao
     abstract fun sleepDao(): SleepDao
     abstract fun dayExtraDao(): DayExtraDao
+    abstract fun receivableDao(): ReceivableDao
+    abstract fun importedEventDao(): ImportedEventDao
 
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "bamnat.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                 .build()
 
         /** Version 2: several alarms per shift, hand-set alarms per day, memo trash. */
@@ -152,6 +154,37 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_day_extras_epochDay` ON `day_extras` (`epochDay`)")
                 moveOldExtraWork(db)
+            }
+        }
+
+        /** Version 13: a memo can be a schedule that rings or notifies [SCHED-01]. Old memos stay plain. */
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE memos ADD COLUMN remindAt TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE memos ADD COLUMN remindRing INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE memos ADD COLUMN remindNotify INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE memos ADD COLUMN remindAsked TEXT DEFAULT NULL")
+            }
+        }
+
+        /** Version 14: money others owe the user [RECV-01] and events brought in from the phone's calendar [IMPORT-01]. */
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `receivables` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `who` TEXT NOT NULL, " +
+                        "`title` TEXT NOT NULL, `amount` INTEGER NOT NULL, `epochDay` INTEGER NOT NULL, `dueEpochDay` INTEGER, " +
+                        "`kind` TEXT NOT NULL, `note` TEXT NOT NULL, `countAsIncome` INTEGER NOT NULL, `closedEpochDay` INTEGER, " +
+                        "`createdAt` INTEGER NOT NULL)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `receivable_payments` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`receivableId` INTEGER NOT NULL, `epochDay` INTEGER NOT NULL, `amount` INTEGER NOT NULL, `entryId` INTEGER)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_receivable_payments_receivableId` ON `receivable_payments` (`receivableId`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `imported_events` (`eventKey` TEXT NOT NULL, `epochDay` INTEGER NOT NULL, " +
+                        "`memoId` INTEGER, `importedAt` INTEGER NOT NULL, PRIMARY KEY(`eventKey`))",
+                )
             }
         }
 

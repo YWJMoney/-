@@ -1,5 +1,7 @@
 package com.bamnat.app.data
 
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import com.bamnat.app.data.db.AppDatabase
 import com.bamnat.app.data.db.CategoryRuleEntity
 import com.bamnat.app.data.db.toEntity
@@ -12,6 +14,9 @@ import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.money.MoneySource
 import com.bamnat.core.money.PaymentParser
+import com.bamnat.core.money.Receivable
+import com.bamnat.core.money.ReceivablePayment
+import com.bamnat.core.money.Receivables
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -36,13 +41,20 @@ class MoneyRepository(
 ) {
     private val dao = db.moneyDao()
 
-    val entries: Flow<List<MoneyEntry>> = dao.observeEntries().map { list -> list.map { it.toModel() } }
+    val entries: Flow<List<MoneyEntry>> = dao.observeEntries().map { list -> list.map { it.toModel() } }.flowOn(Dispatchers.Default)
     val jobs: Flow<List<Job>> = dao.observeJobs().map { list -> list.map { it.toModel() } }
     val sales: Flow<List<DailySales>> = dao.observeSales().map { list -> list.map { it.toModel() } }
     val fixed: Flow<List<FixedCost>> = dao.observeFixed().map { list -> list.map { it.toModel() } }
     val rules: Flow<Map<String, String>> = dao.observeRules().map { list -> list.associate { it.merchant to it.category } }
     val captures: Flow<List<Capture>> = kept.captures
-    val book: Flow<MoneyBook> = combine(entries, jobs, sales, fixed) { e, j, s, f -> MoneyBook(e, j, s, f) }
+    private val owedDao = db.receivableDao()
+    /** [RECV-01] Money others owe the user, each with what came back for it. */
+    val receivables: Flow<List<Receivable>> = combine(owedDao.observe(), owedDao.observePayments()) { list, paid ->
+        val byId = paid.groupBy { it.receivableId }
+        list.map { it.toModel(byId[it.id].orEmpty()) }
+    }
+    /** [STAB-01] Every ledger row is turned into a line off the main thread. */
+    val book: Flow<MoneyBook> = combine(entries, jobs, sales, fixed, receivables) { e, j, s, f, r -> MoneyBook(e, j, s, f, r) }.flowOn(Dispatchers.Default)
 
     /**
      * Inserts a new line or replaces the one with the same id; returns it with its id. When the user
@@ -78,6 +90,50 @@ class MoneyRepository(
     suspend fun allFixed(): List<FixedCost> = dao.allFixed().map { it.toModel() }
 
     suspend fun allEntries(): List<MoneyEntry> = dao.allEntries().map { it.toModel() }
+
+    suspend fun allReceivables(): List<Receivable> {
+        val byId = owedDao.allPayments().groupBy { it.receivableId }
+        return owedDao.all().map { it.toModel(byId[it.id].orEmpty()) }
+    }
+
+    /** [RECV-01] Saves what is owed; its payments are kept as they are. */
+    suspend fun save(r: Receivable): Receivable =
+        if (r.id == 0L) r.copy(id = owedDao.insert(r.toEntity(clock()))) else r.also { owedDao.restore(it.toEntity(clock())) }
+
+    /** [RECV-01] Removes a receivable with its payments and the income lines they wrote. */
+    suspend fun delete(r: Receivable) {
+        owedDao.paymentsOf(r.id).forEach { p -> p.entryId?.let { dao.deleteEntry(it) } }
+        owedDao.deletePaymentsOf(r.id)
+        owedDao.delete(r.id)
+    }
+
+    /** [RECV-01] Puts a receivable back as it was, payments and income lines included (undo). */
+    suspend fun restore(r: Receivable, lines: List<MoneyEntry>) {
+        owedDao.restore(r.toEntity(clock()))
+        lines.forEach { dao.restoreEntry(it.toEntity(clock())) }
+        r.payments.forEach { owedDao.restorePayment(it.copy(receivableId = r.id).toEntity()) }
+    }
+
+    /** The income lines a receivable's payments wrote, to keep for an undo. */
+    suspend fun linesOf(r: Receivable): List<MoneyEntry> = r.payments.mapNotNull { p -> p.entryId?.let { dao.entry(it)?.toModel() } }
+
+    /**
+     * [RECV-01] Money that came back: at most what is left, with an income line when the receivable
+     * counts as income. Returns the payment as saved, or null when nothing was left to receive.
+     */
+    suspend fun receive(r: Receivable, amount: Long, date: LocalDate): ReceivablePayment? {
+        val paid = Receivables.clampPayment(r, amount)
+        if (paid <= 0) return null
+        val entry = Receivables.incomeEntry(r, paid, date)?.let { save(it) }
+        val p = ReceivablePayment(receivableId = r.id, date = date, amount = paid, entryId = entry?.id)
+        return p.copy(id = owedDao.insertPayment(p.toEntity()))
+    }
+
+    /** [RECV-01] Takes a payment back, with its income line. */
+    suspend fun delete(p: ReceivablePayment) {
+        p.entryId?.let { dao.deleteEntry(it) }
+        owedDao.deletePayment(p.id)
+    }
 
     suspend fun clearSales(date: LocalDate) = dao.deleteSales(date.toEpochDay())
 

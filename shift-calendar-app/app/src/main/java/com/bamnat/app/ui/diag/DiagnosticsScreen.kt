@@ -1,5 +1,10 @@
 package com.bamnat.app.ui.diag
 
+import androidx.compose.runtime.produceState
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import android.app.ActivityManager
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -64,8 +69,14 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
     val upcoming = container.alarmScheduler.upcoming
     val snoozeAt = container.alarmScheduler.snoozeAt
 
-    fun events(): List<DiagEvent> = container.telemetry.log.read()
-    fun clearLog() = container.telemetry.log.clear()
+    // [STAB-01] The log waits for queued writes and reads the whole file, so never on the main thread.
+    suspend fun events(): List<DiagEvent> = withContext(Dispatchers.IO) { container.telemetry.log.read() }
+    fun clearLog(then: () -> Unit) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { container.telemetry.log.clear() }
+            then()
+        }
+    }
 
     /** Testers switch tiers here until billing exists [TIER-01]. */
     val tier = container.featureGate.tier
@@ -99,7 +110,6 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
             "기기: ${Build.MANUFACTURER} ${Build.MODEL}",
             "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
             "시간대: ${ZoneId.systemDefault()}",
-            "사용 통계 보내기: ${onOff(settings.shareUsageStats)}",
         )
         val usage = EventBook.counts(events, now - 30L * 24 * 60 * 60 * 1000).map { (name, n) -> "$name: $n" }
             .ifEmpty { listOf("기록 없음") }
@@ -145,7 +155,8 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
     val snoozeAt by vm.snoozeAt.collectAsStateWithLifecycle()
     var refresh by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh++ }
-    val report = remember(refresh, upcoming, snoozeAt) { vm.report(context, vm.events()) }
+    val events by produceState<List<DiagEvent>?>(null, refresh) { value = vm.events() }
+    val report = remember(events, upcoming, snoozeAt) { vm.report(context, events.orEmpty()) }
     var confirmClear by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -215,8 +226,7 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
             confirmButton = {
                 TextButton(onClick = {
                     confirmClear = false
-                    vm.clearLog()
-                    refresh++
+                    vm.clearLog { refresh++ }
                 }) { Text("지우기") }
             },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("취소") } },

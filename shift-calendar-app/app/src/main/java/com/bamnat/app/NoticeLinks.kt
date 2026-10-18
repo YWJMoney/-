@@ -19,6 +19,14 @@ object NoticeLinks {
         LEAVE,
         /** Where the alarm's permissions are checked and fixed. */
         ALARM_CHECK,
+        /** [SCHED-01] The memos, from a memo schedule's notice. */
+        MEMOS,
+        /** [SLP-16] The sleep log and what it says. */
+        SLEEP,
+        /** [RECV-02] Everything owed to the user. */
+        OWED,
+        /** [IMPORT-01] Bringing in the phone's calendar. */
+        CALENDAR_IMPORT,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"
@@ -39,6 +47,11 @@ object NoticeLinks {
         intent.removeExtra(EXTRA)
         _target.value = target
         return true
+    }
+
+    /** Opens [target] from inside the app, from a screen that has no way there of its own. */
+    fun open(target: Target) {
+        _target.value = target
     }
 
     fun consume(target: Target) {

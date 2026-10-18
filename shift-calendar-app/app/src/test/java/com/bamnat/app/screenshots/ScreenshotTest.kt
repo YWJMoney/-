@@ -39,6 +39,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.snapshots.Snapshot
 import com.bamnat.core.diag.DiagEvents
 import com.bamnat.core.diag.EventBook
+import com.bamnat.core.consent.ConsentItem
 import com.bamnat.core.memo.ChecklistItem
 import com.bamnat.core.memo.Memo
 import com.bamnat.core.money.FixedCost
@@ -110,6 +111,8 @@ class ScreenshotTest {
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.USE_FULL_SCREEN_INTENT)
         ShadowAlarmManager.setCanScheduleExactAlarms(true)
         val c = app.container
+        // [ONBOARD-01] Through the consent pages already; the shots of them start over.
+        c.consentStore.markSeen(ConsentItem.entries)
         val repo = c.scheduleRepository
         repo.ensureDefaults()
         val types = repo.shiftTypes.first().associateBy { it.name }
@@ -356,6 +359,13 @@ class ScreenshotTest {
             tapText(title, prefix = true, scrolls = 0)
         }
 
+        /** [SCALE-01] [openDay] on a screen too short to show the whole month: scrolls down to the day first. */
+        fun openDayBelow(date: LocalDate) {
+            val title = Fmt.dayTitle(date)
+            tapText(title, prefix = true, scrolls = 6)
+            tapText(title, prefix = true, scrolls = 6)
+        }
+
         /** Selects a day without opening it. */
         fun selectDay(date: LocalDate) = tapText(Fmt.dayTitle(date), prefix = true, scrolls = 0)
 
@@ -434,6 +444,21 @@ class ScreenshotTest {
     @Test fun foldedDaySheetScrolled() = shoot("2b_folded_day_sheet_extra", FOLDED) {
         openDay(dayCell)
         reveal("메모", exact = true)
+    }
+    // ---- [CAL-03][DAY-04] 그 주만 보기, 하루 화면 순서 ----
+    @Test fun foldedWeekOnly() = shoot("174_folded_week_only", FOLDED) {
+        app.container.settingsRepository.update { it.copy(phoneDayView = com.bamnat.app.data.PhoneDayView.WEEK) }
+        settle()
+        selectDay(dayCell)
+        // Fails when the month did not fold to the week.
+        reveal("달 전체 보기", exact = true)
+    }
+    @Test fun foldedDayGroupOrder() = shoot("175_folded_day_group_order", FOLDED) {
+        app.container.settingsRepository.update { it.copy(dayGroupOrder = listOf("memo", "alarm")) }
+        settle()
+        openDay(dayCell)
+        tapText("순서 바꾸기", exact = true)
+        check(shownDialogs().isNotEmpty()) { "순서 창이 열리지 않았어요" }
     }
     @Test fun foldedExtraWorkDay() = shoot("19_folded_extra_work_day", FOLDED) {
         openDay(restDayExtra)
@@ -679,7 +704,7 @@ class ScreenshotTest {
         tapText("대근", exact = true)
     }
     @Test fun foldedMemoFirstCalendar() = shoot("71_folded_memo_first_calendar", FOLDED) {
-        app.container.settingsRepository.update { it.copy(memoFirst = true) }
+        app.container.settingsRepository.update { it.copy(memoInCells = true) }
         settle()
         scrollUp(450)
     }
@@ -852,6 +877,14 @@ class ScreenshotTest {
                     java.time.Instant.now().plus(java.time.Duration.ofDays(30)), "민지"))
         }
     }
+    // [SHR-11] A shop shares its 매출 and a freelancer their 일정 and 일감 수입, with the figures shown before sending.
+    private fun shareSheet(style: WorkStyle): Screen.() -> Unit = style(style) {
+        val snap = runBlocking { app.container.scheduleRepository.snapshot.first() }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}) }
+    }
+    @Test fun foldedShareLinkBusiness() = shoot("200_folded_share_link_business", FOLDED, shareSheet(WorkStyle.BUSINESS))
+    @Test fun foldedShareLinkField() = shoot("201_folded_share_link_field", FOLDED, shareSheet(WorkStyle.FIELD))
+    @Test fun foldedShareLinkBusinessLargeText() = shoot("202_folded_share_link_business_large_text", FOLDED, 1.5f, shareSheet(WorkStyle.BUSINESS))
     // [WORK-01] First launch: how do you work?
     @Test fun foldedWorkStylePicker() = shoot("49_folded_work_style", FOLDED) {
         content { com.bamnat.app.ui.work.WorkStyleScreen(current = null, onPick = {}) }
@@ -1294,6 +1327,32 @@ class ScreenshotTest {
         content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, ready = true) }
     }
 
+    // [COMM-06][COMM-07] 회사 규칙 광장: every company's rule sets to vote on, the talk on one, and 맞았어요·달라요 on the company screen.
+    @Test fun foldedCompanyBoard() = shoot("190_folded_company_board", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
+    }
+    @Test fun foldedCompanyBoardAdopted() = shoot("191_folded_company_board_adopted", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
+        tapText("채택됨", exact = true)
+    }
+    @Test fun unfoldedCompanyBoard() = shoot("192_unfolded_company_board", UNFOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
+    }
+    @Test fun foldedCompanyTalk() = shoot("193_folded_company_talk", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
+        vm.talk.show("c-v1", "s-v1", "가나다화학 · 품질팀")
+        settle()
+    }
+    @Test fun foldedCompanyVoteAnySetup() = shoot("194_folded_company_vote_any", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyDetailViewModel(companyOn(), "c1")
+        content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, ready = true) }
+        reveal("다니는 회사라면 이 규칙이 맞는지 알려 주세요")
+    }
+
     // [SHR-01][SHR-02][SHR-04] A link with chosen parts, and calendars received from others beside the user's own.
     private val shares = FakeShareApi()
     private val minjiId = "Mj7dEfGh5JkLmNoPqRsTuv"
@@ -1424,6 +1483,22 @@ class ScreenshotTest {
     }
     /** [CAL-01][VIS-02] At 130% text the dates and the line under them stop growing before the cell does. */
     @Test fun foldedCalendarLargeText() = shoot("148_folded_calendar_large_text", FOLDED, fontScale = 1.3f)
+
+    // ---- [SCALE-01] Any phone, any text size: a common phone, a small one, the smallest and the largest text ----
+    @Test fun phoneCalendar() = shoot("160_phone_calendar", PHONE)
+    @Test fun smallPhoneCalendar() = shoot("161_small_phone_calendar", SMALL_PHONE)
+    @Test fun smallPhoneDaySheet() = shoot("162_small_phone_day_sheet", SMALL_PHONE) { openDayBelow(dayCell) }
+    @Test fun phoneCalendarSmallText() = shoot("163_phone_calendar_small_text", PHONE, fontScale = 0.85f)
+    @Test fun phoneCalendarHugeText() = shoot("164_phone_calendar_huge_text", PHONE, fontScale = 2f)
+    @Test fun phoneDaySheetHugeText() = shoot("165_phone_day_sheet_huge_text", PHONE, fontScale = 2f) { openDayBelow(dayCell) }
+    @Test fun phoneSettingsHugeText() = shoot("166_phone_settings_huge_text", PHONE, fontScale = 2f) { tab(4, wide = false) }
+    @Test fun phoneStatsHugeText() = shoot("167_phone_stats_huge_text", PHONE, fontScale = 2f) { tab(3, wide = false) }
+    @Test fun phoneMoneyLargeText() = shoot("168_phone_money_large_text", PHONE, fontScale = 1.5f) { tab(1, wide = false) }
+    @Test fun phonePayLargeText() = shoot("169_phone_pay_large_text", PHONE, fontScale = 1.5f, payScreen(Tier.PRO, withProfile = true))
+    @Test fun phonePayWizardHugeText() = shoot("170_phone_pay_wizard_huge_text", PHONE, fontScale = 2f, payScreen(Tier.PRO, withProfile = false))
+    @Test fun phoneMemosHugeText() = shoot("171_phone_memos_huge_text", PHONE, fontScale = 2f) { tab(2, wide = false) }
+    @Test fun unfoldedCalendarHugeText() = shoot("172_unfolded_calendar_huge_text", UNFOLDED, fontScale = 2f)
+    @Test fun phoneLandscapeCalendar() = shoot("173_phone_landscape_calendar", PHONE_LANDSCAPE)
     @Test fun foldedStatsSameMonth() = shoot("147_folded_stats_same_month", FOLDED) {
         tapText("이전 달", exact = true, scrolls = 0)
         tab(3, wide = false)
@@ -1433,12 +1508,54 @@ class ScreenshotTest {
         settingsPage("데이터")
     }
 
+    // ---- [ONBOARD-01][ONBOARD-02] First-start consent pages ----
+    private fun consent(items: Set<ConsentItem> = ConsentItem.entries.toSet(), then: Screen.() -> Unit = {}): Screen.() -> Unit {
+        val c = app.container
+        c.consentStore.forget()
+        c.consentStore.availableForTest = items
+        return fresh(null, then)
+    }
+
+    @Test fun foldedConsentIntro() = shoot("180_folded_consent_intro", FOLDED, consent())
+    @Test fun unfoldedConsentIntro() = shoot("181_unfolded_consent_intro", UNFOLDED, consent())
+    @Test fun foldedConsentNotifications() = shoot("182_folded_consent_notifications", FOLDED, run {
+        shadowOf(app.getSystemService(android.app.NotificationManager::class.java)).setNotificationsEnabled(false)
+        consent { tapText("하나씩 알아보기") }
+    })
+    @Test fun foldedConsentSleepAsk() = shoot("183_folded_consent_sleep_ask", FOLDED,
+        consent(setOf(ConsentItem.SLEEP, ConsentItem.CALENDAR)) { tapText("하나씩 알아보기") })
+    @Test fun foldedConsentSleepHealth() = shoot("184_folded_consent_sleep_health", FOLDED,
+        consent(setOf(ConsentItem.SLEEP, ConsentItem.CALENDAR)) { tapText("하나씩 알아보기"); tapText("네, 차고 자요") })
+    @Test fun foldedConsentSleepNone() = shoot("185_folded_consent_sleep_none", FOLDED,
+        consent(setOf(ConsentItem.SLEEP, ConsentItem.CALENDAR)) { tapText("하나씩 알아보기"); tapText("아니요, 없어요") })
+    @Test fun foldedConsentCalendar() = shoot("186_folded_consent_calendar", FOLDED,
+        consent(setOf(ConsentItem.CALENDAR)) { tapText("하나씩 알아보기") })
+    @Test fun consentPagesLeadToTheFirstSetup() = shoot("187_folded_consent_then_setup", FOLDED,
+        consent(setOf(ConsentItem.CALENDAR)) {
+            tapText("하나씩 알아보기"); tapText("나중에 할게요")
+            // The first setup comes next, and the pages do not come back.
+            tapText("순서가 돌아가요")
+            assertTrue(app.container.consentStore.seen.value!!.contains(ConsentItem.CALENDAR))
+        })
+
+    // ---- [SCHED-01] A memo that names a time ----
+    @Test fun foldedMemoScheduleOffer() = shoot("188_folded_memo_schedule_offer", FOLDED) {
+        tab(2, wide = false); tapText("건강검진 오전 9시")
+    }
+    @Test fun foldedMemoScheduleDialog() = shoot("189_folded_memo_schedule_dialog", FOLDED) {
+        tab(2, wide = false); tapText("건강검진 오전 9시"); tapText("일정으로 넣기", exact = true)
+    }
+
     private companion object {
         const val RULES_PERIOD_SCROLL = 420
 
         // Galaxy Z Fold6: cover screen 968x2376 px and main screen 1856x2160 px at 420 dpi.
         const val FOLDED = "w369dp-h905dp-port-420dpi"
         const val UNFOLDED = "w707dp-h823dp-port-420dpi"
+        // [SCALE-01] A common phone (Galaxy S24 at 1080x2340), a small one (720x1280 class) and a phone on its side.
+        const val PHONE = "w360dp-h780dp-port-450dpi"
+        const val SMALL_PHONE = "w320dp-h568dp-port-xhdpi"
+        const val PHONE_LANDSCAPE = "w780dp-h360dp-land-450dpi"
     }
 }
 
@@ -1490,8 +1607,8 @@ private class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
             "수당" to "자격수당(매달) · 야간수당(근무마다) · 상여(2·4·6·8·10·12월 기본급 100%)",
         )
         return com.bamnat.app.company.CompanyPage(id, "(주)예시정밀", listOf("예시정밀"), listOf(
-            com.bamnat.app.company.SharedSetup("s1", true, 5, 3, 1, 3, "생산팀", 2, file, main + pay),
-            com.bamnat.app.company.SharedSetup("s2", false, 2, 1, 0, 3, "포장팀", null, file, main.take(2)),
+            com.bamnat.app.company.SharedSetup("s1", true, 5, 3, 1, 3, "생산팀", 2, file, main + pay, trust = 75, agree = 75, posts = 4),
+            com.bamnat.app.company.SharedSetup("s2", false, 2, 1, 0, 3, "포장팀", null, file, main.take(2), trust = 67, agree = 100),
         ))
     }
 
@@ -1505,4 +1622,29 @@ private class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
     override suspend fun forgetMine(device: String) = mine.size
     override suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean, why: String?) =
         com.bamnat.app.company.VoteResult(4, 3, 1, 3, true)
+
+    // [COMM-06][COMM-07] 회사 규칙 광장 and the talk on a rule set.
+    private fun item(id: String, company: String, dept: String, adopted: Boolean, points: Int, persons: Int, bad: Int, trust: Int, agree: Int,
+        posts: Int, hours: Long, gist: String, cycle: String) = com.bamnat.app.company.BoardItem(
+        "c-$id", company, "s-$id", dept, adopted, points, persons, bad, 3, trust, agree, posts, if (adopted) 1 else null,
+        now.minus(java.time.Duration.ofHours(hours)), gist, cycle, true)
+
+    override suspend fun board(adopted: Boolean, from: Int) = com.bamnat.app.company.Board(
+        if (adopted) listOf(
+            item("a1", "(주)예시정밀", "생산팀", true, 5, 3, 1, 75, 75, 4, 30, "주간 08:00~20:00 · 야간 20:00~08:00 · 휴무(쉬는 날)", "순서 5일"),
+            item("a2", "사아자물류", "", true, 4, 3, 0, 100, 100, 0, 80, "주간 09:00~18:00 · 휴무(쉬는 날)", "순서 7일"),
+        ) else listOf(
+            item("v1", "가나다화학", "품질팀", false, 2, 2, 0, 67, 100, 3, 1, "주간 08:30~17:30 휴게 60분 · 휴일(쉬는 날)", "순서 7일"),
+            item("v2", "라마바전자", "생산1팀", false, 3, 2, 1, 67, 67, 5, 5, "주간 07:00~19:00 · 야간 19:00~07:00 · 휴무(쉬는 날)", "순서 8일"),
+            item("v3", "예시정밀 2공장", "", false, 1, 1, 0, 33, 100, 0, 26, "오전 06:00~14:00 · 오후 14:00~22:00 · 야간 22:00~06:00", "순서 6일"),
+        ),
+        null,
+    )
+
+    override suspend fun talk(device: String, company: String, setup: String) = com.bamnat.app.company.Talk(listOf(
+        com.bamnat.app.company.TalkPost("p1", 1, "sender", true, "저희 품질팀은 이렇게 돌아요. 10월 명세서랑 맞춰 봤어요.", now.minus(java.time.Duration.ofHours(20)), false),
+        com.bamnat.app.company.TalkPost("p2", 2, "ok", false, "저도 같은 팀인데 맞아요. 격주 토요일은 특근으로 넣고 있어요.", now.minus(java.time.Duration.ofHours(6)), false),
+        com.bamnat.app.company.TalkPost("p3", 3, "bad", false, "올해부터 야간 시작이 18:30으로 바뀌었어요. 확인해 주세요!", now.minus(java.time.Duration.ofHours(2)), false),
+        com.bamnat.app.company.TalkPost("p4", 4, null, false, "18:30은 2공장 이야기 같아요. 본사는 그대로예요.", now.minus(java.time.Duration.ofMinutes(12)), true),
+    ))
 }

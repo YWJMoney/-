@@ -14,6 +14,9 @@ import com.bamnat.app.AppContainer
 import com.bamnat.core.memo.ChecklistItem
 import com.bamnat.core.memo.Memo
 import com.bamnat.core.memo.MemoOrdering
+import com.bamnat.core.memo.MemoReminder
+import com.bamnat.core.memo.MemoTime
+import java.time.LocalDateTime
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -177,6 +180,8 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
         clearSelection()
     }
     fun setQuery(text: String) = q.update { it.copy(query = text) }
+    /** [STAB-01] What the search box shows, apart from the list that is built off the main thread. */
+    val query: StateFlow<String> = q.map { it.query }.stateIn(viewModelScope, SharingStarted.Eagerly, "")
     fun setCalendarFilter(f: CalendarFilter) = q.update { it.copy(calendarFilter = f) }
     fun setGeneralFilter(f: GeneralFilter) = q.update { it.copy(generalFilter = f) }
     fun setSort(sort: MemoSort) = q.update { it.copy(sort = sort) }
@@ -360,6 +365,23 @@ class MemoEditorViewModel(
         container.scheduleRepository.snapshot) { date, snapshot ->
         date?.let { snapshot.resolver.resolve(it) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * [SCHED-01] A time written in the memo that has not been answered yet: offered as a schedule, or,
+     * when the memo is one already, as its new time. Null when there is nothing to ask.
+     */
+    val scheduleOffer: StateFlow<MemoTime.Found?> = _memo.map { m ->
+        val found = MemoTime.find(m, LocalDateTime.now()) ?: return@map null
+        found.takeIf { m.reminderAsked != it.key && m.reminder?.at != it.at }
+    }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** [SCHED-01] Makes the memo a schedule (or a plain memo again with null); [answered] is the time this answers. */
+    fun setReminder(reminder: MemoReminder?, answered: MemoTime.Found? = null) = update {
+        it.copy(reminder = reminder, reminderAsked = answered?.key ?: it.reminderAsked)
+    }
+
+    /** [SCHED-01] "메모로 둘게요": the same time is not offered again. */
+    fun keepAsMemo(found: MemoTime.Found) = update { it.copy(reminderAsked = found.key) }
 
     /** Saves a copy of this memo and returns nothing; the copy shows up in the list. */
     fun duplicate() {

@@ -2,9 +2,9 @@ name: Android (밤낮)
 on:
   push:
     branches: [main]
-    paths: ["shift-calendar-app/**", ".github/workflows/android.yml"]
+    paths: ["shift-calendar-app/**", "privacy/**", ".github/workflows/android.yml"]
   pull_request:
-    paths: ["shift-calendar-app/**", ".github/workflows/android.yml"]
+    paths: ["shift-calendar-app/**", "privacy/**", ".github/workflows/android.yml"]
 concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
@@ -36,6 +36,12 @@ jobs:
       - run: python3 tools/check_tracker.py
       - run: sh ./gradlew -p core test
       - run: sh ./gradlew :app:testDebugUnitTest :app:lintDebug --continue
+      # Room writes the schema of each database version it builds. A new version has to be committed with its migration.
+      - name: Room schema committed
+        run: |
+          changed=$(git ls-files --others --modified --exclude-standard app/schemas)
+          for f in $changed; do echo "::group::$f"; cat "$f"; echo "::endgroup::"; done
+          test -z "$changed" || { echo "Commit these schema files: $changed"; exit 1; }
       # The share server checks the payloads the app tests just wrote (app/build/share-payload*.json).
       - run: npm test
         working-directory: shift-calendar-app/server/share-worker

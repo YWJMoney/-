@@ -23,7 +23,7 @@ class ReceivedCalendarsTest {
 
     private var now = Instant.parse("2026-11-01T00:00:00Z")
     private val file get() = java.io.File(folder.root, "received_calendars.json")
-    private fun store() = ReceivedCalendarStore(file) { now }
+    private fun store() = ReceivedCalendarStore(file, { now }, writer = { it.run() })
 
     private fun share(title: String, days: Long = 30) = ReceivedShare(
         JSONObject("""{"v":1,"title":"$title","types":[{"id":1,"name":"주간","short":"주","color":"#1E88E5","time":"07:00-19:00","off":false}],

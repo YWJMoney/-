@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -247,7 +248,7 @@ fun SetupPaySheet(companyPay: Boolean, onNow: () -> Unit, onLater: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Button(onClick = onNow, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("지금 할게요") }
+            Button(onClick = onNow, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("지금 할게요") }
             TextButton(onClick = onLater, modifier = Modifier.fillMaxWidth()) { Text("나중에") }
         }
     }

@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -281,7 +282,7 @@ private fun BottomButton(p: Primary, busy: Boolean) {
             Button(
                 onClick = p.onClick,
                 enabled = p.enabled && !busy,
-                modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth().height(56.dp),
+                modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth().heightIn(min = 56.dp),
             ) {
                 if (busy) {
                     CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.5.dp, color = LocalContentColor.current)
