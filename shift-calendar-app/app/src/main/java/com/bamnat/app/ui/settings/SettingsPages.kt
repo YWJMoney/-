@@ -408,7 +408,7 @@ private fun AboutPage(onOpenDiagnostics: (Boolean) -> Unit) {
         color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
-private const val PRIVACY_URL = "https://ywjmoney.github.io/-/privacy.html"
+private const val PRIVACY_URL = "https://ywjmoney.github.io/-/privacy/"
 
 private fun openPrivacy(context: android.content.Context) {
     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
