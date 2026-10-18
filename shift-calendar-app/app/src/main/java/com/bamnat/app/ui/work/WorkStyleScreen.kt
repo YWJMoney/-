@@ -56,6 +56,15 @@ fun WorkStyle.nextStep(company: Boolean = false): String = when (this) {
     WorkStyle.BUSINESS -> "달력에 매일 매출과 경비를 적어요"
 }
 
+/** [WORK-07] Said after the kind of work changed in settings with nothing more to set up. */
+fun WorkStyle.changedMessage(): String = when (this) {
+    WorkStyle.SHIFT -> "교대 근무로 바꿨어요. 근무 순서와 급여 설정은 그대로예요"
+    WorkStyle.DAY -> "평일 근무로 바꿨어요. 일하는 요일과 급여 설정은 그대로예요"
+    WorkStyle.HOURLY -> "시급 근무로 바꿨어요. 일한 날 달력에 시간을 적으면 급여가 계산돼요"
+    WorkStyle.FIELD -> "현장·프리랜서로 바꿨어요. 달력에서 날짜를 눌러 일감과 받을 돈을 적어요"
+    WorkStyle.BUSINESS -> "자영업으로 바꿨어요. 달력에서 날짜를 눌러 그날 매출과 경비를 적어요"
+}
+
 /**
  * [WORK-01] First launch: how do you work? The answer decides the first setup screen and what
  * the calendar and money tab show; it can be changed in settings at any time.

@@ -99,6 +99,7 @@ import com.bamnat.app.ui.stats.StatsViewModel
 import com.bamnat.app.ui.money.MoneyScreen
 import com.bamnat.app.ui.money.MoneyViewModel
 import com.bamnat.app.ui.work.WorkStyleScreen
+import com.bamnat.app.ui.work.changedMessage
 import com.bamnat.app.ui.setup.SetupHost
 import com.bamnat.app.ui.setup.SetupViewModel
 import com.bamnat.app.ui.setup.SetupPaySheet
@@ -117,6 +118,7 @@ import com.bamnat.app.ui.company.CompanySettingsRows
 import com.bamnat.app.ui.company.FixPlace
 import com.bamnat.app.ui.company.InviteSheet
 import androidx.compose.runtime.rememberCoroutineScope
+import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.work.WorkStyle
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
@@ -424,9 +426,27 @@ private fun AppNavHost(
         composable(Routes.WORK_STYLE) {
             val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()
             WorkStyleScreen(current = settings.workStyle, title = "근무 형태 바꾸기", onPick = { style ->
+                val before = settings.workStyle
                 container.settingsRepository.update { it.copy(workStyle = style) }
-                if (style == WorkStyle.HOURLY) container.appScope.launch { container.scheduleRepository.addHourlyTypes() }
-                nav.popFrom(Routes.WORK_STYLE)
+                // [WORK-07] A new kind of work goes straight on to what it still needs, as its card said
+                // ("다음: …"): the order for shift work, the days for weekday work, the wage for hourly work.
+                // What it already has is kept, so switching back and forth never asks twice.
+                scope.launch {
+                    if (style == WorkStyle.HOURLY) container.scheduleRepository.addHourlyTypes()
+                    val patterns = container.scheduleRepository.patterns.first()
+                    val pay = container.payStore.profile.value != null
+                    fun go(route: String) = nav.navigate(route) { popUpTo(Routes.WORK_STYLE) { inclusive = true }; launchSingleTop = true }
+                    when {
+                        style == before -> nav.popFrom(Routes.WORK_STYLE)
+                        style == WorkStyle.SHIFT && patterns.none { it is WorkPattern.Rotation } -> go(Routes.pattern(weekdays = false, setup = !pay))
+                        style == WorkStyle.DAY && patterns.none { it is WorkPattern.Weekly } -> go(Routes.pattern(weekdays = true, setup = !pay))
+                        style == WorkStyle.HOURLY && !pay -> go(Routes.PAY)
+                        else -> {
+                            nav.popFrom(Routes.WORK_STYLE)
+                            snackbar.showSnackbar(style.changedMessage())
+                        }
+                    }
+                }
             })
         }
         composable(TopLevel.MEMOS.route) {

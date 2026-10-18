@@ -45,6 +45,8 @@ data class SharedSchedule(
     val days: Map<LocalDate, SharedDay>,
     val pay: List<SharedPay>,
     val shows: Set<String>,
+    /** [SHR-11] What [pay] is: 급여, 일감 수입 or 매출. */
+    val payKind: com.bamnat.core.work.MoneyShare = com.bamnat.core.work.MoneyShare.PAY,
 ) {
     private val byId = types.associateBy { it.id }
     fun type(id: Long?): SharedType? = id?.let(byId::get)
@@ -85,9 +87,10 @@ data class SharedSchedule(
                     second = d.long("second"),
                     leave = d.str("leave"),
                     memo = d.str("memo"),
+                    // [SHR-11] A freelancer's jobs show where extra work does: a name and a time on the day.
                     extras = d.optJSONArray("extras").objects().map { e ->
                         SharedExtra(e.optString("name"), e.str("time"), e.optInt("minutes", 0).takeIf { it > 0 })
-                    },
+                    } + d.optJSONArray("jobs").objects().map { j -> SharedExtra(j.optString("name"), j.str("time"), null) },
                     rest = if (d.has("rest")) d.optBoolean("rest") else null,
                 )
             }.associateBy { it.date }
@@ -96,7 +99,7 @@ data class SharedSchedule(
                 SharedPay(month, p.optLong("amount"), p.optString("label"))
             }
             val shows = o.optJSONArray("shows")?.let { a -> (0 until a.length()).map { a.optString(it) }.toSet() }.orEmpty()
-            return SharedSchedule(o.optString("title"), types, days, pay, shows)
+            return SharedSchedule(o.optString("title"), types, days, pay, shows, com.bamnat.core.work.MoneyShare.ofKey(o.str("payKind")))
         }
 
         private fun JSONArray?.objects(): List<JSONObject> =

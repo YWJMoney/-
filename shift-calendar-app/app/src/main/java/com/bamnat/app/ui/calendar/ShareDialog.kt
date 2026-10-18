@@ -42,6 +42,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -59,6 +60,9 @@ import com.bamnat.app.share.ShareLinkPayload
 import com.bamnat.app.share.ShareLinkState
 import com.bamnat.app.share.ShareLinkStore
 import com.bamnat.app.share.ShareOptions
+import com.bamnat.app.share.SharedPay
+import com.bamnat.app.ui.Fmt
+import com.bamnat.core.work.MoneyShare
 import kotlinx.coroutines.launch
 import java.time.YearMonth
 import java.time.ZoneId
@@ -70,6 +74,9 @@ import java.time.format.DateTimeFormatter
  * [SHR-01] The sharer picks what goes with the shifts (leave kinds, extra work, memos, pay), all off
  * at first, and sees what leaves the phone before the link is made (privacy policy 1.6).
  * [SHR-02] A received link can be opened here too, to keep it beside the user's own calendar.
+ * [SHR-11] The money part follows how the user works: 급여 for employees, 일감 수입 and the day's jobs
+ * for field work, 매출 for a shop. It can be ticked whenever there is a figure to send, with or
+ * without a pay calculation, and the sheet shows the figures before they leave the phone.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,7 +102,16 @@ fun ShareDialog(
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val profile by container.payStore.profile.collectAsState()
-    val hasPay = profile != null
+    val settings by container.settingsRepository.settings.collectAsState()
+    val kind = MoneyShare.of(settings.workStyle)
+    // Employees' parts: leave kinds and extra work mean nothing to a shop or a freelancer's calendar.
+    val employee = settings.workStyle?.usesPayEngine != false
+    val field = kind == MoneyShare.JOBS
+    // [SHR-11] The figures a link would carry, worked out here so the row can show them before anything is sent.
+    val money by produceState<List<SharedPay>?>(null, kind, month, snapshot, profile) {
+        value = orElse(emptyList()) { ShareContent.money(container, snapshot, month.atDay(1), kind) }
+    }
+    val hasPay = money?.isNotEmpty() == true
 
     fun run(action: suspend () -> Unit) {
         busy = true; error = null
@@ -103,8 +119,18 @@ fun ShareDialog(
             try { action() } catch (e: Exception) { error = messageFor(e, options) } finally { busy = false }
         }
     }
-    val chosen = { options.copy(pay = options.pay && hasPay) }
+    val chosen = {
+        options.copy(
+            pay = options.pay && hasPay, jobs = options.jobs && field,
+            leaveKinds = options.leaveKinds && employee, extras = options.extras && employee,
+        )
+    }
     suspend fun payload() = ShareContent.payload(container, snapshot, month.atDay(1), title, ttl, chosen())
+    // [SHR-11] A calendar with no shifts in these months (a shop, field work, hours not yet written) has
+    // nothing to show until something is ticked; say so instead of letting the server refuse it.
+    val empty by produceState(false, chosen(), month, snapshot, money) {
+        value = orElse(false) { !ShareLinkPayload.hasContent(payload()) }
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         // Scrolls so a folded cover screen with a large font still reaches the buttons.
@@ -141,15 +167,16 @@ fun ShareDialog(
             Text("보여 줄 것", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
             Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Column(Modifier.padding(vertical = 4.dp)) {
-                    PartRow("근무", "이름·색·시간, 늘 들어가요", checked = true, enabled = false) {}
-                    PartRow("휴가 종류", "끄면 연차·반차 말고는 '휴가'로만 보여요", options.leaveKinds) { options = options.copy(leaveKinds = it) }
-                    PartRow("연장·휴무일 근무", "이름과 시간, 날마다 ${ShareLinkPayload.EXTRAS_PER_DAY}개까지. 끄면 대근만 근무로 보여요", options.extras) { options = options.copy(extras = it) }
+                    PartRow("근무", if (employee) "이름·색·시간, 늘 들어가요" else "근무를 적은 날만, 이름·색·시간", checked = true, enabled = false) {}
+                    if (field) {
+                        PartRow("일정", "날마다 일감 이름과 시간, ${ShareLinkPayload.JOBS_PER_DAY}개까지. 고객·장소·금액은 빼요", options.jobs) { options = options.copy(jobs = it) }
+                    }
+                    if (employee) {
+                        PartRow("휴가 종류", "끄면 연차·반차 말고는 '휴가'로만 보여요", options.leaveKinds) { options = options.copy(leaveKinds = it) }
+                        PartRow("연장·휴무일 근무", "이름과 시간, 날마다 ${ShareLinkPayload.EXTRAS_PER_DAY}개까지. 끄면 대근만 근무로 보여요", options.extras) { options = options.copy(extras = it) }
+                    }
                     PartRow("메모", "날짜마다 첫 줄, ${ShareLinkPayload.MEMO_CHARS}자까지", options.memos) { options = options.copy(memos = it) }
-                    PartRow(
-                        "급여",
-                        if (hasPay) "달마다 세전 금액 하나, 내역은 빼요" else "급여 계산을 설정하면 고를 수 있어요",
-                        options.pay && hasPay, enabled = hasPay,
-                    ) { options = options.copy(pay = it) }
+                    PartRow(kind.label, moneyHint(kind, money), options.pay && hasPay, enabled = hasPay) { options = options.copy(pay = it) }
                 }
             }
             OutlinedTextField(value = title, onValueChange = { if (it.length <= 30) title = it }, singleLine = true,
@@ -160,12 +187,15 @@ fun ShareDialog(
             }
             // [MKT-09][OPS-13][SHR-01] Said before the data leaves the phone, in the policy's words, with what was ticked.
             Text(
-                "보내는 것: " + (listOf("근무") + chosen().partNames()).joinToString(", ") + "\n" + SHARE_SERVER_NOTICE,
+                "보내는 것: " + (listOf("근무") + chosen().partNames(kind)).joinToString(", ") + "\n" + SHARE_SERVER_NOTICE,
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (empty) {
+                Text(emptyHint(kind, field), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
             val current = link
             if (current == null) {
-                Button(enabled = !busy, onClick = {
+                Button(enabled = !busy && !empty, onClick = {
                     run {
                         val made = client.create(payload())
                         store.save(made); store.saveOptions(chosen()); saved = chosen(); link = made
@@ -180,7 +210,7 @@ fun ShareDialog(
                     Text("고른 항목이 바뀌었어요. ‘지금 근무표로 고치기’를 누르면 링크에 들어가요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
-                OutlinedButton(enabled = !busy, onClick = {
+                OutlinedButton(enabled = !busy && !empty, onClick = {
                     run {
                         val updated = client.update(current, payload())
                         store.save(updated); store.saveOptions(chosen()); saved = chosen(); link = updated
@@ -230,13 +260,45 @@ private fun PartRow(label: String, hint: String, checked: Boolean, enabled: Bool
     }
 }
 
-/** [SHR-01] The ticked parts in the words the sheet uses. */
-internal fun ShareOptions.partNames(): List<String> = listOfNotNull(
+/** [SHR-01] The ticked parts in the words the sheet uses; [SHR-11] the money in the user's own kind. */
+internal fun ShareOptions.partNames(kind: MoneyShare = MoneyShare.PAY): List<String> = listOfNotNull(
+    "일정".takeIf { jobs },
     "휴가 종류".takeIf { leaveKinds },
     "연장·휴무일 근무".takeIf { extras },
     "메모".takeIf { memos },
-    "급여".takeIf { pay },
+    kind.label.takeIf { pay },
 )
+
+/** A figure worked out for the sheet, or [fallback] when the data cannot be read; leaving the sheet still cancels it. */
+private suspend fun <T> orElse(fallback: T, block: suspend () -> T): T = try {
+    block()
+} catch (e: kotlinx.coroutines.CancellationException) {
+    throw e
+} catch (e: Exception) {
+    fallback
+}
+
+/** [SHR-11] What the money row would send, month by month, or where the figure comes from when there is none yet. */
+internal fun moneyHint(kind: MoneyShare, money: List<SharedPay>?): String = when {
+    money == null -> "금액을 확인하는 중이에요"
+    money.isNotEmpty() -> money.joinToString(" · ") { "${it.month.monthValue}월 ${Fmt.won(it.amount)}" } + "\n" + when (kind) {
+        MoneyShare.PAY -> "달마다 금액 하나만, 내역은 빼요"
+        MoneyShare.JOBS -> "달마다 일감 금액 합계(3.3% 뗀 뒤)만, 고객·장소는 빼요"
+        MoneyShare.SALES -> "달마다 매출 합계만, 경비와 날마다 금액은 빼요"
+    }
+    else -> when (kind) {
+        MoneyShare.PAY -> "급여 계산을 설정하거나 돈 탭에 받은 급여를 적으면 고를 수 있어요"
+        MoneyShare.JOBS -> "이 기간 일감에 금액을 적으면 고를 수 있어요"
+        MoneyShare.SALES -> "이 기간 매출을 적으면 고를 수 있어요. 달력에서 날짜를 눌러 적어요"
+    }
+}
+
+/** [SHR-11] Why the link button waits: these months have nothing to show yet. */
+internal fun emptyHint(kind: MoneyShare, field: Boolean): String = when {
+    field -> "이 기간에는 근무가 없어요. ‘일정’이나 ‘${kind.label}’을 고르면 링크를 만들 수 있어요."
+    kind == MoneyShare.SALES -> "이 기간에는 근무가 없어요. ‘${kind.label}’이나 ‘메모’를 고르면 링크를 만들 수 있어요."
+    else -> "이 기간에는 보낼 근무가 없어요. 근무를 적거나 보여 줄 것을 골라 주세요."
+}
 
 /** What leaves the phone with a link, where it is kept, and who can open it. Matches privacy policy 1.6, sections 1 and 5. */
 internal const val SHARE_SERVER_NOTICE =
@@ -249,6 +311,8 @@ private fun messageFor(e: Exception, options: ShareOptions): String = when (e.me
     "rate_limited" -> "잠시 뒤 다시 해 주세요. 한 시간에 만들 수 있는 링크 수를 넘었어요."
     "not_found", "forbidden" -> "이 링크는 이미 지워졌어요. 링크 끊기를 누른 뒤 새로 만들어 주세요."
     // A server from before 1.10 takes only shifts and leave.
+    // [SHR-11] A server from before 1.13 takes no 일정 and no link without shifts.
+    "days" -> "이 기간에는 보낼 근무가 없어요. 보여 줄 것을 골라 주세요."
     "version", "shows" -> if (options.any) "지금은 근무와 휴가만 보낼 수 있어요. 고른 항목을 끄고 다시 해 주세요." else "링크를 만들지 못했어요 (${e.message}). 다시 해 주세요."
     else -> if (e is ShareLinkException) "링크를 만들지 못했어요 (${e.message}). 다시 해 주세요."
     else if (e is java.io.IOException) "인터넷에 연결되지 않았어요. 연결을 확인하고 다시 해 주세요." else "링크를 만들지 못했어요. 다시 해 주세요."

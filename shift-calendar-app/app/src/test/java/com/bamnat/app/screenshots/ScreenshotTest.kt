@@ -852,6 +852,14 @@ class ScreenshotTest {
                     java.time.Instant.now().plus(java.time.Duration.ofDays(30)), "민지"))
         }
     }
+    // [SHR-11] A shop shares its 매출 and a freelancer their 일정 and 일감 수입, with the figures shown before sending.
+    private fun shareSheet(style: WorkStyle): Screen.() -> Unit = style(style) {
+        val snap = runBlocking { app.container.scheduleRepository.snapshot.first() }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}) }
+    }
+    @Test fun foldedShareLinkBusiness() = shoot("160_folded_share_link_business", FOLDED, shareSheet(WorkStyle.BUSINESS))
+    @Test fun foldedShareLinkField() = shoot("161_folded_share_link_field", FOLDED, shareSheet(WorkStyle.FIELD))
+    @Test fun foldedShareLinkBusinessLargeText() = shoot("162_folded_share_link_business_large_text", FOLDED, 1.5f, shareSheet(WorkStyle.BUSINESS))
     // [WORK-01] First launch: how do you work?
     @Test fun foldedWorkStylePicker() = shoot("49_folded_work_style", FOLDED) {
         content { com.bamnat.app.ui.work.WorkStyleScreen(current = null, onPick = {}) }

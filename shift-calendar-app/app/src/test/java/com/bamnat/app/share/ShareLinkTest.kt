@@ -147,6 +147,46 @@ class ShareLinkTest {
         assertEquals("이사", days.getJSONObject(1).getString("memo"))
     }
 
+    /**
+     * [SHR-11] A freelancer with no shifts: the days' jobs go by title and time only, a job is work for
+     * 같이 쉬는 날, and the money goes as 일감 수입. A shop sends only its sales, with no days at all.
+     */
+    @Test fun fieldAndShopLinks() {
+        val empty = ScheduleSnapshot(emptyList(), null as WorkPattern?, emptyList())
+        val jobDay = start.plusDays(2)
+        val jobs = mapOf(jobDay to listOf(SharedJob("욕실 시공 가나다아파트", "09:00-17:00"), SharedJob(" ", null)))
+        val income = listOf(SharedPay(java.time.YearMonth.of(2026, 11), 870_300, "일감 1건"))
+        val field = ShareLinkPayload.build(empty, start, "준호", 30, ShareOptions(jobs = true, pay = true), pay = income,
+            payKind = com.bamnat.core.work.MoneyShare.JOBS, jobs = jobs)
+        assertEquals(listOf("pay", "jobs"), (0 until 2).map { field.getJSONArray("shows").getString(it) })
+        assertEquals("jobs", field.getString("payKind"))
+        val days = field.getJSONArray("days")
+        assertEquals(1, days.length())
+        val booked = days.getJSONObject(0).getJSONArray("jobs")
+        assertEquals("욕실 시공 가나다아파", booked.getJSONObject(0).getString("name"))
+        assertEquals(ShareLinkPayload.JOB_CHARS, booked.getJSONObject(0).getString("name").length)
+        assertEquals("일감", booked.getJSONObject(1).getString("name"))
+        assertFalse(days.getJSONObject(0).getBoolean("rest"))
+        assertTrue(ShareLinkPayload.hasContent(field))
+        // Jobs given but not ticked never go out, and then the link has nothing to show.
+        val unticked = ShareLinkPayload.build(empty, start, "", 30, ShareOptions(), jobs = jobs)
+        assertFalse(unticked.toString().contains("욕실"))
+        assertFalse(ShareLinkPayload.hasContent(unticked))
+        File("build/share-payload-field.json").writeText(field.toString())
+
+        val shop = ShareLinkPayload.build(empty, start, "가나다식당", 30, ShareOptions(pay = true),
+            pay = listOf(SharedPay(java.time.YearMonth.of(2026, 11), 18_450_000, "매출")), payKind = com.bamnat.core.work.MoneyShare.SALES)
+        assertEquals(0, shop.getJSONArray("days").length())
+        assertEquals("sales", shop.getString("payKind"))
+        assertTrue(ShareLinkPayload.hasContent(shop))
+        val read = SharedSchedule.parse(shop)
+        assertEquals(com.bamnat.core.work.MoneyShare.SALES, read.payKind)
+        assertEquals(18_450_000L, read.pay.single().amount)
+        // The receiver sees the jobs where extra work shows.
+        assertEquals(listOf("욕실 시공 가나다아파", "일감"), SharedSchedule.parse(field).days.getValue(jobDay).extras.map { it.name })
+        assertEquals(false, SharedSchedule.parse(field).isRest(jobDay))
+    }
+
     @Test fun memoLineJoinsAndClips() {
         val a = com.bamnat.core.memo.Memo(date = start, title = "치과", body = "2시 예약")
         val b = com.bamnat.core.memo.Memo(date = start, body = "  저녁   약속\n7시 ")
