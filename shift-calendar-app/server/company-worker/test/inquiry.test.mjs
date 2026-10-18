@@ -2,7 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { server, device, from, signIn } from "./helpers.mjs";
+import worker from "../src/index.js";
+import { server, device, from, signIn, report } from "./helpers.mjs";
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 
@@ -142,4 +143,24 @@ test("a thread with nothing new for half a year is deleted", async (t) => {
   assert.equal((await call("GET", `/api/inquiries/${old.id}`, undefined, mine(1))).status, 404);
   assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM inquiries").get().n, 1);
   assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM inquiry_messages").get().n, 1);
+});
+
+test("the hourly clean-up deletes what is only kept for a while, with nobody sending", async (t) => {
+  const { call, env, DB } = server();
+  await call("POST", "/api/reports", report(1));
+  await call("POST", "/api/inquiries", question(1));
+  await signIn(call);
+  const later = Date.now() + 181 * 24 * 60 * 60 * 1000;
+  t.mock.timers.enable({ apis: ["Date"], now: later });
+  const waits = [];
+  await worker.scheduled({ cron: "17 * * * *", scheduledTime: later }, env, { waitUntil: (p) => waits.push(p) });
+  await Promise.all(waits);
+  const n = (sql) => DB.db.prepare(sql).get().n;
+  assert.equal(n("SELECT COUNT(*) AS n FROM reports WHERE net IS NOT NULL"), 0);
+  assert.equal(n("SELECT COUNT(*) AS n FROM counters"), 0);
+  assert.equal(n("SELECT COUNT(*) AS n FROM sessions"), 0);
+  assert.equal(n("SELECT COUNT(*) AS n FROM inquiries"), 0);
+  assert.equal(n("SELECT COUNT(*) AS n FROM inquiry_messages"), 0);
+  // The report itself stays: only its network link went.
+  assert.equal(n("SELECT COUNT(*) AS n FROM reports"), 1);
 });

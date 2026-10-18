@@ -71,7 +71,29 @@ export default {
       return json({ error: "server" }, 500);
     }
   },
+  // Hourly (wrangler.toml [triggers], or the dashboard's Cron Triggers): what is promised to go, goes on
+  // time even when nobody sends anything.
+  async scheduled(event, env, ctx) {
+    if (!env.DB) return;
+    ctx.waitUntil(ready(env).then(() => prune(env, Date.now())));
+  },
 };
+
+/**
+ * Deletes what the server only keeps for a while: network hashes after two hours, spent limits and
+ * sessions, questions with nothing new for 180 days and the admin log after a year.
+ */
+export async function prune(env, now) {
+  await env.DB.batch([
+    stmt(env, "UPDATE reports SET net = NULL WHERE net IS NOT NULL AND created_at < ?", now - 2 * HOUR),
+    stmt(env, "UPDATE votes SET net = NULL WHERE net IS NOT NULL AND at < ?", now - 2 * HOUR),
+    stmt(env, "DELETE FROM counters WHERE expires < ?", now),
+    stmt(env, "DELETE FROM sessions WHERE expires < ?", now),
+    stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
+    stmt(env, "DELETE FROM inquiries WHERE updated_at < ?", now - INQUIRY.keepMs),
+    stmt(env, "DELETE FROM audit WHERE at < ?", now - 365 * DAY),
+  ]);
+}
 
 async function route(request, env) {
   const url = new URL(request.url);
