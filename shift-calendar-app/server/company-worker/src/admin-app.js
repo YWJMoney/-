@@ -458,6 +458,7 @@ function adminApp() {
     review: '<path d="M4 13h4l2 3h4l2-3h4"/><path d="M5.5 5h13L20 13v6H4v-6z"/>',
     inquiries: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/>',
     companies: '<path d="M4 20V5.5L12 3v17M12 9h8v11M3 20h18M7 8h2M7 12h2M7 16h2M15 13h2M15 17h2"/>',
+    community: '<path d="M3.5 5h11v8h-6l-4 3.5V13h-1z"/><path d="M14.5 9h6v8h-1v3l-3.5-3h-5.5v-4"/>',
     rewards: '<path d="M4 11h16v9H4zM3 7.5h18V11H3zM12 7.5V20"/><path d="M12 7.5C10.5 4 7 4 7.5 6.5c.3 1 2 1 4.5 1M12 7.5C13.5 4 17 4 16.5 6.5c-.3 1-2 1-4.5 1"/>',
     admins: '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.3 2.8-5 5.5-5s4.9 1.7 5.5 5"/><path d="M16 4.8a3 3 0 0 1 0 6M17.5 14c1.7.6 2.8 2.2 3.1 5"/>',
     audit: '<path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="8.5"/>',
@@ -483,6 +484,8 @@ function adminApp() {
     { key: "review", label: "검토", area: "review", group: "main", badge: (o) => (o.pending ?? 0) + (o.asks ?? 0) + (o.flagged ?? 0) },
     { key: "inquiries", label: "문의", area: "inquiries", group: "main", badge: (o) => o.inquiries ?? 0 },
     { key: "companies", label: "회사", area: "companies", group: "main" },
+    // [COMM-06] The talk on rule sets: what people flagged first.
+    { key: "community", label: "토론", area: "community", group: "main", badge: (o) => o.flaggedPosts ?? 0 },
     { key: "rewards", label: "보상", area: "rewards", group: "main", badge: (o) => o.owed ?? 0 },
     { key: "admins", label: "관리자", owner: true, group: "manage", badge: (o) => o.admins?.waiting ?? 0 },
     { key: "audit", label: "활동 기록", area: "audit", group: "manage" },
@@ -497,6 +500,7 @@ function adminApp() {
     adopt: "제보 채택", reject: "제보 거절", answer: "앱에 없는 방식에 답함", company_create: "회사 만듦", company_update: "회사 고침",
     alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림",
     reward_paid: "보상 지급", reward_void: "보상 취소", reward_owed: "보상 대기로 되돌림", settings: "채택 설정 바꿈",
+    post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음",
     inquiry_reply: "문의에 답함", inquiry_status: "문의 상태 바꿈", inquiry_close: "문의 닫음", inquiry_open: "문의 다시 엶",
   };
   const ERRORS = {
@@ -519,6 +523,8 @@ function adminApp() {
     invite: "초대 링크가 만료됐거나 이미 쓰였어요. 최고 관리자에게 새 링크를 부탁해 주세요",
     text: "답을 적어 주세요",
     server: "서버에 문제가 생겼어요. 잠시 뒤 다시 해 주세요",
+    adoptAgree: "맞았어요 비율은 50~100% 사이로 정해 주세요",
+    action: "이 글에는 할 수 없는 일이에요",
   };
   const TEMPLATES = [
     ["확인 중", "알려 주셔서 고마워요. 지금 확인하고 있어요. 고치는 대로 다시 알려 드릴게요."],
@@ -532,7 +538,7 @@ function adminApp() {
     me: null, overview: null, health: null,
     route: { name: "home", id: null },
     data: {}, // per screen
-    reviewFilter: "all", inquiryStatus: "open", rewardTab: "owed", query: "",
+    reviewFilter: "all", inquiryStatus: "open", rewardTab: "owed", query: "", postFilter: "flagged",
     draft: null, loginMode: "account", error: "", busy: 0, online: navigator.onLine,
     join: null, // invite info on the join page
     installPrompt: null, installed: matchMedia("(display-mode: standalone)").matches || navigator.standalone === true,
@@ -644,6 +650,11 @@ function adminApp() {
       if (name === "inquiries" && id) jobs.push(api(`/inquiries/${id}`).then((d) => { S.data.inquiry = d; }));
       if (name === "companies" && !id) jobs.push(api(`/companies?q=${encodeURIComponent(S.query)}`).then((d) => { S.data.list = d; }));
       if (name === "companies" && id) jobs.push(api(`/companies/${id}`).then((d) => { S.data.company = d; }));
+      if (name === "community") {
+        // An id is one talk: company.setup, opened from the review screen.
+        const [company, setup] = (id ?? "").split(".");
+        jobs.push(api(id ? `/posts?company=${company}&setup=${setup}` : `/posts?status=${S.postFilter}`).then((d) => { S.data.posts = d; }));
+      }
       if (name === "rewards") jobs.push(api(`/rewards?status=${S.rewardTab}`).then((d) => { S.data.rewards = d; }));
       if (name === "admins") jobs.push(api("/admins").then((d) => { S.data.admins = d; }));
       if (name === "audit") jobs.push(api("/audit").then((d) => { S.data.audit = d; }));
@@ -751,6 +762,10 @@ function adminApp() {
       const q = S.data.inquiry;
       return { title: q ? KIND_NAMES[q.kind] ?? "문의" : "문의", sub: q ? `${STATUS_NAMES[q.status] ?? ""} · ${moment(q.createdAt)}` : "", back: href("inquiries") };
     }
+    if (name === "community" && id) {
+      const first = S.data.posts?.posts?.[0];
+      return { title: first ? first.company.name : "토론", sub: first ? `${first.dept || "회사 전체"} 규칙의 토론` : "규칙 토론", back: href("community") };
+    }
     if (name === "account") return { title: "내 계정", back: matchMedia("(min-width:45rem)").matches ? null : href("more") };
     if (name === "more") return { title: "더 보기" };
     const n = NAV.find((x) => x.key === name);
@@ -765,6 +780,7 @@ function adminApp() {
     if (name === "review") return reviewView();
     if (name === "inquiries") return id ? inquiryView() : inquiriesView();
     if (name === "companies") return id ? companyView(S.data.company) : companiesView();
+    if (name === "community") return communityView();
     if (name === "rewards") return rewardsView();
     if (name === "admins") return adminsView();
     if (name === "audit") return auditView();
@@ -796,11 +812,13 @@ function adminApp() {
       tile("달라요", o.flagged, "다시 볼 규칙", href("review"), true);
     }
     if (can("inquiries")) tile("문의", o.inquiries, "답을 기다려요", href("inquiries"), true);
+    if (can("community")) tile("신고된 글", o.flaggedPosts, "토론에서 확인할 글", href("community"), true);
     if (can("rewards")) tile("보상 대기", o.owed, "드릴 프로 기간", href("rewards"), false);
     if (S.me.owner) tile("승인 대기 관리자", o.admins?.waiting, "가입한 관리자", href("admins"), true);
     const stats = [];
     if (can("companies")) stats.push(["회사", o.companies], ["쓰는 규칙", o.rules]);
     if (can("review")) stats.push(["모든 제보", o.reports]);
+    if (can("community")) stats.push(["토론 글", o.posts]);
     const todo = [];
     const add = (n, text, to, tone) => n && todo.push(`<li><a href="${to}"><span class="dot ${tone}" aria-hidden="true"></span>${esc(text)}<small>${n}건</small></a></li>`);
     if (S.me.owner) add(o.admins?.waiting, "승인을 기다리는 관리자", href("admins"), "bad");
@@ -810,6 +828,7 @@ function adminApp() {
       add(o.asks, "앱에 없는 방식", href("review"), "warn");
       add(o.flagged, "달라요가 달린 규칙", href("review"), "warn");
     }
+    if (can("community")) add(o.flaggedPosts, "신고된 토론 글", href("community"), "warn");
     if (can("rewards")) add(o.owed, "드릴 보상", href("rewards"), "");
     // Sign-ins would crowd out the work; they stay on the activity screen.
     const feed = S.data.feed?.entries?.filter((e) => !e.action.startsWith("login")).slice(0, 8) ?? null;
@@ -852,7 +871,7 @@ function adminApp() {
     const head = `<div class="segmented" role="group" aria-label="보기">
         ${seg("review-filter", "all", S.reviewFilter, "전체", counts.all)}${seg("review-filter", "groups", S.reviewFilter, "제보", counts.groups)}
         ${seg("review-filter", "asks", S.reviewFilter, "앱에 없는 방식", counts.asks)}${seg("review-filter", "flagged", S.reviewFilter, "달라요", counts.flagged)}</div>
-      <p class="hint">같은 규칙을 서로 다른 2명 이상이 보내 ${points}점이 되면 자동으로 채택돼요. 명세서로 맞춰 본 제보는 2점이에요.${editable ? "" : " 보기 권한이라 채택·거절은 할 수 없어요."}</p>`;
+      <p class="hint">같은 규칙을 서로 다른 2명 이상이 보내 ${points}점이 되고, 투표한 분의 ${S.overview?.settings?.adoptAgree ?? 75}% 이상이 맞았어요라고 하면 자동으로 채택돼요. 명세서로 맞춰 본 제보는 2점이에요.${editable ? "" : " 보기 권한이라 채택·거절은 할 수 없어요."}</p>`;
     if (!q) return head + skeleton();
     const f = S.reviewFilter;
     const parts = [];
@@ -891,14 +910,17 @@ function adminApp() {
       <p class="meta">${g.persons}명 · 제보 ${g.reports.length}건${verified ? ` · 명세서 확인 ${verified}건` : ""} · ${day(g.reports[0].at)}</p>
       ${gist ? `<p class="gist">${esc(gist)}</p>` : ""}
       <div class="score"><meter min="0" max="${g.threshold}" value="${Math.min(g.points, g.threshold)}" aria-label="채택 점수"></meter><b>${g.points}/${g.threshold}점</b></div>
+      <p class="meta">신뢰도 ${g.trust ?? 0} · 맞았어요 ${g.agree ?? 0}%${g.posts ? ` · 토론 ${g.posts}개` : ""}</p>
       ${g.company.hidden ? '<p class="note warn">숨긴 회사예요. 채택해도 회사 찾기에 나오지 않아요.</p>' : ""}
       ${g.turnedDown ? `<p class="note warn">${g.turnedDown === "withdrawn" ? "전에 내린 규칙과 같은 설정이에요" : "전에 거절한 설정이에요"}. 자동으로 채택되지 않아요.</p>`
-        : g.persons >= 2 && g.networks < 2 ? '<p class="note warn">모두 1시간 안에 같은 네트워크에서 보냈어요. 한 분이 여러 번 보냈을 수도 있어서 자동으로 채택하지 않았어요.</p>' : ""}
+        : g.persons >= 2 && g.networks < 2 ? '<p class="note warn">모두 1시간 안에 같은 네트워크에서 보냈어요. 한 분이 여러 번 보냈을 수도 있어서 자동으로 채택하지 않았어요.</p>'
+        : g.doubted && g.bad ? `<p class="note warn">달라요가 많아 자동으로 채택하지 않아요. 토론을 읽고 정해 주세요.</p>` : ""}
       ${g.changes ? changes(g.changes) : ""}
       <details${open ? " open" : ""}><summary>보낸 설정</summary>${lines(g.lines)}</details>
       ${g.reports.filter((r) => r.note).map((r) => `<blockquote>${esc(r.note)}<cite>${r.verified ? "명세서 확인 · " : ""}${moment(r.at)}</cite></blockquote>`).join("")}
       ${g.bad ? `<p class="note bad">달라요 ${g.bad}명</p>` : ""}
       <div class="actions">
+        ${can("community") && g.posts ? `<a class="btn ghost" href="${href("community", `${g.company.id}.${g.setup}`)}">토론 ${g.posts}개 읽기</a>` : ""}
         ${can("companies") ? `<a class="btn ghost" href="${href("companies", g.company.id)}">회사 열기</a>` : ""}
         ${editable ? `<button class="btn" data-act="reject" data-company="${g.company.id}" data-setup="${g.setup}">거절</button>
         <button class="btn primary" data-act="adopt" data-company="${g.company.id}" data-setup="${g.setup}">채택</button>` : ""}
@@ -922,6 +944,56 @@ function adminApp() {
       <div class="actions">${can("companies") ? `<a class="btn ghost" href="${href("companies", f.company.id)}">회사 열기</a>` : ""}
         ${can("companies", "edit") ? `<button class="btn danger" data-act="withdraw-rule" data-id="${f.rule}">규칙 내리기</button>` : ""}</div>
     </article>`;
+  }
+
+  // ---- the talk on rule sets [COMM-06] ----
+
+  function communityView() {
+    const d = S.data.posts;
+    const edit = can("community", "edit");
+    const talk = Boolean(S.route.id);
+    const head = talk ? `<p class="hint">이 규칙에 남긴 글 전부예요. 가려진 글도 보여요.${edit ? "" : " 보기 권한이라 가리거나 지울 수 없어요."}</p>`
+      : `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
+        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}</div>
+        <p class="hint">앱 사용자가 회사 규칙마다 남긴 글이에요. 서로 다른 세 분이 신고하면 개발자가 볼 때까지 가려져요. 다시 보이게 한 글은 신고로 가려지지 않아요.${edit ? "" : " 보기 권한이라 가리거나 지울 수 없어요."}</p>`;
+    if (!d) return head + skeleton();
+    if (!d.posts.length) {
+      return head + empty(S.postFilter === "flagged" && !talk ? "신고된 글이 없어요" : "글이 없어요", "신고가 오면 여기와 메뉴에 숫자로 보여요.");
+    }
+    return head + `<div class="grid">${d.posts.map((p) => postCard(p, edit, talk)).join("")}</div>`;
+  }
+
+  function postCard(p, edit, talk) {
+    const state = p.status === "hidden" ? `<span class="pill bad">가려짐</span>` : p.flags ? `<span class="pill warn">신고 ${p.flags}</span>`
+      : p.kept ? '<span class="pill ok">확인함</span>' : "";
+    return `<article class="card">
+      <div class="head"><h3>${esc(p.company.name)}${p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ""}</h3>${state}</div>
+      <p class="meta">글쓴이 ${esc(p.writer)} · ${esc(ago(p.at))}${p.mutedUntil ? ` · ${esc(day(p.mutedUntil))}까지 쓰기 막힘` : ""}</p>
+      <blockquote>${esc(p.body)}</blockquote>
+      ${p.reasons.length ? `<p class="meta">신고 이유: ${p.reasons.map((r) => `${esc(r.text)} ${r.n}`).join(", ")}</p>` : ""}
+      ${p.hidden ? `<p class="note warn">${esc(p.hidden.text)}</p>` : ""}
+      <div class="actions">
+        ${talk ? "" : `<a class="btn ghost" href="${href("community", `${p.company.id}.${p.setup}`)}">이 토론 전부</a>`}
+        ${edit ? `${p.status === "hidden" || p.flags ? `<button class="btn" data-act="post-show" data-id="${p.id}">${p.status === "hidden" ? "다시 보이기" : "문제없음"}</button>` : ""}
+          ${p.status === "hidden" ? "" : `<button class="btn" data-act="post-hide" data-id="${p.id}">가리기</button>`}
+          <button class="btn" data-act="post-mute" data-id="${p.id}">30일 쓰기 막기</button>
+          <button class="btn danger" data-act="post-delete" data-id="${p.id}">지우기</button>` : ""}
+      </div>
+    </article>`;
+  }
+
+  function openHidePost(id, mute) {
+    const reasons = Object.entries(S.overview?.hideReasons ?? {}).filter(([key]) => key !== "flags");
+    openDialog(`<form data-form="hide-post" data-id="${id}" data-mute="${mute ? 1 : 0}"><h2>${mute ? "30일 동안 쓰기를 막을까요?" : "이 글을 가릴까요?"}</h2>
+      <p>${mute ? "이 글은 가려지고, 글쓴이는 30일 동안 어느 토론에도 글을 쓸 수 없어요. " : ""}글쓴이 앱에 이 이유가 보여요.</p>
+      <div class="radios">${reasons.map(([key, text], i) => `<label class="radio"><input type="radio" name="reason" value="${key}"${i === 0 ? " checked" : ""}>
+        <span>${esc(text)}</span></label>`).join("")}</div>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit">${mute ? "막기" : "가리기"}</button></div></form>`);
+  }
+
+  async function moderate(id, body, done) {
+    await act(() => api(`/posts/${id}`, "POST", body), done);
+    load();
   }
 
   // ---- inquiries ----
@@ -1205,13 +1277,15 @@ function adminApp() {
   }
 
   function settingsView() {
-    const s = S.draft ?? S.overview?.settings ?? { adoptPoints: 3, rewardMonths: 3 };
+    const s = S.draft ?? S.overview?.settings ?? { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75 };
     const edit = can("settings", "edit");
     return `<div class="grid two">
       ${can("settings") ? `<section class="card">
         <h2>자동 채택</h2>
         ${stepper("adoptPoints", "채택 점수", s.adoptPoints, "점", edit)}
         <p class="hint">같은 규칙을 서로 다른 2명 이상이 보내 이 점수가 되면 자동으로 채택해요. 명세서로 맞춰 본 제보는 2점, 나머지는 1점이에요.</p>
+        ${stepper("adoptAgree", "맞았어요 비율", s.adoptAgree ?? 75, "%", edit)}
+        <p class="hint">투표한 분 가운데 이만큼이 맞았어요라고 해야 자동으로 채택해요. 모자라면 검토에 남아 개발자가 정해요. 앱의 신뢰도는 이 비율과 점수를 함께 봐요.</p>
         ${stepper("rewardMonths", "채택 보상", s.rewardMonths, "개월", edit)}
         <p class="hint">채택된 정보를 보낸 분께 드릴 프로 이용 기간이에요. 0개월이면 보상을 기록하지 않아요.</p>
         ${edit ? `<button class="btn primary wide" data-act="save-settings"${S.draft ? "" : " disabled"}>저장</button>` : '<p class="note">보기 권한이라 바꿀 수 없어요.</p>'}
@@ -1468,6 +1542,16 @@ function adminApp() {
       toast("합쳤어요");
       go("companies", c.id);
     }),
+    "post-filter": ({ key }) => {
+      S.postFilter = key;
+      S.data.posts = null;
+      render();
+      load();
+    },
+    "post-show": ({ id }) => moderate(id, { action: "show" }, "다시 보이게 했어요. 신고로는 더 가려지지 않아요"),
+    "post-hide": ({ id }) => openHidePost(id, false),
+    "post-mute": ({ id }) => openHidePost(id, true),
+    "post-delete": ({ id }) => confirmBox("이 글을 지울까요?", "지운 글은 되돌릴 수 없어요. 글쓴이 앱에서도 사라져요.", "지우기", () => moderate(id, { action: "delete" }, "지웠어요")),
     "reward-tab": ({ key }) => {
       S.rewardTab = key;
       render();
@@ -1475,9 +1559,9 @@ function adminApp() {
     },
     reward: ({ id, status }) => (status === "paid" ? openPaid(id) : setReward(id, status)),
     step: ({ key, d }) => {
-      const s = { ...(S.draft ?? S.overview?.settings ?? { adoptPoints: 3, rewardMonths: 3 }) };
-      const [lo, hi] = key === "adoptPoints" ? [2, 20] : [0, 24];
-      s[key] = Math.min(hi, Math.max(lo, s[key] + Number(d)));
+      const s = { adoptAgree: 75, ...(S.draft ?? S.overview?.settings ?? { adoptPoints: 3, rewardMonths: 3 }) };
+      const [lo, hi, by] = key === "adoptPoints" ? [2, 20, 1] : key === "adoptAgree" ? [50, 100, 5] : [0, 24, 1];
+      s[key] = Math.min(hi, Math.max(lo, s[key] + Number(d) * by));
       S.draft = s;
       render({ keepScroll: true });
     },
@@ -1664,6 +1748,12 @@ function adminApp() {
         dialog.close();
         go("companies", c.id);
       }
+    },
+    "hide-post": (form) => {
+      const mute = form.dataset.mute === "1";
+      dialog.close();
+      moderate(form.dataset.id, { action: mute ? "mute" : "hide", reason: new FormData(form).get("reason") },
+        mute ? "가리고 30일 동안 쓰기를 막았어요" : "가렸어요. 글쓴이 앱에 이유가 보여요");
     },
     paid: (form) => {
       dialog.close();
