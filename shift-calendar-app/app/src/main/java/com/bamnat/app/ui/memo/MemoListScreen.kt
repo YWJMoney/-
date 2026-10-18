@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.memo
 
+import kotlinx.coroutines.Dispatchers
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -103,6 +104,9 @@ fun MemoListScreen(
     onOpenTrash: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    // [STAB-01] Read at once, on the same frame as the key: a text box one frame behind the keyboard
+    // doubles or drops half-built Korean letters and moves the cursor.
+    val query by vm.query.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
     BackHandler(enabled = state.selecting) { vm.clearSelection() }
     val today = LocalDate.now()
     val open: (Memo) -> Unit = { memo -> if (state.selecting) vm.toggleSelected(memo.id) else onOpen(memo.id) }
@@ -129,7 +133,7 @@ fun MemoListScreen(
                 Header(state, onSort = vm::setSort, onOpenTrash = onOpenTrash)
             }
             OutlinedTextField(
-                value = state.query,
+                value = query,
                 onValueChange = vm::setQuery,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                 placeholder = { Text("제목, 내용, #태그 검색") },

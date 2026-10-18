@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -233,16 +234,16 @@ fun PayslipMatchDialog(
                             MatchStage.AMOUNTS -> Button(
                                 onClick = ::startMatch,
                                 enabled = (form.gross ?: 0) > 0,
-                                modifier = Modifier.weight(1f).height(52.dp),
+                                modifier = Modifier.weight(1f).heightIn(min = 52.dp),
                             ) { Text("맞춰 보기") }
                             MatchStage.RESULT -> if (m != null) {
-                                OutlinedButton(onClick = { stage = MatchStage.AMOUNTS }, modifier = Modifier.height(52.dp)) { Text("다시 넣기") }
+                                OutlinedButton(onClick = { stage = MatchStage.AMOUNTS }, modifier = Modifier.heightIn(min = 52.dp)) { Text("다시 넣기") }
                                 Button(
                                     onClick = { vm.applyMatch(m); stage = MatchStage.DONE },
-                                    modifier = Modifier.weight(1f).height(52.dp),
+                                    modifier = Modifier.weight(1f).heightIn(min = 52.dp),
                                 ) { Text(if (m.changes.isEmpty() && added.isEmpty()) "확인했어요" else "이 설정으로 바꾸기") }
                             }
-                            MatchStage.DONE -> Button(onClick = onDismiss, modifier = Modifier.weight(1f).height(52.dp)) { Text("닫기") }
+                            MatchStage.DONE -> Button(onClick = onDismiss, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) { Text("닫기") }
                             else -> Unit
                         }
                     }
@@ -318,7 +319,7 @@ private fun ColumnScope.MonthStage(
 @Composable
 private fun RosterStage(onFix: () -> Unit, onAnyway: () -> Unit) {
     StepTitle("먼저 달력을 고쳐 주세요", "근무표가 실제와 다르면 맞춰 본 결과도 어긋나요. 달력 탭에서 그 달 근무와 잔업·특근·대근을 고친 뒤 다시 와 주세요.")
-    Button(onClick = onFix, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("닫고 달력 고치기") }
+    Button(onClick = onFix, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("닫고 달력 고치기") }
     TextButton(onClick = onAnyway, modifier = Modifier.fillMaxWidth()) { Text("그래도 맞춰 볼게요") }
 }
 
@@ -440,7 +441,7 @@ private const val FAR_PERCENT = 5.0
 
 @Composable
 private fun ColumnScope.Working() {
-    Spacer(Modifier.height(48.dp))
+    Spacer(Modifier.heightIn(min = 48.dp))
     CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
     Text("여러 계산 방식으로 맞춰 보는 중이에요", style = MaterialTheme.typography.bodyMedium,
         modifier = Modifier.align(Alignment.CenterHorizontally))

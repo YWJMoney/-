@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.memo
 
+import kotlinx.coroutines.Dispatchers
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -92,7 +93,9 @@ import java.time.format.DateTimeFormatter
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
-    val memo by vm.memo.collectAsStateWithLifecycle()
+    // [STAB-01] Read at once, on the same frame as the key: a text box one frame behind the keyboard
+    // doubles or drops half-built Korean letters and moves the cursor.
+    val memo by vm.memo.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
     val loaded by vm.loaded.collectAsStateWithLifecycle()
     val savedAt by vm.savedAt.collectAsStateWithLifecycle()
     val canUndo by vm.canUndo.collectAsStateWithLifecycle()

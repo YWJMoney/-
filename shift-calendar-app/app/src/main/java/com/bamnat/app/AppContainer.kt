@@ -20,6 +20,12 @@ import com.bamnat.app.diag.Telemetry
 import com.bamnat.app.widget.WidgetRefresher
 import com.bamnat.core.sleep.SleepDebt
 import kotlinx.coroutines.CoroutineScope
+import com.bamnat.core.diag.DiagEvents
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.SupervisorJob
@@ -37,8 +43,13 @@ import java.time.LocalDateTime
 class AppContainer(context: Context) {
     private val appContext: Context = context.applicationContext
 
-    /** Work that must outlive any screen, e.g. saving a memo while leaving the editor. */
-    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /**
+     * Work that must outlive any screen, e.g. saving a memo while leaving the editor. [STAB-01] An error
+     * in one job is written to the event log instead of closing the whole app (a full disk, a locked database).
+     */
+    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e ->
+        runCatching { telemetry.event(DiagEvents.JOB_FAILED, "scope ${e.javaClass.simpleName}") }
+    })
 
     val database: AppDatabase = AppDatabase.create(context)
     val settingsRepository = SettingsRepository(context)
@@ -88,15 +99,38 @@ class AppContainer(context: Context) {
     private companion object {
         /** A shorter sleep (a tap and an undo, a doze) gets no "잤어요" line. */
         const val WOKE_SUMMARY_MINUTES = 20L
+        const val RETRY_FIRST_MILLIS = 2_000L
+        const val RETRY_MAX_MILLIS = 60_000L
     }
 
     suspend fun rescheduleAlarms(after: LocalDateTime = LocalDateTime.now()) {
         alarmScheduler.reschedule(scheduleRepository.snapshot.first(), settingsRepository.current.alarmsEnabled, after)
     }
 
+    /**
+     * [STAB-01] A job that follows the data for as long as the app runs. When it fails it is logged and
+     * started again a little later, so one bad moment does not leave alarms or notices unplanned until
+     * the next launch.
+     */
+    private fun keep(name: String, job: suspend CoroutineScope.() -> Unit) = appScope.launch {
+        var failures = 0
+        while (isActive) {
+            try {
+                coroutineScope { job() }
+                return@launch
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                runCatching { telemetry.event(DiagEvents.JOB_FAILED, "$name ${e.javaClass.simpleName}") }
+                failures++
+                delay(minOf(RETRY_MAX_MILLIS, RETRY_FIRST_MILLIS shl minOf(failures - 1, 5)))
+            }
+        }
+    }
+
     @OptIn(FlowPreview::class)
     fun start() {
-        appScope.launch {
+        keep("schedule") {
             scheduleRepository.ensureDefaults()
             // [SETUP-01] A first setup the app was closed in the middle of saving is finished first.
             runCatching { firstSetup.finishInterrupted() }
@@ -113,7 +147,7 @@ class AppContainer(context: Context) {
         }
         // [WORK-02] Any change to the booked jobs re-plans the next job reminder.
         // [SLP-15] So does the 나갈 돈·받을 돈 switch.
-        appScope.launch {
+        keep("money") {
             val on = settingsRepository.settings.map { it.moneyNotices }.distinctUntilChanged()
             combine(moneyRepository.book, on) { book, _ -> book }.debounce(500)
                 .collect { JobReminderScheduler.reschedule(appContext, it, settingsRepository.current) }
@@ -126,7 +160,7 @@ class AppContainer(context: Context) {
                 .collect { com.bamnat.app.memo.MemoScheduleAlarm.reschedule(appContext, it) }
         }
         // [SLP-15] 하루 브리핑, 퇴근길 and 잘 준비 follow the schedule, the alarms and their settings.
-        appScope.launch {
+        keep("notices") {
             val reads = settingsRepository.settings.map {
                 listOf(it.briefing, it.commuteNotice, it.bedtimeNotice, it.sleepTargetMinutes, it.commuteMinutes, it.alarmsEnabled, it.workStyle)
             }.distinctUntilChanged()
@@ -135,7 +169,7 @@ class AppContainer(context: Context) {
                 .collect { DayNoticeScheduler.reschedule(appContext, it, settingsRepository.current) }
         }
         // [PAY-12][REL-08] 연차 notices follow whether the user entered their days, and their switch.
-        appScope.launch {
+        keep("leave") {
             val entered = payStore.profile.map { it?.rules?.annualLeaveDays != null }.distinctUntilChanged()
             val on = settingsRepository.settings.map { it.leaveNotice }.distinctUntilChanged()
             combine(entered, on) { a, b -> a to b }
@@ -143,7 +177,7 @@ class AppContainer(context: Context) {
         }
         // [SLP-15] 자는 중 follows the sleep log, and a sleep that just ended says how long it was.
         // What waited while the user slept is planned again from the log.
-        appScope.launch {
+        keep("sleeping") {
             var openId: Long? = null
             val on = settingsRepository.settings.map { it.sleepingNotice }.distinctUntilChanged()
             combine(sleepRepository.recent(days = 2), on, alarmScheduler.upcoming) { log, show, next -> Triple(log, show, next) }
@@ -171,17 +205,17 @@ class AppContainer(context: Context) {
                 }
         }
         // [REL-10] The locked-boot copy carries the ringing settings too, so it follows their changes.
-        appScope.launch {
+        keep("bootcopy") {
             settingsRepository.settings.map { com.bamnat.app.alarm.BootAlarms.RingSettings.of(it) }.distinctUntilChanged().drop(1)
                 .collect { alarmScheduler.saveBootCopy() }
         }
         // Widgets lay out weeks from the user's first day of the week.
-        appScope.launch {
+        keep("widgetweek") {
             settingsRepository.settings.map { it.weekStart }.distinctUntilChanged().drop(1)
                 .collect { WidgetRefresher.refresh(appContext) }
         }
         // [SLP-14] The today widget's line of 오늘의 흐름 follows the sleep log and the settings it reads.
-        appScope.launch {
+        keep("widgetflow") {
             val reads = settingsRepository.settings.map {
                 listOf(it.sleepTips, it.sleepTargetMinutes, it.commuteMinutes, it.restCheck, it.strictRest, it.workStyle)
             }.distinctUntilChanged()

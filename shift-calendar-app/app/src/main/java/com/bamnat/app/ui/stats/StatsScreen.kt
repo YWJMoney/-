@@ -1,5 +1,8 @@
 package com.bamnat.app.ui.stats
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.runtime.produceState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -137,9 +140,14 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         if (pays) {
             PayEntryCard(
                 month = month,
-                total = remember(payProfile, snap, month, tier) {
-                    payProfile?.takeIf { FeatureGate.allows(tier, Feature.PAY_ENGINE) }?.let { vm.payTotal(it, snap, month) }
-                },
+                // [STAB-01] A month of pay is worked out off the main thread, and an odd profile shows no total
+                // instead of closing the app.
+                total = produceState<Long?>(null, payProfile, snap, month, tier) {
+                    value = payProfile?.takeIf { FeatureGate.allows(tier, Feature.PAY_ENGINE) }?.let { p ->
+                        runCatching { withContext(Dispatchers.Default) { vm.payTotal(p, snap, month) } }
+                            .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
+                    }
+                }.value,
                 hasProfile = payProfile != null,
                 onClick = onOpenPay,
             )

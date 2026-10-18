@@ -40,6 +40,9 @@ import java.time.format.DateTimeFormatter
 class AlarmService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var player: MediaPlayer? = null
+    /** [STAB-01] The sound being prepared, and which ring it belongs to, so a late answer is ignored. */
+    private var preparing: MediaPlayer? = null
+    private var soundAttempt = 0
     private var vibrator: Vibrator? = null
     private var focusRequest: AudioFocusRequest? = null
     private var volume = 1f
@@ -165,28 +168,60 @@ class AlarmService : Service() {
         add(Settings.System.DEFAULT_NOTIFICATION_URI)
     }.distinct()
 
-    private fun playSound(candidates: List<Uri>, gradual: Boolean) {
-        for (uri in candidates) {
-            val mp = MediaPlayer()
-            val started = runCatching {
-                mp.setAudioAttributes(alarmAttributes)
-                mp.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK)
-                mp.setDataSource(this, uri)
-                mp.isLooping = true
-                mp.prepare()
-                volume = if (gradual) GRADUAL_START else 1f
-                mp.setVolume(volume, volume)
-                mp.start()
-            }.isSuccess
-            if (started) {
-                player = mp
-                if (gradual) handler.postDelayed(volumeRamp, RAMP_STEP_MILLIS)
-                return
-            }
-            mp.release()
+    /**
+     * [STAB-01] Plays the first of [candidates] that works. Each is prepared in the background
+     * (prepareAsync): preparing a sound on a card, in the cloud or no longer there could hold the main
+     * thread for seconds, and the app froze if it was open when the alarm rang. A sound that fails or
+     * takes too long gives way to the next one, and with none left the phone vibrates.
+     */
+    private fun playSound(candidates: List<Uri>, gradual: Boolean, attempt: Int = ++soundAttempt) {
+        if (attempt != soundAttempt) return
+        val uri = candidates.firstOrNull() ?: run {
+            // No playable sound at all: make sure the user still notices.
+            startVibration()
+            return
         }
-        // No playable sound at all: make sure the user still notices.
-        startVibration()
+        val mp = MediaPlayer()
+        var done = false
+        fun next() {
+            if (done) return
+            done = true
+            if (preparing === mp) preparing = null
+            runCatching { mp.release() }
+            playSound(candidates.drop(1), gradual, attempt)
+        }
+        val asked = runCatching {
+            mp.setAudioAttributes(alarmAttributes)
+            mp.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK)
+            mp.setDataSource(this, uri)
+            mp.isLooping = true
+            mp.setOnPreparedListener { ready ->
+                if (done || attempt != soundAttempt || preparing !== ready) return@setOnPreparedListener
+                val started = runCatching {
+                    volume = if (gradual) GRADUAL_START else 1f
+                    ready.setVolume(volume, volume)
+                    ready.start()
+                }.isSuccess
+                if (started) {
+                    done = true
+                    preparing = null
+                    player = ready
+                    if (gradual) handler.postDelayed(volumeRamp, RAMP_STEP_MILLIS)
+                } else {
+                    next()
+                }
+            }
+            mp.setOnErrorListener { _, _, _ ->
+                if (preparing === mp) next()
+                // The sound broke off while ringing: the alarm still goes on, by vibration.
+                else if (player === mp) startVibration()
+                true
+            }
+            preparing = mp
+            mp.prepareAsync()
+            handler.postDelayed({ if (preparing === mp && attempt == soundAttempt) next() }, PREPARE_TIMEOUT_MILLIS)
+        }.isSuccess
+        if (!asked) next()
     }
 
     private val volumeRamp = object : Runnable {
@@ -229,6 +264,9 @@ class AlarmService : Service() {
             mp.release()
         }
         player = null
+        soundAttempt++
+        preparing?.let { runCatching { it.release() } }
+        preparing = null
         vibrator?.cancel()
         vibrator = null
         focusRequest?.let { getSystemService(AudioManager::class.java)?.abandonAudioFocusRequest(it) }
@@ -268,6 +306,8 @@ class AlarmService : Service() {
         private const val GRADUAL_START = 0.15f
         private const val RAMP_INCREMENT = 0.085f
         private const val RAMP_STEP_MILLIS = 2_000L
+        /** [STAB-01] A sound not ready by then gives way to the next one. */
+        private const val PREPARE_TIMEOUT_MILLIS = 5_000L
 
         private val _ringing = MutableStateFlow<RingRequest?>(null)
         /** The alarm currently ringing, observed by [AlarmActivity]. */

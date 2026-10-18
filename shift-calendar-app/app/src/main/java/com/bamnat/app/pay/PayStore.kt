@@ -62,16 +62,26 @@ class PayStore(context: Context) {
     val canUndo: StateFlow<PayProfile?> = _undo.asStateFlow()
 
     suspend fun save(profile: PayProfile?, keepUndo: Boolean = true) = withContext(Dispatchers.IO) {
-        synchronized(this@PayStore) {
-            if (keepUndo) _undo.value = _profile.value
-            if (profile == null) file.delete() else {
-                file.parentFile?.mkdirs()
-                val tmp = File(file.parentFile, "profile.json.tmp")
-                tmp.writeText(PayCodec.encode(profile).toString())
-                tmp.renameTo(file)
-            }
-            _profile.value = profile
+        synchronized(this@PayStore) { write(profile, keepUndo) }
+    }
+
+    /**
+     * [STAB-01] Changes the saved profile in one step: two quick taps (two answers, two switches) each start
+     * from the other's result, instead of the second one undoing the first.
+     */
+    suspend fun update(transform: (PayProfile) -> PayProfile) = withContext(Dispatchers.IO) {
+        synchronized(this@PayStore) { _profile.value?.let { write(transform(it), keepUndo = true) } }
+    }
+
+    private fun write(profile: PayProfile?, keepUndo: Boolean) {
+        if (keepUndo) _undo.value = _profile.value
+        if (profile == null) file.delete() else {
+            file.parentFile?.mkdirs()
+            val tmp = File(file.parentFile, "profile.json.tmp")
+            tmp.writeText(PayCodec.encode(profile).toString())
+            tmp.renameTo(file)
         }
+        _profile.value = profile
     }
 
     suspend fun undo() {

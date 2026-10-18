@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.company
 
+import kotlinx.coroutines.Dispatchers
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -105,7 +106,9 @@ fun CompanyFindScreen(
     /** The user's own setup is already in, so a company that is not here leads to sharing it. */
     ready: Boolean = false,
 ) {
-    val query by vm.query.collectAsStateWithLifecycle()
+    // [STAB-01] Read at once, on the same frame as the key: a text box one frame behind the keyboard
+    // doubles or drops half-built Korean letters and moves the cursor.
+    val query by vm.query.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
     val result by vm.result.collectAsStateWithLifecycle()
     val terms by vm.terms.collectAsStateWithLifecycle()
     val focusRequester = remember { FocusRequester() }
