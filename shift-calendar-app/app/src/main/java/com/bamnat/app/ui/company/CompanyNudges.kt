@@ -168,7 +168,9 @@ private fun VoteCard(a: AppliedSetup, onRight: () -> Unit, onWrong: () -> Unit, 
 private fun RightSheet(a: AppliedSetup, onDismiss: () -> Unit, onVote: (Boolean, (Boolean) -> Unit) -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // A swipe while sending would leave the sheet's scrim catching taps until the answer comes.
+    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetGesturesEnabled = !busy) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("좋아요! 무엇과 맞춰 보셨어요?", style = MaterialTheme.typography.titleLarge)
             Text("${a.company} 분들이 이 설정을 믿고 쓸 수 있게 점수로 쌓여요.", style = MaterialTheme.typography.bodyMedium,
@@ -199,7 +201,9 @@ private fun WrongSheet(vm: CompanyNudgeViewModel, a: AppliedSetup, onDismiss: ()
     var busy by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
     var asking by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // A swipe while sending would leave the sheet's scrim catching taps until the answer comes.
+    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetGesturesEnabled = !busy) {
         AnimatedContent(told, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "wrong-plea") { plea ->
             Column(
                 Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),

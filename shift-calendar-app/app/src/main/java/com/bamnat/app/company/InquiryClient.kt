@@ -2,11 +2,9 @@ package com.bamnat.app.company
 
 import android.content.Context
 import com.bamnat.app.BuildConfig
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.time.Instant
 
@@ -57,23 +55,23 @@ interface InquiryApi {
 class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : InquiryApi {
     override val enabled: Boolean get() = baseUrl.isNotBlank()
 
-    override suspend fun send(device: String, kind: InquiryKind, text: String, info: InquiryInfo): Inquiry = withContext(Dispatchers.IO) {
+    override suspend fun send(device: String, kind: InquiryKind, text: String, info: InquiryInfo): Inquiry = serverCall {
         val i = JSONObject().put("app", info.app).put("model", info.model).put("android", info.android)
         info.diag?.takeIf { it.isNotBlank() }?.let { i.put("diag", it.take(DIAG_MAX)) }
         val body = JSONObject().put("v", 1).put("device", device).put("kind", kind.code).put("text", text.trim()).put("info", i)
         inquiry(serverRequest(baseUrl, "POST", "/api/inquiries", body))
     }
 
-    override suspend fun mine(device: String): List<Inquiry> = withContext(Dispatchers.IO) {
+    override suspend fun mine(device: String): List<Inquiry> = serverCall {
         serverRequest(baseUrl, "GET", "/api/inquiries", device = device).optJSONArray("inquiries").objects().map(::inquiry)
     }
 
-    override suspend fun more(device: String, id: String, text: String): Inquiry = withContext(Dispatchers.IO) {
+    override suspend fun more(device: String, id: String, text: String): Inquiry = serverCall {
         inquiry(serverRequest(baseUrl, "POST", "/api/inquiries/$id/messages", JSONObject().put("text", text.trim()), device))
     }
 
     /** One already gone counts as deleted. */
-    override suspend fun delete(device: String, id: String) = withContext(Dispatchers.IO) {
+    override suspend fun delete(device: String, id: String) = serverCall {
         try {
             serverRequest(baseUrl, "DELETE", "/api/inquiries/$id", device = device)
         } catch (e: CompanyException) {
