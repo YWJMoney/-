@@ -62,6 +62,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -96,7 +97,9 @@ import com.bamnat.app.ui.components.rememberNotificationAsk
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.diag.DiagEvents
 import com.bamnat.core.diag.EventBook
+import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.schedule.IcsWriter
+import com.bamnat.core.schedule.PatternTimeline
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -245,10 +248,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val hasPayProfile: StateFlow<com.bamnat.core.pay.PayProfile?> = container.payStore.profile
 
     /** [COMM-00] Writes the company file to the share cache and opens the share sheet. */
-    fun shareCompany(context: Context, company: String, withAmounts: Boolean) {
+    fun shareCompany(context: Context, company: String, withAmounts: Boolean, team: String = "") {
         viewModelScope.launch {
             runCatching {
-                val text = container.companyShare.export(company, withAmounts)
+                val text = container.companyShare.export(company, withAmounts, team)
                 val file = withContext(Dispatchers.IO) {
                     val dir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
                     dir.listFiles()?.forEach { it.delete() }
@@ -271,14 +274,19 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         _pendingCompany.value = null
     }
 
-    fun applyCompany(rotation: Boolean) {
+    /** [SETUP-02] The file's order as rows of the coming week, the sender's row marked. */
+    suspend fun phasesFor(text: String): com.bamnat.app.ui.company.Phases? =
+        runCatching { com.bamnat.app.ui.company.rotationPhases(container, text, fromSender = true) }.getOrNull()
+
+    /** [todayStep]: today's place in the file's order, so another 조 lines up too [SETUP-02]. */
+    fun applyCompany(rotation: Boolean, todayStep: Int? = null) {
         val text = _pendingCompany.value?.first ?: return
         _pendingCompany.value = null
         container.appScope.launch {
             _message.value = runCatching {
                 // [SET-01] Kept first, so the company's setup can be taken back.
                 container.importUndo.save()
-                val done = container.companyShare.apply(text, rotation)
+                val done = container.companyShare.apply(text, rotation, todayStep)
                 container.telemetry.event(DiagEvents.COMPANY_IMPORT)
                 SettingsMessage(buildList {
                     add("회사 설정을 넣었어요")
@@ -698,16 +706,33 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
     }
     var sharingCompany by remember { mutableStateOf(false) }
     val profile by vm.hasPayProfile.collectAsStateWithLifecycle()
+    val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     if (sharingCompany) {
         CompanyShareDialog(
             hasPay = profile != null,
+            hasRotation = snapshot?.let { PatternTimeline.current(it.patterns, LocalDate.now()) is WorkPattern.Rotation } == true,
             onDismiss = { sharingCompany = false },
-            onShare = { name, amounts -> sharingCompany = false; vm.shareCompany(context, name, amounts) },
+            onShare = { name, amounts, team -> sharingCompany = false; vm.shareCompany(context, name, amounts, team) },
         )
     }
     val pendingCompany by vm.pendingCompany.collectAsStateWithLifecycle()
-    pendingCompany?.let { (_, summary) ->
-        CompanyImportDialog(summary, hasPay = profile != null, onDismiss = vm::cancelCompany, onApply = vm::applyCompany)
+    val scope = rememberCoroutineScope()
+    // [SETUP-02] With the order on, today's row is asked next: the sender's 조 is only where it starts.
+    var phases by remember(pendingCompany) { mutableStateOf<com.bamnat.app.ui.company.Phases?>(null) }
+    pendingCompany?.let { (text, summary) ->
+        val rows = phases
+        if (rows == null) {
+            CompanyImportDialog(summary, hasPay = profile != null, onDismiss = vm::cancelCompany, onApply = { rotation ->
+                if (!rotation) vm.applyCompany(false)
+                else scope.launch {
+                    val p = vm.phasesFor(text)
+                    if (p != null && p.options.size > 1) phases = p else vm.applyCompany(true, if (p != null) 0 else null)
+                }
+            })
+        } else {
+            com.bamnat.app.ui.company.PhaseSheet(rows, replacing = rows.hasPattern, busy = false, onDismiss = { phases = null },
+                onPick = { step -> vm.applyCompany(true, step) })
+        }
     }
     val locked by vm.locked.collectAsStateWithLifecycle()
     locked?.let { UnlockBackupDialog(it, onUnlock = vm::unlock, onDismiss = vm::cancelUnlock) }
@@ -733,7 +758,7 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
 }
 
 /** [SET-01] Everything a restore replaces, and that the data before it is kept. */
-private fun restoreMessage(s: BackupSummary): String {
+internal fun restoreMessage(s: BackupSummary): String {
     val parts = buildList {
         add("근무 종류 ${s.shiftTypes}개")
         add("바꾼 날짜 ${s.days}일")

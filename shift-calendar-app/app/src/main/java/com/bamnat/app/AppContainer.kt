@@ -62,6 +62,11 @@ class AppContainer(context: Context) {
     /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
     var companyApi: com.bamnat.app.company.CompanyApi = com.bamnat.app.company.CompanyClient()
     val companyStore by lazy { com.bamnat.app.company.CompanyStore(appContext) }
+    /** [SETUP-01] The first setup's answers until it saves, on this phone only. */
+    val setupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "setup_draft.json")) }
+    val firstSetup by lazy {
+        com.bamnat.app.data.FirstSetup(scheduleRepository, settingsRepository, setupDrafts, { companyShare }, { companyStore })
+    }
     /** [MKT-09][SHR-02] The link server; screenshots and tests put a fake in its place. */
     var shareApi: com.bamnat.app.share.ShareApi = com.bamnat.app.share.ShareLinkClient()
     /** [SHR-02] Schedules others shared, kept beside the user's own and never backed up. */
@@ -83,6 +88,8 @@ class AppContainer(context: Context) {
     fun start() {
         appScope.launch {
             scheduleRepository.ensureDefaults()
+            // [SETUP-01] A first setup the app was closed in the middle of saving is finished first.
+            runCatching { firstSetup.finishInterrupted() }
             memoRepository.purgeOldTrash()
             moneyRepository.purgeCaptures()
             // Any edit to shift types, the pattern, a day or the master switch re-plans the next alarm.

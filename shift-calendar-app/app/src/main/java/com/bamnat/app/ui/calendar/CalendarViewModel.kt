@@ -92,6 +92,13 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         memoRepo.datesWithMemos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
     val upcomingAlarm: StateFlow<UpcomingAlarm?> = container.alarmScheduler.upcoming
 
+    /** [SETUP-01] A first setup left for later, to go on from the calendar. */
+    val setupDraft: StateFlow<com.bamnat.core.setup.SetupDraft?> = container.setupDrafts.draft
+
+    fun resumeSetup() {
+        container.setupDrafts.draft.value?.let { container.setupDrafts.save(it.copy(later = false)) }
+    }
+
     /** [EXTRA-05] Pieces of extra work moved from an older record that still need a look. */
     val extrasToReview: StateFlow<Int> =
         schedule.extrasToReview.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)

@@ -350,6 +350,8 @@ fun ShiftTypeEditorDialog(
     onDismiss: () -> Unit,
     onSave: (ShiftType) -> Unit,
     onDelete: (() -> Unit)?,
+    /** [SETUP-01] The first setup asks for alarms in a step of their own. */
+    showAlarms: Boolean = true,
 ) {
     var draft by remember(initial) { mutableStateOf(initial) }
     var pickStart by remember { mutableStateOf(false) }
@@ -379,7 +381,7 @@ fun ShiftTypeEditorDialog(
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { Text(if (initial.id == 0L) "근무 추가" else "근무 수정") },
+                        title = { Text(if (initial.id == 0L || initial.name.isBlank()) "근무 추가" else "근무 수정") },
                         navigationIcon = { IconButton(onClick = close) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "닫기") } },
                         actions = {
                             TextButton(onClick = { onSave(draft) }, enabled = draft.name.isNotBlank()) { Text("저장") }
@@ -548,7 +550,7 @@ fun ShiftTypeEditorDialog(
                             )
                         }
 
-                        SectionCard(title = "알람") {
+                        if (showAlarms) SectionCard(title = "알람") {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text("근무 전 알람", style = MaterialTheme.typography.bodyLarge)

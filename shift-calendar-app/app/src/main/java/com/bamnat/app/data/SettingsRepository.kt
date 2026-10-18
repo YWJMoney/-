@@ -40,8 +40,13 @@ data class AppSettings(
     val shareUsageStats: Boolean = false,
     /** Subscription tier; set by billing later, by testers for now [TIER-01]. */
     val tier: Tier = Tier.FREE,
-    /** [WORK-01] How the user works; null until chosen on first launch. */
+    /**
+     * [WORK-01] How the user works; null until chosen on first launch. [SETUP-01] The first setup
+     * writes it only when it saves, so null also means the first setup is not done.
+     */
     val workStyle: WorkStyle? = null,
+    /** [SETUP-02] Shift work on a roster that comes every month: days are painted, not repeated. */
+    val rosterMonthly: Boolean = false,
     /** [PAYX-09][EXTRA-01] The kinds of extra work this person's company has, with their times. */
     val extraKinds: ExtraKinds = ExtraKinds(),
     /** [FEAT-17] Memos come first in the day view, for people who live by their notes. */
@@ -141,6 +146,7 @@ class SettingsRepository(context: Context) {
             shareUsageStats = prefs.getBoolean(K_SHARE_STATS, d.shareUsageStats),
             tier = runCatching { Tier.valueOf(prefs.getString(K_TIER, null) ?: "") }.getOrDefault(d.tier),
             workStyle = prefs.getString(K_WORK_STYLE, null)?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } },
+            rosterMonthly = prefs.getBoolean(K_ROSTER_MONTHLY, d.rosterMonthly),
             extraKinds = ExtraKinds.decode(prefs.getString(K_EXTRA_KINDS, null)),
             memoFirst = prefs.getBoolean(K_MEMO_FIRST, d.memoFirst),
             calendarMemos = prefs.getBoolean(K_CAL_MEMOS, d.calendarMemos),
@@ -184,6 +190,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SHARE_STATS, s.shareUsageStats)
             .putString(K_TIER, s.tier.name)
             .putString(K_WORK_STYLE, s.workStyle?.name)
+            .putBoolean(K_ROSTER_MONTHLY, s.rosterMonthly)
             .putString(K_EXTRA_KINDS, s.extraKinds.encode())
             .putBoolean(K_MEMO_FIRST, s.memoFirst)
             .putBoolean(K_CAL_MEMOS, s.calendarMemos)
@@ -225,6 +232,7 @@ class SettingsRepository(context: Context) {
         const val K_SHARE_STATS = "share_usage_stats"
         const val K_TIER = "tier"
         const val K_WORK_STYLE = "work_style"
+        const val K_ROSTER_MONTHLY = "roster_monthly"
         const val K_EXTRA_KINDS = "extra_kinds"
         const val K_MEMO_FIRST = "memo_first"
         const val K_CAL_MEMOS = "calendar_memos"

@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -20,18 +22,32 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.data.CompanySummary
+import com.bamnat.app.ui.Fmt
 
-/** [COMM-00] What goes in the company file, and whether allowance amounts do. */
+/**
+ * [COMM-00] What goes in the company file, and whether allowance amounts do. [hasRotation]: the
+ * sender's 조 can go with the order, so a coworker on the same one is only asked to confirm [SETUP-02].
+ */
 @Composable
-fun CompanyShareDialog(hasPay: Boolean, onDismiss: () -> Unit, onShare: (String, Boolean) -> Unit) {
+fun CompanyShareDialog(hasPay: Boolean, hasRotation: Boolean, onDismiss: () -> Unit, onShare: (String, Boolean, String) -> Unit) {
     var name by rememberSaveable { mutableStateOf("") }
+    var team by rememberSaveable { mutableStateOf("") }
     var amounts by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("회사 설정 보내기") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(name, { name = it.take(40) }, label = { Text("회사·부서 이름 (선택)") }, singleLine = true)
+                if (hasRotation) {
+                    OutlinedTextField(
+                        team, { team = it.take(12) },
+                        label = { Text("내 조 이름 (선택)") },
+                        placeholder = { Text("예: A조") },
+                        supportingText = { Text("같은 조 동료는 오늘 근무를 따로 고르지 않아도 돼요") },
+                        singleLine = true,
+                    )
+                }
                 Text("들어가는 것: 근무 종류와 시간, 근무 주기, 잔업·특근 이름" + if (hasPay) ", 회사 급여 규칙, 수당 이름" else "",
                     style = MaterialTheme.typography.bodySmall)
                 Text("안 들어가는 것: 기본급, 입사일, 연차 일수, 알람, 달력에 적은 내용과 메모",
@@ -48,7 +64,7 @@ fun CompanyShareDialog(hasPay: Boolean, onDismiss: () -> Unit, onShare: (String,
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onShare(name, amounts) }) { Text("보내기") } },
+        confirmButton = { TextButton(onClick = { onShare(name, amounts, if (hasRotation) team else "") }) { Text("보내기") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }
@@ -69,8 +85,12 @@ fun CompanyImportDialog(summary: CompanySummary, hasPay: Boolean, onDismiss: () 
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.weight(1f)) {
                             Text("${days}일 근무 주기도 넣기", style = MaterialTheme.typography.bodyLarge)
-                            Text("오늘부터 바뀌고 지난 날은 그대로예요", style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            // [SETUP-02] Whose order it is, and that another 조 only picks today's row next.
+                            Text(
+                                (summary.team?.let { "보낸 분은 $it${Fmt.ieyo(it)}. " } ?: "") + "오늘 근무를 고르면 내 조에 맞춰져요. 지난 날은 그대로예요",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                         Switch(checked = rotation, onCheckedChange = { rotation = it })
                     }

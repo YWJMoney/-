@@ -22,8 +22,10 @@ enum class SetupStep { STYLE, COMPANY, BUNDLE, TIMES, ORDER, TODAY, ALARM, SUMMA
 data class SetupSource(
     val kind: Kind,
     val text: String,
-    /** The template's or the server's id; null for a file. */
+    /** The template's id, or the company's on the server; null for a file. */
     val id: String? = null,
+    /** The server's id of the setup chosen at that company. */
+    val setupId: String? = null,
     val name: String = "",
     val dept: String = "",
     val version: Int? = null,
@@ -46,6 +48,8 @@ data class SetupDraft(
     val step: SetupStep = SetupStep.STYLE,
     /** The bundle chosen, a [com.bamnat.core.schedule.ShiftBundles] key or [CUSTOM]. */
     val bundle: String? = null,
+    /** [COMM-05] The company typed when none was found, to invite the user to share their setup later. */
+    val companyName: String = "",
     val types: List<ShiftType> = emptyList(),
     val roles: Map<Long, ShiftRole> = emptyMap(),
     /** "네, 맞아요" on the times: required before going on. */
@@ -89,12 +93,12 @@ data class SetupDraft(
             null, WorkStyle.FIELD, WorkStyle.BUSINESS -> listOf(SetupStep.STYLE)
             WorkStyle.SHIFT -> listOfNotNull(
                 SetupStep.STYLE, SetupStep.COMPANY, SetupStep.BUNDLE.takeIf { source == null }, SetupStep.TIMES,
-                // A shared setup brings its order; the month preview of the next step shows it.
-                SetupStep.ORDER.takeUnless { usesRotation && source != null && rotation.isNotEmpty() },
-                SetupStep.TODAY.takeIf { usesRotation }, SetupStep.ALARM, SetupStep.SUMMARY,
+                // A shared order is asked too, already chosen: a template's is only the usual one for that work.
+                SetupStep.ORDER, SetupStep.TODAY.takeIf { usesRotation }, SetupStep.ALARM, SetupStep.SUMMARY,
             )
-            WorkStyle.DAY -> listOf(SetupStep.STYLE, SetupStep.COMPANY, SetupStep.TIMES, SetupStep.ORDER, SetupStep.ALARM, SetupStep.SUMMARY)
-            WorkStyle.HOURLY -> listOf(SetupStep.STYLE, SetupStep.TIMES, SetupStep.ORDER, SetupStep.ALARM, SetupStep.SUMMARY)
+            // [COMM-05] Weekday and part-time work look for the company too, or start from a template.
+            WorkStyle.DAY, WorkStyle.HOURLY ->
+                listOf(SetupStep.STYLE, SetupStep.COMPANY, SetupStep.TIMES, SetupStep.ORDER, SetupStep.ALARM, SetupStep.SUMMARY)
         }
 
     /** "근무 설정 3/6": [step]'s place among [steps], 1-based. */
@@ -172,6 +176,22 @@ data class SetupDraft(
         return copy(
             bundle = bundle, types = types, roles = roles, timesConfirmed = false, rotation = emptyList(),
             // [WORK-01] Weekday work starts Monday to Friday on its day shift.
+            weekly = DayOfWeek.entries.map { if (style == WorkStyle.DAY && it.value <= 5) day else null },
+            painted = emptyMap(), anchor = null, todayConfirmed = false, alarmByType = emptyMap(),
+        )
+    }
+
+    /**
+     * [COMM-01][SETUP-02] Starts the draft from a shared setup: its shifts and the order as the file
+     * names them. The roles are guessed from the times, so the order can still be changed later.
+     */
+    fun withShared(source: SetupSource, shifts: List<ShiftType>, order: List<String?>): SetupDraft {
+        val types = shifts.mapIndexed { i, t -> t.copy(id = -(i + 1L), sortOrder = i) }
+        val byName = types.associateBy { it.name }
+        val day = types.firstOrNull { !it.isOff && it.hasTimes }?.id
+        return copy(
+            bundle = null, source = source, types = types, roles = types.associate { it.id to ShiftRole.guess(it) },
+            timesConfirmed = false, rotation = order.map { name -> name?.let { byName[it]?.id } },
             weekly = DayOfWeek.entries.map { if (style == WorkStyle.DAY && it.value <= 5) day else null },
             painted = emptyMap(), anchor = null, todayConfirmed = false, alarmByType = emptyMap(),
         )

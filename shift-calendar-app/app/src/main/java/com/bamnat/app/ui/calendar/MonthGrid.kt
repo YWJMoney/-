@@ -155,6 +155,8 @@ fun MonthGrid(
     onPaint: ((List<LocalDate>) -> Unit)? = null,
     /** The hour limit a week over it is marked against, said to TalkBack at the week's first day. */
     weeklyLimitHours: Int = com.bamnat.core.hours.HourLimits().weeklyLimitHours,
+    /** [SETUP-02] The first setup paints days only: no menu on a long press. */
+    quickMenu: Boolean = true,
 ) {
     val cal = LocalCalendarColors.current
     val haptics = LocalHapticFeedback.current
@@ -235,6 +237,7 @@ fun MonthGrid(
                         showLunar = showLunar,
                         onClick = { onDayClick(date) },
                         onQuickAction = { onQuickAction(date, it) },
+                        quickMenu = quickMenu,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         weekNote = if (col == 0 && week.overLimit) {
                             "이 주 ${HoursFormat.hours(week.totalMinutes.toDouble())}시간, ${weeklyLimitHours}시간 넘음"
@@ -265,6 +268,7 @@ private fun DayCell(
     onQuickAction: (QuickAction) -> Unit,
     modifier: Modifier = Modifier,
     weekNote: String? = null,
+    quickMenu: Boolean = true,
 ) {
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
@@ -329,11 +333,11 @@ private fun DayCell(
             .combinedClickable(
                 role = Role.Button,
                 onClick = onClick,
-                onLongClick = {
+                onLongClick = if (quickMenu) ({
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     menu = true
-                },
-                onLongClickLabel = "빠른 설정",
+                }) else null,
+                onLongClickLabel = if (quickMenu) "빠른 설정" else null,
             )
             .semantics {
                 contentDescription = description

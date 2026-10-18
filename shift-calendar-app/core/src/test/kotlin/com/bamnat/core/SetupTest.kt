@@ -126,9 +126,11 @@ class SetupTest {
         assertEquals(s, SetupDraft(style = WorkStyle.SHIFT).steps)
         assertEquals(s - SetupStep.TODAY, SetupDraft(style = WorkStyle.SHIFT, rosterMonthly = true).steps)
         val shared = SetupDraft(style = WorkStyle.SHIFT, rotation = listOf(-1L, null), source = SetupSource(SetupSource.Kind.TEMPLATE, "{}"))
-        assertEquals(listOf(SetupStep.STYLE, SetupStep.COMPANY, SetupStep.TIMES, SetupStep.TODAY, SetupStep.ALARM, SetupStep.SUMMARY), shared.steps)
+        assertEquals(listOf(SetupStep.STYLE, SetupStep.COMPANY, SetupStep.TIMES, SetupStep.ORDER, SetupStep.TODAY, SetupStep.ALARM, SetupStep.SUMMARY),
+            shared.steps)
         assertEquals(6, SetupDraft(style = WorkStyle.DAY).steps.size)
-        assertEquals(listOf(SetupStep.STYLE, SetupStep.TIMES, SetupStep.ORDER, SetupStep.ALARM, SetupStep.SUMMARY), SetupDraft(style = WorkStyle.HOURLY).steps)
+        assertEquals(listOf(SetupStep.STYLE, SetupStep.COMPANY, SetupStep.TIMES, SetupStep.ORDER, SetupStep.ALARM, SetupStep.SUMMARY),
+            SetupDraft(style = WorkStyle.HOURLY).steps)
         assertEquals(listOf(SetupStep.STYLE), SetupDraft(style = WorkStyle.FIELD).steps)
         assertEquals(3, SetupDraft(style = WorkStyle.SHIFT, step = SetupStep.BUNDLE).position)
     }

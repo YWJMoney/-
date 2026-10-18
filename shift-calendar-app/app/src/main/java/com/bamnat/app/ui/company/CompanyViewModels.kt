@@ -96,8 +96,64 @@ class CompanyFindViewModel(private val c: AppContainer) : ViewModel() {
 /** One choice of where today falls in a shared rotation: the next week from it. */
 data class Phase(val step: Int, val days: List<ShiftType?>)
 
-/** A shared rotation and today's place in it, for "오늘은 어떤 근무예요?". */
-data class Phases(val options: List<Phase>, val cycle: Int, val current: Int?)
+/**
+ * A shared rotation and today's place in it, for "오늘은 어떤 근무예요?". [current] is the row the
+ * calendar already shows; [sent] the row of whoever sent the file, with their [team] when they wrote it.
+ */
+data class Phases(
+    val options: List<Phase>,
+    val cycle: Int,
+    val current: Int?,
+    val sent: Int? = null,
+    val team: String? = null,
+    val hasPattern: Boolean = false,
+)
+
+/**
+ * [COMM-01] The rotation of a company file as rows of the next seven days, one per place today could
+ * be in it. [fromSender] marks the row the sender's own start day gives [SETUP-02]: right for the same 조.
+ */
+internal suspend fun rotationPhases(c: AppContainer, text: String, fromSender: Boolean, today: LocalDate = LocalDate.now()): Phases? {
+    val root = JSONObject(text)
+    val rotation = root.optJSONObject("rotation") ?: return null
+    val steps = rotation.optJSONArray("steps") ?: return null
+    val names = (0 until steps.length()).map { if (steps.isNull(it)) null else steps.getString(it) }
+    if (names.isEmpty()) return null
+    val snapshot = c.scheduleRepository.snapshot.first()
+    // The colors and marks the user already gave a shift of the same name, else the file's own.
+    val mine = snapshot.shiftTypes.associateBy { it.name }
+    val types = root.optJSONArray("shiftTypes")?.let { a ->
+        (0 until a.length()).map { a.getJSONObject(it) }.associate { o ->
+            val name = o.getString("name")
+            name to (mine[name] ?: ShiftType(
+                id = 0, name = name, label = o.optString("label").ifEmpty { name.take(1) },
+                colorArgb = o.optLong("color", 0xFF5C6BC0), start = null, end = null, isOff = o.optBoolean("off"),
+                icon = if (o.has("icon") && !o.isNull("icon")) o.getString("icon") else null,
+            ))
+        }
+    }.orEmpty()
+    val n = names.size
+    val orderFrom = { i: Int -> (0 until n).map { names[(i + it) % n] } }
+    val seen = HashSet<List<String?>>()
+    val options = (0 until n).mapNotNull { i ->
+        if (!seen.add(orderFrom(i))) return@mapNotNull null
+        Phase(i, (0 until 7).map { d -> names[(i + d) % n]?.let(types::get) })
+    }
+    // The user's own order, not the calendar with its swaps and leave, says where today falls.
+    val typeNames = snapshot.shiftTypes.associate { it.id to it.name }
+    val week = (0 until 7).map { d ->
+        val date = today.plusDays(d.toLong())
+        PatternTimeline.on(snapshot.patterns, date)?.shiftTypeIdOn(date)?.let(typeNames::get)
+    }
+    val current = if (snapshot.hasPattern) options.firstOrNull { o -> o.days.map { it?.name } == week }?.step else null
+    val anchor = rotation.optString("anchor").takeIf { fromSender && it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    val sent = anchor?.let { a ->
+        val order = orderFrom(Math.floorMod(java.time.temporal.ChronoUnit.DAYS.between(a, today), n.toLong()).toInt())
+        options.firstOrNull { orderFrom(it.step) == order }?.step
+    }
+    val team = rotation.optString("team").trim().take(CompanyShare.MAX_TEAM).takeIf { fromSender && it.isNotEmpty() }
+    return Phases(options, n, current, sent, team, snapshot.hasPattern)
+}
 
 /** [COMM-01] A company's shared setups, and applying one from today's place in its rotation. */
 class CompanyDetailViewModel(private val c: AppContainer, private val id: String) : ViewModel() {
@@ -131,41 +187,7 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
     }
 
     /** The rotation of [setup] as rows of the next seven days, with today's row when the calendar already shows it. */
-    suspend fun phases(setup: SharedSetup): Phases? {
-        val root = JSONObject(setup.text)
-        val steps = root.optJSONObject("rotation")?.optJSONArray("steps") ?: return null
-        val names = (0 until steps.length()).map { if (steps.isNull(it)) null else steps.getString(it) }
-        if (names.isEmpty()) return null
-        val snapshot = c.scheduleRepository.snapshot.first()
-        // The colors and marks the user already gave a shift of the same name, else the file's own.
-        val mine = snapshot.shiftTypes.associateBy { it.name }
-        val types = root.optJSONArray("shiftTypes")?.let { a ->
-            (0 until a.length()).map { a.getJSONObject(it) }.associate { o ->
-                val name = o.getString("name")
-                name to (mine[name] ?: ShiftType(
-                    id = 0, name = name, label = o.optString("label").ifEmpty { name.take(1) },
-                    colorArgb = o.optLong("color", 0xFF5C6BC0), start = null, end = null, isOff = o.optBoolean("off"),
-                    icon = if (o.has("icon") && !o.isNull("icon")) o.getString("icon") else null,
-                ))
-            }
-        }.orEmpty()
-        val n = names.size
-        val seen = HashSet<List<String?>>()
-        val options = (0 until n).mapNotNull { i ->
-            val order = (0 until n).map { names[(i + it) % n] }
-            if (!seen.add(order)) return@mapNotNull null
-            Phase(i, (0 until 7).map { d -> names[(i + d) % n]?.let(types::get) })
-        }
-        // The user's own order, not the calendar with its swaps and leave, says where today falls.
-        val today = LocalDate.now()
-        val typeNames = snapshot.shiftTypes.associate { it.id to it.name }
-        val week = (0 until 7).map { d ->
-            val date = today.plusDays(d.toLong())
-            PatternTimeline.on(snapshot.patterns, date)?.shiftTypeIdOn(date)?.let(typeNames::get)
-        }
-        val current = if (snapshot.hasPattern) options.firstOrNull { o -> o.days.map { it?.name } == week }?.step else null
-        return Phases(options, n, current)
-    }
+    suspend fun phases(setup: SharedSetup): Phases? = rotationPhases(c, setup.text, fromSender = false)
 
     /**
      * Applies [setup] with today at [todayStep] of its rotation. What is still to do comes back:

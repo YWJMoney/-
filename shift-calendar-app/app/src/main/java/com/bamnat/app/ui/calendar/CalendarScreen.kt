@@ -115,6 +115,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import java.time.YearMonth
+import com.bamnat.core.model.ShiftOverride
 import java.time.temporal.ChronoUnit
 
 internal const val PAGE_COUNT = 2400
@@ -227,6 +228,7 @@ fun CalendarScreen(
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
     }
+    val pendingSetup by vm.setupDraft.collectAsStateWithLifecycle()
     val calculator = remember(snap, settings.weekStart, settings.limits) {
         WorkHoursCalculator(snap.resolver, settings.weekStart, settings.limits)
     }
@@ -405,9 +407,20 @@ fun CalendarScreen(
             },
             onOpenPattern = onOpenPattern,
         )
-        // [WORK-01] Only work that repeats needs a pattern; field, shop and hourly work are written day by day.
-        if (snap.isEmpty && settings.workStyle?.usesPattern != false) {
+        // [SETUP-01] A first setup left for later comes first; it fills the calendar.
+        val waiting = pendingSetup?.takeIf { it.later && settings.workStyle == null }
+        if (waiting != null) {
+            SetupResumeCard(waiting, onResume = vm::resumeSetup)
+        } else if (snap.isEmpty && settings.workStyle?.usesPattern != false && !settings.rosterMonthly) {
+            // [WORK-01] Only work that repeats needs a pattern; field, shop and hourly work are written day by day.
             EmptyPatternCard(onOpenPattern)
+        }
+        // [SETUP-02] A roster that comes every month: this month's or next month's, until a day of it is painted.
+        if (settings.rosterMonthly && paint == null && waiting == null) {
+            val thisMonth = YearMonth.from(today)
+            val unpainted = (visibleMonth == thisMonth || visibleMonth == thisMonth.plusMonths(1)) &&
+                snap.entries.none { YearMonth.from(it.date) == visibleMonth && it.override != ShiftOverride.None }
+            if (unpainted) RosterCard(visibleMonth, onPaint = { vm.setPaint(PaintTool.Pick) })
         }
         // [CAL-01] What keeps an alarm from working, the most serious one in a single line, only while
         // one is due within a week. The whole line is the button that fixes it.
@@ -858,6 +871,48 @@ private fun CalendarHeader(
             IconButton(onClick = onOpenPattern) { Icon(Icons.Filled.EventRepeat, "근무 주기 설정") }
         }
     }
+    }
+}
+
+@Composable
+private fun SetupResumeCard(d: com.bamnat.core.setup.SetupDraft, onResume: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.primaryContainer,
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text("근무 설정을 마저 해 주세요", style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer)
+            Text(
+                if (d.style == null) "어떻게 일하는지만 고르면 나머지는 하나씩 물어볼게요."
+                else "${d.steps.size}단계 중 ${d.position}단계까지 했어요. 고른 답은 그대로 있어요.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+            )
+            Button(onClick = onResume) { Text("이어서 하기") }
+        }
+    }
+}
+
+/** [SETUP-02] The month's roster is not painted yet: one tap opens quick input to paint it. */
+@Composable
+private fun RosterCard(month: YearMonth, onPaint: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+    ) {
+        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("${month.monthValue}월 근무표를 칠해 주세요", style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer)
+                Text("근무를 고르고 날짜를 쓸어 칠하면 돼요", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer)
+            }
+            Button(onClick = onPaint) { Text("칠하기") }
+        }
     }
 }
 

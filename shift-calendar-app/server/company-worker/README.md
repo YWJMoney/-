@@ -27,7 +27,9 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
 
    두 값 모두 채팅이나 메신저로 보내지 마세요.
 6. **확인**
-   휴대폰 크롬으로 `https://bamnat-company.<계정 이름>.workers.dev/admin/`을 열어요.
+   휴대폰 크롬 주소창에 `https://bamnat-company.<계정 이름>.workers.dev/admin/`을 그대로 입력해요. 검색으로는 나오지 않아요.
+   `<계정 이름>`은 비밀값이 아니라 Cloudflare가 정한 workers.dev 이름이에요. 공유 링크 서버 주소(`bamnat-share.<계정 이름>.workers.dev`)의 가운데와 같고,
+   Worker → 설정(Settings) → 도메인 및 경로(Domains & Routes)에도 전체 주소가 나와요. RATE_SALT는 주소에 넣지 않아요.
    빠진 설정이 있으면 로그인 화면 아래 "서버 준비"에 무엇을 하면 되는지 나와요.
    로그인한 뒤 크롬 메뉴(⋮) → 홈 화면에 추가를 누르면 앱처럼 열려요.
 7. **주소 알려 주기**

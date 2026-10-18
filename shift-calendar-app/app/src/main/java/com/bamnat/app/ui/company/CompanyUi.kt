@@ -53,7 +53,15 @@ fun companyProblem(code: String, field: String? = null): String = when (code) {
 }
 
 /** "채택되면 프로 3개월을 드려요" when the developer gives a reward; null while there is none. */
-fun rewardLine(terms: CompanyTerms?): String? = terms?.rewardMonths?.takeIf { it > 0 }?.let { "채택되면 프로 ${it}개월을 드려요" }
+fun rewardLine(terms: CompanyTerms?): String? = terms?.rewardMonths?.takeIf { it > 0 }?.let(::rewardText)
+
+/**
+ * [COMM-05] Until billing ships every feature is free, so the reward is said as what it is: months
+ * of 프로 once paid features come, never something to have now.
+ */
+fun rewardText(months: Int): String =
+    if (com.bamnat.app.tier.FeatureGate.BILLING_LIVE) "채택되면 프로 ${months}개월을 드려요"
+    else "지금은 모든 기능이 무료예요. 유료 기능이 생기면 채택된 설정을 보낸 분께 프로 ${months}개월을 드려요"
 
 /** The same in a few words, for a pill next to a button. */
 fun rewardShort(terms: CompanyTerms?): String? = terms?.rewardMonths?.takeIf { it > 0 }?.let { "채택되면 프로 ${it}개월" }

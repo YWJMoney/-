@@ -15,6 +15,7 @@ import com.bamnat.core.model.DayEntry
 import com.bamnat.core.model.ExtraEntry
 import com.bamnat.core.model.ExtraKinds
 import com.bamnat.core.model.Leave
+import com.bamnat.core.model.ShiftIcon
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
@@ -22,6 +23,7 @@ import com.bamnat.core.model.WorkTime
 import com.bamnat.core.schedule.ExtraReview
 import com.bamnat.core.schedule.PatternTimeline
 import com.bamnat.core.schedule.ScheduleResolver
+import com.bamnat.core.setup.SetupDraft
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -183,6 +185,52 @@ class ScheduleRepository(
             shiftTypeDao.delete(id)
         }
     }
+
+    /**
+     * [SETUP-01] The first setup, all in one transaction: the draft's shift types (a type the phone
+     * already has by that name is updated, not doubled), the shifts it seeded at first launch that the
+     * draft does not use and nothing points at removed, then its pattern from two years back (from today
+     * when a pattern was made meanwhile) or its painted days. Returns the draft with the saved ids.
+     */
+    suspend fun applySetup(draft: SetupDraft, today: LocalDate = LocalDate.now()): SetupDraft = db.withTransaction {
+        val existing = shiftTypeDao.getAll().map { it.toModel() }
+        val ids = LinkedHashMap<Long, Long>()
+        for (t in draft.typesToSave().sortedBy { it.sortOrder }) {
+            val mine = existing.firstOrNull { it.name == t.name.trim() }
+            val icon = t.icon ?: mine?.icon ?: ShiftIcon.suggest(t)?.key
+            ids[t.id] = saveShiftType(t.copy(id = mine?.id ?: 0, icon = icon, alarmSoundUri = mine?.alarmSoundUri))
+        }
+        // Field and shop work bring no shifts and keep the first ones, to mark a shift now and then.
+        val seeded = if (ids.isEmpty()) emptySet() else DefaultShiftTypes.all().map { it.name }.toSet()
+        for (t in existing) {
+            if (t.id in ids.values || t.name !in seeded || isReferenced(t.id)) continue
+            shiftTypeDao.delete(t.id)
+        }
+        // The draft's shifts first, in its order; any the user made meanwhile after them.
+        val rank = ids.values.withIndex().associate { (i, id) -> id to i }
+        val all = shiftTypeDao.getAll()
+        shiftTypeDao.updateAll(all.sortedWith(compareBy({ rank[it.id] ?: Int.MAX_VALUE }, { it.sortOrder })).mapIndexed { i, e -> e.copy(sortOrder = i) })
+        val saved = draft.remap(ids)
+        saved.pattern(today)?.let { pattern ->
+            val periods = patternDao.getAll().mapNotNull { it.toModel() }
+            when {
+                periods.isEmpty() -> setFirstPattern(pattern, today)
+                // A save cut short and finished on the next start: the order is already there.
+                PatternTimeline.on(periods, today)?.withRange(pattern.startDate, pattern.endDate) == pattern -> Unit
+                else -> changePatternFrom(pattern, today)
+            }
+        }
+        // Painted days are the roster as given, not changes to it: no change log.
+        for (day in saved.paintedEntries()) {
+            val before = readDay(day.date.toEpochDay())
+            writeDay((before ?: DayEntry(day.date)).copy(override = day.override))
+        }
+        saved
+    }
+
+    /** Whether a pattern, a day or a piece of extra work still points at shift type [id]. */
+    private suspend fun isReferenced(id: Long): Boolean =
+        patternDao.getAll().any { id in decodeSteps(it.steps) } || dayEntryDao.withOverride(id).isNotEmpty() || extraDao.covering(id).isNotEmpty()
 
     /** Replaces the whole history with [pattern] (a test or restore uses this as is). */
     suspend fun savePattern(pattern: WorkPattern) = replacePatterns(listOf(pattern))

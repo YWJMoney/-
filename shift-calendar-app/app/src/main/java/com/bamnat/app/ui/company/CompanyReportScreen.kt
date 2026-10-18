@@ -257,7 +257,7 @@ private fun SentPanel(status: ReportStatus, onDone: () -> Unit, onOpenSent: () -
                 Text(status.detail(), style = MaterialTheme.typography.bodyMedium)
                 if (status.status == "pending" && !status.review) PointsBar(status.points, status.threshold)
                 if (status.rewardMonths > 0 && status.status == "pending") {
-                    RewardPill("채택되면 프로 ${status.rewardMonths}개월을 드려요")
+                    RewardPill(rewardText(status.rewardMonths))
                 }
             }
         }
