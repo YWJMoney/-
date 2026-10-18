@@ -68,6 +68,11 @@ fun rememberNotificationAsk(): () -> Unit {
     }
 }
 
+/** [ONBOARD-01] The consent pages asked the system's question themselves: later taps open the settings once Android stops asking. */
+fun markNotificationAsked(context: Context) {
+    context.getSharedPreferences(DEVICE_PREFS, Context.MODE_PRIVATE).edit().putBoolean(K_ASKED, true).apply()
+}
+
 /** Kept per phone, outside the backed-up settings, so a restore onto a new phone asks there again. */
 private const val DEVICE_PREFS = "device"
 private const val K_ASKED = "notification_asked"

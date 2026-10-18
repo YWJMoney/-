@@ -494,8 +494,19 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         viewModelScope.launch { memoRepo.delete(memo) }
     }
 
+    private val _openMemo = MutableSharedFlow<Long>(extraBufferCapacity = 1)
+    /** [SCHED-01] A memo to open in the editor, from the snackbar's 일정으로 넣기. */
+    val openMemo: SharedFlow<Long> = _openMemo.asSharedFlow()
+
     fun addQuickMemo(date: LocalDate, text: String) {
-        viewModelScope.launch { memoRepo.addQuick(date, text) }
+        viewModelScope.launch {
+            val memo = memoRepo.addQuick(date, text) ?: return@launch
+            // [SCHED-01] A quick line that names a time is asked about, like a memo written in the editor.
+            val found = com.bamnat.core.memo.MemoTime.find(memo, java.time.LocalDateTime.now()) ?: return@launch
+            _messages.tryEmit(UndoMessage("‘${found.phrase}’, 일정으로 넣을까요?", actionLabel = "일정으로 넣기") {
+                _openMemo.tryEmit(memo.id)
+            })
+        }
     }
 
     /** [WORK-06] Ledger, jobs and sales for the calendar's day sections and cells. */

@@ -98,7 +98,11 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     val canUndo by vm.canUndo.collectAsStateWithLifecycle()
     val canRedo by vm.canRedo.collectAsStateWithLifecycle()
     val day by vm.day.collectAsStateWithLifecycle()
+    val offer by vm.scheduleOffer.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    // [SCHED-01] The schedule dialog, and the found time it answers when it was opened from the offer.
+    var scheduling by remember { mutableStateOf(false) }
+    var answering by remember { mutableStateOf<com.bamnat.core.memo.MemoTime.Found?>(null) }
 
     var showColors by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
@@ -217,6 +221,11 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     },
                 )
                 if (date != null) ShiftLabel(day)
+                ScheduleChip(
+                    reminder = memo.reminder,
+                    onOpen = { answering = null; scheduling = true },
+                    onClear = { vm.setReminder(null) },
+                )
             }
             Column(
                 Modifier
@@ -248,6 +257,18 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     )
                 }
             }
+            offer?.let { found ->
+                ScheduleOffer(
+                    found = found,
+                    changing = memo.reminder != null,
+                    onAccept = {
+                        val current = memo.reminder
+                        if (current != null) vm.setReminder(current.copy(at = found.at), answered = found)
+                        else { answering = found; scheduling = true }
+                    },
+                    onDecline = { vm.keepAsMemo(found) },
+                )
+            }
             val chars = if (memo.isChecklist) memo.checklist.sumOf { it.text.length } else memo.body.length
             Text(
                 "${chars}자" + if (memo.isChecklist) " · 완료 ${memo.checkedCount}/${memo.itemCount}" else "",
@@ -275,6 +296,19 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
         ) {
             DatePicker(state = state)
         }
+    }
+
+    if (scheduling) {
+        ScheduleDialog(
+            initial = scheduleStart(answering, memo.reminder, memo.date, java.time.LocalDateTime.now()),
+            current = memo.reminder,
+            onDismiss = { scheduling = false },
+            onSave = { r ->
+                vm.setReminder(r, answered = answering)
+                scheduling = false
+                Toast.makeText(context, "${scheduleText(r.at)}에 ${scheduleWays(r)}${com.bamnat.app.ui.Fmt.ro(scheduleWays(r))} 알려 드릴게요", Toast.LENGTH_SHORT).show()
+            },
+        )
     }
 
     if (confirmDelete) {

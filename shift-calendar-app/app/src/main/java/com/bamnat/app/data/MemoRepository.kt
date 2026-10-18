@@ -62,7 +62,9 @@ class MemoRepository(private val db: AppDatabase, private val clock: () -> Long 
     }
 
     /** Copies a memo (as a new, unpinned memo) and returns the copy. */
-    suspend fun duplicate(memo: Memo): Memo = save(memo.copy(id = 0, pinned = false, deletedAtMillis = null))
+    suspend fun duplicate(memo: Memo): Memo =
+        // [SCHED-01] A copy does not ring a second time for the same plan.
+        save(memo.copy(id = 0, pinned = false, deletedAtMillis = null, reminder = null))
 
     suspend fun setPinned(memo: Memo, pinned: Boolean) = setPinned(listOf(memo.id), pinned)
 
