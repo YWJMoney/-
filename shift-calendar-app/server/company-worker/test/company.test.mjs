@@ -444,5 +444,5 @@ test("without a database the server says so", async () => {
   const { call } = server({ DB: undefined });
   assert.equal((await call("GET", "/api/companies?q=예시")).status, 503);
   const health = await call("GET", "/api/admin/health");
-  assert.deepEqual(health.data, { database: false, password: true, salt: true, why: { password: null, salt: null } });
+  assert.deepEqual(health.data, { database: false, password: true, salt: true, mail: false, why: { password: null, salt: null } });
 });

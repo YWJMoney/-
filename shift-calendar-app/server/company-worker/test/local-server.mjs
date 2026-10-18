@@ -60,12 +60,33 @@ async function seed() {
     }), env);
   }
   await send("/api/reports", report(8, { company: "사아자물류", setup: odd, verified: true }), "10.0.0.8");
+  if (login.ok) await seedAdmins(login.headers.get("set-cookie").split(";")[0]);
   // A way the app cannot set yet.
   await send("/api/reports", report(9, {
     company: "예시정밀", dept: "포장팀", ask: true,
     note: "어떻게: 대근을 4시간만 해도 8시간 근무 뒤에 하면 기본급의 10%가 나와요\n예시: 주간 근무 뒤 19~23시 대근이면 기본급의 10%",
   }), "10.0.0.10");
   console.log("seeded: 1 adopted rule, 1 new version, 2 waiting, 1 turned down, 1 way the app cannot set");
+}
+
+/** [ADMIN-04] One approved admin (minji@example.com, password minji-review-2026), one waiting, one invite out. */
+async function seedAdmins(cookie) {
+  const asOwner = (path, body) => worker.fetch(new Request(`http://localhost:${port}/api/admin${path}`, {
+    method: "POST", headers: { "content-type": "application/json", "x-admin": "1", cookie }, body: JSON.stringify(body),
+  }), env).then((r) => r.json());
+  const reviewer = { review: "edit", inquiries: "edit", companies: "view", rewards: "none", settings: "none", audit: "view" };
+  for (const [email, name, approve] of [["minji@example.com", "민지", true], ["junho@example.com", "준호", false]]) {
+    const inv = await asOwner("/invites", { email, perms: reviewer, note: approve ? "검토 담당" : "" });
+    await worker.fetch(new Request(`http://localhost:${port}/api/admin/join`, {
+      method: "POST", headers: { "content-type": "application/json", "x-admin": "1", "cf-connecting-ip": "10.0.0.20" },
+      body: JSON.stringify({ token: inv.link.split("#")[1], name, password: "minji-review-2026" }),
+    }), env);
+    if (approve) {
+      const list = await worker.fetch(new Request(`http://localhost:${port}/api/admin/admins`, { headers: { cookie } }), env).then((r) => r.json());
+      await asOwner(`/admins/${list.admins.find((a) => a.email === email).id}`, { status: "active" });
+    }
+  }
+  await asOwner("/invites", { email: "seojin@example.com", perms: reviewer, note: "문의 답변" });
 }
 
 if (args.includes("--seed")) await seed();
