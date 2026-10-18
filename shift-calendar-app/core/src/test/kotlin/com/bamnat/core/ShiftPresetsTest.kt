@@ -27,7 +27,7 @@ class ShiftPresetsTest {
     fun `24 hour shift is 20 paid hours and fills the X code`() {
         val duty = ShiftTypeSets.all.first { it.name == "24시간 맞교대" }.types.single().copy(id = 7)
         assertEquals(20 * 60, WorkTime.workMinutes(duty.start!!, duty.end!!, duty.breakMinutes))
-        val steps = PatternPresets.toSteps(PatternPresets.all.first { it.codes == "XOO" }, listOf(duty, Fixtures.off))
+        val steps = PatternPresets.toSteps(PatternPresets.all.first { it.codes == "XBO" }, listOf(duty, Fixtures.off))
         assertEquals(listOf(7L, Fixtures.off.id, Fixtures.off.id), steps)
     }
 
