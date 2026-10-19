@@ -1,56 +1,162 @@
 package com.bamnat.core.money
 
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
+import java.time.temporal.TemporalAdjusters
+
+/** [LEDG-09] How often a repeating line comes round. */
+enum class Repeat(val label: String) { MONTH("매달"), WEEK("매주"), YEAR("매년") }
 
 /**
  * [LEDG-05] Money that leaves on the same day every month: rent, insurance, phone, the card bill.
  * A card bill is counted as a transfer (카드값), because the card's payments are already expenses.
+ * [LEDG-09] Now any repeating line: income too (월급, 용돈), every week or year as well as every
+ * month, from one account, between a first and a last day, and written down by itself on its day
+ * when [auto] is on.
  */
 data class FixedCost(
     val id: Long = 0,
     val name: String,
     val amount: Long,
-    /** Day of the month, 1..31; a day past the month's end means its last day (말일). */
+    /** Day of the month, 1..31 (a day past the month's end means its last day, 말일); for [Repeat.WEEK] 1 (월)..7 (일). */
     val day: Int,
     val kind: MoneyKind = MoneyKind.EXPENSE,
     val category: String = "주거",
     val remind: Boolean = true,
+    val repeat: Repeat = Repeat.MONTH,
+    /** For [Repeat.YEAR], the month, 1..12. */
+    val monthOfYear: Int = 1,
+    val accountId: Long? = null,
+    /** Written into the ledger by itself on its day, instead of waiting for 나갔어요. */
+    val auto: Boolean = false,
+    /** First and last day it repeats on; null for no limit. */
+    val start: LocalDate? = null,
+    val end: LocalDate? = null,
 ) {
     fun dueIn(month: YearMonth): LocalDate = month.atDay(day.coerceIn(1, month.lengthOfMonth()))
+
+    private fun active(d: LocalDate) = (start == null || !d.isBefore(start)) && (end == null || !d.isAfter(end))
+
+    /** [LEDG-09] Every day it falls on from [from] to [to], within its first and last day. */
+    fun occurrences(from: LocalDate, to: LocalDate): List<LocalDate> {
+        if (to.isBefore(from)) return emptyList()
+        val days = when (repeat) {
+            Repeat.MONTH -> generateSequence(YearMonth.from(from)) { it.plusMonths(1) }.takeWhile { !it.isAfter(YearMonth.from(to)) }
+                .map { dueIn(it) }.toList()
+            Repeat.WEEK -> generateSequence(from.with(TemporalAdjusters.nextOrSame(DayOfWeek.of(day.coerceIn(1, 7))))) { it.plusWeeks(1) }
+                .takeWhile { !it.isAfter(to) }.toList()
+            Repeat.YEAR -> (from.year..to.year).map { y -> YearMonth.of(y, monthOfYear.coerceIn(1, 12)).let { m -> m.atDay(day.coerceIn(1, m.lengthOfMonth())) } }
+        }
+        return days.filter { !it.isBefore(from) && !it.isAfter(to) && active(it) }
+    }
+
+    /** [LEDG-09] The days one payment covers, so a line written a little early or late still counts once. */
+    fun periodOf(date: LocalDate): Pair<LocalDate, LocalDate> = when (repeat) {
+        Repeat.MONTH -> date.withDayOfMonth(1) to date.withDayOfMonth(date.lengthOfMonth())
+        Repeat.WEEK -> date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).let { it to it.plusDays(6) }
+        Repeat.YEAR -> date.withDayOfYear(1) to date.withDayOfYear(date.lengthOfYear())
+    }
+
+    /** "매달 25일", "매달 말일", "매주 월요일", "매년 3월 2일" */
+    val schedule: String get() = when (repeat) {
+        Repeat.MONTH -> "매달 " + if (day >= 31) "말일" else "${day}일"
+        Repeat.WEEK -> "매주 " + WEEKDAYS[day.coerceIn(1, 7) - 1] + "요일"
+        Repeat.YEAR -> "매년 ${monthOfYear}월 " + if (day >= 31) "말일" else "${day}일"
+    }
+
+    companion object {
+        val WEEKDAYS = listOf("월", "화", "수", "목", "금", "토", "일")
+    }
 }
 
-data class Upcoming(val cost: FixedCost, val date: LocalDate, val daysLeft: Int)
+/** A payment due on [date]; [cardId] marks a credit card's bill worked out from its spending [LEDG-08]. */
+data class Upcoming(val cost: FixedCost, val date: LocalDate, val daysLeft: Int, val cardId: Long? = null)
 
 object UpcomingPayments {
     /** Whether this month's payment of [cost] is already written down. */
-    fun recorded(cost: FixedCost, month: YearMonth, entries: List<MoneyEntry>): Boolean = entries.any {
-        it.source == MoneySource.FIXED && it.merchant == cost.name && YearMonth.from(it.date) == month
+    fun recorded(cost: FixedCost, month: YearMonth, entries: List<MoneyEntry>): Boolean = recorded(cost, cost.dueIn(month), entries)
+
+    /** [LEDG-09] Whether the payment of [cost] due on [date] is written down: a line for it in the same month, week or year. */
+    fun recorded(cost: FixedCost, date: LocalDate, entries: List<MoneyEntry>): Boolean {
+        val (from, to) = cost.periodOf(date)
+        return entries.any { e ->
+            !e.date.isBefore(from) && !e.date.isAfter(to) &&
+                (e.fixedId == cost.id || (e.fixedId == null && e.source == MoneySource.FIXED && e.merchant == cost.name))
+        }
     }
 
-    /** Payments due from [today] for [days] days that are not yet recorded, soonest first. */
-    fun within(costs: List<FixedCost>, entries: List<MoneyEntry>, today: LocalDate, days: Int = 7): List<Upcoming> =
-        costs.flatMap { c ->
-            listOf(YearMonth.from(today), YearMonth.from(today).plusMonths(1)).map { m -> c to c.dueIn(m) }
-        }.filter { (c, d) ->
-            !d.isBefore(today) && ChronoUnit.DAYS.between(today, d) <= days && !recorded(c, YearMonth.from(d), entries)
-        }.map { (c, d) -> Upcoming(c, d, ChronoUnit.DAYS.between(today, d).toInt()) }
-            .sortedWith(compareBy({ it.date }, { it.cost.id }))
+    /**
+     * [LEDG-08] A credit card's bill as a payment, when the card has a 결제일. A 카드값 fixed cost
+     * with the card's own name gives way to it, so the bill is not listed twice.
+     */
+    private fun cardBills(accounts: List<MoneyAccount>, entries: List<MoneyEntry>, from: LocalDate, to: LocalDate): List<Upcoming> =
+        accounts.filter { it.hasBill && !it.hidden }.flatMap { card ->
+            generateSequence(YearMonth.from(from)) { it.plusMonths(1) }.takeWhile { !it.isAfter(YearMonth.from(to)) }.mapNotNull { m ->
+                val day = CardCycle.payDate(card, m)
+                if (day.isBefore(from) || day.isAfter(to) || CardCycle.paid(card, m, entries)) return@mapNotNull null
+                val bill = CardCycle.bill(card, m, entries, accounts)
+                if (bill.amount <= 0) null else Upcoming(cardCost(card, bill.amount), day, ChronoUnit.DAYS.between(from, day).toInt(), card.id)
+            }.toList()
+        }
 
-    /** What is still to leave this month after [today], counted as spending (card bills are not). */
+    /** The 카드값 line a card's bill is written as. */
+    fun cardCost(card: MoneyAccount, amount: Long) = FixedCost(
+        id = -card.id, name = card.name, amount = amount, day = card.payDay ?: 1, kind = MoneyKind.TRANSFER, category = CARD_BILL,
+        remind = card.remind, accountId = card.payFromId,
+    )
+
+    private fun replacedByCard(c: FixedCost, accounts: List<MoneyAccount>) =
+        c.kind == MoneyKind.TRANSFER && accounts.any { it.hasBill && !it.hidden && it.name == c.name }
+
+    /** Payments due from [today] for [days] days that are not yet recorded, soonest first. */
+    fun within(
+        costs: List<FixedCost>, entries: List<MoneyEntry>, today: LocalDate, days: Int = 7, accounts: List<MoneyAccount> = emptyList(),
+    ): List<Upcoming> {
+        val to = today.plusDays(days.toLong())
+        val fixed = costs.filterNot { replacedByCard(it, accounts) }.flatMap { c ->
+            c.occurrences(today, to).filter { !recorded(c, it, entries) }.map { d -> Upcoming(c, d, ChronoUnit.DAYS.between(today, d).toInt()) }
+        }
+        return (fixed + cardBills(accounts, entries, today, to)).sortedWith(compareBy({ it.date }, { it.cost.kind != MoneyKind.INCOME }, { it.cost.id }))
+    }
+
+    /** What is still to leave this month from [today], counted as spending (card bills and income are not). */
     fun leftThisMonth(costs: List<FixedCost>, entries: List<MoneyEntry>, today: LocalDate): Long {
-        val m = YearMonth.from(today)
-        return costs.filter { it.kind == MoneyKind.EXPENSE && !it.dueIn(m).isBefore(today) && !recorded(it, m, entries) }.sumOf { it.amount }
+        val end = today.withDayOfMonth(today.lengthOfMonth())
+        return costs.filter { it.kind == MoneyKind.EXPENSE }.sumOf { c ->
+            c.occurrences(today, end).count { !recorded(c, it, entries) } * c.amount
+        }
     }
 
     /** The ledger line for paying [cost] on [date]. */
     fun entry(cost: FixedCost, date: LocalDate) = MoneyEntry(
         date = date, kind = cost.kind, amount = cost.amount, category = cost.category,
-        source = MoneySource.FIXED, merchant = cost.name,
+        source = MoneySource.FIXED, merchant = cost.name, accountId = cost.accountId, fixedId = cost.id.takeIf { it > 0 },
     )
+
+    /** [LEDG-08] The line for [u]: a card's bill moves money from its account to the card. */
+    fun entry(u: Upcoming, date: LocalDate) = entry(u.cost, date).copy(toAccountId = u.cardId)
+
+    const val CARD_BILL = "카드값"
+}
+
+/** [LEDG-09] Repeating lines that write themselves down. */
+object Recurring {
+    /** Days back a phone left off still catches up on; older ones are left for the user. */
+    const val CATCH_UP_DAYS = 62L
+
+    /**
+     * Lines for every [FixedCost.auto] payment due up to [today] and not written yet, oldest
+     * first. A line is never written before the day it was set up ([FixedCost.start]).
+     */
+    fun due(costs: List<FixedCost>, entries: List<MoneyEntry>, today: LocalDate): List<MoneyEntry> =
+        costs.filter { it.auto && it.amount > 0 }.flatMap { c ->
+            val from = maxOf(c.start ?: today, today.minusDays(CATCH_UP_DAYS))
+            c.occurrences(from, today).filter { !UpcomingPayments.recorded(c, it, entries) }.map { UpcomingPayments.entry(c, it) }
+        }.sortedWith(compareBy({ it.date }, { it.fixedId }))
 }
 
 /**
@@ -67,6 +173,7 @@ object MoneyAlerts {
     fun all(
         jobs: List<Job>, costs: List<FixedCost>, entries: List<MoneyEntry>, today: LocalDate,
         receivables: List<Receivable> = emptyList(),
+        accounts: List<MoneyAccount> = emptyList(),
     ): List<Alert> = buildList {
         for (j in jobs) {
             val start = j.start
@@ -82,12 +189,31 @@ object MoneyAlerts {
                 }
             }
         }
-        val months = listOf(YearMonth.from(today), YearMonth.from(today).plusMonths(1))
-        for (c in costs.filter { it.remind }) for (m in months) {
-            if (UpcomingPayments.recorded(c, m, entries)) continue
-            val due = c.dueIn(m)
-            add(Alert(due.minusDays(3).atTime(BILL_AT), "bill-${c.id}-$m-3", "3일 뒤 나갈 돈", "${c.name} ${won(c.amount)} · ${due.monthValue}/${due.dayOfMonth}"))
-            add(Alert(due.atTime(BILL_AT), "bill-${c.id}-$m-0", "오늘 나갈 돈", "${c.name} ${won(c.amount)}"))
+        val until = YearMonth.from(today).plusMonths(1).atEndOfMonth()
+        for (c in costs.filter { it.remind }) for (due in c.occurrences(today, until)) {
+            // [LEDG-09] A line that writes itself says so on the day; the rest are reminders until written.
+            if (c.auto) {
+                add(Alert(due.atTime(BILL_AT), "bill-${c.id}-$due-0", "가계부에 적었어요", "${c.schedule} ${c.name} ${won(c.amount)}"))
+                continue
+            }
+            if (UpcomingPayments.recorded(c, due, entries)) continue
+            if (c.kind == MoneyKind.INCOME) {
+                add(Alert(due.atTime(BILL_AT), "bill-${c.id}-$due-0", "오늘 들어올 돈", "${c.name} ${won(c.amount)}"))
+                continue
+            }
+            // A weekly line three days ahead would ring nearly every other day.
+            if (c.repeat != Repeat.WEEK) {
+                add(Alert(due.minusDays(3).atTime(BILL_AT), "bill-${c.id}-$due-3", "3일 뒤 나갈 돈", "${c.name} ${won(c.amount)} · ${due.monthValue}/${due.dayOfMonth}"))
+            }
+            add(Alert(due.atTime(BILL_AT), "bill-${c.id}-$due-0", "오늘 나갈 돈", "${c.name} ${won(c.amount)}"))
+        }
+        // [LEDG-08] A credit card's bill, worked out from what was spent on it.
+        for (u in UpcomingPayments.within(emptyList(), entries, today, (until.toEpochDay() - today.toEpochDay()).toInt(), accounts)) {
+            if (!u.cost.remind) continue
+            val due = u.date
+            val name = "${u.cost.name} ${UpcomingPayments.CARD_BILL}"
+            add(Alert(due.minusDays(3).atTime(BILL_AT), "card-${u.cardId}-$due-3", "3일 뒤 나갈 돈", "$name ${won(u.cost.amount)} · ${due.monthValue}/${due.dayOfMonth}"))
+            add(Alert(due.atTime(BILL_AT), "card-${u.cardId}-$due-0", "오늘 나갈 돈", "$name ${won(u.cost.amount)}"))
         }
         // [RECV-03] Money owed to the user: the promised day and a week after it.
         for (r in receivables) for ((n, at) in ReceivableAlerts.of(r).withIndex()) {
@@ -100,8 +226,9 @@ object MoneyAlerts {
     fun next(
         jobs: List<Job>, costs: List<FixedCost>, entries: List<MoneyEntry>, now: LocalDateTime,
         receivables: List<Receivable> = emptyList(),
+        accounts: List<MoneyAccount> = emptyList(),
     ): List<Alert> {
-        val ahead = all(jobs, costs, entries, now.toLocalDate(), receivables).filter { it.at.isAfter(now) }
+        val ahead = all(jobs, costs, entries, now.toLocalDate(), receivables, accounts).filter { it.at.isAfter(now) }
         val first = ahead.minOfOrNull { it.at } ?: return emptyList()
         return ahead.filter { it.at == first }.sortedBy { it.key }
     }
@@ -110,8 +237,9 @@ object MoneyAlerts {
     fun dueAt(
         jobs: List<Job>, costs: List<FixedCost>, entries: List<MoneyEntry>, at: LocalDateTime,
         receivables: List<Receivable> = emptyList(),
+        accounts: List<MoneyAccount> = emptyList(),
     ): List<Alert> =
-        all(jobs, costs, entries, at.toLocalDate(), receivables).filter { it.at == at }.sortedBy { it.key }
+        all(jobs, costs, entries, at.toLocalDate(), receivables, accounts).filter { it.at == at }.sortedBy { it.key }
 
     private fun won(v: Long) = "%,d원".format(v)
 }

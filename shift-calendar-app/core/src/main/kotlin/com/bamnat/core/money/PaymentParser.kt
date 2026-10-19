@@ -273,6 +273,8 @@ object PaymentParser {
             date = p.date ?: arrived, kind = p.kind, amount = amount, category = category, note = notes.joinToString(" · "),
             source = source, merchant = p.merchant, time = p.time, cardLast4 = p.last4.orEmpty(),
             reviewed = source != MoneySource.NOTIFICATION,
+            // [LEDG-08] Spread over that many card bills; a cancellation comes back at once.
+            installments = if (p.type == Type.APPROVAL) p.installments.coerceIn(1, 60) else 1,
         )
     }
 }
