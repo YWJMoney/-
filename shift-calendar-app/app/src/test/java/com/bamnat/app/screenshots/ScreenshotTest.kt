@@ -2097,6 +2097,189 @@ class ScreenshotTest {
         settle()
     }
     @Test fun foldedMemosNewMemo() = shoot("345_folded_memos_new_memo", FOLDED) { tab(2, wide = false) }
+
+    // ---- 급여 커스텀·설정 쉽게 (1.15) [PAYS-07..11][SETUP-03..13] ----
+    /** [PAYS-07] 우리 회사 항목 만들기 over the pay screen, opened at [kind] or at the list of kinds. */
+    private fun itemBuilder(kind: com.bamnat.app.ui.pay.ItemKind? = null, gap: Long? = null): Screen.() -> Unit =
+        payScreen(Tier.PRO, withProfile = true) { vm ->
+            val profile = vm.profile.collectAsState().value
+            val snap = vm.snapshot.collectAsState().value
+            if (profile != null && snap != null) {
+                com.bamnat.app.ui.pay.CustomItemDialog(vm, profile, snap, java.time.YearMonth.now(), onDismiss = {}, onSave = {},
+                    gap = gap, startKind = kind)
+            }
+        }
+
+    private fun Screen.deductForm() {
+        itemBuilder(com.bamnat.app.ui.pay.ItemKind.DEDUCT).invoke(this)
+        typeInto("이름 (선택)", "기숙사비")
+        typeInto("한 달 금액", "50000")
+        repeat(2) { settle() }
+    }
+
+    /** [PAYS-07][PAYS-09] A deduction made from the pay screen, then the notice and the invitation to share the way. */
+    private fun Screen.madeDeduction() {
+        companyOn()
+        // As the app opens it: with the way to 회사 설정 보내기.
+        payScreen(Tier.PRO, withProfile = true) { vm -> com.bamnat.app.ui.pay.PayScreen(vm, onBack = {}, onShareWay = {}) }.invoke(this)
+        tapText("우리 회사 항목 만들기", exact = true)
+        tapText("빠지는 돈 (차감)", exact = true)
+        typeInto("이름 (선택)", "기숙사비")
+        typeInto("한 달 금액", "50000")
+        repeat(2) { settle() }
+        tapText("만들기", exact = true)
+        reveal("만들었어요", exact = false)
+    }
+
+    /** [PAYS-08] 명세서로 맞춰 보기 with the way to 회사 설정 보내기, for the invitation after a match. */
+    private fun matchWithShare(): Screen.() -> Unit = payScreen(Tier.PRO, withProfile = true) { vm ->
+        val profile = vm.profile.collectAsState().value
+        val snap = vm.snapshot.collectAsState().value
+        if (profile != null && snap != null) {
+            com.bamnat.app.ui.pay.PayslipMatchDialog(vm, profile, snap, java.time.YearMonth.now(), onDismiss = {}, onShareWay = {})
+        }
+    }
+
+    /** This month as the app has it, for a payslip a little off from it. */
+    private fun appTotalNow(): Long = runBlocking {
+        val c = app.container
+        PayViewModel(c).calculateOff(c.payStore.profile.value!!, c.scheduleRepository.snapshot.first(), java.time.YearMonth.now()).total
+    }
+
+    private fun Screen.payslipGap() {
+        matchWithShare().invoke(this)
+        // A company allowance the app does not have; no setting explains all of it.
+        val gross = appTotalNow() + 52_000
+        tapText("네, 같았어요", exact = true)
+        typeInto("지급 총액", gross.toString())
+        tapText("맞춰 보기", exact = true)
+        repeat(3) { settle() }
+        reveal("이 차이를 항목으로 만들기")
+    }
+
+    private fun Screen.payslipMatched() {
+        companyOn()
+        matchWithShare().invoke(this)
+        val gross = appTotalNow()
+        tapText("네, 같았어요", exact = true)
+        typeInto("지급 총액", gross.toString())
+        tapText("맞춰 보기", exact = true)
+        repeat(3) { settle() }
+        tapText("확인했어요", exact = true)
+        reveal("명세서와 맞았어요", exact = false)
+    }
+
+    /** [SETUP-03][SETUP-05] One setup question with the month worked out from this phone's roster. */
+    private fun wizardAt(key: String): Screen.() -> Unit = {
+        val c = app.container
+        val vm = PayViewModel(c)
+        val snap = runBlocking { c.scheduleRepository.snapshot.first() }
+        val month = java.time.YearMonth.now()
+        val sample = vm.sampleProfile()
+        content {
+            com.bamnat.app.ui.pay.PayWizard(sample, {}, {}, snapshot = snap, preview = { vm.preview(it, snap, month) }, startAt = key)
+        }
+        repeat(4) { settle() }
+    }
+
+    private fun shiftEditor(): Screen.() -> Unit = {
+        val day = runBlocking { app.container.scheduleRepository.shiftTypes.first().first { it.name == "주간" } }
+        content { com.bamnat.app.ui.shifts.ShiftTypeEditorDialog(day, onDismiss = {}, onSave = {}, onDelete = {}) }
+    }
+
+    @Test fun foldedPayItemKinds() = shoot("260_folded_pay_item_kinds", FOLDED, itemBuilder())
+    @Test fun unfoldedPayItemKinds() = shoot("261_unfolded_pay_item_kinds", UNFOLDED, itemBuilder())
+    @Test fun foldedPayItemPerShift() = shoot("262_folded_pay_item_per_shift", FOLDED) {
+        itemBuilder(com.bamnat.app.ui.pay.ItemKind.PER_SHIFT).invoke(this)
+        typeInto("이름 (선택)", "위험수당")
+        typeInto("1회 금액", "10000")
+        tapText("야간", exact = true)
+        repeat(2) { settle() }
+    }
+    @Test fun foldedPayItemDeduct() = shoot("263_folded_pay_item_deduct", FOLDED) { deductForm() }
+    @Test fun unfoldedPayItemDeduct() = shoot("264_unfolded_pay_item_deduct", UNFOLDED) { deductForm() }
+    @Test fun foldedPayMadeShare() = shoot("265_folded_pay_made_share", FOLDED) { madeDeduction() }
+    @Test fun unfoldedPayMadeShare() = shoot("266_unfolded_pay_made_share", UNFOLDED) { madeDeduction() }
+    @Test fun foldedPayCustomList() = shoot("267_folded_pay_custom_list", FOLDED) {
+        payScreen(Tier.PRO, withProfile = true, adjust = {
+            it.copy(customRules = listOf(
+                com.bamnat.core.pay.CustomRule("d1", "기숙사비", com.bamnat.core.pay.RuleWhen(), com.bamnat.core.pay.RulePay.Monthly(50_000), deduct = true),
+                com.bamnat.core.pay.CustomRule("d2", "식대", com.bamnat.core.pay.RuleWhen(dayKind = com.bamnat.core.pay.RuleDayKind.WORK_DAY),
+                    com.bamnat.core.pay.RulePay.PerTime(3_000), deduct = true),
+                com.bamnat.core.pay.CustomRule("s1", "근속수당", com.bamnat.core.pay.RuleWhen(), com.bamnat.core.pay.RulePay.OfBaseMonthly(0.03)),
+            ))
+        }).invoke(this)
+        reveal("직접 만든 항목", exact = true)
+    }
+    @Test fun foldedPayslipGap() = shoot("268_folded_payslip_gap", FOLDED) { payslipGap() }
+    @Test fun unfoldedPayslipGap() = shoot("269_unfolded_payslip_gap", UNFOLDED) { payslipGap() }
+    @Test fun foldedPayslipGapBuilder() = shoot("270_folded_payslip_gap_builder", FOLDED) {
+        payslipGap()
+        tapText("이 차이를 항목으로 만들기")
+    }
+    @Test fun foldedPayslipMatchedShare() = shoot("271_folded_payslip_matched_share", FOLDED) { payslipMatched() }
+    @Test fun unfoldedPayslipMatchedShare() = shoot("272_unfolded_payslip_matched_share", UNFOLDED) { payslipMatched() }
+    @Test fun foldedPayWizardQuestion() = shoot("273_folded_pay_wizard_question", FOLDED, wizardAt(com.bamnat.core.pay.Unknowns.FIVE_OR_MORE))
+    @Test fun unfoldedPayWizardQuestion() = shoot("274_unfolded_pay_wizard_question", UNFOLDED, wizardAt(com.bamnat.core.pay.Unknowns.FIVE_OR_MORE))
+    @Test fun foldedPayTermDialog() = shoot("275_folded_pay_term_dialog", FOLDED) {
+        wizardAt(com.bamnat.core.pay.Unknowns.FIVE_OR_MORE).invoke(this)
+        tapText("5인 이상이란?", exact = true)
+    }
+    @Test fun foldedPayWizardHoursTerm() = shoot("276_folded_pay_wizard_hours_term", FOLDED, wizardAt(com.bamnat.core.pay.Unknowns.MONTHLY_HOURS))
+    @Test fun foldedPayWizardItemsHint() = shoot("277_folded_pay_wizard_items_hint", FOLDED) {
+        content { com.bamnat.app.ui.pay.PayWizard(null, null, {}, scrollToEnd = true, startAt = "items") }
+    }
+    @Test fun phonePayWizardQuestionHugeText() = shoot("278_phone_pay_wizard_question_huge_text", PHONE, fontScale = 2f,
+        wizardAt(com.bamnat.core.pay.Unknowns.FIVE_OR_MORE))
+    @Test fun foldedSetupStepsLeft() = shoot("279_folded_setup_steps_left", FOLDED, fresh(null) { tapText("순서가 돌아가요") })
+    @Test fun unfoldedSetupStepsLeft() = shoot("280_unfolded_setup_steps_left", UNFOLDED, fresh(null) {
+        tapText("순서가 돌아가요"); tapText("4조 2교대 12시간")
+    })
+    @Test fun foldedShiftTypesEasy() = shoot("281_folded_shift_types_easy", FOLDED) {
+        settingsPage("내 근무")
+        tapText("근무 종류와 시간", exact = true)
+    }
+    @Test fun unfoldedShiftTypesEasy() = shoot("282_unfolded_shift_types_easy", UNFOLDED) {
+        settingsPage("내 근무", wide = true)
+        tapText("근무 종류와 시간", exact = true)
+    }
+    @Test fun foldedShiftEditorTimeFirst() = shoot("283_folded_shift_editor_time_first", FOLDED, shiftEditor())
+    @Test fun foldedShiftEditorLook() = shoot("284_folded_shift_editor_look", FOLDED) {
+        shiftEditor().invoke(this)
+        tapText("색과 아이콘 (선택)", exact = true)
+        reveal("색상", exact = true)
+    }
+    @Test fun unfoldedShiftEditorTimeFirst() = shoot("285_unfolded_shift_editor_time_first", UNFOLDED, shiftEditor())
+    @Test fun foldedPatternEasy() = shoot("286_folded_pattern_easy", FOLDED) {
+        settingsPage("내 근무")
+        tapText("근무 주기", exact = true)
+    }
+    @Test fun unfoldedPatternEasy() = shoot("287_unfolded_pattern_easy", UNFOLDED) {
+        settingsPage("내 근무", wide = true)
+        tapText("근무 주기", exact = true)
+    }
+    @Test fun foldedPayItemDeductDark() = shoot("288_folded_pay_item_deduct_dark", "w369dp-h905dp-port-night-420dpi") { deductForm() }
+    @Test fun phonePayItemDeductHugeText() = shoot("289_phone_pay_item_deduct_huge_text", PHONE, fontScale = 2f) { deductForm() }
+    // [PAYS-10][PAYS-11] The ‘?’ in the top bar, and a 추정 badge saying what to put in.
+    @Test fun foldedPayEstimateHint() = shoot("267b_folded_pay_estimate_hint", FOLDED) {
+        payScreen(Tier.PRO, withProfile = true) { vm -> com.bamnat.app.ui.pay.PayScreen(vm, onBack = {}, onHelp = {}) }.invoke(this)
+        tapText("추정 포함", exact = true)
+    }
+    // [SETUP-10] 맞았어요 said once, and the button out of the way at the end of the list.
+    @Test fun foldedCompanyBoardEnd() = shoot("271b_folded_company_board_end", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
+        settle()
+        reveal("예시정밀 2공장", exact = true)
+        scrollUp(800)
+        settle()
+    }
+    // [SETUP-12] A first setup left for later, picked up again from 설정 > 내 근무.
+    @Test fun foldedSettingsSetupResume() = shoot("280b_folded_settings_setup_resume", FOLDED, fresh(null) {
+        tapText("순서가 돌아가요")
+        tapText("나중에 할게요", exact = true)
+        settingsPage("내 근무")
+    })
 }
 
 /** [SHR-02] The share server for screenshots: links people sent, answered at once. */
