@@ -97,8 +97,10 @@ private const val NEW = "new"
 fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
     val list by vm.list.collectAsStateWithLifecycle()
     val offline by vm.offline.collectAsStateWithLifecycle()
-    // The list, the form, or one question by its id.
-    var view by rememberSaveable { mutableStateOf(LIST) }
+    // The list, the form, or one question by its id. 계산이 이상해요 opens straight on the form [ADMIN-02].
+    var view by rememberSaveable { mutableStateOf(if (vm.payCheck != null) NEW else LIST) }
+    // Until that question is sent, back returns to the pay screen it came from.
+    var fromPay by rememberSaveable { mutableStateOf(vm.payCheck != null) }
     var deleting by remember { mutableStateOf<Inquiry?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { vm.refresh() }
@@ -107,8 +109,9 @@ fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
     // A question that is gone (deleted elsewhere) falls back to the list.
     LaunchedEffect(list, view) { if (view != LIST && view != NEW && list != null && open == null) view = LIST }
 
-    val back = { if (view == LIST) onBack() else { view = LIST } }
-    BackHandler(enabled = view != LIST) { view = LIST }
+    val leaves = view == LIST || (view == NEW && fromPay)
+    val back = { if (leaves) onBack() else { view = LIST } }
+    BackHandler(enabled = !leaves) { view = LIST }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -128,7 +131,8 @@ fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                 }
                 when {
-                    view == NEW -> InquiryForm(vm, onSent = { sent -> message = null; view = sent.id })
+                    view == NEW -> InquiryForm(vm, pay = vm.payCheck.takeIf { fromPay },
+                        onSent = { sent -> message = null; fromPay = false; view = sent.id })
                     open != null -> InquiryThread(vm, open)
                     else -> InquiryList(vm, list, onNew = { message = null; view = NEW }, onOpen = { message = null; view = it.id })
                 }
@@ -231,11 +235,14 @@ private val stamp = DateTimeFormatter.ofPattern("M월 d일 HH:mm")
 private fun stampOf(at: Instant): String = at.atZone(ZoneId.systemDefault()).format(stamp)
 
 @Composable
-private fun InquiryForm(vm: InquiryViewModel, onSent: (Inquiry) -> Unit) {
+private fun InquiryForm(vm: InquiryViewModel, pay: String?, onSent: (Inquiry) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val busy by vm.busy.collectAsStateWithLifecycle()
-    var kind by rememberSaveable { mutableStateOf<InquiryKind?>(null) }
+    // From 계산이 이상해요 it is a 오류 제보 already, and the pay check goes with it unless unticked.
+    var kind by rememberSaveable { mutableStateOf(if (pay != null) InquiryKind.BUG else null) }
+    var withPay by rememberSaveable { mutableStateOf(pay != null) }
+    var showPay by rememberSaveable { mutableStateOf(false) }
     var text by rememberSaveable { mutableStateOf("") }
     var withCheck by rememberSaveable { mutableStateOf(false) }
     var showCheck by rememberSaveable { mutableStateOf(false) }
@@ -243,7 +250,7 @@ private fun InquiryForm(vm: InquiryViewModel, onSent: (Inquiry) -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     val problem = vm.problem(text)
     // The alarm check helps most when the app misbehaves, so it is offered ticked there.
-    LaunchedEffect(kind) { if (kind == InquiryKind.BUG && check == null) withCheck = true }
+    LaunchedEffect(kind) { if (kind == InquiryKind.BUG && pay == null && check == null) withCheck = true }
     LaunchedEffect(withCheck, showCheck) { if ((withCheck || showCheck) && check == null) check = vm.alarmCheck(context) }
 
     Column(
@@ -261,7 +268,7 @@ private fun InquiryForm(vm: InquiryViewModel, onSent: (Inquiry) -> Unit) {
             onValueChange = { text = it.take(InquiryClient.TEXT_MAX + 50) },
             modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
             minLines = 5,
-            placeholder = { Text(placeholder(kind)) },
+            placeholder = { Text(if (pay != null) PAY_PLACEHOLDER else placeholder(kind)) },
             isError = problem != null,
             supportingText = {
                 Row {
@@ -277,30 +284,24 @@ private fun InquiryForm(vm: InquiryViewModel, onSent: (Inquiry) -> Unit) {
                 InfoLine("앱", vm.info.app)
                 InfoLine("기기", vm.info.model)
                 InfoLine("Android", vm.info.android)
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    Modifier.fillMaxWidth().toggleable(value = withCheck, role = Role.Checkbox, onValueChange = { withCheck = it }),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Checkbox(checked = withCheck, onCheckedChange = null)
-                    Spacer(Modifier.width(8.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("알람 점검 기록도 보내기", style = MaterialTheme.typography.bodyLarge)
-                        Text("다음 알람 시각과 근무 이름, 권한 상태, 최근 알람 기록이 들어 있어요",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (pay != null) {
+                    Spacer(Modifier.height(4.dp))
+                    CheckRow("급여 계산 내용도 보내기", "이 달의 규칙과 항목별 시간·가산율이에요. 금액은 들어가지 않아요",
+                        checked = withPay, onChange = { withPay = it })
+                    TextButton(onClick = { showPay = !showPay }) {
+                        Text(if (showPay) "내용 접기" else "보낼 내용 보기")
+                        Icon(if (showPay) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null)
                     }
+                    if (showPay) Shown(pay)
                 }
+                Spacer(Modifier.height(4.dp))
+                CheckRow("알람 점검 기록도 보내기", "다음 알람 시각과 근무 이름, 권한 상태, 최근 알람 기록이 들어 있어요",
+                    checked = withCheck, onChange = { withCheck = it })
                 TextButton(onClick = { showCheck = !showCheck }) {
                     Text(if (showCheck) "기록 접기" else "보낼 기록 보기")
                     Icon(if (showCheck) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null)
                 }
-                if (showCheck) {
-                    Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                        Text(check ?: "불러오는 중…", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp).verticalScroll(rememberScrollState())
-                                .horizontalScroll(rememberScrollState()).padding(10.dp))
-                    }
-                }
+                if (showCheck) Shown(check ?: "불러오는 중…")
             }
         }
         Text(INQUIRY_SEND_NOTICE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -312,7 +313,7 @@ private fun InquiryForm(vm: InquiryViewModel, onSent: (Inquiry) -> Unit) {
                 error = null
                 scope.launch {
                     val diag = if (withCheck) check ?: vm.alarmCheck(context) else null
-                    vm.send(k, text, diag) { sent, why -> if (sent != null) onSent(sent) else { error = why } }
+                    vm.send(k, text, diag, pay.takeIf { withPay }) { sent, why -> if (sent != null) onSent(sent) else { error = why } }
                 }
             },
             enabled = ready,
@@ -326,6 +327,34 @@ private fun InquiryForm(vm: InquiryViewModel, onSent: (Inquiry) -> Unit) {
             }
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+private const val PAY_PLACEHOLDER = "예: 9월 야간수당이 명세서보다 3시간만큼 적게 나와요. 금액 대신 시간이나 비율로 적어 주세요"
+
+/** A ticked line of what goes with the question. */
+@Composable
+private fun CheckRow(title: String, detail: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().toggleable(value = checked, role = Role.Checkbox, onValueChange = onChange),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = checked, onCheckedChange = null)
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** Exactly what will be sent, before it is. */
+@Composable
+private fun Shown(text: String) {
+    Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        Text(text, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace,
+            modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp).verticalScroll(rememberScrollState())
+                .horizontalScroll(rememberScrollState()).padding(10.dp))
     }
 }
 

@@ -11,7 +11,7 @@ import java.time.Instant
 /** What a question is about [ADMIN-02]; [code] is the server's word for it. */
 enum class InquiryKind(val code: String, val label: String, val hint: String) {
     QUESTION("question", "궁금해요", "쓰는 법이나 계산이 궁금할 때"),
-    BUG("bug", "앱이 이상해요", "알람이 안 울리거나 화면이 멈출 때"),
+    BUG("bug", "앱이 이상해요", "알람이 안 울리거나 계산이 다르거나 화면이 멈출 때"),
     IDEA("idea", "이렇게 바뀌면 좋겠어요", "있었으면 하는 기능"),
     ;
 
@@ -38,9 +38,10 @@ data class Inquiry(
 /**
  * What goes with a question, all shown before it is sent: the app and phone always, the alarm
  * check only when the user ticks it. Never a name, contact, amount or anything from the calendar
- * beyond what the alarm check itself says.
+ * beyond what the alarm check itself says. [pay] is what 급여 > 계산이 이상해요 adds: the month's rules and
+ * each line's hours and rate, again without an amount, and only while the user leaves it ticked.
  */
-data class InquiryInfo(val app: String, val model: String, val android: String, val diag: String? = null)
+data class InquiryInfo(val app: String, val model: String, val android: String, val diag: String? = null, val pay: String? = null)
 
 /** [ADMIN-02] 설정 > 문의하기 through the company server; screenshots and tests answer with a fake. */
 interface InquiryApi {
@@ -58,6 +59,7 @@ class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
     override suspend fun send(device: String, kind: InquiryKind, text: String, info: InquiryInfo): Inquiry = serverCall {
         val i = JSONObject().put("app", info.app).put("model", info.model).put("android", info.android)
         info.diag?.takeIf { it.isNotBlank() }?.let { i.put("diag", it.take(DIAG_MAX)) }
+        info.pay?.takeIf { it.isNotBlank() }?.let { i.put("pay", it.take(PAY_MAX)) }
         val body = JSONObject().put("v", 1).put("device", device).put("kind", kind.code).put("text", text.trim()).put("info", i)
         inquiry(serverRequest(baseUrl, "POST", "/api/inquiries", body))
     }
@@ -95,6 +97,7 @@ class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
         /** The longest question the server takes, and the longest alarm check. */
         const val TEXT_MAX = 2000
         const val DIAG_MAX = 6000
+        const val PAY_MAX = 3000
     }
 }
 

@@ -559,7 +559,12 @@ private fun AppNavHost(
                 top = {
                     CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                         onFix = { nav.fixCompanySetup(it) })
-                })
+                },
+                // [ADMIN-02] 계산이 이상해요 is a question in the app; a build without the company server shares it.
+                onReport = if (container.inquiryApi.enabled) { check ->
+                    container.pendingPayCheck = check
+                    nav.navigate(Routes.INQUIRY) { launchSingleTop = true }
+                } else null)
             if (inviting) {
                 InviteSheet(nudges, onShare = { inviting = false; nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                     onDismiss = { inviting = false })

@@ -1439,6 +1439,7 @@ const INQUIRY = {
   kinds: ["question", "bug", "idea"],
   text: 2000,
   diag: 6000,
+  pay: 3000,
   bytes: 16 * 1024,
   perDay: 5,
   perNetworkDay: 20,
@@ -1454,7 +1455,47 @@ const INQUIRY_INFO = [
   ["기기", "model", 80],
   ["Android", "android", 40],
   ["알람 점검", "diag", INQUIRY.diag],
+  // 급여 > 계산이 이상해요: the month's rules and each line's hours and rate, never an amount.
+  ["급여 계산", "pay", INQUIRY.pay],
 ];
+
+// ---- sorting questions without reading each one [ADMIN-02] ----
+//
+// Every question gets a topic and an urgency from its words, its kind and what came with it, worked
+// out when the list is read, so better words sort old questions too and nothing new is stored. The
+// developer filters by topic and sees the urgent ones first instead of opening each to sort it.
+
+/** Topic, label and the words that point to it; the most matched topic wins, the first on a tie. */
+const INQUIRY_TOPICS = [
+  ["alarm", "알람", /알람|울리|울려|울림|소리|진동|깨워|스누즈|다시\s*울/g],
+  ["pay", "급여 계산", /급여|월급|시급|일당|연봉|수당|가산|명세서|통상임금|주휴|연차|퇴직|세금|4대\s*보험|계산/g],
+  ["schedule", "근무표·달력", /근무표|달력|캘린더|교대|패턴|근무\s*유형|대근|휴무|비번|야간|주간|오프|일정|메모/g],
+  ["share", "공유", /공유|링크|상대방|가족|동기화|받은\s*사람|보낸\s*사람/g],
+  ["company", "회사 설정", /회사|부서|규칙|투표|토론|채택/g],
+  ["backup", "백업·기기 이동", /백업|복원|새\s*(폰|휴대폰|기기)|기기\s*변경|옮기|가져오기|내보내기/g],
+  ["billing", "결제", /결제|구독|프리미엄|환불|구매|광고|유료|무료/g],
+  ["app", "앱 동작", /멈춰|멈춤|멈추|꺼져|꺼짐|튕|강제\s*종료|오류|에러|버그|안\s*열|안\s*켜|느려|느림|로딩|하얀\s*화면|검은\s*화면|위젯|워치|잠금\s*화면|배터리|업데이트/g],
+];
+const TOPIC_NAMES = Object.fromEntries([...INQUIRY_TOPICS.map(([key, label]) => [key, label]), ["etc", "기타"]]);
+
+/** Words that make a problem urgent: an alarm that did not ring, an app that will not open, money paid. */
+const URGENT = /안\s*울|못\s*(들|일어)|놓쳤|늦게\s*울|지각|안\s*열|안\s*켜|튕|강제\s*종료|꺼져|데이터.{0,6}(사라|없어|날아)|사라졌|환불|결제.{0,6}(안|됐|두\s*번)/;
+
+/** What the list and a thread show for sorting: topic, its label and how soon it needs an answer. */
+function triage(kind, text, info) {
+  const t = String(text ?? "");
+  let topic = "etc";
+  let best = 0;
+  for (const [key, , re] of INQUIRY_TOPICS) {
+    const n = t.match(re)?.length ?? 0;
+    if (n > best) [topic, best] = [key, n];
+  }
+  // What came with it says more than any word: 계산이 이상해요 sends the pay check, the alarm form its check.
+  if (info?.pay) topic = "pay";
+  else if (best === 0 && info?.diag) topic = "alarm";
+  const urgency = kind === "idea" ? "low" : URGENT.test(t) ? "urgent" : "normal";
+  return { topic, topicName: TOPIC_NAMES[topic], urgency };
+}
 
 async function inquiries(request, env, path) {
   const method = request.method;
@@ -1549,6 +1590,7 @@ function inquiryInfo(v) {
     if (x === undefined || x === null || x === "") continue;
     if (typeof x !== "string" || [...x].length > longest) refuse("info", key);
     if (key !== "diag" && personal(x) === "email") refuse("info", key);
+    if (key === "pay" && personal(x)) refuse("info", key);
     out[key] = x.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
   }
   return out;
@@ -1571,7 +1613,7 @@ async function inquiryView(env, row, admin = false) {
   const info = JSON.parse(row.info);
   const context = {};
   for (const [label, key] of INQUIRY_INFO) if (info[key]) context[label] = info[key];
-  return { ...view, appVersion: info.app ?? null, context };
+  return { ...view, appVersion: info.app ?? null, context, ...triage(row.kind, messages.find((m) => m.sender === "user")?.text, info) };
 }
 
 /** Who answered: the signed-in admin's name once there are admin accounts, else "admin". */
@@ -1614,6 +1656,7 @@ async function adminInquiries(request, env, url, path, now) {
 async function inquiryList(env, params) {
   const status = ["open", "answered", "closed"].includes(params.get("status")) ? params.get("status") : null;
   const q = String(params.get("q") ?? "").trim().slice(0, 40);
+  const topic = Object.hasOwn(TOPIC_NAMES, params.get("topic") ?? "") ? params.get("topic") : null;
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const [rows, statusRows] = (await env.DB.batch([stmt(env, `SELECT i.*,
       (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id) AS count,
@@ -1628,20 +1671,30 @@ async function inquiryList(env, params) {
   for (const r of statusRows) {
     if (Object.hasOwn(counts, r.status)) counts[r.status] = r.n;
   }
-  return {
-    counts,
-    inquiries: rows.map((r) => ({
+  const listed = rows.map((r) => {
+    const info = JSON.parse(r.info);
+    return {
       id: r.id,
       kind: r.kind,
       status: r.status,
       preview: [...(r.first ?? "")].slice(0, 120).join(""),
       count: r.count,
       waiting: r.last === "user",
-      appVersion: JSON.parse(r.info).app ?? null,
+      appVersion: info.app ?? null,
       createdAt: iso(r.created_at),
       updatedAt: iso(r.updated_at),
-    })),
-  };
+      ...triage(r.kind, r.first, info),
+    };
+  });
+  // How many of this view are in each topic, so the filter shows where the questions pile up.
+  const topics = {};
+  for (const i of listed) topics[i.topic] = (topics[i.topic] ?? 0) + 1;
+  const rank = { urgent: 0, normal: 1, low: 2 };
+  // Urgent first among those waiting for an answer; otherwise the order stays the newest first.
+  const waits = (i) => (i.status === "open" ? 0 : 1);
+  const shown = listed.filter((i) => !topic || i.topic === topic)
+    .sort((a, b) => waits(a) - waits(b) || (waits(a) === 0 ? rank[a.urgency] - rank[b.urgency] : 0));
+  return { counts, topics, topicNames: TOPIC_NAMES, inquiries: shown };
 }
 
 // ---- the developer app's API [ADMIN-01] ----

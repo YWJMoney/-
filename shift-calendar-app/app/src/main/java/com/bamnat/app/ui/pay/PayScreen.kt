@@ -120,6 +120,8 @@ fun PayScreen(
     onOpenExtraKinds: () -> Unit = {},
     /** [COMM-02][COMM-03] Cards above the result: sharing a hand-made setup, 맞았어요·달라요. */
     top: @Composable () -> Unit = {},
+    /** [ADMIN-02] 계산이 이상해요 opens 문의하기 with this month's pay check; null sends it by mail or chat app. */
+    onReport: ((String) -> Unit)? = null,
 ) {
     val profile by vm.profile.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
@@ -173,7 +175,7 @@ fun PayScreen(
                     val month by vm.month.collectAsStateWithLifecycle()
                     CompanyRulesEditor(vm, profile!!, snap, month, onClose = { editingRules = false }, onOpenKinds = onOpenExtraKinds)
                 }
-                else -> PayResult(vm, profile!!, snap, tier, onEditSetup = { editingSetup = true }, onEditRules = { editingRules = true }, top = top)
+                else -> PayResult(vm, profile!!, snap, tier, onEditSetup = { editingSetup = true }, onEditRules = { editingRules = true }, top = top, onReport = onReport)
             }
         }
     }
@@ -189,6 +191,7 @@ private fun PayResult(
     onEditSetup: () -> Unit,
     onEditRules: () -> Unit,
     top: @Composable () -> Unit = {},
+    onReport: ((String) -> Unit)? = null,
 ) {
     val month by vm.month.collectAsStateWithLifecycle()
     val undo by vm.undoAvailable.collectAsStateWithLifecycle()
@@ -401,7 +404,9 @@ private fun PayResult(
 
         Glossary()
 
-        TextButton(onClick = { reportProblem(context, profile, shown) }) { Text("계산이 이상해요 (오류 제보)") }
+        TextButton(onClick = {
+            if (onReport != null) onReport(payCheck(profile, shown)) else reportProblem(context, profile, shown)
+        }) { Text("계산이 이상해요 (오류 제보)") }
         Text(
             "회사 급여명세서와 다를 수 있어요. 세금과 4대보험을 빼기 전 금액이에요. 계산 기준: 요율 ${shown.ratesVersion}, " +
                 "공휴일 ${KoreanHolidays.VERSION}.",
@@ -1024,6 +1029,29 @@ private fun reportProblem(context: android.content.Context, profile: PayProfile,
     }
     context.startActivity(android.content.Intent.createChooser(send, "오류 제보 보내기"))
 }
+
+/**
+ * [ADMIN-02] What 계산이 이상해요 sends with a question: the month, the rules and each line's hours and
+ * rate, but no amount. The server refuses amounts in a question, so a line that still holds one is left out.
+ */
+internal fun payCheck(profile: PayProfile, result: MonthPay): String = buildList {
+    add("월: ${result.month} · 요율 ${result.ratesVersion} · 공휴일 ${KoreanHolidays.VERSION} · 앱 ${com.bamnat.app.BuildConfig.VERSION_NAME}")
+    add("직군: ${profile.occupation.label} · ${profile.wageLabel()} · " +
+        "${if (profile.fiveOrMoreEmployees) "5인 이상" else "5인 미만"} · 소정 ${profile.monthlyHours}시간")
+    profile.rules.summary(profile).forEach { add("규칙: $it") }
+    result.lines.forEach { l ->
+        val how = listOfNotNull(
+            l.minutes.takeIf { it > 0 }?.let { PayCalculator.hours(it) },
+            l.multiplier.takeIf { it > 0 }?.let { PayCalculator.pct(it) },
+            // A basis such as "일당 ÷ 소정근로" often names an amount; the line stays without it.
+            l.basis.takeIf { it.isNotBlank() && com.bamnat.app.company.CompanyText.personal(it) == null },
+            "추정".takeIf { l.estimated },
+        ).joinToString(" · ")
+        add(if (how.isEmpty()) l.label else "${l.label}: $how")
+    }
+    result.warnings.forEach { add("경고: $it") }
+}.filter { com.bamnat.app.company.CompanyText.personal(it) == null }
+    .joinToString("\n").take(com.bamnat.app.company.InquiryClient.PAY_MAX)
 
 /** When a bonus is paid: its fixed months and the 명절 it follows [PAYX-10]. */
 private fun PayItem.paidWhen(): String = listOfNotNull(

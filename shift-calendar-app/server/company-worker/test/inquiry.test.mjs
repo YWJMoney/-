@@ -50,6 +50,7 @@ test("contacts and amounts are refused with the field; so is anything it does no
     [{ info: "1.12.0" }, "info", "info"],
     [{ info: { model: "a".repeat(81) } }, "info", "model"],
     [{ info: { app: "me@example.com" } }, "info", "app"],
+    [{ info: { pay: "기본급: 2,500,000원" } }, "info", "pay"],
   ];
   for (const [change, error, field] of cases) {
     const res = await call("POST", "/api/inquiries", question(1, change));
@@ -178,4 +179,39 @@ test("the hourly clean-up deletes what is only kept for a while, with nobody sen
   assert.equal(n("SELECT COUNT(*) AS n FROM inquiry_messages"), 0);
   // The report itself stays: only its network link went.
   assert.equal(n("SELECT COUNT(*) AS n FROM reports"), 1);
+});
+
+test("계산이 이상해요 sends the pay check without amounts, and the developer app shows it", async () => {
+  const { call } = server();
+  const pay = "월: 2026-10 · 요율 2026.1\n야간수당: 48시간 · 50%\n규칙: 연장 가산 50%";
+  const q = (await call("POST", "/api/inquiries", question(1, { text: "야간수당이 명세서보다 4시간만큼 적어요", info: { app: "1.13.1 (20)", pay } }))).data;
+  const admin = await signIn(call);
+  const detail = (await call("GET", `/api/admin/inquiries/${q.id}`, undefined, admin)).data;
+  assert.equal(detail.context["급여 계산"], pay);
+  assert.equal((await call("POST", "/api/inquiries", question(2, { info: { pay: "가".repeat(3001) } }))).status, 400);
+});
+
+test("questions sort themselves by topic and urgency, and the developer can show one topic", async () => {
+  const { call } = server();
+  const send = async (n, change) => (await call("POST", "/api/inquiries", question(n, change), from(n))).data.id;
+  const alarm = await send(1, { text: "어제 출근 알람이 안 울려서 지각했어요" });
+  const pay = await send(2, { text: "야간수당이 명세서와 달라요", info: { app: "1.13.1", pay: "야간수당: 48시간 · 50%" } });
+  const idea = await send(3, { kind: "idea", text: "달력에서 공유 링크를 더 쉽게 만들면 좋겠어요" });
+  const other = await send(4, { kind: "question", text: "안녕하세요 질문 있어요" });
+  const admin = await signIn(call);
+  const list = (await call("GET", "/api/admin/inquiries?status=open", undefined, admin)).data;
+  const by = Object.fromEntries(list.inquiries.map((i) => [i.id, i]));
+  assert.deepEqual([by[alarm].topic, by[alarm].urgency], ["alarm", "urgent"]);
+  assert.deepEqual([by[pay].topic, by[pay].topicName, by[pay].urgency], ["pay", "급여 계산", "normal"]);
+  assert.deepEqual([by[idea].topic, by[idea].urgency], ["share", "low"]);
+  assert.equal(by[other].topic, "etc");
+  // The urgent one comes first, and the counts say where questions pile up.
+  assert.equal(list.inquiries[0].id, alarm);
+  assert.deepEqual(list.topics, { alarm: 1, pay: 1, share: 1, etc: 1 });
+  const only = (await call("GET", "/api/admin/inquiries?status=open&topic=pay", undefined, admin)).data;
+  assert.deepEqual(only.inquiries.map((i) => i.id), [pay]);
+  assert.equal(only.topics.alarm, 1);
+  // An unknown topic shows everything, and a thread carries its sorting too.
+  assert.equal((await call("GET", "/api/admin/inquiries?topic=x", undefined, admin)).data.inquiries.length, 4);
+  assert.equal((await call("GET", `/api/admin/inquiries/${alarm}`, undefined, admin)).data.urgency, "urgent");
 });
