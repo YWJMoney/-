@@ -132,6 +132,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val settings: StateFlow<AppSettings> = container.settingsRepository.settings
     val upcoming: StateFlow<UpcomingAlarm?> = container.alarmScheduler.upcoming
     val snoozeAt: StateFlow<Long?> = container.alarmScheduler.snoozeAt
+    /** [MCAL-01] The user's calendars, for 설정 > 달력. */
+    val calendars: StateFlow<List<com.bamnat.app.data.PersonalCalendar>> = container.calendars.calendars
     val snapshot: StateFlow<ScheduleSnapshot?> = container.scheduleRepository.snapshot
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     fun cancelSnooze() = container.alarmScheduler.cancelSnooze()
@@ -394,6 +396,8 @@ fun SettingsScreen(
     company: (@Composable ColumnScope.() -> Unit)? = null,
     /** [ADMIN-02] 문의하기 in the app. */
     onOpenInquiry: () -> Unit = {},
+    /** [MCAL-04] The calendar list. */
+    onOpenCalendars: () -> Unit = {},
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -433,7 +437,7 @@ fun SettingsScreen(
             page = p, vm = vm, settings = settings, refresh = refresh, files = files, askNotifications = askNotifications,
             onOpenShiftTypes = onOpenShiftTypes, onOpenPattern = onOpenPattern, onOpenDiagnostics = onOpenDiagnostics,
             onOpenWorkStyle = onOpenWorkStyle, onOpenExtraKinds = onOpenExtraKinds, onOpenPay = onOpenPay, company = company,
-            onOpenPage = { page = it }, onOpenInquiry = onOpenInquiry,
+            onOpenPage = { page = it }, onOpenInquiry = onOpenInquiry, onOpenCalendars = onOpenCalendars,
         )
     }
     val hub: @Composable (Modifier, SettingsPage?) -> Unit = { modifier, selected ->
@@ -788,6 +792,7 @@ internal fun restoreMessage(s: BackupSummary): String {
         if (s.moneyLines > 0) add("돈 기록 ${s.moneyLines}건")
         if (s.sleeps > 0) add("수면 기록 ${s.sleeps}개")
         if (s.hasPay) add("급여 설정")
+        if (s.calendars > 0) add("추가한 달력 ${s.calendars}개")
     }
     val saved = if (s.exportedAtMillis > 0) " (${Fmt.dayTitle(AlarmScheduler.millisToLocal(s.exportedAtMillis).toLocalDate())} 저장)" else ""
     return "들어 있는 것: ${parts.joinToString(", ")}$saved.\n" +

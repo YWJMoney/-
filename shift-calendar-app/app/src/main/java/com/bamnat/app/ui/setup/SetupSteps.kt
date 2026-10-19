@@ -83,8 +83,16 @@ private val STYLE_CHOICES = listOf(
 )
 
 @Composable
-internal fun StyleStep(d: SetupDraft, onPick: (WorkStyle, Boolean) -> Unit, onOpenFile: () -> Unit) {
-    StepHeader("어떻게 일하세요?", "고르면 바로 다음 질문으로 넘어가요. 나중에 설정에서 바꿀 수 있어요.")
+internal fun StyleStep(
+    d: SetupDraft, onPick: (WorkStyle, Boolean) -> Unit, onOpenFile: () -> Unit,
+    /** [MCAL-02] The name of a calendar being added; null on the first launch. */
+    forCalendar: String? = null,
+) {
+    if (forCalendar != null) {
+        StepHeader("$forCalendar 달력은 어떻게 일하세요?", "처음 시작할 때처럼 하나씩 물어볼게요. 이 달력에만 들어가고 다른 달력은 그대로예요.")
+    } else {
+        StepHeader("어떻게 일하세요?", "고르면 바로 다음 질문으로 넘어가요. 나중에 설정에서 바꿀 수 있어요.")
+    }
     STYLE_CHOICES.forEach { c ->
         ChoiceCard(
             title = c.title,
@@ -94,7 +102,9 @@ internal fun StyleStep(d: SetupDraft, onPick: (WorkStyle, Boolean) -> Unit, onOp
             onClick = { onPick(c.style, c.roster) },
         )
     }
-    FileCard("파일로 시작하기", "동료가 보낸 회사 설정 파일이나, 쓰던 백업 파일이 있으면 골라 주세요", onOpenFile)
+    FileCard("파일로 시작하기",
+        if (forCalendar != null) "동료가 보낸 회사 설정 파일이 있으면 골라 주세요" else "동료가 보낸 회사 설정 파일이나, 쓰던 백업 파일이 있으면 골라 주세요",
+        onOpenFile)
 }
 
 /** The answer to "어떻게 일하세요?" as it was given. */

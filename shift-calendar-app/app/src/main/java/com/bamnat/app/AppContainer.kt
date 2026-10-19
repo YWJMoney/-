@@ -41,7 +41,7 @@ import java.time.LocalDateTime
 
 /** Manual dependency container, created once in [BamnatApp]. */
 class AppContainer(context: Context) {
-    private val appContext: Context = context.applicationContext
+    val appContext: Context = context.applicationContext
 
     /**
      * Work that must outlive any screen, e.g. saving a memo while leaving the editor. [STAB-01] An error
@@ -55,6 +55,15 @@ class AppContainer(context: Context) {
     val settingsRepository = SettingsRepository(context)
     val scheduleRepository = ScheduleRepository(database, kinds = settingsRepository.settings.map { it.extraKinds },
         extraName = { settingsRepository.current.extraKinds.name(it) })
+    /** [MCAL-01] The user's calendars; the main one is [scheduleRepository]. */
+    val calendars = com.bamnat.app.data.CalendarBook(
+        java.io.File(appContext.filesDir, "calendars.json"), scheduleRepository, com.bamnat.app.data.CalendarStorage.Files(appContext),
+        repositoryOf = { db ->
+            ScheduleRepository(db, kinds = settingsRepository.settings.map { it.extraKinds }, extraName = { settingsRepository.current.extraKinds.name(it) })
+        },
+    )
+    /** [MCAL-02] The setup of a calendar being added, kept apart from the app's first setup. */
+    val calendarSetupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "calendar_setup_draft.json")) }
     val memoRepository = MemoRepository(database)
     val sleepRepository = com.bamnat.app.data.SleepRepository(database)
     /** [ONBOARD-01] What this phone was told about on the first-start consent pages. */
@@ -67,7 +76,7 @@ class AppContainer(context: Context) {
         com.bamnat.app.alarm.BootAlarms.RingSettings.of(settingsRepository.current)
     }
     val payStore = PayStore(appContext)
-    val backupManager = BackupManager(database, settingsRepository, payStore = payStore)
+    val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars)
     /** [SET-01] The data as it was before the last import, to take the import back. */
     val importUndo by lazy { com.bamnat.app.data.ImportUndo(java.io.File(appContext.noBackupFilesDir, "before_import.json"), backupManager) }
     /** [COMM-00] Company settings as a file for coworkers. */
@@ -104,7 +113,7 @@ class AppContainer(context: Context) {
     }
 
     suspend fun rescheduleAlarms(after: LocalDateTime = LocalDateTime.now()) {
-        alarmScheduler.reschedule(scheduleRepository.snapshot.first(), settingsRepository.current.alarmsEnabled, after)
+        alarmScheduler.reschedule(calendars.ringing.first(), settingsRepository.current.alarmsEnabled, after)
     }
 
     /**
@@ -136,12 +145,15 @@ class AppContainer(context: Context) {
             runCatching { firstSetup.finishInterrupted() }
             memoRepository.purgeOldTrash()
             moneyRepository.purgeCaptures()
+            // [MCAL-02] A calendar whose setup was left before saving is not kept.
+            if (calendarSetupDrafts.draft.value == null) calendars.dropUnfinished()
             // Any edit to shift types, the pattern, a day or the master switch re-plans the next alarm.
+            // [MCAL-01] So does one in an added calendar whose alarms ring.
             val enabled = settingsRepository.settings.map { it.alarmsEnabled }.distinctUntilChanged()
-            combine(scheduleRepository.snapshot, enabled) { snapshot, on -> snapshot to on }
+            combine(calendars.ringing, enabled) { ringing, on -> ringing to on }
                 .debounce(300)
-                .collect { (snapshot, on) ->
-                    alarmScheduler.reschedule(snapshot, on)
+                .collect { (ringing, on) ->
+                    alarmScheduler.reschedule(ringing, on)
                     WidgetRefresher.refresh(appContext)
                 }
         }

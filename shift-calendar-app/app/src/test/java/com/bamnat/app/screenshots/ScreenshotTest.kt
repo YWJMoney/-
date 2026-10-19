@@ -1470,6 +1470,78 @@ class ScreenshotTest {
         tapText("민지의 근무표 보기", exact = true)
     }
 
+    // ---- [MCAL-01][MCAL-02][MCAL-03][MCAL-04] The user's own calendars ----
+    /** An added part-time calendar, 월·수·금 오전 알바, set up and listed; the main one stays on screen unless [show]. */
+    private fun addedCalendar(name: String = "편의점 알바", show: Boolean = false): String = runBlocking {
+        val c = app.container
+        val id = c.calendars.begin(name)
+        val repo = c.calendars.repository(id)
+        repo.ensureDefaults()
+        repo.addHourlyTypes()
+        val shift = repo.shiftTypes.first().first { it.name == "오전 알바" }.id
+        repo.setFirstPattern(WorkPattern.Weekly.fromSteps(LocalDate.of(2026, 7, 1), listOf(shift, null, shift, null, shift, null, null)))
+        c.calendars.finishSetup(id, com.bamnat.core.work.WorkStyle.HOURLY)
+        if (!show) c.calendars.setActive(com.bamnat.app.data.PersonalCalendar.MAIN)
+        id
+    }
+
+    @Test fun foldedMyCalendarsSwitcher() = shoot("210_folded_my_calendars_switcher", FOLDED) {
+        receivedOn()
+        addedCalendar()
+        settle()
+        tapText("달력 바꾸기", prefix = true)
+    }
+    @Test fun foldedAddedCalendar() = shoot("211_folded_added_calendar", FOLDED) {
+        receivedOn(minji = false)
+        addedCalendar(show = true)
+    }
+    @Test fun unfoldedAddedCalendar() = shoot("212_unfolded_added_calendar", UNFOLDED) {
+        addedCalendar(show = true)
+    }
+    @Test fun foldedCalendarsList() = shoot("213_folded_calendars_list", FOLDED) {
+        receivedOn()
+        val id = addedCalendar()
+        // Shared with a link of its own [MCAL-03].
+        com.bamnat.app.share.ShareLinkStore(app, id).save(com.bamnat.app.share.ShareLinkState("al1", "https://bamnat-share.example/s/al1", "t",
+            java.time.Instant.now().plus(java.time.Duration.ofDays(30)), "민지"))
+        addedCalendar("가족 일정")
+        settle()
+        tapText("달력 바꾸기", prefix = true)
+        tapText("순서·관리", exact = true)
+    }
+    @Test fun unfoldedCalendarsList() = shoot("214_unfolded_calendars_list", UNFOLDED) {
+        receivedOn(minji = false)
+        addedCalendar()
+        settle()
+        tapText("달력 바꾸기", prefix = true)
+        tapText("순서·관리", exact = true)
+    }
+    @Test fun foldedCalendarEdit() = shoot("215_folded_calendar_edit", FOLDED) {
+        addedCalendar()
+        settle()
+        tapText("달력 바꾸기", prefix = true)
+        tapText("순서·관리", exact = true)
+        tapText("편의점 알바", exact = true)
+    }
+    @Test fun foldedNewCalendarDialog() = shoot("216_folded_new_calendar", FOLDED) {
+        tapText("더 보기", exact = true)
+        tapText("새 달력 만들기", exact = true)
+    }
+    @Test fun foldedNewCalendarSetup() = shoot("217_folded_new_calendar_setup", FOLDED) {
+        tapText("더 보기", exact = true)
+        tapText("새 달력 만들기", exact = true)
+        tapText("다음", exact = true)
+    }
+    @Test fun foldedAddedCalendarShare() = shoot("218_folded_added_calendar_share", FOLDED) {
+        val c = receivedOn()
+        addedCalendar(show = true)
+        val snap = runBlocking { c.calendars.activeSnapshot.first() }
+        content {
+            com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}, client = shares,
+                calendar = c.calendars.current(), onOpenReceived = {})
+        }
+    }
+
     // ---- M10 [SET-01][SLP-15] Settings in groups ----
     @Test fun foldedSettingsAlarm() = shoot("140_folded_settings_alarm", FOLDED) { settingsPage("알람") }
     @Test fun foldedSettingsNotices() = shoot("141_folded_settings_notices", FOLDED) { settingsPage("알림") }

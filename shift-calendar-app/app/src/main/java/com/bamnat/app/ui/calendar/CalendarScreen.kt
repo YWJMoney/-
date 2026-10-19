@@ -48,6 +48,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EditCalendar
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.EventRepeat
+import androidx.compose.material.icons.outlined.LibraryAdd
+import com.bamnat.app.appContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -159,6 +161,10 @@ fun CalendarScreen(
     onOpenPay: () -> Unit = onOpenStats,
     onOpenSettings: () -> Unit,
     onOpenExtraKinds: () -> Unit = {},
+    /** [MCAL-02] Starts the setup of a new calendar with this id. */
+    onSetupCalendar: (String) -> Unit = {},
+    /** [MCAL-04] The calendar list: order, names, removing one. */
+    onManageCalendars: () -> Unit = {},
 ) {
     val context = LocalContext.current
     // Re-checked on every return to the app, since the user may change it in system settings.
@@ -183,6 +189,11 @@ fun CalendarScreen(
     val viewingReceived by received.viewing.collectAsStateWithLifecycle()
     val openingLink by received.opening.collectAsStateWithLifecycle()
     var switching by remember { mutableStateOf(false) }
+    // [MCAL-01] The user's own calendars, the one on screen, and the list's order with the received ones.
+    val myCalendars by vm.calendars.collectAsStateWithLifecycle()
+    val activeCalendar by vm.activeCalendar.collectAsStateWithLifecycle()
+    val calendarOrder by vm.calendarOrder.collectAsStateWithLifecycle()
+    val onAddCalendar = rememberAddCalendar(context.appContainer, onSetupCalendar)
     // A link id to open, "" to paste one, null when closed.
     var adding by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(openingLink) {
@@ -359,18 +370,34 @@ fun CalendarScreen(
     val shareLinks = remember { com.bamnat.app.share.ShareLinkClient().enabled }
     if (showShare) ShareDialog(
         snapshot = snap, month = visibleMonth,
+        calendar = activeCalendar,
         onImage = { scope.launch { MonthImage.share(context, snap, visibleMonth, settings.weekStart) }; vm.logShare() },
         onDismiss = { showShare = false },
         onOpenReceived = { showShare = false; adding = "" },
     )
-    // [SHR-02] Whose calendar is on screen, once one was received.
+    // [SHR-02][MCAL-01] Whose calendar is on screen, once there is more than one.
+    val calendarRows = remember(calendarOrder, myCalendars, receivedList, received.enabled, showShare, switching) {
+        CalendarRow.of(calendarOrder, myCalendars, if (received.enabled) receivedList else emptyList()) { id ->
+            if (shareLinks) com.bamnat.app.share.ShareLinkStore(context, id).load() else null
+        }
+    }
+    val pickCalendar: (CalendarRow) -> Unit = { row ->
+        vm.setPaint(null)
+        when (row) {
+            is CalendarRow.Mine -> { received.view(null); vm.viewCalendar(row.cal.id) }
+            is CalendarRow.Got -> received.view(row.cal.id)
+        }
+    }
+    val currentRow: CalendarRow = viewingReceived?.let { CalendarRow.Got(it) }
+        ?: calendarRows.firstOrNull { it.key == com.bamnat.app.data.CalendarKey.Mine(activeCalendar.id) } ?: CalendarRow.Mine(activeCalendar, null)
     val identityBar: @Composable () -> Unit = {
-        if (receivedList.isNotEmpty() && received.enabled) {
+        if (calendarRows.size > 1) {
             CalendarIdentityBar(
-                calendars = receivedList,
-                viewing = viewingReceived,
+                rows = calendarRows,
+                current = currentRow,
+                home = activeCalendar,
                 onOpenSwitcher = { switching = true },
-                onView = { id -> vm.setPaint(null); received.view(id) },
+                onPick = pickCalendar,
             )
         }
     }
@@ -402,6 +429,8 @@ fun CalendarScreen(
         if (noticeTarget != NoticeLinks.Target.TODAY) return@LaunchedEffect
         NoticeLinks.consume(NoticeLinks.Target.TODAY)
         received.view(null)
+        // [MCAL-01] Day notices follow the main calendar.
+        vm.viewCalendar(com.bamnat.app.data.PersonalCalendar.MAIN)
         vm.setPaint(null)
         sheetOpen = false
         vm.select(LocalDate.now())
@@ -512,6 +541,7 @@ fun CalendarScreen(
                 }
             },
             onOpenPattern = onOpenPattern,
+            onAddCalendar = onAddCalendar,
         )
         // [SETUP-01] A first setup left for later comes first; it fills the calendar.
         val waiting = pendingSetup?.takeIf { it.later && settings.workStyle == null }
@@ -791,10 +821,12 @@ fun CalendarScreen(
 
     if (switching) {
         CalendarSwitcherSheet(
-            calendars = receivedList,
-            viewingId = viewingReceived?.id,
-            onPick = { id -> switching = false; vm.setPaint(null); received.view(id) },
-            onAdd = { switching = false; adding = "" },
+            rows = calendarRows,
+            currentKey = currentRow.key,
+            onPick = { row -> switching = false; pickCalendar(row) },
+            onAddCalendar = { switching = false; onAddCalendar() },
+            onAddReceived = if (received.enabled) ({ switching = false; adding = "" }) else null,
+            onManage = { switching = false; onManageCalendars() },
             onRemove = { cal -> received.remove(cal.id) },
             onDismiss = { switching = false },
         )
@@ -944,6 +976,8 @@ private fun CalendarHeader(
     onShare: () -> Unit = {},
     /** [CAL-03] ‹ › step a week while one week is on screen. */
     byWeek: Boolean = false,
+    /** [MCAL-02] Adds a calendar of the user's own. */
+    onAddCalendar: () -> Unit = {},
 ) {
     // [QA-01] A cover screen (~344dp) cannot fit four icons, the month and 오늘: share and pattern
     // go into a menu there instead of being squeezed off the edge.
@@ -978,11 +1012,14 @@ private fun CalendarHeader(
                         onClick = { menu = false; onShare() })
                     DropdownMenuItem(text = { Text("근무 주기 설정") }, leadingIcon = { Icon(Icons.Filled.EventRepeat, null) },
                         onClick = { menu = false; onOpenPattern() })
+                    DropdownMenuItem(text = { Text("새 달력 만들기") }, leadingIcon = { Icon(Icons.Outlined.LibraryAdd, null) },
+                        onClick = { menu = false; onAddCalendar() })
                 }
             }
         } else {
             IconButton(onClick = onShare) { Icon(Icons.Filled.Share, "근무표 공유") }
             IconButton(onClick = onOpenPattern) { Icon(Icons.Filled.EventRepeat, "근무 주기 설정") }
+            IconButton(onClick = onAddCalendar) { Icon(Icons.Outlined.LibraryAdd, "새 달력 만들기") }
         }
     }
     }
