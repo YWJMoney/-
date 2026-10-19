@@ -2279,6 +2279,144 @@ class ScreenshotTest {
         tapText("순서가 돌아가요")
         tapText("나중에 할게요", exact = true)
         settingsPage("내 근무")
+
+    // ---- 가계부 (1.15) ----
+    /**
+     * [LEDG-06][LEDG-08][LEDG-09][LEDG-11] The seeded month made a whole ledger: a pay account, cash
+     * and two cards behind the lines, budgets (배달 already over), pay-ins and bills that repeat, a
+     * split payment, tags, a memo, installments, a transfer, and the months before for the year.
+     */
+    private fun ledger() = runBlocking<Unit> {
+        val money = app.container.moneyRepository
+        val month = today.withDayOfMonth(1)
+        fun day(d: Int) = month.plusDays(d.toLong().coerceAtMost(today.dayOfMonth - 1L))
+        val bank = money.save(com.bamnat.core.money.MoneyAccount(name = "국민 월급통장", type = com.bamnat.core.money.AccountType.BANK, opening = 1_850_000))
+        val cash = money.save(com.bamnat.core.money.MoneyAccount(name = "지갑", type = com.bamnat.core.money.AccountType.CASH, opening = 62_000))
+        val credit = money.save(com.bamnat.core.money.MoneyAccount(name = "신한 Deep", type = com.bamnat.core.money.AccountType.CREDIT,
+            last4 = "1234", payDay = 14, payFromId = bank.id))
+        val check = money.save(com.bamnat.core.money.MoneyAccount(name = "KB 체크", type = com.bamnat.core.money.AccountType.CHECK,
+            last4 = "5678", payFromId = bank.id))
+        // The card's bill now comes from the card itself.
+        money.allFixed().filter { it.kind == MoneyKind.TRANSFER }.forEach { money.delete(it) }
+        val byNote = mapOf("출근길 커피" to check, "팀 점심" to credit, "이마트" to credit, "넷플릭스" to credit, "메가커피" to cash,
+            "휴대폰 요금" to bank, "배달의민족" to credit, "CU" to cash, "중고 거래" to bank)
+        money.saveAll(money.allEntries().map { e ->
+            val account = byNote[e.note] ?: when (e.cardLast4) { "1234" -> credit; "5678" -> check; else -> null }
+            when (e.note) {
+                "팀 점심" -> e.copy(accountId = account?.id, tags = listOf("회식"), memo = "민지·준호와 점심, 내가 계산")
+                "이마트" -> e.copy(accountId = account?.id, parts = listOf(com.bamnat.core.money.EntryPart("생활", 18_400)), tags = listOf("장보기"))
+                else -> e.copy(accountId = account?.id)
+            }
+        })
+        listOf(
+            MoneyEntry(date = day(9), kind = MoneyKind.INCOME, amount = 2_480_000, category = "급여", merchant = "사아자물류", accountId = bank.id),
+            MoneyEntry(date = day(4), kind = MoneyKind.TRANSFER, amount = 100_000, category = "내 계좌", merchant = "ATM 출금",
+                accountId = bank.id, toAccountId = cash.id),
+            MoneyEntry(date = day(7), kind = MoneyKind.EXPENSE, amount = 459_000, category = "생활", merchant = "라마바전자 무선청소기",
+                accountId = credit.id, installments = 3),
+            MoneyEntry(date = day(2), kind = MoneyKind.EXPENSE, amount = 120_000, category = "여가", merchant = "가나다 펜션",
+                accountId = credit.id, tags = listOf("여행")),
+            MoneyEntry(date = day(6), kind = MoneyKind.EXPENSE, amount = 12_800, category = "교통", merchant = "택시", accountId = cash.id),
+        ).forEach { money.save(it) }
+        // Last month to compare with, and the months of the year before it.
+        val last = month.minusMonths(1)
+        listOf("카페" to 26_000L, "배달" to 52_000L, "장보기·쇼핑" to 143_000L, "통신" to 55_000L, "구독" to 13_500L, "교통" to 38_000L)
+            .forEachIndexed { i, (c, a) -> money.save(MoneyEntry(date = last.plusDays(i * 3L + 2), kind = MoneyKind.EXPENSE, amount = a, category = c)) }
+        money.save(MoneyEntry(date = last.plusDays(9), kind = MoneyKind.INCOME, amount = 2_450_000, category = "급여", merchant = "사아자물류"))
+        (2 until today.monthValue).forEach { k ->
+            val m = month.minusMonths(k.toLong())
+            money.save(MoneyEntry(date = m.plusDays(9), kind = MoneyKind.INCOME, amount = 2_400_000 + k * 15_000L, category = "급여", merchant = "사아자물류"))
+            money.save(MoneyEntry(date = m.plusDays(3), kind = MoneyKind.EXPENSE, amount = 380_000 + (k % 3) * 120_000L, category = "식비"))
+            money.save(MoneyEntry(date = m.plusDays(12), kind = MoneyKind.EXPENSE, amount = 455_000 + k * 21_000L, category = "주거"))
+        }
+        money.setBudget(com.bamnat.core.money.MoneyBudget.TOTAL, 1_600_000)
+        money.setBudget("식비", 300_000)
+        money.setBudget("카페", 40_000)
+        money.setBudget("배달", 15_000)
+        money.setBudget("장보기·쇼핑", 200_000)
+        money.save(FixedCost(name = "주말 알바비", amount = 80_000, day = 6, kind = MoneyKind.INCOME, category = "부수입",
+            repeat = com.bamnat.core.money.Repeat.WEEK, accountId = bank.id))
+        money.save(FixedCost(name = "자동차 보험", amount = 642_000, day = 20, category = "보험", repeat = com.bamnat.core.money.Repeat.YEAR,
+            monthOfYear = today.plusMonths(1).monthValue, accountId = credit.id))
+    }
+
+    /** The money tab on one of its pages, with [ledger] seeded. */
+    private fun ledgerPage(page: String?, wide: Boolean = false, then: Screen.() -> Unit = {}): Screen.() -> Unit = {
+        ledger()
+        tab(1, wide)
+        if (page != null) tapText(page, exact = true, scrolls = 0)
+        then()
+    }
+
+    @Test fun foldedLedgerSummary() = shoot("230_folded_ledger_summary", FOLDED, ledgerPage(null))
+    @Test fun foldedLedgerBudgets() = shoot("231_folded_ledger_budgets", FOLDED, ledgerPage(null) { reveal("분류별 예산", exact = true) })
+    @Test fun foldedLedgerAccounts() = shoot("232_folded_ledger_accounts", FOLDED, ledgerPage(null) { reveal("곧 나갈 돈") })
+    @Test fun unfoldedLedgerSummary() = shoot("233_unfolded_ledger_summary", UNFOLDED, ledgerPage(null, wide = true))
+    @Test fun foldedLedgerList() = shoot("234_folded_ledger_list", FOLDED, ledgerPage("내역"))
+    @Test fun unfoldedLedgerList() = shoot("235_unfolded_ledger_list", UNFOLDED, ledgerPage("내역", wide = true))
+    @Test fun foldedLedgerFilter() = shoot("236_folded_ledger_filter", FOLDED, ledgerPage("내역") { tapText("거르기", exact = true, scrolls = 0) })
+    @Test fun foldedLedgerSelect() = shoot("237_folded_ledger_select", FOLDED, ledgerPage("내역") {
+        reveal("팀 점심")
+        longPressText("팀 점심")
+        tapText("이마트")
+    })
+    @Test fun foldedLedgerReport() = shoot("238_folded_ledger_report", FOLDED, ledgerPage("분석"))
+    @Test fun foldedLedgerReportMore() = shoot("239_folded_ledger_report_more", FOLDED, ledgerPage("분석") { reveal("년 흐름") })
+    @Test fun unfoldedLedgerReport() = shoot("240_unfolded_ledger_report", UNFOLDED, ledgerPage("분석", wide = true))
+    @Test fun foldedLedgerEntry() = shoot("241_folded_ledger_entry", FOLDED, ledgerPage(null) { tapText("돈 적기", exact = true, scrolls = 0) })
+    @Test fun foldedLedgerEntryMore() = shoot("242_folded_ledger_entry_more", FOLDED, ledgerPage("내역") {
+        tapText("이마트")
+        reveal("나눠 적기", exact = true)
+    })
+    @Test fun foldedLedgerRecurring() = shoot("243_folded_ledger_recurring", FOLDED, ledgerPage(null) { tapText("주말 알바비") })
+    @Test fun foldedLedgerAccount() = shoot("244_folded_ledger_account", FOLDED, ledgerPage(null) { tapText("신한 Deep", prefix = true) })
+    @Test fun foldedLedgerBudgetEditor() = shoot("245_folded_ledger_budget_editor", FOLDED, ledgerPage(null) {
+        reveal("분류별 예산", exact = true)
+        tapText("고치기", exact = true)
+    })
+    @Test fun foldedLedgerCategories() = shoot("246_folded_ledger_categories", FOLDED, ledgerPage(null) {
+        tapText("돈 적기", exact = true, scrolls = 0)
+        tapText("분류 편집", exact = true)
+    })
+    @Test fun phoneLedgerSummaryHugeText() = shoot("247_phone_ledger_summary_huge_text", PHONE, fontScale = 2f, ledgerPage(null))
+    @Test fun phoneLedgerListHugeText() = shoot("248_phone_ledger_list_huge_text", PHONE, fontScale = 2f, ledgerPage("내역"))
+    @Test fun phoneLedgerEntryHugeText() = shoot("249_phone_ledger_entry_huge_text", PHONE, fontScale = 2f,
+        ledgerPage(null) { tapText("돈 적기", exact = true, scrolls = 0) })
+    @Test fun foldedLedgerDark() = shoot("250_folded_ledger_dark", "w369dp-h905dp-port-night-420dpi", ledgerPage(null))
+    @Test fun foldedLedgerReportDark() = shoot("251_folded_ledger_report_dark", "w369dp-h905dp-port-night-420dpi", ledgerPage("분석"))
+    @Test fun foldedLedgerEmpty() = shoot("252_folded_ledger_empty", FOLDED) {
+        addedCalendar(show = true)
+        tab(1, wide = false)
+        tapText("내역", exact = true, scrolls = 0)
+    }
+    /** [LEDG-01][LEDG-11] A day's ledger lines on the calendar, with badges, a split line, tags and installments. */
+    @Test fun foldedDayLedger() = shoot("253_folded_day_ledger", FOLDED) {
+        ledger()
+        runBlocking {
+            val money = app.container.moneyRepository
+            val card = money.allAccounts().first { it.last4 == "1234" }
+            money.save(MoneyEntry(date = dayCell, kind = MoneyKind.EXPENSE, amount = 86_000, category = "식비", merchant = "가나다 한우",
+                accountId = card.id, tags = listOf("회식"), parts = listOf(com.bamnat.core.money.EntryPart("여가", 20_000))))
+            money.save(MoneyEntry(date = dayCell, kind = MoneyKind.EXPENSE, amount = 1_290_000, category = "생활", merchant = "라마바전자 냉장고",
+                accountId = card.id, installments = 6))
+            money.save(MoneyEntry(date = dayCell, kind = MoneyKind.TRANSFER, amount = 300_000, category = "저축", merchant = "적금"))
+        }
+        openDay(dayCell)
+        openGroup("돈")
+        reveal("가계부", exact = true)
+    }
+    @Test fun unfoldedLedgerEntry() = shoot("254_unfolded_ledger_entry", UNFOLDED, ledgerPage("내역", wide = true) { tapText("팀 점심") })
+    @Test fun phoneLedgerReport() = shoot("255_phone_ledger_report", PHONE, ledgerPage("분석"))
+    // [LEDG-16] 자동 기록, as settings' 결제 알림 읽기 opens it (the ⋮ menu's popup is out of the test's reach).
+    @Test fun foldedLedgerAutoRecord() = shoot("259_folded_ledger_auto_record", FOLDED, ledgerPage(null) {
+        com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.AUTO_RECORD)
+        settle()
+    })
+    // [LEDG-15] Field and shop work read jobs or sales on 통계, not 0시간; a narrow pane keeps an amount whole.
+    @Test fun foldedFieldStats() = shoot("256_folded_field_stats", FOLDED, fresh(WorkStyle.FIELD) { tab(3, wide = false) })
+    @Test fun foldedBusinessStats() = shoot("257_folded_business_stats", FOLDED, fresh(WorkStyle.BUSINESS) { tab(3, wide = false) })
+    @Test fun unfoldedBusinessDaySales() = shoot("258_unfolded_business_day_sales", UNFOLDED, style(WorkStyle.BUSINESS) {
+        reveal("순수익", exact = true, across = 0.75f)
     })
 }
 

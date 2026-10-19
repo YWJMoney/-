@@ -192,12 +192,11 @@ class CalendarBook(
     /** [MCAL-06] [everyMoney] read now, from a notice's receiver. */
     suspend fun everyMoneyNow(): com.bamnat.core.money.MoneyBook = merged(_calendars.value.map { cal ->
         val m = money(cal.id)
-        com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed(), m.allReceivables())
+        com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed(), m.allReceivables(), m.allAccounts())
     })
 
-    private fun merged(books: List<com.bamnat.core.money.MoneyBook>) = books.singleOrNull() ?: com.bamnat.core.money.MoneyBook(
-        books.flatMap { it.entries }, books.flatMap { it.jobs }, books.flatMap { it.sales }, books.flatMap { it.fixed }, books.flatMap { it.receivables },
-    )
+    /** [LEDG-08] Accounts and repeating lines keep to their own calendar ([com.bamnat.core.money.MoneyBook.merge]). */
+    private fun merged(books: List<com.bamnat.core.money.MoneyBook>) = com.bamnat.core.money.MoneyBook.merge(books)
 
     /** [MCAL-06] Calendar [id]'s pay setup and closed months; the main one's otherwise. */
     @Synchronized

@@ -15,6 +15,8 @@ object NoticeLinks {
         /** The calendar on today, with 오늘의 흐름 at the top. */
         TODAY,
         MONEY,
+        /** [LEDG-16] The money tab with 자동 기록 (결제 알림 읽기) open. */
+        AUTO_RECORD,
         /** The pay screen, where 연차 is. */
         LEAVE,
         /** Where the alarm's permissions are checked and fixed. */

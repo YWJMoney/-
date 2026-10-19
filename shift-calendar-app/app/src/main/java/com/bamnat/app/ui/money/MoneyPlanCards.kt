@@ -5,6 +5,33 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material3.Button
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import com.bamnat.app.ui.theme.NumberStyle
+import com.bamnat.core.money.MoneyBook
+import com.bamnat.core.money.Repeat
+import com.bamnat.core.money.UpcomingPayments
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -129,6 +156,31 @@ fun Capture.draft(): MoneyEntry {
  */
 @Composable
 fun AutoRecordCard(onPaste: () -> Unit, explainFirst: Boolean = false) {
+    SectionCard(title = "자동으로 적기") { AutoRecordControls(onPaste, explainFirst) }
+}
+
+/**
+ * [LEDG-16] 자동 기록 from the money tab's ⋮, always in the same place, and where settings'
+ * 결제 알림 읽기 row lands ([NoticeLinks.Target.AUTO_RECORD]).
+ */
+@Composable
+fun AutoRecordDialog(onPaste: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("자동 기록") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                AutoRecordControls(onPaste = { onDismiss(); onPaste() })
+                Text("돈 탭 위 ⋮ > 자동 기록에서 언제든 켜고 꺼요.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
+}
+
+@Composable
+private fun AutoRecordControls(onPaste: () -> Unit, explainFirst: Boolean = false) {
     val context = LocalContext.current
     var on by remember { mutableStateOf(CaptureService.isOn(context)) }
     var access by remember { mutableStateOf(CaptureService.hasAccess(context)) }
@@ -138,8 +190,8 @@ fun AutoRecordCard(onPaste: () -> Unit, explainFirst: Boolean = false) {
         access = CaptureService.hasAccess(context)
         onPauseOrDispose { }
     }
-    SectionCard(title = "자동으로 적기") {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    Column {
+        Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Notifications, null, tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
@@ -155,7 +207,7 @@ fun AutoRecordCard(onPaste: () -> Unit, explainFirst: Boolean = false) {
             }
             Switch(checked = on && access, onCheckedChange = { want ->
                 if (want) explaining = true else { CaptureService.setOn(context, false); on = false }
-            })
+            }, modifier = Modifier.semantics { contentDescription = "결제 알림 읽기" })
         }
         if (on && !access) {
             TextButton(onClick = { openAccess(context) }) { Text("알림 접근 허용하러 가기") }
@@ -285,7 +337,11 @@ fun PasteDialog(
     )
 }
 
-/** [LEDG-05] Fixed costs due within a week, with one tap to write each down when it leaves. */
+/**
+ * [LEDG-05][LEDG-09] Repeating money due within a week, both ways: what leaves (with card bills
+ * worked out from what was spent on each card [LEDG-08]) and what comes in, each written down with
+ * one tap. Lines set to write themselves say so; the whole list opens below.
+ */
 @Composable
 fun UpcomingCard(
     upcoming: List<Upcoming>,
@@ -295,105 +351,253 @@ fun UpcomingCard(
     onEdit: (FixedCost?) -> Unit,
 ) {
     var showAll by rememberSaveable { mutableStateOf(false) }
+    val cal = LocalCalendarColors.current
+    val incoming = upcoming.any { it.cost.kind == MoneyKind.INCOME } || all.any { it.kind == MoneyKind.INCOME }
     SectionCard(
-        title = "곧 나갈 돈",
-        trailing = { TextButton(onClick = { onEdit(null) }) { Icon(Icons.Filled.Add, null); Spacer(Modifier.width(4.dp)); Text("고정 지출") } },
+        title = if (incoming) "곧 나갈 돈·들어올 돈" else "곧 나갈 돈",
+        trailing = { TextButton(onClick = { onEdit(null) }) { Icon(Icons.Filled.Add, null); Spacer(Modifier.width(4.dp)); Text("반복") } },
     ) {
-        if (all.isEmpty()) {
-            Text("월세·보험·통신비·카드값처럼 매달 나가는 돈을 적어 두면 3일 전과 당일 아침에 알려 드려요.",
+        if (all.isEmpty() && upcoming.isEmpty()) {
+            Text("월세·보험·통신비처럼 매달 나가는 돈, 월급처럼 들어오는 돈을 적어 두면 3일 전과 당일 아침에 알려 드려요. 그날 저절로 가계부에 적게 할 수도 있어요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             return@SectionCard
         }
         if (upcoming.isEmpty()) {
-            Text("일주일 안에 나갈 고정 지출이 없어요.", style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("일주일 안에 오갈 돈이 없어요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         upcoming.forEach { u ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f).clickable { onEdit(u.cost) }) {
-                    Text(u.cost.name, style = MaterialTheme.typography.titleSmall)
-                    Text("${if (u.daysLeft == 0) "오늘" else "D-${u.daysLeft}"} · ${Fmt.shortDate(u.date)} · ${Fmt.won(u.cost.amount)}",
+            val c = u.cost
+            val card = u.cardId != null
+            val name = if (card) "${c.name} ${UpcomingPayments.CARD_BILL}" else c.name
+            val income = c.kind == MoneyKind.INCOME
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(10.dp))
+                    .then(if (c.id > 0) Modifier.clickable { onEdit(c) } else Modifier).padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CategoryAvatar(c.category, size = 36.dp)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        listOfNotNull(if (u.daysLeft == 0) "오늘" else "D-${u.daysLeft}", Fmt.shortDate(u.date),
+                            if (c.auto) "저절로 적어요" else null).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (u.daysLeft <= 1) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.onSurfaceVariant)
+                        color = if (u.daysLeft <= 1 && !income) cal.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-                AssistChip(onClick = { onRecord(u) }, label = { Text("나갔어요") })
+                Column(horizontalAlignment = Alignment.End) {
+                    Text((if (income) "+" else if (c.kind == MoneyKind.EXPENSE) "-" else "") + Fmt.won(c.amount),
+                        style = MaterialTheme.typography.titleSmall.merge(NumberStyle), fontWeight = FontWeight.Bold,
+                        color = when (c.kind) { MoneyKind.INCOME -> cal.income; MoneyKind.EXPENSE -> cal.expense; else -> MaterialTheme.colorScheme.onSurface })
+                    AssistChip(onClick = { onRecord(u) }, label = { Text(if (income) "들어왔어요" else if (card) "냈어요" else "나갔어요") },
+                        modifier = Modifier.semantics { contentDescription = "$name ${Fmt.won(c.amount)} ${if (income) "들어왔어요" else "나갔어요"}로 적기" })
+                }
             }
         }
         if (leftThisMonth > 0) {
-            Text("이번 달 남은 고정 지출 ${Fmt.won(leftThisMonth)}", style = MaterialTheme.typography.bodySmall,
+            Text("이번 달 남은 반복 지출 ${Fmt.won(leftThisMonth)}", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         }
-        TextButton(onClick = { showAll = !showAll }) { Text(if (showAll) "접기" else "고정 지출 ${all.size}개 모두 보기") }
+        if (all.isNotEmpty()) {
+            TextButton(onClick = { showAll = !showAll }) { Text(if (showAll) "접기" else "반복 ${all.size}개 모두 보기") }
+        }
         if (showAll) {
             all.forEach { c ->
-                Row(Modifier.fillMaxWidth().clickable { onEdit(c) }.padding(vertical = 4.dp)) {
-                    Text("${c.name} · 매달 ${if (c.day >= 31) "말일" else "${c.day}일"}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    Text(Fmt.won(c.amount), style = MaterialTheme.typography.bodyMedium)
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onEdit(c) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(c.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(listOfNotNull(c.schedule, c.category, if (c.auto) "자동" else null, c.end?.let { "${Fmt.shortFullDate(it)}까지" }).joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text(Fmt.won(c.amount), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
+                        color = if (c.kind == MoneyKind.INCOME) cal.income else MaterialTheme.colorScheme.onSurface)
                 }
             }
         }
     }
 }
 
-/** Adds or edits one fixed cost [LEDG-05]. A card bill is a transfer so card spending is not counted twice. */
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * Adds or edits one repeating line [LEDG-05][LEDG-09]: money out or in, or a card bill (a transfer,
+ * so card spending is not counted twice), every week, month or year, from an account, with a first
+ * and last day, reminded and, if wished, written down by itself on the day.
+ */
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
-fun FixedCostDialog(initial: FixedCost?, onSave: (FixedCost) -> Unit, onDelete: (FixedCost) -> Unit, onDismiss: () -> Unit) {
+fun FixedCostDialog(
+    initial: FixedCost?,
+    onSave: (FixedCost) -> Unit,
+    onDelete: (FixedCost) -> Unit,
+    onDismiss: () -> Unit,
+    book: MoneyBook? = null,
+    today: LocalDate = LocalDate.now(),
+) {
+    val ledger = rememberLedger(book)
+    var kind by rememberSaveable { mutableStateOf(initial?.kind ?: MoneyKind.EXPENSE) }
     var name by rememberSaveable { mutableStateOf(initial?.name.orEmpty()) }
     var digits by rememberSaveable { mutableStateOf(amountDigits(initial?.amount ?: 0)) }
-    var day by rememberSaveable { mutableStateOf(initial?.day ?: 25) }
-    var card by rememberSaveable { mutableStateOf(initial?.kind == MoneyKind.TRANSFER) }
-    var category by rememberSaveable { mutableStateOf(initial?.category?.takeIf { initial.kind == MoneyKind.EXPENSE } ?: "주거") }
+    var repeat by rememberSaveable { mutableStateOf(initial?.repeat ?: Repeat.MONTH) }
+    var day by rememberSaveable { mutableIntStateOf(initial?.day ?: 25) }
+    var weekday by rememberSaveable { mutableIntStateOf(if (initial?.repeat == Repeat.WEEK) initial.day else today.dayOfWeek.value) }
+    var month by rememberSaveable { mutableIntStateOf(initial?.monthOfYear ?: today.monthValue) }
+    val categories = remember(ledger, kind) { ledger.categoriesOf(kind) }
+    var category by rememberSaveable {
+        mutableStateOf(initial?.category ?: if (kind == MoneyKind.TRANSFER) UpcomingPayments.CARD_BILL else "주거")
+    }
+    var account by rememberSaveable { mutableStateOf(initial?.accountId) }
     var remind by rememberSaveable { mutableStateOf(initial?.remind ?: true) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "고정 지출 추가" else "고정 지출 고치기") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it.take(30) }, singleLine = true,
-                    label = { Text("이름 (예: 월세, 보험, 신한카드)") }, modifier = Modifier.fillMaxWidth())
-                AmountField("금액", digits, { digits = it })
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("매달", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { day = if (day <= 1) 31 else day - 1 }) { Text("−") }
-                    Text(if (day >= 31) "말일" else "${day}일", style = MaterialTheme.typography.titleMedium)
-                    TextButton(onClick = { day = if (day >= 31) 1 else day + 1 }) { Text("+") }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("카드값이에요", style = MaterialTheme.typography.bodyLarge)
-                        Text("카드로 쓴 돈은 이미 지출에 있어서, 카드값은 이체로 적어 두 번 세지 않아요.",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    var auto by rememberSaveable { mutableStateOf(initial?.auto ?: false) }
+    var start by rememberSaveable { mutableStateOf((initial?.start ?: if (initial == null) today else null)?.toString()) }
+    var end by rememberSaveable { mutableStateOf(initial?.end?.toString()) }
+    var picking by remember { mutableStateOf<String?>(null) }
+    val accounts = ledger.activeAccounts
+    val chosenCategory = category.takeIf { it in categories } ?: categories.first()
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.fillMaxWidth().imePadding()) {
+            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (initial == null) "반복 추가" else "반복 고치기", style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f).semantics { heading() })
+                if (initial != null) IconButton(onClick = { onDelete(initial) }) { Icon(Icons.Outlined.Delete, "지우기", tint = MaterialTheme.colorScheme.error) }
+                IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "닫기") }
+            }
+            Column(
+                Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    val kinds = listOf(MoneyKind.EXPENSE to "나갈 돈", MoneyKind.INCOME to "들어올 돈", MoneyKind.TRANSFER to "카드값·이체")
+                    kinds.forEachIndexed { i, (k, label) ->
+                        SegmentedButton(selected = kind == k, onClick = {
+                            kind = k
+                            val list = ledger.categoriesOf(k)
+                            if (category !in list) category = when (k) {
+                                MoneyKind.TRANSFER -> UpcomingPayments.CARD_BILL
+                                MoneyKind.INCOME -> MoneyCategories.SALARY
+                                MoneyKind.EXPENSE -> "주거"
+                            }.takeIf { it in list } ?: list.first()
+                        }, shape = SegmentedButtonDefaults.itemShape(i, kinds.size)) { Text(label, maxLines = 1) }
                     }
-                    Switch(checked = card, onCheckedChange = { card = it })
                 }
-                if (!card) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("주거", "통신", "공과금", "구독", "교육", "자동차", "의료", "기타").forEach { c ->
-                            FilterChip(selected = category == c, onClick = { category = c }, label = { Text(c) })
+                OutlinedTextField(value = name, onValueChange = { name = it.take(30) }, singleLine = true,
+                    label = { Text(when (kind) { MoneyKind.INCOME -> "이름 (예: 월급, 용돈)"; MoneyKind.TRANSFER -> "이름 (예: 신한카드, 적금)"; else -> "이름 (예: 월세, 보험)" }) },
+                    modifier = Modifier.fillMaxWidth())
+                AmountField("금액", digits, { digits = it })
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    Repeat.entries.forEachIndexed { i, r ->
+                        SegmentedButton(selected = repeat == r, onClick = { repeat = r }, shape = SegmentedButtonDefaults.itemShape(i, Repeat.entries.size)) { Text(r.label) }
+                    }
+                }
+                when (repeat) {
+                    // One row of seven, so the week reads as a week on the narrowest screen.
+                    Repeat.WEEK -> SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        FixedCost.WEEKDAYS.forEachIndexed { i, w ->
+                            SegmentedButton(
+                                selected = weekday == i + 1, onClick = { weekday = i + 1 },
+                                shape = SegmentedButtonDefaults.itemShape(i, FixedCost.WEEKDAYS.size),
+                                icon = {},
+                                modifier = Modifier.semantics { contentDescription = "${w}요일" },
+                            ) { Text(w, maxLines = 1, softWrap = false) }
+                        }
+                    }
+                    Repeat.MONTH -> Stepper("날짜", if (day >= 31) "말일" else "${day}일", { day = if (day <= 1) 31 else day - 1 }, { day = if (day >= 31) 1 else day + 1 })
+                    Repeat.YEAR -> {
+                        Stepper("달", "${month}월", { month = if (month <= 1) 12 else month - 1 }, { month = if (month >= 12) 1 else month + 1 })
+                        Stepper("날짜", if (day >= 31) "말일" else "${day}일", { day = if (day <= 1) 31 else day - 1 }, { day = if (day >= 31) 1 else day + 1 })
+                    }
+                }
+                Text("분류", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    categories.forEach { c ->
+                        FilterChip(selected = chosenCategory == c, onClick = { category = c }, label = { Text(c) },
+                            leadingIcon = { Icon(categoryIcon(c), null, Modifier.size(18.dp)) })
+                    }
+                }
+                if (kind == MoneyKind.TRANSFER) {
+                    Text("카드로 쓴 돈은 이미 나간 돈에 있어서, 카드값은 이체로 적어 두 번 세지 않아요. 결제수단에 신용카드를 더하면 카드값을 쓴 만큼 알아서 계산해요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (accounts.isNotEmpty()) {
+                    Text(when (kind) { MoneyKind.INCOME -> "들어오는 곳"; MoneyKind.TRANSFER -> "어디서"; else -> "결제수단" },
+                        style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        FilterChip(selected = account == null, onClick = { account = null }, label = { Text("안 고름") })
+                        accounts.forEach { a ->
+                            FilterChip(selected = account == a.id, onClick = { account = a.id }, label = { Text(a.label) },
+                                leadingIcon = { Icon(accountIcon(a.type), null, Modifier.size(18.dp)) })
                         }
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("3일 전·당일 아침 알림", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                    Switch(checked = remind, onCheckedChange = { remind = it })
-                }
+                SwitchLine("그날 저절로 가계부에 적기", "앱을 열거나 알림이 올 때 빠진 날까지 한 번씩만 적어요.", auto) { auto = it }
+                SwitchLine(if (kind == MoneyKind.INCOME) "당일 아침 알림" else "3일 전·당일 아침 알림", null, remind) { remind = it }
+                DateLine("시작", start?.let(LocalDate::parse)?.let(Fmt::shortFullDate) ?: "처음부터") { picking = "start" }
+                DateLine("끝나는 날", end?.let(LocalDate::parse)?.let(Fmt::shortFullDate) ?: "계속", clear = if (end != null) ({ end = null }) else null) { picking = "end" }
+                Spacer(Modifier.height(4.dp))
             }
-        },
-        confirmButton = {
-            TextButton(enabled = name.isNotBlank() && digits.toAmount() > 0, onClick = {
-                onSave(FixedCost(id = initial?.id ?: 0, name = name.trim(), amount = digits.toAmount(), day = day,
-                    kind = if (card) MoneyKind.TRANSFER else MoneyKind.EXPENSE,
-                    category = if (card) "카드값" else category.takeIf { it in MoneyCategories.expense } ?: "기타", remind = remind))
-            }) { Text("저장") }
-        },
-        dismissButton = {
-            Row {
-                if (initial != null) TextButton(onClick = { onDelete(initial) }) { Text("지우기", color = MaterialTheme.colorScheme.error) }
-                TextButton(onClick = onDismiss) { Text("취소") }
-            }
-        },
-    )
+            HorizontalDivider()
+            val ready = name.isNotBlank() && digits.toAmount() > 0
+            Button(
+                enabled = ready,
+                onClick = {
+                    onSave(FixedCost(
+                        id = initial?.id ?: 0, name = name.trim(), amount = digits.toAmount(),
+                        day = if (repeat == Repeat.WEEK) weekday else day, kind = kind, category = chosenCategory, remind = remind,
+                        repeat = repeat, monthOfYear = month, accountId = account, auto = auto,
+                        start = start?.let(LocalDate::parse), end = end?.let(LocalDate::parse),
+                    ))
+                },
+                modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp).heightIn(min = 48.dp),
+            ) { Text("저장") }
+        }
+    }
+    picking?.let { which ->
+        val current = (if (which == "start") start else end)?.let(LocalDate::parse) ?: today
+        val state = rememberDatePickerState(initialSelectedDateMillis = current.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli())
+        DatePickerDialog(
+            onDismissRequest = { picking = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let { ms ->
+                        val d = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneOffset.UTC).toLocalDate().toString()
+                        if (which == "start") start = d else end = d
+                    }
+                    picking = null
+                }) { Text("확인") }
+            },
+            dismissButton = { TextButton(onClick = { picking = null }) { Text("취소") } },
+        ) { DatePicker(state, showModeToggle = false) }
+    }
+}
+
+@Composable
+private fun Stepper(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        IconButton(onClick = onMinus) { Text("−", style = MaterialTheme.typography.titleLarge) }
+        Text(value, style = MaterialTheme.typography.titleMedium, modifier = Modifier.widthIn(min = 48.dp), textAlign = TextAlign.Center)
+        IconButton(onClick = onPlus) { Text("+", style = MaterialTheme.typography.titleLarge) }
+    }
+}
+
+@Composable
+private fun SwitchLine(title: String, caption: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onChange(!checked) }, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            if (caption != null) Text(caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+@Composable
+private fun DateLine(label: String, value: String, clear: (() -> Unit)? = null, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Text(value, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+        if (clear != null) IconButton(onClick = clear) { Icon(Icons.Filled.Close, "$label 지우기") }
+    }
 }
 
 /** [LEDG-04] Where the month's money went most often; a tap shows only that place's lines. */

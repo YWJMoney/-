@@ -38,7 +38,7 @@ class MigrationTest {
         createVersion1(context.getDatabasePath(name).apply { parentFile?.mkdirs() })
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15)
             .allowMainThreadQueries()
             .build()
         try {
@@ -128,7 +128,7 @@ class MigrationTest {
         sql.close()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15).allowMainThreadQueries().build()
         try {
             val days = assembleDays(db.dayEntryDao().getAll(), db.dayExtraDao().getAll()).associateBy { it.date.toEpochDay() }
             assertEquals(listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120)), days.getValue(20000).extras)
@@ -176,7 +176,7 @@ class MigrationTest {
         sql.close()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15).allowMainThreadQueries().build()
         try {
             val memo = db.memoDao().get(1)!!.toModel()
             assertEquals("내일 오후 3시", memo.body)
@@ -209,12 +209,72 @@ class MigrationTest {
         sql.close()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_13_14).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15).allowMainThreadQueries().build()
         try {
             assertEquals("도배", db.moneyDao().allJobs().single().title)
             assertEquals(9_000L, db.sleepDao().all().single().endMillis)
             assertTrue(db.receivableDao().all().isEmpty())
             assertTrue(db.importedEventDao().keys().isEmpty())
+        } finally {
+            db.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    /**
+     * [LEDG-06][LEDG-08][LEDG-09] Version 14 lines and fixed costs stay as they were and read as
+     * before (no account, monthly, written by hand); a card payment read with "3개월 할부" in its note
+     * gets its installments; the new tables arrive empty and work.
+     */
+    @Test
+    fun version14LedgerKeepsItsLinesAndGetsAccounts() = runBlocking {
+        val name = "migration-14.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val sql = createTables(file, 14)
+        sql.execSQL(
+            "INSERT INTO money_entries (id, epochDay, kind, amount, category, note, source, createdAt, merchant, minuteOfDay, cardLast4, reviewed) " +
+                "VALUES (1, 20745, 'EXPENSE', 120000, '쇼핑', '3개월 할부', 'NOTIFICATION', 1, '라마바전자', 600, '1234', 1)",
+        )
+        sql.execSQL(
+            "INSERT INTO money_entries (id, epochDay, kind, amount, category, note, source, createdAt, merchant, minuteOfDay, cardLast4, reviewed) " +
+                "VALUES (2, 20746, 'EXPENSE', 9000, '식비', '', 'MANUAL', 2, '', NULL, '', 1)",
+        )
+        sql.execSQL("INSERT INTO fixed_costs (id, name, amount, day, kind, category, remind) VALUES (1, '월세', 500000, 25, 'EXPENSE', '주거', 1)")
+        sql.version = 14
+        sql.close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+            .addMigrations(AppDatabase.MIGRATION_14_15).allowMainThreadQueries().build()
+        try {
+            val dao = db.moneyDao()
+            val lines = dao.allEntries().map { it.toModel() }.sortedBy { it.id }
+            assertEquals(listOf(3, 1), lines.map { it.installments })
+            assertEquals("라마바전자", lines[0].merchant)
+            assertEquals("1234", lines[0].cardLast4)
+            assertTrue(lines.all { it.accountId == null && it.tags.isEmpty() && it.parts.isEmpty() && it.memo.isEmpty() && it.fixedId == null })
+            val rent = dao.allFixed().single().toModel()
+            assertEquals(com.bamnat.core.money.Repeat.MONTH, rent.repeat)
+            assertEquals(false, rent.auto)
+            assertNull(rent.start)
+            assertTrue(dao.allAccounts().isEmpty())
+            assertTrue(dao.allBudgets().isEmpty())
+            assertTrue(dao.allCategories().isEmpty())
+
+            // The new parts are written and read back whole.
+            val card = com.bamnat.core.money.MoneyAccount(name = "신한 Deep", type = com.bamnat.core.money.AccountType.CREDIT, last4 = "1234", payDay = 14)
+            val cardId = dao.insertAccount(card.toEntity())
+            assertEquals(card.copy(id = cardId), dao.allAccounts().single().toModel())
+            val split = lines[1].copy(
+                accountId = cardId, memo = "민지랑", tags = listOf("여행", "회식"),
+                parts = listOf(com.bamnat.core.money.EntryPart("카페", 3_000)), installments = 1, fixedId = 1,
+            )
+            dao.restoreEntry(split.toEntity(5))
+            assertEquals(split, dao.entry(2)!!.toModel())
+            dao.upsertBudget(com.bamnat.core.money.MoneyBudget("식비", 300_000).toEntity())
+            assertEquals(300_000L, dao.allBudgets().single().amount)
+            dao.insertCategories(listOf(com.bamnat.core.money.CategoryEdit(com.bamnat.core.money.MoneyKind.EXPENSE, "운동", 0).toEntity()))
+            assertEquals("운동", dao.allCategories().single().name)
         } finally {
             db.close()
             context.deleteDatabase(name)

@@ -13,8 +13,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MoneyEntryEntity::class, JobEntity::class, DailySalesEntity::class,
         FixedCostEntity::class, CategoryRuleEntity::class, DayChangeEntity::class, SleepLogEntity::class,
         DayExtraEntity::class, ReceivableEntity::class, ReceivablePaymentEntity::class, ImportedEventEntity::class,
+        MoneyAccountEntity::class, MoneyBudgetEntity::class, MoneyCategoryEntity::class,
     ],
-    version = 14,
+    version = 15,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -33,7 +34,7 @@ abstract class AppDatabase : RoomDatabase() {
         /** [MCAL-01] Each added calendar is a database of its own with the same tables; only its schedule ones are used. */
         fun create(context: Context, name: String = "bamnat.db"): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, name)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                 .build()
 
         /** Version 2: several alarms per shift, hand-set alarms per day, memo trash. */
@@ -188,6 +189,51 @@ abstract class AppDatabase : RoomDatabase() {
                 )
             }
         }
+
+        /**
+         * Version 15: the ledger grows up [LEDG-06]..[LEDG-14]. Lines get an account, a transfer
+         * target, a memo, tags, split parts, installments and the repeating line they came from;
+         * repeating lines get weekly and yearly repeats, an account, writing themselves down and a
+         * first and last day; accounts, budgets and the user's categories get tables of their own.
+         * Card payments read before keep their installments, which were only in the note.
+         */
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE money_entries ADD COLUMN accountId INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE money_entries ADD COLUMN toAccountId INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE money_entries ADD COLUMN memo TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE money_entries ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE money_entries ADD COLUMN parts TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE money_entries ADD COLUMN installments INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE money_entries ADD COLUMN fixedId INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE fixed_costs ADD COLUMN repeat TEXT NOT NULL DEFAULT 'MONTH'")
+                db.execSQL("ALTER TABLE fixed_costs ADD COLUMN monthOfYear INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE fixed_costs ADD COLUMN accountId INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE fixed_costs ADD COLUMN auto INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE fixed_costs ADD COLUMN startEpochDay INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE fixed_costs ADD COLUMN endEpochDay INTEGER DEFAULT NULL")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `money_accounts` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, " +
+                        "`type` TEXT NOT NULL, `last4` TEXT NOT NULL, `payDay` INTEGER, `closeDay` INTEGER, `payFromId` INTEGER, " +
+                        "`opening` INTEGER NOT NULL, `color` INTEGER NOT NULL, `sortOrder` INTEGER NOT NULL, `hidden` INTEGER NOT NULL, " +
+                        "`remind` INTEGER NOT NULL)",
+                )
+                db.execSQL("CREATE TABLE IF NOT EXISTS `money_budgets` (`category` TEXT NOT NULL, `amount` INTEGER NOT NULL, PRIMARY KEY(`category`))")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `money_categories` (`kind` TEXT NOT NULL, `name` TEXT NOT NULL, `position` INTEGER NOT NULL, " +
+                        "`hidden` INTEGER NOT NULL, PRIMARY KEY(`kind`, `name`))",
+                )
+                // "3개월 할부" was written into the note by the payment reader before version 15.
+                db.query("SELECT id, note FROM money_entries WHERE note LIKE '%개월 할부%'").use { c ->
+                    while (c.moveToNext()) {
+                        val months = INSTALLMENTS.find(c.getString(1) ?: "")?.groupValues?.get(1)?.toIntOrNull() ?: continue
+                        if (months > 1) db.execSQL("UPDATE money_entries SET installments = ? WHERE id = ?", arrayOf<Any>(months.coerceAtMost(60), c.getLong(0)))
+                    }
+                }
+            }
+        }
+
+        private val INSTALLMENTS = Regex("(\\d{1,2})개월 할부")
 
         /**
          * [EXTRA-05] Moves version 11 extra work (still in day_entries) into day_extras; also run on a

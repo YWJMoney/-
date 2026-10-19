@@ -16,23 +16,18 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -45,10 +40,6 @@ import com.bamnat.app.ui.components.TimePickerDialog
 import com.bamnat.core.money.DailySales
 import com.bamnat.core.money.Job
 import com.bamnat.core.money.JobReminders
-import com.bamnat.core.money.MoneyCategories
-import com.bamnat.core.money.MoneyEntry
-import com.bamnat.core.money.MoneyKind
-import com.bamnat.core.money.PaymentParser
 import java.time.LocalDate
 import java.time.LocalTime
 
@@ -66,11 +57,13 @@ fun AmountField(
     onChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     imeAction: ImeAction = ImeAction.Next,
+    textStyle: androidx.compose.ui.text.TextStyle? = null,
 ) {
     OutlinedTextField(
         value = digits,
         onValueChange = { v -> onChange(v.filter(Char::isDigit).trimStart('0').take(MAX_DIGITS)) },
         label = { Text(label) },
+        textStyle = textStyle ?: androidx.compose.material3.LocalTextStyle.current,
         suffix = { Text("원") },
         singleLine = true,
         visualTransformation = ThousandsTransformation,
@@ -103,125 +96,6 @@ internal object ThousandsTransformation : VisualTransformation {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun CategoryChips(options: List<String>, selected: String, onSelect: (String) -> Unit) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        options.forEach { c -> FilterChip(selected = selected == c, onClick = { onSelect(c) }, label = { Text(c) }) }
-    }
-}
-
-/**
- * Writes or edits one ledger line [LEDG-01]. An [initial] with id 0 is a new line filled in ahead
- * (from a notification the app could not finish [LEDG-02]). [frequent] amounts are one tap away and
- * a known place picks its category by itself [LEDG-04].
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun EntryDialog(
-    date: LocalDate,
-    initial: MoneyEntry?,
-    defaultKind: MoneyKind = MoneyKind.EXPENSE,
-    onSave: (MoneyEntry) -> Unit,
-    onDelete: ((MoneyEntry) -> Unit)? = null,
-    onDismiss: () -> Unit,
-    frequent: (MoneyKind) -> List<Long> = { emptyList() },
-    rules: Map<String, String> = emptyMap(),
-) {
-    val isNew = initial == null || initial.id == 0L
-    var kind by rememberSaveable { mutableStateOf(initial?.kind ?: defaultKind) }
-    // A cancellation is stored negative (or, from a kept foreign text, still 0 and marked "결제 취소").
-    val cancel = (initial?.amount ?: 0) < 0 || initial?.note?.startsWith("결제 취소") == true
-    var digits by rememberSaveable { mutableStateOf(amountDigits(kotlin.math.abs(initial?.amount ?: 0))) }
-    var category by rememberSaveable { mutableStateOf(initial?.category ?: MoneyCategories.of(defaultKind).first()) }
-    var categoryTouched by rememberSaveable { mutableStateOf(initial != null) }
-    var place by rememberSaveable { mutableStateOf(initial?.merchant?.ifBlank { initial.note }.orEmpty()) }
-    var day by rememberSaveable { mutableStateOf((initial?.date ?: date).toString()) }
-    val onDay = LocalDate.parse(day)
-    val amount = digits.toAmount()
-    val amountFocus = remember { FocusRequester() }
-    // A new line starts in the amount with the keypad up: amount first, the rest is optional.
-    if (isNew) LaunchedEffect(Unit) { runCatching { amountFocus.requestFocus() } }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (isNew) "돈 적기" else "돈 기록 고치기") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Spending is often written down a day or two later, so the date moves by a tap.
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { day = onDay.minusDays(1).toString() }) { Text("‹ 전날") }
-                    Text(Fmt.dayTitle(onDay), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    TextButton(onClick = { day = onDay.plusDays(1).toString() }) { Text("다음날 ›") }
-                }
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    MoneyKind.entries.forEachIndexed { i, k ->
-                        SegmentedButton(
-                            selected = kind == k,
-                            onClick = {
-                                kind = k
-                                if (category !in MoneyCategories.of(k)) category = MoneyCategories.of(k).first()
-                            },
-                            shape = SegmentedButtonDefaults.itemShape(i, MoneyKind.entries.size),
-                        ) { Text(k.label) }
-                    }
-                }
-                AmountField("금액", digits, { digits = it }, Modifier.focusRequester(amountFocus))
-                val quick = remember(kind) { frequent(kind) }
-                if (quick.isNotEmpty()) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        quick.forEach { a ->
-                            FilterChip(selected = amount == a, onClick = { digits = amountDigits(a) }, label = { Text(Fmt.won(a)) })
-                        }
-                    }
-                }
-                OutlinedTextField(
-                    value = place,
-                    onValueChange = { v ->
-                        place = v.take(40)
-                        // A place seen before (or a known brand) fills its category until the user picks one.
-                        if (!categoryTouched && kind == MoneyKind.EXPENSE) {
-                            val guess = PaymentParser.guessCategory(place.trim(), rules)
-                            if (guess != "기타" && guess in MoneyCategories.expense) category = guess
-                        }
-                    },
-                    singleLine = true,
-                    label = { Text("어디서·무엇 (선택)") }, modifier = Modifier.fillMaxWidth(),
-                )
-                CategoryChips(MoneyCategories.of(kind), category) { category = it; categoryTouched = true }
-                if (!initial?.note.isNullOrBlank() && !initial?.merchant.isNullOrBlank()) {
-                    Text(initial!!.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                if (kind == MoneyKind.TRANSFER) {
-                    Text("내 계좌끼리 옮긴 돈이라 수입·지출 합계에는 넣지 않아요.", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                if (kind == MoneyKind.INCOME && category == MoneyCategories.SALARY) {
-                    Text("실제로 받은 급여를 적으면 그달은 예상 급여 대신 이 금액으로 계산해요.", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = amount > 0, onClick = {
-                // A cancelled payment is stored negative; editing it keeps the sign.
-                val signed = if (cancel) -amount else amount
-                val base = initial ?: MoneyEntry(date = onDay, kind = kind, amount = signed, category = category)
-                onSave(base.copy(date = onDay, kind = kind, amount = signed, category = category, merchant = place.trim(),
-                    note = if (initial?.merchant.isNullOrBlank()) "" else initial!!.note, reviewed = true))
-            }) { Text("저장") }
-        },
-        dismissButton = {
-            Row {
-                if (!isNew && onDelete != null) {
-                    TextButton(onClick = { onDelete(initial!!) }) { Text("지우기", color = MaterialTheme.colorScheme.error) }
-                }
-                TextButton(onClick = onDismiss) { Text("취소") }
-            }
-        },
-    )
-}
-
 /** Books or edits a job for field and freelance work [WORK-02]. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -243,7 +117,7 @@ fun JobDialog(
     var balancePaid by rememberSaveable { mutableStateOf(initial?.balancePaid ?: false) }
     var remind by rememberSaveable { mutableStateOf(initial?.remindMinutes) }
     var note by rememberSaveable { mutableStateOf(initial?.note.orEmpty()) }
-    var days by rememberSaveable { mutableStateOf(initial?.days ?: 1) }
+    var days by rememberSaveable { mutableIntStateOf(initial?.days ?: 1) }
     var costs by rememberSaveable { mutableStateOf(amountDigits(initial?.costs ?: 0)) }
     var withholding by rememberSaveable { mutableStateOf(initial?.withholding ?: false) }
     var picking by remember { mutableStateOf<String?>(null) }

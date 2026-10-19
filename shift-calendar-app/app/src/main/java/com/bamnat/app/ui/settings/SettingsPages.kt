@@ -449,8 +449,9 @@ private fun PrivacyPage(
             onOpenPage(SettingsPage.REST)
         }
         // [UX-04] Where 결제 알림 읽기 is turned on, as a way there.
-        NavRow("결제 알림 읽기", "카드·은행 알림으로 돈 기록을 채우는 것은 돈 탭에서 켜고 꺼요") {
-            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.MONEY)
+        // [LEDG-16] Straight to the money tab's 자동 기록 sheet.
+        NavRow("결제 알림 읽기", "카드·은행 알림으로 돈 기록을 채우는 것은 돈 탭 › ⋮ › 자동 기록에서 켜고 꺼요") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.AUTO_RECORD)
         }
         Note("허용을 바꾸면 휴대폰 설정 화면이 열려요.")
     }
