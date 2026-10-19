@@ -644,7 +644,11 @@ private fun AppNavHost(
                 onReport = if (container.inquiryApi.enabled) { check ->
                     container.pendingPayCheck = check
                     nav.navigate(Routes.INQUIRY) { launchSingleTop = true }
-                } else null)
+                } else null,
+                // [PAYS-09] The invitation after a match or an item of the company's own sends to 내 설정 나누기.
+                onShareWay = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
+                // [PAYS-10][UX-05] '?' opens the pay answers first, then a question if they don't help.
+                onHelp = { com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "급여", help = true)) })
             if (inviting) {
                 InviteSheet(nudges, onShare = { inviting = false; nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                     onDismiss = { inviting = false })

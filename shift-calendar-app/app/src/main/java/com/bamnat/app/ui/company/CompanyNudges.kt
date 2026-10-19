@@ -325,11 +325,13 @@ fun AskDeveloperDialog(
     onDismiss: () -> Unit,
     onSent: () -> Unit,
     setup: String? = null,
+    /** [PAYS-09] Words to start from, e.g. the company's own items without amounts; the user reads and changes them first. */
+    prefill: String = "",
 ) {
     val container = LocalContext.current.appContainer
     val scope = rememberCoroutineScope()
     var name by rememberSaveable { mutableStateOf(company) }
-    var how by rememberSaveable { mutableStateOf("") }
+    var how by rememberSaveable { mutableStateOf(prefill.take(800)) }
     var example by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }

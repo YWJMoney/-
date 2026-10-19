@@ -139,6 +139,8 @@ object PayslipMatcher {
         val unmatched = linkedMapOf<String, Long>()
         for ((name, amount) in payslip.allowances) {
             val item = p.items.firstOrNull { norm(it.name) == norm(name) }
+            // [PAYS-07] An item the user made for the company's own way is in the total already, as it is.
+            if (item == null && p.customRules.any { it.on && norm(it.name) == norm(name) }) continue
             if (item == null) {
                 unmatched[name] = amount
                 continue

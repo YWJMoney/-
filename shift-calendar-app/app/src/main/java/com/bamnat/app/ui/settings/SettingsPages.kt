@@ -81,6 +81,8 @@ private fun WorkPage(
     onOpenExtraKinds: () -> Unit,
 ) {
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
+    // [SETUP-12] A first setup left for later goes on from here too; nothing shows when none is waiting.
+    com.bamnat.app.ui.setup.SetupResumeCard()
     SectionCard(title = null) {
         // [WORK-01] Changing the kind of work keeps every record; it only changes what screens show.
         NavRow("일하는 방식", settings.workStyle?.let { "${it.label} · ${it.description}" } ?: "교대·일근·시급·현장·자영업 중에서 골라요", onOpenWorkStyle)

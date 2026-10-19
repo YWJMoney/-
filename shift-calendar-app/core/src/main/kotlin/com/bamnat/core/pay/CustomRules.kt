@@ -83,15 +83,29 @@ sealed interface RulePay {
     /** [amount] won once for each day with matching work, e.g. 토요일 근무 1회 20,000원. */
     data class PerTime(val amount: Long) : RulePay
 
+    /**
+     * [PAYS-07] [amount] won once a month, whatever the month's work, e.g. 자격수당 매달 5만원, 기숙사비 매달
+     * 5만원 차감. The rule's [RuleWhen] is not looked at.
+     */
+    data class Monthly(val amount: Long) : RulePay
+
+    /** [PAYS-07] 기본급 × [share] once a month, e.g. 근속수당 기본급의 5%. The rule's [RuleWhen] is not looked at. */
+    data class OfBaseMonthly(val share: Double) : RulePay
+
     fun describe(): String = when (this) {
         is PerHour -> "시간당 ${won(amount)}"
         is OfHourly -> "통상시급의 ${ExtraRule.percent(rate)}"
         is OfBase -> "${PayCalculator.hours(perMinutes)}에 기본급의 ${ExtraRule.percent(share)}"
         is PerTime -> "1회 ${won(amount)}"
+        is Monthly -> "매달 ${won(amount)}"
+        is OfBaseMonthly -> "매달 기본급의 ${ExtraRule.percent(share)}"
     }
 
     /** True when the amount follows 통상시급 or 기본급, so it is only as sure as they are. */
-    val followsWage: Boolean get() = this is OfHourly || this is OfBase
+    val followsWage: Boolean get() = this is OfHourly || this is OfBase || this is OfBaseMonthly
+
+    /** [PAYS-07] Paid once a month rather than on the work the rule matches. */
+    val monthly: Boolean get() = this is Monthly || this is OfBaseMonthly
 }
 
 /**
@@ -108,10 +122,34 @@ data class CustomRule(
     val on: Boolean = true,
     /** The sentence the rule was read from, to show next to it; empty for a rule made with the editor. */
     val source: String = "",
+    /**
+     * [PAYS-07] Taken off the month instead of added, e.g. 지각 1회 10,000원 차감, 기숙사비 매달 50,000원 차감. The
+     * month's total is what is paid before tax, so this is for money the payslip takes off its 지급 side.
+     */
+    val deduct: Boolean = false,
 ) {
-    /** "토요일 근무일: 통상시급의 50%". */
+    /** "토요일 근무일: 통상시급의 50%", "매달 50,000원 차감". */
     fun describe(shiftNames: Map<Long, String> = emptyMap(), extraNames: Map<Long, String> = emptyMap()): String =
-        whenever.describe(shiftNames, extraNames).let { w -> if (w.isEmpty()) "모든 근무: " else "$w: " } + pay.describe()
+        (if (pay.monthly) "" else whenever.describe(shiftNames, extraNames).let { w -> if (w.isEmpty()) "모든 근무: " else "$w: " }) +
+            pay.describe() + if (deduct) " 차감" else ""
+
+    /**
+     * [PAYS-09] The rule in words with no amount in won, for telling the developer the company's way: "토요일: 1회
+     * 정액", "매달 기본급의 5%", "매달 정액 차감". Shares of 시급 and 기본급 stay; they are the company's, not the user's.
+     */
+    fun describeWithoutAmount(shiftNames: Map<Long, String> = emptyMap(), extraNames: Map<Long, String> = emptyMap()): String {
+        val way = when (val p = pay) {
+            is RulePay.PerHour -> "시간당 정액"
+            is RulePay.PerTime -> "1회 정액"
+            is RulePay.Monthly -> "매달 정액"
+            else -> p.describe()
+        }
+        return (if (pay.monthly) "" else whenever.describe(shiftNames, extraNames).let { w -> if (w.isEmpty()) "모든 근무: " else "$w: " }) +
+            way + if (deduct) " 차감" else ""
+    }
+
+    /** [PAYS-07] The month's line for it: "자격수당 (회사 규칙)", "기숙사비 (차감)". */
+    val lineLabel: String get() = "$name (${if (deduct) "차감" else "회사 규칙"})"
 
     companion object {
         const val MAX = 20

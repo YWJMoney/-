@@ -69,6 +69,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.core.pay.Cadence
+import com.bamnat.core.pay.CustomRule
 import com.bamnat.core.pay.DatedValue
 import com.bamnat.core.pay.PayItem
 import com.bamnat.core.pay.PayProfile
@@ -160,6 +161,8 @@ fun PayslipMatchDialog(
     snapshot: ScheduleSnapshot,
     month: YearMonth,
     onDismiss: () -> Unit,
+    /** [PAYS-09] 회사 설정 보내기 for the invitation once the payslip and the app agree; null leaves that way out. */
+    onShareWay: (() -> Unit)? = null,
 ) {
     val latest = YearMonth.now()
     var chosen by remember { mutableStateOf(minOf(month, latest)) }
@@ -170,6 +173,9 @@ fun PayslipMatchDialog(
     var failed by remember { mutableStateOf(false) }
     // Payslip allowances the user chose to add; ids stay the same when the match runs again.
     val added = remember { mutableStateListOf<PayItem>() }
+    // [PAYS-08] Rules of the company's own made from the gap, and the gap the builder is open for.
+    val addedRules = remember { mutableStateListOf<CustomRule>() }
+    var makingFor by remember { mutableStateOf<PayslipMatch?>(null) }
     val scope = rememberCoroutineScope()
     val appTotal by produceState<Long?>(null, chosen) { value = null; value = vm.calculateOff(profile, snapshot, chosen).total }
     // [PAYS-05] 명세서 사진으로 채우기, and what it filled.
@@ -191,7 +197,7 @@ fun PayslipMatchDialog(
         failed = false
         scope.launch {
             try {
-                match = vm.match(profile.copy(items = profile.items + added), snapshot, chosen, slip)
+                match = vm.match(profile.copy(items = profile.items + added, customRules = profile.customRules + addedRules), snapshot, chosen, slip)
                 stage = MatchStage.RESULT
             } catch (e: CancellationException) {
                 throw e
@@ -210,6 +216,22 @@ fun PayslipMatchDialog(
         }
     }
     val canGoBack = stage == MatchStage.ROSTER || stage == MatchStage.AMOUNTS || stage == MatchStage.RESULT
+
+    makingFor?.let { m ->
+        CustomItemDialog(
+            vm, m.profile, snapshot, chosen,
+            onDismiss = { makingFor = null },
+            onSave = { made ->
+                when (made) {
+                    is MadeItem.Item -> added += made.item
+                    is MadeItem.Rule -> addedRules += made.rule
+                }
+                makingFor = null
+                startMatch()
+            },
+            gap = m.gap,
+        )
+    }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         BackHandler(enabled = canGoBack) { back() }
@@ -241,7 +263,7 @@ fun PayslipMatchDialog(
                                 Button(
                                     onClick = { vm.applyMatch(m); stage = MatchStage.DONE },
                                     modifier = Modifier.weight(1f).heightIn(min = 52.dp),
-                                ) { Text(if (m.changes.isEmpty() && added.isEmpty()) "확인했어요" else "이 설정으로 바꾸기") }
+                                ) { Text(if (m.changes.isEmpty() && added.isEmpty() && addedRules.isEmpty()) "확인했어요" else "이 설정으로 바꾸기") }
                             }
                             MatchStage.DONE -> Button(onClick = onDismiss, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) { Text("닫기") }
                             else -> Unit
@@ -268,7 +290,7 @@ fun PayslipMatchDialog(
                                 MatchStage.AMOUNTS -> AmountsStage(profile, chosen, form, appTotal, more, { more = it }, failed, filled) { scanning = true }
                                 MatchStage.WORKING -> Working()
                                 MatchStage.RESULT -> match?.let { m ->
-                                    ResultStage(m, added) { names ->
+                                    ResultStage(m, added, addedRules, onMakeGap = { makingFor = m }) { names ->
                                         val from = profile.period.start(chosen)
                                         names.forEachIndexed { i, (name, amount) ->
                                             added += PayItem(
@@ -279,7 +301,16 @@ fun PayslipMatchDialog(
                                         startMatch()
                                     }
                                 }
-                                MatchStage.DONE -> match?.let { DoneStage(it.changes.isNotEmpty() || added.isNotEmpty()) }
+                                MatchStage.DONE -> match?.let { m ->
+                                    DoneStage(m.changes.isNotEmpty() || added.isNotEmpty() || addedRules.isNotEmpty())
+                                    // [PAYS-09] Only once the setup proved itself: the invitation to share it.
+                                    if (m.matched) com.bamnat.app.ui.company.ShareWayCard(
+                                        com.bamnat.app.ui.company.ShareMoment.MATCHED, onShare = onShareWay?.let { go -> { onDismiss(); go() } },
+                                        modifier = Modifier.padding(top = 16.dp),
+                                        ways = waysText(m.profile, snapshot.shiftTypes.associate { it.id to it.name }, null),
+                                        notInFile = m.profile.customRules.isNotEmpty(),
+                                    )
+                                }
                             }
                             Spacer(Modifier.height(24.dp))
                         }
@@ -448,7 +479,13 @@ private fun ColumnScope.Working() {
 }
 
 @Composable
-private fun ResultStage(m: PayslipMatch, added: List<PayItem>, onAdd: (List<Pair<String, Long>>) -> Unit) {
+private fun ResultStage(
+    m: PayslipMatch,
+    added: List<PayItem>,
+    addedRules: List<CustomRule>,
+    onMakeGap: () -> Unit,
+    onAdd: (List<Pair<String, Long>>) -> Unit,
+) {
     val pct = "%.1f".format(abs(m.gapPercent))
     val (title, body) = when {
         m.matched && m.changes.isEmpty() && added.isEmpty() -> "지금 설정이 명세서와 맞아요" to "차이 ${won(abs(m.gap))} ($pct%)"
@@ -480,15 +517,19 @@ private fun ResultStage(m: PayslipMatch, added: List<PayItem>, onAdd: (List<Pair
         }
     }
 
-    if (m.changes.isNotEmpty() || added.isNotEmpty()) {
+    if (m.changes.isNotEmpty() || added.isNotEmpty() || addedRules.isNotEmpty()) {
         SectionCard(title = "바뀌는 것") {
             m.changes.forEach { c -> ChangeRow(c.label, "${c.from} → ${c.to}") }
             added.forEach { a ->
                 val now = m.profile.items.firstOrNull { it.id == a.id } ?: a
-                ChangeRow(now.name, "새 수당 · 월 ${won(now.amount.on(m.month).value)} · 통상임금 ${if (now.ordinary) "포함" else "제외"}")
+                ChangeRow(now.name, "새 수당 · ${now.cadence.label} ${won(now.amount.on(m.month).value)} · 통상임금 ${if (now.ordinary) "포함" else "제외"}")
             }
+            addedRules.forEach { r -> ChangeRow(r.name, (if (r.deduct) "새 차감 · " else "새 항목 · ") + r.describe()) }
         }
     }
+
+    // [PAYS-08] What is left of the gap points at the line the app does not have, and makes it in one go.
+    if (!m.matched) GapCard(m.gap, onMakeGap)
 
     if (m.unmatched.isNotEmpty()) {
         val pick = remember(m) { mutableStateMapOf<String, Boolean>().apply { m.unmatched.keys.forEach { put(it, true) } } }
@@ -540,6 +581,28 @@ private fun ResultStage(m: PayslipMatch, added: List<PayItem>, onAdd: (List<Pair
     m.payslipHourly?.let {
         Text("명세서의 수당과 시간으로 거꾸로 계산한 통상시급은 ${won(it)}이에요.", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** [PAYS-08] "명세서보다 12,000원 적어요 → 이 차이를 항목으로 만들기". */
+@Composable
+private fun GapCard(gap: Long, onMake: () -> Unit) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                if (gap > 0) "앱이 명세서보다 ${won(gap)} 적어요" else "앱이 명세서보다 ${won(-gap)} 많아요",
+                style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Text(
+                if (gap > 0) "회사만 주는 수당이 앱에 없을 수 있어요. 그 항목을 만들면 차이가 메워지는지 바로 다시 맞춰 봐요."
+                else "회사가 빼는 돈(차감)이 앱에 없을 수 있어요. 그 항목을 만들면 바로 다시 맞춰 봐요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Button(onClick = onMake, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Icon(Icons.Filled.Add, null)
+                Text(" 이 차이를 항목으로 만들기")
+            }
+        }
     }
 }
 

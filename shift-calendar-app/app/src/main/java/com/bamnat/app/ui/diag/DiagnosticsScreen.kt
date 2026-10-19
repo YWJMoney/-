@@ -16,6 +16,9 @@ import android.os.Build
 import android.os.PowerManager
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
+import com.bamnat.app.ui.settings.InquiryStart
+import com.bamnat.app.ui.settings.InquiryLinks
+import com.bamnat.app.company.InquiryKind
 import com.bamnat.app.ui.diag.DiagnosticsViewModel.Companion.clock
 import com.bamnat.app.ui.components.SystemSettings
 import com.bamnat.app.alarm.AlarmScheduler
@@ -313,6 +316,16 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                             )
                         }
                     }
+                }
+            }
+            // [UX-05] When the checks don't solve it, ask with this phone's alarm check attached.
+            item {
+                SectionCard(title = "그래도 안 울리면") {
+                    Text("알람 점검 내용을 붙여 개발자에게 물어볼 수 있어요. 근무 이름과 메모는 담지 않아요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedButton(onClick = {
+                        InquiryLinks.ask(InquiryStart(about = "알람", kind = InquiryKind.BUG, withCheck = true))
+                    }) { Text("점검 내용과 함께 문의하기") }
                 }
             }
             item { Spacer(Modifier.width(1.dp).padding(bottom = 24.dp)) }

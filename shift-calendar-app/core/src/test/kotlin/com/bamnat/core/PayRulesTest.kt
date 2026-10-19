@@ -127,7 +127,74 @@ class PayRulesTest {
         assertEquals(10_000, pay(sunday, r).total - pay(base, r).total)
     }
 
+    @Test
+    fun `R6 PAYS-07 a monthly amount and a share of 기본급 are paid once, whatever the work`() {
+        val fixed = CustomRule("m", "자격수당", RuleWhen(), RulePay.Monthly(50_000))
+        assertEquals(50_000, added(with(fixed), sixDays()))
+        val m = pay(with(fixed), sixDays())
+        assertEquals("매달 50,000원", m.lines.single { it.label == "자격수당 (회사 규칙)" }.formula)
+        // Paid for the month, not on any one day.
+        assertTrue(m.days.none { d -> d.parts.any { it.label == "자격수당" } })
+        // 2,508,000 × 5% = 125,400.
+        val share = CustomRule("s", "근속수당", RuleWhen(), RulePay.OfBaseMonthly(0.05))
+        assertEquals(125_400, added(with(share), sixDays()))
+        assertEquals("매달 기본급의 5%", share.describe())
+    }
+
+    @Test
+    fun `R7 PAYS-07 a deduction takes its amount off, day by day or once a month`() {
+        // 식대 3,000원 off each of November's 25 working days: −75,000.
+        val meal = CustomRule("d", "식대", RuleWhen(dayKind = RuleDayKind.WORK_DAY), RulePay.PerTime(3_000), deduct = true)
+        val m = pay(with(meal), sixDays())
+        assertEquals(-75_000, m.total - pay(salary, sixDays()).total)
+        assertEquals(-75_000, m.lines.single { it.label == "식대 (차감)" }.amount)
+        assertEquals(-3_000, m.day(LocalDate.of(2026, 11, 2))!!.parts.single { it.label == "식대" }.amount)
+        val dorm = CustomRule("r", "기숙사비", RuleWhen(), RulePay.Monthly(50_000), deduct = true)
+        assertEquals(-50_000, added(with(dorm), sixDays()))
+        assertEquals("매달 50,000원 차감", dorm.describe())
+        assertEquals(0, added(with(dorm.copy(on = false)), sixDays()))
+        // [PAYS-09] Told to the developer without the amount.
+        assertEquals("매달 정액 차감", dorm.describeWithoutAmount())
+        assertEquals("근무일: 1회 정액 차감", meal.describeWithoutAmount())
+        assertFalse("원" in meal.describeWithoutAmount())
+    }
+
+    @Test
+    fun `R8 PAYS-07 a payslip line named like an item the user made is not missing from the app`() {
+        val p = with(CustomRule("m", "자격수당", RuleWhen(), RulePay.Monthly(50_000)))
+        val total = pay(p, sixDays()).total
+        val match = PayslipMatcher.match(p, nov, sixDays()::resolve, com.bamnat.core.pay.Payslip(total, allowances = mapOf("자격 수당" to 50_000)))
+        assertTrue(match.unmatched.isEmpty())
+        assertTrue(match.matched)
+    }
+
     // ---- reading rules ----
+
+    @Test
+    fun `T6 PAYS-07 money taken off reads as a deduction, taxes and 지각 left out`() {
+        val f = RuleText.read(
+            """
+            기숙사비 매달 5만원 차감
+            식대 근무일마다 3,000원 공제
+            조합비 기본급의 1% 공제
+            국민연금 135,000원 공제
+            지각 1회 1만원 차감
+            """.trimIndent(),
+        )
+        assertEquals(f.joinToString(" | ") { "${it.sourceLine} → ${it.change.summary}" }, 3, f.size)
+        val rules = f.map { (it.change as RuleChange.Custom).rule }
+        assertTrue(rules.all { it.deduct })
+        assertEquals(RulePay.Monthly(50_000), rules[0].pay)
+        assertEquals("기숙사비", rules[0].name)
+        assertEquals(RulePay.PerTime(3_000), rules[1].pay)
+        assertEquals(RuleDayKind.WORK_DAY, rules[1].whenever.dayKind)
+        assertEquals("식대", rules[1].name)
+        assertEquals(RulePay.OfBaseMonthly(0.01), rules[2].pay)
+        assertEquals("조합비", rules[2].name)
+        // Applied: 50,000 + 25 × 3,000 + 2,508,000 × 1% off.
+        val p = RuleText.apply(salary, f.map { it.change }, nov)
+        assertEquals(-(50_000L + 75_000 + 25_080), added(p, sixDays()))
+    }
 
     @Test
     fun `T1 the user's own company way reads as the rule ExtraPremiumTest works out`() {
