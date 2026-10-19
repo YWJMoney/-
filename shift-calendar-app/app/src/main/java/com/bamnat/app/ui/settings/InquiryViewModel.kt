@@ -8,6 +8,7 @@ import com.bamnat.app.company.CompanyException
 import com.bamnat.app.company.CompanyText
 import com.bamnat.app.company.Inquiry
 import com.bamnat.app.company.InquiryClient
+import com.bamnat.app.company.InquiryDraft
 import com.bamnat.app.company.InquiryFlag
 import com.bamnat.app.company.InquiryInfo
 import com.bamnat.app.company.InquiryKind
@@ -44,8 +45,35 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     /** [ADMIN-02] Opened from 계산이 이상해요: the pay check to send, and the form comes first. */
     val payCheck: String? = c.pendingPayCheck.also { c.pendingPayCheck = null }
 
-    /** [ADMIN-02] 모두의 문의 opens first, unless the developer answered this phone's question. */
-    val startOnBoard: Boolean = c.inquiryStore.unread.value == 0
+    /** [UX-05] The build has the company server: questions go in the app, else by mail. */
+    val online: Boolean get() = c.inquiryApi.enabled
+
+    /** [UX-05] The build can make and take calendar links, so the answer about receiving one is offered. */
+    val shareOn: Boolean get() = c.shareApi.enabled
+
+    /** [UX-05] What the screen that opened this asked for: the help answers, or the form started for it. */
+    val start: InquiryStart? = InquiryLinks.take()
+
+    /** [UX-05] 내 문의 opens first when the developer answered; else the help answers. */
+    val startOnMine: Boolean = online && c.inquiryStore.unread.value > 0
+
+    /** Answers not opened yet, for the 내 문의 tab. */
+    val unread: StateFlow<Int> = c.inquiryStore.unread
+
+    /** [UX-05] A question written and not sent; kept on the phone only. */
+    val draft: StateFlow<InquiryDraft?> = c.inquiryStore.draft
+
+    fun saveDraft(kind: InquiryKind?, text: String) = c.inquiryStore.saveDraft(kind, text)
+
+    fun clearDraft() = c.inquiryStore.clearDraft()
+
+    fun reply(id: String): String = c.inquiryStore.reply(id)
+
+    fun saveReply(id: String, text: String) = c.inquiryStore.saveReply(id, text)
+
+    /** [UX-05] New answers first, then questions still waiting, then the rest, newest first. */
+    fun ordered(list: List<Inquiry>): List<Inquiry> =
+        list.sortedWith(compareByDescending<Inquiry> { unreadIn(it) }.thenByDescending { it.waiting }.thenByDescending { it.updatedAt })
 
     private val _board = MutableStateFlow<PublicPage?>(null)
     /** 모두의 문의 as far as it is loaded; null until the first page comes back. */
@@ -66,6 +94,11 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     val thread: StateFlow<PublicThread?> = _thread.asStateFlow()
 
     fun loadBoard(more: Boolean = false) {
+        // Without the server there is no 모두의 문의 to load.
+        if (!online) {
+            if (_board.value == null) _board.value = PublicPage(emptyList(), emptyList(), emptyMap(), null)
+            return
+        }
         val after = if (more) _board.value?.next ?: return else 0
         viewModelScope.launch {
             runCatching { c.inquiryApi.board(device, _topic.value, _bySame.value, after) }
@@ -133,8 +166,8 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
 
     fun refresh() {
         viewModelScope.launch {
-            // Nothing to look up before this phone has asked anything.
-            if (!c.inquiryStore.asked) {
+            // Nothing to look up before this phone has asked anything, or without the server.
+            if (!online || !c.inquiryStore.asked) {
                 _list.value = emptyList()
                 return@launch
             }
@@ -171,12 +204,16 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     fun send(kind: InquiryKind, text: String, diag: String?, pay: String?, done: (Inquiry?, String?) -> Unit) = act(done) {
         c.inquiryApi.send(device, kind, text, info.copy(diag = diag, pay = pay)).also {
             c.inquiryStore.asked = true
+            c.inquiryStore.clearDraft()
             _list.value = listOf(it) + _list.value.orEmpty().filter { o -> o.id != it.id }
         }
     }
 
     fun more(id: String, text: String, done: (Inquiry?, String?) -> Unit) = act(done) {
-        c.inquiryApi.more(device, id, text).also { updated -> _list.value = _list.value.orEmpty().map { if (it.id == id) updated else it } }
+        c.inquiryApi.more(device, id, text).also { updated ->
+            c.inquiryStore.saveReply(id, "")
+            _list.value = _list.value.orEmpty().map { if (it.id == id) updated else it }
+        }
     }
 
     fun delete(id: String, done: (Boolean) -> Unit) {

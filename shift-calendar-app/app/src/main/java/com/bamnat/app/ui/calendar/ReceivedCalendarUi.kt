@@ -123,11 +123,15 @@ fun CalendarAvatar(
     shape: androidx.compose.ui.graphics.Shape = CircleShape,
 ) {
     Box(modifier.size(size).clip(shape).background(color), contentAlignment = Alignment.Center) {
+        // [UX-06] The letter keeps to the circle at every text size: the line height grew with large text
+        // and pushed it below the middle.
+        val letter = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.46f).toSp() }
         Text(
             initial,
             color = contentColor,
             fontWeight = FontWeight.Bold,
-            fontSize = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.46f).toSp() },
+            fontSize = letter,
+            lineHeight = letter,
             maxLines = 1,
         )
     }
@@ -204,7 +208,7 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
             Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("받은 근무표 넣기", style = MaterialTheme.typography.titleLarge)
+            Text("동료 근무표 받기", style = MaterialTheme.typography.titleLarge)
             Text("받은 링크를 넣으면 내 달력과 바꿔 가며 볼 수 있어요. 같이 쉬는 날도 바로 보여요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (startId == null) {
@@ -229,6 +233,7 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
                 if (preview !is ReceivedViewModel.Preview.Ready) {
                     Button(onClick = { vm.preview(text) }, enabled = text.isNotBlank() && preview != ReceivedViewModel.Preview.Loading,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("불러오기") }
+                    NoLinkYet()
                 }
             }
             AnimatedContent(preview, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "preview") { p ->
@@ -258,6 +263,33 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
         }
     }
 }
+
+/**
+ * [UX-03] For someone who has never had a link: where a coworker makes one, and a message asking for it.
+ * A tapped link opens this sheet by itself, so pasting is only for links copied by hand.
+ */
+@Composable
+private fun NoLinkYet() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
+            Text("링크가 아직 없나요?", style = MaterialTheme.typography.titleSmall)
+            Text("동료가 밤낮 달력 위 ‘공유’에서 ‘링크 만들어 보내기’를 누르면 받을 수 있어요. 받은 링크를 누르면 여기로 바로 열려요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp, end = 8.dp))
+            TextButton(onClick = {
+                val ask = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(android.content.Intent.EXTRA_TEXT, LINK_ASK)
+                }
+                runCatching { context.startActivity(android.content.Intent.createChooser(ask, "근무표 링크 부탁하기")) }
+            }) { Text("링크 부탁하는 메시지 보내기") }
+        }
+    }
+}
+
+/** [UX-03] What the ask says: where the link is made, in the app's own words. */
+internal const val LINK_ASK = "근무표 같이 보고 싶어요! 밤낮 앱 달력 위 ‘공유’ → ‘링크 만들어 보내기’로 링크 하나 보내 줄래요?"
 
 @Composable
 private fun PreviewCard(s: SharedSchedule, color: Color, expiresAt: Instant, today: LocalDate) {

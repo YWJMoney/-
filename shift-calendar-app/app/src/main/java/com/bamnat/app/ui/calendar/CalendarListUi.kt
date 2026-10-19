@@ -33,6 +33,13 @@ import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -158,7 +165,9 @@ private fun CalendarRow.Mine.subtitle(): String {
 
 /**
  * [SHR-02][MCAL-01] Whose calendar is on screen, like the account on a mail app: a tap on the name
- * opens the switcher, a tap on a face switches at once. There once there is more than one calendar.
+ * opens the switcher, a tap on a face switches at once. [UX-03] Always there, even with one calendar,
+ * so the switcher (new calendar, a coworker's calendar) is one tap away, and with 공유 at its end on
+ * every screen size: on the cover screen it used to hide in ⋮.
  */
 @Composable
 fun CalendarIdentityBar(
@@ -169,28 +178,37 @@ fun CalendarIdentityBar(
     onOpenSwitcher: () -> Unit,
     onPick: (CalendarRow) -> Unit,
     modifier: Modifier = Modifier,
+    /** [UX-03] Shares the user's own calendar on screen; null hides it (someone else's calendar). */
+    onShare: (() -> Unit)? = null,
 ) {
-    Row(modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+    // Two faces beside 공유 on a cover screen or with large text, three where there is room.
+    val room = if (maxWidth < 392.dp || LocalDensity.current.fontScale > 1.3f) 2 else 3
+    Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         val currentName = (current as? CalendarRow.Got)?.cal?.fullName ?: current.title
-        Surface(
-            onClick = onOpenSwitcher,
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            modifier = Modifier.weight(1f, fill = false).semantics { contentDescription = "달력 바꾸기, 지금 $currentName" },
-        ) {
-            Row(Modifier.padding(start = 4.dp, end = 6.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                current.Avatar()
-                Spacer(Modifier.width(8.dp))
-                Text(current.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false))
-                Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(20.dp))
+        // [UX-03] The name takes all the room the faces and 공유 leave, not half of it.
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            Surface(
+                onClick = onOpenSwitcher,
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.semantics { contentDescription = "달력 바꾸기, 지금 $currentName" },
+            ) {
+                Row(Modifier.padding(start = 4.dp, end = 6.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    current.Avatar()
+                    Spacer(Modifier.width(8.dp))
+                    Text(current.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false))
+                    Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(20.dp))
+                }
             }
         }
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.width(4.dp))
         if (current is CalendarRow.Mine) {
             // Faces to switch with one tap, in the list's order.
             val faces = rows.filter { it.key != current.key }
-            faces.take(3).forEach { row ->
+            val shown = if (onShare != null) room else 3
+            faces.take(shown).forEach { row ->
                 val name = (row as? CalendarRow.Got)?.cal?.fullName ?: row.title
                 Box(
                     Modifier.size(40.dp).clip(CircleShape).clickable(role = Role.Button) { onPick(row) }
@@ -198,9 +216,10 @@ fun CalendarIdentityBar(
                     contentAlignment = Alignment.Center,
                 ) { row.Avatar(size = 30.dp) }
             }
-            if (faces.size > 3) {
-                TextButton(onClick = onOpenSwitcher) { Text("+${faces.size - 3}") }
+            if (faces.size > shown) {
+                TextButton(onClick = onOpenSwitcher) { Text("+${faces.size - shown}") }
             }
+            onShare?.let { ShareAction(it, Modifier.padding(start = 4.dp)) }
         } else {
             Surface(onClick = { onPick(rows.firstOrNull { it.key == CalendarKey.Mine(home.id) } ?: CalendarRow.Mine(home, null)) },
                 shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
@@ -213,6 +232,21 @@ fun CalendarIdentityBar(
                 }
             }
         }
+    }
+    }
+}
+
+/** [UX-03] 공유 in words and an icon, so it reads as what it does on every screen; TalkBack hears what is shared. */
+@Composable
+internal fun ShareAction(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    FilledTonalButton(
+        onClick = onClick,
+        contentPadding = PaddingValues(start = 12.dp, end = 16.dp),
+        modifier = modifier.heightIn(min = 40.dp).semantics { contentDescription = "근무표 공유" },
+    ) {
+        Icon(Icons.Filled.Share, null, Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text("공유", maxLines = 1, modifier = Modifier.clearAndSetSemantics { })
     }
 }
 
@@ -229,6 +263,8 @@ fun CalendarSwitcherSheet(
     onManage: () -> Unit,
     onRemove: (ReceivedCalendar) -> Unit,
     onDismiss: () -> Unit,
+    /** [UX-03] Shares one of the user's calendars straight from the list. */
+    onShare: ((PersonalCalendar) -> Unit)? = null,
 ) {
     var removing by remember { mutableStateOf<ReceivedCalendar?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -249,6 +285,9 @@ fun CalendarSwitcherSheet(
                         subtitle = row.subtitle(),
                         selected = currentKey == row.key,
                         onClick = { onPick(row) },
+                        trailing = onShare?.let { share ->
+                            { IconButton(onClick = { share(row.cal) }) { Icon(Icons.Filled.Share, "${row.cal.name} 근무표 공유") } }
+                        },
                     )
                     is CalendarRow.Got -> SwitchRow(
                         avatar = { row.cal.Avatar(size = 40.dp) },
@@ -264,8 +303,9 @@ fun CalendarSwitcherSheet(
                     )
                 }
             }
-            AddRow("새 달력 만들기", onAddCalendar, MineShape, rows.newCalendarBadge())
-            onAddReceived?.let { AddRow("받은 링크로 달력 넣기", it, CircleShape) }
+            AddRow("새 달력 만들기", onAddCalendar, MineShape, rows.newCalendarBadge(), detail = "알바·부업 근무를 따로 적고 따로 공유해요")
+            // [UX-03] Said the way people think of it: a coworker's schedule, and what it is for.
+            onAddReceived?.let { AddRow("동료 근무표 받기", it, CircleShape, detail = "받은 링크를 넣으면 내 달력과 바꿔 가며 보고, 같이 쉬는 날도 보여요") }
             Text(
                 "새 달력은 근무와 순서를 따로 갖고, 링크도 따로 공유해요. " +
                     (if (onAddReceived != null) "받은 달력은 읽기 전용이고 보낸 분이 링크를 끊으면 여기서도 지워져요." else ""),
@@ -287,7 +327,7 @@ fun CalendarSwitcherSheet(
 }
 
 @Composable
-private fun AddRow(label: String, onClick: () -> Unit, shape: Shape, badge: String? = null) {
+private fun AddRow(label: String, onClick: () -> Unit, shape: Shape, badge: String? = null, detail: String? = null) {
     Row(
         Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(horizontal = 24.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -296,11 +336,16 @@ private fun AddRow(label: String, onClick: () -> Unit, shape: Shape, badge: Stri
             Icon(Icons.Filled.Add, null, tint = MaterialTheme.colorScheme.primary)
         }
         Spacer(Modifier.width(16.dp))
-        Text(label, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-        badge?.let {
-            Spacer(Modifier.width(8.dp))
-            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primaryContainer).padding(horizontal = 8.dp, vertical = 2.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(label, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                badge?.let {
+                    Spacer(Modifier.width(8.dp))
+                    Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primaryContainer).padding(horizontal = 8.dp, vertical = 2.dp))
+                }
+            }
+            detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
 }
@@ -437,7 +482,13 @@ class CalendarsViewModel(private val c: AppContainer) : ViewModel() {
 /** [MCAL-01][MCAL-04] 설정 > 달력 목록, and 순서·관리 from the switcher. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CalendarsScreen(vm: CalendarsViewModel, onBack: () -> Unit, onAddCalendar: () -> Unit) {
+fun CalendarsScreen(
+    vm: CalendarsViewModel,
+    onBack: () -> Unit,
+    onAddCalendar: () -> Unit,
+    /** [UX-03] Opens one calendar's share sheet on the calendar tab. */
+    onShare: (String) -> Unit = {},
+) {
     val rows by vm.rows.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
@@ -496,6 +547,7 @@ fun CalendarsScreen(vm: CalendarsViewModel, onBack: () -> Unit, onAddCalendar: (
             onAlarms = { vm.setAlarms(row.cal.id, it) },
             onDelete = { editing = null; deleting = row.cal },
             onDismiss = { editing = null },
+            onShare = { editing = null; onShare(row.cal.id) },
         )
     }
     deleting?.let { cal ->
@@ -575,6 +627,7 @@ private fun CalendarEditDialog(
     onAlarms: (Boolean) -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
+    onShare: () -> Unit = {},
 ) {
     val cal = row.cal
     var name by remember(cal.id) { mutableStateOf(cal.name) }
@@ -600,12 +653,19 @@ private fun CalendarEditDialog(
                     Text("알람, 위젯, 알림, 급여 계산은 내 달력을 따라요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                row.link?.openText()?.let {
+                // [UX-03] The way to this calendar's link from here, rather than words about where it is.
+                val open = row.link?.openText()
+                open?.let {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.Link, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(8.dp))
-                        Text("$it. 링크는 이 달력을 보면서 공유 버튼에서 고치거나 끊어요.", style = MaterialTheme.typography.bodySmall)
+                        Text(it, style = MaterialTheme.typography.bodySmall)
                     }
+                }
+                OutlinedButton(onClick = { save(); onShare() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Icon(Icons.Filled.Share, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (open != null) "링크 고치기·다시 보내기" else "이 달력 근무표 공유")
                 }
             }
         },

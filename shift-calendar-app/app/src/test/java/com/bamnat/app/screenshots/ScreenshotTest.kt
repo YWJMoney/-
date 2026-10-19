@@ -1471,7 +1471,7 @@ class ScreenshotTest {
         content { com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}, client = shares, onOpenReceived = {}) }
         tapText("메모", exact = true)
         tapText("급여", exact = true)
-        reveal("받은 근무표가 있나요?")
+        reveal("동료 근무표도 받아 볼까요?")
     }
     @Test fun foldedIdentityBar() = shoot("132_folded_identity_bar", FOLDED) { receivedOn() }
     @Test fun foldedCalendarSwitcher() = shoot("133_folded_calendar_switcher", FOLDED) {
@@ -1685,6 +1685,195 @@ class ScreenshotTest {
         const val SMALL_PHONE = "w320dp-h568dp-port-xhdpi"
         const val PHONE_LANDSCAPE = "w780dp-h360dp-land-450dpi"
     }
+
+    // ---- 앱 검토·공유·설정·문의 (1.15) ----
+    // [UX-03] 공유 in sight on every screen size, [UX-04] settings found by words, [UX-05] help before a question,
+    // [UX-06] quick wins on the sleep and memo screens.
+
+    /** [UX-05] The question server for screenshots: two questions from this phone, one answered, and 모두의 문의. */
+    private class FakeInquiryApi(override val enabled: Boolean = true) : com.bamnat.app.company.InquiryApi {
+        private val now = java.time.Instant.now()
+        private fun ago(hours: Long) = now.minus(java.time.Duration.ofHours(hours))
+        private val mine = mutableListOf(
+            com.bamnat.app.company.Inquiry("q2", com.bamnat.app.company.InquiryKind.BUG, "answered", ago(30), ago(2), listOf(
+                com.bamnat.app.company.InquiryMessage(false, "[알람] 야간 근무 전 알람이 가끔 5분 늦게 울려요.", ago(30)),
+                com.bamnat.app.company.InquiryMessage(true, "알려 주셔서 고마워요. 배터리 최적화에서 밤낮을 빼 주시면 제시간에 울려요.", ago(2)),
+            ), public = true, same = 3),
+            com.bamnat.app.company.Inquiry("q1", com.bamnat.app.company.InquiryKind.IDEA, "open", ago(50), ago(50), listOf(
+                com.bamnat.app.company.InquiryMessage(false, "달력에서 동료 근무표를 겹쳐 보면 좋겠어요.", ago(50)),
+            ), public = true),
+        )
+
+        override suspend fun send(device: String, kind: com.bamnat.app.company.InquiryKind, text: String, info: com.bamnat.app.company.InquiryInfo) =
+            com.bamnat.app.company.Inquiry("q3", kind, "open", now, now, listOf(com.bamnat.app.company.InquiryMessage(false, text, now)), public = kind.public)
+                .also { mine.add(0, it) }
+        override suspend fun mine(device: String) = mine.toList()
+        override suspend fun more(device: String, id: String, text: String) = mine.first { it.id == id }
+        override suspend fun delete(device: String, id: String) = Unit
+        override suspend fun board(device: String, topic: String?, bySame: Boolean, after: Int) = com.bamnat.app.company.PublicPage(listOf(
+            com.bamnat.app.company.PublicInquiry("p1", com.bamnat.app.company.InquiryKind.BUG, "answered", "야간 근무 전 알람이 가끔 5분 늦게 울려요.",
+                1, 3, false, true, "alarm", "알람", ago(2)),
+            com.bamnat.app.company.PublicInquiry("p2", com.bamnat.app.company.InquiryKind.QUESTION, "answered", "근무표 링크를 받으면 내 달력에 같이 보이나요?",
+                1, 5, false, false, "share", "공유", ago(20)),
+            com.bamnat.app.company.PublicInquiry("p3", com.bamnat.app.company.InquiryKind.IDEA, "open", "위젯에서 다음 근무까지 남은 시간을 보고 싶어요",
+                0, 2, false, false, "widget", "위젯", ago(40)),
+        ), listOf("alarm" to "알람", "share" to "공유", "widget" to "위젯"), mapOf("alarm" to 1, "share" to 1, "widget" to 1), null)
+        override suspend fun boardThread(device: String, id: String) = com.bamnat.app.company.PublicThread(id,
+            com.bamnat.app.company.InquiryKind.QUESTION, "answered", "공유", 5, false, false, false, ago(20), listOf(
+                com.bamnat.app.company.InquiryMessage(false, "근무표 링크를 받으면 내 달력에 같이 보이나요?", ago(20)),
+                com.bamnat.app.company.InquiryMessage(true, "네, ‘동료 근무표 받기’에 링크를 넣으면 달력 이름을 눌러 바꿔 가며 볼 수 있어요.", ago(18)),
+            ), null)
+        override suspend fun same(device: String, id: String, on: Boolean) = 6
+        override suspend fun flag(device: String, id: String, reason: com.bamnat.app.company.InquiryFlag) = Unit
+    }
+
+    /** [UX-05] Questions through the fake server; [asked]: this phone sent the two above, one with a new answer. */
+    private fun inquiriesOn(enabled: Boolean = true, asked: Boolean = false) = app.container.also { c ->
+        c.inquiryApi = FakeInquiryApi(enabled)
+        c.inquiryStore.asked = asked
+    }
+
+    /** [UX-05] Opens 도움말과 문의 the way another screen does: the link, then the navigation. */
+    private fun Screen.askFromScreen(start: com.bamnat.app.ui.settings.InquiryStart) {
+        com.bamnat.app.ui.settings.InquiryLinks.ask(start)
+        settle()
+    }
+
+    @Test fun foldedCalendarShare() = shoot("320_folded_calendar_share", FOLDED)
+    @Test fun unfoldedCalendarShare() = shoot("321_unfolded_calendar_share", UNFOLDED)
+    @Test fun phoneCalendarShare() = shoot("322_phone_calendar_share", PHONE)
+    @Test fun phoneCalendarShareHugeText() = shoot("323_phone_calendar_share_huge_text", PHONE, fontScale = 2f)
+    @Test fun foldedSwitcherMineOnly() {
+        app.container.shareApi = shares
+        shoot("324_folded_switcher_mine_only", FOLDED) { tapText("달력 바꾸기", prefix = true) }
+    }
+    @Test fun foldedReceiveNoLinkYet() {
+        app.container.shareApi = shares
+        shoot("325_folded_receive_no_link", FOLDED) {
+            tapText("달력 바꾸기", prefix = true)
+            tapText("동료 근무표 받기", exact = true)
+            reveal("링크 부탁하는 메시지 보내기")
+        }
+    }
+    @Test fun foldedIdentityBarWithFaces() = shoot("326_folded_identity_bar_faces", FOLDED) { receivedOn() }
+
+    @Test fun foldedSettingsHubHelp() {
+        inquiriesOn(asked = true)
+        shoot("327_folded_settings_hub", FOLDED) { tab(4, wide = false) }
+    }
+    @Test fun foldedSettingsSearch() = shoot("328_folded_settings_search", FOLDED) {
+        tab(4, wide = false)
+        typeInto("설정 찾기", "알람 소리")
+    }
+    @Test fun foldedSettingsSearchFound() = shoot("329_folded_settings_search_found", FOLDED) {
+        tab(4, wide = false)
+        typeInto("설정 찾기", "알람 소리")
+        tapText("알람음", exact = true)
+    }
+    @Test fun unfoldedSettingsSearchFound() = shoot("330_unfolded_settings_search_found", UNFOLDED) {
+        tab(4, wide = true)
+        typeInto("설정 찾기", "다크 모드")
+        tapText("테마", exact = true)
+    }
+    @Test fun phoneSettingsSearchHugeText() = shoot("331_phone_settings_search_huge_text", PHONE, fontScale = 2f) {
+        tab(4, wide = false)
+        typeInto("설정 찾기", "백업")
+    }
+    @Test fun foldedSettingsCalendarShareRows() {
+        app.container.shareApi = shares
+        shoot("332_folded_settings_calendar_share", FOLDED) { settingsPage("달력 화면") }
+    }
+    @Test fun foldedSettingsSearchNothing() = shoot("333_folded_settings_search_nothing", FOLDED) {
+        tab(4, wide = false)
+        typeInto("설정 찾기", "화면이 자꾸 꺼져요")
+    }
+
+    @Test fun foldedHelpHome() {
+        inquiriesOn()
+        shoot("334_folded_help_home", FOLDED) {
+            tab(4, wide = false)
+            tapText("도움말과 문의", exact = true)
+        }
+    }
+    @Test fun foldedHelpSearch() {
+        inquiriesOn()
+        shoot("335_folded_help_search", FOLDED) {
+            tab(4, wide = false)
+            tapText("도움말과 문의", exact = true)
+            typeInto("도움말 찾기", "알람이 안 울려요")
+            tapText("알람이 안 울리거나 늦게 울려요", exact = true)
+        }
+    }
+    @Test fun foldedHelpFromCalendar() {
+        inquiriesOn()
+        shoot("336_folded_help_from_calendar", FOLDED) {
+            askFromScreen(com.bamnat.app.ui.settings.InquiryStart(about = "달력", help = true))
+        }
+    }
+    @Test fun foldedInquiryFormTips() {
+        inquiriesOn()
+        shoot("337_folded_inquiry_form_tips", FOLDED) {
+            askFromScreen(com.bamnat.app.ui.settings.InquiryStart(about = "근무표 공유", kind = com.bamnat.app.company.InquiryKind.QUESTION))
+            typeInto("[근무표 공유] ", "[근무표 공유] 동료에게 근무표 링크를 보내고 싶어요")
+            reveal("혹시 이런 내용인가요?")
+        }
+    }
+    @Test fun foldedInquiryMineUnread() {
+        inquiriesOn(asked = true)
+        shoot("338_folded_inquiry_mine_unread", FOLDED) {
+            tab(4, wide = false)
+            tapText("도움말과 문의", exact = true)
+        }
+    }
+    @Test fun unfoldedHelpHome() {
+        inquiriesOn()
+        shoot("339_unfolded_help_home", UNFOLDED) {
+            tab(4, wide = true)
+            askFromScreen(com.bamnat.app.ui.settings.InquiryStart(help = true))
+        }
+    }
+    @Test fun phoneHelpHugeText() {
+        inquiriesOn()
+        shoot("340_phone_help_huge_text", PHONE, fontScale = 2f) {
+            askFromScreen(com.bamnat.app.ui.settings.InquiryStart(help = true))
+        }
+    }
+    @Test fun foldedHelpDark() {
+        inquiriesOn()
+        shoot("341_folded_help_dark", "w369dp-h905dp-port-night-420dpi") {
+            askFromScreen(com.bamnat.app.ui.settings.InquiryStart(help = true))
+            tapText("근무표를 동료·가족에게 보내고 싶어요", exact = true)
+        }
+    }
+    @Test fun foldedHelpByMail() {
+        inquiriesOn(enabled = false)
+        shoot("342_folded_help_mail", FOLDED) {
+            tab(4, wide = false)
+            tapText("도움말과 문의", exact = true)
+            reveal("메일로 문의하기")
+        }
+    }
+    @Test fun foldedInquiryByMailForm() {
+        inquiriesOn(enabled = false)
+        shoot("343_folded_inquiry_mail_form", FOLDED) {
+            askFromScreen(com.bamnat.app.ui.settings.InquiryStart(about = "달력"))
+            tapText("궁금해요", exact = true)
+            reveal("메일에 함께 적는 정보")
+        }
+    }
+    @Test fun foldedSettingsSearchWithHelp() = shoot("346_folded_settings_search_help", FOLDED) {
+        tab(4, wide = false)
+        typeInto("설정 찾기", "알람이 안 울려요")
+    }
+    @Test fun phoneSettingsHubNewAnswerHugeText() {
+        inquiriesOn(asked = true)
+        shoot("347_phone_settings_new_answer_huge_text", PHONE, fontScale = 2f) { tab(4, wide = false) }
+    }
+    @Test fun foldedSleepNow() = shoot("344_folded_sleep_now", FOLDED) {
+        com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SLEEP)
+        settle()
+    }
+    @Test fun foldedMemosNewMemo() = shoot("345_folded_memos_new_memo", FOLDED) { tab(2, wide = false) }
 }
 
 /** [SHR-02] The share server for screenshots: links people sent, answered at once. */

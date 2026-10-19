@@ -266,21 +266,31 @@ fun ShareDialog(
                     run { client.delete(current); store.clear() }
                 }, modifier = Modifier.fillMaxWidth()) { Text("링크 끊기", color = MaterialTheme.colorScheme.error) }
             }
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            error?.let { why ->
+                Text(why, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                // [UX-05] An error that does not go away is one tap from a question, with what the sheet said.
+                TextButton(onClick = {
+                    onDismiss()
+                    com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(
+                        about = "근무표 공유", kind = com.bamnat.app.company.InquiryKind.BUG, text = "‘$why’라고 나와요. "))
+                }) { Text("계속 안 되면 문의하기") }
+            }
             if (onOpenReceived != null) {
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                // [UX-03] The other way round: a coworker's schedule beside the user's own.
                 Row(
-                    Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onOpenReceived).padding(vertical = 8.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, onClickLabel = "받기", onClick = onOpenReceived)
+                        .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(Icons.Outlined.CalendarMonth, null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("받은 근무표가 있나요?", style = MaterialTheme.typography.titleSmall)
-                        Text("받은 링크를 넣으면 내 달력과 바꿔 가며 볼 수 있어요", style = MaterialTheme.typography.bodySmall,
+                        Text("동료 근무표도 받아 볼까요?", style = MaterialTheme.typography.titleSmall)
+                        Text("받은 링크를 넣으면 내 달력과 바꿔 가며 보고, 같이 쉬는 날도 보여요", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text("넣기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    Text("받기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 }
             }
         }

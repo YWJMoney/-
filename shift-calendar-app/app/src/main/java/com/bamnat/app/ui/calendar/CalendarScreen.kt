@@ -49,6 +49,9 @@ import androidx.compose.material.icons.filled.EditCalendar
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.EventRepeat
 import androidx.compose.material.icons.outlined.LibraryAdd
+import androidx.compose.material.icons.outlined.GroupAdd
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import com.bamnat.app.appContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -368,6 +371,18 @@ fun CalendarScreen(
     var showMonthPicker by remember { mutableStateOf(false) }
     var showShare by remember { mutableStateOf(false) }
     val shareLinks = remember { com.bamnat.app.share.ShareLinkClient().enabled }
+    // [UX-03] Pointed out once, the first time there is a schedule worth sending and nothing was sent yet.
+    val hints = remember { HintStore(context) }
+    var shareHintDone by remember { mutableStateOf(hints.done(HintStore.SHARE)) }
+    val shareCalendar: () -> Unit = {
+        if (!shareHintDone) { hints.markDone(HintStore.SHARE); shareHintDone = true }
+        // [MKT-09] With a link server the sheet offers picture or link; without one it sends the picture.
+        if (shareLinks) showShare = true
+        else {
+            scope.launch { MonthImage.share(context, snap, visibleMonth, settings.weekStart) }
+            vm.logShare()
+        }
+    }
     // [MCAL-03] Keyed by the calendar, so a sheet opened as the calendar changes starts from that calendar's link.
     if (showShare) androidx.compose.runtime.key(activeCalendar?.id) {
         ShareDialog(
@@ -393,16 +408,17 @@ fun CalendarScreen(
     }
     val currentRow: CalendarRow = viewingReceived?.let { CalendarRow.Got(it) }
         ?: calendarRows.firstOrNull { it.key == com.bamnat.app.data.CalendarKey.Mine(activeCalendar.id) } ?: CalendarRow.Mine(activeCalendar, null)
+    // [UX-03] Always there: whose calendar this is (a tap opens the switcher, where a coworker's calendar
+    // is taken in too) and 공유, on every screen size.
     val identityBar: @Composable () -> Unit = {
-        if (calendarRows.size > 1) {
-            CalendarIdentityBar(
-                rows = calendarRows,
-                current = currentRow,
-                home = activeCalendar,
-                onOpenSwitcher = { switching = true },
-                onPick = pickCalendar,
-            )
-        }
+        CalendarIdentityBar(
+            rows = calendarRows,
+            current = currentRow,
+            home = activeCalendar,
+            onOpenSwitcher = { switching = true },
+            onPick = pickCalendar,
+            onShare = shareCalendar,
+        )
     }
     // Back from someone's calendar returns to the user's own, like leaving another account.
     androidx.activity.compose.BackHandler(enabled = viewingReceived != null) { received.view(null) }
@@ -448,6 +464,17 @@ fun CalendarScreen(
         // [MCAL-03] An added calendar's notice opens that calendar's sheet.
         vm.viewCalendar(NoticeLinks.calendar.value ?: com.bamnat.app.data.PersonalCalendar.MAIN)
         if (shareLinks) showShare = true
+        else {
+            scope.launch { MonthImage.share(context, snap, visibleMonth, settings.weekStart) }
+            vm.logShare()
+        }
+    }
+    // [UX-03] 동료 근무표 받기 from settings or a help answer: the sheet that takes a received link.
+    LaunchedEffect(noticeTarget) {
+        if (noticeTarget != NoticeLinks.Target.RECEIVE) return@LaunchedEffect
+        NoticeLinks.consume(NoticeLinks.Target.RECEIVE)
+        received.view(null)
+        if (received.enabled) adding = ""
     }
     // [CAL-01] The picked day's week over the hour limit, said in one line under the calendar.
     val weekNote = remember(calculator, selected, settings.weeklyLimitHours) {
@@ -533,6 +560,16 @@ fun CalendarScreen(
 
     val calendarPart: @Composable () -> Unit = {
         identityBar()
+        val linkMade = remember(activeCalendar.id, showShare) {
+            shareLinks && context.appContainer.shareLinksOf(activeCalendar.id).link.value != null
+        }
+        if (!shareHintDone && !linkMade && !snap.isEmpty && paint == null && pendingSetup?.later != true) {
+            ShareHintCard(
+                onShare = shareCalendar,
+                onClose = { hints.markDone(HintStore.SHARE); shareHintDone = true },
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 4.dp),
+            )
+        }
         CalendarHeader(
             month = if (weekOnly && !wide) YearMonth.from(selected) else visibleMonth,
             // [CAL-03] With one week on screen, ‹ › go a week back or on.
@@ -544,16 +581,10 @@ fun CalendarScreen(
             },
             onPickMonth = { showMonthPicker = true },
             byWeek = weekOnly,
-            onShare = {
-                // [MKT-09] With a link server the icon offers picture or link; without one it sends the picture.
-                if (shareLinks) showShare = true
-                else {
-                    scope.launch { MonthImage.share(context, snap, visibleMonth, settings.weekStart) }
-                    vm.logShare()
-                }
-            },
+            onShare = shareCalendar,
             onOpenPattern = onOpenPattern,
             onAddCalendar = onAddCalendar,
+            onReceive = if (received.enabled) ({ adding = "" }) else null,
         )
         // [SETUP-01] A first setup left for later comes first; it fills the calendar.
         val waiting = pendingSetup?.takeIf { it.later && settings.workStyle == null }
@@ -841,6 +872,15 @@ fun CalendarScreen(
             onManage = { switching = false; onManageCalendars() },
             onRemove = { cal -> received.remove(cal.id) },
             onDismiss = { switching = false },
+            // [UX-03] Each of the user's calendars shares from here, as that calendar.
+            onShare = { cal ->
+                switching = false
+                received.view(null)
+                vm.setPaint(null)
+                vm.viewCalendar(cal.id)
+                // The sheet is keyed by the calendar on screen, so it opens as this one.
+                shareCalendar()
+            },
         )
     }
     adding?.let { start ->
@@ -990,9 +1030,12 @@ private fun CalendarHeader(
     byWeek: Boolean = false,
     /** [MCAL-02] Adds a calendar of the user's own. */
     onAddCalendar: () -> Unit = {},
+    /** [UX-03] Opens the sheet that takes a coworker's link; null without a share server. */
+    onReceive: (() -> Unit)? = null,
 ) {
-    // [QA-01] A cover screen (~344dp) cannot fit four icons, the month and 오늘: share and pattern
-    // go into a menu there instead of being squeezed off the edge.
+    // [QA-01] A cover screen (~344dp) cannot fit four icons, the month and 오늘: pattern and the new
+    // calendar go into ⋮ there. [UX-03] 공유 is in the bar above on every screen; ⋮ keeps it too, where
+    // people who learned it there look, with the coworker's calendar, the calendar's look and help.
     BoxWithConstraints(Modifier.fillMaxWidth()) {
     val narrow = maxWidth < 392.dp
     var menu by remember { mutableStateOf(false) }
@@ -1001,37 +1044,55 @@ private fun CalendarHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onPrev) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, if (byWeek) "이전 주" else "이전 달") }
-        // [VIS-02] The month opens the month list: 48dp tall, with ▾ to show it can be tapped.
-        Row(
-            Modifier
-                .heightIn(min = 48.dp)
-                .clip(MaterialTheme.shapes.small)
-                .clickable(onClickLabel = "달 고르기", role = Role.Button, onClick = onPickMonth)
-                .padding(start = 6.dp, end = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(Fmt.month(month), style = if (narrow) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge)
-            Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        // [UX-06] The month and › take only what is left, the month's text shrinking at the largest text
+        // sizes, so 오늘 and ⋮ (with 공유) stay on screen instead of being pushed off it.
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            // [VIS-02] The month opens the month list: 48dp tall, with ▾ to show it can be tapped.
+            Row(
+                Modifier
+                    .weight(1f, fill = false)
+                    .heightIn(min = 48.dp)
+                    .clip(MaterialTheme.shapes.small)
+                    .clickable(onClickLabel = "달 고르기", role = Role.Button, onClick = onPickMonth)
+                    .padding(start = 6.dp, end = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                com.bamnat.app.ui.FitText(Fmt.month(month), if (narrow) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                    Modifier.weight(1f, fill = false))
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = onNext) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, if (byWeek) "다음 주" else "다음 달") }
         }
-        IconButton(onClick = onNext) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, if (byWeek) "다음 주" else "다음 달") }
-        Spacer(Modifier.weight(1f))
-        TextButton(onClick = onToday) { Text("오늘") }
-        if (narrow) {
-            Box {
-                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "더 보기") }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("근무표 공유") }, leadingIcon = { Icon(Icons.Filled.Share, null) },
-                        onClick = { menu = false; onShare() })
+        TextButton(onClick = onToday) { Text("오늘", maxLines = 1, softWrap = false) }
+        if (!narrow) {
+            IconButton(onClick = onOpenPattern) { Icon(Icons.Filled.EventRepeat, "근무 주기 설정") }
+            IconButton(onClick = onAddCalendar) { Icon(Icons.Outlined.LibraryAdd, "새 달력 만들기") }
+        }
+        Box {
+            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "더 보기") }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(text = { Text("근무표 공유") }, leadingIcon = { Icon(Icons.Filled.Share, null) },
+                    onClick = { menu = false; onShare() })
+                onReceive?.let { receive ->
+                    DropdownMenuItem(text = { Text("동료 근무표 받기") }, leadingIcon = { Icon(Icons.Outlined.GroupAdd, null) },
+                        onClick = { menu = false; receive() })
+                }
+                if (narrow) {
                     DropdownMenuItem(text = { Text("근무 주기 설정") }, leadingIcon = { Icon(Icons.Filled.EventRepeat, null) },
                         onClick = { menu = false; onOpenPattern() })
                     DropdownMenuItem(text = { Text("새 달력 만들기") }, leadingIcon = { Icon(Icons.Outlined.LibraryAdd, null) },
                         onClick = { menu = false; onAddCalendar() })
                 }
+                // [UX-04] The calendar's own look (week start, what shows under a date) is one tap from it.
+                DropdownMenuItem(text = { Text("달력 보기 설정") }, leadingIcon = { Icon(Icons.Outlined.Tune, null) },
+                    onClick = { menu = false; com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.CALENDAR) })
+                // [UX-05] Help and questions from the screen people use most.
+                DropdownMenuItem(text = { Text("도움말·문의") }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.HelpOutline, null) },
+                    onClick = {
+                        menu = false
+                        com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "달력", help = true))
+                    })
             }
-        } else {
-            IconButton(onClick = onShare) { Icon(Icons.Filled.Share, "근무표 공유") }
-            IconButton(onClick = onOpenPattern) { Icon(Icons.Filled.EventRepeat, "근무 주기 설정") }
-            IconButton(onClick = onAddCalendar) { Icon(Icons.Outlined.LibraryAdd, "새 달력 만들기") }
         }
     }
     }

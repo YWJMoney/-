@@ -67,6 +67,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.outlined.Bedtime
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.Button
+import androidx.compose.material3.Surface
+import com.bamnat.app.ui.settings.InquiryLinks
+import com.bamnat.app.ui.settings.InquiryStart
+import com.bamnat.app.ui.settings.SettingsLinks
+import com.bamnat.app.ui.settings.SettingsPage
 import com.bamnat.app.AppContainer
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.ui.Fmt
@@ -146,6 +155,30 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun runUndo(m: UndoMessage) { m.undo?.let { u -> container.appScope.launch { u() } } }
+
+    /** [UX-06] "잠들었어요" on the sleep screen too, as on the calendar; the 자는 중 notice follows the log. */
+    fun fellAsleep() {
+        container.appScope.launch {
+            val asleep = container.sleepRepository.fellAsleep()
+            val at = Fmt.time(asleep.entry.start.toLocalTime())
+            _messages.emit(
+                if (asleep.started) UndoMessage("${at}부터 자는 중으로 적었어요") { container.sleepRepository.delete(asleep.entry.id) }
+                else UndoMessage("이미 ${at}부터 자는 중이에요"),
+            )
+        }
+    }
+
+    /** [UX-06] "깼어요": the open sleep ends now. */
+    fun wokeUp() {
+        container.appScope.launch {
+            val sleep = container.sleepRepository.wokeUp() ?: return@launch
+            val minutes = sleep.minutes ?: 0L
+            _messages.emit(UndoMessage(
+                if (minutes > SleepDebt.MAX_SLEEP_MINUTES) "16시간이 넘게 열려 있던 기록이라 수면 통계에서 뺐어요"
+                else "${SleepInsights.hours(minutes)} 잤어요",
+            ) { container.sleepRepository.reopen(sleep.id) })
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -171,6 +204,15 @@ fun SleepScreen(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit) {
             TopAppBar(
                 title = { Text("수면 기록") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                // [UX-06] Where the target and the watch are set, and help, from the screen that uses them.
+                actions = {
+                    IconButton(onClick = { SettingsLinks.open(SettingsPage.REST, "목표 수면 시간") }) {
+                        Icon(Icons.Outlined.Tune, "수면 설정")
+                    }
+                    IconButton(onClick = { InquiryLinks.ask(InquiryStart(about = "수면 기록", help = true)) }) {
+                        Icon(Icons.AutoMirrored.Outlined.HelpOutline, "수면 기록 도움말")
+                    }
+                },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -181,6 +223,7 @@ fun SleepScreen(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit) {
         val s = state ?: return@Scaffold
         val r = s.report
         val summary: @Composable ColumnScope.() -> Unit = {
+            NowCard(s.log.firstOrNull { it.end == null && !it.imported }, onAsleep = vm::fellAsleep, onAwake = vm::wokeUp)
             if (r.loggedDays < 7) HowItWorks()
             WeekTiles(r, target)
             if (r.findings.isNotEmpty()) Findings(r.findings)
@@ -222,13 +265,36 @@ fun SleepScreen(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit) {
     }
 }
 
+/**
+ * [UX-06] The two taps where the sleep is looked at: "잠들었어요", or "깼어요" while a sleep is open. Before,
+ * only the calendar's day had them, so the screen about sleep could not start one.
+ */
+@Composable
+private fun NowCard(open: SleepEntry?, onAsleep: () -> Unit, onAwake: () -> Unit) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Bedtime, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(if (open == null) "지금 자려고요?" else "${Fmt.time(open.start.toLocalTime())}부터 자는 중",
+                    style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                Text(if (open == null) "누르고 자면, 일어나서 ‘깼어요’로 끝내요" else "일어났으면 ‘깼어요’를 눌러요",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            }
+            Spacer(Modifier.width(8.dp))
+            if (open == null) Button(onClick = onAsleep, modifier = Modifier.heightIn(min = 48.dp)) { Text("잠들었어요") }
+            else Button(onClick = onAwake, modifier = Modifier.heightIn(min = 48.dp)) { Text("깼어요") }
+        }
+    }
+}
+
 /** [SLP-16] What the taps are for, said where the user first wonders. */
 @Composable
 private fun HowItWorks() {
     SectionCard(title = "수면 기록은 이렇게 쓰여요") {
         listOf(
             "잠들 때 ‘잠들었어요’, 깼을 때 ‘깼어요’를 누르면 돼요. 달력 위 오늘의 흐름 카드, 오늘 날짜, 자는 중 알림에 버튼이 있어요.",
-            "깜빡했으면 여기서 ‘기록 추가’로 나중에 적어도 돼요. 워치 기록은 설정 > 수면에서 헬스 커넥트를 켜면 함께 세요.",
+            "깜빡했으면 여기서 ‘기록 추가’로 나중에 적어도 돼요. 워치 기록은 설정 > 잠과 휴식에서 헬스 커넥트를 켜면 함께 세요.",
             "기록이 쌓이면 야간 뒤·아침 출근 전·쉬는 날 평균을 따로 보여 주고, 퇴근길 카드가 내 평균으로 알려 줘요.",
         ).forEachIndexed { i, line ->
             Row(Modifier.padding(vertical = 3.dp)) {
@@ -391,7 +457,7 @@ private fun hm(t: LocalDateTime) = "%02d:%02d".format(t.hour, t.minute)
 
 private fun healthNote(state: com.bamnat.app.sleep.HealthSleep.State): String? = when (state) {
     com.bamnat.app.sleep.HealthSleep.State.READY -> "헬스 커넥트 기록을 함께 보여 줘요. 직접 적은 기록과 겹치면 직접 기록을 써요."
-    com.bamnat.app.sleep.HealthSleep.State.NEEDS_PERMISSION -> "헬스 커넥트 수면 읽기 허용이 꺼져 있어요. 설정 > 수면에서 다시 켤 수 있어요."
+    com.bamnat.app.sleep.HealthSleep.State.NEEDS_PERMISSION -> "헬스 커넥트 수면 읽기 허용이 꺼져 있어요. 설정 > 잠과 휴식에서 다시 켤 수 있어요."
     else -> null
 }
 

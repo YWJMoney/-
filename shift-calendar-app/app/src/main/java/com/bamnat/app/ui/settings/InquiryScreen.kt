@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.settings
 
+import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -26,21 +27,29 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Apartment
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.QuestionAnswer
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PrimaryTabRow
@@ -61,6 +70,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -68,11 +79,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -111,41 +128,84 @@ private const val NEW = "new"
 // [ADMIN-02] 모두의 문의, and one public question by "pub:" and its id.
 private const val BOARD = "board"
 private const val PUB = "pub:"
+// [UX-05] The answers to what people ask most, searched before a question is written.
+private const val HELP = "help"
 
 /**
- * [ADMIN-02] 설정 > 문의하기: questions sent from this phone with the developer's answers, a new
- * question in three steps (what about, what happened, what goes with it) and a thread to ask more.
+ * [ADMIN-02][UX-05] 도움말과 문의: answers first (searched with the settings and 모두의 문의), then a
+ * question in three steps (what about, what happened, what goes with it), questions sent from this
+ * phone with the developer's answers, and a thread to ask more. A build without the company server
+ * shows the answers and writes the question as a mail. Nothing here sends more than before: the
+ * question's text, its kind and what the form shows it adds.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
     val list by vm.list.collectAsStateWithLifecycle()
     val offline by vm.offline.collectAsStateWithLifecycle()
-    // The list, the form, or one question by its id. 계산이 이상해요 opens straight on the form [ADMIN-02].
-    var view by rememberSaveable { mutableStateOf(if (vm.payCheck != null) NEW else if (vm.startOnBoard) BOARD else LIST) }
-    // Until that question is sent, back returns to the pay screen it came from.
+    val unread by vm.unread.collectAsStateWithLifecycle()
+    // [UX-05] What the screen that opened this asked for; 계산이 이상해요 and 문의하기 open on the form.
+    var start by remember { mutableStateOf(vm.start) }
+    val first = when {
+        vm.payCheck != null -> NEW
+        start != null -> if (start?.help == true) HELP else NEW
+        vm.startOnMine -> LIST
+        else -> HELP
+    }
+    var view by rememberSaveable { mutableStateOf(first) }
+    // Until that question is sent, back returns to the screen it came from.
+    var fromElsewhere by rememberSaveable { mutableStateOf(first == NEW) }
     var fromPay by rememberSaveable { mutableStateOf(vm.payCheck != null) }
+    // A new start begins the form again.
+    var formKey by rememberSaveable { mutableIntStateOf(0) }
+    var query by rememberSaveable { mutableStateOf(start?.takeIf { it.help }?.text.orEmpty()) }
+    var about by rememberSaveable { mutableStateOf(start?.about) }
     var deleting by remember { mutableStateOf<Inquiry?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { vm.refresh() }
     LaunchedEffect(Unit) { vm.loadBoard() }
+    // Another screen's 문의 while this one is open (it stays on top) is taken here.
+    val pending by InquiryLinks.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(pending) {
+        val s = InquiryLinks.take() ?: return@LaunchedEffect
+        start = s
+        about = s.about
+        message = null
+        formKey++
+        if (s.help) { query = s.text; view = HELP } else view = NEW
+    }
     val open = list?.firstOrNull { it.id == view }
     val publicId = view.removePrefix(PUB).takeIf { view.startsWith(PUB) }
-    val home = view == LIST || view == BOARD
-    // Back from a public question returns to 모두의 문의, from anything else to 내 문의.
-    var lastHome by rememberSaveable { mutableStateOf(if (view == BOARD) BOARD else LIST) }
+    val home = view == HELP || view == LIST || view == BOARD
+    // Back from a public question returns to 모두의 문의, from anything else to where it was opened.
+    var lastHome by rememberSaveable { mutableStateOf(if (first == NEW) HELP else first) }
     LaunchedEffect(view) { if (home) lastHome = view }
     LaunchedEffect(open?.id, open?.answers) { open?.let(vm::opened) }
     // A question that is gone (deleted elsewhere) falls back to the list.
     LaunchedEffect(list, view) { if (!home && view != NEW && publicId == null && list != null && open == null) view = LIST }
+    val ask: (String, HelpTopic?) -> Unit = { text, topic ->
+        start = InquiryStart(about = topic?.tag ?: about, kind = topic?.ask, withCheck = topic?.withCheck == true, text = text)
+        message = null
+        formKey++
+        view = NEW
+    }
 
-    val leaves = home || (view == NEW && fromPay)
+    val leaves = home || (view == NEW && fromElsewhere)
     val back = { if (leaves) onBack() else { view = if (publicId != null) BOARD else lastHome } }
     BackHandler(enabled = !leaves) { back() }
+    // [UX-05] Back clears a help search before it leaves.
+    BackHandler(enabled = view == HELP && query.isNotEmpty()) { query = "" }
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (view == NEW) "새 문의" else if (open != null) open.kind.label else if (publicId != null) "모두의 문의" else "문의하기") },
+                title = {
+                    Text(when {
+                        view == NEW -> if (vm.online) "새 문의" else "메일로 문의"
+                        open != null -> open.kind.label
+                        publicId != null -> "모두의 문의"
+                        else -> "도움말과 문의"
+                    })
+                },
                 navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 actions = {
                     if (open != null) IconButton(onClick = { deleting = open }) { Icon(Icons.Outlined.Delete, "이 문의 지우기") }
@@ -155,24 +215,33 @@ fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding).imePadding(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
-                if (home) {
-                    PrimaryTabRow(selectedTabIndex = if (view == BOARD) 0 else 1) {
+                if (home && vm.online) {
+                    PrimaryTabRow(selectedTabIndex = when (view) { HELP -> 0; BOARD -> 1; else -> 2 }) {
+                        Tab(selected = view == HELP, onClick = { message = null; view = HELP }, text = { Text("도움말") })
                         Tab(selected = view == BOARD, onClick = { message = null; view = BOARD }, text = { Text("모두의 문의") })
-                        Tab(selected = view == LIST, onClick = { message = null; view = LIST }, text = { Text("내 문의") })
+                        Tab(selected = view == LIST, onClick = { message = null; view = LIST }, text = { MineTab(unread) })
                     }
                 }
                 if (offline && view == LIST) OfflineLine(vm::refresh)
                 message?.let {
                     Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).semantics { liveRegion = LiveRegionMode.Polite })
                 }
                 when {
-                    view == NEW -> InquiryForm(vm, pay = vm.payCheck.takeIf { fromPay },
-                        onSent = { sent -> message = null; fromPay = false; view = sent.id })
-                    view == BOARD -> PublicBoard(vm, onNew = { message = null; view = NEW }, onOpen = { message = null; view = PUB + it.id })
+                    view == NEW -> key(formKey) {
+                        InquiryForm(vm, pay = vm.payCheck.takeIf { fromPay }, start = start,
+                            onSent = { sent -> message = null; fromPay = false; fromElsewhere = false; start = null; view = sent.id },
+                            onMailed = {
+                                fromPay = false; start = null
+                                if (fromElsewhere) onBack() else { message = "메일 앱에서 보내 주세요. 답은 메일로 와요"; view = HELP }
+                            })
+                    }
+                    view == HELP -> HelpHome(vm, about, query, onQuery = { query = it }, list = list, onAsk = ask,
+                        onMine = { message = null; view = LIST }, onOpenPublic = { message = null; view = PUB + it.id })
+                    view == BOARD -> PublicBoard(vm, onNew = { ask("", null) }, onOpen = { message = null; view = PUB + it.id })
                     publicId != null -> PublicThreadView(vm, publicId, onGone = { message = "이 문의는 지워졌거나 가려졌어요"; view = BOARD })
                     open != null -> InquiryThread(vm, open)
-                    else -> InquiryList(vm, list, onNew = { message = null; view = NEW }, onOpen = { message = null; view = it.id })
+                    else -> InquiryList(vm, list, onNew = { ask("", null) }, onOpen = { message = null; view = it.id })
                 }
             }
         }
@@ -193,6 +262,18 @@ fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
                 }
             },
         )
+    }
+}
+
+/** [UX-05] 내 문의, with the answers not opened yet counted beside it and read as words. */
+@Composable
+private fun MineTab(unread: Int) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("내 문의")
+        if (unread > 0) {
+            Spacer(Modifier.width(6.dp))
+            Badge(Modifier.clearAndSetSemantics { contentDescription = "새 답 ${unread}개" }) { Text(if (unread > 9) "9+" else "$unread") }
+        }
     }
 }
 
@@ -233,9 +314,23 @@ private fun InquiryItems(vm: InquiryViewModel, list: List<Inquiry>, onNew: () ->
             Text("개발자가 직접 읽고 답해요. 답은 이 화면에 오고, 모두의 문의에도 함께 올라가요.", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
         }
+    } else {
+        Text(standing(list, vm::unreadIn), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp))
     }
     Button(onClick = onNew, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("새 문의 쓰기") }
-    list.forEach { i -> InquiryCard(i, unread = vm.unreadIn(i), onClick = { onOpen(i) }) }
+    // [UX-05] New answers first, then the questions still waiting.
+    vm.ordered(list).forEach { i -> InquiryCard(i, unread = vm.unreadIn(i), onClick = { onOpen(i) }) }
+}
+
+/** [UX-05] "새 답 1개 · 답을 기다리는 문의 2개": where the user's questions stand, in one line. */
+internal fun standing(list: List<Inquiry>, unread: (Inquiry) -> Boolean): String {
+    val fresh = list.count(unread)
+    val waiting = list.count { it.waiting }
+    return listOfNotNull(
+        "새 답이 온 문의 ${fresh}개".takeIf { fresh > 0 },
+        "답을 기다리는 문의 ${waiting}개".takeIf { waiting > 0 },
+    ).joinToString(" · ").ifEmpty { "보낸 문의 ${list.size}개에 모두 답했어요" }
 }
 
 @Composable
@@ -269,29 +364,71 @@ private val stamp = DateTimeFormatter.ofPattern("M월 d일 HH:mm")
 /** "10월 18일 21:05" in this phone's time zone. */
 private fun stampOf(at: Instant): String = at.atZone(ZoneId.systemDefault()).format(stamp)
 
+/** "[달력] " and the like at the start of a question: the screen it was asked from. */
+private val TAG = Regex("^\\[[^\\]]{1,30}]\\s*")
+
+/** What is written beyond the screen's name; empty when nothing is. */
+private fun bodyOf(text: String): String = text.replace(TAG, "").trim()
+
 @Composable
-private fun InquiryForm(vm: InquiryViewModel, pay: String?, onSent: (Inquiry) -> Unit) {
+private fun InquiryForm(vm: InquiryViewModel, pay: String?, start: InquiryStart?, onSent: (Inquiry) -> Unit, onMailed: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val busy by vm.busy.collectAsStateWithLifecycle()
+    // [UX-05] Without the company server the question becomes a mail the user sends from their mail app.
+    val mail = !vm.online
+    // [UX-05] The screen it was opened from starts the text, shown and editable.
+    val given = (start?.about?.let { "[$it] " } ?: "") + start?.text.orEmpty()
+    // [UX-05] A question started before comes back, unless this was opened with words of its own.
+    val draft = remember { vm.draft.value.takeIf { pay == null && start?.text.isNullOrBlank() } }
+    var restored by rememberSaveable { mutableStateOf(draft != null) }
+    // Opened with words of its own while another question waits: that one can still be brought back.
+    val older = remember { vm.draft.value.takeIf { draft == null && it?.text != given } }
+    var offerOlder by rememberSaveable { mutableStateOf(older != null) }
     // From 계산이 이상해요 it is a 오류 제보 already, and the pay check goes with it unless unticked.
-    var kind by rememberSaveable { mutableStateOf(if (pay != null) InquiryKind.BUG else null) }
+    var kind by rememberSaveable { mutableStateOf(if (pay != null) InquiryKind.BUG else start?.kind ?: draft?.kind) }
     var withPay by rememberSaveable { mutableStateOf(pay != null) }
     var showPay by rememberSaveable { mutableStateOf(false) }
-    var text by rememberSaveable { mutableStateOf("") }
-    var withCheck by rememberSaveable { mutableStateOf(false) }
+    var text by rememberSaveable { mutableStateOf(draft?.text ?: given) }
+    var withCheck by rememberSaveable { mutableStateOf(start?.withCheck == true) }
     var showCheck by rememberSaveable { mutableStateOf(false) }
     var check by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    val problem = vm.problem(text)
+    var openTip by rememberSaveable { mutableStateOf<String?>(null) }
+    val problem = if (mail) text.takeIf { it.length > InquiryClient.TEXT_MAX }?.let { "${InquiryClient.TEXT_MAX}자까지 쓸 수 있어요" } else vm.problem(text)
     // The alarm check helps most when the app misbehaves, so it is offered ticked there.
     LaunchedEffect(kind) { if (kind == InquiryKind.BUG && pay == null && check == null) withCheck = true }
     LaunchedEffect(withCheck, showCheck) { if ((withCheck || showCheck) && check == null) check = vm.alarmCheck(context) }
+    // [UX-05] Kept as it is written, so leaving to look something up loses nothing. Only on this phone.
+    LaunchedEffect(kind, text) { vm.saveDraft(kind, if (bodyOf(text).isEmpty()) "" else text) }
+    val sendByMail: () -> Unit = {
+        scope.launch {
+            val diag = if (withCheck) check ?: vm.alarmCheck(context) else null
+            mailQuestion(context, kind, text, diag, pay.takeIf { withPay })
+            vm.clearDraft()
+            onMailed()
+        }
+    }
 
     Column(
         Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        if (restored) {
+            DraftLine("쓰던 문의를 불러왔어요", action = "새로 쓰기") {
+                restored = false
+                vm.clearDraft()
+                text = given
+                kind = start?.kind
+            }
+        }
+        if (offerOlder && older != null) {
+            DraftLine("쓰던 문의가 하나 더 있어요", action = "불러오기") {
+                offerOlder = false
+                text = older.text
+                if (older.kind != null) kind = older.kind
+            }
+        }
         StepTitle("1. 어떤 문의인가요?")
         InquiryKind.entries.forEach { k ->
             KindOption(k, selected = kind == k) { kind = k }
@@ -308,12 +445,24 @@ private fun InquiryForm(vm: InquiryViewModel, pay: String?, onSent: (Inquiry) ->
             supportingText = {
                 Row {
                     Text(problem ?: "언제, 어느 화면에서였는지 적으면 더 빨리 답할 수 있어요", modifier = Modifier.weight(1f))
+                    Spacer(Modifier.width(8.dp))
                     Text("${text.length}/${InquiryClient.TEXT_MAX}")
                 }
             },
         )
+        // [UX-05] An answer that fits what is being written, before it is sent.
+        val body = bodyOf(text)
+        val topics = remember { HelpFaq.topics(vm.shareOn) }
+        val tips = remember(body, kind) {
+            if (kind == InquiryKind.COMPANY || body.length < 4) emptyList() else HelpFaq.search(body, topics, limit = 2)
+        }
+        if (tips.isNotEmpty()) {
+            Text("혹시 이런 내용인가요?", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+            tips.forEach { t -> FaqCard(t, expanded = openTip == t.id, onToggle = { openTip = if (openTip == t.id) null else t.id }) }
+        }
 
-        StepTitle("3. 함께 보내는 정보")
+        StepTitle(if (mail) "3. 메일에 함께 적는 정보" else "3. 함께 보내는 정보")
         SoftCard {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 InfoLine("앱", vm.info.app)
@@ -339,14 +488,31 @@ private fun InquiryForm(vm: InquiryViewModel, pay: String?, onSent: (Inquiry) ->
                 if (showCheck) Shown(check ?: "불러오는 중…")
             }
         }
-        Text(if (kind?.public == false) INQUIRY_PRIVATE_NOTICE else INQUIRY_SEND_NOTICE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
-        val ready = kind != null && text.isNotBlank() && problem == null && !busy
+        Text(
+            when {
+                mail -> "메일 앱이 열려요. 보내기 전에 한 번 더 보고 고칠 수 있어요. 받는 곳: $REPORT_EMAIL"
+                kind?.public == false -> INQUIRY_PRIVATE_NOTICE
+                else -> INQUIRY_SEND_NOTICE
+            },
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        error?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
+            // [UX-05] A question that cannot go stays written, and can still go by mail.
+            OutlinedButton(onClick = sendByMail, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Icon(Icons.Outlined.Email, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("메일로 보내기")
+            }
+        }
+        val ready = kind != null && body.isNotEmpty() && problem == null && !busy
         Button(
             onClick = {
                 val k = kind ?: return@Button
                 error = null
-                scope.launch {
+                if (mail) sendByMail()
+                else scope.launch {
                     val diag = if (withCheck) check ?: vm.alarmCheck(context) else null
                     vm.send(k, text, diag, pay.takeIf { withPay }) { sent, why -> if (sent != null) onSent(sent) else { error = why } }
                 }
@@ -356,12 +522,45 @@ private fun InquiryForm(vm: InquiryViewModel, pay: String?, onSent: (Inquiry) ->
         ) {
             if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             else {
-                Icon(Icons.AutoMirrored.Outlined.Send, null, modifier = Modifier.size(18.dp))
+                Icon(if (mail) Icons.Outlined.Email else Icons.AutoMirrored.Outlined.Send, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(if (kind == null) "어떤 문의인지 골라 주세요" else "보내기")
+                Text(when {
+                    kind == null -> "어떤 문의인지 골라 주세요"
+                    body.isEmpty() -> "무슨 일인지 적어 주세요"
+                    mail -> "메일 앱으로 보내기"
+                    else -> "보내기"
+                })
             }
         }
+        if (!mail) Note("보내기 전까지 쓰던 내용은 이 휴대폰에 남아 있어요.")
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+/**
+ * [UX-05] The question as a mail from the user's own mail app: what they wrote, and what they ticked to
+ * go with it, in the same words the form showed. Nothing goes until they send it there.
+ */
+private fun mailQuestion(context: Context, kind: InquiryKind?, text: String, diag: String?, pay: String?) {
+    val extra = buildString {
+        if (pay != null) append("\n\n[급여 계산 내용]\n").append(pay)
+        if (diag != null) append("\n\n[알람 점검 기록]\n").append(diag)
+    }
+    writeToUs(context, "[밤낮 문의] " + (kind?.label ?: "문의"), text.trim() + extra)
+}
+
+/** [UX-05] One line about a question not sent yet, with what can be done about it. */
+@Composable
+private fun DraftLine(text: String, action: String, secondary: Pair<String, () -> Unit>? = null, onAction: () -> Unit) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.EditNote, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+            Spacer(Modifier.width(10.dp))
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.weight(1f))
+            secondary?.let { (label, act) -> TextButton(onClick = act, modifier = Modifier.heightIn(min = 48.dp)) { Text(label) } }
+            TextButton(onClick = onAction, modifier = Modifier.heightIn(min = 48.dp)) { Text(action) }
+        }
     }
 }
 
@@ -447,9 +646,11 @@ private fun InfoLine(label: String, value: String) {
 @Composable
 private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
     val busy by vm.busy.collectAsStateWithLifecycle()
-    var text by rememberSaveable(i.id) { mutableStateOf("") }
+    // [UX-05] More to say is kept until it is sent, like a new question.
+    var text by rememberSaveable(i.id) { mutableStateOf(vm.reply(i.id)) }
     var error by remember { mutableStateOf<String?>(null) }
     val problem = vm.problem(text)
+    LaunchedEffect(i.id, text) { vm.saveReply(i.id, text) }
     Column(Modifier.fillMaxSize()) {
         Column(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
@@ -468,14 +669,17 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
             }
             i.messages.forEach { m -> Bubble(m.text, m.fromDeveloper, stampOf(m.at)) }
             if (i.waiting) {
-                Text("개발자가 읽고 답하면 여기에 보여요. 설정 첫 화면에도 알려 드려요.", style = MaterialTheme.typography.bodySmall,
+                Text("개발자가 읽고 답하면 여기에 보여요. 설정 탭과 설정 첫 화면에도 표시해 드려요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(8.dp))
         }
         Surface(tonalElevation = 2.dp) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                error?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = text,
@@ -676,6 +880,194 @@ private fun Bubble(text: String, fromDeveloper: Boolean, at: String) {
             ) {
                 Text(text, style = MaterialTheme.typography.bodyLarge,
                     color = if (fromDeveloper) scheme.onPrimaryContainer else scheme.onSurface, modifier = Modifier.padding(12.dp))
+            }
+        }
+    }
+}
+
+/**
+ * [UX-05] 도움말: one search over the answers, the settings and 모두의 문의, the answers about the screen
+ * it was opened from first, then the rest. A question is always one tap away at the end, with the
+ * words searched already in it, so not finding an answer is never a dead end.
+ */
+@Composable
+private fun HelpHome(
+    vm: InquiryViewModel,
+    about: String?,
+    query: String,
+    onQuery: (String) -> Unit,
+    list: List<Inquiry>?,
+    onAsk: (String, HelpTopic?) -> Unit,
+    onMine: () -> Unit,
+    onOpenPublic: (PublicInquiry) -> Unit,
+) {
+    val topics = remember { HelpFaq.topics(vm.shareOn) }
+    val draft by vm.draft.collectAsStateWithLifecycle()
+    val board by vm.board.collectAsStateWithLifecycle()
+    var expanded by rememberSaveable { mutableStateOf<String?>(null) }
+    val toggle: (HelpTopic) -> Unit = { t -> expanded = if (expanded == t.id) null else t.id }
+    Column(
+        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = query,
+            onValueChange = { onQuery(it.take(60)) },
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "도움말 찾기" },
+            placeholder = { Text("무엇이 궁금한가요? (예: 알람, 백업)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            leadingIcon = { Icon(Icons.Filled.Search, null) },
+            trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { onQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") } }) else null,
+            singleLine = true,
+            shape = MaterialTheme.shapes.extraLarge,
+        )
+        draft?.let { d ->
+            DraftLine("쓰던 문의가 있어요: " + d.text.lineSequence().first().take(24), action = "이어 쓰기",
+                secondary = "지우기" to { vm.clearDraft() }) { onAsk("", null) }
+        }
+        if (query.isBlank()) {
+            val here = remember(about, topics) { HelpFaq.about(about, topics).take(4) }
+            if (here.isNotEmpty()) {
+                SectionLabel("‘${about.orEmpty().substringAfterLast("> ").trim()}’ 도움말")
+                here.forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
+            }
+            SectionLabel("자주 묻는 질문")
+            (topics - here.toSet()).forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
+        } else {
+            val found = remember(query, topics) { HelpFaq.search(query, topics) }
+            val settings = remember(query) {
+                SettingsIndex.search(query, SettingsIndex.entries(board = false, share = vm.shareOn), limit = 3)
+                    .filter { (it.place as? SettingPlace.Screen)?.go != SettingsGo.INQUIRY }
+            }
+            val posts = remember(query, board) { boardMatches(query, board?.items.orEmpty()) }
+            val total = found.size + settings.size + posts.size
+            Text(if (total == 0) "‘$query’에 맞는 답을 찾지 못했어요" else "찾은 답 ${total}개",
+                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp).semantics { liveRegion = LiveRegionMode.Polite })
+            found.forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk(query, t) }) }
+            if (settings.isNotEmpty()) {
+                SectionLabel("설정에서 찾기")
+                settings.forEach { e -> HelpSettingRow(e) }
+            }
+            if (posts.isNotEmpty()) {
+                SectionLabel("모두의 문의에서")
+                posts.forEach { p -> PublicCard(p) { onOpenPublic(p) } }
+            }
+        }
+        AskCard(vm, query, list, onAsk = { onAsk(query, null) }, onMine = onMine)
+        if (vm.online) MailNotice()
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 2.dp).semantics { heading() })
+}
+
+/**
+ * [UX-05] One answer: the question, and when opened, the answer, a button to where it is done, and a
+ * question about it if that did not help.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FaqCard(topic: HelpTopic, expanded: Boolean, onToggle: () -> Unit, onAsk: (() -> Unit)? = null) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = if (expanded) scheme.surfaceContainer else scheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                    .clickable(role = Role.Button, onClickLabel = if (expanded) "답 접기" else "답 보기", onClick = onToggle)
+                    .semantics { stateDescription = if (expanded) "펼침" else "접힘" }
+                    .padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.AutoMirrored.Outlined.HelpOutline, null, tint = scheme.primary, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(12.dp))
+                Text(topic.question, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, tint = scheme.onSurfaceVariant)
+            }
+            if (expanded) {
+                Column(Modifier.padding(start = 48.dp, end = 16.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(topic.answer, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurface)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        topic.action?.let { (label, action) ->
+                            FilledTonalButton(onClick = { action.run() }, modifier = Modifier.heightIn(min = 48.dp)) { Text(label) }
+                        }
+                        if (onAsk != null) {
+                            TextButton(onClick = onAsk, modifier = Modifier.heightIn(min = 48.dp)) {
+                                Text(if (topic.withCheck) "점검 기록과 함께 문의" else "그래도 안 되면 문의")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** [UX-05] A setting the help search found, with where it lives; it opens there. */
+@Composable
+private fun HelpSettingRow(e: SettingEntry) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.medium)
+            .clickable(role = Role.Button) {
+                when (val p = e.place) {
+                    is SettingPlace.Row -> SettingsLinks.open(p.page, p.row)
+                    is SettingPlace.Screen -> SettingsLinks.go(p.go)
+                }
+            }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(e.title, style = MaterialTheme.typography.bodyLarge)
+            Text(if (e.where == "설정") "설정" else "설정 › ${e.where}", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
+    }
+}
+
+/** [UX-05] Questions others asked that hold the words searched, as far as 모두의 문의 is loaded. */
+internal fun boardMatches(query: String, items: List<PublicInquiry>, limit: Int = 3): List<PublicInquiry> =
+    // Only the question's own words count: every question under 알람 is not about a late alarm.
+    SearchText.best(items, limit) { SearchText.score(query, it.preview, emptyList()) }
+
+/**
+ * [UX-05] The end of the help page: ask the developer, with where the user's questions stand. A build
+ * without the server asks by mail.
+ */
+@Composable
+private fun AskCard(vm: InquiryViewModel, query: String, list: List<Inquiry>?, onAsk: () -> Unit, onMine: () -> Unit) {
+    SoftCard(Modifier.padding(top = 12.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(if (query.isBlank()) "찾는 답이 없나요?" else "‘$query’ 그대로 물어볼까요?", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (vm.online) "개발자가 직접 읽고 답해요. 답이 오면 설정 탭에 표시돼요."
+                else "메일로 물어보면 개발자가 직접 읽고 메일로 답해요.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(onClick = onAsk, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                Icon(if (vm.online) Icons.Outlined.QuestionAnswer else Icons.Outlined.Email, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (vm.online) "새 문의 쓰기" else "메일로 문의하기")
+            }
+            if (vm.online && !list.isNullOrEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.medium)
+                        .clickable(role = Role.Button, onClick = onMine).padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("내 문의: " + standing(list, vm::unreadIn), style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary)
+                }
             }
         }
     }

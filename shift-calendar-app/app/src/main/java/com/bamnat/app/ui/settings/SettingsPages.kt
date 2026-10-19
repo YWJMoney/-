@@ -6,6 +6,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.ui.Modifier
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -145,8 +146,10 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
             sound = settings.defaultAlarmSound,
             defaultLabel = "휴대폰 기본 알람음",
             onPicked = { s -> vm.update { it.copy(defaultAlarmSound = s) } },
+            modifier = Modifier.focusMark("알람음"),
         )
-        Note("근무 종류마다 다른 소리를 정할 수도 있어요.")
+        // [UX-04] Said as a way there, not only as a sentence.
+        NavRow("근무마다 다른 소리", "근무 종류에서 근무마다 알람음을 따로 정해요", onOpenShiftTypes)
         SwitchRow("진동", "소리와 함께 진동해요", settings.vibrate) { v -> vm.update { it.copy(vibrate = v) } }
         SwitchRow("점점 크게", "작은 소리로 시작해 20초 동안 커져요", settings.gradualVolume) { v -> vm.update { it.copy(gradualVolume = v) } }
     }
@@ -308,6 +311,13 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
     SectionCard(title = "내 달력") {
         NavRow("달력 목록", if (calendars.size > 1) "${calendars.size}개 · " + calendars.joinToString(", ") { it.name }
             else "새 달력을 만들어 근무를 따로 적고 따로 공유해요", onOpenCalendars)
+        HorizontalDivider()
+        // [UX-03] Sharing is also where people look for it in settings; both open the calendar with the sheet up.
+        NavRow("근무표 공유", "이미지나 링크로 동료·가족에게 보내요") { SettingsLinks.go(SettingsGo.SHARE) }
+        if (vm.shareOn) {
+            HorizontalDivider()
+            NavRow("동료 근무표 받기", "받은 링크를 넣으면 내 달력과 바꿔 가며 봐요") { SettingsLinks.go(SettingsGo.RECEIVE) }
+        }
     }
     SectionCard(title = "모양") {
         ChoiceRow("테마", null, listOf(ThemeMode.SYSTEM to "휴대폰 따라", ThemeMode.LIGHT to "밝게", ThemeMode.DARK to "어둡게"), settings.themeMode) { m ->
@@ -431,7 +441,11 @@ private fun PrivacyPage(
         NavRow("워치·휴대폰 수면 기록", if (settings.healthSleep) "헬스 커넥트에서 읽고 있어요" else "읽지 않아요 · 잠과 휴식에서 켜요") {
             onOpenPage(SettingsPage.REST)
         }
-        Note("허용을 바꾸면 휴대폰 설정 화면이 열려요. 결제 알림 읽기는 돈 탭에서 켜고 꺼요.")
+        // [UX-04] Where 결제 알림 읽기 is turned on, as a way there.
+        NavRow("결제 알림 읽기", "카드·은행 알림으로 돈 기록을 채우는 것은 돈 탭에서 켜고 꺼요") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.MONEY)
+        }
+        Note("허용을 바꾸면 휴대폰 설정 화면이 열려요.")
     }
 }
 
@@ -442,17 +456,17 @@ private fun AboutPage(vm: SettingsViewModel, onOpenDiagnostics: (Boolean) -> Uni
     SectionCard(title = null) {
         NavRow("알람 점검", "알람이 안 울리거나 늦을 때 원인을 찾아요") { onOpenDiagnostics(false) }
         HorizontalDivider()
-        // [ADMIN-02] In the app, answered in the app; a build without the company server writes a mail.
-        if (vm.inquiryOn) {
-            NavRow("문의하기", if (unread > 0) "개발자 답이 ${unread}개 왔어요" else "앱 안에서 보내고, 답도 여기서 받아요") { onOpenInquiry() }
-        } else {
-            NavRow("문의하기", "메일로 보내요. 휴대폰 기종과 앱 버전이 함께 적혀요") { writeToUs(context) }
-        }
+        // [ADMIN-02][UX-05] Help first, then a question: in the app when the build has the server, by mail when not.
+        NavRow("도움말과 문의", when {
+            unread > 0 -> "개발자 답이 ${unread}개 왔어요"
+            vm.inquiryOn -> "자주 묻는 질문을 보고, 앱 안에서 묻고 답을 받아요"
+            else -> "자주 묻는 질문을 보고, 메일로 물어요"
+        }) { onOpenInquiry() }
         HorizontalDivider()
         NavRow("개인정보 처리방침", null) { openPrivacy(context) }
     }
     Text("밤낮 ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant)
+        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.focusMark("버전"))
 }
 
 // [ADMIN-02] The 밤낮 policy; privacy.html at the site root is another app's.
@@ -462,17 +476,32 @@ private fun openPrivacy(context: android.content.Context) {
     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
 
-/** A mail to the developer with what helps answer it; nothing from the calendar goes in. */
-internal fun writeToUs(context: android.content.Context) {
-    val body = "\n\n---\n앱: 밤낮 ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n기기: ${Build.MANUFACTURER} ${Build.MODEL}\n" +
+/**
+ * A mail to the developer with what helps answer it; nothing from the calendar goes in. [text] is what
+ * the user already wrote (a question that could not be sent, say), so it is not typed twice. [UX-05]
+ */
+internal fun writeToUs(context: android.content.Context, subject: String = "[밤낮 문의]", text: String = "") {
+    val body = text + "\n\n---\n앱: 밤낮 ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n기기: ${Build.MANUFACTURER} ${Build.MODEL}\n" +
         "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})"
     val mail = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$REPORT_EMAIL")).apply {
-        putExtra(Intent.EXTRA_SUBJECT, "[밤낮 문의]")
+        putExtra(Intent.EXTRA_EMAIL, arrayOf(REPORT_EMAIL))
+        putExtra(Intent.EXTRA_SUBJECT, subject)
         putExtra(Intent.EXTRA_TEXT, body)
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
     runCatching { context.startActivity(mail) }.onFailure {
-        android.widget.Toast.makeText(context, "메일 앱이 없어요. $REPORT_EMAIL 로 보내 주세요", android.widget.Toast.LENGTH_LONG).show()
+        // No mail app: any app that sends text, with the address in the text.
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_EMAIL, arrayOf(REPORT_EMAIL))
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            putExtra(Intent.EXTRA_TEXT, "받는 곳: $REPORT_EMAIL\n\n$body")
+        }
+        runCatching {
+            context.startActivity(Intent.createChooser(send, "문의 보내기").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.onFailure {
+            android.widget.Toast.makeText(context, "메일 앱이 없어요. $REPORT_EMAIL 로 보내 주세요", android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 }
 
