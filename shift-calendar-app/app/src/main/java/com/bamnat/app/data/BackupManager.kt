@@ -89,6 +89,61 @@ class BackupManager(
     }
 
     /** One read transaction, so an edit made meanwhile cannot leave days pointing at a missing type [QA-01]. */
+    /** [MCAL-06] A calendar's ledger, jobs, sales, fixed costs, learned categories and money owed. */
+    private suspend fun putMoney(source: AppDatabase, into: JSONObject) {
+        // [WORK-06] Ledger, jobs and sales (version 7). Older apps ignore these keys.
+        val money = source.moneyDao()
+        into.put("money", JSONArray().apply {
+            money.allEntries().forEach { e ->
+                put(JSONObject().put("id", e.id).put("day", e.epochDay).put("kind", e.kind).put("amount", e.amount)
+                    .put("category", e.category).put("note", e.note).put("source", e.source).put("created", e.createdAt)
+                    .put("merchant", e.merchant).putOpt("minute", e.minuteOfDay).put("card", e.cardLast4).put("reviewed", e.reviewed))
+            }
+        })
+        into.put("jobs", JSONArray().apply {
+            money.allJobs().forEach { j ->
+                put(JSONObject().put("id", j.id).put("day", j.epochDay).put("title", j.title).put("client", j.client)
+                    .put("place", j.place).putOpt("start", j.startMinute).putOpt("end", j.endMinute).put("amount", j.amount)
+                    .put("deposit", j.deposit).put("depositPaid", j.depositPaid).put("balancePaid", j.balancePaid)
+                    .putOpt("remind", j.remindMinutes).put("note", j.note)
+                    .putOpt("endDay", j.endEpochDay).put("costs", j.costs).put("withholding", j.withholding))
+            }
+        })
+        into.put("sales", JSONArray().apply {
+            money.allSales().forEach { d -> put(JSONObject().put("day", d.epochDay).put("sales", d.sales).put("costs", d.costs).put("note", d.note)) }
+        })
+        // [LEDG-05][LEDG-04] Fixed costs and learned categories (version 9). Unread notification texts are never backed up.
+        into.put("fixed", JSONArray().apply {
+            money.allFixed().forEach { f ->
+                put(JSONObject().put("id", f.id).put("name", f.name).put("amount", f.amount).put("day", f.day).put("kind", f.kind)
+                    .put("category", f.category).put("remind", f.remind))
+            }
+        })
+        into.put("rules", JSONArray().apply {
+            money.allRules().forEach { r -> put(JSONObject().put("merchant", r.merchant).put("category", r.category)) }
+        })
+        // [RECV-01] Money others owe, with what came back (version 13). Older apps ignore these keys.
+        val owed = source.receivableDao()
+        into.put("owed", JSONArray().apply {
+            owed.all().forEach { r ->
+                put(JSONObject().put("id", r.id).put("who", r.who).put("title", r.title).put("amount", r.amount).put("day", r.epochDay)
+                    .putOpt("due", r.dueEpochDay).put("kind", r.kind).put("note", r.note).put("income", r.countAsIncome)
+                    .putOpt("closed", r.closedEpochDay).put("created", r.createdAt))
+            }
+        })
+        into.put("owedPaid", JSONArray().apply {
+            owed.allPayments().forEach { p ->
+                put(JSONObject().put("id", p.id).put("owed", p.receivableId).put("day", p.epochDay).put("amount", p.amount).putOpt("entry", p.entryId))
+            }
+        })
+    }
+
+    /** [MCAL-06] A calendar's pay setup and closed months. */
+    private fun putPay(store: com.bamnat.app.pay.PayStore, into: JSONObject) {
+        store.profile.value?.let { into.put("pay", com.bamnat.app.pay.PayCodec.encode(it)) }
+        into.put("payClosed", JSONArray(store.closed.value.values.map(com.bamnat.app.pay.SnapshotCodec::encode)))
+    }
+
     suspend fun export(): String = db.withTransaction { exportNow() }
 
     private suspend fun exportNow(): String {
@@ -102,7 +157,8 @@ class BackupManager(
             root.put("calendars", JSONArray().apply {
                 book.added().forEach { cal ->
                     val o = CalendarBook.run { cal.toJson() }
-                    book.database(cal.id).let { other -> other.withTransaction { putSchedule(other, o) } }
+                    book.database(cal.id).let { other -> other.withTransaction { putSchedule(other, o); putMoney(other, o) } }
+                    putPay(book.pay(cal.id), o)
                     put(o)
                 }
             })
@@ -123,59 +179,12 @@ class BackupManager(
             )
         }
         root.put("memos", memos)
-        // [WORK-06] Ledger, jobs and sales (version 7). Older apps ignore these keys.
-        val money = db.moneyDao()
-        root.put("money", JSONArray().apply {
-            money.allEntries().forEach { e ->
-                put(JSONObject().put("id", e.id).put("day", e.epochDay).put("kind", e.kind).put("amount", e.amount)
-                    .put("category", e.category).put("note", e.note).put("source", e.source).put("created", e.createdAt)
-                    .put("merchant", e.merchant).putOpt("minute", e.minuteOfDay).put("card", e.cardLast4).put("reviewed", e.reviewed))
-            }
-        })
-        root.put("jobs", JSONArray().apply {
-            money.allJobs().forEach { j ->
-                put(JSONObject().put("id", j.id).put("day", j.epochDay).put("title", j.title).put("client", j.client)
-                    .put("place", j.place).putOpt("start", j.startMinute).putOpt("end", j.endMinute).put("amount", j.amount)
-                    .put("deposit", j.deposit).put("depositPaid", j.depositPaid).put("balancePaid", j.balancePaid)
-                    .putOpt("remind", j.remindMinutes).put("note", j.note)
-                    .putOpt("endDay", j.endEpochDay).put("costs", j.costs).put("withholding", j.withholding))
-            }
-        })
-        root.put("sales", JSONArray().apply {
-            money.allSales().forEach { d -> put(JSONObject().put("day", d.epochDay).put("sales", d.sales).put("costs", d.costs).put("note", d.note)) }
-        })
-        // [LEDG-05][LEDG-04] Fixed costs and learned categories (version 9). Unread notification texts are never backed up.
-        root.put("fixed", JSONArray().apply {
-            money.allFixed().forEach { f ->
-                put(JSONObject().put("id", f.id).put("name", f.name).put("amount", f.amount).put("day", f.day).put("kind", f.kind)
-                    .put("category", f.category).put("remind", f.remind))
-            }
-        })
-        root.put("rules", JSONArray().apply {
-            money.allRules().forEach { r -> put(JSONObject().put("merchant", r.merchant).put("category", r.category)) }
-        })
-        // [RECV-01] Money others owe, with what came back (version 13). Older apps ignore these keys.
-        val owed = db.receivableDao()
-        root.put("owed", JSONArray().apply {
-            owed.all().forEach { r ->
-                put(JSONObject().put("id", r.id).put("who", r.who).put("title", r.title).put("amount", r.amount).put("day", r.epochDay)
-                    .putOpt("due", r.dueEpochDay).put("kind", r.kind).put("note", r.note).put("income", r.countAsIncome)
-                    .putOpt("closed", r.closedEpochDay).put("created", r.createdAt))
-            }
-        })
-        root.put("owedPaid", JSONArray().apply {
-            owed.allPayments().forEach { p ->
-                put(JSONObject().put("id", p.id).put("owed", p.receivableId).put("day", p.epochDay).put("amount", p.amount).putOpt("entry", p.entryId))
-            }
-        })
+        putMoney(db, root)
         // [SLP-06] The sleep log goes with the rest of the user's data.
         root.put("sleep", JSONArray().apply {
             db.sleepDao().all().forEach { l -> put(JSONObject().put("start", l.startMillis).putOpt("end", l.endMillis)) }
         })
-        payStore?.let { store ->
-            store.profile.value?.let { root.put("pay", com.bamnat.app.pay.PayCodec.encode(it)) }
-            root.put("payClosed", JSONArray(store.closed.value.values.map(com.bamnat.app.pay.SnapshotCodec::encode)))
-        }
+        payStore?.let { putPay(it, root) }
         val s = settings.current
         root.put(
             "settings",
@@ -286,13 +295,89 @@ class BackupManager(
     }
 
     /** Replaces all data with the backup, in one transaction: a broken file changes nothing. */
+    /** [MCAL-06] A calendar's money as a backup has it; null parts are from a backup made before they existed. */
+    /** [MCAL-05][MCAL-06] An added calendar as a backup has it. */
+    private class AddedRows(
+        val cal: PersonalCalendar, val schedule: ScheduleRows, val money: MoneyRows,
+        val pay: com.bamnat.core.pay.PayProfile?, val payClosed: List<com.bamnat.core.pay.CalcSnapshot>?,
+    )
+
+    private class MoneyRows(
+        val entries: List<MoneyEntryEntity>?, val jobs: List<JobEntity>?, val sales: List<DailySalesEntity>?,
+        val fixed: List<FixedCostEntity>?, val rules: List<CategoryRuleEntity>?,
+        val owed: List<com.bamnat.app.data.db.ReceivableEntity>?, val owedPaid: List<com.bamnat.app.data.db.ReceivablePaymentEntity>?,
+    )
+
+    private fun readMoney(from: JSONObject): MoneyRows {
+        val entries = from.optJSONArray("money")?.objects()?.map { o ->
+            MoneyEntryEntity(
+                id = o.getLong("id"), epochDay = o.getLong("day"), kind = o.getString("kind"), amount = o.getLong("amount"),
+                category = o.optString("category"), note = o.optString("note"), source = o.optString("source", "MANUAL"),
+                createdAt = o.optLong("created"), merchant = o.optString("merchant"), minuteOfDay = o.optIntOrNull("minute"),
+                cardLast4 = o.optString("card"), reviewed = o.optBoolean("reviewed", true),
+            )
+        }
+        val fixed = from.optJSONArray("fixed")?.objects()?.map { o ->
+            FixedCostEntity(o.getLong("id"), o.optString("name"), o.optLong("amount"), o.optInt("day", 1), o.optString("kind", "EXPENSE"),
+                o.optString("category"), o.optBoolean("remind", true))
+        }
+        val rules = from.optJSONArray("rules")?.objects()?.map { o -> CategoryRuleEntity(o.getString("merchant"), o.optString("category")) }
+        val jobs = from.optJSONArray("jobs")?.objects()?.map { o ->
+            JobEntity(
+                id = o.getLong("id"), epochDay = o.getLong("day"), title = o.optString("title"), client = o.optString("client"),
+                place = o.optString("place"), startMinute = o.optIntOrNull("start"), endMinute = o.optIntOrNull("end"),
+                amount = o.optLong("amount"), deposit = o.optLong("deposit"), depositPaid = o.optBoolean("depositPaid"),
+                balancePaid = o.optBoolean("balancePaid"), remindMinutes = o.optIntOrNull("remind"), note = o.optString("note"),
+                endEpochDay = if (o.has("endDay") && !o.isNull("endDay")) o.getLong("endDay") else null,
+                costs = o.optLong("costs"), withholding = o.optBoolean("withholding"),
+            )
+        }
+        val owed = from.optJSONArray("owed")?.objects()?.map { o ->
+            com.bamnat.app.data.db.ReceivableEntity(
+                id = o.getLong("id"), who = o.optString("who"), title = o.optString("title"), amount = o.optLong("amount"),
+                epochDay = o.getLong("day"), dueEpochDay = if (o.has("due") && !o.isNull("due")) o.getLong("due") else null,
+                kind = o.optString("kind", "OTHER"), note = o.optString("note"), countAsIncome = o.optBoolean("income"),
+                closedEpochDay = if (o.has("closed") && !o.isNull("closed")) o.getLong("closed") else null, createdAt = o.optLong("created"),
+            )
+        }
+        val owedPaid = from.optJSONArray("owedPaid")?.objects()?.map { o ->
+            com.bamnat.app.data.db.ReceivablePaymentEntity(o.getLong("id"), o.getLong("owed"), o.getLong("day"), o.optLong("amount"),
+                if (o.has("entry") && !o.isNull("entry")) o.getLong("entry") else null)
+        }
+        val sales = from.optJSONArray("sales")?.objects()?.map { o ->
+            DailySalesEntity(o.getLong("day"), o.optLong("sales"), o.optLong("costs"), o.optString("note"))
+        }
+        return MoneyRows(entries, jobs, sales, fixed, rules, owed, owedPaid)
+    }
+
+    /** [MCAL-06] Replaces a calendar's money with a backup's, part by part; call inside its transaction. */
+    private suspend fun writeMoney(target: AppDatabase, rows: MoneyRows) {
+        // Backups from before version 7 carry no money; what is on the phone then stays.
+        val money = target.moneyDao()
+        rows.entries?.let { list -> money.clearEntries(); list.forEach { money.restoreEntry(it) } }
+        rows.jobs?.let { list -> money.clearJobs(); list.forEach { money.restoreJob(it) } }
+        rows.sales?.let { list -> money.clearSales(); list.forEach { money.upsertSales(it) } }
+        rows.fixed?.let { list -> money.clearFixed(); list.forEach { money.restoreFixed(it) } }
+        rows.rules?.let { list -> money.clearRules(); list.forEach { money.upsertRule(it) } }
+        // Backups from before version 13 carry no receivables; the ones on the phone then stay.
+        rows.owed?.let { list ->
+            val dao = target.receivableDao()
+            dao.clearPayments(); dao.clear()
+            list.forEach { dao.restore(it) }
+            rows.owedPaid?.forEach { dao.restorePayment(it) }
+        }
+    }
+
     suspend fun restore(json: String) {
         val root = parse(json)
         val schedule = readSchedule(root)
         // [MCAL-05] Added calendars come back only from a backup that has them; read before anything changes.
         val added = if (calendars != null && root.has("calendars")) root.optJSONArray("calendars").objects().mapNotNull { o ->
-            CalendarBook.fromJson(o)?.takeIf { !it.isMain }?.let { cal -> cal to readSchedule(o) }
-        }.distinctBy { it.first.id } else null
+            CalendarBook.fromJson(o)?.takeIf { !it.isMain }?.let { cal ->
+                AddedRows(cal, readSchedule(o), readMoney(o), o.optJSONObject("pay")?.let(com.bamnat.app.pay.PayCodec::decode),
+                    o.optJSONArray("payClosed")?.objects()?.map(com.bamnat.app.pay.SnapshotCodec::decode))
+            }
+        }.distinctBy { it.cal.id } else null
         val addedOrder = root.optJSONArray("calendarOrder")?.let { a -> (0 until a.length()).map { a.optString(it) } }
         val mainCalendar = root.optJSONObject("mainCalendar")?.let(CalendarBook::fromJson)
         val memos = root.optJSONArray("memos").objects().map { o ->
@@ -306,65 +391,15 @@ class BackupManager(
                 remindNotify = o.optBoolean("remindNotify"), remindAsked = o.optStringOrNull("remindAsked"),
             )
         }
-        val entries = root.optJSONArray("money")?.objects()?.map { o ->
-            MoneyEntryEntity(
-                id = o.getLong("id"), epochDay = o.getLong("day"), kind = o.getString("kind"), amount = o.getLong("amount"),
-                category = o.optString("category"), note = o.optString("note"), source = o.optString("source", "MANUAL"),
-                createdAt = o.optLong("created"), merchant = o.optString("merchant"), minuteOfDay = o.optIntOrNull("minute"),
-                cardLast4 = o.optString("card"), reviewed = o.optBoolean("reviewed", true),
-            )
-        }
-        val fixed = root.optJSONArray("fixed")?.objects()?.map { o ->
-            FixedCostEntity(o.getLong("id"), o.optString("name"), o.optLong("amount"), o.optInt("day", 1), o.optString("kind", "EXPENSE"),
-                o.optString("category"), o.optBoolean("remind", true))
-        }
-        val rules = root.optJSONArray("rules")?.objects()?.map { o -> CategoryRuleEntity(o.getString("merchant"), o.optString("category")) }
         val sleep = root.optJSONArray("sleep")?.objects()?.map { o ->
             com.bamnat.app.data.db.SleepLogEntity(startMillis = o.getLong("start"), endMillis = if (o.has("end") && !o.isNull("end")) o.getLong("end") else null)
         }
-        val jobs = root.optJSONArray("jobs")?.objects()?.map { o ->
-            JobEntity(
-                id = o.getLong("id"), epochDay = o.getLong("day"), title = o.optString("title"), client = o.optString("client"),
-                place = o.optString("place"), startMinute = o.optIntOrNull("start"), endMinute = o.optIntOrNull("end"),
-                amount = o.optLong("amount"), deposit = o.optLong("deposit"), depositPaid = o.optBoolean("depositPaid"),
-                balancePaid = o.optBoolean("balancePaid"), remindMinutes = o.optIntOrNull("remind"), note = o.optString("note"),
-                endEpochDay = if (o.has("endDay") && !o.isNull("endDay")) o.getLong("endDay") else null,
-                costs = o.optLong("costs"), withholding = o.optBoolean("withholding"),
-            )
-        }
-        val owed = root.optJSONArray("owed")?.objects()?.map { o ->
-            com.bamnat.app.data.db.ReceivableEntity(
-                id = o.getLong("id"), who = o.optString("who"), title = o.optString("title"), amount = o.optLong("amount"),
-                epochDay = o.getLong("day"), dueEpochDay = if (o.has("due") && !o.isNull("due")) o.getLong("due") else null,
-                kind = o.optString("kind", "OTHER"), note = o.optString("note"), countAsIncome = o.optBoolean("income"),
-                closedEpochDay = if (o.has("closed") && !o.isNull("closed")) o.getLong("closed") else null, createdAt = o.optLong("created"),
-            )
-        }
-        val owedPaid = root.optJSONArray("owedPaid")?.objects()?.map { o ->
-            com.bamnat.app.data.db.ReceivablePaymentEntity(o.getLong("id"), o.getLong("owed"), o.getLong("day"), o.optLong("amount"),
-                if (o.has("entry") && !o.isNull("entry")) o.getLong("entry") else null)
-        }
-        val sales = root.optJSONArray("sales")?.objects()?.map { o ->
-            DailySalesEntity(o.getLong("day"), o.optLong("sales"), o.optLong("costs"), o.optString("note"))
-        }
+        val money = readMoney(root)
         // Read before anything changes, so a broken pay part leaves the phone as it was.
         val pay = root.optJSONObject("pay")?.let(com.bamnat.app.pay.PayCodec::decode)
         val payClosed = root.optJSONArray("payClosed")?.objects()?.map(com.bamnat.app.pay.SnapshotCodec::decode)
         db.withTransaction {
-            // Backups from before version 7 carry no money; what is on the phone then stays.
-            val money = db.moneyDao()
-            entries?.let { list -> money.clearEntries(); list.forEach { money.restoreEntry(it) } }
-            jobs?.let { list -> money.clearJobs(); list.forEach { money.restoreJob(it) } }
-            sales?.let { list -> money.clearSales(); list.forEach { money.upsertSales(it) } }
-            fixed?.let { list -> money.clearFixed(); list.forEach { money.restoreFixed(it) } }
-            rules?.let { list -> money.clearRules(); list.forEach { money.upsertRule(it) } }
-            // Backups from before version 13 carry no receivables; the ones on the phone then stay.
-            owed?.let { list ->
-                val dao = db.receivableDao()
-                dao.clearPayments(); dao.clear()
-                list.forEach { dao.restore(it) }
-                owedPaid?.forEach { dao.restorePayment(it) }
-            }
+            writeMoney(db, money)
             // Backups from before version 11 carry no sleep log; the one on the phone then stays.
             sleep?.let { list -> db.sleepDao().clear(); list.forEach { db.sleepDao().insert(it) } }
             db.memoDao().clear()
@@ -374,8 +409,14 @@ class BackupManager(
         // [MCAL-05] The added calendars as the backup had them, each in its own database.
         calendars?.let { book ->
             if (added != null) {
-                book.replaceAdded(listOfNotNull(mainCalendar) + added.map { it.first }, addedOrder)
-                for ((cal, rows) in added) book.database(cal.id).let { other -> other.withTransaction { writeSchedule(other, rows) } }
+                book.replaceAdded(listOfNotNull(mainCalendar) + added.map { it.cal }, addedOrder)
+                for (a in added) {
+                    book.database(a.cal.id).let { other -> other.withTransaction { writeSchedule(other, a.schedule); writeMoney(other, a.money) } }
+                    // [MCAL-06] Its pay setup points at its own shift ids, restored just above.
+                    val store = book.pay(a.cal.id)
+                    store.save(a.pay, keepUndo = false)
+                    store.replaceClosed(a.payClosed.orEmpty().associateBy { it.month })
+                }
             } else if (mainCalendar != null) {
                 book.rename(PersonalCalendar.MAIN, mainCalendar.name)
             }

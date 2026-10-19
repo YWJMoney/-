@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.money
 
+import com.bamnat.app.appContainer
 import com.bamnat.app.ui.components.labelWidth
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -88,16 +89,21 @@ import java.time.YearMonth
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-class MoneyViewModel(private val container: AppContainer) : ViewModel(), MoneyActions {
+class MoneyViewModel(
+    private val container: AppContainer,
+    /** [MCAL-06] The calendar whose money this is: the one on the calendar tab. */
+    val calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+) : ViewModel(), MoneyActions {
+    private val scope = container.scopeOf(calendarId)
     /** [NAV-01] The month shown here, the calendar's and 근무·급여's too. */
     val shownMonth: StateFlow<YearMonth> = container.shownMonth.month
     fun showMonth(month: YearMonth) = container.shownMonth.show(month)
-    private val money = container.moneyRepository
+    private val money = scope.money
     val book: StateFlow<MoneyBook?> = money.book.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val snapshot: StateFlow<ScheduleSnapshot?> =
-        container.scheduleRepository.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-    val settings: StateFlow<AppSettings> = container.settingsRepository.settings
-    val payProfile: StateFlow<PayProfile?> = container.payStore.profile
+        scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val settings: StateFlow<AppSettings> = scope.settings.stateIn(viewModelScope, SharingStarted.Eagerly, scope.currentSettings())
+    val payProfile: StateFlow<PayProfile?> = scope.pay.profile
     val tier: StateFlow<Tier> = container.featureGate.tier
     private val payCalculator = PayCalculator()
 
@@ -261,6 +267,9 @@ fun MoneyScreen(
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달")
                 }
             }
+            // [MCAL-06] Whose money this is, once there are several calendars.
+            com.bamnat.app.ui.calendar.CalendarScopeChips(androidx.compose.ui.platform.LocalContext.current.appContainer,
+                Modifier.padding(horizontal = 16.dp))
             if (wide) {
                 Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 8.dp),

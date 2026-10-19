@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.BamnatApp
 import com.bamnat.app.share.ShareLinkState
 import com.bamnat.app.share.ShareLinkStore
+import com.bamnat.app.ui.calendar.newCalendarBadge
 import com.bamnat.app.ui.setup.SetupViewModel
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.setup.SetupStep
@@ -212,5 +213,56 @@ class PersonalCalendarsTest {
         assertTrue(snap.resolver.resolve(day.plusDays(1)).isWorkDay)
         // A restore opens on the main calendar.
         assertEquals(PersonalCalendar.MAIN, c.calendars.active.value)
+    }
+
+    /** [MCAL-06] An added calendar keeps its own jobs, ledger and pay; the main calendar's stay as they were. */
+    @Test fun anAddedCalendarKeepsItsOwnMoneyAndPay() = runBlocking {
+        val id = listedCalendar("알바")
+        val day = LocalDate.of(2026, 11, 2)
+        c.calendars.money(id).save(com.bamnat.core.money.Job(date = day, title = "행사 진행", amount = 150_000))
+        assertEquals(listOf("행사 진행"), c.calendars.money(id).jobs.first().map { it.title })
+        assertTrue(c.moneyRepository.jobs.first().isEmpty())
+        // The main calendar's money is the app's as it always was.
+        assertSame(c.moneyRepository, c.calendars.money(PersonalCalendar.MAIN))
+        assertSame(c.payStore, c.calendars.pay(PersonalCalendar.MAIN))
+
+        val profile = com.bamnat.app.ui.pay.PayViewModel(c, id).sampleProfile()
+        c.calendars.pay(id).save(profile, keepUndo = false)
+        assertNull(c.payStore.profile.value)
+        // Kept in its own folder, read again on the next start.
+        val again = com.bamnat.app.pay.PayStore(app, java.io.File(CalendarStorage.filesOf(app, id), "pay"))
+        assertEquals(profile.occupation, again.profile.value?.occupation)
+
+        // The job notices hear about every calendar's jobs.
+        assertEquals(listOf("행사 진행"), c.calendars.everyMoney.first().jobs.map { it.title })
+
+        // Taken out with its calendar.
+        c.calendars.delete(id)
+        assertFalse(CalendarStorage.filesOf(app, id).exists())
+    }
+
+    /** [MCAL-06] Its money and pay are in the backup too, and come back to it. */
+    @Test fun aBackupCarriesAnAddedCalendarsMoneyAndPay() = runBlocking {
+        val id = listedCalendar("알바")
+        c.calendars.repository(id).ensureDefaults()
+        val day = LocalDate.of(2026, 11, 2)
+        c.calendars.money(id).save(com.bamnat.core.money.Job(date = day, title = "행사 진행", amount = 150_000))
+        c.calendars.pay(id).save(com.bamnat.app.ui.pay.PayViewModel(c, id).sampleProfile(), keepUndo = false)
+        val json = c.backupManager.export()
+
+        c.calendars.delete(id)
+        c.backupManager.restore(json)
+        assertEquals(listOf("행사 진행"), c.calendars.money(id).jobs.first().map { it.title })
+        assertNotNull(c.calendars.pay(id).profile.value)
+        assertTrue(c.moneyRepository.jobs.first().isEmpty())
+        assertNull(c.payStore.profile.value)
+    }
+
+    /** [MCAL-07] The main calendar and one added calendar are free; the list says 프로 from the second added one. */
+    @Test fun aSecondAddedCalendarIsPro() {
+        fun badge() = com.bamnat.app.ui.calendar.CalendarRow.of(c.calendars.order.value, c.calendars.calendars.value, emptyList()).newCalendarBadge()
+        assertNull(badge())
+        listedCalendar("알바")
+        assertEquals("프로", badge())
     }
 }

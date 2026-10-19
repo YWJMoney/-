@@ -43,6 +43,8 @@ data class PersonalCalendar(
         /** Avatar colours for added calendars, apart from the received ones' so the two kinds read apart. */
         val COLORS = listOf(0xFF2F80ED, 0xFF27AE60, 0xFFB5651D, 0xFF8E44AD, 0xFFD6457A, 0xFF00A88F, 0xFFE0A100, 0xFF5D6D7E)
         const val MAX_NAME = 20
+        /** [MCAL-07] Added calendars free of charge besides the main one; more are [com.bamnat.app.tier.Feature.MORE_CALENDARS]. */
+        const val FREE_ADDED = 1
     }
 }
 
@@ -88,12 +90,17 @@ interface CalendarStorage {
         override fun delete(id: String, db: AppDatabase?) {
             db?.close()
             context.deleteDatabase(fileName(id))
+            // [MCAL-06] Its pay setup and closed months go with it.
+            filesOf(context, id).deleteRecursively()
         }
     }
 
     companion object {
         /** In the databases folder beside the main one, so backups and phone transfers carry it [REL-04]. */
         fun fileName(id: String) = "calendar_$id.db"
+
+        /** [MCAL-06] An added calendar's other files (its pay setup), in app storage so backups carry them. */
+        fun filesOf(context: android.content.Context, id: String) = File(context.filesDir, "calendars/$id")
     }
 }
 
@@ -111,6 +118,11 @@ class CalendarBook(
     /** A repository over an added calendar's database, with the same kinds of extra work as the main one. */
     private val repositoryOf: (AppDatabase) -> ScheduleRepository,
     private val clock: () -> Long = System::currentTimeMillis,
+    /** [MCAL-06] The main calendar's money and pay; added calendars keep their own. */
+    private val mainMoney: () -> MoneyRepository = { error("No money here") },
+    private val mainPay: () -> com.bamnat.app.pay.PayStore = { error("No pay here") },
+    private val moneyOf: (AppDatabase) -> MoneyRepository = { MoneyRepository(it) },
+    private val payOf: (String) -> com.bamnat.app.pay.PayStore = { error("No pay here") },
 ) {
     private data class State(val calendars: List<PersonalCalendar>, val order: List<String>, val active: String)
 
@@ -137,20 +149,61 @@ class CalendarBook(
 
     fun current(): PersonalCalendar = get(_active.value) ?: mainOf(all)
 
-    private val open = HashMap<String, Pair<AppDatabase, ScheduleRepository>>()
+    private class Opened(val db: AppDatabase, val schedule: ScheduleRepository) {
+        var money: MoneyRepository? = null
+    }
+
+    private val open = HashMap<String, Opened>()
+    private val pays = HashMap<String, com.bamnat.app.pay.PayStore>()
+
+    private fun opened(id: String): Opened = open.getOrPut(id) { storage.open(id).let { db -> Opened(db, repositoryOf(db)) } }
 
     /** The schedule of calendar [id]; the main one for an id that is not (or no longer) there. */
     @Synchronized
     fun repository(id: String): ScheduleRepository {
         if (id == PersonalCalendar.MAIN || get(id) == null) return main
-        return open.getOrPut(id) { storage.open(id).let { db -> db to repositoryOf(db) } }.second
+        return opened(id).schedule
     }
 
     /** [MCAL-05] An added calendar's database, for the backup. */
     @Synchronized
     fun database(id: String): AppDatabase {
         require(id != PersonalCalendar.MAIN && get(id) != null) { "Not an added calendar: $id" }
-        return open.getOrPut(id) { storage.open(id).let { db -> db to repositoryOf(db) } }.first
+        return opened(id).db
+    }
+
+    /** [MCAL-06] Calendar [id]'s ledger, jobs, sales and receivables, in its own database; the main one's otherwise. */
+    @Synchronized
+    fun money(id: String): MoneyRepository {
+        if (id == PersonalCalendar.MAIN || get(id) == null) return mainMoney()
+        val o = opened(id)
+        return o.money ?: moneyOf(o.db).also { o.money = it }
+    }
+
+    /**
+     * [MCAL-06] Every calendar's money as one book, for the job, bill and 받을 돈 notices: a job
+     * booked on any calendar is told about.
+     */
+    val everyMoney: Flow<com.bamnat.core.money.MoneyBook> = _calendars.flatMapLatest { list ->
+        if (list.isEmpty()) flowOf(com.bamnat.core.money.MoneyBook.EMPTY)
+        else combine(list.map { money(it.id).book }) { books -> merged(books.toList()) }
+    }
+
+    /** [MCAL-06] [everyMoney] read now, from a notice's receiver. */
+    suspend fun everyMoneyNow(): com.bamnat.core.money.MoneyBook = merged(_calendars.value.map { cal ->
+        val m = money(cal.id)
+        com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed(), m.allReceivables())
+    })
+
+    private fun merged(books: List<com.bamnat.core.money.MoneyBook>) = books.singleOrNull() ?: com.bamnat.core.money.MoneyBook(
+        books.flatMap { it.entries }, books.flatMap { it.jobs }, books.flatMap { it.sales }, books.flatMap { it.fixed }, books.flatMap { it.receivables },
+    )
+
+    /** [MCAL-06] Calendar [id]'s pay setup and closed months; the main one's otherwise. */
+    @Synchronized
+    fun pay(id: String): com.bamnat.app.pay.PayStore {
+        if (id == PersonalCalendar.MAIN || get(id) == null) return mainPay()
+        return pays.getOrPut(id) { payOf(id) }
     }
 
     /** [MCAL-01] What the calendar tab works on now; a write started here stays with this calendar. */
@@ -232,7 +285,7 @@ class CalendarBook(
     @Synchronized
     fun delete(id: String) {
         if (id == PersonalCalendar.MAIN || get(id) == null) return
-        val db = synchronized(this) { open.remove(id)?.first }
+        val db = synchronized(this) { pays.remove(id); open.remove(id)?.db }
         val s = state.value
         write(s.copy(
             calendars = s.calendars.filter { it.id != id },
