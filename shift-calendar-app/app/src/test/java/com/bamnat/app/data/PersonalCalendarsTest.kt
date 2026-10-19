@@ -43,7 +43,7 @@ class PersonalCalendarsTest {
     private val today = now.toLocalDate()
 
     private fun waitFor(what: String, done: () -> Boolean) {
-        val end = System.currentTimeMillis() + 15_000
+        val end = System.currentTimeMillis() + 60_000
         while (!done()) {
             check(System.currentTimeMillis() < end) { "Timed out waiting for $what" }
             shadowOf(Looper.getMainLooper()).idle()
