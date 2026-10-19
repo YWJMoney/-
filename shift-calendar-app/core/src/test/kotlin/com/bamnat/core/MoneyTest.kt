@@ -51,9 +51,29 @@ class MoneyTest {
         assertEquals(42_000, m.expenses)
         assertEquals(listOf("식비" to 32_000L, "카페" to 10_000L), m.expenseByCategory.map { it.category to it.amount })
         assertEquals(2, m.expenseByCategory.first { it.category == "카페" }.count)
-        assertEquals(2_000_000 + 2_000_000 + 300_000 + 50_000L, m.income)
+        // [RECV-04] Only the paid deposit of the jobs came in; the rest is 받을 돈.
+        assertEquals(2_000_000 + 300_000 + 300_000 + 50_000L, m.income)
         assertEquals(300_000, m.jobReceived)
+        assertEquals(1_700_000, m.jobOwed)
         assertEquals(m.income - 42_000, m.balance)
+    }
+
+    /** [RECV-04] A job written with its price is not money in until 돈 받음 is ticked. */
+    @Test
+    fun aJobCountsAsIncomeOnlyOnceItIsPaid() {
+        val job = Job(date = d(3), title = "도배", amount = 800_000, deposit = 200_000)
+        val none = MoneyCalculator.month(nov, emptyList(), listOf(job), emptyList())
+        assertEquals(0, none.income)
+        assertEquals(800_000, none.jobEarned)
+        assertEquals(800_000, none.jobOwed)
+        assertEquals(200_000, MoneyCalculator.month(nov, emptyList(), listOf(job.copy(depositPaid = true)), emptyList()).income)
+        val all = MoneyCalculator.month(nov, emptyList(), listOf(job.copy(depositPaid = true, balancePaid = true)), emptyList())
+        assertEquals(800_000, all.income)
+        assertEquals(0, all.jobOwed)
+        // The calendar cell follows: nothing in until paid, the owed part shown as 받을 돈.
+        val day = MoneyCalculator.days(nov, emptyList(), listOf(job), emptyList()).getValue(d(3))
+        assertEquals(0, day.income)
+        assertEquals(800_000, day.unpaid)
     }
 
     @Test
@@ -74,8 +94,10 @@ class MoneyTest {
         )
         val days = MoneyCalculator.days(nov, listOf(MoneyEntry(date = d(3), kind = MoneyKind.EXPENSE, amount = 8_000, category = "식비")),
             jobs, listOf(DailySales(d(9), 0, 0)))
-        assertEquals(100_000, days.getValue(d(3)).income)
+        assertEquals(0, days.getValue(d(3)).income)
         assertEquals(8_000, days.getValue(d(3)).expense)
+        assertEquals(70_000, days.getValue(d(1)).income)
+        assertEquals(50_000, days.getValue(d(25)).income)
         assertEquals(150_000, days.getValue(d(25)).unpaid)
         assertFalse(d(9) in days)
         assertEquals(listOf(1L), MoneyCalculator.unpaid(jobs, d(20)).map { it.id })
@@ -98,18 +120,26 @@ class MoneyTest {
     }
 
     @Test
-    fun jobCostsComeOffIncome() {
+    fun jobCostsGoOutWithSpending() {
         val tiles = Job(date = d(3), title = "욕실", amount = 1_200_000, costs = 350_000)
         val m = MoneyCalculator.month(nov, emptyList(), listOf(tiles), emptyList())
-        assertEquals(850_000, m.income)
+        // [RECV-04] Unpaid: nothing in, the materials already out.
+        assertEquals(0, m.income)
+        assertEquals(350_000, m.spent)
+        assertEquals(-350_000, m.balance)
         assertEquals(350_000, m.jobCosts)
+        assertEquals(850_000, m.jobProfit)
+        val paid = MoneyCalculator.month(nov, emptyList(), listOf(tiles.copy(balancePaid = true)), emptyList())
+        assertEquals(1_200_000, paid.income)
+        assertEquals(850_000, paid.balance)
+        assertEquals(350_000, MoneyCalculator.days(nov, emptyList(), listOf(tiles), emptyList()).getValue(d(3)).expense)
         // Costs do not change what the client still owes.
         assertEquals(1_200_000, tiles.unpaid)
     }
 
     @Test
     fun aJobOverSeveralDaysMarksEachDayButCountsOnce() {
-        val job = Job(id = 7, date = d(28), endDate = d(30).plusDays(2), title = "주방 리모델링", amount = 3_000_000)
+        val job = Job(id = 7, date = d(28), endDate = d(30).plusDays(2), title = "주방 리모델링", amount = 3_000_000, balancePaid = true)
         assertEquals(5, job.days)
         val book = com.bamnat.core.money.MoneyBook(jobs = listOf(job))
         val days = book.days(nov)

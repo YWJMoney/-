@@ -885,6 +885,36 @@ class ScreenshotTest {
     @Test fun foldedShareLinkBusiness() = shoot("200_folded_share_link_business", FOLDED, shareSheet(WorkStyle.BUSINESS))
     @Test fun foldedShareLinkField() = shoot("201_folded_share_link_field", FOLDED, shareSheet(WorkStyle.FIELD))
     @Test fun foldedShareLinkBusinessLargeText() = shoot("202_folded_share_link_business_large_text", FOLDED, 1.5f, shareSheet(WorkStyle.BUSINESS))
+    // [RECV-05] 받을 돈 for each kind of work: written debts, unpaid jobs, the job and receivable sheets.
+    private fun owed(s: WorkStyle, wide: Boolean = false, then: Screen.() -> Unit = {}): Screen.() -> Unit = style(s) {
+        val c = app.container
+        runBlocking {
+            val money = c.moneyRepository
+            money.save(com.bamnat.core.money.Receivable(who = "라마바전자", title = "9월 납품 대금", amount = 1_650_000, date = today.minusDays(40),
+                due = today.minusDays(6), kind = com.bamnat.core.money.ReceivableKind.SALE))
+            val part = money.save(com.bamnat.core.money.Receivable(who = "가나다식당", title = "단체 도시락 외상", amount = 480_000,
+                date = today.minusDays(12), due = today.plusDays(2), kind = com.bamnat.core.money.ReceivableKind.SALE, note = "월말에 한 번에 준다고 함"))
+            money.receive(part, 200_000, today.minusDays(3))
+            money.save(com.bamnat.core.money.Receivable(who = "민지", title = "여행 경비", amount = 120_000, date = today.minusDays(20),
+                kind = com.bamnat.core.money.ReceivableKind.LOAN))
+        }
+        settle()
+        val vm = com.bamnat.app.ui.money.OwedViewModel(c)
+        content { com.bamnat.app.ui.money.OwedScreen(vm, wide = wide, onBack = {}, today = today) }
+        settle()
+        then()
+    }
+    @Test fun foldedOwedBusiness() = shoot("210_folded_owed_business", FOLDED, owed(WorkStyle.BUSINESS))
+    @Test fun foldedOwedFieldList() = shoot("211_folded_owed_field_list", FOLDED, owed(WorkStyle.FIELD) { scrollUp(520, across = 0.5f) })
+    @Test fun foldedOwedSheet() = shoot("212_folded_owed_sheet", FOLDED, owed(WorkStyle.BUSINESS) { tapText("단체 도시락 외상") })
+    @Test fun foldedOwedJobSheet() = shoot("213_folded_owed_job_sheet", FOLDED, owed(WorkStyle.FIELD) { tapText("주방 수전 교체") })
+    @Test fun unfoldedOwed() = shoot("214_unfolded_owed", UNFOLDED, owed(WorkStyle.SHIFT, wide = true))
+    @Test fun phoneOwedEmpty() = shoot("215_phone_owed_empty", PHONE, style(WorkStyle.HOURLY) {
+        val c = app.container
+        // Before any job was done, so nothing is owed yet.
+        val vm = com.bamnat.app.ui.money.OwedViewModel(c)
+        content { com.bamnat.app.ui.money.OwedScreen(vm, wide = false, onBack = {}, today = today.minusYears(5)) }
+    })
     // [WORK-01] First launch: how do you work?
     @Test fun foldedWorkStylePicker() = shoot("49_folded_work_style", FOLDED) {
         content { com.bamnat.app.ui.work.WorkStyleScreen(current = null, onPick = {}) }

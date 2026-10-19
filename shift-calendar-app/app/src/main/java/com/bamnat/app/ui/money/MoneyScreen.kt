@@ -322,8 +322,13 @@ private fun SummaryCard(m: MonthMoney) {
             }
             Column(Modifier.weight(1f)) {
                 Text("나간 돈", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("-" + Fmt.won(m.expenses), style = MaterialTheme.typography.titleMedium, color = cal.expense, fontWeight = FontWeight.Bold)
+                Text("-" + Fmt.won(m.spent), style = MaterialTheme.typography.titleMedium, color = cal.expense, fontWeight = FontWeight.Bold)
             }
+        }
+        // [RECV-04] Work written down but not paid yet stays out of 들어온 돈 and shows here instead.
+        if (m.jobOwed > 0) {
+            Text("아직 안 받은 일감 ${Fmt.won(m.jobOwed)}은 받을 돈에 있어요. 돈 받음을 켜면 들어온 돈에 더해져요.",
+                style = MaterialTheme.typography.bodySmall, color = cal.warning, modifier = Modifier.padding(top = 8.dp))
         }
     }
 }
@@ -349,10 +354,11 @@ private fun IncomeCard(m: MonthMoney, style: WorkStyle?, hasProfile: Boolean, on
             }
         }
         if (style?.usesJobs == true || m.jobCount > 0) {
-            Line("일감 ${m.jobCount}건", Fmt.won(m.jobEarned))
+            // [RECV-04] Only what was paid counts; the rest of the work is shown, not added.
+            Line("일감 ${m.jobCount}건 받은 돈", Fmt.won(m.jobReceived))
+            if (m.jobEarned > 0) Line("  일한 금액 ${Fmt.won(m.jobEarned)} · 아직 안 받은 돈 ${Fmt.won(m.jobOwed)}", "", muted = true)
             if (m.jobWithheld > 0) Line("  3.3% 세금 뗀 뒤 금액 (뗀 세금 ${Fmt.won(m.jobWithheld)})", "", muted = true)
-            if (m.jobCosts > 0) Line("  자재비·경비", "-" + Fmt.won(m.jobCosts), muted = true)
-            if (m.jobEarned > 0) Line("  그중 받은 돈", Fmt.won(m.jobReceived), muted = true)
+            if (m.jobCosts > 0) Line("  자재비·경비는 나간 돈에 넣었어요", Fmt.won(m.jobCosts), muted = true)
         }
         if (style?.usesSales == true || m.salesDays > 0) {
             Line("가게 순수익 (${m.salesDays}일)", Fmt.won(m.salesNet))
@@ -456,11 +462,11 @@ private fun StatsCard(m: MonthMoney, prev: MonthMoney?, trend: List<MonthMoney>,
         }
         extra()
         // Months before the first record are left out rather than shown as empty rows.
-        val shown = trend.dropWhile { it.income == 0L && it.expenses == 0L }
+        val shown = trend.dropWhile { it.income == 0L && it.spent == 0L }
         if (shown.size > 1) {
             Spacer(Modifier.height(12.dp))
             Text("월별 흐름", style = MaterialTheme.typography.labelLarge)
-            val max = shown.maxOf { maxOf(it.income, it.expenses) }.coerceAtLeast(1)
+            val max = shown.maxOf { maxOf(it.income, it.spent) }.coerceAtLeast(1)
             shown.forEach { t -> TrendRow(t, max) }
         }
     }
@@ -473,11 +479,11 @@ private fun TrendRow(t: MonthMoney, max: Long) {
         Text(Fmt.monthShort(t.month), style = MaterialTheme.typography.labelMedium, modifier = Modifier.labelWidth(40.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Track(t.income.toFloat() / max, cal.income)
-            Track(t.expenses.toFloat() / max, cal.expense)
+            Track(t.spent.toFloat() / max, cal.expense)
         }
         Column(Modifier.padding(start = 10.dp), horizontalAlignment = Alignment.End) {
             Text("+" + Fmt.wonShort(t.income), style = MaterialTheme.typography.labelSmall, color = cal.income)
-            Text("-" + Fmt.wonShort(t.expenses), style = MaterialTheme.typography.labelSmall, color = cal.expense)
+            Text("-" + Fmt.wonShort(t.spent), style = MaterialTheme.typography.labelSmall, color = cal.expense)
         }
     }
 }
