@@ -1,6 +1,7 @@
 package com.bamnat.app.company
 
 import android.content.Context
+import androidx.core.content.edit
 import com.bamnat.app.BuildConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -262,6 +263,46 @@ class InquiryStore(context: Context) {
     }
 
     fun forget(id: String) {
-        prefs.edit().remove("seen_$id").apply()
+        prefs.edit {
+            remove("seen_$id")
+            remove("reply_$id")
+        }
+    }
+
+    private val _draft = MutableStateFlow(loadDraft())
+    /** [UX-05] A question being written and not sent yet. It stays on this phone and is never sent by itself. */
+    val draft: StateFlow<InquiryDraft?> = _draft.asStateFlow()
+
+    private fun loadDraft(): InquiryDraft? {
+        val text = prefs.getString("draft_text", null)?.takeIf { it.isNotBlank() } ?: return null
+        return InquiryDraft(prefs.getString("draft_kind", null)?.let(InquiryKind::of), text)
+    }
+
+    /** Keeps [text] for later; a blank one clears the draft. */
+    fun saveDraft(kind: InquiryKind?, text: String) {
+        val next = InquiryDraft(kind, text).takeIf { text.isNotBlank() }
+        if (next == _draft.value) return
+        _draft.value = next
+        prefs.edit {
+            if (next == null) {
+                remove("draft_text")
+                remove("draft_kind")
+            } else {
+                putString("draft_text", text)
+                if (kind != null) putString("draft_kind", kind.code) else remove("draft_kind")
+            }
+        }
+    }
+
+    fun clearDraft() = saveDraft(null, "")
+
+    /** [UX-05] More to say on question [id], kept until it is sent. */
+    fun reply(id: String): String = prefs.getString("reply_$id", "").orEmpty()
+
+    fun saveReply(id: String, text: String) {
+        prefs.edit { if (text.isBlank()) remove("reply_$id") else putString("reply_$id", text) }
     }
 }
+
+/** [UX-05] A question not sent yet: what it is about (if chosen) and what is written so far. */
+data class InquiryDraft(val kind: InquiryKind?, val text: String)

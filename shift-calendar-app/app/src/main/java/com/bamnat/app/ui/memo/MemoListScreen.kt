@@ -50,13 +50,12 @@ import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.SelectAll
-import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -83,9 +82,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.ui.Fmt
+import com.bamnat.app.ui.IconCountBadge
 import com.bamnat.app.ui.components.ShiftBadge
 import com.bamnat.app.ui.components.memoBackground
 import com.bamnat.app.ui.theme.MemoPaletteLight
@@ -175,9 +177,13 @@ fun MemoListScreen(
                 SmallFloatingActionButton(onClick = { onNew(true, date) }) {
                     Icon(Icons.Filled.Checklist, contentDescription = "새 체크리스트")
                 }
-                FloatingActionButton(onClick = { onNew(false, date) }) {
-                    Icon(Icons.Outlined.Edit, contentDescription = if (date != null) "오늘 날짜로 새 메모" else "새 메모")
-                }
+                // [UX-06] Said in words: a pencil alone was read as "edit" and the checklist above it was missed.
+                ExtendedFloatingActionButton(
+                    onClick = { onNew(false, date) },
+                    icon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+                    text = { Text("새 메모") },
+                    modifier = Modifier.semantics { contentDescription = if (date != null) "오늘 날짜로 새 메모" else "새 메모" },
+                )
             }
         }
     }
@@ -219,7 +225,7 @@ private fun Header(state: MemoListState, onSort: (MemoSort) -> Unit, onOpenTrash
             }
         }
         IconButton(onClick = onOpenTrash) {
-            BadgedBox(badge = { if (state.trashCount > 0) Badge { Text("${state.trashCount}") } }) {
+            BadgedBox(badge = { if (state.trashCount > 0) IconCountBadge(state.trashCount, "메모 ${state.trashCount}개") }) {
                 Icon(Icons.Outlined.Delete, contentDescription = "휴지통")
             }
         }

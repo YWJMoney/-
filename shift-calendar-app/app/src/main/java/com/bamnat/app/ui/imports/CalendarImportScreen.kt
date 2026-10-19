@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material3.AlertDialog
@@ -214,6 +215,12 @@ fun CalendarImportScreen(vm: CalendarImportViewModel, onBack: () -> Unit) {
             TopAppBar(
                 title = { Text("캘린더에서 가져오기") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                // [UX-05] Help about this screen, with the question already about it.
+                actions = {
+                    IconButton(onClick = {
+                        com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "캘린더에서 가져오기", help = true))
+                    }) { Icon(Icons.AutoMirrored.Outlined.HelpOutline, "가져오기 도움말") }
+                },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
