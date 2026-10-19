@@ -39,6 +39,9 @@ class ReceivedViewModelTest {
         /** Holds every read until completed, like a slow network. */
         var gate: CompletableDeferred<Unit>? = null
         var reads = 0
+        /** [SHR-12] Answers "nothing changed" to a look that carries a tag. */
+        var unchanged = false
+        var tags = mutableListOf<String?>()
         override suspend fun create(payload: JSONObject) = error("not used")
         override suspend fun update(state: ShareLinkState, payload: JSONObject) = error("not used")
         override suspend fun delete(state: ShareLinkState) = Unit
@@ -47,6 +50,11 @@ class ReceivedViewModelTest {
             gate?.await()
             failure?.let { throw it }
             return shares[id] ?: throw ShareLinkException("not_found")
+        }
+        override suspend fun readIfChanged(id: String, etag: String?): ReceivedShare? {
+            tags += etag
+            if (unchanged && etag != null) { reads++; return null }
+            return read(id)
         }
     }
 
@@ -163,6 +171,29 @@ class ReceivedViewModelTest {
         vm.view(id)
         settle()
         assertEquals(1, api.reads)
+    }
+
+    /** [SHR-12] A look carries the copy's tag; nothing changed keeps the copy and only marks it checked. */
+    @Test fun anUnchangedLinkKeepsItsCopy() {
+        var now = Instant.now()
+        c.received.put(id, share("민지").copy(etag = "W/\"t1\""))
+        val before = c.received.get(id)!!
+        api.unchanged = true
+        api.shares[id] = share("민지2")
+        val vm = ReceivedViewModel(c) { now }
+        now = now.plus(Duration.ofMinutes(2))
+        vm.view(id)
+        settle()
+        assertEquals(listOf<String?>("W/\"t1\""), api.tags)
+        assertEquals("민지", c.received.get(id)?.title)
+        assertEquals(before.raw.toString(), c.received.get(id)?.raw.toString())
+
+        // The sharer changed it: the next look downloads it.
+        api.unchanged = false
+        now = now.plus(Duration.ofMinutes(2))
+        vm.refreshIfStale(id)
+        settle()
+        assertEquals("민지2", c.received.get(id)?.title)
     }
 
     @Test fun expiredOnesGoWhenTheAppOpens() {

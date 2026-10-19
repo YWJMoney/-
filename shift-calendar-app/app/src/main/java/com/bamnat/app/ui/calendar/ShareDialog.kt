@@ -56,6 +56,7 @@ import com.bamnat.app.appContainer
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.share.ShareApi
 import com.bamnat.app.share.ShareContent
+import com.bamnat.app.share.ShareExpiryReminder
 import com.bamnat.app.share.ShareLinkException
 import com.bamnat.app.share.ShareLinkPayload
 import com.bamnat.app.share.ShareLinkState
@@ -78,6 +79,8 @@ import java.time.format.DateTimeFormatter
  * [SHR-11] The money part follows how the user works: 급여 for employees, 일감 수입 and the day's jobs
  * for field work, 매출 for a shop. It can be ticked whenever there is a figure to send, with or
  * without a pay calculation, and the sheet shows the figures before they leave the phone.
+ * [SHR-12] A link follows the calendar by itself ([com.bamnat.app.share.ShareSync]) unless the sharer
+ * turns that off, keeps its end date when it does, and can be kept open longer from here or the notice.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,7 +90,7 @@ fun ShareDialog(
     onImage: () -> Unit,
     onDismiss: () -> Unit,
     client: ShareApi = LocalContext.current.appContainer.shareApi,
-    store: ShareLinkStore = LocalContext.current.let { c -> remember { ShareLinkStore(c) } },
+    store: ShareLinkStore = LocalContext.current.appContainer.shareLinks,
     preview: ShareLinkState? = null,
     /** [SHR-02] Opens the sheet that takes a received link; null hides that part. */
     onOpenReceived: (() -> Unit)? = null,
@@ -95,9 +98,11 @@ fun ShareDialog(
     val context = LocalContext.current
     val container = context.appContainer
     val scope = rememberCoroutineScope()
-    var link by remember { mutableStateOf(preview ?: store.load()) }
+    val stored by store.link.collectAsState()
+    val link = preview ?: stored
     var title by remember { mutableStateOf(link?.title.orEmpty()) }
-    var ttl by remember { mutableIntStateOf(30) }
+    var ttl by remember { mutableIntStateOf(link?.ttlDays ?: 30) }
+    var auto by remember { mutableStateOf(store.auto) }
     var saved by remember { mutableStateOf(store.options()) }
     var options by remember { mutableStateOf(saved) }
     var busy by remember { mutableStateOf(false) }
@@ -126,7 +131,12 @@ fun ShareDialog(
             leaveKinds = options.leaveKinds && employee, extras = options.extras && employee,
         )
     }
-    suspend fun payload() = ShareContent.payload(container, snapshot, month.atDay(1), title, ttl, chosen())
+    suspend fun payload(ttlDays: Int? = ttl) = ShareContent.payload(container, snapshot, month.atDay(1), title, ttlDays, chosen())
+    /** [SHR-12] Keeps what was sent, so the automatic update sends only what changes after it. */
+    fun keep(made: ShareLinkState, sent: org.json.JSONObject) {
+        store.saveOptions(chosen()); saved = chosen()
+        store.save(made.copy(from = month), ShareLinkPayload.fingerprint(sent))
+    }
     // [SHR-11] A calendar with no shifts in these months (a shop, field work, hours not yet written) has
     // nothing to show until something is ticked; say so instead of letting the server refuse it.
     val empty by produceState(false, chosen(), month, snapshot, money) {
@@ -158,9 +168,12 @@ fun ShareDialog(
             // A link already made comes first: sending it again is what most people open this for.
             val made = link
             if (made != null) {
-                Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
-                    Text("만든 링크: ${made.url}\n${expiryText(made)}까지 열려요.", style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.fillMaxWidth().padding(12.dp))
+                // [SHR-12] Closing soon is said in the accent colour, with the way to keep it open below.
+                val soon = ShareExpiryReminder.closingSoon(made)
+                Surface(shape = RoundedCornerShape(12.dp),
+                    color = if (soon) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest) {
+                    Text("만든 링크: ${made.url}\n${expiryText(made)}까지 열려요." + if (soon) " 곧 닫혀요. 아래 ‘기간 늘리기’로 더 열어 둘 수 있어요." else "",
+                        style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth().padding(12.dp))
                 }
                 Button(enabled = !busy, onClick = { send(context, made) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 링크 다시 보내기") }
             }
@@ -182,9 +195,15 @@ fun ShareDialog(
             }
             OutlinedTextField(value = title, onValueChange = { if (it.length <= 30) title = it }, singleLine = true,
                 label = { Text("이름 (선택, 예: 민지)") }, modifier = Modifier.fillMaxWidth())
-            Text("열어 둘 기간", style = MaterialTheme.typography.labelLarge)
+            // [SHR-12] With a link made, the period is what 기간 늘리기 adds from today.
+            Text(if (link == null) "열어 둘 기간" else "기간 늘리기", style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ShareLinkPayload.TTL_DAYS.forEach { d -> FilterChip(selected = ttl == d, onClick = { ttl = d }, label = { Text("${d}일") }) }
+            }
+            // [SHR-12] On by default: whoever got the link sees the calendar as it is now.
+            PartRow("고치면 링크도 바로 바꾸기", "내 달력을 고치면 몇 초 뒤 링크에도 들어가요. 받은 사람 앱은 다음에 열 때 새로 받아요", auto) {
+                auto = it; store.auto = it
+                if (it) scope.launch { container.shareSync.sync() }
             }
             // [MKT-09][OPS-13][SHR-01] Said before the data leaves the phone, in the policy's words, with what was ticked.
             Text(
@@ -198,8 +217,9 @@ fun ShareDialog(
             if (current == null) {
                 Button(enabled = !busy && !empty, onClick = {
                     run {
-                        val made = client.create(payload())
-                        store.save(made); store.saveOptions(chosen()); saved = chosen(); link = made
+                        val sent = payload()
+                        val made = client.create(sent)
+                        keep(made, sent)
                         container.telemetry.event("share_link_create", chosen().shows.joinToString(",").ifEmpty { "shifts" })
                         send(context, made)
                     }
@@ -207,20 +227,32 @@ fun ShareDialog(
                     if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("링크 만들어 보내기")
                 }
             } else {
-                if (chosen() != saved) {
-                    Text("고른 항목이 바뀌었어요. ‘지금 근무표로 고치기’를 누르면 링크에 들어가요.",
+                if (chosen() != saved || title.trim() != current.title.trim()) {
+                    Text("고른 항목이나 이름이 바뀌었어요. ‘지금 근무표로 고치기’를 누르면 링크에 들어가요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                }
+                // [SHR-12] Sent the way the automatic update sends it: the end date stays.
+                if (!auto || chosen() != saved || title.trim() != current.title.trim()) {
+                    OutlinedButton(enabled = !busy && !empty, onClick = {
+                        run {
+                            val sent = payload(null)
+                            keep(client.update(current, sent), sent)
+                        }
+                    }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("지금 근무표로 고치기")
+                    }
                 }
                 OutlinedButton(enabled = !busy && !empty, onClick = {
                     run {
-                        val updated = client.update(current, payload())
-                        store.save(updated); store.saveOptions(chosen()); saved = chosen(); link = updated
+                        val sent = payload(ttl)
+                        keep(client.update(current, sent), sent)
+                        container.telemetry.event("share_link_extend", "sheet")
                     }
                 }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("지금 근무표로 고치기")
+                    if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("오늘부터 ${ttl}일 열어 두기")
                 }
                 TextButton(enabled = !busy, onClick = {
-                    run { client.delete(current); store.clear(); link = null }
+                    run { client.delete(current); store.clear() }
                 }, modifier = Modifier.fillMaxWidth()) { Text("링크 끊기", color = MaterialTheme.colorScheme.error) }
             }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }

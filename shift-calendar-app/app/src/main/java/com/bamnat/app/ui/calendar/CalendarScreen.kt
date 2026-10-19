@@ -408,6 +408,13 @@ fun CalendarScreen(
         pagerState.scrollToPage(monthToPage(baseMonth, YearMonth.now()))
         pageScroll.scrollTo(0)
     }
+    // [SHR-12] The link's expiry notice opens the share sheet on the user's own calendar, to 늘리기.
+    LaunchedEffect(noticeTarget) {
+        if (noticeTarget != NoticeLinks.Target.SHARE) return@LaunchedEffect
+        NoticeLinks.consume(NoticeLinks.Target.SHARE)
+        received.view(null)
+        if (shareLinks) showShare = true
+    }
     // [CAL-01] The picked day's week over the hour limit, said in one line under the calendar.
     val weekNote = remember(calculator, selected, settings.weeklyLimitHours) {
         calculator.week(selected).takeIf { it.overLimit }?.let {

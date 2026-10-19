@@ -14,7 +14,7 @@ import java.time.LocalDate
 
 /** [SHR-01] A link's payload from the phone's own data, with only what the sharer ticked. */
 object ShareContent {
-    suspend fun payload(c: AppContainer, snapshot: ScheduleSnapshot, from: LocalDate, title: String, ttlDays: Int, options: ShareOptions): JSONObject =
+    suspend fun payload(c: AppContainer, snapshot: ScheduleSnapshot, from: LocalDate, title: String, ttlDays: Int?, options: ShareOptions): JSONObject =
         withContext(Dispatchers.Default) {
             val memos = if (options.memos) memos(c, from) else emptyMap()
             val kind = kind(c)

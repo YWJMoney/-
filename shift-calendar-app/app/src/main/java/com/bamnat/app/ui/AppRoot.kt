@@ -270,7 +270,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         val target = noticeTarget ?: return@LaunchedEffect
         when (target) {
             // Over an editor the calendar goes on top, so the editor's input is still there after back.
-            NoticeLinks.Target.TODAY -> {
+            // [SHR-12] The calendar opens its share sheet itself.
+            NoticeLinks.Target.TODAY, NoticeLinks.Target.SHARE -> {
                 val current = nav.currentBackStackEntry?.destination?.route
                 when {
                     current == TopLevel.CALENDAR.route -> Unit

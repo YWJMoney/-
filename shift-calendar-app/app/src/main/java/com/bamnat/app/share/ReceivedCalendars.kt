@@ -123,6 +123,8 @@ data class ReceivedCalendar(
     val updatedAt: Instant?,
     val expiresAt: Instant?,
     val raw: JSONObject?,
+    /** [SHR-12] The server's tag for [raw], so the next look downloads it only when the sharer changed it. */
+    val etag: String? = null,
 ) {
     val schedule: SharedSchedule? by lazy { raw?.let { runCatching { SharedSchedule.parse(it) }.getOrNull() } }
     val gone: Boolean get() = raw == null
@@ -182,21 +184,27 @@ class ReceivedCalendarStore(
         val old = get(id)
         val title = share.schedule.optString("title").trim()
         val color = old?.color ?: ReceivedCalendar.COLORS[_calendars.value.size % ReceivedCalendar.COLORS.size]
-        val cal = ReceivedCalendar(id, title, color, old?.addedAt ?: now, now, share.updatedAt, share.expiresAt, share.schedule)
+        val cal = ReceivedCalendar(id, title, color, old?.addedAt ?: now, now, share.updatedAt, share.expiresAt, share.schedule, share.etag)
         write(if (old == null) _calendars.value + cal else _calendars.value.map { if (it.id == id) cal else it })
         return cal
+    }
+
+    /** [SHR-12] Asked and nothing changed: the copy here is current as of now. */
+    fun touch(id: String) {
+        val now = clock()
+        if (get(id)?.gone == false) write(_calendars.value.map { if (it.id == id) it.copy(fetchedAt = now) else it })
     }
 
     /** The sharer cut the link or it ran out: the schedule goes, the entry stays to say so. */
     fun markGone(id: String) {
         val now = clock()
-        write(_calendars.value.map { if (it.id == id) it.copy(raw = null, fetchedAt = now) else it })
+        write(_calendars.value.map { if (it.id == id) it.copy(raw = null, fetchedAt = now, etag = null) else it })
     }
 
     /** Clears what ran out by the phone's own clock, even with no internet to ask. */
     fun expire(now: Instant = clock()) {
         if (_calendars.value.any { !it.gone && it.expiresAt?.isBefore(now) == true }) {
-            write(_calendars.value.map { if (!it.gone && it.expiresAt?.isBefore(now) == true) it.copy(raw = null) else it })
+            write(_calendars.value.map { if (!it.gone && it.expiresAt?.isBefore(now) == true) it.copy(raw = null, etag = null) else it })
         }
     }
 
@@ -247,13 +255,15 @@ class ReceivedCalendarStore(
         updatedAt?.let { put("updatedAt", it.toString()) }
         expiresAt?.let { put("expiresAt", it.toString()) }
         raw?.let { put("schedule", it) }
+        etag?.let { put("etag", it) }
     }
 
     private fun fromJson(o: JSONObject): ReceivedCalendar? {
         val id = o.optString("id").takeIf { it.isNotEmpty() } ?: return null
         fun time(key: String) = o.optString(key).takeIf { it.isNotEmpty() }?.let { runCatching { Instant.parse(it) }.getOrNull() }
         return ReceivedCalendar(id, o.optString("title"), o.optLong("color", ReceivedCalendar.COLORS[0]),
-            time("addedAt") ?: Instant.EPOCH, time("fetchedAt"), time("updatedAt"), time("expiresAt"), o.optJSONObject("schedule"))
+            time("addedAt") ?: Instant.EPOCH, time("fetchedAt"), time("updatedAt"), time("expiresAt"), o.optJSONObject("schedule"),
+            o.optString("etag").takeIf { it.isNotEmpty() })
     }
 
     companion object {

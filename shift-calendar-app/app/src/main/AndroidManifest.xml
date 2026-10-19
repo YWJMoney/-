@@ -115,6 +115,14 @@
             android:name=".pay.LeaveReminderReceiver"
             android:exported="false" />
 
+        <!-- [SHR-12] The shared link closing soon, and its 늘리기 button. -->
+        <receiver
+            android:name=".share.ShareExpiryReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".share.ShareExtendReceiver"
+            android:exported="false" />
+
         <!-- [SLP-15] 하루 브리핑, 퇴근길 안전 and 잘 준비; the name stays from 1.10 so its alarms still land. -->
         <receiver
             android:name=".sleep.SleepReminderReceiver"

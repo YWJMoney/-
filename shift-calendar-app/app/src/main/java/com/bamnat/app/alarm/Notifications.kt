@@ -31,6 +31,8 @@ object Notifications {
     const val LEAVE_CHANNEL_ID = "leave_notice_v1"
     /** [SCHED-01] A memo that is a schedule, when it comes. */
     const val MEMO_CHANNEL_ID = "memo_schedule_v1"
+    /** [SHR-12] The sharer's link closing soon. */
+    const val SHARE_CHANNEL_ID = "share_expiry_v1"
     /** Before 1.11 every sleep tip made a sound here; a channel's importance cannot be lowered, so it goes. */
     private const val OLD_SLEEP_CHANNEL_ID = "sleep_tips_v1"
 
@@ -46,6 +48,7 @@ object Notifications {
     const val COMMUTE_ID = 7312
     const val SLEEPING_ID = 7313
     const val LEAVE_ID = 7201
+    const val SHARE_ID = 7202
 
     fun createChannels(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
@@ -106,7 +109,11 @@ object Notifications {
             group = GROUP_DAY
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo))
+        val share = NotificationChannel(SHARE_CHANNEL_ID, "근무표 링크 기간", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "보낸 근무표 링크가 닫히기 며칠 전에 알려요. 알림에서 바로 늘릴 수 있어요"
+            group = GROUP_DAY
+        }
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
     }
 
