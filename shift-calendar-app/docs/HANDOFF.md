@@ -8,7 +8,7 @@
 ## 1. 지금 상태
 
 - 안드로이드 전용 앱이에요. 갤럭시 폴드의 접은 화면과 펼친 화면을 둘 다 맞추고, 첫 화면은 달력이에요.
-- Kotlin, Compose BOM 2025.05.00, Room v14, minSdk 26, targetSdk 36, Robolectric 4.14.1.
+- Kotlin, Compose BOM 2025.05.00, Room v15, minSdk 26, targetSdk 36, Robolectric 4.14.1.
 - 버전별로 들어간 큰 줄기
 
 | 버전 | 단계 | 들어간 것 |
