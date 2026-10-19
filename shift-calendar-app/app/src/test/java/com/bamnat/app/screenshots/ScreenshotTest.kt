@@ -899,7 +899,8 @@ class ScreenshotTest {
                 kind = com.bamnat.core.money.ReceivableKind.LOAN))
         }
         settle()
-        content { com.bamnat.app.ui.money.OwedScreen(com.bamnat.app.ui.money.OwedViewModel(c), wide = wide, onBack = {}, today = today) }
+        val vm = com.bamnat.app.ui.money.OwedViewModel(c)
+        content { com.bamnat.app.ui.money.OwedScreen(vm, wide = wide, onBack = {}, today = today) }
         settle()
         then()
     }
@@ -911,7 +912,8 @@ class ScreenshotTest {
     @Test fun phoneOwedEmpty() = shoot("215_phone_owed_empty", PHONE, style(WorkStyle.HOURLY) {
         val c = app.container
         // Before any job was done, so nothing is owed yet.
-        content { com.bamnat.app.ui.money.OwedScreen(com.bamnat.app.ui.money.OwedViewModel(c), wide = false, onBack = {}, today = today.minusYears(5)) }
+        val vm = com.bamnat.app.ui.money.OwedViewModel(c)
+        content { com.bamnat.app.ui.money.OwedScreen(vm, wide = false, onBack = {}, today = today.minusYears(5)) }
     })
     // [WORK-01] First launch: how do you work?
     @Test fun foldedWorkStylePicker() = shoot("49_folded_work_style", FOLDED) {
