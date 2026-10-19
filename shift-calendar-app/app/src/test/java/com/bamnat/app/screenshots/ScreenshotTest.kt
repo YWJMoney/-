@@ -1072,6 +1072,12 @@ class ScreenshotTest {
         }.invoke(this)
         scrollUp(RULES_PERIOD_SCROLL)
     }
+    // [TIME-01] Typing a duration became the same wheels as clock times.
+    @Test fun foldedDurationWheel() = shoot("203_folded_duration_wheel", FOLDED) {
+        content {
+            com.bamnat.app.ui.components.DurationDialog("몇 분 전에 울릴까요?", 90, 24 * 60, onDismiss = {}, onConfirm = {})
+        }
+    }
     @Test fun foldedSteppers() = shoot("93_folded_steppers_fixed_width", FOLDED) {
         content {
             androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(24.dp)) {

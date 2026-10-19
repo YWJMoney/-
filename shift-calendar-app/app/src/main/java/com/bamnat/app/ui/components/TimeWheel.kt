@@ -50,7 +50,7 @@ import com.bamnat.app.ui.theme.NumberStyle
 import kotlinx.coroutines.launch
 import java.time.LocalTime
 
-private val ITEM_HEIGHT = 44.dp
+internal val WHEEL_ROW_HEIGHT = 44.dp
 private const val VISIBLE_ITEMS = 5
 /** Each wheel repeats its values this many times so it can spin in both directions. */
 private const val LOOPS = 200
@@ -88,19 +88,20 @@ fun TimePickerDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Box(Modifier.fillMaxWidth().height(ITEM_HEIGHT * VISIBLE_ITEMS), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth().height(WHEEL_ROW_HEIGHT * VISIBLE_ITEMS), contentAlignment = Alignment.Center) {
                     // Band behind the selected row.
                     Box(
                         Modifier
                             .fillMaxWidth()
-                            .height(ITEM_HEIGHT)
+                            .height(WHEEL_ROW_HEIGHT)
                             .clip(MaterialTheme.shapes.medium)
                             .background(MaterialTheme.colorScheme.primaryContainer),
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Wheel(count = 24, value = hour, jump = jump, label = "시", onValue = { hour = it })
-                        Text(":", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(horizontal = 8.dp))
+                        WheelUnit("시")
                         Wheel(count = 60, value = minute, jump = jump, label = "분", onValue = { minute = it })
+                        WheelUnit("분")
                     }
                 }
                 Row(
@@ -130,9 +131,32 @@ fun TimePickerDialog(
 
 val DEFAULT_PRESETS: List<LocalTime> = listOf(6, 7, 8, 9, 14, 18, 20, 22).map { LocalTime.of(it, 0) }
 
+/** Unit beside a wheel, on the selected row. */
 @Composable
-private fun Wheel(count: Int, value: Int, jump: Int, label: String, onValue: (Int) -> Unit) {
-    val middle = count * LOOPS / 2
+internal fun WheelUnit(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onPrimaryContainer,
+        modifier = Modifier.padding(start = 2.dp, end = 10.dp),
+    )
+}
+
+/**
+ * One column of numbers that turns up and down. [TIME-01] The rows above and below the chosen one
+ * stay readable (at 3시 you see 2 above and 4 below), fading further out, so you can tell which way
+ * to turn. A [cyclic] wheel runs past the end back to the start, like a clock; a plain one stops.
+ */
+@Composable
+internal fun Wheel(
+    count: Int,
+    value: Int,
+    jump: Int,
+    label: String,
+    onValue: (Int) -> Unit,
+    cyclic: Boolean = true,
+) {
+    val middle = if (cyclic) count * LOOPS / 2 else 0
     val state = rememberLazyListState(initialFirstVisibleItemIndex = middle + value)
     val scope = rememberCoroutineScope()
     // The row nearest the middle of the wheel is the chosen one.
@@ -165,25 +189,27 @@ private fun Wheel(count: Int, value: Int, jump: Int, label: String, onValue: (In
         state = state,
         flingBehavior = rememberSnapFlingBehavior(state, SnapPosition.Center),
         modifier = Modifier
-            .width(72.dp)
-            .height(ITEM_HEIGHT * VISIBLE_ITEMS)
+            .width(64.dp)
+            .height(WHEEL_ROW_HEIGHT * VISIBLE_ITEMS)
             .semantics {
                 contentDescription = "$value$label"
                 // [VIS-02] TalkBack moves the wheel one step at a time, not only a page.
                 val unit = if (label == "시") "1시간" else "1$label"
+                val last = if (cyclic) count * LOOPS - 1 else count - 1
                 customActions = listOf(
-                    CustomAccessibilityAction("$unit 늘리기") { scope.launch { state.animateScrollToItem(selected + 1) }; true },
-                    CustomAccessibilityAction("$unit 줄이기") { scope.launch { state.animateScrollToItem(selected - 1) }; true },
+                    CustomAccessibilityAction("$unit 늘리기") { scope.launch { state.animateScrollToItem((selected + 1).coerceAtMost(last)) }; true },
+                    CustomAccessibilityAction("$unit 줄이기") { scope.launch { state.animateScrollToItem((selected - 1).coerceAtLeast(0)) }; true },
                 )
             },
-        contentPadding = PaddingValues(vertical = ITEM_HEIGHT * (VISIBLE_ITEMS / 2)),
+        contentPadding = PaddingValues(vertical = WHEEL_ROW_HEIGHT * (VISIBLE_ITEMS / 2)),
     ) {
-        items(count * LOOPS) { i ->
+        items(if (cyclic) count * LOOPS else count) { i ->
             val v = Math.floorMod(i, count)
-            val isSelected = i == selected
+            val distance = kotlin.math.abs(i - selected)
+            val isSelected = distance == 0
             Box(
                 Modifier
-                    .height(ITEM_HEIGHT)
+                    .height(WHEEL_ROW_HEIGHT)
                     .fillMaxWidth(),
                 contentAlignment = Alignment.Center,
             ) {
@@ -191,10 +217,10 @@ private fun Wheel(count: Int, value: Int, jump: Int, label: String, onValue: (In
                     "%02d".format(v),
                     style = MaterialTheme.typography.headlineSmall.merge(NumberStyle),
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                    fontSize = if (isSelected) 28.sp else 20.sp,
+                    fontSize = when (distance) { 0 -> 28.sp; 1 -> 22.sp; else -> 18.sp },
                     textAlign = TextAlign.Center,
                     modifier = Modifier
-                        .alpha(if (isSelected) 1f else 0.45f)
+                        .alpha(when (distance) { 0 -> 1f; 1 -> 0.7f; else -> 0.3f })
                         .clickable(interactionSource = null, indication = null) { scope.launch { state.animateScrollToItem(i) } },
                 )
             }
