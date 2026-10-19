@@ -1524,13 +1524,12 @@ class ScreenshotTest {
         tapText("편의점 알바", exact = true)
     }
     @Test fun foldedNewCalendarDialog() = shoot("216_folded_new_calendar", FOLDED) {
-        tapText("더 보기", exact = true)
-        tapText("새 달력 만들기", exact = true)
+        content { com.bamnat.app.ui.calendar.NewCalendarDialog("달력 2", 0, { _, _ -> }, {}) }
     }
     @Test fun foldedNewCalendarSetup() = shoot("217_folded_new_calendar_setup", FOLDED) {
-        tapText("더 보기", exact = true)
-        tapText("새 달력 만들기", exact = true)
-        tapText("다음", exact = true)
+        val c = app.container
+        val id = c.calendars.begin("편의점 알바")
+        content { com.bamnat.app.ui.setup.SetupHost(com.bamnat.app.ui.setup.SetupViewModel(c, calendarId = id)) }
     }
     @Test fun foldedAddedCalendarShare() = shoot("218_folded_added_calendar_share", FOLDED) {
         val c = receivedOn()

@@ -74,6 +74,9 @@ class PersonalCalendarsTest {
         return id
     }
 
+    /** A listed calendar without going through the questions, for what does not depend on them. */
+    private fun listedCalendar(name: String): String = c.calendars.begin(name).also { c.calendars.finishSetup(it, WorkStyle.HOURLY) }
+
     @Test fun aPhoneFromBeforeOpensOnItsOwnCalendarAsItWas() {
         val list = c.calendars.calendars.value
         assertEquals(listOf(PersonalCalendar.MAIN), list.map { it.id })
@@ -135,8 +138,8 @@ class PersonalCalendarsTest {
     }
 
     @Test fun theListKeepsTheUsersOrderWithReceivedCalendarsInIt() {
-        val a = addWeekdayCalendar("알바")
-        val b = addWeekdayCalendar("가족")
+        val a = listedCalendar("알바")
+        val b = listedCalendar("가족")
         val keys = CalendarKey.arrange(c.calendars.order.value, c.calendars.calendars.value.map { it.id }, listOf("LINK1"))
         assertEquals(listOf("mine:main", "mine:$a", "mine:$b", "got:LINK1"), keys.map { it.key })
 
@@ -156,7 +159,7 @@ class PersonalCalendarsTest {
     }
 
     @Test fun removingACalendarTakesItsDatabaseAndGoesBackToTheMainOne() {
-        val id = addWeekdayCalendar("알바")
+        val id = listedCalendar("알바")
         assertEquals(id, c.calendars.active.value)
         assertTrue(app.getDatabasePath(CalendarStorage.fileName(id)).exists())
         c.calendars.delete(id)
@@ -169,14 +172,14 @@ class PersonalCalendarsTest {
     }
 
     @Test fun anAddedCalendarRingsUnderItsNameUntilItsAlarmsAreOff() = runBlocking {
-        val id = addWeekdayCalendar("알바")
+        val id = listedCalendar("알바")
         assertEquals(listOf(null, "알바"), c.calendars.ringing.first().map { it.first })
         c.calendars.setAlarms(id, false)
         assertEquals(listOf<String?>(null), c.calendars.ringing.first().map { it.first })
     }
 
     @Test fun eachCalendarKeepsItsOwnLink() {
-        val id = addWeekdayCalendar("알바")
+        val id = listedCalendar("알바")
         val link = ShareLinkState("abc", "https://example.test/s/abc", "token", Instant.now().plusSeconds(86_400), "민지")
         ShareLinkStore(app, id).save(link)
         assertEquals("abc", ShareLinkStore(app, id).load()?.id)
