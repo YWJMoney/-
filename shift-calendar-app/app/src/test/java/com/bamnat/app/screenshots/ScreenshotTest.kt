@@ -113,6 +113,8 @@ class ScreenshotTest {
         val c = app.container
         // [ONBOARD-01] Through the consent pages already; the shots of them start over.
         c.consentStore.markSeen(ConsentItem.entries)
+        // [CAL-17] The one-time tip on the first date tap has its own shot (295); the others tap dates past it.
+        com.bamnat.app.ui.calendar.HintStore(app).markDone(com.bamnat.app.ui.calendar.HintStore.LONG_PRESS)
         val repo = c.scheduleRepository
         repo.ensureDefaults()
         val types = repo.shiftTypes.first().associateBy { it.name }
@@ -1618,9 +1620,10 @@ class ScreenshotTest {
     @Test fun foldedSettingsNotices() = shoot("141_folded_settings_notices", FOLDED) { settingsPage("알림") }
     @Test fun foldedSettingsRest() = shoot("142_folded_settings_rest", FOLDED) { settingsPage("잠과 휴식") }
     @Test fun unfoldedSettingsNotices() = shoot("143_unfolded_settings_notices", UNFOLDED) { settingsPage("알림", wide = true) }
-    @Test fun foldedQuickInput() = shoot("145_folded_quick_input", FOLDED) { tapText("빠른 입력", exact = true, scrolls = 0) }
+    // [CAL-15] The FAB keeps under the month's last row, so on the cover screen it is a scroll away.
+    @Test fun foldedQuickInput() = shoot("145_folded_quick_input", FOLDED) { tapText("빠른 입력", exact = true) }
     @Test fun foldedQuickInputDrag() = shoot("146_folded_quick_input_drag", FOLDED) {
-        tapText("빠른 입력", exact = true, scrolls = 0)
+        tapText("빠른 입력", exact = true)
         tapText("야간 칠하기", exact = true, scrolls = 0)
         dragDays(dayCell, today)
     }
@@ -1743,10 +1746,33 @@ class ScreenshotTest {
 
     @Test fun calShiftFolded() = shoot("290_folded_shift_calendar", FOLDED, withPay())
     @Test fun calShiftUnfolded() = shoot("291_unfolded_shift_calendar", UNFOLDED, withPay())
-    @Test fun calShiftPhone() = shoot("292_phone_shift_calendar", PHONE, withPay())
+    /** Hints read once when the calendar opens: set before the screen starts. */
+    private fun hints(seen: Boolean, vararg keys: String) {
+        val store = com.bamnat.app.ui.calendar.HintStore(app)
+        if (seen) keys.forEach(store::markDone)
+        else app.getSharedPreferences("hints", android.content.Context.MODE_PRIVATE).edit().apply { keys.forEach { remove(it) } }.commit()
+    }
+
+    /**
+     * [CAL-16][CAL-15] A returning user with 오늘의 흐름 folded to one line, a little way down: the month's
+     * last row ends above the FAB, which rides in its room under the month with its label.
+     */
+    @Test fun calFlowFolded() {
+        hints(seen = true, com.bamnat.app.ui.calendar.HintStore.SHARE)
+        shoot("292_folded_flow_folded", FOLDED, withPay {
+            tapText("오늘의 흐름 접기", exact = true, scrolls = 0)
+            scrollUp(140)
+        })
+    }
     @Test fun calFieldFolded() = shoot("293_folded_field_calendar", FOLDED, plain(WorkStyle.FIELD, moreJobs))
     @Test fun calFieldUnfolded() = shoot("294_unfolded_field_calendar", UNFOLDED, plain(WorkStyle.FIELD, moreJobs))
-    @Test fun calFieldPhone() = shoot("295_phone_field_calendar", PHONE, plain(WorkStyle.FIELD, moreJobs))
+    /** [CAL-17] The first tap on a date says once that a long press changes it in place. */
+    @Test fun calLongPressTip() {
+        hints(seen = false, com.bamnat.app.ui.calendar.HintStore.LONG_PRESS)
+        hints(seen = true, com.bamnat.app.ui.calendar.HintStore.SHARE)
+        app.container.settingsRepository.update { it.copy(sleepTips = false) }
+        shoot("295_folded_long_press_tip", FOLDED) { selectDay(secondRowMonday()) }
+    }
     @Test fun calFieldDay() = shoot("296_folded_field_day", FOLDED, plain(WorkStyle.FIELD, moreJobs) { openDay(today) })
     @Test fun calBusinessFolded() = shoot("297_folded_business_calendar", FOLDED, plain(WorkStyle.BUSINESS, moreSales))
     @Test fun calBusinessUnfolded() = shoot("298_unfolded_business_calendar", UNFOLDED, plain(WorkStyle.BUSINESS, moreSales))
@@ -1799,14 +1825,14 @@ class ScreenshotTest {
         return first.plusDays((7 - first.dayOfWeek.value % 7).toLong() + 1)
     }
     @Test fun calPaintLeave() = shoot("307_unfolded_paint_leave", UNFOLDED) {
-        tapText("빠른 입력", exact = true, scrolls = 0)
+        tapText("빠른 입력", exact = true)
         tapText("연차 칠하기", exact = true, scrolls = 0)
         dragDays(secondRowMonday(), secondRowMonday().plusDays(4))
     }
 
     /** [CAL-09] A long press starts a range; the next tap ends it. */
     @Test fun calPaintRange() = shoot("308_folded_paint_range", FOLDED) {
-        tapText("빠른 입력", exact = true, scrolls = 0)
+        tapText("빠른 입력", exact = true)
         tapText("야간 칠하기", exact = true, scrolls = 0)
         longPressText(Fmt.dayTitle(secondRowMonday()), prefix = true)
     }
@@ -1907,7 +1933,8 @@ class ScreenshotTest {
         plain(WorkStyle.BUSINESS, moreSales)
         widgetShots("318_widget_business")
     }
-    @Test fun calBusinessPhone() = shoot("319_phone_business_calendar", PHONE, plain(WorkStyle.BUSINESS, moreSales))
+    /** [CAL-18] The day's chips past the screen's edge: the end fades and "+N ›" says how many more. */
+    @Test fun calDayChipsMore() = shoot("319_folded_day_chips_more", FOLDED) { openDay(today) }
 
     // ---- 앱 검토·공유·설정·문의 (1.15) ----
     // [UX-03] 공유 in sight on every screen size, [UX-04] settings found by words, [UX-05] help before a question,

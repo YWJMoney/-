@@ -11,7 +11,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -22,7 +21,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -89,6 +87,18 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.EventBusy
 import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.semantics.contentDescription
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 /** The day's alarms as they ring with its switch on, so a day turned off still shows what it would ring. */
@@ -437,28 +447,23 @@ private fun QuickChips(
     }
     val alarms = remember(snapshot, day.date) { plannedAlarms(snapshot, day) }
     val log by vm.sleepLog.collectAsStateWithLifecycle()
-    Row(
-        modifier
-            .fillMaxWidth()
-            .fadingRightEdge()
-            .horizontalScroll(rememberScrollState())
-            .padding(start = 12.dp, end = endSpace),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    ChipRow(modifier, start = 12.dp, end = endSpace) {
         // [CAL-05] Field and shop work: the day's job or sales is the first chip.
         focus.addLabel?.let { label ->
             val hasSales = focus == CalendarFocus.SALES && book.on(day.date).sales != null
-            AssistChip(
-                onClick = { addingMoney = true },
-                label = { Text(if (hasSales) "매출 고치기" else label, maxLines = 1) },
-                leadingIcon = { Icon(Icons.Filled.Add, null, Modifier.size(18.dp)) },
-                colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer),
-                border = null,
-            )
+            item {
+                AssistChip(
+                    onClick = { addingMoney = true },
+                    label = { Text(if (hasSales) "매출 고치기" else label, maxLines = 1) },
+                    leadingIcon = { Icon(Icons.Filled.Add, null, Modifier.size(18.dp)) },
+                    colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer),
+                    border = null,
+                )
+            }
         }
-        for (c in choices) {
+        for (c in choices) item {
             val i = ExtraText.indexOf(day, c)
             FilterChip(
                 selected = i >= 0,
@@ -471,7 +476,7 @@ private fun QuickChips(
         }
         if (!moneyFirst && (day.leave != null || day.isWorkDay && day.shiftType?.hasTimes == true)) {
             val kind = day.leave?.kind ?: LeaveKind.ANNUAL
-            for (q in listOf(2, 4)) {
+            for (q in listOf(2, 4)) item {
                 val l = Leave(kind, q)
                 val on = day.leave?.quarters == q
                 FilterChip(
@@ -482,7 +487,7 @@ private fun QuickChips(
                 )
             }
         }
-        if (alarms.isNotEmpty() && calendarAlarms) {
+        if (alarms.isNotEmpty() && calendarAlarms) item {
             val off = day.alarmSkipped
             AssistChip(
                 onClick = { vm.setAlarmSkipped(day.date, !off, announce = true) },
@@ -494,7 +499,7 @@ private fun QuickChips(
             )
         }
         // [CAL-05] Sleep goes with shifts, as 오늘의 흐름 does; a job or shop day keeps its chips for the day's work.
-        if (day.date == today && settings.sleepTips && !moneyFirst) {
+        if (day.date == today && settings.sleepTips && !moneyFirst) item {
             val asleep = log.firstOrNull { it.end == null } != null
             AssistChip(
                 onClick = { if (asleep) vm.wokeUp() else vm.fellAsleep() },
@@ -502,11 +507,13 @@ private fun QuickChips(
                 leadingIcon = { Icon(if (asleep) Icons.Filled.WbSunny else Icons.Filled.Bedtime, null, Modifier.size(18.dp)) },
             )
         }
-        AssistChip(
-            onClick = onMemo,
-            label = { Text("메모", maxLines = 1) },
-            leadingIcon = { Icon(Icons.AutoMirrored.Outlined.NoteAdd, null, Modifier.size(18.dp)) },
-        )
+        item {
+            AssistChip(
+                onClick = onMemo,
+                label = { Text("메모", maxLines = 1) },
+                leadingIcon = { Icon(Icons.AutoMirrored.Outlined.NoteAdd, null, Modifier.size(18.dp)) },
+            )
+        }
     }
     if (addingMoney) {
         if (focus == CalendarFocus.JOBS) {
@@ -520,19 +527,87 @@ private fun QuickChips(
 
 private const val QUICK_EXTRAS = 3
 
-/** Fades the last few dp of a row that scrolls sideways, so it reads as "there is more". */
-internal fun Modifier.fadingRightEdge(): Modifier = this
+/**
+ * Fades the ends of a row that scrolls sideways, each only while there is more that way, so a cut-off
+ * row reads as "there is more" and a row shown whole is not dimmed. Read while drawing: scrolling
+ * redraws the edge without recomposing the row.
+ */
+internal fun Modifier.fadingEdges(back: () -> Boolean, forward: () -> Boolean, width: Dp = 32.dp): Modifier = this
     .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
     .drawWithContent {
         drawContent()
-        val w = 28.dp.toPx().coerceAtMost(size.width)
-        drawRect(
+        val w = width.toPx().coerceAtMost(size.width / 3)
+        if (forward()) drawRect(
             brush = Brush.horizontalGradient(listOf(Color.Black, Color.Transparent), startX = size.width - w, endX = size.width),
             topLeft = Offset(size.width - w, 0f),
             size = androidx.compose.ui.geometry.Size(w, size.height),
             blendMode = BlendMode.DstIn,
         )
+        if (back()) drawRect(
+            brush = Brush.horizontalGradient(listOf(Color.Transparent, Color.Black), startX = 0f, endX = w),
+            size = androidx.compose.ui.geometry.Size(w, size.height),
+            blendMode = BlendMode.DstIn,
+        )
     }
+
+/**
+ * [CAL-18] Chips in one line that scrolls sideways. While some are out of sight to the right, the
+ * end fades and a "+2 ›" button says how many; a tap on it brings them in.
+ */
+@Composable
+internal fun ChipRow(modifier: Modifier = Modifier, start: Dp, end: Dp, content: LazyListScope.() -> Unit) {
+    val state = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val reserve = with(LocalDensity.current) { MORE_RESERVE.toPx() }
+    // A chip that ends under the button or past the edge counts as out of sight; none once at the end.
+    val more by remember(state, reserve) {
+        derivedStateOf {
+            if (!state.canScrollForward) 0 else {
+                val info = state.layoutInfo
+                val edge = info.viewportEndOffset - reserve
+                val lastShown = info.visibleItemsInfo.lastOrNull { it.offset + it.size <= edge }?.index
+                    ?: ((info.visibleItemsInfo.firstOrNull()?.index ?: 0) - 1)
+                info.totalItemsCount - 1 - lastShown
+            }
+        }
+    }
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+        LazyRow(
+            state = state,
+            modifier = Modifier.fillMaxWidth().fadingEdges(back = { state.canScrollBackward }, forward = { state.canScrollForward }),
+            contentPadding = PaddingValues(start = start, end = end),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content,
+        )
+        if (more > 0) {
+            MoreButton(more, Modifier.padding(end = 4.dp)) {
+                scope.launch { state.animateScrollBy(state.layoutInfo.viewportSize.width * 0.6f) }
+            }
+        }
+    }
+}
+
+/** [CAL-18] "+2 ›": how many chips are out of sight, as a button that scrolls to them. */
+@Composable
+private fun MoreButton(count: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shadowElevation = 2.dp,
+        modifier = modifier,
+    ) {
+        Row(Modifier.heightIn(min = 32.dp).padding(start = 10.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("+$count", style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
+                modifier = Modifier.semantics { contentDescription = "${count}개 더 보기" })
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
+        }
+    }
+}
+
+private val MORE_RESERVE = 48.dp
 
 /**
  * [DAY-01] The selected day under the calendar on phones: the same header as the sheet, so most
