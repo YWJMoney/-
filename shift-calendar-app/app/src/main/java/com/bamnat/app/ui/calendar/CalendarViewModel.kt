@@ -128,10 +128,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         container.calendars.active.flatMapLatest { container.calendars.repository(it).extrasToReview }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
-    /** Pay setup and tier, so a day on the calendar shows what it adds to pay [PAYX-08]. */
-    /** [MCAL-01] The pay setup is the main job's: an added calendar shows its hours by law only. */
-    val payProfile: StateFlow<PayProfile?> = kotlinx.coroutines.flow.combine(container.payStore.profile, activeCalendar) { p, cal -> p.takeIf { cal.isMain } }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, container.payStore.profile.value.takeIf { container.calendars.current().isMain })
+    /** Pay setup and tier, so a day on the calendar shows what it adds to pay [PAYX-08]. [MCAL-06] The calendar on screen's own. */
+    val payProfile: StateFlow<PayProfile?> = container.calendars.active.flatMapLatest { container.calendars.pay(it).profile }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, container.calendars.pay(container.calendars.active.value).profile.value)
     val tier: StateFlow<Tier> = container.featureGate.tier
     private val payCalculator = PayCalculator()
 
@@ -555,33 +554,40 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
-    /** [WORK-06] Ledger, jobs and sales for the calendar's day sections and cells. */
-    private val money = container.moneyRepository
-    val moneyBook: StateFlow<MoneyBook> = money.book.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MoneyBook.EMPTY)
+    /**
+     * [WORK-06] Ledger, jobs and sales for the calendar's day sections and cells. [MCAL-06] The calendar
+     * on screen's own; each action keeps to the calendar it started on, its undo too.
+     */
+    private val money get() = container.calendars.money(container.calendars.active.value)
+    val moneyBook: StateFlow<MoneyBook> = container.calendars.active.flatMapLatest { container.calendars.money(it).book }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MoneyBook.EMPTY)
 
-    override fun saveEntry(entry: MoneyEntry) { container.appScope.launch { money.save(entry) } }
-    private val rules: StateFlow<Map<String, String>> = money.rules.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+    override fun saveEntry(entry: MoneyEntry) { val money = money; container.appScope.launch { money.save(entry) } }
+    private val rules: StateFlow<Map<String, String>> = container.calendars.active.flatMapLatest { container.calendars.money(it).rules }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
     override val categoryRules: Map<String, String> get() = rules.value
     override fun frequentAmounts(kind: com.bamnat.core.money.MoneyKind): List<Long> =
         com.bamnat.core.money.MoneyStats.frequentAmounts(moneyBook.value.entries, kind, java.time.LocalDate.now())
 
     override fun deleteEntry(entry: MoneyEntry) {
+        val money = money
         container.appScope.launch {
             money.delete(entry)
             _messages.tryEmit(UndoMessage("‘${entry.note.ifBlank { entry.category }}’ 기록을 지웠어요") { money.save(entry) })
         }
     }
 
-    override fun saveJob(job: Job) { container.appScope.launch { money.save(job) } }
+    override fun saveJob(job: Job) { val money = money; container.appScope.launch { money.save(job) } }
 
     override fun deleteJob(job: Job) {
+        val money = money
         container.appScope.launch {
             money.delete(job)
             _messages.tryEmit(UndoMessage("‘${job.title}’ 일감을 지웠어요") { money.save(job) })
         }
     }
 
-    override fun saveSales(sales: DailySales) { container.appScope.launch { money.save(sales) } }
+    override fun saveSales(sales: DailySales) { val money = money; container.appScope.launch { money.save(sales) } }
 
     fun runUndo(message: UndoMessage) {
         val undo = message.undo ?: return

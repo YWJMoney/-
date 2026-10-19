@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.stats
 
+import com.bamnat.app.appContainer
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import androidx.compose.runtime.produceState
@@ -62,14 +63,19 @@ import kotlinx.coroutines.flow.stateIn
 import java.time.DayOfWeek
 import java.time.YearMonth
 
-class StatsViewModel(private val container: AppContainer) : ViewModel() {
+class StatsViewModel(
+    private val container: AppContainer,
+    /** [MCAL-06] The calendar whose hours and pay these are: the one on the calendar tab. */
+    val calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+) : ViewModel() {
+    private val scope = container.scopeOf(calendarId)
     /** [NAV-01] The month shown here, the calendar's and 돈's too. */
     val shownMonth: StateFlow<YearMonth> = container.shownMonth.month
     fun showMonth(month: YearMonth) = container.shownMonth.show(month)
     val snapshot: StateFlow<ScheduleSnapshot?> =
-        container.scheduleRepository.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-    val settings: StateFlow<AppSettings> = container.settingsRepository.settings
-    val payProfile: StateFlow<PayProfile?> = container.payStore.profile
+        scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val settings: StateFlow<AppSettings> = scope.settings.stateIn(viewModelScope, SharingStarted.Eagerly, scope.currentSettings())
+    val payProfile: StateFlow<PayProfile?> = scope.pay.profile
     val tier: StateFlow<Tier> = container.featureGate.tier
     private val payCalculator = PayCalculator()
 
@@ -117,6 +123,8 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달")
             }
         }
+        // [MCAL-06] Whose hours and pay these are, once there are several calendars.
+        com.bamnat.app.ui.calendar.CalendarScopeChips(androidx.compose.ui.platform.LocalContext.current.appContainer)
 
         // [EXTRA-01] The four tiles add up to the total: the roster, extra work on working days, work on days off.
         val tiles: List<@Composable (Modifier) -> Unit> = listOf(

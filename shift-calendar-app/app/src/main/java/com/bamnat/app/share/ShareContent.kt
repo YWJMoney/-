@@ -1,6 +1,7 @@
 package com.bamnat.app.share
 
 import com.bamnat.app.AppContainer
+import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.pay.named
 import com.bamnat.core.pay.PayCalculator
@@ -16,38 +17,43 @@ import java.time.LocalDate
 object ShareContent {
     suspend fun payload(
         c: AppContainer, snapshot: ScheduleSnapshot, from: LocalDate, title: String, ttlDays: Int?, options: ShareOptions,
-        /** [MCAL-03] An added calendar's own kind of work. */
-        kind: MoneyShare = kind(c),
+        /** [MCAL-03][MCAL-06] Whose calendar: its own kind of work, money and pay; memos are the same on every calendar. */
+        calendar: String = PersonalCalendar.MAIN,
     ): JSONObject =
         withContext(Dispatchers.Default) {
+            val kind = kind(c, calendar)
             val memos = if (options.memos) memos(c, from) else emptyMap()
-            val pay = if (options.pay) money(c, snapshot, from, kind) else emptyList()
-            val jobs = if (options.jobs) jobs(c, from) else emptyMap()
+            val pay = if (options.pay) money(c, snapshot, from, kind, calendar) else emptyList()
+            val jobs = if (options.jobs) jobs(c, from, calendar) else emptyMap()
             ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs)
         }
 
     /** [SHR-11] The money a link of this user carries: pay for employees, job income for field work, sales for a shop. */
-    fun kind(c: AppContainer): MoneyShare = MoneyShare.of(c.settingsRepository.current.workStyle)
+    fun kind(c: AppContainer, calendar: String = PersonalCalendar.MAIN): MoneyShare =
+        MoneyShare.of(c.scopeOf(calendar).currentSettings().workStyle)
 
     /** [SHR-11] The months' money in the user's own kind; months with nothing to show are left out. */
-    suspend fun money(c: AppContainer, snapshot: ScheduleSnapshot, from: LocalDate, kind: MoneyShare): List<SharedPay> =
+    suspend fun money(
+        c: AppContainer, snapshot: ScheduleSnapshot, from: LocalDate, kind: MoneyShare, calendar: String = PersonalCalendar.MAIN,
+    ): List<SharedPay> =
         withContext(Dispatchers.Default) {
             val months = ShareLinkPayload.months(from)
+            val money = c.calendars.money(calendar)
             val figures = when (kind) {
-                MoneyShare.SALES -> MoneyShareFigures.sales(months, c.moneyRepository.sales.first())
-                MoneyShare.JOBS -> MoneyShareFigures.jobs(months, c.moneyRepository.jobs.first())
+                MoneyShare.SALES -> MoneyShareFigures.sales(months, money.sales.first())
+                MoneyShare.JOBS -> MoneyShareFigures.jobs(months, money.jobs.first())
                 // With no pay calculation, the salary written in the ledger still lets an employee show it.
-                MoneyShare.PAY -> pay(c, snapshot, from).takeIf { it.isNotEmpty() }?.let { return@withContext it }
-                    ?: MoneyShareFigures.recordedPay(months, c.moneyRepository.entries.first())
+                MoneyShare.PAY -> pay(c, snapshot, from, calendar).takeIf { it.isNotEmpty() }?.let { return@withContext it }
+                    ?: MoneyShareFigures.recordedPay(months, money.entries.first())
             }
             figures.map { SharedPay(it.month, it.amount, it.label) }
         }
 
     /** [SHR-11] Each day's booked jobs, every day a job runs, by title and start–end time only. */
-    suspend fun jobs(c: AppContainer, from: LocalDate): Map<LocalDate, List<SharedJob>> {
+    suspend fun jobs(c: AppContainer, from: LocalDate, calendar: String = PersonalCalendar.MAIN): Map<LocalDate, List<SharedJob>> {
         val until = from.plusDays(ShareLinkPayload.DAYS.toLong())
         val out = LinkedHashMap<LocalDate, MutableList<SharedJob>>()
-        c.moneyRepository.jobs.first().sortedWith(compareBy({ it.date }, { it.start })).forEach { j ->
+        c.calendars.money(calendar).jobs.first().sortedWith(compareBy({ it.date }, { it.start })).forEach { j ->
             val start = j.start
             val end = j.end
             val time = if (start != null && end != null) "%02d:%02d-%02d:%02d".format(start.hour, start.minute, end.hour, end.minute) else null
@@ -72,9 +78,10 @@ object ShareContent {
     }
 
     /** The months' pay before tax: the closed figure when a month was closed, else this calendar's estimate. */
-    fun pay(c: AppContainer, snapshot: ScheduleSnapshot, from: LocalDate): List<SharedPay> {
-        val profile = c.payStore.profile.value ?: return emptyList()
-        val closed = c.payStore.closed.value
+    fun pay(c: AppContainer, snapshot: ScheduleSnapshot, from: LocalDate, calendar: String = PersonalCalendar.MAIN): List<SharedPay> {
+        val store = c.calendars.pay(calendar)
+        val profile = store.profile.value ?: return emptyList()
+        val closed = store.closed.value
         val calculator = PayCalculator()
         return ShareLinkPayload.months(from).map { m ->
             closed[m]?.let { SharedPay(m, it.total, "세전 확정") }

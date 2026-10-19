@@ -63,15 +63,18 @@ object JobReminderScheduler {
     )
 
     /** What is due at [at], read again now so a job paid or a bill recorded since is not announced. */
-    internal suspend fun dueAt(money: MoneyRepository, settings: AppSettings, at: LocalDateTime): List<MoneyAlerts.Alert> {
-        val book = MoneyBook(money.allEntries(), money.allJobs(), emptyList(), money.allFixed(), money.allReceivables())
+    internal suspend fun dueAt(money: MoneyRepository, settings: AppSettings, at: LocalDateTime): List<MoneyAlerts.Alert> =
+        dueAt(MoneyBook(money.allEntries(), money.allJobs(), emptyList(), money.allFixed(), money.allReceivables()), settings, at)
+
+    /** [MCAL-06] The same from every calendar's money at once. */
+    internal fun dueAt(book: MoneyBook, settings: AppSettings, at: LocalDateTime): List<MoneyAlerts.Alert> {
         return MoneyAlerts.dueAt(book.jobs, book.fixed, book.entries, at, book.receivables).filter { wanted(it, settings) }
     }
 
     /** [SLP-15] Money held while the user slept, now that they are up. */
     suspend fun postMoneyDue(context: Context, at: LocalDateTime) {
         val c = context.appContainer
-        postMoney(context, dueAt(c.moneyRepository, c.settingsRepository.current, at).filterNot(::isJob))
+        postMoney(context, dueAt(c.calendars.everyMoneyNow(), c.settingsRepository.current, at).filterNot(::isJob))
     }
 
     fun postJob(context: Context, alert: MoneyAlerts.Alert) {
@@ -109,19 +112,18 @@ class JobReminderReceiver : BroadcastReceiver() {
         val pending = goAsync()
         container.appScope.launch {
             try {
-                val money = container.moneyRepository
+                // [MCAL-06] Every calendar's jobs, bills and money owed.
                 val settings = container.settingsRepository.current
                 if (atMillis != 0L) {
                     val at = LocalDateTime.ofInstant(Instant.ofEpochMilli(atMillis), ZoneId.systemDefault())
-                    val (jobs, rest) = JobReminderScheduler.dueAt(money, settings, at).partition { it.key.startsWith("job-") }
+                    val (jobs, rest) = JobReminderScheduler.dueAt(container.calendars.everyMoneyNow(), settings, at).partition { it.key.startsWith("job-") }
                     jobs.forEach { JobReminderScheduler.postJob(context, it) }
                     if (rest.isNotEmpty() && !QuietHold.holdIfAsleep(context, QuietHold.Source.MONEY, at)) {
                         JobReminderScheduler.postMoney(context, rest)
                     }
                 }
                 // Plan the next one after this moment, so the same alert never repeats.
-                val book = MoneyBook(money.allEntries(), money.allJobs(), emptyList(), money.allFixed(), money.allReceivables())
-                JobReminderScheduler.reschedule(context, book, settings, LocalDateTime.now().plusSeconds(1))
+                JobReminderScheduler.reschedule(context, container.calendars.everyMoneyNow(), settings, LocalDateTime.now().plusSeconds(1))
             } finally {
                 pending.finish()
             }

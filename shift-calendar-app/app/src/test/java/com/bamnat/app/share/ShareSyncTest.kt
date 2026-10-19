@@ -89,7 +89,7 @@ class ShareSyncTest {
         assertEquals(2, api.sent.size)
     }
 
-    /** [MCAL-03] An added calendar's link follows that calendar's own days, never the main one's or its pay. */
+    /** [MCAL-03][MCAL-06] An added calendar's link follows that calendar's own days and its own pay, never the main one's. */
     @Test fun anAddedCalendarsLinkFollowsItsOwnDays() = runBlocking {
         val id = c.calendars.begin("알바").also { c.calendars.finishSetup(it, com.bamnat.core.work.WorkStyle.HOURLY) }
         val repo = c.calendars.repository(id)
@@ -97,7 +97,8 @@ class ShareSyncTest {
         val day = repo.shiftTypes.first().first { !it.isOff }.id
         repo.setOverride(LocalDate.now().plusDays(5), ShiftOverride.Shift(day))
         val links = c.shareLinksOf(id)
-        links.saveOptions(ShareOptions(pay = true, jobs = true))
+        links.saveOptions(ShareOptions(pay = true))
+        c.calendars.pay(id).save(com.bamnat.app.ui.pay.PayViewModel(c, id).sampleProfile(), keepUndo = false)
         links.save(link())
         val sync = ShareSync(c)
         // The main calendar has no link: nothing goes out for it.
@@ -106,8 +107,9 @@ class ShareSyncTest {
         val sent = api.sent.single()
         val dates = (0 until sent.getJSONArray("days").length()).map { sent.getJSONArray("days").getJSONObject(it).getString("date") }
         assertEquals(listOf(LocalDate.now().plusDays(5).toString()), dates)
-        assertFalse(sent.has("pay"))
-        assertFalse(sent.optJSONArray("shows")?.toString().orEmpty().contains("jobs"))
+        // Its own pay estimate goes with it; the main calendar has none set up.
+        assertTrue(sent.getJSONArray("pay").length() > 0)
+        assertNull(c.payStore.profile.value)
         assertEquals(ShareSync.Result.Same, sync.sync(id))
 
         // Taken out with its calendar.

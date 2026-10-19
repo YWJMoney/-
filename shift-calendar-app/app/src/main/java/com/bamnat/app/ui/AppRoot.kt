@@ -168,7 +168,9 @@ private object Routes {
     const val DIAGNOSTICS = "diagnostics?testing={testing}"
 
     fun diagnostics(testing: Boolean) = "diagnostics?testing=$testing"
-    const val PAY = "pay"
+    /** [MCAL-06] The pay of one of the user's calendars; without one, the main calendar's. */
+    const val PAY = "pay?calendar={calendar}"
+    fun pay(calendar: String = PersonalCalendar.MAIN) = "pay?calendar=$calendar"
     const val EXTRA_KINDS = "extra_kinds"
     const val MEMO = "memo/{id}?date={date}&checklist={checklist}"
 
@@ -293,7 +295,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             NoticeLinks.Target.MONEY -> { nav.navigateTopLevel(TopLevel.MONEY.route); NoticeLinks.consume(target) }
             NoticeLinks.Target.MEMOS -> { nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target) }
-            NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.PAY) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.pay()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.SLEEP -> { nav.navigate(Routes.SLEEP) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.OWED -> { nav.navigate(Routes.OWED) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.CALENDAR_IMPORT -> { nav.navigate(Routes.CALENDAR_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -413,7 +415,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 companyPay = container.companyStore.pendingPay != null,
                 onNow = {
                     container.firstSetup.consumeSaved()
-                    nav.navigate(Routes.PAY) { launchSingleTop = true }
+                    nav.navigate(Routes.pay()) { launchSingleTop = true }
                 },
                 onLater = { container.firstSetup.consumeSaved() },
             )
@@ -465,7 +467,7 @@ private fun AppNavHost(
                 onOpenShiftTypes = { nav.navigate(Routes.shiftTypes(container.calendars.active.value)) { launchSingleTop = true } },
                 onOpenStats = { nav.navigateTopLevel(TopLevel.STATS.route) },
                 onOpenMoney = { nav.navigateTopLevel(TopLevel.MONEY.route) },
-                onOpenPay = { nav.navigate(Routes.PAY) { launchSingleTop = true } },
+                onOpenPay = { nav.navigate(Routes.pay(container.calendars.active.value)) { launchSingleTop = true } },
                 onOpenSettings = { nav.navigateTopLevel(TopLevel.SETTINGS.route) },
                 onOpenExtraKinds = { nav.navigate(Routes.EXTRA_KINDS) { launchSingleTop = true } },
                 onSetupCalendar = { id -> nav.navigate(Routes.calendarSetup(id)) { launchSingleTop = true } },
@@ -476,8 +478,17 @@ private fun AppNavHost(
             val id = entry.arguments?.getString("id").orEmpty()
             val vm = appViewModel(key = "calendar_setup_$id") { SetupViewModel(it, calendarId = id) }
             val done by vm.done.collectAsStateWithLifecycle()
-            LaunchedEffect(done) { if (done) nav.popFrom(Routes.CALENDAR_SETUP) }
+            val profile by remember(id) { container.calendars.pay(id).profile }.collectAsStateWithLifecycle()
+            // [MCAL-06] As after the first setup: work paid by the hour or month is offered its pay next.
+            val asksPay = done && container.calendars.get(id)?.let { it.ready && it.style?.usesPayEngine == true } == true &&
+                profile == null
+            LaunchedEffect(done) { if (done && !asksPay) nav.popFrom(Routes.CALENDAR_SETUP) }
             SetupHost(vm)
+            if (asksPay) SetupPaySheet(
+                companyPay = false,
+                onNow = { nav.navigate(Routes.pay(id)) { popUpTo(Routes.CALENDAR_SETUP) { inclusive = true }; launchSingleTop = true } },
+                onLater = { nav.popFrom(Routes.CALENDAR_SETUP) },
+            )
         }
         composable(Routes.CALENDARS) {
             val vm = appViewModel { CalendarsViewModel(it) }
@@ -485,8 +496,10 @@ private fun AppNavHost(
             CalendarsScreen(vm, onBack = { nav.popFrom(Routes.CALENDARS) }, onAddCalendar = add)
         }
         composable(TopLevel.MONEY.route) {
-            val vm = appViewModel { MoneyViewModel(it) }
-            MoneyScreen(vm = vm, wide = wide, snackbar = snackbar, onOpenPay = { nav.navigate(Routes.PAY) { launchSingleTop = true } })
+            // [MCAL-06] The money of the calendar on the calendar tab, a view of its own per calendar.
+            val calendar by container.calendars.active.collectAsStateWithLifecycle()
+            val vm = appViewModel(key = "money_$calendar") { MoneyViewModel(it, calendar) }
+            MoneyScreen(vm = vm, wide = wide, snackbar = snackbar, onOpenPay = { nav.navigate(Routes.pay(vm.calendarId)) { launchSingleTop = true } })
         }
         composable(Routes.WORK_STYLE) {
             val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()
@@ -505,7 +518,7 @@ private fun AppNavHost(
                         style == before -> nav.popFrom(Routes.WORK_STYLE)
                         style == WorkStyle.SHIFT && patterns.none { it is WorkPattern.Rotation } -> go(Routes.pattern(weekdays = false, setup = !pay))
                         style == WorkStyle.DAY && patterns.none { it is WorkPattern.Weekly } -> go(Routes.pattern(weekdays = true, setup = !pay))
-                        style == WorkStyle.HOURLY && !pay -> go(Routes.PAY)
+                        style == WorkStyle.HOURLY && !pay -> go(Routes.pay())
                         else -> {
                             nav.popFrom(Routes.WORK_STYLE)
                             snackbar.showSnackbar(style.changedMessage())
@@ -528,8 +541,9 @@ private fun AppNavHost(
             MemoTrashScreen(vm = vm, onBack = { nav.popFrom(Routes.MEMO_TRASH) })
         }
         composable(TopLevel.STATS.route) {
-            val vm = appViewModel { StatsViewModel(it) }
-            StatsScreen(vm = vm, wide = wide, onOpenPay = { nav.navigate(Routes.PAY) { launchSingleTop = true } })
+            val calendar by container.calendars.active.collectAsStateWithLifecycle()
+            val vm = appViewModel(key = "stats_$calendar") { StatsViewModel(it, calendar) }
+            StatsScreen(vm = vm, wide = wide, onOpenPay = { nav.navigate(Routes.pay(vm.calendarId)) { launchSingleTop = true } })
         }
         composable(TopLevel.SETTINGS.route) {
             val vm = appViewModel { SettingsViewModel(it) }
@@ -541,7 +555,7 @@ private fun AppNavHost(
                 onOpenDiagnostics = { testing -> nav.navigate(Routes.diagnostics(testing)) { launchSingleTop = true } },
                 onOpenWorkStyle = { nav.navigate(Routes.WORK_STYLE) { launchSingleTop = true } },
                 onOpenExtraKinds = { nav.navigate(Routes.EXTRA_KINDS) { launchSingleTop = true } },
-                onOpenPay = { nav.navigate(Routes.PAY) { launchSingleTop = true } },
+                onOpenPay = { nav.navigate(Routes.pay()) { launchSingleTop = true } },
                 wide = wide,
                 snackbar = snackbar,
                 company = if (nudges.enabled) ({
@@ -563,11 +577,13 @@ private fun AppNavHost(
             val vm = appViewModel { InquiryViewModel(it) }
             InquiryScreen(vm = vm, onBack = { nav.popFrom(Routes.INQUIRY) })
         }
-        composable(Routes.PAY) {
-            val vm = appViewModel { PayViewModel(it) }
+        composable(Routes.PAY, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+            val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
+            val vm = appViewModel(key = "pay_$calendar") { PayViewModel(it, calendar) }
             val profile by vm.profile.collectAsStateWithLifecycle()
             val pendingPay by container.companyStore.pendingPayFlow.collectAsStateWithLifecycle()
-            if (profile == null && pendingPay != null) {
+            // [MCAL-06] A coworker's company setup is for the main job's pay.
+            if (profile == null && pendingPay != null && calendar == PersonalCalendar.MAIN) {
                 // [COMM-01] A coworker's setup came with its pay: only the user's own amounts are left.
                 val companyPay = appViewModel(key = "company-pay-${pendingPay.hashCode()}") { CompanyPayViewModel(it) }
                 CompanyPayScreen(companyPay, onBack = { nav.popFrom(Routes.PAY) }, onByHand = { container.companyStore.pendingPay = null })
@@ -650,7 +666,7 @@ private fun AppNavHost(
                             !hasPattern -> nav.navigate(Routes.pattern(weekdays = weekdays || applied.cycleDays == null, setup = true)) {
                                 popUpTo(Routes.COMPANY_FIND) { inclusive = true }
                             }
-                            applied.pendingPay || (setup && !pay) -> nav.navigate(Routes.PAY) {
+                            applied.pendingPay || (setup && !pay) -> nav.navigate(Routes.pay()) {
                                 popUpTo(Routes.COMPANY_FIND) { inclusive = true }
                                 launchSingleTop = true
                             }
@@ -697,7 +713,8 @@ private fun AppNavHost(
             com.bamnat.app.ui.sleep.SleepScreen(vm = vm, wide = wide, onBack = { nav.popFrom(Routes.SLEEP) })
         }
         composable(Routes.OWED) {
-            val vm = appViewModel { com.bamnat.app.ui.money.OwedViewModel(it) }
+            val calendar by container.calendars.active.collectAsStateWithLifecycle()
+            val vm = appViewModel(key = "owed_$calendar") { com.bamnat.app.ui.money.OwedViewModel(it, calendar) }
             com.bamnat.app.ui.money.OwedScreen(vm = vm, wide = wide, onBack = { nav.popFrom(Routes.OWED) })
         }
         composable(Routes.CALENDAR_IMPORT) {
@@ -708,7 +725,7 @@ private fun AppNavHost(
             val vm = appViewModel { ExtraKindsViewModel(it) }
             ExtraKindsScreen(vm = vm, onBack = { nav.popFrom(Routes.EXTRA_KINDS) },
                 // Back to the pay screen when it opened this one, so the stack does not grow.
-                onOpenPay = { if (!nav.popBackStack(Routes.PAY, inclusive = false)) nav.navigate(Routes.PAY) { launchSingleTop = true } })
+                onOpenPay = { if (!nav.popBackStack(Routes.PAY, inclusive = false)) nav.navigate(Routes.pay()) { launchSingleTop = true } })
         }
         composable(
             Routes.DIAGNOSTICS,
@@ -740,7 +757,7 @@ private fun AppNavHost(
                 onBack = { nav.popFrom(Routes.PATTERN) },
                 // [PAYX-13] Right after the first cycle, the pay setup opens in its place.
                 onSaved = if (setup) ({
-                    nav.navigate(Routes.PAY) { popUpTo(Routes.PATTERN) { inclusive = true }; launchSingleTop = true }
+                    nav.navigate(Routes.pay(calendar)) { popUpTo(Routes.PATTERN) { inclusive = true }; launchSingleTop = true }
                 }) else null,
                 onOpenShiftTypes = { nav.navigate(Routes.shiftTypes(calendar)) { launchSingleTop = true } },
             )
@@ -812,7 +829,7 @@ private fun NavHostController.afterCompanyByHand(setup: Boolean, weekdays: Boole
 /** [COMM-03] After 달라요: where the setup is corrected before the right one is shared. */
 private fun NavHostController.fixCompanySetup(place: FixPlace) {
     when (place) {
-        FixPlace.PAY -> navigate(Routes.PAY) { launchSingleTop = true }
+        FixPlace.PAY -> navigate(Routes.pay()) { launchSingleTop = true }
         FixPlace.SHIFT_TYPES -> navigate(Routes.shiftTypes()) { launchSingleTop = true }
         FixPlace.PATTERN -> navigate(Routes.pattern()) { launchSingleTop = true }
         FixPlace.NONE -> navigate(Routes.COMPANY_REPORT) { launchSingleTop = true }

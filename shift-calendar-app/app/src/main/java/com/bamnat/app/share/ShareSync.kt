@@ -2,7 +2,6 @@ package com.bamnat.app.share
 
 import com.bamnat.app.AppContainer
 import com.bamnat.app.data.PersonalCalendar
-import com.bamnat.core.work.MoneyShare
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
@@ -45,11 +44,15 @@ class ShareSync(
     /** Follows the data for as long as the app runs. */
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     suspend fun follow() {
-        // [MCAL-03] The added calendars' own days and links; memos are the same on every calendar.
+        // [MCAL-03][MCAL-06] The added calendars' own days, money, pay and links; memos are the same on every calendar.
         val added: Flow<Any?> = c.calendars.calendars.flatMapLatest { list ->
             val others = list.filter { !it.isMain }
             if (others.isEmpty()) flowOf(Unit)
-            else combine(others.flatMap { listOf(c.calendars.repository(it.id).snapshot, c.shareLinksOf(it.id).link) }) { Unit }
+            else combine(others.flatMap { cal ->
+                val money = c.calendars.money(cal.id)
+                val pay = c.calendars.pay(cal.id)
+                listOf(c.calendars.repository(cal.id).snapshot, c.shareLinksOf(cal.id).link, money.jobs, money.sales, money.entries, pay.profile, pay.closed)
+            }) { Unit }
         }
         val reads: List<Flow<Any?>> = listOf(
             c.scheduleRepository.snapshot, c.memoRepository.memos, c.moneyRepository.jobs, c.moneyRepository.sales,
@@ -85,10 +88,8 @@ class ShareSync(
         val cal = c.calendars.get(calendarId) ?: return Result.Gone
         val from = ShareLinkPayload.startMonth(link, today())
         val snapshot = c.calendars.repository(calendarId).snapshot.first()
-        // An added calendar shares as its own kind of work and never carries the main job's money (see ShareDialog).
-        val options = if (cal.isMain) store.options() else store.options().copy(pay = false, jobs = false)
-        val payload = if (cal.isMain) ShareContent.payload(c, snapshot, from.atDay(1), link.title, ttlDays, options)
-        else ShareContent.payload(c, snapshot, from.atDay(1), link.title, ttlDays, options, MoneyShare.of(cal.style))
+        // [MCAL-06] Each calendar shares its own kind of work, money and pay.
+        val payload = ShareContent.payload(c, snapshot, from.atDay(1), link.title, ttlDays, store.options(), cal.id)
         // A calendar emptied for these months stays as it was on the link rather than being refused.
         if (!ShareLinkPayload.hasContent(payload)) return Result.Same
         val sent = ShareLinkPayload.fingerprint(payload)
