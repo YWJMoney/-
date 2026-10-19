@@ -2279,6 +2279,7 @@ class ScreenshotTest {
         tapText("순서가 돌아가요")
         tapText("나중에 할게요", exact = true)
         settingsPage("내 근무")
+    })
 
     // ---- 가계부 (1.15) ----
     /**
