@@ -191,6 +191,25 @@ test("계산이 이상해요 sends the pay check without amounts, and the develo
   assert.equal((await call("POST", "/api/inquiries", question(2, { info: { pay: "가".repeat(3001) } }))).status, 400);
 });
 
+test("회사 방식 알려 주기 is a question only the developer reads, with the kind's settings", async () => {
+  const { call } = server();
+  const setup = "종류: 휴무일 근무 · 근무처럼\n지금 설정: 1회 정액 (8시간까지) + 연장 50%(8시간 넘게)\n사업장: 5인 이상 · 월급제";
+  const sent = await call("POST", "/api/inquiries", question(1, {
+    kind: "company", public: true, text: "회사: 예시정밀\n휴무일 근무는 8시간에 기본급 10%, 넘으면 0.5 가산", info: { app: "1.14.1 (21)", setup },
+  }), from(1));
+  assert.equal(sent.status, 201);
+  // The app asks for public on every question; a company's way never is.
+  assert.equal(sent.data.public, false);
+  assert.equal((await call("GET", "/api/inquiries/public")).data.inquiries.length, 0);
+  const admin = await signIn(call);
+  const detail = (await call("GET", `/api/admin/inquiries/${sent.data.id}`, undefined, admin)).data;
+  assert.deepEqual([detail.kind, detail.topic, detail.urgency, detail.context["회사 설정"]], ["company", "company", "low", setup]);
+  // Settings with an amount are refused like the pay check; other is a kind too.
+  const amount = await call("POST", "/api/inquiries", question(2, { kind: "company", info: { setup: "1회 정액 50,000원" } }), from(2));
+  assert.deepEqual([amount.status, amount.data.field], [400, "setup"]);
+  assert.equal((await call("POST", "/api/inquiries", question(3, { kind: "other", text: "화면이 예뻐요" }), from(3))).status, 201);
+});
+
 test("questions sort themselves by topic and urgency, and the developer can show one topic", async () => {
   const { call } = server();
   const send = async (n, change) => (await call("POST", "/api/inquiries", question(n, change), from(n))).data.id;

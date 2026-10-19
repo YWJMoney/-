@@ -583,19 +583,32 @@ class CompanyNudgeViewModel(private val c: AppContainer) : ViewModel() {
 }
 
 /**
- * [EXTRA-06][COMM-04] A company way the app cannot set yet, sent to the developer with this phone's
- * setup (no amounts). The answer shows in 내가 보낸 정보. Null when it went, else what to tell the user.
+ * [EXTRA-06][COMM-04] A company way the app cannot set yet. Since 1.14.1 it is a question in the app
+ * like any other [INQ-01]: the developer answers it with the rest in the developer app's 문의, and the
+ * answer shows in 설정 > 문의하기. It is never public, since it names the workplace. [setup] is the
+ * kind's settings in words, without an amount. Null when it went, else what to tell the user.
  */
-suspend fun AppContainer.askDeveloper(company: String, note: String): String? {
+suspend fun AppContainer.askDeveloper(company: String, how: String, example: String, setup: String? = null): String? {
+    val text = "회사: ${company.trim()}\n${how.trim()}" + (if (example.isNotBlank()) "\n예시: ${example.trim()}" else "")
     CompanyText.personal(company)?.let { return companyProblem(it, "company") }
-    CompanyText.personal(note)?.let { return companyProblem(it, "note") }
+    CompanyText.personal(text)?.let { return companyProblem(it, "note") }
     if (CompanyText.norm(company).length < 2) return companyProblem("company")
+    if (text.length > com.bamnat.app.company.InquiryClient.TEXT_MAX) return companyProblem("note")
     return try {
-        val status = companyApi.report(companyStore.device, company, "", false, note.take(1500), companyShare.exportForServer(), ask = true)
-        companyStore.addSent(SentReport(status.id, status.company, status.dept, ask = true, at = Instant.now()))
-        telemetry.event("company_ask", if (status.again) "again" else "new")
+        inquiryApi.send(companyStore.device, com.bamnat.app.company.InquiryKind.COMPANY, text, deviceInquiryInfo().copy(setup = setup))
+        inquiryStore.asked = true
+        telemetry.event("company_ask", "inquiry")
         null
     } catch (e: CompanyException) {
-        companyProblem(e.code, e.field)
+        // The settings are made by the app; one the server will not take is a name that looks like an amount.
+        if (e.field == "setup") "이 종류의 이름이나 설정에 금액·연락처처럼 보이는 글자가 있어요. 이름을 바꾼 뒤 보내 주세요"
+        else companyProblem(e.code, if (e.field == "text") "note" else e.field)
     }
 }
+
+/** [ADMIN-02] What always goes with a question: this app and phone, shown on the form before it is sent. */
+fun deviceInquiryInfo() = com.bamnat.app.company.InquiryInfo(
+    app = "${com.bamnat.app.BuildConfig.VERSION_NAME} (${com.bamnat.app.BuildConfig.VERSION_CODE})",
+    model = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
+    android = "${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})",
+)

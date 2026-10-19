@@ -512,7 +512,7 @@ function adminApp() {
     { key: "settings", label: "설정", group: "manage" },
   ];
   const LEVEL_NAMES = { none: "없음", view: "보기", edit: "고치기" };
-  const KIND_NAMES = { question: "질문", bug: "문제 신고", problem: "문제 신고", idea: "제안" };
+  const KIND_NAMES = { question: "질문", bug: "문제 신고", problem: "문제 신고", idea: "건의·제안", company: "회사 방식", other: "그 밖의 이야기" };
   const STATUS_NAMES = { open: "답 대기", answered: "답함", closed: "닫힘" };
   const ACTION_NAMES = {
     login: "로그인", login_failed: "로그인 실패", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",

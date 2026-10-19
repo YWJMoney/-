@@ -832,7 +832,7 @@ private fun KindEditor(
                 company = vm.companyName,
                 onDismiss = { reporting = false },
                 onSent = { reporting = false; vm.reported() },
-                note = { company, how, example -> reportText(draft, snapshot, profile, company, how, example) },
+                setup = setupText(draft, snapshot, profile),
             )
         } else {
             ReportDialog(draft, snapshot, profile, onDismiss = { reporting = false }, onSent = { reporting = false; vm.reported() })
@@ -1108,18 +1108,9 @@ private fun ReportDialog(draft: KindDraft, snapshot: ScheduleSnapshot, profile: 
 
 /** What is sent: the kind's settings and the user's words. Amounts the user typed into rules are left out. */
 private fun reportText(draft: KindDraft, snapshot: ScheduleSnapshot, profile: PayProfile?, company: String, how: String, example: String): String = buildString {
-    val k = draft.kind
     appendLine("[밤낮 회사 방식 제보]")
     appendLine("회사: ${company.trim().ifEmpty { "적지 않음" }}")
-    appendLine("종류: ${k.name} · ${timingText(k, snapshot.typesById)}")
-    if (k.timing is ExtraTiming.Band || k.timing is ExtraTiming.AsShift) appendLine("쉬는 날에 하면: ${k.offDay.label}")
-    val night = (profile?.rules ?: CompanyRules()).nightLabel(RateTable.on(LocalDate.now()))
-    appendLine("지금 설정: ${draft.rule.shareText(night)}")
-    draft.byShift.forEach { (id, r) -> appendLine("  ${snapshot.typesById[id]?.name ?: "근무"}: ${r.shareText(night)}") }
-    profile?.let { p ->
-        appendLine("사업장: ${if (p.fiveOrMoreEmployees) "5인 이상" else "5인 미만"} · ${p.wageLabel()} · " +
-            "쉬는 날 근무 ${p.rules.restDayWork.label}")
-    }
+    appendLine(setupText(draft, snapshot, profile))
     appendLine()
     appendLine("회사 방식:")
     appendLine(how.trim())
@@ -1131,6 +1122,20 @@ private fun reportText(draft: KindDraft, snapshot: ScheduleSnapshot, profile: Pa
     appendLine()
     append("앱 ${BuildConfig.VERSION_NAME}")
 }
+
+/** [INQ-01] This kind's settings in words, without the won amounts typed into its rules. */
+private fun setupText(draft: KindDraft, snapshot: ScheduleSnapshot, profile: PayProfile?): String = buildString {
+    val k = draft.kind
+    appendLine("종류: ${k.name} · ${timingText(k, snapshot.typesById)}")
+    if (k.timing is ExtraTiming.Band || k.timing is ExtraTiming.AsShift) appendLine("쉬는 날에 하면: ${k.offDay.label}")
+    val night = (profile?.rules ?: CompanyRules()).nightLabel(RateTable.on(LocalDate.now()))
+    appendLine("지금 설정: ${draft.rule.shareText(night)}")
+    draft.byShift.forEach { (id, r) -> appendLine("  ${snapshot.typesById[id]?.name ?: "근무"}: ${r.shareText(night)}") }
+    profile?.let { p ->
+        appendLine("사업장: ${if (p.fiveOrMoreEmployees) "5인 이상" else "5인 미만"} · ${p.wageLabel()} · " +
+            "쉬는 날 근무 ${p.rules.restDayWork.label}")
+    }
+}.trimEnd()
 
 /** A rule in words without the won amounts typed into it. */
 private fun ExtraRule.shareText(nightLabel: String): String =

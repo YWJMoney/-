@@ -1458,10 +1458,12 @@ async function flag(request, env, id) {
 // public is also in 모두의 문의 (below), without anything that went with it.
 
 const INQUIRY = {
-  kinds: ["question", "bug", "idea"],
+  // [INQ-01] Since 1.14.1 suggestions, anything else and a company's way the app cannot set come here too.
+  kinds: ["question", "bug", "idea", "company", "other"],
   text: 2000,
   diag: 6000,
   pay: 3000,
+  setup: 3000,
   bytes: 16 * 1024,
   perDay: 5,
   perNetworkDay: 20,
@@ -1479,7 +1481,12 @@ const INQUIRY_INFO = [
   ["알람 점검", "diag", INQUIRY.diag],
   // 급여 > 계산이 이상해요: the month's rules and each line's hours and rate, never an amount.
   ["급여 계산", "pay", INQUIRY.pay],
+  // [INQ-01] 회사 방식 알려 주기: the kind's settings in words, never an amount.
+  ["회사 설정", "setup", INQUIRY.setup],
 ];
+
+/** [INQ-01] A company's way names the workplace: it stays with the developer, whatever the app asks. */
+const PRIVATE_KINDS = ["company"];
 
 // ---- sorting questions without reading each one [ADMIN-02] ----
 //
@@ -1513,9 +1520,10 @@ function triage(kind, text, info) {
     if (n > best) [topic, best] = [key, n];
   }
   // What came with it says more than any word: 계산이 이상해요 sends the pay check, the alarm form its check.
-  if (info?.pay) topic = "pay";
+  if (kind === "company" || info?.setup) topic = "company";
+  else if (info?.pay) topic = "pay";
   else if (best === 0 && info?.diag) topic = "alarm";
-  const urgency = kind === "idea" ? "low" : URGENT.test(t) ? "urgent" : "normal";
+  const urgency = ["idea", "company", "other"].includes(kind) ? "low" : URGENT.test(t) ? "urgent" : "normal";
   return { topic, topicName: TOPIC_NAMES[topic], urgency };
 }
 
@@ -1586,7 +1594,7 @@ async function ask(request, env) {
   await env.DB.batch([
     // Only an app that says so on its form sends public: true; a question from an older app stays the developer's.
     stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at) VALUES (?, ?, ?, ?, 'open', ?, ?, ?)",
-      id, dev, body.kind, JSON.stringify(info), body.public === true ? 1 : 0, now, now),
+      id, dev, body.kind, JSON.stringify(info), body.public === true && !PRIVATE_KINDS.includes(body.kind) ? 1 : 0, now, now),
     stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, text, now),
     // Threads with nothing new for half a year go, answers and all.
     stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
@@ -1620,7 +1628,7 @@ function inquiryInfo(v) {
     if (x === undefined || x === null || x === "") continue;
     if (typeof x !== "string" || [...x].length > longest) refuse("info", key);
     if (key !== "diag" && personal(x) === "email") refuse("info", key);
-    if (key === "pay" && personal(x)) refuse("info", key);
+    if ((key === "pay" || key === "setup") && personal(x)) refuse("info", key);
     out[key] = x.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
   }
   return out;
