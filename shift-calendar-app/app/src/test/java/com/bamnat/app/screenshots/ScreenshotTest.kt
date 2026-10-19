@@ -532,10 +532,12 @@ class ScreenshotTest {
     @Test fun foldedAlarmChecks() = shoot("350_folded_alarm_checks", FOLDED) {
         val c = app.container
         c.alarmScheduler.scheduleTest()
-        content { DiagnosticsScreen(DiagnosticsViewModel(c), onBack = {}) }
+        val vm = DiagnosticsViewModel(c)
+        content { DiagnosticsScreen(vm, onBack = {}) }
     }
     @Test fun unfoldedAlarmChecks() = shoot("351_unfolded_alarm_checks", UNFOLDED) {
-        content { DiagnosticsScreen(DiagnosticsViewModel(app.container), onBack = {}) }
+        val vm = DiagnosticsViewModel(app.container)
+        content { DiagnosticsScreen(vm, onBack = {}) }
     }
     // [OPS-23] 설정 › 앱 정보 › 오픈소스 라이선스.
     @Test fun foldedOpenSourceLicenses() = shoot("352_folded_open_source_licenses", FOLDED) {
