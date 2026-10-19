@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -41,7 +42,9 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -97,11 +100,9 @@ fun TimePickerDialog(
                             .clip(MaterialTheme.shapes.medium)
                             .background(MaterialTheme.colorScheme.primaryContainer),
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Wheel(count = 24, value = hour, jump = jump, label = "시", onValue = { hour = it })
-                        WheelUnit("시")
-                        Wheel(count = 60, value = minute, jump = jump, label = "분", onValue = { minute = it })
-                        WheelUnit("분")
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        WheelHalf(count = 24, value = hour, jump = jump, label = "시", onValue = { hour = it })
+                        WheelHalf(count = 60, value = minute, jump = jump, label = "분", onValue = { minute = it })
                     }
                 }
                 Row(
@@ -131,16 +132,43 @@ fun TimePickerDialog(
 
 val DEFAULT_PRESETS: List<LocalTime> = listOf(6, 7, 8, 9, 14, 18, 20, 22).map { LocalTime.of(it, 0) }
 
-/** Unit beside a wheel, on the selected row. */
+/**
+ * One wheel with its unit, taking an equal share of the row. [TIME-02] The whole share turns the
+ * wheel, not only the digits, so a thumb anywhere over 시 or 분 works; the share ends where the next
+ * wheel's begins, so a swipe never turns the neighbour.
+ */
 @Composable
-internal fun WheelUnit(text: String) {
+internal fun RowScope.WheelHalf(
+    count: Int,
+    value: Int,
+    jump: Int,
+    label: String,
+    onValue: (Int) -> Unit,
+    cyclic: Boolean = true,
+) {
+    Box(Modifier.weight(1f).padding(horizontal = 2.dp), contentAlignment = Alignment.Center) {
+        Wheel(count, value, jump, label, onValue, cyclic, Modifier.fillMaxWidth())
+        // The unit sits right of the centred digits. An invisible copy on the left keeps the digits
+        // centred over the wheel. Plain text takes no touches, so swipes over it still turn the wheel.
+        Row(Modifier.clearAndSetSemantics {}, verticalAlignment = Alignment.CenterVertically) {
+            WheelUnitText(label, Modifier.alpha(0f))
+            Text("00", style = WheelDigits, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.alpha(0f))
+            WheelUnitText(label)
+        }
+    }
+}
+
+@Composable
+private fun WheelUnitText(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.onPrimaryContainer,
-        modifier = Modifier.padding(start = 2.dp, end = 10.dp),
+        modifier = modifier.padding(horizontal = 4.dp),
     )
 }
+
+private val WheelDigits: TextStyle @Composable get() = MaterialTheme.typography.headlineSmall.merge(NumberStyle)
 
 /**
  * One column of numbers that turns up and down. [TIME-01] The rows above and below the chosen one
@@ -155,6 +183,7 @@ internal fun Wheel(
     label: String,
     onValue: (Int) -> Unit,
     cyclic: Boolean = true,
+    modifier: Modifier = Modifier.width(64.dp),
 ) {
     val middle = if (cyclic) count * LOOPS / 2 else 0
     val state = rememberLazyListState(initialFirstVisibleItemIndex = middle + value)
@@ -188,8 +217,7 @@ internal fun Wheel(
     LazyColumn(
         state = state,
         flingBehavior = rememberSnapFlingBehavior(state, SnapPosition.Center),
-        modifier = Modifier
-            .width(64.dp)
+        modifier = modifier
             .height(WHEEL_ROW_HEIGHT * VISIBLE_ITEMS)
             .semantics {
                 contentDescription = "$value$label"
@@ -210,18 +238,17 @@ internal fun Wheel(
             Box(
                 Modifier
                     .height(WHEEL_ROW_HEIGHT)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .clickable(interactionSource = null, indication = null) { scope.launch { state.animateScrollToItem(i) } },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     "%02d".format(v),
-                    style = MaterialTheme.typography.headlineSmall.merge(NumberStyle),
+                    style = WheelDigits,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                     fontSize = when (distance) { 0 -> 28.sp; 1 -> 22.sp; else -> 18.sp },
                     textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .alpha(when (distance) { 0 -> 1f; 1 -> 0.7f; else -> 0.3f })
-                        .clickable(interactionSource = null, indication = null) { scope.launch { state.animateScrollToItem(i) } },
+                    modifier = Modifier.alpha(when (distance) { 0 -> 1f; 1 -> 0.7f; else -> 0.3f }),
                 )
             }
         }

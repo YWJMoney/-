@@ -446,11 +446,9 @@ fun DurationDialog(
                             .clip(MaterialTheme.shapes.medium)
                             .background(MaterialTheme.colorScheme.primaryContainer),
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Wheel(count = maxMinutes / 60 + 1, value = hours, jump = 0, label = "시간", onValue = { hours = it }, cyclic = false)
-                        WheelUnit("시간")
-                        Wheel(count = 60, value = mins, jump = 0, label = "분", onValue = { mins = it })
-                        WheelUnit("분")
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        WheelHalf(count = maxMinutes / 60 + 1, value = hours, jump = 0, label = "시간", onValue = { hours = it }, cyclic = false)
+                        WheelHalf(count = 60, value = mins, jump = 0, label = "분", onValue = { mins = it })
                     }
                 }
             }
