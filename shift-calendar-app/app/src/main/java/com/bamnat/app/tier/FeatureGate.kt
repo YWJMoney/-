@@ -24,6 +24,8 @@ enum class Feature(val label: String, val minTier: Tier) {
     TEAM_ROSTER("팀 근무표 만들기", Tier.LEADER),
     /** [TIER-05] This month's records and totals stay free; comparisons, trends and breakdowns are pro. */
     MONEY_STATS("돈 통계", Tier.PRO),
+    /** [MCAL-07] The main calendar and one added calendar are free; a second added calendar on is pro. */
+    MORE_CALENDARS("달력 여러 개", Tier.PRO),
 }
 
 /**

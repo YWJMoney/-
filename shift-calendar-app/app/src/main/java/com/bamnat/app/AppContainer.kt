@@ -63,7 +63,12 @@ class AppContainer(context: Context) {
         repositoryOf = { db ->
             ScheduleRepository(db, kinds = settingsRepository.settings.map { it.extraKinds }, extraName = { settingsRepository.current.extraKinds.name(it) })
         },
+        mainMoney = { moneyRepository },
+        mainPay = { payStore },
+        payOf = { id -> PayStore(appContext, java.io.File(com.bamnat.app.data.CalendarStorage.filesOf(appContext, id), "pay")) },
     )
+    /** [MCAL-06] Calendar [id]'s days, money and pay as a screen sees them. */
+    fun scopeOf(id: String) = com.bamnat.app.data.CalendarScope(calendars, settingsRepository, id)
     /** [MCAL-02] The setup of a calendar being added, kept apart from the app's first setup. */
     val calendarSetupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "calendar_setup_draft.json")) }
     val memoRepository = MemoRepository(database)
@@ -183,7 +188,8 @@ class AppContainer(context: Context) {
         // [SLP-15] So does the 나갈 돈·받을 돈 switch.
         keep("money") {
             val on = settingsRepository.settings.map { it.moneyNotices }.distinctUntilChanged()
-            combine(moneyRepository.book, on) { book, _ -> book }.debounce(500)
+            // [MCAL-06] A job booked on any calendar is told about.
+            combine(calendars.everyMoney, on) { book, _ -> book }.debounce(500)
                 .collect { JobReminderScheduler.reschedule(appContext, it, settingsRepository.current) }
         }
         // [SCHED-01] A memo saved, moved to the trash, restored or brought back from a backup re-plans the next schedule.

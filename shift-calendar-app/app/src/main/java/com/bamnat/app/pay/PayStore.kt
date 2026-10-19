@@ -52,8 +52,12 @@ import java.time.YearMonth
  * The pay profile, kept as one JSON file in app storage (included in phone backup) [PAY-10].
  * Company pay values never leave the phone.
  */
-class PayStore(context: Context) {
-    private val file = File(context.filesDir, "pay/profile.json")
+class PayStore(
+    context: Context,
+    /** [MCAL-06] Where it keeps its files: the main calendar's own folder, or an added calendar's. */
+    dir: File = File(context.filesDir, "pay"),
+) {
+    private val file = File(dir, "profile.json")
     private val _profile = MutableStateFlow(read())
     val profile: StateFlow<PayProfile?> = _profile.asStateFlow()
 
@@ -95,7 +99,7 @@ class PayStore(context: Context) {
 
     // ---- closed months [PAYX-03, PAY-10] ----
 
-    private val closedFile = File(context.filesDir, "pay/closed.json")
+    private val closedFile = File(dir, "closed.json")
     private val _closed = MutableStateFlow(readClosed())
     /** Months the user closed: their saved results stay as they were when rules or rates change. */
     val closed: StateFlow<Map<YearMonth, CalcSnapshot>> = _closed.asStateFlow()

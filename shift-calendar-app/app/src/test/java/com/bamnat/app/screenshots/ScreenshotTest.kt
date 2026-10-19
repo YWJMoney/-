@@ -1587,6 +1587,17 @@ class ScreenshotTest {
         }
     }
 
+    /** [MCAL-06] 돈 on an added calendar: its own jobs, with the calendars to switch above. */
+    @Test fun foldedAddedCalendarMoney() = shoot("219_folded_added_calendar_money", FOLDED) {
+        val c = app.container
+        val id = addedCalendar(show = true)
+        runBlocking {
+            c.calendars.money(id).save(Job(date = today, title = "주말 행사 진행", start = LocalTime.of(10, 0), amount = 120_000))
+            c.calendars.money(id).save(MoneyEntry(date = today.minusDays(3), kind = MoneyKind.INCOME, amount = 412_000, category = "급여", note = "알바 급여"))
+        }
+        tab(1, wide = false)
+    }
+
     // ---- M10 [SET-01][SLP-15] Settings in groups ----
     @Test fun foldedSettingsAlarm() = shoot("140_folded_settings_alarm", FOLDED) { settingsPage("알람") }
     @Test fun foldedSettingsNotices() = shoot("141_folded_settings_notices", FOLDED) { settingsPage("알림") }

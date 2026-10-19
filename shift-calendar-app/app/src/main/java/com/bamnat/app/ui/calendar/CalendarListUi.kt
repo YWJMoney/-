@@ -50,6 +50,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import com.bamnat.app.tier.Feature
+import com.bamnat.app.tier.FeatureGate
+import com.bamnat.app.tier.Tier
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -261,7 +264,7 @@ fun CalendarSwitcherSheet(
                     )
                 }
             }
-            AddRow("새 달력 만들기", onAddCalendar, MineShape)
+            AddRow("새 달력 만들기", onAddCalendar, MineShape, rows.newCalendarBadge())
             onAddReceived?.let { AddRow("받은 링크로 달력 넣기", it, CircleShape) }
             Text(
                 "새 달력은 근무와 순서를 따로 갖고, 링크도 따로 공유해요. " +
@@ -284,7 +287,7 @@ fun CalendarSwitcherSheet(
 }
 
 @Composable
-private fun AddRow(label: String, onClick: () -> Unit, shape: Shape) {
+private fun AddRow(label: String, onClick: () -> Unit, shape: Shape, badge: String? = null) {
     Row(
         Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(horizontal = 24.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -294,8 +297,17 @@ private fun AddRow(label: String, onClick: () -> Unit, shape: Shape) {
         }
         Spacer(Modifier.width(16.dp))
         Text(label, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+        badge?.let {
+            Spacer(Modifier.width(8.dp))
+            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primaryContainer).padding(horizontal = 8.dp, vertical = 2.dp))
+        }
     }
 }
+
+/** [MCAL-07] "프로" beside 새 달력 만들기 once the free added calendars are made. */
+internal fun List<CalendarRow>.newCalendarBadge(): String? =
+    Tier.PRO.label.takeIf { count { it is CalendarRow.Mine && !it.cal.isMain } >= PersonalCalendar.FREE_ADDED }
 
 /**
  * [MCAL-02] Naming a new calendar before its setup. The name and colour can be changed later in the
@@ -303,7 +315,11 @@ private fun AddRow(label: String, onClick: () -> Unit, shape: Shape) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun NewCalendarDialog(suggested: String, colorIndex: Int, onCreate: (String, Long) -> Unit, onDismiss: () -> Unit) {
+fun NewCalendarDialog(
+    suggested: String, colorIndex: Int, onCreate: (String, Long) -> Unit, onDismiss: () -> Unit,
+    /** [MCAL-07] This one would be past the free ones, so a pro calendar. */
+    pro: Boolean = false,
+) {
     var name by remember { mutableStateOf("") }
     var color by remember { mutableLongStateOf(PersonalCalendar.COLORS[colorIndex % PersonalCalendar.COLORS.size]) }
     AlertDialog(
@@ -315,6 +331,7 @@ fun NewCalendarDialog(suggested: String, colorIndex: Int, onCreate: (String, Lon
                     "근무 형태부터 처음 시작할 때처럼 하나씩 물어볼게요. 지금 달력은 그대로예요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (pro) Text(proNote(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 OutlinedTextField(
                     value = name, onValueChange = { if (it.length <= PersonalCalendar.MAX_NAME) name = it }, singleLine = true,
                     label = { Text("이름") }, placeholder = { Text(suggested) }, modifier = Modifier.fillMaxWidth(),
@@ -326,6 +343,11 @@ fun NewCalendarDialog(suggested: String, colorIndex: Int, onCreate: (String, Lon
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }
+
+/** [MCAL-07] What a calendar past the free ones is, before and after paid features open. */
+internal fun proNote(): String =
+    if (FeatureGate.BILLING_LIVE) "추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료이고, 이 달력부터는 ${Tier.PRO.label} 기능이에요."
+    else "추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료이고, 그다음부터는 ${Tier.PRO.label} 기능이 될 거예요. 지금은 모든 기능이 무료예요."
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -461,7 +483,7 @@ fun CalendarsScreen(vm: CalendarsViewModel, onBack: () -> Unit, onAddCalendar: (
                     )
                 }
                 Spacer(Modifier.padding(4.dp))
-                AddRow("새 달력 만들기", onAddCalendar, MineShape)
+                AddRow("새 달력 만들기", onAddCalendar, MineShape, rows.newCalendarBadge())
             }
         }
     }
@@ -604,9 +626,20 @@ fun rememberAddCalendar(c: AppContainer, onSetup: (String) -> Unit): () -> Unit 
     val scope = rememberCoroutineScope()
     val setup by androidx.compose.runtime.rememberUpdatedState(onSetup)
     val calendars by c.calendars.calendars.collectAsStateWithLifecycle()
-    if (naming) {
-        val made = calendars.count { !it.isMain }
+    val tier by c.featureGate.tier.collectAsStateWithLifecycle()
+    val made = calendars.count { !it.isMain }
+    val pro = made >= PersonalCalendar.FREE_ADDED
+    if (naming && pro && !FeatureGate.allows(tier, Feature.MORE_CALENDARS)) {
+        // [MCAL-07] Past the free calendars once paid features are on: said, not made.
+        AlertDialog(
+            onDismissRequest = { naming = false },
+            title = { Text("달력을 더 만들려면 ${Tier.PRO.label}가 필요해요") },
+            text = { Text("내 달력과 추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료예요. ${Tier.PRO.label}에서 달력을 더 만들 수 있어요.") },
+            confirmButton = { TextButton(onClick = { naming = false }) { Text("확인") } },
+        )
+    } else if (naming) {
         NewCalendarDialog(
+            pro = pro,
             suggested = "달력 ${made + 2}",
             colorIndex = made,
             onDismiss = { naming = false },
@@ -626,6 +659,31 @@ fun rememberAddCalendar(c: AppContainer, onSetup: (String) -> Unit): () -> Unit 
         {
             val left = c.calendars.unfinished()
             if (left != null && c.calendarSetupDrafts.draft.value != null) setup(left.id) else naming = true
+        }
+    }
+}
+
+/**
+ * [MCAL-06] Which of the user's calendars 돈, 근무·급여 and 받을 돈 show, once there is more than one:
+ * the one on the calendar tab, switched here too. Nothing shows with only the main calendar.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun CalendarScopeChips(c: AppContainer, modifier: Modifier = Modifier) {
+    val list by c.calendars.calendars.collectAsStateWithLifecycle()
+    val active by c.calendars.active.collectAsStateWithLifecycle()
+    if (list.size < 2) return
+    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        list.forEach { cal ->
+            androidx.compose.material3.FilterChip(
+                selected = cal.id == active,
+                onClick = {
+                    if (cal.id != active) c.telemetry.event("calendar_switch", if (cal.isMain) "main" else "added")
+                    c.calendars.setActive(cal.id)
+                },
+                label = { Text(cal.name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                leadingIcon = { Box(Modifier.size(10.dp).clip(MineShape).background(cal.color.asColor())) },
+            )
         }
     }
 }

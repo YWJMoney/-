@@ -107,10 +107,8 @@ class SystemEventReceiver : BroadcastReceiver() {
                 container.rescheduleAlarms(LocalDateTime.now())
                 container.alarmScheduler.restoreSnooze()
                 val settings = container.settingsRepository.current
-                container.moneyRepository.let { m ->
-                    com.bamnat.app.money.JobReminderScheduler.reschedule(context,
-                        com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed(), m.allReceivables()), settings)
-                }
+                // [MCAL-06] Every calendar's jobs and money.
+                com.bamnat.app.money.JobReminderScheduler.reschedule(context, container.calendars.everyMoneyNow(), settings)
                 com.bamnat.app.pay.LeaveReminder.reschedule(context, container.payStore.profile.value, settings)
                 // [SHR-12] The link's expiry notice did not survive the reboot either.
                 container.calendars.calendars.value.forEach { cal ->

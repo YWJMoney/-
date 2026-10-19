@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.money
 
+import com.bamnat.app.appContainer
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -154,11 +155,16 @@ import java.time.temporal.ChronoUnit
 import kotlin.math.roundToLong
 
 /** [RECV-01][RECV-02][RECV-05] 받을 돈: everything owed to the user, written down here or left on a job. */
-class OwedViewModel(private val container: AppContainer) : ViewModel() {
-    private val money = container.moneyRepository
+class OwedViewModel(
+    private val container: AppContainer,
+    /** [MCAL-06] The calendar whose money is owed: the one on the calendar tab. */
+    val calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+) : ViewModel() {
+    private val scope = container.scopeOf(calendarId)
+    private val money = scope.money
     val book: StateFlow<MoneyBook?> = money.book.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-    val style: StateFlow<WorkStyle?> = container.settingsRepository.settings.map { it.workStyle }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), container.settingsRepository.current.workStyle)
+    val style: StateFlow<WorkStyle?> = scope.settings.map { it.workStyle }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), scope.currentSettings().workStyle)
 
     private val _messages = MutableSharedFlow<UndoMessage>(extraBufferCapacity = 4)
     val messages: SharedFlow<UndoMessage> = _messages.asSharedFlow()
@@ -328,6 +334,8 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
         },
     ) { padding ->
         val top: @Composable ColumnScope.() -> Unit = {
+            // [MCAL-06] Whose money is owed, once there are several calendars.
+            com.bamnat.app.ui.calendar.CalendarScopeChips(androidx.compose.ui.platform.LocalContext.current.appContainer)
             Totals(summary, filter, onFilter = pickFilter, onShowDone = { show = Show.DONE })
             if (summary.byWho.size > 1 || summary.aging.drop(1).any { it > 0 }) {
                 Breakdown(summary, person, startOpen = wide) { who -> show = Show.OWED; person = if (person == who) null else who }

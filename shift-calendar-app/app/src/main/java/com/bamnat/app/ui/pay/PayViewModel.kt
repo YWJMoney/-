@@ -72,39 +72,46 @@ data class PayView(
     val holidayModes: List<Pair<HolidayPayMode, Long>>,
 )
 
-class PayViewModel(private val container: AppContainer) : ViewModel() {
-    val profile: StateFlow<PayProfile?> = container.payStore.profile
-    val undoAvailable: StateFlow<PayProfile?> = container.payStore.canUndo
+class PayViewModel(
+    private val container: AppContainer,
+    /** [MCAL-06] The calendar whose pay this is. */
+    val calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+) : ViewModel() {
+    private val scope = container.scopeOf(calendarId)
+    private val payStore = scope.pay
+    val profile: StateFlow<PayProfile?> = payStore.profile
+    val undoAvailable: StateFlow<PayProfile?> = payStore.canUndo
     val tier: StateFlow<Tier> = container.featureGate.tier
     val snapshot: StateFlow<ScheduleSnapshot?> =
-        container.scheduleRepository.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     // [PAYX-15] Opens on the pay month today belongs to: after a 20일 close, 10/25 is November's pay.
     // [NAV-01] Opened while the calendar or 근무·급여 shows another month, pay opens on that month;
     // on this month, on the pay period running now.
     private val _month = MutableStateFlow(container.shownMonth.month.value.takeIf { it != YearMonth.now() }
-        ?: container.payStore.profile.value?.period?.monthOf(java.time.LocalDate.now()) ?: YearMonth.now())
+        ?: payStore.profile.value?.period?.monthOf(java.time.LocalDate.now()) ?: YearMonth.now())
     val month: StateFlow<YearMonth> = _month.asStateFlow()
     fun moveMonth(by: Long) { _month.value = _month.value.plusMonths(by) }
 
     private val calculator = PayCalculator()
-    val settings: StateFlow<com.bamnat.app.data.AppSettings> = container.settingsRepository.settings
+    val settings: StateFlow<com.bamnat.app.data.AppSettings> =
+        scope.settings.stateIn(viewModelScope, SharingStarted.Eagerly, scope.currentSettings())
 
     init { container.telemetry.event(DiagEvents.SCREEN, "pay") }
 
     fun canUse(feature: Feature, tier: Tier) = FeatureGate.allows(tier, feature)
 
-    val closed: StateFlow<Map<YearMonth, CalcSnapshot>> = container.payStore.closed
+    val closed: StateFlow<Map<YearMonth, CalcSnapshot>> = payStore.closed
 
     /** Keeps this month's result as it is now, whatever changes later [PAYX-03]. */
     fun closeMonth(result: MonthPay) = viewModelScope.launch {
         val existing = closed.value[result.month]
         val snap = existing?.recalculated(result, System.currentTimeMillis()) ?: CalcSnapshot.close(result, System.currentTimeMillis())
-        container.payStore.saveClosed(snap, result.month)
+        payStore.saveClosed(snap, result.month)
         container.telemetry.event("pay_month_close", if (existing == null) "close" else "recalc")
     }
 
-    fun reopenMonth(month: YearMonth) = viewModelScope.launch { container.payStore.saveClosed(null, month) }
+    fun reopenMonth(month: YearMonth) = viewModelScope.launch { payStore.saveClosed(null, month) }
 
     /** What a month comes to: its closed result when closed, else a fresh calculation. */
     fun totalFor(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): Long =
@@ -124,16 +131,16 @@ class PayViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun saveSetup(profile: PayProfile) = viewModelScope.launch {
-        container.payStore.save(profile, keepUndo = false)
+        payStore.save(profile, keepUndo = false)
         container.telemetry.event("pay_setup_done", profile.occupation.name)
     }
 
-    fun reset() = viewModelScope.launch { container.payStore.save(null) }
+    fun reset() = viewModelScope.launch { payStore.save(null) }
 
-    fun undo() = viewModelScope.launch { container.payStore.undo() }
+    fun undo() = viewModelScope.launch { payStore.undo() }
 
     fun update(transform: (PayProfile) -> PayProfile) = viewModelScope.launch {
-        container.payStore.update(transform)
+        payStore.update(transform)
     }
 
     // ---- values over time ----
