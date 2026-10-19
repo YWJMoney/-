@@ -117,6 +117,10 @@ import com.bamnat.app.review.InAppReview
 import com.bamnat.app.review.InAppReview.findActivity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.animation.animateContentSize
+import androidx.compose.material.icons.filled.AlarmOff
+import com.bamnat.core.work.calendarStart
 import java.time.LocalDate
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import java.time.YearMonth
@@ -183,6 +187,16 @@ fun CalendarScreen(
     val memoDates by vm.memoDates.collectAsStateWithLifecycle()
     val moneyBook by vm.moneyBook.collectAsStateWithLifecycle()
     val datedMemos by vm.datedMemos.collectAsStateWithLifecycle()
+    // [CAL-05..CAL-13] What the calendar is about, its view, its alarms and quick input's marks.
+    val focus by vm.focus.collectAsStateWithLifecycle()
+    val listView by vm.listView.collectAsStateWithLifecycle()
+    val calendarAlarmsOn by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
+    val mark by vm.mark.collectAsStateWithLifecycle()
+    val rangeFrom by vm.rangeFrom.collectAsStateWithLifecycle()
+    val holidaysKept by vm.holidaysKept.collectAsStateWithLifecycle()
+    val payProfile by vm.payProfile.collectAsStateWithLifecycle()
+    val tier by vm.tier.collectAsStateWithLifecycle()
+    var legendOpen by remember { mutableStateOf(false) }
     // [SHR-02] Calendars others shared, switched to like accounts.
     val received = appViewModel { ReceivedViewModel(it) }
     val receivedList by received.calendars.collectAsStateWithLifecycle()
@@ -237,7 +251,8 @@ fun CalendarScreen(
     val sheetSnackbar = remember { SnackbarHostState() }
     val messageHost by rememberUpdatedState(if (sheetOpen && !wide) sheetSnackbar else snackbarHostState)
     LaunchedEffect(vm) {
-        vm.messages.collect { msg ->
+        // [CAL-10] The newest change replaces a message still showing, so undo always means the last thing done.
+        vm.messages.collectLatest { msg ->
             val result = messageHost.showSnackbar(
                 message = msg.message,
                 actionLabel = if (msg.undo != null) msg.actionLabel else null,
@@ -258,11 +273,24 @@ fun CalendarScreen(
     val calculator = remember(snap, settings.weekStart, settings.limits) {
         WorkHoursCalculator(snap.resolver, settings.weekStart, settings.limits)
     }
+    // [CAL-14] Stable references, so the cells' painting hooks never change under them.
+    val paintDays: (List<LocalDate>) -> Unit = remember(vm) { vm::paintDays }
+    val startRange: (LocalDate) -> Unit = remember(vm) { vm::startRange }
 
     val baseMonth = BASE_MONTH
     val shownMonth by vm.shownMonth.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState(initialPage = monthToPage(baseMonth, shownMonth)) { PAGE_COUNT }
     val visibleMonth = pageToMonth(baseMonth, pagerState.currentPage)
+    // [CAL-06] The month on screen in the kind of work's own figures; pay is worked out off the main thread.
+    val overview = remember(snap, visibleMonth, focus, moneyBook) {
+        com.bamnat.core.work.MonthOverview.of(visibleMonth, focus, snap.resolver, moneyBook.jobs, moneyBook.sales)
+    }
+    val payEstimate by produceState<Long?>(null, payProfile, snap, visibleMonth, tier, focus) {
+        value = null
+        if (focus != com.bamnat.core.work.CalendarFocus.SHIFTS || payProfile == null) return@produceState
+        delay(150)
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.monthEstimate(payProfile, snap, visibleMonth) }
+    }
     val scope = rememberCoroutineScope()
     // A month picked from the list is there at once.
     val goToMonth: (YearMonth) -> Unit = { m -> scope.launch { pagerState.scrollToPage(monthToPage(baseMonth, m)) } }
@@ -315,7 +343,7 @@ fun CalendarScreen(
         }
     }
     // [DAY-01] A tap picks the day and shows it under the calendar; a tap on the picked day opens it all.
-    val onDayClick: (LocalDate) -> Unit = { date ->
+    val onDayClickNow: (LocalDate) -> Unit = { date ->
         val painting = paint != null
         val again = date == selected
         vm.onDayTapped(date)
@@ -343,19 +371,33 @@ fun CalendarScreen(
         memoFocus++
         if (!showsDay) sheetOpen = true
     }
-    val onQuickAction: (LocalDate, QuickAction) -> Unit = { date, action ->
+    val onQuickActionNow: (LocalDate, QuickAction) -> Unit = { date, action ->
         val day = snap.resolver.resolve(date)
         when (action) {
             is QuickAction.Shift -> vm.assignQuick(day, action.override, snap)
             is QuickAction.Extra -> vm.toggleExtra(day, action.choice)
             is QuickAction.SetLeave -> vm.setLeave(date, action.leave, announce = true)
             is QuickAction.Alarm -> vm.setAlarmSkipped(date, action.skipped, announce = true)
+            QuickAction.AddMoney -> {
+                vm.select(date)
+                quickMoney = true
+            }
+            QuickAction.Memo -> {
+                vm.select(date)
+                onMemo()
+            }
             QuickAction.Open -> {
                 vm.select(date)
                 if (!showsDay) sheetOpen = true
             }
         }
     }
+    // [CAL-14] The same two lambdas for the whole life of the screen: a tap that changes the selection
+    // then redraws only the two cells it touches, not all 42 of every month in the pager.
+    val dayClickLatest by rememberUpdatedState(onDayClickNow)
+    val quickActionLatest by rememberUpdatedState(onQuickActionNow)
+    val onDayClick: (LocalDate) -> Unit = remember { { d: LocalDate -> dayClickLatest(d) } }
+    val onQuickAction: (LocalDate, QuickAction) -> Unit = remember { { d: LocalDate, a: QuickAction -> quickActionLatest(d, a) } }
     // [EXTRA-05] Records from before 1.9 that need a look, offered once above the calendar.
     val toReview by vm.extrasToReview.collectAsStateWithLifecycle()
     var reviewing by remember { mutableStateOf(false) }
@@ -493,8 +535,9 @@ fun CalendarScreen(
                 onDayClick = onDayClick,
                 onQuickAction = onQuickAction,
                 money = moneyBook,
-                showMoney = settings.workStyle?.usesPayEngine == false,
+                showMoney = focus.moneyFirst,
                 memoTexts = memoTexts,
+                focus = focus,
                 modifier = Modifier.pointerInput(Unit) {
                     var dragged = 0f
                     detectHorizontalDragGestures(
@@ -559,9 +602,39 @@ fun CalendarScreen(
         val waiting = pendingSetup?.takeIf { it.later && settings.workStyle == null }
         if (waiting != null) {
             SetupResumeCard(waiting, onResume = vm::resumeSetup)
-        } else if (snap.isEmpty && settings.workStyle?.usesPattern != false && !settings.rosterMonthly) {
-            // [WORK-01] Only work that repeats needs a pattern; field, shop and hourly work are written day by day.
-            EmptyPatternCard(onOpenPattern)
+        } else if (paint == null && !settings.rosterMonthly) {
+            // [WORK-01][CAL-05] Only work that repeats needs a pattern; field, shop and hourly work start from
+            // a first record, each in its own words.
+            val style = settings.workStyle
+            val empty = when {
+                style?.usesPattern != false -> snap.isEmpty
+                style == com.bamnat.core.work.WorkStyle.HOURLY -> overview.isEmpty && !snap.hasPattern
+                else -> overview.isEmpty && YearMonth.from(today) == visibleMonth
+            }
+            if (empty) CalendarStartCard(
+                start = style.calendarStart(),
+                onAction = {
+                    when {
+                        style?.usesPattern != false -> onOpenPattern()
+                        style == com.bamnat.core.work.WorkStyle.HOURLY -> vm.setPaint(PaintTool.Pick)
+                        else -> {
+                            if (YearMonth.from(today) == visibleMonth) vm.select(today)
+                            quickMoney = true
+                        }
+                    }
+                },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
+        // [CAL-07] Weekday work set by the week, on this month's public holidays: asked once.
+        val holidayDays = remember(snap, visibleMonth, holidaysKept, settings.workStyle, activeCalendar.id) { vm.holidayWork(snap, visibleMonth) }
+        if (holidayDays.isNotEmpty() && paint == null) {
+            HolidayWorkCard(
+                month = visibleMonth, dates = holidayDays,
+                onRest = { vm.restHolidays(holidayDays) },
+                onKeep = { vm.keepHolidayWork(visibleMonth) },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
         }
         // [SETUP-02] A roster that comes every month: this month's or next month's, until a day of it is painted.
         if (settings.rosterMonthly && paint == null && waiting == null) {
@@ -573,7 +646,10 @@ fun CalendarScreen(
         // [CAL-01] What keeps an alarm from working, the most serious one in a single line, only while
         // one is due within a week. The whole line is the button that fixes it.
         val linePlace = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-        if (alarmSoon) when {
+        if (alarmSoon && !calendarAlarmsOn) {
+            // [CAL-13] An added calendar kept from ringing: the master switch and permissions do not matter here.
+            CalendarAlarmsOffLine(activeCalendar.name, onTurnOn = { vm.setCalendarAlarms(true) }, modifier = linePlace)
+        } else if (alarmSoon) when {
             // [SET-01] With the master switch off nothing rings: said where the user looks first.
             !settings.alarmsEnabled -> AlarmWarningLine("알람이 모두 꺼져 있어요", "켜기", { vm.setAlarmsEnabled(true) }, linePlace)
             // [REL-11][SLP-15] Without notifications an alarm still sounds, but nothing on the lock
@@ -589,6 +665,21 @@ fun CalendarScreen(
         // [SLP-14] 오늘의 흐름 while this month is on screen, for work that comes in shifts and hours.
         if (settings.sleepTips && settings.workStyle?.usesPayEngine != false && !snap.isEmpty && visibleMonth == YearMonth.from(today)) {
             TodayFlowSection(vm, snap, settings, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        }
+        // [CAL-05] Today for field and shop work, where 오늘의 흐름 shows shifts.
+        if (visibleMonth == YearMonth.from(today) && paint == null) when (focus) {
+            com.bamnat.core.work.CalendarFocus.JOBS -> if (moneyBook.jobs.isNotEmpty()) TodayJobsCard(
+                today = today, jobs = moneyBook.jobs,
+                onOpen = { d -> onDateChange(d); if (!showsDay) sheetOpen = true },
+                onAdd = { vm.select(today); quickMoney = true },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            com.bamnat.core.work.CalendarFocus.SALES -> if (moneyBook.sales.isNotEmpty()) TodaySalesCard(
+                today = today, sales = moneyBook.sales,
+                onWrite = { vm.select(today); quickMoney = true },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            else -> Unit
         }
         if (swapCovers.isNotEmpty()) {
             ExtraReviewCard(
@@ -612,19 +703,52 @@ fun CalendarScreen(
         if (weekOnly && !wide) {
             weekPart()
         } else {
-            MonthShiftCounts(snap, visibleMonth, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-            WeekdayHeader(settings.weekStart, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
-            BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+            // [CAL-06] The month in the kind of work's own three figures.
+            if (!(focus == com.bamnat.core.work.CalendarFocus.SHIFTS && overview.isEmpty && payEstimate == null)) {
+                MonthSummaryBar(
+                    overview = overview,
+                    payEstimate = payEstimate,
+                    onOpen = if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) onOpenPay else onOpenMoney,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
+            // [CAL-06][CAL-08] The month's shifts at a glance, what the marks mean, and grid or list.
+            val showList = listView && paint == null
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                // The counts take what is left, so the two buttons always sit at the right edge.
+                Box(Modifier.weight(1f)) { MonthShiftCounts(snap, visibleMonth) }
+                CalendarViewSwitch(listView = showList, onListView = { if (paint == null) vm.setListView(it) }, onLegend = { legendOpen = true })
+            }
+            if (!showList) WeekdayHeader(settings.weekStart, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
+            BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = if (showList) 0.dp else 8.dp)) {
                 val cellHeight = (maxWidth / 7 * 1.3f).coerceIn(66.dp, 100.dp) + cellTextGrowth()
+                // [CAL-09] With something to stamp, a drag paints and a long press starts a range.
+                val stamping = mark != null || (paint != null && paint != PaintTool.Pick)
+                val memoCounts = remember(datedMemos) { datedMemos.groupingBy { it.date!! }.eachCount() }
                 HorizontalPager(
                     state = pagerState,
-                    modifier = Modifier.fillMaxWidth().height(cellHeight * GRID_ROWS),
-                    beyondViewportPageCount = 1,
+                    // [CAL-08] The list is as tall as its month; the grid is always six weeks.
+                    modifier = Modifier.fillMaxWidth().then(if (showList) Modifier.animateContentSize() else Modifier.height(cellHeight * GRID_ROWS)),
+                    beyondViewportPageCount = if (showList) 0 else 1,
                     key = { it },
+                    verticalAlignment = Alignment.Top,
                     // [CAL-01] With a stamp chosen, a sideways drag paints days instead of turning the month.
-                    userScrollEnabled = paint == null || paint == PaintTool.Pick,
+                    userScrollEnabled = !stamping,
                 ) { page ->
-                    MonthGrid(
+                    if (showList) {
+                        AgendaList(
+                            month = pageToMonth(baseMonth, page),
+                            focus = focus,
+                            snapshot = snap,
+                            money = moneyBook,
+                            memoCounts = memoCounts,
+                            weekStart = settings.weekStart,
+                            today = today,
+                            selected = selected,
+                            onDay = onDayClick,
+                            onQuickAction = onQuickAction,
+                        )
+                    } else MonthGrid(
                         month = pageToMonth(baseMonth, page),
                         snapshot = snap,
                         calculator = calculator,
@@ -637,50 +761,33 @@ fun CalendarScreen(
                         onDayClick = onDayClick,
                         onQuickAction = onQuickAction,
                         money = moneyBook,
-                        showMoney = settings.workStyle?.usesPayEngine == false,
+                        showMoney = focus.moneyFirst,
                         memoTexts = memoTexts,
-                        onPaint = if (paint != null && paint != PaintTool.Pick) vm::paintDays else null,
+                        onPaint = if (stamping) paintDays else null,
                         weeklyLimitHours = settings.weeklyLimitHours,
+                        focus = focus,
+                        onLongPress = if (stamping) startRange else null,
+                        rangeFrom = rangeFrom,
                     )
                 }
             }
             Spacer(Modifier.height(12.dp))
-            val moneyFirst = settings.workStyle?.usesPayEngine == false
             if (!wide) {
-                if (moneyFirst) {
-                    MoneyDayCard(
-                        date = selected,
-                        isToday = selected == today,
-                        day = remember(moneyBook, selected) { moneyBook.on(selected) },
-                        memoCount = if (selected in memoDates) 1 else 0,
-                        onOpen = { sheetOpen = true },
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        memoPreview = remember(datedMemos, selected) { datedMemos.firstOrNull { it.date == selected }?.let { it.title.ifBlank { it.preview } } },
-                    )
-                } else {
-                    DayPreview(
-                        day = remember(snap, selected) { snap.resolver.resolve(selected) },
-                        today = today,
-                        snapshot = snap,
-                        vm = vm,
-                        onDateChange = onDateChange,
-                        onOpen = { sheetOpen = true },
-                        onMemo = onMemo,
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        weekNote = weekNote,
-                    )
-                }
+                // [CAL-05] One day card for every kind of work: its jobs, sales or shift, with the chips that fit.
+                DayPreview(
+                    day = remember(snap, selected) { snap.resolver.resolve(selected) },
+                    today = today,
+                    snapshot = snap,
+                    vm = vm,
+                    onDateChange = onDateChange,
+                    onOpen = { sheetOpen = true },
+                    onMemo = onMemo,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    weekNote = weekNote,
+                )
                 Spacer(Modifier.height(12.dp))
             }
-            if (moneyFirst) {
-                // [WORK-04] Field and shop work care about the month's money, not weekly hour limits.
-                MonthMoneyCard(
-                    month = remember(moneyBook, visibleMonth) { moneyBook.month(visibleMonth) },
-                    unpaid = remember(moneyBook, today) { com.bamnat.core.money.MoneyCalculator.unpaid(moneyBook.jobs, today).sumOf { it.unpaid } },
-                    onOpen = onOpenMoney,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            } else {
+            if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) {
                 HoursLine(
                     calculator = calculator,
                     limits = settings.limits,
@@ -797,7 +904,8 @@ fun CalendarScreen(
         if (!wide) fab()
         if (paint != null) {
             Box(Modifier.align(Alignment.BottomCenter)) {
-                PaintBar(snapshot = snap, tool = paint, last = lastPaint, onTool = vm::setPaint, onUndo = vm::undoLastPaint)
+                PaintBar(snapshot = snap, tool = paint, last = lastPaint, onTool = vm::setPaint, onUndo = vm::undoLastPaint,
+                    mark = mark, onMark = vm::setMark, focus = focus)
             }
         }
     }
@@ -861,8 +969,15 @@ fun CalendarScreen(
                 showMonthPicker = false
                 goToMonth(m)
             },
+            selected = selected,
+            onPickDate = { d ->
+                showMonthPicker = false
+                vm.select(d)
+                goToMonth(YearMonth.from(d))
+            },
         )
     }
+    if (legendOpen) CalendarLegendSheet(focus, snap, onDismiss = { legendOpen = false })
 }
 
 /** [DAY-01][DAY-03] The whole day over the calendar, open at once, with its own snackbar for undo. */
@@ -892,87 +1007,28 @@ private fun MonthShiftCounts(snapshot: ScheduleSnapshot, month: YearMonth, modif
         Pair(snapshot.shiftTypes.filter { (byType[it.id] ?: 0) > 0 }.map { it to byType.getValue(it.id) }, extras)
     }
     if (counts.first.isEmpty() && counts.second.isEmpty()) return
-    Row(
-        modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        for ((type, n) in counts.first) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                ShiftBadge(type, size = 18.dp, outlined = type.isOff)
-                Text(" $n", style = MaterialTheme.typography.labelLarge.merge(NumberStyle))
-            }
-        }
-        for ((kind, n) in counts.second) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                ExtraKindMark(kind, size = 18.dp)
-                Text(" ${kind.name} $n", style = MaterialTheme.typography.labelLarge.merge(NumberStyle))
-            }
-        }
-    }
-}
-
-@Composable
-private fun MoneyDayCard(
-    date: LocalDate,
-    isToday: Boolean,
-    day: com.bamnat.core.money.DayBook,
-    memoCount: Int,
-    onOpen: () -> Unit,
-    modifier: Modifier,
-    memoPreview: String? = null,
-) {
-    Surface(
-        onClick = onOpen,
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(Fmt.dayTitle(date) + if (isToday) " · 오늘" else "", style = MaterialTheme.typography.titleMedium)
-                val parts = buildList {
-                    day.jobs.firstOrNull()?.let { j ->
-                        add(j.start?.let { Fmt.time(it) + " " }.orEmpty() + j.title + if (day.jobs.size > 1) " 외 ${day.jobs.size - 1}건" else "")
-                    }
-                    day.sales?.let { add("매출 ${Fmt.won(it.sales)}") }
-                    val spent = day.entries.filter { it.kind == com.bamnat.core.money.MoneyKind.EXPENSE }.sumOf { it.amount }
-                    if (spent > 0) add("지출 ${Fmt.won(spent)}")
-                    if (memoCount > 0) add(memoPreview?.takeIf { it.isNotBlank() }?.let { "메모: $it" } ?: "메모 있음")
-                    if (isEmpty()) add("기록 없음 · 눌러서 적기")
+    // [CAL-06] Beside the view buttons a narrow screen drops the badges' icons, and the row fades out
+    // at the edge so what is left to scroll to shows.
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val icons = maxWidth >= 320.dp
+        Row(
+            Modifier.fillMaxWidth().fadingRightEdge().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            for ((type, n) in counts.first) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ShiftBadge(type, size = 18.dp, outlined = type.isOff, showIcon = icons)
+                    Text(" $n", style = MaterialTheme.typography.labelLarge.merge(NumberStyle))
                 }
-                Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Text("열기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary)
-        }
-    }
-}
-
-@Composable
-private fun MonthMoneyCard(month: com.bamnat.core.money.MonthMoney, unpaid: Long, onOpen: () -> Unit, modifier: Modifier) {
-    val cal = LocalCalendarColors.current
-    Surface(
-        onClick = onOpen,
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLowest,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("${month.month.monthValue}월 수입", style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(Fmt.won(month.income), style = MaterialTheme.typography.titleLarge, color = cal.income)
+            for ((kind, n) in counts.second) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ExtraKindMark(kind, size = 18.dp)
+                    Text(" ${kind.name} $n", style = MaterialTheme.typography.labelLarge.merge(NumberStyle))
+                }
             }
-            Column(Modifier.weight(1f)) {
-                Text("받을 돈", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(Fmt.won(unpaid), style = MaterialTheme.typography.titleLarge,
-                    color = if (unpaid > 0) cal.warning else MaterialTheme.colorScheme.onSurface)
-            }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "돈 탭 열기", tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(20.dp))
         }
     }
 }
@@ -1079,34 +1135,9 @@ private fun RosterCard(month: YearMonth, onPaint: () -> Unit) {
     }
 }
 
-@Composable
-private fun EmptyPatternCard(onOpenPattern: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.primaryContainer,
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Text("근무 주기를 등록해 보세요", style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer)
-            Text(
-                "주주야야비휴 같은 교대 순서나 요일별 근무를 한 번만 입력하면 달력이 자동으로 채워져요.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
-            )
-            Button(onClick = onOpenPattern) {
-                Icon(Icons.Filled.Autorenew, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("근무 주기 정하기")
-            }
-        }
-    }
-}
-
 /**
- * [CAL-01] The hours in one line under the calendar: the picked week, the month, the three-month
- * average. A number over its limit is marked in words and color; the week's own warning is the bar
+ * [CAL-01] The hours in one line under the calendar: the picked week and the three-month average
+ * ([CAL-06] the month's hours are in the summary over the calendar). A number over its limit is marked in words and color; the week's own warning is the bar
  * beside it and the line under the day. A tap opens 근무·급여.
  */
 @OptIn(ExperimentalLayoutApi::class)
@@ -1120,7 +1151,6 @@ private fun HoursLine(
     modifier: Modifier = Modifier,
 ) {
     val week = remember(calculator, selected) { calculator.week(selected) }
-    val monthSummary = remember(calculator, month) { calculator.month(month) }
     val three = remember(calculator, month) { calculator.threeMonths(month) }
     val cal = LocalCalendarColors.current
     Surface(
@@ -1133,7 +1163,6 @@ private fun HoursLine(
             FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 HoursPart("이 주", HoursFormat.hours(week.totalMinutes.toDouble()) + "시간",
                     limits.weeklyLimitHours.takeIf { week.overLimit }, cal.warning)
-                HoursPart("${month.monthValue}월", HoursFormat.hours(monthSummary.totalMinutes.toDouble()) + "시간", null, cal.warning)
                 // Its own limit (52), not the week's (64), so the number it is over is said.
                 HoursPart("3개월 주평균", HoursFormat.hours(three.averageWeeklyMinutes) + "시간",
                     limits.threeMonthAverageLimitHours.takeIf { three.overLimit }, cal.warning)
@@ -1184,7 +1213,11 @@ private fun PaintBar(
     last: CalendarViewModel.PaintUndo?,
     onTool: (PaintTool?) -> Unit,
     onUndo: () -> Unit,
+    mark: DayMark? = null,
+    onMark: (DayMark?) -> Unit = {},
+    focus: com.bamnat.core.work.CalendarFocus = com.bamnat.core.work.CalendarFocus.SHIFTS,
 ) {
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     Surface(
         modifier = Modifier.fillMaxWidth().padding(12.dp),
         shape = MaterialTheme.shapes.extraLarge,
@@ -1196,18 +1229,22 @@ private fun PaintBar(
             Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("빠른 입력", style = MaterialTheme.typography.titleSmall)
-                    // [CAL-01] One line: what to do now, or what the last drag did.
+                    // [CAL-01] What to do now, or what the last drag did. [CAL-09] Two lines, so the range hint fits.
                     Text(
-                        last?.text ?: if (tool == PaintTool.Pick) "근무를 고르고 날짜를 누르거나 끌어서 칠하세요"
-                        else "누르거나 끌어서 칠해요 · 다시 누르면 취소",
+                        last?.text ?: when {
+                            tool == PaintTool.Pick && mark == null -> "고르고 날짜를 누르거나 끌어서 칠하세요"
+                            mark == DayMark.LEAVE -> "근무일을 누르거나 끌면 연차가 들어가요 · 길게 누르면 기간"
+                            mark == DayMark.ALARM_OFF -> "누르거나 끌면 그날 알람이 꺼져요 · 길게 누르면 기간"
+                            else -> "누르거나 끌어서 칠해요 · 다시 누르면 취소 · 길게 누르면 기간"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = if (last != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
                 }
-                if (last != null) TextButton(onClick = onUndo) { Text("되돌리기") }
+                if (last?.undo != null) TextButton(onClick = onUndo) { Text("되돌리기") }
                 IconButton(onClick = { onTool(null) }) { Icon(Icons.Filled.Close, "빠른 입력 끝내기") }
             }
             Row(
@@ -1218,7 +1255,7 @@ private fun PaintBar(
                 for (type in snapshot.shiftTypes) {
                     val t = PaintTool.Shift(type.id)
                     FilterChip(
-                        selected = tool == t,
+                        selected = tool == t && mark == null,
                         onClick = { onTool(if (tool == t) PaintTool.Pick else t) },
                         label = { Text(type.name) },
                         leadingIcon = { ShiftBadge(type, size = 18.dp, outlined = type.isOff) },
@@ -1227,7 +1264,7 @@ private fun PaintBar(
                 }
                 if (snapshot.shiftTypes.none { it.isOff }) {
                     FilterChip(
-                        selected = tool == PaintTool.Off,
+                        selected = tool == PaintTool.Off && mark == null,
                         onClick = { onTool(if (tool == PaintTool.Off) PaintTool.Pick else PaintTool.Off) },
                         label = { Text("쉬는 날") },
                         modifier = Modifier.semantics { contentDescription = "쉬는 날 칠하기" },
@@ -1240,14 +1277,72 @@ private fun PaintBar(
                     leadingIcon = { Icon(Icons.Filled.Autorenew, contentDescription = null) },
                     modifier = Modifier.semantics { contentDescription = "패턴대로 되돌리기" },
                 )
+                // [CAL-09] Leave and 알람 끄기 painted like shifts, for work kept in shifts.
+                if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS || snapshot.hasPattern) {
+                    VerticalDivider(Modifier.height(32.dp).align(Alignment.CenterVertically))
+                    for (m in DayMark.entries) {
+                        FilterChip(
+                            selected = mark == m,
+                            onClick = {
+                                haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
+                                onMark(if (mark == m) null else m)
+                            },
+                            label = { Text(m.label) },
+                            leadingIcon = {
+                                if (m == DayMark.LEAVE) com.bamnat.app.ui.components.LeaveMark(com.bamnat.core.model.Leave(com.bamnat.core.model.LeaveKind.ANNUAL, 4), size = 18.dp)
+                                else Icon(Icons.Filled.AlarmOff, contentDescription = null, Modifier.size(18.dp))
+                            },
+                            modifier = Modifier.semantics { contentDescription = "${m.label} 칠하기" },
+                        )
+                    }
+                }
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MonthPickerDialog(initial: YearMonth, onDismiss: () -> Unit, onPick: (YearMonth) -> Unit) {
+private fun MonthPickerDialog(
+    initial: YearMonth,
+    onDismiss: () -> Unit,
+    onPick: (YearMonth) -> Unit,
+    selected: LocalDate = initial.atDay(1),
+    /** [CAL-06] A date far away, picked on a full calendar instead of month by month. */
+    onPickDate: ((LocalDate) -> Unit)? = null,
+) {
     var year by remember { mutableStateOf(initial.year) }
+    var pickingDate by remember { mutableStateOf(false) }
+    if (pickingDate && onPickDate != null) {
+        val utc = java.time.ZoneOffset.UTC
+        val state = androidx.compose.material3.rememberDatePickerState(
+            initialSelectedDateMillis = selected.atStartOfDay(utc).toInstant().toEpochMilli(),
+        )
+        androidx.compose.material3.DatePickerDialog(
+            onDismissRequest = { pickingDate = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let { onPickDate(java.time.Instant.ofEpochMilli(it).atZone(utc).toLocalDate()) }
+                    pickingDate = false
+                }) { Text("이 날로 가기") }
+            },
+            dismissButton = { TextButton(onClick = { pickingDate = false }) { Text("취소") } },
+        ) {
+            // The title and the picked day in the app's own words, whatever the phone's language.
+            androidx.compose.material3.DatePicker(
+                state = state,
+                title = { Text("갈 날짜 고르기", Modifier.padding(start = 24.dp, end = 12.dp, top = 16.dp)) },
+                headline = {
+                    Text(
+                        state.selectedDateMillis?.let { Fmt.dayTitle(java.time.Instant.ofEpochMilli(it).atZone(utc).toLocalDate()) } ?: "날짜를 눌러 주세요",
+                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier.padding(start = 24.dp, end = 12.dp, bottom = 12.dp),
+                    )
+                },
+            )
+        }
+        return
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -1284,7 +1379,12 @@ private fun MonthPickerDialog(initial: YearMonth, onDismiss: () -> Unit, onPick:
         confirmButton = {
             TextButton(onClick = { onPick(YearMonth.now()) }) { Text("이번 달") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+        dismissButton = {
+            Row {
+                if (onPickDate != null) TextButton(onClick = { pickingDate = true }) { Text("날짜 고르기") }
+                TextButton(onClick = onDismiss) { Text("닫기") }
+            }
+        },
     )
 }
 

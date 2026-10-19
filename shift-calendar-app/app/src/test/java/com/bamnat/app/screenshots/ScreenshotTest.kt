@@ -1698,6 +1698,214 @@ class ScreenshotTest {
         const val SMALL_PHONE = "w320dp-h568dp-port-xhdpi"
         const val PHONE_LANDSCAPE = "w780dp-h360dp-land-450dpi"
     }
+
+    // ---- 달력 (1.15) ----
+    // [CAL-05..CAL-14] The calendar for each kind of work: its month summary, list, legend, quick input marks
+    // and ranges, holidays, added and received calendars, large text, dark mode and the home screen widgets.
+
+    /** [CAL-05] Field or shop work as such a user keeps it: no shifts, the seeded jobs and sales, and what [more] adds. */
+    private fun plain(s: WorkStyle, more: suspend (com.bamnat.app.AppContainer) -> Unit = {}, then: Screen.() -> Unit = {}): Screen.() -> Unit {
+        val c = app.container
+        runBlocking {
+            c.scheduleRepository.clearPattern()
+            c.scheduleRepository.entries.first().forEach { c.scheduleRepository.restoreDay(it.date, null) }
+            more(c)
+        }
+        c.settingsRepository.update { it.copy(workStyle = s) }
+        return then
+    }
+
+    /** A three-day job still owed and one paid last week, beside the seeded ones. */
+    private val moreJobs: suspend (com.bamnat.app.AppContainer) -> Unit = { c ->
+        c.moneyRepository.save(Job(date = today.plusDays(6), endDate = today.plusDays(8), title = "베란다 방수", client = "이OO 고객",
+            amount = 900_000, deposit = 200_000, depositPaid = true))
+        c.moneyRepository.save(Job(date = today.minusDays(9), title = "싱크대 교체", amount = 350_000, balancePaid = true))
+    }
+
+    /** Every open day of the month so far, closed on Mondays. */
+    private val moreSales: suspend (com.bamnat.app.AppContainer) -> Unit = { c ->
+        for (d in 1 until today.dayOfMonth - 1) {
+            val date = today.withDayOfMonth(d)
+            if (date.dayOfWeek == java.time.DayOfWeek.MONDAY) continue
+            c.moneyRepository.save(DailySales(date, sales = 520_000L + d * 137_000L % 760_000L, costs = 150_000L + d * 31_000L % 90_000L))
+        }
+    }
+
+    /** [CAL-06] Pay set up on Pro, so the summary over a shift calendar shows the month's pay. */
+    private fun withPay(then: Screen.() -> Unit = {}): Screen.() -> Unit {
+        val c = app.container
+        c.settingsRepository.update { it.copy(tier = Tier.PRO) }
+        runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(rules = companyRules), keepUndo = false) }
+        return then
+    }
+
+    @Test fun calShiftFolded() = shoot("290_folded_shift_calendar", FOLDED, withPay())
+    @Test fun calShiftUnfolded() = shoot("291_unfolded_shift_calendar", UNFOLDED, withPay())
+    @Test fun calShiftPhone() = shoot("292_phone_shift_calendar", PHONE, withPay())
+    @Test fun calFieldFolded() = shoot("293_folded_field_calendar", FOLDED, plain(WorkStyle.FIELD, moreJobs))
+    @Test fun calFieldUnfolded() = shoot("294_unfolded_field_calendar", UNFOLDED, plain(WorkStyle.FIELD, moreJobs))
+    @Test fun calFieldPhone() = shoot("295_phone_field_calendar", PHONE, plain(WorkStyle.FIELD, moreJobs))
+    @Test fun calFieldDay() = shoot("296_folded_field_day", FOLDED, plain(WorkStyle.FIELD, moreJobs) { openDay(today) })
+    @Test fun calBusinessFolded() = shoot("297_folded_business_calendar", FOLDED, plain(WorkStyle.BUSINESS, moreSales))
+    @Test fun calBusinessUnfolded() = shoot("298_unfolded_business_calendar", UNFOLDED, plain(WorkStyle.BUSINESS, moreSales))
+    @Test fun calBusinessDay() = shoot("299_folded_business_day", FOLDED, plain(WorkStyle.BUSINESS, moreSales) { openDay(today) })
+
+    /** [CAL-07] 평일 근무 on the next month with a weekday holiday: asked once whether those are days off. */
+    @Test fun calDayHolidays() = shoot("300_folded_day_holiday_card", FOLDED) {
+        val c = app.container
+        runBlocking {
+            val repo = c.scheduleRepository
+            val day = repo.shiftTypes.first().first { it.name == "주간" }.id
+            repo.savePattern(WorkPattern.Weekly.fromSteps(LocalDate.of(2026, 1, 5), listOf(day, day, day, day, day, null, null)))
+        }
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.DAY) }
+        settle()
+        val ahead = (0..12).first { n ->
+            val m = java.time.YearMonth.now().plusMonths(n.toLong())
+            (1..m.lengthOfMonth()).map { m.atDay(it) }.any { it.dayOfWeek.value <= 5 && com.bamnat.core.holiday.KoreanHolidays.isHoliday(it) }
+        }
+        repeat(ahead) { tapText("다음 달", exact = true, scrolls = 0) }
+    }
+
+    /** [CAL-05] An hourly job's own calendar before any day is written: one step to start. */
+    @Test fun calHourlyStart() = shoot("301_folded_hourly_start", FOLDED) {
+        val c = app.container
+        val id = c.calendars.begin("편의점 알바")
+        runBlocking { c.calendars.repository(id).apply { ensureDefaults(); addHourlyTypes() } }
+        c.calendars.finishSetup(id, WorkStyle.HOURLY)
+    }
+
+    // [CAL-08] The month as a list, for each kind of work.
+    @Test fun calListShift() = shoot("302_folded_list_view", FOLDED) { tapText("목록으로 보기", exact = true, scrolls = 0) }
+    @Test fun calListField() = shoot("303_folded_field_list_view", FOLDED, plain(WorkStyle.FIELD, moreJobs) {
+        tapText("목록으로 보기", exact = true, scrolls = 0)
+    })
+    @Test fun calListBusiness() = shoot("304_unfolded_business_list_view", UNFOLDED, plain(WorkStyle.BUSINESS, moreSales) {
+        tapText("목록으로 보기", exact = true, scrolls = 0)
+    })
+
+    // [CAL-06] What every mark means, in the calendar's own kind of work.
+    @Test fun calLegendShift() = shoot("305_folded_legend_shift", FOLDED) { tapText("달력 표시 안내", exact = true, scrolls = 0) }
+    @Test fun calLegendField() = shoot("306_folded_legend_field", FOLDED, plain(WorkStyle.FIELD, moreJobs) {
+        tapText("달력 표시 안내", exact = true, scrolls = 0)
+    })
+
+    /** [CAL-09] 연차 painted across a week: only the working days take it, and the bar says so with undo. */
+    /** Monday of the month's second row (weeks start on Sunday): above the quick input bar on every screen. */
+    private fun secondRowMonday(): LocalDate {
+        val first = today.withDayOfMonth(1)
+        return first.plusDays((7 - first.dayOfWeek.value % 7).toLong() + 1)
+    }
+    @Test fun calPaintLeave() = shoot("307_unfolded_paint_leave", UNFOLDED) {
+        tapText("빠른 입력", exact = true, scrolls = 0)
+        tapText("연차 칠하기", exact = true, scrolls = 0)
+        dragDays(secondRowMonday(), secondRowMonday().plusDays(4))
+    }
+
+    /** [CAL-09] A long press starts a range; the next tap ends it. */
+    @Test fun calPaintRange() = shoot("308_folded_paint_range", FOLDED) {
+        tapText("빠른 입력", exact = true, scrolls = 0)
+        tapText("야간 칠하기", exact = true, scrolls = 0)
+        longPressText(Fmt.dayTitle(secondRowMonday()), prefix = true)
+    }
+
+    // [CAL-13] An added calendar kept from ringing: said above the calendar and in the day's alarms.
+    @Test fun calAddedAlarmsOff() = shoot("309_folded_added_calendar_alarms_off", FOLDED) {
+        val id = addedCalendar(show = true)
+        app.container.calendars.setAlarms(id, false)
+    }
+    @Test fun calAddedAlarmsOffDay() = shoot("310_folded_added_calendar_alarms_off_day", FOLDED) {
+        val id = addedCalendar(show = true)
+        app.container.calendars.setAlarms(id, false)
+        settle()
+        val work = (0..6).map { today.plusDays(it.toLong()) }.first { it.dayOfWeek.value in setOf(1, 3, 5) }
+        if (work.month == today.month) openDay(work) else openDayBelow(work)
+        openGroup("알람")
+        reveal("알람", exact = true)
+    }
+
+    // [CAL-12] A freelancer's link: jobs and a memo, no shifts, so no "휴" on every empty day.
+    private val jobsLinkId = "Fr9gHj3KlMnPqRsTuVwXyZ"
+    private fun jobsShare(): com.bamnat.app.share.ReceivedShare {
+        val snap = com.bamnat.app.data.ScheduleSnapshot(emptyList(), emptyList<WorkPattern>(), emptyList())
+        val jobs = linkedMapOf(
+            today to listOf(com.bamnat.app.share.SharedJob("욕실 타일 시공", "09:00-17:00")),
+            today.plusDays(2) to listOf(com.bamnat.app.share.SharedJob("현장 실측", "14:00-15:00")),
+        )
+        for (d in 6L..8L) jobs[today.plusDays(d)] = listOf(com.bamnat.app.share.SharedJob("베란다 방수", null))
+        val memos = mapOf(today.plusDays(4) to "자재 받기")
+        val body = com.bamnat.app.share.ShareLinkPayload.build(snap, today.withDayOfMonth(1), "준호", 30,
+            com.bamnat.app.share.ShareOptions(memos = true, jobs = true), memos, jobs = jobs)
+        body.remove("ttlDays")
+        return com.bamnat.app.share.ReceivedShare(body, java.time.Instant.now().plus(java.time.Duration.ofDays(30)), java.time.Instant.now())
+    }
+    private fun jobsLinkOn() {
+        val c = app.container
+        c.shareApi = shares
+        shares.links[jobsLinkId] = jobsShare()
+        c.received.put(jobsLinkId, shares.links.getValue(jobsLinkId))
+    }
+    @Test fun calReceivedJobs() = shoot("311_folded_received_jobs", FOLDED) {
+        jobsLinkOn()
+        settle()
+        tapText("준호의 근무표 보기", exact = true)
+    }
+    @Test fun calReceivedJobsDay() = shoot("312_unfolded_received_jobs", UNFOLDED) {
+        jobsLinkOn()
+        settle()
+        tapText("준호의 근무표 보기", exact = true)
+        tapText(Fmt.dayTitle(today), prefix = true, scrolls = 0)
+    }
+
+    // [CAL-06][VIS-02] 200% text: the summary's figures and the cells still fit.
+    @Test fun calShiftHugeText() = shoot("313_phone_shift_huge_text", PHONE, 2f, withPay())
+    @Test fun calFieldHugeText() = shoot("314_phone_field_huge_text", PHONE, 2f, plain(WorkStyle.FIELD, moreJobs))
+
+    /** [CAL-06] Any date, picked on a full calendar from the month list. */
+    @Test fun calDateJump() = shoot("315_folded_date_jump", FOLDED) {
+        tapText(Fmt.month(java.time.YearMonth.now()), exact = true, scrolls = 0)
+        tapText("날짜 고르기", exact = true, scrolls = 0)
+    }
+    @Test fun calFieldDark() = shoot("316_folded_field_dark", "w369dp-h905dp-port-night-420dpi", plain(WorkStyle.FIELD, moreJobs))
+
+    /** [CAL-11] The three widgets in the words of field and shop work. */
+    private fun widgetShots(prefix: String) = runBlocking {
+        val shots = listOf(
+            Triple("today", com.bamnat.app.widget.TodayWidget() as androidx.glance.appwidget.GlanceAppWidget, 180 to 150),
+            Triple("week", com.bamnat.app.widget.WeekWidget(), 340 to 110),
+            Triple("month", com.bamnat.app.widget.MonthWidget(), 340 to 330),
+        )
+        for ((name, widget, dims) in shots) {
+            val (wDp, hDp) = dims
+            @OptIn(androidx.glance.ExperimentalGlanceApi::class)
+            val rv = widget.compose(app, size = androidx.compose.ui.unit.DpSize(wDp.dp, hDp.dp))
+            val density = app.resources.displayMetrics.density
+            val w = (wDp * density).toInt()
+            val h = (hDp * density).toInt()
+            val parent = android.widget.FrameLayout(app)
+            parent.addView(rv.apply(app, parent), android.widget.FrameLayout.LayoutParams(w, h))
+            parent.measure(
+                android.view.View.MeasureSpec.makeMeasureSpec(w, android.view.View.MeasureSpec.EXACTLY),
+                android.view.View.MeasureSpec.makeMeasureSpec(h, android.view.View.MeasureSpec.EXACTLY),
+            )
+            parent.layout(0, 0, w, h)
+            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bmp)
+            canvas.drawColor(0xFF7A8BA8.toInt())
+            parent.draw(canvas)
+            val out = File("build/screenshots/${prefix}_$name.png").apply { parentFile!!.mkdirs() }
+            out.outputStream().use { st -> bmp.compress(Bitmap.CompressFormat.PNG, 100, st) }
+        }
+    }
+    @Test fun calFieldWidgets() {
+        plain(WorkStyle.FIELD, moreJobs)
+        widgetShots("317_widget_field")
+    }
+    @Test fun calBusinessWidgets() {
+        plain(WorkStyle.BUSINESS, moreSales)
+        widgetShots("318_widget_business")
+    }
+    @Test fun calBusinessPhone() = shoot("319_phone_business_calendar", PHONE, plain(WorkStyle.BUSINESS, moreSales))
 }
 
 /** [SHR-02] The share server for screenshots: links people sent, answered at once. */
