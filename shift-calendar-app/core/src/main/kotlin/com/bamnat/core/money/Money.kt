@@ -61,7 +61,8 @@ data class MoneyEntry(
     /** [LEDG-11] What [c] got of this line; 0 when it has no part of it. */
     fun shareOf(c: String): Long = shares().filter { it.first == c }.sumOf { it.second }
 
-    val isSplit: Boolean get() = parts.size > 1
+    /** Spread over more than one category. */
+    val isSplit: Boolean get() = shares().size > 1
 }
 
 /** [LEDG-11] One category's piece of a split payment, in whole won. */

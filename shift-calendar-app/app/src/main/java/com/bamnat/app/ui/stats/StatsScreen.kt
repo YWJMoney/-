@@ -57,6 +57,8 @@ import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.hours.WeekSummary
 import com.bamnat.core.hours.WorkHoursCalculator
+import com.bamnat.core.money.MoneyBook
+import com.bamnat.app.ui.money.wonBrief
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -81,6 +83,9 @@ class StatsViewModel(
 
     fun payTotal(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): Long =
         payCalculator.calculate(profile, month, snapshot.resolver::resolve).total
+
+    /** [LEDG-15] The calendar's money: field work counts its jobs here and a shop its sales, not hours. */
+    val book: StateFlow<MoneyBook?> = scope.money.book.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 }
 
 @Composable
@@ -93,6 +98,8 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
     val month by vm.shownMonth.collectAsStateWithLifecycle()
     // [NAV-01] Work paid by the hour or the shift reads its pay here; field and shop work have 돈 for it.
     val pays = settings.workStyle?.usesPayEngine != false
+    val style = settings.workStyle
+    val book by vm.book.collectAsStateWithLifecycle()
 
     val snap = snapshot
     if (snap == null) {
@@ -105,6 +112,9 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
     val summary = remember(calc, month) { calc.month(month) }
     val three = remember(calc, month) { calc.threeMonths(month) }
     val trend = remember(calc, month) { (5 downTo 0).map { calc.month(month.minusMonths(it.toLong())) } }
+    // [LEDG-15] Field and shop work show their jobs or sales; hours only once some are on the calendar.
+    val hasHours = pays || summary.totalMinutes > 0 || three.totalMinutes > 0
+    val columns = if (wide) 4 else 2
 
     Column(
         Modifier
@@ -114,7 +124,15 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (pays) "근무·급여" else "근무 통계", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+            Text(
+                when {
+                    pays -> "근무·급여"
+                    style?.usesJobs == true -> "일감 통계"
+                    style?.usesSales == true -> "매출 통계"
+                    else -> "근무 통계"
+                },
+                style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f),
+            )
             IconButton(onClick = { vm.showMonth(month.minusMonths(1)) }) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달")
             }
@@ -126,6 +144,16 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         // [MCAL-06] Whose hours and pay these are, once there are several calendars.
         com.bamnat.app.ui.calendar.CalendarScopeChips(androidx.compose.ui.platform.LocalContext.current.appContainer)
 
+        val money = book
+        if (money != null && style?.usesJobs == true) JobFigures(money, month, columns)
+        if (money != null && style?.usesSales == true) SalesFigures(money, month, columns)
+        if (!hasHours) {
+            Text("달력에 근무 시간을 넣으면 주별 근무시간과 3개월 평균도 여기서 볼 수 있어요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp))
+            return@Column
+        }
+
         // [EXTRA-01] The four tiles add up to the total: the roster, extra work on working days, work on days off.
         val tiles: List<@Composable (Modifier) -> Unit> = listOf(
             { m -> StatTile("${month.monthValue}월 총 근무", HoursFormat.korean(summary.totalMinutes), m,
@@ -136,13 +164,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             { m -> StatTile("쉬는 날 근무", HoursFormat.korean(summary.restDayExtraMinutes), m,
                 caption = "${summary.restDayWorkDays}일") },
         )
-        val columns = if (wide) 4 else 2
-        tiles.chunked(columns).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                row.forEach { tile -> tile(Modifier.weight(1f)) }
-                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
-            }
-        }
+        TileGrid(tiles, columns)
 
         // [NAV-01] 근무·급여: the month's pay right under its hours.
         if (pays) {
@@ -241,7 +263,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         }
 
         SectionCard(title = "최근 6개월") {
-            MonthTrend(trend.map { it.month to it.totalMinutes })
+            MonthTrend(trend.map { it.month to it.totalMinutes.toLong() }, floor = 60) { HoursFormat.decimalHours(it.toDouble()).substringBefore('.') }
         }
 
         Text(
@@ -318,8 +340,8 @@ private fun LimitBar(value: Double, limit: Double, max: Double) {
 }
 
 @Composable
-private fun MonthTrend(values: List<Pair<YearMonth, Int>>) {
-    val max = (values.maxOfOrNull { it.second } ?: 0).coerceAtLeast(60)
+private fun MonthTrend(values: List<Pair<YearMonth, Long>>, floor: Long, label: (Long) -> String) {
+    val max = (values.maxOfOrNull { it.second } ?: 0).coerceAtLeast(floor)
     Row(
         Modifier.fillMaxWidth().height(140.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -329,8 +351,8 @@ private fun MonthTrend(values: List<Pair<YearMonth, Int>>) {
             val last = i == values.lastIndex
             Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    HoursFormat.decimalHours(minutes.toDouble()).substringBefore('.'),
-                    style = MaterialTheme.typography.labelSmall.merge(NumberStyle),
+                    if (minutes > 0) label(minutes) else "",
+                    style = MaterialTheme.typography.labelSmall.merge(NumberStyle), maxLines = 1,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
@@ -383,5 +405,60 @@ private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, on
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
         }
+    }
+}
+
+/** Tiles [columns] to a row; a short last row keeps the tiles' width. */
+@Composable
+private fun TileGrid(tiles: List<@Composable (Modifier) -> Unit>, columns: Int) {
+    tiles.chunked(columns).forEach { row ->
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            row.forEach { tile -> tile(Modifier.weight(1f)) }
+            repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+        }
+    }
+}
+
+/**
+ * [LEDG-15][WORK-02] Field work's month in jobs: how many, what they earned, what is still owed and
+ * what is left after costs, and six months of earnings. Words match the calendar's month summary.
+ */
+@Composable
+private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
+    val m = remember(book, month) { book.month(month) }
+    val days = remember(book, month) {
+        book.jobs.filter { YearMonth.from(it.date) == month }
+            .flatMap { j -> (0 until j.days).map { j.date.plusDays(it.toLong()) } }
+            .filter { YearMonth.from(it) == month }.distinct().size
+    }
+    val trend = remember(book, month) { (5 downTo 0).map { month.minusMonths(it.toLong()).let { mm -> mm to book.month(mm).jobEarned } } }
+    val tiles: List<@Composable (Modifier) -> Unit> = listOf(
+        { md -> StatTile("${month.monthValue}월 일감", "${m.jobCount}건", md, caption = "${days}일 일해요") },
+        { md -> StatTile("번 돈", Fmt.won(m.jobEarned), md, caption = m.jobReceived.takeIf { it > 0 }?.let { "받음 ${wonBrief(it)}" }) },
+        { md -> StatTile("받을 돈", Fmt.won(m.jobOwed), md, warning = m.jobOwed > 0) },
+        { md -> StatTile("남은 돈", Fmt.won(m.jobProfit), md, caption = m.jobCosts.takeIf { it > 0 }?.let { "경비 ${wonBrief(it)}" }) },
+    )
+    TileGrid(tiles, columns)
+    if (trend.any { it.second > 0 }) {
+        SectionCard(title = "최근 6개월 번 돈") { MonthTrend(trend, floor = 1) { wonBrief(it) } }
+    }
+}
+
+/** [LEDG-15][WORK-03] A shop's month in sales: the total, costs, what is left and a day's average, and six months of sales. */
+@Composable
+private fun SalesFigures(book: MoneyBook, month: YearMonth, columns: Int) {
+    val m = remember(book, month) { book.month(month) }
+    val best = remember(book, month) { book.sales.filter { YearMonth.from(it.date) == month }.maxByOrNull { it.sales }?.takeIf { it.sales > 0 } }
+    val trend = remember(book, month) { (5 downTo 0).map { month.minusMonths(it.toLong()).let { mm -> mm to book.month(mm).sales } } }
+    val tiles: List<@Composable (Modifier) -> Unit> = listOf(
+        { md -> StatTile("${month.monthValue}월 매출", Fmt.won(m.sales), md, caption = "${m.salesDays}일 적음") },
+        { md -> StatTile("경비", Fmt.won(m.salesCosts), md) },
+        { md -> StatTile("남은 돈", Fmt.won(m.salesNet), md, warning = m.salesNet < 0) },
+        { md -> StatTile("하루 평균", Fmt.won(if (m.salesDays > 0) m.sales / m.salesDays else 0), md,
+            caption = best?.let { "최고 ${it.date.monthValue}/${it.date.dayOfMonth} ${wonBrief(it.sales)}" }) },
+    )
+    TileGrid(tiles, columns)
+    if (trend.any { it.second > 0 }) {
+        SectionCard(title = "최근 6개월 매출") { MonthTrend(trend, floor = 1) { wonBrief(it) } }
     }
 }
