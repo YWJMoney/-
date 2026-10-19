@@ -59,6 +59,25 @@ test("the board lists rule sets being voted on and adopted ones, but not hidden 
   assert.ok(!text.includes("device"));
 });
 
+test("the board finds a company by name or another name for it, in either tab", async () => {
+  const { call } = server();
+  const h = await signIn(call);
+  await oneRuleSet(call);
+  await call("POST", "/api/reports", report(2, { company: "가나다화학", verified: true }), from(2));
+  const adopted = await call("POST", "/api/reports", report(3, { company: "가나다화학" }), from(3));
+  await call("POST", `/api/admin/companies/${adopted.data.company.id}/aliases`, { name: "GND케미칼" }, h);
+  const names = async (q, tab = "adopted") => (await call("GET", `/api/board?tab=${tab}&q=${encodeURIComponent(q)}`)).data.items.map((i) => i.company.name);
+  assert.deepEqual(await names("(주)가나다"), ["가나다화학"]);
+  assert.deepEqual(await names("gnd"), ["가나다화학"]);
+  assert.deepEqual(await names("예시"), []);
+  assert.deepEqual(await names("예시", "voting"), ["예시정밀"]);
+  assert.deepEqual(await names("가나다", "voting"), []);
+  // One letter, or only symbols, narrows nothing.
+  assert.deepEqual(await names("가"), ["가나다화학"]);
+  assert.deepEqual(await names("%"), ["가나다화학"]);
+  assert.equal((await call("GET", "/api/board?tab=adopted&q=가나다")).data.q, "가나다");
+});
+
 test("anyone can talk about a rule set; each writer is 참여자 N of that talk with what they said about it", async () => {
   const { call } = server();
   const { c, g, say, read } = await oneRuleSet(call);

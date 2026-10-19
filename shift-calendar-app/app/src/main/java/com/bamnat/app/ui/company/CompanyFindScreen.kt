@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.Apartment
 import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
@@ -105,6 +106,8 @@ fun CompanyFindScreen(
     focus: Boolean = true,
     /** The user's own setup is already in, so a company that is not here leads to sharing it. */
     ready: Boolean = false,
+    /** [COMM-07] Every company's rules, to look through without a name. */
+    onBoard: (() -> Unit)? = null,
 ) {
     // [STAB-01] Read at once, on the same frame as the key: a text box one frame behind the keyboard
     // doubles or drops half-built Korean letters and moves the cursor.
@@ -177,6 +180,13 @@ fun CompanyFindScreen(
                             }
                         }
                         is CompanyFindViewModel.Result.Failed -> Offline(r.code, onRetry = vm::retry) { byHand(r.query) }
+                    }
+                }
+                if (onBoard != null) {
+                    OutlinedButton(onClick = { keyboard?.hide(); onBoard() }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Outlined.Forum, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("회사 규칙 광장에서 모든 회사 규칙 보기")
                     }
                 }
                 if (setup && result !is CompanyFindViewModel.Result.Found) {

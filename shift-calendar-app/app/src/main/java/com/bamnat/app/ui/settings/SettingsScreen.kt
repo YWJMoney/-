@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Payments
@@ -394,6 +395,8 @@ fun SettingsScreen(
     company: (@Composable ColumnScope.() -> Unit)? = null,
     /** [ADMIN-02] 문의하기 in the app. */
     onOpenInquiry: () -> Unit = {},
+    /** [COMM-07] 회사 규칙 광장, on the first screen when the build has a company server. */
+    onOpenBoard: (() -> Unit)? = null,
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -438,7 +441,7 @@ fun SettingsScreen(
     }
     val hub: @Composable (Modifier, SettingsPage?) -> Unit = { modifier, selected ->
         SettingsHub(vm, settings, refresh, askNotifications, selected, hubScroll, modifier,
-            onOpen = { page = it }, onOpenDiagnostics = onOpenDiagnostics, onOpenShiftTypes = onOpenShiftTypes)
+            onOpen = { page = it }, onOpenDiagnostics = onOpenDiagnostics, onOpenShiftTypes = onOpenShiftTypes, onOpenBoard = onOpenBoard)
     }
 
     if (wide) {
@@ -511,6 +514,7 @@ private fun SettingsHub(
     onOpen: (SettingsPage) -> Unit,
     onOpenDiagnostics: (Boolean) -> Unit,
     onOpenShiftTypes: () -> Unit,
+    onOpenBoard: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
@@ -529,6 +533,8 @@ private fun SettingsHub(
             GroupRow(p.icon, p.title, if (p == SettingsPage.ABOUT && unread > 0) "문의에 답이 ${unread}개 왔어요 · $line" else line,
                 selected == p) { onOpen(p) }
         }
+        // [COMM-07] Its own row, so it is one tap away rather than inside 급여.
+        if (onOpenBoard != null) GroupRow(Icons.Outlined.Forum, "회사 규칙 광장", "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론", false, onOpenBoard)
         VersionLine(onOpenDiagnostics)
     }
 }

@@ -333,10 +333,23 @@ class CompanyBoardViewModel(private val c: AppContainer) : ViewModel() {
     private val _terms = MutableStateFlow(TermsCache.value)
     val terms: StateFlow<CompanyTerms?> = _terms.asStateFlow()
     val talk = TalkHolder(c, viewModelScope)
+    /** [COMM-07] A company's name, as typed; both tabs show only its rules once the typing stops. */
+    val query = MutableStateFlow("")
+    private var asked = ""
 
     init {
         viewModelScope.launch { _terms.value = c.loadTerms() }
         more(false)
+        viewModelScope.launch {
+            query.collectLatest { typed ->
+                val q = typed.trim()
+                if (q == asked) return@collectLatest
+                delay(300)
+                asked = q
+                tabs.values.forEach { it.value = Tab() }
+                more()
+            }
+        }
     }
 
     fun pick(adopted: Boolean) {
@@ -356,13 +369,16 @@ class CompanyBoardViewModel(private val c: AppContainer) : ViewModel() {
         val from = f.value.next ?: return
         if (f.value.loading) return
         f.value = f.value.copy(loading = true, error = null)
+        val q = asked
         viewModelScope.launch {
-            f.value = try {
-                val b = c.companyApi.board(adopted, from)
+            val done = try {
+                val b = c.companyApi.board(adopted, from, q)
                 f.value.copy(items = f.value.items + b.items, next = b.next, loading = false)
             } catch (e: CompanyException) {
                 f.value.copy(loading = false, error = companyProblem(e.code, e.field))
             }
+            // A page for a name no longer in the box is dropped; the new name's pages are on their way.
+            if (q == asked) f.value = done
         }
     }
 }

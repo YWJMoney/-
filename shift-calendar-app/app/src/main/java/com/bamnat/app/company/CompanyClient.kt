@@ -140,8 +140,11 @@ interface CompanyApi {
     suspend fun forgetMine(device: String): Int
     suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean = false, why: String? = null): VoteResult
 
-    /** [COMM-07] Every company's rule sets: [adopted] ones anyone can use, or ones still being voted on. */
-    suspend fun board(adopted: Boolean, from: Int = 0): Board = Board(emptyList(), null)
+    /**
+     * [COMM-07] Every company's rule sets: [adopted] ones anyone can use, or ones still being voted on.
+     * [q] finds a company by name, written any way 회사 찾기 takes it.
+     */
+    suspend fun board(adopted: Boolean, from: Int = 0, q: String = ""): Board = Board(emptyList(), null)
     /** [COMM-06] The talk on one rule set; this install's own posts are marked. */
     suspend fun talk(device: String, company: String, setup: String): Talk = Talk(emptyList())
     /** Posts in it; the new post's id comes back. */
@@ -202,8 +205,9 @@ class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
         CompanyTerms(o.optInt("threshold", 3), o.optInt("rewardMonths", 0), o.optInt("agree", 75))
     }
 
-    override suspend fun board(adopted: Boolean, from: Int): Board = serverCall {
-        val o = request("GET", "/api/board?tab=${if (adopted) "adopted" else "voting"}&from=$from")
+    override suspend fun board(adopted: Boolean, from: Int, q: String): Board = serverCall {
+        val name = q.trim().take(40).takeIf { it.isNotEmpty() }?.let { "&q=" + URLEncoder.encode(it, "UTF-8") }.orEmpty()
+        val o = request("GET", "/api/board?tab=${if (adopted) "adopted" else "voting"}&from=$from$name")
         Board(
             items = o.optJSONArray("items").objects().map { i ->
                 val c = i.getJSONObject("company")

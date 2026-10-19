@@ -527,6 +527,7 @@ private fun AppNavHost(
                     )
                 }) else null,
                 onOpenInquiry = { nav.navigate(Routes.INQUIRY) { launchSingleTop = true } },
+                onOpenBoard = if (nudges.enabled) ({ nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } }) else null,
             )
         }
         composable(Routes.INQUIRY) {
@@ -589,6 +590,7 @@ private fun AppNavHost(
                 onBack = { nav.popFrom(Routes.COMPANY_FIND) },
                 onOpen = { id -> nav.navigate(Routes.company(id, setup, weekdays)) },
                 onByHand = { nav.afterCompanyByHand(setup, weekdays, ready) },
+                onBoard = if (setup) null else ({ nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } }),
             )
         }
         composable(
