@@ -5,6 +5,7 @@ import com.bamnat.app.alarm.AlarmScheduler
 import com.bamnat.app.data.BackupManager
 import com.bamnat.app.data.MemoRepository
 import com.bamnat.app.data.MoneyRepository
+import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.data.ScheduleRepository
 import com.bamnat.app.data.SettingsRepository
 import com.bamnat.app.data.db.AppDatabase
@@ -29,6 +30,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -41,7 +43,7 @@ import java.time.LocalDateTime
 
 /** Manual dependency container, created once in [BamnatApp]. */
 class AppContainer(context: Context) {
-    private val appContext: Context = context.applicationContext
+    val appContext: Context = context.applicationContext
 
     /**
      * Work that must outlive any screen, e.g. saving a memo while leaving the editor. [STAB-01] An error
@@ -55,6 +57,15 @@ class AppContainer(context: Context) {
     val settingsRepository = SettingsRepository(context)
     val scheduleRepository = ScheduleRepository(database, kinds = settingsRepository.settings.map { it.extraKinds },
         extraName = { settingsRepository.current.extraKinds.name(it) })
+    /** [MCAL-01] The user's calendars; the main one is [scheduleRepository]. */
+    val calendars = com.bamnat.app.data.CalendarBook(
+        java.io.File(appContext.filesDir, "calendars.json"), scheduleRepository, com.bamnat.app.data.CalendarStorage.Files(appContext),
+        repositoryOf = { db ->
+            ScheduleRepository(db, kinds = settingsRepository.settings.map { it.extraKinds }, extraName = { settingsRepository.current.extraKinds.name(it) })
+        },
+    )
+    /** [MCAL-02] The setup of a calendar being added, kept apart from the app's first setup. */
+    val calendarSetupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "calendar_setup_draft.json")) }
     val memoRepository = MemoRepository(database)
     val sleepRepository = com.bamnat.app.data.SleepRepository(database)
     /** [ONBOARD-01] What this phone was told about on the first-start consent pages. */
@@ -67,7 +78,7 @@ class AppContainer(context: Context) {
         com.bamnat.app.alarm.BootAlarms.RingSettings.of(settingsRepository.current)
     }
     val payStore = PayStore(appContext)
-    val backupManager = BackupManager(database, settingsRepository, payStore = payStore)
+    val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars)
     /** [SET-01] The data as it was before the last import, to take the import back. */
     val importUndo by lazy { com.bamnat.app.data.ImportUndo(java.io.File(appContext.noBackupFilesDir, "before_import.json"), backupManager) }
     /** [COMM-00] Company settings as a file for coworkers. */
@@ -77,6 +88,8 @@ class AppContainer(context: Context) {
     val companyStore by lazy { com.bamnat.app.company.CompanyStore(appContext) }
     /** [ADMIN-02] 설정 > 문의하기 through the company server; screenshots and tests put a fake in its place. */
     var inquiryApi: com.bamnat.app.company.InquiryApi = com.bamnat.app.company.InquiryClient()
+    /** [ADMIN-02] The pay check 계산이 이상해요 hands to 문의하기; the next 문의하기 screen takes it once. */
+    var pendingPayCheck: String? = null
     val inquiryStore by lazy { com.bamnat.app.company.InquiryStore(appContext) }
     /** [SETUP-01] The first setup's answers until it saves, on this phone only. */
     val setupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "setup_draft.json")) }
@@ -85,6 +98,24 @@ class AppContainer(context: Context) {
     }
     /** [MKT-09][SHR-02] The link server; screenshots and tests put a fake in its place. */
     var shareApi: com.bamnat.app.share.ShareApi = com.bamnat.app.share.ShareLinkClient()
+    /** [MKT-09][SHR-12] The one link this phone made, shared by the sheet, the automatic update and the expiry notice. */
+    /** [MCAL-02] When this run began: a calendar begun since is being made, not left over. */
+    private val startedAt = System.currentTimeMillis()
+    val shareLinks by lazy { com.bamnat.app.share.ShareLinkStore(appContext) }
+    private val addedShareLinks = java.util.concurrent.ConcurrentHashMap<String, com.bamnat.app.share.ShareLinkStore>()
+    /** [MCAL-03] The link of one of the user's calendars; the main one is [shareLinks]. */
+    fun shareLinksOf(calendarId: String): com.bamnat.app.share.ShareLinkStore =
+        if (calendarId == PersonalCalendar.MAIN) shareLinks
+        else addedShareLinks.getOrPut(calendarId) { com.bamnat.app.share.ShareLinkStore(appContext, calendarId) }
+    /** [MCAL-03] A removed calendar's link goes with it, its expiry notice too. */
+    fun forgetShareLinks(calendarId: String) {
+        if (calendarId == PersonalCalendar.MAIN) return
+        addedShareLinks.remove(calendarId)?.clear()
+        com.bamnat.app.share.ShareLinkStore.forget(appContext, calendarId)
+        com.bamnat.app.share.ShareExpiryReminder.reschedule(appContext, calendarId, null, null)
+    }
+    /** [SHR-12] Sends the link again when the calendar changes. */
+    val shareSync by lazy { com.bamnat.app.share.ShareSync(this) }
     /** [SHR-02] Schedules others shared, kept beside the user's own and never backed up. */
     val received by lazy { com.bamnat.app.share.ReceivedCalendarStore(java.io.File(appContext.noBackupFilesDir, "received_calendars.json")) }
     val featureGate = FeatureGate(settingsRepository, appScope)
@@ -104,7 +135,7 @@ class AppContainer(context: Context) {
     }
 
     suspend fun rescheduleAlarms(after: LocalDateTime = LocalDateTime.now()) {
-        alarmScheduler.reschedule(scheduleRepository.snapshot.first(), settingsRepository.current.alarmsEnabled, after)
+        alarmScheduler.reschedule(calendars.ringing.first(), settingsRepository.current.alarmsEnabled, after)
     }
 
     /**
@@ -136,12 +167,15 @@ class AppContainer(context: Context) {
             runCatching { firstSetup.finishInterrupted() }
             memoRepository.purgeOldTrash()
             moneyRepository.purgeCaptures()
+            // [MCAL-02] A calendar whose setup was left before saving is not kept.
+            if (calendarSetupDrafts.draft.value == null) calendars.dropUnfinished(before = startedAt)
             // Any edit to shift types, the pattern, a day or the master switch re-plans the next alarm.
+            // [MCAL-01] So does one in an added calendar whose alarms ring.
             val enabled = settingsRepository.settings.map { it.alarmsEnabled }.distinctUntilChanged()
-            combine(scheduleRepository.snapshot, enabled) { snapshot, on -> snapshot to on }
+            combine(calendars.ringing, enabled) { ringing, on -> ringing to on }
                 .debounce(300)
-                .collect { (snapshot, on) ->
-                    alarmScheduler.reschedule(snapshot, on)
+                .collect { (ringing, on) ->
+                    alarmScheduler.reschedule(ringing, on)
                     WidgetRefresher.refresh(appContext)
                 }
         }
@@ -174,6 +208,21 @@ class AppContainer(context: Context) {
             val on = settingsRepository.settings.map { it.leaveNotice }.distinctUntilChanged()
             combine(entered, on) { a, b -> a to b }
                 .collect { LeaveReminder.reschedule(appContext, payStore.profile.value, settingsRepository.current) }
+        }
+        // [SHR-12] The link this phone made follows the calendar, and its expiry notice follows the link.
+        keep("share") { if (shareApi.enabled) shareSync.follow() }
+        // [MCAL-03] Each of the user's calendars has its own link and so its own notice.
+        keep("shareexpiry") {
+            calendars.calendars.map { list -> list.map { it.id } }.distinctUntilChanged().collectLatest { ids ->
+                coroutineScope {
+                    ids.forEach { id ->
+                        launch {
+                            val store = shareLinksOf(id)
+                            store.link.collect { com.bamnat.app.share.ShareExpiryReminder.reschedule(appContext, id, it, store.noticedFor) }
+                        }
+                    }
+                }
+            }
         }
         // [SLP-15] 자는 중 follows the sleep log, and a sleep that just ended says how long it was.
         // What waited while the user slept is planned again from the log.

@@ -136,7 +136,7 @@ fun PatternScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (setup) "1/2 근무 주기" else "근무 주기") },
+                title = { CalendarTitle(if (setup) "1/2 근무 주기" else "근무 주기", vm) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 actions = {
                     TextButton(onClick = save, enabled = valid) { Text(if (setup && existing == null) "다음" else "저장") }

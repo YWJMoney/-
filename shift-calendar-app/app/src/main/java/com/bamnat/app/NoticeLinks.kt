@@ -27,6 +27,8 @@ object NoticeLinks {
         OWED,
         /** [IMPORT-01] Bringing in the phone's calendar. */
         CALENDAR_IMPORT,
+        /** [SHR-12] The calendar with the share sheet open, from the link's expiry notice. */
+        SHARE,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"
@@ -34,10 +36,22 @@ object NoticeLinks {
     private val _target = MutableStateFlow<Target?>(null)
     val target: StateFlow<Target?> = _target.asStateFlow()
 
+    private const val CALENDAR_EXTRA = "com.bamnat.app.extra.CALENDAR"
+
+    private val _calendar = MutableStateFlow<String?>(null)
+    /** [MCAL-03] Which of the user's calendars [target] is about, when a notice says; null is the main one. */
+    val calendar: StateFlow<String?> = _calendar.asStateFlow()
+
     /** Opens the app on [target], or brings it forward there; the screen underneath is not stacked again. */
-    fun intent(context: Context, target: Target): Intent = Intent(context, MainActivity::class.java)
+    fun intent(context: Context, target: Target, calendar: String? = null): Intent = Intent(context, MainActivity::class.java)
         .putExtra(EXTRA, target.name)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        .apply {
+            if (calendar == null) return@apply
+            putExtra(CALENDAR_EXTRA, calendar)
+            // Each calendar's notice keeps its own intent rather than taking over another's.
+            data = android.net.Uri.parse("bamnat-notice://calendar/$calendar")
+        }
 
     /** Reads a target off an intent; true when there was one. */
     fun read(intent: Intent?): Boolean {
@@ -45,12 +59,15 @@ object NoticeLinks {
         if (intent == null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return false
         val target = intent.getStringExtra(EXTRA)?.let { n -> Target.entries.firstOrNull { it.name == n } } ?: return false
         intent.removeExtra(EXTRA)
+        _calendar.value = intent.getStringExtra(CALENDAR_EXTRA)
+        intent.removeExtra(CALENDAR_EXTRA)
         _target.value = target
         return true
     }
 
     /** Opens [target] from inside the app, from a screen that has no way there of its own. */
     fun open(target: Target) {
+        _calendar.value = null
         _target.value = target
     }
 

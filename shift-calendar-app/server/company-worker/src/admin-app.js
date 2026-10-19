@@ -10,35 +10,55 @@ const ADMIN_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-
 /** The pages the app answers on: the app itself, the invite link, and the page that explains installing. */
 const PAGES = ["/admin/", "/admin/join", "/admin/install"];
 
-export function adminFile(path) {
+export function adminFile(path, request) {
   const png = ICONS[path];
   if (png) {
     return new Response(Uint8Array.from(atob(png), (c) => c.charCodeAt(0)), {
       headers: { "content-type": "image/png", "cache-control": "public, max-age=86400", "x-content-type-options": "nosniff" },
     });
   }
-  const files = {
-    "/admin/app.js": [`(${adminApp})();\n`, "text/javascript; charset=utf-8"],
-    "/admin/sw.js": [`(${adminWorker})();\n`, "text/javascript; charset=utf-8"],
+  const file = adminFiles()[path];
+  if (!file) return new Response("Not found", { status: 404 });
+  const headers = {
+    "content-type": file.type,
+    // Checked each time, but an unchanged file is answered with 304 and no body (ETag).
+    "cache-control": "no-cache",
+    etag: file.etag,
+    "content-security-policy": ADMIN_CSP,
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+    "x-robots-tag": "noindex, nofollow",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "x-frame-options": "DENY",
+  };
+  const asked = request?.headers.get("if-none-match");
+  if (asked && asked.split(/\s*,\s*/).some((t) => t.replace(/^W\//, "") === file.etag)) return new Response(null, { status: 304, headers });
+  return new Response(file.body, { headers });
+}
+
+const hashText = (text) => {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+};
+
+let builtFiles = null;
+
+/** The app's files with their tags, made once per worker copy. The phone keeps the app's own files under a name that changes with them. */
+function adminFiles() {
+  if (builtFiles) return builtFiles;
+  const app = `(${adminApp})();\n`;
+  const version = hashText(app + ADMIN_CSS + ADMIN_HTML + JSON.stringify(MANIFEST));
+  const list = {
+    "/admin/app.js": [app, "text/javascript; charset=utf-8"],
+    "/admin/sw.js": [`(${adminWorker})(${JSON.stringify(version)});\n`, "text/javascript; charset=utf-8"],
     "/admin/app.css": [ADMIN_CSS, "text/css; charset=utf-8"],
     "/admin/manifest.webmanifest": [JSON.stringify(MANIFEST), "application/manifest+json; charset=utf-8"],
     "/admin/icon.svg": [ICON_SVG, "image/svg+xml"],
   };
-  for (const page of PAGES) files[page] = [ADMIN_HTML, "text/html; charset=utf-8"];
-  const file = files[path];
-  if (!file) return new Response("Not found", { status: 404 });
-  return new Response(file[0], {
-    headers: {
-      "content-type": file[1],
-      "cache-control": "no-cache",
-      "content-security-policy": ADMIN_CSP,
-      "x-content-type-options": "nosniff",
-      "referrer-policy": "no-referrer",
-      "x-robots-tag": "noindex, nofollow",
-      "permissions-policy": "camera=(), microphone=(), geolocation=()",
-      "x-frame-options": "DENY",
-    },
-  });
+  for (const page of PAGES) list[page] = [ADMIN_HTML, "text/html; charset=utf-8"];
+  builtFiles = Object.fromEntries(Object.entries(list).map(([p, [body, type]]) => [p, { body, type, etag: `"${hashText(body)}"` }]));
+  return builtFiles;
 }
 
 const MANIFEST = {
@@ -538,7 +558,7 @@ function adminApp() {
     me: null, overview: null, health: null,
     route: { name: "home", id: null },
     data: {}, // per screen
-    reviewFilter: "all", inquiryStatus: "open", rewardTab: "owed", query: "", postFilter: "flagged",
+    reviewFilter: "all", inquiryStatus: "open", inquiryTopic: "", rewardTab: "owed", query: "", postFilter: "flagged",
     draft: null, loginMode: "account", error: "", busy: 0, online: navigator.onLine,
     join: null, // invite info on the join page
     installPrompt: null, installed: matchMedia("(display-mode: standalone)").matches || navigator.standalone === true,
@@ -639,11 +659,11 @@ function adminApp() {
   }
 
   /** Fetches what the current screen shows; the home numbers come along so badges stay right. */
-  async function load({ quiet = false } = {}) {
+  async function load({ quiet = false, overview = true } = {}) {
     const { name, id } = S.route;
     const key = `${name}/${id ?? ""}`;
     try {
-      const jobs = [api("/overview").then((o) => { S.overview = o; S.me = o.me; })];
+      const jobs = overview ? [api("/overview").then((o) => { S.overview = o; S.me = o.me; })] : [];
       if (name === "home" && can("audit")) jobs.push(api("/audit").then((d) => { S.data.feed = d; }));
       if (name === "review") jobs.push(api("/queue").then((d) => { S.data.queue = d; }));
       if (name === "inquiries" && !id) jobs.push(loadInquiries());
@@ -671,7 +691,7 @@ function adminApp() {
 
   async function loadInquiries() {
     try {
-      S.data.inquiries = await api(`/inquiries?status=${S.inquiryStatus}`);
+      S.data.inquiries = await api(`/inquiries?status=${S.inquiryStatus}${S.inquiryTopic ? `&topic=${S.inquiryTopic}` : ""}`);
       S.data.inquiriesMissing = false;
     } catch (e) {
       // The server has no inquiry box yet: the screen says so instead of failing.
@@ -998,6 +1018,23 @@ function adminApp() {
 
   // ---- inquiries ----
 
+  /** [ADMIN-02] The server sorts each question by topic; a chip shows one topic, with how many there are. */
+  function topicChips(d) {
+    const topics = d?.topics ?? {};
+    const names = d?.topicNames ?? {};
+    const keys = Object.keys(names).filter((k) => topics[k] || k === S.inquiryTopic);
+    if (!keys.length) return "";
+    const chip = (key, label, n) => `<button type="button" class="chip pick" data-act="inquiry-topic" data-key="${key}" aria-pressed="${S.inquiryTopic === key}">${esc(label)}${n ? ` ${n}` : ""}</button>`;
+    return `<div class="chips" role="group" aria-label="주제">${chip("", "전체")}${keys.map((k) => chip(k, names[k], topics[k])).join("")}</div>`;
+  }
+
+  /** [ADMIN-02] 모두의 문의: whether others see it, and what they said: 나도 그래요 and 신고. */
+  function publicPills(q) {
+    if (!q.public) return "";
+    return (q.hidden ? '<span class="pill bad">숨김</span>' : '<span class="pill info">공개</span>') +
+      (q.same ? `<span class="pill">나도 ${q.same}</span>` : "") + (q.flags ? `<span class="pill warn">신고 ${q.flags}</span>` : "");
+  }
+
   function inquiriesView() {
     if (S.data.inquiriesMissing) {
       return empty("문의함이 아직 서버에 없어요", "앱 안 문의가 켜진 서버로 업데이트하면 여기서 바로 답할 수 있어요.");
@@ -1006,15 +1043,15 @@ function adminApp() {
     const counts = d?.counts ?? {};
     const head = `<div class="segmented" role="group" aria-label="문의 상태">
       ${seg("inquiry-status", "open", S.inquiryStatus, "답 대기", counts.open)}${seg("inquiry-status", "answered", S.inquiryStatus, "답함", counts.answered)}
-      ${seg("inquiry-status", "closed", S.inquiryStatus, "닫힘", counts.closed)}</div>`;
+      ${seg("inquiry-status", "closed", S.inquiryStatus, "닫힘", counts.closed)}</div>${topicChips(d)}`;
     if (!d) return head + skeleton();
     if (!d.inquiries.length) {
       return head + empty(S.inquiryStatus === "open" ? "답을 기다리는 문의가 없어요" : "목록이 비어 있어요", "앱에서 문의가 오면 여기와 메뉴에 숫자로 보여요.");
     }
     return head + `<ul class="rows">${d.inquiries.map((q) => `<li><a class="row${q.waiting ? " unread" : ""}" href="${href("inquiries", q.id)}">
-      <span class="row-main"><b>${esc(KIND_NAMES[q.kind] ?? "문의")}${q.appVersion ? ` <span class="meta">앱 ${esc(q.appVersion)}</span>` : ""}</b>
+      <span class="row-main"><b>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}${q.appVersion ? ` <span class="meta">앱 ${esc(q.appVersion)}</span>` : ""}</b>
         <span class="preview">${esc(q.preview)}</span></span>
-      <span class="row-side"><span>${esc(ago(q.updatedAt ?? q.createdAt))}</span>${q.count > 1 ? `<span class="pill">${q.count}</span>` : ""}</span>
+      <span class="row-side"><span>${esc(ago(q.updatedAt ?? q.createdAt))}</span>${q.count > 1 ? `<span class="pill">${q.count}</span>` : ""}${publicPills(q)}</span>
       ${icon(P.chevron)}</a></li>`).join("")}</ul>`;
   }
 
@@ -1031,11 +1068,11 @@ function adminApp() {
     const status = { open: ["warn", "답 대기"], answered: ["ok", "답함"], closed: ["", "닫힘"] }[q.status] ?? ["", q.status];
     return `<div class="cols">
       <section>
-        <div class="card"><div class="card-head"><h2>${esc(KIND_NAMES[q.kind] ?? "문의")}</h2><span class="pill ${status[0]}">${status[1]}</span></div>
+        <div class="card"><div class="card-head"><h2>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}</h2><span class="pill ${status[0]}">${status[1]}</span></div>
           <div class="thread">${thread}</div></div>
         ${editable && q.status !== "closed" ? `<form class="composer" data-form="reply">
           <label class="sr" for="reply">답</label>
-          <textarea id="reply" name="text" maxlength="2000" placeholder="보낸 분 앱에 보일 답을 적어요. 이름, 연락처, 금액은 묻지 않아요." required></textarea>
+          <textarea id="reply" name="text" maxlength="2000" placeholder="${q.public ? "보낸 분 앱과 모두의 문의에" : "보낸 분 앱에"} 보일 답을 적어요. 이름, 연락처, 금액은 묻지 않아요." required></textarea>
           <div class="chips" role="group" aria-label="자주 쓰는 답">${TEMPLATES.map(([label], i) => `<button type="button" class="chip pick" data-act="template" data-i="${i}">${esc(label)}</button>`).join("")}</div>
           <div class="actions"><span class="count" id="reply-count">0/2000</span>
             <button class="btn" type="submit" data-close="1">답하고 닫기</button><button class="btn primary" type="submit">답하기</button></div>
@@ -1044,6 +1081,12 @@ function adminApp() {
       <aside>
         <section class="card"><h2>함께 온 정보</h2><p class="hint">보낸 분이 보내기 전에 보고 동의한 정보예요.</p>
           ${ctx.length ? `<dl class="kv">${ctx.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</dd>`).join("")}</dl>` : '<p class="meta">없어요</p>'}</section>
+        ${q.public ? `<section class="card"><h2>모두의 문의</h2>
+          <p class="hint">${q.hidden ? `숨겼어요: ${esc(q.hidden.text)}. 보낸 분 앱에는 이유가 보여요.` : "앱을 쓰는 모두가 이 문의와 답을 봐요. 함께 온 정보는 개발자만 봐요."}</p>
+          <div class="chips">${publicPills(q)}${(q.reasons ?? []).map((r) => `<span class="chip">${esc(r.text)} ${r.n}</span>`).join("")}</div>
+          ${editable ? `<div class="actions start">${q.hidden ? '<button class="btn" data-act="inquiry-show">다시 보이기</button>'
+            : `${[["abuse", "욕설·비방"], ["personal", "개인 정보"], ["spam", "광고·도배"]].map(([code, label]) =>
+              `<button class="btn" data-act="inquiry-hide" data-reason="${code}">숨기기: ${label}</button>`).join("")}${q.flags && !q.kept ? '<button class="btn" data-act="inquiry-show">괜찮아요</button>' : ""}`}</div>` : ""}</section>` : ""}
         ${editable ? `<section class="card"><h2>상태</h2>
           <div class="actions start">${q.status === "closed" ? '<button class="btn" data-act="inquiry-state" data-status="open">다시 열기</button>'
             : '<button class="btn" data-act="inquiry-state" data-status="closed">닫기</button>'}</div></section>` : ""}
@@ -1579,11 +1622,27 @@ function adminApp() {
       render();
       load();
     },
+    "inquiry-topic": ({ key }) => {
+      S.inquiryTopic = key;
+      S.data.inquiries = null;
+      render();
+      load();
+    },
     template: ({ i }) => {
       const box = document.getElementById("reply");
       box.value = (box.value ? `${box.value.trimEnd()}\n\n` : "") + TEMPLATES[Number(i)][1];
       box.dispatchEvent(new Event("input", { bubbles: true }));
       box.focus();
+    },
+    "inquiry-hide": async ({ reason }) => {
+      const q = await act(() => api(`/inquiries/${S.route.id}/visibility`, "POST", { action: "hide", reason }), "숨겼어요. 보낸 분 앱에 이유가 보여요");
+      if (q) S.data.inquiry = q;
+      load();
+    },
+    "inquiry-show": async () => {
+      const q = await act(() => api(`/inquiries/${S.route.id}/visibility`, "POST", { action: "show" }), "다시 보이게 했어요. 신고로는 더 가려지지 않아요");
+      if (q) S.data.inquiry = q;
+      load();
     },
     "inquiry-state": async ({ status }) => {
       const q = await act(() => api(`/inquiries/${S.route.id}/status`, "POST", { status }), status === "closed" ? "문의를 닫았어요" : "문의를 다시 열었어요");
@@ -1955,14 +2014,27 @@ function adminApp() {
     S.installPrompt = null;
   });
 
+  /**
+   * Opens the app. The home screen's recent activity is asked for together with the numbers rather than
+   * after them; an admin who may not see it simply gets no feed. The numbers just came, so the screen's
+   * own data is all that is fetched after.
+   */
   async function enter() {
+    const home = (location.hash.replace(/^#\/?/, "").split("/")[0] || "home") === "home";
+    const feed = home ? api("/audit").catch(() => null) : null;
     S.overview = await api("/overview");
     S.me = S.overview.me;
     S.phase = "app";
     S.route = readRoute();
     if (!location.hash) history.replaceState(null, "", `/admin/${href(S.route.name)}`);
     render();
-    load({ quiet: true });
+    if (feed && S.route.name === "home") {
+      const d = await feed;
+      if (d && can("audit")) S.data.feed = d;
+      if (S.route.name === "home" && S.phase === "app") render({ keepScroll: true });
+    } else {
+      load({ quiet: true, overview: false });
+    }
   }
 
   (async () => {
@@ -1986,22 +2058,28 @@ function adminApp() {
       render();
       return;
     }
-    S.health = await health();
+    // What the server still lacks only shows on the login screen, so it is not waited for before signing in.
+    const checked = health().then((h) => { S.health = h; return h; });
     try {
       await enter();
     } catch {
+      await checked;
       S.phase = "login";
       render();
     }
   })();
 }
 
-/** The developer app's service worker: the newest files from the network, saved copies without one. */
-function adminWorker() {
-  const CACHE = "bamnat-admin-2";
+/**
+ * The developer app's service worker. The app's own files open from the phone at once and are refreshed
+ * in the background for the next time, so opening the app does not wait on the network; a new version
+ * of the app changes [version], and the phone then fetches every file again. What the API says is never kept.
+ */
+function adminWorker(version) {
+  const CACHE = `bamnat-admin-${version}`;
   const SHELL = ["/admin/", "/admin/app.js", "/admin/app.css", "/admin/icon.svg", "/admin/manifest.webmanifest", "/admin/install"];
   self.addEventListener("install", (event) => {
-    event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+    event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));
   });
   self.addEventListener("activate", (event) => {
     event.waitUntil(caches.keys()
@@ -2010,15 +2088,14 @@ function adminWorker() {
   });
   self.addEventListener("fetch", (event) => {
     const url = new URL(event.request.url);
-    // Only the app's own files; what the API says is never kept on the phone.
     if (event.request.method !== "GET" || url.origin !== self.location.origin || !url.pathname.startsWith("/admin/")) return;
-    event.respondWith(fetch(event.request).then((res) => {
-      if (res.ok) {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(event.request, copy));
-      }
+    const fresh = fetch(event.request).then(async (res) => {
+      if (res.ok) await caches.open(CACHE).then((c) => c.put(event.request, res.clone()));
       return res;
-    }).catch(() => caches.match(event.request).then((hit) => hit ?? caches.match("/admin/"))));
+    });
+    event.waitUntil(fresh.catch(() => {}));
+    event.respondWith(caches.open(CACHE).then((c) => c.match(event.request, { ignoreSearch: true }))
+      .then((hit) => hit ?? fresh.catch(() => caches.match("/admin/"))));
   });
 }
 

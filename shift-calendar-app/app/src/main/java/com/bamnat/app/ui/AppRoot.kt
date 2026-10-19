@@ -75,6 +75,10 @@ import com.bamnat.app.AppContainer
 import com.bamnat.app.alarm.Notifications
 import com.bamnat.app.ui.calendar.CalendarScreen
 import com.bamnat.app.ui.calendar.CalendarViewModel
+import com.bamnat.app.ui.calendar.CalendarsScreen
+import com.bamnat.app.ui.calendar.CalendarsViewModel
+import com.bamnat.app.ui.calendar.rememberAddCalendar
+import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.ui.components.AdSlot
 import com.bamnat.app.ui.diag.DiagnosticsScreen
 import com.bamnat.app.ui.diag.DiagnosticsViewModel
@@ -147,11 +151,19 @@ private enum class TopLevel(val route: String, val label: String, val icon: Imag
 }
 
 private object Routes {
-    const val SHIFT_TYPES = "shift_types"
-    const val PATTERN = "pattern?weekdays={weekdays}&setup={setup}"
+    // [MCAL-01] Shifts and the order are edited for one calendar: the main one unless one is named.
+    const val SHIFT_TYPES = "shift_types?calendar={calendar}"
+    const val PATTERN = "pattern?weekdays={weekdays}&setup={setup}&calendar={calendar}"
     const val WORK_STYLE = "work_style"
 
-    fun pattern(weekdays: Boolean = false, setup: Boolean = false) = "pattern?weekdays=$weekdays&setup=$setup"
+    fun shiftTypes(calendar: String = PersonalCalendar.MAIN) = "shift_types?calendar=$calendar"
+    fun pattern(weekdays: Boolean = false, setup: Boolean = false, calendar: String = PersonalCalendar.MAIN) =
+        "pattern?weekdays=$weekdays&setup=$setup&calendar=$calendar"
+
+    // [MCAL-02][MCAL-04] Setting up a new calendar, and the calendar list.
+    const val CALENDAR_SETUP = "calendar_setup/{id}"
+    const val CALENDARS = "calendars"
+    fun calendarSetup(id: String) = "calendar_setup/$id"
     const val MEMO_TRASH = "memo_trash"
     const val DIAGNOSTICS = "diagnostics?testing={testing}"
 
@@ -270,7 +282,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         val target = noticeTarget ?: return@LaunchedEffect
         when (target) {
             // Over an editor the calendar goes on top, so the editor's input is still there after back.
-            NoticeLinks.Target.TODAY -> {
+            // [SHR-12] The calendar opens its share sheet itself.
+            NoticeLinks.Target.TODAY, NoticeLinks.Target.SHARE -> {
                 val current = nav.currentBackStackEntry?.destination?.route
                 when {
                     current == TopLevel.CALENDAR.route -> Unit
@@ -447,14 +460,29 @@ private fun AppNavHost(
                 snackbarHostState = snackbar,
                 onOpenMemo = { id -> nav.navigate(Routes.memo(id)) },
                 onNewMemo = { date -> nav.navigate(Routes.memo(0, date)) },
-                onOpenPattern = { nav.navigate(Routes.pattern()) { launchSingleTop = true } },
-                onOpenShiftTypes = { nav.navigate(Routes.SHIFT_TYPES) { launchSingleTop = true } },
+                // [MCAL-01] The calendar on screen is the one these edit.
+                onOpenPattern = { nav.navigate(Routes.pattern(calendar = container.calendars.active.value)) { launchSingleTop = true } },
+                onOpenShiftTypes = { nav.navigate(Routes.shiftTypes(container.calendars.active.value)) { launchSingleTop = true } },
                 onOpenStats = { nav.navigateTopLevel(TopLevel.STATS.route) },
                 onOpenMoney = { nav.navigateTopLevel(TopLevel.MONEY.route) },
                 onOpenPay = { nav.navigate(Routes.PAY) { launchSingleTop = true } },
                 onOpenSettings = { nav.navigateTopLevel(TopLevel.SETTINGS.route) },
                 onOpenExtraKinds = { nav.navigate(Routes.EXTRA_KINDS) { launchSingleTop = true } },
+                onSetupCalendar = { id -> nav.navigate(Routes.calendarSetup(id)) { launchSingleTop = true } },
+                onManageCalendars = { nav.navigate(Routes.CALENDARS) { launchSingleTop = true } },
             )
+        }
+        composable(Routes.CALENDAR_SETUP, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+            val id = entry.arguments?.getString("id").orEmpty()
+            val vm = appViewModel(key = "calendar_setup_$id") { SetupViewModel(it, calendarId = id) }
+            val done by vm.done.collectAsStateWithLifecycle()
+            LaunchedEffect(done) { if (done) nav.popFrom(Routes.CALENDAR_SETUP) }
+            SetupHost(vm)
+        }
+        composable(Routes.CALENDARS) {
+            val vm = appViewModel { CalendarsViewModel(it) }
+            val add = rememberAddCalendar(container) { id -> nav.navigate(Routes.calendarSetup(id)) { launchSingleTop = true } }
+            CalendarsScreen(vm, onBack = { nav.popFrom(Routes.CALENDARS) }, onAddCalendar = add)
         }
         composable(TopLevel.MONEY.route) {
             val vm = appViewModel { MoneyViewModel(it) }
@@ -508,7 +536,7 @@ private fun AppNavHost(
             val nudges = appViewModel { CompanyNudgeViewModel(it) }
             SettingsScreen(
                 vm = vm,
-                onOpenShiftTypes = { nav.navigate(Routes.SHIFT_TYPES) { launchSingleTop = true } },
+                onOpenShiftTypes = { nav.navigate(Routes.shiftTypes()) { launchSingleTop = true } },
                 onOpenPattern = { nav.navigate(Routes.pattern()) { launchSingleTop = true } },
                 onOpenDiagnostics = { testing -> nav.navigate(Routes.diagnostics(testing)) { launchSingleTop = true } },
                 onOpenWorkStyle = { nav.navigate(Routes.WORK_STYLE) { launchSingleTop = true } },
@@ -527,6 +555,8 @@ private fun AppNavHost(
                     )
                 }) else null,
                 onOpenInquiry = { nav.navigate(Routes.INQUIRY) { launchSingleTop = true } },
+                onOpenBoard = if (nudges.enabled) ({ nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } }) else null,
+                onOpenCalendars = { nav.navigate(Routes.CALENDARS) { launchSingleTop = true } },
             )
         }
         composable(Routes.INQUIRY) {
@@ -559,7 +589,12 @@ private fun AppNavHost(
                 top = {
                     CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                         onFix = { nav.fixCompanySetup(it) })
-                })
+                },
+                // [ADMIN-02] 계산이 이상해요 is a question in the app; a build without the company server shares it.
+                onReport = if (container.inquiryApi.enabled) { check ->
+                    container.pendingPayCheck = check
+                    nav.navigate(Routes.INQUIRY) { launchSingleTop = true }
+                } else null)
             if (inviting) {
                 InviteSheet(nudges, onShare = { inviting = false; nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                     onDismiss = { inviting = false })
@@ -584,6 +619,7 @@ private fun AppNavHost(
                 onBack = { nav.popFrom(Routes.COMPANY_FIND) },
                 onOpen = { id -> nav.navigate(Routes.company(id, setup, weekdays)) },
                 onByHand = { nav.afterCompanyByHand(setup, weekdays, ready) },
+                onBoard = if (setup) null else ({ nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } }),
             )
         }
         composable(
@@ -681,8 +717,9 @@ private fun AppNavHost(
             val vm = appViewModel { DiagnosticsViewModel(it) }
             DiagnosticsScreen(vm = vm, testing = entry.arguments?.getBoolean("testing") == true, onBack = { nav.popFrom(Routes.DIAGNOSTICS) })
         }
-        composable(Routes.SHIFT_TYPES) {
-            val vm = appViewModel { ShiftsViewModel(it) }
+        composable(Routes.SHIFT_TYPES, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+            val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
+            val vm = appViewModel(key = "shifts_$calendar") { ShiftsViewModel(it, calendar) }
             ShiftTypesScreen(vm = vm, onBack = { nav.popFrom(Routes.SHIFT_TYPES) })
         }
         composable(
@@ -690,9 +727,11 @@ private fun AppNavHost(
             arguments = listOf(
                 navArgument("weekdays") { type = NavType.BoolType; defaultValue = false },
                 navArgument("setup") { type = NavType.BoolType; defaultValue = false },
+                navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN },
             ),
         ) { entry ->
-            val vm = appViewModel { ShiftsViewModel(it) }
+            val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
+            val vm = appViewModel(key = "shifts_$calendar") { ShiftsViewModel(it, calendar) }
             val setup = entry.arguments?.getBoolean("setup") ?: false
             PatternScreen(
                 vm = vm,
@@ -703,7 +742,7 @@ private fun AppNavHost(
                 onSaved = if (setup) ({
                     nav.navigate(Routes.PAY) { popUpTo(Routes.PATTERN) { inclusive = true }; launchSingleTop = true }
                 }) else null,
-                onOpenShiftTypes = { nav.navigate(Routes.SHIFT_TYPES) { launchSingleTop = true } },
+                onOpenShiftTypes = { nav.navigate(Routes.shiftTypes(calendar)) { launchSingleTop = true } },
             )
         }
         composable(
@@ -774,7 +813,7 @@ private fun NavHostController.afterCompanyByHand(setup: Boolean, weekdays: Boole
 private fun NavHostController.fixCompanySetup(place: FixPlace) {
     when (place) {
         FixPlace.PAY -> navigate(Routes.PAY) { launchSingleTop = true }
-        FixPlace.SHIFT_TYPES -> navigate(Routes.SHIFT_TYPES) { launchSingleTop = true }
+        FixPlace.SHIFT_TYPES -> navigate(Routes.shiftTypes()) { launchSingleTop = true }
         FixPlace.PATTERN -> navigate(Routes.pattern()) { launchSingleTop = true }
         FixPlace.NONE -> navigate(Routes.COMPANY_REPORT) { launchSingleTop = true }
     }

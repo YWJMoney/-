@@ -8,11 +8,13 @@
 // DELETE /api/reports/:id         header X-Device: the sender takes their report back
 // DELETE /api/mine                header X-Device: everything this install sent, gone
 // POST   /api/votes               맞았어요 / 달라요 on a setup [COMM-03]
-// GET    /api/board?tab=           every company's rule sets: ones still being voted on, or adopted [COMM-07]
+// GET    /api/board?tab=&q=        every company's rule sets: ones still being voted on, or adopted; q finds a company [COMM-07]
 // GET    /api/companies/:id/setups/:setup/posts   the talk on one rule set [COMM-06]
 // POST   /api/posts               a post in that talk; DELETE /api/posts/:id takes it back (header X-Device)
 // POST   /api/posts/:id/flag      신고: three people hide a post until the developer looks
 // *      /api/inquiries...        header X-Device: questions and problem reports from the app [ADMIN-02]
+// GET    /api/inquiries/public    모두의 문의: questions sent as public, with the developer's answers
+// POST   /api/inquiries/:id/same  나도 그래요; /flag 신고: three people hide a question until the developer looks
 // GET    /admin/                  the developer app, installable on a phone [ADMIN-01][ADMIN-03]
 // GET    /admin/join#<invite>     an invited admin installs the app and makes an account [ADMIN-04]
 // *      /api/admin/*             behind a sign-in: the owner's password (secret ADMIN_PASSWORD), or an
@@ -141,6 +143,7 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM invites WHERE used_at IS NULL AND expires < ?", now),
     stmt(env, "DELETE FROM codes WHERE expires < ?", now),
     stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
+    stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
     stmt(env, "DELETE FROM inquiries WHERE updated_at < ?", now - INQUIRY.keepMs),
     // [COMM-06] A hidden post nobody restored is gone after 90 days, and a 30-day 쓰기 막기 when it ends.
     stmt(env, "DELETE FROM post_flags WHERE post_id IN (SELECT id FROM posts WHERE status = 'hidden' AND hidden_at < ?)", now - LIMITS.hiddenPostDays * DAY),
@@ -158,7 +161,7 @@ async function route(request, env) {
     return new Response("User-agent: *\nDisallow: /\n", { headers: { "content-type": "text/plain; charset=utf-8" } });
   }
   if (path === "/admin") return Response.redirect(`${url.origin}/admin/`, 301);
-  if (path.startsWith("/admin/")) return adminFile(path);
+  if (path.startsWith("/admin/")) return adminFile(path, request);
   if (path === "/api/admin/health" && method === "GET") return json(health(env));
   if (!env.DB) return json({ error: "no_database" }, 503);
   await ready(env);
@@ -242,6 +245,10 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS inquiry_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, inquiry_id TEXT NOT NULL,
     sender TEXT NOT NULL, text TEXT NOT NULL, by TEXT, at INTEGER NOT NULL)`,
   "CREATE INDEX IF NOT EXISTS inquiry_messages_inquiry ON inquiry_messages (inquiry_id, id)",
+  // [ADMIN-02] 나도 그래요 (kind same) and 신고 (kind flag) on a public question, once per install each.
+  `CREATE TABLE IF NOT EXISTS inquiry_marks (inquiry_id TEXT NOT NULL, device TEXT NOT NULL, kind TEXT NOT NULL,
+    reason TEXT, at INTEGER NOT NULL, PRIMARY KEY (inquiry_id, device, kind))`,
+  "CREATE INDEX IF NOT EXISTS inquiry_marks_device ON inquiry_marks (device)",
   // Sign-ins before admin accounts kept only a token; they end once, and the owner signs in again.
   "DROP TABLE IF EXISTS sessions",
 ];
@@ -249,15 +256,34 @@ const SCHEMA = [
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
 const COLUMNS = [
   "ALTER TABLE audit ADD COLUMN actor TEXT NOT NULL DEFAULT ''",
+  // [ADMIN-02] 모두의 문의: a question sent as public, why it is hidden, its 신고, whether the developer kept it, 나도 그래요.
+  "ALTER TABLE inquiries ADD COLUMN public INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE inquiries ADD COLUMN hidden TEXT",
+  "ALTER TABLE inquiries ADD COLUMN flags INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE inquiries ADD COLUMN kept INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE inquiries ADD COLUMN same INTEGER NOT NULL DEFAULT 0",
 ];
 
 const schemas = new WeakMap();
 
-/** Tables are made on first use, so setting up the server is binding an empty D1 database. */
+/** Changes whenever SCHEMA or COLUMNS does, so a server made by this code skips making tables again. */
+const SCHEMA_VERSION = (() => {
+  let h = 5381;
+  for (const c of [...SCHEMA, ...COLUMNS].join("\n")) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0;
+  return h.toString(36);
+})();
+
+/**
+ * Tables are made on first use, so setting up the server is binding an empty D1 database. A fresh copy of
+ * the worker starts often (a quiet server is woken by each visit), so once the tables match this code it
+ * only reads one setting instead of going over every table again.
+ */
 function ready(env) {
   let done = schemas.get(env.DB);
   if (!done) {
-    done = env.DB.batch(SCHEMA.map((sql) => env.DB.prepare(sql))).then(async () => {
+    done = env.DB.prepare("SELECT value FROM settings WHERE key = 'schema'").first("value").catch(() => null).then(async (made) => {
+      if (made === SCHEMA_VERSION) return;
+      await env.DB.batch(SCHEMA.map((sql) => env.DB.prepare(sql)));
       for (const sql of COLUMNS) {
         try {
           await env.DB.prepare(sql).run();
@@ -265,6 +291,7 @@ function ready(env) {
           if (!/duplicate column/i.test(String(e?.message ?? e))) throw e;
         }
       }
+      await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema', ?)").bind(SCHEMA_VERSION).run();
     }).catch((e) => {
       schemas.delete(env.DB);
       throw e;
@@ -280,7 +307,10 @@ const all = async (env, sql, ...params) => (await stmt(env, sql, ...params).all(
 const run = (env, sql, ...params) => stmt(env, sql, ...params).run();
 
 async function settings(env) {
-  const rows = await all(env, "SELECT key, value FROM settings WHERE key IN ('adopt_points', 'reward_months', 'adopt_agree')");
+  return readSettings(await all(env, "SELECT key, value FROM settings WHERE key IN ('adopt_points', 'reward_months', 'adopt_agree')"));
+}
+
+function readSettings(rows) {
   const read = (key, fallback) => {
     const n = Number(rows.find((r) => r.key === key)?.value);
     return Number.isInteger(n) ? n : fallback;
@@ -1063,8 +1093,16 @@ async function score(env, companyId, grp) {
     SELECT device, points, cluster FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted')
     UNION ALL
     SELECT device, CASE WHEN verified = 1 THEN 2 ELSE 1 END, cluster FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1`, companyId, grp);
-  const doubters = new Set((await all(env, "SELECT device FROM votes WHERE company_id = ? AND grp = ? AND ok = 0", companyId, grp))
-    .map((v) => v.device));
+  const doubters = (await all(env, "SELECT device FROM votes WHERE company_id = ? AND grp = ? AND ok = 0", companyId, grp)).map((v) => v.device);
+  return tally(rows, doubters);
+}
+
+/**
+ * The score from what was sent and voted, read for many setups at once: [rows] are the reports still
+ * pending or adopted and the 맞았어요 votes (device, points, cluster), [doubterDevices] the 달라요 votes.
+ */
+function tally(rows, doubterDevices) {
+  const doubters = new Set(doubterDevices);
   const people = new Map();
   const networks = new Set();
   for (const r of rows) {
@@ -1190,6 +1228,10 @@ async function forgetMine(request, env) {
     stmt(env, "DELETE FROM post_flags WHERE device = ? OR post_id NOT IN (SELECT id FROM posts)", dev),
     stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE device = ?)", dev),
     stmt(env, "DELETE FROM inquiries WHERE device = ?", dev),
+    // [ADMIN-02] Their 나도 그래요 and 신고 on others' questions go too, and those count one fewer.
+    stmt(env, `UPDATE inquiries SET same = same - 1 WHERE id IN (SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'same')`, dev),
+    stmt(env, `UPDATE inquiries SET flags = flags - 1 WHERE id IN (SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'flag')`, dev),
+    stmt(env, "DELETE FROM inquiry_marks WHERE device = ? OR inquiry_id NOT IN (SELECT id FROM inquiries)", dev),
   ]);
   return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes });
 }
@@ -1252,20 +1294,24 @@ async function board(env, url) {
   const offset = Math.min(600, Math.max(0, Number.parseInt(url.searchParams.get("from") ?? "0", 10) || 0));
   const size = 20;
   const { adoptPoints } = await settings(env);
+  // A company's name or another name for it, written any way 회사 찾기 accepts; one letter narrows nothing.
+  const q = normName(url.searchParams.get("q")).slice(0, 40);
+  const like = q.length < 2 ? "" : `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const named = `(?3 = '' OR c.norm LIKE ?3 ESCAPE '\\' OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.norm LIKE ?3 ESCAPE '\\'))`;
   const rows = tab === "adopted"
     ? await all(env, `SELECT r.company_id, r.grp, r.dept, r.setup, r.version, r.adopted_at AS at, c.name
         FROM rules r JOIN companies c ON c.id = r.company_id
-        WHERE r.withdrawn = 0 AND r.superseded = 0 AND c.hidden = 0 AND c.merged_into IS NULL
-        ORDER BY r.adopted_at DESC LIMIT ? OFFSET ?`, size + 1, offset)
+        WHERE r.withdrawn = 0 AND r.superseded = 0 AND c.hidden = 0 AND c.merged_into IS NULL AND ${named}
+        ORDER BY r.adopted_at DESC LIMIT ?1 OFFSET ?2`, size + 1, offset, like)
     : await all(env, `SELECT p.company_id, p.grp, c.name,
           MAX(MAX(p.created_at),
             COALESCE((SELECT MAX(v.at) FROM votes v WHERE v.company_id = p.company_id AND v.grp = p.grp), 0),
             COALESCE((SELECT MAX(t.created_at) FROM posts t WHERE t.company_id = p.company_id AND t.grp = p.grp AND t.status = 'shown'), 0)) AS at
         FROM reports p JOIN companies c ON c.id = p.company_id
-        WHERE p.status = 'pending' AND c.hidden = 0 AND c.merged_into IS NULL
+        WHERE p.status = 'pending' AND c.hidden = 0 AND c.merged_into IS NULL AND ${named}
           AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = p.company_id AND x.grp = p.grp AND x.status = 'rejected')
           AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = p.company_id AND w.grp = p.grp AND (w.withdrawn = 1 OR w.superseded = 0))
-        GROUP BY p.company_id, p.grp ORDER BY at DESC LIMIT ? OFFSET ?`, size + 1, offset);
+        GROUP BY p.company_id, p.grp ORDER BY at DESC LIMIT ?1 OFFSET ?2`, size + 1, offset, like);
   const items = [];
   for (const r of rows.slice(0, size)) {
     const rep = tab === "adopted" ? r : await representative(env, r.company_id, r.grp);
@@ -1284,7 +1330,7 @@ async function board(env, url) {
       pay: lines.some(([label]) => label === "사업장"),
     });
   }
-  return { tab, items, next: rows.length > size ? offset + size : null, threshold: adoptPoints };
+  return { tab, ...(like ? { q } : {}), items, next: rows.length > size ? offset + size : null, threshold: adoptPoints };
 }
 
 /** A rule set people may talk about: adopted and in use, or still gathering votes. */
@@ -1307,7 +1353,7 @@ async function talk(request, env, companyId, grp) {
   if (!c) return json({ error: "not_found" }, 404);
   const device = deviceId(request.headers.get("x-device"));
   const me = device ? await deviceHash(device) : null;
-  const rows = await all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, id LIMIT 500", c.id, grp);
+  const rows = await all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, rowid LIMIT 500", c.id, grp);
   const senders = new Set((await all(env, `SELECT device FROM reports WHERE company_id = ? AND grp = ? AND status IN ('pending', 'adopted')`,
     c.id, grp)).map((r) => r.device));
   const votes = new Map((await all(env, "SELECT device, ok, verified FROM votes WHERE company_id = ? AND grp = ?", c.id, grp))
@@ -1407,13 +1453,15 @@ async function flag(request, env, id) {
 // 설정 > 문의하기 sends here instead of opening a mail app, and the developer answers in /admin; the
 // answer shows in the app. Like a report it carries no amount, contact or name: those are refused, not
 // cleaned. What goes with it (app version, phone model, Android, the alarm check if the user ticks it)
-// is shown in the app before sending. Only the install's hash is kept, so only that phone sees the
-// thread, and a thread with nothing new for 180 days is deleted.
+// is shown in the app before sending. Only the install's hash is kept, so only that phone can write to,
+// or delete, the thread, and a thread with nothing new for 180 days is deleted. A question sent as
+// public is also in 모두의 문의 (below), without anything that went with it.
 
 const INQUIRY = {
   kinds: ["question", "bug", "idea"],
   text: 2000,
   diag: 6000,
+  pay: 3000,
   bytes: 16 * 1024,
   perDay: 5,
   perNetworkDay: 20,
@@ -1429,12 +1477,57 @@ const INQUIRY_INFO = [
   ["기기", "model", 80],
   ["Android", "android", 40],
   ["알람 점검", "diag", INQUIRY.diag],
+  // 급여 > 계산이 이상해요: the month's rules and each line's hours and rate, never an amount.
+  ["급여 계산", "pay", INQUIRY.pay],
 ];
+
+// ---- sorting questions without reading each one [ADMIN-02] ----
+//
+// Every question gets a topic and an urgency from its words, its kind and what came with it, worked
+// out when the list is read, so better words sort old questions too and nothing new is stored. The
+// developer filters by topic and sees the urgent ones first instead of opening each to sort it.
+
+/** Topic, label and the words that point to it; the most matched topic wins, the first on a tie. */
+const INQUIRY_TOPICS = [
+  ["alarm", "알람", /알람|울리|울려|울림|소리|진동|깨워|스누즈|다시\s*울/g],
+  ["pay", "급여 계산", /급여|월급|시급|일당|연봉|수당|가산|명세서|통상임금|주휴|연차|퇴직|세금|4대\s*보험|계산/g],
+  ["schedule", "근무표·달력", /근무표|달력|캘린더|교대|패턴|근무\s*유형|대근|휴무|비번|야간|주간|오프|일정|메모/g],
+  ["share", "공유", /공유|링크|상대방|가족|동기화|받은\s*사람|보낸\s*사람/g],
+  ["company", "회사 설정", /회사|부서|규칙|투표|토론|채택/g],
+  ["backup", "백업·기기 이동", /백업|복원|새\s*(폰|휴대폰|기기)|기기\s*변경|옮기|가져오기|내보내기/g],
+  ["billing", "결제", /결제|구독|프리미엄|환불|구매|광고|유료|무료/g],
+  ["app", "앱 동작", /멈춰|멈춤|멈추|꺼져|꺼짐|튕|강제\s*종료|오류|에러|버그|안\s*열|안\s*켜|느려|느림|로딩|하얀\s*화면|검은\s*화면|위젯|워치|잠금\s*화면|배터리|업데이트/g],
+];
+const TOPIC_NAMES = Object.fromEntries([...INQUIRY_TOPICS.map(([key, label]) => [key, label]), ["etc", "기타"]]);
+
+/** Words that make a problem urgent: an alarm that did not ring, an app that will not open, money paid. */
+const URGENT = /안\s*울|못\s*(들|일어)|놓쳤|늦게\s*울|지각|안\s*열|안\s*켜|튕|강제\s*종료|꺼져|데이터.{0,6}(사라|없어|날아)|사라졌|환불|결제.{0,6}(안|됐|두\s*번)/;
+
+/** What the list and a thread show for sorting: topic, its label and how soon it needs an answer. */
+function triage(kind, text, info) {
+  const t = String(text ?? "");
+  let topic = "etc";
+  let best = 0;
+  for (const [key, , re] of INQUIRY_TOPICS) {
+    const n = t.match(re)?.length ?? 0;
+    if (n > best) [topic, best] = [key, n];
+  }
+  // What came with it says more than any word: 계산이 이상해요 sends the pay check, the alarm form its check.
+  if (info?.pay) topic = "pay";
+  else if (best === 0 && info?.diag) topic = "alarm";
+  const urgency = kind === "idea" ? "low" : URGENT.test(t) ? "urgent" : "normal";
+  return { topic, topicName: TOPIC_NAMES[topic], urgency };
+}
 
 async function inquiries(request, env, path) {
   const method = request.method;
   const device = deviceId(request.headers.get("x-device"));
   if (path === "/api/inquiries" && method === "POST") return ask(request, env);
+  if (path === "/api/inquiries/public" && method === "GET") return publicList(env, new URL(request.url).searchParams, device);
+  const pub = path.match(/^\/api\/inquiries\/public\/([A-Za-z0-9]{22})$/);
+  if (pub && method === "GET") return publicThread(env, pub[1], device);
+  const mark = path.match(/^\/api\/inquiries\/([A-Za-z0-9]{22})\/(same|flag)$/);
+  if (mark && method === "POST") return inquiryMark(request, env, mark[1], mark[2]);
   if (!device) return json({ error: "device", field: "device" }, 400);
   const dev = await deviceHash(device);
   if (path === "/api/inquiries" && method === "GET") {
@@ -1452,6 +1545,7 @@ async function inquiries(request, env, path) {
   if (!m[2] && method === "DELETE") {
     await env.DB.batch([
       stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id = ?", row.id),
+      stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id = ?", row.id),
       stmt(env, "DELETE FROM inquiries WHERE id = ?", row.id),
     ]);
     return new Response(null, { status: 204 });
@@ -1490,11 +1584,13 @@ async function ask(request, env) {
   }
   const id = randomId(22);
   await env.DB.batch([
-    stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'open', ?, ?)",
-      id, dev, body.kind, JSON.stringify(info), now, now),
+    // Only an app that says so on its form sends public: true; a question from an older app stays the developer's.
+    stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at) VALUES (?, ?, ?, ?, 'open', ?, ?, ?)",
+      id, dev, body.kind, JSON.stringify(info), body.public === true ? 1 : 0, now, now),
     stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, text, now),
     // Threads with nothing new for half a year go, answers and all.
     stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
+    stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
     stmt(env, "DELETE FROM inquiries WHERE updated_at < ?", now - INQUIRY.keepMs),
     stmt(env, "DELETE FROM counters WHERE expires < ?", now),
   ]);
@@ -1524,6 +1620,7 @@ function inquiryInfo(v) {
     if (x === undefined || x === null || x === "") continue;
     if (typeof x !== "string" || [...x].length > longest) refuse("info", key);
     if (key !== "diag" && personal(x) === "email") refuse("info", key);
+    if (key === "pay" && personal(x)) refuse("info", key);
     out[key] = x.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
   }
   return out;
@@ -1541,12 +1638,20 @@ async function inquiryView(env, row, admin = false) {
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
     messages: messages.map((m) => ({ from: m.sender, text: m.text, at: iso(m.at), ...(admin && m.by ? { by: m.by } : {}) })),
+    public: row.public === 1,
+    same: row.same ?? 0,
+    ...(row.hidden ? { hidden: { code: row.hidden, text: INQUIRY_HIDE[row.hidden] ?? "" } } : {}),
   };
   if (!admin) return view;
   const info = JSON.parse(row.info);
   const context = {};
   for (const [label, key] of INQUIRY_INFO) if (info[key]) context[label] = info[key];
-  return { ...view, appVersion: info.app ?? null, context };
+  const reasons = await all(env, `SELECT reason, COUNT(*) AS n FROM inquiry_marks WHERE inquiry_id = ? AND kind = 'flag'
+    GROUP BY reason ORDER BY n DESC, reason`, row.id);
+  return {
+    ...view, appVersion: info.app ?? null, context, ...triage(row.kind, messages.find((m) => m.sender === "user")?.text, info),
+    flags: row.flags ?? 0, kept: row.kept === 1, reasons: reasons.map((r) => ({ code: r.reason, text: FLAGS[r.reason] ?? r.reason, n: r.n })),
+  };
 }
 
 /** Who answered: the signed-in admin's name once there are admin accounts, else "admin". */
@@ -1557,10 +1662,120 @@ function actorName(env) {
 }
 
 /** /api/admin/inquiries: the list, one thread, an answer and open or closed. */
+// ---- 모두의 문의 [ADMIN-02] ----
+//
+// A question sent from an app that says so on its form is public: anyone with the app reads it and the
+// developer's answers, says 나도 그래요 or 신고s it. The writer is never named, and what went with the
+// question (app, phone, alarm check, pay check) stays with the developer. A question sent before was
+// promised to the developer only, so it stays private. Three 신고 hide it until the developer looks.
+
+/** Why a public question is hidden, as its writer's app shows it. */
+const INQUIRY_HIDE = {
+  abuse: "욕설이나 비방이 있어요",
+  personal: "개인 정보가 있어요",
+  spam: "광고나 도배예요",
+  flags: "신고가 모여 개발자가 확인하고 있어요",
+};
+
+const PUBLIC_PAGE = 30;
+
+/** What anyone sees of a public question in the list. */
+function publicItem(r, me, sameByMe) {
+  return {
+    id: r.id,
+    kind: r.kind,
+    status: r.status,
+    preview: [...(r.first ?? "")].slice(0, 160).join(""),
+    answers: r.answers,
+    same: r.same,
+    sameByMe: sameByMe.has(r.id),
+    mine: r.device === me,
+    createdAt: iso(r.created_at),
+    updatedAt: iso(r.updated_at),
+    ...triage(r.kind, r.first, JSON.parse(r.info)),
+  };
+}
+
+/** 모두의 문의, newest activity first or most 나도 그래요 first, one topic or all, a page at a time. */
+async function publicList(env, params, device) {
+  const me = device ? await deviceHash(device) : null;
+  const topic = Object.hasOwn(TOPIC_NAMES, params.get("topic") ?? "") ? params.get("topic") : null;
+  const order = params.get("sort") === "same" ? "i.same DESC, i.updated_at DESC" : "i.updated_at DESC";
+  const offset = Math.max(0, Math.min(Number.parseInt(params.get("after") ?? "0", 10) || 0, 1000));
+  const rows = await all(env, `SELECT i.id, i.kind, i.status, i.info, i.same, i.device, i.created_at, i.updated_at,
+      (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
+      (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin') AS answers
+    FROM inquiries i WHERE i.public = 1 AND i.hidden IS NULL ORDER BY ${order} LIMIT 500`);
+  const sameByMe = new Set(me ? (await all(env, "SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'same'", me))
+    .map((r) => r.inquiry_id) : []);
+  const items = rows.map((r) => publicItem(r, me, sameByMe));
+  const topics = {};
+  for (const i of items) topics[i.topic] = (topics[i.topic] ?? 0) + 1;
+  const shown = items.filter((i) => !topic || i.topic === topic);
+  const page = shown.slice(offset, offset + PUBLIC_PAGE);
+  return json({ topics, topicNames: TOPIC_NAMES, inquiries: page, next: offset + PUBLIC_PAGE < shown.length ? offset + PUBLIC_PAGE : null });
+}
+
+/** One public question with every message; its writer also sees it while hidden, with why. */
+async function publicThread(env, id, device) {
+  const me = device ? await deviceHash(device) : null;
+  const row = await one(env, "SELECT * FROM inquiries WHERE id = ? AND public = 1", id);
+  if (!row || (row.hidden && row.device !== me)) return json({ error: "not_found" }, 404);
+  const messages = await messagesOf(env, row.id);
+  const marks = me ? await all(env, "SELECT kind FROM inquiry_marks WHERE inquiry_id = ? AND device = ?", row.id, me) : [];
+  return json({
+    id: row.id,
+    kind: row.kind,
+    status: row.status,
+    same: row.same,
+    sameByMe: marks.some((m) => m.kind === "same"),
+    flaggedByMe: marks.some((m) => m.kind === "flag"),
+    mine: row.device === me,
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
+    messages: messages.map((m) => ({ from: m.sender === "user" ? "user" : "admin", text: m.text, at: iso(m.at) })),
+    ...triage(row.kind, messages.find((m) => m.sender === "user")?.text, JSON.parse(row.info)),
+    ...(row.hidden ? { hidden: { code: row.hidden, text: INQUIRY_HIDE[row.hidden] ?? "" } } : {}),
+  });
+}
+
+/** 나도 그래요 (on: false takes it back) or 신고, once per install; not on one's own question. */
+async function inquiryMark(request, env, id, kind) {
+  const body = await readJson(request, 1024);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  const now = Date.now();
+  const net = await network(request, env, now);
+  if (!(await allow(env, `vote|${net.now}`, LIMITS.votesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
+  const dev = await deviceHash(device);
+  const row = await one(env, "SELECT * FROM inquiries WHERE id = ? AND public = 1 AND hidden IS NULL", id);
+  if (!row) return json({ error: "not_found" }, 404);
+  if (row.device === dev) return json({ error: "own" }, 400);
+  if (kind === "same") {
+    await env.DB.batch([
+      body.on === false
+        ? stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id = ? AND device = ? AND kind = 'same'", id, dev)
+        : stmt(env, "INSERT OR IGNORE INTO inquiry_marks (inquiry_id, device, kind, reason, at) VALUES (?, ?, 'same', NULL, ?)", id, dev, now),
+      stmt(env, "UPDATE inquiries SET same = (SELECT COUNT(*) FROM inquiry_marks WHERE inquiry_id = ?1 AND kind = 'same') WHERE id = ?1", id),
+    ]);
+    const after = await one(env, "SELECT same FROM inquiries WHERE id = ?", id);
+    return json({ same: after.same, sameByMe: body.on !== false });
+  }
+  const reason = Object.hasOwn(FLAGS, body.reason) && body.reason !== "false" ? body.reason : "abuse";
+  const added = await run(env, "INSERT OR IGNORE INTO inquiry_marks (inquiry_id, device, kind, reason, at) VALUES (?, ?, 'flag', ?, ?)", id, dev, reason, now);
+  if (added.meta.changes) {
+    await run(env, `UPDATE inquiries SET flags = flags + 1,
+        hidden = CASE WHEN kept = 0 AND flags + 1 >= ?2 THEN 'flags' ELSE hidden END WHERE id = ?1`, id, LIMITS.flagsToHide);
+    const after = await one(env, "SELECT hidden FROM inquiries WHERE id = ?", id);
+    if (after.hidden) await audit(env, now, "inquiry_autohide", id);
+  }
+  return json({ ok: true });
+}
+
 async function adminInquiries(request, env, url, path, now) {
   const method = request.method;
   if (path === "/inquiries" && method === "GET") return json(await inquiryList(env, url.searchParams));
-  const m = path.match(/^\/inquiries\/([A-Za-z0-9]{22})(\/reply|\/status)?$/);
+  const m = path.match(/^\/inquiries\/([A-Za-z0-9]{22})(\/reply|\/status|\/visibility)?$/);
   if (!m) return json({ error: "not_found" }, 404);
   const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", m[1]);
   if (!row) return json({ error: "not_found" }, 404);
@@ -1576,6 +1791,22 @@ async function adminInquiries(request, env, url, path, now) {
       stmt(env, "UPDATE inquiries SET status = ?, updated_at = ? WHERE id = ?", status, now, row.id),
     ]);
     await audit(env, now, "inquiry_reply", row.id, status);
+  } else if (m[2] === "/visibility") {
+    // 모두의 문의: hide (with a reason the writer's app shows) or show again; either way 신고 no longer hides it.
+    if (!row.public) refuse("public", "action");
+    if (body.action === "hide") {
+      const reason = Object.hasOwn(INQUIRY_HIDE, body.reason) && body.reason !== "flags" ? body.reason : "abuse";
+      await run(env, "UPDATE inquiries SET hidden = ?, kept = 1 WHERE id = ?", reason, row.id);
+      await audit(env, now, "inquiry_hide", row.id, reason);
+    } else if (body.action === "show") {
+      await env.DB.batch([
+        stmt(env, "UPDATE inquiries SET hidden = NULL, kept = 1, flags = 0 WHERE id = ?", row.id),
+        stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id = ? AND kind = 'flag'", row.id),
+      ]);
+      await audit(env, now, "inquiry_show", row.id);
+    } else {
+      refuse("action", "action");
+    }
   } else {
     if (!["open", "closed"].includes(body.status)) refuse("status", "status");
     // Opening or closing is the developer's bookkeeping; it does not keep a thread from its 180 days.
@@ -1589,33 +1820,50 @@ async function adminInquiries(request, env, url, path, now) {
 async function inquiryList(env, params) {
   const status = ["open", "answered", "closed"].includes(params.get("status")) ? params.get("status") : null;
   const q = String(params.get("q") ?? "").trim().slice(0, 40);
+  const topic = Object.hasOwn(TOPIC_NAMES, params.get("topic") ?? "") ? params.get("topic") : null;
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-  const rows = await all(env, `SELECT i.*,
+  const [rows, statusRows] = (await env.DB.batch([stmt(env, `SELECT i.*,
       (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id) AS count,
       (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
       (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last
     FROM inquiries i
     WHERE (?1 IS NULL OR i.status = ?1)
       AND (?2 = '' OR EXISTS (SELECT 1 FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.text LIKE ?3 ESCAPE '\\'))
-    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 200`, status, q, like);
+    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 200`, status, q, like),
+  stmt(env, "SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status")])).map((r) => r.results);
   const counts = { open: 0, answered: 0, closed: 0 };
-  for (const r of await all(env, "SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status")) {
+  for (const r of statusRows) {
     if (Object.hasOwn(counts, r.status)) counts[r.status] = r.n;
   }
-  return {
-    counts,
-    inquiries: rows.map((r) => ({
+  const listed = rows.map((r) => {
+    const info = JSON.parse(r.info);
+    return {
       id: r.id,
       kind: r.kind,
       status: r.status,
       preview: [...(r.first ?? "")].slice(0, 120).join(""),
       count: r.count,
       waiting: r.last === "user",
-      appVersion: JSON.parse(r.info).app ?? null,
+      appVersion: info.app ?? null,
       createdAt: iso(r.created_at),
       updatedAt: iso(r.updated_at),
-    })),
-  };
+      ...triage(r.kind, r.first, info),
+      public: r.public === 1,
+      hidden: r.hidden ?? null,
+      flags: r.flags ?? 0,
+      same: r.same ?? 0,
+    };
+  });
+  // How many of this view are in each topic, so the filter shows where the questions pile up.
+  const topics = {};
+  for (const i of listed) topics[i.topic] = (topics[i.topic] ?? 0) + 1;
+  const rank = { urgent: 0, normal: 1, low: 2 };
+  // Among those waiting for an answer: urgent first, then the ones most people said 나도 그래요 to; the rest
+  // stay newest first.
+  const waits = (i) => (i.status === "open" ? 0 : 1);
+  const shown = listed.filter((i) => !topic || i.topic === topic)
+    .sort((a, b) => waits(a) - waits(b) || (waits(a) === 0 ? rank[a.urgency] - rank[b.urgency] || b.same - a.same : 0));
+  return { counts, topics, topicNames: TOPIC_NAMES, inquiries: shown };
 }
 
 // ---- the developer app's API [ADMIN-01] ----
@@ -1790,12 +2038,12 @@ async function signedIn(request, env, now) {
   const token = (request.headers.get("cookie") ?? "").split(/;\s*/).find((c) => c.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1);
   if (!token || !/^[A-Za-z0-9]{40}$/.test(token)) return null;
   const hash = await sha256(`session|${token}`);
-  const row = await one(env, "SELECT admin, expires FROM admin_sessions WHERE token = ?", hash);
-  if (!row || row.expires <= now) return null;
-  if (row.admin === OWNER.id) return { token: hash, actor: OWNER };
-  // Read on every call, so a pause or a change of permissions applies at once.
-  const account = await one(env, "SELECT * FROM admins WHERE id = ? AND status = 'active'", row.admin);
-  return account ? { token: hash, actor: actorOf(account) } : null;
+  // The account is read with the session on every call, so a pause or a change of permissions applies at once.
+  const row = await one(env, `SELECT s.admin AS session_admin, s.expires AS session_expires, a.* FROM admin_sessions s
+    LEFT JOIN admins a ON a.id = s.admin AND a.status = 'active' WHERE s.token = ?`, hash);
+  if (!row || row.session_expires <= now) return null;
+  if (row.session_admin === OWNER.id) return { token: hash, actor: OWNER };
+  return row.id ? { token: hash, actor: actorOf(row) } : null;
 }
 
 const actorOf = (a) => ({ id: a.id, name: a.name, email: a.email, owner: false, perms: readPerms(a.perms) });
@@ -2083,45 +2331,128 @@ async function auditLog(env, url) {
 
 /** The home screen's numbers, only for the areas this admin can see. */
 async function overview(env, actor) {
-  const count = async (sql) => (await one(env, sql)).n;
-  const out = { me: me(actor), settings: await settings(env), reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS, flagReasons: FLAGS,
-    salt: secretIssue(env, "RATE_SALT", 1) === null };
+  // One trip to the database for every number: the home screen waits on this call.
+  const counts = { settings: "SELECT key, value FROM settings WHERE key IN ('adopt_points', 'reward_months', 'adopt_agree')" };
   if (can(actor, "review")) {
-    out.pending = await count("SELECT COUNT(*) AS n FROM (SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending')");
-    out.asks = await count("SELECT COUNT(*) AS n FROM reports WHERE status = 'ask'");
-    out.flagged = await count(`SELECT COUNT(*) AS n FROM rules r WHERE r.withdrawn = 0 AND r.superseded = 0
-      AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0)`);
-    out.reports = await count("SELECT COUNT(*) AS n FROM reports");
+    counts.pending = "SELECT COUNT(*) AS n FROM (SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending')";
+    counts.asks = "SELECT COUNT(*) AS n FROM reports WHERE status = 'ask'";
+    counts.flagged = `SELECT COUNT(*) AS n FROM rules r WHERE r.withdrawn = 0 AND r.superseded = 0
+      AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0)`;
+    counts.reports = "SELECT COUNT(*) AS n FROM reports";
   }
-  if (can(actor, "inquiries")) out.inquiries = await count("SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open'");
-  if (can(actor, "rewards")) out.owed = await count("SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'");
+  if (can(actor, "inquiries")) counts.inquiries = "SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open'";
+  if (can(actor, "rewards")) counts.owed = "SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'";
   if (can(actor, "community")) {
     // [COMM-06] Flagged posts still shown, and ones the flags hid that nobody has looked at yet.
-    out.flaggedPosts = await count("SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')");
-    out.posts = await count("SELECT COUNT(*) AS n FROM posts WHERE status = 'shown'");
+    counts.flaggedPosts = "SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')";
+    counts.posts = "SELECT COUNT(*) AS n FROM posts WHERE status = 'shown'";
   }
   if (can(actor, "companies")) {
-    out.companies = await count("SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL");
-    out.rules = await count("SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0");
+    counts.companies = "SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL";
+    counts.rules = "SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0";
   }
-  if (actor.owner) out.admins = { waiting: await count("SELECT COUNT(*) AS n FROM admins WHERE status = 'pending'") };
+  if (actor.owner) counts.waiting = "SELECT COUNT(*) AS n FROM admins WHERE status = 'pending'";
+  const keys = Object.keys(counts);
+  const results = await env.DB.batch(keys.map((k) => env.DB.prepare(counts[k])));
+  const got = Object.fromEntries(keys.map((k, i) => [k, results[i].results]));
+  const out = { me: me(actor), settings: readSettings(got.settings), reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS,
+    flagReasons: FLAGS, salt: secretIssue(env, "RATE_SALT", 1) === null };
+  for (const k of keys) {
+    if (k === "settings" || k === "waiting") continue;
+    out[k] = got[k][0].n;
+  }
+  if (actor.owner) out.admins = { waiting: got.waiting[0].n };
   return out;
 }
 
-/** Setups waiting for a decision, the ones with most behind them first, and rules people doubt. */
+/** Rows of [list] grouped by company and setup. */
+function byGroup(list) {
+  const out = new Map();
+  for (const r of list) {
+    const key = `${r.company_id}/${r.grp}`;
+    if (!out.has(key)) out.set(key, []);
+    out.get(key).push(r);
+  }
+  return out;
+}
+
+/** The score of each setup in [reports] (pending or adopted) and [votes], keyed company/setup. */
+function tallies(reports, votes) {
+  const sent = byGroup(reports);
+  const voted = byGroup(votes);
+  const keys = new Set([...sent.keys(), ...voted.keys()]);
+  const out = new Map();
+  for (const key of keys) {
+    const v = voted.get(key) ?? [];
+    const rows = [...(sent.get(key) ?? []).map((r) => ({ device: r.device, points: r.points, cluster: r.cluster })),
+      ...v.filter((x) => x.ok === 1).map((x) => ({ device: x.device, points: x.verified === 1 ? 2 : 1, cluster: x.cluster }))];
+    out.set(key, tally(rows, v.filter((x) => x.ok === 0).map((x) => x.device)));
+  }
+  return out;
+}
+
+const NO_SCORE = { points: 0, persons: 0, networks: 0, bad: 0 };
+
+/**
+ * Setups waiting for a decision, the ones with most behind them first, and rules people doubt. Everything
+ * is read in one trip to the database, however many setups wait.
+ */
 async function queue(env) {
-  const { adoptPoints, adoptAgree } = await settings(env);
-  const groups = await all(env, `SELECT company_id, grp, MAX(created_at) AS last FROM reports WHERE status = 'pending'
-    GROUP BY company_id, grp ORDER BY last DESC LIMIT 60`);
+  // The same 60 setups in every statement: one order with nothing left to chance, read in one batch.
+  const waiting = `WITH g AS (SELECT company_id, grp, MAX(created_at) AS last FROM reports WHERE status = 'pending'
+    GROUP BY company_id, grp ORDER BY last DESC, company_id, grp LIMIT 60)`;
+  const doubted = `WITH f AS (SELECT r.id FROM rules r WHERE r.withdrawn = 0 AND r.superseded = 0
+    AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0) ORDER BY r.id LIMIT 30),
+    fg AS (SELECT DISTINCT r.company_id, r.grp FROM rules r JOIN f ON f.id = r.id)`;
+  const [settingRows, groups, companyRows, reports, votes, posts, ruleRows, rejected, flaggedRows, flaggedReports, flaggedVotes, askRows] =
+    (await env.DB.batch([
+      env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('adopt_points', 'reward_months', 'adopt_agree')"),
+      env.DB.prepare(`${waiting} SELECT * FROM g`),
+      env.DB.prepare(`${waiting} SELECT id, name, hidden FROM companies WHERE id IN (SELECT company_id FROM g)`),
+      env.DB.prepare(`${waiting} SELECT r.* FROM reports r JOIN g ON g.company_id = r.company_id AND g.grp = r.grp
+        WHERE r.status IN ('pending', 'adopted')`),
+      env.DB.prepare(`${waiting} SELECT v.company_id, v.grp, v.device, v.ok, v.verified, v.cluster FROM votes v
+        JOIN g ON g.company_id = v.company_id AND g.grp = v.grp`),
+      env.DB.prepare(`${waiting} SELECT p.company_id, p.grp, COUNT(*) AS n FROM posts p JOIN g ON g.company_id = p.company_id AND g.grp = p.grp
+        WHERE p.status = 'shown' GROUP BY p.company_id, p.grp`),
+      env.DB.prepare(`${waiting} SELECT id, company_id, dept_norm, grp, version, setup, withdrawn, superseded FROM rules
+        WHERE company_id IN (SELECT company_id FROM g)`),
+      env.DB.prepare(`${waiting} SELECT DISTINCT r.company_id, r.grp FROM reports r JOIN g ON g.company_id = r.company_id AND g.grp = r.grp
+        WHERE r.status = 'rejected'`),
+      env.DB.prepare(`${doubted}
+        SELECT r.id, r.company_id, r.grp, r.dept, r.version, r.setup, c.name,
+          SUM(CASE WHEN v.ok = 0 AND v.why = 'name' THEN 1 ELSE 0 END) AS names,
+          SUM(CASE WHEN v.ok = 0 AND v.why = 'old' THEN 1 ELSE 0 END) AS old
+        FROM f JOIN rules r ON r.id = f.id JOIN companies c ON c.id = r.company_id
+          JOIN votes v ON v.company_id = r.company_id AND v.grp = r.grp
+        GROUP BY r.id`),
+      env.DB.prepare(`${doubted} SELECT r.company_id, r.grp, r.device, r.points, r.cluster FROM reports r
+        JOIN fg ON fg.company_id = r.company_id AND fg.grp = r.grp WHERE r.status IN ('pending', 'adopted')`),
+      env.DB.prepare(`${doubted} SELECT v.company_id, v.grp, v.device, v.ok, v.verified, v.cluster FROM votes v
+        JOIN fg ON fg.company_id = v.company_id AND fg.grp = v.grp`),
+      env.DB.prepare(`SELECT p.id, p.company_id, p.dept, p.note, p.verified, p.setup, p.created_at, c.name
+        FROM reports p JOIN companies c ON c.id = p.company_id WHERE p.status = 'ask' ORDER BY p.created_at LIMIT 60`),
+    ])).map((r) => r.results);
+  const { adoptPoints, adoptAgree } = readSettings(settingRows);
+  const companiesById = new Map(companyRows.map((c) => [c.id, c]));
+  const sent = byGroup(reports);
+  const scores = tallies(reports, votes);
+  const postCounts = new Map(posts.map((p) => [`${p.company_id}/${p.grp}`, p.n]));
+  const turnedDown = new Set(rejected.map((r) => `${r.company_id}/${r.grp}`));
   const out = [];
   for (const g of groups) {
-    const c = await one(env, "SELECT id, name, hidden FROM companies WHERE id = ?", g.company_id);
-    const rep = await representative(env, g.company_id, g.grp);
-    const s = await score(env, g.company_id, g.grp);
-    const reports = await all(env, `SELECT id, verified, note, created_at FROM reports WHERE company_id = ? AND grp = ? AND status = 'pending'
-      ORDER BY created_at`, g.company_id, g.grp);
-    const active = await activeRule(env, g.company_id, rep.dept_norm);
-    const why = await blocker(env, g.company_id, g.grp, rep.dept_norm);
+    const key = `${g.company_id}/${g.grp}`;
+    const c = companiesById.get(g.company_id);
+    const mine = sent.get(key) ?? [];
+    // The report a setup is shown and adopted from, as representative() picks it.
+    const rep = [...mine].sort((a, b) => b.verified - a.verified || b.created_at - a.created_at)[0];
+    const s = scores.get(key) ?? NO_SCORE;
+    const pending = mine.filter((r) => r.status === "pending").sort((a, b) => a.created_at - b.created_at);
+    const rules = ruleRows.filter((r) => r.company_id === g.company_id);
+    const active = rules.filter((r) => r.dept_norm === rep.dept_norm && r.withdrawn === 0 && r.superseded === 0)
+      .sort((a, b) => b.version - a.version)[0] ?? null;
+    // As blocker() decides it.
+    const why = active ? "active" : rules.some((r) => r.grp === g.grp && r.withdrawn === 1) ? "withdrawn" : turnedDown.has(key) ? "rejected" : null;
     const lines = describe(JSON.parse(rep.setup));
     out.push({
       company: { id: c.id, name: c.name, hidden: c.hidden === 1 },
@@ -2135,33 +2466,26 @@ async function queue(env) {
       ...trust(s, adoptPoints),
       // [COMM-07] More 달라요 than the setting allows: auto adoption waits for the developer.
       doubted: s.persons * 100 < adoptAgree * (s.persons + s.bad),
-      posts: (await one(env, "SELECT COUNT(*) AS n FROM posts WHERE company_id = ? AND grp = ? AND status = 'shown'", g.company_id, g.grp)).n,
+      posts: postCounts.get(key) ?? 0,
       // Enough points, but another rule is in use, this one was turned down, everyone sent it from one
       // network or too many say 달라요: only the developer decides.
       blocked: (Boolean(why) || s.networks < 2 || s.persons * 100 < adoptAgree * (s.persons + s.bad)) && s.persons >= 2 && s.points >= adoptPoints,
       turnedDown: why === "withdrawn" || why === "rejected" ? why : null,
       replaces: active ? { id: active.id, version: active.version } : null,
-      reports: reports.map((r) => ({ id: r.id, verified: r.verified === 1, note: r.note, at: iso(r.created_at) })),
+      reports: pending.map((r) => ({ id: r.id, verified: r.verified === 1, note: r.note, at: iso(r.created_at) })),
       lines,
       changes: active ? diffLines(describe(JSON.parse(active.setup)), lines) : null,
     });
   }
   out.sort((a, b) => b.blocked - a.blocked || b.points - a.points || cmp(a.reports[0].at, b.reports[0].at));
-  const flagged = [];
-  for (const r of await all(env, `
-    SELECT r.id, r.company_id, r.grp, r.dept, r.version, r.setup, c.name,
-      SUM(CASE WHEN v.ok = 0 AND v.why = 'name' THEN 1 ELSE 0 END) AS names,
-      SUM(CASE WHEN v.ok = 0 AND v.why = 'old' THEN 1 ELSE 0 END) AS old
-    FROM rules r JOIN companies c ON c.id = r.company_id JOIN votes v ON v.company_id = r.company_id AND v.grp = r.grp
-    WHERE r.withdrawn = 0 AND r.superseded = 0
-    GROUP BY r.id HAVING SUM(CASE WHEN v.ok = 0 THEN 1 ELSE 0 END) > 0 LIMIT 30`)) {
-    const s = await score(env, r.company_id, r.grp);
-    flagged.push({ rule: r.id, company: { id: r.company_id, name: r.name }, dept: r.dept, version: r.version, good: s.persons, bad: s.bad,
-      names: r.names, old: r.old, lines: describe(JSON.parse(r.setup)) });
-  }
+  const flaggedScores = tallies(flaggedReports, flaggedVotes);
+  const flagged = flaggedRows.map((r) => {
+    const s = flaggedScores.get(`${r.company_id}/${r.grp}`) ?? NO_SCORE;
+    return { rule: r.id, company: { id: r.company_id, name: r.name }, dept: r.dept, version: r.version, good: s.persons, bad: s.bad,
+      names: r.names, old: r.old, lines: describe(JSON.parse(r.setup)) };
+  });
   flagged.sort((a, b) => b.bad - a.bad);
-  const asks = (await all(env, `SELECT p.id, p.company_id, p.dept, p.note, p.verified, p.setup, p.created_at, c.name
-    FROM reports p JOIN companies c ON c.id = p.company_id WHERE p.status = 'ask' ORDER BY p.created_at LIMIT 60`)).map((a) => ({
+  const asks = askRows.map((a) => ({
     id: a.id, company: { id: a.company_id, name: a.name }, dept: a.dept, note: a.note, verified: a.verified === 1, at: iso(a.created_at),
     lines: describe(JSON.parse(a.setup)),
   }));
@@ -2226,19 +2550,27 @@ async function companies(env, query) {
 }
 
 async function companyInfo(env, id) {
-  const c = await one(env, "SELECT * FROM companies WHERE id = ?", id);
+  // One trip for the whole page, however many rules the company has.
+  const [[c], intoRows, aliasRows, ruleRows, reports, votes, [pending]] = (await env.DB.batch([
+    stmt(env, "SELECT * FROM companies WHERE id = ?", id),
+    stmt(env, "SELECT m.id, m.name FROM companies c JOIN companies m ON m.id = c.merged_into WHERE c.id = ?", id),
+    stmt(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", id),
+    stmt(env, "SELECT * FROM rules WHERE company_id = ? ORDER BY dept_norm, version DESC", id),
+    stmt(env, "SELECT company_id, grp, device, points, cluster FROM reports WHERE company_id = ? AND status IN ('pending', 'adopted')", id),
+    stmt(env, "SELECT company_id, grp, device, ok, verified, cluster FROM votes WHERE company_id = ?", id),
+    stmt(env, "SELECT COUNT(DISTINCT grp) AS n FROM reports WHERE company_id = ? AND status = 'pending'", id),
+  ])).map((r) => r.results);
   if (!c) return json({ error: "not_found" }, 404);
-  const into = c.merged_into ? await one(env, "SELECT id, name FROM companies WHERE id = ?", c.merged_into) : null;
-  const aliases = (await all(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", id)).map((a) => a.name);
-  const rules = [];
-  for (const r of await all(env, "SELECT * FROM rules WHERE company_id = ? ORDER BY dept_norm, version DESC", id)) {
-    const s = await score(env, id, r.grp);
-    rules.push({
+  const into = intoRows[0] ?? null;
+  const aliases = aliasRows.map((a) => a.name);
+  const scores = tallies(reports, votes);
+  const rules = ruleRows.map((r) => {
+    const s = scores.get(`${id}/${r.grp}`) ?? NO_SCORE;
+    return {
       id: r.id, dept: r.dept, version: r.version, source: r.source, adoptedAt: iso(r.adopted_at), withdrawn: r.withdrawn === 1,
       superseded: r.superseded === 1, ok: s.persons, bad: s.bad, lines: describe(JSON.parse(r.setup)),
-    });
-  }
-  const pending = await one(env, "SELECT COUNT(DISTINCT grp) AS n FROM reports WHERE company_id = ? AND status = 'pending'", id);
+    };
+  });
   return json({
     id: c.id, name: c.name, hidden: c.hidden === 1, mergedInto: into, createdAt: iso(c.created_at), aliases, rules, pending: pending.n,
   });
@@ -2424,28 +2756,42 @@ async function postList(env, url) {
   const one_talk = company && /^[A-Za-z0-9]{12}$/.test(company) && grp && /^[0-9a-f]{16}$/.test(grp);
   const rows = one_talk
     ? await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
-        WHERE p.company_id = ? AND p.grp = ? ORDER BY p.created_at LIMIT 500`, company, grp)
+        WHERE p.company_id = ? AND p.grp = ? ORDER BY p.created_at, p.rowid LIMIT 500`, company, grp)
     : status === "flagged"
       ? await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
           WHERE p.kept = 0 AND (p.flags > 0 OR p.hide_reason = 'flags') ORDER BY p.flags DESC, p.created_at DESC LIMIT 100`)
       : await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
           ${status === "hidden" ? "WHERE p.status = 'hidden'" : ""} ORDER BY p.created_at DESC LIMIT 100`);
-  const out = [];
+  // What each post needs besides itself, for all of them in one trip.
+  const ids = JSON.stringify(rows.map((p) => p.id));
+  const talks = JSON.stringify([...new Map(rows.map((p) => [`${p.company_id}/${p.grp}`, [p.company_id, p.grp]])).values()]);
+  const pairs = "SELECT json_extract(value, '$[0]') AS company_id, json_extract(value, '$[1]') AS grp FROM json_each(?)";
+  const [ruleDepts, reportDepts, flagRows, mutedRows] = rows.length ? (await env.DB.batch([
+    stmt(env, `SELECT r.company_id, r.grp, r.dept FROM rules r JOIN (${pairs}) t ON t.company_id = r.company_id AND t.grp = r.grp
+      ORDER BY r.version DESC`, talks),
+    stmt(env, `SELECT r.company_id, r.grp, r.dept FROM reports r JOIN (${pairs}) t ON t.company_id = r.company_id AND t.grp = r.grp`, talks),
+    stmt(env, `SELECT post_id, reason, COUNT(*) AS n FROM post_flags WHERE post_id IN (SELECT value FROM json_each(?))
+      GROUP BY post_id, reason ORDER BY n DESC, reason`, ids),
+    stmt(env, `SELECT device, until FROM muted WHERE until > ? AND device IN (SELECT value FROM json_each(?))`, Date.now(),
+      JSON.stringify([...new Set(rows.map((p) => p.device))])),
+  ])).map((r) => r.results) : [[], [], [], []];
   const depts = new Map();
+  // The newest rule's department, else any report's, as before.
+  for (const r of [...ruleDepts, ...reportDepts]) {
+    const key = `${r.company_id}/${r.grp}`;
+    if (!depts.has(key)) depts.set(key, r.dept);
+  }
+  const mutedUntil = new Map(mutedRows.map((m) => [m.device, m.until]));
+  const out = [];
   for (const p of rows) {
     const key = `${p.company_id}/${p.grp}`;
-    if (!depts.has(key)) {
-      const r = (await one(env, "SELECT dept FROM rules WHERE company_id = ? AND grp = ? ORDER BY version DESC LIMIT 1", p.company_id, p.grp))
-        ?? (await one(env, "SELECT dept FROM reports WHERE company_id = ? AND grp = ? LIMIT 1", p.company_id, p.grp));
-      depts.set(key, r?.dept ?? "");
-    }
-    const reasons = await all(env, "SELECT reason, COUNT(*) AS n FROM post_flags WHERE post_id = ? GROUP BY reason ORDER BY n DESC, reason", p.id);
-    const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", p.device, Date.now());
+    const reasons = flagRows.filter((f) => f.post_id === p.id);
+    const muted = mutedUntil.has(p.device) ? { until: mutedUntil.get(p.device) } : null;
     out.push({
       id: p.id,
       company: { id: p.company_id, name: p.name },
       setup: p.grp,
-      dept: depts.get(key),
+      dept: depts.get(key) ?? "",
       body: p.body,
       writer: p.device.slice(0, 6),
       at: iso(p.created_at),

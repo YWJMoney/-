@@ -885,6 +885,36 @@ class ScreenshotTest {
     @Test fun foldedShareLinkBusiness() = shoot("200_folded_share_link_business", FOLDED, shareSheet(WorkStyle.BUSINESS))
     @Test fun foldedShareLinkField() = shoot("201_folded_share_link_field", FOLDED, shareSheet(WorkStyle.FIELD))
     @Test fun foldedShareLinkBusinessLargeText() = shoot("202_folded_share_link_business_large_text", FOLDED, 1.5f, shareSheet(WorkStyle.BUSINESS))
+    // [RECV-05] 받을 돈 for each kind of work: written debts, unpaid jobs, the job and receivable sheets.
+    private fun owed(s: WorkStyle, wide: Boolean = false, then: Screen.() -> Unit = {}): Screen.() -> Unit = style(s) {
+        val c = app.container
+        runBlocking {
+            val money = c.moneyRepository
+            money.save(com.bamnat.core.money.Receivable(who = "라마바전자", title = "9월 납품 대금", amount = 1_650_000, date = today.minusDays(40),
+                due = today.minusDays(6), kind = com.bamnat.core.money.ReceivableKind.SALE))
+            val part = money.save(com.bamnat.core.money.Receivable(who = "가나다식당", title = "단체 도시락 외상", amount = 480_000,
+                date = today.minusDays(12), due = today.plusDays(2), kind = com.bamnat.core.money.ReceivableKind.SALE, note = "월말에 한 번에 준다고 함"))
+            money.receive(part, 200_000, today.minusDays(3))
+            money.save(com.bamnat.core.money.Receivable(who = "민지", title = "여행 경비", amount = 120_000, date = today.minusDays(20),
+                kind = com.bamnat.core.money.ReceivableKind.LOAN))
+        }
+        settle()
+        val vm = com.bamnat.app.ui.money.OwedViewModel(c)
+        content { com.bamnat.app.ui.money.OwedScreen(vm, wide = wide, onBack = {}, today = today) }
+        settle()
+        then()
+    }
+    @Test fun foldedOwedBusiness() = shoot("210_folded_owed_business", FOLDED, owed(WorkStyle.BUSINESS))
+    @Test fun foldedOwedFieldList() = shoot("211_folded_owed_field_list", FOLDED, owed(WorkStyle.FIELD) { scrollUp(520, across = 0.5f) })
+    @Test fun foldedOwedSheet() = shoot("212_folded_owed_sheet", FOLDED, owed(WorkStyle.BUSINESS) { tapText("단체 도시락 외상") })
+    @Test fun foldedOwedJobSheet() = shoot("213_folded_owed_job_sheet", FOLDED, owed(WorkStyle.FIELD) { tapText("주방 수전 교체") })
+    @Test fun unfoldedOwed() = shoot("214_unfolded_owed", UNFOLDED, owed(WorkStyle.SHIFT, wide = true))
+    @Test fun phoneOwedEmpty() = shoot("215_phone_owed_empty", PHONE, style(WorkStyle.HOURLY) {
+        val c = app.container
+        // Before any job was done, so nothing is owed yet.
+        val vm = com.bamnat.app.ui.money.OwedViewModel(c)
+        content { com.bamnat.app.ui.money.OwedScreen(vm, wide = false, onBack = {}, today = today.minusYears(5)) }
+    })
     // [WORK-01] First launch: how do you work?
     @Test fun foldedWorkStylePicker() = shoot("49_folded_work_style", FOLDED) {
         content { com.bamnat.app.ui.work.WorkStyleScreen(current = null, onPick = {}) }
@@ -1071,6 +1101,12 @@ class ScreenshotTest {
             if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {}, onOpenKinds = {})
         }.invoke(this)
         scrollUp(RULES_PERIOD_SCROLL)
+    }
+    // [TIME-01] Typing a duration became the same wheels as clock times.
+    @Test fun foldedDurationWheel() = shoot("203_folded_duration_wheel", FOLDED) {
+        content {
+            com.bamnat.app.ui.components.DurationDialog("몇 분 전에 울릴까요?", 90, 24 * 60, onDismiss = {}, onConfirm = {})
+        }
     }
     @Test fun foldedSteppers() = shoot("93_folded_steppers_fixed_width", FOLDED) {
         content {
@@ -1341,6 +1377,15 @@ class ScreenshotTest {
         val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
         content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
     }
+    @Test fun foldedCompanyBoardSearch() = shoot("195_folded_company_board_search", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
+        tapText("채택됨", exact = true)
+        vm.query.value = "예시"
+        // Past the pause the board waits for typing to stop.
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(400))
+        settle()
+    }
     @Test fun foldedCompanyTalk() = shoot("193_folded_company_talk", FOLDED) {
         val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
         content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
@@ -1468,6 +1513,78 @@ class ScreenshotTest {
         receivedOn()
         settle()
         tapText("민지의 근무표 보기", exact = true)
+    }
+
+    // ---- [MCAL-01][MCAL-02][MCAL-03][MCAL-04] The user's own calendars ----
+    /** An added part-time calendar, 월·수·금 오전 알바, set up and listed; the main one stays on screen unless [show]. */
+    private fun addedCalendar(name: String = "편의점 알바", show: Boolean = false): String = runBlocking {
+        val c = app.container
+        val id = c.calendars.begin(name)
+        val repo = c.calendars.repository(id)
+        repo.ensureDefaults()
+        repo.addHourlyTypes()
+        val shift = repo.shiftTypes.first().first { it.name == "오전 알바" }.id
+        repo.setFirstPattern(WorkPattern.Weekly.fromSteps(LocalDate.of(2026, 7, 1), listOf(shift, null, shift, null, shift, null, null)))
+        c.calendars.finishSetup(id, com.bamnat.core.work.WorkStyle.HOURLY)
+        if (!show) c.calendars.setActive(com.bamnat.app.data.PersonalCalendar.MAIN)
+        id
+    }
+
+    @Test fun foldedMyCalendarsSwitcher() = shoot("210_folded_my_calendars_switcher", FOLDED) {
+        receivedOn()
+        addedCalendar()
+        settle()
+        tapText("달력 바꾸기", prefix = true)
+    }
+    @Test fun foldedAddedCalendar() = shoot("211_folded_added_calendar", FOLDED) {
+        receivedOn(minji = false)
+        addedCalendar(show = true)
+    }
+    @Test fun unfoldedAddedCalendar() = shoot("212_unfolded_added_calendar", UNFOLDED) {
+        addedCalendar(show = true)
+    }
+    @Test fun foldedCalendarsList() = shoot("213_folded_calendars_list", FOLDED) {
+        receivedOn()
+        val id = addedCalendar()
+        // Shared with a link of its own [MCAL-03].
+        app.container.shareLinksOf(id).save(com.bamnat.app.share.ShareLinkState("al1", "https://bamnat-share.example/s/al1", "t",
+            java.time.Instant.now().plus(java.time.Duration.ofDays(30)), "민지"))
+        addedCalendar("가족 일정")
+        settle()
+        tapText("달력 바꾸기", prefix = true)
+        tapText("순서·관리", exact = true)
+    }
+    @Test fun unfoldedCalendarsList() = shoot("214_unfolded_calendars_list", UNFOLDED) {
+        receivedOn(minji = false)
+        addedCalendar()
+        settle()
+        tapText("달력 바꾸기", prefix = true)
+        tapText("순서·관리", exact = true)
+    }
+    @Test fun foldedCalendarEdit() = shoot("215_folded_calendar_edit", FOLDED) {
+        addedCalendar()
+        settle()
+        tapText("달력 바꾸기", prefix = true)
+        tapText("순서·관리", exact = true)
+        tapText("편의점 알바", exact = true)
+    }
+    @Test fun foldedNewCalendarDialog() = shoot("216_folded_new_calendar", FOLDED) {
+        content { com.bamnat.app.ui.calendar.NewCalendarDialog("달력 2", 0, { _, _ -> }, {}) }
+    }
+    @Test fun foldedNewCalendarSetup() = shoot("217_folded_new_calendar_setup", FOLDED) {
+        val c = app.container
+        val id = c.calendars.begin("편의점 알바")
+        val vm = com.bamnat.app.ui.setup.SetupViewModel(c, calendarId = id)
+        content { com.bamnat.app.ui.setup.SetupHost(vm) }
+    }
+    @Test fun foldedAddedCalendarShare() = shoot("218_folded_added_calendar_share", FOLDED) {
+        val c = receivedOn()
+        addedCalendar(show = true)
+        val snap = runBlocking { c.calendars.activeSnapshot.first() }
+        content {
+            com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}, client = shares,
+                calendar = c.calendars.current(), onOpenReceived = {})
+        }
     }
 
     // ---- M10 [SET-01][SLP-15] Settings in groups ----
@@ -1629,15 +1746,15 @@ private class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
         "c-$id", company, "s-$id", dept, adopted, points, persons, bad, 3, trust, agree, posts, if (adopted) 1 else null,
         now.minus(java.time.Duration.ofHours(hours)), gist, cycle, true)
 
-    override suspend fun board(adopted: Boolean, from: Int) = com.bamnat.app.company.Board(
-        if (adopted) listOf(
+    override suspend fun board(adopted: Boolean, from: Int, q: String) = com.bamnat.app.company.Board(
+        (if (adopted) listOf(
             item("a1", "(주)예시정밀", "생산팀", true, 5, 3, 1, 75, 75, 4, 30, "주간 08:00~20:00 · 야간 20:00~08:00 · 휴무(쉬는 날)", "순서 5일"),
             item("a2", "사아자물류", "", true, 4, 3, 0, 100, 100, 0, 80, "주간 09:00~18:00 · 휴무(쉬는 날)", "순서 7일"),
         ) else listOf(
             item("v1", "가나다화학", "품질팀", false, 2, 2, 0, 67, 100, 3, 1, "주간 08:30~17:30 휴게 60분 · 휴일(쉬는 날)", "순서 7일"),
             item("v2", "라마바전자", "생산1팀", false, 3, 2, 1, 67, 67, 5, 5, "주간 07:00~19:00 · 야간 19:00~07:00 · 휴무(쉬는 날)", "순서 8일"),
             item("v3", "예시정밀 2공장", "", false, 1, 1, 0, 33, 100, 0, 26, "오전 06:00~14:00 · 오후 14:00~22:00 · 야간 22:00~06:00", "순서 6일"),
-        ),
+        )).filter { q.isBlank() || it.company.contains(q.trim()) },
         null,
     )
 

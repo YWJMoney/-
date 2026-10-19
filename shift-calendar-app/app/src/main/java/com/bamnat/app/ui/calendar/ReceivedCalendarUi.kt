@@ -91,6 +91,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleStartEffect
+import androidx.lifecycle.repeatOnLifecycle
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.share.ReceivedCalendar
 import com.bamnat.app.share.SharedDay
@@ -117,8 +118,11 @@ private val TogetherColor = Color(0xFFE5487A)
 
 /** [SHR-02] A round avatar with one letter, the face of a calendar in the switcher. */
 @Composable
-fun CalendarAvatar(initial: String, color: Color, modifier: Modifier = Modifier, size: Dp = 28.dp, contentColor: Color = Color.White) {
-    Box(modifier.size(size).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
+fun CalendarAvatar(
+    initial: String, color: Color, modifier: Modifier = Modifier, size: Dp = 28.dp, contentColor: Color = Color.White,
+    shape: androidx.compose.ui.graphics.Shape = CircleShape,
+) {
+    Box(modifier.size(size).clip(shape).background(color), contentAlignment = Alignment.Center) {
         Text(
             initial,
             color = contentColor,
@@ -130,132 +134,14 @@ fun CalendarAvatar(initial: String, color: Color, modifier: Modifier = Modifier,
 }
 
 @Composable
-private fun MyAvatar(size: Dp = 28.dp) =
+internal fun MyAvatar(size: Dp = 28.dp) =
     CalendarAvatar("나", MaterialTheme.colorScheme.primary, size = size, contentColor = MaterialTheme.colorScheme.onPrimary)
 
 @Composable
-private fun ReceivedCalendar.Avatar(size: Dp = 28.dp) = CalendarAvatar(initial, color.asColor(), size = size)
-
-/**
- * [SHR-02] Whose calendar is on screen, like the account on a mail app: a tap on the name opens
- * the switcher, a tap on a face switches at once. Only there once a calendar was received.
- */
-@Composable
-fun CalendarIdentityBar(
-    calendars: List<ReceivedCalendar>,
-    viewing: ReceivedCalendar?,
-    onOpenSwitcher: () -> Unit,
-    onView: (String?) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Surface(
-            onClick = onOpenSwitcher,
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            modifier = Modifier.weight(1f, fill = false).semantics { contentDescription = "달력 바꾸기, 지금 ${viewing?.fullName ?: "내 달력"}" },
-        ) {
-            Row(Modifier.padding(start = 4.dp, end = 6.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (viewing == null) MyAvatar() else viewing.Avatar()
-                Spacer(Modifier.width(8.dp))
-                Text(viewing?.name ?: "내 달력", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false))
-                Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(20.dp))
-            }
-        }
-        Spacer(Modifier.weight(1f))
-        if (viewing == null) {
-            // Faces to switch with one tap, the most recent first.
-            val faces = calendars.asReversed()
-            faces.take(3).forEach { cal ->
-                Box(
-                    Modifier.size(40.dp).clip(CircleShape).clickable(role = Role.Button) { onView(cal.id) }
-                        .semantics { contentDescription = "${cal.fullName} 보기" },
-                    contentAlignment = Alignment.Center,
-                ) { cal.Avatar(size = 30.dp) }
-            }
-            if (faces.size > 3) {
-                TextButton(onClick = onOpenSwitcher) { Text("+${faces.size - 3}") }
-            }
-        } else {
-            Surface(onClick = { onView(null) }, shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-                Row(Modifier.padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    MyAvatar(size = 26.dp)
-                    Spacer(Modifier.width(6.dp))
-                    Text("내 달력으로", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                }
-            }
-        }
-    }
-}
-
-/** [SHR-02] The calendar switcher: the user's own first, then each received one. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun CalendarSwitcherSheet(
-    calendars: List<ReceivedCalendar>,
-    viewingId: String?,
-    onPick: (String?) -> Unit,
-    onAdd: () -> Unit,
-    onRemove: (ReceivedCalendar) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var removing by remember { mutableStateOf<ReceivedCalendar?>(null) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 16.dp)) {
-            Text("누구의 달력을 볼까요?", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
-            SwitchRow(
-                avatar = { MyAvatar(size = 40.dp) },
-                title = "내 달력",
-                subtitle = "내 근무와 메모, 고칠 수 있어요",
-                selected = viewingId == null,
-                onClick = { onPick(null) },
-            )
-            calendars.forEach { cal ->
-                SwitchRow(
-                    avatar = { cal.Avatar(size = 40.dp) },
-                    title = cal.fullName,
-                    subtitle = cal.summary(),
-                    detail = cal.schedule?.showsText()?.let { "함께 받은 것: $it" },
-                    selected = viewingId == cal.id,
-                    dim = cal.gone,
-                    onClick = { onPick(cal.id) },
-                    trailing = {
-                        IconButton(onClick = { removing = cal }) { Icon(Icons.Outlined.PersonRemove, "${cal.fullName} 목록에서 빼기") }
-                    },
-                )
-            }
-            Row(
-                Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onAdd).padding(horizontal = 24.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(40.dp).clip(CircleShape).border(1.5.dp, MaterialTheme.colorScheme.outline, CircleShape), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Add, null, tint = MaterialTheme.colorScheme.primary)
-                }
-                Spacer(Modifier.width(16.dp))
-                Text("받은 링크로 달력 넣기", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-            }
-            Text(
-                "받은 달력은 읽기 전용이고 이 휴대폰에만 있어요. 보낸 분이 링크를 끊으면 여기서도 지워져요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-            )
-        }
-    }
-    removing?.let { cal ->
-        ConfirmDialog(
-            title = "${cal.fullName}${Fmt.obj(cal.fullName)} 뺄까요?",
-            message = "이 휴대폰에서만 빠지고 보낸 분의 링크는 그대로예요. 링크를 다시 넣으면 또 볼 수 있어요.",
-            confirmLabel = "빼기",
-            destructive = true,
-            onDismiss = { removing = null },
-            onConfirm = { onRemove(cal); removing = null },
-        )
-    }
-}
+internal fun ReceivedCalendar.Avatar(size: Dp = 28.dp) = CalendarAvatar(initial, color.asColor(), size = size)
 
 @Composable
-private fun SwitchRow(
+internal fun SwitchRow(
     avatar: @Composable () -> Unit,
     title: String,
     subtitle: String,
@@ -286,13 +172,13 @@ private fun SwitchRow(
 }
 
 /** "10월 1일~12월 31일", or what happened to it. */
-private fun ReceivedCalendar.summary(): String {
+internal fun ReceivedCalendar.summary(): String {
     val s = schedule ?: return "공유가 끝났어요"
     return if (s.first != null && s.last != null) "${Fmt.monthDay(s.first)}~${Fmt.monthDay(s.last)}" else "근무 없음"
 }
 
 /** [SHR-01] The parts the sharer ticked, in the share sheet's words; null when only shifts came. */
-private fun SharedSchedule.showsText(): String? =
+internal fun SharedSchedule.showsText(): String? =
     listOfNotNull(
         "일정".takeIf { "jobs" in shows },
         "휴가 종류".takeIf { "leaveKinds" in shows },
@@ -480,6 +366,16 @@ fun ReceivedCalendarView(
     LifecycleStartEffect(cal.id) {
         vm.refreshIfStale(cal.id)
         onStopOrDispose { }
+    }
+    // [SHR-12] While it stays on screen, a quiet look every few minutes; only a change is downloaded.
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(cal.id, lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                kotlinx.coroutines.delay(5 * 60_000L)
+                vm.refreshIfStale(cal.id)
+            }
+        }
     }
     val schedule = cal.schedule
     if (schedule == null) {

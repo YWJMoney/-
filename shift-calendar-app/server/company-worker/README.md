@@ -116,7 +116,7 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
 | `DELETE /api/reports/:id` | 제보 되돌리기 (헤더 `X-Device`) |
 | `DELETE /api/mine` | 이 설치가 보낸 것 전부 지우기 (헤더 `X-Device`) |
 | `POST /api/votes` | 맞았어요·달라요 `{device, company, setup, ok, verified?, why?}` |
-| `GET /api/board?tab=voting\|adopted&from=` | 회사 규칙 광장: 모든 회사의 투표 중인 규칙(최근 활동 순)이나 채택된 규칙, 20개씩 [COMM-07] |
+| `GET /api/board?tab=voting\|adopted&from=&q=` | 회사 규칙 광장: 모든 회사의 투표 중인 규칙(최근 활동 순)이나 채택된 규칙, 20개씩. `q`는 회사 이름이나 다른 이름(회사 찾기처럼 띄어쓰기·(주) 무시, 두 글자부터) [COMM-07] |
 | `GET /api/companies/:id/setups/:setup/posts` | 한 규칙의 토론. 헤더 `X-Device`가 있으면 내 글 표시와 가려진 내 글의 이유 [COMM-06] |
 | `POST /api/posts` | 토론 글 `{device, company, setup, body}` (500자까지) |
 | `DELETE /api/posts/:id` | 내 글 지우기 (헤더 `X-Device`) |

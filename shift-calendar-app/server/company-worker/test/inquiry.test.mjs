@@ -50,6 +50,7 @@ test("contacts and amounts are refused with the field; so is anything it does no
     [{ info: "1.12.0" }, "info", "info"],
     [{ info: { model: "a".repeat(81) } }, "info", "model"],
     [{ info: { app: "me@example.com" } }, "info", "app"],
+    [{ info: { pay: "기본급: 2,500,000원" } }, "info", "pay"],
   ];
   for (const [change, error, field] of cases) {
     const res = await call("POST", "/api/inquiries", question(1, change));
@@ -178,4 +179,103 @@ test("the hourly clean-up deletes what is only kept for a while, with nobody sen
   assert.equal(n("SELECT COUNT(*) AS n FROM inquiry_messages"), 0);
   // The report itself stays: only its network link went.
   assert.equal(n("SELECT COUNT(*) AS n FROM reports"), 1);
+});
+
+test("계산이 이상해요 sends the pay check without amounts, and the developer app shows it", async () => {
+  const { call } = server();
+  const pay = "월: 2026-10 · 요율 2026.1\n야간수당: 48시간 · 50%\n규칙: 연장 가산 50%";
+  const q = (await call("POST", "/api/inquiries", question(1, { text: "야간수당이 명세서보다 4시간만큼 적어요", info: { app: "1.13.1 (20)", pay } }))).data;
+  const admin = await signIn(call);
+  const detail = (await call("GET", `/api/admin/inquiries/${q.id}`, undefined, admin)).data;
+  assert.equal(detail.context["급여 계산"], pay);
+  assert.equal((await call("POST", "/api/inquiries", question(2, { info: { pay: "가".repeat(3001) } }))).status, 400);
+});
+
+test("questions sort themselves by topic and urgency, and the developer can show one topic", async () => {
+  const { call } = server();
+  const send = async (n, change) => (await call("POST", "/api/inquiries", question(n, change), from(n))).data.id;
+  const alarm = await send(1, { text: "어제 출근 알람이 안 울려서 지각했어요" });
+  const pay = await send(2, { text: "야간수당이 명세서와 달라요", info: { app: "1.13.1", pay: "야간수당: 48시간 · 50%" } });
+  const idea = await send(3, { kind: "idea", text: "달력에서 공유 링크를 더 쉽게 만들면 좋겠어요" });
+  const other = await send(4, { kind: "question", text: "안녕하세요 질문 있어요" });
+  const admin = await signIn(call);
+  const list = (await call("GET", "/api/admin/inquiries?status=open", undefined, admin)).data;
+  const by = Object.fromEntries(list.inquiries.map((i) => [i.id, i]));
+  assert.deepEqual([by[alarm].topic, by[alarm].urgency], ["alarm", "urgent"]);
+  assert.deepEqual([by[pay].topic, by[pay].topicName, by[pay].urgency], ["pay", "급여 계산", "normal"]);
+  assert.deepEqual([by[idea].topic, by[idea].urgency], ["share", "low"]);
+  assert.equal(by[other].topic, "etc");
+  // The urgent one comes first, and the counts say where questions pile up.
+  assert.equal(list.inquiries[0].id, alarm);
+  assert.deepEqual(list.topics, { alarm: 1, pay: 1, share: 1, etc: 1 });
+  const only = (await call("GET", "/api/admin/inquiries?status=open&topic=pay", undefined, admin)).data;
+  assert.deepEqual(only.inquiries.map((i) => i.id), [pay]);
+  assert.equal(only.topics.alarm, 1);
+  // An unknown topic shows everything, and a thread carries its sorting too.
+  assert.equal((await call("GET", "/api/admin/inquiries?topic=x", undefined, admin)).data.inquiries.length, 4);
+  assert.equal((await call("GET", `/api/admin/inquiries/${alarm}`, undefined, admin)).data.urgency, "urgent");
+});
+
+test("모두의 문의: a public question and its answers are for everyone, what came with it is not", async () => {
+  const { call } = server();
+  const send = async (n, change) => (await call("POST", "/api/inquiries", question(n, change), from(n))).data.id;
+  const open = await send(1, { public: true, text: "공유 링크를 상대방이 못 열어요", info: { app: "1.14.0", model: "samsung SM-F956N", diag: "다음 알람: 06:00 · 주간" } });
+  const old = await send(2, { text: "알람이 늦게 울려요" });
+  const admin = await signIn(call);
+  await call("POST", `/api/admin/inquiries/${open}/reply`, { text: "고쳤어요. 앱을 업데이트해 주세요" }, { ...admin, origin: ORIGIN });
+
+  const list = (await call("GET", "/api/inquiries/public")).data;
+  // An older app did not say so, so its question stays the developer's.
+  assert.deepEqual(list.inquiries.map((i) => i.id), [open]);
+  const item = list.inquiries[0];
+  assert.deepEqual([item.topic, item.answers, item.same, item.mine], ["share", 1, 0, false]);
+  assert.equal((await call("GET", "/api/inquiries/public", undefined, mine(1))).data.inquiries[0].mine, true);
+  const thread = (await call("GET", `/api/inquiries/public/${open}`)).data;
+  assert.deepEqual(thread.messages.map((m) => m.from), ["user", "admin"]);
+  const text = JSON.stringify(thread);
+  for (const secret of ["SM-F956N", "다음 알람", "1.14.0", device(1)]) assert.ok(!text.includes(secret), secret);
+  assert.equal((await call("GET", `/api/inquiries/public/${old}`)).status, 404);
+  assert.equal((await call("GET", "/api/inquiries/public?topic=alarm")).data.inquiries.length, 0);
+
+  // 나도 그래요 once per install, taken back too; not on one's own.
+  for (const n of [3, 3, 4]) assert.equal((await call("POST", `/api/inquiries/${open}/same`, { device: device(n) }, from(n))).status, 200);
+  assert.equal((await call("GET", `/api/inquiries/public/${open}`, undefined, mine(3))).data.same, 2);
+  assert.equal((await call("GET", `/api/inquiries/public/${open}`, undefined, mine(3))).data.sameByMe, true);
+  await call("POST", `/api/inquiries/${open}/same`, { device: device(4), on: false }, from(4));
+  assert.equal((await call("GET", `/api/inquiries/public/${open}`)).data.same, 1);
+  assert.equal((await call("POST", `/api/inquiries/${open}/same`, { device: device(1) }, from(1))).status, 400);
+  assert.equal((await call("POST", `/api/inquiries/${old}/same`, { device: device(3) }, from(3))).status, 404);
+});
+
+test("three 신고 hide a public question until the developer looks; its writer sees why", async () => {
+  const { call } = server();
+  const id = (await call("POST", "/api/inquiries", question(1, { public: true, text: "광고 광고 광고" }), from(1))).data.id;
+  for (const n of [2, 3, 3, 4]) await call("POST", `/api/inquiries/${id}/flag`, { device: device(n), reason: "spam" }, from(n));
+  assert.equal((await call("GET", "/api/inquiries/public")).data.inquiries.length, 0);
+  assert.equal((await call("GET", `/api/inquiries/public/${id}`)).status, 404);
+  assert.equal((await call("GET", `/api/inquiries/public/${id}`, undefined, mine(1))).data.hidden.code, "flags");
+  assert.equal((await call("GET", `/api/inquiries/${id}`, undefined, mine(1))).data.hidden.code, "flags");
+  const admin = await signIn(call);
+  const h = { ...admin, origin: ORIGIN };
+  const seen = (await call("GET", `/api/admin/inquiries/${id}`, undefined, admin)).data;
+  assert.deepEqual([seen.public, seen.flags, seen.reasons[0].code, seen.reasons[0].n], [true, 3, "spam", 3]);
+  // Shown again, 신고 no longer hides it; hidden by the developer with a reason the writer sees.
+  await call("POST", `/api/admin/inquiries/${id}/visibility`, { action: "show" }, h);
+  for (const n of [5, 6, 7]) await call("POST", `/api/inquiries/${id}/flag`, { device: device(n) }, from(n));
+  assert.equal((await call("GET", "/api/inquiries/public")).data.inquiries.length, 1);
+  await call("POST", `/api/admin/inquiries/${id}/visibility`, { action: "hide", reason: "spam" }, h);
+  assert.equal((await call("GET", `/api/inquiries/public/${id}`, undefined, mine(1))).data.hidden.text, "광고나 도배예요");
+  // A private question cannot be made public from the developer app.
+  const priv = (await call("POST", "/api/inquiries", question(8), from(8))).data.id;
+  assert.equal((await call("POST", `/api/admin/inquiries/${priv}/visibility`, { action: "show" }, h)).status, 400);
+});
+
+test("this phone's 지우기 takes its questions and its 나도 그래요 away", async () => {
+  const { call } = server();
+  const id = (await call("POST", "/api/inquiries", question(1, { public: true }), from(1))).data.id;
+  await call("POST", `/api/inquiries/${id}/same`, { device: device(2) }, from(2));
+  await call("DELETE", "/api/mine", undefined, mine(2));
+  assert.equal((await call("GET", `/api/inquiries/public/${id}`)).data.same, 0);
+  await call("DELETE", "/api/mine", undefined, mine(1));
+  assert.equal((await call("GET", "/api/inquiries/public")).data.inquiries.length, 0);
 });

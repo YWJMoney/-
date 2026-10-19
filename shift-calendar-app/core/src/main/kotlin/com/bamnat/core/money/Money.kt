@@ -104,7 +104,9 @@ data class CategoryTotal(val category: String, val amount: Long, val count: Int)
 /**
  * One month of money for the money tab [WORK-04][LEDG-01]. Income adds up each source the user's
  * work produces; when the user records the salary actually paid (분류 급여) it replaces the
- * engine's estimate so the same pay is never counted twice.
+ * engine's estimate so the same pay is never counted twice. A job counts only the deposit and
+ * balance ticked as paid ([RECV-04]): money still owed is 받을 돈, not 들어온 돈, and the job's
+ * costs go out with the other spending so an unpaid job never shows as negative income.
  */
 data class MonthMoney(
     val month: YearMonth,
@@ -128,8 +130,12 @@ data class MonthMoney(
     val payCounted: Long get() = if (payRecorded > 0) payRecorded else payEstimate ?: 0
     val salesNet: Long get() = sales - salesCosts
     val jobProfit: Long get() = jobEarned - jobCosts
-    val income: Long get() = payCounted + jobProfit + salesNet + otherIncome
-    val balance: Long get() = income - expenses
+    /** [RECV-04] This month's jobs not yet paid; shown beside 들어온 돈, never inside it. */
+    val jobOwed: Long get() = (jobEarned - jobReceived).coerceAtLeast(0)
+    val income: Long get() = payCounted + jobReceived + salesNet + otherIncome
+    /** Ledger spending plus the jobs' materials and other costs. */
+    val spent: Long get() = expenses + jobCosts
+    val balance: Long get() = income - spent
 }
 
 data class DayMoney(val income: Long, val expense: Long, val jobs: Int, val unpaid: Long) {
@@ -171,7 +177,7 @@ object MoneyCalculator {
         )
     }
 
-    /** Money per day for calendar cells; days with nothing are left out. A job's money shows on its first day. */
+    /** Money per day for calendar cells; days with nothing are left out. A job's money shows on its first day, once paid [RECV-04]. */
     fun days(month: YearMonth, entries: List<MoneyEntry>, jobs: List<Job>, sales: List<DailySales>): Map<LocalDate, DayMoney> {
         val first = month.atDay(1)
         val last = month.atEndOfMonth()
@@ -191,8 +197,8 @@ object MoneyCalculator {
             val de = e[date].orEmpty()
             val dj = starts[date].orEmpty()
             val day = DayMoney(
-                income = de.filter { it.kind == MoneyKind.INCOME }.sumOf { it.amount } + dj.sumOf { it.profit } + (s[date]?.net ?: 0),
-                expense = de.filter { it.kind == MoneyKind.EXPENSE }.sumOf { it.amount },
+                income = de.filter { it.kind == MoneyKind.INCOME }.sumOf { it.amount } + dj.sumOf { it.received } + (s[date]?.net ?: 0),
+                expense = de.filter { it.kind == MoneyKind.EXPENSE }.sumOf { it.amount } + dj.sumOf { it.costs },
                 jobs = running[date] ?: 0,
                 unpaid = dj.sumOf { it.unpaid },
             )

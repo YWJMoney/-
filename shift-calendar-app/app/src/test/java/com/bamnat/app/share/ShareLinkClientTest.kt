@@ -19,6 +19,8 @@ class ShareLinkClientTest {
     private val server = ServerSocket(0, 8, InetAddress.getLoopbackAddress())
     @Volatile private var status = 200
     @Volatile private var body = ""
+    @Volatile private var headers = ""
+    @Volatile private var asked: String? = null
     private val id = "Ab3dEfGh5JkLmNoPqRsTuv"
 
     /** Answers every request with [status] and [body], one connection at a time. */
@@ -30,10 +32,14 @@ class ShareLinkClientTest {
                 runCatching {
                     socket.use { s ->
                         val reader = s.getInputStream().bufferedReader()
-                        while (reader.readLine()?.isNotEmpty() == true) Unit
+                        while (true) {
+                            val line = reader.readLine() ?: break
+                            if (line.isEmpty()) break
+                            if (line.startsWith("If-None-Match:", ignoreCase = true)) asked = line.substringAfter(":").trim()
+                        }
                         val bytes = body.toByteArray()
                         s.getOutputStream().apply {
-                            write("HTTP/1.1 $status X\r\nContent-Type: text/plain\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray())
+                            write("HTTP/1.1 $status X\r\nContent-Type: text/plain\r\nContent-Length: ${bytes.size}\r\n${headers}Connection: close\r\n\r\n".toByteArray())
                             write(bytes)
                             flush()
                         }
@@ -60,6 +66,19 @@ class ShareLinkClientTest {
         assertEquals("bad_response", failure(200, """{"schedule":{"v":1},"expiresAt":"곧"}"""))
         assertEquals("too_large", failure(200, "x".repeat(300 * 1024)))
         assertEquals("http_502", failure(502, "<html>Bad gateway</html>"))
+    }
+
+    /** [SHR-12] The tag goes back with the next look; an unchanged link reads as null, not as an error. */
+    @Test fun anUnchangedLinkIsNotDownloadedAgain() {
+        status = 200
+        headers = "ETag: W/\"abc\"\r\n"
+        body = """{"schedule":{"v":1,"title":"민지","types":[],"days":[]},"expiresAt":"2026-12-01T00:00:00Z","updatedAt":null}"""
+        val first = runBlocking { client.readIfChanged(id, null) }!!
+        assertEquals("W/\"abc\"", first.etag)
+        status = 304
+        body = ""
+        assertEquals(null, runBlocking { client.readIfChanged(id, first.etag) })
+        assertEquals("W/\"abc\"", asked)
     }
 
     @Test fun theServersOwnAnswers() {

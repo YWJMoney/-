@@ -1,9 +1,12 @@
 package com.bamnat.core
 
 import com.bamnat.core.money.Job
+import com.bamnat.core.money.JobPayments
 import com.bamnat.core.money.MoneyAlerts
 import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.money.Owed
+import com.bamnat.core.money.OwedFilter
+import com.bamnat.core.money.OwedSort
 import com.bamnat.core.money.Receivable
 import com.bamnat.core.money.ReceivableAlerts
 import com.bamnat.core.money.ReceivableKind
@@ -112,5 +115,58 @@ class ReceivablesTest {
         assertEquals("10월 납품 (사아자물류) · 200,000원", alerts.first().text)
         val next = MoneyAlerts.next(emptyList(), emptyList(), emptyList(), LocalDateTime.of(2026, 11, 20, 12, 0), listOf(x))
         assertEquals(LocalDateTime.of(2026, 11, 22, 10, 0), next.single().at)
+    }
+
+    /** [RECV-05] Chips, search and order on the 받을 돈 list. */
+    @Test
+    fun theListNarrowsByChipSearchAndOrder() {
+        val late = r(1, "라마바전자", 300_000, d(2), d(10))
+        val soon = r(2, "민지", 50_000, d(5), d(21)).copy(note = "점심값")
+        val part = r(3, "가나다화학", 900_000, d(1), null, 100_000)
+        val job = Job(id = 9, date = d(12), title = "욕실", client = "김사장", place = "역삼동", amount = 400_000)
+        val owed = Receivables.owed(listOf(late, soon, part), listOf(job), today)
+        val ids = { list: List<Owed> -> list.map { (it as? Owed.Written)?.r?.id ?: -(it as Owed.FromJob).job.id } }
+        assertEquals(listOf(1L), ids(Receivables.narrow(owed, today, OwedFilter.OVERDUE)))
+        assertEquals(listOf(2L), ids(Receivables.narrow(owed, today, OwedFilter.DUE_SOON)))
+        assertEquals(listOf(3L), ids(Receivables.narrow(owed, today, OwedFilter.PARTLY)))
+        assertEquals(listOf(-9L), ids(Receivables.narrow(owed, today, OwedFilter.JOBS)))
+        assertEquals(3, Receivables.narrow(owed, today, OwedFilter.WRITTEN).size)
+        // Search looks at who, what and notes, place included.
+        assertEquals(listOf(2L), ids(Receivables.narrow(owed, today, query = "점심")))
+        assertEquals(listOf(-9L), ids(Receivables.narrow(owed, today, query = "역삼")))
+        assertEquals(listOf(1L), ids(Receivables.narrow(owed, today, query = " 라마바 ")))
+        assertEquals(listOf(3L, -9L, 1L, 2L), ids(Receivables.narrow(owed, today, sort = OwedSort.AMOUNT)))
+        assertEquals(listOf(3L, 1L, -9L, 2L), ids(Receivables.narrow(owed, today, sort = OwedSort.OLDEST)))
+        val counts = Receivables.counts(owed, today)
+        assertEquals(4, counts[OwedFilter.ALL])
+        assertEquals(1, counts[OwedFilter.OVERDUE])
+        assertEquals(listOf(-9L), ids(Receivables.of(owed, "김사장")))
+    }
+
+    /** [RECV-05] The note sent to whoever owes says what for, how much, and the promised day. */
+    @Test
+    fun aReminderNoteNamesWhatHowMuchAndWhen() {
+        val late = Owed.Written(r(1, "라마바전자", 300_000, d(2), d(10)).copy(title = "10월 납품"))
+        val text = Receivables.reminder(late, today)
+        assertTrue(text, text.startsWith("라마바전자 님, 안녕하세요."))
+        assertTrue(text, text.contains("10월 납품"))
+        assertTrue(text, text.contains("11월 10일에 주시기로 한 300,000원"))
+        val job = Owed.FromJob(Job(id = 9, date = d(12), title = "욕실", amount = 400_000, deposit = 100_000, depositPaid = true))
+        val jobText = Receivables.reminder(job, today)
+        assertTrue(jobText, jobText.startsWith("안녕하세요."))
+        assertTrue(jobText, jobText.contains("11월 12일 욕실") && jobText.contains("300,000원"))
+    }
+
+    /** [RECV-05] Ticking a job paid from the list sets the same switches as the job editor. */
+    @Test
+    fun aJobIsPaidFromTheList() {
+        val job = Job(id = 9, date = d(12), title = "욕실", amount = 400_000, deposit = 100_000)
+        assertEquals(300_000, JobPayments.deposit(job)!!.unpaid)
+        assertEquals(0, JobPayments.all(job).unpaid)
+        assertNull(JobPayments.deposit(job.copy(depositPaid = true)))
+        assertNull(JobPayments.deposit(job.copy(deposit = 0)))
+        // No deposit: only the one 돈 받음 switch.
+        val plain = JobPayments.all(job.copy(deposit = 0))
+        assertTrue(plain.balancePaid && !plain.depositPaid)
     }
 }

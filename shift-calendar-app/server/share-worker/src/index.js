@@ -2,8 +2,10 @@
 //
 // POST   /api/share            body: schedule JSON  -> { id, url, deleteToken, expiresAt }
 // PUT    /api/share/:id        same body, header X-Delete-Token -> { id, url, expiresAt }
+//                              [SHR-12] without ttlDays the link keeps its end date; with it the link stays open that long from now
 // DELETE /api/share/:id        header X-Delete-Token -> 204
 // GET    /api/share/:id        [SHR-02] the schedule for the app's 받은 달력 -> { schedule, expiresAt, updatedAt }
+//                              [SHR-12] with an ETag; If-None-Match with it answers 304 while nothing changed
 // GET    /s/:id                the schedule as a web page (noindex, no scripts)
 // GET    /.well-known/assetlinks.json   lets Android open /s/ links in the app (ANDROID_CERT_SHA256)
 //
@@ -71,7 +73,7 @@ async function route(request, env) {
   const api = path.match(/^\/api\/share\/([A-Za-z0-9]{16,32})$/);
   if (api && request.method === "PUT") return update(request, env, url, api[1]);
   if (api && request.method === "DELETE") return remove(request, env, api[1]);
-  if (api && request.method === "GET") return read(env, api[1]);
+  if (api && request.method === "GET") return read(request, env, api[1]);
   if (path === "/.well-known/assetlinks.json" && request.method === "GET") return assetLinks(env);
   const page = path.match(/^\/s\/([A-Za-z0-9]{16,32})$/);
   if (page && (request.method === "GET" || request.method === "HEAD")) return view(request, env, page[1]);
@@ -90,7 +92,7 @@ async function create(request, env, url) {
   const record = {
     schedule: parsed.schedule,
     tokenHash: await sha256(deleteToken),
-    expiresAt: expiry(parsed.ttlDays),
+    expiresAt: expiry(parsed.ttlDays ?? 30),
     updatedAt: new Date().toISOString(),
   };
   await put(env, id, record);
@@ -102,9 +104,13 @@ async function update(request, env, url, id) {
   if (record instanceof Response) return record;
   const parsed = await readSchedule(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
-  const next = { ...record, schedule: parsed.schedule, expiresAt: expiry(parsed.ttlDays), updatedAt: new Date().toISOString() };
+  // [SHR-12] The app sends every change by itself; only the sharer's 연장 (a ttlDays) moves the end date.
+  const expiresAt = parsed.ttlDays == null ? record.expiresAt : expiry(parsed.ttlDays);
+  if (Date.parse(expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
+  const same = JSON.stringify(parsed.schedule) === JSON.stringify(record.schedule);
+  const next = { ...record, schedule: parsed.schedule, expiresAt, updatedAt: same ? record.updatedAt : new Date().toISOString() };
   await put(env, id, next);
-  return json({ id, url: `${url.origin}/s/${id}`, expiresAt: next.expiresAt });
+  return json({ id, url: `${url.origin}/s/${id}`, expiresAt: next.expiresAt, updatedAt: next.updatedAt });
 }
 
 async function remove(request, env, id) {
@@ -133,10 +139,18 @@ async function view(request, env, id) {
 }
 
 /** [SHR-02] What the app's 받은 달력 shows: the same schedule as the page, never the token hash. */
-async function read(env, id) {
+async function read(request, env, id) {
   const record = await env.SHARES.get(id, "json");
   if (!record || Date.parse(record.expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
-  return json({ schedule: record.schedule, expiresAt: record.expiresAt, updatedAt: record.updatedAt ?? null });
+  // [SHR-12] Receivers ask often and download only when the schedule or its end date changed.
+  const tag = `W/"${(await sha256(`${record.updatedAt ?? ""}|${record.expiresAt}`)).slice(0, 20)}"`;
+  const asked = (request.headers.get("if-none-match") || "").split(",").map((t) => t.trim().replace(/^W\//, ""));
+  if (asked.includes(tag.replace(/^W\//, ""))) {
+    return new Response(null, { status: 304, headers: { etag: tag, "cache-control": "no-store" } });
+  }
+  const res = json({ schedule: record.schedule, expiresAt: record.expiresAt, updatedAt: record.updatedAt ?? null });
+  res.headers.set("etag", tag);
+  return res;
 }
 
 /**
@@ -180,7 +194,8 @@ export function validate(body) {
     if (!Array.isArray(body.shows) || body.shows.some((s) => !SHOWS.includes(s))) return { error: "shows" };
     shows = SHOWS.filter((s) => body.shows.includes(s));
   }
-  const ttlDays = LIMITS.ttlDays.includes(body.ttlDays) ? body.ttlDays : 30;
+  // [SHR-12] No ttlDays: a new link gets 30 days, an update keeps its end date.
+  const ttlDays = body.ttlDays == null ? null : LIMITS.ttlDays.includes(body.ttlDays) ? body.ttlDays : 30;
   const title = cleanText(body.title ?? "", LIMITS.title);
   if (title === null) return { error: "title" };
   if (!Array.isArray(body.types) || body.types.length > LIMITS.types) return { error: "types" };

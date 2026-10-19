@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Payments
@@ -132,6 +133,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val settings: StateFlow<AppSettings> = container.settingsRepository.settings
     val upcoming: StateFlow<UpcomingAlarm?> = container.alarmScheduler.upcoming
     val snoozeAt: StateFlow<Long?> = container.alarmScheduler.snoozeAt
+    /** [MCAL-01] The user's calendars, for 설정 > 달력. */
+    val calendars: StateFlow<List<com.bamnat.app.data.PersonalCalendar>> = container.calendars.calendars
     val snapshot: StateFlow<ScheduleSnapshot?> = container.scheduleRepository.snapshot
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     fun cancelSnooze() = container.alarmScheduler.cancelSnooze()
@@ -394,6 +397,10 @@ fun SettingsScreen(
     company: (@Composable ColumnScope.() -> Unit)? = null,
     /** [ADMIN-02] 문의하기 in the app. */
     onOpenInquiry: () -> Unit = {},
+    /** [COMM-07] 회사 규칙 광장, on the first screen when the build has a company server. */
+    onOpenBoard: (() -> Unit)? = null,
+    /** [MCAL-04] The calendar list. */
+    onOpenCalendars: () -> Unit = {},
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -433,12 +440,12 @@ fun SettingsScreen(
             page = p, vm = vm, settings = settings, refresh = refresh, files = files, askNotifications = askNotifications,
             onOpenShiftTypes = onOpenShiftTypes, onOpenPattern = onOpenPattern, onOpenDiagnostics = onOpenDiagnostics,
             onOpenWorkStyle = onOpenWorkStyle, onOpenExtraKinds = onOpenExtraKinds, onOpenPay = onOpenPay, company = company,
-            onOpenPage = { page = it }, onOpenInquiry = onOpenInquiry,
+            onOpenPage = { page = it }, onOpenInquiry = onOpenInquiry, onOpenCalendars = onOpenCalendars,
         )
     }
     val hub: @Composable (Modifier, SettingsPage?) -> Unit = { modifier, selected ->
         SettingsHub(vm, settings, refresh, askNotifications, selected, hubScroll, modifier,
-            onOpen = { page = it }, onOpenDiagnostics = onOpenDiagnostics, onOpenShiftTypes = onOpenShiftTypes)
+            onOpen = { page = it }, onOpenDiagnostics = onOpenDiagnostics, onOpenShiftTypes = onOpenShiftTypes, onOpenBoard = onOpenBoard)
     }
 
     if (wide) {
@@ -511,6 +518,7 @@ private fun SettingsHub(
     onOpen: (SettingsPage) -> Unit,
     onOpenDiagnostics: (Boolean) -> Unit,
     onOpenShiftTypes: () -> Unit,
+    onOpenBoard: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
@@ -529,6 +537,8 @@ private fun SettingsHub(
             GroupRow(p.icon, p.title, if (p == SettingsPage.ABOUT && unread > 0) "문의에 답이 ${unread}개 왔어요 · $line" else line,
                 selected == p) { onOpen(p) }
         }
+        // [COMM-07] Its own row, so it is one tap away rather than inside 급여.
+        if (onOpenBoard != null) GroupRow(Icons.Outlined.Forum, "회사 규칙 광장", "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론", false, onOpenBoard)
         VersionLine(onOpenDiagnostics)
     }
 }
@@ -788,6 +798,7 @@ internal fun restoreMessage(s: BackupSummary): String {
         if (s.moneyLines > 0) add("돈 기록 ${s.moneyLines}건")
         if (s.sleeps > 0) add("수면 기록 ${s.sleeps}개")
         if (s.hasPay) add("급여 설정")
+        if (s.calendars > 0) add("추가한 달력 ${s.calendars}개")
     }
     val saved = if (s.exportedAtMillis > 0) " (${Fmt.dayTitle(AlarmScheduler.millisToLocal(s.exportedAtMillis).toLocalDate())} 저장)" else ""
     return "들어 있는 것: ${parts.joinToString(", ")}$saved.\n" +

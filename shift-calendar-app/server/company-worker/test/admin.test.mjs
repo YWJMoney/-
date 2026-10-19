@@ -442,3 +442,53 @@ async function worker(path) {
   const { default: w } = await import("../src/index.js");
   return w.fetch(new Request(ORIGIN + path), {});
 }
+
+test("the developer app's screens take a few trips to the database however much waits", async () => {
+  const { call, DB } = server();
+  for (let g = 0; g < 12; g++) {
+    const s = setup();
+    s.pay.monthlyHours = 160 + g;
+    await call("POST", "/api/reports", report(g + 1, { company: `회사${g}정밀`, setup: s }), from(g + 1));
+  }
+  const admin = await signIn(call);
+  let trips = 0;
+  let inBatch = false;
+  const { prepare, batch } = DB;
+  const trip = () => { if (!inBatch) trips++; };
+  const counted = (s) => ({ ...s, bind: (...v) => counted(s.bind(...v)),
+    first: (...a) => (trip(), s.first(...a)), all: () => (trip(), s.all()), run: () => (trip(), s.run()) });
+  DB.prepare = (sql) => counted(prepare(sql));
+  DB.batch = async (list) => {
+    trips++;
+    inBatch = true;
+    try {
+      return await batch(list);
+    } finally {
+      inBatch = false;
+    }
+  };
+  for (const path of ["/api/admin/overview", "/api/admin/queue", "/api/admin/companies?q=", "/api/admin/posts?status=all", "/api/admin/inquiries"]) {
+    trips = 0;
+    const res = await call("GET", path, undefined, admin);
+    assert.equal(res.status, 200, path);
+    // The sign-in check, then one batch.
+    assert.ok(trips <= 2, `${path}: ${trips} trips`);
+  }
+  const q = (await call("GET", "/api/admin/queue", undefined, admin)).data;
+  assert.equal(q.groups.length, 12);
+  const one = (await call("GET", `/api/admin/companies/${q.groups[0].company.id}`, undefined, admin)).data;
+  assert.equal(one.pending, 1);
+});
+
+test("the app's files are not sent again when the phone already has them", async () => {
+  const { call } = server();
+  const first = await call("GET", "/admin/app.js");
+  const etag = first.headers.get("etag");
+  assert.match(etag, /^"[0-9a-z]+"$/);
+  const again = await call("GET", "/admin/app.js", undefined, { "if-none-match": etag });
+  assert.equal(again.status, 304);
+  assert.equal(again.text, "");
+  assert.equal((await call("GET", "/admin/app.js", undefined, { "if-none-match": '"other"' })).status, 200);
+  // The phone keeps the files under a name that changes with the app.
+  assert.match((await call("GET", "/admin/sw.js")).text, /\)\("[0-9a-z]+"\);\n$/);
+});

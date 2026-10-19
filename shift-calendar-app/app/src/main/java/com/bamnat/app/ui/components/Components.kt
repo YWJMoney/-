@@ -14,12 +14,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -30,7 +30,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,7 +51,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -416,6 +414,7 @@ private fun RepeatIconButton(onStep: () -> Unit, enabled: Boolean, content: @Com
     ) { content() }
 }
 
+/** [TIME-01] Hours and minutes on the same up-and-down wheels as clock times, instead of typing. */
 @Composable
 fun DurationDialog(
     title: String,
@@ -424,38 +423,40 @@ fun DurationDialog(
     onDismiss: () -> Unit,
     onConfirm: (Int) -> Unit,
 ) {
-    var hours by remember { mutableStateOf((initialMinutes / 60).toString()) }
-    var mins by remember { mutableStateOf((initialMinutes % 60).toString()) }
-    val h = hours.toIntOrNull()
-    val m = mins.toIntOrNull()
-    val total = if (h != null && m != null && h >= 0 && m in 0..59) h * 60 + m else null
-    val valid = total != null && total <= maxMinutes
+    val start = initialMinutes.coerceIn(0, maxMinutes)
+    var hours by remember { mutableStateOf(start / 60) }
+    var mins by remember { mutableStateOf(start % 60) }
+    val total = hours * 60 + mins
+    val valid = total <= maxMinutes
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = hours,
-                    onValueChange = { v -> hours = v.filter(Char::isDigit).take(2) },
-                    label = { Text("시간") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f),
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    if (valid) HoursFormat.korean(total) else "${HoursFormat.korean(maxMinutes)}까지 정할 수 있어요",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (valid) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                 )
-                OutlinedTextField(
-                    value = mins,
-                    onValueChange = { v -> mins = v.filter(Char::isDigit).take(2) },
-                    label = { Text("분") },
-                    singleLine = true,
-                    isError = m != null && m > 59,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f),
-                )
+                Box(Modifier.fillMaxWidth().height(WHEEL_ROW_HEIGHT * 5), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(WHEEL_ROW_HEIGHT)
+                            .clip(MaterialTheme.shapes.medium)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Wheel(count = maxMinutes / 60 + 1, value = hours, jump = 0, label = "시간", onValue = { hours = it }, cyclic = false)
+                        WheelUnit("시간")
+                        Wheel(count = 60, value = mins, jump = 0, label = "분", onValue = { mins = it })
+                        WheelUnit("분")
+                    }
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = { total?.let(onConfirm) }, enabled = valid) { Text("확인") }
+            TextButton(onClick = { onConfirm(total) }, enabled = valid) { Text("확인") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
