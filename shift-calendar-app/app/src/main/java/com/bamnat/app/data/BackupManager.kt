@@ -9,6 +9,9 @@ import com.bamnat.app.data.db.JobEntity
 import com.bamnat.app.data.db.MoneyEntryEntity
 import com.bamnat.app.data.db.FixedCostEntity
 import com.bamnat.app.data.db.CategoryRuleEntity
+import com.bamnat.app.data.db.MoneyAccountEntity
+import com.bamnat.app.data.db.MoneyBudgetEntity
+import com.bamnat.app.data.db.MoneyCategoryEntity
 import com.bamnat.app.data.db.MemoEntity
 import com.bamnat.app.data.db.PatternEntity
 import com.bamnat.app.data.db.ShiftTypeEntity
@@ -97,7 +100,11 @@ class BackupManager(
             money.allEntries().forEach { e ->
                 put(JSONObject().put("id", e.id).put("day", e.epochDay).put("kind", e.kind).put("amount", e.amount)
                     .put("category", e.category).put("note", e.note).put("source", e.source).put("created", e.createdAt)
-                    .put("merchant", e.merchant).putOpt("minute", e.minuteOfDay).put("card", e.cardLast4).put("reviewed", e.reviewed))
+                    .put("merchant", e.merchant).putOpt("minute", e.minuteOfDay).put("card", e.cardLast4).put("reviewed", e.reviewed)
+                    // [LEDG-08][LEDG-09][LEDG-11] Version 15; only what is set, so a plain line stays short.
+                    .putOpt("account", e.accountId).putOpt("toAccount", e.toAccountId).putOpt("fixedId", e.fixedId)
+                    .putOpt("memo", e.memo.ifEmpty { null }).putOpt("tags", e.tags.ifEmpty { null })
+                    .putOpt("parts", e.parts.ifEmpty { null }).putOpt("installments", e.installments.takeIf { it > 1 }))
             }
         })
         into.put("jobs", JSONArray().apply {
@@ -116,7 +123,26 @@ class BackupManager(
         into.put("fixed", JSONArray().apply {
             money.allFixed().forEach { f ->
                 put(JSONObject().put("id", f.id).put("name", f.name).put("amount", f.amount).put("day", f.day).put("kind", f.kind)
-                    .put("category", f.category).put("remind", f.remind))
+                    .put("category", f.category).put("remind", f.remind)
+                    // [LEDG-09] Version 15.
+                    .put("repeat", f.repeat).put("monthOfYear", f.monthOfYear).putOpt("account", f.accountId).put("auto", f.auto)
+                    .putOpt("start", f.startEpochDay).putOpt("end", f.endEpochDay))
+            }
+        })
+        // [LEDG-08][LEDG-06][LEDG-14] Accounts, budgets and the user's categories (version 15). Older apps ignore these keys.
+        into.put("accounts", JSONArray().apply {
+            money.allAccounts().forEach { a ->
+                put(JSONObject().put("id", a.id).put("name", a.name).put("type", a.type).put("last4", a.last4)
+                    .putOpt("payDay", a.payDay).putOpt("closeDay", a.closeDay).putOpt("payFrom", a.payFromId)
+                    .put("opening", a.opening).put("color", a.color).put("order", a.sortOrder).put("hidden", a.hidden).put("remind", a.remind))
+            }
+        })
+        into.put("budgets", JSONArray().apply {
+            money.allBudgets().forEach { b -> put(JSONObject().put("category", b.category).put("amount", b.amount)) }
+        })
+        into.put("categories", JSONArray().apply {
+            money.allCategories().forEach { c ->
+                put(JSONObject().put("kind", c.kind).put("name", c.name).put("position", c.position).put("hidden", c.hidden))
             }
         })
         into.put("rules", JSONArray().apply {
@@ -305,6 +331,7 @@ class BackupManager(
     private class MoneyRows(
         val entries: List<MoneyEntryEntity>?, val jobs: List<JobEntity>?, val sales: List<DailySalesEntity>?,
         val fixed: List<FixedCostEntity>?, val rules: List<CategoryRuleEntity>?,
+        val accounts: List<MoneyAccountEntity>?, val budgets: List<MoneyBudgetEntity>?, val categories: List<MoneyCategoryEntity>?,
         val owed: List<com.bamnat.app.data.db.ReceivableEntity>?, val owedPaid: List<com.bamnat.app.data.db.ReceivablePaymentEntity>?,
     )
 
@@ -315,11 +342,30 @@ class BackupManager(
                 category = o.optString("category"), note = o.optString("note"), source = o.optString("source", "MANUAL"),
                 createdAt = o.optLong("created"), merchant = o.optString("merchant"), minuteOfDay = o.optIntOrNull("minute"),
                 cardLast4 = o.optString("card"), reviewed = o.optBoolean("reviewed", true),
+                accountId = o.optLongOrNull("account"), toAccountId = o.optLongOrNull("toAccount"), memo = o.optString("memo"),
+                tags = o.optString("tags"), parts = o.optString("parts"), installments = o.optInt("installments", 1).coerceIn(1, 60),
+                fixedId = o.optLongOrNull("fixedId"),
             )
         }
         val fixed = from.optJSONArray("fixed")?.objects()?.map { o ->
-            FixedCostEntity(o.getLong("id"), o.optString("name"), o.optLong("amount"), o.optInt("day", 1), o.optString("kind", "EXPENSE"),
-                o.optString("category"), o.optBoolean("remind", true))
+            FixedCostEntity(
+                id = o.getLong("id"), name = o.optString("name"), amount = o.optLong("amount"), day = o.optInt("day", 1),
+                kind = o.optString("kind", "EXPENSE"), category = o.optString("category"), remind = o.optBoolean("remind", true),
+                repeat = o.optString("repeat", "MONTH"), monthOfYear = o.optInt("monthOfYear", 1), accountId = o.optLongOrNull("account"),
+                auto = o.optBoolean("auto"), startEpochDay = o.optLongOrNull("start"), endEpochDay = o.optLongOrNull("end"),
+            )
+        }
+        val accounts = from.optJSONArray("accounts")?.objects()?.map { o ->
+            MoneyAccountEntity(
+                id = o.getLong("id"), name = o.optString("name"), type = o.optString("type", "OTHER"), last4 = o.optString("last4"),
+                payDay = o.optIntOrNull("payDay"), closeDay = o.optIntOrNull("closeDay"), payFromId = o.optLongOrNull("payFrom"),
+                opening = o.optLong("opening"), color = o.optInt("color"), sortOrder = o.optInt("order"), hidden = o.optBoolean("hidden"),
+                remind = o.optBoolean("remind", true),
+            )
+        }
+        val budgets = from.optJSONArray("budgets")?.objects()?.map { o -> MoneyBudgetEntity(o.optString("category"), o.optLong("amount")) }
+        val categories = from.optJSONArray("categories")?.objects()?.map { o ->
+            MoneyCategoryEntity(o.optString("kind", "EXPENSE"), o.getString("name"), o.optInt("position"), o.optBoolean("hidden"))
         }
         val rules = from.optJSONArray("rules")?.objects()?.map { o -> CategoryRuleEntity(o.getString("merchant"), o.optString("category")) }
         val jobs = from.optJSONArray("jobs")?.objects()?.map { o ->
@@ -347,7 +393,7 @@ class BackupManager(
         val sales = from.optJSONArray("sales")?.objects()?.map { o ->
             DailySalesEntity(o.getLong("day"), o.optLong("sales"), o.optLong("costs"), o.optString("note"))
         }
-        return MoneyRows(entries, jobs, sales, fixed, rules, owed, owedPaid)
+        return MoneyRows(entries, jobs, sales, fixed, rules, accounts, budgets, categories, owed, owedPaid)
     }
 
     /** [MCAL-06] Replaces a calendar's money with a backup's, part by part; call inside its transaction. */
@@ -359,6 +405,10 @@ class BackupManager(
         rows.sales?.let { list -> money.clearSales(); list.forEach { money.upsertSales(it) } }
         rows.fixed?.let { list -> money.clearFixed(); list.forEach { money.restoreFixed(it) } }
         rows.rules?.let { list -> money.clearRules(); list.forEach { money.upsertRule(it) } }
+        // Backups from before version 15 carry no accounts, budgets or categories; the ones on the phone then stay.
+        rows.accounts?.let { list -> money.clearAccounts(); list.forEach { money.restoreAccount(it) } }
+        rows.budgets?.let { list -> money.clearBudgets(); list.forEach { money.upsertBudget(it) } }
+        rows.categories?.let { list -> money.clearAllCategories(); money.insertCategories(list) }
         // Backups from before version 13 carry no receivables; the ones on the phone then stay.
         rows.owed?.let { list ->
             val dao = target.receivableDao()
@@ -520,6 +570,7 @@ class BackupManager(
         if (this == null) emptyList() else (0 until length()).map { getJSONObject(it) }
 
     private fun JSONObject.optIntOrNull(key: String): Int? = if (!has(key) || isNull(key)) null else getInt(key)
+    private fun JSONObject.optLongOrNull(key: String): Long? = if (!has(key) || isNull(key)) null else getLong(key)
     private fun JSONObject.optStringOrNull(key: String): String? = if (!has(key) || isNull(key)) null else getString(key)
 
     companion object {

@@ -41,7 +41,7 @@ object JobReminderScheduler {
 
     fun reschedule(context: Context, book: MoneyBook, settings: AppSettings, now: LocalDateTime = LocalDateTime.now()) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
-        val next = MoneyAlerts.all(book.jobs, book.fixed, book.entries, now.toLocalDate(), book.receivables)
+        val next = MoneyAlerts.all(book.jobs, book.fixed, book.entries, now.toLocalDate(), book.receivables, book.accounts)
             .filter { it.at.isAfter(now) && wanted(it, settings) }.minOfOrNull { it.at }
         if (next == null) {
             am.cancel(pending(context, 0L))
@@ -64,11 +64,11 @@ object JobReminderScheduler {
 
     /** What is due at [at], read again now so a job paid or a bill recorded since is not announced. */
     internal suspend fun dueAt(money: MoneyRepository, settings: AppSettings, at: LocalDateTime): List<MoneyAlerts.Alert> =
-        dueAt(MoneyBook(money.allEntries(), money.allJobs(), emptyList(), money.allFixed(), money.allReceivables()), settings, at)
+        dueAt(MoneyBook(money.allEntries(), money.allJobs(), emptyList(), money.allFixed(), money.allReceivables(), money.allAccounts()), settings, at)
 
     /** [MCAL-06] The same from every calendar's money at once. */
     internal fun dueAt(book: MoneyBook, settings: AppSettings, at: LocalDateTime): List<MoneyAlerts.Alert> {
-        return MoneyAlerts.dueAt(book.jobs, book.fixed, book.entries, at, book.receivables).filter { wanted(it, settings) }
+        return MoneyAlerts.dueAt(book.jobs, book.fixed, book.entries, at, book.receivables, book.accounts).filter { wanted(it, settings) }
     }
 
     /** [SLP-15] Money held while the user slept, now that they are up. */
@@ -114,6 +114,10 @@ class JobReminderReceiver : BroadcastReceiver() {
             try {
                 // [MCAL-06] Every calendar's jobs, bills and money owed.
                 val settings = container.settingsRepository.current
+                // [LEDG-09] Repeating lines that write themselves are written before their notice says so.
+                for (cal in container.calendars.calendars.value) {
+                    runCatching { container.calendars.money(cal.id).catchUpRecurring(java.time.LocalDate.now()) }
+                }
                 if (atMillis != 0L) {
                     val at = LocalDateTime.ofInstant(Instant.ofEpochMilli(atMillis), ZoneId.systemDefault())
                     val (jobs, rest) = JobReminderScheduler.dueAt(container.calendars.everyMoneyNow(), settings, at).partition { it.key.startsWith("job-") }

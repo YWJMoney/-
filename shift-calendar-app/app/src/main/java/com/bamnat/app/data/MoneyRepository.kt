@@ -4,12 +4,19 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.Dispatchers
 import com.bamnat.app.data.db.AppDatabase
 import com.bamnat.app.data.db.CategoryRuleEntity
+import com.bamnat.app.data.db.decodeParts
+import com.bamnat.app.data.db.encodeParts
 import com.bamnat.app.data.db.toEntity
 import com.bamnat.app.data.db.toModel
+import com.bamnat.core.money.CategoryEdit
 import com.bamnat.core.money.DailySales
 import com.bamnat.core.money.FixedCost
 import com.bamnat.core.money.Job
+import com.bamnat.core.money.MoneyAccount
+import com.bamnat.core.money.MoneyAccounts
 import com.bamnat.core.money.MoneyBook
+import com.bamnat.core.money.MoneyBudget
+import com.bamnat.core.money.MoneyCategories
 import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.money.MoneySource
@@ -17,6 +24,7 @@ import com.bamnat.core.money.PaymentParser
 import com.bamnat.core.money.Receivable
 import com.bamnat.core.money.ReceivablePayment
 import com.bamnat.core.money.Receivables
+import com.bamnat.core.money.Recurring
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -53,8 +61,18 @@ class MoneyRepository(
         val byId = paid.groupBy { it.receivableId }
         list.map { it.toModel(byId[it.id].orEmpty()) }
     }
+    /** [LEDG-08] Cash, bank accounts and cards, in the user's order. */
+    val accounts: Flow<List<MoneyAccount>> = dao.observeAccounts().map { list -> list.map { it.toModel() } }
+    /** [LEDG-06] Monthly budgets. */
+    val budgets: Flow<List<MoneyBudget>> = dao.observeBudgets().map { list -> list.map { it.toModel() } }
+    /** [LEDG-14] Categories the user added, hid or moved. */
+    val categories: Flow<List<CategoryEdit>> = dao.observeCategories().map { list -> list.mapNotNull { it.toModel() } }
+    private val plans: Flow<Triple<List<MoneyAccount>, List<MoneyBudget>, List<CategoryEdit>>> =
+        combine(accounts, budgets, categories) { a, b, c -> Triple(a, b, c) }
     /** [STAB-01] Every ledger row is turned into a line off the main thread. */
-    val book: Flow<MoneyBook> = combine(entries, jobs, sales, fixed, receivables) { e, j, s, f, r -> MoneyBook(e, j, s, f, r) }.flowOn(Dispatchers.Default)
+    val book: Flow<MoneyBook> = combine(
+        combine(entries, jobs, sales, fixed, receivables) { e, j, s, f, r -> MoneyBook(e, j, s, f, r) }, plans,
+    ) { b, (a, bu, c) -> b.copy(accounts = a, budgets = bu, categories = c) }.flowOn(Dispatchers.Default)
 
     /**
      * Inserts a new line or replaces the one with the same id; returns it with its id. When the user
@@ -70,6 +88,102 @@ class MoneyRepository(
     }
 
     suspend fun delete(entry: MoneyEntry) = dao.deleteEntry(entry.id)
+
+    /** [LEDG-07] Several lines changed at once (고르기), saved as they are. */
+    suspend fun saveAll(list: List<MoneyEntry>) {
+        if (list.isNotEmpty()) dao.restoreEntries(list.map { it.toEntity(clock()) })
+    }
+
+    /** [LEDG-07] Several lines removed at once; [saveAll] with the same lines puts them back. */
+    suspend fun deleteAll(list: List<MoneyEntry>) {
+        if (list.isNotEmpty()) dao.deleteEntries(list.map { it.id })
+    }
+
+    suspend fun allAccounts(): List<MoneyAccount> = dao.allAccounts().map { it.toModel() }
+
+    suspend fun allBudgets(): List<MoneyBudget> = dao.allBudgets().map { it.toModel() }
+
+    suspend fun allCategories(): List<CategoryEdit> = dao.allCategories().mapNotNull { it.toModel() }
+
+    /** [LEDG-08] Adds an account at the end of the list, or saves the one with the same id. */
+    suspend fun save(account: MoneyAccount): MoneyAccount {
+        val clean = account.copy(name = account.name.trim().take(MoneyAccount.MAX_NAME), last4 = account.last4.filter { it.isDigit() }.takeLast(4))
+        if (clean.id != 0L) return clean.also { dao.restoreAccount(it.toEntity()) }
+        val order = (dao.allAccounts().maxOfOrNull { it.sortOrder } ?: -1) + 1
+        return clean.copy(order = order).let { it.copy(id = dao.insertAccount(it.toEntity())) }
+    }
+
+    /**
+     * [LEDG-08] Removes an account. One with lines is put away instead, so its old lines keep their
+     * name and balances stay right; returns true when it was really removed. Cards that paid from a
+     * removed account no longer point at it.
+     */
+    suspend fun remove(account: MoneyAccount): Boolean {
+        if (dao.linesOfAccount(account.id) > 0) {
+            dao.restoreAccount(account.copy(hidden = true).toEntity())
+            return false
+        }
+        dao.deleteAccount(account.id)
+        dao.allAccounts().filter { it.payFromId == account.id }.forEach { dao.restoreAccount(it.copy(payFromId = null)) }
+        return true
+    }
+
+    /** [LEDG-08] Saves the user's order of accounts. */
+    suspend fun reorder(accounts: List<MoneyAccount>) =
+        accounts.forEachIndexed { i, a -> if (a.order != i) dao.restoreAccount(a.copy(order = i).toEntity()) }
+
+    /** [LEDG-06] Sets a monthly budget; 0 or less removes it. */
+    suspend fun setBudget(category: String, amount: Long) =
+        if (amount <= 0) dao.deleteBudget(category) else dao.upsertBudget(MoneyBudget(category, amount).toEntity())
+
+    /** [LEDG-14] Saves the user's categories for [kind] in their order; null names are dropped. */
+    suspend fun saveCategories(kind: MoneyKind, list: List<CategoryEdit>) {
+        dao.clearCategories(kind.name)
+        dao.insertCategories(list.filter { it.kind == kind && it.name.isNotBlank() }.map { it.toEntity() })
+    }
+
+    /**
+     * [LEDG-14] Renames a category everywhere it is used: lines (split parts too), repeating
+     * lines, learned places and its budget, so nothing is left under the old name.
+     */
+    suspend fun renameCategory(kind: MoneyKind, from: String, to: String) {
+        val name = MoneyCategories.clean(to)
+        if (name.isEmpty() || name == from) return
+        dao.renameInEntries(kind.name, from, name)
+        dao.renameInFixed(kind.name, from, name)
+        if (kind == MoneyKind.EXPENSE) {
+            dao.renameInRules(from, name)
+            dao.allBudgets().firstOrNull { it.category == from }?.let { b ->
+                dao.deleteBudget(from)
+                dao.upsertBudget(b.copy(category = name))
+            }
+            val split = dao.entriesWithPart(from).filter { it.kind == kind.name }.mapNotNull { e ->
+                val parts = decodeParts(e.parts)
+                if (parts.none { it.category == from }) null
+                else e.copy(parts = encodeParts(parts.map { if (it.category == from) it.copy(category = name) else it }))
+            }
+            if (split.isNotEmpty()) dao.restoreEntries(split)
+        }
+        val mine = dao.allCategories().filter { it.kind == kind.name }
+        if (mine.isNotEmpty()) {
+            dao.clearCategories(kind.name)
+            dao.insertCategories(mine.map { if (it.name == from) it.copy(name = name) else it }.distinctBy { it.name })
+        }
+    }
+
+    private val recurringLock = Mutex()
+
+    /**
+     * [LEDG-09] Writes down the repeating lines set to write themselves that came due up to
+     * [today], once each, and returns them. Run when the money tab opens and when an alarm fires.
+     */
+    suspend fun catchUpRecurring(today: LocalDate): List<MoneyEntry> = recurringLock.withLock {
+        val costs = allFixed().filter { it.auto }
+        if (costs.isEmpty()) return emptyList()
+        val since = today.minusDays(Recurring.CATCH_UP_DAYS + 366)
+        val lines = dao.entriesFrom(since.toEpochDay()).map { it.toModel() }
+        Recurring.due(costs, lines, today).map { save(it) }
+    }
 
     suspend fun markAllReviewed() = dao.markAllReviewed()
 
@@ -184,7 +298,10 @@ class MoneyRepository(
         val category = if (parsed.type == PaymentParser.Type.CANCEL) {
             PaymentParser.findCancelTarget(parsed, day, recent)?.category ?: parsed.category
         } else parsed.category
-        PaymentParser.toEntry(parsed, arrived.toLocalDate(), MoneySource.NOTIFICATION, category)?.let { save(it) }
+        PaymentParser.toEntry(parsed, arrived.toLocalDate(), MoneySource.NOTIFICATION, category)
+            // [LEDG-08] A card the user added picks up its payments by the last four digits.
+            ?.let { e -> e.copy(accountId = MoneyAccounts.match(e.cardLast4, allAccounts())) }
+            ?.let { save(it) }
         return Outcome.SAVED
     }
 
