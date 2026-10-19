@@ -29,7 +29,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.outlined.Apartment
 import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Flag
@@ -94,6 +96,11 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /** [ADMIN-02] What the form and the privacy policy say about a question before it goes. */
+/** [INQ-01] A company way names the workplace, so it stays with the developer; the privacy policy 1-3항 says the same. */
+internal const val INQUIRY_PRIVATE_NOTICE =
+    "회사 방식은 모두의 문의에 올라가지 않고 개발자만 봐요. 이름, 메일 주소, 전화번호, 기본급·수당 금액은 적지 말아 주세요. " +
+        "보낸 문의는 언제든 지울 수 있고, 180일 동안 새 글이 없으면 저절로 지워져요."
+
 internal const val INQUIRY_SEND_NOTICE =
     "모두의 문의에 올라가요. 앱을 쓰는 다른 분도 적은 글과 개발자 답을 볼 수 있고, 보낸 분이 누구인지는 보이지 않아요. " +
         "3번의 ‘함께 보내는 정보’는 개발자만 봐요. 이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요. " +
@@ -332,7 +339,7 @@ private fun InquiryForm(vm: InquiryViewModel, pay: String?, onSent: (Inquiry) ->
                 if (showCheck) Shown(check ?: "불러오는 중…")
             }
         }
-        Text(INQUIRY_SEND_NOTICE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(if (kind?.public == false) INQUIRY_PRIVATE_NOTICE else INQUIRY_SEND_NOTICE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
         val ready = kind != null && text.isNotBlank() && problem == null && !busy
         Button(
@@ -389,6 +396,8 @@ private fun Shown(text: String) {
 private fun placeholder(kind: InquiryKind?): String = when (kind) {
     InquiryKind.BUG -> "예: 어제 야간 출근 알람이 5분 늦게 울렸어요. 잠금 화면에는 아무것도 안 떴어요"
     InquiryKind.IDEA -> "예: 달력이 일요일부터 시작하면 좋겠어요"
+    InquiryKind.COMPANY -> "예: OO공장 생산2팀이에요. 휴무일 근무는 8시간에 기본급 10%, 8시간 넘으면 0.5 가산이에요"
+    InquiryKind.OTHER -> "예: 야간 근무 날 화면이 어두워져서 좋아요"
     else -> "예: 대근을 4시간만 하면 급여에 어떻게 들어가나요?"
 }
 
@@ -422,6 +431,8 @@ private fun InquiryKind.icon(): ImageVector = when (this) {
     InquiryKind.QUESTION -> Icons.Outlined.QuestionAnswer
     InquiryKind.BUG -> Icons.Outlined.BugReport
     InquiryKind.IDEA -> Icons.Outlined.Lightbulb
+    InquiryKind.COMPANY -> Icons.Outlined.Apartment
+    InquiryKind.OTHER -> Icons.Outlined.ChatBubbleOutline
 }
 
 @Composable

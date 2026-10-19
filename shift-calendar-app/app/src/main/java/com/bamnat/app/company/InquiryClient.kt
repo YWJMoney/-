@@ -8,11 +8,17 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
 import java.time.Instant
 
-/** What a question is about [ADMIN-02]; [code] is the server's word for it. */
-enum class InquiryKind(val code: String, val label: String, val hint: String) {
+/**
+ * What a question is about [ADMIN-02]; [code] is the server's word for it. Every question, suggestion and
+ * company way goes this one way since 1.14.1 [INQ-01]; a company way names the workplace, so it is not
+ * [public] and only the developer reads it.
+ */
+enum class InquiryKind(val code: String, val label: String, val hint: String, val public: Boolean = true) {
     QUESTION("question", "궁금해요", "쓰는 법이나 계산이 궁금할 때"),
     BUG("bug", "앱이 이상해요", "알람이 안 울리거나 계산이 다르거나 화면이 멈출 때"),
-    IDEA("idea", "이렇게 바뀌면 좋겠어요", "있었으면 하는 기능"),
+    IDEA("idea", "건의·제안", "있었으면 하는 기능이나 바뀌면 좋을 점"),
+    COMPANY("company", "회사 방식 알려 주기", "회사의 수당·근무 계산 방식이 앱에 없을 때. 개발자만 봐요", public = false),
+    OTHER("other", "그 밖의 이야기", "칭찬이나 불편한 점, 무엇이든"),
     ;
 
     companion object {
@@ -87,7 +93,15 @@ enum class InquiryFlag(val code: String, val label: String) {
  * beyond what the alarm check itself says. [pay] is what 급여 > 계산이 이상해요 adds: the month's rules and
  * each line's hours and rate, again without an amount, and only while the user leaves it ticked.
  */
-data class InquiryInfo(val app: String, val model: String, val android: String, val diag: String? = null, val pay: String? = null)
+data class InquiryInfo(
+    val app: String,
+    val model: String,
+    val android: String,
+    val diag: String? = null,
+    val pay: String? = null,
+    /** [INQ-01] 회사 방식 알려 주기: the kind's settings in words, without an amount. */
+    val setup: String? = null,
+)
 
 /** [ADMIN-02] 설정 > 문의하기 through the company server; screenshots and tests answer with a fake. */
 interface InquiryApi {
@@ -112,9 +126,10 @@ class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
         val i = JSONObject().put("app", info.app).put("model", info.model).put("android", info.android)
         info.diag?.takeIf { it.isNotBlank() }?.let { i.put("diag", it.take(DIAG_MAX)) }
         info.pay?.takeIf { it.isNotBlank() }?.let { i.put("pay", it.take(PAY_MAX)) }
+        info.setup?.takeIf { it.isNotBlank() }?.let { i.put("setup", it.take(SETUP_MAX)) }
         // [ADMIN-02] The form says the question goes to 모두의 문의; the server keeps it private without this.
         val body = JSONObject().put("v", 1).put("device", device).put("kind", kind.code).put("text", text.trim()).put("info", i)
-            .put("public", true)
+            .put("public", kind.public)
         inquiry(serverRequest(baseUrl, "POST", "/api/inquiries", body))
     }
 
@@ -211,6 +226,7 @@ class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
         const val TEXT_MAX = 2000
         const val DIAG_MAX = 6000
         const val PAY_MAX = 3000
+        const val SETUP_MAX = 3000
     }
 }
 

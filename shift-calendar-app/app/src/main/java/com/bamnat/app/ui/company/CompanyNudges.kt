@@ -37,6 +37,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.SheetValue
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -74,7 +75,8 @@ private enum class Wrong(val label: String, val why: String, val place: FixPlace
 
 /** [EXTRA-06][COMM-04] What the developer gets with a way the app cannot set yet; the privacy policy says the same. */
 internal const val ASK_NOTICE =
-    "회사 이름과 적은 내용, 지금 설정(금액 빼고)이 개발자에게 가요. 기본급·이름·연락처는 적지 마세요. 답은 설정 > 내가 보낸 정보에서 볼 수 있어요."
+    "앱 안 문의로 개발자에게만 가고, 모두의 문의에는 올라가지 않아요. 회사 이름과 적은 내용, 앱·기기 정보가 가요. " +
+        "기본급·이름·연락처는 적지 마세요. 답은 설정 > 앱 정보 > 문의하기에서 볼 수 있어요."
 
 /**
  * [COMM-02][COMM-03] The cards around a company setup, on the pay screen and in settings: the
@@ -314,16 +316,15 @@ fun InviteSheet(vm: CompanyNudgeViewModel, onShare: () -> Unit, onDismiss: () ->
 
 /**
  * [EXTRA-06][COMM-04] A company way the app cannot set yet, in words and an example, straight to
- * the developer. The answer comes back in 내가 보낸 정보. [note] builds what is sent from the words.
+ * the developer as a question in the app [INQ-01]. The answer comes back in 설정 > 문의하기. [setup] is
+ * the settings that go with it, shown before sending.
  */
 @Composable
 fun AskDeveloperDialog(
     company: String,
     onDismiss: () -> Unit,
     onSent: () -> Unit,
-    note: (company: String, how: String, example: String) -> String = { _, how, example ->
-        "어떻게: ${how.trim()}" + (if (example.isNotBlank()) "\n예시: ${example.trim()}" else "")
-    },
+    setup: String? = null,
 ) {
     val container = LocalContext.current.appContainer
     val scope = rememberCoroutineScope()
@@ -333,12 +334,13 @@ fun AskDeveloperDialog(
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var sent by remember { mutableStateOf(false) }
+    var showSetup by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = { Text(if (sent) "보냈어요! 💌" else "회사 방식 알려 주기") },
         text = {
             if (sent) {
-                Text("개발자가 직접 읽고 답을 드려요. 답은 설정 > 내가 보낸 정보에서 볼 수 있어요.", style = MaterialTheme.typography.bodyMedium)
+                Text("개발자가 직접 읽고 답을 드려요. 답은 설정 > 앱 정보 > 문의하기에서 볼 수 있어요.", style = MaterialTheme.typography.bodyMedium)
             } else {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("말과 예시로 적어 주시면 개발자가 직접 읽고, 앱에 넣을 수 있는지 답을 드려요.", style = MaterialTheme.typography.bodySmall,
@@ -350,6 +352,16 @@ fun AskDeveloperDialog(
                     OutlinedTextField(example, { example = it.take(400) }, label = { Text("예시 (선택)") },
                         placeholder = { Text("예: 근무 8시간 뒤 야간 4시간 → 기본급의 10%") },
                         minLines = 2, modifier = Modifier.fillMaxWidth())
+                    if (setup != null) {
+                        TextButton(onClick = { showSetup = !showSetup }) {
+                            Text(if (showSetup) "함께 보내는 설정 접기" else "함께 보내는 설정 보기 (금액 없이)")
+                        }
+                        if (showSetup) {
+                            Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                                Text(setup, style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth().padding(10.dp))
+                            }
+                        }
+                    }
                     Text(ASK_NOTICE, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                 }
@@ -363,7 +375,7 @@ fun AskDeveloperDialog(
                     busy = true
                     error = null
                     scope.launch {
-                        error = container.askDeveloper(name, note(name, how, example))
+                        error = container.askDeveloper(name, how, example, setup)
                         busy = false
                         if (error == null) sent = true
                     }

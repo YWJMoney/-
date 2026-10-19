@@ -1,11 +1,9 @@
 package com.bamnat.app.ui.settings
 
 import android.content.Context
-import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
-import com.bamnat.app.BuildConfig
 import com.bamnat.app.company.CompanyException
 import com.bamnat.app.company.CompanyText
 import com.bamnat.app.company.Inquiry
@@ -41,11 +39,7 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     private val device get() = c.companyStore.device
 
     /** What always goes with a question; shown on the form before it is sent. */
-    val info = InquiryInfo(
-        app = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-        model = "${Build.MANUFACTURER} ${Build.MODEL}",
-        android = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
-    )
+    val info: InquiryInfo = com.bamnat.app.ui.company.deviceInquiryInfo()
 
     /** [ADMIN-02] Opened from 계산이 이상해요: the pay check to send, and the form comes first. */
     val payCheck: String? = c.pendingPayCheck.also { c.pendingPayCheck = null }

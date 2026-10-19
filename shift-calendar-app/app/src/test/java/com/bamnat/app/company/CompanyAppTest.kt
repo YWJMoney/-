@@ -241,6 +241,18 @@ class CompanyAppTest {
         api.delete("app-test-device-0011", sent.id)
     }
 
+    /** [INQ-01] 회사 방식 알려 주기 is a question in the app that only the developer reads, with the kind's settings. */
+    @Test fun aCompanyWayIsAPrivateQuestion() = withServer { base ->
+        val api = InquiryClient(base)
+        val info = InquiryInfo(app = "1.14.1 (21)", model = "samsung SM-F956N", android = "16 (API 36)",
+            setup = "종류: 휴무일 근무 · 근무처럼\n지금 설정: 1회 정액 (8시간까지)")
+        val sent = api.send("app-test-device-0031", InquiryKind.COMPANY, "회사: 예시정밀\n휴무일 근무는 8시간에 기본급 10%", info)
+        assertEquals(InquiryKind.COMPANY, sent.kind)
+        assertFalse(sent.public)
+        assertTrue(api.board("app-test-device-0032", null, false, 0).items.isEmpty())
+        assertEquals(InquiryKind.OTHER, api.send("app-test-device-0033", InquiryKind.OTHER, "화면이 예뻐요", info.copy(setup = null)).kind)
+    }
+
     /** [ADMIN-02] 모두의 문의: a question this app sends is public, others say 나도 그래요 and 신고, the extras stay private. */
     @Test fun everyoneSeesPublicQuestions() = withServer { base ->
         val api = InquiryClient(base)
