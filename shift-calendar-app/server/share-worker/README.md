@@ -32,9 +32,9 @@ Cloudflare Worker 하나와 KV 저장소 하나로 돌아가고, 무료 요금�
 | 요청 | 하는 일 |
 | --- | --- |
 | `POST /api/share` | 링크 만들기. 답: `{id, url, deleteToken, expiresAt}` |
-| `PUT /api/share/:id` | 지금 근무표로 고치기 (헤더 `X-Delete-Token`) |
+| `PUT /api/share/:id` | 지금 근무표로 고치기 (헤더 `X-Delete-Token`). `ttlDays`가 없으면 끝나는 날을 그대로 두고, 있으면 오늘부터 그만큼 열어요 |
 | `DELETE /api/share/:id` | 링크 끊기 (헤더 `X-Delete-Token`) |
-| `GET /api/share/:id` | 받은 근무표 읽기. 답: `{schedule, expiresAt, updatedAt}`. 끊겼거나 기간이 지나면 404 `not_found` |
+| `GET /api/share/:id` | 받은 근무표 읽기. 답: `{schedule, expiresAt, updatedAt}`와 `ETag`. `If-None-Match`에 그 값을 넣으면 바뀐 게 없을 때 304. 끊겼거나 기간이 지나면 404 `not_found` |
 | `GET /s/:id` | 브라우저로 보는 근무표 페이지 (검색엔진 차단, 스크립트 없음) |
 | `GET /.well-known/assetlinks.json` | 링크를 앱으로 여는 Android 확인 파일 |
 
@@ -50,6 +50,14 @@ Cloudflare Worker 하나와 KV 저장소 하나로 돌아가고, 무료 요금�
 - `shows`에 `jobs`(일정)가 더해졌어요. 날마다 `jobs: [{name, time}]`가 4개까지 오고, 이름은 12자까지예요. 고객·장소·금액은 받지 않아요.
 - 근무가 없는 달력(가게, 현장 일)은 `days`가 비어 있어도 금액(`pay`)이 있으면 받아요.
 - **앱 1.13을 내기 전에 이 서버 코드를 다시 올려 주세요.** 예전 서버는 일정과 근무 없는 링크를 거절해요(앱이 "보낼 근무가 없어요"라고 알려 줘요).
+
+앱 1.14부터 [SHR-12]:
+- 공유한 사람이 달력을 고치면 앱이 몇 초 뒤 링크를 스스로 고쳐요(`PUT`에 `ttlDays` 없이). 이때 링크가 닫히는 날은 그대로예요.
+  같은 내용을 다시 보내면 `updatedAt`도 그대로라 받은 사람 앱이 다시 내려받지 않아요.
+- 기간 늘리기(앱 공유 화면, 또는 닫히기 3일 전 알림의 ‘N일 늘리기’)는 `ttlDays`를 넣어 보내요. 오늘부터 7·30·90일이에요.
+- 받은 사람 앱은 `ETag`를 넣어 물어보고, 바뀐 게 있을 때만 근무표를 받아요. 근무표가 바뀌거나 기간이 늘면 `ETag`가 바뀌어요.
+- 이미 닫힌 링크는 `PUT`으로 다시 열 수 없어요(404).
+- **앱 1.14를 내기 전에 이 서버 코드를 다시 올려 주세요.** 예전 서버는 `ttlDays` 없는 고치기를 30일로 바꿔서, 자동 고치기 때마다 끝나는 날이 30일 뒤로 바뀌어요.
 
 ## 개인정보
 

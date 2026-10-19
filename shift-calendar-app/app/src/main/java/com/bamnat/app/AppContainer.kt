@@ -85,6 +85,10 @@ class AppContainer(context: Context) {
     }
     /** [MKT-09][SHR-02] The link server; screenshots and tests put a fake in its place. */
     var shareApi: com.bamnat.app.share.ShareApi = com.bamnat.app.share.ShareLinkClient()
+    /** [MKT-09][SHR-12] The one link this phone made, shared by the sheet, the automatic update and the expiry notice. */
+    val shareLinks by lazy { com.bamnat.app.share.ShareLinkStore(appContext) }
+    /** [SHR-12] Sends the link again when the calendar changes. */
+    val shareSync by lazy { com.bamnat.app.share.ShareSync(this) }
     /** [SHR-02] Schedules others shared, kept beside the user's own and never backed up. */
     val received by lazy { com.bamnat.app.share.ReceivedCalendarStore(java.io.File(appContext.noBackupFilesDir, "received_calendars.json")) }
     val featureGate = FeatureGate(settingsRepository, appScope)
@@ -174,6 +178,11 @@ class AppContainer(context: Context) {
             val on = settingsRepository.settings.map { it.leaveNotice }.distinctUntilChanged()
             combine(entered, on) { a, b -> a to b }
                 .collect { LeaveReminder.reschedule(appContext, payStore.profile.value, settingsRepository.current) }
+        }
+        // [SHR-12] The link this phone made follows the calendar, and its expiry notice follows the link.
+        keep("share") { if (shareApi.enabled) shareSync.follow() }
+        keep("shareexpiry") {
+            shareLinks.link.collect { com.bamnat.app.share.ShareExpiryReminder.reschedule(appContext, it, shareLinks.noticedFor) }
         }
         // [SLP-15] 자는 중 follows the sleep log, and a sleep that just ended says how long it was.
         // What waited while the user slept is planned again from the log.

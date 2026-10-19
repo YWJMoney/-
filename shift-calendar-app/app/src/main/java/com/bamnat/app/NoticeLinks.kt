@@ -27,6 +27,8 @@ object NoticeLinks {
         OWED,
         /** [IMPORT-01] Bringing in the phone's calendar. */
         CALENDAR_IMPORT,
+        /** [SHR-12] The calendar with the share sheet open, from the link's expiry notice. */
+        SHARE,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"
