@@ -94,6 +94,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         HomeRequests.onStart()
+        appContainer.verifyAlarms()
     }
 
     override fun onStop() {

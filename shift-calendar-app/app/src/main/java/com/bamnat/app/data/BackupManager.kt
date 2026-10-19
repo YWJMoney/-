@@ -202,6 +202,7 @@ class BackupManager(
                 // 1.10 and before read one switch for all sleep notices.
                 .put("sleepReminders", s.briefing || s.commuteNotice)
                 .put("briefing", s.briefing).put("commuteNotice", s.commuteNotice).put("bedtimeNotice", s.bedtimeNotice)
+                .put("todayShiftNotice", s.todayShiftNotice)
                 .put("sleepingNotice", s.sleepingNotice).put("quietWhileAsleep", s.quietWhileAsleep)
                 .put("moneyNotices", s.moneyNotices).put("leaveNotice", s.leaveNotice)
                 .put("sleepTarget", s.sleepTargetMinutes).put("commute", s.commuteMinutes),
@@ -460,6 +461,7 @@ class BackupManager(
                     briefing = o.optBoolean("briefing", o.optBoolean("sleepReminders", s.briefing)),
                     commuteNotice = o.optBoolean("commuteNotice", o.optBoolean("sleepReminders", s.commuteNotice)),
                     bedtimeNotice = o.optBoolean("bedtimeNotice", s.bedtimeNotice),
+                    todayShiftNotice = o.optBoolean("todayShiftNotice", s.todayShiftNotice),
                     sleepingNotice = o.optBoolean("sleepingNotice", s.sleepingNotice),
                     quietWhileAsleep = o.optBoolean("quietWhileAsleep", s.quietWhileAsleep),
                     moneyNotices = o.optBoolean("moneyNotices", s.moneyNotices),

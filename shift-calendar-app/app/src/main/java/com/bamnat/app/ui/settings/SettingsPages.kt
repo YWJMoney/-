@@ -220,7 +220,7 @@ private fun NoticesPage(
     val canPost = remember(refresh) { Notifications.canPost(context) }
     val off = remember(refresh) {
         listOf(Notifications.ALARM_CHANNEL_ID, Notifications.DAY_CHANNEL_ID, Notifications.COMMUTE_CHANNEL_ID,
-            Notifications.MONEY_CHANNEL_ID, Notifications.LEAVE_CHANNEL_ID)
+            Notifications.MONEY_CHANNEL_ID, Notifications.LEAVE_CHANNEL_ID, Notifications.TODAY_CHANNEL_ID)
             .filter { canPost && !Notifications.channelOn(context, it) }.toSet()
     }
     fun warning(on: Boolean, channel: String) = if (on && channel in off) "휴대폰 설정에서 꺼져 있어 오지 않아요" else null
@@ -262,6 +262,11 @@ private fun NoticesPage(
         SwitchRow("자는 중 표시", "‘잠들었어요’를 누르면 알림창에 잔 시간과 다음 알람이 보이고, ‘깼어요’로 끝내요", settings.sleepingNotice,
             warning = warning(settings.sleepingNotice, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
             set(on) { it.copy(sleepingNotice = on) }
+        }
+        // [FEAT-18] Phones have no lock-screen widgets; this quiet notice stands in for one.
+        SwitchRow("잠금 화면 오늘 근무", "오늘과 내일 근무를 잠금 화면과 알림창에 늘 보여 줘요. 소리는 나지 않아요", settings.todayShiftNotice,
+            warning = warning(settings.todayShiftNotice, Notifications.TODAY_CHANNEL_ID), onFix = fix(Notifications.TODAY_CHANNEL_ID)) { on ->
+            set(on) { it.copy(todayShiftNotice = on) }
         }
     }
     SectionCard(title = "돈과 휴가") {
@@ -450,6 +455,11 @@ private fun AboutPage(vm: SettingsViewModel, onOpenDiagnostics: (Boolean) -> Uni
         }
         HorizontalDivider()
         NavRow("개인정보 처리방침", null) { openPrivacy(context) }
+        HorizontalDivider()
+        // [OPS-23] The libraries the app ships with.
+        var licenses by remember { mutableStateOf(false) }
+        NavRow("오픈소스 라이선스", null) { licenses = true }
+        if (licenses) OpenSourceLicensesDialog { licenses = false }
     }
     Text("밤낮 ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)

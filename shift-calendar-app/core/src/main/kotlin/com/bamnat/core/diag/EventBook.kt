@@ -16,6 +16,11 @@ object DiagEvents {
     const val ALARM_FALLBACK = "alarm_fallback"
     const val ALARM_DISMISSED = "alarm_dismissed"
     const val ALARM_SNOOZED = "alarm_snoozed"
+    /** [REL-13] The self-check found the system's alarm missing or different and registered it again. */
+    const val ALARM_REPAIRED = "alarm_repaired"
+    /** [REL-13] The one-minute test alarm from 알람 점검 was set, and when it rang (with its delay). */
+    const val ALARM_TEST_SET = "alarm_test_set"
+    const val ALARM_TEST_FIRED = "alarm_test_fired"
     const val SNOOZE_FIRED = "snooze_fired"
     const val SYSTEM_EVENT = "system_event"
     const val BACKUP_EXPORT = "backup_export"

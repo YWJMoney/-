@@ -20,12 +20,17 @@ import java.time.ZoneId
 object WidgetRefresher {
     suspend fun refresh(context: Context) {
         val app = context.applicationContext
+        // [FEAT-18] The lock-screen 오늘 근무 notice moves on with the same wake-up as the widgets.
+        val notice = runCatching { com.bamnat.app.alarm.TodayShiftNotice.update(app) }.getOrDefault(false)
         // [STAB-01] Every edit asks for this; with no widget on the home screen there is nothing to draw or wake for.
         val placed = runCatching {
             val manager = GlanceAppWidgetManager(app)
             listOf(TodayWidget::class.java, WeekWidget::class.java, MonthWidget::class.java).any { manager.getGlanceIds(it).isNotEmpty() }
         }.getOrDefault(true)
-        if (!placed) return
+        if (!placed) {
+            if (notice) scheduleNext(app, null)
+            return
+        }
         runCatching {
             TodayWidget().updateAll(app)
             WeekWidget().updateAll(app)

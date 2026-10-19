@@ -528,6 +528,19 @@ class ScreenshotTest {
         val vm = DiagnosticsViewModel(c)
         content { DiagnosticsScreen(vm, onBack = {}) }
     }
+    // [REL-13] 알람 점검: the checks with their fix buttons and a test alarm waiting.
+    @Test fun foldedAlarmChecks() = shoot("350_folded_alarm_checks", FOLDED) {
+        val c = app.container
+        c.alarmScheduler.scheduleTest()
+        content { DiagnosticsScreen(DiagnosticsViewModel(c), onBack = {}) }
+    }
+    @Test fun unfoldedAlarmChecks() = shoot("351_unfolded_alarm_checks", UNFOLDED) {
+        content { DiagnosticsScreen(DiagnosticsViewModel(app.container), onBack = {}) }
+    }
+    // [OPS-23] 설정 › 앱 정보 › 오픈소스 라이선스.
+    @Test fun foldedOpenSourceLicenses() = shoot("352_folded_open_source_licenses", FOLDED) {
+        content { com.bamnat.app.ui.settings.OpenSourceLicensesDialog(onDismiss = {}) }
+    }
 
     /** [EXTRA-03] 대근 1회 기본급의 10% for 8 hours with the 연장·야간 가산 on top, 특근 a fixed amount. */
     /** [EXTRA-08] 대근 as the thread's company pays it: 8시간에 기본급 10%, 이 일 8시간 넘으면 50%, 야간 50%. */
