@@ -278,6 +278,53 @@ test("the app reads a link as JSON until it is cut or expires", async () => {
   assert.deepEqual(await gone.json(), { error: "not_found" });
 });
 
+test("[SHR-12] an update keeps the end date unless the sharer extends it", async () => {
+  const env = { SHARES: memoryKv() };
+  const made = await (await call(env, "POST", "/api/share", { ...sample, ttlDays: 7 })).json();
+  const token = { "x-delete-token": made.deleteToken };
+  const { ttlDays, ...auto } = sample;
+  const kept = await (await call(env, "PUT", `/api/share/${made.id}`, { ...auto, title: "민지2" }, token)).json();
+  assert.equal(kept.expiresAt, made.expiresAt, "a change the app sends by itself moves nothing");
+  assert.ok(env.SHARES.lastTtl <= 7 * 86400);
+  const longer = await (await call(env, "PUT", `/api/share/${made.id}`, { ...auto, ttlDays: 90 }, token)).json();
+  assert.ok(Date.parse(longer.expiresAt) > Date.now() + 89 * 86400000, "연장 opens it 90 days from now");
+  assert.ok(env.SHARES.lastTtl > 89 * 86400);
+
+  // A link past its end date cannot be brought back by an update.
+  const record = JSON.parse(env.SHARES.map.get(made.id));
+  env.SHARES.map.set(made.id, JSON.stringify({ ...record, expiresAt: new Date(Date.now() - 1000).toISOString() }));
+  assert.equal((await call(env, "PUT", `/api/share/${made.id}`, auto, token)).status, 404);
+});
+
+test("[SHR-12] receivers download only what changed", async () => {
+  const env = { SHARES: memoryKv() };
+  const made = await (await call(env, "POST", "/api/share", sample)).json();
+  const token = { "x-delete-token": made.deleteToken };
+  const first = await call(env, "GET", `/api/share/${made.id}`);
+  const tag = first.headers.get("etag");
+  assert.match(tag, /^W\/"[0-9a-f]{20}"$/);
+  const same = await call(env, "GET", `/api/share/${made.id}`, undefined, { "if-none-match": tag });
+  assert.equal(same.status, 304);
+  assert.equal(await same.text(), "");
+  // Cloudflare may hand the tag back without W/.
+  assert.equal((await call(env, "GET", `/api/share/${made.id}`, undefined, { "if-none-match": tag.slice(2) })).status, 304);
+
+  // Sending the same schedule again changes nothing for them.
+  const { ttlDays, ...auto } = sample;
+  await new Promise((r) => setTimeout(r, 5));
+  await call(env, "PUT", `/api/share/${made.id}`, auto, token);
+  assert.equal((await call(env, "GET", `/api/share/${made.id}`, undefined, { "if-none-match": tag })).status, 304);
+
+  // A changed day, or a longer link, is downloaded again.
+  await call(env, "PUT", `/api/share/${made.id}`, { ...auto, days: [...sample.days, { date: "2026-11-04", type: 2 }] }, token);
+  const changed = await call(env, "GET", `/api/share/${made.id}`, undefined, { "if-none-match": tag });
+  assert.equal(changed.status, 200);
+  assert.equal((await changed.json()).schedule.days.length, 4);
+  const tag2 = changed.headers.get("etag");
+  await call(env, "PUT", `/api/share/${made.id}`, { ...auto, days: [...sample.days, { date: "2026-11-04", type: 2 }], ttlDays: 90 }, token);
+  assert.equal((await call(env, "GET", `/api/share/${made.id}`, undefined, { "if-none-match": tag2 })).status, 200);
+});
+
 test("asset links name the app only once a certificate is set", async () => {
   const none = await call({ SHARES: memoryKv() }, "GET", "/.well-known/assetlinks.json");
   assert.deepEqual(await none.json(), []);

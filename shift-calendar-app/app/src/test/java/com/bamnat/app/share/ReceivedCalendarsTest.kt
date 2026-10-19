@@ -31,6 +31,23 @@ class ReceivedCalendarsTest {
         now.plus(Duration.ofDays(days)), now,
     )
 
+    /** [SHR-12] The tag is kept with the copy, and an unchanged look only moves when it was checked. */
+    @Test fun keepsTheTagAndTouches() {
+        val s = store()
+        s.put("AAAAAAAAAAAAAAAA", share("민지").copy(etag = "W/\"t1\""))
+        assertEquals("W/\"t1\"", store().get("AAAAAAAAAAAAAAAA")?.etag)
+        now = now.plus(Duration.ofMinutes(10))
+        s.touch("AAAAAAAAAAAAAAAA")
+        assertEquals(now, store().get("AAAAAAAAAAAAAAAA")?.fetchedAt)
+        s.markGone("AAAAAAAAAAAAAAAA")
+        assertNull(s.get("AAAAAAAAAAAAAAAA")?.etag)
+        // Gone stays gone: a touch does not bring it back as current.
+        val gone = s.get("AAAAAAAAAAAAAAAA")?.fetchedAt
+        now = now.plus(Duration.ofMinutes(10))
+        s.touch("AAAAAAAAAAAAAAAA")
+        assertEquals(gone, s.get("AAAAAAAAAAAAAAAA")?.fetchedAt)
+    }
+
     @Test fun keepsAndReloads() {
         val s = store()
         val a = s.put("AAAAAAAAAAAAAAAA", share("민지"))

@@ -112,6 +112,11 @@ class SystemEventReceiver : BroadcastReceiver() {
                         com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed(), m.allReceivables()), settings)
                 }
                 com.bamnat.app.pay.LeaveReminder.reschedule(context, container.payStore.profile.value, settings)
+                // [SHR-12] The link's expiry notice did not survive the reboot either.
+                container.calendars.calendars.value.forEach { cal ->
+                    val links = container.shareLinksOf(cal.id)
+                    com.bamnat.app.share.ShareExpiryReminder.reschedule(context, cal.id, links.link.value, links.noticedFor)
+                }
                 // [SCHED-01] Memo schedules did not survive the reboot either.
                 com.bamnat.app.memo.MemoScheduleAlarm.reschedule(context, container.memoRepository.memos.first())
                 com.bamnat.app.sleep.DayNoticeScheduler.reschedule(context, container.scheduleRepository.snapshot.first(), settings)

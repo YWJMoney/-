@@ -69,7 +69,10 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
         }
     }
 
-    /** Fetches again when the copy is older than a few minutes, so switching feels instant but stays current. */
+    /**
+     * Asks again when the copy is older than a minute, so switching feels instant but stays current.
+     * [SHR-12] The ask carries the copy's tag and downloads only what the sharer changed.
+     */
     fun refreshIfStale(id: String) {
         c.received.expire(clock())
         val cal = c.received.get(id) ?: return
@@ -84,7 +87,8 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
         viewModelScope.launch {
             _refresh.value = try {
                 // Taken out while this was loading: it stays out.
-                c.received.update(id, c.shareApi.read(id))
+                val changed = c.shareApi.readIfChanged(id, c.received.get(id)?.etag)
+                if (changed == null) c.received.touch(id) else c.received.update(id, changed)
                 Refresh.Idle
             } catch (e: ShareLinkException) {
                 // Cut or run out: what the sharer took back goes from this phone too.
@@ -152,6 +156,6 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
     fun consumeOpening() = c.received.open(null)
 
     private companion object {
-        val STALE: Duration = Duration.ofMinutes(5)
+        val STALE: Duration = Duration.ofMinutes(1)
     }
 }

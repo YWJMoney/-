@@ -80,7 +80,6 @@ import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.share.ReceivedCalendar
 import com.bamnat.app.share.ShareLinkException
 import com.bamnat.app.share.ShareLinkState
-import com.bamnat.app.share.ShareLinkStore
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.ConfirmDialog
 import com.bamnat.app.ui.components.asColor
@@ -350,7 +349,7 @@ class CalendarsViewModel(private val c: AppContainer) : ViewModel() {
 
     val rows: StateFlow<List<CalendarRow>> =
         combine(c.calendars.order, c.calendars.calendars, c.received.calendars, links) { order, mine, got, _ ->
-            CalendarRow.of(order, mine, if (c.shareApi.enabled) got else emptyList()) { id -> ShareLinkStore(c.appContext, id).load() }
+            CalendarRow.of(order, mine, if (c.shareApi.enabled) got else emptyList()) { id -> c.shareLinksOf(id).link.value }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _message = MutableStateFlow<String?>(null)
@@ -386,8 +385,7 @@ class CalendarsViewModel(private val c: AppContainer) : ViewModel() {
         if (_busy.value) return
         _busy.value = true
         viewModelScope.launch {
-            val store = ShareLinkStore(c.appContext, id)
-            val link = store.load()
+            val link = c.shareLinksOf(id).link.value
             val cut = link == null || keepLink || try {
                 c.shareApi.delete(link)
                 true
@@ -398,7 +396,7 @@ class CalendarsViewModel(private val c: AppContainer) : ViewModel() {
                 false
             }
             if (cut) {
-                ShareLinkStore.forget(c.appContext, id)
+                c.forgetShareLinks(id)
                 c.calendars.delete(id)
                 c.telemetry.event("calendar_delete", if (link != null) "with_link" else "")
                 onDone()

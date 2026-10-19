@@ -8,6 +8,9 @@ import com.bamnat.core.memo.Memo
 import com.bamnat.core.model.Leave
 import com.bamnat.core.model.LeaveKind
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONException
@@ -27,7 +30,17 @@ import java.time.format.DateTimeParseException
  * the page shows: dates, shift names, colours and times. Memos, pay, extra work and the kind of
  * leave other than 연차 leave the phone only when the sharer ticks them [SHR-01].
  */
-data class ShareLinkState(val id: String, val url: String, val deleteToken: String, val expiresAt: Instant, val title: String)
+data class ShareLinkState(
+    val id: String,
+    val url: String,
+    val deleteToken: String,
+    val expiresAt: Instant,
+    val title: String,
+    /** [SHR-12] The period the sharer picked, offered again for 연장; 30 for a link made before 1.14. */
+    val ttlDays: Int = 30,
+    /** [SHR-12] The first month the link shows; null for a link made before 1.14, which then starts this month. */
+    val from: YearMonth? = null,
+)
 
 /** [SHR-01] What a link carries besides the shifts; all off until the sharer ticks them. */
 data class ShareOptions(
@@ -104,6 +117,23 @@ object ShareLinkPayload {
     const val JOBS_PER_DAY = 4
     const val JOB_CHARS = 12
 
+    /**
+     * [SHR-12] What a payload says about the schedule, without the period: the app sends a link again
+     * only when this changed since it last sent it.
+     */
+    fun fingerprint(payload: JSONObject): String {
+        val copy = JSONObject(payload.toString()).apply { remove("ttlDays") }
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(copy.toString().toByteArray(Charsets.UTF_8))
+        return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * [SHR-12] The month a link sent now starts at: the month it was made from, or this month once that
+     * one is over, so the three months move along with time and never show only the past.
+     */
+    fun startMonth(link: ShareLinkState, today: LocalDate): YearMonth =
+        maxOf(link.from ?: YearMonth.from(today), YearMonth.from(today))
+
     /** [SHR-11] Whether a payload has anything to show: a server refuses a link with no days and no money. */
     fun hasContent(payload: JSONObject): Boolean =
         (payload.optJSONArray("days")?.length() ?: 0) > 0 || (payload.optJSONArray("pay")?.length() ?: 0) > 0
@@ -112,7 +142,8 @@ object ShareLinkPayload {
         snapshot: ScheduleSnapshot,
         from: LocalDate,
         title: String,
-        ttlDays: Int,
+        /** [SHR-12] Null keeps the link's end date: what the app sends by itself after a change. */
+        ttlDays: Int?,
         options: ShareOptions = ShareOptions(),
         /** [SHR-01] Each day's memo line, see [memoLine]; sent only with [ShareOptions.memos]. */
         memos: Map<LocalDate, String> = emptyMap(),
@@ -184,7 +215,7 @@ object ShareLinkPayload {
             // [SHR-01] Nothing ticked stays v1, which every server version takes.
             put("v", if (options.any) 2 else 1)
             put("title", title.trim().take(30))
-            put("ttlDays", ttlDays)
+            ttlDays?.let { put("ttlDays", it) }
             put("types", types)
             put("days", days)
             if (options.any) put("shows", JSONArray(options.shows))
@@ -203,10 +234,16 @@ object ShareLinkPayload {
 }
 
 /**
- * The link this phone made for one calendar, kept so it can be updated or cut later. [MCAL-03] Each of
- * the user's calendars has its own link; the main calendar keeps the file links were always kept in.
+ * The link this phone made for one calendar, kept so it can be updated or cut later. [SHR-12] One
+ * instance per calendar in the app ([com.bamnat.app.AppContainer.shareLinks]), so the sheet, the
+ * automatic update and the expiry notice all see the same link as it changes. [MCAL-03] Each of the
+ * user's calendars has its own link; the main calendar keeps the file links were always kept in.
  */
-class ShareLinkStore(context: Context, val calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN) {
+class ShareLinkStore(
+    context: Context,
+    val calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+    private val clock: () -> Instant = Instant::now,
+) {
     private val prefs = context.applicationContext.getSharedPreferences(prefsName(calendarId), Context.MODE_PRIVATE)
 
     companion object {
@@ -216,10 +253,14 @@ class ShareLinkStore(context: Context, val calendarId: String = com.bamnat.app.d
         /** [MCAL-03] A removed calendar's link details go with it. */
         fun forget(context: Context, calendarId: String) {
             if (calendarId == com.bamnat.app.data.PersonalCalendar.MAIN) return
-            context.applicationContext.getSharedPreferences(prefsName(calendarId), Context.MODE_PRIVATE).edit().clear().apply()
+            context.applicationContext.getSharedPreferences(prefsName(calendarId), Context.MODE_PRIVATE).edit().clear().commit()
             context.applicationContext.deleteSharedPreferences(prefsName(calendarId))
         }
     }
+
+    private val _link = MutableStateFlow(load())
+    /** The link, or null when there is none or it ran out. */
+    val link: StateFlow<ShareLinkState?> = _link.asStateFlow()
 
     fun load(): ShareLinkState? {
         val id = prefs.getString("id", null) ?: return null
@@ -229,17 +270,46 @@ class ShareLinkStore(context: Context, val calendarId: String = com.bamnat.app.d
             deleteToken = prefs.getString("token", null) ?: return null,
             expiresAt = runCatching { Instant.parse(prefs.getString("expires", "")) }.getOrNull() ?: return null,
             title = prefs.getString("title", "") ?: "",
+            ttlDays = prefs.getInt("ttl", 30),
+            from = prefs.getString("from", null)?.let { runCatching { YearMonth.parse(it) }.getOrNull() },
         )
-        return state.takeIf { it.expiresAt.isAfter(Instant.now()) }
+        return state.takeIf { it.expiresAt.isAfter(clock()) }
     }
 
-    fun save(s: ShareLinkState) {
+    /** [SHR-12] Saves the link as the server now has it; [sent] is the [ShareLinkPayload.fingerprint] of what was sent. */
+    fun save(s: ShareLinkState, sent: String? = null) {
         prefs.edit().putString("id", s.id).putString("url", s.url).putString("token", s.deleteToken)
-            .putString("expires", s.expiresAt.toString()).putString("title", s.title).apply()
+            .putString("expires", s.expiresAt.toString()).putString("title", s.title).putInt("ttl", s.ttlDays)
+            .apply { if (s.from != null) putString("from", s.from.toString()) else remove("from") }
+            .apply { if (sent != null) putString("sent", sent) }
+            .apply()
+        _link.value = s
     }
 
     /** Forgets the link; what the sharer ticked stays for the next one. */
-    fun clear() = prefs.edit().remove("id").remove("url").remove("token").remove("expires").remove("title").apply()
+    fun clear() {
+        prefs.edit().remove("id").remove("url").remove("token").remove("expires").remove("title").remove("ttl").remove("from")
+            .remove("sent").remove("noticed").apply()
+        _link.value = null
+    }
+
+    /** [SHR-02] Drops a link that ran out while the app stayed open. */
+    fun expire() {
+        if (_link.value?.expiresAt?.isAfter(clock()) == false) _link.value = null
+    }
+
+    /** [SHR-12] The fingerprint of what the server last got, null when unknown (a link from before 1.14). */
+    val sent: String? get() = prefs.getString("sent", null)
+
+    /** [SHR-12] Whether a change on the calendar goes to the link by itself; on unless the sharer turned it off. */
+    var auto: Boolean
+        get() = prefs.getBoolean("auto", true)
+        set(value) { prefs.edit().putBoolean("auto", value).apply() }
+
+    /** [SHR-12] The end date the expiry notice was last posted for, so it comes once per period. */
+    var noticedFor: Instant?
+        get() = prefs.getString("noticed", null)?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        set(value) { prefs.edit().apply { if (value == null) remove("noticed") else putString("noticed", value.toString()) }.apply() }
 
     /** [SHR-01] What the sharer ticked last time, used again for the next link and for 고치기. */
     fun options(): ShareOptions = ShareOptions.of(prefs.getStringSet("shows", emptySet()).orEmpty())
@@ -248,7 +318,13 @@ class ShareLinkStore(context: Context, val calendarId: String = com.bamnat.app.d
 }
 
 /** [SHR-02] A link as the app reads it for 받은 달력: the schedule JSON as the server keeps it. */
-data class ReceivedShare(val schedule: JSONObject, val expiresAt: Instant, val updatedAt: Instant?)
+data class ReceivedShare(
+    val schedule: JSONObject,
+    val expiresAt: Instant,
+    val updatedAt: Instant?,
+    /** [SHR-12] The server's tag for this version, asked with next time so an unchanged link is not downloaded again. */
+    val etag: String? = null,
+)
 
 /** [MKT-09][SHR-02] The link server; tests and screenshots use a fake. */
 interface ShareApi {
@@ -258,6 +334,12 @@ interface ShareApi {
     suspend fun delete(state: ShareLinkState)
     /** Throws [ShareLinkException] "not_found" once the link was cut or ran out. */
     suspend fun read(id: String): ReceivedShare
+
+    /**
+     * [SHR-12] Reads the link only if it changed since the version tagged [etag]: null when it did not.
+     * A server or fake without tags always reads it.
+     */
+    suspend fun readIfChanged(id: String, etag: String?): ReceivedShare? = read(id)
 }
 
 /** [SHR-02] The link id in a shared message: "…/s/<id>" from the web page, or bamnat://s/<id> from its app button. */
@@ -273,16 +355,19 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
     override val enabled: Boolean get() = baseUrl.isNotBlank()
 
     override suspend fun create(payload: JSONObject): ShareLinkState = withContext(Dispatchers.IO) {
-        val o = request("POST", "/api/share", payload, null)
+        val o = request("POST", "/api/share", payload, null).body
         readable {
             ShareLinkState(o.getString("id"), o.getString("url"), o.getString("deleteToken"),
-                Instant.parse(o.getString("expiresAt")), payload.optString("title"))
+                Instant.parse(o.getString("expiresAt")), payload.optString("title"), ttlDays = payload.optInt("ttlDays", 30))
         }
     }
 
     override suspend fun update(state: ShareLinkState, payload: JSONObject): ShareLinkState = withContext(Dispatchers.IO) {
-        val o = request("PUT", "/api/share/${state.id}", payload, state.deleteToken)
-        readable { state.copy(url = o.getString("url"), expiresAt = Instant.parse(o.getString("expiresAt")), title = payload.optString("title")) }
+        val o = request("PUT", "/api/share/${state.id}", payload, state.deleteToken).body
+        readable {
+            state.copy(url = o.getString("url"), expiresAt = Instant.parse(o.getString("expiresAt")), title = payload.optString("title"),
+                ttlDays = if (payload.has("ttlDays")) payload.optInt("ttlDays", state.ttlDays) else state.ttlDays)
+        }
     }
 
     /** Cuts the link. A link the server no longer has counts as cut. */
@@ -295,30 +380,39 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
         Unit
     }
 
-    override suspend fun read(id: String): ReceivedShare = withContext(Dispatchers.IO) {
-        val o = request("GET", "/api/share/$id", null, null)
+    override suspend fun read(id: String): ReceivedShare = readIfChanged(id, null)!!
+
+    override suspend fun readIfChanged(id: String, etag: String?): ReceivedShare? = withContext(Dispatchers.IO) {
+        val reply = request("GET", "/api/share/$id", null, null, etag)
+        if (reply.code == HttpURLConnection.HTTP_NOT_MODIFIED) return@withContext null
+        val o = reply.body
         readable {
             ReceivedShare(o.getJSONObject("schedule"), Instant.parse(o.getString("expiresAt")),
-                o.optString("updatedAt").takeIf { it.isNotEmpty() && it != "null" }?.let { runCatching { Instant.parse(it) }.getOrNull() })
+                o.optString("updatedAt").takeIf { it.isNotEmpty() && it != "null" }?.let { runCatching { Instant.parse(it) }.getOrNull() },
+                reply.etag)
         }
     }
 
-    private fun request(method: String, path: String, body: JSONObject?, token: String?): JSONObject {
+    private class Reply(val code: Int, val body: JSONObject, val etag: String?)
+
+    private fun request(method: String, path: String, body: JSONObject?, token: String?, etag: String? = null): Reply {
         val conn = URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = method
             conn.connectTimeout = 10_000
             conn.readTimeout = 15_000
             token?.let { conn.setRequestProperty("X-Delete-Token", it) }
+            etag?.let { conn.setRequestProperty("If-None-Match", it) }
             if (body != null) {
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             }
             val code = conn.responseCode
+            if (code == HttpURLConnection.HTTP_NOT_MODIFIED) return Reply(code, JSONObject(), etag)
             val text = (if (code < 400) conn.inputStream else conn.errorStream)?.use { it.readCapped() }.orEmpty()
             if (code >= 400) throw ShareLinkException(runCatching { JSONObject(text).getString("error") }.getOrDefault("http_$code"))
-            return if (text.isBlank()) JSONObject() else readable { JSONObject(text) }
+            return Reply(code, if (text.isBlank()) JSONObject() else readable { JSONObject(text) }, conn.getHeaderField("ETag"))
         } finally {
             conn.disconnect()
         }

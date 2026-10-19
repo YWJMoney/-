@@ -161,6 +161,7 @@ class PersonalCalendarsTest {
     @Test fun removingACalendarTakesItsDatabaseAndGoesBackToTheMainOne() {
         val id = listedCalendar("알바")
         assertEquals(id, c.calendars.active.value)
+        runBlocking { c.calendars.repository(id).ensureDefaults() }
         assertTrue(app.getDatabasePath(CalendarStorage.fileName(id)).exists())
         c.calendars.delete(id)
         assertNull(c.calendars.get(id))

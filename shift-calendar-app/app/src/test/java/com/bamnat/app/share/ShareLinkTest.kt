@@ -279,6 +279,16 @@ class ShareLinkTest {
         assertTrue(read.expiresAt.isAfter(java.time.Instant.now()))
         val v2 = client.update(updated, ShareLinkPayload.build(snapshot, start, "민지3", 30, ShareOptions(memos = true), mapOf(start to "치과")))
         assertEquals("치과", SharedSchedule.parse(client.read(v2.id).schedule).days.getValue(start).memo)
+        // [SHR-12] Sent by itself after a change: the end date stays, and receivers download only a change.
+        val auto = client.update(v2, ShareLinkPayload.build(snapshot, start, "민지3", null, ShareOptions(memos = true), mapOf(start to "치과 3시")))
+        assertEquals(v2.expiresAt, auto.expiresAt)
+        val tagged = client.readIfChanged(made.id, null)!!
+        assertTrue(tagged.etag != null)
+        assertEquals(null, client.readIfChanged(made.id, tagged.etag))
+        val longer = client.update(auto, ShareLinkPayload.build(snapshot, start, "민지3", 90, ShareOptions(memos = true), mapOf(start to "치과 3시")))
+        assertEquals(90, longer.ttlDays)
+        assertTrue(longer.expiresAt.isAfter(v2.expiresAt))
+        assertTrue("a longer link is downloaded again for its new end date", client.readIfChanged(made.id, tagged.etag) != null)
         client.delete(updated)
         client.delete(updated) // already gone: still fine
         assertEquals("not_found", runCatching { client.read(made.id) }.exceptionOrNull()?.message)

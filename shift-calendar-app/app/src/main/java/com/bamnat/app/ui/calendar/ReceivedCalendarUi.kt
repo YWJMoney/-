@@ -91,6 +91,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleStartEffect
+import androidx.lifecycle.repeatOnLifecycle
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.share.ReceivedCalendar
 import com.bamnat.app.share.SharedDay
@@ -365,6 +366,16 @@ fun ReceivedCalendarView(
     LifecycleStartEffect(cal.id) {
         vm.refreshIfStale(cal.id)
         onStopOrDispose { }
+    }
+    // [SHR-12] While it stays on screen, a quiet look every few minutes; only a change is downloaded.
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(cal.id, lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                kotlinx.coroutines.delay(5 * 60_000L)
+                vm.refreshIfStale(cal.id)
+            }
+        }
     }
     val schedule = cal.schedule
     if (schedule == null) {

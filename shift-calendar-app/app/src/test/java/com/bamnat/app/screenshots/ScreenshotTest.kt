@@ -1502,7 +1502,7 @@ class ScreenshotTest {
         receivedOn()
         val id = addedCalendar()
         // Shared with a link of its own [MCAL-03].
-        com.bamnat.app.share.ShareLinkStore(app, id).save(com.bamnat.app.share.ShareLinkState("al1", "https://bamnat-share.example/s/al1", "t",
+        app.container.shareLinksOf(id).save(com.bamnat.app.share.ShareLinkState("al1", "https://bamnat-share.example/s/al1", "t",
             java.time.Instant.now().plus(java.time.Duration.ofDays(30)), "민지"))
         addedCalendar("가족 일정")
         settle()

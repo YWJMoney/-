@@ -368,17 +368,20 @@ fun CalendarScreen(
     var showMonthPicker by remember { mutableStateOf(false) }
     var showShare by remember { mutableStateOf(false) }
     val shareLinks = remember { com.bamnat.app.share.ShareLinkClient().enabled }
-    if (showShare) ShareDialog(
-        snapshot = snap, month = visibleMonth,
-        calendar = activeCalendar,
-        onImage = { scope.launch { MonthImage.share(context, snap, visibleMonth, settings.weekStart) }; vm.logShare() },
-        onDismiss = { showShare = false },
-        onOpenReceived = { showShare = false; adding = "" },
-    )
+    // [MCAL-03] Keyed by the calendar, so a sheet opened as the calendar changes starts from that calendar's link.
+    if (showShare) androidx.compose.runtime.key(activeCalendar?.id) {
+        ShareDialog(
+            snapshot = snap, month = visibleMonth,
+            calendar = activeCalendar,
+            onImage = { scope.launch { MonthImage.share(context, snap, visibleMonth, settings.weekStart) }; vm.logShare() },
+            onDismiss = { showShare = false },
+            onOpenReceived = { showShare = false; adding = "" },
+        )
+    }
     // [SHR-02][MCAL-01] Whose calendar is on screen, once there is more than one.
     val calendarRows = remember(calendarOrder, myCalendars, receivedList, received.enabled, showShare, switching) {
         CalendarRow.of(calendarOrder, myCalendars, if (received.enabled) receivedList else emptyList()) { id ->
-            if (shareLinks) com.bamnat.app.share.ShareLinkStore(context, id).load() else null
+            if (shareLinks) context.appContainer.shareLinksOf(id).link.value else null
         }
     }
     val pickCalendar: (CalendarRow) -> Unit = { row ->
@@ -436,6 +439,15 @@ fun CalendarScreen(
         vm.select(LocalDate.now())
         pagerState.scrollToPage(monthToPage(baseMonth, YearMonth.now()))
         pageScroll.scrollTo(0)
+    }
+    // [SHR-12] The link's expiry notice opens the share sheet on the user's own calendar, to 늘리기.
+    LaunchedEffect(noticeTarget) {
+        if (noticeTarget != NoticeLinks.Target.SHARE) return@LaunchedEffect
+        NoticeLinks.consume(NoticeLinks.Target.SHARE)
+        received.view(null)
+        // [MCAL-03] An added calendar's notice opens that calendar's sheet.
+        vm.viewCalendar(NoticeLinks.calendar.value ?: com.bamnat.app.data.PersonalCalendar.MAIN)
+        if (shareLinks) showShare = true
     }
     // [CAL-01] The picked day's week over the hour limit, said in one line under the calendar.
     val weekNote = remember(calculator, selected, settings.weeklyLimitHours) {
