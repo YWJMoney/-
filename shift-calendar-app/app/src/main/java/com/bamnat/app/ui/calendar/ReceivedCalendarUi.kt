@@ -295,9 +295,16 @@ private fun PreviewCard(s: SharedSchedule, color: Color, expiresAt: Instant, tod
     }
 }
 
-/** The badge for one of their days: the shift (and the shift covered on top), or the leave. */
+/** [CAL-12] Whether the sender keeps shifts at all; a freelancer's or a shop's link has only jobs and memos. */
+internal fun SharedSchedule.usesShifts(): Boolean = days.values.any { it.type != null || it.second != null }
+
+/**
+ * The badge for one of their days: the shift (and the shift covered on top), or the leave. [CAL-12] A
+ * day with only a job (or extra work) shows that, and a sender without shifts never gets "휴" stamped
+ * on every empty day.
+ */
 @Composable
-private fun DayBadge(s: SharedSchedule, day: SharedDay?, size: Dp, inRange: Boolean = true) {
+private fun DayBadge(s: SharedSchedule, day: SharedDay?, size: Dp, inRange: Boolean = true, shifts: Boolean = true) {
     if (!inRange) {
         Text("–", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
         return
@@ -305,6 +312,7 @@ private fun DayBadge(s: SharedSchedule, day: SharedDay?, size: Dp, inRange: Bool
     val type = s.type(day?.type)?.asShiftType()
     val second = s.type(day?.second)?.asShiftType()
     val leave = day?.leave?.takeIf { day.fullLeave }
+    val extra = day?.extras?.firstOrNull()
     when {
         leave != null -> LeaveChip(leave, size)
         type != null && second != null -> Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -313,7 +321,22 @@ private fun DayBadge(s: SharedSchedule, day: SharedDay?, size: Dp, inRange: Bool
         }
         second != null -> ShiftBadge(type = second, size = size)
         type != null -> ShiftBadge(type = type, size = size, outlined = type.isOff)
-        else -> ShiftBadge(type = null, text = "휴", size = size, outlined = true)
+        extra != null -> ExtraChip(extra.name, day.extras.size, size)
+        shifts -> ShiftBadge(type = null, text = "휴", size = size, outlined = true)
+        else -> Spacer(Modifier.height(size))
+    }
+}
+
+/** [CAL-12] A job or extra work as the day's own mark: its first two letters, and how many there are. */
+@Composable
+private fun ExtraChip(name: String, count: Int, size: Dp) {
+    Box(
+        Modifier.height(size).clip(RoundedCornerShape(size / 4)).background(MaterialTheme.colorScheme.secondaryContainer)
+            .padding(horizontal = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(name.take(2) + if (count > 1) "+" else "", color = MaterialTheme.colorScheme.onSecondaryContainer, fontWeight = FontWeight.Bold,
+            fontSize = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.46f).toSp() }, maxLines = 1)
     }
 }
 
@@ -415,11 +438,12 @@ fun ReceivedCalendarView(
             TextButton(onClick = { selected = today; goTo(YearMonth.from(today)) }) { Text("오늘") }
         }
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (canCompare) {
+            // [CAL-12] Only for a month the link covers: outside it there is nothing to compare.
+            if (canCompare && schedule.covers(month)) {
                 FilterChip(
                     selected = together,
                     onClick = { together = !together },
-                    label = { Text(if (schedule.covers(month)) "같이 쉬는 날 ${togetherCount}일" else "같이 쉬는 날") },
+                    label = { Text("같이 쉬는 날 ${togetherCount}일") },
                     leadingIcon = { Icon(Icons.Filled.Favorite, null, Modifier.size(16.dp), tint = if (together) TogetherColor else MaterialTheme.colorScheme.onSurfaceVariant) },
                     colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TogetherColor.copy(alpha = 0.14f)),
                 )
@@ -451,7 +475,7 @@ fun ReceivedCalendarView(
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         }
-        Legend(schedule, month, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        Legend(schedule, month, Modifier.padding(horizontal = 16.dp, vertical = 8.dp), together = canCompare && schedule.covers(month))
     }
     val detailPart: @Composable (Modifier) -> Unit = { m ->
         Column(m, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -530,6 +554,7 @@ private fun ReceivedMonthGrid(
 ) {
     val firstDay = month.atDay(1)
     val start = firstDay.minusDays(((firstDay.dayOfWeek.value - weekStart.value + 7) % 7).toLong())
+    val shifts = remember(schedule) { schedule.usesShifts() }
     Column(Modifier.fillMaxWidth()) {
         for (row in 0 until GRID_ROWS) {
             Row(Modifier.fillMaxWidth().height(cellHeight)) {
@@ -545,6 +570,7 @@ private fun ReceivedMonthGrid(
                         together = together(date),
                         onClick = { onDayClick(date) },
                         modifier = Modifier.weight(1f).fillMaxHeight(),
+                        shifts = shifts,
                     )
                 }
             }
@@ -563,11 +589,14 @@ private fun ReceivedDayCell(
     together: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    shifts: Boolean = true,
 ) {
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(10.dp)
     val inRange = schedule.covers(date)
+    // [CAL-12] The day's job or extra work is its badge when it has no shift; then no corner letter repeats it.
+    val extraIsBadge = day != null && day.type == null && day.second == null && !day.fullLeave && day.extras.isNotEmpty()
     val type = schedule.type(day?.type)
     val second = schedule.type(day?.second)
     val holiday = KoreanHolidays.nameOf(date)
@@ -593,7 +622,7 @@ private fun ReceivedDayCell(
         else {
             // A 대근 on a day with no shift of its own is that day's work.
             val main = type ?: second
-            append(", ").append(main?.name ?: "근무 없음")
+            if (main != null || day?.extras.isNullOrEmpty()) append(", ").append(main?.name ?: if (shifts) "근무 없음" else "일정 없음")
             main?.time?.takeIf { !main.off }?.let { append(" ").append(it.replace("-", "부터 ")).append("까지") }
             second?.takeIf { type != null }?.let { append(", ").append(it.name).append(" 더") }
             day?.leave?.let { append(", ").append(it) }
@@ -633,15 +662,16 @@ private fun ReceivedDayCell(
                 if (together) {
                     Icon(Icons.Filled.Favorite, null, tint = TogetherColor, modifier = Modifier.align(Alignment.TopStart).size(11.dp))
                 }
-                day?.extras?.firstOrNull()?.let { e ->
+                day?.extras?.firstOrNull()?.takeIf { !extraIsBadge }?.let { e ->
                     Box(
                         Modifier.align(Alignment.TopEnd).clip(RoundedCornerShape(4.dp)).background(scheme.secondaryContainer).padding(horizontal = 2.dp),
                     ) { Text(e.name.take(1), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = scheme.onSecondaryContainer) }
                 }
             }
-            if (inRange) DayBadge(schedule, day, size = 22.dp)
+            if (inRange) DayBadge(schedule, day, size = 22.dp, shifts = shifts)
+            // [CAL-12] Without a memo, a job's start time says when the day begins.
             Text(
-                day?.memo.orEmpty(),
+                day?.memo ?: day?.extras?.firstOrNull { it.time != null }?.time?.substringBefore("-").orEmpty(),
                 fontSize = 9.sp,
                 lineHeight = 10.sp,
                 color = scheme.onSurfaceVariant,
@@ -655,13 +685,24 @@ private fun ReceivedDayCell(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Legend(schedule: SharedSchedule, month: YearMonth, modifier: Modifier = Modifier) {
-    val used = remember(schedule, month) {
-        schedule.days.values.filter { YearMonth.from(it.date) == month }.flatMap { listOfNotNull(it.type, it.second) }.toSet()
-    }
+private fun Legend(schedule: SharedSchedule, month: YearMonth, modifier: Modifier = Modifier, together: Boolean = false) {
+    val inMonth = remember(schedule, month) { schedule.days.values.filter { YearMonth.from(it.date) == month } }
+    val used = remember(inMonth) { inMonth.flatMap { listOfNotNull(it.type, it.second) }.toSet() }
     val types = schedule.types.filter { it.id in used }
-    if (types.isEmpty()) return
+    // [CAL-12] Jobs and extra work, and the days both are off, are named too.
+    val extras = remember(inMonth) { inMonth.any { it.extras.isNotEmpty() } }
+    if (types.isEmpty() && !extras && !together) return
     FlowRow(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (extras) Row(verticalAlignment = Alignment.CenterVertically) {
+            ExtraChip("일", 1, 18.dp)
+            Spacer(Modifier.width(4.dp))
+            Text("일감·추가 근무", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (together) Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Favorite, null, tint = TogetherColor, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("같이 쉬는 날", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         types.forEach { t ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ShiftBadge(type = t.asShiftType(), size = 18.dp, outlined = t.off, showIcon = false)
@@ -697,12 +738,14 @@ private fun ReceivedDayCard(
                         val second = schedule.type(day?.second)
                         // A 대근 on a day with no shift of its own is that day's work.
                         val main = type ?: second
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            DayBadge(schedule, day, size = 22.dp)
-                            Spacer(Modifier.width(8.dp))
+                        val shifts = remember(schedule) { schedule.usesShifts() }
+                        // [CAL-12] A day with only jobs lists them below instead of saying "근무 없음".
+                        if (main != null || day?.extras.isNullOrEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
+                            DayBadge(schedule, day, size = 22.dp, shifts = shifts)
+                            if (main != null || shifts || day?.leave != null) Spacer(Modifier.width(8.dp))
                             Text(
                                 when {
-                                    main == null -> "근무 없음"
+                                    main == null -> if (shifts) "근무 없음" else "일정 없음"
                                     main.off -> main.name
                                     else -> main.name + (main.time?.let { " " + it.replace("-", "~") } ?: "")
                                 },

@@ -79,6 +79,10 @@ import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.hours.WorkHoursCalculator
 import com.bamnat.core.schedule.DaySource
 import com.bamnat.core.schedule.ResolvedDay
+import com.bamnat.core.work.CalendarFocus
+import androidx.compose.material.icons.automirrored.outlined.NoteAdd
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Work
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
@@ -129,7 +133,52 @@ sealed interface QuickAction {
     data class SetLeave(val leave: Leave?) : QuickAction
     /** [DAY-03] This day's alarm off (true) or back on. */
     data class Alarm(val skipped: Boolean) : QuickAction
+    /** [CAL-05] 일감 적기 or 매출 적기 on this day. */
+    data object AddMoney : QuickAction
+    /** [CAL-05] A memo on this day. */
+    data object Memo : QuickAction
     data object Open : QuickAction
+}
+
+/** [CAL-06] A job over several days, drawn as one bar across them: its ends and whether money is still owed. */
+internal data class JobSpan(val first: Boolean, val last: Boolean, val owed: Boolean, val title: String, val nth: Int, val days: Int)
+
+/**
+ * [CAL-14] What the cells of one month show from the money book, worked out once for the month
+ * instead of in each of its 42 cells.
+ */
+internal class MonthMoneyCells(
+    val days: Map<LocalDate, DayMoney>,
+    val spans: Map<LocalDate, JobSpan>,
+    val sales: Map<LocalDate, Long>,
+    /** Jobs starting on each date. */
+    val starts: Map<LocalDate, Int>,
+    private val bestSales: Long,
+) {
+    /** [CAL-06] How strong a shop's day was against the month's best, 0 for a day without sales. */
+    fun heat(date: LocalDate): Float =
+        sales[date]?.takeIf { bestSales > 0 && it > 0 }?.let { 0.3f + 0.7f * it.toFloat() / bestSales } ?: 0f
+
+    companion object {
+        val EMPTY = MonthMoneyCells(emptyMap(), emptyMap(), emptyMap(), emptyMap(), 0)
+
+        fun of(money: MoneyBook, months: List<YearMonth>, from: LocalDate, to: LocalDate): MonthMoneyCells {
+            if (money.jobs.isEmpty() && money.sales.isEmpty() && money.entries.isEmpty()) return EMPTY
+            val days = months.distinct().fold(emptyMap<LocalDate, DayMoney>()) { acc, m -> acc + money.days(m) }
+            val spans = HashMap<LocalDate, JobSpan>()
+            for (j in money.jobs.filter { it.days > 1 && !it.lastDate.isBefore(from) && !it.date.isAfter(to) }.sortedBy { it.date }) {
+                var d = maxOf(j.date, from)
+                while (!d.isAfter(minOf(j.lastDate, to))) {
+                    spans.putIfAbsent(d, JobSpan(d == j.date, d == j.lastDate, j.unpaid > 0, j.title,
+                        (d.toEpochDay() - j.date.toEpochDay()).toInt() + 1, j.days))
+                    d = d.plusDays(1)
+                }
+            }
+            val sales = money.sales.filter { it.date in from..to && it.sales > 0 }.associate { it.date to it.sales }
+            val starts = money.jobs.filter { it.date in from..to }.groupingBy { it.date }.eachCount()
+            return MonthMoneyCells(days, spans, sales, starts, sales.values.maxOrNull() ?: 0)
+        }
+    }
 }
 
 @Composable
@@ -157,11 +206,19 @@ fun MonthGrid(
     weeklyLimitHours: Int = com.bamnat.core.hours.HourLimits().weeklyLimitHours,
     /** [SETUP-02] The first setup paints days only: no menu on a long press. */
     quickMenu: Boolean = true,
+    /** [CAL-05] What the calendar is about: shifts, jobs or sales. */
+    focus: CalendarFocus = CalendarFocus.SHIFTS,
+    /** [CAL-09] In quick input a long press starts a range instead of opening the menu. */
+    onLongPress: ((LocalDate) -> Unit)? = null,
+    /** [CAL-09] The first day of a range being painted. */
+    rangeFrom: LocalDate? = null,
 ) {
     val cal = LocalCalendarColors.current
     val haptics = LocalHapticFeedback.current
-    val dayMoney = remember(money, month, showMoney) { if (showMoney) money.days(month) else emptyMap() }
     val firstCell = remember(month, calculator) { calculator.weekStartOf(month.atDay(1)) }
+    val cells = remember(money, month, firstCell) {
+        MonthMoneyCells.of(money, listOf(month), firstCell, firstCell.plusDays(GRID_ROWS * 7L - 1))
+    }
     // Days under the finger while painting, shown at once and written when it lifts.
     var dragged by remember { mutableStateOf<List<LocalDate>>(emptyList()) }
     val paint by rememberUpdatedState(onPaint)
@@ -230,20 +287,29 @@ fun MonthGrid(
                 for (col in 0 until 7) {
                     val date = rowStart.plusDays(col.toLong())
                     val day = remember(snapshot, date) { snapshot.resolver.resolve(date) }
+                    val inMonth = date.year == month.year && date.month == month.month
                     DayCell(
                         day = day,
                         snapshot = snapshot,
-                        inMonth = date.year == month.year && date.month == month.month,
+                        inMonth = inMonth,
                         isToday = date == today,
                         isSelected = date == selected || date in dragged,
                         hasMemo = date in memoDates,
-                        money = dayMoney[date],
+                        money = if (inMonth) cells.days[date] else null,
                         memoText = memoTexts[date],
                         showHours = showHours,
                         showLunar = showLunar,
                         onClick = { onDayClick(date) },
                         onQuickAction = { onQuickAction(date, it) },
                         quickMenu = quickMenu,
+                        focus = focus,
+                        showMoney = showMoney,
+                        span = cells.spans[date],
+                        startsHere = cells.starts[date] ?: 0,
+                        sales = cells.sales[date],
+                        heat = if (focus == CalendarFocus.SALES && inMonth) cells.heat(date) else 0f,
+                        onLongPress = onLongPress?.let { f -> { f(date) } },
+                        isRangeStart = date == rangeFrom,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         weekNote = if (col == 0 && week.overLimit) {
                             "이 주 ${HoursFormat.hours(week.totalMinutes.toDouble())}시간, ${weeklyLimitHours}시간 넘음"
@@ -277,10 +343,11 @@ fun WeekStrip(
     money: MoneyBook = MoneyBook.EMPTY,
     showMoney: Boolean = false,
     memoTexts: Map<LocalDate, String> = emptyMap(),
+    focus: CalendarFocus = CalendarFocus.SHIFTS,
 ) {
     val month = YearMonth.from(selected)
-    val dayMoney = remember(money, monday, showMoney) {
-        if (showMoney) money.days(YearMonth.from(monday)) + money.days(YearMonth.from(monday.plusDays(6))) else emptyMap()
+    val cells = remember(money, monday) {
+        MonthMoneyCells.of(money, listOf(YearMonth.from(monday), YearMonth.from(monday.plusDays(6))), monday, monday.plusDays(6))
     }
     Row(modifier.fillMaxWidth().height(cellHeight).padding(start = WEEK_BAR_SPACE)) {
         for (col in 0 until 7) {
@@ -294,12 +361,17 @@ fun WeekStrip(
                 isToday = date == today,
                 isSelected = date == selected,
                 hasMemo = date in memoDates,
-                money = dayMoney[date],
+                money = cells.days[date],
                 memoText = memoTexts[date],
                 showHours = showHours,
                 showLunar = showLunar,
                 onClick = { onDayClick(date) },
                 onQuickAction = { onQuickAction(date, it) },
+                focus = focus,
+                showMoney = showMoney,
+                span = cells.spans[date],
+                startsHere = cells.starts[date] ?: 0,
+                sales = cells.sales[date],
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
         }
@@ -324,6 +396,16 @@ private fun DayCell(
     modifier: Modifier = Modifier,
     weekNote: String? = null,
     quickMenu: Boolean = true,
+    focus: CalendarFocus = CalendarFocus.SHIFTS,
+    /** [WORK-02][WORK-03] The day's income under the date, for field and shop work. */
+    showMoney: Boolean = false,
+    span: JobSpan? = null,
+    startsHere: Int = 0,
+    sales: Long? = null,
+    /** [CAL-06] A shop's day tinted by how strong its sales were. */
+    heat: Float = 0f,
+    onLongPress: (() -> Unit)? = null,
+    isRangeStart: Boolean = false,
 ) {
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
@@ -348,15 +430,25 @@ private fun DayCell(
     }
     // Working days are tinted with their shift's color so the month reads at a glance.
     // A 대근 on a day off tints the cell with the covered shift [EXTRA-01].
+    val dark = isDarkSurface()
     val tint = (type?.takeIf { !it.isOff && day.leave?.isFullDay != true } ?: day.coveredShift)
-        ?.colorArgb?.asColor()?.copy(alpha = if (isDarkSurface()) 0.22f else 0.13f)
+        ?.colorArgb?.asColor()?.copy(alpha = if (dark) 0.22f else 0.13f)
+        ?: cal.income.takeIf { heat > 0f }?.copy(alpha = heat * if (dark) 0.30f else 0.20f)
+    val jobs = money?.jobs ?: 0
     // [VIS-01] What the cell shows, read out in the same order.
     val description = buildString {
         append(Fmt.dayTitle(date))
         if (isToday) append(", 오늘")
         holidayName?.let { append(", ").append(it) }
-        append(", ").append(if (day.isWorkDay) type?.name ?: "근무" else type?.name ?: "쉬는 날")
-        if (day.isWorkDay) append(" ").append(HoursFormat.korean(day.scheduledMinutes))
+        // [CAL-05] A field or shop day without work is not a day off: it says what the day has, or that it is empty.
+        val shiftWords = when {
+            day.isWorkDay -> (type?.name ?: "근무") + " " + HoursFormat.korean(day.scheduledMinutes)
+            type != null && (focus == CalendarFocus.SHIFTS || !type.isOff || jobs == 0 && sales == null) -> type.name
+            focus == CalendarFocus.SHIFTS -> "쉬는 날"
+            jobs > 0 || sales != null -> null
+            else -> focus.emptyDay
+        }
+        shiftWords?.let { append(", ").append(it) }
         day.leave?.let { append(", ").append(it.label) }
         for (e in day.extras) {
             append(", ").append(ExtraText.name(e))
@@ -366,9 +458,11 @@ private fun DayCell(
         // [VIS-02] Said the way the day screen says it.
         if (day.alarmSkipped) append(", 알람 꺼짐")
         if (hasMemo) append(", 메모 있음")
+        span?.let { append(", ‘${it.title}’ ${it.days}일 중 ${it.nth}일째") }
         money?.let { m ->
-            if (m.jobs > 0) append(", 일감 ${m.jobs}건")
-            if (m.income != 0L) append(", 수입 ").append(Fmt.won(m.income))
+            if (m.jobs > 0 && (span == null || m.jobs > 1)) append(", 일감 ${m.jobs}건")
+            sales?.let { append(", 매출 ").append(Fmt.won(it)) }
+            if (m.income != 0L && sales == null) append(", 수입 ").append(Fmt.won(m.income))
             if (m.unpaid > 0) append(", 받을 돈 ").append(Fmt.won(m.unpaid))
         }
         weekNote?.let { append(", ").append(it) }
@@ -381,18 +475,32 @@ private fun DayCell(
             .background(tint ?: Color.Transparent)
             .then(
                 when {
-                    isSelected -> Modifier.border(2.dp, scheme.primary, shape)
+                    // [CAL-09] The first day of a range stands out until its end is tapped.
+                    isRangeStart -> Modifier.background(scheme.tertiary.copy(alpha = 0.16f)).border(2.5.dp, scheme.tertiary, shape)
+                    // [CAL-06] The picked day: a ring and a light wash, clear on any shift color.
+                    isSelected -> Modifier.background(scheme.primary.copy(alpha = 0.08f)).border(2.dp, scheme.primary, shape)
                     else -> Modifier
                 },
             )
             .combinedClickable(
                 role = Role.Button,
                 onClick = onClick,
-                onLongClick = if (quickMenu) ({
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    menu = true
-                }) else null,
-                onLongClickLabel = if (quickMenu) "빠른 설정" else null,
+                onLongClick = when {
+                    onLongPress != null -> ({
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onLongPress()
+                    })
+                    quickMenu -> ({
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        menu = true
+                    })
+                    else -> null
+                },
+                onLongClickLabel = when {
+                    onLongPress != null -> "여기부터 칠하기"
+                    quickMenu -> "빠른 설정"
+                    else -> null
+                },
             )
             .semantics {
                 contentDescription = description
@@ -426,7 +534,8 @@ private fun DayCell(
                 // [CAL-01] Two corners, filled in order: 알람 꺼짐 (always top left, so it is never pushed out),
                 // then the kinds of extra work, a part-day leave, a day changed by hand. What does not fit
                 // is still read out and shown under the calendar.
-                val marks = remember(day) { cornerMarks(day) }
+                val jobCorner = if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null
+                val marks = remember(day, jobCorner) { cornerMarks(day, jobCorner) }
                 val alarmOff = day.alarmSkipped
                 val topEnd = marks.firstOrNull()
                 val topStart = if (alarmOff) null else marks.getOrNull(1)
@@ -441,7 +550,12 @@ private fun DayCell(
             val fullLeave = day.leave?.takeIf { it.isFullDay }
             val covered = day.coveredShift
             val badgeKind = day.extras.firstOrNull()?.kind?.takeIf { !day.isWorkDay && covered == null && day.leave == null }
-            if (fullLeave != null) {
+            // [CAL-05] For field and shop work a job outranks a day-off mark; a painted 휴무 is not the day's news.
+            val jobFirst = focus != CalendarFocus.SHIFTS && jobs > 0 && (type == null || type.isOff) && !day.hasCustomTimes &&
+                fullLeave == null && covered == null && badgeKind == null
+            if (jobFirst) {
+                JobMark(span = span, count = if (span != null && startsHere == 0) 0 else jobs, owed = (money?.unpaid ?: 0) > 0 || span?.owed == true && span.first)
+            } else if (fullLeave != null) {
                 // A whole day of leave shows the leave instead of the shift it replaced [FEAT-10].
                 LeaveMark(fullLeave, size = 22.dp)
             } else if (covered != null && day.isWorkDay && type != null) {
@@ -458,15 +572,14 @@ private fun DayCell(
                 ExtraKindMark(badgeKind, size = 22.dp)
             } else if (type != null || day.hasCustomTimes) {
                 ShiftBadge(type = type, text = type?.label ?: "근", size = 22.dp, outlined = type?.isOff == true)
-            } else if (money != null && money.jobs > 0) {
-                // [WORK-02] A booked job; amber while money is still owed.
-                JobBadge(count = money.jobs, owed = money.unpaid > 0)
             } else {
                 Spacer(Modifier.height(22.dp))
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                 val extraMinutes = day.extraMinutes
-                val moneyText = money?.income?.takeIf { it != 0L }?.let { Fmt.wonShort(it) }
+                // [CAL-05] A shop's cell says its sales; field work says what came in.
+                val moneyText = if (!showMoney) null else (sales?.takeIf { focus == CalendarFocus.SALES } ?: money?.income?.takeIf { it != 0L })
+                    ?.let { Fmt.wonShort(it) }
                 val footer = when {
                     memoText != null -> memoText
                     moneyText != null -> moneyText
@@ -487,7 +600,7 @@ private fun DayCell(
                     overflow = TextOverflow.Clip,
                     color = when {
                         memoText != null -> cal.memoDot
-                        moneyText != null -> if (money!!.income < 0) cal.expense else cal.income
+                        moneyText != null -> if ((sales ?: money?.income ?: 0L) < 0) cal.expense else cal.income
                         extraMinutes > 0 -> cal.holidayWork
                         else -> scheme.onSurfaceVariant
                     },
@@ -508,7 +621,19 @@ private fun DayCell(
                 color = scheme.primary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
             )
-            for (t in snapshot.shiftTypes) {
+            // [CAL-05] Field and shop work write the day's job or sales first.
+            focus.addLabel?.let { label ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    leadingIcon = { Icon(Icons.Filled.Add, null) },
+                    onClick = { menu = false; onQuickAction(QuickAction.AddMoney) },
+                )
+            }
+            // [CAL-05] Shifts are offered where the calendar keeps them: always for shift work, and for field
+            // or shop work only once a pattern or a painted day says it does.
+            val usesShifts = focus == CalendarFocus.SHIFTS || snapshot.hasPattern || day.source == DaySource.OVERRIDE
+            if (usesShifts && focus.addLabel != null) HorizontalDivider()
+            if (usesShifts) for (t in snapshot.shiftTypes) {
                 DropdownMenuItem(
                     text = { Text(t.name) },
                     leadingIcon = { ShiftBadge(t, size = 20.dp, outlined = t.isOff) },
@@ -523,7 +648,7 @@ private fun DayCell(
                     onClick = { menu = false; onQuickAction(QuickAction.Shift(ShiftOverride.None)) },
                 )
             }
-            val choices = remember(snapshot, day) { ExtraText.choices(snapshot.kinds, snapshot.shiftTypes, day) }
+            val choices = remember(snapshot, day, usesShifts) { if (usesShifts) ExtraText.choices(snapshot.kinds, snapshot.shiftTypes, day) else emptyList() }
             if (choices.isNotEmpty()) HorizontalDivider()
             for (c in choices) {
                 val i = ExtraText.indexOf(day, c)
@@ -555,6 +680,11 @@ private fun DayCell(
                 )
             }
             DropdownMenuItem(
+                text = { Text("메모 쓰기") },
+                leadingIcon = { Icon(Icons.AutoMirrored.Outlined.NoteAdd, null) },
+                onClick = { menu = false; onQuickAction(QuickAction.Memo) },
+            )
+            DropdownMenuItem(
                 text = { Text("자세히 열기") },
                 leadingIcon = { Icon(Icons.Filled.OpenInFull, null) },
                 onClick = { menu = false; onQuickAction(QuickAction.Open) },
@@ -563,8 +693,40 @@ private fun DayCell(
     }
 }
 
+/**
+ * [CAL-06] A job in a field worker's cell: the badge on the day it starts, and a bar that carries a
+ * job over several days across them, so a three-day job reads as one piece of work.
+ */
 @Composable
-private fun JobBadge(count: Int, owed: Boolean) {
+private fun JobMark(span: JobSpan?, count: Int, owed: Boolean) {
+    val scheme = MaterialTheme.colorScheme
+    val cal = LocalCalendarColors.current
+    val barColor = if (span?.owed == true) cal.warningContainer else scheme.secondaryContainer
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(22.dp)
+            .drawBehind {
+                if (span == null) return@drawBehind
+                val h = 8.dp.toPx()
+                val reach = 4.dp.toPx() // across the cell's own padding, so the days join up
+                val left = if (span.first) size.width / 2 else -reach
+                val right = if (span.last) size.width / 2 else size.width + reach
+                drawRoundRect(
+                    barColor,
+                    topLeft = Offset(left, (size.height - h) / 2),
+                    size = Size(right - left, h),
+                    cornerRadius = CornerRadius(h / 2),
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (count > 0) JobBadge(count = count, owed = owed)
+    }
+}
+
+@Composable
+internal fun JobBadge(count: Int, owed: Boolean) {
     val scheme = MaterialTheme.colorScheme
     val bg = if (owed) LocalCalendarColors.current.warningContainer else scheme.secondaryContainer
     Box(
@@ -577,14 +739,17 @@ private fun JobBadge(count: Int, owed: Boolean) {
 }
 
 /** [CAL-01] What a cell's corners can show, most important first. */
-private sealed interface Corner {
+internal sealed interface Corner {
     data class Kind(val kind: com.bamnat.core.model.ExtraKind) : Corner
     data class PartLeave(val leave: Leave) : Corner
+    /** [CAL-06] A side job (부업) on a shift worker's day; amber while money is owed. */
+    data class Job(val owed: Boolean) : Corner
     data object Changed : Corner
 }
 
 /** The corner marks of a day, in order; 알람 꺼짐 has its own place and is not among them. */
-private fun cornerMarks(day: ResolvedDay): List<Corner> = buildList {
+private fun cornerMarks(day: ResolvedDay, job: Boolean? = null): List<Corner> = buildList {
+    job?.let { add(Corner.Job(it)) }
     // [EXTRA-01] On a day off whose only work is extra work, the first kind is the day's badge, not a corner.
     val kinds = day.extras.map { it.kind }.distinctBy { it.id }
     val kindIsBadge = !day.isWorkDay && day.coveredShift == null && kinds.isNotEmpty() && day.leave == null
@@ -594,10 +759,12 @@ private fun cornerMarks(day: ResolvedDay): List<Corner> = buildList {
 }
 
 @Composable
-private fun CornerMark(mark: Corner) {
+internal fun CornerMark(mark: Corner) {
     when (mark) {
         is Corner.Kind -> ExtraKindMark(mark.kind, size = 13.dp)
         is Corner.PartLeave -> LeaveMark(mark.leave, size = 13.dp)
+        is Corner.Job -> Icon(Icons.Filled.Work, contentDescription = null, modifier = Modifier.size(13.dp),
+            tint = if (mark.owed) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.secondary)
         // Days the user changed by hand.
         Corner.Changed -> Box(Modifier.padding(2.dp).size(5.dp).clip(CircleShape).background(LocalCalendarColors.current.changed))
     }
