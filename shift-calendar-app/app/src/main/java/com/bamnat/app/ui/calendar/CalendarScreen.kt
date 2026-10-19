@@ -85,6 +85,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.IntOffset
@@ -521,6 +522,7 @@ fun CalendarScreen(
     val docking = paint == null && !listView && !(weekOnly && !wide)
     val density = androidx.compose.ui.platform.LocalDensity.current
     val fabLift = with(density) { (FAB_MARGIN + FAB_HEIGHT).toPx() }
+    val fabHeight = with(density) { FAB_HEIGHT.toPx() }
     val dockGap = with(density) { FAB_DOCK_GAP.toPx() }
     val fabJump = with(density) { 8.dp.toPx() }
     val fabTarget: () -> Float = {
@@ -928,6 +930,8 @@ fun CalendarScreen(
         Spacer(Modifier.matchParentSize().onGloballyPositioned { c -> fabAreaBottom = c.positionInWindow().y + c.size.height })
         val style = settings.workStyle
         val place = Modifier.align(Alignment.BottomEnd).padding(FAB_MARGIN).offset { IntOffset(0, fabDrop.value.roundToInt()) }
+            // Coming up from the edge it fades in with how much of it shows, so a sliver is not a stray shape.
+            .graphicsLayer { alpha = ((fabLift - fabDrop.value) / fabHeight).coerceIn(0f, 1f) }
         if (!fabGone && paint == null && style != null && !style.usesPayEngine) {
             // [WORK-02][WORK-03] Field and shop work add the day's job or sales instead of stamping shifts.
             val label = if (style.usesJobs) "일감 적기" else "매출 적기"

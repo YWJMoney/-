@@ -1620,9 +1620,10 @@ class ScreenshotTest {
     @Test fun foldedSettingsNotices() = shoot("141_folded_settings_notices", FOLDED) { settingsPage("알림") }
     @Test fun foldedSettingsRest() = shoot("142_folded_settings_rest", FOLDED) { settingsPage("잠과 휴식") }
     @Test fun unfoldedSettingsNotices() = shoot("143_unfolded_settings_notices", UNFOLDED) { settingsPage("알림", wide = true) }
-    @Test fun foldedQuickInput() = shoot("145_folded_quick_input", FOLDED) { tapText("빠른 입력", exact = true, scrolls = 0) }
+    // [CAL-15] The FAB keeps under the month's last row, so on the cover screen it is a scroll away.
+    @Test fun foldedQuickInput() = shoot("145_folded_quick_input", FOLDED) { tapText("빠른 입력", exact = true) }
     @Test fun foldedQuickInputDrag() = shoot("146_folded_quick_input_drag", FOLDED) {
-        tapText("빠른 입력", exact = true, scrolls = 0)
+        tapText("빠른 입력", exact = true)
         tapText("야간 칠하기", exact = true, scrolls = 0)
         dragDays(dayCell, today)
     }
@@ -1824,14 +1825,14 @@ class ScreenshotTest {
         return first.plusDays((7 - first.dayOfWeek.value % 7).toLong() + 1)
     }
     @Test fun calPaintLeave() = shoot("307_unfolded_paint_leave", UNFOLDED) {
-        tapText("빠른 입력", exact = true, scrolls = 0)
+        tapText("빠른 입력", exact = true)
         tapText("연차 칠하기", exact = true, scrolls = 0)
         dragDays(secondRowMonday(), secondRowMonday().plusDays(4))
     }
 
     /** [CAL-09] A long press starts a range; the next tap ends it. */
     @Test fun calPaintRange() = shoot("308_folded_paint_range", FOLDED) {
-        tapText("빠른 입력", exact = true, scrolls = 0)
+        tapText("빠른 입력", exact = true)
         tapText("야간 칠하기", exact = true, scrolls = 0)
         longPressText(Fmt.dayTitle(secondRowMonday()), prefix = true)
     }
