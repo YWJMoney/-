@@ -1336,7 +1336,7 @@ async function talk(request, env, companyId, grp) {
   if (!c) return json({ error: "not_found" }, 404);
   const device = deviceId(request.headers.get("x-device"));
   const me = device ? await deviceHash(device) : null;
-  const rows = await all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, id LIMIT 500", c.id, grp);
+  const rows = await all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, rowid LIMIT 500", c.id, grp);
   const senders = new Set((await all(env, `SELECT device FROM reports WHERE company_id = ? AND grp = ? AND status IN ('pending', 'adopted')`,
     c.id, grp)).map((r) => r.device));
   const votes = new Map((await all(env, "SELECT device, ok, verified FROM votes WHERE company_id = ? AND grp = ?", c.id, grp))
@@ -2591,7 +2591,7 @@ async function postList(env, url) {
   const one_talk = company && /^[A-Za-z0-9]{12}$/.test(company) && grp && /^[0-9a-f]{16}$/.test(grp);
   const rows = one_talk
     ? await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
-        WHERE p.company_id = ? AND p.grp = ? ORDER BY p.created_at LIMIT 500`, company, grp)
+        WHERE p.company_id = ? AND p.grp = ? ORDER BY p.created_at, p.rowid LIMIT 500`, company, grp)
     : status === "flagged"
       ? await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
           WHERE p.kept = 0 AND (p.flags > 0 OR p.hide_reason = 'flags') ORDER BY p.flags DESC, p.created_at DESC LIMIT 100`)
