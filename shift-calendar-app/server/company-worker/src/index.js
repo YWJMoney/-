@@ -13,6 +13,8 @@
 // POST   /api/posts               a post in that talk; DELETE /api/posts/:id takes it back (header X-Device)
 // POST   /api/posts/:id/flag      신고: three people hide a post until the developer looks
 // *      /api/inquiries...        header X-Device: questions and problem reports from the app [ADMIN-02]
+// GET    /api/inquiries/public    모두의 문의: questions sent as public, with the developer's answers
+// POST   /api/inquiries/:id/same  나도 그래요; /flag 신고: three people hide a question until the developer looks
 // GET    /admin/                  the developer app, installable on a phone [ADMIN-01][ADMIN-03]
 // GET    /admin/join#<invite>     an invited admin installs the app and makes an account [ADMIN-04]
 // *      /api/admin/*             behind a sign-in: the owner's password (secret ADMIN_PASSWORD), or an
@@ -141,6 +143,7 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM invites WHERE used_at IS NULL AND expires < ?", now),
     stmt(env, "DELETE FROM codes WHERE expires < ?", now),
     stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
+    stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
     stmt(env, "DELETE FROM inquiries WHERE updated_at < ?", now - INQUIRY.keepMs),
     // [COMM-06] A hidden post nobody restored is gone after 90 days, and a 30-day 쓰기 막기 when it ends.
     stmt(env, "DELETE FROM post_flags WHERE post_id IN (SELECT id FROM posts WHERE status = 'hidden' AND hidden_at < ?)", now - LIMITS.hiddenPostDays * DAY),
@@ -242,6 +245,10 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS inquiry_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, inquiry_id TEXT NOT NULL,
     sender TEXT NOT NULL, text TEXT NOT NULL, by TEXT, at INTEGER NOT NULL)`,
   "CREATE INDEX IF NOT EXISTS inquiry_messages_inquiry ON inquiry_messages (inquiry_id, id)",
+  // [ADMIN-02] 나도 그래요 (kind same) and 신고 (kind flag) on a public question, once per install each.
+  `CREATE TABLE IF NOT EXISTS inquiry_marks (inquiry_id TEXT NOT NULL, device TEXT NOT NULL, kind TEXT NOT NULL,
+    reason TEXT, at INTEGER NOT NULL, PRIMARY KEY (inquiry_id, device, kind))`,
+  "CREATE INDEX IF NOT EXISTS inquiry_marks_device ON inquiry_marks (device)",
   // Sign-ins before admin accounts kept only a token; they end once, and the owner signs in again.
   "DROP TABLE IF EXISTS sessions",
 ];
@@ -249,6 +256,12 @@ const SCHEMA = [
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
 const COLUMNS = [
   "ALTER TABLE audit ADD COLUMN actor TEXT NOT NULL DEFAULT ''",
+  // [ADMIN-02] 모두의 문의: a question sent as public, why it is hidden, its 신고, whether the developer kept it, 나도 그래요.
+  "ALTER TABLE inquiries ADD COLUMN public INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE inquiries ADD COLUMN hidden TEXT",
+  "ALTER TABLE inquiries ADD COLUMN flags INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE inquiries ADD COLUMN kept INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE inquiries ADD COLUMN same INTEGER NOT NULL DEFAULT 0",
 ];
 
 const schemas = new WeakMap();
@@ -1190,6 +1203,10 @@ async function forgetMine(request, env) {
     stmt(env, "DELETE FROM post_flags WHERE device = ? OR post_id NOT IN (SELECT id FROM posts)", dev),
     stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE device = ?)", dev),
     stmt(env, "DELETE FROM inquiries WHERE device = ?", dev),
+    // [ADMIN-02] Their 나도 그래요 and 신고 on others' questions go too, and those count one fewer.
+    stmt(env, `UPDATE inquiries SET same = same - 1 WHERE id IN (SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'same')`, dev),
+    stmt(env, `UPDATE inquiries SET flags = flags - 1 WHERE id IN (SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'flag')`, dev),
+    stmt(env, "DELETE FROM inquiry_marks WHERE device = ? OR inquiry_id NOT IN (SELECT id FROM inquiries)", dev),
   ]);
   return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes });
 }
@@ -1407,8 +1424,9 @@ async function flag(request, env, id) {
 // 설정 > 문의하기 sends here instead of opening a mail app, and the developer answers in /admin; the
 // answer shows in the app. Like a report it carries no amount, contact or name: those are refused, not
 // cleaned. What goes with it (app version, phone model, Android, the alarm check if the user ticks it)
-// is shown in the app before sending. Only the install's hash is kept, so only that phone sees the
-// thread, and a thread with nothing new for 180 days is deleted.
+// is shown in the app before sending. Only the install's hash is kept, so only that phone can write to,
+// or delete, the thread, and a thread with nothing new for 180 days is deleted. A question sent as
+// public is also in 모두의 문의 (below), without anything that went with it.
 
 const INQUIRY = {
   kinds: ["question", "bug", "idea"],
@@ -1476,6 +1494,11 @@ async function inquiries(request, env, path) {
   const method = request.method;
   const device = deviceId(request.headers.get("x-device"));
   if (path === "/api/inquiries" && method === "POST") return ask(request, env);
+  if (path === "/api/inquiries/public" && method === "GET") return publicList(env, new URL(request.url).searchParams, device);
+  const pub = path.match(/^\/api\/inquiries\/public\/([A-Za-z0-9]{22})$/);
+  if (pub && method === "GET") return publicThread(env, pub[1], device);
+  const mark = path.match(/^\/api\/inquiries\/([A-Za-z0-9]{22})\/(same|flag)$/);
+  if (mark && method === "POST") return inquiryMark(request, env, mark[1], mark[2]);
   if (!device) return json({ error: "device", field: "device" }, 400);
   const dev = await deviceHash(device);
   if (path === "/api/inquiries" && method === "GET") {
@@ -1493,6 +1516,7 @@ async function inquiries(request, env, path) {
   if (!m[2] && method === "DELETE") {
     await env.DB.batch([
       stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id = ?", row.id),
+      stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id = ?", row.id),
       stmt(env, "DELETE FROM inquiries WHERE id = ?", row.id),
     ]);
     return new Response(null, { status: 204 });
@@ -1531,11 +1555,13 @@ async function ask(request, env) {
   }
   const id = randomId(22);
   await env.DB.batch([
-    stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'open', ?, ?)",
-      id, dev, body.kind, JSON.stringify(info), now, now),
+    // Only an app that says so on its form sends public: true; a question from an older app stays the developer's.
+    stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at) VALUES (?, ?, ?, ?, 'open', ?, ?, ?)",
+      id, dev, body.kind, JSON.stringify(info), body.public === true ? 1 : 0, now, now),
     stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, text, now),
     // Threads with nothing new for half a year go, answers and all.
     stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
+    stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
     stmt(env, "DELETE FROM inquiries WHERE updated_at < ?", now - INQUIRY.keepMs),
     stmt(env, "DELETE FROM counters WHERE expires < ?", now),
   ]);
@@ -1583,12 +1609,20 @@ async function inquiryView(env, row, admin = false) {
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
     messages: messages.map((m) => ({ from: m.sender, text: m.text, at: iso(m.at), ...(admin && m.by ? { by: m.by } : {}) })),
+    public: row.public === 1,
+    same: row.same ?? 0,
+    ...(row.hidden ? { hidden: { code: row.hidden, text: INQUIRY_HIDE[row.hidden] ?? "" } } : {}),
   };
   if (!admin) return view;
   const info = JSON.parse(row.info);
   const context = {};
   for (const [label, key] of INQUIRY_INFO) if (info[key]) context[label] = info[key];
-  return { ...view, appVersion: info.app ?? null, context, ...triage(row.kind, messages.find((m) => m.sender === "user")?.text, info) };
+  const reasons = await all(env, `SELECT reason, COUNT(*) AS n FROM inquiry_marks WHERE inquiry_id = ? AND kind = 'flag'
+    GROUP BY reason ORDER BY n DESC, reason`, row.id);
+  return {
+    ...view, appVersion: info.app ?? null, context, ...triage(row.kind, messages.find((m) => m.sender === "user")?.text, info),
+    flags: row.flags ?? 0, kept: row.kept === 1, reasons: reasons.map((r) => ({ code: r.reason, text: FLAGS[r.reason] ?? r.reason, n: r.n })),
+  };
 }
 
 /** Who answered: the signed-in admin's name once there are admin accounts, else "admin". */
@@ -1599,10 +1633,120 @@ function actorName(env) {
 }
 
 /** /api/admin/inquiries: the list, one thread, an answer and open or closed. */
+// ---- 모두의 문의 [ADMIN-02] ----
+//
+// A question sent from an app that says so on its form is public: anyone with the app reads it and the
+// developer's answers, says 나도 그래요 or 신고s it. The writer is never named, and what went with the
+// question (app, phone, alarm check, pay check) stays with the developer. A question sent before was
+// promised to the developer only, so it stays private. Three 신고 hide it until the developer looks.
+
+/** Why a public question is hidden, as its writer's app shows it. */
+const INQUIRY_HIDE = {
+  abuse: "욕설이나 비방이 있어요",
+  personal: "개인 정보가 있어요",
+  spam: "광고나 도배예요",
+  flags: "신고가 모여 개발자가 확인하고 있어요",
+};
+
+const PUBLIC_PAGE = 30;
+
+/** What anyone sees of a public question in the list. */
+function publicItem(r, me, sameByMe) {
+  return {
+    id: r.id,
+    kind: r.kind,
+    status: r.status,
+    preview: [...(r.first ?? "")].slice(0, 160).join(""),
+    answers: r.answers,
+    same: r.same,
+    sameByMe: sameByMe.has(r.id),
+    mine: r.device === me,
+    createdAt: iso(r.created_at),
+    updatedAt: iso(r.updated_at),
+    ...triage(r.kind, r.first, JSON.parse(r.info)),
+  };
+}
+
+/** 모두의 문의, newest activity first or most 나도 그래요 first, one topic or all, a page at a time. */
+async function publicList(env, params, device) {
+  const me = device ? await deviceHash(device) : null;
+  const topic = Object.hasOwn(TOPIC_NAMES, params.get("topic") ?? "") ? params.get("topic") : null;
+  const order = params.get("sort") === "same" ? "i.same DESC, i.updated_at DESC" : "i.updated_at DESC";
+  const offset = Math.max(0, Math.min(Number.parseInt(params.get("after") ?? "0", 10) || 0, 1000));
+  const rows = await all(env, `SELECT i.id, i.kind, i.status, i.info, i.same, i.device, i.created_at, i.updated_at,
+      (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
+      (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin') AS answers
+    FROM inquiries i WHERE i.public = 1 AND i.hidden IS NULL ORDER BY ${order} LIMIT 500`);
+  const sameByMe = new Set(me ? (await all(env, "SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'same'", me))
+    .map((r) => r.inquiry_id) : []);
+  const items = rows.map((r) => publicItem(r, me, sameByMe));
+  const topics = {};
+  for (const i of items) topics[i.topic] = (topics[i.topic] ?? 0) + 1;
+  const shown = items.filter((i) => !topic || i.topic === topic);
+  const page = shown.slice(offset, offset + PUBLIC_PAGE);
+  return json({ topics, topicNames: TOPIC_NAMES, inquiries: page, next: offset + PUBLIC_PAGE < shown.length ? offset + PUBLIC_PAGE : null });
+}
+
+/** One public question with every message; its writer also sees it while hidden, with why. */
+async function publicThread(env, id, device) {
+  const me = device ? await deviceHash(device) : null;
+  const row = await one(env, "SELECT * FROM inquiries WHERE id = ? AND public = 1", id);
+  if (!row || (row.hidden && row.device !== me)) return json({ error: "not_found" }, 404);
+  const messages = await messagesOf(env, row.id);
+  const marks = me ? await all(env, "SELECT kind FROM inquiry_marks WHERE inquiry_id = ? AND device = ?", row.id, me) : [];
+  return json({
+    id: row.id,
+    kind: row.kind,
+    status: row.status,
+    same: row.same,
+    sameByMe: marks.some((m) => m.kind === "same"),
+    flaggedByMe: marks.some((m) => m.kind === "flag"),
+    mine: row.device === me,
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
+    messages: messages.map((m) => ({ from: m.sender === "user" ? "user" : "admin", text: m.text, at: iso(m.at) })),
+    ...triage(row.kind, messages.find((m) => m.sender === "user")?.text, JSON.parse(row.info)),
+    ...(row.hidden ? { hidden: { code: row.hidden, text: INQUIRY_HIDE[row.hidden] ?? "" } } : {}),
+  });
+}
+
+/** 나도 그래요 (on: false takes it back) or 신고, once per install; not on one's own question. */
+async function inquiryMark(request, env, id, kind) {
+  const body = await readJson(request, 1024);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  const now = Date.now();
+  const net = await network(request, env, now);
+  if (!(await allow(env, `vote|${net.now}`, LIMITS.votesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
+  const dev = await deviceHash(device);
+  const row = await one(env, "SELECT * FROM inquiries WHERE id = ? AND public = 1 AND hidden IS NULL", id);
+  if (!row) return json({ error: "not_found" }, 404);
+  if (row.device === dev) return json({ error: "own" }, 400);
+  if (kind === "same") {
+    await env.DB.batch([
+      body.on === false
+        ? stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id = ? AND device = ? AND kind = 'same'", id, dev)
+        : stmt(env, "INSERT OR IGNORE INTO inquiry_marks (inquiry_id, device, kind, reason, at) VALUES (?, ?, 'same', NULL, ?)", id, dev, now),
+      stmt(env, "UPDATE inquiries SET same = (SELECT COUNT(*) FROM inquiry_marks WHERE inquiry_id = ?1 AND kind = 'same') WHERE id = ?1", id),
+    ]);
+    const after = await one(env, "SELECT same FROM inquiries WHERE id = ?", id);
+    return json({ same: after.same, sameByMe: body.on !== false });
+  }
+  const reason = Object.hasOwn(FLAGS, body.reason) && body.reason !== "false" ? body.reason : "abuse";
+  const added = await run(env, "INSERT OR IGNORE INTO inquiry_marks (inquiry_id, device, kind, reason, at) VALUES (?, ?, 'flag', ?, ?)", id, dev, reason, now);
+  if (added.meta.changes) {
+    await run(env, `UPDATE inquiries SET flags = flags + 1,
+        hidden = CASE WHEN kept = 0 AND flags + 1 >= ?2 THEN 'flags' ELSE hidden END WHERE id = ?1`, id, LIMITS.flagsToHide);
+    const after = await one(env, "SELECT hidden FROM inquiries WHERE id = ?", id);
+    if (after.hidden) await audit(env, now, "inquiry_autohide", id);
+  }
+  return json({ ok: true });
+}
+
 async function adminInquiries(request, env, url, path, now) {
   const method = request.method;
   if (path === "/inquiries" && method === "GET") return json(await inquiryList(env, url.searchParams));
-  const m = path.match(/^\/inquiries\/([A-Za-z0-9]{22})(\/reply|\/status)?$/);
+  const m = path.match(/^\/inquiries\/([A-Za-z0-9]{22})(\/reply|\/status|\/visibility)?$/);
   if (!m) return json({ error: "not_found" }, 404);
   const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", m[1]);
   if (!row) return json({ error: "not_found" }, 404);
@@ -1618,6 +1762,22 @@ async function adminInquiries(request, env, url, path, now) {
       stmt(env, "UPDATE inquiries SET status = ?, updated_at = ? WHERE id = ?", status, now, row.id),
     ]);
     await audit(env, now, "inquiry_reply", row.id, status);
+  } else if (m[2] === "/visibility") {
+    // 모두의 문의: hide (with a reason the writer's app shows) or show again; either way 신고 no longer hides it.
+    if (!row.public) refuse("public", "action");
+    if (body.action === "hide") {
+      const reason = Object.hasOwn(INQUIRY_HIDE, body.reason) && body.reason !== "flags" ? body.reason : "abuse";
+      await run(env, "UPDATE inquiries SET hidden = ?, kept = 1 WHERE id = ?", reason, row.id);
+      await audit(env, now, "inquiry_hide", row.id, reason);
+    } else if (body.action === "show") {
+      await env.DB.batch([
+        stmt(env, "UPDATE inquiries SET hidden = NULL, kept = 1, flags = 0 WHERE id = ?", row.id),
+        stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id = ? AND kind = 'flag'", row.id),
+      ]);
+      await audit(env, now, "inquiry_show", row.id);
+    } else {
+      refuse("action", "action");
+    }
   } else {
     if (!["open", "closed"].includes(body.status)) refuse("status", "status");
     // Opening or closing is the developer's bookkeeping; it does not keep a thread from its 180 days.
@@ -1658,16 +1818,21 @@ async function inquiryList(env, params) {
       createdAt: iso(r.created_at),
       updatedAt: iso(r.updated_at),
       ...triage(r.kind, r.first, info),
+      public: r.public === 1,
+      hidden: r.hidden ?? null,
+      flags: r.flags ?? 0,
+      same: r.same ?? 0,
     };
   });
   // How many of this view are in each topic, so the filter shows where the questions pile up.
   const topics = {};
   for (const i of listed) topics[i.topic] = (topics[i.topic] ?? 0) + 1;
   const rank = { urgent: 0, normal: 1, low: 2 };
-  // Urgent first among those waiting for an answer; otherwise the order stays the newest first.
+  // Among those waiting for an answer: urgent first, then the ones most people said 나도 그래요 to; the rest
+  // stay newest first.
   const waits = (i) => (i.status === "open" ? 0 : 1);
   const shown = listed.filter((i) => !topic || i.topic === topic)
-    .sort((a, b) => waits(a) - waits(b) || (waits(a) === 0 ? rank[a.urgency] - rank[b.urgency] : 0));
+    .sort((a, b) => waits(a) - waits(b) || (waits(a) === 0 ? rank[a.urgency] - rank[b.urgency] || b.same - a.same : 0));
   return { counts, topics, topicNames: TOPIC_NAMES, inquiries: shown };
 }
 

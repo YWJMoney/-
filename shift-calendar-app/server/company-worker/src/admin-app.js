@@ -1008,6 +1008,13 @@ function adminApp() {
     return `<div class="chips" role="group" aria-label="주제">${chip("", "전체")}${keys.map((k) => chip(k, names[k], topics[k])).join("")}</div>`;
   }
 
+  /** [ADMIN-02] 모두의 문의: whether others see it, and what they said: 나도 그래요 and 신고. */
+  function publicPills(q) {
+    if (!q.public) return "";
+    return (q.hidden ? '<span class="pill bad">숨김</span>' : '<span class="pill info">공개</span>') +
+      (q.same ? `<span class="pill">나도 ${q.same}</span>` : "") + (q.flags ? `<span class="pill warn">신고 ${q.flags}</span>` : "");
+  }
+
   function inquiriesView() {
     if (S.data.inquiriesMissing) {
       return empty("문의함이 아직 서버에 없어요", "앱 안 문의가 켜진 서버로 업데이트하면 여기서 바로 답할 수 있어요.");
@@ -1024,7 +1031,7 @@ function adminApp() {
     return head + `<ul class="rows">${d.inquiries.map((q) => `<li><a class="row${q.waiting ? " unread" : ""}" href="${href("inquiries", q.id)}">
       <span class="row-main"><b>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}${q.appVersion ? ` <span class="meta">앱 ${esc(q.appVersion)}</span>` : ""}</b>
         <span class="preview">${esc(q.preview)}</span></span>
-      <span class="row-side"><span>${esc(ago(q.updatedAt ?? q.createdAt))}</span>${q.count > 1 ? `<span class="pill">${q.count}</span>` : ""}</span>
+      <span class="row-side"><span>${esc(ago(q.updatedAt ?? q.createdAt))}</span>${q.count > 1 ? `<span class="pill">${q.count}</span>` : ""}${publicPills(q)}</span>
       ${icon(P.chevron)}</a></li>`).join("")}</ul>`;
   }
 
@@ -1045,7 +1052,7 @@ function adminApp() {
           <div class="thread">${thread}</div></div>
         ${editable && q.status !== "closed" ? `<form class="composer" data-form="reply">
           <label class="sr" for="reply">답</label>
-          <textarea id="reply" name="text" maxlength="2000" placeholder="보낸 분 앱에 보일 답을 적어요. 이름, 연락처, 금액은 묻지 않아요." required></textarea>
+          <textarea id="reply" name="text" maxlength="2000" placeholder="${q.public ? "보낸 분 앱과 모두의 문의에" : "보낸 분 앱에"} 보일 답을 적어요. 이름, 연락처, 금액은 묻지 않아요." required></textarea>
           <div class="chips" role="group" aria-label="자주 쓰는 답">${TEMPLATES.map(([label], i) => `<button type="button" class="chip pick" data-act="template" data-i="${i}">${esc(label)}</button>`).join("")}</div>
           <div class="actions"><span class="count" id="reply-count">0/2000</span>
             <button class="btn" type="submit" data-close="1">답하고 닫기</button><button class="btn primary" type="submit">답하기</button></div>
@@ -1054,6 +1061,12 @@ function adminApp() {
       <aside>
         <section class="card"><h2>함께 온 정보</h2><p class="hint">보낸 분이 보내기 전에 보고 동의한 정보예요.</p>
           ${ctx.length ? `<dl class="kv">${ctx.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</dd>`).join("")}</dl>` : '<p class="meta">없어요</p>'}</section>
+        ${q.public ? `<section class="card"><h2>모두의 문의</h2>
+          <p class="hint">${q.hidden ? `숨겼어요: ${esc(q.hidden.text)}. 보낸 분 앱에는 이유가 보여요.` : "앱을 쓰는 모두가 이 문의와 답을 봐요. 함께 온 정보는 개발자만 봐요."}</p>
+          <div class="chips">${publicPills(q)}${(q.reasons ?? []).map((r) => `<span class="chip">${esc(r.text)} ${r.n}</span>`).join("")}</div>
+          ${editable ? `<div class="actions start">${q.hidden ? '<button class="btn" data-act="inquiry-show">다시 보이기</button>'
+            : `${[["abuse", "욕설·비방"], ["personal", "개인 정보"], ["spam", "광고·도배"]].map(([code, label]) =>
+              `<button class="btn" data-act="inquiry-hide" data-reason="${code}">숨기기: ${label}</button>`).join("")}${q.flags && !q.kept ? '<button class="btn" data-act="inquiry-show">괜찮아요</button>' : ""}`}</div>` : ""}</section>` : ""}
         ${editable ? `<section class="card"><h2>상태</h2>
           <div class="actions start">${q.status === "closed" ? '<button class="btn" data-act="inquiry-state" data-status="open">다시 열기</button>'
             : '<button class="btn" data-act="inquiry-state" data-status="closed">닫기</button>'}</div></section>` : ""}
@@ -1600,6 +1613,16 @@ function adminApp() {
       box.value = (box.value ? `${box.value.trimEnd()}\n\n` : "") + TEMPLATES[Number(i)][1];
       box.dispatchEvent(new Event("input", { bubbles: true }));
       box.focus();
+    },
+    "inquiry-hide": async ({ reason }) => {
+      const q = await act(() => api(`/inquiries/${S.route.id}/visibility`, "POST", { action: "hide", reason }), "숨겼어요. 보낸 분 앱에 이유가 보여요");
+      if (q) S.data.inquiry = q;
+      load();
+    },
+    "inquiry-show": async () => {
+      const q = await act(() => api(`/inquiries/${S.route.id}/visibility`, "POST", { action: "show" }), "다시 보이게 했어요. 신고로는 더 가려지지 않아요");
+      if (q) S.data.inquiry = q;
+      load();
     },
     "inquiry-state": async ({ status }) => {
       const q = await act(() => api(`/inquiries/${S.route.id}/status`, "POST", { status }), status === "closed" ? "문의를 닫았어요" : "문의를 다시 열었어요");

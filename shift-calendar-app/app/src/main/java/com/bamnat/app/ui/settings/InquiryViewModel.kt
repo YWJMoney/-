@@ -10,8 +10,11 @@ import com.bamnat.app.company.CompanyException
 import com.bamnat.app.company.CompanyText
 import com.bamnat.app.company.Inquiry
 import com.bamnat.app.company.InquiryClient
+import com.bamnat.app.company.InquiryFlag
 import com.bamnat.app.company.InquiryInfo
 import com.bamnat.app.company.InquiryKind
+import com.bamnat.app.company.PublicPage
+import com.bamnat.app.company.PublicThread
 import com.bamnat.app.ui.diag.DiagnosticsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,6 +49,93 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
 
     /** [ADMIN-02] Opened from 계산이 이상해요: the pay check to send, and the form comes first. */
     val payCheck: String? = c.pendingPayCheck.also { c.pendingPayCheck = null }
+
+    /** [ADMIN-02] 모두의 문의 opens first, unless the developer answered this phone's question. */
+    val startOnBoard: Boolean = c.inquiryStore.unread.value == 0
+
+    private val _board = MutableStateFlow<PublicPage?>(null)
+    /** 모두의 문의 as far as it is loaded; null until the first page comes back. */
+    val board: StateFlow<PublicPage?> = _board.asStateFlow()
+
+    private val _boardOffline = MutableStateFlow(false)
+    val boardOffline: StateFlow<Boolean> = _boardOffline.asStateFlow()
+
+    private val _topic = MutableStateFlow<String?>(null)
+    val topic: StateFlow<String?> = _topic.asStateFlow()
+
+    private val _bySame = MutableStateFlow(false)
+    /** Most 나도 그래요 first instead of the newest. */
+    val bySame: StateFlow<Boolean> = _bySame.asStateFlow()
+
+    private val _thread = MutableStateFlow<PublicThread?>(null)
+    /** The public question open now. */
+    val thread: StateFlow<PublicThread?> = _thread.asStateFlow()
+
+    fun loadBoard(more: Boolean = false) {
+        val after = if (more) _board.value?.next ?: return else 0
+        viewModelScope.launch {
+            runCatching { c.inquiryApi.board(device, _topic.value, _bySame.value, after) }
+                .onSuccess { page ->
+                    _boardOffline.value = false
+                    _board.value = if (more) page.copy(items = _board.value?.items.orEmpty() + page.items) else page
+                }
+                .onFailure {
+                    _boardOffline.value = true
+                    if (_board.value == null) _board.value = PublicPage(emptyList(), emptyList(), emptyMap(), null)
+                }
+        }
+    }
+
+    fun showTopic(topic: String?) {
+        if (_topic.value == topic) return
+        _topic.value = topic
+        loadBoard()
+    }
+
+    fun sortBySame(on: Boolean) {
+        if (_bySame.value == on) return
+        _bySame.value = on
+        loadBoard()
+    }
+
+    fun openThread(id: String, failed: () -> Unit) {
+        if (_thread.value?.id != id) _thread.value = null
+        viewModelScope.launch {
+            runCatching { c.inquiryApi.boardThread(device, id) }
+                .onSuccess { _thread.value = it }
+                .onFailure { failed() }
+        }
+    }
+
+    /** 나도 그래요 on the open question, shown at once and put back if the server says no. */
+    fun same(on: Boolean, done: (String?) -> Unit) {
+        val t = _thread.value ?: return
+        _thread.value = t.copy(sameByMe = on, same = (t.same + if (on) 1 else -1).coerceAtLeast(0))
+        viewModelScope.launch {
+            runCatching { c.inquiryApi.same(device, t.id, on) }
+                .onSuccess { n ->
+                    _thread.value = _thread.value?.takeIf { it.id == t.id }?.copy(same = n, sameByMe = on) ?: _thread.value
+                    _board.value = _board.value?.let { b -> b.copy(items = b.items.map { if (it.id == t.id) it.copy(same = n, sameByMe = on) else it }) }
+                    done(null)
+                }
+                .onFailure {
+                    _thread.value = t
+                    done(failure(it))
+                }
+        }
+    }
+
+    fun flag(reason: InquiryFlag, done: (String?) -> Unit) {
+        val t = _thread.value ?: return
+        viewModelScope.launch {
+            runCatching { c.inquiryApi.flag(device, t.id, reason) }
+                .onSuccess {
+                    _thread.value = t.copy(flaggedByMe = true)
+                    done(null)
+                }
+                .onFailure { done(failure(it)) }
+        }
+    }
 
     fun refresh() {
         viewModelScope.launch {
@@ -122,7 +212,7 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         "rate_limited" -> "오늘은 더 보낼 수 없어요. 내일 다시 보내거나 메일로 보내 주세요"
         "too_many" -> "이 문의에는 더 쓸 수 없어요. 새 문의로 보내 주세요"
         "email", "phone", "amount" -> personalProblem(e.message ?: "")
-        "not_found" -> "이 문의는 지워졌어요"
+        "not_found" -> "이 문의는 지워졌거나 가려졌어요"
         else -> "보내지 못했어요. 잠시 뒤 다시 해 주세요"
     }
 

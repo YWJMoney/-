@@ -241,6 +241,34 @@ class CompanyAppTest {
         api.delete("app-test-device-0011", sent.id)
     }
 
+    /** [ADMIN-02] 모두의 문의: a question this app sends is public, others say 나도 그래요 and 신고, the extras stay private. */
+    @Test fun everyoneSeesPublicQuestions() = withServer { base ->
+        val api = InquiryClient(base)
+        val info = InquiryInfo(app = "1.14.0 (20)", model = "samsung SM-F956N", android = "16 (API 36)", pay = "야간수당: 48시간 · 50%")
+        val sent = api.send("app-test-device-0021", InquiryKind.BUG, "야간수당이 명세서보다 4시간만큼 적어요", info)
+        assertTrue(sent.public)
+
+        val page = api.board("app-test-device-0022", topic = null, bySame = false, after = 0)
+        val item = page.items.single()
+        assertEquals(sent.id, item.id)
+        assertEquals("pay", item.topic)
+        assertFalse(item.mine)
+        assertEquals("급여 계산", page.topics.toMap()["pay"])
+        assertEquals(1, page.counts["pay"])
+        assertTrue(api.board("app-test-device-0021", "pay", bySame = true, after = 0).items.single().mine)
+        assertTrue(api.board("app-test-device-0022", "alarm", bySame = false, after = 0).items.isEmpty())
+
+        assertEquals(1, api.same("app-test-device-0022", sent.id, on = true))
+        val thread = api.boardThread("app-test-device-0022", sent.id)
+        assertTrue(thread.sameByMe)
+        assertEquals(listOf(false), thread.messages.map { it.fromDeveloper })
+        assertEquals(0, api.same("app-test-device-0022", sent.id, on = false))
+
+        api.flag("app-test-device-0023", sent.id, InquiryFlag.SPAM)
+        assertTrue(api.boardThread("app-test-device-0023", sent.id).flaggedByMe)
+        assertNull(api.boardThread("app-test-device-0021", sent.id).hidden)
+    }
+
     /**
      * Runs server/company-worker on Node with SQLite for [block], given its address. Skipped where Node
      * is missing.
