@@ -82,6 +82,13 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.rememberUpdatedState
@@ -145,6 +152,16 @@ private val WEEK_SWIPE = 48.dp
 /** [CAL-01] The unfolded day panel: room for "10월 18일 (일) 오늘" and its arrows, never most of the screen. */
 private val DAY_PANEL_MIN_WIDTH = 280.dp
 private val DAY_PANEL_MAX_WIDTH = 420.dp
+/** [CAL-15] The floating button's height and the room it keeps from the screen's edge. */
+private val FAB_HEIGHT = 56.dp
+private val FAB_MARGIN = 16.dp
+/** [CAL-15] Between the month's last row and the button riding under it. */
+private val FAB_DOCK_GAP = 8.dp
+/** [CAL-15] Room under the month for the button: the gap above it, its height and the same gap below. */
+private val FAB_ROOM = FAB_DOCK_GAP + FAB_HEIGHT + FAB_DOCK_GAP
+private const val FAB_STEP_MILLIS = 180
+/** [CAL-17] The tip comes just after the tap has shown its day, so it is read as being about the tap. */
+private const val TIP_DELAY_MILLIS = 400L
 
 /** Fixed, so a saved pager page always maps back to the same month (even after a restart). */
 internal val BASE_MONTH: YearMonth = YearMonth.of(2026, 1)
@@ -345,10 +362,23 @@ fun CalendarScreen(
             lastToday = today
         }
     }
+    // [UX-03][CAL-17] Things pointed out once on this phone.
+    val hints = remember { HintStore(context) }
+    var longPressHintDone by remember { mutableStateOf(hints.done(HintStore.LONG_PRESS)) }
+    val longPressSeen: () -> Unit = {
+        if (!longPressHintDone) { hints.markDone(HintStore.LONG_PRESS); longPressHintDone = true }
+    }
     // [DAY-01] A tap picks the day and shows it under the calendar; a tap on the picked day opens it all.
     val onDayClickNow: (LocalDate) -> Unit = { date ->
         val painting = paint != null
         val again = date == selected
+        // [CAL-17] Changing one day in place is a long press away, which nothing on screen shows: the
+        // first plain tap on a date says so once.
+        if (!painting && mark == null && rangeFrom == null && !longPressHintDone) {
+            longPressSeen()
+            val tip = focus.longPressTip()
+            scope.launch { delay(TIP_DELAY_MILLIS); vm.tip(tip) }
+        }
         vm.onDayTapped(date)
         val m = YearMonth.from(date)
         if (m != visibleMonth && !weekOnly) slideToMonth(m)
@@ -375,6 +405,8 @@ fun CalendarScreen(
         if (!showsDay) sheetOpen = true
     }
     val onQuickActionNow: (LocalDate, QuickAction) -> Unit = { date, action ->
+        // [CAL-17] Found the long press already: the tip is not needed.
+        longPressSeen()
         val day = snap.resolver.resolve(date)
         when (action) {
             is QuickAction.Shift -> vm.assignQuick(day, action.override, snap)
@@ -414,7 +446,6 @@ fun CalendarScreen(
     var showShare by remember { mutableStateOf(false) }
     val shareLinks = remember { com.bamnat.app.share.ShareLinkClient().enabled }
     // [UX-03] Pointed out once, the first time there is a schedule worth sending and nothing was sent yet.
-    val hints = remember { HintStore(context) }
     var shareHintDone by remember { mutableStateOf(hints.done(HintStore.SHARE)) }
     val shareCalendar: () -> Unit = {
         if (!shareHintDone) { hints.markDone(HintStore.SHARE); shareHintDone = true }
@@ -479,10 +510,37 @@ fun CalendarScreen(
         }
     }
 
+    // [CAL-15] No date is ever under the FAB, so a tap meant for a day never opens quick input. There is
+    // room for the FAB under the month: while the month's last row (the 30th, the 31st) is lower than
+    // where the FAB rests, the FAB rides in that room just under the row, coming up from the screen's
+    // edge with it, and it rests in its usual place once the month is above. Read while placing:
+    // scrolling moves it without recomposing; a jump (another view, another layout) is animated.
+    val pageScroll = rememberScrollState()
+    var gridBottom by remember { mutableFloatStateOf(Float.NaN) }
+    var fabAreaBottom by remember { mutableFloatStateOf(Float.NaN) }
+    val docking = paint == null && !listView && !(weekOnly && !wide)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val fabLift = with(density) { (FAB_MARGIN + FAB_HEIGHT).toPx() }
+    val dockGap = with(density) { FAB_DOCK_GAP.toPx() }
+    val fabJump = with(density) { 8.dp.toPx() }
+    val fabTarget: () -> Float = {
+        if (!docking || gridBottom.isNaN() || fabAreaBottom.isNaN()) 0f
+        else (gridBottom + dockGap - (fabAreaBottom - fabLift)).coerceIn(0f, fabLift)
+    }
+    val fabDrop = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(docking, fabLift) {
+        androidx.compose.runtime.snapshotFlow { fabTarget() }.collectLatest { t ->
+            if (kotlin.math.abs(t - fabDrop.value) > fabJump) fabDrop.animateTo(t, tween(FAB_STEP_MILLIS, easing = FastOutSlowInEasing))
+            else fabDrop.snapTo(t)
+        }
+    }
     // [DAY-01] The FAB folds to its icon while the page goes on under it (the day card, the month's hours),
     // so what it would cover stays readable and in reach; at the page's end there is room for its label.
-    val pageScroll = rememberScrollState()
-    val fabExpanded by remember { derivedStateOf { !pageScroll.canScrollForward } }
+    // [CAL-15] It says "빠른 입력" at the top of the page and while it rides under the month, so the
+    // first look tells what it is.
+    val fabExpanded by remember { derivedStateOf { fabDrop.value > 0.5f || pageScroll.value == 0 || !pageScroll.canScrollForward } }
+    // Below the screen's edge with the month, it is not there for TalkBack either.
+    val fabGone by remember(fabLift) { derivedStateOf { fabDrop.value >= fabLift - 1f } }
 
     // [SLP-15] A tapped day notice opens on today: the user's own calendar, this month, the page's top.
     val noticeTarget by NoticeLinks.target.collectAsStateWithLifecycle()
@@ -751,7 +809,11 @@ fun CalendarScreen(
                 CalendarViewSwitch(listView = showList, onListView = { if (paint == null) vm.setListView(it) }, onLegend = { legendOpen = true })
             }
             if (!showList) WeekdayHeader(settings.weekStart, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
-            BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = if (showList) 0.dp else 8.dp)) {
+            BoxWithConstraints(
+                Modifier.fillMaxWidth().padding(horizontal = if (showList) 0.dp else 8.dp)
+                    // [CAL-15] Where the month's last row ends, for the FAB to keep under it.
+                    .onGloballyPositioned { c -> gridBottom = c.positionInWindow().y + c.size.height },
+            ) {
                 val cellHeight = (maxWidth / 7 * 1.3f).coerceIn(66.dp, 100.dp) + cellTextGrowth()
                 // [CAL-09] With something to stamp, a drag paints and a long press starts a range.
                 val stamping = mark != null || (paint != null && paint != PaintTool.Pick)
@@ -802,7 +864,9 @@ fun CalendarScreen(
                     )
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            // [CAL-15] Room for the floating button under the month, so its last row (the 30th, the 31st)
+            // can always be scrolled clear of it.
+            Spacer(Modifier.height(if (paint == null) FAB_ROOM else 12.dp))
             if (!wide) {
                 // [CAL-05] One day card for every kind of work: its jobs, sales or shift, with the chips that fit.
                 DayPreview(
@@ -860,9 +924,11 @@ fun CalendarScreen(
 
     val bottomSpace = if (paint != null) 132.dp else 88.dp
     val fab: @Composable BoxScope.() -> Unit = {
+        // [CAL-15] Where the FAB rests: the bottom of the area it floats in.
+        Spacer(Modifier.matchParentSize().onGloballyPositioned { c -> fabAreaBottom = c.positionInWindow().y + c.size.height })
         val style = settings.workStyle
-        val place = Modifier.align(Alignment.BottomEnd).padding(16.dp)
-        if (paint == null && style != null && !style.usesPayEngine) {
+        val place = Modifier.align(Alignment.BottomEnd).padding(FAB_MARGIN).offset { IntOffset(0, fabDrop.value.roundToInt()) }
+        if (!fabGone && paint == null && style != null && !style.usesPayEngine) {
             // [WORK-02][WORK-03] Field and shop work add the day's job or sales instead of stamping shifts.
             val label = if (style.usesJobs) "일감 적기" else "매출 적기"
             // The extended FAB drops its text from semantics, so the icon carries the label for TalkBack.
@@ -873,7 +939,7 @@ fun CalendarScreen(
                 expanded = fabExpanded,
                 modifier = place,
             )
-        } else if (paint == null) {
+        } else if (!fabGone && paint == null) {
             ExtendedFloatingActionButton(
                 // [CAL-01] Nothing is chosen yet, so the first tap cannot paint a day by surprise.
                 onClick = { vm.setPaint(PaintTool.Pick) },
@@ -899,14 +965,15 @@ fun CalendarScreen(
                 identityBar = identityBar,
             )
         }
-    } else Box(Modifier.fillMaxSize()) {
+    } else Box(Modifier.fillMaxSize().clipToBounds()) {
         if (wide) {
             // [CAL-01] About 3:2, so the unfolded calendar's days are as big as on the cover screen; the
             // day panel keeps the room its title and switches need.
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val panelWidth = (maxWidth * 0.4f).coerceIn(DAY_PANEL_MIN_WIDTH, DAY_PANEL_MAX_WIDTH)
                 Row(Modifier.fillMaxSize()) {
-                    Box(Modifier.weight(1f).fillMaxHeight()) {
+                    // [CAL-15] Clipped, so the FAB riding under the month slides out under the pane's edge.
+                    Box(Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
                         Column(
                             Modifier
                                 .fillMaxSize()
@@ -1051,8 +1118,9 @@ private fun MonthShiftCounts(snapshot: ScheduleSnapshot, month: YearMonth, modif
     // at the edge so what is left to scroll to shows.
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val icons = maxWidth >= 320.dp
+        val scroll = rememberScrollState()
         Row(
-            Modifier.fillMaxWidth().fadingRightEdge().horizontalScroll(rememberScrollState()),
+            Modifier.fillMaxWidth().fadingEdges(back = { scroll.canScrollBackward }, forward = { scroll.canScrollForward }).horizontalScroll(scroll),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1562,3 +1630,10 @@ private fun MonthRestCard(issues: List<com.bamnat.core.schedule.RestCheck.Issue>
 }
 
 private const val REST_PREVIEW_ROWS = 3
+
+/** [CAL-17] The one-time tip on the first tap of a date, in the words of the kind of work. */
+private fun com.bamnat.core.work.CalendarFocus.longPressTip(): String = "날짜를 길게 누르면 빠른 설정이 열려요. " + when (this) {
+    com.bamnat.core.work.CalendarFocus.SHIFTS -> "근무·연차를 바로 바꿀 수 있어요"
+    com.bamnat.core.work.CalendarFocus.JOBS -> "일감을 바로 적을 수 있어요"
+    com.bamnat.core.work.CalendarFocus.SALES -> "매출을 바로 적을 수 있어요"
+}

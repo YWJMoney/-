@@ -44,6 +44,9 @@ internal class HintStore(context: Context) {
     companion object {
         /** The calendar's 공유 was pointed out, or used. */
         const val SHARE = "share_hint"
+
+        /** [CAL-17] A long press on a date opens 빠른 설정: said once on the first tap, or found already. */
+        const val LONG_PRESS = "long_press_hint"
     }
 }
 

@@ -154,6 +154,20 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         viewPrefs.edit().putBoolean(K_LIST, on).apply()
     }
 
+    /** [CAL-16] 오늘의 흐름 folded to one line by the user; kept on this phone until opened again. */
+    private val _flowFolded = MutableStateFlow(runCatching { viewPrefs.getBoolean(K_FLOW_FOLDED, false) }.getOrDefault(false))
+    val flowFolded: StateFlow<Boolean> = _flowFolded.asStateFlow()
+
+    fun setFlowFolded(folded: Boolean) {
+        _flowFolded.value = folded
+        viewPrefs.edit().putBoolean(K_FLOW_FOLDED, folded).apply()
+    }
+
+    /** [CAL-17] A tip said once in the snackbar, closed with 알겠어요; nothing to undo. */
+    fun tip(text: String) {
+        _messages.tryEmit(UndoMessage(text, actionLabel = "알겠어요") {})
+    }
+
     /** [CAL-07] Months whose holidays the user works on purpose, per calendar: not asked again. */
     private val _holidaysKept = MutableStateFlow(runCatching { viewPrefs.getStringSet(K_HOLIDAYS, emptySet())!!.toSet() }.getOrDefault(emptySet()))
 
@@ -865,6 +879,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private companion object {
         const val VIEW_PREFS = "calendar_view"
         const val K_LIST = "list"
+        const val K_FLOW_FOLDED = "flow_folded"
         const val K_HOLIDAYS = "holidays_kept"
         val FULL_LEAVE = Leave(LeaveKind.ANNUAL, 4)
     }

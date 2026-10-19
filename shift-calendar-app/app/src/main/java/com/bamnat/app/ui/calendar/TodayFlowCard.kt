@@ -106,6 +106,7 @@ internal fun rememberMinute(): LocalDateTime {
 @Composable
 internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot, settings: AppSettings, modifier: Modifier = Modifier) {
     val log by vm.sleepLog.collectAsStateWithLifecycle()
+    val folded by vm.flowFolded.collectAsStateWithLifecycle()
     val now = rememberMinute()
     val card = remember(snapshot, settings, log, now) { vm.todayFlow(snapshot, settings, log, now) }
     TodayFlowCard(
@@ -125,6 +126,8 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
         onNumbers = vm::setSleepNumbers,
         onHide = vm::hideTodayFlow,
         modifier = modifier,
+        folded = folded,
+        onFold = vm::setFlowFolded,
     )
 }
 
@@ -132,7 +135,8 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
  * [SLP-14] The card: one thing to do now in a big line and why in a small one (ⓘ beside them), a rest
  * sign when there is one, the next 24 hours as a strip, and the one button that fits. The day's work
  * is on the strip, so it has no title line of its own; TalkBack reads it with the strip. A day off
- * folds to one line that opens on a tap.
+ * folds to one line that opens on a tap. [CAL-16] Any day folds to that line with ⌃, and stays folded
+ * until opened again, so a small screen keeps room for the month.
  */
 @Composable
 internal fun TodayFlowCard(
@@ -145,6 +149,8 @@ internal fun TodayFlowCard(
     onNumbers: (target: Int, commute: Int) -> Unit,
     onHide: () -> Unit,
     modifier: Modifier = Modifier,
+    folded: Boolean = false,
+    onFold: (Boolean) -> Unit = {},
 ) {
     var info by remember { mutableStateOf(false) }
     var askWake by remember { mutableStateOf(false) }
@@ -156,16 +162,21 @@ internal fun TodayFlowCard(
         color = if (warning) cal.warningContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = modifier.fillMaxWidth().animateContentSize(),
     ) {
-        if (card.compact && !opened) {
+        if (folded || card.compact && !opened) {
             Row(
-                Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(onClickLabel = "펼치기") { opened = true }
+                Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                    .clickable(onClickLabel = "오늘의 흐름 펼치기") { if (folded) onFold(false); opened = true }
                     .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(stateIcon(card), null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                Icon(stateIcon(card), null, tint = if (warning) cal.warning else MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
                 Text(card.headline, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                Icon(Icons.Filled.ExpandMore, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                // [CAL-16] A warning keeps its one button on the folded line: an alarm is turned back on without opening.
+                if (warning) card.action?.let { a ->
+                    ActionButton(a, Modifier.padding(start = 8.dp)) { onPick(a, card, onAction) { askWake = true } }
+                }
+                Icon(Icons.Filled.ExpandMore, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp))
             }
             return@Surface
         }
@@ -178,7 +189,7 @@ internal fun TodayFlowCard(
                         Icon(stateIcon(card), null, tint = if (warning) cal.warning else MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 1.dp, end = 10.dp).size(22.dp))
                         Text(card.headline, style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f).padding(end = if (card.compact) 84.dp else 36.dp))
+                            modifier = Modifier.weight(1f).padding(end = 84.dp))
                     }
                     card.detail?.let {
                         Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -186,7 +197,8 @@ internal fun TodayFlowCard(
                     }
                 }
                 Row(Modifier.align(Alignment.TopEnd)) {
-                    if (card.compact) IconButton(onClick = { opened = false }) { Icon(Icons.Filled.ExpandLess, contentDescription = "접기") }
+                    // [CAL-16] Folds to one line on every day, and stays so.
+                    IconButton(onClick = { opened = false; onFold(true) }) { Icon(Icons.Filled.ExpandLess, contentDescription = "오늘의 흐름 접기") }
                     IconButton(onClick = { info = true }) { Icon(Icons.Outlined.Info, contentDescription = "오늘의 흐름 안내와 목표 수면") }
                 }
             }
