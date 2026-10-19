@@ -130,7 +130,8 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         val tiles: List<@Composable (Modifier) -> Unit> = listOf(
             { m -> StatTile("${month.monthValue}월 총 근무", HoursFormat.korean(summary.totalMinutes), m,
                 caption = "근무 ${summary.workDays}일") },
-            { m -> StatTile("근무표대로", HoursFormat.korean(summary.scheduledMinutes), m) },
+            // [SETUP-11] Says what it leaves out, like the other three tiles do.
+            { m -> StatTile("근무표대로", HoursFormat.korean(summary.scheduledMinutes), m, caption = "추가 근무 빼고") },
             { m -> StatTile("근무일 추가 근무", HoursFormat.korean(summary.extraMinutes - summary.restDayExtraMinutes), m,
                 caption = "잔업·조출 등") },
             { m -> StatTile("쉬는 날 근무", HoursFormat.korean(summary.restDayExtraMinutes), m,

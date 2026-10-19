@@ -331,6 +331,42 @@ class PayViewModel(
         return match
     }
 
+    // ---- [PAYS-07] the company's own items ----
+
+    /** What [made] does to [month] on top of [profile]: the amount (negative when it takes off) and how often it came up. */
+    internal suspend fun effectOf(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth, made: MadeItem): ItemEffect =
+        withContext(Dispatchers.Default) {
+            val p = profile.named(settings.value.extraKinds)
+            val resolve = snapshot.resolver::resolve
+            val with = when (made) {
+                is MadeItem.Item -> p.copy(items = p.items.filterNot { it.id == made.item.id } + made.item)
+                is MadeItem.Rule -> p.copy(customRules = p.customRules.filterNot { it.id == made.rule.id } + made.rule)
+            }
+            val before = calculator.calculate(p, month, resolve, checks = false)
+            val after = calculator.calculate(with, month, resolve, checks = false)
+            val times = when (made) {
+                is MadeItem.Item -> if (made.item.cadence == Cadence.MONTHLY) 1 else after.itemTimes[made.item.id] ?: 0
+                is MadeItem.Rule -> if (made.rule.pay.monthly) 1 else after.days.count { d -> d.parts.any { it.label == made.rule.name } }
+            }
+            ItemEffect(after.total - before.total, times)
+        }
+
+    /** [PAYS-07] Keeps an item the user made; a rule made before keeps its place in the list. */
+    internal fun saveMade(made: MadeItem) = update { p ->
+        when (made) {
+            is MadeItem.Item -> p.copy(items = p.items.filterNot { it.id == made.item.id } + made.item)
+            is MadeItem.Rule -> {
+                val i = p.customRules.indexOfFirst { it.id == made.rule.id }
+                p.copy(customRules = if (i >= 0) p.customRules.toMutableList().also { it[i] = made.rule }
+                else (p.customRules + made.rule).take(com.bamnat.core.pay.CustomRule.MAX))
+            }
+        }
+    }
+
+    fun setCustomRuleOn(id: String, on: Boolean) = update { p -> p.copy(customRules = p.customRules.map { if (it.id == id) it.copy(on = on) else it }) }
+
+    fun removeCustomRule(id: String) = update { p -> p.copy(customRules = p.customRules.filterNot { it.id == id }) }
+
     /** [PAYS-02] Keeps the matched settings and the check; one tap on 되돌리기 brings the old ones back. */
     fun applyMatch(match: PayslipMatch) = update { p ->
         val v = match.verifiedProfile(System.currentTimeMillis())

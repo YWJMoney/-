@@ -199,4 +199,24 @@ class PayCodecTest {
         // No rules, no key: files without them stay as they were.
         assertEquals(false, PayCodec.encode(p.copy(customRules = emptyList())).has("customRules"))
     }
+
+    /**
+     * [PAYS-07] Monthly items, shares of 기본급 and deductions survive a round trip. A deduction is stored inside a
+     * kind 1.14 does not know, so an older version drops it instead of adding it to the pay.
+     */
+    @Test fun madeItemsRoundTrip() {
+        val rules = listOf(
+            com.bamnat.core.pay.CustomRule("m", "자격수당", com.bamnat.core.pay.RuleWhen(), com.bamnat.core.pay.RulePay.Monthly(50_000)),
+            com.bamnat.core.pay.CustomRule("s", "근속수당", com.bamnat.core.pay.RuleWhen(), com.bamnat.core.pay.RulePay.OfBaseMonthly(0.05)),
+            com.bamnat.core.pay.CustomRule("d", "식대", com.bamnat.core.pay.RuleWhen(dayKind = com.bamnat.core.pay.RuleDayKind.WORK_DAY),
+                com.bamnat.core.pay.RulePay.PerTime(3_000), deduct = true),
+            com.bamnat.core.pay.CustomRule("r", "기숙사비", com.bamnat.core.pay.RuleWhen(), com.bamnat.core.pay.RulePay.Monthly(50_000), deduct = true),
+        )
+        val p = PayProfile(Occupation.CUSTOM, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_500_000))), customRules = rules)
+        val json = PayCodec.encode(p)
+        assertEquals(p, PayCodec.decode(json))
+        val stored = json.getJSONArray("customRules").getJSONObject(2).getJSONObject("pay")
+        assertEquals("minus", stored.getString("type"))
+        assertEquals("perTime", stored.getJSONObject("of").getString("type"))
+    }
 }

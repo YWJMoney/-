@@ -14,6 +14,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.AlarmAdd
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -43,8 +44,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.AlarmOff
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -139,8 +142,9 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
+                // [SETUP-07] What can be done here, said once: tap to change, arrows to reorder.
                 Text(
-                    "달력에 표시될 근무 종류예요. 시간, 색, 알람을 근무마다 따로 정할 수 있어요.",
+                    "달력에 보이는 근무예요. 근무를 누르면 시간과 알람을 고치고, 오른쪽 화살표로 달력에 보이는 순서를 바꿔요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp),
@@ -269,9 +273,10 @@ private fun ShiftTypeRow(
                     }
                 }
             }
+            // [SETUP-07] Straight arrows that move, not the chevrons that read as "open"; TalkBack names the shift.
             Column {
-                IconButton(onClick = onMoveUp, enabled = canMoveUp) { Icon(Icons.Filled.KeyboardArrowUp, "위로") }
-                IconButton(onClick = onMoveDown, enabled = canMoveDown) { Icon(Icons.Filled.KeyboardArrowDown, "아래로") }
+                IconButton(onClick = onMoveUp, enabled = canMoveUp) { Icon(Icons.Filled.ArrowUpward, "${type.name} 위로 옮기기", Modifier.size(20.dp)) }
+                IconButton(onClick = onMoveDown, enabled = canMoveDown) { Icon(Icons.Filled.ArrowDownward, "${type.name} 아래로 옮기기", Modifier.size(20.dp)) }
             }
         }
     }
@@ -385,6 +390,7 @@ fun ShiftTypeEditorDialog(
     var pickBreak by remember { mutableStateOf(false) }
     var addingAlarm by remember { mutableStateOf(false) }
     var editingAlarm by remember { mutableStateOf<AlarmSpec?>(null) }
+    var styling by remember(initial) { mutableStateOf(false) }
     val context = LocalContext.current
     // [SLP-15] Turning an alarm on is when the notification permission is explained and asked for.
     val askNotifications = rememberNotificationAsk()
@@ -446,47 +452,15 @@ fun ShiftTypeEditorDialog(
                         )
                     }
 
-                    SectionCard(title = "색상") {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            for (c in ShiftPalette) {
-                                val selected = c == draft.colorArgb
-                                Box(
-                                    Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .background(c.asColor())
-                                        .border(if (selected) 3.dp else 0.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
-                                        .clickable { draft = draft.copy(colorArgb = c) },
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    if (selected) Icon(Icons.Filled.Check, "선택됨", tint = androidx.compose.ui.graphics.Color.White)
-                                }
-                            }
-                        }
-                    }
-
-                    SectionCard(title = "아이콘") {
-                        // [FEAT-01] An icon next to the label on the calendar; none keeps cells plain.
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            val tint = draft.colorArgb.asColor()
-                            IconChoice(selected = draft.icon == null, label = "없음", onClick = { draft = draft.copy(icon = null) }) {
-                                Text("—", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            for (icon in ShiftIcon.entries) {
-                                IconChoice(selected = draft.icon == icon.key, label = icon.label, onClick = { draft = draft.copy(icon = icon.key) }) {
-                                    Icon(icon.vector, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
-                                }
-                            }
-                        }
-                    }
-
                     SectionCard(title = null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text("쉬는 날 유형", style = MaterialTheme.typography.bodyLarge)
-                                Text("휴무, 비번처럼 근무시간에 들어가지 않는 날", style = MaterialTheme.typography.bodySmall,
+                                // [SETUP-08] Said as the user would: is this a day without work?
+                                Text("일하지 않는 날이에요", style = MaterialTheme.typography.bodyLarge)
+                                Text("휴무·비번처럼 근무가 없는 날이면 켜요", style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                            Spacer(Modifier.width(12.dp))
                             Switch(checked = draft.isOff, onCheckedChange = { off ->
                                 draft = if (off) {
                                     draft.copy(isOff = true, alarmEnabled = false)
@@ -631,6 +605,72 @@ fun ShiftTypeEditorDialog(
                                     defaultLabel = "기본 알람음 (설정에서 변경)",
                                     onPicked = { draft = draft.copy(alarmSoundUri = it) },
                                 )
+                            }
+                        }
+                    }
+
+                    // [SETUP-08] Time first: it is what the calendar and the pay need. Colour and icon already have a
+                    // value, so they wait folded under one row instead of filling the first screen.
+                    SectionCard(title = null) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(MaterialTheme.shapes.medium)
+                                .clickable(onClickLabel = if (styling) "색과 아이콘 접기" else "색과 아이콘 바꾸기") { styling = !styling }
+                                .heightIn(min = 48.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("색과 아이콘 (선택)", style = MaterialTheme.typography.bodyLarge)
+                                Text("지금 모양 그대로 써도 돼요", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            ShiftBadge(draft.copy(label = draft.label.ifBlank { draft.name.take(1).ifBlank { "?" } }), size = 32.dp,
+                                outlined = draft.isOff)
+                            Spacer(Modifier.width(8.dp))
+                            Icon(if (styling) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null)
+                        }
+                        AnimatedVisibility(styling) {
+                            Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("색상", style = MaterialTheme.typography.labelLarge)
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    ShiftPalette.forEachIndexed { i, c ->
+                                        val selected = c == draft.colorArgb
+                                        // A 48 dp target around a 36 dp swatch.
+                                        Box(
+                                            Modifier
+                                                .size(48.dp)
+                                                .clip(CircleShape)
+                                                .clickable(onClickLabel = "이 색 고르기") { draft = draft.copy(colorArgb = c) }
+                                                .semantics { contentDescription = "색 ${i + 1}"; this.selected = selected },
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Box(
+                                                Modifier
+                                                    .size(36.dp)
+                                                    .clip(CircleShape)
+                                                    .background(c.asColor())
+                                                    .border(if (selected) 3.dp else 0.dp, MaterialTheme.colorScheme.onSurface, CircleShape),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                if (selected) Icon(Icons.Filled.Check, null, tint = androidx.compose.ui.graphics.Color.White)
+                                            }
+                                        }
+                                    }
+                                }
+                                Text("아이콘", style = MaterialTheme.typography.labelLarge)
+                                // [FEAT-01] An icon next to the label on the calendar; none keeps cells plain.
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    val tint = draft.colorArgb.asColor()
+                                    IconChoice(selected = draft.icon == null, label = "없음", onClick = { draft = draft.copy(icon = null) }) {
+                                        Text("—", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    for (icon in ShiftIcon.entries) {
+                                        IconChoice(selected = draft.icon == icon.key, label = icon.label, onClick = { draft = draft.copy(icon = icon.key) }) {
+                                            Icon(icon.vector, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

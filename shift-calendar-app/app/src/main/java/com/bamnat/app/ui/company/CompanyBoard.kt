@@ -113,14 +113,19 @@ fun CompanyBoardScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = onShare, text = { Text("우리 회사 규칙 올리기") }, icon = { Icon(Icons.Filled.Add, null) })
+            // [SETUP-10] Shrinks to its icon once the list moves, so it does not sit on a card's numbers.
+            val wide by remember { derivedStateOf { list.firstVisibleItemIndex == 0 } }
+            ExtendedFloatingActionButton(
+                onClick = onShare, expanded = wide, text = { Text("우리 회사 규칙 올리기") },
+                icon = { Icon(Icons.Filled.Add, if (wide) null else "우리 회사 규칙 올리기") },
+            )
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
             LazyColumn(
                 state = list,
                 modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
@@ -230,10 +235,11 @@ fun TrustLine(trust: Int, agree: Int, persons: Int, bad: Int, adopted: Boolean) 
             Text("${if (adopted) agree.coerceAtLeast(trust) else trust}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         }
         Text(
-            buildString {
-                append(if (persons > 0) "맞았어요 ${persons}명" else "아직 확인한 분이 없어요")
-                if (bad > 0) append(" · 달라요 ${bad}명")
-                if (persons + bad > 0) append(" · 맞았어요 ${agree}%")
+            // [SETUP-10] 맞았어요 once, its share beside it: "맞았어요 2명 (67%) · 달라요 1명".
+            when {
+                persons > 0 -> "맞았어요 ${persons}명 (${agree}%)" + if (bad > 0) " · 달라요 ${bad}명" else ""
+                bad > 0 -> "달라요 ${bad}명"
+                else -> "아직 확인한 분이 없어요"
             },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

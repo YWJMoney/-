@@ -610,7 +610,9 @@ private fun AppNavHost(
                 onReport = if (container.inquiryApi.enabled) { check ->
                     container.pendingPayCheck = check
                     nav.navigate(Routes.INQUIRY) { launchSingleTop = true }
-                } else null)
+                } else null,
+                // [PAYS-09] The invitation after a match or an item of the company's own sends to 내 설정 나누기.
+                onShareWay = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } })
             if (inviting) {
                 InviteSheet(nudges, onShare = { inviting = false; nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                     onDismiss = { inviting = false })
