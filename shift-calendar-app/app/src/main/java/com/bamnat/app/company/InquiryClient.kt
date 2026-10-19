@@ -22,7 +22,10 @@ enum class InquiryKind(val code: String, val label: String, val hint: String) {
 
 data class InquiryMessage(val fromDeveloper: Boolean, val text: String, val at: Instant)
 
-/** One question and its answers [ADMIN-02]. [status]: open (waiting for the developer), answered or closed. */
+/**
+ * One question and its answers [ADMIN-02]. [status]: open (waiting for the developer), answered or closed.
+ * [public]: in 모두의 문의; [same]: how many said 나도 그래요; [hidden]: why it is out of 모두의 문의, if it is.
+ */
 data class Inquiry(
     val id: String,
     val kind: InquiryKind,
@@ -30,9 +33,52 @@ data class Inquiry(
     val createdAt: Instant,
     val updatedAt: Instant,
     val messages: List<InquiryMessage>,
+    val public: Boolean = false,
+    val same: Int = 0,
+    val hidden: String? = null,
 ) {
     val answers: Int get() = messages.count { it.fromDeveloper }
     val waiting: Boolean get() = status == "open"
+}
+
+/** [ADMIN-02] A question in 모두의 문의 as the list shows it; [topicName] is the server's sorting of it. */
+data class PublicInquiry(
+    val id: String,
+    val kind: InquiryKind,
+    val status: String,
+    val preview: String,
+    val answers: Int,
+    val same: Int,
+    val sameByMe: Boolean,
+    val mine: Boolean,
+    val topic: String,
+    val topicName: String,
+    val updatedAt: Instant,
+)
+
+/** One page of 모두의 문의, how many there are in each topic, and where the next page starts. */
+data class PublicPage(val items: List<PublicInquiry>, val topics: List<Pair<String, String>>, val counts: Map<String, Int>, val next: Int?)
+
+/** A public question with every message; [hidden] only reaches its writer. */
+data class PublicThread(
+    val id: String,
+    val kind: InquiryKind,
+    val status: String,
+    val topicName: String,
+    val same: Int,
+    val sameByMe: Boolean,
+    val flaggedByMe: Boolean,
+    val mine: Boolean,
+    val createdAt: Instant,
+    val messages: List<InquiryMessage>,
+    val hidden: String?,
+)
+
+/** Why someone 신고s a public question: the server's code and the words for it. */
+enum class InquiryFlag(val code: String, val label: String) {
+    ABUSE("abuse", "욕설·비방"),
+    PERSONAL("personal", "개인 정보가 있어요"),
+    SPAM("spam", "광고·도배"),
 }
 
 /**
@@ -51,6 +97,12 @@ interface InquiryApi {
     suspend fun mine(device: String): List<Inquiry>
     suspend fun more(device: String, id: String, text: String): Inquiry
     suspend fun delete(device: String, id: String)
+    /** 모두의 문의: one topic or all ([topic] null), newest activity or most 나도 그래요 first. */
+    suspend fun board(device: String, topic: String?, bySame: Boolean, after: Int): PublicPage
+    suspend fun boardThread(device: String, id: String): PublicThread
+    /** 나도 그래요, or taking it back; the count after. */
+    suspend fun same(device: String, id: String, on: Boolean): Int
+    suspend fun flag(device: String, id: String, reason: InquiryFlag)
 }
 
 class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : InquiryApi {
@@ -60,7 +112,9 @@ class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
         val i = JSONObject().put("app", info.app).put("model", info.model).put("android", info.android)
         info.diag?.takeIf { it.isNotBlank() }?.let { i.put("diag", it.take(DIAG_MAX)) }
         info.pay?.takeIf { it.isNotBlank() }?.let { i.put("pay", it.take(PAY_MAX)) }
+        // [ADMIN-02] The form says the question goes to 모두의 문의; the server keeps it private without this.
         val body = JSONObject().put("v", 1).put("device", device).put("kind", kind.code).put("text", text.trim()).put("info", i)
+            .put("public", true)
         inquiry(serverRequest(baseUrl, "POST", "/api/inquiries", body))
     }
 
@@ -82,15 +136,74 @@ class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
         Unit
     }
 
+    override suspend fun board(device: String, topic: String?, bySame: Boolean, after: Int): PublicPage = serverCall {
+        val query = listOfNotNull(topic?.let { "topic=$it" }, "sort=same".takeIf { bySame }, "after=$after".takeIf { after > 0 })
+            .joinToString("&").let { if (it.isEmpty()) "" else "?$it" }
+        val o = serverRequest(baseUrl, "GET", "/api/inquiries/public$query", device = device)
+        val names = o.optJSONObject("topicNames")
+        val counts = o.optJSONObject("topics")
+        PublicPage(
+            items = o.optJSONArray("inquiries").objects().map {
+                PublicInquiry(
+                    id = it.getString("id"),
+                    kind = InquiryKind.of(it.optString("kind")),
+                    status = it.optString("status", "open"),
+                    preview = it.optString("preview"),
+                    answers = it.optInt("answers"),
+                    same = it.optInt("same"),
+                    sameByMe = it.optBoolean("sameByMe"),
+                    mine = it.optBoolean("mine"),
+                    topic = it.optString("topic", "etc"),
+                    topicName = it.optString("topicName", "기타"),
+                    updatedAt = Instant.parse(it.getString("updatedAt")),
+                )
+            },
+            topics = names?.keys()?.asSequence()?.map { it to names.optString(it) }?.toList().orEmpty(),
+            counts = counts?.keys()?.asSequence()?.associateWith { counts.optInt(it) }.orEmpty(),
+            next = if (o.isNull("next")) null else o.optInt("next"),
+        )
+    }
+
+    override suspend fun boardThread(device: String, id: String): PublicThread = serverCall {
+        val o = serverRequest(baseUrl, "GET", "/api/inquiries/public/$id", device = device)
+        PublicThread(
+            id = o.getString("id"),
+            kind = InquiryKind.of(o.optString("kind")),
+            status = o.optString("status", "open"),
+            topicName = o.optString("topicName", "기타"),
+            same = o.optInt("same"),
+            sameByMe = o.optBoolean("sameByMe"),
+            flaggedByMe = o.optBoolean("flaggedByMe"),
+            mine = o.optBoolean("mine"),
+            createdAt = Instant.parse(o.getString("createdAt")),
+            messages = messages(o),
+            hidden = o.optJSONObject("hidden")?.optString("text"),
+        )
+    }
+
+    override suspend fun same(device: String, id: String, on: Boolean): Int = serverCall {
+        serverRequest(baseUrl, "POST", "/api/inquiries/$id/same", JSONObject().put("device", device).put("on", on)).optInt("same")
+    }
+
+    override suspend fun flag(device: String, id: String, reason: InquiryFlag) = serverCall {
+        serverRequest(baseUrl, "POST", "/api/inquiries/$id/flag", JSONObject().put("device", device).put("reason", reason.code))
+        Unit
+    }
+
+    private fun messages(o: JSONObject) = o.optJSONArray("messages").objects().map {
+        InquiryMessage(fromDeveloper = it.optString("from") == "admin", text = it.optString("text"), at = Instant.parse(it.getString("at")))
+    }
+
     private fun inquiry(o: JSONObject) = Inquiry(
         id = o.getString("id"),
         kind = InquiryKind.of(o.optString("kind")),
         status = o.optString("status", "open"),
         createdAt = Instant.parse(o.getString("createdAt")),
         updatedAt = Instant.parse(o.getString("updatedAt")),
-        messages = o.optJSONArray("messages").objects().map {
-            InquiryMessage(fromDeveloper = it.optString("from") == "admin", text = it.optString("text"), at = Instant.parse(it.getString("at")))
-        },
+        messages = messages(o),
+        public = o.optBoolean("public"),
+        same = o.optInt("same"),
+        hidden = o.optJSONObject("hidden")?.optString("text"),
     )
 
     companion object {
