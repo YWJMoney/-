@@ -42,6 +42,7 @@ import com.bamnat.core.sleep.SleepPlan
 import com.bamnat.core.sleep.SleepSchedule
 import com.bamnat.core.sleep.TodayFlow
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -81,13 +82,36 @@ data class DayInsight(
     val extraAmounts: Map<Int, Long> = emptyMap(),
 )
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class CalendarViewModel(private val container: AppContainer) : ViewModel(), MoneyActions {
-    private val schedule = container.scheduleRepository
+    /** [MCAL-01] The calendar on the calendar tab; each write goes to the one on screen when it started. */
+    private val schedule: com.bamnat.app.data.ScheduleRepository get() = container.calendars.activeRepository()
     private val memoRepo = container.memoRepository
 
+    /** [MCAL-01] The user's calendars and the one on screen. */
+    val calendars: StateFlow<List<com.bamnat.app.data.PersonalCalendar>> = container.calendars.calendars
+    val activeCalendar: StateFlow<com.bamnat.app.data.PersonalCalendar> =
+        container.calendars.activeCalendar.stateIn(viewModelScope, SharingStarted.Eagerly, container.calendars.current())
+
+    /** [MCAL-04] The list's order, received calendars included. */
+    val calendarOrder: StateFlow<List<String>> = container.calendars.order
+
+    fun viewCalendar(id: String) {
+        if (id != container.calendars.active.value) container.telemetry.event("calendar_switch", if (id == com.bamnat.app.data.PersonalCalendar.MAIN) "main" else "added")
+        container.calendars.setActive(id)
+    }
+
     val snapshot: StateFlow<ScheduleSnapshot?> =
-        schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-    val settings: StateFlow<AppSettings> = container.settingsRepository.settings
+        container.calendars.activeSnapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    /**
+     * [MCAL-01] An added calendar answers its own kind of work, so the calendar tab shows it as that
+     * calendar works; everything else in settings is the app's.
+     */
+    val settings: StateFlow<AppSettings> = kotlinx.coroutines.flow.combine(container.settingsRepository.settings, activeCalendar) { s, cal ->
+        if (cal.isMain) s else s.copy(workStyle = cal.style ?: s.workStyle, rosterMonthly = false)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, container.settingsRepository.current.let { s ->
+        container.calendars.current().let { cal -> if (cal.isMain) s else s.copy(workStyle = cal.style ?: s.workStyle, rosterMonthly = false) }
+    })
     val memoDates: StateFlow<Set<LocalDate>> =
         memoRepo.datesWithMemos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
     val upcomingAlarm: StateFlow<UpcomingAlarm?> = container.alarmScheduler.upcoming
@@ -101,10 +125,13 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     /** [EXTRA-05] Pieces of extra work moved from an older record that still need a look. */
     val extrasToReview: StateFlow<Int> =
-        schedule.extrasToReview.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+        container.calendars.active.flatMapLatest { container.calendars.repository(it).extrasToReview }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     /** Pay setup and tier, so a day on the calendar shows what it adds to pay [PAYX-08]. */
-    val payProfile: StateFlow<PayProfile?> = container.payStore.profile
+    /** [MCAL-01] The pay setup is the main job's: an added calendar shows its hours by law only. */
+    val payProfile: StateFlow<PayProfile?> = kotlinx.coroutines.flow.combine(container.payStore.profile, activeCalendar) { p, cal -> p.takeIf { cal.isMain } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, container.payStore.profile.value.takeIf { container.calendars.current().isMain })
     val tier: StateFlow<Tier> = container.featureGate.tier
     private val payCalculator = PayCalculator()
 
@@ -291,6 +318,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             else -> null
         }
         viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.updateDays(dates.distinct()) { entry -> nextShift(entry, target) }
             val what = if (before.size == 1) Fmt.monthDay(before.keys.first()) + "을" else "${before.size}일을"
             _lastPaint.value = PaintUndo(
@@ -333,6 +361,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         val date = day.date
         val type = (override as? ShiftOverride.Shift)?.let { snapshot.typesById[it.shiftTypeId] }
         viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = changeShift(date) { override }
             val name = type?.name ?: if (override == ShiftOverride.None) "패턴" else "쉬는 날"
             val restore: suspend () -> Unit = { schedule.restoreDay(date, before) }
@@ -382,6 +411,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     fun setCustomTimes(date: LocalDate, start: LocalTime, end: LocalTime) {
         viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             schedule.updateDay(date) { it.copy(customStart = start, customEnd = end) }
         }
     }
@@ -392,6 +422,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     fun clearCustomTimes(date: LocalDate) {
         viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             schedule.setCustomTimes(date, null, null, null)
         }
     }
@@ -399,6 +430,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** [EXTRA-01] Adds a piece of extra work, said back with undo: "10월 17일에 야간 대근을 넣었어요". */
     fun addExtra(date: LocalDate, entry: ExtraEntry, name: String) {
         viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.addExtra(date, entry)
             if ((before?.extras?.size ?: 0) >= com.bamnat.app.data.ScheduleRepository.MAX_EXTRAS) {
                 _messages.emit(UndoMessage("하루에 추가 근무는 ${com.bamnat.app.data.ScheduleRepository.MAX_EXTRAS}건까지 넣을 수 있어요"))
@@ -415,6 +447,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     fun removeExtra(date: LocalDate, index: Int, name: String) {
         viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.removeExtra(date, index)
             _messages.emit(UndoMessage("$name${Fmt.obj(name)} 뺐어요") { schedule.restoreDay(date, before) })
         }
@@ -442,6 +475,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun convertSwapCovers(days: List<DayEntry>) {
         container.settingsRepository.update { it.copy(swapCoversAnswered = true) }
         viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val n = schedule.convertShiftSwapCovers(days.map { it.date })
             if (n > 0) _messages.emit(UndoMessage("${n}일을 대근으로 바꿨어요") { days.forEach { schedule.restoreDay(it.date, it) } })
         }
@@ -453,6 +487,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** 연차·반차 for a day; [announce] says it back with undo when it was set without the day open [DAY-03]. */
     fun setLeave(date: LocalDate, leave: Leave?, announce: Boolean = false) {
         viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.setLeave(date, leave)
             if (!announce) return@launch
             val text = leave?.let { "${Fmt.monthDay(date)}에 ${it.label}${Fmt.obj(it.label)} 넣었어요" }
@@ -469,6 +504,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     fun setAlarmSkipped(date: LocalDate, skipped: Boolean, announce: Boolean = false) {
         viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.setAlarmSkipped(date, skipped)
             if (announce) {
                 _messages.emit(UndoMessage("${Fmt.monthDay(date)} 알람을 ${if (skipped) "껐어요" else "켰어요"}") { schedule.restoreDay(date, before) })
@@ -478,6 +514,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     fun resetDay(date: LocalDate) {
         viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.resetDay(date)
             if (before != null && !before.isEmpty) {
                 _messages.emit(UndoMessage("${Fmt.monthDay(date)}을 패턴대로 되돌렸어요") {

@@ -53,6 +53,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -99,6 +101,9 @@ fun SetupHost(vm: SetupViewModel) {
         snackbar.showSnackbar(m)
     }
     BackHandler(enabled = fixing || d.previous() != null) { vm.back() }
+    // [MCAL-02] A calendar being added: back on the first question gives it up, after asking.
+    var leaving by remember { mutableStateOf(false) }
+    BackHandler(enabled = vm.calendarId != null && !fixing && d.previous() == null) { leaving = true }
 
     // One way in for a coworker's company file and for the user's own backup, as in settings.
     val context = LocalContext.current
@@ -116,7 +121,9 @@ fun SetupHost(vm: SetupViewModel) {
                 TopAppBar(
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (fixing) "답 고치기" else "근무 설정", style = MaterialTheme.typography.titleMedium)
+                            Text(if (fixing) "답 고치기" else vm.calendarName?.let { "$it 달력 설정" } ?: "근무 설정",
+                                style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false))
                             // The count only once the kind of work says how many questions there are.
                             if (d.style != null && !fixing) {
                                 Text(
@@ -132,10 +139,16 @@ fun SetupHost(vm: SetupViewModel) {
                             IconButton(onClick = vm::back) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, if (fixing) "고치기 그만두기" else "이전 질문")
                             }
+                        } else if (vm.calendarId != null) {
+                            IconButton(onClick = { leaving = true }) { Icon(Icons.Filled.Close, "새 달력 그만 만들기") }
                         }
                     },
                     actions = {
-                        if (d.step != SetupStep.STYLE && !fixing) TextButton(onClick = vm::later) { Text("나중에 할게요") }
+                        // [MCAL-02] An added calendar is set up now or not made; its questions wait on no card.
+                        if (d.step != SetupStep.STYLE && !fixing) {
+                            if (vm.calendarId == null) TextButton(onClick = vm::later) { Text("나중에 할게요") }
+                            else TextButton(onClick = { leaving = true }) { Text("그만두기") }
+                        }
                     },
                 )
                 val progress by animateFloatAsState(
@@ -174,7 +187,7 @@ fun SetupHost(vm: SetupViewModel) {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     when (step) {
-                        SetupStep.STYLE -> StyleStep(d, onPick = vm::pickStyle, onOpenFile = onOpenFile)
+                        SetupStep.STYLE -> StyleStep(d, onPick = vm::pickStyle, onOpenFile = onOpenFile, forCalendar = vm.calendarName)
                         SetupStep.COMPANY -> CompanyStep(vm, d, onSearch = if (vm.companySearch) ({ searching = true }) else null, onOpenFile = onOpenFile)
                         SetupStep.BUNDLE -> BundleStep(d, onPick = vm::pickBundle)
                         SetupStep.TIMES -> TimesStep(vm, d)
@@ -199,6 +212,16 @@ fun SetupHost(vm: SetupViewModel) {
     }
 
     if (searching) CompanySearchDialog(vm, initialQuery = d.companyName, onDismiss = { searching = false })
+    if (leaving) {
+        ConfirmDialog(
+            title = "새 달력을 그만 만들까요?",
+            message = "지금까지 고른 답과 이 달력은 지워져요. 다른 달력은 그대로예요.",
+            confirmLabel = "그만 만들기",
+            destructive = true,
+            onDismiss = { leaving = false },
+            onConfirm = { leaving = false; vm.cancelCalendar() },
+        )
+    }
 
     val locked by vm.locked.collectAsStateWithLifecycle()
     locked?.let { UnlockBackupDialog(it, onUnlock = vm::unlock, onDismiss = vm::cancelFile) }

@@ -49,8 +49,13 @@ import java.time.YearMonth
 class SetupViewModel(
     private val c: AppContainer,
     private val now: () -> LocalDateTime = LocalDateTime::now,
+    /**
+     * [MCAL-02] A calendar being added: the same questions as the first launch, saved into that
+     * calendar only. The app's settings, pay setup and company stay as they are.
+     */
+    val calendarId: String? = null,
 ) : ViewModel() {
-    private val store = c.setupDrafts
+    private val store = if (calendarId != null) c.calendarSetupDrafts else c.setupDrafts
     private val current: SetupDraft get() = store.draft.value ?: SetupDraft()
 
     val draft: StateFlow<SetupDraft> = store.draft.map { it ?: SetupDraft() }
@@ -69,6 +74,22 @@ class SetupViewModel(
     val companySearch: Boolean get() = c.companyApi.enabled
 
     val today: LocalDate get() = now().toLocalDate()
+
+    /** [MCAL-02] The name of the calendar being added; null for the first setup. */
+    val calendarName: String? get() = calendarId?.let { c.calendars.get(it)?.name }
+
+    private val _done = MutableStateFlow(false)
+    /** [MCAL-02] The added calendar was saved (or given up): the screen closes. */
+    val done: StateFlow<Boolean> = _done.asStateFlow()
+
+    /** [MCAL-02] Gives up the calendar being added, with its answers. */
+    fun cancelCalendar() {
+        val id = calendarId ?: return
+        store.clear()
+        c.calendars.delete(id)
+        c.telemetry.event("calendar_setup_cancel")
+        _done.value = true
+    }
 
     private val _saving = MutableStateFlow(false)
     val saving: StateFlow<Boolean> = _saving.asStateFlow()
@@ -185,6 +206,8 @@ class SetupViewModel(
                 }
                 when {
                     CompanyShare.isCompanyFile(text) -> importCompany(text)
+                    // [MCAL-02] A backup replaces every calendar; it is not something to add one from.
+                    calendarId != null -> _message.value = "백업은 설정 > 백업에서 불러올 수 있어요. 여기서는 회사 근무 파일만 열 수 있어요"
                     c.backupManager.isSealed(text) -> _locked.value = LockedBackup(text)
                     else -> _pendingRestore.value = text to c.backupManager.summarize(text)
                 }
@@ -460,16 +483,40 @@ class SetupViewModel(
         _saving.value = true
         // The setup screen goes away as soon as the kind of work is saved, so the save outlives it.
         c.appScope.launch {
-            runCatching { c.firstSetup.save(d) }
+            runCatching { if (calendarId != null) saveCalendar(calendarId, d) else c.firstSetup.save(d) }
                 .onSuccess {
                     c.telemetry.event("setup_done", buildString {
                         append(d.style?.name)
                         d.source?.let { append('_').append(it.kind.name) }
                     })
                 }
-                .onFailure { _message.value = "저장하지 못했어요. 한 번 더 눌러 주세요" }
+                .onFailure { e ->
+                    android.util.Log.w("Setup", "The setup was not saved", e)
+                    _message.value = "저장하지 못했어요. 한 번 더 눌러 주세요"
+                }
             _saving.value = false
         }
+    }
+
+    /**
+     * [MCAL-02] Saves the added calendar's answers into its own database, then lists and shows it.
+     * Field and shop work keep the seeded shifts, as on the first launch.
+     */
+    private suspend fun saveCalendar(id: String, d: SetupDraft) {
+        val style = requireNotNull(d.style) { "A setup without a kind of work" }
+        requireNotNull(c.calendars.get(id)) { "The calendar was removed" }
+        val repo = c.calendars.repository(id)
+        check(repo !== c.scheduleRepository) { "An added calendar never saves into the main one" }
+        val marked = d.copy(committing = true, later = false)
+        withContext(Dispatchers.IO) {
+            store.save(marked)
+            store.flush()
+        }
+        repo.ensureDefaults()
+        repo.applySetup(marked, today)
+        c.calendars.finishSetup(id, style)
+        store.clear()
+        _done.value = true
     }
 
     companion object {

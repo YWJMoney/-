@@ -49,16 +49,23 @@ class AlarmScheduler(
      * Plans the first alarm strictly after [after]. Passing the trigger time of the alarm that
      * just rang guarantees the same alarm is never registered twice.
      */
+    fun reschedule(snapshot: ScheduleSnapshot, enabled: Boolean, after: LocalDateTime = LocalDateTime.now()) =
+        reschedule(listOf(null to snapshot), enabled, after)
+
+    /**
+     * [MCAL-01] The same over several calendars: the earliest alarm of any of them rings, and one from
+     * an added calendar carries that calendar's name ("알바 주간 근무 알람"), the main calendar's none.
+     */
     @Synchronized
-    fun reschedule(snapshot: ScheduleSnapshot, enabled: Boolean, after: LocalDateTime = LocalDateTime.now()) {
+    fun reschedule(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, after: LocalDateTime = LocalDateTime.now()) {
         // [REL-11] An inexact alarm can arrive minutes late. Until it has, re-planning (another
         // alarm or a widget waking the app) must keep it rather than skip past it to the next one.
         val pending = prefs.getLong(K_PENDING, 0L)
         val afterMillis = after.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val from = if (pending in (afterMillis - LATE_KEEP_MILLIS + 1)..afterMillis) millisToLocal(pending - 1_000) else after
-        val plan = if (enabled) AlarmPlanner.nextAlarm(snapshot.resolver, from) else null
+        val plan = if (enabled) nextOf(calendars, from) else null
         val operation = shiftAlarmIntent(plan)
-        saveBootCopy(if (enabled) planAhead(snapshot, from) else emptyList())
+        saveBootCopy(if (enabled) planAhead(calendars, from) else emptyList())
         if (plan == null) {
             prefs.edit().remove(K_PENDING).apply()
             alarmManager.cancel(operation)
@@ -91,16 +98,24 @@ class AlarmScheduler(
     private var lastAhead: List<RingRequest> = emptyList()
 
     /** The next [BootAlarms.AHEAD] alarms, so a locked phone can ring several in a row. */
-    private fun planAhead(snapshot: ScheduleSnapshot, after: LocalDateTime): List<RingRequest> {
+    private fun planAhead(calendars: List<Pair<String?, ScheduleSnapshot>>, after: LocalDateTime): List<RingRequest> {
         val out = ArrayList<RingRequest>()
         var from = after
         while (out.size < BootAlarms.AHEAD) {
-            val p = AlarmPlanner.nextAlarm(snapshot.resolver, from) ?: break
+            val p = nextOf(calendars, from) ?: break
             out += RingRequest.from(p, p.triggerAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
             from = p.triggerAt
         }
         return out
     }
+
+    /** [MCAL-01] The first alarm after [from] across [calendars]; at the same minute the earlier calendar's. */
+    private fun nextOf(calendars: List<Pair<String?, ScheduleSnapshot>>, from: LocalDateTime): PlannedAlarm? =
+        calendars.mapNotNull { (name, snapshot) ->
+            AlarmPlanner.nextAlarm(snapshot.resolver, from)?.let { p ->
+                if (name == null || p.shiftName.isBlank()) p else p.copy(shiftName = "$name ${p.shiftName}")
+            }
+        }.minByOrNull { it.triggerAt }
 
     /** Copies the planned alarms and ringing settings for a locked boot [REL-10]. */
     fun saveBootCopy(ahead: List<RingRequest> = lastAhead) {

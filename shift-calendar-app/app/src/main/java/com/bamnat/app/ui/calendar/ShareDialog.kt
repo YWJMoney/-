@@ -90,7 +90,9 @@ fun ShareDialog(
     onImage: () -> Unit,
     onDismiss: () -> Unit,
     client: ShareApi = LocalContext.current.appContainer.shareApi,
-    store: ShareLinkStore = LocalContext.current.appContainer.shareLinks,
+    /** [MCAL-03] The calendar on screen; each of the user's calendars has a link of its own. */
+    calendar: com.bamnat.app.data.PersonalCalendar? = null,
+    store: ShareLinkStore = LocalContext.current.appContainer.shareLinksOf(calendar?.id ?: com.bamnat.app.data.PersonalCalendar.MAIN),
     preview: ShareLinkState? = null,
     /** [SHR-02] Opens the sheet that takes a received link; null hides that part. */
     onOpenReceived: (() -> Unit)? = null,
@@ -109,13 +111,16 @@ fun ShareDialog(
     var error by remember { mutableStateOf<String?>(null) }
     val profile by container.payStore.profile.collectAsState()
     val settings by container.settingsRepository.settings.collectAsState()
-    val kind = MoneyShare.of(settings.workStyle)
+    // [MCAL-03] An added calendar shares as its own kind of work, and never the main job's pay, jobs or sales.
+    val added = calendar != null && !calendar.isMain
+    val style = if (added) calendar!!.style else settings.workStyle
+    val kind = MoneyShare.of(style)
     // Employees' parts: leave kinds and extra work mean nothing to a shop or a freelancer's calendar.
-    val employee = settings.workStyle?.usesPayEngine != false
-    val field = kind == MoneyShare.JOBS
+    val employee = style?.usesPayEngine != false
+    val field = kind == MoneyShare.JOBS && !added
     // [SHR-11] The figures a link would carry, worked out here so the row can show them before anything is sent.
     val money by produceState<List<SharedPay>?>(null, kind, month, snapshot, profile) {
-        value = orElse(emptyList()) { ShareContent.money(container, snapshot, month.atDay(1), kind) }
+        value = if (added) emptyList() else orElse(emptyList()) { ShareContent.money(container, snapshot, month.atDay(1), kind) }
     }
     val hasPay = money?.isNotEmpty() == true
 
@@ -131,7 +136,7 @@ fun ShareDialog(
             leaveKinds = options.leaveKinds && employee, extras = options.extras && employee,
         )
     }
-    suspend fun payload(ttlDays: Int? = ttl) = ShareContent.payload(container, snapshot, month.atDay(1), title, ttlDays, chosen())
+    suspend fun payload(ttlDays: Int? = ttl) = ShareContent.payload(container, snapshot, month.atDay(1), title, ttlDays, chosen(), kind)
     /** [SHR-12] Keeps what was sent, so the automatic update sends only what changes after it. */
     fun keep(made: ShareLinkState, sent: org.json.JSONObject) {
         store.saveOptions(chosen()); saved = chosen()
@@ -150,6 +155,11 @@ fun ShareDialog(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("근무표 공유", style = MaterialTheme.typography.titleLarge)
+            if (added) {
+                // [MCAL-03] Which calendar this link is for, and that the others keep their own.
+                Text("${calendar!!.name} 달력만 보내요. 다른 달력은 각자 링크를 따로 만들어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             OutlinedButton(onClick = { onImage(); onDismiss() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Icon(Icons.Outlined.Image, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
@@ -190,7 +200,7 @@ fun ShareDialog(
                         PartRow("연장·휴무일 근무", "이름과 시간, 날마다 ${ShareLinkPayload.EXTRAS_PER_DAY}개까지. 끄면 대근만 근무로 보여요", options.extras) { options = options.copy(extras = it) }
                     }
                     PartRow("메모", "날짜마다 첫 줄, ${ShareLinkPayload.MEMO_CHARS}자까지", options.memos) { options = options.copy(memos = it) }
-                    PartRow(kind.label, moneyHint(kind, money), options.pay && hasPay, enabled = hasPay) { options = options.copy(pay = it) }
+                    if (!added) PartRow(kind.label, moneyHint(kind, money), options.pay && hasPay, enabled = hasPay) { options = options.copy(pay = it) }
                 }
             }
             OutlinedTextField(value = title, onValueChange = { if (it.length <= 30) title = it }, singleLine = true,
@@ -203,7 +213,7 @@ fun ShareDialog(
             // [SHR-12] On by default: whoever got the link sees the calendar as it is now.
             PartRow("고치면 링크도 바로 바꾸기", "내 달력을 고치면 몇 초 뒤 링크에도 들어가요. 받은 사람 앱은 다음에 열 때 새로 받아요", auto) {
                 auto = it; store.auto = it
-                if (it) scope.launch { container.shareSync.sync() }
+                if (it) scope.launch { container.shareSync.sync(store.calendarId) }
             }
             // [MKT-09][OPS-13][SHR-01] Said before the data leaves the phone, in the policy's words, with what was ticked.
             Text(

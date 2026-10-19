@@ -14,10 +14,13 @@ import java.time.LocalDate
 
 /** [SHR-01] A link's payload from the phone's own data, with only what the sharer ticked. */
 object ShareContent {
-    suspend fun payload(c: AppContainer, snapshot: ScheduleSnapshot, from: LocalDate, title: String, ttlDays: Int?, options: ShareOptions): JSONObject =
+    suspend fun payload(
+        c: AppContainer, snapshot: ScheduleSnapshot, from: LocalDate, title: String, ttlDays: Int?, options: ShareOptions,
+        /** [MCAL-03] An added calendar's own kind of work. */
+        kind: MoneyShare = kind(c),
+    ): JSONObject =
         withContext(Dispatchers.Default) {
             val memos = if (options.memos) memos(c, from) else emptyMap()
-            val kind = kind(c)
             val pay = if (options.pay) money(c, snapshot, from, kind) else emptyList()
             val jobs = if (options.jobs) jobs(c, from) else emptyMap()
             ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs)

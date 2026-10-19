@@ -55,6 +55,7 @@ internal fun ColumnScope.SettingsPageContent(
     company: (@Composable ColumnScope.() -> Unit)?,
     onOpenPage: (SettingsPage) -> Unit,
     onOpenInquiry: () -> Unit = {},
+    onOpenCalendars: () -> Unit = {},
 ) {
     when (page) {
         SettingsPage.WORK -> WorkPage(vm, settings, onOpenWorkStyle, onOpenPattern, onOpenShiftTypes, onOpenExtraKinds)
@@ -62,7 +63,7 @@ internal fun ColumnScope.SettingsPageContent(
         SettingsPage.REST -> RestPage(vm, settings)
         SettingsPage.NOTICES -> NoticesPage(vm, settings, refresh, askNotifications, onOpenPage)
         SettingsPage.PAY -> PayPage(vm, files, onOpenPay, company)
-        SettingsPage.CALENDAR -> CalendarPage(vm, settings)
+        SettingsPage.CALENDAR -> CalendarPage(vm, settings, onOpenCalendars)
         SettingsPage.DATA -> DataPage(vm, files)
         SettingsPage.PRIVACY -> PrivacyPage(vm, settings, refresh, askNotifications, onOpenPage)
         SettingsPage.ABOUT -> AboutPage(vm, onOpenDiagnostics, onOpenInquiry)
@@ -301,7 +302,13 @@ private enum class CellLine { NONE, HOURS, LUNAR }
 private enum class MemoView { PLAIN, BELOW, CELLS }
 
 @Composable
-private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings) {
+private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCalendars: () -> Unit) {
+    // [MCAL-01][MCAL-04] The user's calendars: adding one, the list's order, names and taking one out.
+    val calendars by vm.calendars.collectAsStateWithLifecycle()
+    SectionCard(title = "내 달력") {
+        NavRow("달력 목록", if (calendars.size > 1) "${calendars.size}개 · " + calendars.joinToString(", ") { it.name }
+            else "새 달력을 만들어 근무를 따로 적고 따로 공유해요", onOpenCalendars)
+    }
     SectionCard(title = "모양") {
         ChoiceRow("테마", null, listOf(ThemeMode.SYSTEM to "휴대폰 따라", ThemeMode.LIGHT to "밝게", ThemeMode.DARK to "어둡게"), settings.themeMode) { m ->
             vm.update { it.copy(themeMode = m) }

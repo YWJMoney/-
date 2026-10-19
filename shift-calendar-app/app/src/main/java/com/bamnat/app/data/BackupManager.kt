@@ -24,6 +24,8 @@ data class BackupSummary(
     val shiftTypes: Int, val days: Int, val memos: Int, val exportedAtMillis: Long, val moneyLines: Int = 0, val extras: Int = 0,
     /** [SET-01] The rest of what a restore replaces, said before it does. */
     val sleeps: Int = 0, val hasPay: Boolean = false,
+    /** [MCAL-05] Added calendars besides the main one. */
+    val calendars: Int = 0,
 )
 
 class BackupException(message: String) : Exception(message)
@@ -39,17 +41,13 @@ class BackupManager(
     private val clock: () -> Long = System::currentTimeMillis,
     /** [PAY-10] The pay setup and closed months live in their own file, but belong in the backup. */
     private val payStore: com.bamnat.app.pay.PayStore? = null,
+    /** [MCAL-05] The added calendars belong in the backup too. */
+    private val calendars: CalendarBook? = null,
 ) {
-    /** One read transaction, so an edit made meanwhile cannot leave days pointing at a missing type [QA-01]. */
-    suspend fun export(): String = db.withTransaction { exportNow() }
-
-    private suspend fun exportNow(): String {
-        val root = JSONObject()
-            .put("app", APP_ID)
-            .put("format", FORMAT_VERSION)
-            .put("exportedAt", clock())
+    /** The schedule tables of [source] (shifts, order, changed days, extra work) as a backup holds them. */
+    private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
         val types = JSONArray()
-        db.shiftTypeDao().getAll().forEach { t ->
+        source.shiftTypeDao().getAll().forEach { t ->
             types.put(
                 JSONObject()
                     .put("id", t.id).put("name", t.name).put("label", t.label).put("color", t.colorArgb)
@@ -60,17 +58,17 @@ class BackupManager(
                     .putOpt("breakStart", t.breakStartMinute),
             )
         }
-        root.put("shiftTypes", types)
+        into.put("shiftTypes", types)
         val patterns = JSONArray()
-        db.patternDao().getAll().forEach { p ->
+        source.patternDao().getAll().forEach { p ->
             patterns.put(
                 JSONObject().put("kind", p.kind).put("start", p.startEpochDay).putOpt("end", p.endEpochDay)
                     .put("steps", p.steps).putOpt("anchor", p.anchorEpochDay),
             )
         }
-        root.put("patterns", patterns)
+        into.put("patterns", patterns)
         val days = JSONArray()
-        db.dayEntryDao().getAll().forEach { d ->
+        source.dayEntryDao().getAll().forEach { d ->
             days.put(
                 JSONObject()
                     .put("day", d.epochDay).put("mode", d.overrideMode).putOpt("type", d.overrideShiftTypeId)
@@ -79,15 +77,38 @@ class BackupManager(
                     .putOpt("alarms", d.customAlarms).put("leave", d.leave),
             )
         }
-        root.put("days", days)
+        into.put("days", days)
         // [EXTRA-01] Extra work by date (format 2).
-        root.put("extras", JSONArray().apply {
-            db.dayExtraDao().getAll().forEach { x ->
+        into.put("extras", JSONArray().apply {
+            source.dayExtraDao().getAll().forEach { x ->
                 put(JSONObject().put("day", x.epochDay).put("kind", x.kindId).putOpt("start", x.startMinute).putOpt("end", x.endMinute)
                     .put("break", x.breakMinutes).putOpt("breakStart", x.breakStartMinute).put("minutes", x.minutes)
                     .putOpt("covered", x.coveredShiftTypeId).put("review", x.needsReview).put("pos", x.position))
             }
         })
+    }
+
+    /** One read transaction, so an edit made meanwhile cannot leave days pointing at a missing type [QA-01]. */
+    suspend fun export(): String = db.withTransaction { exportNow() }
+
+    private suspend fun exportNow(): String {
+        val root = JSONObject()
+            .put("app", APP_ID)
+            .put("format", FORMAT_VERSION)
+            .put("exportedAt", clock())
+        putSchedule(db, root)
+        // [MCAL-05] Each added calendar with its own shifts, order and days, and the list's order.
+        calendars?.let { book ->
+            root.put("calendars", JSONArray().apply {
+                book.added().forEach { cal ->
+                    val o = CalendarBook.run { cal.toJson() }
+                    book.database(cal.id).let { other -> other.withTransaction { putSchedule(other, o) } }
+                    put(o)
+                }
+            })
+            root.put("calendarOrder", JSONArray(book.order.value))
+            book.get(PersonalCalendar.MAIN)?.let { root.put("mainCalendar", CalendarBook.run { it.toJson() }) }
+        }
         val memos = JSONArray()
         db.memoDao().getAll().forEach { m ->
             memos.put(
@@ -193,13 +214,17 @@ class BackupManager(
                 (root.optJSONArray("owed")?.length() ?: 0),
             sleeps = root.optJSONArray("sleep")?.length() ?: 0,
             hasPay = root.has("pay"),
+            calendars = root.optJSONArray("calendars")?.length() ?: 0,
         )
     }
 
-    /** Replaces all data with the backup, in one transaction: a broken file changes nothing. */
-    suspend fun restore(json: String) {
-        val root = parse(json)
-        val types = root.getJSONArray("shiftTypes").objects().map { o ->
+    /** [MCAL-05] One calendar's schedule as a backup holds it; throws for one with no shifts. */
+    private class ScheduleRows(
+        val types: List<ShiftTypeEntity>, val patterns: List<PatternEntity>, val days: List<DayEntryEntity>, val extras: List<DayExtraEntity>?,
+    )
+
+    private fun readSchedule(from: JSONObject): ScheduleRows {
+        val types = from.getJSONArray("shiftTypes").objects().map { o ->
             ShiftTypeEntity(
                 id = o.getLong("id"), name = o.getString("name"), label = o.getString("label"),
                 colorArgb = o.getLong("color"), startMinute = o.optIntOrNull("start"), endMinute = o.optIntOrNull("end"),
@@ -211,8 +236,8 @@ class BackupManager(
         }
         if (types.isEmpty()) throw BackupException("근무 종류가 없는 백업 파일이에요")
         // Older backups held one "pattern" object instead of the "patterns" history.
-        val patternObjects = root.optJSONArray("patterns")?.objects()
-            ?: listOfNotNull(root.optJSONObject("pattern"))
+        val patternObjects = from.optJSONArray("patterns")?.objects()
+            ?: listOfNotNull(from.optJSONObject("pattern"))
         val patterns = patternObjects.mapIndexed { i, p ->
             PatternEntity(
                 id = i + 1, kind = p.getString("kind"), startEpochDay = p.getLong("start"),
@@ -220,7 +245,7 @@ class BackupManager(
                 anchorEpochDay = if (p.isNull("anchor") || !p.has("anchor")) null else p.getLong("anchor"),
             )
         }
-        val days = root.optJSONArray("days").objects().map { o ->
+        val days = from.optJSONArray("days").objects().map { o ->
             DayEntryEntity(
                 epochDay = o.getLong("day"), overrideMode = o.optInt("mode"),
                 overrideShiftTypeId = if (o.isNull("type") || !o.has("type")) null else o.getLong("type"),
@@ -233,7 +258,7 @@ class BackupManager(
                 secondShiftTypeId = if (o.has("second") && !o.isNull("second")) o.getLong("second") else null,
             )
         }
-        val extras = root.optJSONArray("extras")?.objects()?.map { o ->
+        val extras = from.optJSONArray("extras")?.objects()?.map { o ->
             DayExtraEntity(
                 epochDay = o.getLong("day"), kindId = o.getLong("kind"), startMinute = o.optIntOrNull("start"),
                 endMinute = o.optIntOrNull("end"), breakMinutes = o.optInt("break").coerceIn(0, 24 * 60),
@@ -242,6 +267,34 @@ class BackupManager(
                 needsReview = o.optBoolean("review"), position = o.optInt("pos"),
             )
         }
+        return ScheduleRows(types, patterns, days, extras)
+    }
+
+    /** Replaces [target]'s schedule with [rows]; the change log described the days being replaced [MKT-08]. */
+    private suspend fun writeSchedule(target: AppDatabase, rows: ScheduleRows) {
+        target.dayChangeDao().clear()
+        target.dayEntryDao().clear()
+        target.dayExtraDao().clear()
+        target.patternDao().clear()
+        target.shiftTypeDao().clear()
+        target.shiftTypeDao().insertAll(rows.types)
+        target.patternDao().saveAll(rows.patterns)
+        target.dayEntryDao().insertAll(rows.days)
+        if (rows.extras != null) target.dayExtraDao().insertAll(rows.extras)
+        // [EXTRA-05] A backup from 1.8 or earlier: the same move as the database upgrade.
+        else com.bamnat.app.data.db.AppDatabase.moveOldExtraWork(target.openHelper.writableDatabase)
+    }
+
+    /** Replaces all data with the backup, in one transaction: a broken file changes nothing. */
+    suspend fun restore(json: String) {
+        val root = parse(json)
+        val schedule = readSchedule(root)
+        // [MCAL-05] Added calendars come back only from a backup that has them; read before anything changes.
+        val added = if (calendars != null && root.has("calendars")) root.optJSONArray("calendars").objects().mapNotNull { o ->
+            CalendarBook.fromJson(o)?.takeIf { !it.isMain }?.let { cal -> cal to readSchedule(o) }
+        }.distinctBy { it.first.id } else null
+        val addedOrder = root.optJSONArray("calendarOrder")?.let { a -> (0 until a.length()).map { a.optString(it) } }
+        val mainCalendar = root.optJSONObject("mainCalendar")?.let(CalendarBook::fromJson)
         val memos = root.optJSONArray("memos").objects().map { o ->
             MemoEntity(
                 id = o.getLong("id"), epochDay = if (o.isNull("day") || !o.has("day")) null else o.getLong("day"),
@@ -315,18 +368,17 @@ class BackupManager(
             // Backups from before version 11 carry no sleep log; the one on the phone then stays.
             sleep?.let { list -> db.sleepDao().clear(); list.forEach { db.sleepDao().insert(it) } }
             db.memoDao().clear()
-            db.dayChangeDao().clear() // the log described the days being replaced [MKT-08]
-            db.dayEntryDao().clear()
-            db.dayExtraDao().clear()
-            db.patternDao().clear()
-            db.shiftTypeDao().clear()
-            db.shiftTypeDao().insertAll(types)
-            db.patternDao().saveAll(patterns)
-            db.dayEntryDao().insertAll(days)
-            if (extras != null) db.dayExtraDao().insertAll(extras)
-            // [EXTRA-05] A backup from 1.8 or earlier: the same move as the database upgrade.
-            else com.bamnat.app.data.db.AppDatabase.moveOldExtraWork(db.openHelper.writableDatabase)
+            writeSchedule(db, schedule)
             memos.forEach { db.memoDao().restore(it) }
+        }
+        // [MCAL-05] The added calendars as the backup had them, each in its own database.
+        calendars?.let { book ->
+            if (added != null) {
+                book.replaceAdded(listOfNotNull(mainCalendar) + added.map { it.first }, addedOrder)
+                for ((cal, rows) in added) book.database(cal.id).let { other -> other.withTransaction { writeSchedule(other, rows) } }
+            } else if (mainCalendar != null) {
+                book.rename(PersonalCalendar.MAIN, mainCalendar.name)
+            }
         }
         // The pay setup points at shift types by id, and those ids just changed to the backup's: a
         // backup with a pay setup brings it along. Older backups keep the phone's own.
@@ -352,7 +404,7 @@ class BackupManager(
                     alarmsEnabled = o.optBoolean("alarmsOn", s.alarmsEnabled),
                     // [SETUP-01] A backup from before the question with a pattern in it is shift work, as on the phone.
                     workStyle = o.optStringOrNull("workStyle")?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } } ?: s.workStyle
-                        ?: WorkStyle.SHIFT.takeIf { patterns.isNotEmpty() },
+                        ?: WorkStyle.SHIFT.takeIf { schedule.patterns.isNotEmpty() },
                     rosterMonthly = o.optBoolean("rosterMonthly", s.rosterMonthly),
                     extraKinds = o.optStringOrNull("extraKinds")?.let { com.bamnat.core.model.ExtraKinds.decode(it) } ?: s.extraKinds,
                     memoInCells = o.optBoolean("memoFirst", s.memoInCells),
@@ -374,7 +426,7 @@ class BackupManager(
                     sleepTargetMinutes = o.optInt("sleepTarget", s.sleepTargetMinutes).coerceIn(4 * 60, 10 * 60),
                     commuteMinutes = o.optInt("commute", s.commuteMinutes).coerceIn(0, MAX_COMMUTE_MINUTES),
                     // Old records came back with the backup; offer to fix them again.
-                    swapCoversAnswered = s.swapCoversAnswered && extras != null,
+                    swapCoversAnswered = s.swapCoversAnswered && schedule.extras != null,
                 )
             }
         }

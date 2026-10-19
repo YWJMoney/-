@@ -234,12 +234,29 @@ object ShareLinkPayload {
 }
 
 /**
- * The one link this phone made, kept so it can be updated or cut later. [SHR-12] One instance in the
- * app ([com.bamnat.app.AppContainer.shareLinks]), so the sheet, the automatic update and the expiry
- * notice all see the same link as it changes.
+ * The link this phone made for one calendar, kept so it can be updated or cut later. [SHR-12] One
+ * instance per calendar in the app ([com.bamnat.app.AppContainer.shareLinks]), so the sheet, the
+ * automatic update and the expiry notice all see the same link as it changes. [MCAL-03] Each of the
+ * user's calendars has its own link; the main calendar keeps the file links were always kept in.
  */
-class ShareLinkStore(context: Context, private val clock: () -> Instant = Instant::now) {
-    private val prefs = context.applicationContext.getSharedPreferences("share_link", Context.MODE_PRIVATE)
+class ShareLinkStore(
+    context: Context,
+    val calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+    private val clock: () -> Instant = Instant::now,
+) {
+    private val prefs = context.applicationContext.getSharedPreferences(prefsName(calendarId), Context.MODE_PRIVATE)
+
+    companion object {
+        fun prefsName(calendarId: String) =
+            if (calendarId == com.bamnat.app.data.PersonalCalendar.MAIN) "share_link" else "share_link_$calendarId"
+
+        /** [MCAL-03] A removed calendar's link details go with it. */
+        fun forget(context: Context, calendarId: String) {
+            if (calendarId == com.bamnat.app.data.PersonalCalendar.MAIN) return
+            context.applicationContext.getSharedPreferences(prefsName(calendarId), Context.MODE_PRIVATE).edit().clear().commit()
+            context.applicationContext.deleteSharedPreferences(prefsName(calendarId))
+        }
+    }
 
     private val _link = MutableStateFlow(load())
     /** The link, or null when there is none or it ran out. */

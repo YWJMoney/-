@@ -110,7 +110,7 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("근무 종류와 시간") },
+                title = { CalendarTitle("근무 종류와 시간", vm) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
@@ -723,4 +723,14 @@ private fun IconChoice(selected: Boolean, label: String, onClick: () -> Unit, co
             .semantics { contentDescription = label; this.selected = selected },
         contentAlignment = Alignment.Center,
     ) { content() }
+}
+
+/** [MCAL-01] A screen's title, with the added calendar it edits under it. */
+@Composable
+internal fun CalendarTitle(title: String, vm: ShiftsViewModel) {
+    val name by vm.calendarName.collectAsStateWithLifecycle()
+    Column {
+        Text(title)
+        name?.let { Text("$it 달력", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    }
 }

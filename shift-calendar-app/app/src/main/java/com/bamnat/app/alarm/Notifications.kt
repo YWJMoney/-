@@ -118,22 +118,22 @@ object Notifications {
     }
 
     /** [SLP-15] A notice's tap opens the screen it is about. */
-    fun open(context: Context, target: NoticeLinks.Target, requestCode: Int): PendingIntent = PendingIntent.getActivity(
-        context, requestCode, NoticeLinks.intent(context, target),
+    fun open(context: Context, target: NoticeLinks.Target, requestCode: Int, calendar: String? = null): PendingIntent = PendingIntent.getActivity(
+        context, requestCode, NoticeLinks.intent(context, target, calendar),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
     /** Posts unless notifications were turned off in the meantime. */
-    fun post(context: Context, id: Int, notification: android.app.Notification) {
+    fun post(context: Context, id: Int, notification: android.app.Notification, tag: String? = null) {
         if (!canPost(context)) return
         try {
-            NotificationManagerCompat.from(context).notify(id, notification)
+            NotificationManagerCompat.from(context).notify(tag, id, notification)
         } catch (e: SecurityException) {
             // Notifications were turned off between the check and the post.
         }
     }
 
-    fun cancel(context: Context, id: Int) = NotificationManagerCompat.from(context).cancel(id)
+    fun cancel(context: Context, id: Int, tag: String? = null) = NotificationManagerCompat.from(context).cancel(tag, id)
 
     /**
      * Tells the user that alarms can no longer ring on time because the exact-alarm permission
