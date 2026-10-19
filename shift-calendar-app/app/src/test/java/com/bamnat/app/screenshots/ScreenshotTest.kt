@@ -1529,7 +1529,8 @@ class ScreenshotTest {
     @Test fun foldedNewCalendarSetup() = shoot("217_folded_new_calendar_setup", FOLDED) {
         val c = app.container
         val id = c.calendars.begin("편의점 알바")
-        content { com.bamnat.app.ui.setup.SetupHost(com.bamnat.app.ui.setup.SetupViewModel(c, calendarId = id)) }
+        val vm = com.bamnat.app.ui.setup.SetupViewModel(c, calendarId = id)
+        content { com.bamnat.app.ui.setup.SetupHost(vm) }
     }
     @Test fun foldedAddedCalendarShare() = shoot("218_folded_added_calendar_share", FOLDED) {
         val c = receivedOn()

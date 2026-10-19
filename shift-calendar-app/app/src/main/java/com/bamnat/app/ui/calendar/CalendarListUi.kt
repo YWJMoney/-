@@ -603,8 +603,9 @@ fun rememberAddCalendar(c: AppContainer, onSetup: (String) -> Unit): () -> Unit 
     var naming by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val setup by androidx.compose.runtime.rememberUpdatedState(onSetup)
+    val calendars by c.calendars.calendars.collectAsStateWithLifecycle()
     if (naming) {
-        val made = c.calendars.calendars.value.count { !it.isMain }
+        val made = calendars.count { !it.isMain }
         NewCalendarDialog(
             suggested = "달력 ${made + 2}",
             colorIndex = made,

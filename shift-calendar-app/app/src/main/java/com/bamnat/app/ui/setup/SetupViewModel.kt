@@ -490,7 +490,10 @@ class SetupViewModel(
                         d.source?.let { append('_').append(it.kind.name) }
                     })
                 }
-                .onFailure { _message.value = "저장하지 못했어요. 한 번 더 눌러 주세요" }
+                .onFailure { e ->
+                    android.util.Log.w("Setup", "The setup was not saved", e)
+                    _message.value = "저장하지 못했어요. 한 번 더 눌러 주세요"
+                }
             _saving.value = false
         }
     }

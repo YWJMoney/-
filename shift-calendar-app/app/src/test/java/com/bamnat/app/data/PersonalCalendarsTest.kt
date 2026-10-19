@@ -52,6 +52,7 @@ class PersonalCalendarsTest {
     }
 
     @Before fun defaults() {
+        org.robolectric.shadows.ShadowLog.stream = System.out
         waitFor("the first shifts") { runBlocking { c.scheduleRepository.shiftTypes.first().isNotEmpty() } }
     }
 
@@ -70,7 +71,8 @@ class PersonalCalendarsTest {
         }
         assertEquals(SetupStep.SUMMARY, c.calendarSetupDrafts.draft.value!!.step)
         vm.save()
-        waitFor("the calendar's save") { vm.done.value }
+        waitFor("the calendar's save") { vm.done.value || vm.message.value != null }
+        assertNull("the save failed", vm.message.value)
         return id
     }
 
