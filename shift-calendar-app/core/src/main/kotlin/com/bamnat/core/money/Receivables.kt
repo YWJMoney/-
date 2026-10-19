@@ -171,6 +171,80 @@ object Receivables {
     fun clampPayment(r: Receivable, amount: Long): Long = amount.coerceIn(0, (r.amount - r.received).coerceAtLeast(0))
 
     const val NO_NAME = "이름 없음"
+
+    /**
+     * [RECV-05] The 받을 돈 list as the user narrowed it: a [filter] chip, a search over who, what
+     * and the note, and an order. Done ones never mix in; they have their own tab.
+     */
+    fun narrow(owed: List<Owed>, today: LocalDate, filter: OwedFilter = OwedFilter.ALL, query: String = "", sort: OwedSort = OwedSort.URGENT): List<Owed> {
+        val q = query.trim()
+        val picked = owed.filter { filter.keeps(it, today) && (q.isEmpty() || it.matches(q)) }
+        return when (sort) {
+            OwedSort.URGENT -> picked
+            OwedSort.AMOUNT -> picked.sortedWith(compareByDescending<Owed> { it.left }.thenBy { it.since })
+            OwedSort.OLDEST -> picked.sortedWith(compareBy<Owed> { it.due ?: it.since }.thenByDescending { it.left })
+        }
+    }
+
+    /** How many lines each chip would show, so a chip with nothing behind it can say 0. */
+    fun counts(owed: List<Owed>, today: LocalDate): Map<OwedFilter, Int> = OwedFilter.entries.associateWith { f -> owed.count { f.keeps(it, today) } }
+
+    /** Money still out from one person, so the list can show their lines together. */
+    fun of(owed: List<Owed>, who: String): List<Owed> = owed.filter { it.who.trim().ifBlank { NO_NAME } == who }
+
+    /**
+     * [RECV-05] A polite note the user can send to whoever owes: what for, how much is left, and
+     * the promised day when there is one. Plain words so it reads well in any messenger.
+     */
+    fun reminder(o: Owed, today: LocalDate): String {
+        val who = o.who.trim()
+        val hello = if (who.isEmpty()) "안녕하세요." else "$who 님, 안녕하세요."
+        val what = when (o) {
+            is Owed.FromJob -> "${o.job.date.monthValue}월 ${o.job.date.dayOfMonth}일 ${o.name}"
+            is Owed.Written -> o.name.takeIf { it != who } ?: "${o.since.monthValue}월 ${o.since.dayOfMonth}일 건"
+        }
+        val due = o.due
+        val left = won(o.left)
+        val ask = when {
+            due != null && today.isAfter(due) -> "${due.monthValue}월 ${due.dayOfMonth}일에 주시기로 한 ${left}이 아직 들어오지 않아서 연락드려요."
+            due != null -> "${due.monthValue}월 ${due.dayOfMonth}일까지 ${left} 부탁드려요."
+            else -> "아직 남은 ${left} 확인 부탁드려요."
+        }
+        return "$hello\n$what 관련해서 $ask\n이미 보내셨다면 이 메시지는 넘겨 주세요. 감사합니다."
+    }
+
+    private fun won(amount: Long): String = String.format(java.util.Locale.KOREA, "%,d원", amount)
+
+    private fun Owed.matches(q: String): Boolean {
+        val note = (this as? Owed.Written)?.r?.note.orEmpty() + ((this as? Owed.FromJob)?.job?.let { it.place + " " + it.note }.orEmpty())
+        return listOf(who, name, note).any { it.contains(q, ignoreCase = true) }
+    }
+}
+
+/** [RECV-05] The chips above the 받을 돈 list. */
+enum class OwedFilter(val label: String) {
+    ALL("전체"), OVERDUE("약속일 지남"), DUE_SOON("곧 받을 날"), PARTLY("일부 받음"), JOBS("일감 잔금"), WRITTEN("직접 적은 것");
+
+    fun keeps(o: Owed, today: LocalDate): Boolean = when (this) {
+        ALL -> true
+        OVERDUE -> o.status(today) == ReceivableStatus.OVERDUE
+        DUE_SOON -> o.status(today) == ReceivableStatus.DUE_SOON
+        PARTLY -> when (o) { is Owed.Written -> o.r.received > 0; is Owed.FromJob -> o.job.received > 0 }
+        JOBS -> o is Owed.FromJob
+        WRITTEN -> o is Owed.Written
+    }
+}
+
+/** [RECV-05] Orders for the 받을 돈 list; the first is the one the app picks. */
+enum class OwedSort(val label: String) { URGENT("급한 순"), AMOUNT("금액 큰 순"), OLDEST("오래된 순") }
+
+/** [RECV-05] What a job's 돈 받음 switches become when its money came in, without opening the job. */
+object JobPayments {
+    /** Every part paid: the deposit when there is one, and the rest. */
+    fun all(job: Job): Job = job.copy(depositPaid = job.deposit > 0, balancePaid = true)
+
+    /** Only the deposit (선금) paid; null when the job has no unpaid deposit. */
+    fun deposit(job: Job): Job? = if (job.deposit > 0 && !job.depositPaid) job.copy(depositPaid = true) else null
 }
 
 /**
