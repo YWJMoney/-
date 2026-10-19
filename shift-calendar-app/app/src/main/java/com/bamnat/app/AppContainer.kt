@@ -97,6 +97,8 @@ class AppContainer(context: Context) {
     /** [MKT-09][SHR-02] The link server; screenshots and tests put a fake in its place. */
     var shareApi: com.bamnat.app.share.ShareApi = com.bamnat.app.share.ShareLinkClient()
     /** [MKT-09][SHR-12] The one link this phone made, shared by the sheet, the automatic update and the expiry notice. */
+    /** [MCAL-02] When this run began: a calendar begun since is being made, not left over. */
+    private val startedAt = System.currentTimeMillis()
     val shareLinks by lazy { com.bamnat.app.share.ShareLinkStore(appContext) }
     private val addedShareLinks = java.util.concurrent.ConcurrentHashMap<String, com.bamnat.app.share.ShareLinkStore>()
     /** [MCAL-03] The link of one of the user's calendars; the main one is [shareLinks]. */
@@ -164,7 +166,7 @@ class AppContainer(context: Context) {
             memoRepository.purgeOldTrash()
             moneyRepository.purgeCaptures()
             // [MCAL-02] A calendar whose setup was left before saving is not kept.
-            if (calendarSetupDrafts.draft.value == null) calendars.dropUnfinished()
+            if (calendarSetupDrafts.draft.value == null) calendars.dropUnfinished(before = startedAt)
             // Any edit to shift types, the pattern, a day or the master switch re-plans the next alarm.
             // [MCAL-01] So does one in an added calendar whose alarms ring.
             val enabled = settingsRepository.settings.map { it.alarmsEnabled }.distinctUntilChanged()

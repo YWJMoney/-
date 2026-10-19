@@ -169,6 +169,7 @@ class CalendarBook(
             else combine(list.map { cal -> repository(cal.id).snapshot.map { s -> (if (cal.isMain) null else cal.name) to s } }) { it.toList() }
         }
 
+    @Synchronized
     fun setActive(id: String) {
         val target = get(id)?.takeIf { it.ready }?.id ?: PersonalCalendar.MAIN
         if (target == _active.value) return
@@ -179,6 +180,7 @@ class CalendarBook(
      * [MCAL-02] Starts a calendar: it has a database at once, so its first setup saves into it, but it
      * is listed only after [finishSetup]. Returns its id.
      */
+    @Synchronized
     fun begin(name: String, color: Long? = null): String {
         val id = UUID.randomUUID().toString().replace("-", "").take(12)
         val made = all.count { !it.isMain }
@@ -194,6 +196,7 @@ class CalendarBook(
     }
 
     /** [MCAL-02] Its first setup is saved: listed from now on, and shown. */
+    @Synchronized
     fun finishSetup(id: String, style: WorkStyle) {
         if (get(id) == null) return
         write(state.value.copy(calendars = all.map { if (it.id == id) it.copy(style = style, ready = true) else it }, active = id))
@@ -202,11 +205,16 @@ class CalendarBook(
     /** [MCAL-02] A calendar whose first setup was started and not saved yet, to go on with. */
     fun unfinished(): PersonalCalendar? = all.lastOrNull { !it.ready }
 
-    /** Calendars whose first setup was never saved, other than [keep]: they and their databases go. */
-    fun dropUnfinished(keep: String? = null) {
-        all.filter { !it.ready && it.id != keep }.forEach { delete(it.id) }
+    /**
+     * Calendars whose first setup was never saved, other than [keep] and any begun at or after
+     * [before] (one being made right now): they and their databases go.
+     */
+    @Synchronized
+    fun dropUnfinished(keep: String? = null, before: Long? = null) {
+        all.filter { !it.ready && it.id != keep && (before == null || it.createdAt < before) }.forEach { delete(it.id) }
     }
 
+    @Synchronized
     fun rename(id: String, name: String) {
         val cal = get(id) ?: return
         val clean = name.trim().take(PersonalCalendar.MAX_NAME)
@@ -221,6 +229,7 @@ class CalendarBook(
     }
 
     /** [MCAL-01] Removes an added calendar and everything in it. The main calendar cannot go. */
+    @Synchronized
     fun delete(id: String) {
         if (id == PersonalCalendar.MAIN || get(id) == null) return
         val db = synchronized(this) { open.remove(id)?.first }
@@ -234,6 +243,7 @@ class CalendarBook(
     }
 
     /** [MCAL-04] Stores the list exactly as the user placed it. */
+    @Synchronized
     fun arrange(keys: List<CalendarKey>) {
         write(state.value.copy(order = keys.map { it.key }.distinct()))
     }
@@ -245,6 +255,7 @@ class CalendarBook(
     fun added(): List<PersonalCalendar> = all.filter { !it.isMain && it.ready }
 
     /** [MCAL-05] A restore replaces the added calendars with the backup's, ids and order kept. */
+    @Synchronized
     fun replaceAdded(calendars: List<PersonalCalendar>, order: List<String>?) {
         added().forEach { delete(it.id) }
         val s = state.value
@@ -255,6 +266,7 @@ class CalendarBook(
         write(State(list, order ?: s.order, PersonalCalendar.MAIN))
     }
 
+    @Synchronized
     private fun update(id: String, transform: (PersonalCalendar) -> PersonalCalendar) {
         if (get(id) == null) return
         write(state.value.copy(calendars = all.map { if (it.id == id) transform(it) else it }))
