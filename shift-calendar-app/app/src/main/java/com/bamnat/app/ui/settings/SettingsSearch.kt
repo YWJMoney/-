@@ -116,6 +116,11 @@ internal object SettingsIndex {
         screen(W.title, "근무 주기", SettingsGo.PATTERN, "순서", "패턴", "로테이션", "주주야야", "시작일", "요일", "교대 순서"),
         screen(W.title, "근무 종류와 시간", SettingsGo.SHIFT_TYPES, "주간", "야간", "근무 시간", "출근 시간", "색", "아이콘", "근무 전 알람", "휴게"),
         screen(W.title, "연장 휴무일 근무 지정", SettingsGo.EXTRA_KINDS, "잔업", "특근", "대근", "연장", "휴일 근무", "가산"),
+        // [SHFT-06][SHFT-07][DAYW-06][DAYW-07]
+        screen(W.title, "듀티표 사진으로 넣기", SettingsGo.DUTY_ROSTER, "듀티표", "근무표 사진", "글자 인식", "사진으로 입력", "간호사", "한 달 입력"),
+        screen(W.title, "연간 건강 지표", SettingsGo.HEALTH_REPORT, "야간 비율", "연속 야간", "건강", "1년", "연간 통계"),
+        screen(W.title, "근태 엑셀 가져오기", SettingsGo.ATTENDANCE_IMPORT, "엑셀", "CSV", "근태", "출퇴근 기록", "회사 시스템", "xlsx"),
+        screen(W.title, "출퇴근 자동 기록", SettingsGo.COMMUTE, "위치", "지오펜스", "자동 출근", "자동 퇴근", "GPS", "회사 위치"),
         row(A, "알람 사용", "알람 끄기", "알람 켜기", "모두 끄기", "알람 전체"),
         row(A, "알람음", "알람 소리", "벨소리", "무음", row = "알람음"),
         row(A, "근무마다 다른 소리", "근무별 알람음", "야간 소리"),

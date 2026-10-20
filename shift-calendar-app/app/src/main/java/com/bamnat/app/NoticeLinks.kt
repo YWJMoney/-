@@ -33,6 +33,14 @@ object NoticeLinks {
         SHARE,
         /** [UX-03] The calendar with the sheet that takes a received link open. */
         RECEIVE,
+        /** [SHFT-06] 듀티표 사진으로 넣기, for the calendar on screen. */
+        DUTY_ROSTER,
+        /** [SHFT-07] 연간 건강 지표. */
+        HEALTH_REPORT,
+        /** [DAYW-06] 근태 엑셀 가져오기. */
+        ATTENDANCE_IMPORT,
+        /** [DAYW-07] 출퇴근 자동 기록, from its settings row or its notice. */
+        COMMUTE,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"

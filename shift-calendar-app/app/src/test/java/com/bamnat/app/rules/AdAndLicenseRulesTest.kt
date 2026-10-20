@@ -48,6 +48,7 @@ class AdAndLicenseRulesTest {
             "androidx.navigation" to "AndroidX Core", "androidx.glance" to "Jetpack Glance", "androidx.room" to "AndroidX Room",
             "androidx.health.connect" to "Health Connect", "org.jetbrains.kotlinx" to "Kotlin",
             "com.google.mlkit" to "ML Kit", "com.google.android.play" to "Google Play",
+            "com.google.android.gms" to "Google Play 서비스",
         )
         for (g in groups) {
             val name = covered[g] ?: error("오픈소스 라이선스 목록에 '$g'을(를) 더해 주세요 (OpenSourceLicenses.kt)")

@@ -94,6 +94,8 @@ internal fun WorkTypeMoreCards(
 ) {
     if (style?.usesPayEngine != false) PayGapCard(calendarId, month, payTotal, profile, book, style)
     if (style.isShift()) SwapCard(snapshot, month)
+    // [SHFT-07] The year's night share, runs of nights and short rests.
+    if (style.isShift()) HealthYearCard(snapshot)
     if (style == WorkStyle.DAY) {
         OvertimeCapCard(calendarId, summary)
         BridgeCard(snapshot)

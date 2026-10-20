@@ -18,6 +18,11 @@
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
     <!-- [IMPORT-01] Read only, asked when the user opens 캘린더에서 가져오기; nothing read leaves the phone. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <!-- [DAYW-07] 출퇴근 자동 기록 only, off by default and asked when the user turns it on after a plain
+         explanation: one geofence around the workplace, used on the phone; no location is sent or kept. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
@@ -148,6 +153,24 @@
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- [DAYW-07] Workplace geofence crossings and 맞아요·아니요 on the record's notice. -->
+        <receiver
+            android:name=".commute.CommuteReceiver"
+            android:exported="false" />
+
+        <!-- [SHFT-08] The Wear OS app asks for fresh days when it opens; only Google Play services binds it. -->
+        <service
+            android:name=".watch.WatchRequestService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:host="*"
+                    android:pathPrefix="/bamnat/sync"
+                    android:scheme="wear" />
             </intent-filter>
         </service>
 
