@@ -135,7 +135,8 @@ class AppContainer(context: Context) {
         com.bamnat.app.alarm.BootAlarms.RingSettings.of(settingsRepository.current)
     }
     val payStore = PayStore(appContext)
-    val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars)
+    val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars,
+        workTools = com.bamnat.app.data.WorkToolsStore.get(appContext))
     /** [SET-01] The data as it was before the last import, to take the import back. */
     val importUndo by lazy { com.bamnat.app.data.ImportUndo(java.io.File(appContext.noBackupFilesDir, "before_import.json"), backupManager) }
     /** [COMM-00] Company settings as a file for coworkers. */

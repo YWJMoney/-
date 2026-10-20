@@ -285,6 +285,13 @@ class ScheduleRepository(
 
     suspend fun clearPattern() = patternDao.clear()
 
+    /** [HRLY-11] 퇴사: the repeating schedule stops after [last]; days written by hand stay as they are. */
+    suspend fun endPatternsAfter(last: LocalDate) {
+        db.withTransaction {
+            replacePatterns(com.bamnat.core.work.QuitCheck.endPatterns(patternDao.getAll().mapNotNull { it.toModel() }, last))
+        }
+    }
+
     /** One day as stored, with its extra work; null when the day follows the pattern untouched. */
     private suspend fun readDay(epochDay: Long): DayEntry? {
         val row = dayEntryDao.get(epochDay)
