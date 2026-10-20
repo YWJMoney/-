@@ -168,6 +168,10 @@ fun EntryDialog(
     var tagsText by rememberSaveable { mutableStateOf(initial?.tags.orEmpty().joinToString(" ") { "#$it" }) }
     var partsText by rememberSaveable { mutableStateOf(encodeParts(initial?.parts.orEmpty())) }
     var installments by rememberSaveable { mutableIntStateOf(initial?.installments ?: 1) }
+    // [FLD-08] 증빙 and a receipt photo, for field and shop costs.
+    var proof by rememberSaveable { mutableStateOf(initial?.proof.orEmpty()) }
+    var receipt by rememberSaveable { mutableStateOf(initial?.receipt.orEmpty()) }
+    val proofs = ledger.style == com.bamnat.core.work.WorkStyle.FIELD || ledger.style == com.bamnat.core.work.WorkStyle.BUSINESS
     var more by rememberSaveable {
         mutableStateOf(initial != null && (initial.memo.isNotBlank() || initial.tags.isNotEmpty() || initial.parts.isNotEmpty()))
     }
@@ -195,6 +199,7 @@ fun EntryDialog(
             memo = memo.trim(), tags = Ledger.parseTags(tagsText),
             parts = if (kind == MoneyKind.TRANSFER) emptyList() else parts.filter { it.amount > 0 && it.category != category },
             installments = if (credit) installments else 1,
+            proof = if (kind == MoneyKind.EXPENSE) proof else "", receipt = if (kind == MoneyKind.EXPENSE) receipt else "",
         )
     }
 
@@ -314,6 +319,9 @@ fun EntryDialog(
                             Text("+", style = MaterialTheme.typography.titleLarge)
                         }
                     }
+                }
+                if (kind == MoneyKind.EXPENSE && (proofs || proof.isNotBlank() || receipt.isNotBlank())) {
+                    ProofSection(proof, { proof = it }, receipt, { receipt = it })
                 }
                 if (!initial?.note.isNullOrBlank() && !initial?.merchant.isNullOrBlank()) {
                     Text(initial!!.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

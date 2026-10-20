@@ -247,6 +247,8 @@ fun ShopDaysScreen(vm: ShopDaysViewModel, onBack: () -> Unit, onSaved: (String) 
                         ) { on -> vm.edit { it.copy(autoClosed = on) } }
                     }
                 }
+                // [SHOP-02][SHOP-03] Card deposits and the till, saved as they change.
+                ShopMoneySettings(vm.calendarId)
                 Text(ShopDays.describe(rules), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                 Button(onClick = { vm.save(onSaved) }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     Text(if (busy) "저장하는 중…" else "저장")

@@ -5,6 +5,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import androidx.compose.runtime.produceState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -146,7 +148,9 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
 
         val money = book
         if (money != null && style?.usesJobs == true) JobFigures(money, month, columns)
+        if (money != null && style == WorkStyle.FIELD) FieldStatsCards(money, month)
         if (money != null && style?.usesSales == true) SalesFigures(money, month, columns) { snap.resolver.resolve(it).isWorkDay }
+        if (money != null && style == WorkStyle.BUSINESS) ShopStatsCards(vm.calendarId, money, month, { snap.resolver.resolve(it).isWorkDay })
         if (!hasHours) {
             Text("달력에 근무 시간을 넣으면 주별 근무시간과 3개월 평균도 여기서 볼 수 있어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -431,7 +435,7 @@ private fun TileGrid(tiles: List<@Composable (Modifier) -> Unit>, columns: Int) 
 private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
     val m = remember(book, month) { book.month(month) }
     val days = remember(book, month) {
-        book.jobs.filter { YearMonth.from(it.date) == month }
+        book.jobs.filter { YearMonth.from(it.date) == month && !it.cancelled }
             .flatMap { j -> (0 until j.days).map { j.date.plusDays(it.toLong()) } }
             .filter { YearMonth.from(it) == month }.distinct().size
     }
@@ -445,10 +449,14 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
     TileGrid(tiles, columns)
     // [TYPE-07] Who the month's work came from and who still owes.
     val clients = remember(book, month) { WorkStats.clients(month, book.jobs) }
+    // [FLD-05] A client's row opens 거래내역서 보내기.
+    var statement by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    statement?.let { StatementDialog(it, month, book.jobs) { statement = null } }
     if (clients.isNotEmpty()) {
         SectionCard(title = "거래처별") {
             clients.take(8).forEach { c ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().clickable(onClickLabel = "거래내역서 보내기") { statement = c.client }.padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(c.client, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
                         Text("${c.jobs}건" + (if (c.owed > 0) " · 받을 돈 ${wonBrief(c.owed)}" else ""),
@@ -458,6 +466,8 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
                     Text(Fmt.won(c.earned), style = MaterialTheme.typography.titleSmall.merge(NumberStyle))
                 }
             }
+            Text("거래처를 누르면 거래내역서를 사진으로 보낼 수 있어요.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (m.jobEarned > 0) {
                 Text("3.3% 떼고 받으면 ${Fmt.won(m.jobEarned - m.jobEarned * 33 / 1000)} · 5월 종합소득세 때 돌려받을 수 있어요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,

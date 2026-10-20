@@ -116,8 +116,18 @@ data class Job(
     val payable: Long get() = amount - withheld
     val balance: Long get() = (payable - deposit).coerceAtLeast(0)
     val received: Long get() = (if (depositPaid) deposit.coerceAtMost(payable) else 0) + (if (balancePaid) balance else 0)
-    val unpaid: Long get() = (payable - received).coerceAtLeast(0)
+    /** [FLD-03] A cancelled job is owed nothing more; a deposit already paid is kept. */
+    val unpaid: Long get() = if (cancelled) 0 else (payable - received).coerceAtLeast(0)
     val profit: Long get() = payable - costs
+
+    /** [FLD-03] Called off: counts for nothing but the deposit it kept. */
+    val cancelled: Boolean get() = status == JobStatus.CANCELLED
+
+    /** [FLD-03] What the job is worth to the user: its pay, or for a cancelled one only what was already paid. */
+    val earned: Long get() = if (cancelled) received else payable
+
+    /** [FLD-03] 입금 완료 follows from the money, not from a step the user picks. */
+    val fullyPaid: Boolean get() = !cancelled && amount > 0 && unpaid == 0L
 }
 
 /** [WORK-02] Withholding on 사업소득: 소득세 3% + 지방소득세 (소득세의 10%), each below 10 won dropped. */
@@ -289,11 +299,12 @@ object MoneyCalculator {
             month = month,
             payEstimate = payEstimate,
             payRecorded = salary.sumOf { it.amount },
-            jobEarned = j.sumOf { it.payable },
+            // [FLD-03] A cancelled job adds only the deposit it kept.
+            jobEarned = j.sumOf { it.earned },
             jobReceived = j.sumOf { it.received },
-            jobCount = j.size,
+            jobCount = j.count { !it.cancelled },
             jobCosts = j.sumOf { it.costs },
-            jobWithheld = j.sumOf { it.withheld },
+            jobWithheld = j.filter { !it.cancelled }.sumOf { it.withheld },
             sales = s.sumOf { it.sales },
             salesCosts = s.sumOf { it.costs },
             salesDays = s.count { it.sales != 0L || it.costs != 0L },
@@ -356,7 +367,12 @@ data class MoneyBook(
     val categories: List<CategoryEdit> = emptyList(),
     /** [TYPE-08] The calendar's kind of work, which picks its built-in categories. */
     val style: com.bamnat.core.work.WorkStyle? = null,
+    /** [SHOP-04] The kinds of work of the calendars merged into this book. */
+    val styles: Set<com.bamnat.core.work.WorkStyle> = emptySet(),
 ) {
+    /** [SHOP-04] Every kind of work behind this book, for the tax deadlines that go with them. */
+    val allStyles: Set<com.bamnat.core.work.WorkStyle> get() = styles + setOfNotNull(style)
+
     fun month(month: YearMonth, payEstimate: Long? = null) = MoneyCalculator.month(month, entries, jobs, sales, payEstimate)
     fun days(month: YearMonth) = MoneyCalculator.days(month, entries, jobs, sales)
     /** [RECV-02] Everything still owed, written down or left on a job. */
@@ -385,6 +401,7 @@ data class MoneyBook(
             return MoneyBook(
                 moved.flatMap { it.entries }, moved.flatMap { it.jobs }, moved.flatMap { it.sales }, moved.flatMap { it.fixed },
                 moved.flatMap { it.receivables }, moved.flatMap { it.accounts },
+                styles = books.flatMap { it.allStyles }.toSet(),
             )
         }
 

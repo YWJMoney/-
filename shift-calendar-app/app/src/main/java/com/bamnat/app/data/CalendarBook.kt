@@ -33,6 +33,10 @@ data class PersonalCalendar(
     val shop: com.bamnat.core.work.ShopRules? = null,
     /** False while its first setup is still being answered; such a calendar is not listed yet. */
     val ready: Boolean = true,
+    /** [FLD-01] For field work: 일당(공수)형 or 건별형, the day rate and the last 업체; null until set. */
+    val field: com.bamnat.core.money.FieldRules? = null,
+    /** [SHOP-02] For a shop: card fee and settlement days, opening cash, the sales target and VAT type; null until set. */
+    val shopMoney: com.bamnat.core.work.ShopMoney? = null,
     val createdAt: Long = 0,
 ) {
     val isMain: Boolean get() = id == MAIN
@@ -194,7 +198,7 @@ class CalendarBook(
     /** [MCAL-06] [everyMoney] read now, from a notice's receiver. */
     suspend fun everyMoneyNow(): com.bamnat.core.money.MoneyBook = merged(_calendars.value.map { cal ->
         val m = money(cal.id)
-        com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed(), m.allReceivables(), m.allAccounts())
+        com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed(), m.allReceivables(), m.allAccounts(), style = m.currentStyle())
     })
 
     /** [LEDG-08] Accounts and repeating lines keep to their own calendar ([com.bamnat.core.money.MoneyBook.merge]). */
@@ -293,6 +297,16 @@ class CalendarBook(
         update(id) { c -> c.shop?.let { c.copy(shop = transform(it)) } ?: c }
     }
 
+    /** [FLD-01] Changes a calendar's field settings from their current value (or the defaults). */
+    fun updateField(id: String, transform: (com.bamnat.core.money.FieldRules) -> com.bamnat.core.money.FieldRules) {
+        update(id) { c -> c.copy(field = transform(c.field ?: com.bamnat.core.money.FieldRules())) }
+    }
+
+    /** [SHOP-02] Changes a calendar's shop money settings from their current value (or the defaults). */
+    fun updateShopMoney(id: String, transform: (com.bamnat.core.work.ShopMoney) -> com.bamnat.core.work.ShopMoney) {
+        update(id) { c -> c.copy(shopMoney = transform(c.shopMoney ?: com.bamnat.core.work.ShopMoney())) }
+    }
+
     /** [CALS-02] The kind of work of calendar [id]: an added one's own, the main one's from [mainStyle]. */
     fun styleOf(id: String, mainStyle: WorkStyle?): WorkStyle? = get(id)?.takeIf { !it.isMain }?.style ?: mainStyle
 
@@ -333,7 +347,7 @@ class CalendarBook(
         val s = state.value
         val main = s.calendars.firstOrNull { it.isMain } ?: defaultMain()
         val restoredMain = calendars.firstOrNull { it.isMain }
-        val list = listOf(restoredMain?.let { main.copy(name = it.name, color = it.color, shop = it.shop) } ?: main) +
+        val list = listOf(restoredMain?.let { main.copy(name = it.name, color = it.color, shop = it.shop, field = it.field, shopMoney = it.shopMoney) } ?: main) +
             calendars.filter { !it.isMain }.map { it.copy(ready = true) }
         write(State(list, order ?: s.order, PersonalCalendar.MAIN))
     }
@@ -407,6 +421,8 @@ class CalendarBook(
             .put("id", id).put("name", name).put("color", color).putOpt("style", style?.name)
             .put("alarms", alarms).put("ready", ready).put("created", createdAt)
             .putOpt("shop", shop?.let(::shopJson))
+            .putOpt("field", field?.let(::fieldJson))
+            .putOpt("shopMoney", shopMoney?.let(::shopMoneyJson))
 
         fun fromJson(o: JSONObject): PersonalCalendar? {
             val id = o.optString("id").takeIf { it.isNotEmpty() && it.length <= 40 && it.all { c -> c.isLetterOrDigit() } } ?: return null
@@ -419,6 +435,37 @@ class CalendarBook(
                 ready = o.optBoolean("ready", true),
                 createdAt = o.optLong("created"),
                 shop = o.optJSONObject("shop")?.let(::shopOf),
+                field = o.optJSONObject("field")?.let(::fieldOf),
+                shopMoney = o.optJSONObject("shopMoney")?.let(::shopMoneyOf),
+            )
+        }
+
+        /** [FLD-01] */
+        fun fieldJson(r: com.bamnat.core.money.FieldRules): JSONObject = JSONObject()
+            .putOpt("mode", r.mode?.name).put("rate", r.dayRate).put("client", r.lastClient)
+            .putOpt("notMatched", r.notMatched.takeIf { it.isNotEmpty() }?.joinToString(","))
+
+        fun fieldOf(o: JSONObject): com.bamnat.core.money.FieldRules = com.bamnat.core.money.FieldRules(
+            mode = o.optString("mode").takeIf { it.isNotEmpty() }?.let { m -> runCatching { com.bamnat.core.money.FieldMode.valueOf(m) }.getOrNull() },
+            dayRate = o.optLong("rate").coerceAtLeast(0),
+            lastClient = o.optString("client").take(30),
+            notMatched = o.optString("notMatched").split(',').mapNotNull { it.toLongOrNull() },
+        )
+
+        /** [SHOP-02] */
+        fun shopMoneyJson(r: com.bamnat.core.work.ShopMoney): JSONObject = JSONObject()
+            .put("feeBp", r.cardFeeBp).put("settleDays", r.settleDays).put("opening", r.openingCash)
+            .put("target", r.monthlyTarget).put("simpleTax", r.simpleTax).put("valueAdded", r.valueAddedPercent)
+
+        fun shopMoneyOf(o: JSONObject): com.bamnat.core.work.ShopMoney {
+            val d = com.bamnat.core.work.ShopMoney()
+            return com.bamnat.core.work.ShopMoney(
+                cardFeeBp = o.optInt("feeBp", d.cardFeeBp).coerceIn(0, 1000),
+                settleDays = o.optInt("settleDays", d.settleDays).coerceIn(0, 30),
+                openingCash = o.optLong("opening").coerceAtLeast(0),
+                monthlyTarget = o.optLong("target").coerceAtLeast(0),
+                simpleTax = o.optBoolean("simpleTax"),
+                valueAddedPercent = o.optInt("valueAdded", d.valueAddedPercent).coerceIn(0, 100),
             )
         }
 

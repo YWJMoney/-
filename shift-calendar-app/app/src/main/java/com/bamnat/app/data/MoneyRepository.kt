@@ -28,6 +28,7 @@ import com.bamnat.core.money.Recurring
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -77,6 +78,9 @@ class MoneyRepository(
         combine(entries, jobs, sales, fixed, receivables) { e, j, s, f, r -> MoneyBook(e, j, s, f, r) }, plans,
     ) { b, (a, bu, c) -> b.copy(accounts = a, budgets = bu, categories = c) }
         .combine(style.distinctUntilChanged()) { b, st -> b.copy(style = st) }.flowOn(Dispatchers.Default)
+
+    /** [SHOP-04] The calendar's kind of work now, for the tax deadlines that go with it. */
+    suspend fun currentStyle(): com.bamnat.core.work.WorkStyle? = style.firstOrNull()
 
     /**
      * Inserts a new line or replaces the one with the same id; returns it with its id. When the user

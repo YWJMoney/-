@@ -109,6 +109,8 @@ fun JobRow(job: Job, showDate: Boolean = false, onClick: () -> Unit) {
         Column(horizontalAlignment = Alignment.End) {
             Text(Fmt.won(job.payable), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             when {
+                // [FLD-03] 가계약 and 취소 say so; a cancelled job owes nothing.
+                job.cancelled || job.status == com.bamnat.core.money.JobStatus.TENTATIVE -> JobStatusTag(job)
                 job.amount == 0L -> Unit
                 job.unpaid == 0L -> Text("다 받음", style = MaterialTheme.typography.labelSmall, color = cal.income)
                 else -> Text("받을 돈 ${Fmt.won(job.unpaid)}", style = MaterialTheme.typography.labelSmall, color = cal.warning)
@@ -138,6 +140,7 @@ fun SalesSection(date: LocalDate, sales: DailySales?, actions: MoneyActions) {
                 Text(sales.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp))
             }
+            SalesDayExtras(sales)
         }
     }
     if (editing) SalesDialog(date, sales, onSave = { actions.saveSales(it); editing = false }, onDismiss = { editing = false })

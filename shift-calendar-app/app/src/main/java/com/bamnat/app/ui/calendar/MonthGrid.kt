@@ -154,6 +154,8 @@ internal class MonthMoneyCells(
     /** Jobs starting on each date. */
     val starts: Map<LocalDate, Int>,
     private val bestSales: Long,
+    /** [FLD-04] The jobs on each day, for field work's client-coloured bars. */
+    val field: Map<LocalDate, List<com.bamnat.core.money.Job>> = emptyMap(),
 ) {
     /** [CAL-06] How strong a shop's day was against the month's best, 0 for a day without sales. */
     fun heat(date: LocalDate): Float =
@@ -176,7 +178,8 @@ internal class MonthMoneyCells(
             }
             val sales = money.sales.filter { it.date in from..to && it.sales > 0 }.associate { it.date to it.sales }
             val starts = money.jobs.filter { it.date in from..to }.groupingBy { it.date }.eachCount()
-            return MonthMoneyCells(days, spans, sales, starts, sales.values.maxOrNull() ?: 0)
+            return MonthMoneyCells(days, spans, sales, starts, sales.values.maxOrNull() ?: 0,
+                if (money.style == com.bamnat.core.work.WorkStyle.FIELD) fieldJobsOf(money, from, to) else emptyMap())
         }
     }
 }
@@ -219,6 +222,7 @@ fun MonthGrid(
     val cells = remember(money, month, firstCell) {
         MonthMoneyCells.of(money, listOf(month), firstCell, firstCell.plusDays(GRID_ROWS * 7L - 1))
     }
+    val cardDue = rememberCardDue(money)
     // Days under the finger while painting, shown at once and written when it lifts.
     var dragged by remember { mutableStateOf<List<LocalDate>>(emptyList()) }
     val paint by rememberUpdatedState(onPaint)
@@ -308,6 +312,8 @@ fun MonthGrid(
                         startsHere = cells.starts[date] ?: 0,
                         sales = cells.sales[date],
                         heat = if (focus == CalendarFocus.SALES && inMonth) cells.heat(date) else 0f,
+                        fieldJobs = cells.field[date],
+                        cardDue = date in cardDue,
                         onLongPress = onLongPress?.let { f -> { f(date) } },
                         isRangeStart = date == rangeFrom,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -349,6 +355,7 @@ fun WeekStrip(
     val cells = remember(money, monday) {
         MonthMoneyCells.of(money, listOf(YearMonth.from(monday), YearMonth.from(monday.plusDays(6))), monday, monday.plusDays(6))
     }
+    val cardDue = rememberCardDue(money)
     Row(modifier.fillMaxWidth().height(cellHeight).padding(start = WEEK_BAR_SPACE)) {
         for (col in 0 until 7) {
             val date = monday.plusDays(col.toLong())
@@ -372,6 +379,8 @@ fun WeekStrip(
                 span = cells.spans[date],
                 startsHere = cells.starts[date] ?: 0,
                 sales = cells.sales[date],
+                fieldJobs = cells.field[date],
+                cardDue = date in cardDue,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
         }
@@ -406,6 +415,10 @@ private fun DayCell(
     heat: Float = 0f,
     onLongPress: (() -> Unit)? = null,
     isRangeStart: Boolean = false,
+    /** [FLD-04] Field work's jobs on this day, drawn in their clients' colours. */
+    fieldJobs: List<com.bamnat.core.money.Job>? = null,
+    /** [SHOP-02] A card deposit is expected this day. */
+    cardDue: Boolean = false,
 ) {
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
@@ -458,6 +471,9 @@ private fun DayCell(
         // [VIS-02] Said the way the day screen says it.
         if (day.alarmSkipped) append(", 알람 꺼짐")
         if (hasMemo) append(", 메모 있음")
+        fieldUnitsText(fieldJobs)?.let { append(", ").append(it) }
+        fieldJobs?.filter { it.status == com.bamnat.core.money.JobStatus.TENTATIVE || it.cancelled }?.forEach { append(", ‘${it.title}’ ${it.status.label}") }
+        if (cardDue) append(", 카드 입금 예정")
         span?.let { append(", ‘${it.title}’ ${it.days}일 중 ${it.nth}일째") }
         money?.let { m ->
             if (m.jobs > 0 && (span == null || m.jobs > 1)) append(", 일감 ${m.jobs}건")
@@ -546,6 +562,7 @@ private fun DayCell(
                         modifier = Modifier.align(Alignment.TopStart).size(13.dp))
                 }
                 topStart?.let { Box(Modifier.align(Alignment.TopStart)) { CornerMark(it) } }
+                if (cardDue && topStart == null && !alarmOff) CardDueMark(Modifier.align(Alignment.TopStart))
             }
             val fullLeave = day.leave?.takeIf { it.isFullDay }
             val covered = day.coveredShift
@@ -553,7 +570,9 @@ private fun DayCell(
             // [CAL-05] For field and shop work a job outranks a day-off mark; a painted 휴무 is not the day's news.
             val jobFirst = focus != CalendarFocus.SHIFTS && jobs > 0 && (type == null || type.isOff) && !day.hasCustomTimes &&
                 fullLeave == null && covered == null && badgeKind == null
-            if (jobFirst) {
+            if (jobFirst && !fieldJobs.isNullOrEmpty()) {
+                FieldJobMarks(fieldJobs, date)
+            } else if (jobFirst) {
                 JobMark(span = span, count = if (span != null && startsHere == 0) 0 else jobs, owed = (money?.unpaid ?: 0) > 0 || span?.owed == true && span.first)
             } else if (fullLeave != null) {
                 // A whole day of leave shows the leave instead of the shift it replaced [FEAT-10].
@@ -580,8 +599,11 @@ private fun DayCell(
                 // [CAL-05] A shop's cell says its sales; field work says what came in.
                 val moneyText = if (!showMoney) null else (sales?.takeIf { focus == CalendarFocus.SALES } ?: money?.income?.takeIf { it != 0L })
                     ?.let { Fmt.wonShort(it) }
+                // [FLD-02] A day-rate day says its 공수 ("1공", "0.5") under the bar.
+                val unitsText = if (focus == CalendarFocus.JOBS) fieldUnitsText(fieldJobs) else null
                 val footer = when {
                     memoText != null -> memoText
+                    unitsText != null -> unitsText
                     moneyText != null -> moneyText
                     extraMinutes > 0 -> "+" + HoursFormat.short(extraMinutes)
                     // [FEAT-05] Lunar date takes the place of the hours when turned on.
@@ -600,6 +622,7 @@ private fun DayCell(
                     overflow = TextOverflow.Clip,
                     color = when {
                         memoText != null -> cal.memoDot
+                        unitsText != null -> scheme.onSurface
                         moneyText != null -> if ((sales ?: money?.income ?: 0L) < 0) cal.expense else cal.income
                         extraMinutes > 0 -> cal.holidayWork
                         else -> scheme.onSurfaceVariant

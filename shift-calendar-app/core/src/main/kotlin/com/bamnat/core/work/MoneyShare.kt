@@ -44,7 +44,7 @@ object MoneyShareFigures {
 
     /** A freelancer's job income per month, on each job's first day, after 3.3% when it is held back. */
     fun jobs(months: List<YearMonth>, jobs: List<Job>): List<MonthFigure> = months.mapNotNull { m ->
-        val inMonth = jobs.filter { YearMonth.from(it.date) == m && it.amount > 0 }
+        val inMonth = jobs.filter { YearMonth.from(it.date) == m && it.amount > 0 && !it.cancelled }
         if (inMonth.isEmpty()) null else MonthFigure(m, inMonth.sumOf { it.payable }.coerceAtLeast(0), "일감 ${inMonth.size}건")
     }
 

@@ -207,6 +207,10 @@ fun CalendarEditScreen(
                             if (moneyFirst || state.hasPay) words.incomeHint else "아직 정하지 않았어요 · ${words.incomeHint}",
                             if (moneyFirst) onMoney else onPay,
                         )
+                        if (state.style == WorkStyle.FIELD) {
+                            HorizontalDivider()
+                            FieldModeSetting(cal)
+                        }
                     }
                 }
                 Card(Modifier.fillMaxWidth()) {

@@ -106,9 +106,14 @@ class AppContainer(context: Context) {
      */
     suspend fun capture(text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean): MoneyRepository.Outcome =
         captureLock.withLock {
-            val target = runCatching { captureCalendar(text, pkg, postedAt) }
+            // [SHOP-08] A card terminal's or delivery app's notice goes to the shop calendar.
+            val target = com.bamnat.app.money.ShopNotices.route(this, pkg, app) ?: runCatching { captureCalendar(text, pkg, postedAt) }
                 .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
                 .getOrDefault(com.bamnat.app.data.PersonalCalendar.MAIN)
+            // [SHOP-08] On a shop calendar its sales and card deposits are taken as sales, not ledger lines.
+            runCatching { com.bamnat.app.money.ShopNotices.take(this, target, text, pkg, app, postedAt) }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                .getOrNull()?.let { return@withLock it }
             val others = calendars.calendars.value.map { it.id }.filter { it != target }
             calendars.money(target).capture(text, app, postedAt, fromMessenger) { day ->
                 others.flatMap { id -> runCatching { calendars.money(id).recent(day) }.getOrDefault(emptyList()) }

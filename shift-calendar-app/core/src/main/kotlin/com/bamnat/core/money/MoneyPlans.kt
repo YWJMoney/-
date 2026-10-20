@@ -174,8 +174,12 @@ object MoneyAlerts {
         jobs: List<Job>, costs: List<FixedCost>, entries: List<MoneyEntry>, today: LocalDate,
         receivables: List<Receivable> = emptyList(),
         accounts: List<MoneyAccount> = emptyList(),
+        /** [SHOP-04] The kinds of work the user's calendars have, for the tax deadlines that go with them. */
+        styles: Set<com.bamnat.core.work.WorkStyle> = emptySet(),
     ): List<Alert> = buildList {
         for (j in jobs) {
+            // [FLD-03] A cancelled job neither starts nor owes.
+            if (j.cancelled) continue
             val start = j.start
             val before = j.remindMinutes
             if (start != null && before != null) {
@@ -183,8 +187,10 @@ object MoneyAlerts {
                 add(Alert(j.date.atTime(start).minusMinutes(before.toLong()), "job-${j.id}", j.title.ifBlank { "일감" }, "${JobReminders.label(before)} · $text"))
             }
             if (j.unpaid > 0) {
+                // [FLD-09] The day after the promised day and a week after it; without one, after the last day.
+                val from = j.due ?: j.lastDate
                 for ((n, after) in listOf(1L, 7L).withIndex()) {
-                    add(Alert(j.lastDate.plusDays(after).atTime(NUDGE_AT), "unpaid-${j.id}-$n", "받을 돈이 남았어요",
+                    add(Alert(from.plusDays(after).atTime(NUDGE_AT), "unpaid-${j.id}-$n", if (j.due != null) "입금 약속일이 지났어요" else "받을 돈이 남았어요",
                         "${j.title.ifBlank { "일감" }}${j.client.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""} · ${won(j.unpaid)}"))
                 }
             }
@@ -220,6 +226,8 @@ object MoneyAlerts {
             val who = r.who.trim().takeIf { it.isNotBlank() && it != r.name }?.let { " ($it)" } ?: ""
             add(Alert(at.first.atTime(NUDGE_AT), "owed-${r.id}-$n", at.second, "${r.name}$who · ${won(r.left)}"))
         }
+        // [SHOP-04] 부가세 and 종합소득세 deadlines for shop and field work.
+        for (t in TaxDeadlines.alerts(today, styles)) add(Alert(t.at, t.key, t.title, t.text))
     }
 
     /** The alerts at the earliest time strictly after [now]; empty when none is ahead. */
@@ -227,8 +235,9 @@ object MoneyAlerts {
         jobs: List<Job>, costs: List<FixedCost>, entries: List<MoneyEntry>, now: LocalDateTime,
         receivables: List<Receivable> = emptyList(),
         accounts: List<MoneyAccount> = emptyList(),
+        styles: Set<com.bamnat.core.work.WorkStyle> = emptySet(),
     ): List<Alert> {
-        val ahead = all(jobs, costs, entries, now.toLocalDate(), receivables, accounts).filter { it.at.isAfter(now) }
+        val ahead = all(jobs, costs, entries, now.toLocalDate(), receivables, accounts, styles).filter { it.at.isAfter(now) }
         val first = ahead.minOfOrNull { it.at } ?: return emptyList()
         return ahead.filter { it.at == first }.sortedBy { it.key }
     }
@@ -238,8 +247,9 @@ object MoneyAlerts {
         jobs: List<Job>, costs: List<FixedCost>, entries: List<MoneyEntry>, at: LocalDateTime,
         receivables: List<Receivable> = emptyList(),
         accounts: List<MoneyAccount> = emptyList(),
+        styles: Set<com.bamnat.core.work.WorkStyle> = emptySet(),
     ): List<Alert> =
-        all(jobs, costs, entries, at.toLocalDate(), receivables, accounts).filter { it.at == at }.sortedBy { it.key }
+        all(jobs, costs, entries, at.toLocalDate(), receivables, accounts, styles).filter { it.at == at }.sortedBy { it.key }
 
     private fun won(v: Long) = "%,d원".format(v)
 }

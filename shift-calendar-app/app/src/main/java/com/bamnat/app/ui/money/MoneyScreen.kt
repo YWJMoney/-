@@ -473,6 +473,8 @@ fun MoneyScreen(
         if (!wide) NewRecordsCard(unseen, captures, onOpen = { editing = it }, onAllSeen = vm::markAllSeen,
             onFinish = { finishing = it }, onDrop = vm::dropCapture)
         HeroCard(m, budget, today, onBudget = { budgeting = true })
+        // [FLD-06][SHOP-02] A deposit that may be a job's money; card deposits still to come.
+        WorkMoneyCards(vm.calendarId, book, style, today)
         BudgetCard(budget, today, onEdit = { budgeting = true })
         OtherPlacesCard(otherPlaces, book.categoriesOf(MoneyKind.EXPENSE), onPick = { g, c -> vm.recategorize(g.entries, c) })
         UpcomingCard(upcoming, book.fixed, leftFixed, onRecord = { vm.recordFixed(it, today) },

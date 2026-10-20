@@ -207,7 +207,8 @@ object WorkStats {
     }
 
     fun clients(month: YearMonth, jobs: List<Job>): List<ClientTotal> =
-        jobs.filter { YearMonth.from(it.date) == month }
+        // [FLD-03] Cancelled jobs are left out.
+        jobs.filter { YearMonth.from(it.date) == month && !it.cancelled }
             .groupBy { it.client.trim().ifEmpty { "거래처 미정" } }
             .map { (c, l) -> ClientTotal(c, l.size, l.sumOf { it.payable }, l.sumOf { it.unpaid }) }
             .sortedWith(compareByDescending<ClientTotal> { it.earned }.thenBy { it.client })

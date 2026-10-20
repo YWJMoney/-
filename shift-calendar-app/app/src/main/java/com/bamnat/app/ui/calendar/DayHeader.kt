@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.appContainer
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.tween
@@ -447,9 +448,18 @@ private fun QuickChips(
     }
     val alarms = remember(snapshot, day.date) { plannedAlarms(snapshot, day) }
     val log by vm.sleepLog.collectAsStateWithLifecycle()
+    // [FLD-01][FLD-02] A day-rate field calendar offers 공수 buttons instead of 일감 적기.
+    val calendar by vm.activeCalendar.collectAsStateWithLifecycle()
+    val calendars = androidx.compose.ui.platform.LocalContext.current.appContainer.calendars
+    val fieldRules = calendar.field ?: com.bamnat.core.money.FieldRules()
+    val dayRate = focus == CalendarFocus.JOBS && fieldRules.dayRateMode
     ChipRow(modifier, start = 12.dp, end = endSpace) {
+        if (dayRate) dayRateChips(day.date, book, fieldRules, onDelete = vm::deleteJob, onSave = { job, r ->
+            calendars.updateField(calendar.id) { it.copy(dayRate = r.dayRate, lastClient = r.lastClient) }
+            vm.saveJob(job)
+        })
         // [CAL-05] Field and shop work: the day's job or sales is the first chip.
-        focus.addLabel?.let { label ->
+        focus.addLabel?.takeIf { !dayRate }?.let { label ->
             val hasSales = focus == CalendarFocus.SALES && book.on(day.date).sales != null
             item {
                 AssistChip(
@@ -516,7 +526,13 @@ private fun QuickChips(
         }
     }
     if (addingMoney) {
-        if (focus == CalendarFocus.JOBS) {
+        // [FLD-01] The first 일감 적기 on a field calendar asks once how it counts its work.
+        if (focus == CalendarFocus.JOBS && calendar.field?.mode == null) {
+            FieldModePrompt { m ->
+                calendars.updateField(calendar.id) { it.copy(mode = m) }
+                if (m == com.bamnat.core.money.FieldMode.DAY_RATE) addingMoney = false
+            }
+        } else if (focus == CalendarFocus.JOBS) {
             com.bamnat.app.ui.money.JobDialog(day.date, null, onSave = { vm.saveJob(it); addingMoney = false }, onDismiss = { addingMoney = false })
         } else {
             com.bamnat.app.ui.money.SalesDialog(day.date, book.on(day.date).sales,

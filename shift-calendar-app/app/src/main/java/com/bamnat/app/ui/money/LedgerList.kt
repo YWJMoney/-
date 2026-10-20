@@ -678,6 +678,8 @@ private fun ExportDialog(shown: List<MoneyEntry>, book: MoneyBook, range: Pair<L
                 Text(name, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 Text("파일은 이 휴대폰에서 만들어지고, 보낼 곳은 직접 골라요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // [SHOP-07] Daily sales and jobs as their own files.
+                WorkCsvButtons(book, range, onMessage, onDismiss)
             }
         },
         confirmButton = {
