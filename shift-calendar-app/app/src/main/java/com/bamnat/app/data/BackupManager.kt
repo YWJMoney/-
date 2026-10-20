@@ -171,6 +171,8 @@ class BackupManager(
                 put(JSONObject().put("id", p.id).put("owed", p.receivableId).put("day", p.epochDay).put("amount", p.amount).putOpt("entry", p.entryId))
             }
         })
+        // [INV-10] An investor calendar's accounts, trades, deposits, journal, alarms and settings (version 18).
+        InvestBackup.put(source)?.let { into.put("invest", it) }
     }
 
     /** [MCAL-06] A calendar's pay setup and closed months. */
@@ -259,7 +261,9 @@ class BackupManager(
             exportedAtMillis = root.optLong("exportedAt"),
             moneyLines = (root.optJSONArray("money")?.length() ?: 0) + (root.optJSONArray("jobs")?.length() ?: 0) +
                 (root.optJSONArray("sales")?.length() ?: 0) + (root.optJSONArray("fixed")?.length() ?: 0) +
-                (root.optJSONArray("owed")?.length() ?: 0),
+                (root.optJSONArray("owed")?.length() ?: 0) +
+                // [INV-10] The main calendar's trades and deposits.
+                (root.optJSONObject("invest")?.let { (it.optJSONArray("trades")?.length() ?: 0) + (it.optJSONArray("cash")?.length() ?: 0) } ?: 0),
             sleeps = root.optJSONArray("sleep")?.length() ?: 0,
             hasPay = root.has("pay"),
             calendars = root.optJSONArray("calendars")?.length() ?: 0,
@@ -347,6 +351,8 @@ class BackupManager(
         val fixed: List<FixedCostEntity>?, val rules: List<CategoryRuleEntity>?,
         val accounts: List<MoneyAccountEntity>?, val budgets: List<MoneyBudgetEntity>?, val categories: List<MoneyCategoryEntity>?,
         val owed: List<com.bamnat.app.data.db.ReceivableEntity>?, val owedPaid: List<com.bamnat.app.data.db.ReceivablePaymentEntity>?,
+        /** [INV-10] Null for a backup without investor records: the phone's then stay. */
+        val invest: InvestBackup.Rows? = null,
     )
 
     private fun readMoney(from: JSONObject): MoneyRows {
@@ -413,7 +419,8 @@ class BackupManager(
                 cashCounted = o.optLongOrNull("counted"), cardSettled = o.optBoolean("settled"),
             )
         }
-        return MoneyRows(entries, jobs, sales, fixed, rules, accounts, budgets, categories, owed, owedPaid)
+        val invest = from.optJSONObject("invest")?.let(InvestBackup::read)
+        return MoneyRows(entries, jobs, sales, fixed, rules, accounts, budgets, categories, owed, owedPaid, invest)
     }
 
     /** [MCAL-06] Replaces a calendar's money with a backup's, part by part; call inside its transaction. */
@@ -436,6 +443,8 @@ class BackupManager(
             list.forEach { dao.restore(it) }
             rows.owedPaid?.forEach { dao.restorePayment(it) }
         }
+        // [INV-10] Backups from before version 18, or of a calendar with no investor records, leave the phone's.
+        rows.invest?.let { InvestBackup.write(target, it) }
     }
 
     suspend fun restore(json: String) {

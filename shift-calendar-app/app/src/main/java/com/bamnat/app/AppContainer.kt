@@ -258,6 +258,8 @@ class AppContainer(context: Context) {
                 .debounce(300)
                 .collect { com.bamnat.app.memo.MemoScheduleAlarm.reschedule(appContext, it) }
         }
+        // [INV-08] An investor alarm or date saved, changed or restored re-plans the next investor notice.
+        com.bamnat.app.invest.InvestNotices.follow(this)
         // [SLP-15] 하루 브리핑, 퇴근길 and 잘 준비 follow the schedule, the alarms and their settings.
         keep("notices") {
             val reads = settingsRepository.settings.map {

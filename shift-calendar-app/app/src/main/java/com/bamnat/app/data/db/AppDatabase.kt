@@ -14,8 +14,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FixedCostEntity::class, CategoryRuleEntity::class, DayChangeEntity::class, SleepLogEntity::class,
         DayExtraEntity::class, ReceivableEntity::class, ReceivablePaymentEntity::class, ImportedEventEntity::class,
         MoneyAccountEntity::class, MoneyBudgetEntity::class, MoneyCategoryEntity::class,
+        // [INV-01] Version 18: the investor calendar.
+        InvestAccountEntity::class, InvestTradeEntity::class, InvestCashEntity::class, InvestQuoteEntity::class,
+        InvestJournalEntity::class, InvestEventEntity::class, InvestAlarmEntity::class, InvestSnapshotEntity::class,
+        InvestSettingEntity::class,
     ],
-    version = 17,
+    version = 18,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -29,12 +33,13 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun dayExtraDao(): DayExtraDao
     abstract fun receivableDao(): ReceivableDao
     abstract fun importedEventDao(): ImportedEventDao
+    abstract fun investDao(): InvestDao
 
     companion object {
         /** [MCAL-01] Each added calendar is a database of its own with the same tables; only its schedule ones are used. */
         fun create(context: Context, name: String = "bamnat.db"): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, name)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
                 .build()
 
         /** Version 2: several alarms per shift, hand-set alarms per day, memo trash. */
@@ -266,6 +271,32 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE memos ADD COLUMN repeat TEXT NOT NULL DEFAULT ''")
             }
         }
+
+        /**
+         * Version 18 [INV-01]: the investor calendar's tables. Only new tables: every row of version 17
+         * keeps its meaning, and a calendar of another kind leaves them empty.
+         */
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                INVEST_TABLES.forEach(db::execSQL)
+            }
+        }
+
+        /** As Room writes them in schemas/18.json, so a migrated database matches a fresh one. */
+        private val INVEST_TABLES = listOf(
+            "CREATE TABLE IF NOT EXISTS `invest_accounts` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `type` TEXT NOT NULL, `broker` TEXT NOT NULL, `feeRate` REAL, `sortOrder` INTEGER NOT NULL, `hidden` INTEGER NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS `invest_trades` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `accountId` INTEGER NOT NULL, `epochDay` INTEGER NOT NULL, `minuteOfDay` INTEGER, `symbol` TEXT NOT NULL, `name` TEXT NOT NULL, `market` TEXT NOT NULL, `side` TEXT NOT NULL, `quantity` REAL NOT NULL, `price` REAL NOT NULL, `currency` TEXT NOT NULL, `fxRate` REAL NOT NULL, `fee` REAL NOT NULL, `tax` REAL NOT NULL, `reason` TEXT NOT NULL, `emotions` TEXT NOT NULL, `tags` TEXT NOT NULL, `followedRules` INTEGER, `memo` TEXT NOT NULL, `alarmId` INTEGER, `createdAt` INTEGER NOT NULL)",
+            "CREATE INDEX IF NOT EXISTS `index_invest_trades_epochDay` ON `invest_trades` (`epochDay`)",
+            "CREATE TABLE IF NOT EXISTS `invest_cash` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `accountId` INTEGER NOT NULL, `epochDay` INTEGER NOT NULL, `minuteOfDay` INTEGER, `kind` TEXT NOT NULL, `amount` INTEGER NOT NULL, `tax` INTEGER NOT NULL, `symbol` TEXT NOT NULL, `memo` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)",
+            "CREATE INDEX IF NOT EXISTS `index_invest_cash_epochDay` ON `invest_cash` (`epochDay`)",
+            "CREATE TABLE IF NOT EXISTS `invest_quotes` (`symbol` TEXT NOT NULL, `name` TEXT NOT NULL, `market` TEXT NOT NULL, `price` REAL NOT NULL, `epochDay` INTEGER NOT NULL, PRIMARY KEY(`symbol`))",
+            "CREATE TABLE IF NOT EXISTS `invest_journal` (`epochDay` INTEGER NOT NULL, `market` TEXT NOT NULL, `review` TEXT NOT NULL, `checked` TEXT NOT NULL, `grade` TEXT, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`epochDay`))",
+            "CREATE TABLE IF NOT EXISTS `invest_events` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `epochDay` INTEGER NOT NULL, `kind` TEXT NOT NULL, `symbol` TEXT NOT NULL, `title` TEXT NOT NULL, `memo` TEXT NOT NULL, `remind` INTEGER NOT NULL)",
+            "CREATE INDEX IF NOT EXISTS `index_invest_events_epochDay` ON `invest_events` (`epochDay`)",
+            "CREATE TABLE IF NOT EXISTS `invest_alarms` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `kind` TEXT NOT NULL, `label` TEXT NOT NULL, `minuteOfDay` INTEGER NOT NULL, `weekdays` TEXT NOT NULL, `monthDay` INTEGER, `onceEpochDay` INTEGER, `skipHolidays` INTEGER NOT NULL, `symbol` TEXT NOT NULL, `name` TEXT NOT NULL, `market` TEXT NOT NULL, `accountId` INTEGER, `side` TEXT NOT NULL, `quantity` REAL, `amount` INTEGER, `targetPrice` REAL, `enabled` INTEGER NOT NULL, `ring` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS `invest_snapshots` (`epochDay` INTEGER NOT NULL, `value` INTEGER NOT NULL, `principal` INTEGER NOT NULL, PRIMARY KEY(`epochDay`))",
+            "CREATE TABLE IF NOT EXISTS `invest_settings` (`key` TEXT NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`key`))",
+        )
 
         private val INSTALLMENTS = Regex("(\\d{1,2})개월 할부")
 

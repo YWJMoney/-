@@ -82,6 +82,7 @@ internal fun AgendaList(
                     CalendarFocus.SHIFTS -> "${m.monthValue}월에 적힌 근무가 없어요"
                     CalendarFocus.JOBS -> "${m.monthValue}월에 잡힌 일감이 없어요"
                     CalendarFocus.SALES -> "${m.monthValue}월에 적은 매출이 없어요"
+                    CalendarFocus.INVEST -> "${m.monthValue}월 매매는 ‘투자·수익’ 탭의 기록에서 날짜별로 볼 수 있어요"
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -105,6 +106,7 @@ private fun WeekRow(w: AgendaRow.Week, focus: CalendarFocus) {
         CalendarFocus.SHIFTS -> w.minutes.takeIf { it > 0 }?.let { HoursFormat.hours(it.toDouble()) + "시간" }
         CalendarFocus.JOBS -> if (w.jobs > 0) "일감 ${w.jobs}건 · ${Fmt.wonShort(w.jobEarned)}" else null
         CalendarFocus.SALES -> w.sales.takeIf { it > 0 }?.let { "매출 ${Fmt.wonShort(it)}" }
+        CalendarFocus.INVEST -> null
     }
     Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))

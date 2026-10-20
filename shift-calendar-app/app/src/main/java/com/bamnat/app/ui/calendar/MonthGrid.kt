@@ -221,6 +221,8 @@ fun MonthGrid(
     hourly: HourlyCells? = null,
     /** [DAYW-01] A day calendar: working days that just follow the pattern show no badge. */
     quietWorkDays: Boolean = false,
+    /** [INV-01] An investor calendar: days tinted by what they earned, trades and dates marked. */
+    invest: com.bamnat.app.ui.invest.InvestCells? = null,
 ) {
     val cal = LocalCalendarColors.current
     val haptics = LocalHapticFeedback.current
@@ -326,6 +328,7 @@ fun MonthGrid(
                         hourly = hourly,
                         holidayWeekDone = col == 6 && holidayWeek?.holidayPay == true,
                         quietWorkDays = quietWorkDays,
+                        invest = invest,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         weekNote = if (col == 0 && week.overLimit) {
                             "이 주 ${HoursFormat.hours(week.totalMinutes.toDouble())}시간, ${weeklyLimitHours}시간 넘음"
@@ -363,6 +366,7 @@ fun WeekStrip(
     hourly: HourlyCells? = null,
     /** [DAYW-01] As in [MonthGrid]. */
     quietWorkDays: Boolean = false,
+    invest: com.bamnat.app.ui.invest.InvestCells? = null,
 ) {
     val month = YearMonth.from(selected)
     val cells = remember(money, monday) {
@@ -396,6 +400,7 @@ fun WeekStrip(
                 cardDue = date in cardDue,
                 hourly = hourly,
                 quietWorkDays = quietWorkDays,
+                invest = invest,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
         }
@@ -438,6 +443,8 @@ private fun DayCell(
     holidayWeekDone: Boolean = false,
     /** [DAYW-01] Leave out the badge of a working day that just follows the pattern; TalkBack still says it. */
     quietWorkDays: Boolean = false,
+    /** [INV-01][INV-14] An investor calendar's day: tinted red or blue by its result, its trades and dates marked. */
+    invest: com.bamnat.app.ui.invest.InvestCells? = null,
 ) {
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
@@ -463,7 +470,7 @@ private fun DayCell(
     // Working days are tinted with their shift's color so the month reads at a glance.
     // A 대근 on a day off tints the cell with the covered shift [EXTRA-01].
     val dark = isDarkSurface()
-    val tint = (type?.takeIf { !it.isOff && day.leave?.isFullDay != true } ?: day.coveredShift)
+    val tint = invest?.tint(date, cal.sunday, cal.saturday, dark) ?: (type?.takeIf { !it.isOff && day.leave?.isFullDay != true } ?: day.coveredShift)
         ?.colorArgb?.asColor()?.copy(alpha = if (dark) 0.22f else 0.13f)
         ?: cal.income.takeIf { heat > 0f }?.copy(alpha = heat * if (dark) 0.30f else 0.20f)
     val jobs = money?.jobs ?: 0
@@ -504,6 +511,7 @@ private fun DayCell(
         // [HRLY-01][HRLY-02]
         day.entry?.attendance?.let { append(", ").append(it.label) }
         if (holidayWeekDone) append(", 이 주 주휴 충족")
+        invest?.describe(date)?.let { append(", ").append(it) }
     }
 
     Box(
@@ -584,7 +592,8 @@ private fun DayCell(
                         modifier = Modifier.align(Alignment.TopStart).size(13.dp))
                 }
                 topStart?.let { Box(Modifier.align(Alignment.TopStart)) { CornerMark(it) } }
-                if (cardDue && topStart == null && !alarmOff) CardDueMark(Modifier.align(Alignment.TopStart))
+                if (invest?.hasEvent(date) == true && topStart == null && !alarmOff) com.bamnat.app.ui.invest.InvestEventDot(Modifier.align(Alignment.TopStart))
+                else if (cardDue && topStart == null && !alarmOff) CardDueMark(Modifier.align(Alignment.TopStart))
                 else if (holidayWeekDone && topStart == null && !alarmOff) HolidayWeekCheck(Modifier.align(Alignment.TopStart).padding(start = 2.dp))
             }
             val fullLeave = day.leave?.takeIf { it.isFullDay }
@@ -616,6 +625,9 @@ private fun DayCell(
             } else if (hourly != null && hourlyRange != null) {
                 // [HRLY-03] An 알바 day's hours are its mark, not the shift code.
                 HourlyTimeMark(day, hourlyRange)
+            } else if (invest != null && invest.trades(date) > 0 && (type == null || type.isOff)) {
+                // [INV-01] A day with trades: how many.
+                com.bamnat.app.ui.invest.InvestDayMark(invest, date)
             } else if ((type != null || day.hasCustomTimes) && !(quietWorkDays && DayWork.isRoutine(day))) {
                 ShiftBadge(type = type, text = type?.label ?: "근", size = 22.dp, outlined = type?.isOff == true)
             } else {
@@ -628,10 +640,13 @@ private fun DayCell(
                     ?.let { Fmt.wonShort(it) })
                     // [HRLY-03] An 알바 day says what it earned.
                     ?: hourly?.payText(day)
+                // [INV-01] An investor's day says what it earned or lost.
+                val investText = invest?.footer(date)
                 // [FLD-02] A day-rate day says its 공수 ("1공", "0.5") under the bar.
                 val unitsText = if (focus == CalendarFocus.JOBS) fieldUnitsText(fieldJobs) else null
                 val footer = when {
                     memoText != null -> memoText
+                    investText != null -> investText
                     unitsText != null -> unitsText
                     moneyText != null -> moneyText
                     extraMinutes > 0 -> "+" + HoursFormat.short(extraMinutes)
@@ -651,12 +666,13 @@ private fun DayCell(
                     overflow = TextOverflow.Clip,
                     color = when {
                         memoText != null -> cal.memoDot
+                        investText != null && invest != null -> com.bamnat.app.ui.invest.investFooterColor(invest, date)
                         unitsText != null -> scheme.onSurface
                         moneyText != null -> if ((sales ?: money?.income ?: 0L) < 0) cal.expense else cal.income
                         extraMinutes > 0 -> cal.holidayWork
                         else -> scheme.onSurfaceVariant
                     },
-                    fontWeight = if (extraMinutes > 0 || moneyText != null) FontWeight.Bold else FontWeight.Normal,
+                    fontWeight = if (extraMinutes > 0 || moneyText != null || investText != null) FontWeight.Bold else FontWeight.Normal,
                     style = NumberStyle,
                 )
                 if (hasMemo && memoText == null) {

@@ -45,7 +45,12 @@ class WidgetData(
     val fieldWeek: WidgetFigures.FieldWeek? = null,
     /** [COMN-05] A day worker's 연차 left this year; null when the days granted are not set. */
     val leaveLeft: Double? = null,
+    /** [INV-16] An investor's today and each day's result. */
+    val invest: InvestLine? = null,
 ) {
+    /** [INV-16] What the investor's widgets say: today's result, the total return, each day's result. */
+    class InvestLine(val todayPnl: Long, val todayTrades: Int, val totalReturn: Double?, val days: Map<LocalDate, Long>, val hide: Boolean, val empty: Boolean)
+
     fun day(date: LocalDate): ResolvedDay = resolver.resolve(date)
 
     /** [CAL-11] Jobs running on [date], earliest first. */
@@ -62,6 +67,7 @@ class WidgetData(
         CalendarFocus.SHIFTS -> !hasPattern
         CalendarFocus.JOBS -> jobs.isEmpty() && !hasPattern
         CalendarFocus.SALES -> sales.isEmpty() && !hasPattern
+        CalendarFocus.INVEST -> (invest == null || invest.empty) && !hasPattern
     }
 
     companion object {
@@ -77,7 +83,7 @@ class WidgetData(
                     settings.restCheck, settings.strictRest)
             }
             // [CAL-11] Field and shop work fill the widgets from the money book, read on the phone only.
-            val book = if (focus == CalendarFocus.SHIFTS) null else container.calendars.money(PersonalCalendar.MAIN).book.first()
+            val book = if (focus == CalendarFocus.SHIFTS || focus == CalendarFocus.INVEST) null else container.calendars.money(PersonalCalendar.MAIN).book.first()
             val today = now.toLocalDate()
             // [COMN-05] Each kind of work's own line on the today widget.
             val hourly = if (settings.workStyle == WorkStyle.HOURLY) {
@@ -107,7 +113,17 @@ class WidgetData(
                 hourlyWeek = hourly,
                 fieldWeek = field,
                 leaveLeft = leaveLeft,
+                invest = if (focus == CalendarFocus.INVEST) investLine(container, now.toLocalDate()) else null,
             )
+        }
+
+        /** [INV-16] The main calendar's investor records, read on the phone only. */
+        private suspend fun investLine(container: com.bamnat.app.AppContainer, today: LocalDate): InvestLine {
+            val book = com.bamnat.app.data.InvestRepository.of(container.database).now()
+            val result = com.bamnat.core.invest.Portfolio.build(book)
+            val days = com.bamnat.core.invest.Portfolio.dailyPnl(result, book.cash)
+            return InvestLine(days[today] ?: 0L, book.trades.count { it.date == today }, result.summary.simpleReturn, days,
+                book.settings.hideAmounts, book.isEmpty)
         }
     }
 }

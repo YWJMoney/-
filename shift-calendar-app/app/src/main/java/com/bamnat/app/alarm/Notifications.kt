@@ -35,6 +35,8 @@ object Notifications {
     const val SHARE_CHANNEL_ID = "share_expiry_v1"
     /** [FEAT-18] The lock-screen 오늘 근무 notice: no sound, no badge, shown in full on the lock screen. */
     const val TODAY_CHANNEL_ID = "today_shift_v1"
+    /** [INV-08] The investor's 장 시작·마감, 정기 매수일, 목표가 확인 and date notices. */
+    const val INVEST_CHANNEL_ID = "invest_alarm_v1"
     /** Before 1.11 every sleep tip made a sound here; a channel's importance cannot be lowered, so it goes. */
     private const val OLD_SLEEP_CHANNEL_ID = "sleep_tips_v1"
 
@@ -121,7 +123,12 @@ object Notifications {
             setShowBadge(false)
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today))
+        val invest = NotificationChannel(INVEST_CHANNEL_ID, "투자 알림", NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "장 시작·마감, 정기 매수일, 목표가 확인, 적어 둔 배당·실적 날을 알려요. 알림에서 바로 매매를 적을 수 있어요"
+            group = GROUP_MONEY
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
+        }
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
     }
 
