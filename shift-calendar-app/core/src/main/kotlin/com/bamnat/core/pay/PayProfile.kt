@@ -218,4 +218,22 @@ data class PayProfile(
     val verified: PayslipCheck? = null,
     /** [PAYS-06] Rules the user stated in their own words, paid on top of everything else. */
     val customRules: List<CustomRule> = emptyList(),
-)
+    /** [HRLY-04] How tax comes off this pay, for 예상 실수령; nothing by default. */
+    val taxMode: TaxMode = TaxMode.NONE,
+    /**
+     * [HRLY-05] 법정 휴게 자동 빼기: a day with no break set gets the break 근로기준법 제54조 asks for, 30 minutes
+     * from 4 hours and an hour from 8 (see [com.bamnat.core.schedule.LegalBreak]).
+     */
+    val legalBreaks: Boolean = false,
+    /** [HRLY-06] 수습 감액: days before this date pay [probationPercent] of the hourly wage; null for none. */
+    val probationEnd: LocalDate? = null,
+    val probationPercent: Int = 90,
+    /** [HRLY-07] The weekday a 주휴 week starts on; null counts 주휴 by [weekStart] like the rest of the pay. */
+    val holidayWeekStart: DayOfWeek? = null,
+) {
+    /** [HRLY-07] The weekday 주휴 weeks start on. */
+    val holidayWeekFrom: DayOfWeek get() = holidayWeekStart ?: weekStart
+
+    /** [HRLY-06] True when [date] is paid at the 수습 rate. */
+    fun onProbation(date: LocalDate): Boolean = probationEnd?.let { date.isBefore(it) } == true && probationPercent in 1..99
+}

@@ -269,6 +269,9 @@ private fun PayResult(
         TotalCard(shown, range, unlocked, closed = closedSnap != null, onChecks = { checking = true },
             onEstimate = { estimate = Estimates.forMonth(shown, profile) })
 
+        // [HRLY-04..HRLY-08] 예상 실수령 and the settings only a part-timer needs.
+        if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) HourlyPayCard(vm, profile, shown.total, unlocked, snapshot, month)
+
         // [PAYS-01] Allowances whose amount is not known are in no figure; each says how often it came up.
         if (closedSnap == null && result.missing.isNotEmpty()) {
             SectionCard(title = "합계에 넣지 않은 수당") {

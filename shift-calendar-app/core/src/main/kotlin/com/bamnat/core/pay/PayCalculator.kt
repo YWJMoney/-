@@ -1,6 +1,8 @@
 package com.bamnat.core.pay
 
 import com.bamnat.core.holiday.KoreanHolidays
+import com.bamnat.core.model.Attendance
+import com.bamnat.core.schedule.LegalBreak
 import com.bamnat.core.schedule.ResolvedDay
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -137,11 +139,16 @@ class PayCalculator(
         // 탄력적 근로시간제 period's start so a period ending this month is settled whole. End with the
         // week holding the last day: extra work is the week's last hours, so the whole week decides.
         val weekFrom = periodStart.with(TemporalAdjusters.previousOrSame(profile.weekStart))
-        val from = flex?.start(periodStart)?.let { minOf(it, weekFrom) } ?: weekFrom
-        val to = periodEnd.with(TemporalAdjusters.nextOrSame(profile.weekStart.minus(1)))
+        // [HRLY-07] 주휴 weeks may start on another weekday; the days read reach over their weeks too.
+        val holidayWeekFrom = periodStart.with(TemporalAdjusters.previousOrSame(profile.holidayWeekFrom))
+        val from = minOf(flex?.start(periodStart)?.let { minOf(it, weekFrom) } ?: weekFrom, holidayWeekFrom)
+        val to = maxOf(periodEnd.with(TemporalAdjusters.nextOrSame(profile.weekStart.minus(1))),
+            periodEnd.with(TemporalAdjusters.nextOrSame(profile.holidayWeekFrom.minus(1))))
         // [PAYS-03] A break counted as work is work from the start: it can make 연장, 야간 and 주휴 hours.
+        // [HRLY-05] The legal break comes off first, so a break counted as work still pays it.
         val days = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }
-            .map(resolve).map { if (rules.breakPay == BreakPay.AS_WORK) it.breaksAsWork() else it }.toList()
+            .map(resolve).map { if (profile.legalBreaks) LegalBreak.apply(it) else it }
+            .map { if (rules.breakPay == BreakPay.AS_WORK) it.breaksAsWork() else it }.toList()
         // [EXTRA-02] The 주휴일 is a paid holiday under every company rule (제55조 제1항), except for an
         // approved 감시·단속 worker, who has none [PAYS-03].
         val weeklyHolidays = if (supervisory) emptySet() else weeklyHolidays(rules.weeklyHoliday, days, profile.weekStart)
@@ -244,6 +251,12 @@ class PayCalculator(
         // The week's 소정근로 for 주휴 counts paid leave and paid holidays as attended.
         val attendedByDate = days.associate { it.date to (paidLeaveByDate[it.date] ?: 0) + paidHolidayMinutes(it) }
             .filterValues { it > 0 }
+        // [HRLY-02] A 결근 breaks the week's 개근; 지각 and 조퇴 do not.
+        val absentDates = days.filter { it.entry?.attendance == Attendance.ABSENT }.map { it.date }.toSet()
+        // [HRLY-06] 수습 감액 taken off the base of each day before the probation ends.
+        val probationCut = (100 - profile.probationPercent).coerceIn(0, 100) / 100.0
+        var probationMinutes = 0
+        var probationTotal = 0L
 
         for (day in monthDays) {
             val m = byDate[day.date] ?: DayMinutes(day.date)
@@ -302,6 +315,12 @@ class PayCalculator(
                     if (reg == dailyMinutes) "일당 ${won(base.value)}" else "일당 ${won(base.value)} × ${hours(reg)} ÷ ${hours(dailyMinutes)}")
                 else -> DayPart(LineKind.BASE, "기본", money(reg, 1.0), "${hours(reg)} × ${won(hourly)}")
             })
+            if (byHour && reg > 0 && profile.onProbation(day.date)) {
+                val cut = (basePay(reg) * probationCut).roundToLong()
+                probationMinutes += reg
+                probationTotal += cut
+                parts.add(1, DayPart(LineKind.BASE, "수습 감액", -cut, "${hours(reg)} 기본의 ${100 - profile.probationPercent}%"))
+            }
             if (xr > 0) parts += DayPart(LineKind.EXTRA_HOURS, "소정 외 근로", money(xr, 1.0), "${hours(xr)} × ${won(hourly)} (8·40시간 이내)")
             if (ot > 0) parts += DayPart(LineKind.OVERTIME, "연장", money(ot, mOt), "${hours(ot)} × ${pct(mOt)}")
             if (n > 0 && pr.night > 0) parts += DayPart(LineKind.NIGHT, "야간 가산", money(n, pr.night), "${hours(n)} × ${pct(pr.night)} (${rules.nightLabel(rates)})")
@@ -399,6 +418,20 @@ class PayCalculator(
                     " (근로기준법 시행령 제6조 제2항 제2호)",
                 estimated = baseEstimated,
             )
+        }
+        // [HRLY-06] 수습 기간 (근로기준법 시행령 제3조): 최저임금의 90%까지만 줄일 수 있어요.
+        if (probationTotal > 0) {
+            lines += PayLine(
+                LineKind.BASE, "수습 감액", -probationTotal,
+                formula = "수습 중 기본 근무 ${hours(probationMinutes)}의 ${100 - profile.probationPercent}% (시급의 ${profile.probationPercent}%)",
+                minutes = probationMinutes, hourly = hourly,
+                basis = "${profile.probationEnd} 전까지 수습 · 최저임금법 제5조 제2항, 시행령 제3조",
+                estimated = baseEstimated,
+            )
+            if (hourly * profile.probationPercent / 100.0 < rates.minimumHourlyWage * 0.9) {
+                warnings += "수습 시급 ${won((hourly * profile.probationPercent / 100.0).roundToLong())}이 최저임금의 90%" +
+                    " ${won((rates.minimumHourlyWage * 0.9).roundToLong())}보다 낮아요. 수습이어도 그 아래로는 줄일 수 없어요"
+            }
         }
         if (paidBreak > 0) lines += line(
             LineKind.BASE, "유급 휴게", paidBreak, hourly, 1.0,
@@ -564,7 +597,7 @@ class PayCalculator(
 
         // [PAYS-03] An approved 감시·단속 worker has no 주휴 (제55조 is in chapter 4).
         if (byHour && rules.weeklyHolidayPay && !supervisory) {
-            weeklyHolidayLine(allMinutes, attendedByDate, weekFrom, periodStart, periodEnd, hourly, baseEstimated)?.let { lines += it }
+            weeklyHolidayLine(allMinutes, attendedByDate, holidayWeekFrom, periodStart, periodEnd, hourly, baseEstimated, absentDates)?.let { lines += it }
         }
 
         if (hourly in 1 until rates.minimumHourlyWage) {
@@ -885,18 +918,19 @@ class PayCalculator(
     /**
      * 주휴수당 [PAY-12 선행, 근로기준법 제55조·시행령 제30조]: each week ending in the pay period with at least
      * 15 scheduled hours earns (weekly hours ÷ 40) × 8 hours, at most 8. The calendar is taken as
-     * worked in full (개근). Extra work is not 소정근로 and does not count.
+     * worked in full (개근), except that [HRLY-02] a week with a day marked 결근 ([absent]) earns none.
+     * Extra work is not 소정근로 and does not count.
      */
     private fun weeklyHolidayLine(
         all: List<DayMinutes>, attended: Map<LocalDate, Int>, from: LocalDate, periodStart: LocalDate, periodEnd: LocalDate,
-        hourly: Long, estimated: Boolean,
+        hourly: Long, estimated: Boolean, absent: Set<LocalDate> = emptySet(),
     ): PayLine? {
         var weekStart = from
         var minutes = 0
         val weeks = mutableListOf<Int>()
         while (!weekStart.plusDays(6).isAfter(periodEnd)) {
             val end = weekStart.plusDays(6)
-            if (!end.isBefore(periodStart)) {
+            if (!end.isBefore(periodStart) && absent.none { !it.isBefore(weekStart) && !it.isAfter(end) }) {
                 // Paid leave and paid holidays count as attended hours of the week.
                 val worked = all.filter { !it.date.isBefore(weekStart) && !it.date.isAfter(end) }
                     .sumOf { it.regular + (attended[it.date] ?: 0) }
@@ -911,7 +945,7 @@ class PayCalculator(
         if (weeks.isEmpty()) return null
         return line(
             LineKind.ALLOWANCE, "주휴수당", minutes, hourly, 1.0,
-            "${weeks.size}주 (주마다 근무시간 ÷ 40 × 8시간, 최대 8시간)", "근로기준법 제55조, 시행령 제30조 (달력대로 개근 가정)", estimated,
+            "${weeks.size}주 (주마다 근무시간 ÷ 40 × 8시간, 최대 8시간)", "근로기준법 제55조, 시행령 제30조 (달력대로 개근 가정, 결근한 주는 빼요)", estimated,
         )
     }
 

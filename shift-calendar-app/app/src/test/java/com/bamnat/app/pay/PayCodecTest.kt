@@ -160,6 +160,17 @@ class PayCodecTest {
         assertNull(PayCodec.decode(PayCodec.encode(p.copy(items = listOf(p.items[1].copy(covers = null))))).items[0].covers)
     }
 
+    /** [HRLY-04..HRLY-07] 알바 settings round trip; a file without them reads with the defaults. */
+    @Test fun hourlySettingsRoundTrip() {
+        val base = PayProfile(Occupation.PART_TIME, WageType.HOURLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 10_320))))
+        val p = base.copy(taxMode = com.bamnat.core.pay.TaxMode.INSURANCE_4, legalBreaks = true,
+            probationEnd = LocalDate.of(2026, 12, 31), probationPercent = 90, holidayWeekStart = DayOfWeek.SUNDAY)
+        assertEquals(p, PayCodec.decode(PayCodec.encode(p)))
+        val plain = PayCodec.encode(base)
+        listOf("taxMode", "legalBreaks", "probationEnd", "probationPercent", "holidayWeekStart").forEach { assertEquals(false, plain.has(it)) }
+        assertEquals(base, PayCodec.decode(plain))
+    }
+
     /** [PAYS-03] A file from 1.11 reads with the new fields at their defaults; values from a newer version do not fail it. */
     @Test fun olderAndNewerFilesStillRead() {
         val json = PayCodec.encode(PayProfile(Occupation.NURSE, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_500_000)))))

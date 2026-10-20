@@ -320,14 +320,14 @@ DAYW-02,"일근 통계 첫 카드(일근 P1) → 이번 달 야근 시간, 연�
 DAYW-03,"‘지금 퇴근’ 버튼(일근 P2) → 위젯과 하루 화면에서 누르면 퇴근 시각까지 야근으로 적기",1.16.0,진행 중,,
 DAYW-04,"징검다리 연휴 추천(일근 P2) → 연차 1~2일로 길게 쉬는 날 찾아 보여 주기",1.16.0,진행 중,,
 DAYW-05,"월 시간외 상한(일근 P2) → 상한을 정하면 이번 달 남은 시간 보여 주기",1.16.0,진행 중,,
-HRLY-01,"알바 출결 한 번에(알바 P1) → 하루 화면에서 지각·조퇴·결근 한 번 누르기, 대타는 대근으로",1.16.0,진행 중,,
-HRLY-02,"주휴수당 개근 판정과 배지(알바 P1) → 결근한 주는 주휴 빠짐, 달력 주마다 주휴 충족 표시",1.16.0,진행 중,,
-HRLY-03,"알바 달력 칸(알바 P1) → 근무 코드 대신 18–23 같은 시간과 그날 번 돈",1.16.0,진행 중,,
-HRLY-04,"세금 방식과 예상 실수령(알바 P1) → 없음·3.3%·4대보험 고르기, 실수령 보여 주기",1.16.0,진행 중,,
-HRLY-05,"휴게시간 자동 차감(알바 P2) → 4시간 30분, 8시간 1시간 법정 휴게 자동",1.16.0,진행 중,,
-HRLY-06,"수습 감액(알바 P2) → 수습 기간 동안 시급 90%",1.16.0,진행 중,,
-HRLY-07,"주휴 계산 시작 요일(알바 P2) → 주휴 주를 무슨 요일부터 셀지",1.16.0,진행 중,,
-HRLY-08,"출근·퇴근 버튼과 기록 내보내기(알바 P2) → 누르면 실제 시각으로 적고, 근무 기록 CSV로 내보내기",1.16.0,진행 중,,
+HRLY-01,"알바 출결 한 번에(알바 P1) → 하루 화면에서 지각·조퇴·결근 한 번 누르기, 대타는 대근으로",1.16.0,완료,,"ScheduleResolver(결근은 시간·급여 없음), DayChanges(출결 이력), ui/calendar/HourlyDay.kt hourlyChips·CoverChip·AttendanceMark, DayHeader QuickChips, MonthGrid Corner.Attend, CalendarViewModel.changeDay; HourlyWorkTest"
+HRLY-02,"주휴수당 개근 판정과 배지(알바 P1) → 결근한 주는 주휴 빠짐, 달력 주마다 주휴 충족 표시",1.16.0,완료,,"PayCalculator weeklyHolidayLine(결근 주 제외), core/work/HourlyWork.kt weeks·weekEndingIn, StatsScreen HolidayPayWeeks(실제 결근), MonthGrid 주휴 ✓(HolidayWeekCheck); HourlyWorkTest"
+HRLY-03,알바 달력 칸(알바 P1) → 근무 코드 대신 18–23 같은 시간과 그날 번 돈,1.16.0,완료,,"HourlyWork.timeRange·dayPay·brief, ui/calendar/HourlyDay.kt HourlyCells·HourlyTimeMark, MonthGrid DayCell(시간·일급), CalendarScreen; HourlyWorkTest"
+HRLY-04,"세금 방식과 예상 실수령(알바 P1) → 없음·3.3%·4대보험 고르기, 실수령 보여 주기",1.16.0,완료,,"core/pay/TakeHome.kt(TaxMode·TakeHomeResult·TakeHome.estimate), PayProfile.taxMode·PayCodec, ui/pay/HourlyPay.kt HourlyPayCard·TakeHomeLine, PayScreen, StatsScreen; HourlyWorkTest"
+HRLY-05,"휴게시간 자동 차감(알바 P2) → 4시간 30분, 8시간 1시간 법정 휴게 자동",1.16.0,완료,,"core/schedule/LegalBreak.kt, ScheduleResolver(legalBreaks), PayCalculator, PayProfile.legalBreaks, ScheduleSnapshot.legalBreaks, HourlyPayCard 스위치; HourlyWorkTest"
+HRLY-06,수습 감액(알바 P2) → 수습 기간 동안 시급 90%,1.16.0,완료,,"PayProfile.probationEnd·probationPercent·onProbation, PayCalculator 수습 감액 줄·최저임금 90% 경고, HourlyWork.dayPay, HourlyPayCard; HourlyWorkTest"
+HRLY-07,주휴 계산 시작 요일(알바 P2) → 주휴 주를 무슨 요일부터 셀지,1.16.0,완료,,"PayProfile.holidayWeekStart·holidayWeekFrom, PayCalculator 주휴 주, hourlyWeek(settings), StatsScreen·MonthGrid 배지, HourlyPayCard 요일 칩; HourlyWorkTest"
+HRLY-08,"출근·퇴근 버튼과 기록 내보내기(알바 P2) → 누르면 실제 시각으로 적고, 근무 기록 CSV로 내보내기",1.16.0,완료,,"hourlyChips 출근·퇴근(HourlyWork.clock 5분, 하루 변경 기록), core/work/HourlyWork.kt WorkLogCsv, ui/pay/HourlyPay.kt WorkLogExport(공유·파일 저장); HourlyWorkTest. 위젯 버튼은 안 함"
 FLD-01,"일당형·건별형 고르기(프리랜서 P1) → 현장 달력을 공수로 셀지 건별로 셀지",1.16.0,진행 중,,
 FLD-02,"공수 버튼(프리랜서 P1) → 날짜에 1·0.5·1.5·직접, 업체 기억, 일당×공수",1.16.0,진행 중,,
 FLD-03,"일감 상태(프리랜서 P1) → 가계약→확정→완료→입금, 취소",1.16.0,진행 중,,

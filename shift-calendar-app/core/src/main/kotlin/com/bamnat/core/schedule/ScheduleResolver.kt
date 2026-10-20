@@ -1,5 +1,6 @@
 package com.bamnat.core.schedule
 
+import com.bamnat.core.model.Attendance
 import com.bamnat.core.model.DayEntry
 import com.bamnat.core.model.ExtraEntry
 import com.bamnat.core.model.ExtraKind
@@ -103,6 +104,8 @@ class ScheduleResolver(
     entries: Collection<DayEntry>,
     /** [EXTRA-01] The user's kinds of extra work, for where each piece sits on the clock. */
     val kinds: ExtraKinds = ExtraKinds(),
+    /** [HRLY-05] Take the legal break off days that have none set ([LegalBreak]). */
+    val legalBreaks: Boolean = false,
 ) {
     constructor(shiftTypes: Collection<ShiftType>, pattern: WorkPattern?, entries: Collection<DayEntry>, kinds: ExtraKinds = ExtraKinds()) :
         this(shiftTypes, listOfNotNull(pattern), entries, kinds)
@@ -121,6 +124,11 @@ class ScheduleResolver(
     fun patternShiftIdOn(date: LocalDate): Long? = patternOn(date)?.shiftTypeIdOn(date)
 
     fun resolve(date: LocalDate): ResolvedDay {
+        val day = resolveDay(date)
+        return if (legalBreaks) LegalBreak.apply(day) else day
+    }
+
+    private fun resolveDay(date: LocalDate): ResolvedDay {
         val entry = entriesByDate[date]
         val (type, source) = when (val o = entry?.override ?: ShiftOverride.None) {
             ShiftOverride.Off -> null to DaySource.OVERRIDE
@@ -135,8 +143,10 @@ class ScheduleResolver(
         }
 
         // Custom times only adjust a working day. On a day off they are ignored, so switching a
-        // day to 휴무 can never leave hours behind.
-        val dayOff = entry?.override == ShiftOverride.Off || type == null || type.isOff
+        // day to 휴무 can never leave hours behind. [HRLY-01] A 결근 is not worked either: the shift
+        // stays on the calendar but has no hours and no pay.
+        val absent = entry?.attendance == Attendance.ABSENT
+        val dayOff = entry?.override == ShiftOverride.Off || type == null || type.isOff || absent
         val customTimes = entry?.hasCustomTimes == true && !dayOff
         val start: LocalTime?
         val end: LocalTime?
@@ -145,7 +155,7 @@ class ScheduleResolver(
             start = entry!!.customStart
             end = entry.customEnd
             breakMinutes = entry.customBreakMinutes ?: type?.takeIf { it.hasTimes }?.breakMinutes ?: 0
-        } else if (type != null && type.hasTimes) {
+        } else if (type != null && type.hasTimes && !absent) {
             start = type.start
             end = type.end
             breakMinutes = entry?.customBreakMinutes ?: type.breakMinutes
