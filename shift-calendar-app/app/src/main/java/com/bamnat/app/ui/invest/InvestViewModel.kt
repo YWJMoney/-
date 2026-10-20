@@ -174,9 +174,23 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
         return base.copy(date = date ?: base.date ?: s.today)
     }
 
+    /**
+     * [INV-02][INV-03] Where a line is saved: a new one goes to an open account (made when none is),
+     * while a changed one stays in its own account, closed or not, as long as that account exists.
+     */
+    private suspend fun homeAccount(accountId: Long, editing: Boolean): Long {
+        val account = state.value.full.account(accountId)
+        return when {
+            accountId == 0L || account == null -> repo.ensureAccount()
+            editing -> accountId
+            account.hidden -> repo.ensureAccount()
+            else -> accountId
+        }
+    }
+
     // [INV-03][INV-20] Trades: saved, copied, changed and deleted with 되돌리기.
     fun saveTrade(t: Trade, before: Trade?) = viewModelScope.launch {
-        val account = if (t.accountId == 0L || state.value.full.account(t.accountId)?.hidden != false) repo.ensureAccount() else t.accountId
+        val account = homeAccount(t.accountId, before != null)
         val id = repo.saveTrade(t.copy(accountId = account))
         changed()
         val what = "${t.title} ${t.side.label}"
@@ -192,7 +206,7 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
 
     // [INV-02][INV-09] 입금·출금, 배당·이자, 기타 비용.
     fun saveCash(c: CashFlow, before: CashFlow?) = viewModelScope.launch {
-        val account = if (c.accountId == 0L || state.value.full.account(c.accountId)?.hidden != false) repo.ensureAccount() else c.accountId
+        val account = homeAccount(c.accountId, before != null)
         val id = repo.saveCash(c.copy(accountId = account))
         changed()
         val principal = state.value.full.cash.sumOf { it.principalWon } - (before?.principalWon ?: 0) + c.principalWon

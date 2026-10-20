@@ -4,6 +4,7 @@ import com.bamnat.app.AppContainer
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.pay.named
+import com.bamnat.core.memo.MemoSharing
 import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.work.MoneyShare
 import com.bamnat.core.work.MoneyShareFigures
@@ -66,11 +67,15 @@ object ShareContent {
         return out
     }
 
-    /** Each day's memos in the link's days, as one line a day, newest first as under the calendar. */
+    /**
+     * Each day's memos in the link's days, as one line a day, newest first as under the calendar.
+     * [SHR-01][MEMO-02] Only the calendar's own memos and those for every calendar: 메모 공유 shows a
+     * grouped calendar's memos in the app, never on another calendar's link.
+     */
     suspend fun memos(c: AppContainer, from: LocalDate, calendar: String = PersonalCalendar.MAIN): Map<LocalDate, String> {
         val until = from.plusDays(ShareLinkPayload.DAYS.toLong())
-        return c.memoRepository.memosFor(calendar).first()
-            .filter { m -> !m.inTrash && !m.isBlank && m.date?.let { !it.isBefore(from) && it.isBefore(until) } == true }
+        return c.memoRepository.memos.first()
+            .filter { m -> m.showsOn(calendar, MemoSharing.SEPARATE) && !m.inTrash && !m.isBlank && m.date?.let { !it.isBefore(from) && it.isBefore(until) } == true }
             .sortedByDescending { it.updatedAtMillis }
             .groupBy { it.date!! }
             .mapNotNull { (date, list) -> ShareLinkPayload.memoLine(list)?.let { date to it } }
