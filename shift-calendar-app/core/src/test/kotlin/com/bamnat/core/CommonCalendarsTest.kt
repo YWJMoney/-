@@ -89,19 +89,23 @@ class CommonCalendarsTest {
         val book = MoneyBook(listOf(seen, waiting), budgets = listOf(MoneyBudget("식비", 30_000)))
 
         // 바로 적기 (off): as before, every line counts.
-        val now = book.holdUnconfirmed(false)
+        val now = book.holdUnconfirmed(null)
         assertEquals(50_000, now.month(month).expenses)
         assertEquals(emptyList<MoneyEntry>(), now.pending)
 
         // 확인하고 적기 (on): the waiting line is out of the month, the budget and the days until confirmed.
-        val held = book.holdUnconfirmed(true)
+        val held = book.holdUnconfirmed(mon)
         assertEquals(listOf(waiting), held.pending)
         assertEquals(10_000, held.month(month).expenses)
         assertEquals(null, held.days(month)[tue])
         val budget = Budgets.status(held.budgets, held.entries, month, tue)
         assertEquals(10_000, budget.categories.single().spent)
-        val confirmed = MoneyBook(listOf(seen, waiting.copy(reviewed = true))).holdUnconfirmed(true)
+        val confirmed = MoneyBook(listOf(seen, waiting.copy(reviewed = true))).holdUnconfirmed(mon)
         assertEquals(50_000, confirmed.month(month).expenses)
+        // Lines from before the switch went on were counted already and stay in the totals.
+        val older = book.holdUnconfirmed(tue.plusDays(1))
+        assertEquals(emptyList<MoneyEntry>(), older.pending)
+        assertEquals(50_000, older.month(month).expenses)
     }
 
     @Test

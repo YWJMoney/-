@@ -199,6 +199,7 @@ class CalendarBook(
     suspend fun everyMoneyNow(): com.bamnat.core.money.MoneyBook = merged(_calendars.value.map { cal ->
         val m = money(cal.id)
         com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed(), m.allReceivables(), m.allAccounts(), style = m.currentStyle())
+            .holdUnconfirmed(m.holdFrom())
     })
 
     /** [LEDG-08] Accounts and repeating lines keep to their own calendar ([com.bamnat.core.money.MoneyBook.merge]). */

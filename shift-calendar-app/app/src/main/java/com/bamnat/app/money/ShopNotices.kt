@@ -20,15 +20,23 @@ import java.time.ZoneId
  * other kind of calendar, is left to the usual payment reading.
  */
 object ShopNotices {
-    /** Recent texts already taken, so a notification posted again is not added twice. */
-    private val seen = ArrayDeque<String>()
-    private const val SEEN = 64
+    /**
+     * Recent notifications already taken (calendar, time posted and text), kept in a file so one posted
+     * again, even after the app restarts, is not added twice; two orders with the same text posted at
+     * different times are both added.
+     */
+    private var seen: ArrayDeque<String>? = null
+    private const val SEEN = 200
 
     private fun styleOf(c: AppContainer, id: String) = c.calendars.styleOf(id, c.settingsRepository.current.workStyle)
 
-    /** A shop app's notification goes to the shop calendar when there is exactly one. */
+    /**
+     * A shop app's notification goes to the shop calendar when there is exactly one, unless the user
+     * sent that app to a calendar of their own [CALS-03].
+     */
     fun route(c: AppContainer, pkg: String, app: String): String? {
         if (ShopCapture.source(pkg, app) == null) return null
+        if (pkg in c.autoRecordPrefs.current.appCalendars) return null
         return c.calendars.calendars.value.filter { styleOf(c, it.id) == WorkStyle.BUSINESS }.singleOrNull()?.id
     }
 
@@ -38,9 +46,9 @@ object ShopNotices {
         val money = c.calendars.money(id)
         val arrived = LocalDateTime.ofInstant(Instant.ofEpochMilli(postedAt), ZoneId.systemDefault())
         val date = arrived.toLocalDate()
-        val key = "$id|$date|$text"
+        val key = "$id|$postedAt|${text.hashCode()}"
         ShopCapture.read(text, pkg, app)?.let { sale ->
-            if (!remember(key)) return MoneyRepository.Outcome.DUPLICATE
+            if (!remember(c, key)) return MoneyRepository.Outcome.DUPLICATE
             val day = money.book.first().sales.firstOrNull { it.date == date }
             val next = ShopCapture.add(day, date, sale)
             money.save(next)
@@ -53,16 +61,19 @@ object ShopNotices {
         val rules = c.calendars.get(id)?.shopMoney ?: ShopMoney()
         val matched = CardSettlement.match(amount, parsed?.date ?: date, CardSettlement.expected(book.sales, rules, KoreanHolidays::isHoliday))
         if (matched.isEmpty()) return null
-        if (!remember(key)) return MoneyRepository.Outcome.DUPLICATE
+        if (!remember(c, key)) return MoneyRepository.Outcome.DUPLICATE
         for (e in matched) book.sales.firstOrNull { it.date == e.saleDate }?.let { money.save(it.copy(cardSettled = true)) }
         return MoneyRepository.Outcome.SAVED
     }
 
     @Synchronized
-    private fun remember(key: String): Boolean {
-        if (key in seen) return false
-        seen.addLast(key)
-        while (seen.size > SEEN) seen.removeFirst()
+    private fun remember(c: AppContainer, key: String): Boolean {
+        val file = java.io.File(c.appContext.noBackupFilesDir, "shop_notices_seen.txt")
+        val list = seen ?: ArrayDeque(runCatching { file.readLines() }.getOrDefault(emptyList()).filter { it.isNotBlank() }).also { seen = it }
+        if (key in list) return false
+        list.addLast(key)
+        while (list.size > SEEN) list.removeFirst()
+        runCatching { file.writeText(list.joinToString("\n")) }
         return true
     }
 }

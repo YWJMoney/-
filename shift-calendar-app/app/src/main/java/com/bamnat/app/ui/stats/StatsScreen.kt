@@ -193,7 +193,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         // [TYPE-06] A part-timer's weeks against the 15 hours 주휴수당 needs.
         // [HRLY-02][HRLY-07] Counted from the 주휴 week's own start, with 결근 days as absences.
         if (style == WorkStyle.HOURLY) {
-            val weekStart = payProfile?.holidayWeekStart ?: settings.weekStart
+            val weekStart = payProfile?.holidayWeekFrom ?: settings.weekStart
             val weeks = remember(snap, month, weekStart, payProfile?.legalBreaks) {
                 HourlyWork.weeks(month, weekStart, snap.copy(legalBreaks = payProfile?.legalBreaks == true).resolver::resolve)
             }

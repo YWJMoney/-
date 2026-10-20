@@ -24,7 +24,12 @@ class AutoRecordPrefs(context: Context) {
         val appCalendars: Map<String, String> = emptyMap(),
         /** [COMN-04] 확인하고 적기: payment lines wait in 확인 대기함 and count only once confirmed; off is 바로 적기. */
         val confirmFirst: Boolean = false,
-    )
+        /** [COMN-04] The day 확인하고 적기 was turned on; older lines were already counted and stay counted. */
+        val confirmSince: java.time.LocalDate? = null,
+    ) {
+        /** [COMN-04] From when unconfirmed lines wait, or null for 바로 적기. */
+        val holdFrom: java.time.LocalDate? get() = if (confirmFirst) confirmSince ?: java.time.LocalDate.MIN else null
+    }
 
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences("auto_record", Context.MODE_PRIVATE)
@@ -57,7 +62,10 @@ class AutoRecordPrefs(context: Context) {
     }
 
     /** [COMN-04] 확인하고 적기 on, or 바로 적기. */
-    fun setConfirmFirst(on: Boolean) = edit { putBoolean(K_CONFIRM_FIRST, on) }
+    fun setConfirmFirst(on: Boolean) = edit {
+        putBoolean(K_CONFIRM_FIRST, on)
+        if (on && !current.confirmFirst) putLong(K_CONFIRM_SINCE, java.time.LocalDate.now().toEpochDay())
+    }
 
     /** [CALS-04] A calendar that goes away hands its notifications back to 내 달력. */
     fun forgetCalendar(id: String) {
@@ -87,6 +95,7 @@ class AutoRecordPrefs(context: Context) {
             line.split('\t', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] }
         }.toMap(),
         confirmFirst = prefs.getBoolean(K_CONFIRM_FIRST, false),
+        confirmSince = if (prefs.contains(K_CONFIRM_SINCE)) java.time.LocalDate.ofEpochDay(prefs.getLong(K_CONFIRM_SINCE, 0)) else null,
     )
 
     private companion object {
@@ -98,6 +107,7 @@ class AutoRecordPrefs(context: Context) {
         const val K_CALENDAR = "calendar"
         const val K_APP_CALENDARS = "app_calendars"
         const val K_CONFIRM_FIRST = "confirm_first"
+        const val K_CONFIRM_SINCE = "confirm_since"
         const val MAX_APPS = 30
     }
 }

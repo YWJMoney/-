@@ -62,7 +62,8 @@ internal fun LazyListScope.dayRateChips(
                 when {
                     on && existing != null -> onDelete(existing)
                     rules.dayRate <= 0 && existing == null -> asking = true
-                    else -> onSave(DayRate.job(date, u, rules.dayRate, rules.lastClient, existing), rules)
+                    // A day already written keeps its own 일당; a new day takes the remembered one.
+                    else -> onSave(DayRate.job(date, u, existing?.let(DayRate::rateOf) ?: rules.dayRate, rules.lastClient, existing), rules)
                 }
             },
             label = { Text(DayRate.label(u), maxLines = 1) },
@@ -86,7 +87,7 @@ internal fun LazyListScope.dayRateChips(
 @Composable
 private fun DayRateDialog(date: LocalDate, units: Double, rules: FieldRules, existing: Job?, onDismiss: () -> Unit, onSave: (Job, FieldRules) -> Unit) {
     var unitsText by rememberSaveable { mutableStateOf(DayRate.trim(units)) }
-    val existingRate = existing?.units?.takeIf { it > 0 }?.let { Math.round(existing.amount / it) }
+    val existingRate = existing?.let(DayRate::rateOf)
     var rate by rememberSaveable { mutableStateOf(amountDigits(existingRate ?: rules.dayRate)) }
     var client by rememberSaveable { mutableStateOf(existing?.client ?: rules.lastClient) }
     val u = unitsText.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0 && it <= 5 }

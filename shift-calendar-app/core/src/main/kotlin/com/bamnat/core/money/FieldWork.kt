@@ -50,16 +50,21 @@ object DayRate {
     /** The amount for [units] days at [rate], to the won. */
     fun amount(rate: Long, units: Double): Long = (rate * units).roundToLong().coerceAtLeast(0)
 
+    /** The 일당 a day-rate job was written at, or null when it has no 공수. */
+    fun rateOf(job: Job): Long? = job.units?.takeIf { it > 0 }?.let { (job.amount / it).roundToLong() }?.takeIf { it > 0 }
+
     /**
      * The job [units] makes on [date]: [existing] (a day-rate job already there) with the new units and
-     * amount, keeping what was paid; or a new one for [client] at [rate].
+     * amount, keeping what was paid; or a new one for [client] at [rate]. When the amount grows past
+     * what was ticked as paid, the rest is owed again.
      */
     fun job(date: LocalDate, units: Double, rate: Long, client: String, existing: Job? = null): Job {
-        val amount = amount(rate.takeIf { it > 0 } ?: existing?.let { j -> j.units?.takeIf { it > 0 }?.let { (j.amount / it).roundToLong() } } ?: 0, units)
+        val amount = amount(rate.takeIf { it > 0 } ?: existing?.let(::rateOf) ?: 0, units)
         val base = existing ?: Job(date = date, title = label(units), client = client.trim())
         return base.copy(
             title = if (existing == null || existing.title == existing.units?.let(::label)) label(units) else existing.title,
             units = units, amount = amount, status = if (base.status == JobStatus.TENTATIVE) JobStatus.CONFIRMED else base.status,
+            balancePaid = base.balancePaid && amount <= base.amount,
         )
     }
 
@@ -193,6 +198,17 @@ object DepositMatch {
             val key = when (t) { is Target.ForJob -> "job-${t.job.id}"; is Target.ForReceivable -> "r-${t.r.id}" }
             if (!used.add(key)) null else Match(e, t)
         }
+    }
+
+    /**
+     * What becomes of the matched deposit line once the job or receivable counts the money: when it
+     * reached an account, it stays as money moved into that account (이체), so the balance keeps it
+     * while the month's income does not count it twice; with no account it is not needed (null).
+     */
+    fun kept(entry: MoneyEntry, accounts: List<MoneyAccount>, name: String): MoneyEntry? {
+        val account = MoneyAccounts.of(entry, accounts) ?: return null
+        return entry.copy(kind = MoneyKind.TRANSFER, accountId = null, cardLast4 = "", toAccountId = account,
+            reviewed = true, memo = entry.memo.ifBlank { "$name 입금" })
     }
 
     /** The job with the matched part ticked as paid. */

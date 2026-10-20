@@ -67,8 +67,11 @@ data class ResolvedDay(
 ) {
     val isWorkDay: Boolean get() = scheduledMinutes > 0 || (start != null && end != null)
     val isOff: Boolean get() = !isWorkDay
-    /** A day with no shift and no leave: work on it is 휴무일 or 휴일 work [EXTRA-02]. */
-    val isRestDay: Boolean get() = !isWorkDay && leave == null
+    /**
+     * A day with no shift and no leave: work on it is 휴무일 or 휴일 work [EXTRA-02]. [HRLY-01] A 결근
+     * is a missed working day, not a rest day, so it is never picked as 주휴일 or paid as 휴일 work.
+     */
+    val isRestDay: Boolean get() = !isWorkDay && leave == null && entry?.attendance != Attendance.ABSENT
     val hasExtraWork: Boolean get() = extras.isNotEmpty()
     val extraMinutes: Int get() = extras.sumOf { it.minutes }
 

@@ -13,7 +13,6 @@ import androidx.glance.layout.height
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import com.bamnat.app.ui.Fmt
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.pay.LeaveBook
 import com.bamnat.core.work.WidgetFigures
@@ -57,14 +56,17 @@ internal fun WorkStyleLine(data: WidgetData) {
     }
 }
 
-/** [COMN-05] A field worker's week under the jobs: days worked (or 공수) and money still owed. */
+/**
+ * [COMN-05] A field worker's week under the jobs: days worked (or 공수) and whether money is still owed.
+ * A home screen is seen by others, so the amount itself stays in the app.
+ */
 @Composable
 internal fun FieldWeekLine(data: WidgetData) {
     val w = data.fieldWeek ?: return
     Spacer(GlanceModifier.height(6.dp))
     Text(
         "이번 주 " + (w.units?.let { WidgetFigures.units(it) } ?: "${w.days}일") +
-            if (w.unpaid > 0) " · 미수금 ${Fmt.wonShort(w.unpaid)}" else " · 미수금 없음",
+            if (w.unpaid > 0) " · 받을 돈 있어요" else " · 받을 돈 없음",
         style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp),
         maxLines = 1,
     )

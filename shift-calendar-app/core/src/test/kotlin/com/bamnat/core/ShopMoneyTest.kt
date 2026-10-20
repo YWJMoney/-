@@ -153,12 +153,16 @@ class ShopMoneyTest {
         assertNull(ShopCapture.read("오늘 매출 리포트가 도착했어요", "", "배민사장님"))
         assertNull(ShopCapture.read("리뷰 이벤트 5,000원 쿠폰", "", "쿠팡이츠 스토어"))
         val day = ShopCapture.add(DailySales(d(2), 50_000), d(2), order)
-        assertEquals(50_000, day.cash)
+        // A total written without a split stays as it was, not turned into cash.
+        assertEquals(0, day.cash)
         assertEquals(23_500, day.delivery)
         assertEquals(73_500, day.sales)
         val undone = ShopCapture.add(day, d(2), order.copy(amount = -30_000))
         assertEquals(0, undone.delivery)
         assertEquals(50_000, undone.sales)
+        // 외상 written into the day's total is kept when an order comes in.
+        val withCredit = DailySales(d(3), 120_000, card = 100_000)
+        assertEquals(135_000, ShopCapture.add(withCredit, d(3), order.copy(amount = 15_000)).sales)
 
         val text = "[Web발신]\n신한 11/04 10:12\n입금 197,200원\n신한카드 정산\n잔액 1,000,000원"
         val parsed = (PaymentParser.parse(text, LocalDateTime.of(2026, 11, 4, 10, 12)) as? PaymentParser.Result.Ok)?.parsed

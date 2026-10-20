@@ -302,7 +302,7 @@ fun CalendarScreen(
     // [HRLY-02][HRLY-03] An 알바 calendar's cells show times and pay, and each week its 주휴.
     val hourlyCells = remember(settings.workStyle, payProfile, settings.weekStart) {
         if (settings.workStyle != com.bamnat.core.work.WorkStyle.HOURLY) null
-        else HourlyCells(payProfile, payProfile?.holidayWeekStart ?: settings.weekStart)
+        else HourlyCells(payProfile, payProfile?.holidayWeekFrom ?: settings.weekStart)
     }
     // [CAL-14] Stable references, so the cells' painting hooks never change under them.
     val paintDays: (List<LocalDate>) -> Unit = remember(vm) { vm::paintDays }

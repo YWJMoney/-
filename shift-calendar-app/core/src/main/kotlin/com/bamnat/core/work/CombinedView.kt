@@ -34,7 +34,7 @@ object CombinedView {
     /** Calendar [calendar]'s work on [day]: its shift unless missed or on leave all day, its extra work, and its jobs. */
     fun spansOf(calendar: String, day: ResolvedDay, jobs: List<Job>): List<WorkSpan> = buildList {
         val absent = day.entry?.attendance == Attendance.ABSENT
-        val onLeave = day.leave != null && day.leaveMinutes >= day.scheduledMinutes
+        val onLeave = day.leave?.isFullDay == true
         if (day.isWorkDay && !absent && !onLeave) {
             add(WorkSpan(calendar, day.date, day.shiftType?.name ?: "근무", day.shiftFrom, day.shiftTo))
         }
@@ -74,7 +74,8 @@ object CombinedView {
             if (spans.isEmpty()) continue
             count++
             val absent = day.entry?.attendance == Attendance.ABSENT
-            if (!absent) minutes += (day.scheduledMinutes - day.leaveMinutes).coerceAtLeast(0)
+            // scheduledMinutes is already what is left after leave (반차 09~13:30).
+            if (!absent) minutes += day.scheduledMinutes
             minutes += day.extraMinutes
             minutes += jobs.filter { it.covers(day.date) && it.status != JobStatus.CANCELLED && it.start != null && it.end != null }
                 .sumOf { j ->

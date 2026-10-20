@@ -71,8 +71,9 @@ object MonthAgenda {
                 start = weekFrom,
                 end = weekEnd,
                 minutes = days.sumOf { it.day.totalMinutes },
-                jobs = started.size,
-                jobEarned = started.sumOf { it.payable },
+                // [FLD-03] A cancelled job is not work; it adds only the deposit it kept.
+                jobs = started.count { !it.cancelled },
+                jobEarned = started.sumOf { it.earned },
                 sales = days.sumOf { it.sales?.sales ?: 0 },
             )
             var gapFrom: LocalDate? = null

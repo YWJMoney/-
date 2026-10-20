@@ -44,6 +44,10 @@ class FieldWorkTest {
         assertEquals("0.5공", half.title)
         assertEquals("김반장", half.client)
         assertTrue(half.balancePaid)
+        // More 공수 than was paid for: the rest is owed again, at the job's own 일당.
+        val more = DayRate.job(d(3), 1.5, DayRate.rateOf(paid)!!, "", existing = paid)
+        assertEquals(300_000, more.amount)
+        assertFalse(more.balancePaid)
         assertEquals("1공", DayRate.cell(1.0))
         assertEquals("0.5", DayRate.cell(0.5))
         assertEquals("1.5", DayRate.cell(1.5))
@@ -145,6 +149,14 @@ class FieldWorkTest {
         // One offer per job: the newest deposit; a manual line, an answered one and an old one are not asked about.
         assertEquals(listOf(2L), found.map { it.entry.id })
         assertTrue(DepositMatch.pending(entries, listOf(job.copy(status = JobStatus.CANCELLED)), emptyList(), emptySet(), d(12)).isEmpty())
+        // 맞아요: a deposit into an account stays as money moved into it, out of the month's income.
+        val bank = com.bamnat.core.money.MoneyAccount(id = 3, name = "통장", type = com.bamnat.core.money.AccountType.BANK)
+        val kept = DepositMatch.kept(income(2, 100_000, 11).copy(accountId = 3), listOf(bank), "웨딩")!!
+        assertEquals(MoneyKind.TRANSFER, kept.kind)
+        assertEquals(3L, kept.toAccountId)
+        assertEquals(100_000L, com.bamnat.core.money.MoneyAccounts.balances(listOf(bank), listOf(kept))[3])
+        assertEquals(0L, MoneyBook(listOf(kept)).month(YearMonth.of(2026, 11)).otherIncome)
+        assertNull(DepositMatch.kept(income(2, 100_000, 11), listOf(bank), "웨딩"))
     }
 
     @Test

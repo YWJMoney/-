@@ -64,7 +64,7 @@ private fun DepositMatchCard(c: AppContainer, calendarId: String, book: MoneyBoo
         Text("${Fmt.shortDate(m.entry.date)} ${m.entry.title} ${Fmt.won(m.entry.amount)}", style = MaterialTheme.typography.bodyLarge)
         Text("이 입금, ${what}인가요?", style = MaterialTheme.typography.titleSmall,
             modifier = Modifier.padding(top = 4.dp))
-        Text("맞으면 받은 돈으로 바꾸고, 같은 돈이 두 번 세지 않게 이 입금 기록은 일감에 합쳐요.",
+        Text("맞으면 받은 돈으로 바꿔요. 같은 돈이 두 번 세지 않게 이 입금은 수입에서 빼고, 계좌 잔액은 그대로 둬요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
             OutlinedButton(onClick = {
@@ -73,15 +73,12 @@ private fun DepositMatchCard(c: AppContainer, calendarId: String, book: MoneyBoo
             FilledTonalButton(onClick = {
                 val money = c.calendars.money(calendarId)
                 c.appScope.launch {
+                    // The line stays as money into its account when it had one, so the balance is kept.
+                    val kept = DepositMatch.kept(m.entry, book.accounts, m.target.name)
+                    if (kept != null) money.save(kept) else money.delete(m.entry)
                     when (val t = m.target) {
-                        is DepositMatch.Target.ForJob -> {
-                            money.save(DepositMatch.paid(t.job, t.part))
-                            money.delete(m.entry)
-                        }
-                        is DepositMatch.Target.ForReceivable -> {
-                            money.delete(m.entry)
-                            money.receive(t.r, m.entry.amount, m.entry.date)
-                        }
+                        is DepositMatch.Target.ForJob -> money.save(DepositMatch.paid(t.job, t.part))
+                        is DepositMatch.Target.ForReceivable -> money.receive(t.r, m.entry.amount, m.entry.date)
                     }
                 }
             }) { Text("맞아요") }

@@ -624,8 +624,8 @@ private fun DayCell(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                 val extraMinutes = day.extraMinutes
                 // [CAL-05] A shop's cell says its sales; field work says what came in.
-                val moneyText = if (!showMoney) null else (sales?.takeIf { focus == CalendarFocus.SALES } ?: money?.income?.takeIf { it != 0L })
-                    ?.let { Fmt.wonShort(it) }
+                val moneyText = (if (!showMoney) null else (sales?.takeIf { focus == CalendarFocus.SALES } ?: money?.income?.takeIf { it != 0L })
+                    ?.let { Fmt.wonShort(it) })
                     // [HRLY-03] An 알바 day says what it earned.
                     ?: hourly?.payText(day)
                 // [FLD-02] A day-rate day says its 공수 ("1공", "0.5") under the bar.

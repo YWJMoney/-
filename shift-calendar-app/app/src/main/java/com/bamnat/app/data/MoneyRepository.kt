@@ -51,7 +51,7 @@ class MoneyRepository(
     /** [TYPE-08] The calendar's kind of work, for its built-in categories. */
     private val style: Flow<com.bamnat.core.work.WorkStyle?> = kotlinx.coroutines.flow.flowOf(null),
     /** [COMN-04] 확인하고 적기: lines not yet confirmed stay out of the book's totals. */
-    private val confirmFirst: Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false),
+    private val confirmFirst: Flow<java.time.LocalDate?> = kotlinx.coroutines.flow.flowOf(null),
 ) {
     private val dao = db.moneyDao()
 
@@ -80,10 +80,13 @@ class MoneyRepository(
         combine(entries, jobs, sales, fixed, receivables) { e, j, s, f, r -> MoneyBook(e, j, s, f, r) }, plans,
     ) { b, (a, bu, c) -> b.copy(accounts = a, budgets = bu, categories = c) }
         .combine(style.distinctUntilChanged()) { b, st -> b.copy(style = st) }
-        .combine(confirmFirst.distinctUntilChanged()) { b, on -> b.holdUnconfirmed(on) }.flowOn(Dispatchers.Default)
+        .combine(confirmFirst.distinctUntilChanged()) { b, from -> b.holdUnconfirmed(from) }.flowOn(Dispatchers.Default)
 
     /** [SHOP-04] The calendar's kind of work now, for the tax deadlines that go with it. */
     suspend fun currentStyle(): com.bamnat.core.work.WorkStyle? = style.firstOrNull()
+
+    /** [COMN-04] From when 확인하고 적기 holds lines back now, for a book read outside [book]. */
+    suspend fun holdFrom(): java.time.LocalDate? = confirmFirst.firstOrNull()
 
     /**
      * Inserts a new line or replaces the one with the same id; returns it with its id. When the user

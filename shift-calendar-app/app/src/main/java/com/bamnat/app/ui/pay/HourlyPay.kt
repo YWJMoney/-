@@ -50,7 +50,6 @@ import com.bamnat.core.pay.TakeHome
 import com.bamnat.core.pay.TaxMode
 import com.bamnat.core.work.HourlyWork
 import com.bamnat.core.work.WorkLogCsv
-import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -62,11 +61,12 @@ import java.time.YearMonth
 import java.time.ZoneOffset
 
 /**
- * [HRLY-07] An 알바 calendar counts 주휴 weeks from the app's week start until the user picks a day, so the
- * calendar's 주휴 badges, 통계 and pay agree.
+ * [HRLY-07] The profile as pay sees it. Until the user picks a 주휴 week start, 주휴 weeks follow the pay
+ * week ([PayProfile.holidayWeekFrom]), as they always did, so nobody's pay moves without being asked;
+ * the calendar's 주휴 badges and 통계 count from the same day.
  */
-fun PayProfile.hourlyWeek(settings: AppSettings): PayProfile =
-    if (settings.workStyle == WorkStyle.HOURLY && holidayWeekStart == null) copy(holidayWeekStart = settings.weekStart) else this
+@Suppress("UNUSED_PARAMETER")
+fun PayProfile.hourlyWeek(settings: AppSettings): PayProfile = this
 
 /** [HRLY-04] Names of each tax mode, as the chips say them. */
 val TaxMode.label: String

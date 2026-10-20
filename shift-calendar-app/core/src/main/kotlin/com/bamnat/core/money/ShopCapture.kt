@@ -59,13 +59,14 @@ object ShopCapture {
     /** [sales] of a day with [sale] added to its bucket; a cancellation never takes a bucket below zero. */
     fun add(day: DailySales?, date: java.time.LocalDate, sale: Sale): DailySales {
         val base = day ?: DailySales(date, 0)
-        // A day written only as a total keeps that total as cash, so the parts still add up to it.
-        val start = if (base.byMethod == 0L && base.sales > 0) base.copy(cash = base.sales) else base
         val next = when (sale.bucket) {
-            Bucket.CARD -> start.copy(card = (start.card + sale.amount).coerceAtLeast(0))
-            Bucket.DELIVERY -> start.copy(delivery = (start.delivery + sale.amount).coerceAtLeast(0))
+            Bucket.CARD -> base.copy(card = (base.card + sale.amount).coerceAtLeast(0))
+            Bucket.DELIVERY -> base.copy(delivery = (base.delivery + sale.amount).coerceAtLeast(0))
         }
-        return next.copy(sales = next.byMethod)
+        // The day's total moves by the sale itself: 외상 and a total written without a split stay in it,
+        // and it never drops below what the payment methods add up to.
+        val added = next.byMethod - base.byMethod
+        return next.copy(sales = (base.sales + added).coerceAtLeast(next.byMethod))
     }
 
     private val CARD_COMPANY = Regex("카드")

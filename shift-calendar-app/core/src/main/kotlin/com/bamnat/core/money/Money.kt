@@ -378,11 +378,12 @@ data class MoneyBook(
     /**
      * [COMN-04] With 확인하고 적기 on, lines not yet confirmed move from [entries] to [pending], so the
      * month's totals, budgets, stats and notices count only what the user confirmed. Off (바로 적기),
-     * the book is left as it is and unconfirmed lines count at once, as before.
+     * the book is left as it is and unconfirmed lines count at once, as before. Only lines dated
+     * on or after [from], the day the switch went on, wait: older ones were already counted.
      */
-    fun holdUnconfirmed(on: Boolean): MoneyBook {
-        if (!on) return this
-        val (seen, waiting) = entries.partition { it.reviewed }
+    fun holdUnconfirmed(from: LocalDate?): MoneyBook {
+        if (from == null) return this
+        val (waiting, seen) = entries.partition { !it.reviewed && !it.date.isBefore(from) }
         return if (waiting.isEmpty()) this else copy(entries = seen, pending = pending + waiting)
     }
 
