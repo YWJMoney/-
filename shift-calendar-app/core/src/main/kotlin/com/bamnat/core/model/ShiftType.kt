@@ -34,6 +34,8 @@ data class ShiftType(
     val sortOrder: Int = 0,
     /** Key of a [ShiftIcon] shown next to the label; null shows the label only [FEAT-01]. */
     val icon: String? = null,
+    /** [SHFT-01] This kind of day's own extra pay on top of the company's rules, in percent (야간 근무 수당 30%); 0 for none. */
+    val premiumPercent: Int = 0,
 ) {
     val hasTimes: Boolean get() = !isOff && start != null && end != null
 

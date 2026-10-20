@@ -29,6 +29,8 @@ data class Memo(
      * every calendar, and every memo written before calendars had their own).
      */
     val calendars: Set<String> = emptySet(),
+    /** [NOTE-05] How a dated memo comes back ("M25" every month on the 25th, "W2" every Tuesday); empty for once. */
+    val repeat: String = "",
 ) {
     /** [NOTE-01] Shown on calendar [id]. */
     fun showsOn(id: String): Boolean = calendars.isEmpty() || id in calendars

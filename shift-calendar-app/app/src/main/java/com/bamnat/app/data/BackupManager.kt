@@ -58,7 +58,7 @@ class BackupManager(
                     .put("break", t.breakMinutes).put("off", t.isOff)
                     .put("alarm", t.alarmEnabled).put("alarmOffset", t.alarmOffsetMinutes)
                     .putOpt("sound", t.alarmSoundUri).put("order", t.sortOrder).put("alarms", t.alarmOffsets).putOpt("icon", t.icon)
-                    .putOpt("breakStart", t.breakStartMinute),
+                    .putOpt("breakStart", t.breakStartMinute).putOpt("premium", t.premiumPercent.takeIf { it > 0 }),
             )
         }
         into.put("shiftTypes", types)
@@ -77,7 +77,9 @@ class BackupManager(
                     .put("day", d.epochDay).put("mode", d.overrideMode).putOpt("type", d.overrideShiftTypeId)
                     .putOpt("start", d.customStartMinute).putOpt("end", d.customEndMinute)
                     .putOpt("break", d.customBreakMinutes).put("skip", d.alarmSkipped)
-                    .putOpt("alarms", d.customAlarms).put("leave", d.leave),
+                    .putOpt("alarms", d.customAlarms).put("leave", d.leave)
+                    // [HRLY-01][SHFT-03] Version 17; older apps ignore them.
+                    .putOpt("attendance", d.attendance.takeIf { it != 0 }).putOpt("swap", d.swapWith.ifEmpty { null }),
             )
         }
         into.put("days", days)
@@ -104,7 +106,8 @@ class BackupManager(
                     // [LEDG-08][LEDG-09][LEDG-11] Version 15; only what is set, so a plain line stays short.
                     .putOpt("account", e.accountId).putOpt("toAccount", e.toAccountId).putOpt("fixedId", e.fixedId)
                     .putOpt("memo", e.memo.ifEmpty { null }).putOpt("tags", e.tags.ifEmpty { null })
-                    .putOpt("parts", e.parts.ifEmpty { null }).putOpt("installments", e.installments.takeIf { it > 1 }))
+                    .putOpt("parts", e.parts.ifEmpty { null }).putOpt("installments", e.installments.takeIf { it > 1 })
+                    .putOpt("proof", e.proof.ifEmpty { null }).putOpt("receipt", e.receipt.ifEmpty { null }))
             }
         })
         into.put("jobs", JSONArray().apply {
@@ -113,11 +116,17 @@ class BackupManager(
                     .put("place", j.place).putOpt("start", j.startMinute).putOpt("end", j.endMinute).put("amount", j.amount)
                     .put("deposit", j.deposit).put("depositPaid", j.depositPaid).put("balancePaid", j.balancePaid)
                     .putOpt("remind", j.remindMinutes).put("note", j.note)
-                    .putOpt("endDay", j.endEpochDay).put("costs", j.costs).put("withholding", j.withholding))
+                    .putOpt("endDay", j.endEpochDay).put("costs", j.costs).put("withholding", j.withholding)
+                    .put("status", j.status).putOpt("units", j.units).putOpt("due", j.dueEpochDay))
             }
         })
         into.put("sales", JSONArray().apply {
-            money.allSales().forEach { d -> put(JSONObject().put("day", d.epochDay).put("sales", d.sales).put("costs", d.costs).put("note", d.note)) }
+            money.allSales().forEach { d ->
+                put(JSONObject().put("day", d.epochDay).put("sales", d.sales).put("costs", d.costs).put("note", d.note)
+                    // [SHOP-01][SHOP-02][SHOP-03] Version 17.
+                    .put("card", d.card).put("cash", d.cash).put("transfer", d.transfer).put("delivery", d.delivery)
+                    .putOpt("counted", d.cashCounted).put("settled", d.cardSettled))
+            }
         })
         // [LEDG-05][LEDG-04] Fixed costs and learned categories (version 9). Unread notification texts are never backed up.
         into.put("fixed", JSONArray().apply {
@@ -203,7 +212,8 @@ class BackupManager(
                     .putOpt("remindAt", m.remindAt).put("remindRing", m.remindRing).put("remindNotify", m.remindNotify)
                     .putOpt("remindAsked", m.remindAsked)
                     // [NOTE-01] Version 16. Without it a memo shows on every calendar, as before.
-                    .putOpt("calendars", m.calendars.ifEmpty { null }),
+                    .putOpt("calendars", m.calendars.ifEmpty { null })
+                    .putOpt("repeat", m.repeat.ifEmpty { null }),
             )
         }
         root.put("memos", memos)
@@ -269,7 +279,7 @@ class BackupManager(
                 breakMinutes = o.optInt("break"), isOff = o.optBoolean("off"), alarmEnabled = o.optBoolean("alarm"),
                 alarmOffsetMinutes = o.optInt("alarmOffset", 60), alarmSoundUri = o.optStringOrNull("sound"),
                 sortOrder = o.optInt("order"), alarmOffsets = o.optString("alarms", ""), icon = o.optStringOrNull("icon"),
-                breakStartMinute = o.optIntOrNull("breakStart"),
+                breakStartMinute = o.optIntOrNull("breakStart"), premiumPercent = o.optInt("premium").coerceIn(0, 300),
             )
         }
         if (types.isEmpty()) throw BackupException("근무 종류가 없는 백업 파일이에요")
@@ -294,6 +304,7 @@ class BackupManager(
                 holidayWorkMinutes = o.optInt("holiday").coerceIn(0, 24 * 60), alarmSkipped = o.optBoolean("skip"),
                 customAlarms = o.optStringOrNull("alarms"), extraWork = o.optInt("extra"), leave = o.optInt("leave"),
                 secondShiftTypeId = if (o.has("second") && !o.isNull("second")) o.getLong("second") else null,
+                attendance = o.optInt("attendance"), swapWith = o.optString("swap"),
             )
         }
         val extras = from.optJSONArray("extras")?.objects()?.map { o ->
@@ -347,7 +358,7 @@ class BackupManager(
                 cardLast4 = o.optString("card"), reviewed = o.optBoolean("reviewed", true),
                 accountId = o.optLongOrNull("account"), toAccountId = o.optLongOrNull("toAccount"), memo = o.optString("memo"),
                 tags = o.optString("tags"), parts = o.optString("parts"), installments = o.optInt("installments", 1).coerceIn(1, 60),
-                fixedId = o.optLongOrNull("fixedId"),
+                fixedId = o.optLongOrNull("fixedId"), proof = o.optString("proof"), receipt = o.optString("receipt"),
             )
         }
         val fixed = from.optJSONArray("fixed")?.objects()?.map { o ->
@@ -379,6 +390,8 @@ class BackupManager(
                 balancePaid = o.optBoolean("balancePaid"), remindMinutes = o.optIntOrNull("remind"), note = o.optString("note"),
                 endEpochDay = if (o.has("endDay") && !o.isNull("endDay")) o.getLong("endDay") else null,
                 costs = o.optLong("costs"), withholding = o.optBoolean("withholding"),
+                status = o.optInt("status", 1), units = if (o.has("units") && !o.isNull("units")) o.getDouble("units") else null,
+                dueEpochDay = o.optLongOrNull("due"),
             )
         }
         val owed = from.optJSONArray("owed")?.objects()?.map { o ->
@@ -394,7 +407,11 @@ class BackupManager(
                 if (o.has("entry") && !o.isNull("entry")) o.getLong("entry") else null)
         }
         val sales = from.optJSONArray("sales")?.objects()?.map { o ->
-            DailySalesEntity(o.getLong("day"), o.optLong("sales"), o.optLong("costs"), o.optString("note"))
+            DailySalesEntity(
+                o.getLong("day"), o.optLong("sales"), o.optLong("costs"), o.optString("note"),
+                card = o.optLong("card"), cash = o.optLong("cash"), transfer = o.optLong("transfer"), delivery = o.optLong("delivery"),
+                cashCounted = o.optLongOrNull("counted"), cardSettled = o.optBoolean("settled"),
+            )
         }
         return MoneyRows(entries, jobs, sales, fixed, rules, accounts, budgets, categories, owed, owedPaid)
     }
@@ -443,6 +460,7 @@ class BackupManager(
                 remindAt = o.optStringOrNull("remindAt"), remindRing = o.optBoolean("remindRing"),
                 remindNotify = o.optBoolean("remindNotify"), remindAsked = o.optStringOrNull("remindAsked"),
                 calendars = com.bamnat.core.memo.MemoCalendars.encode(com.bamnat.core.memo.MemoCalendars.decode(o.optStringOrNull("calendars"))),
+                repeat = o.optString("repeat"),
             )
         }
         val sleep = root.optJSONArray("sleep")?.objects()?.map { o ->

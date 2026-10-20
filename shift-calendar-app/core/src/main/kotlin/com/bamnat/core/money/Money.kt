@@ -39,6 +39,10 @@ data class MoneyEntry(
     val installments: Int = 1,
     /** [LEDG-09] The repeating line ([FixedCost]) this one was written for. */
     val fixedId: Long? = null,
+    /** [FLD-08] What proves the cost (세금계산서, 카드 영수증, 현금영수증, 간이영수증), or empty. */
+    val proof: String = "",
+    /** [FLD-08] A receipt photo kept in the app's own folder, by file name; empty for none. */
+    val receipt: String = "",
 ) {
     /** What a list shows as the line's name. */
     val title: String get() = merchant.ifBlank { note.ifBlank { memo.ifBlank { category } } }
@@ -94,6 +98,12 @@ data class Job(
     val costs: Long = 0,
     /** Paid as 사업소득 with 3.3% withheld (freelance teaching, filming, many trades). */
     val withholding: Boolean = false,
+    /** [FLD-03] Where the job stands: 가계약, 확정, 완료 or 취소; paid follows from the payments. */
+    val status: JobStatus = JobStatus.CONFIRMED,
+    /** [FLD-02] Days of work counted as 공수 (1, 0.5, 1.5 …) for day-rate work; null for a job paid as a whole. */
+    val units: Double? = null,
+    /** [FLD-09] When the money is promised; null follows the last day. */
+    val due: LocalDate? = null,
 ) {
     val lastDate: LocalDate get() = endDate?.takeIf { it.isAfter(date) } ?: date
     val days: Int get() = (lastDate.toEpochDay() - date.toEpochDay()).toInt() + 1
@@ -121,8 +131,33 @@ object Withholding {
 }
 
 /** A shop's day [WORK-03]: what came in and what the day cost. */
-data class DailySales(val date: LocalDate, val sales: Long, val costs: Long = 0, val note: String = "") {
+data class DailySales(
+    val date: LocalDate,
+    val sales: Long,
+    val costs: Long = 0,
+    val note: String = "",
+    /** [SHOP-01] The day's sales by how they were paid; all 0 when only the total was written. */
+    val card: Long = 0,
+    val cash: Long = 0,
+    val transfer: Long = 0,
+    val delivery: Long = 0,
+    /** [SHOP-03] The cash counted in the till at closing (시재); null when not counted. */
+    val cashCounted: Long? = null,
+    /** [SHOP-02] The card company has paid this day's card sales into the account. */
+    val cardSettled: Boolean = false,
+) {
     val net: Long get() = sales - costs
+    /** [SHOP-01] Sales written by how they were paid. */
+    val byMethod: Long get() = card + cash + transfer + delivery
+}
+
+/** [FLD-03] A job's steps. Cancelled jobs count for nothing. */
+enum class JobStatus(val label: String, val code: Int) {
+    TENTATIVE("가계약", 0), CONFIRMED("확정", 1), DONE("완료", 2), CANCELLED("취소", 3);
+
+    companion object {
+        fun fromCode(code: Int): JobStatus = entries.firstOrNull { it.code == code } ?: CONFIRMED
+    }
 }
 
 object MoneyCategories {
