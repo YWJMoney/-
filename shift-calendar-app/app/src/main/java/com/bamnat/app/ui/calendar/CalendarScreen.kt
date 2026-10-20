@@ -628,6 +628,8 @@ fun CalendarScreen(
                 showMoney = focus.moneyFirst,
                 memoTexts = memoTexts,
                 focus = focus,
+                // [DAYW-01] A day calendar shows its exceptions only.
+                quietWorkDays = settings.workStyle == com.bamnat.core.work.WorkStyle.DAY,
                 modifier = Modifier.pointerInput(Unit) {
                     var dragged = 0f
                     detectHorizontalDragGestures(
@@ -869,6 +871,8 @@ fun CalendarScreen(
                         focus = focus,
                         onLongPress = if (stamping) startRange else null,
                         rangeFrom = rangeFrom,
+                        // [DAYW-01] A day calendar shows its exceptions only; painting shows every day.
+                        quietWorkDays = settings.workStyle == com.bamnat.core.work.WorkStyle.DAY && !stamping,
                     )
                 }
             }

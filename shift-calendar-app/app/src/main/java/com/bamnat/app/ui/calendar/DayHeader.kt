@@ -463,6 +463,8 @@ private fun QuickChips(
                 )
             }
         }
+        // [DAYW-03] A day worker's 지금 퇴근, first on today's working day.
+        if (offersLeaveNow(settings.workStyle, day, today)) item { LeaveNowChip(day, vm) }
         for (c in choices) item {
             val i = ExtraText.indexOf(day, c)
             FilterChip(

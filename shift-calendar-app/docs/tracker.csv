@@ -310,16 +310,16 @@ NOTE-01,"메모를 달력별로 → 메모는 만든 달력에만 보이고, 예
 NOTE-02,"공용 메모장 → 이 달력·공용 메모장·모든 메모로 보기, 메모마다 보일 달력 고르기, 여러 메모를 한 번에 공유",1.16.0,완료,,"MemoNotebook, ui/memo/MemoCalendarsUi.kt, MemoListScreen 공유, MemoEditorScreen MemoCalendarsChip"
 NOTE-03,"키보드가 쓰는 줄을 가림 → 쓰고 있는 줄이 늘 키보드 위에 보이게 스크롤",1.16.0,완료,,"MemoEditorScreen MemoBodyField (BringIntoViewRequester)"
 NOTE-04,"목록 이어쓰기 → 1. / 1) / - / • 로 시작한 줄에서 엔터를 누르면 다음 번호·같은 표시가 이어지고, 빈 항목에서 엔터면 목록 끝",1.16.0,완료,,"core/memo/ListContinuation.kt, MemoBodyField, ListContinuationTest"
-SHFT-01,"근무 코드별 수당(시장조사 교대 P1) → 근무 종류마다 ‘이 근무 수당 n%’와 야간 여부 표시, 급여 계산에 줄로 더함",1.16.0,진행 중,,
-SHFT-02,"교대 통계 첫 카드 → 코드별 횟수, 야간 횟수, 예상 급여",1.16.0,진행 중,,
-SHFT-03,"근무 교환·대근 기록(교대 P2) → 날마다 ‘누구와 바꿈’, 달마다 교환·대근 모아 보기",1.16.0,진행 중,,
-SHFT-04,"예상 급여와 실제 입금 차이(교대·일근·알바 P2) → 급여일에 들어온 급여와 계산한 급여의 차이 알려 주기",1.16.0,진행 중,,
-SHFT-05,"야간 근무 중 자동 어두운 화면(교대 P2) → 화면 설정에 ‘야간 근무 중 어둡게’",1.16.0,진행 중,,
-DAYW-01,"일근 달력은 예외만(일근 P1) → 평일 기본 근무는 칸에 안 쓰고 연차·야근·출장·재택 같은 예외만",1.16.0,진행 중,,
-DAYW-02,"일근 통계 첫 카드(일근 P1) → 이번 달 야근 시간, 연차 사용·잔여, 예상 실수령",1.16.0,진행 중,,
-DAYW-03,"‘지금 퇴근’ 버튼(일근 P2) → 위젯과 하루 화면에서 누르면 퇴근 시각까지 야근으로 적기",1.16.0,진행 중,,
-DAYW-04,"징검다리 연휴 추천(일근 P2) → 연차 1~2일로 길게 쉬는 날 찾아 보여 주기",1.16.0,진행 중,,
-DAYW-05,"월 시간외 상한(일근 P2) → 상한을 정하면 이번 달 남은 시간 보여 주기",1.16.0,진행 중,,
+SHFT-01,"근무 코드별 수당(시장조사 교대 P1) → 근무 종류마다 ‘이 근무 수당 n%’와 야간 여부 표시, 급여 계산에 줄로 더함",1.16.0,완료,,"core/model/NightShift.kt (NightShift.crosses, ShiftType.isNight), PayCalculator ShiftPremium 줄·하루 몫, ui/shifts/ShiftPremium.kt (ShiftPremiumSection, ShiftPremiumMarks), ShiftTypeEditorDialog showPremium, ShiftWorkTest"
+SHFT-02,"교대 통계 첫 카드 → 코드별 횟수, 야간 횟수, 예상 급여",1.16.0,완료,,"core/work/ShiftMonth.kt (ShiftMonth.of: 코드별 횟수·야간), ui/stats/WorkTypeCards.kt ShiftFirstCard, StatsScreen WorkTypeFirstCard, ShiftWorkTest"
+SHFT-03,"근무 교환·대근 기록(교대 P2) → 날마다 ‘누구와 바꿈’, 달마다 교환·대근 모아 보기",1.16.0,완료,,"DayEntry.swapWith, ui/calendar/WorkTypeDay.kt SwapRow(교환·대근 이름), CalendarViewModel.setSwapWith, ShiftMonth.swaps/names, WorkTypeCards SwapCard, ShiftWorkTest"
+SHFT-04,예상 급여와 실제 입금 차이(교대·일근·알바 P2) → 급여일에 들어온 급여와 계산한 급여의 차이 알려 주기,1.16.0,완료,,"core/pay/PayGap.kt (PayGaps.of, PayGap.text), WorkTypeCards PayGapCard (교대·일근·알바, 세후 추정과 비교), ShiftWorkTest"
+SHFT-05,야간 근무 중 자동 어두운 화면(교대 P2) → 화면 설정에 ‘야간 근무 중 어둡게’,1.16.0,완료,,"ThemeMode.NIGHT_SHIFT, ui/theme/NightShiftTheme.kt rememberThemeMode, NightShift.isOn, MainActivity, 설정 → 모양 ‘야간 근무 중 어둡게’, ShiftWorkTest"
+DAYW-01,일근 달력은 예외만(일근 P1) → 평일 기본 근무는 칸에 안 쓰고 연차·야근·출장·재택 같은 예외만,1.16.0,완료,,"core/work/DayWork.kt DayWork.isRoutine, MonthGrid DayCell quietWorkDays (MonthGrid·WeekStrip, CalendarScreen), DayWorkTest"
+DAYW-02,"일근 통계 첫 카드(일근 P1) → 이번 달 야근 시간, 연차 사용·잔여, 예상 실수령",1.16.0,완료,,"core/pay/TakeHome.kt (TaxMode, TakeHome.estimate), data/WorkTypePrefs.kt, WorkTypeCards DayFirstCard(야근·연차 LeaveBook·예상 실수령), DayWorkTest"
+DAYW-03,‘지금 퇴근’ 버튼(일근 P2) → 위젯과 하루 화면에서 누르면 퇴근 시각까지 야근으로 적기,1.16.0,완료,,"DayWork.leaveNow, ui/calendar/WorkTypeDay.kt LeaveNowChip·LeaveNowWriter, DayHeader QuickChips, CalendarViewModel.leaveNow, widget/LeaveNowAction.kt (오늘 위젯 버튼), DayWorkTest"
+DAYW-04,징검다리 연휴 추천(일근 P2) → 연차 1~2일로 길게 쉬는 날 찾아 보여 주기,1.16.0,완료,,"DayWork.bridges (KoreanHolidays, 12개월), WorkTypeCards BridgeCard, DayWorkTest"
+DAYW-05,월 시간외 상한(일근 P2) → 상한을 정하면 이번 달 남은 시간 보여 주기,1.16.0,완료,,"DayWork.OvertimeCap, WorkTypePrefs.setOvertimeCap, WorkTypeCards OvertimeCapCard (상한 정하기·남은 시간·넘음 경고), DayWorkTest"
 HRLY-01,"알바 출결 한 번에(알바 P1) → 하루 화면에서 지각·조퇴·결근 한 번 누르기, 대타는 대근으로",1.16.0,진행 중,,
 HRLY-02,"주휴수당 개근 판정과 배지(알바 P1) → 결근한 주는 주휴 빠짐, 달력 주마다 주휴 충족 표시",1.16.0,진행 중,,
 HRLY-03,"알바 달력 칸(알바 P1) → 근무 코드 대신 18–23 같은 시간과 그날 번 돈",1.16.0,진행 중,,

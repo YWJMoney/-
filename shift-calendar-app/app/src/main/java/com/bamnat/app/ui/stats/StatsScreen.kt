@@ -154,6 +154,18 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             return@Column
         }
 
+        // [NAV-01] The month's pay, worked out once for the pay card and the work type's cards.
+        // [STAB-01] A month of pay is worked out off the main thread, and an odd profile shows no total
+        // instead of closing the app.
+        val payTotal = produceState<Long?>(null, payProfile, snap, month, tier) {
+            value = payProfile?.takeIf { pays && FeatureGate.allows(tier, Feature.PAY_ENGINE) }?.let { p ->
+                runCatching { withContext(Dispatchers.Default) { vm.payTotal(p, snap, month) } }
+                    .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
+            }
+        }.value
+        // [SHFT-02][DAYW-02] A shift or day worker's first card.
+        WorkTypeFirstCard(style, vm.calendarId, snap, month, summary, payTotal, payProfile, columns)
+
         // [EXTRA-01] The four tiles add up to the total: the roster, extra work on working days, work on days off.
         val tiles: List<@Composable (Modifier) -> Unit> = listOf(
             { m -> StatTile("${month.monthValue}월 총 근무", HoursFormat.korean(summary.totalMinutes), m,
@@ -174,18 +186,13 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         if (pays) {
             PayEntryCard(
                 month = month,
-                // [STAB-01] A month of pay is worked out off the main thread, and an odd profile shows no total
-                // instead of closing the app.
-                total = produceState<Long?>(null, payProfile, snap, month, tier) {
-                    value = payProfile?.takeIf { FeatureGate.allows(tier, Feature.PAY_ENGINE) }?.let { p ->
-                        runCatching { withContext(Dispatchers.Default) { vm.payTotal(p, snap, month) } }
-                            .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
-                    }
-                }.value,
+                total = payTotal,
                 hasProfile = payProfile != null,
                 onClick = onOpenPay,
             )
         }
+        // [SHFT-03][SHFT-04][DAYW-04][DAYW-05] Swaps, pay that came in, the 시간외 상한 and 징검다리 연휴.
+        WorkTypeMoreCards(style, vm.calendarId, snap, month, summary, payTotal, payProfile, book)
 
         // [EXTRA-02] 주 52시간 (제53조), 64 under 탄력적 근로시간제; it does not apply under 5 employees.
         val profile = payProfile

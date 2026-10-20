@@ -181,6 +181,7 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit) {
     editing?.let { type ->
         ShiftTypeEditorDialog(
             initial = type,
+            showPremium = vm.isShiftCalendar,
             onDismiss = { editing = null },
             onSave = {
                 vm.save(it)
@@ -245,7 +246,11 @@ private fun ShiftTypeRow(
             ShiftBadge(type, size = 32.dp, outlined = type.isOff)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(type.name, style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(type.name, style = MaterialTheme.typography.titleMedium)
+                    // [SHFT-01] Night work and the kind's own premium, at a glance.
+                    ShiftPremiumMarks(type)
+                }
                 val start = type.start
                 val end = type.end
                 Text(
@@ -383,6 +388,8 @@ fun ShiftTypeEditorDialog(
     onDelete: (() -> Unit)?,
     /** [SETUP-01] The first setup asks for alarms in a step of their own. */
     showAlarms: Boolean = true,
+    /** [SHFT-01] A shift calendar sets each kind's own premium here. */
+    showPremium: Boolean = false,
 ) {
     var draft by remember(initial) { mutableStateOf(initial) }
     var pickStart by remember { mutableStateOf(false) }
@@ -550,6 +557,9 @@ fun ShiftTypeEditorDialog(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+
+                        // [SHFT-01] This kind of day's own premium, a line of its own in 급여 계산.
+                        if (showPremium) ShiftPremiumSection(timed, onChange = { draft = draft.copy(premiumPercent = it) })
 
                         if (showAlarms) SectionCard(title = "알람") {
                             Row(verticalAlignment = Alignment.CenterVertically) {

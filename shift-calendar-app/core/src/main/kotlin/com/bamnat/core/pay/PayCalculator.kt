@@ -225,6 +225,8 @@ class PayCalculator(
         val dayPays = mutableListOf<DayPay>()
         // [PAYS-06] What each of the user's own rules paid this month, by [CustomRule.id].
         val customTotals = linkedMapOf<String, CustomTotal>()
+        // [SHFT-01] Each kind of day's own premium (야간 근무 수당 30%): minutes worked on it, by shift type id.
+        val premiumTotals = linkedMapOf<Long, ShiftPremium>()
         val shiftNames = HashMap<Long, String>()
         val extraKindNames = HashMap<Long, String>(rules.extraNames)
         // Leave [FEAT-10]: minutes by kind, and paid leave per date for 주휴 weeks.
@@ -332,6 +334,13 @@ class PayCalculator(
                 }
                 if (leave.kind.paid) paidLeave += mins else unpaidLeave += mins
                 parts += DayPart(LineKind.LEAVE, leave.label, amount, formula)
+            }
+            // [SHFT-01] The shift kind's own premium on the hours worked on it, on top of the company's rules.
+            day.shiftType?.takeIf { day.isWorkDay && it.premiumPercent > 0 && m.shift.worked > 0 }?.let { t ->
+                val mins = m.shift.worked
+                val rate = t.premiumPercent / 100.0
+                premiumTotals.getOrPut(t.id) { ShiftPremium(t.name, t.premiumPercent) }.minutes += mins
+                parts += DayPart(LineKind.ALLOWANCE, "${t.name} 근무 수당", money(mins, rate), "${hours(mins)} × ${won(hourly)} × ${pct(rate)}")
             }
             // [EXTRA-03] Allowances counted the same way however the work was entered: the day's shift
             // and each piece of extra work that counts as a shift.
@@ -498,6 +507,12 @@ class PayCalculator(
             )
         }
 
+        // [SHFT-01] One line per kind of day with a premium of its own.
+        for ((_, t) in premiumTotals) lines += line(
+            LineKind.ALLOWANCE, "${t.name} 근무 수당 ${t.percent}%", t.minutes, hourly, t.percent / 100.0,
+            "‘${t.name}’ 근무로 일한 시간에 더해 주는 몫",
+            "근무 종류에 넣은 ‘이 근무 수당 ${t.percent}%’ (회사 규칙·단체협약)", baseEstimated,
+        )
         if (paidLeave > 0 && byHour) lines += line(
             LineKind.LEAVE, "유급 휴가", paidLeave, hourly, 1.0,
             "연차·유급 휴가로 쉰 근무시간", "근로기준법 제60조 (연차 유급휴가)", baseEstimated,
@@ -664,6 +679,9 @@ class PayCalculator(
         LineKind.NIGHT -> "야간"
         else -> "휴일"
     }
+
+    /** [SHFT-01] Minutes worked on one kind of day that pays its own premium. */
+    private class ShiftPremium(val name: String, val percent: Int, var minutes: Int = 0)
 
     /** What a company rule pays for one piece of work, how, and what the law would pay for it. */
     private class RuleResult(val amount: Long, val formula: String, val credited: Int, val legal: Long)

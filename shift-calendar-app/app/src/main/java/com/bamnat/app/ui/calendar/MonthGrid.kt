@@ -80,6 +80,7 @@ import com.bamnat.core.hours.WorkHoursCalculator
 import com.bamnat.core.schedule.DaySource
 import com.bamnat.core.schedule.ResolvedDay
 import com.bamnat.core.work.CalendarFocus
+import com.bamnat.core.work.DayWork
 import androidx.compose.material.icons.automirrored.outlined.NoteAdd
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Work
@@ -212,6 +213,8 @@ fun MonthGrid(
     onLongPress: ((LocalDate) -> Unit)? = null,
     /** [CAL-09] The first day of a range being painted. */
     rangeFrom: LocalDate? = null,
+    /** [DAYW-01] A day calendar: working days that just follow the pattern show no badge. */
+    quietWorkDays: Boolean = false,
 ) {
     val cal = LocalCalendarColors.current
     val haptics = LocalHapticFeedback.current
@@ -310,6 +313,7 @@ fun MonthGrid(
                         heat = if (focus == CalendarFocus.SALES && inMonth) cells.heat(date) else 0f,
                         onLongPress = onLongPress?.let { f -> { f(date) } },
                         isRangeStart = date == rangeFrom,
+                        quietWorkDays = quietWorkDays,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         weekNote = if (col == 0 && week.overLimit) {
                             "이 주 ${HoursFormat.hours(week.totalMinutes.toDouble())}시간, ${weeklyLimitHours}시간 넘음"
@@ -344,6 +348,8 @@ fun WeekStrip(
     showMoney: Boolean = false,
     memoTexts: Map<LocalDate, String> = emptyMap(),
     focus: CalendarFocus = CalendarFocus.SHIFTS,
+    /** [DAYW-01] As in [MonthGrid]. */
+    quietWorkDays: Boolean = false,
 ) {
     val month = YearMonth.from(selected)
     val cells = remember(money, monday) {
@@ -372,6 +378,7 @@ fun WeekStrip(
                 span = cells.spans[date],
                 startsHere = cells.starts[date] ?: 0,
                 sales = cells.sales[date],
+                quietWorkDays = quietWorkDays,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
         }
@@ -406,6 +413,8 @@ private fun DayCell(
     heat: Float = 0f,
     onLongPress: (() -> Unit)? = null,
     isRangeStart: Boolean = false,
+    /** [DAYW-01] Leave out the badge of a working day that just follows the pattern; TalkBack still says it. */
+    quietWorkDays: Boolean = false,
 ) {
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
@@ -570,7 +579,7 @@ private fun DayCell(
             } else if (badgeKind != null) {
                 // [EXTRA-01] Other extra work on a day off (특근 09–18): the kind itself is the day's mark.
                 ExtraKindMark(badgeKind, size = 22.dp)
-            } else if (type != null || day.hasCustomTimes) {
+            } else if ((type != null || day.hasCustomTimes) && !(quietWorkDays && DayWork.isRoutine(day))) {
                 ShiftBadge(type = type, text = type?.label ?: "근", size = 22.dp, outlined = type?.isOff == true)
             } else {
                 Spacer(Modifier.height(22.dp))

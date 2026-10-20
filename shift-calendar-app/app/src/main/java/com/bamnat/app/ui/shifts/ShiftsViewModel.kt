@@ -50,6 +50,10 @@ class ShiftsViewModel(
 
     val settings: StateFlow<AppSettings> = container.settingsRepository.settings
 
+    /** [SHFT-01] A shift calendar (or the main one from before work styles), where each kind can carry its own premium. */
+    val isShiftCalendar: Boolean
+        get() = container.scopeOf(calendarId).currentSettings().workStyle.let { it == null || it == com.bamnat.core.work.WorkStyle.SHIFT }
+
     /** Pattern being edited; survives navigating to the shift type screen and back. */
     val draft = PatternDraft()
 

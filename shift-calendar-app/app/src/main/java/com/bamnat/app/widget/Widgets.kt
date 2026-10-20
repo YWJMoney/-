@@ -123,6 +123,11 @@ private fun TodayContent(data: WidgetData) {
             CalendarFocus.SHIFTS -> Unit
         }
         DayLine("오늘", data.day(data.today), big = true)
+        // [DAYW-03] A day worker leaves work from the home screen.
+        if (LeaveNowAction.offered(data.style, data.day(data.today))) {
+            Spacer(GlanceModifier.height(4.dp))
+            LeaveNowWidgetButton()
+        }
         val line = data.flow?.line
         if (line != null) {
             Spacer(GlanceModifier.height(4.dp))

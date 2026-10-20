@@ -188,7 +188,8 @@ fun BamnatTheme(
     content: @Composable () -> Unit,
 ) {
     val dark = when (themeMode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        // [SHFT-05] The app resolves NIGHT_SHIFT before it gets here (rememberThemeMode); elsewhere it is the phone's.
+        ThemeMode.SYSTEM, ThemeMode.NIGHT_SHIFT -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }

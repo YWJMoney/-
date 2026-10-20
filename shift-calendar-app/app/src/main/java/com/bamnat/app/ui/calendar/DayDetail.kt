@@ -598,6 +598,8 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
         }
     }
     if (day.isWorkDay) WorkTimeContent(day, snapshot, vm)
+    // [SHFT-03] On a shift calendar, who the shift was swapped with.
+    WorkTypeDayRow(day, snapshot, vm)
 }
 
 @Composable
