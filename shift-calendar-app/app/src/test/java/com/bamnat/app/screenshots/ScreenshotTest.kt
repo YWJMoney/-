@@ -2175,8 +2175,10 @@ class ScreenshotTest {
 
     private fun Screen.payslipGap() {
         matchWithShare().invoke(this)
-        // A company allowance the app does not have; no setting explains all of it.
-        val gross = appTotalNow() + 52_000
+        // A company allowance the app does not have; no setting explains all of it. A share of the month, not a
+        // fixed amount: 52,000원 came within the 0.5% match of a 쉬는 날 근무 change on some days of the month.
+        val total = appTotalNow()
+        val gross = total + total * 35 / 1000
         tapText("네, 같았어요", exact = true)
         typeInto("지급 총액", gross.toString())
         tapText("맞춰 보기", exact = true)
