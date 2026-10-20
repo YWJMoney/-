@@ -16,6 +16,8 @@ enum class SettingsGo {
     SHARE, RECEIVE, SLEEP, CALENDAR_IMPORT,
     /** [SHFT-06][SHFT-07][DAYW-06][DAYW-07] */
     DUTY_ROSTER, HEALTH_REPORT, ATTENDANCE_IMPORT, COMMUTE,
+    /** [GUIDE-05] 기능 켜고 끄기. */
+    FEATURES,
 }
 
 /** [UX-04] Where a link inside the app goes: one group of settings (and the row to point at), or a screen. */

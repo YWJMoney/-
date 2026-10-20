@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.work
 
+import com.bamnat.app.ui.guide.FeatureCard
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -71,9 +72,10 @@ import java.util.UUID
  */
 @Composable
 fun ShopToolCards(calendarId: String, book: MoneyBook, month: YearMonth, today: LocalDate = LocalDate.now()) {
-    StaffCostCard(calendarId, book, month)
-    WeatherSalesCard(calendarId, book, month)
-    SimpleTaxCard(book, today)
+    // [GUIDE-05] Each card can be turned off for its calendar.
+    FeatureCard("shop.staff", calendarId) { StaffCostCard(calendarId, book, month) }
+    FeatureCard("shop.weather", calendarId) { WeatherSalesCard(calendarId, book, month) }
+    FeatureCard("shop.simpleTax", calendarId) { SimpleTaxCard(book, today) }
 }
 
 /** [SHOP-09] 간이과세 기준 대비 올해 매출: progress, where the year is heading and a warning near or over 1억 400만 원. */
@@ -215,6 +217,8 @@ private fun StaffCostCard(calendarId: String, book: MoneyBook, month: YearMonth)
     val store = remember { WorkToolsStore.get(context) }
     val tools by store.of(calendarId).collectAsStateWithLifecycle()
     var open by rememberSaveable { mutableStateOf(false) }
+    // [GUIDE-01] Opened from the guide or the help search.
+    com.bamnat.app.ui.guide.FocusedTool("staff", "shop.staff") { open = true }
     val roster = tools.roster
     val cost = remember(roster, month) { LaborCost.month(roster, month) }
     val sales = remember(book.sales, month) { book.sales.filter { YearMonth.from(it.date) == month }.sumOf { it.sales } }

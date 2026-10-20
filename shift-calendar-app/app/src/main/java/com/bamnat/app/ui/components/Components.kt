@@ -175,6 +175,17 @@ fun SectionCard(
     trailing: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    // [GUIDE-06] A card of a feature that can be off carries ⋮ › 이 기능 끄기; cards inside it do not.
+    val feature = com.bamnat.app.ui.guide.LocalCardFeature.current
+    if (feature != null) {
+        androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.guide.LocalCardFeature provides null) {
+            SectionCard(title, modifier, trailing = {
+                trailing?.invoke()
+                com.bamnat.app.ui.guide.FeatureMenuButton(feature)
+            }, content = content)
+        }
+        return
+    }
     if (LocalFlatSections.current) {
         Column(modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             if (title != null || trailing != null) {

@@ -102,6 +102,11 @@ fun HourlyToolsCard(calendarId: String, profile: PayProfile?, snapshot: Schedule
     val store = remember { WorkToolsStore.get(context) }
     val tools by store.of(calendarId).collectAsStateWithLifecycle()
     var open by rememberSaveable { mutableStateOf<String?>(null) }
+    // [GUIDE-01][GUIDE-04] Opened from the guide or the help search; opening a tool counts as using it.
+    com.bamnat.app.ui.guide.FocusedTool("offers", "hourly.offers") { open = "offers" }
+    com.bamnat.app.ui.guide.FocusedTool("contract", "hourly.contract") { open = "contract" }
+    com.bamnat.app.ui.guide.FocusedTool("quit", "hourly.quit") { open = "quit" }
+    LaunchedEffect(open) { open?.let { com.bamnat.app.data.GuideStore.get(context).used("hourly.$it") } }
     val contract = tools.contract
     contract.daysLeft(today)?.takeIf { contract.endingSoon(today) }?.let { left ->
         WarningBanner(

@@ -43,7 +43,8 @@ fun WorkMoneyCards(calendarId: String, book: MoneyBook, style: WorkStyle?, today
     val c = LocalContext.current.appContainer
     val calendars by c.calendars.calendars.collectAsStateWithLifecycle()
     val cal = calendars.firstOrNull { it.id == calendarId }
-    if (style == WorkStyle.FIELD) DepositMatchCard(c, calendarId, book, cal?.field ?: FieldRules(), today)
+    // [GUIDE-05] 입금 확인 can be turned off for its calendar.
+    if (style == WorkStyle.FIELD) com.bamnat.app.ui.guide.FeatureCard("field.deposit", calendarId) { DepositMatchCard(c, calendarId, book, cal?.field ?: FieldRules(), today) }
     if (style == WorkStyle.BUSINESS) CardDepositsCard(c, calendarId, book, cal?.shopMoney ?: ShopMoney(), today)
 }
 

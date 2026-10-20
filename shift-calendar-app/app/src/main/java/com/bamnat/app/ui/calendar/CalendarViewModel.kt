@@ -664,8 +664,12 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
+    /** [GUIDE-04] The guide ticks a feature once it is used; only on this phone. */
+    private fun guideUsed(id: String) = com.bamnat.app.data.GuideStore.get(container.appContext).used(id)
+
     /** [SHFT-03] Who the day was swapped with (or covered for, on a 대근 day); blank clears it. Said back with undo. */
     fun setSwapWith(date: LocalDate, name: String) {
+        if (name.isNotBlank()) guideUsed("shift.swap")
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val clean = name.trim().take(MAX_SWAP_NAME)
@@ -681,6 +685,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * there), before the end the day ends now. Said back with undo.
      */
     fun leaveNow(day: ResolvedDay, now: LocalDateTime = LocalDateTime.now()) {
+        guideUsed("day.leaveNow")
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val kindName = snapshot.value?.kinds?.name(com.bamnat.core.model.ExtraKind.OVERTIME_ID) ?: "잔업"
@@ -691,7 +696,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     /** [EXTRA-01] Adds a piece of extra work, said back with undo: "10월 17일에 야간 대근을 넣었어요". */
     /** [HRLY-01][HRLY-08] Changes one day of the calendar on screen (출결, 출근·퇴근), said back with undo. */
-    fun changeDay(date: LocalDate, said: String, transform: (com.bamnat.core.model.DayEntry) -> com.bamnat.core.model.DayEntry) {
+    fun changeDay(date: LocalDate, said: String, feature: String? = null, transform: (com.bamnat.core.model.DayEntry) -> com.bamnat.core.model.DayEntry) {
+        feature?.let(::guideUsed)
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.updateDay(date, transform)
@@ -891,6 +897,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     /** [CAL-10] A new job can be taken back; a changed one (paid, moved) goes back to what it was. */
     override fun saveJob(job: Job) {
+        if (job.units != null) guideUsed("field.units")
+        if (job.due != null) guideUsed("field.due")
+        if (job.status != com.bamnat.core.money.JobStatus.CONFIRMED) guideUsed("field.status")
         val money = money
         container.appScope.launch {
             val before = if (job.id == 0L) null else money.job(job.id)
@@ -912,6 +921,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     /** [CAL-10] The day's sales as they were come back with undo, or go away when there were none. */
     override fun saveSales(sales: DailySales) {
+        guideUsed("shop.dayClose")
+        if (sales.cashCounted != null) guideUsed("shop.cash")
         val money = money
         val calendar = container.calendars.active.value
         container.appScope.launch {

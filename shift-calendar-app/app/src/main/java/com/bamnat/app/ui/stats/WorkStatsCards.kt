@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.stats
 
+import com.bamnat.app.ui.guide.FeatureCard
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -54,7 +55,7 @@ import java.time.YearMonth
  * held back and costs for the 5월 종합소득세 신고.
  */
 @Composable
-fun FieldStatsCards(book: MoneyBook, month: YearMonth, today: LocalDate = LocalDate.now()) {
+fun FieldStatsCards(book: MoneyBook, month: YearMonth, today: LocalDate = LocalDate.now(), calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN) {
     val units = remember(book, month) { DayRate.month(month, book.jobs) }
     if (units.days > 0) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -67,6 +68,13 @@ fun FieldStatsCards(book: MoneyBook, month: YearMonth, today: LocalDate = LocalD
     val monthDays = remember(book, month) { FieldYear.workedDays(book.jobs, month.atDay(1), month.atEndOfMonth()) }
     val yearEnd = if (year == today.year) today else LocalDate.of(year, 12, 31)
     val yearDays = remember(book, year, yearEnd) { FieldYear.workedDays(book.jobs, LocalDate.of(year, 1, 1), yearEnd) }
+    // [GUIDE-05] 출역일 and the year's totals go off together, for this calendar.
+    FeatureCard("field.year", calendarId) { FieldYearCards(book, month, today, monthDays, yearDays) }
+}
+
+@Composable
+private fun FieldYearCards(book: MoneyBook, month: YearMonth, today: LocalDate, monthDays: Int, yearDays: Int) {
+    val year = month.year
     SectionCard(title = "출역일") {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile("${month.monthValue}월", "${monthDays}일", Modifier.weight(1f))
@@ -150,7 +158,8 @@ fun ShopStatsCards(calendarId: String, book: MoneyBook, month: YearMonth, isOpen
     val calendars by c.calendars.calendars.collectAsStateWithLifecycle()
     val rules = calendars.firstOrNull { it.id == calendarId }?.shopMoney ?: ShopMoney()
     val split = remember(book, month) { SalesSplit.of(month, book.sales) }
-    if (split.total > split.unsplit) {
+    // [GUIDE-05] Each card can be turned off for its calendar.
+    if (split.total > split.unsplit) FeatureCard("shop.split", calendarId) {
         SectionCard(title = "결제 수단별") {
             split.parts.forEach { (name, v) ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -162,9 +171,13 @@ fun ShopStatsCards(calendarId: String, book: MoneyBook, month: YearMonth, isOpen
             }
         }
     }
-    TargetCard(rules, book, month, today, isOpen) { t -> c.calendars.updateShopMoney(calendarId) { it.copy(monthlyTarget = t) } }
-    VatCard(rules, book, if (YearMonth.from(today) == month) today else month.atDay(1)) { simple ->
-        c.calendars.updateShopMoney(calendarId) { it.copy(simpleTax = simple) }
+    FeatureCard("shop.target", calendarId) {
+        TargetCard(rules, book, month, today, isOpen) { t -> c.calendars.updateShopMoney(calendarId) { it.copy(monthlyTarget = t) } }
+    }
+    FeatureCard("shop.vat", calendarId) {
+        VatCard(rules, book, if (YearMonth.from(today) == month) today else month.atDay(1)) { simple ->
+            c.calendars.updateShopMoney(calendarId) { it.copy(simpleTax = simple) }
+        }
     }
 }
 

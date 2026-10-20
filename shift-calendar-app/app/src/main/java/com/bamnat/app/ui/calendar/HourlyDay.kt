@@ -90,7 +90,7 @@ internal fun LazyListScope.hourlyChips(day: ResolvedDay, today: LocalDate, snaps
             AssistChip(
                 onClick = {
                     val now = HourlyWork.clock(LocalTime.now())
-                    vm.changeDay(day.date, "출근 ${Fmt.time(now)} 적었어요") { e ->
+                    vm.changeDay(day.date, "출근 ${Fmt.time(now)} 적었어요", feature = "hourly.clock") { e ->
                         e.copy(customStart = now, customEnd = e.customEnd ?: day.shiftType?.end)
                     }
                 },
@@ -102,7 +102,7 @@ internal fun LazyListScope.hourlyChips(day: ResolvedDay, today: LocalDate, snaps
             AssistChip(
                 onClick = {
                     val now = HourlyWork.clock(LocalTime.now())
-                    vm.changeDay(day.date, "퇴근 ${Fmt.time(now)} 적었어요") { e ->
+                    vm.changeDay(day.date, "퇴근 ${Fmt.time(now)} 적었어요", feature = "hourly.clock") { e ->
                         e.copy(customEnd = now, customStart = e.customStart ?: day.start ?: day.shiftType?.start)
                     }
                 },
@@ -116,7 +116,7 @@ internal fun LazyListScope.hourlyChips(day: ResolvedDay, today: LocalDate, snaps
         FilterChip(
             selected = on,
             onClick = {
-                vm.changeDay(day.date, if (on) "${a.label} 표시를 지웠어요" else "${Fmt.monthDay(day.date)} ${a.label}${if (a == Attendance.EARLY) "로" else "으로"} 적었어요") { e ->
+                vm.changeDay(day.date, if (on) "${a.label} 표시를 지웠어요" else "${Fmt.monthDay(day.date)} ${a.label}${if (a == Attendance.EARLY) "로" else "으로"} 적었어요", feature = "hourly.attendance") { e ->
                     e.copy(attendance = if (on) null else a)
                 }
             },

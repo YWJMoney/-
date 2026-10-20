@@ -560,10 +560,11 @@ fun CalendarScreen(
         if (noticeTarget != NoticeLinks.Target.TODAY) return@LaunchedEffect
         NoticeLinks.consume(NoticeLinks.Target.TODAY)
         received.view(null)
-        // [MCAL-01] Day notices follow the main calendar.
-        vm.viewCalendar(com.bamnat.app.data.PersonalCalendar.MAIN)
+        // [MCAL-01] Day notices follow the main calendar; [GUIDE-01] a feature of today opens on its own calendar, with the day open.
+        val feature = com.bamnat.app.ui.guide.FeatureLinks.takeToday()
+        vm.viewCalendar(feature ?: com.bamnat.app.data.PersonalCalendar.MAIN)
         vm.setPaint(null)
-        sheetOpen = false
+        sheetOpen = feature != null && !showsDay
         vm.select(LocalDate.now())
         pagerState.scrollToPage(monthToPage(baseMonth, YearMonth.now()))
         pageScroll.scrollTo(0)
@@ -732,6 +733,11 @@ fun CalendarScreen(
                 },
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
+        }
+        // [GUIDE-02][GUIDE-03] What this calendar can do on its first days, then one tip at the right moment.
+        if (waiting == null && paint == null && viewingReceived == null && visibleMonth == YearMonth.from(today)) {
+            com.bamnat.app.ui.guide.GuideArea(activeCalendar.id, settings.workStyle, snap, moneyBook, payProfile, settings.weekStart,
+                Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
         }
         // [CAL-07] Weekday work set by the week, on this month's public holidays: asked once.
         val holidayDays = remember(snap, visibleMonth, holidaysKept, settings.workStyle, activeCalendar.id) { vm.holidayWork(snap, visibleMonth) }

@@ -1,5 +1,8 @@
 package com.bamnat.app.ui.settings
 
+import com.bamnat.app.ui.guide.guideCalendar
+import com.bamnat.app.appContainer
+import androidx.compose.material3.HorizontalDivider
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -190,6 +193,16 @@ fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
         view = NEW
     }
 
+    // [GUIDE-07] Nothing found: 의견 with the words searched and the kind of work, ready to send.
+    val guideContainer = LocalContext.current.appContainer
+    val idea: (String) -> Unit = { q ->
+        val (_, style) = guideContainer.guideCalendar()
+        start = InquiryStart(about = "기능 찾기", kind = InquiryKind.IDEA, text = com.bamnat.app.ui.guide.FeatureSearch.ideaText(q, style))
+        message = null
+        formKey++
+        view = NEW
+    }
+
     val leaves = home || (view == NEW && fromElsewhere)
     val back = { if (leaves) onBack() else { view = if (publicId != null) BOARD else lastHome } }
     BackHandler(enabled = !leaves) { back() }
@@ -236,7 +249,7 @@ fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
                                 if (fromElsewhere) onBack() else { message = "메일 앱에서 보내 주세요. 답은 메일로 와요"; view = HELP }
                             })
                     }
-                    view == HELP -> HelpHome(vm, about, query, onQuery = { query = it }, list = list, onAsk = ask,
+                    view == HELP -> HelpHome(vm, about, query, onQuery = { query = it }, list = list, onAsk = ask, onIdea = idea,
                         onMine = { message = null; view = LIST }, onOpenPublic = { message = null; view = PUB + it.id })
                     view == BOARD -> PublicBoard(vm, onNew = { ask("", null) }, onOpen = { message = null; view = PUB + it.id })
                     publicId != null -> PublicThreadView(vm, publicId, onGone = { message = "이 문의는 지워졌거나 가려졌어요"; view = BOARD })
@@ -900,6 +913,7 @@ private fun HelpHome(
     onAsk: (String, HelpTopic?) -> Unit,
     onMine: () -> Unit,
     onOpenPublic: (PublicInquiry) -> Unit,
+    onIdea: (String) -> Unit = {},
 ) {
     val topics = remember { HelpFaq.topics(vm.shareOn) }
     val draft by vm.draft.collectAsStateWithLifecycle()
@@ -914,8 +928,9 @@ private fun HelpHome(
         OutlinedTextField(
             value = query,
             onValueChange = { onQuery(it.take(60)) },
-            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "도움말 찾기" },
-            placeholder = { Text("무엇이 궁금한가요? (예: 알람, 백업)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "기능과 도움말 찾기" },
+            // [GUIDE-07] Features, answers and settings by name or other words.
+            placeholder = { Text("무엇을 찾으세요? (예: 주휴, 백업, 알람)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
             leadingIcon = { Icon(Icons.Filled.Search, null) },
             trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { onQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") } }) else null,
             singleLine = true,
@@ -940,10 +955,21 @@ private fun HelpHome(
                     .filter { (it.place as? SettingPlace.Screen)?.go != SettingsGo.INQUIRY }
             }
             val posts = remember(query, board) { boardMatches(query, board?.items.orEmpty()) }
-            val total = found.size + settings.size + posts.size
+            // [GUIDE-07] The features first: where each is, what it does, and whether it is off on this calendar.
+            val guideContainer = LocalContext.current.appContainer
+            val features = remember(query) {
+                val (_, style) = guideContainer.guideCalendar()
+                com.bamnat.app.ui.guide.FeatureSearch.search(query, style)
+            }
+            val total = found.size + settings.size + posts.size + features.size
             Text(if (total == 0) "‘$query’에 맞는 답을 찾지 못했어요" else "찾은 답 ${total}개",
                 style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 4.dp, top = 4.dp).semantics { liveRegion = LiveRegionMode.Polite })
+            if (features.isNotEmpty()) {
+                SectionLabel("기능에서 찾기")
+                features.forEach { f -> com.bamnat.app.ui.guide.FeatureHelpRow(f) }
+            }
+            if (found.isNotEmpty() && features.isNotEmpty()) SectionLabel("자주 묻는 질문에서")
             found.forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk(query, t) }) }
             if (settings.isNotEmpty()) {
                 SectionLabel("설정에서 찾기")
@@ -954,7 +980,7 @@ private fun HelpHome(
                 posts.forEach { p -> PublicCard(p) { onOpenPublic(p) } }
             }
         }
-        AskCard(vm, query, list, onAsk = { onAsk(query, null) }, onMine = onMine)
+        AskCard(vm, query, list, onAsk = { onAsk(query, null) }, onMine = onMine, onIdea = { onIdea(query) })
         if (vm.online) MailNotice()
         Spacer(Modifier.height(24.dp))
     }
@@ -1044,9 +1070,21 @@ internal fun boardMatches(query: String, items: List<PublicInquiry>, limit: Int 
  * without the server asks by mail.
  */
 @Composable
-private fun AskCard(vm: InquiryViewModel, query: String, list: List<Inquiry>?, onAsk: () -> Unit, onMine: () -> Unit) {
+private fun AskCard(vm: InquiryViewModel, query: String, list: List<Inquiry>?, onAsk: () -> Unit, onMine: () -> Unit, onIdea: () -> Unit = {}) {
     SoftCard(Modifier.padding(top = 12.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // [GUIDE-07] Not found: the words go to the developer as 건의·제안, with the kind of work.
+            if (query.isNotBlank()) {
+                Text("못 찾았나요?", style = MaterialTheme.typography.titleMedium)
+                Text("찾던 말과 지금 달력의 근무 유형을 담아 의견으로 보내요. 있는 기능이면 어디 있는지 답해 드리고, 없으면 만들 때 참고해요.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick = onIdea, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                    Icon(Icons.Outlined.QuestionAnswer, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("못 찾았어요 · 의견 보내기")
+                }
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            }
             Text(if (query.isBlank()) "찾는 답이 없나요?" else "‘$query’ 그대로 물어볼까요?", style = MaterialTheme.typography.titleMedium)
             Text(
                 if (vm.online) "개발자가 직접 읽고 답해요. 답이 오면 설정 탭에 표시돼요."

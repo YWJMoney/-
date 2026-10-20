@@ -135,6 +135,8 @@ import com.bamnat.app.ui.company.InviteSheet
 import androidx.compose.runtime.rememberCoroutineScope
 import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.work.WorkStyle
+import com.bamnat.core.guide.Place
+import com.bamnat.app.ui.guide.settingsPage
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.runtime.produceState
@@ -212,6 +214,8 @@ private object Routes {
     const val HEALTH_REPORT = "health_report"
     const val ATTENDANCE_IMPORT = "attendance_import"
     const val COMMUTE = "commute"
+    /** [GUIDE-05] 설정 › 기능 켜고 끄기. */
+    const val FEATURES = "features"
 
     fun companyFind(setup: Boolean = false, weekdays: Boolean = false) = "company_find?setup=$setup&weekdays=$weekdays"
     fun company(id: String, setup: Boolean, weekdays: Boolean) = "company/$id?setup=$setup&weekdays=$weekdays"
@@ -270,6 +274,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // Which screens get used decides what is worth building next [MEAS-03].
     LaunchedEffect(route) {
         route?.let { container.telemetry.event(DiagEvents.SCREEN, it.substringBefore('/').substringBefore('?')) }
+        // [GUIDE-04] A screen that holds a feature ticks it in the guide; kept on this phone only.
+        route?.let { com.bamnat.app.ui.guide.GuideUse.screen(com.bamnat.app.data.GuideStore.get(container.appContext), it.substringBefore('/').substringBefore('?')) }
     }
 
     // Opening the app (again) always lands on the calendar.
@@ -359,6 +365,22 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 SettingsLinks.consume(link)
                 link.go.route()?.let { r -> nav.navigate(r) { launchSingleTop = true } }
             }
+        }
+    }
+    // [GUIDE-01] The checklist, a tip, the help search or 기능 켜고 끄기 opens a feature where it lives,
+    // for the calendar on screen.
+    val featureLink by com.bamnat.app.ui.guide.FeatureLinks.target.collectAsStateWithLifecycle()
+    LaunchedEffect(featureLink) {
+        val link = featureLink ?: return@LaunchedEffect
+        com.bamnat.app.ui.guide.FeatureLinks.consume(link)
+        nav.openFeature(container, link)
+    }
+    // [GUIDE-06] A feature turned off from its ⋮: where it comes back, one tap away.
+    LaunchedEffect(Unit) {
+        com.bamnat.app.ui.guide.FeatureLinks.turnedOff.collect { name ->
+            val result = snackbar.showSnackbar("‘$name’ 꺼졌어요. 설정 › 기능 켜고 끄기에서 다시 켤 수 있어요",
+                actionLabel = "바로 가기", duration = SnackbarDuration.Long)
+            if (result == SnackbarResult.ActionPerformed) nav.navigate(Routes.FEATURES) { launchSingleTop = true }
         }
     }
     // [UX-05] A new answer to the user's question shows on the 설정 tab from the moment the app opens.
@@ -886,6 +908,7 @@ private fun AppNavHost(
             val vm = appViewModel { com.bamnat.app.ui.work.CommuteViewModel(it) }
             com.bamnat.app.ui.work.CommuteScreen(vm = vm, onBack = { nav.popFrom(Routes.COMMUTE) })
         }
+        composable(Routes.FEATURES) { com.bamnat.app.ui.guide.FeatureSwitchesScreen(onBack = { nav.popFrom(Routes.FEATURES) }) }
         composable(Routes.EXTRA_KINDS) {
             val vm = appViewModel { ExtraKindsViewModel(it) }
             ExtraKindsScreen(vm = vm, onBack = { nav.popFrom(Routes.EXTRA_KINDS) },
@@ -972,6 +995,47 @@ private fun NavHostController.openPattern(c: com.bamnat.app.AppContainer, calend
     navigate(if (style == WorkStyle.BUSINESS) Routes.shopDays(calendar) else Routes.pattern(weekdays = style == WorkStyle.DAY, calendar = calendar)) { launchSingleTop = true }
 }
 
+/** [GUIDE-01] Where each [com.bamnat.core.guide.Place] of the feature list is, for the calendar on screen. */
+private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core.guide.FeatureRoute) {
+    val cal = c.calendars.active.value
+    fun screen(r: String) = navigate(r) { launchSingleTop = true }
+    when (link.place) {
+        Place.CALENDAR, Place.TODAY -> {
+            navigateTopLevel(TopLevel.CALENDAR.route)
+            com.bamnat.app.ui.guide.FeatureLinks.today(cal)
+            NoticeLinks.open(NoticeLinks.Target.TODAY)
+        }
+        Place.MONEY -> navigateTopLevel(TopLevel.MONEY.route)
+        Place.AUTO_RECORD -> NoticeLinks.open(NoticeLinks.Target.AUTO_RECORD)
+        Place.MEMOS -> navigateTopLevel(TopLevel.MEMOS.route)
+        Place.STATS -> navigateTopLevel(TopLevel.STATS.route)
+        Place.PAY -> screen(Routes.pay(cal))
+        Place.PATTERN -> openPattern(c, cal)
+        Place.SHIFT_TYPES -> screen(Routes.shiftTypes(cal))
+        Place.EXTRA_KINDS -> screen(Routes.EXTRA_KINDS)
+        Place.WORK_STYLE -> screen(Routes.workStyle(cal))
+        Place.CALENDARS -> screen(Routes.CALENDARS)
+        Place.CALENDAR_EDIT -> screen(Routes.calendarEdit(cal))
+        Place.SHOP_DAYS -> screen(Routes.shopDays(cal))
+        Place.COMBINED -> screen(Routes.COMBINED)
+        Place.OWED -> screen(Routes.OWED)
+        Place.SLEEP -> screen(Routes.SLEEP)
+        Place.DUTY_ROSTER -> screen(Routes.DUTY_ROSTER)
+        Place.HEALTH_REPORT -> screen(Routes.HEALTH_REPORT)
+        Place.ATTENDANCE_IMPORT -> screen(Routes.ATTENDANCE_IMPORT)
+        Place.COMMUTE -> screen(Routes.COMMUTE)
+        Place.CALENDAR_IMPORT -> screen(Routes.CALENDAR_IMPORT)
+        Place.SHARE -> { navigateTopLevel(TopLevel.CALENDAR.route); NoticeLinks.open(NoticeLinks.Target.SHARE, cal) }
+        Place.RECEIVE -> { navigateTopLevel(TopLevel.CALENDAR.route); NoticeLinks.open(NoticeLinks.Target.RECEIVE) }
+        Place.DIAGNOSTICS -> screen(Routes.diagnostics(false))
+        Place.INQUIRY -> com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(help = true))
+        Place.FEATURES -> screen(Routes.FEATURES)
+        Place.SETTINGS_WORK, Place.SETTINGS_ALARM, Place.SETTINGS_REST, Place.SETTINGS_NOTICES, Place.SETTINGS_PAY,
+        Place.SETTINGS_CALENDAR, Place.SETTINGS_DATA, Place.SETTINGS_PRIVACY ->
+            link.place.settingsPage()?.let { SettingsLinks.open(it, link.focus) }
+    }
+}
+
 /** [UX-04] The route a [SettingsGo] opens; the calendar's own sheets are opened through [NoticeLinks] instead. */
 private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.WORK_STYLE -> Routes.workStyle()
@@ -983,6 +1047,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.DIAGNOSTICS -> Routes.diagnostics(false)
     SettingsGo.INQUIRY -> Routes.INQUIRY
     SettingsGo.BOARD -> Routes.COMPANY_BOARD
+    SettingsGo.FEATURES -> Routes.FEATURES
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,
     SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT, SettingsGo.COMMUTE -> null
 }

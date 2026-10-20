@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.stats
 
+import com.bamnat.app.ui.guide.FeatureCard
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -75,8 +76,9 @@ internal fun WorkTypeFirstCard(
     columns: Int,
 ) {
     when {
-        style.isShift() -> ShiftFirstCard(snapshot, month, payTotal)
-        style == WorkStyle.DAY -> DayFirstCard(calendarId, snapshot, month, summary, payTotal, profile, columns)
+        // [GUIDE-05] Each card can be turned off for its calendar.
+        style.isShift() -> FeatureCard("shift.firstCard", calendarId) { ShiftFirstCard(snapshot, month, payTotal) }
+        style == WorkStyle.DAY -> FeatureCard("day.firstCard", calendarId) { DayFirstCard(calendarId, snapshot, month, summary, payTotal, profile, columns) }
     }
 }
 
@@ -92,13 +94,14 @@ internal fun WorkTypeMoreCards(
     profile: PayProfile?,
     book: MoneyBook?,
 ) {
-    if (style?.usesPayEngine != false) PayGapCard(calendarId, month, payTotal, profile, book, style)
-    if (style.isShift()) SwapCard(snapshot, month)
+    // [GUIDE-05] Each card can be turned off for its calendar.
+    if (style?.usesPayEngine != false) FeatureCard("pay.gap", calendarId) { PayGapCard(calendarId, month, payTotal, profile, book, style) }
+    if (style.isShift()) FeatureCard("shift.swapCard", calendarId) { SwapCard(snapshot, month) }
     // [SHFT-07] The year's night share, runs of nights and short rests.
-    if (style.isShift()) HealthYearCard(snapshot)
+    if (style.isShift()) FeatureCard("shift.health", calendarId) { HealthYearCard(snapshot) }
     if (style == WorkStyle.DAY) {
-        OvertimeCapCard(calendarId, summary)
-        BridgeCard(snapshot)
+        FeatureCard("day.overtimeCap", calendarId) { OvertimeCapCard(calendarId, summary) }
+        FeatureCard("day.bridges", calendarId) { BridgeCard(snapshot) }
     }
 }
 

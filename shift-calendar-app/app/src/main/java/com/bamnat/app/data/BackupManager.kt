@@ -50,6 +50,8 @@ class BackupManager(
     private val memoSharing: MemoSharingStore? = null,
     /** [HRLY-09][FLD-11][SHOP-10][SHOP-11] Each calendar's work tools (offers, contract fields, quotes, weather, staff); photos stay on the phone. */
     private val workTools: WorkToolsStore? = null,
+    /** [GUIDE-05] The features turned off with the app's own switches; what was used stays on the phone. */
+    private val guide: GuideStore? = null,
 ) {
     /** The schedule tables of [source] (shifts, order, changed days, extra work) as a backup holds them. */
     private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
@@ -230,6 +232,7 @@ class BackupManager(
         })
         payStore?.let { putPay(it, root) }
         root.putOpt("workTools", workTools?.export(PersonalCalendar.MAIN))
+        guide?.let { root.put("featuresOff", it.exportOff()) }
         val s = settings.current
         root.put(
             "settings",
@@ -487,6 +490,8 @@ class BackupManager(
         }
         // [MEMO-02] An older backup has no sharing: the phone's own choice stays.
         root.optJSONArray("memoSharing")?.let { a -> memoSharing?.set(MemoSharingStore.fromJson(a)) }
+        // [GUIDE-05] An older backup has none: the phone's own switches stay.
+        root.optJSONArray("featuresOff")?.let { a -> guide?.restoreOff(a) }
         // [MCAL-05] The added calendars as the backup had them, each in its own database.
         calendars?.let { book ->
             if (added != null) {

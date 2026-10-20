@@ -483,10 +483,11 @@ fun MoneyScreen(
         // [COMN-02] With two calendars or more, all of them added up.
         AllCalendarsCard(month)
         BudgetCard(budget, today, onEdit = { budgeting = true })
-        OtherPlacesCard(otherPlaces, book.categoriesOf(MoneyKind.EXPENSE), onPick = { g, c -> vm.recategorize(g.entries, c) })
+        // [GUIDE-05] Suggestions that can be turned off for the calendar.
+        com.bamnat.app.ui.guide.FeatureCard("money.otherPlaces", vm.calendarId) { OtherPlacesCard(otherPlaces, book.categoriesOf(MoneyKind.EXPENSE), onPick = { g, c -> vm.recategorize(g.entries, c) }) }
         UpcomingCard(upcoming, book.fixed, leftFixed, onRecord = { vm.recordFixed(it, today) },
             onEdit = { c -> if (c == null) addingFixed = true else editingFixed = c })
-        RepeatSuggestCard(repeats, onAdd = vm::addRepeat, onNo = vm::notRepeating)
+        com.bamnat.app.ui.guide.FeatureCard("money.repeat", vm.calendarId) { RepeatSuggestCard(repeats, onAdd = vm::addRepeat, onNo = vm::notRepeating) }
         AccountsCard(book, today, onAdd = { t -> if (t == null) addingAnyAccount = true else addingAccount = t }, onEdit = { editingAccount = it })
     }
     val right: @Composable () -> Unit = {

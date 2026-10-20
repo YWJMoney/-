@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.work
 
+import com.bamnat.app.ui.guide.FeatureCard
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -67,8 +68,9 @@ import java.time.YearMonth
  */
 @Composable
 fun FieldToolCards(calendarId: String, book: MoneyBook, month: YearMonth, today: LocalDate = LocalDate.now()) {
-    DailyTaxCard(book, month)
-    QuotesCard(calendarId, today)
+    // [GUIDE-05] Each card can be turned off for its calendar.
+    FeatureCard("field.dailyTax", calendarId) { DailyTaxCard(book, month) }
+    FeatureCard("field.quote", calendarId) { QuotesCard(calendarId, today) }
 }
 
 /**
@@ -99,6 +101,8 @@ private fun QuotesCard(calendarId: String, today: LocalDate) {
     val store = remember { WorkToolsStore.get(context) }
     val tools by store.of(calendarId).collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<Quote?>(null) }
+    // [GUIDE-01] Opened from the guide or the help search: a new 견적서.
+    com.bamnat.app.ui.guide.FocusedTool("quote", "field.quote") { editing = Quote(date = today, items = listOf(QuoteItem(""))) }
     SectionCard(title = "견적서", trailing = {
         TextButton(onClick = { editing = Quote(date = today, items = listOf(QuoteItem(""))) }) {
             Icon(Icons.Filled.Add, null)

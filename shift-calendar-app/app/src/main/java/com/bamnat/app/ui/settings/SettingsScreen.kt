@@ -62,6 +62,7 @@ import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Payments
@@ -635,6 +636,10 @@ private fun SettingsHub(
         }
         // [COMM-07] Its own row, so it is one tap away rather than inside 급여.
         if (onOpenBoard != null) GroupRow(Icons.Outlined.Forum, "회사 규칙 광장", "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론", false, onClick = onOpenBoard)
+        // [GUIDE-05] Every feature that can be off, and where to turn it back on.
+        GroupRow(Icons.Outlined.Tune, "기능 켜고 끄기", "쓰지 않는 카드·안내·자동 기능 끄고 다시 켜기", false) {
+            SettingsLinks.go(SettingsGo.FEATURES)
+        }
         // [UX-05] Help and questions on their own row, with new answers counted on it.
         GroupRow(
             Icons.AutoMirrored.Outlined.HelpOutline, "도움말과 문의",
@@ -727,13 +732,21 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
             }
         }
     }
+    // [GUIDE-07] Features too: where each is, what it does, whether it is off here.
+    val features = remember(query) { com.bamnat.app.ui.guide.FeatureSearch.search(query, limit = 3) }
+    if (features.isNotEmpty()) {
+        Text("기능 ${features.size}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp))
+        for (f in features) com.bamnat.app.ui.guide.FeatureHelpRow(f, Modifier.padding(bottom = 8.dp))
+    }
     // Nothing found is not a dead end: the same words go to the help answers, and on to a question.
+    val nothing = results.isEmpty() && answers.isEmpty() && features.isEmpty()
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(if (results.isEmpty() && answers.isEmpty()) "도움말에서 더 찾거나 개발자에게 물어봐요" else "찾는 게 아니면 도움말에서 더 찾아봐요",
+            Text(if (nothing) "찾는 기능이 있나요? 기능 찾기에서 더 찾고, 없으면 의견을 보내요" else "찾는 게 아니면 도움말에서 더 찾아봐요",
                 style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            TextButton(onClick = { InquiryLinks.ask(InquiryStart(help = true, text = query)) }) { Text("도움말") }
+            TextButton(onClick = { InquiryLinks.ask(InquiryStart(help = true, text = query)) }) { Text(if (nothing) "기능 찾기" else "도움말") }
         }
     }
 }

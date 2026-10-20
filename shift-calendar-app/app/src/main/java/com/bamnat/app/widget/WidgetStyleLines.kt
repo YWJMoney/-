@@ -24,6 +24,8 @@ import com.bamnat.core.work.WorkStyle
  */
 @Composable
 internal fun WorkStyleLine(data: WidgetData) {
+    // [GUIDE-05] 위젯 근무 유형 줄 can be turned off in 기능 켜고 끄기.
+    if (styleLinesOff()) return
     val style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp)
     when (data.style) {
         WorkStyle.HOURLY -> data.hourlyWeek?.let { w ->
@@ -62,6 +64,7 @@ internal fun WorkStyleLine(data: WidgetData) {
  */
 @Composable
 internal fun FieldWeekLine(data: WidgetData) {
+    if (styleLinesOff()) return
     val w = data.fieldWeek ?: return
     Spacer(GlanceModifier.height(6.dp))
     Text(
@@ -71,3 +74,8 @@ internal fun FieldWeekLine(data: WidgetData) {
         maxLines = 1,
     )
 }
+
+/** [GUIDE-05] The widget line for the kind of work was turned off. */
+@Composable
+private fun styleLinesOff(): Boolean =
+    com.bamnat.app.data.GuideStore.get(androidx.glance.LocalContext.current).isOff("widget.lines", com.bamnat.app.data.PersonalCalendar.MAIN)

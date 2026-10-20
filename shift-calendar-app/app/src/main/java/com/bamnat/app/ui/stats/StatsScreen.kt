@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.stats
 
+import com.bamnat.app.ui.guide.FeatureCard
 import com.bamnat.app.appContainer
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -155,7 +156,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
 
         val money = book
         if (money != null && style?.usesJobs == true) JobFigures(money, month, columns)
-        if (money != null && style == WorkStyle.FIELD) FieldStatsCards(money, month)
+        if (money != null && style == WorkStyle.FIELD) FieldStatsCards(money, month, calendarId = vm.calendarId)
         // [FLD-11][FLD-13] 일용직 세금과 견적서.
         if (money != null && style == WorkStyle.FIELD) com.bamnat.app.ui.work.FieldToolCards(vm.calendarId, money, month)
         if (money != null && style?.usesSales == true) SalesFigures(money, month, columns) { snap.resolver.resolve(it).isWorkDay }
@@ -201,7 +202,8 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             val weeks = remember(snap, month, weekStart, payProfile?.legalBreaks) {
                 HourlyWork.weeks(month, weekStart, snap.copy(legalBreaks = payProfile?.legalBreaks == true).resolver::resolve)
             }
-            HolidayPayWeeks(weeks, month)
+            // [GUIDE-05]
+            FeatureCard("hourly.weeks", vm.calendarId) { HolidayPayWeeks(weeks, month) }
         }
 
         // [NAV-01] 근무·급여: the month's pay right under its hours.
@@ -217,7 +219,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             if (style == WorkStyle.HOURLY && total != null) payProfile?.let { TakeHomeLine(total, it.taxMode, Modifier.padding(start = 4.dp)) }
         }
         // [HRLY-09][HRLY-10][HRLY-11] 두 알바 비교, 근로계약서, 그만두는 날 정리.
-        if (style == WorkStyle.HOURLY) com.bamnat.app.ui.work.HourlyToolsCard(vm.calendarId, payProfile, snap)
+        if (style == WorkStyle.HOURLY) FeatureCard("hourly.tools", vm.calendarId) { com.bamnat.app.ui.work.HourlyToolsCard(vm.calendarId, payProfile, snap) }
         // [SHFT-03][SHFT-04][DAYW-04][DAYW-05] Swaps, pay that came in, the 시간외 상한 and 징검다리 연휴.
         WorkTypeMoreCards(style, vm.calendarId, snap, month, summary, payTotal, payProfile, book)
 

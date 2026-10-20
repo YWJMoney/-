@@ -143,6 +143,7 @@ internal object SettingsIndex {
         row(N, "자는 중 표시", "자는 중", "알림창"),
         row(N, "나갈 돈·받을 돈", "고정비", "미수금", "돈 알림", "받을 돈"),
         row(N, "연차 소멸 안내", "연차", "휴가 알림"),
+        row(N, "잠금 화면 오늘 근무", "잠금 화면", "상시 알림", "오늘 근무 알림"), // [GUIDE-01]
         row(N, "자는 동안 미루기", "방해 금지", "조용히"),
         screen(P.title, "급여 계산", SettingsGo.PAY, "월급", "기본급", "수당", "연차", "급여일", "시급", "명세서", "통상임금"),
         row(P, "회사 설정 보내기", "동료", "회사 설정 파일", "같은 회사"),
@@ -169,6 +170,8 @@ internal object SettingsIndex {
         row(V, "알림 허용", "알림 권한", "권한", row = "알림"),
         row(V, "잠금 화면에 알람 띄우기", "전체 화면", "권한", "잠금 화면"),
         row(V, "결제 알림 읽기", "카드 알림", "은행 알림", "문자", "자동 기록", "가계부"),
+        // [GUIDE-05] Every switch of a feature that can be off, in one place.
+        screen("설정", "기능 켜고 끄기", SettingsGo.FEATURES, "기능 끄기", "기능 켜기", "숨기기", "안 보이게", "카드 끄기", "안내 끄기", "팁 끄기", "위젯 줄"),
         screen(I.title, "문의하기", SettingsGo.INQUIRY, "질문", "건의", "제안", "오류", "버그", "고객센터", "도움말", "메일", "신고"),
         screen(I.title, "자주 묻는 질문", SettingsGo.INQUIRY, "도움말", "사용법", "어떻게", "FAQ"),
         row(I, "앱 버전", "버전", "업데이트", row = "버전"),
