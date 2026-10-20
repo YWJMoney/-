@@ -143,7 +143,10 @@ internal fun factsOf(style: WorkStyle?, now: LocalDateTime, snapshot: ScheduleSn
     )
 }
 
-/** [GUIDE-02] '이 달력으로 할 수 있는 것': each line opens the feature, ticks once used; 나중에 and × put it away. */
+/**
+ * [GUIDE-02] '이 달력으로 할 수 있는 것': each line opens the feature, ticks once used; 나중에 and × put it away.
+ * Folded to the next thing to try, so the month grid under it stays in view; 모두 보기 opens the rest.
+ */
 @Composable
 private fun ChecklistCard(
     style: WorkStyle?,
@@ -155,6 +158,8 @@ private fun ChecklistCard(
 ) {
     val scheme = MaterialTheme.colorScheme
     val done = items.count { it.done }
+    var open by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val next = items.firstOrNull { !it.done } ?: items.first()
     Surface(shape = MaterialTheme.shapes.large, color = scheme.surfaceContainerLow, modifier = modifier.fillMaxWidth().animateContentSize()) {
         Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -165,9 +170,11 @@ private fun ChecklistCard(
                 }
                 IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "이 안내 닫기", tint = scheme.onSurfaceVariant) }
             }
-            items.forEach { item -> ChecklistRow(item, onTry) }
+            if (open) items.forEach { item -> ChecklistRow(item, onTry) } else ChecklistRow(next, onTry)
             Row(Modifier.fillMaxWidth().padding(end = 8.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                Text("끄려면 설정 › 기능 켜고 끄기", style = MaterialTheme.typography.labelSmall, color = scheme.outline, modifier = Modifier.weight(1f))
+                if (open) Text("끄려면 설정 › 기능 켜고 끄기", style = MaterialTheme.typography.labelSmall, color = scheme.outline, modifier = Modifier.weight(1f))
+                else Spacer(Modifier.weight(1f))
+                if (items.size > 1) TextButton(onClick = { open = !open }) { Text(if (open) "접기" else "모두 보기 (${items.size})") }
                 TextButton(onClick = onLater) { Text("나중에") }
             }
         }
