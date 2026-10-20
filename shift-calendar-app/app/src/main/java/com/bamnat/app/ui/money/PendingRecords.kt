@@ -22,6 +22,9 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -38,20 +41,32 @@ import com.bamnat.core.money.MoneyEntry
 
 /**
  * [COMN-04] A line in 확인 대기함: swiped right it is confirmed and counts from then on, swiped left
- * it is thrown away (with undo). Tapped it opens to fix, and saving it confirms it too.
+ * it is thrown away once asked [SWIPE-01] (with undo). Tapped it opens to fix, and saving it confirms it too.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PendingRow(e: MoneyEntry, onOpen: () -> Unit, onConfirm: () -> Unit, onDelete: () -> Unit) {
     val haptics = LocalHapticFeedback.current
-    val state = rememberSwipeToDismissBoxState(positionalThreshold = { it * 0.35f })
+    // [SWIPE-01] Slid left it springs back and asks before throwing the line away.
+    var asking by remember { mutableStateOf(false) }
+    val state = rememberSwipeToDismissBoxState(
+        confirmValueChange = { v ->
+            if (v == SwipeToDismissBoxValue.EndToStart) {
+                haptics.performHapticFeedback(HapticFeedbackType.Reject)
+                asking = true
+                false
+            } else true
+        },
+        positionalThreshold = { it * SWIPE_THRESHOLD },
+    )
     LaunchedEffect(state.currentValue) {
         when (state.currentValue) {
             SwipeToDismissBoxValue.StartToEnd -> { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onConfirm() }
-            SwipeToDismissBoxValue.EndToStart -> { haptics.performHapticFeedback(HapticFeedbackType.Reject); onDelete() }
+            SwipeToDismissBoxValue.EndToStart -> state.reset()
             SwipeToDismissBoxValue.Settled -> Unit
         }
     }
+    if (asking) DeleteLineDialog(e, onDismiss = { asking = false }, onConfirm = { asking = false; onDelete() })
     SwipeToDismissBox(
         state = state,
         backgroundContent = {

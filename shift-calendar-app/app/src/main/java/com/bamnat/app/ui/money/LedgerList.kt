@@ -127,6 +127,26 @@ data class LedgerView(
     val narrowed: Boolean get() = filter.count > 0 || filter.query.isNotBlank()
 }
 
+/** [SWIPE-01] How far a line must slide, as a share of its width, before letting go acts on it. */
+internal const val SWIPE_THRESHOLD = 0.5f
+
+/**
+ * [SWIPE-01] Asked before a line slid to the left goes: what it is, so the right one is removed.
+ * After 삭제 the money view model offers 되돌리기, which puts the same line back.
+ */
+@Composable
+internal fun DeleteLineDialog(e: MoneyEntry, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    val what = listOfNotNull(Fmt.shortDate(e.date), e.title.ifBlank { e.category }, signedWon(e)).joinToString(" · ")
+    com.bamnat.app.ui.components.ConfirmDialog(
+        title = "삭제할까요?",
+        message = "$what\n\n삭제한 뒤에도 바로 나오는 ‘되돌리기’로 다시 살릴 수 있어요.",
+        confirmLabel = "삭제",
+        destructive = true,
+        onDismiss = onDismiss,
+        onConfirm = onConfirm,
+    )
+}
+
 /** What the list can do to its lines; the money view model does it, with undo. */
 interface LedgerListActions {
     fun open(e: MoneyEntry)
@@ -138,7 +158,7 @@ interface LedgerListActions {
 
 /**
  * [LEDG-07] Every line, found by words and conditions over any period, in days with their own
- * totals. A line slides right to copy it to today and left to remove it (with undo); a long press
+ * totals. A line slides right to copy it to today and left to remove it (asked first [SWIPE-01], with undo); a long press
  * picks several to move to a category or remove together. Screen readers get the same actions.
  * [LEDG-12] What is shown can leave as a CSV file. On a wide screen the conditions stay open beside
  * the list.
@@ -436,13 +456,28 @@ private fun LedgerRow(
     showDate: Boolean = false,
 ) {
     val haptics = LocalHapticFeedback.current
-    val state = rememberSwipeToDismissBoxState(positionalThreshold = { it * 0.35f })
+    // [SWIPE-01] A slide to the left never removes the line by itself: it springs back and asks first,
+    // and it has to go half the row's width, so a slanted scroll cannot set it off.
+    var asking by remember { mutableStateOf(false) }
+    val state = rememberSwipeToDismissBoxState(
+        confirmValueChange = { v ->
+            if (v == SwipeToDismissBoxValue.EndToStart) {
+                haptics.performHapticFeedback(HapticFeedbackType.Reject)
+                asking = true
+                false
+            } else true
+        },
+        positionalThreshold = { it * SWIPE_THRESHOLD },
+    )
     LaunchedEffect(state.currentValue) {
         when (state.currentValue) {
             SwipeToDismissBoxValue.StartToEnd -> { haptics.performHapticFeedback(HapticFeedbackType.Confirm); actions.duplicate(e); state.reset() }
-            SwipeToDismissBoxValue.EndToStart -> { haptics.performHapticFeedback(HapticFeedbackType.Reject); actions.delete(listOf(e)) }
+            SwipeToDismissBoxValue.EndToStart -> state.reset()
             SwipeToDismissBoxValue.Settled -> Unit
         }
+    }
+    if (asking) {
+        DeleteLineDialog(e, onDismiss = { asking = false }, onConfirm = { asking = false; actions.delete(listOf(e)) })
     }
     val cal = LocalCalendarColors.current
     SwipeToDismissBox(
@@ -499,7 +534,7 @@ private fun LedgerRow(
                     if (selecting) this.selected = selected
                     customActions = listOf(
                         CustomAccessibilityAction("오늘로 복사") { actions.duplicate(e); true },
-                        CustomAccessibilityAction("지우기") { actions.delete(listOf(e)); true },
+                        CustomAccessibilityAction("지우기") { asking = true; true },
                         CustomAccessibilityAction(if (selected) "고르기 풀기" else "고르기") { onToggle(); true },
                     )
                 },
