@@ -37,6 +37,11 @@ data class WatchPayload(
     val alarmLabel: String = "",
     /** The calendar's name ("내 달력"). */
     val calendar: String = "",
+    /**
+     * [SHFT-08] When it was sent, as epoch milliseconds (0 from an older phone app): the phone's clock or time
+     * zone changing does not make a newer copy look older, as [syncedAt] (the phone's local time) can.
+     */
+    val sentAtMillis: Long = 0,
 )
 
 object WatchDays {
@@ -77,7 +82,8 @@ object WatchDays {
      * its label, calendar) and one line per day, fields apart by tabs.
      */
     fun encode(p: WatchPayload): String {
-        val head = listOf(VERSION, p.syncedAt.toString(), p.nextAlarm?.toString().orEmpty(), clean(p.alarmLabel), clean(p.calendar)).joinToString("\t")
+        val head = listOf(VERSION, p.syncedAt.toString(), p.nextAlarm?.toString().orEmpty(), clean(p.alarmLabel), clean(p.calendar), p.sentAtMillis.toString())
+            .joinToString("\t")
         return (listOf(head) + p.days.map { d ->
             listOf(d.date.toString(), clean(d.name), clean(d.label), d.colorArgb.toString(), d.start?.let(::hm).orEmpty(),
                 d.end?.let(::hm).orEmpty(), if (d.off) "1" else "0").joinToString("\t")
@@ -98,7 +104,19 @@ object WatchDays {
                     f[5].takeIf { it.isNotEmpty() }?.let(LocalTime::parse), f[6] == "1")
             }.getOrNull()
         }
-        return WatchPayload(days, synced, head[2].takeIf { it.isNotEmpty() }?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }, head[3], head[4])
+        return WatchPayload(days, synced, head[2].takeIf { it.isNotEmpty() }?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }, head[3], head[4],
+            head.getOrNull(5)?.toLongOrNull() ?: 0)
+    }
+
+    /**
+     * [SHFT-08] Whether [next] may replace [kept] on the watch: by the epoch milliseconds both were sent at; a copy
+     * without them (an older phone app) by its local time, and one with them always over one without.
+     */
+    fun replaces(next: WatchPayload, kept: WatchPayload?): Boolean = when {
+        kept == null -> true
+        next.sentAtMillis > 0 && kept.sentAtMillis > 0 -> next.sentAtMillis >= kept.sentAtMillis
+        next.sentAtMillis > 0 -> true
+        else -> !kept.syncedAt.isAfter(next.syncedAt)
     }
 
     /** The day for [date] among what the phone sent, or null when it is not there. */

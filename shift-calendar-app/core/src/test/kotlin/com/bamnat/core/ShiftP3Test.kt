@@ -182,6 +182,14 @@ class ShiftP3Test {
         assertNull(WatchDays.alarmAhead(back, LocalDateTime.of(2026, 10, 20, 22, 0)))
         assertEquals("3시간 전", WatchDays.age(p.syncedAt, LocalDateTime.of(2026, 10, 20, 11, 5)))
         assertNull(WatchDays.decode("garbage"))
+        // A newer copy whose phone clock went back an hour still replaces the old one: compared by epoch millis.
+        val sent = p.copy(sentAtMillis = 1_000_000L)
+        assertEquals(sent, WatchDays.decode(WatchDays.encode(sent)))
+        val later = sent.copy(syncedAt = p.syncedAt.minusHours(1), sentAtMillis = 2_000_000L)
+        assertTrue(WatchDays.replaces(later, sent))
+        assertTrue(!WatchDays.replaces(sent, later))
+        assertTrue(WatchDays.replaces(sent, p))
+        assertTrue(!WatchDays.replaces(p.copy(syncedAt = p.syncedAt.minusHours(1)), p))
         val grid = WatchDays.monthGrid(2026, 10)
         assertEquals(LocalDate.of(2026, 10, 1), grid[0][3]) // Thursday
         assertTrue(grid.all { it.size == 7 })

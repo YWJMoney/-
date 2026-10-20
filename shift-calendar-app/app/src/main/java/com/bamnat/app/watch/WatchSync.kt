@@ -49,7 +49,7 @@ object WatchSync {
         val sameDays = WatchDays.encode(WatchPayload(days, LocalDateTime.of(2000, 1, 1, 0, 0), alarmAt, label, name))
         val now = System.currentTimeMillis()
         if (!force && sameDays == lastBody && now - lastAt < RESEND_MILLIS) return@withLock
-        val body = WatchDays.encode(WatchPayload(days, LocalDateTime.now(), alarmAt, label, name))
+        val body = WatchDays.encode(WatchPayload(days, LocalDateTime.now(), alarmAt, label, name, sentAtMillis = now))
         val request = PutDataMapRequest.create(WatchDays.PATH).apply { dataMap.putString(WatchDays.KEY, body) }.asPutDataRequest().setUrgent()
         val ok = runCatching { await(Wearable.getDataClient(context).putDataItem(request)) != null }.getOrDefault(false)
         if (ok) {

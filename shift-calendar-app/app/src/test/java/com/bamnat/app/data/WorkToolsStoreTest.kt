@@ -47,6 +47,18 @@ class WorkToolsStoreTest {
         assertEquals(WorkTools(), WorkToolsStore.decode(JSONObject("{}")))
     }
 
+    @Test fun hoursTypedAsNaNOrInfinityAreSavedAsZero() {
+        val root = File(context.filesDir, "tools-nan").apply { deleteRecursively() }
+        val store = WorkToolsStore { File(root, it) }
+        store.update("a") { WorkTools(offers = listOf(JobOffer("편의점", 10_320, Double.NaN, 4, nightHoursPerWeek = Double.POSITIVE_INFINITY))) }
+        val offer = store.current("a").offers.single()
+        assertEquals(0.0, offer.hoursPerWeek, 0.0)
+        assertEquals(0.0, offer.nightHoursPerWeek, 0.0)
+        // What the screens show is what can be saved.
+        assertEquals(store.current("a"), WorkToolsStore.decode(WorkToolsStore.encode(store.current("a"))))
+        root.deleteRecursively()
+    }
+
     @Test fun calendarsKeepTheirOwnToolsAndBackupsLeaveMissingPhotosOut() {
         val root = File(context.filesDir, "tools-test").apply { deleteRecursively() }
         val store = WorkToolsStore { File(root, it) }
