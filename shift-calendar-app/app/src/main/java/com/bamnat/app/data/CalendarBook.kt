@@ -329,6 +329,22 @@ class CalendarBook(
         runCatching { storage.delete(id, db) }
     }
 
+    /**
+     * [UNDO-01][UNDO-03] Puts a calendar's entry back as [RecordsTrash] kept it: for a calendar still
+     * here only its kind of work and shop or field settings (its name and colour stay as they are now);
+     * a removed one comes back whole with the same id, listed at [order] when given.
+     */
+    @Synchronized
+    fun restoreEntry(cal: PersonalCalendar, order: List<String>?) {
+        if (get(cal.id) != null) {
+            update(cal.id) { it.copy(style = if (it.isMain) it.style else cal.style, shop = cal.shop, field = cal.field, shopMoney = cal.shopMoney) }
+            return
+        }
+        if (cal.isMain) return
+        val s = state.value
+        write(s.copy(calendars = s.calendars + cal.copy(ready = true), order = order ?: s.order))
+    }
+
     /** [MCAL-04] Stores the list exactly as the user placed it. */
     @Synchronized
     fun arrange(keys: List<CalendarKey>) {

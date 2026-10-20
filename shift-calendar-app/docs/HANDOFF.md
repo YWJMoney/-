@@ -36,7 +36,7 @@
   **서버 코드를 다시 붙여 넣어야(README 3번) 문의 API가 살아나요.** 그 전에는 앱이 문의를 보내면 "보내지 못했어요"가 나와요.
 - 개인 달력 여러 개 [MCAL-01~07], 1.14.0·1.14.2: 지금 달력은 그대로 '내 달력'(`bamnat.db`)이고, 추가한 달력은 `calendar_<id>.db`에 근무 종류·주기·날짜를 따로 둬요.
   목록·순서·보고 있는 달력은 `files/calendars.json`(`data/CalendarBook.kt`). 1.16.0부터 달력 탭·통계·설정(근무 형태·종류·주기·급여)은 보고 있는 달력을 따라요(설정 화면 '설정할 달력'). 위젯·알림은 내 달력.
-  메모는 `memos.calendars`(빈 값=모든 달력)로 달력에 붙고, 결제 알림은 `AppContainer.capture`가 카드 끝 4자리 → 카드사 → 앱별 → 기본 달력 순으로 넣어요(`core/money/CaptureRoute.kt`).
+  메모는 `memos.calendars`로 달력에 붙어요. MEMO-01부터 빈 값은 예전 메모로 내 달력 것, `,*,`는 모든 달력(공용 메모장)이고, 달력끼리 함께 보기는 `files/memo_sharing.json`(설정 › 달력 화면 › 메모 공유). 근무 형태 바꾸기·기록 지우기·달력 지우기는 `noBackupFilesDir/records_trash`에 7일 남아 설정 › 데이터 › 최근 지운 기록에서 되돌려요(`data/RecordsTrash.kt`, UNDO-01~03). 그리고 결제 알림은 `AppContainer.capture`가 카드 끝 4자리 → 카드사 → 앱별 → 기본 달력 순으로 넣어요(`core/money/CaptureRoute.kt`).
   자영업 달력은 `PersonalCalendar.shop`(영업시간·정기휴무)을 `ui/work/ShopDaysScreen.kt`의 `ShopKeeper`가 근무표에 반영하고, 앱을 열 때 매출 없는 지난 영업일을 휴무로 바꿔요(스스로 바꾼 날만 매출을 적으면 다시 영업).
   알람은 내 달력과 '근무 알람 울리기'가 켜진 추가 달력을 합쳐 예약하고, 추가 달력 알람은 이름이 붙어요("편의점 알바 오전 알바 근무 알람").
   달력마다 공유 링크가 따로예요(`ShareLinkStore(context, calendarId)`, 내 달력은 예전 `share_link` 그대로). 서버는 바뀌지 않았어요.

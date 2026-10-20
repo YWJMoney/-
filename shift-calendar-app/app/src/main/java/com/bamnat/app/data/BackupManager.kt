@@ -46,6 +46,8 @@ class BackupManager(
     private val payStore: com.bamnat.app.pay.PayStore? = null,
     /** [MCAL-05] The added calendars belong in the backup too. */
     private val calendars: CalendarBook? = null,
+    /** [MEMO-02] Which calendars share memos. */
+    private val memoSharing: MemoSharingStore? = null,
 ) {
     /** The schedule tables of [source] (shifts, order, changed days, extra work) as a backup holds them. */
     private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
@@ -211,12 +213,13 @@ class BackupManager(
                     // [SCHED-01] Version 13. Older apps ignore these keys and keep the memo plain.
                     .putOpt("remindAt", m.remindAt).put("remindRing", m.remindRing).put("remindNotify", m.remindNotify)
                     .putOpt("remindAsked", m.remindAsked)
-                    // [NOTE-01] Version 16. Without it a memo shows on every calendar, as before.
+                    // [NOTE-01] Version 16. [MEMO-01] Without it the memo is 내 달력's; ",*," is every calendar.
                     .putOpt("calendars", m.calendars.ifEmpty { null })
                     .putOpt("repeat", m.repeat.ifEmpty { null }),
             )
         }
         root.put("memos", memos)
+        memoSharing?.let { root.put("memoSharing", MemoSharingStore.toJson(it.state.value)) }
         putMoney(db, root)
         // [SLP-06] The sleep log goes with the rest of the user's data.
         root.put("sleep", JSONArray().apply {
@@ -478,6 +481,8 @@ class BackupManager(
             writeSchedule(db, schedule)
             memos.forEach { db.memoDao().restore(it) }
         }
+        // [MEMO-02] An older backup has no sharing: the phone's own choice stays.
+        root.optJSONArray("memoSharing")?.let { a -> memoSharing?.set(MemoSharingStore.fromJson(a)) }
         // [MCAL-05] The added calendars as the backup had them, each in its own database.
         calendars?.let { book ->
             if (added != null) {

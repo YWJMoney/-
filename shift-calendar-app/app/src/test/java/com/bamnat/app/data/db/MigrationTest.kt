@@ -282,7 +282,7 @@ class MigrationTest {
     }
 
     /** The tables of schema [version] exactly as Room wrote them, empty. */
-    /** [NOTE-01] Version 15 memos stay on every calendar; a memo can then name its own. */
+    /** [NOTE-01] Version 15 memos keep an empty calendar list; [MEMO-01] that now means 내 달력's alone. */
     @Test
     fun version15MemosStayOnEveryCalendar() = runBlocking {
         val name = "migration-15.db"
@@ -301,11 +301,11 @@ class MigrationTest {
         try {
             val memo = db.memoDao().get(1)!!.toModel()
             assertTrue(memo.calendars.isEmpty())
-            assertTrue(memo.showsOn("main") && memo.showsOn("abc"))
+            assertTrue(memo.showsOn("main") && !memo.showsOn("abc"))
             db.memoDao().update(memo.copy(calendars = setOf("abc", "main")).toEntity())
             val again = db.memoDao().get(1)!!.toModel()
             assertEquals(setOf("abc", "main"), again.calendars)
-            assertTrue(again.isShared)
+            assertTrue(again.isShared())
             assertTrue(!again.copy(calendars = setOf("abc")).showsOn("main"))
         } finally {
             db.close()

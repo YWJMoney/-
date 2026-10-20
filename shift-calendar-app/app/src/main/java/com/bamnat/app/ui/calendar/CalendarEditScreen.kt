@@ -117,6 +117,14 @@ class CalendarEditViewModel(private val c: AppContainer, val calendarId: String)
     /** [CALS-04] Payment notifications that no card, account or app sends elsewhere go here. */
     fun takeNotifications() = c.autoRecordPrefs.setCalendar(calendarId)
 
+    /** [UNDO-02] What 기록 지우기 would take, said in its question. */
+    suspend fun records(): com.bamnat.app.data.RecordsTrash.Records = c.recordsTrash.records(calendarId)
+
+    /** [UNDO-02] Clears this calendar's records; 되돌리기 follows, and 최근 지운 기록 keeps them 7 days. */
+    fun clearRecords() {
+        c.appScope.launch { c.recordsTrash.clearRecords(calendarId) }
+    }
+
     fun delete(keepLink: Boolean, onDone: () -> Unit) {
         if (_busy.value) return
         _busy.value = true
@@ -148,6 +156,8 @@ fun CalendarEditScreen(
     if (cal == null) return
     var name by remember(cal.id) { mutableStateOf(cal.name) }
     var deleting by remember { mutableStateOf(false) }
+    var clearing by remember { mutableStateOf<com.bamnat.app.data.RecordsTrash.Records?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val focus = LocalFocusManager.current
     val words = state.style.words()
     val save = { vm.rename(name); focus.clearFocus() }
@@ -233,6 +243,10 @@ fun CalendarEditScreen(
                     Spacer(Modifier.width(8.dp))
                     Text("이 달력 근무표 공유")
                 }
+                // [UNDO-02] Starting this calendar over without removing it, with 7 days to take it back.
+                TextButton(onClick = { scope.launch { clearing = vm.records() } }, modifier = Modifier.fillMaxWidth()) {
+                    Text("이 달력 기록 지우기", color = MaterialTheme.colorScheme.error)
+                }
                 if (!cal.isMain) {
                     TextButton(onClick = { deleting = true }, modifier = Modifier.fillMaxWidth()) {
                         Text("달력 지우기", color = MaterialTheme.colorScheme.error)
@@ -243,6 +257,27 @@ fun CalendarEditScreen(
                     LaunchedEffect(it) { kotlinx.coroutines.delay(2500); vm.consumeMessage() }
                 }
             }
+        }
+    }
+    clearing?.let { records ->
+        if (records.isEmpty) {
+            ConfirmDialog(
+                title = "지울 기록이 없어요",
+                message = "‘${cal.name}’에는 아직 지울 근무 기록이나 돈 기록이 없어요.",
+                confirmLabel = "확인",
+                onDismiss = { clearing = null },
+                onConfirm = { clearing = null },
+            )
+        } else {
+            ConfirmDialog(
+                title = "‘${cal.name}’ 기록을 지울까요?",
+                message = "${records.text}\n\n이 기록을 지우고 처음부터 시작해요. 근무 형태, 근무 종류(이름·시간·알람)와 가계부는 그대로예요. " +
+                    "7일 안에는 설정 › 데이터 › 최근 지운 기록에서 되돌릴 수 있어요.",
+                confirmLabel = "지우기",
+                destructive = true,
+                onDismiss = { clearing = null },
+                onConfirm = { clearing = null; vm.clearRecords() },
+            )
         }
     }
     if (deleting) {
@@ -258,7 +293,9 @@ fun CalendarEditScreen(
         } else {
             ConfirmDialog(
                 title = "${cal.name} 달력을 지울까요?",
-                message = "이 달력의 근무와 순서, 고친 날, 돈 기록이 모두 지워지고 되돌릴 수 없어요. 공유한 링크도 끊어요. 이 달력에만 있던 메모는 내 달력으로 옮겨요.",
+                // [UNDO-03] Kept for 7 days.
+                message = "이 달력의 근무와 순서, 고친 날, 돈 기록이 모두 지워져요. 7일 안에는 설정 › 데이터 › 최근 지운 기록에서 되돌릴 수 있어요. " +
+                    "공유한 링크는 끊기고, 되돌려도 링크는 다시 만들어야 해요. 이 달력에만 있던 메모는 내 달력으로 옮겨요.",
                 confirmLabel = if (busy) "지우는 중…" else "지우기",
                 destructive = true,
                 onDismiss = { if (!busy) deleting = false },

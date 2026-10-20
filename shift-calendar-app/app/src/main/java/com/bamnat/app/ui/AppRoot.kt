@@ -393,6 +393,18 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
     }
 
+    // [UNDO-01][UNDO-02][UNDO-03] A kind of work changed, records cleared or a calendar removed: 되돌리기 at
+    // once, wherever it was done, and 설정 › 데이터 › 최근 지운 기록 for 7 days after.
+    LaunchedEffect(Unit) {
+        container.recordsTrash.offers.collect { offer ->
+            val result = snackbar.showSnackbar(offer.message, actionLabel = "되돌리기", duration = SnackbarDuration.Long)
+            if (result == SnackbarResult.ActionPerformed) {
+                val ok = container.recordsTrash.restore(offer.entry.id)
+                snackbar.showSnackbar(if (ok) "되돌렸어요" else "되돌리지 못했어요. 설정 › 데이터 › 최근 지운 기록에서 다시 해 주세요")
+            }
+        }
+    }
+
     val navigateTop: (TopLevel) -> Unit = { dest -> nav.navigateTopLevel(dest.route) }
 
     Row(Modifier.fillMaxSize()) {
@@ -590,14 +602,25 @@ private fun AppNavHost(
             val cal = list.firstOrNull { it.id == calendar }
             val isMain = cal?.isMain != false
             val current = if (isMain) settings.workStyle else cal?.style ?: settings.workStyle
-            WorkStyleScreen(current = current, title = if (isMain) "근무 형태 바꾸기" else "‘${cal?.name}’ 근무 형태", onPick = { style ->
+            // [UNDO-01] A calendar with records is asked first whether they stay; the answer can be taken back for 7 days.
+            var asking by remember { mutableStateOf<Pair<WorkStyle, com.bamnat.app.data.RecordsTrash.Records>?>(null) }
+            // clear: null when nothing is changed from a kind of work (the first one, or the same again).
+            val apply: (WorkStyle, Boolean?) -> Unit = { style, clear ->
                 val before = current
-                // [CALS-02] Each calendar keeps its own kind of work: the main one in settings, an added one in its entry.
-                if (isMain) container.settingsRepository.update { it.copy(workStyle = style) } else container.calendars.setStyle(calendar, style)
                 // [WORK-07] A new kind of work goes straight on to what it still needs, as its card said
                 // ("다음: …"): the order for shift work, the days for weekday work, the wage for hourly work.
                 // What it already has is kept, so switching back and forth never asks twice.
                 scope.launch {
+                    if (clear == null) {
+                        // [CALS-02] Each calendar keeps its own kind of work: the main one in settings, an added one in its entry.
+                        if (isMain) container.settingsRepository.update { it.copy(workStyle = style) } else container.calendars.setStyle(calendar, style)
+                    } else {
+                        // [UNDO-01] Kept or cleared, the change is offered back (되돌리기) and listed for 7 days.
+                        container.recordsTrash.changeStyle(
+                            calendar, style, clear,
+                            if (clear) "기록을 지우고 ${style.label}${com.bamnat.app.ui.Fmt.ro(style.label)} 새로 시작해요" else style.changedMessage(),
+                        )
+                    }
                     val schedule = container.calendars.repository(calendar)
                     if (style == WorkStyle.HOURLY) schedule.addHourlyTypes()
                     val patterns = schedule.patterns.first()
@@ -612,11 +635,29 @@ private fun AppNavHost(
                         style == WorkStyle.BUSINESS -> go(Routes.shopDays(calendar))
                         else -> {
                             nav.popFrom(Routes.WORK_STYLE)
-                            snackbar.showSnackbar(style.changedMessage())
+                            if (clear == null) snackbar.showSnackbar(style.changedMessage())
                         }
                     }
                 }
+            }
+            WorkStyleScreen(current = current, title = if (isMain) "근무 형태 바꾸기" else "‘${cal?.name}’ 근무 형태", onPick = { style ->
+                if (current == null || style == current) apply(style, null)
+                else scope.launch {
+                    val records = container.recordsTrash.records(calendar)
+                    if (records.isEmpty) apply(style, false) else asking = style to records
+                }
             })
+            asking?.let { (style, records) ->
+                com.bamnat.app.ui.work.KeepRecordsDialog(
+                    calendarName = cal?.name ?: PersonalCalendar.MAIN_NAME,
+                    from = current ?: style,
+                    to = style,
+                    records = records,
+                    onKeep = { asking = null; apply(style, false) },
+                    onClear = { asking = null; apply(style, true) },
+                    onDismiss = { asking = null },
+                )
+            }
         }
         composable(TopLevel.MEMOS.route) {
             val vm = appViewModel { MemoListViewModel(it) }

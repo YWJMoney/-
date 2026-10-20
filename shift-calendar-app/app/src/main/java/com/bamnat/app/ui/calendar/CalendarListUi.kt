@@ -489,6 +489,8 @@ internal suspend fun removeCalendar(c: AppContainer, id: String, keepLink: Boole
         false
     }
     if (!cut) return false
+    // [UNDO-03] Everything it had is kept for 7 days before anything moves, so it can come back whole.
+    val kept = runCatching { c.recordsTrash.beforeDelete(id) }.getOrNull()
     c.forgetShareLinks(id)
     // [NOTE-01][CALS-04] Its memos stay, on the calendars they were shared with or on 내 달력; its notifications
     // go to 내 달력. Moved before the calendar goes, so no memo is left on a calendar that is not there.
@@ -496,6 +498,7 @@ internal suspend fun removeCalendar(c: AppContainer, id: String, keepLink: Boole
     c.autoRecordPrefs.forgetCalendar(id)
     c.calendars.delete(id)
     c.telemetry.event("calendar_delete", if (link != null) "with_link" else "")
+    kept?.let(c.recordsTrash::deleted)
     return true
 }
 
@@ -585,7 +588,7 @@ fun CalendarsScreen(
         } else {
             ConfirmDialog(
                 title = "${cal.name} 달력을 지울까요?",
-                message = "이 달력의 근무와 순서, 고친 날이 모두 지워지고 되돌릴 수 없어요. 공유한 링크도 끊어요. 이 달력에만 있던 메모는 내 달력으로 옮겨요.",
+                message = "이 달력의 근무와 순서, 고친 날이 모두 지워져요. 7일 안에는 설정 › 데이터 › 최근 지운 기록에서 되돌릴 수 있어요(공유한 링크는 다시 만들어야 해요). 이 달력에만 있던 메모는 내 달력으로 옮겨요.", // [UNDO-03]
                 confirmLabel = if (busy) "지우는 중…" else "지우기",
                 destructive = true,
                 onDismiss = { if (!busy) deleting = null },

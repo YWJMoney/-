@@ -344,6 +344,15 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         NavRow("달력 목록", if (calendars.size > 1) "${calendars.size}개 · " + calendars.joinToString(", ") { it.name }
             else "새 달력을 만들어 근무를 따로 적고 따로 공유해요", onOpenCalendars)
         HorizontalDivider()
+        // [MEMO-02] Memos stay with their own calendar unless calendars are grouped here.
+        val memoSharing by vm.memoSharing.collectAsStateWithLifecycle()
+        var sharingMemos by remember { mutableStateOf(false) }
+        NavRow("메모 공유", com.bamnat.app.ui.memo.memoSharingText(memoSharing, calendars)) { if (calendars.size > 1) sharingMemos = true }
+        if (sharingMemos) {
+            com.bamnat.app.ui.memo.MemoSharingDialog(memoSharing, calendars, onDismiss = { sharingMemos = false },
+                onSave = { vm.setMemoSharing(it); sharingMemos = false })
+        }
+        HorizontalDivider()
         // [UX-03] Sharing is also where people look for it in settings; both open the calendar with the sheet up.
         NavRow("근무표 공유", "이미지나 링크로 동료·가족에게 보내요") { SettingsLinks.go(SettingsGo.SHARE) }
         if (vm.shareOn) {
@@ -430,6 +439,13 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
             HorizontalDivider()
             NavRow("불러오기 전으로 되돌리기", "$savedLabel 불러오기 전 데이터로 돌아가요") { confirmUndo = true }
         }
+        // [UNDO-01][UNDO-02][UNDO-03] A changed kind of work, cleared records or a removed calendar, for 7 days.
+        val cleared by vm.recentlyCleared.collectAsStateWithLifecycle()
+        var showCleared by remember { mutableStateOf(false) }
+        HorizontalDivider()
+        NavRow("최근 지운 기록", if (cleared.isEmpty()) "근무 형태를 바꾸거나 기록·달력을 지우면 7일 동안 여기서 되돌릴 수 있어요"
+            else "${cleared.size}개 · 7일 안에 되돌릴 수 있어요") { showCleared = true }
+        if (showCleared) RecordsTrashDialog(cleared, onRestore = vm::restoreCleared, onDismiss = { showCleared = false })
     }
     SectionCard(title = "다른 캘린더 앱과") {
         // [IMPORT-01]

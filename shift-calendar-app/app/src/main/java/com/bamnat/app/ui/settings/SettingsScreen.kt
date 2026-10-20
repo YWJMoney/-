@@ -157,6 +157,19 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val snoozeAt: StateFlow<Long?> = container.alarmScheduler.snoozeAt
     /** [MCAL-01] The user's calendars, for 설정 > 달력. */
     val calendars: StateFlow<List<com.bamnat.app.data.PersonalCalendar>> = container.calendars.calendars
+
+    /** [MEMO-02] 메모 공유: 달력마다 따로, or calendars grouped to see each other's memos. */
+    val memoSharing: StateFlow<com.bamnat.core.memo.MemoSharing> = container.memoSharing.state
+    fun setMemoSharing(sharing: com.bamnat.core.memo.MemoSharing) = container.memoSharing.set(sharing)
+
+    /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록, newest first. */
+    val recentlyCleared: StateFlow<List<com.bamnat.app.data.RecordsTrash.Entry>> = container.recordsTrash.entries
+    fun restoreCleared(entry: com.bamnat.app.data.RecordsTrash.Entry) {
+        container.appScope.launch {
+            val ok = container.recordsTrash.restore(entry.id)
+            _message.value = SettingsMessage(if (ok) "‘${entry.name}’ 기록을 되돌렸어요" else "되돌리지 못했어요. 7일이 지났거나 파일을 읽지 못했어요")
+        }
+    }
     /** [CALS-02] 내 근무 and 급여 follow the calendar picked at their top (the one on the calendar tab). */
     val activeCalendar: StateFlow<String> = container.calendars.active
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)

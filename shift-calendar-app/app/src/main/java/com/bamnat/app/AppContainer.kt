@@ -79,7 +79,12 @@ class AppContainer(context: Context) {
     fun scopeOf(id: String) = com.bamnat.app.data.CalendarScope(calendars, settingsRepository, id)
     /** [MCAL-02] The setup of a calendar being added, kept apart from the app's first setup. */
     val calendarSetupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "calendar_setup_draft.json")) }
-    val memoRepository = MemoRepository(database)
+    /** [MEMO-02] 설정 › 메모 공유; 달력마다 따로 until the user groups calendars. */
+    val memoSharing = com.bamnat.app.data.MemoSharingStore(java.io.File(appContext.filesDir, "memo_sharing.json"))
+    /** [MEMO-01] Memos stay with the calendar they were written on, unless calendars share them. */
+    val memoRepository = MemoRepository(database, sharing = kotlinx.coroutines.flow.combine(memoSharing.state, calendars.calendars) { s, list ->
+        s.cleaned(list.map { it.id })
+    })
     val sleepRepository = com.bamnat.app.data.SleepRepository(database)
     /** [ONBOARD-01] What this phone was told about on the first-start consent pages. */
     val consentStore by lazy { com.bamnat.app.data.ConsentStore(appContext) }
@@ -135,7 +140,11 @@ class AppContainer(context: Context) {
         com.bamnat.app.alarm.BootAlarms.RingSettings.of(settingsRepository.current)
     }
     val payStore = PayStore(appContext)
-    val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars)
+    val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars, memoSharing = memoSharing)
+    /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록: a calendar's records as they were before a change, for 7 days. */
+    val recordsTrash by lazy {
+        com.bamnat.app.data.RecordsTrash(java.io.File(appContext.noBackupFilesDir, "records_trash"), calendars, database, settingsRepository)
+    }
     /** [SET-01] The data as it was before the last import, to take the import back. */
     val importUndo by lazy { com.bamnat.app.data.ImportUndo(java.io.File(appContext.noBackupFilesDir, "before_import.json"), backupManager) }
     /** [COMM-00] Company settings as a file for coworkers. */
@@ -230,6 +239,8 @@ class AppContainer(context: Context) {
             // [SETUP-01] A first setup the app was closed in the middle of saving is finished first.
             runCatching { firstSetup.finishInterrupted() }
             memoRepository.purgeOldTrash()
+            // [UNDO-01] What was cleared or removed more than 7 days ago goes for good.
+            runCatching { recordsTrash.purge() }
             moneyRepository.purgeCaptures()
             // [MCAL-02] A calendar whose setup was left before saving is not kept.
             if (calendarSetupDrafts.draft.value == null) calendars.dropUnfinished(before = startedAt)

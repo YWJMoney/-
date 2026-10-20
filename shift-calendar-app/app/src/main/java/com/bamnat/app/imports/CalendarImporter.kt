@@ -80,7 +80,7 @@ class CalendarImporter(
                     val text = CalendarImport.memoText(p.event)
                     val title = text.substringBefore('\n')
                     val body = text.substringAfter('\n', "")
-                    memoId = memos.save(Memo(date = p.date, title = title, body = body)).id
+                    memoId = memos.save(Memo(date = p.date, title = title, body = body, calendars = setOf(com.bamnat.app.data.PersonalCalendar.MAIN))).id // [MEMO-01] onto 내 달력, as its days
                     memoIds += memoId
                 }
             }
