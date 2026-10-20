@@ -106,7 +106,8 @@ class RecordsTrash(
             pay = calendars.pay(calendarId).profile.value != null,
             // [INV-01][UNDO-02] An investor calendar's records: its trades, and the rest of its lines.
             trades = count("invest_trades"),
-            invest = INVEST_TABLES.any { it != "invest_trades" && it != "invest_quotes" && count(it) > 0 },
+            // Lines the user wrote; an account made on its own, prices and daily totals do not count.
+            invest = listOf("invest_cash", "invest_journal", "invest_events", "invest_alarms").any { count(it) > 0 },
         )
     }
 
