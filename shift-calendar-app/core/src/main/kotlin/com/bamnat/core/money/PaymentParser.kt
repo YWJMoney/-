@@ -133,16 +133,30 @@ object PaymentParser {
     }
 
     /**
+     * [LEDG-21] A rule the user wrote as "이 말이 들어가면": its word is kept with this mark in front.
+     * No place read from a text has it, since the parser drops every piece with a '*'.
+     */
+    const val CONTAINS = "*"
+
+    fun isContainsRule(key: String): Boolean = key.startsWith(CONTAINS)
+
+    /** [LEDG-21] The word of a "이 말이 들어가면" rule as it is compared: no spaces, lower case. */
+    private fun containsWord(key: String): String = key.removePrefix(CONTAINS).replace(Regex("\\s+"), "").lowercase()
+
+    /**
      * [LEDG-17] The user's rule for [merchant]: the same name first, else the rule whose place is the
-     * longest start of this one, so a rule learned at one branch covers the others.
+     * longest start of this one, so a rule learned at one branch covers the others. [LEDG-21] A
+     * "이 말이 들어가면" rule counts when its word is anywhere in the name; the longest match wins.
      */
     fun ruleFor(merchant: String, rules: Map<String, String>): String? {
         if (merchant.isBlank() || rules.isEmpty()) return null
         rules[merchant]?.let { return it }
         val key = placeKey(merchant)
-        if (key.length < 2) return null
-        return rules.entries.mapNotNull { (m, c) -> placeKey(m).takeIf { it.length >= 2 && key.startsWith(it) }?.let { it to c } }
-            .maxByOrNull { it.first.length }?.second
+        val flat = merchant.replace(Regex("\\s+"), "").lowercase()
+        return rules.entries.mapNotNull { (m, c) ->
+            if (isContainsRule(m)) containsWord(m).takeIf { it.isNotEmpty() && flat.contains(it) }?.let { it to c }
+            else placeKey(m).takeIf { it.length >= 2 && key.length >= 2 && key.startsWith(it) }?.let { it to c }
+        }.maxByOrNull { it.first.length }?.second
     }
 
     fun guessCategory(merchant: String, rules: Map<String, String> = emptyMap()): String {

@@ -77,6 +77,8 @@ class AppContainer(context: Context) {
     val consentStore by lazy { com.bamnat.app.data.ConsentStore(appContext) }
     /** [SLP-08] Sleep measured by a watch or the phone, read from Health Connect. */
     val healthSleep = com.bamnat.app.sleep.HealthSleep(context)
+    /** [LEDG-22][LEDG-24] How 결제 알림으로 적기 was tuned, and repeats the user turned down. */
+    val autoRecordPrefs by lazy { com.bamnat.app.data.AutoRecordPrefs(appContext) }
     val moneyRepository = MoneyRepository(database, com.bamnat.app.data.CaptureStore(java.io.File(appContext.noBackupFilesDir, "captures.json")))
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository)
     val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry) {

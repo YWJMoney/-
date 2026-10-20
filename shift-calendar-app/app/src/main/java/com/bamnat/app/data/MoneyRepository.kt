@@ -268,6 +268,14 @@ class MoneyRepository(
 
     suspend fun delete(cost: FixedCost) = dao.deleteFixed(cost.id)
 
+    /** [LEDG-21] A rule the user wrote or changed on the rules page; [merchant] may be a "이 말이 들어가면" word. */
+    suspend fun setRule(merchant: String, category: String) {
+        if (merchant.isNotBlank()) dao.upsertRule(CategoryRuleEntity(merchant, category))
+    }
+
+    /** [LEDG-21] Forgets a rule; places it covered go back to the built-in guess. */
+    suspend fun deleteRule(merchant: String) = dao.deleteRule(merchant)
+
     suspend fun rules(): Map<String, String> = dao.allRules().associate { it.merchant to it.category }
 
     /** Lines from the last month, enough to find a duplicate or the payment a cancellation undoes. */

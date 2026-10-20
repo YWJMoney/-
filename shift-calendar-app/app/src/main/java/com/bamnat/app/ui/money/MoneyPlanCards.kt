@@ -164,13 +164,16 @@ fun AutoRecordCard(onPaste: () -> Unit, explainFirst: Boolean = false) {
  * 결제 알림 읽기 row lands ([NoticeLinks.Target.AUTO_RECORD]).
  */
 @Composable
-fun AutoRecordDialog(onPaste: () -> Unit, onDismiss: () -> Unit) {
+fun AutoRecordDialog(onPaste: () -> Unit, onDismiss: () -> Unit, onRules: (() -> Unit)? = null, onFilter: (() -> Unit)? = null) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("자동 기록") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 AutoRecordControls(onPaste = { onDismiss(); onPaste() })
+                // [LEDG-21][LEDG-22] How it sorts and what it leaves out.
+                if (onRules != null) OutlinedButton(onClick = onRules, modifier = Modifier.fillMaxWidth()) { Text("자동 분류 규칙") }
+                if (onFilter != null) OutlinedButton(onClick = onFilter, modifier = Modifier.fillMaxWidth()) { Text("알림 거르기") }
                 Text("돈 탭 위 ⋮ > 자동 기록에서 언제든 켜고 꺼요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
             }

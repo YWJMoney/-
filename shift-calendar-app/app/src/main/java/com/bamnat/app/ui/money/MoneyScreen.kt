@@ -71,6 +71,7 @@ import com.bamnat.app.AppContainer
 import com.bamnat.app.NoticeLinks
 import com.bamnat.app.appContainer
 import com.bamnat.app.data.AppSettings
+import com.bamnat.app.data.AutoRecordPrefs
 import com.bamnat.app.data.Capture
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.tier.Feature
@@ -82,6 +83,7 @@ import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.core.money.AccountType
 import com.bamnat.core.money.BudgetLine
 import com.bamnat.core.money.Budgets
+import com.bamnat.core.money.CaptureFilter
 import com.bamnat.core.money.CategoryEdit
 import com.bamnat.core.money.DailySales
 import com.bamnat.core.money.FixedCost
@@ -95,6 +97,8 @@ import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.money.MoneyStats
 import com.bamnat.core.money.MonthMoney
+import com.bamnat.core.money.OtherPlaces
+import com.bamnat.core.money.RepeatFinder
 import com.bamnat.core.money.Reports
 import com.bamnat.core.money.Upcoming
 import com.bamnat.core.money.UpcomingPayments
@@ -273,6 +277,29 @@ class MoneyViewModel(
         }
     }
     fun markAllSeen() { container.appScope.launch { money.markAllReviewed() } }
+
+    /** [LEDG-22][LEDG-24] How 결제 알림으로 적기 was tuned, and repeats turned down. */
+    val autoRecord: StateFlow<AutoRecordPrefs.State> = container.autoRecordPrefs.state
+    fun setCaptureFilter(filter: CaptureFilter) = container.autoRecordPrefs.setFilter(filter)
+
+    /** [LEDG-21] A rule written or changed on the rules page. */
+    fun setRule(merchant: String, category: String) { container.appScope.launch { money.setRule(merchant, category) } }
+    fun deleteRule(merchant: String) {
+        val old = rules.value[merchant] ?: return
+        container.appScope.launch {
+            money.deleteRule(merchant)
+            _undo.tryEmit(UndoMessage("규칙을 지웠어요") { money.setRule(merchant, old) })
+        }
+    }
+
+    /** [LEDG-24] A payment seen every month becomes a 반복 지출; 아니에요 is remembered. */
+    fun addRepeat(s: RepeatFinder.Suggestion) {
+        container.appScope.launch {
+            val saved = money.save(s.toFixedCost())
+            _undo.tryEmit(UndoMessage("‘${saved.name}’을 반복 지출로 등록했어요") { money.delete(saved) })
+        }
+    }
+    fun notRepeating(s: RepeatFinder.Suggestion) = container.autoRecordPrefs.notRepeating(s.key)
     fun finishCapture(capture: Capture, entry: MoneyEntry) {
         container.appScope.launch { money.save(entry); money.dismissCapture(capture.id) }
     }
@@ -372,6 +399,8 @@ fun MoneyScreen(
     var editingCategories by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var autoRecording by rememberSaveable { mutableStateOf(false) }
+    var editingRules by rememberSaveable { mutableStateOf(false) }
+    var filtering by rememberSaveable { mutableStateOf(false) }
     // [LEDG-16] 돈 적기 shrinks to its icon while the page scrolls down and comes back on the way up.
     var fabExpanded by rememberSaveable { mutableStateOf(true) }
     val fabScroll = remember {
@@ -393,6 +422,7 @@ fun MoneyScreen(
     }
     val rules by vm.rules.collectAsStateWithLifecycle()
     val captures by vm.captures.collectAsStateWithLifecycle()
+    val autoRecord by vm.autoRecord.collectAsStateWithLifecycle()
     val book = bookOrNull ?: MoneyBook.EMPTY
     val style = settings.workStyle
     val statsOpen = FeatureGate.allows(tier, Feature.MONEY_STATS)
@@ -415,6 +445,10 @@ fun MoneyScreen(
     }
     val owed = remember(book, today) { book.owed(today) }
     val unseen = remember(book) { book.entries.filter { !it.reviewed } }
+    val otherPlaces = remember(book, today) { OtherPlaces.groups(book.entries, today) }
+    val repeats = remember(book, today, autoRecord.notRepeating) {
+        RepeatFinder.find(book.entries, book.fixed, today, autoRecord.notRepeating)
+    }
     val upcoming = remember(book, today) { UpcomingPayments.within(book.fixed, book.entries, today, accounts = book.accounts) }
     val leftFixed = remember(book, today) { UpcomingPayments.leftThisMonth(book.fixed, book.entries, today) }
     val budget = remember(book, month, today, leftFixed) { Budgets.status(book.budgets, book.entries, month, today, leftFixed) }
@@ -434,8 +468,10 @@ fun MoneyScreen(
             onFinish = { finishing = it }, onDrop = vm::dropCapture)
         HeroCard(m, budget, today, onBudget = { budgeting = true })
         BudgetCard(budget, today, onEdit = { budgeting = true })
+        OtherPlacesCard(otherPlaces, book.categoriesOf(MoneyKind.EXPENSE), onPick = { g, c -> vm.recategorize(g.entries, c) })
         UpcomingCard(upcoming, book.fixed, leftFixed, onRecord = { vm.recordFixed(it, today) },
             onEdit = { c -> if (c == null) addingFixed = true else editingFixed = c })
+        RepeatSuggestCard(repeats, onAdd = vm::addRepeat, onNo = vm::notRepeating)
         AccountsCard(book, today, onAdd = { t -> if (t == null) addingAnyAccount = true else addingAccount = t }, onEdit = { editingAccount = it })
     }
     val right: @Composable () -> Unit = {
@@ -548,7 +584,11 @@ fun MoneyScreen(
         EntryDialog(draft.date, draft, draft.kind, onSave = { vm.finishCapture(c, it); finishing = null },
             onDismiss = { finishing = null }, frequent = vm::frequentAmounts, rules = rules, book = book)
     }
-    if (autoRecording) AutoRecordDialog(onPaste = { pasting = true }, onDismiss = { autoRecording = false })
+    if (autoRecording) AutoRecordDialog(onPaste = { pasting = true }, onDismiss = { autoRecording = false },
+        onRules = { autoRecording = false; editingRules = true }, onFilter = { autoRecording = false; filtering = true })
+    if (editingRules) CategoryRulesDialog(rules, book.categoriesOf(MoneyKind.EXPENSE), onSave = vm::setRule, onDelete = vm::deleteRule,
+        onDismiss = { editingRules = false })
+    if (filtering) CaptureFilterDialog(autoRecord, onChange = vm::setCaptureFilter, onDismiss = { filtering = false })
     if (pasting) PasteDialog(book.entries, rules, onSave = { vm.saveAll(it); pasting = false }, onDismiss = { pasting = false }, today = today)
     if (addingFixed || editingFixed != null) {
         FixedCostDialog(editingFixed, onSave = { vm.saveFixed(it); addingFixed = false; editingFixed = null },
