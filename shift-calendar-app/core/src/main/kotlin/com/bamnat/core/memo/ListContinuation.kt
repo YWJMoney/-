@@ -93,4 +93,55 @@ object ListContinuation {
         }
         return BULLET.find(line)?.value?.replace("✓", "☐")
     }
+
+    private val ORDERED = Regex("^(\\s*)(\\d{1,3})([.)])(\\s+)")
+
+    /**
+     * [NOTE-08] Keeps a numbered list in order after an edit inside it: the items following the
+     * caret's item ("1. ", "2) ", same spaces in front and the same mark) are numbered on from it, and
+     * deeper items under them are passed over. When the edit took text away, the caret's own item is
+     * numbered on from the item above it as well, so deleting "2. …" turns "3. …" into "2. …". Bare
+     * numbers ("3 사과") are left as they are.
+     */
+    fun renumber(before: Edit, after: Edit): Edit {
+        if (after.text == before.text) return after
+        val lines = after.text.split('\n').toMutableList()
+        val caret = after.cursor.coerceIn(0, after.text.length)
+        val caretLine = after.text.substring(0, caret).count { it == '\n' }
+        var anchor = caretLine
+        if (after.text.length < before.text.length && caretLine > 0) {
+            val here = ORDERED.find(lines[caretLine])
+            val above = ORDERED.find(lines[caretLine - 1])
+            if (here != null && above != null && sameList(here, above)) anchor = caretLine - 1
+        }
+        val head = ORDERED.find(lines[anchor]) ?: return after
+        var n = head.groupValues[2].toInt()
+        var cursor = caret
+        val indent = head.groupValues[1]
+        for (i in anchor + 1 until lines.size) {
+            val line = lines[i]
+            val m = ORDERED.find(line)
+            if (m != null && sameList(m, head)) {
+                n++
+                val numbered = indent + n + m.groupValues[3] + line.substring(m.groupValues[1].length + m.groupValues[2].length + 1)
+                // A number that grows or shrinks by a digit on the caret's own line moves the caret after it.
+                if (i == caretLine && caret > lineStart(lines, i) + indent.length) {
+                    cursor += numbered.length - line.length
+                }
+                lines[i] = numbered
+                continue
+            }
+            val lead = line.takeWhile { it == ' ' || it == '\t' }
+            if (line.isNotBlank() && lead.length > indent.length) continue
+            break
+        }
+        val text = lines.joinToString("\n")
+        if (text == after.text) return after
+        return Edit(text, cursor.coerceIn(0, text.length))
+    }
+
+    private fun sameList(a: MatchResult, b: MatchResult): Boolean =
+        a.groupValues[1] == b.groupValues[1] && a.groupValues[3] == b.groupValues[3]
+
+    private fun lineStart(lines: List<String>, index: Int): Int = (0 until index).sumOf { lines[it].length + 1 }
 }

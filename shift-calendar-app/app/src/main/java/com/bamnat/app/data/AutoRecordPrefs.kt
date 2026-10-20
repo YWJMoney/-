@@ -22,6 +22,8 @@ class AutoRecordPrefs(context: Context) {
         val calendar: String = PersonalCalendar.MAIN,
         /** [CALS-04] Package → calendar: an app's notifications always go to that calendar. */
         val appCalendars: Map<String, String> = emptyMap(),
+        /** [COMN-04] 확인하고 적기: payment lines wait in 확인 대기함 and count only once confirmed; off is 바로 적기. */
+        val confirmFirst: Boolean = false,
     )
 
     private val prefs: SharedPreferences =
@@ -54,6 +56,9 @@ class AutoRecordPrefs(context: Context) {
         putStringSet(K_APP_CALENDARS, next.map { "${it.key}\t${it.value}" }.toSet())
     }
 
+    /** [COMN-04] 확인하고 적기 on, or 바로 적기. */
+    fun setConfirmFirst(on: Boolean) = edit { putBoolean(K_CONFIRM_FIRST, on) }
+
     /** [CALS-04] A calendar that goes away hands its notifications back to 내 달력. */
     fun forgetCalendar(id: String) {
         if (current.calendar == id) setCalendar(PersonalCalendar.MAIN)
@@ -81,6 +86,7 @@ class AutoRecordPrefs(context: Context) {
         appCalendars = prefs.getStringSet(K_APP_CALENDARS, null).orEmpty().mapNotNull { line ->
             line.split('\t', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] }
         }.toMap(),
+        confirmFirst = prefs.getBoolean(K_CONFIRM_FIRST, false),
     )
 
     private companion object {
@@ -91,6 +97,7 @@ class AutoRecordPrefs(context: Context) {
         const val K_NOT_REPEATING = "not_repeating"
         const val K_CALENDAR = "calendar"
         const val K_APP_CALENDARS = "app_calendars"
+        const val K_CONFIRM_FIRST = "confirm_first"
         const val MAX_APPS = 30
     }
 }

@@ -346,12 +346,12 @@ SHOP-05,"목표 매출(자영업 P2) → 남은 영업일로 나눈 하루 목�
 SHOP-06,"외상을 매출에 잇기(자영업 P2)",1.16.0,진행 중,,
 SHOP-07,"매출·일감 CSV 내보내기(자영업 P2)",1.16.0,진행 중,,
 SHOP-08,"카드 단말기·배달앱 알림을 매출로, 정산 입금을 카드 입금으로(공통 6-2)",1.16.0,진행 중,,
-COMN-01,"합쳐 보기(공통 6-1) → 모든 달력을 한 달력에 색 막대로, 겹치는 시간 경고",1.16.0,진행 중,,
-COMN-02,"가계부 전체 합계(공통 6-1) → 달력별 장부와 모든 달력 합계",1.16.0,진행 중,,
-COMN-03,"통계 [전체] 칩(공통 6-1) → 모든 달력의 총수입·총지출·순저축",1.16.0,진행 중,,
-COMN-04,"결제 알림 확인 대기함(공통 6-2) → 바로 적기 대신 확인한 것만 적기",1.16.0,진행 중,,
-COMN-05,"근무 형태별 위젯(공통 6-5) → 알바 주 시간·주휴, 현장 공수·미수금, 일근 남은 연차·야근",1.16.0,진행 중,,
-NOTE-05,"반복 메모(공통 6-3) → 매달 25일·매주 화요일처럼 돌아오는 메모",1.16.0,진행 중,,
-NOTE-06,"하루 화면 위에 메모 제목(공통 6-3)",1.16.0,진행 중,,
-NOTE-07,"체크 칸 누르면 ☑, 키보드 위 목록 버튼(공통 6-4)",1.16.0,진행 중,,
-NOTE-08,"목록 번호 다시 매기기(공통 6-4)",1.16.0,진행 중,,
+COMN-01,"합쳐 보기(공통 6-1) → 모든 달력을 한 달력에 색 막대로, 겹치는 시간 경고",1.16.0,완료,,"core/work/CombinedView.kt (spansOf·clashes·clashDays), CommonCalendarsTest; ui/calendar/CombinedScreen.kt, data/EveryCalendar.kt, CalendarSwitcherSheet onCombined, AppRoot Routes.COMBINED"
+COMN-02,가계부 전체 합계(공통 6-1) → 달력별 장부와 모든 달력 합계,1.16.0,완료,,"core/money/AllCalendars.kt (AllCalendarsMonth), CommonCalendarsTest.everyCalendarAddsUp; ui/money/AllCalendarsCard.kt in MoneyScreen, data/EveryCalendar.month"
+COMN-03,통계 [전체] 칩(공통 6-1) → 모든 달력의 총수입·총지출·순저축,1.16.0,완료,,"ui/stats/AllCalendarsStats.kt, CalendarScopeChips(all, onAll) 전체 칩, StatsScreen; CombinedView.workOf, CommonCalendarsTest.workDaysAndHoursPerCalendar"
+COMN-04,결제 알림 확인 대기함(공통 6-2) → 바로 적기 대신 확인한 것만 적기,1.16.0,완료,,"MoneyBook.pending·holdUnconfirmed, CommonCalendarsTest.unconfirmedLinesAreLeftOutOnlyWhenAskedTo; AutoRecordPrefs.confirmFirst, MoneyRepository(confirmFirst)·confirm, ui/money/PendingRecords.kt (PendingRow, ConfirmFirstControl), NewRecordsCard 확인 대기함"
+COMN-05,"근무 형태별 위젯(공통 6-5) → 알바 주 시간·주휴, 현장 공수·미수금, 일근 남은 연차·야근",1.16.0,완료,,"core/work/WidgetFigures.kt, CommonCalendarsTest.widgetFiguresForEachKindOfWork; widget/WidgetStyleLines.kt, WidgetData (hourlyWeek·fieldWeek·leaveLeft), TodayWidget"
+NOTE-05,반복 메모(공통 6-3) → 매달 25일·매주 화요일처럼 돌아오는 메모,1.16.0,완료,,"core/memo/MemoRepeat.kt (occursOn·expand), MemoTextTest; MemoRepository.memosOn·datesWithMemos, CalendarViewModel.datedMemos, MemoRepeatChip, MemoEditorViewModel.setRepeat"
+NOTE-06,하루 화면 위에 메모 제목(공통 6-3),1.16.0,완료,,DayHeader dayTokens (첫 메모 제목 + 외 N)
+NOTE-07,"체크 칸 누르면 ☑, 키보드 위 목록 버튼(공통 6-4)",1.16.0,완료,,"core/memo/MemoText.kt (toggleCheck·toggleMark·insert·dateStamp), MemoTextTest; ui/memo/MemoBodyTools.kt (MemoBodyToolbar), MemoEditorScreen MemoBodyField"
+NOTE-08,목록 번호 다시 매기기(공통 6-4),1.16.0,완료,,"core/memo/ListContinuation.renumber, ListContinuationTest.numbersStayInSequence; MemoBodyField"

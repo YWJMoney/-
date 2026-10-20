@@ -356,7 +356,20 @@ data class MoneyBook(
     val categories: List<CategoryEdit> = emptyList(),
     /** [TYPE-08] The calendar's kind of work, which picks its built-in categories. */
     val style: com.bamnat.core.work.WorkStyle? = null,
+    /** [COMN-04] Lines from payment notifications waiting in 확인 대기함, kept out of every total until confirmed. */
+    val pending: List<MoneyEntry> = emptyList(),
 ) {
+    /**
+     * [COMN-04] With 확인하고 적기 on, lines not yet confirmed move from [entries] to [pending], so the
+     * month's totals, budgets, stats and notices count only what the user confirmed. Off (바로 적기),
+     * the book is left as it is and unconfirmed lines count at once, as before.
+     */
+    fun holdUnconfirmed(on: Boolean): MoneyBook {
+        if (!on) return this
+        val (seen, waiting) = entries.partition { it.reviewed }
+        return if (waiting.isEmpty()) this else copy(entries = seen, pending = pending + waiting)
+    }
+
     fun month(month: YearMonth, payEstimate: Long? = null) = MoneyCalculator.month(month, entries, jobs, sales, payEstimate)
     fun days(month: YearMonth) = MoneyCalculator.days(month, entries, jobs, sales)
     /** [RECV-02] Everything still owed, written down or left on a job. */

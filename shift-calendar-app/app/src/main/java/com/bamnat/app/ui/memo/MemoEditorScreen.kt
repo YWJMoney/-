@@ -114,6 +114,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     var showDatePicker by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    val bodyTools = remember { MemoBodyTools() }
     val background = memoBackground(memo.colorIndex)
 
     Scaffold(
@@ -227,6 +228,8 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     },
                 )
                 if (date != null) ShiftLabel(day)
+                // [NOTE-05] A dated memo can come back every week, month or year.
+                if (date != null) MemoRepeatChip(date, memo.repeat, vm::setRepeat)
                 ScheduleChip(
                     reminder = memo.reminder,
                     onOpen = { answering = null; scheduling = true },
@@ -261,6 +264,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                         textStyle = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.heightIn(min = 240.dp),
                         autoFocus = memo.id == 0L && memo.title.isEmpty(),
+                        tools = bodyTools,
                     )
                 }
             }
@@ -276,6 +280,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     onDecline = { vm.keepAsMemo(found) },
                 )
             }
+            if (!memo.isChecklist) MemoBodyToolbar(bodyTools)
             val chars = if (memo.isChecklist) memo.checklist.sumOf { it.text.length } else memo.body.length
             Text(
                 "${chars}자" + if (memo.isChecklist) " · 완료 ${memo.checkedCount}/${memo.itemCount}" else "",
@@ -399,6 +404,8 @@ private fun PlainField(
  * The memo's body. [NOTE-03] The line being typed stays above the keyboard: whenever the text or the
  * caret moves, the caret's line (and a little room under it) is scrolled into view, so a long memo
  * never runs on behind the keyboard. [NOTE-04] Enter at the end of "1. …" or "- …" starts the next item.
+ * [NOTE-08] A numbered list stays in order after an edit inside it. [NOTE-07] A tap on a "☐ " box ticks
+ * it, and the bar above the keyboard ([tools]) puts list marks and today's date on the caret's line.
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -409,6 +416,7 @@ private fun MemoBodyField(
     textStyle: TextStyle,
     modifier: Modifier = Modifier,
     autoFocus: Boolean = false,
+    tools: MemoBodyTools? = null,
 ) {
     val focus = remember { FocusRequester() }
     if (autoFocus) {
@@ -428,17 +436,41 @@ private fun MemoBodyField(
         val caret = l.getCursorRect(at)
         runCatching { caretView.bringIntoView(caret.copy(top = caret.top - room / 2, bottom = caret.bottom + room)) }
     }
+    if (tools != null) {
+        // [NOTE-07] The bar's taps change the text where the caret is, like typing would.
+        tools.onAction = { action ->
+            val at = com.bamnat.core.memo.ListContinuation.Edit(field.text, field.selection.end)
+            val edit = when (action) {
+                is MemoBodyTools.Action.Mark -> com.bamnat.core.memo.MemoText.toggleMark(at, action.mark)
+                MemoBodyTools.Action.Today -> com.bamnat.core.memo.MemoText.insert(
+                    field.text, field.selection.start, field.selection.end, com.bamnat.core.memo.MemoText.dateStamp(LocalDate.now()),
+                )
+            }
+            val done = com.bamnat.core.memo.ListContinuation.renumber(at, edit)
+            field = androidx.compose.ui.text.input.TextFieldValue(done.text, androidx.compose.ui.text.TextRange(done.cursor))
+            if (field.text != value) onValueChange(field.text)
+        }
+        LaunchedEffect(focused) { tools.editing = focused }
+    }
     val color = MaterialTheme.colorScheme.onSurface
     BasicTextField(
         value = field,
         onValueChange = { next ->
             val before = field
+            val was = com.bamnat.core.memo.ListContinuation.Edit(before.text, before.selection.end)
+            // [NOTE-07] A tap (the caret moved, nothing typed) on a check box ticks it.
+            if (next.text == before.text && next.composition == null && next.selection.collapsed && next.selection != before.selection) {
+                val ticked = com.bamnat.core.memo.MemoText.toggleCheck(next.text, next.selection.start)
+                if (ticked != null) {
+                    field = androidx.compose.ui.text.input.TextFieldValue(ticked.text, androidx.compose.ui.text.TextRange(ticked.cursor))
+                    onValueChange(field.text)
+                    return@BasicTextField
+                }
+            }
             // While a Korean letter is still being put together, the text is left exactly as the keyboard has it.
             val goOn = if (next.composition == null) {
-                com.bamnat.core.memo.ListContinuation.apply(
-                    com.bamnat.core.memo.ListContinuation.Edit(before.text, before.selection.end),
-                    com.bamnat.core.memo.ListContinuation.Edit(next.text, next.selection.end),
-                )
+                val typed = com.bamnat.core.memo.ListContinuation.Edit(next.text, next.selection.end)
+                com.bamnat.core.memo.ListContinuation.renumber(was, com.bamnat.core.memo.ListContinuation.apply(was, typed))
             } else null
             field = if (goOn != null && goOn.text != next.text) {
                 androidx.compose.ui.text.input.TextFieldValue(goOn.text, androidx.compose.ui.text.TextRange(goOn.cursor))

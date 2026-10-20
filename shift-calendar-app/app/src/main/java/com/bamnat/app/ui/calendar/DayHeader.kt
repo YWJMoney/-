@@ -377,7 +377,7 @@ private fun DaySalesLine(sales: com.bamnat.core.money.DailySales) {
 @Composable
 private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings): List<DayToken> {
     val memos by vm.datedMemos.collectAsStateWithLifecycle()
-    val memoCount = remember(memos, day.date) { memos.count { it.date == day.date } }
+    val dayMemos = remember(memos, day.date) { memos.filter { it.date == day.date } }
     val alarms = remember(snapshot, day.date) { plannedAlarms(snapshot, day) }
     val rest = remember(snapshot, day.date, settings.restCheck, settings.strictRest) {
         if (settings.restCheck) vm.restIssuesOn(snapshot, day.date, settings.strictRest) else emptyList()
@@ -393,7 +393,13 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
         }
         if (day.extras.any { it.entry.needsReview }) add(DayToken("추가 근무 확인 필요", DayToken.Tone.WARNING))
         if (day.source == DaySource.OVERRIDE || day.hasCustomTimes) add(DayToken("직접 바꿈", DayToken.Tone.ACCENT))
-        if (memoCount > 0) add(DayToken("메모 $memoCount", DayToken.Tone.PLAIN))
+        // [NOTE-06] The first memo's title, cut to one line, and how many more there are.
+        dayMemos.firstOrNull()?.let { first ->
+            val title = first.title.ifBlank { first.preview }.lineSequence().firstOrNull().orEmpty().trim()
+            val shown = if (title.length > 14) title.take(13) + "…" else title
+            val more = if (dayMemos.size > 1) " 외 ${dayMemos.size - 1}" else ""
+            add(DayToken(if (shown.isEmpty()) "메모 ${dayMemos.size}" else "메모 · $shown$more", DayToken.Tone.PLAIN))
+        }
         rest.firstOrNull()?.let { add(DayToken(it.kind.label, DayToken.Tone.WARNING)) }
         // [CAL-01] A week over the limit is said in its own line under the header, with the limit.
     }

@@ -123,6 +123,8 @@ private fun TodayContent(data: WidgetData) {
             CalendarFocus.SHIFTS -> Unit
         }
         DayLine("오늘", data.day(data.today), big = true)
+        // [COMN-05] A part-timer's week and 주휴, a day worker's 연차 and 야근.
+        WorkStyleLine(data)
         val line = data.flow?.line
         if (line != null) {
             Spacer(GlanceModifier.height(4.dp))
@@ -215,6 +217,8 @@ private fun JobsToday(data: WidgetData) {
             Text("다음 일감 ${Fmt.shortDate(j.date)} ${j.title}", style = small(GlanceTheme.colors.primary), maxLines = 1)
         }
     }
+    // [COMN-05] The week's days or 공수, and what is still owed.
+    if (data.style == WorkStyle.FIELD) FieldWeekLine(data)
 }
 
 /** [CAL-11] A shop's own day and month; the amounts are the user's, on their own screen, as in the calendar's cells. */

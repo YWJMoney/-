@@ -49,4 +49,39 @@ class ListContinuationTest {
         val pasted = Edit("1. 우유\n2. 빵", 11)
         assertEquals(pasted, ListContinuation.apply(Edit("1. 우유", 5), pasted))
     }
+
+    /** [NOTE-08] Changes [before] to [after] with the caret at [cursor] and renumbers. */
+    private fun renumber(before: String, after: String, cursor: Int): Edit =
+        ListContinuation.renumber(Edit(before, before.length), Edit(after, cursor))
+
+    @Test
+    fun numbersStayInSequence() {
+        // An item put in after "1." (Enter) pushes the ones under it down.
+        val typed = enter("1. 우유").let { "1. 우유\n2. \n2. 빵\n3. 잼" to it.cursor }
+        assertEquals("1. 우유\n2. \n3. 빵\n4. 잼", renumber("1. 우유\n2. 빵\n3. 잼", typed.first, typed.second).text)
+        // Deleting an item pulls the ones under it up, even when the caret lands on the next one.
+        assertEquals("1. 우유\n2. 잼", renumber("1. 우유\n2. 빵\n3. 잼", "1. 우유\n3. 잼", 6).text)
+        assertEquals("1) 우유\n2) 잼", renumber("1) 우유\n2) 빵\n3) 잼", "1) 우유\n3) 잼", 9).text)
+        // Deeper items are passed over and keep their own numbers; a plain line ends the list.
+        assertEquals(
+            "1. a\n2. 새\n  1. 안\n3. b\n끝\n7. 다른 목록",
+            renumber("1. a\n2. b", "1. a\n2. 새\n  1. 안\n2. b\n끝\n7. 다른 목록", 9).text,
+        )
+        // From 9 to 10 the line grows by one, and the caret on it moves with it.
+        val grown = renumber("8. a\n9. b\n10. c", "8. a\n9. x\n9. b\n10. c", 9)
+        assertEquals("8. a\n9. x\n10. b\n11. c", grown.text)
+        assertEquals(9, grown.cursor)
+        val pulled = ListContinuation.renumber(Edit("8. a\n9. b\n10. c", 0), Edit("8. a\n10. c", 8))
+        assertEquals(Edit("8. a\n9. c", 7), pulled)
+    }
+
+    @Test
+    fun renumberingLeavesOtherTextAlone() {
+        // Bare numbers, a list that starts at its own number and a caret-only move change nothing.
+        assertEquals("1 사과\n5 배", renumber("1 사과", "1 사과\n5 배", 8).text)
+        assertEquals("3. 셋\n7. 일곱", renumber("3. 셋", "3. 셋\n7. 일곱", 9).text)
+        assertEquals(Edit("1. a\n5. b", 2), ListContinuation.renumber(Edit("1. a\n5. b", 9), Edit("1. a\n5. b", 2)))
+        // Typing a number on the caret's own line is left as typed.
+        assertEquals("1. a\n5. ", renumber("1. a\n5.", "1. a\n5. ", 8).text)
+    }
 }

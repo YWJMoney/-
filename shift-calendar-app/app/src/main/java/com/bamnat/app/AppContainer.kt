@@ -71,7 +71,7 @@ class AppContainer(context: Context) {
             MoneyRepository(db, captureStore, style = kotlinx.coroutines.flow.combine(calendarsFlow, settingsRepository.settings) { list, s ->
                 // [CALS-02] An added calendar without a kind of work of its own follows the main one, as its tabs do.
                 list.firstOrNull { it.id == id }?.takeIf { !it.isMain }?.style ?: s.workStyle
-            })
+            }, confirmFirst = autoRecordPrefs.state.map { it.confirmFirst })
         },
         payOf = { id -> PayStore(appContext, java.io.File(com.bamnat.app.data.CalendarStorage.filesOf(appContext, id), "pay")) },
     )
@@ -88,7 +88,8 @@ class AppContainer(context: Context) {
     /** [LEDG-22][LEDG-24] How 결제 알림으로 적기 was tuned, and repeats the user turned down. */
     val autoRecordPrefs by lazy { com.bamnat.app.data.AutoRecordPrefs(appContext) }
     private val captureStore by lazy { com.bamnat.app.data.CaptureStore(java.io.File(appContext.noBackupFilesDir, "captures.json")) }
-    val moneyRepository = MoneyRepository(database, captureStore, style = settingsRepository.settings.map { it.workStyle })
+    val moneyRepository = MoneyRepository(database, captureStore, style = settingsRepository.settings.map { it.workStyle },
+        confirmFirst = autoRecordPrefs.state.map { it.confirmFirst })
     /** The calendar list as a flow, for repositories made before [calendars] is there. */
     private val calendarsFlow: kotlinx.coroutines.flow.Flow<List<com.bamnat.app.data.PersonalCalendar>>
         get() = calendars.calendars
