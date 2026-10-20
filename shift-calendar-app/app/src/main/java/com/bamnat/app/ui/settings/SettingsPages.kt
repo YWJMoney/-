@@ -352,7 +352,10 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         }
     }
     SectionCard(title = "모양") {
-        ChoiceRow("테마", null, listOf(ThemeMode.SYSTEM to "휴대폰 따라", ThemeMode.LIGHT to "밝게", ThemeMode.DARK to "어둡게"), settings.themeMode) { m ->
+        // [SHFT-05] 야간 근무 중 어둡게: dark during a night shift on the calendar being viewed.
+        ChoiceRow("테마", if (settings.themeMode == ThemeMode.NIGHT_SHIFT) "22~06시에 걸친 근무 중에는 어둡게, 그 밖에는 휴대폰 따라" else null,
+            listOf(ThemeMode.SYSTEM to "휴대폰 따라", ThemeMode.LIGHT to "밝게", ThemeMode.DARK to "어둡게", ThemeMode.NIGHT_SHIFT to "야간 근무 중 어둡게"),
+            settings.themeMode) { m ->
             vm.update { it.copy(themeMode = m) }
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

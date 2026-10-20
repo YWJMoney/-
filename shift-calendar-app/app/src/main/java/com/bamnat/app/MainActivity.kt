@@ -40,8 +40,10 @@ class MainActivity : ComponentActivity() {
         val container = appContainer
         setContent {
             val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()
-            val dark = when (settings.themeMode) {
-                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+            // [SHFT-05] 야간 근무 중 어둡게 turns into dark or the phone's theme as the night shift starts and ends.
+            val themeMode = com.bamnat.app.ui.theme.rememberThemeMode(settings.themeMode, container)
+            val dark = when (themeMode) {
+                ThemeMode.SYSTEM, ThemeMode.NIGHT_SHIFT -> isSystemInDarkTheme()
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK -> true
             }
@@ -53,7 +55,7 @@ class MainActivity : ComponentActivity() {
                 )
                 onDispose { }
             }
-            BamnatTheme(themeMode = settings.themeMode, dynamicColor = settings.dynamicColor) {
+            BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor) {
                 androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.calendar.LocalExtraKinds provides settings.extraKinds) {
                     AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container)
                 }

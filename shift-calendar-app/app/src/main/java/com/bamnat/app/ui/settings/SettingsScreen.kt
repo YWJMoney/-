@@ -773,7 +773,7 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
     ).ifEmpty { listOf("근무 알람만 와요") }.joinToString(" · ")
     SettingsPage.PAY -> if (hasPay) "급여 계산 · 연차 · 회사 설정 주고받기" else "급여 계산 시작하기 · 회사 설정 주고받기"
     SettingsPage.CALENDAR -> listOf(
-        when (s.themeMode) { ThemeMode.SYSTEM -> "휴대폰 테마"; ThemeMode.LIGHT -> "밝게"; ThemeMode.DARK -> "어둡게" },
+        when (s.themeMode) { ThemeMode.SYSTEM -> "휴대폰 테마"; ThemeMode.LIGHT -> "밝게"; ThemeMode.DARK -> "어둡게"; ThemeMode.NIGHT_SHIFT -> "야간 근무 중 어둡게" },
         "날짜 칸 아래 " + when { s.showLunar -> "음력"; s.showHoursInCells -> "근무시간"; else -> "비움" },
     ).joinToString(" · ")
     SettingsPage.DATA -> "백업 저장 · 불러오기 · 캘린더 가져오기·내보내기"

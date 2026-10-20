@@ -125,6 +125,11 @@ private fun TodayContent(data: WidgetData) {
         DayLine("오늘", data.day(data.today), big = true)
         // [COMN-05] A part-timer's week and 주휴, a day worker's 연차 and 야근.
         WorkStyleLine(data)
+        // [DAYW-03] A day worker leaves work from the home screen.
+        if (LeaveNowAction.offered(data.style, data.day(data.today))) {
+            Spacer(GlanceModifier.height(4.dp))
+            LeaveNowWidgetButton()
+        }
         val line = data.flow?.line
         if (line != null) {
             Spacer(GlanceModifier.height(4.dp))

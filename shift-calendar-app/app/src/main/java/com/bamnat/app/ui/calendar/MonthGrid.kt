@@ -81,6 +81,7 @@ import com.bamnat.core.schedule.DaySource
 import com.bamnat.core.schedule.ResolvedDay
 import com.bamnat.core.work.CalendarFocus
 import com.bamnat.core.work.HourlyWork
+import com.bamnat.core.work.DayWork
 import androidx.compose.material.icons.automirrored.outlined.NoteAdd
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Work
@@ -218,6 +219,8 @@ fun MonthGrid(
     rangeFrom: LocalDate? = null,
     /** [HRLY-02][HRLY-03] An 알바 calendar: times and pay in the cells, a 주휴 mark on each week. */
     hourly: HourlyCells? = null,
+    /** [DAYW-01] A day calendar: working days that just follow the pattern show no badge. */
+    quietWorkDays: Boolean = false,
 ) {
     val cal = LocalCalendarColors.current
     val haptics = LocalHapticFeedback.current
@@ -322,6 +325,7 @@ fun MonthGrid(
                         isRangeStart = date == rangeFrom,
                         hourly = hourly,
                         holidayWeekDone = col == 6 && holidayWeek?.holidayPay == true,
+                        quietWorkDays = quietWorkDays,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         weekNote = if (col == 0 && week.overLimit) {
                             "이 주 ${HoursFormat.hours(week.totalMinutes.toDouble())}시간, ${weeklyLimitHours}시간 넘음"
@@ -357,6 +361,8 @@ fun WeekStrip(
     memoTexts: Map<LocalDate, String> = emptyMap(),
     focus: CalendarFocus = CalendarFocus.SHIFTS,
     hourly: HourlyCells? = null,
+    /** [DAYW-01] As in [MonthGrid]. */
+    quietWorkDays: Boolean = false,
 ) {
     val month = YearMonth.from(selected)
     val cells = remember(money, monday) {
@@ -389,6 +395,7 @@ fun WeekStrip(
                 fieldJobs = cells.field[date],
                 cardDue = date in cardDue,
                 hourly = hourly,
+                quietWorkDays = quietWorkDays,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
         }
@@ -429,6 +436,8 @@ private fun DayCell(
     cardDue: Boolean = false,
     hourly: HourlyCells? = null,
     holidayWeekDone: Boolean = false,
+    /** [DAYW-01] Leave out the badge of a working day that just follows the pattern; TalkBack still says it. */
+    quietWorkDays: Boolean = false,
 ) {
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
@@ -607,7 +616,7 @@ private fun DayCell(
             } else if (hourly != null && hourlyRange != null) {
                 // [HRLY-03] An 알바 day's hours are its mark, not the shift code.
                 HourlyTimeMark(day, hourlyRange)
-            } else if (type != null || day.hasCustomTimes) {
+            } else if ((type != null || day.hasCustomTimes) && !(quietWorkDays && DayWork.isRoutine(day))) {
                 ShiftBadge(type = type, text = type?.label ?: "근", size = 22.dp, outlined = type?.isOff == true)
             } else {
                 Spacer(Modifier.height(22.dp))

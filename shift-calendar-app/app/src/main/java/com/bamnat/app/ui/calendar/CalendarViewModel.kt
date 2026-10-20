@@ -664,6 +664,31 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
+    /** [SHFT-03] Who the day was swapped with (or covered for, on a 대근 day); blank clears it. Said back with undo. */
+    fun setSwapWith(date: LocalDate, name: String) {
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
+            val clean = name.trim().take(MAX_SWAP_NAME)
+            val before = schedule.updateDay(date) { it.copy(swapWith = clean) }
+            if ((before?.swapWith ?: "") == clean) return@launch
+            val text = if (clean.isEmpty()) "${Fmt.monthDay(date)} 교환 기록을 지웠어요" else "${Fmt.monthDay(date)}에 ‘$clean’${Fmt.ro(clean)} 교환을 적었어요"
+            _messages.emit(UndoMessage(text) { schedule.restoreDay(date, before) })
+        }
+    }
+
+    /**
+     * [DAYW-03] 지금 퇴근 on [day]: past the end it puts 잔업 from the end to now (replacing a 잔업 already
+     * there), before the end the day ends now. Said back with undo.
+     */
+    fun leaveNow(day: ResolvedDay, now: LocalDateTime = LocalDateTime.now()) {
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
+            val kindName = snapshot.value?.kinds?.name(com.bamnat.core.model.ExtraKind.OVERTIME_ID) ?: "잔업"
+            val (before, text) = LeaveNowWriter.write(schedule, day, now, kindName)
+            _messages.emit(if (text == null) UndoMessage("퇴근 시각이에요. 따로 적을 게 없어요") else UndoMessage(text) { schedule.restoreDay(day.date, before) })
+        }
+    }
+
     /** [EXTRA-01] Adds a piece of extra work, said back with undo: "10월 17일에 야간 대근을 넣었어요". */
     /** [HRLY-01][HRLY-08] Changes one day of the calendar on screen (출결, 출근·퇴근), said back with undo. */
     fun changeDay(date: LocalDate, said: String, transform: (com.bamnat.core.model.DayEntry) -> com.bamnat.core.model.DayEntry) {
