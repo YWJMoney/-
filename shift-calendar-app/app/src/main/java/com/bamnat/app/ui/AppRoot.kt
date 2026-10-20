@@ -207,6 +207,11 @@ private object Routes {
     const val CALENDAR_IMPORT = "calendar_import"
     /** [COMN-01] 모든 달력 합쳐 보기. */
     const val COMBINED = "combined"
+    // [SHFT-06][SHFT-07][DAYW-06][DAYW-07] Shift and day work's own tools, for the calendar on screen.
+    const val DUTY_ROSTER = "duty_roster"
+    const val HEALTH_REPORT = "health_report"
+    const val ATTENDANCE_IMPORT = "attendance_import"
+    const val COMMUTE = "commute"
 
     fun companyFind(setup: Boolean = false, weekdays: Boolean = false) = "company_find?setup=$setup&weekdays=$weekdays"
     fun company(id: String, setup: Boolean, weekdays: Boolean) = "company/$id?setup=$setup&weekdays=$weekdays"
@@ -321,6 +326,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.SLEEP -> { nav.navigate(Routes.SLEEP) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.OWED -> { nav.navigate(Routes.OWED) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.CALENDAR_IMPORT -> { nav.navigate(Routes.CALENDAR_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.DUTY_ROSTER -> { nav.navigate(Routes.DUTY_ROSTER) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.HEALTH_REPORT -> { nav.navigate(Routes.HEALTH_REPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.ATTENDANCE_IMPORT -> { nav.navigate(Routes.ATTENDANCE_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [SET-01] Settings takes the target itself, to open on the alarm's state from wherever it was.
             NoticeLinks.Target.ALARM_CHECK -> {
                 val current = nav.currentBackStackEntry?.destination?.route
@@ -817,6 +826,25 @@ private fun AppNavHost(
             val vm = appViewModel { com.bamnat.app.ui.imports.CalendarImportViewModel(it) }
             com.bamnat.app.ui.imports.CalendarImportScreen(vm = vm, onBack = { nav.popFrom(Routes.CALENDAR_IMPORT) })
         }
+        composable(Routes.DUTY_ROSTER) {
+            val calendar = remember { container.calendars.active.value }
+            val vm = appViewModel(key = "duty_$calendar") { com.bamnat.app.ui.imports.DutyRosterViewModel(it, calendar) }
+            com.bamnat.app.ui.imports.DutyRosterScreen(vm = vm, onBack = { nav.popFrom(Routes.DUTY_ROSTER) })
+        }
+        composable(Routes.HEALTH_REPORT) {
+            val calendar = remember { container.calendars.active.value }
+            val vm = appViewModel(key = "health_$calendar") { com.bamnat.app.ui.stats.HealthReportViewModel(it, calendar) }
+            com.bamnat.app.ui.stats.HealthReportScreen(vm = vm, onBack = { nav.popFrom(Routes.HEALTH_REPORT) })
+        }
+        composable(Routes.ATTENDANCE_IMPORT) {
+            val calendar = remember { container.calendars.active.value }
+            val vm = appViewModel(key = "attendance_$calendar") { com.bamnat.app.ui.imports.AttendanceImportViewModel(it, calendar) }
+            com.bamnat.app.ui.imports.AttendanceImportScreen(vm = vm, onBack = { nav.popFrom(Routes.ATTENDANCE_IMPORT) })
+        }
+        composable(Routes.COMMUTE) {
+            val vm = appViewModel { com.bamnat.app.ui.work.CommuteViewModel(it) }
+            com.bamnat.app.ui.work.CommuteScreen(vm = vm, onBack = { nav.popFrom(Routes.COMMUTE) })
+        }
         composable(Routes.EXTRA_KINDS) {
             val vm = appViewModel { ExtraKindsViewModel(it) }
             ExtraKindsScreen(vm = vm, onBack = { nav.popFrom(Routes.EXTRA_KINDS) },
@@ -914,7 +942,8 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.DIAGNOSTICS -> Routes.diagnostics(false)
     SettingsGo.INQUIRY -> Routes.INQUIRY
     SettingsGo.BOARD -> Routes.COMPANY_BOARD
-    SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT -> null
+    SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,
+    SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT, SettingsGo.COMMUTE -> null
 }
 
 /**

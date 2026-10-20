@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">밤낮</string>
+    <string name="tile_label">오늘 근무</string>
+    <string name="complication_label">밤낮 오늘 근무</string>
+</resources>

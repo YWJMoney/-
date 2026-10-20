@@ -107,6 +107,30 @@ private fun WorkPage(
         }
     }
     Note("일하는 방식을 바꿔도 적어 둔 기록은 그대로 남아요.")
+    WorkTools(work.workStyle)
+}
+
+/** [SHFT-06][SHFT-07][DAYW-06][DAYW-07] Tools of the calendar's own kind of work, for the calendar picked above. */
+@Composable
+private fun WorkTools(style: com.bamnat.core.work.WorkStyle?) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val commute by remember { com.bamnat.app.data.CommutePrefs.get(context).state }.collectAsStateWithLifecycle()
+    fun open(t: com.bamnat.app.NoticeLinks.Target) = com.bamnat.app.NoticeLinks.open(t)
+    when (style) {
+        null, com.bamnat.core.work.WorkStyle.SHIFT -> SectionCard(title = "교대 근무 도구") {
+            NavRow("듀티표 사진으로 넣기", "한 달 듀티표 사진을 읽어 근무를 한 번에 넣어요") { open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER) }
+            HorizontalDivider()
+            NavRow("연간 건강 지표", "야간 비율, 연속 야간, 짧은 휴식, 주말·공휴일 근무") { open(com.bamnat.app.NoticeLinks.Target.HEALTH_REPORT) }
+        }
+        com.bamnat.core.work.WorkStyle.DAY -> SectionCard(title = "일근 도구") {
+            NavRow("근태 엑셀 가져오기", "회사 근태 시스템의 엑셀·CSV로 출퇴근·연차·야근을 넣어요") { open(com.bamnat.app.NoticeLinks.Target.ATTENDANCE_IMPORT) }
+            HorizontalDivider()
+            NavRow("출퇴근 자동 기록", if (commute.enabled) "켜져 있어요 · 회사 위치에 들어오고 나갈 때 적어요" else "꺼져 있어요 · 회사 위치로 출근·퇴근 시각을 적어요") {
+                open(com.bamnat.app.NoticeLinks.Target.COMMUTE)
+            }
+        }
+        else -> Unit
+    }
 }
 
 /**
@@ -435,6 +459,16 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
         // [IMPORT-01]
         NavRow("캘린더에서 가져오기", "삼성·구글 캘린더 일정을 읽어 근무와 메모로 옮겨요") {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.CALENDAR_IMPORT)
+        }
+        HorizontalDivider()
+        // [SHFT-06]
+        NavRow("듀티표 사진으로 넣기", "듀티표 사진이나 복사한 글자로 한 달 근무를 넣어요") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER)
+        }
+        HorizontalDivider()
+        // [DAYW-06]
+        NavRow("근태 엑셀 가져오기", "회사 근태 시스템의 엑셀(.xlsx)·CSV 파일로 출퇴근·연차를 넣어요") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.ATTENDANCE_IMPORT)
         }
         HorizontalDivider()
         // [REL-04]

@@ -108,6 +108,10 @@ dependencies {
     implementation("com.google.android.play:review-ktx:2.0.2")
     // [PAYS-05][PAYX-04] Payslip and rule photos read on the phone; the Korean model is bundled, nothing is downloaded or sent.
     implementation("com.google.mlkit:text-recognition-korean:16.0.1")
+    // [DAYW-07] On-device geofencing for 출퇴근 자동 기록 (off by default); no location leaves the phone.
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+    // [SHFT-08] The Wear OS watch gets the days through the Wearable Data Layer, phone to watch.
+    implementation("com.google.android.gms:play-services-wearable:19.0.0")
 
     val composeBom = platform("androidx.compose:compose-bom:2025.05.00")
     implementation(composeBom)

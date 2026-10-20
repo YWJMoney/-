@@ -342,5 +342,15 @@ class AppContainer(context: Context) {
                 .drop(1).debounce(500)
                 .collect { WidgetRefresher.refresh(appContext) }
         }
+        // [SHFT-08][REL-09] The watch follows the main calendar and its next alarm, from app start on.
+        keep("watch") {
+            combine(scheduleRepository.snapshot, alarmScheduler.upcoming) { snap, next -> snap to next }
+                .debounce(1_000)
+                .collect { (snap, next) -> com.bamnat.app.watch.WatchSync.push(appContext, snap, next) }
+        }
+        // [DAYW-07] The workplace geofence is put back if Play services lost it (cleared data, an update).
+        if (com.bamnat.app.data.CommutePrefs.get(appContext).current.enabled) {
+            appScope.launch { runCatching { com.bamnat.app.commute.CommuteRecorder.sync(appContext) } }
+        }
     }
 }

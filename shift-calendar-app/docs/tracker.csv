@@ -7,7 +7,7 @@ REL-05,"알람이 앱을 열어야 꺼짐 → 알림·잠금 화면에서 바로
 REL-06,불만을 회귀 테스트 목록으로 → 실행·광고·위젯·알람·데이터 이전 5개 분야를 릴리스 체크리스트로,0,진행 중,G0,"docs/release-checklist.md(5분야·알람 매트릭스 7·자동 점검·문서·G0 칸, 1.15.0에서 처음 채움)"
 REL-07,"최신 OS 대응을 꾸준히(방치된 경쟁 앱 대비) → 연 2회 이상 정기 릴리스, 7장 연간 운영 캘린더",상시,대기,,
 REL-08,연차 총량 15일 고정 해제 요청 → 연차 원장에서 총량·이월을 사용자가 정함,2 → 확장 M4,완료,,"CompanyRules.annualLeaveCarry, 연차 카드 이월 입력·급여 화면 반영; 스크린샷 81"
-REL-09,"Watch 한 달 보기 요청 → Wear OS는 보고서가 ""수요 미검증"". 설치 기기 통계에서 워치 비중이 보이면 재검토",-,보류,G-WEAR,
+REL-09,"Watch 한 달 보기 요청 → Wear OS 앱의 월 보기 (오늘·이번 주·월 보기, 타일, 시계 화면 컴플리케이션)",1.17.0,완료,,"wear 모듈: MainActivity (오늘·이번 주·월 보기, 받은 시각, 다시 받기), ShiftTileService, TodayComplicationService, WatchStore·DaysListenerService; core/work/WatchDays.kt (45일·다음 알람·monthGrid), ShiftP3Test; 휴대폰 watch/WatchSync.kt"
 REL-10,"재부팅 후 잠금 해제 전에도 근무 알람이 울려야 함 → 다음 알람 6개·울림 설정을 기기 보호 저장소에 복사, LOCKED_BOOT_COMPLETED에서 등록",확장 M6,완료,,"BootAlarms.kt, 알람 부품 directBootAware, M6AppTest(잠금 부팅 등록·잠금 중 울림·복사본)"
 REL-11,"정확 알람이 꺼진 안드로이드 12에서 늦게 오는 알람이 다시 계획될 때 건너뛰어짐 → 울릴 때까지 유지, 알림 꺼짐 경고에 잠금 화면 안내",확장 M6,완료,,"AlarmScheduler 대기 알람 유지(2시간), markFired; M6AppTest.aLateInexactAlarmIsKeptUntilItRings"
 REL-12,"잠금화면에서 알람을 끌 수 없음 → 알림 끄기·다시 알림 버튼을 잠금 해제 없이 동작, 전체 화면 알림이 막혀 있으면 달력에서 알려 줌",확장 M7,완료,,"AlarmActionReceiver, setAuthenticationRequired(false), 달력 경고; M7AppTest. 실제 기기 잠금 화면 확인 필요"
@@ -355,3 +355,8 @@ NOTE-05,반복 메모(공통 6-3) → 매달 25일·매주 화요일처럼 돌�
 NOTE-06,하루 화면 위에 메모 제목(공통 6-3),1.16.0,완료,,DayHeader dayTokens (첫 메모 제목 + 외 N)
 NOTE-07,"체크 칸 누르면 ☑, 키보드 위 목록 버튼(공통 6-4)",1.16.0,완료,,"core/memo/MemoText.kt (toggleCheck·toggleMark·insert·dateStamp), MemoTextTest; ui/memo/MemoBodyTools.kt (MemoBodyToolbar), MemoEditorScreen MemoBodyField"
 NOTE-08,목록 번호 다시 매기기(공통 6-4),1.16.0,완료,,"core/memo/ListContinuation.renumber, ListContinuationTest.numbersStayInSequence; MemoBodyField"
+SHFT-06,"듀티표 사진에서 글자 인식으로 자동 입력(교대 P3) → 사진(시스템 사진 선택)이나 붙여 넣은 글자에서 내 줄을 찾아 한 달 미리 보기, 고친 뒤 넣고 되돌리기",1.17.0,완료,,"core/imports/DutyRoster.kt (DutyCodes, DutyRoster.read·readText·apply), ShiftP3Test; imports/RosterScanner.kt (ML Kit 한국어, 기기 안), ui/imports/DutyRosterScreen.kt, 설정 › 내 근무 ‘교대 근무 도구’·데이터"
+SHFT-07,"연간 건강 지표 리포트(교대 P3) → 야간 비율, 최장 연속 야간, 11시간 미만 휴식, 주말·공휴일 근무, 달마다·작년과 비교",1.17.0,완료,,"core/work/ShiftHealth.kt (ShiftHealth.year, HealthYear), ShiftP3Test; ui/stats/HealthReport.kt (HealthYearCard 통계 카드, HealthReportScreen)"
+SHFT-08,"스마트워치 타일(교대 P3) → Wear OS 앱: 오늘·내일 근무와 다음 알람 타일, 컴플리케이션, 휴대폰이 Data Layer로 45일 보냄(인터넷 없음)",1.17.0,완료,,"wear 모듈 (ShiftTileService, TodayComplicationService, MainActivity, WatchStore), app/watch/WatchSync.kt·WatchRequestService, AppContainer keep(watch), core/work/WatchDays.kt, ShiftP3Test"
+DAYW-06,"회사 근태 시스템 엑셀 가져오기(일근 P3) → .xlsx·CSV(UTF-8·CP949), 열 고르기와 미리 보기, 늦은 출근·이른 퇴근·잔업·특근·연차·결근 적기, 되돌리기",1.17.0,완료,,"core/imports/Sheets.kt (xlsx zip·XML, CSV), core/imports/AttendanceImport.kt (guess·read·apply), DayP3Test; ui/imports/AttendanceImportScreen.kt"
+DAYW-07,"위치 기반 출퇴근 자동 기록(일근 P3) → 회사 위치 지오펜스(기기 안), 도착·퇴근을 맞아요·아니요로 묻거나 바로 적기, 기본 꺼짐, 켤 때 위치 사용 안내 먼저",1.17.0,완료,,"core/work/Commute.kt (arrive·leave·apply), DayP3Test; data/CommutePrefs.kt, commute/CommuteRecorder.kt (GeofencingClient, CommuteReceiver), ui/work/CommuteScreen.kt, WorkToolsSearchTest"
