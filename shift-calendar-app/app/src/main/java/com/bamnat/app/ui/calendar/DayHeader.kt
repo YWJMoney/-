@@ -542,6 +542,9 @@ private fun QuickChips(
                 calendars.updateField(calendar.id) { it.copy(mode = m) }
                 if (m == com.bamnat.core.money.FieldMode.DAY_RATE) addingMoney = false
             }
+        } else if (focus == CalendarFocus.INVEST) {
+            // [INV-03] 매매 기록 for this day.
+            com.bamnat.app.ui.invest.InvestQuickTrade(calendar.id, day.date, onDismiss = { addingMoney = false })
         } else if (focus == CalendarFocus.JOBS) {
             com.bamnat.app.ui.money.JobDialog(day.date, null, onSave = { vm.saveJob(it); addingMoney = false }, onDismiss = { addingMoney = false })
         } else {

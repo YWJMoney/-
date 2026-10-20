@@ -319,6 +319,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 }
             }
             NoticeLinks.Target.MONEY -> { nav.navigateTopLevel(TopLevel.MONEY.route); NoticeLinks.consume(target) }
+            // [INV-08] An investor notice opens its calendar's 투자 tab, which opens the trade itself.
+            NoticeLinks.Target.INVEST, NoticeLinks.Target.INVEST_TRADE -> {
+                NoticeLinks.calendar.value?.let { container.calendars.setActive(it) }
+                nav.navigateTopLevel(TopLevel.STATS.route)
+                // The trade sheet waits for the 투자 tab to read it; a plain notice is done here.
+                if (target == NoticeLinks.Target.INVEST) NoticeLinks.consume(target)
+            }
             // [LEDG-16] The money tab takes this one itself, to open 자동 기록.
             NoticeLinks.Target.AUTO_RECORD -> nav.navigateTopLevel(TopLevel.MONEY.route)
             NoticeLinks.Target.MEMOS -> { nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target) }
@@ -683,6 +690,14 @@ private fun AppNavHost(
         }
         composable(TopLevel.STATS.route) {
             val calendar by container.calendars.active.collectAsStateWithLifecycle()
+            // [INV-01] An investor calendar's tab is its own: 투자·수익.
+            val cals by container.calendars.calendars.collectAsStateWithLifecycle()
+            val mainStyle by container.settingsRepository.settings.collectAsStateWithLifecycle()
+            val tabStyle = cals.firstOrNull { it.id == calendar }?.takeIf { !it.isMain }?.style ?: mainStyle.workStyle
+            if (tabStyle == WorkStyle.INVEST) {
+                com.bamnat.app.ui.invest.InvestScreen(vm = com.bamnat.app.ui.invest.investViewModel(calendar), wide = wide, snackbar = snackbar)
+                return@composable
+            }
             val vm = appViewModel(key = "stats_$calendar") { StatsViewModel(it, calendar) }
             StatsScreen(vm = vm, wide = wide, onOpenPay = { nav.navigate(Routes.pay(vm.calendarId)) { launchSingleTop = true } })
         }

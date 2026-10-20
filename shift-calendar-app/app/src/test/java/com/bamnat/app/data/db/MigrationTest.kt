@@ -38,7 +38,7 @@ class MigrationTest {
         createVersion1(context.getDatabasePath(name).apply { parentFile?.mkdirs() })
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15, AppDatabase.MIGRATION_15_16, AppDatabase.MIGRATION_16_17)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15, AppDatabase.MIGRATION_15_16, AppDatabase.MIGRATION_16_17, AppDatabase.MIGRATION_17_18)
             .allowMainThreadQueries()
             .build()
         try {
@@ -128,7 +128,7 @@ class MigrationTest {
         sql.close()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15, AppDatabase.MIGRATION_15_16, AppDatabase.MIGRATION_16_17).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15, AppDatabase.MIGRATION_15_16, AppDatabase.MIGRATION_16_17, AppDatabase.MIGRATION_17_18).allowMainThreadQueries().build()
         try {
             val days = assembleDays(db.dayEntryDao().getAll(), db.dayExtraDao().getAll()).associateBy { it.date.toEpochDay() }
             assertEquals(listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120)), days.getValue(20000).extras)
@@ -176,7 +176,7 @@ class MigrationTest {
         sql.close()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15, AppDatabase.MIGRATION_15_16, AppDatabase.MIGRATION_16_17).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15, AppDatabase.MIGRATION_15_16, AppDatabase.MIGRATION_16_17, AppDatabase.MIGRATION_17_18).allowMainThreadQueries().build()
         try {
             val memo = db.memoDao().get(1)!!.toModel()
             assertEquals("내일 오후 3시", memo.body)
@@ -209,7 +209,7 @@ class MigrationTest {
         sql.close()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15, AppDatabase.MIGRATION_15_16, AppDatabase.MIGRATION_16_17).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15, AppDatabase.MIGRATION_15_16, AppDatabase.MIGRATION_16_17, AppDatabase.MIGRATION_17_18).allowMainThreadQueries().build()
         try {
             assertEquals("도배", db.moneyDao().allJobs().single().title)
             assertEquals(9_000L, db.sleepDao().all().single().endMillis)
@@ -245,7 +245,7 @@ class MigrationTest {
         sql.close()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_14_15, AppDatabase.MIGRATION_15_16, AppDatabase.MIGRATION_16_17).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_14_15, AppDatabase.MIGRATION_15_16, AppDatabase.MIGRATION_16_17, AppDatabase.MIGRATION_17_18).allowMainThreadQueries().build()
         try {
             val dao = db.moneyDao()
             val lines = dao.allEntries().map { it.toModel() }.sortedBy { it.id }
@@ -297,7 +297,7 @@ class MigrationTest {
         sql.close()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_15_16, AppDatabase.MIGRATION_16_17).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_15_16, AppDatabase.MIGRATION_16_17, AppDatabase.MIGRATION_17_18).allowMainThreadQueries().build()
         try {
             val memo = db.memoDao().get(1)!!.toModel()
             assertTrue(memo.calendars.isEmpty())
@@ -327,7 +327,7 @@ class MigrationTest {
         sql.close()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_16_17).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_16_17, AppDatabase.MIGRATION_17_18).allowMainThreadQueries().build()
         try {
             val job = db.moneyDao().allJobs().single().toModel()
             assertEquals(com.bamnat.core.money.JobStatus.CONFIRMED, job.status)
@@ -336,6 +336,57 @@ class MigrationTest {
             assertEquals(300_000L, sales.sales)
             assertEquals(0L, sales.byMethod)
             assertTrue(!sales.cardSettled && sales.cashCounted == null)
+        } finally {
+            db.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    /**
+     * [INV-01] Version 17 rows come through version 18 exactly as they were (attendance, a swap, a job's
+     * 공수 and status, a shop's card sales, a line's proof, a repeating memo); the investor tables arrive
+     * empty and take rows.
+     */
+    @Test
+    fun version17RowsKeepTheirMeaning() = runBlocking {
+        val name = "migration-17.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val sql = createTables(file, 17)
+        sql.execSQL("INSERT INTO day_entries (epochDay, overrideMode, overtimeMinutes, holidayWorkMinutes, alarmSkipped, attendance, swapWith) " +
+            "VALUES (20740, 0, 0, 0, 0, 2, '민지')")
+        sql.execSQL("INSERT INTO jobs (id, epochDay, title, client, place, amount, deposit, depositPaid, balancePaid, note, status, units, dueEpochDay) " +
+            "VALUES (1, 20741, '타일', '가나다', '', 300000, 0, 0, 0, '', 2, 1.5, 20760)")
+        sql.execSQL("INSERT INTO daily_sales (epochDay, sales, costs, note, card, cash, cashCounted, cardSettled) VALUES (20742, 500000, 0, '', 400000, 100000, 98000, 1)")
+        sql.execSQL("INSERT INTO money_entries (id, epochDay, kind, amount, category, note, source, createdAt, proof) " +
+            "VALUES (1, 20743, 'EXPENSE', 33000, '자재비', '', 'MANUAL', 1, 'CARD')")
+        sql.execSQL("INSERT INTO memos (id, epochDay, title, body, checklist, isChecklist, colorIndex, pinned, createdAt, updatedAt, repeat) " +
+            "VALUES (1, 20744, '월세', '', '', 0, 0, 0, 1, 1, 'M25')")
+        sql.version = 17
+        sql.close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+            .addMigrations(AppDatabase.MIGRATION_17_18).allowMainThreadQueries().build()
+        try {
+            val day = db.dayEntryDao().getAll().single()
+            assertEquals(2, day.attendance)
+            assertEquals("민지", day.swapWith)
+            val job = db.moneyDao().allJobs().single()
+            assertEquals(2, job.status)
+            assertEquals(1.5, job.units!!, 1e-9)
+            assertEquals(20760L, job.dueEpochDay)
+            val sales = db.moneyDao().allSales().single()
+            assertEquals(400_000L, sales.card)
+            assertEquals(98_000L, sales.cashCounted)
+            assertTrue(sales.cardSettled)
+            assertEquals("CARD", db.moneyDao().allEntries().single().proof)
+            assertEquals("M25", db.memoDao().getAll().single().repeat)
+            val invest = db.investDao()
+            assertTrue(invest.allAccounts().isEmpty() && invest.allTrades().isEmpty() && invest.allCash().isEmpty() && invest.allAlarms().isEmpty())
+            val id = invest.upsertAccount(com.bamnat.core.invest.InvestAccount(name = "일반 계좌").toEntity())
+            invest.upsertTrade(com.bamnat.core.invest.Trade(accountId = id, date = java.time.LocalDate.ofEpochDay(20745), symbol = "005930",
+                side = com.bamnat.core.invest.Side.BUY, quantity = 1.0, price = 70_000.0).toEntity())
+            assertEquals("005930", invest.allTrades().single().toModel().key)
         } finally {
             db.close()
             context.deleteDatabase(name)

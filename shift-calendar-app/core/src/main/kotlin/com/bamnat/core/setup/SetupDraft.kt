@@ -90,7 +90,7 @@ data class SetupDraft(
     /** The steps this draft goes through. */
     val steps: List<SetupStep>
         get() = when (style) {
-            null, WorkStyle.FIELD, WorkStyle.BUSINESS -> listOf(SetupStep.STYLE)
+            null, WorkStyle.FIELD, WorkStyle.BUSINESS, WorkStyle.INVEST -> listOf(SetupStep.STYLE)
             WorkStyle.SHIFT -> listOfNotNull(
                 SetupStep.STYLE, SetupStep.COMPANY, SetupStep.BUNDLE.takeIf { source == null }, SetupStep.TIMES,
                 // A shared order is asked too, already chosen: a template's is only the usual one for that work.
