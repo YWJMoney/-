@@ -118,7 +118,7 @@ class PayViewModel(
         closed.value[month]?.total ?: calculate(profile, snapshot, month).total
 
     fun calculate(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): MonthPay =
-        calculator.calculate(profile.named(settings.value.extraKinds), month, snapshot.resolver::resolve)
+        calculator.calculate(profile.named(settings.value.extraKinds).hourlyWeek(settings.value), month, snapshot.resolver::resolve)
 
     /** A sample nurse profile on the user's own schedule, for the free preview and the first-time walkthrough. */
     fun sampleProfile(): PayProfile {
@@ -288,7 +288,7 @@ class PayViewModel(
 
     /** The month for the pay screen, with the range and the figures the cards compare. */
     suspend fun view(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): PayView = withContext(Dispatchers.Default) {
-        val p = profile.named(settings.value.extraKinds)
+        val p = profile.named(settings.value.extraKinds).hourlyWeek(settings.value)
         val resolve = snapshot.resolver::resolve
         val result = calculator.calculate(p, month, resolve)
         val range = if (Unknowns.of(p).isEmpty()) null else PayRange.of(p, month, resolve, calculator = calculator, rosterHours = rosterHours(p, snapshot, month))

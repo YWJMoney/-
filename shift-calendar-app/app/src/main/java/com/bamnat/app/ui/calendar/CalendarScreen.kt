@@ -297,6 +297,11 @@ fun CalendarScreen(
     val calculator = remember(snap, settings.weekStart, settings.limits) {
         WorkHoursCalculator(snap.resolver, settings.weekStart, settings.limits)
     }
+    // [HRLY-02][HRLY-03] An 알바 calendar's cells show times and pay, and each week its 주휴.
+    val hourlyCells = remember(settings.workStyle, payProfile, settings.weekStart) {
+        if (settings.workStyle != com.bamnat.core.work.WorkStyle.HOURLY) null
+        else HourlyCells(payProfile, payProfile?.holidayWeekStart ?: settings.weekStart)
+    }
     // [CAL-14] Stable references, so the cells' painting hooks never change under them.
     val paintDays: (List<LocalDate>) -> Unit = remember(vm) { vm::paintDays }
     val startRange: (LocalDate) -> Unit = remember(vm) { vm::startRange }
@@ -628,6 +633,7 @@ fun CalendarScreen(
                 showMoney = focus.moneyFirst,
                 memoTexts = memoTexts,
                 focus = focus,
+                hourly = hourlyCells,
                 modifier = Modifier.pointerInput(Unit) {
                     var dragged = 0f
                     detectHorizontalDragGestures(
@@ -869,6 +875,7 @@ fun CalendarScreen(
                         focus = focus,
                         onLongPress = if (stamping) startRange else null,
                         rangeFrom = rangeFrom,
+                        hourly = hourlyCells,
                     )
                 }
             }

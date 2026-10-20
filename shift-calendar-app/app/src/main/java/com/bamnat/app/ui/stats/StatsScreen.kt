@@ -65,6 +65,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import com.bamnat.core.work.HourlyWeek
+import com.bamnat.core.work.HourlyWork
+import com.bamnat.app.ui.pay.TakeHomeLine
+import com.bamnat.app.ui.pay.hourlyWeek
 import com.bamnat.core.work.WorkStats
 import com.bamnat.core.work.WorkStyle
 import com.bamnat.core.work.words
@@ -88,7 +91,7 @@ class StatsViewModel(
     private val payCalculator = PayCalculator()
 
     fun payTotal(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): Long =
-        payCalculator.calculate(profile, month, snapshot.resolver::resolve).total
+        payCalculator.calculate(profile.hourlyWeek(settings.value), month, snapshot.resolver::resolve).total
 
     /** [LEDG-15] The calendar's money: field work counts its jobs here and a shop its sales, not hours. */
     val book: StateFlow<MoneyBook?> = scope.money.book.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -172,23 +175,33 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         TileGrid(tiles, columns)
 
         // [TYPE-06] A part-timer's weeks against the 15 hours 주휴수당 needs.
-        if (style == WorkStyle.HOURLY) HolidayPayWeeks(summary.weeks.map { HourlyWeek(it.start, it.totalMinutes, 0) }, month)
+        // [HRLY-02][HRLY-07] Counted from the 주휴 week's own start, with 결근 days as absences.
+        if (style == WorkStyle.HOURLY) {
+            val weekStart = payProfile?.holidayWeekStart ?: settings.weekStart
+            val weeks = remember(snap, month, weekStart, payProfile?.legalBreaks) {
+                HourlyWork.weeks(month, weekStart, snap.copy(legalBreaks = payProfile?.legalBreaks == true).resolver::resolve)
+            }
+            HolidayPayWeeks(weeks, month)
+        }
 
         // [NAV-01] 근무·급여: the month's pay right under its hours.
         if (pays) {
+            // [STAB-01] A month of pay is worked out off the main thread, and an odd profile shows no total
+            // instead of closing the app.
+            val total = produceState<Long?>(null, payProfile, snap, month, tier) {
+                value = payProfile?.takeIf { FeatureGate.allows(tier, Feature.PAY_ENGINE) }?.let { p ->
+                    runCatching { withContext(Dispatchers.Default) { vm.payTotal(p, snap, month) } }
+                        .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
+                }
+            }.value
             PayEntryCard(
                 month = month,
-                // [STAB-01] A month of pay is worked out off the main thread, and an odd profile shows no total
-                // instead of closing the app.
-                total = produceState<Long?>(null, payProfile, snap, month, tier) {
-                    value = payProfile?.takeIf { FeatureGate.allows(tier, Feature.PAY_ENGINE) }?.let { p ->
-                        runCatching { withContext(Dispatchers.Default) { vm.payTotal(p, snap, month) } }
-                            .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
-                    }
-                }.value,
+                total = total,
                 hasProfile = payProfile != null,
                 onClick = onOpenPay,
             )
+            // [HRLY-04] 예상 실수령 next to the pay before tax.
+            if (style == WorkStyle.HOURLY && total != null) payProfile?.let { TakeHomeLine(total, it.taxMode, Modifier.padding(start = 4.dp)) }
         }
 
         // [EXTRA-02] 주 52시간 (제53조), 64 under 탄력적 근로시간제; it does not apply under 5 employees.
@@ -554,6 +567,8 @@ private fun HolidayPayWeeks(weeks: List<HourlyWeek>, month: YearMonth) {
                 Text(
                     when {
                         w.holidayPay -> "주휴 ${HoursFormat.korean(w.holidayPayMinutes)}"
+                        // [HRLY-02] 지각·조퇴는 개근을 깨지 않지만 결근은 깨요.
+                        w.absent > 0 -> "결근 ${w.absent}일, 주휴 없음"
                         w.minutes == 0 -> "-"
                         else -> "${HoursFormat.korean(w.shortBy)} 모자람"
                     },

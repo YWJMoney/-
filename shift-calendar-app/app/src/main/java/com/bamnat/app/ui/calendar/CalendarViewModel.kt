@@ -3,6 +3,7 @@ package com.bamnat.app.ui.calendar
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
+import com.bamnat.app.ui.pay.hourlyWeek
 import com.bamnat.app.alarm.UpcomingAlarm
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.ScheduleSnapshot
@@ -118,7 +119,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     val snapshot: StateFlow<ScheduleSnapshot?> =
-        container.calendars.activeSnapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        kotlinx.coroutines.flow.combine(container.calendars.activeSnapshot,
+            container.calendars.active.flatMapLatest { container.calendars.pay(it).profile }) { s, p ->
+            // [HRLY-05] Hours on the calendar take the legal break off, as pay does.
+            if (p?.legalBreaks == true) s.copy(legalBreaks = true) else s
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     /**
      * [MCAL-01] An added calendar answers its own kind of work, so the calendar tab shows it as that
      * calendar works; everything else in settings is the app's.
@@ -251,7 +256,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private fun monthPay(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): MonthPay {
         val key = listOf(profile, snapshot, month)
         monthPayCache?.takeIf { it.first == key }?.let { return it.second }
-        return payCalculator.calculate(profile, month, snapshot.resolver::resolve).also { monthPayCache = key to it }
+        val p = profile.hourlyWeek(settings.value)
+        return payCalculator.calculate(p, month, snapshot.resolver::resolve).also { monthPayCache = key to it }
     }
 
     /** [STAB-01] The last tap on 메모 the day's memo field has acted on. */
@@ -657,6 +663,15 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [EXTRA-01] Adds a piece of extra work, said back with undo: "10월 17일에 야간 대근을 넣었어요". */
+    /** [HRLY-01][HRLY-08] Changes one day of the calendar on screen (출결, 출근·퇴근), said back with undo. */
+    fun changeDay(date: LocalDate, said: String, transform: (com.bamnat.core.model.DayEntry) -> com.bamnat.core.model.DayEntry) {
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
+            val before = schedule.updateDay(date, transform)
+            _messages.emit(UndoMessage(said) { schedule.restoreDay(date, before) })
+        }
+    }
+
     fun addExtra(date: LocalDate, entry: ExtraEntry, name: String) {
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in

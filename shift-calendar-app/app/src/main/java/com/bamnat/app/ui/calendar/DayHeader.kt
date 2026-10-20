@@ -473,6 +473,8 @@ private fun QuickChips(
                 )
             }
         }
+        // [HRLY-01][HRLY-08] 알바: 출근·퇴근, 지각·조퇴·결근, 대타.
+        if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) hourlyChips(day, today, snapshot, vm)
         for (c in choices) item {
             val i = ExtraText.indexOf(day, c)
             FilterChip(
