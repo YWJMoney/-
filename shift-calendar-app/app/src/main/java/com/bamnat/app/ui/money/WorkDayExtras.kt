@@ -36,6 +36,8 @@ fun SalesDayExtras(sales: DailySales) {
     val credits = remember(book.receivables, sales.date) { book.receivables.filter { it.date == sales.date && it.kind == ReceivableKind.SALE } }
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     Column(Modifier.padding(top = 6.dp)) {
+        // [SHOP-10] The day's weather, when picked in 하루 마감.
+        com.bamnat.app.ui.work.WeatherLine(calendar.id, sales.date)
         if (sales.byMethod > 0) {
             Text(
                 listOf("카드" to sales.card, "현금" to sales.cash, "계좌" to sales.transfer, "배달앱" to sales.delivery)

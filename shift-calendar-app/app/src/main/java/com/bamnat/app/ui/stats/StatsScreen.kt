@@ -156,8 +156,12 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         val money = book
         if (money != null && style?.usesJobs == true) JobFigures(money, month, columns)
         if (money != null && style == WorkStyle.FIELD) FieldStatsCards(money, month)
+        // [FLD-11][FLD-13] 일용직 세금과 견적서.
+        if (money != null && style == WorkStyle.FIELD) com.bamnat.app.ui.work.FieldToolCards(vm.calendarId, money, month)
         if (money != null && style?.usesSales == true) SalesFigures(money, month, columns) { snap.resolver.resolve(it).isWorkDay }
         if (money != null && style == WorkStyle.BUSINESS) ShopStatsCards(vm.calendarId, money, month, { snap.resolver.resolve(it).isWorkDay })
+        // [SHOP-09][SHOP-10][SHOP-11] 직원 인건비, 날씨별 매출, 간이과세 기준.
+        if (money != null && style == WorkStyle.BUSINESS) com.bamnat.app.ui.work.ShopToolCards(vm.calendarId, money, month)
         if (!hasHours) {
             Text("달력에 근무 시간을 넣으면 주별 근무시간과 3개월 평균도 여기서 볼 수 있어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -212,6 +216,8 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             // [HRLY-04] 예상 실수령 next to the pay before tax.
             if (style == WorkStyle.HOURLY && total != null) payProfile?.let { TakeHomeLine(total, it.taxMode, Modifier.padding(start = 4.dp)) }
         }
+        // [HRLY-09][HRLY-10][HRLY-11] 두 알바 비교, 근로계약서, 그만두는 날 정리.
+        if (style == WorkStyle.HOURLY) com.bamnat.app.ui.work.HourlyToolsCard(vm.calendarId, payProfile, snap)
         // [SHFT-03][SHFT-04][DAYW-04][DAYW-05] Swaps, pay that came in, the 시간외 상한 and 징검다리 연휴.
         WorkTypeMoreCards(style, vm.calendarId, snap, month, summary, payTotal, payProfile, book)
 

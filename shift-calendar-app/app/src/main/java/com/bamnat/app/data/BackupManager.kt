@@ -48,6 +48,8 @@ class BackupManager(
     private val calendars: CalendarBook? = null,
     /** [MEMO-02] Which calendars share memos. */
     private val memoSharing: MemoSharingStore? = null,
+    /** [HRLY-09][FLD-11][SHOP-10][SHOP-11] Each calendar's work tools (offers, contract fields, quotes, weather, staff); photos stay on the phone. */
+    private val workTools: WorkToolsStore? = null,
 ) {
     /** The schedule tables of [source] (shifts, order, changed days, extra work) as a backup holds them. */
     private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
@@ -196,6 +198,7 @@ class BackupManager(
                     val o = CalendarBook.run { cal.toJson() }
                     book.database(cal.id).let { other -> other.withTransaction { putSchedule(other, o); putMoney(other, o) } }
                     putPay(book.pay(cal.id), o)
+                    o.putOpt("workTools", workTools?.export(cal.id))
                     put(o)
                 }
             })
@@ -226,6 +229,7 @@ class BackupManager(
             db.sleepDao().all().forEach { l -> put(JSONObject().put("start", l.startMillis).putOpt("end", l.endMillis)) }
         })
         payStore?.let { putPay(it, root) }
+        root.putOpt("workTools", workTools?.export(PersonalCalendar.MAIN))
         val s = settings.current
         root.put(
             "settings",
@@ -503,6 +507,13 @@ class BackupManager(
         payStore?.let { store ->
             if (pay != null) store.save(pay, keepUndo = false)
             if (payClosed != null) store.replaceClosed(payClosed.associateBy { it.month })
+        }
+        // Backups from before 1.17 carry no work tools; the phone's own then stay.
+        workTools?.let { tools ->
+            tools.restore(PersonalCalendar.MAIN, root.optJSONObject("workTools"))
+            if (added != null) root.optJSONArray("calendars").objects().forEach { o ->
+                CalendarBook.fromJson(o)?.takeIf { !it.isMain }?.let { cal -> tools.restore(cal.id, o.optJSONObject("workTools")) }
+            }
         }
         root.optJSONObject("settings")?.let { o ->
             settings.update { s ->

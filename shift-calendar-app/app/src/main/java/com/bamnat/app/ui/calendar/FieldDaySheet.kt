@@ -102,6 +102,11 @@ private fun DayRateDialog(date: LocalDate, units: Double, rules: FieldRules, exi
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(),
                 )
                 AmountField("일당 (1공)", rate, { rate = it })
+                // [FLD-12] 공종별 평균 일당, [FLD-13] 그 일당의 일용직 세금.
+                com.bamnat.app.ui.work.TradeWageLink { rate = it.toString() }
+                com.bamnat.app.ui.work.dailyTaxLine(rate.toAmount())?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 ClientField(client, { client = it.take(30) }, label = "업체")
                 if (u != null && rate.toAmount() > 0) {
                     Text("${DayRate.label(u)} × ${Fmt.won(rate.toAmount())} = ${Fmt.won(DayRate.amount(rate.toAmount(), u))}",

@@ -60,6 +60,11 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
     var credit by rememberSaveable { mutableStateOf("") }
     var creditWho by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf(initial?.note.orEmpty()) }
+    // [SHOP-10] 날씨 메모, kept beside the sales in the calendar's own file.
+    val tools = remember { com.bamnat.app.data.WorkToolsStore.get(c.appContext) }
+    val savedWeather = remember(calendar.id, date) { tools.current(calendar.id).weather[date] }
+    var weather by rememberSaveable { mutableStateOf(savedWeather?.weather) }
+    var temperature by rememberSaveable { mutableStateOf(savedWeather?.temperature?.toString().orEmpty()) }
     val parts = card.toAmount() + cash.toAmount() + transfer.toAmount() + delivery.toAmount()
     // 외상 written before for this day is already in its sales; a new one joins them on save.
     val earlierCredit = if (initial != null && initial.byMethod > 0) (initial.sales - initial.byMethod).coerceAtLeast(0) else 0
@@ -109,6 +114,7 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
                 }
                 OutlinedTextField(value = note, onValueChange = { note = it.take(100) }, singleLine = true,
                     label = { Text("메모 (선택)") }, modifier = Modifier.fillMaxWidth())
+                com.bamnat.app.ui.work.WeatherPicker(weather, temperature, { weather = it }, { temperature = it })
                 Text("매출 ${Fmt.won(sales)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text("순수익 ${Fmt.won(net)}", style = MaterialTheme.typography.bodyLarge,
                     color = if (net < 0) LocalCalendarColors.current.expense else MaterialTheme.colorScheme.onSurface)
@@ -126,6 +132,7 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
                         ))
                     }
                 }
+                com.bamnat.app.ui.work.saveWeather(tools, calendar.id, date, weather, temperature)
                 onSave(build())
             }) { Text("저장") }
         },
