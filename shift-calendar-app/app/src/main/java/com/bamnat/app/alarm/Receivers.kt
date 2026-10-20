@@ -116,6 +116,14 @@ class SystemEventReceiver : BroadcastReceiver() {
         container.telemetry.event(DiagEvents.SYSTEM_EVENT, intent.action?.substringAfterLast('.') ?: "")
         val pending = goAsync()
         container.appScope.launch {
+            // [DAYW-07] Geofences and the wait after a leave do not survive a reboot; put back on their own,
+            // so a failure in the alarms below never skips them.
+            runCatching {
+                if (com.bamnat.app.data.CommutePrefs.get(context).current.enabled) {
+                    com.bamnat.app.commute.CommuteRecorder.sync(context)
+                    com.bamnat.app.commute.CommuteRecorder.resume(context)
+                }
+            }
             try {
                 container.rescheduleAlarms(LocalDateTime.now())
                 container.alarmScheduler.restoreSnooze()
@@ -137,8 +145,6 @@ class SystemEventReceiver : BroadcastReceiver() {
                 com.bamnat.app.sleep.QuietHold.release(context)
                 // A new date or time zone changes what "today" is on the widgets.
                 WidgetRefresher.refresh(context)
-                // [DAYW-07] Geofences do not survive a reboot.
-                if (com.bamnat.app.data.CommutePrefs.get(context).current.enabled) runCatching { com.bamnat.app.commute.CommuteRecorder.sync(context) }
             } finally {
                 pending.finish()
             }

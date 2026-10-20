@@ -2,11 +2,15 @@ package com.bamnat.app.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.bamnat.core.model.ExtraEntry
+import com.bamnat.core.work.Commute
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONObject
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 
 /**
  * [DAYW-07] 출퇴근 자동 기록 as the user set it: off unless turned on, the one workplace point (latitude,
@@ -28,6 +32,9 @@ class CommutePrefs private constructor(context: Context) {
         val leftAt: LocalDateTime? = null,
         /** A leave seen, written once the phone does not come back within the wait (a walk at lunch). */
         val pendingLeave: LocalDateTime? = null,
+        /** The day the last written leave went on, and that day as it was before it. */
+        val undoDate: LocalDate? = null,
+        val undo: Commute.Undo? = null,
     ) {
         val hasPlace: Boolean get() = lat != null && lng != null
         /** Today's arrival, when there is one. */
@@ -42,14 +49,18 @@ class CommutePrefs private constructor(context: Context) {
     fun setEnabled(on: Boolean) = edit {
         putBoolean(K_ON, on)
         // Turned off, the workplace point goes too.
-        if (!on) { remove(K_LAT); remove(K_LNG); remove(K_ARRIVED); remove(K_LEFT); remove(K_PENDING) }
+        if (!on) { remove(K_LAT); remove(K_LNG); remove(K_ARRIVED); remove(K_LEFT); remove(K_PENDING); remove(K_UNDO) }
     }
 
     fun setPlace(lat: Double, lng: Double) = edit { putString(K_LAT, lat.toString()); putString(K_LNG, lng.toString()) }
     fun setRadius(m: Int) = edit { putInt(K_RADIUS, m.coerceIn(MIN_RADIUS, MAX_RADIUS)) }
     fun setAuto(auto: Boolean) = edit { putBoolean(K_AUTO, auto) }
     fun setCalendar(id: String) = edit { putString(K_CALENDAR, id) }
-    fun arrived(at: LocalDateTime) = edit { putString(K_ARRIVED, at.toString()); remove(K_PENDING) }
+    fun arrived(at: LocalDateTime) = edit { putString(K_ARRIVED, at.toString()); remove(K_PENDING); remove(K_UNDO) }
+    /** [DAYW-07] What a written leave changed on [date], to put back if the phone comes back that day. */
+    fun leaveWritten(date: LocalDate, undo: Commute.Undo?) = edit { if (undo == null) remove(K_UNDO) else putString(K_UNDO, encode(date, undo)) }
+    /** [DAYW-07] Back the same day: the leave was not 퇴근, so it is forgotten. */
+    fun leaveUndone() = edit { remove(K_LEFT); remove(K_UNDO); remove(K_PENDING) }
     fun left(at: LocalDateTime) = edit { putString(K_LEFT, at.toString()); remove(K_PENDING) }
     fun leavePending(at: LocalDateTime?) = edit { if (at == null) remove(K_PENDING) else putString(K_PENDING, at.toString()) }
 
@@ -62,8 +73,32 @@ class CommutePrefs private constructor(context: Context) {
 
     private fun time(key: String) = prefs.getString(key, null)?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }
 
+    private fun encode(date: LocalDate, u: Commute.Undo): String = JSONObject()
+        .put("date", date.toString())
+        .putOpt("cs", u.customStart?.toString())
+        .putOpt("ce", u.customEnd?.toString())
+        .put("kind", u.kindId)
+        .putOpt("extra", u.extra?.let { e ->
+            JSONObject().put("kind", e.kindId).putOpt("s", e.start?.toString()).putOpt("e", e.end?.toString()).put("b", e.breakMinutes)
+                .putOpt("bs", e.breakStart?.toString()).put("m", e.minutes).putOpt("cov", e.coveredShiftId).put("rev", e.needsReview)
+        })
+        .toString()
+
+    private fun decode(raw: String?): Pair<LocalDate, Commute.Undo>? = raw?.let {
+        runCatching {
+            val o = JSONObject(it)
+            fun JSONObject.t(k: String) = optString(k).takeIf { v -> v.isNotEmpty() }?.let(LocalTime::parse)
+            val extra = o.optJSONObject("extra")?.let { e ->
+                ExtraEntry(e.getLong("kind"), e.t("s"), e.t("e"), e.optInt("b"), e.t("bs"), e.optInt("m"),
+                    if (e.has("cov")) e.getLong("cov") else null, e.optBoolean("rev"))
+            }
+            LocalDate.parse(o.getString("date")) to Commute.Undo(o.t("cs"), o.t("ce"), o.getLong("kind"), extra)
+        }.getOrNull()
+    }
+
     private fun read(): State {
         val arrived = time(K_ARRIVED)
+        val undo = decode(prefs.getString(K_UNDO, null))
         return State(
             enabled = prefs.getBoolean(K_ON, false),
             calendarId = prefs.getString(K_CALENDAR, null) ?: PersonalCalendar.MAIN,
@@ -75,6 +110,8 @@ class CommutePrefs private constructor(context: Context) {
             arrivedAt = arrived,
             leftAt = time(K_LEFT),
             pendingLeave = time(K_PENDING),
+            undoDate = undo?.first,
+            undo = undo?.second,
         )
     }
 
@@ -91,6 +128,7 @@ class CommutePrefs private constructor(context: Context) {
         private const val K_ARRIVED = "arrived"
         private const val K_LEFT = "left"
         private const val K_PENDING = "pending_leave"
+        private const val K_UNDO = "leave_undo"
 
         @Volatile private var instance: CommutePrefs? = null
 

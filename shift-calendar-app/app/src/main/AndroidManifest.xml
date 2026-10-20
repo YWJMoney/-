@@ -167,7 +167,12 @@
         <!-- [DAYW-07] Workplace geofence crossings and 맞아요·아니요 on the record's notice. -->
         <receiver
             android:name=".commute.CommuteReceiver"
-            android:exported="false" />
+            android:exported="false">
+            <!-- Location turned back on: the geofence the system dropped is put back. -->
+            <intent-filter>
+                <action android:name="android.location.PROVIDERS_CHANGED" />
+            </intent-filter>
+        </receiver>
 
         <!-- [SHFT-08] The Wear OS app asks for fresh days when it opens; only Google Play services binds it. -->
         <service
