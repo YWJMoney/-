@@ -98,6 +98,8 @@ import java.time.LocalDateTime
 /**
  * [LEDG-02] Lines the app wrote down from notifications, waiting for a glance, and texts it kept
  * because it could not finish them. Totals already include the lines; this is only a check.
+ * [COMN-04] With 확인하고 적기 on ([waiting]) it is 확인 대기함: the lines count only once confirmed,
+ * one by one (swipe or ✓) or all at once, and a wrong one is swiped away.
  */
 @Composable
 fun NewRecordsCard(
@@ -107,18 +109,37 @@ fun NewRecordsCard(
     onAllSeen: () -> Unit,
     onFinish: (Capture) -> Unit,
     onDrop: (Capture) -> Unit,
+    waiting: Boolean = false,
+    onConfirm: (List<MoneyEntry>) -> Unit = {},
+    onDelete: (List<MoneyEntry>) -> Unit = {},
 ) {
     if (unseen.isEmpty() && kept.isEmpty()) return
     SectionCard(
-        title = "새로 들어온 기록 ${unseen.size + kept.size}건",
-        trailing = { if (unseen.isNotEmpty()) TextButton(onClick = onAllSeen) { Text("모두 확인") } },
+        title = (if (waiting) "확인 대기함 " else "새로 들어온 기록 ") + "${unseen.size + kept.size}건",
+        trailing = {
+            if (unseen.isNotEmpty()) TextButton(onClick = { if (waiting) onConfirm(unseen) else onAllSeen() }) { Text("모두 확인") }
+        },
     ) {
-        if (unseen.isNotEmpty()) {
+        if (waiting && unseen.isNotEmpty()) {
+            Text("결제 알림에서 읽었어요. 확인한 것만 합계에 들어가요. 오른쪽으로 밀면 확인, 왼쪽으로 밀면 지워요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            unseen.take(10).forEach { e ->
+                androidx.compose.runtime.key(e.id) {
+                    PendingRow(e, onOpen = { onOpen(e) }, onConfirm = { onConfirm(listOf(e)) }, onDelete = { onDelete(listOf(e)) })
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(if (unseen.size > 10) "그 밖에 ${unseen.size - 10}건이 더 기다려요" else "",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                TextButton(onClick = { onDelete(unseen) }) { Text("모두 지우기", color = MaterialTheme.colorScheme.error) }
+            }
+        }
+        if (!waiting && unseen.isNotEmpty()) {
             Text("결제 알림에서 적었어요. 분류가 틀리면 눌러서 고치면 그 가게는 다음부터 그 분류로 적어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        unseen.take(10).forEach { e -> EntryRow(e, showDate = true) { onOpen(e) } }
-        if (unseen.size > 10) {
+        if (!waiting) unseen.take(10).forEach { e -> EntryRow(e, showDate = true) { onOpen(e) } }
+        if (!waiting && unseen.size > 10) {
             Text("그 밖에 ${unseen.size - 10}건은 아래 기록에 있어요", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -173,6 +194,8 @@ fun AutoRecordDialog(onPaste: () -> Unit, onDismiss: () -> Unit, onRules: (() ->
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 AutoRecordControls(onPaste = { onDismiss(); onPaste() })
+                // [COMN-04] 바로 적기 or 확인하고 적기.
+                ConfirmFirstControl()
                 // [CALS-04] Which calendar the notifications go to, once there is more than one.
                 CaptureCalendarControls()
                 // [LEDG-21][LEDG-22] How it sorts and what it leaves out.

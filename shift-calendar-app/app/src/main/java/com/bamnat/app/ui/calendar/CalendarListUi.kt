@@ -267,6 +267,8 @@ fun CalendarSwitcherSheet(
     onDismiss: () -> Unit,
     /** [UX-03] Shares one of the user's calendars straight from the list. */
     onShare: ((PersonalCalendar) -> Unit)? = null,
+    /** [COMN-01] 모든 달력 합쳐 보기, offered once the user has two calendars or more. */
+    onCombined: (() -> Unit)? = null,
 ) {
     var removing by remember { mutableStateOf<ReceivedCalendar?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -307,6 +309,9 @@ fun CalendarSwitcherSheet(
                         },
                     )
                 }
+            }
+            if (onCombined != null && rows.count { it is CalendarRow.Mine } >= 2) {
+                AddRow("모든 달력 합쳐 보기", onCombined, MineShape, detail = "달력마다 색 막대로 한 달력에 보고, 겹치는 시간을 알려 줘요")
             }
             AddRow("새 달력 만들기", onAddCalendar, MineShape, rows.newCalendarBadge(), detail = "알바·부업 근무를 따로 적고 따로 공유해요")
             // [UX-03] Said the way people think of it: a coworker's schedule, and what it is for.
@@ -746,15 +751,25 @@ fun rememberAddCalendar(c: AppContainer, onSetup: (String) -> Unit): () -> Unit 
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun CalendarScopeChips(c: AppContainer, modifier: Modifier = Modifier) {
+fun CalendarScopeChips(
+    c: AppContainer,
+    modifier: Modifier = Modifier,
+    /** [COMN-03] Where a screen offers 전체 first: whether it is picked, and what a tap on it or a calendar says. */
+    all: Boolean = false,
+    onAll: ((Boolean) -> Unit)? = null,
+) {
     val list by c.calendars.calendars.collectAsStateWithLifecycle()
     val active by c.calendars.active.collectAsStateWithLifecycle()
     if (list.size < 2) return
     FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (onAll != null) {
+            androidx.compose.material3.FilterChip(selected = all, onClick = { onAll(true) }, label = { Text("전체") })
+        }
         list.forEach { cal ->
             androidx.compose.material3.FilterChip(
-                selected = cal.id == active,
+                selected = cal.id == active && !all,
                 onClick = {
+                    onAll?.invoke(false)
                     if (cal.id != active) c.telemetry.event("calendar_switch", if (cal.isMain) "main" else "added")
                     c.calendars.setActive(cal.id)
                 },

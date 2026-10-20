@@ -385,6 +385,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     /** [FEAT-17] Memos that belong to a date, for the list under the calendar and memo-first cells. */
     val datedMemos: StateFlow<List<Memo>> = combine(memoRepo.memos, container.calendars.active) { list, cal -> list.filter { it.showsOn(cal) } }
+        // [NOTE-05] A repeating memo is on each day it comes back on.
+        .map { list -> com.bamnat.app.data.MemoRepository.repeatWindow().let { (from, to) -> com.bamnat.core.memo.MemoRepeat.expand(list, from, to) } }
         .map { list -> list.filter { it.date != null && !it.inTrash && !it.isBlank }.sortedWith(compareBy({ it.date }, { -it.updatedAtMillis })) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

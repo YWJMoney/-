@@ -369,9 +369,22 @@ data class MoneyBook(
     val style: com.bamnat.core.work.WorkStyle? = null,
     /** [SHOP-04] The kinds of work of the calendars merged into this book. */
     val styles: Set<com.bamnat.core.work.WorkStyle> = emptySet(),
+    /** [COMN-04] Lines from payment notifications waiting in 확인 대기함, kept out of every total until confirmed. */
+    val pending: List<MoneyEntry> = emptyList(),
 ) {
     /** [SHOP-04] Every kind of work behind this book, for the tax deadlines that go with them. */
     val allStyles: Set<com.bamnat.core.work.WorkStyle> get() = styles + setOfNotNull(style)
+
+    /**
+     * [COMN-04] With 확인하고 적기 on, lines not yet confirmed move from [entries] to [pending], so the
+     * month's totals, budgets, stats and notices count only what the user confirmed. Off (바로 적기),
+     * the book is left as it is and unconfirmed lines count at once, as before.
+     */
+    fun holdUnconfirmed(on: Boolean): MoneyBook {
+        if (!on) return this
+        val (seen, waiting) = entries.partition { it.reviewed }
+        return if (waiting.isEmpty()) this else copy(entries = seen, pending = pending + waiting)
+    }
 
     fun month(month: YearMonth, payEstimate: Long? = null) = MoneyCalculator.month(month, entries, jobs, sales, payEstimate)
     fun days(month: YearMonth) = MoneyCalculator.days(month, entries, jobs, sales)
@@ -401,7 +414,7 @@ data class MoneyBook(
             return MoneyBook(
                 moved.flatMap { it.entries }, moved.flatMap { it.jobs }, moved.flatMap { it.sales }, moved.flatMap { it.fixed },
                 moved.flatMap { it.receivables }, moved.flatMap { it.accounts },
-                styles = books.flatMap { it.allStyles }.toSet(),
+                styles = books.flatMap { it.allStyles }.toSet(), pending = moved.flatMap { it.pending },
             )
         }
 

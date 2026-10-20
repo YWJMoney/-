@@ -50,6 +50,8 @@ class MoneyRepository(
     private val clock: () -> Long = System::currentTimeMillis,
     /** [TYPE-08] The calendar's kind of work, for its built-in categories. */
     private val style: Flow<com.bamnat.core.work.WorkStyle?> = kotlinx.coroutines.flow.flowOf(null),
+    /** [COMN-04] 확인하고 적기: lines not yet confirmed stay out of the book's totals. */
+    private val confirmFirst: Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false),
 ) {
     private val dao = db.moneyDao()
 
@@ -77,7 +79,8 @@ class MoneyRepository(
     val book: Flow<MoneyBook> = combine(
         combine(entries, jobs, sales, fixed, receivables) { e, j, s, f, r -> MoneyBook(e, j, s, f, r) }, plans,
     ) { b, (a, bu, c) -> b.copy(accounts = a, budgets = bu, categories = c) }
-        .combine(style.distinctUntilChanged()) { b, st -> b.copy(style = st) }.flowOn(Dispatchers.Default)
+        .combine(style.distinctUntilChanged()) { b, st -> b.copy(style = st) }
+        .combine(confirmFirst.distinctUntilChanged()) { b, on -> b.holdUnconfirmed(on) }.flowOn(Dispatchers.Default)
 
     /** [SHOP-04] The calendar's kind of work now, for the tax deadlines that go with it. */
     suspend fun currentStyle(): com.bamnat.core.work.WorkStyle? = style.firstOrNull()
@@ -206,6 +209,9 @@ class MoneyRepository(
     }
 
     suspend fun markAllReviewed() = dao.markAllReviewed()
+
+    /** [COMN-04] Lines from 확인 대기함 confirmed: they count from now on. */
+    suspend fun confirm(list: List<MoneyEntry>) = saveAll(list.filter { !it.reviewed }.map { it.copy(reviewed = true) })
 
     suspend fun save(job: Job): Job =
         if (job.id == 0L) job.copy(id = dao.insertJob(job.toEntity())) else job.also { dao.restoreJob(it.toEntity()) }

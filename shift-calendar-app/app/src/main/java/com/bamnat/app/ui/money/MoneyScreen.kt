@@ -278,6 +278,9 @@ class MoneyViewModel(
     }
     fun markAllSeen() { container.appScope.launch { money.markAllReviewed() } }
 
+    /** [COMN-04] Lines in 확인 대기함 confirmed, so they count. */
+    fun confirm(list: List<MoneyEntry>) { container.appScope.launch { money.confirm(list) } }
+
     /** [LEDG-22][LEDG-24] How 결제 알림으로 적기 was tuned, and repeats turned down. */
     val autoRecord: StateFlow<AutoRecordPrefs.State> = container.autoRecordPrefs.state
     fun setCaptureFilter(filter: CaptureFilter) = container.autoRecordPrefs.setFilter(filter)
@@ -450,7 +453,8 @@ fun MoneyScreen(
         }
     }
     val owed = remember(book, today) { book.owed(today) }
-    val unseen = remember(book) { book.entries.filter { !it.reviewed } }
+    // [COMN-04] With 확인하고 적기 on, the unconfirmed lines are in book.pending, out of every total.
+    val unseen = remember(book) { book.pending + book.entries.filter { !it.reviewed } }
     val otherPlaces = remember(book, today) { OtherPlaces.groups(book.entries, today) }
     val repeats = remember(book, today, autoRecord.notRepeating) {
         RepeatFinder.find(book.entries, book.fixed, today, autoRecord.notRepeating)
@@ -471,10 +475,13 @@ fun MoneyScreen(
 
     val left: @Composable () -> Unit = {
         if (!wide) NewRecordsCard(unseen, captures, onOpen = { editing = it }, onAllSeen = vm::markAllSeen,
-            onFinish = { finishing = it }, onDrop = vm::dropCapture)
+            onFinish = { finishing = it }, onDrop = vm::dropCapture,
+            waiting = autoRecord.confirmFirst, onConfirm = vm::confirm, onDelete = vm::delete)
         HeroCard(m, budget, today, onBudget = { budgeting = true })
         // [FLD-06][SHOP-02] A deposit that may be a job's money; card deposits still to come.
         WorkMoneyCards(vm.calendarId, book, style, today)
+        // [COMN-02] With two calendars or more, all of them added up.
+        AllCalendarsCard(month)
         BudgetCard(budget, today, onEdit = { budgeting = true })
         OtherPlacesCard(otherPlaces, book.categoriesOf(MoneyKind.EXPENSE), onPick = { g, c -> vm.recategorize(g.entries, c) })
         UpcomingCard(upcoming, book.fixed, leftFixed, onRecord = { vm.recordFixed(it, today) },
@@ -484,7 +491,8 @@ fun MoneyScreen(
     }
     val right: @Composable () -> Unit = {
         if (wide) NewRecordsCard(unseen, captures, onOpen = { editing = it }, onAllSeen = vm::markAllSeen,
-            onFinish = { finishing = it }, onDrop = vm::dropCapture)
+            onFinish = { finishing = it }, onDrop = vm::dropCapture,
+            waiting = autoRecord.confirmFirst, onConfirm = vm::confirm, onDelete = vm::delete)
         RecentCard(recent, month, onOpen = { editing = it }, onAll = { vm.setView(LedgerView()); vm.showPage(MoneyViewModel.Page.LIST) })
         IncomeCard(m, style, hasProfile = profile != null, onOpenPay = onOpenPay)
         // [RECV-02] Money owed: receivables and unpaid jobs together, the whole list one tap away.

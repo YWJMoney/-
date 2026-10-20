@@ -393,7 +393,17 @@ class MemoEditorViewModel(
     fun setBody(body: String) = update { it.copy(body = body) }
     fun setColor(index: Int) = update { it.copy(colorIndex = index) }
     fun togglePinned() = update { it.copy(pinned = !it.pinned) }
-    fun setDate(date: LocalDate?) = update { it.copy(date = date) }
+    /** [NOTE-05] A repeat follows the new date (same kind, its weekday or day), and goes with the date. */
+    fun setDate(date: LocalDate?) = update {
+        val kind = com.bamnat.core.memo.MemoRepeat.kindOf(it.repeat)
+        it.copy(date = date, repeat = date?.let { d -> com.bamnat.core.memo.MemoRepeat.code(kind, d) }.orEmpty())
+    }
+
+    /** [NOTE-05] How a dated memo comes back: every week on its weekday, every month on its day, every year. */
+    fun setRepeat(kind: com.bamnat.core.memo.MemoRepeat.Kind) = update {
+        val date = it.date ?: return@update it
+        it.copy(repeat = com.bamnat.core.memo.MemoRepeat.code(kind, date))
+    }
     /** [NOTE-02] The calendars the memo shows on; empty for every calendar. */
     fun setCalendars(ids: Set<String>) = update { it.copy(calendars = ids) }
 

@@ -205,6 +205,8 @@ private object Routes {
     const val SLEEP = "sleep"
     const val OWED = "owed"
     const val CALENDAR_IMPORT = "calendar_import"
+    /** [COMN-01] 모든 달력 합쳐 보기. */
+    const val COMBINED = "combined"
 
     fun companyFind(setup: Boolean = false, weekdays: Boolean = false) = "company_find?setup=$setup&weekdays=$weekdays"
     fun company(id: String, setup: Boolean, weekdays: Boolean) = "company/$id?setup=$setup&weekdays=$weekdays"
@@ -519,8 +521,10 @@ private fun AppNavHost(
                 onSetupCalendar = { id -> nav.navigate(Routes.calendarSetup(id)) { launchSingleTop = true } },
                 onManageCalendars = { nav.navigate(Routes.CALENDARS) { launchSingleTop = true } },
                 onEditCalendar = { id -> nav.navigate(Routes.calendarEdit(id)) { launchSingleTop = true } },
+                onOpenCombined = { nav.navigate(Routes.COMBINED) { launchSingleTop = true } },
             )
         }
+        composable(Routes.COMBINED) { com.bamnat.app.ui.calendar.CombinedScreen(onBack = { nav.popFrom(Routes.COMBINED) }) }
         composable(Routes.CALENDAR_SETUP, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
             val id = entry.arguments?.getString("id").orEmpty()
             val vm = appViewModel(key = "calendar_setup_$id") { SetupViewModel(it, calendarId = id) }

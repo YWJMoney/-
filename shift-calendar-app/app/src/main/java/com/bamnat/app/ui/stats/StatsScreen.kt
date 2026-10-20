@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -146,8 +147,11 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달")
             }
         }
-        // [MCAL-06] Whose hours and pay these are, once there are several calendars.
-        com.bamnat.app.ui.calendar.CalendarScopeChips(androidx.compose.ui.platform.LocalContext.current.appContainer)
+        // [MCAL-06] Whose hours and pay these are, once there are several calendars; [COMN-03] or all of them.
+        var everyCalendar by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+        com.bamnat.app.ui.calendar.CalendarScopeChips(androidx.compose.ui.platform.LocalContext.current.appContainer,
+            all = everyCalendar, onAll = { everyCalendar = it })
+        if (everyCalendar && AllCalendarsStats(month)) return@Column
 
         val money = book
         if (money != null && style?.usesJobs == true) JobFigures(money, month, columns)

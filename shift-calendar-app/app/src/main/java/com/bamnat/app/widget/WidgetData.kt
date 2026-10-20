@@ -12,7 +12,12 @@ import com.bamnat.core.schedule.ScheduleResolver
 import com.bamnat.core.sleep.SleepMerge
 import com.bamnat.core.sleep.TodayFlow
 import com.bamnat.core.work.CalendarFocus
+import com.bamnat.core.work.WidgetFigures
 import com.bamnat.core.work.WorkStyle
+import com.bamnat.core.hours.WorkHoursCalculator
+import com.bamnat.core.holiday.KoreanHolidays
+import com.bamnat.core.pay.LeaveBook
+import com.bamnat.core.schedule.CalendarGrid
 import kotlinx.coroutines.flow.first
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -34,6 +39,12 @@ class WidgetData(
     /** [CAL-11] Booked jobs, by title and time only: a home screen is seen by others, so no amounts. */
     val jobs: List<Job> = emptyList(),
     val sales: Map<LocalDate, DailySales> = emptyMap(),
+    /** [COMN-05] A part-timer's week against 주휴 15시간. */
+    val hourlyWeek: WidgetFigures.HourlyWeek? = null,
+    /** [COMN-05] A field worker's week of days or 공수, and what is still owed. */
+    val fieldWeek: WidgetFigures.FieldWeek? = null,
+    /** [COMN-05] A day worker's 연차 left this year; null when the days granted are not set. */
+    val leaveLeft: Double? = null,
 ) {
     fun day(date: LocalDate): ResolvedDay = resolver.resolve(date)
 
@@ -67,6 +78,18 @@ class WidgetData(
             }
             // [CAL-11] Field and shop work fill the widgets from the money book, read on the phone only.
             val book = if (focus == CalendarFocus.SHIFTS) null else container.calendars.money(PersonalCalendar.MAIN).book.first()
+            val today = now.toLocalDate()
+            // [COMN-05] Each kind of work's own line on the today widget.
+            val hourly = if (settings.workStyle == WorkStyle.HOURLY) {
+                WidgetFigures.HourlyWeek(WorkHoursCalculator(snapshot.resolver, settings.weekStart).week(today).totalMinutes)
+            } else null
+            val field = if (settings.workStyle == WorkStyle.FIELD && book != null) {
+                WidgetFigures.fieldWeek(book.jobs, CalendarGrid.weekStartOf(today, settings.weekStart), today)
+            } else null
+            val leaveLeft = if (settings.workStyle == WorkStyle.DAY) container.payStore.profile.value?.let { p ->
+                LeaveBook.balance(today.year, p.rules.annualLeaveDays, today, snapshot.resolver::resolve,
+                    free = { p.rules.holidayLeaveFree && KoreanHolidays.isHoliday(it) }, carried = p.rules.annualLeaveCarry).remaining
+            } else null
             return WidgetData(
                 today = now.toLocalDate(),
                 weekStart = settings.weekStart,
@@ -78,6 +101,9 @@ class WidgetData(
                 style = settings.workStyle,
                 jobs = book?.jobs.orEmpty(),
                 sales = book?.sales.orEmpty().filter { it.sales != 0L || it.costs != 0L }.associateBy { it.date },
+                hourlyWeek = hourly,
+                fieldWeek = field,
+                leaveLeft = leaveLeft,
             )
         }
     }

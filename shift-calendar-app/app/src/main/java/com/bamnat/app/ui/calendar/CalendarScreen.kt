@@ -193,6 +193,8 @@ fun CalendarScreen(
     onManageCalendars: () -> Unit = {},
     /** [CALS-01] One of the user's calendars: its name, colour, kind of work and settings. */
     onEditCalendar: (String) -> Unit = {},
+    /** [COMN-01] 모든 달력 합쳐 보기. */
+    onOpenCombined: () -> Unit = {},
 ) {
     val context = LocalContext.current
     // Re-checked on every return to the app, since the user may change it in system settings.
@@ -1065,6 +1067,7 @@ fun CalendarScreen(
             onEdit = { cal -> switching = false; onEditCalendar(cal.id) },
             onRemove = { cal -> received.remove(cal.id) },
             onDismiss = { switching = false },
+            onCombined = { switching = false; onOpenCombined() },
             // [UX-03] Each of the user's calendars shares from here, as that calendar.
             onShare = { cal ->
                 switching = false

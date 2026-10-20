@@ -6,6 +6,7 @@ import com.bamnat.app.data.db.AppDatabase
 import com.bamnat.app.data.db.toEntity
 import com.bamnat.app.data.db.toModel
 import com.bamnat.core.memo.Memo
+import com.bamnat.core.memo.MemoRepeat
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,14 +39,16 @@ class MemoRepository(private val db: AppDatabase, private val clock: () -> Long 
     fun memosOn(date: LocalDate): Flow<List<Memo>> =
         dao.observeOn(date.toEpochDay()).map { list -> list.map { it.toModel() } }
 
-    /** [NOTE-01] The memos of [date] that show on calendar [calendar]. */
+    /** [NOTE-01] The memos of [date] that show on calendar [calendar]; [NOTE-05] repeating ones that come back that day too. */
     fun memosOn(date: LocalDate, calendar: String): Flow<List<Memo>> =
-        memosOn(date).map { list -> list.filter { it.showsOn(calendar) } }
+        memos.map { list -> list.filter { it.showsOn(calendar) && MemoRepeat.occursOn(it, date) } }
 
-    /** [NOTE-01] Dates with a memo that shows on calendar [calendar]. */
+    /** [NOTE-01] Dates with a memo that shows on calendar [calendar]; [NOTE-05] each day a repeating one comes back on. */
     fun datesWithMemos(calendar: String): Flow<Set<LocalDate>> = memos.map { list ->
-        list.mapNotNullTo(HashSet()) { m -> m.date?.takeIf { m.showsOn(calendar) } }
+        val (from, to) = repeatWindow()
+        MemoRepeat.expand(list.filter { it.showsOn(calendar) }, from, to).mapNotNullTo(HashSet()) { it.date }
     }
+
 
     /** [NOTE-02] Puts memos on the given calendars (empty for every calendar). */
     suspend fun setCalendars(memos: Collection<Memo>, calendars: Set<String>) {
@@ -145,6 +148,10 @@ class MemoRepository(private val db: AppDatabase, private val clock: () -> Long 
     suspend fun purgeOldTrash() = dao.purgeTrash(clock() - TRASH_DAYS * DAY_MILLIS)
 
     companion object {
+        /** [NOTE-05] The days repeating memos are laid out on: a year back to three years on. */
+        fun repeatWindow(today: LocalDate = LocalDate.now()): Pair<LocalDate, LocalDate> =
+            today.minusYears(1).withDayOfMonth(1) to today.plusYears(3)
+
         const val TRASH_DAYS = 30L
         private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
     }
