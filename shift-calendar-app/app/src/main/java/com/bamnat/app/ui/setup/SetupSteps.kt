@@ -80,6 +80,8 @@ private val STYLE_CHOICES = listOf(
     StyleChoice(WorkStyle.HOURLY, false, "아르바이트 · 시급", "일한 시간만큼 시급으로 받아요", WorkStyle.HOURLY.icon()),
     StyleChoice(WorkStyle.FIELD, false, "현장 · 프리랜서", "일감과 받을 돈을 달력에 적어요 · 고르면 바로 시작", WorkStyle.FIELD.icon()),
     StyleChoice(WorkStyle.BUSINESS, false, "자영업", "매일 매출과 경비를 달력에 적어요 · 고르면 바로 시작", WorkStyle.BUSINESS.icon()),
+    // [INV-01] 투자자: trades, 원금 and 수익률 on the calendar.
+    StyleChoice(WorkStyle.INVEST, false, "투자 · 주식·코인", "매매와 수익률, 투자일지를 달력에 적어요 · 고르면 바로 시작", WorkStyle.INVEST.icon()),
 )
 
 @Composable

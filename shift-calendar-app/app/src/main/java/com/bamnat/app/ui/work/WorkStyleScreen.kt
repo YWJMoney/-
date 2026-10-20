@@ -27,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +43,7 @@ fun WorkStyle.icon(): ImageVector = when (this) {
     WorkStyle.HOURLY -> Icons.Filled.AccessTime
     WorkStyle.FIELD -> Icons.Filled.Construction
     WorkStyle.BUSINESS -> Icons.Filled.Storefront
+    WorkStyle.INVEST -> Icons.AutoMirrored.Filled.TrendingUp
 }
 
 /**
@@ -54,6 +56,7 @@ fun WorkStyle.nextStep(company: Boolean = false): String = when (this) {
     WorkStyle.HOURLY -> "다음: 시급 정하기"
     WorkStyle.FIELD -> "달력에 일감과 받을 돈을 적어요"
     WorkStyle.BUSINESS -> "달력에 매일 매출과 경비를 적어요"
+    WorkStyle.INVEST -> "달력에 매매와 수익을 적어요 · 원금부터 적으면 수익률이 바로 나와요"
 }
 
 /** [WORK-07] Said after the kind of work changed in settings with nothing more to set up. */
@@ -63,6 +66,7 @@ fun WorkStyle.changedMessage(): String = when (this) {
     WorkStyle.HOURLY -> "시급 근무로 바꿨어요. 일한 날 달력에 시간을 적으면 급여가 계산돼요"
     WorkStyle.FIELD -> "현장·프리랜서로 바꿨어요. 달력에서 날짜를 눌러 일감과 받을 돈을 적어요"
     WorkStyle.BUSINESS -> "자영업으로 바꿨어요. 달력에서 날짜를 눌러 그날 매출과 경비를 적어요"
+    WorkStyle.INVEST -> "투자로 바꿨어요. ‘투자·수익’ 탭에서 원금(입금)부터 적고, 달력에서 날짜를 눌러 매매를 적어요"
 }
 
 /**

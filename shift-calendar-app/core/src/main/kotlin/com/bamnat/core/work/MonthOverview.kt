@@ -48,6 +48,8 @@ data class MonthOverview(
         CalendarFocus.SHIFTS -> workDays == 0 && leaveDays == 0.0
         CalendarFocus.JOBS -> jobs == 0 && jobDays == 0 && workDays == 0
         CalendarFocus.SALES -> openDays == 0 && sales == 0L && salesCosts == 0L
+        // [INV-01] The investor's month has its own bar from the trades; this one has nothing to say.
+        CalendarFocus.INVEST -> true
     }
 
     companion object {

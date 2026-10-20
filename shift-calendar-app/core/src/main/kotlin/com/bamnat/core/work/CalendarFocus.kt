@@ -2,13 +2,14 @@ package com.bamnat.core.work
 
 /**
  * [CAL-05] What a day on the calendar is mainly about, by how the user works: the shift (교대·일근·시급),
- * the booked jobs (현장·프리랜서) or the shop's sales (자영업). Every place on the calendar that
+ * the booked jobs (현장·프리랜서), the shop's sales (자영업) or the day's trades and gain (투자) [INV-01]. Every place on the calendar that
  * names a day, adds to it or sums a month asks this instead of guessing from the shifts.
  */
 enum class CalendarFocus {
     SHIFTS,
     JOBS,
-    SALES;
+    SALES,
+    INVEST;
 
     /** Days are filled with money records rather than shifts. */
     val moneyFirst: Boolean get() = this != SHIFTS
@@ -18,6 +19,7 @@ enum class CalendarFocus {
         SHIFTS -> "쉬는 날"
         JOBS -> "잡힌 일감 없음"
         SALES -> "매출 안 적음"
+        INVEST -> "매매 없음"
     }
 
     /** The one-tap way to add the day's main record; null where days are stamped with shifts. */
@@ -25,6 +27,7 @@ enum class CalendarFocus {
         SHIFTS -> null
         JOBS -> "일감 적기"
         SALES -> "매출 적기"
+        INVEST -> "매매 기록"
     }
 
     /** A run of empty days in the month list, e.g. "3일 비어 있어요". */
@@ -32,6 +35,7 @@ enum class CalendarFocus {
         SHIFTS -> "${days}일 쉬어요"
         JOBS -> "${days}일 비어 있어요"
         SALES -> "${days}일 매출 없음"
+        INVEST -> "${days}일 매매 없음"
     }
 
     companion object {
@@ -39,6 +43,7 @@ enum class CalendarFocus {
         fun of(style: WorkStyle?): CalendarFocus = when {
             style?.usesJobs == true -> JOBS
             style?.usesSales == true -> SALES
+            style?.usesTrades == true -> INVEST
             else -> SHIFTS
         }
     }
@@ -72,6 +77,11 @@ fun WorkStyle?.calendarStart(): CalendarStart = when (this) {
         "이번 달 일감이 아직 없어요",
         "날짜를 고르고 일감을 적으면 달력에 표시되고, 시작 전에 알려 드리고, 받을 돈도 챙겨 드려요.",
         "일감 적기",
+    )
+    WorkStyle.INVEST -> CalendarStart(
+        "원금부터 적어 보세요",
+        "계좌에 넣은 돈(입금)을 적으면 원금이 되고, 매수·매도를 적으면 칸마다 그날 손익이 빨강·파랑으로 보여요.",
+        "입금 적기",
     )
     WorkStyle.BUSINESS -> CalendarStart(
         "이번 달 매출이 아직 없어요",

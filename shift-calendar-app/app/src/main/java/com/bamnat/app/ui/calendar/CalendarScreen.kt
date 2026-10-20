@@ -249,6 +249,11 @@ fun CalendarScreen(
             .filterValues { it.isNotEmpty() }
     }
     var quickMoney by remember { mutableStateOf(false) }
+    // [INV-01] An investor calendar's trades, cells and sheets.
+    val investVm = if (focus == com.bamnat.core.work.CalendarFocus.INVEST) com.bamnat.app.ui.invest.investViewModel(activeCalendar.id) else null
+    val investState = investVm?.state?.collectAsStateWithLifecycle()?.value
+    val investCells = remember(investState) { investState?.takeIf { it.loaded }?.let { com.bamnat.app.ui.invest.InvestCells.of(it) } }
+    var investSheet by remember { mutableStateOf<com.bamnat.app.ui.invest.InvestSheet?>(null) }
 
     // Re-read the date every minute so "today" moves at midnight while the app is open.
     val today by produceState(LocalDate.now()) {
@@ -637,6 +642,7 @@ fun CalendarScreen(
                 memoTexts = memoTexts,
                 focus = focus,
                 hourly = hourlyCells,
+                invest = investCells,
                 // [DAYW-01] A day calendar shows its exceptions only.
                 quietWorkDays = settings.workStyle == com.bamnat.core.work.WorkStyle.DAY,
                 modifier = Modifier.pointerInput(Unit) {
@@ -717,6 +723,8 @@ fun CalendarScreen(
             val empty = when {
                 style?.usesPattern != false -> snap.isEmpty
                 style == com.bamnat.core.work.WorkStyle.HOURLY -> overview.isEmpty && !snap.hasPattern
+                // [INV-01] An investor calendar starts from its first deposit.
+                style == com.bamnat.core.work.WorkStyle.INVEST -> investState?.loaded == true && investState.full.isEmpty
                 else -> overview.isEmpty && YearMonth.from(today) == visibleMonth
             }
             if (empty) CalendarStartCard(
@@ -725,6 +733,8 @@ fun CalendarScreen(
                     when {
                         style?.usesPattern != false -> onOpenPattern()
                         style == com.bamnat.core.work.WorkStyle.HOURLY -> vm.setPaint(PaintTool.Pick)
+                        style == com.bamnat.core.work.WorkStyle.INVEST ->
+                            investSheet = com.bamnat.app.ui.invest.InvestSheet.CashEdit(com.bamnat.core.invest.CashKind.DEPOSIT)
                         else -> {
                             if (YearMonth.from(today) == visibleMonth) vm.select(today)
                             quickMoney = true
@@ -792,6 +802,11 @@ fun CalendarScreen(
                 onWrite = { vm.select(today); quickMoney = true },
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
+            // [INV-01] Today's result, 총자산 and 수익률, and the next alarm.
+            com.bamnat.core.work.CalendarFocus.INVEST -> if (investVm != null) com.bamnat.app.ui.invest.TodayInvestCard(
+                vm = investVm, today = today, onTrade = { vm.select(today); quickMoney = true }, onOpen = onOpenStats,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
             else -> Unit
         }
         if (swapCovers.isNotEmpty()) {
@@ -817,7 +832,10 @@ fun CalendarScreen(
             weekPart()
         } else {
             // [CAL-06] The month in the kind of work's own three figures.
-            if (!(focus == com.bamnat.core.work.CalendarFocus.SHIFTS && overview.isEmpty && payEstimate == null)) {
+            if (focus == com.bamnat.core.work.CalendarFocus.INVEST && investVm != null) {
+                // [INV-06] The month in the investor's own figures.
+                com.bamnat.app.ui.invest.InvestMonthBar(investVm, visibleMonth, onOpen = onOpenStats, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            } else if (!(focus == com.bamnat.core.work.CalendarFocus.SHIFTS && overview.isEmpty && payEstimate == null)) {
                 MonthSummaryBar(
                     overview = overview,
                     payEstimate = payEstimate,
@@ -886,6 +904,7 @@ fun CalendarScreen(
                         onLongPress = if (stamping) startRange else null,
                         rangeFrom = rangeFrom,
                         hourly = hourlyCells,
+                        invest = investCells,
                         // [DAYW-01] A day calendar shows its exceptions only; painting shows every day.
                         quietWorkDays = settings.workStyle == com.bamnat.core.work.WorkStyle.DAY && !stamping,
                     )
@@ -959,7 +978,7 @@ fun CalendarScreen(
             .graphicsLayer { alpha = ((fabLift - fabDrop.value) / fabHeight).coerceIn(0f, 1f) }
         if (!fabGone && paint == null && style != null && !style.usesPayEngine) {
             // [WORK-02][WORK-03] Field and shop work add the day's job or sales instead of stamping shifts.
-            val label = if (style.usesJobs) "일감 적기" else "매출 적기"
+            val label = if (style.usesJobs) "일감 적기" else if (style.usesTrades) "매매 기록" else "매출 적기"
             // The extended FAB drops its text from semantics, so the icon carries the label for TalkBack.
             ExtendedFloatingActionButton(
                 onClick = { quickMoney = true },
@@ -1037,7 +1056,17 @@ fun CalendarScreen(
         }
     }
 
-    if (quickMoney) {
+    if (investVm != null) {
+        com.bamnat.app.ui.invest.InvestMessages(investVm, snackbarHostState)
+        investSheet?.let { s -> com.bamnat.app.ui.invest.InvestSheetHost(investVm, s) { investSheet = it } }
+    }
+    if (quickMoney && investVm != null) {
+        // [INV-03] The trade sheet for the picked day.
+        LaunchedEffect(Unit) {
+            investSheet = com.bamnat.app.ui.invest.InvestSheet.TradeEdit(investVm.draftFor(null, selected))
+            quickMoney = false
+        }
+    } else if (quickMoney) {
         if (settings.workStyle?.usesJobs == true) {
             com.bamnat.app.ui.money.JobDialog(selected, null, onSave = { vm.saveJob(it); quickMoney = false }, onDismiss = { quickMoney = false })
         } else {
@@ -1674,4 +1703,5 @@ private fun com.bamnat.core.work.CalendarFocus.longPressTip(): String = "날짜�
     com.bamnat.core.work.CalendarFocus.SHIFTS -> "근무·연차를 바로 바꿀 수 있어요"
     com.bamnat.core.work.CalendarFocus.JOBS -> "일감을 바로 적을 수 있어요"
     com.bamnat.core.work.CalendarFocus.SALES -> "매출을 바로 적을 수 있어요"
+    com.bamnat.core.work.CalendarFocus.INVEST -> "매매를 바로 적을 수 있어요"
 }
