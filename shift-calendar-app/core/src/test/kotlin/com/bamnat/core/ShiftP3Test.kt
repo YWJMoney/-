@@ -87,6 +87,28 @@ class ShiftP3Test {
     }
 
     @Test
+    fun `a two-letter name made of code letters stays a name`() {
+        val text = """
+            이름 1 2 3 4 5
+            주연 D E N O D
+            이나 N N O D D
+            연주 O D D E E
+        """.trimIndent()
+        val rows = DutyRoster.readText(text, codes)
+        val juyeon = rows.first { it.label == "주연" }
+        assertEquals(mapOf(1 to day, 2 to evening, 3 to night, 4 to off, 5 to day), juyeon.cells)
+        assertEquals(night, rows.first { it.label == "이나" }.cells[1])
+        assertEquals(off, rows.first { it.label == "연주" }.cells[1])
+    }
+
+    @Test
+    fun `tab-separated cells keep empty days in their place`() {
+        val text = "이름\t1\t2\t3\t4\t5\n민지\tD\t\tN\tO\tD"
+        val minji = DutyRoster.readText(text, codes).first { it.label == "민지" }
+        assertEquals(mapOf(1 to day, 3 to night, 4 to off, 5 to day), minji.cells)
+    }
+
+    @Test
     fun `a photo's words go under the day above them, blanks stay blank`() {
         fun w(t: String, x: Int, y: Int) = RosterWord(t, x - 10, y - 10, x + 10, y + 10)
         val header = (1..7).map { w("$it", it * 50, 100) }

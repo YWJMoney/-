@@ -107,6 +107,24 @@ class DayP3Test {
         assertEquals(1, AttendanceImport.kindOf("오전 반반차").leave!!.quarters)
         assertEquals(LeaveKind.PAID, AttendanceImport.kindOf("병가").leave!!.kind)
         assertNull(AttendanceImport.kindOf("정상").leave)
+        // A paid day off is a day off, not leave taken.
+        assertNull(AttendanceImport.kindOf("유급휴일").leave)
+        assertNull(AttendanceImport.kindOf("주휴일").leave)
+        assertEquals(LeaveKind.PAID, AttendanceImport.kindOf("유급휴가").leave!!.kind)
+        // A plain number is hours, however many digits; Excel's fraction of a day in a number cell comes as h:mm.
+        assertEquals(15, AttendanceImport.parseMinutes("0.25"))
+        assertEquals(30, AttendanceImport.parseMinutes("0.5"))
+        assertEquals(15, AttendanceImport.parseMinutes("0.2500"))
+        assertEquals("6:00", Sheets.dayFraction("0.25"))
+        assertEquals("12:00", Sheets.dayFraction("0.5"))
+        assertEquals("8:30", Sheets.dayFraction("0.354166666666667"))
+        assertEquals("8.5", Sheets.dayFraction("8.5"))
+        assertEquals(360, AttendanceImport.parseMinutes(Sheets.dayFraction("0.25")))
+        // Without a year: the one nearest today, not more than a month ahead.
+        val jan = LocalDate.of(2027, 1, 5)
+        assertEquals(LocalDate.of(2026, 12, 28), AttendanceImport.parseDate("12/28", 2027, near = jan))
+        assertEquals(LocalDate.of(2027, 1, 20), AttendanceImport.parseDate("1/20", 2027, near = jan))
+        assertEquals(LocalDate.of(2027, 1, 3), AttendanceImport.parseDate("1월 3일", 2000, near = LocalDate.of(2026, 12, 30)))
     }
 
     @Test

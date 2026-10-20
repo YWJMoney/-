@@ -75,12 +75,16 @@ object AttendanceImport {
         return col?.let { ColumnMap(-1, mapOf(AttendanceField.DATE to it)) }
     }
 
-    /** The days of [rows] under [map]; rows without a date are left out, and the last row of a date wins. */
-    fun read(rows: List<List<String>>, map: ColumnMap, defaultYear: Int): List<AttendanceRow> {
+    /**
+     * The days of [rows] under [map]; rows without a date are left out, and the last row of a date wins.
+     * A date written without its year takes [defaultYear], or with [near] the year that puts it nearest that
+     * day and not more than a month after it (December's export read in January is last year's).
+     */
+    fun read(rows: List<List<String>>, map: ColumnMap, defaultYear: Int, near: LocalDate? = null): List<AttendanceRow> {
         fun cell(row: List<String>, f: AttendanceField) = map.columns[f]?.let { row.getOrNull(it) }.orEmpty().trim()
         val out = LinkedHashMap<LocalDate, AttendanceRow>()
         rows.drop(map.headerRow + 1).forEach { row ->
-            val date = parseDate(cell(row, AttendanceField.DATE), defaultYear) ?: return@forEach
+            val date = parseDate(cell(row, AttendanceField.DATE), defaultYear, near) ?: return@forEach
             val kind = cell(row, AttendanceField.KIND)
             val k = kindOf(kind)
             val rawStart = cell(row, AttendanceField.START)
@@ -112,6 +116,8 @@ object AttendanceImport {
         }
         return when {
             "결근" in t || "무단" in t -> Kind(absent = true)
+            // 유급휴일·주휴일·공휴일 are days off, not leave taken.
+            "휴일" in t || "주휴" in t -> Kind()
             "무급" in t -> Kind(Leave(LeaveKind.UNPAID, quarters))
             listOf("반반차", "반차", "연차", "월차", "ANNUAL").any { it in t } -> Kind(Leave(LeaveKind.ANNUAL, quarters))
             listOf("병가", "경조", "공가", "특별휴가", "출산", "육아", "보건", "유급", "휴가", "VACATION", "LEAVE").any { it in t } -> Kind(Leave(LeaveKind.PAID, quarters))
@@ -120,7 +126,7 @@ object AttendanceImport {
     }
 
     /** A date as 근태 exports write it: 2026-10-01, 2026.10.01(수), 2026/10/1, 10/01, 10월 1일, 20261001, or Excel's day number. */
-    fun parseDate(text: String, defaultYear: Int): LocalDate? {
+    fun parseDate(text: String, defaultYear: Int, near: LocalDate? = null): LocalDate? {
         val s = text.trim().replace(Regex("""\([^)]*\)"""), " ").trim()
         if (s.isEmpty()) return null
         Regex("""^(\d{4})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})""").find(s)?.let { m ->
@@ -133,7 +139,12 @@ object AttendanceImport {
             return date(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt())
         }
         Regex("""^(\d{1,2})\s*[-./월]\s*(\d{1,2})\s*일?(?:\s|$)""").find(s)?.let { m ->
-            return date(defaultYear, m.groupValues[1].toInt(), m.groupValues[2].toInt())
+            val month = m.groupValues[1].toInt()
+            val day = m.groupValues[2].toInt()
+            if (near == null) return date(defaultYear, month, day)
+            return listOf(near.year - 1, near.year, near.year + 1).mapNotNull { date(it, month, day) }
+                .filter { !it.isAfter(near.plusMonths(1)) }
+                .minByOrNull { kotlin.math.abs(it.toEpochDay() - near.toEpochDay()) }
         }
         // Excel keeps a date as days since 1899-12-30; 30000..60000 is 1982..2064.
         s.toDoubleOrNull()?.takeIf { it in 30000.0..60000.0 }?.let { return LocalDate.of(1899, 12, 30).plusDays(it.toLong()) }
@@ -168,7 +179,10 @@ object AttendanceImport {
         return null
     }
 
-    /** A length: 8:30, 8.5 (hours), 8시간 30분, 90분, or Excel's fraction of a day (0.354). */
+    /**
+     * A length: 8:30, 8.5 (hours), 8시간 30분, 90분. A plain number is hours (0.5 is 30분); Excel's fraction
+     * of a day in a number cell already comes as h:mm from [Sheets].
+     */
     fun parseMinutes(text: String): Int? {
         val s = text.trim().replace(" ", "")
         if (s.isEmpty() || s == "-") return null
@@ -180,7 +194,7 @@ object AttendanceImport {
         }
         val v = s.removeSuffix("시간").removeSuffix("h").toDoubleOrNull() ?: return null
         if (v < 0) return null
-        return if (v < 1 && v > 0 && '.' in s && s.length > 4) Math.round(v * 24 * 60).toInt() else Math.round(v * 60).toInt().coerceAtMost(24 * 60)
+        return Math.round(v * 60).toInt().coerceAtMost(24 * 60)
     }
 
     /**

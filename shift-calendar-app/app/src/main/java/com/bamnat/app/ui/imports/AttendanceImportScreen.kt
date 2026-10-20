@@ -93,7 +93,8 @@ class AttendanceImportViewModel(private val container: AppContainer, val calenda
     ) {
         val width: Int get() = rows.maxOfOrNull { it.size } ?: 0
         val days: List<AttendanceRow>
-            get() = map?.takeIf { it.ready || AttendanceField.DATE in it.columns }?.let { AttendanceImport.read(rows, it, LocalDate.now().year) }.orEmpty()
+            // [DAYW-06] A date without its year takes the year nearest today (last December's export read in January).
+            get() = map?.takeIf { it.ready || AttendanceField.DATE in it.columns }?.let { LocalDate.now().let { today -> AttendanceImport.read(rows, it, today.year, near = today) } }.orEmpty()
         val todo: List<AttendanceRow> get() = days.filter { !it.isEmpty }
         /** What a column is called: its header, or its letter. */
         fun columnName(c: Int): String {
