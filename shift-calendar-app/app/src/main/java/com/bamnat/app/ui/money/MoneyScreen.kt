@@ -197,8 +197,16 @@ class MoneyViewModel(
 
     override fun saveEntry(entry: MoneyEntry) {
         val before = book.value
+        val old = before?.entries?.firstOrNull { it.id == entry.id && entry.id != 0L }
         container.appScope.launch {
             money.save(entry)
+            // [LEDG-18] The other lines from this place can follow in one tap.
+            val same = old?.let { money.samePlace(entry, it.category) }.orEmpty()
+            if (same.isNotEmpty()) {
+                _undo.tryEmit(UndoMessage("같은 곳 기록 ${same.size}건도 ‘${entry.category}’(으)로 바꿀까요?", actionLabel = "바꾸기") {
+                    recategorize(same, entry.category)
+                })
+            }
             // [LEDG-06] Said once, when this line is the one that pushes a budget over.
             val crossed = before?.let { Budgets.crossedBy(entry, it.budgets, it.entries, LocalDate.now()) }.orEmpty()
             if (crossed.isNotEmpty()) _undo.tryEmit(UndoMessage(overText(crossed), undo = null))

@@ -87,6 +87,18 @@ class MoneyRepository(
         return entry.also { dao.restoreEntry(it.toEntity(clock())) }
     }
 
+    /**
+     * [LEDG-18] Other spending lines from the same place as [entry] still in [from], the category it
+     * just left, so one change can carry over to them when the user says so.
+     */
+    suspend fun samePlace(entry: MoneyEntry, from: String): List<MoneyEntry> {
+        if (entry.merchant.isBlank() || entry.kind != MoneyKind.EXPENSE || from == entry.category) return emptyList()
+        return dao.allEntries().map { it.toModel() }.filter {
+            it.id != entry.id && it.kind == MoneyKind.EXPENSE && it.category == from && it.parts.isEmpty() &&
+                PaymentParser.samePlace(it.merchant, entry.merchant)
+        }
+    }
+
     suspend fun delete(entry: MoneyEntry) = dao.deleteEntry(entry.id)
 
     /** [LEDG-07] Several lines changed at once (고르기), saved as they are. */
@@ -273,6 +285,8 @@ class MoneyRepository(
         // and both must not pass the duplicate check before either is saved.
         kept.purge(postedAt - KEEP_MILLIS)
         if (!PaymentParser.looksFinancial(text)) return Outcome.IGNORED
+        // [LEDG-20] Ads, bills to come and limit notices carry amounts too; they are not kept either.
+        if (PaymentParser.notice(text) != null) return Outcome.IGNORED
         val arrived = LocalDateTime.ofInstant(Instant.ofEpochMilli(postedAt), ZoneId.systemDefault())
         val result = PaymentParser.parse(text, arrived, rules())
         val parsed = (result as? PaymentParser.Result.Ok)?.parsed
