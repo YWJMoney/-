@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EditCalendar
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.EventRepeat
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.LibraryAdd
 import androidx.compose.material.icons.outlined.GroupAdd
 import androidx.compose.material.icons.outlined.Tune
@@ -190,6 +191,8 @@ fun CalendarScreen(
     onSetupCalendar: (String) -> Unit = {},
     /** [MCAL-04] The calendar list: order, names, removing one. */
     onManageCalendars: () -> Unit = {},
+    /** [CALS-01] One of the user's calendars: its name, colour, kind of work and settings. */
+    onEditCalendar: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     // Re-checked on every return to the app, since the user may change it in system settings.
@@ -688,6 +691,9 @@ fun CalendarScreen(
             onOpenPattern = onOpenPattern,
             onAddCalendar = onAddCalendar,
             onReceive = if (received.enabled) ({ adding = "" }) else null,
+            // [CALS-01] The calendar on screen is changed from its own page: name, kind of work, settings.
+            onEditCalendar = if (viewingReceived == null) ({ onEditCalendar(activeCalendar.id) }) else null,
+            calendarName = activeCalendar.name,
         )
         // [SETUP-01] A first setup left for later comes first; it fills the calendar.
         val waiting = pendingSetup?.takeIf { it.later && settings.workStyle == null }
@@ -1049,6 +1055,7 @@ fun CalendarScreen(
             onAddCalendar = { switching = false; onAddCalendar() },
             onAddReceived = if (received.enabled) ({ switching = false; adding = "" }) else null,
             onManage = { switching = false; onManageCalendars() },
+            onEdit = { cal -> switching = false; onEditCalendar(cal.id) },
             onRemove = { cal -> received.remove(cal.id) },
             onDismiss = { switching = false },
             // [UX-03] Each of the user's calendars shares from here, as that calendar.
@@ -1160,6 +1167,9 @@ private fun CalendarHeader(
     onAddCalendar: () -> Unit = {},
     /** [UX-03] Opens the sheet that takes a coworker's link; null without a share server. */
     onReceive: (() -> Unit)? = null,
+    /** [CALS-01] The calendar on screen's own page; null while a received calendar is shown. */
+    onEditCalendar: (() -> Unit)? = null,
+    calendarName: String = "",
 ) {
     // [QA-01] A cover screen (~344dp) cannot fit four icons, the month and 오늘: pattern and the new
     // calendar go into ⋮ there. [UX-03] 공유 is in the bar above on every screen; ⋮ keeps it too, where
@@ -1199,6 +1209,10 @@ private fun CalendarHeader(
         Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "더 보기") }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                onEditCalendar?.let { edit ->
+                    DropdownMenuItem(text = { Text("‘$calendarName’ 고치기") }, leadingIcon = { Icon(Icons.Outlined.Edit, null) },
+                        onClick = { menu = false; edit() })
+                }
                 DropdownMenuItem(text = { Text("근무표 공유") }, leadingIcon = { Icon(Icons.Filled.Share, null) },
                     onClick = { menu = false; onShare() })
                 onReceive?.let { receive ->

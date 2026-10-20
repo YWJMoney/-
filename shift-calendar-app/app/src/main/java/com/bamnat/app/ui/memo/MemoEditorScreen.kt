@@ -22,6 +22,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -102,6 +104,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     val canRedo by vm.canRedo.collectAsStateWithLifecycle()
     val day by vm.day.collectAsStateWithLifecycle()
     val offer by vm.scheduleOffer.collectAsStateWithLifecycle()
+    val calendars by vm.calendars.collectAsStateWithLifecycle()
     val context = LocalContext.current
     // [SCHED-01] The schedule dialog, and the found time it answers when it was opened from the offer.
     var scheduling by remember { mutableStateOf(false) }
@@ -229,6 +232,8 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     onOpen = { answering = null; scheduling = true },
                     onClear = { vm.setReminder(null) },
                 )
+                // [NOTE-02] Which calendars show this memo; the shared notebook is every memo on more than one.
+                MemoCalendarsChip(memo.calendars, calendars, vm::setCalendars)
             }
             Column(
                 Modifier
@@ -249,12 +254,11 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 if (memo.isChecklist) {
                     ChecklistEditor(memo = memo, vm = vm)
                 } else {
-                    PlainField(
+                    MemoBodyField(
                         value = memo.body,
                         onValueChange = vm::setBody,
                         placeholder = "내용을 적어 보세요",
                         textStyle = MaterialTheme.typography.bodyLarge,
-                        singleLine = false,
                         modifier = Modifier.heightIn(min = 240.dp),
                         autoFocus = memo.id == 0L && memo.title.isEmpty(),
                     )
@@ -380,6 +384,76 @@ private fun PlainField(
         singleLine = singleLine,
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = imeAction),
+        decorationBox = { inner ->
+            Box {
+                if (value.isEmpty()) {
+                    Text(placeholder, style = textStyle, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                }
+                inner()
+            }
+        },
+    )
+}
+
+/**
+ * The memo's body. [NOTE-03] The line being typed stays above the keyboard: whenever the text or the
+ * caret moves, the caret's line (and a little room under it) is scrolled into view, so a long memo
+ * never runs on behind the keyboard. [NOTE-04] Enter at the end of "1. …" or "- …" starts the next item.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun MemoBodyField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    textStyle: TextStyle,
+    modifier: Modifier = Modifier,
+    autoFocus: Boolean = false,
+) {
+    val focus = remember { FocusRequester() }
+    if (autoFocus) {
+        LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    }
+    var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(value)) }
+    // Undo, redo and the checklist switch change the text from outside: the caret goes to its end.
+    if (field.text != value) field = androidx.compose.ui.text.input.TextFieldValue(value, androidx.compose.ui.text.TextRange(value.length))
+    var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+    var focused by remember { mutableStateOf(false) }
+    val caretView = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    val room = with(androidx.compose.ui.platform.LocalDensity.current) { 32.dp.toPx() }
+    LaunchedEffect(field.selection, field.text, layout, focused) {
+        val l = layout ?: return@LaunchedEffect
+        if (!focused) return@LaunchedEffect
+        val at = field.selection.end.coerceIn(0, l.layoutInput.text.length)
+        val caret = l.getCursorRect(at)
+        runCatching { caretView.bringIntoView(caret.copy(top = caret.top - room / 2, bottom = caret.bottom + room)) }
+    }
+    val color = MaterialTheme.colorScheme.onSurface
+    BasicTextField(
+        value = field,
+        onValueChange = { next ->
+            val before = field
+            // While a Korean letter is still being put together, the text is left exactly as the keyboard has it.
+            val goOn = if (next.composition == null) {
+                com.bamnat.core.memo.ListContinuation.apply(
+                    com.bamnat.core.memo.ListContinuation.Edit(before.text, before.selection.end),
+                    com.bamnat.core.memo.ListContinuation.Edit(next.text, next.selection.end),
+                )
+            } else null
+            field = if (goOn != null && goOn.text != next.text) {
+                androidx.compose.ui.text.input.TextFieldValue(goOn.text, androidx.compose.ui.text.TextRange(goOn.cursor))
+            } else next
+            if (field.text != value) onValueChange(field.text)
+        },
+        onTextLayout = { layout = it },
+        modifier = modifier
+            .fillMaxWidth()
+            .focusRequester(focus)
+            .onFocusChanged { focused = it.isFocused }
+            .bringIntoViewRequester(caretView),
+        textStyle = textStyle.copy(color = color),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
         decorationBox = { inner ->
             Box {
                 if (value.isEmpty()) {

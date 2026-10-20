@@ -71,6 +71,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.bamnat.core.work.words
 import com.bamnat.app.AppContainer
 import com.bamnat.app.alarm.Notifications
 import com.bamnat.app.ui.calendar.CalendarScreen
@@ -151,14 +152,23 @@ private enum class TopLevel(val route: String, val label: String, val icon: Imag
     SETTINGS("settings", "설정", Icons.Outlined.Settings, Icons.Filled.Settings),
     ;
 
-    fun labelFor(style: WorkStyle?): String = if (this == STATS && style?.usesPayEngine == false) "통계" else label
+    /** [TYPE-02] The hours-and-money tab is named for the work of the calendar on screen. */
+    fun labelFor(style: WorkStyle?): String = if (this == STATS) style.words().tab else label
 }
 
 private object Routes {
     // [MCAL-01] Shifts and the order are edited for one calendar: the main one unless one is named.
     const val SHIFT_TYPES = "shift_types?calendar={calendar}"
     const val PATTERN = "pattern?weekdays={weekdays}&setup={setup}&calendar={calendar}"
-    const val WORK_STYLE = "work_style"
+    // [CALS-02] The kind of work of one calendar: the main one unless one is named.
+    const val WORK_STYLE = "work_style?calendar={calendar}"
+    fun workStyle(calendar: String = PersonalCalendar.MAIN) = "work_style?calendar=$calendar"
+    // [CALS-01] One calendar's own page: name, colour, kind of work and everything set for it.
+    const val CALENDAR_EDIT = "calendar_edit/{id}"
+    fun calendarEdit(id: String) = "calendar_edit/$id"
+    // [TYPE-03] A shop calendar's hours and regular days off.
+    const val SHOP_DAYS = "shop_days?calendar={calendar}"
+    fun shopDays(calendar: String = PersonalCalendar.MAIN) = "shop_days?calendar=$calendar"
 
     fun shiftTypes(calendar: String = PersonalCalendar.MAIN) = "shift_types?calendar=$calendar"
     fun pattern(weekdays: Boolean = false, setup: Boolean = false, calendar: String = PersonalCalendar.MAIN) =
@@ -215,6 +225,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // that already have a pattern were set up before this question existed, so they are shift workers
     // and are not asked; a setup on its way (or being saved) is never taken for one of those.
     val settingsNow by container.settingsRepository.settings.collectAsStateWithLifecycle()
+    // [CALS-02] The calendar on screen and its kind of work, which names the tabs and opens its own settings.
+    val activeCalendarId by container.calendars.active.collectAsStateWithLifecycle()
+    val calendarList by container.calendars.calendars.collectAsStateWithLifecycle()
+    val activeStyle = calendarList.firstOrNull { it.id == activeCalendarId }?.takeIf { !it.isMain }?.style ?: settingsNow.workStyle
     val setupDraft by container.setupDrafts.draft.collectAsStateWithLifecycle()
     val needsSetup by produceState<Boolean?>(if (settingsNow.workStyle != null) false else null, settingsNow.workStyle, setupDraft == null) {
         value = when {
@@ -389,7 +403,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                         selected = selected,
                         onClick = { navigateTop(dest) },
                         icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
-                        label = { TabLabel(dest.labelFor(settingsNow.workStyle)) },
+                        label = { TabLabel(dest.labelFor(activeStyle)) },
                     )
                 }
             }
@@ -410,7 +424,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                     selected = selected,
                                     onClick = { navigateTop(dest) },
                                     icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
-                                    label = { TabLabel(dest.labelFor(settingsNow.workStyle)) },
+                                    label = { TabLabel(dest.labelFor(activeStyle)) },
                                 )
                             }
                         }
@@ -495,7 +509,7 @@ private fun AppNavHost(
                 onOpenMemo = { id -> nav.navigate(Routes.memo(id)) },
                 onNewMemo = { date -> nav.navigate(Routes.memo(0, date)) },
                 // [MCAL-01] The calendar on screen is the one these edit.
-                onOpenPattern = { nav.navigate(Routes.pattern(calendar = container.calendars.active.value)) { launchSingleTop = true } },
+                onOpenPattern = { nav.openPattern(container, container.calendars.active.value) },
                 onOpenShiftTypes = { nav.navigate(Routes.shiftTypes(container.calendars.active.value)) { launchSingleTop = true } },
                 onOpenStats = { nav.navigateTopLevel(TopLevel.STATS.route) },
                 onOpenMoney = { nav.navigateTopLevel(TopLevel.MONEY.route) },
@@ -504,6 +518,7 @@ private fun AppNavHost(
                 onOpenExtraKinds = { nav.navigate(Routes.EXTRA_KINDS) { launchSingleTop = true } },
                 onSetupCalendar = { id -> nav.navigate(Routes.calendarSetup(id)) { launchSingleTop = true } },
                 onManageCalendars = { nav.navigate(Routes.CALENDARS) { launchSingleTop = true } },
+                onEditCalendar = { id -> nav.navigate(Routes.calendarEdit(id)) { launchSingleTop = true } },
             )
         }
         composable(Routes.CALENDAR_SETUP, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
@@ -529,6 +544,33 @@ private fun AppNavHost(
             CalendarsScreen(vm, onBack = { nav.popFrom(Routes.CALENDARS) }, onAddCalendar = add, onShare = { id ->
                 nav.navigateTopLevel(TopLevel.CALENDAR.route)
                 NoticeLinks.open(NoticeLinks.Target.SHARE, id)
+            }, onEdit = { id -> nav.navigate(Routes.calendarEdit(id)) { launchSingleTop = true } })
+        }
+        composable(Routes.CALENDAR_EDIT, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+            val id = entry.arguments?.getString("id") ?: PersonalCalendar.MAIN
+            val vm = appViewModel(key = "calendar_edit_$id") { com.bamnat.app.ui.calendar.CalendarEditViewModel(it, id) }
+            com.bamnat.app.ui.calendar.CalendarEditScreen(
+                vm = vm,
+                onBack = { nav.popFrom(Routes.CALENDAR_EDIT) },
+                onWorkStyle = { nav.navigate(Routes.workStyle(id)) { launchSingleTop = true } },
+                onPattern = { nav.openPattern(container, id) },
+                onShiftTypes = { nav.navigate(Routes.shiftTypes(id)) { launchSingleTop = true } },
+                onPay = { nav.navigate(Routes.pay(id)) { launchSingleTop = true } },
+                onMoney = { container.calendars.setActive(id); nav.navigateTopLevel(TopLevel.MONEY.route) },
+                onShare = {
+                    container.calendars.setActive(id)
+                    nav.navigateTopLevel(TopLevel.CALENDAR.route)
+                    NoticeLinks.open(NoticeLinks.Target.SHARE, id)
+                },
+                onDeleted = { nav.popFrom(Routes.CALENDAR_EDIT) },
+            )
+        }
+        composable(Routes.SHOP_DAYS, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+            val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
+            val vm = appViewModel(key = "shop_$calendar") { com.bamnat.app.ui.work.ShopDaysViewModel(it, calendar) }
+            com.bamnat.app.ui.work.ShopDaysScreen(vm = vm, onBack = { nav.popFrom(Routes.SHOP_DAYS) }, onSaved = { msg ->
+                nav.popFrom(Routes.SHOP_DAYS)
+                scope.launch { snackbar.showSnackbar(msg) }
             })
         }
         composable(TopLevel.MONEY.route) {
@@ -537,24 +579,33 @@ private fun AppNavHost(
             val vm = appViewModel(key = "money_$calendar") { MoneyViewModel(it, calendar) }
             MoneyScreen(vm = vm, wide = wide, snackbar = snackbar, onOpenPay = { nav.navigate(Routes.pay(vm.calendarId)) { launchSingleTop = true } })
         }
-        composable(Routes.WORK_STYLE) {
+        composable(Routes.WORK_STYLE, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+            val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
             val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()
-            WorkStyleScreen(current = settings.workStyle, title = "근무 형태 바꾸기", onPick = { style ->
-                val before = settings.workStyle
-                container.settingsRepository.update { it.copy(workStyle = style) }
+            val list by container.calendars.calendars.collectAsStateWithLifecycle()
+            val cal = list.firstOrNull { it.id == calendar }
+            val isMain = cal?.isMain != false
+            val current = if (isMain) settings.workStyle else cal?.style ?: settings.workStyle
+            WorkStyleScreen(current = current, title = if (isMain) "근무 형태 바꾸기" else "‘${cal?.name}’ 근무 형태", onPick = { style ->
+                val before = current
+                // [CALS-02] Each calendar keeps its own kind of work: the main one in settings, an added one in its entry.
+                if (isMain) container.settingsRepository.update { it.copy(workStyle = style) } else container.calendars.setStyle(calendar, style)
                 // [WORK-07] A new kind of work goes straight on to what it still needs, as its card said
                 // ("다음: …"): the order for shift work, the days for weekday work, the wage for hourly work.
                 // What it already has is kept, so switching back and forth never asks twice.
                 scope.launch {
-                    if (style == WorkStyle.HOURLY) container.scheduleRepository.addHourlyTypes()
-                    val patterns = container.scheduleRepository.patterns.first()
-                    val pay = container.payStore.profile.value != null
+                    val schedule = container.calendars.repository(calendar)
+                    if (style == WorkStyle.HOURLY) schedule.addHourlyTypes()
+                    val patterns = schedule.patterns.first()
+                    val pay = container.calendars.pay(calendar).profile.value != null
                     fun go(route: String) = nav.navigate(route) { popUpTo(Routes.WORK_STYLE) { inclusive = true }; launchSingleTop = true }
                     when {
                         style == before -> nav.popFrom(Routes.WORK_STYLE)
-                        style == WorkStyle.SHIFT && patterns.none { it is WorkPattern.Rotation } -> go(Routes.pattern(weekdays = false, setup = !pay))
-                        style == WorkStyle.DAY && patterns.none { it is WorkPattern.Weekly } -> go(Routes.pattern(weekdays = true, setup = !pay))
-                        style == WorkStyle.HOURLY && !pay -> go(Routes.pay())
+                        style == WorkStyle.SHIFT && patterns.none { it is WorkPattern.Rotation } -> go(Routes.pattern(weekdays = false, setup = !pay, calendar = calendar))
+                        style == WorkStyle.DAY && patterns.none { it is WorkPattern.Weekly } -> go(Routes.pattern(weekdays = true, setup = !pay, calendar = calendar))
+                        style == WorkStyle.HOURLY && !pay -> go(Routes.pay(calendar))
+                        // [TYPE-03] A shop sets its hours and regular days off next.
+                        style == WorkStyle.BUSINESS -> go(Routes.shopDays(calendar))
                         else -> {
                             nav.popFrom(Routes.WORK_STYLE)
                             snackbar.showSnackbar(style.changedMessage())
@@ -586,12 +637,13 @@ private fun AppNavHost(
             val nudges = appViewModel { CompanyNudgeViewModel(it) }
             SettingsScreen(
                 vm = vm,
-                onOpenShiftTypes = { nav.navigate(Routes.shiftTypes()) { launchSingleTop = true } },
-                onOpenPattern = { nav.navigate(Routes.pattern()) { launchSingleTop = true } },
+                // [CALS-02] 내 근무 and 급여 set up the calendar chosen at their top: each calendar its own.
+                onOpenShiftTypes = { nav.navigate(Routes.shiftTypes(container.calendars.active.value)) { launchSingleTop = true } },
+                onOpenPattern = { nav.openPattern(container, container.calendars.active.value) },
                 onOpenDiagnostics = { testing -> nav.navigate(Routes.diagnostics(testing)) { launchSingleTop = true } },
-                onOpenWorkStyle = { nav.navigate(Routes.WORK_STYLE) { launchSingleTop = true } },
+                onOpenWorkStyle = { nav.navigate(Routes.workStyle(container.calendars.active.value)) { launchSingleTop = true } },
                 onOpenExtraKinds = { nav.navigate(Routes.EXTRA_KINDS) { launchSingleTop = true } },
-                onOpenPay = { nav.navigate(Routes.pay()) { launchSingleTop = true } },
+                onOpenPay = { nav.navigate(Routes.pay(container.calendars.active.value)) { launchSingleTop = true } },
                 wide = wide,
                 snackbar = snackbar,
                 company = if (nudges.enabled) ({
@@ -841,9 +893,15 @@ private fun TabIcon(dest: TopLevel, selected: Boolean, badge: Int) {
     BadgedBox(badge = { IconCountBadge(badge, "문의에 새 답 ${badge}개", cap = 9) }) { Icon(icon, contentDescription = null) }
 }
 
+/** [TYPE-03] 근무 주기 of a calendar; a shop's is its 영업일·정기휴무. */
+private fun NavHostController.openPattern(c: com.bamnat.app.AppContainer, calendar: String) {
+    val style = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
+    navigate(if (style == WorkStyle.BUSINESS) Routes.shopDays(calendar) else Routes.pattern(weekdays = style == WorkStyle.DAY, calendar = calendar)) { launchSingleTop = true }
+}
+
 /** [UX-04] The route a [SettingsGo] opens; the calendar's own sheets are opened through [NoticeLinks] instead. */
 private fun SettingsGo.route(): String? = when (this) {
-    SettingsGo.WORK_STYLE -> Routes.WORK_STYLE
+    SettingsGo.WORK_STYLE -> Routes.workStyle()
     SettingsGo.PATTERN -> Routes.pattern()
     SettingsGo.SHIFT_TYPES -> Routes.shiftTypes()
     SettingsGo.EXTRA_KINDS -> Routes.EXTRA_KINDS

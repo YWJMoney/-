@@ -7,6 +7,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -19,6 +20,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
+import com.bamnat.core.work.words
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.alarm.AlarmScheduler
 import com.bamnat.app.alarm.Notifications
@@ -81,24 +87,41 @@ private fun WorkPage(
     onOpenExtraKinds: () -> Unit,
 ) {
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
+    // [CALS-02] Each calendar's work is its own: the one picked here is the one these rows set up.
+    val work by vm.workSettings.collectAsStateWithLifecycle()
+    val words = work.workStyle.words()
     // [SETUP-12] A first setup left for later goes on from here too; nothing shows when none is waiting.
     com.bamnat.app.ui.setup.SetupResumeCard()
+    CalendarPick()
     SectionCard(title = null) {
         // [WORK-01] Changing the kind of work keeps every record; it only changes what screens show.
-        NavRow("일하는 방식", settings.workStyle?.let { "${it.label} · ${it.description}" } ?: "교대·일근·시급·현장·자영업 중에서 골라요", onOpenWorkStyle)
+        NavRow("일하는 방식", work.workStyle?.let { "${it.label} · ${it.description}" } ?: "교대·일근·시급·현장·자영업 중에서 골라요", onOpenWorkStyle)
         HorizontalDivider()
-        NavRow("근무 주기", when (settings.workStyle) {
-            WorkStyle.SHIFT, null -> "주주휴휴야야휴휴처럼 돌아가는 순서와 시작일"
-            WorkStyle.DAY -> "일하는 요일과 시작일"
-            else -> "되풀이되는 근무가 있으면 정해요"
-        }, onOpenPattern)
+        NavRow(words.pattern, words.patternHint, onOpenPattern)
         HorizontalDivider()
-        NavRow("근무 종류와 시간", shiftsLine(snapshot?.shiftTypes.orEmpty()), onOpenShiftTypes)
-        HorizontalDivider()
-        // [EXTRA-04][EXTRA-07] Each company names, times and pays work on a day off and extra hours its own way.
-        NavRow("연장 휴무일 근무 지정", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·가산 임금", onOpenExtraKinds)
+        NavRow(words.types, shiftsLine(snapshot?.shiftTypes.orEmpty()), onOpenShiftTypes)
+        if (work.workStyle?.usesPayEngine != false) {
+            HorizontalDivider()
+            // [EXTRA-04][EXTRA-07] Each company names, times and pays work on a day off and extra hours its own way.
+            NavRow("연장 휴무일 근무 지정", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·가산 임금", onOpenExtraKinds)
+        }
     }
     Note("일하는 방식을 바꿔도 적어 둔 기록은 그대로 남아요.")
+}
+
+/**
+ * [CALS-02] Which calendar the rows below set up, once there is more than one: the one on the calendar
+ * tab, switched here too, so a calendar made later is set up from here like the first one.
+ */
+@Composable
+private fun CalendarPick() {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val list by c.calendars.calendars.collectAsStateWithLifecycle()
+    if (list.size < 2) return
+    Column(Modifier.padding(horizontal = 4.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("설정할 달력", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        com.bamnat.app.ui.calendar.CalendarScopeChips(c)
+    }
 }
 
 /** "주간 07:00–19:00 · 야간 19:00–07:00 외 2개". */
@@ -294,6 +317,8 @@ private fun NoticesPage(
 @Composable
 private fun PayPage(vm: SettingsViewModel, files: SettingsFiles, onOpenPay: () -> Unit, company: (@Composable ColumnScope.() -> Unit)?) {
     val profile by vm.hasPayProfile.collectAsStateWithLifecycle()
+    // [CALS-02] Each calendar has its own pay setup.
+    CalendarPick()
     SectionCard(title = null) {
         NavRow("급여 계산", if (profile != null) "기본급·수당·회사 규칙·연차·급여일" else "기본급만 넣으면 이번 달 예상 급여가 보여요", onOpenPay)
     }

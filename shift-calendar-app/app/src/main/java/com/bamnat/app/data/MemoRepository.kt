@@ -38,6 +38,30 @@ class MemoRepository(private val db: AppDatabase, private val clock: () -> Long 
     fun memosOn(date: LocalDate): Flow<List<Memo>> =
         dao.observeOn(date.toEpochDay()).map { list -> list.map { it.toModel() } }
 
+    /** [NOTE-01] The memos of [date] that show on calendar [calendar]. */
+    fun memosOn(date: LocalDate, calendar: String): Flow<List<Memo>> =
+        memosOn(date).map { list -> list.filter { it.showsOn(calendar) } }
+
+    /** [NOTE-01] Dates with a memo that shows on calendar [calendar]. */
+    fun datesWithMemos(calendar: String): Flow<Set<LocalDate>> = memos.map { list ->
+        list.mapNotNullTo(HashSet()) { m -> m.date?.takeIf { m.showsOn(calendar) } }
+    }
+
+    /** [NOTE-02] Puts memos on the given calendars (empty for every calendar). */
+    suspend fun setCalendars(memos: Collection<Memo>, calendars: Set<String>) {
+        memos.filter { it.id != 0L && it.calendars != calendars }.forEach { m ->
+            dao.get(m.id)?.toModel()?.let { dao.update(it.copy(calendars = calendars).toEntity()) }
+        }
+    }
+
+    /** [NOTE-01] A calendar that goes away leaves its memos on the calendars it shared them with, or on 내 달력. */
+    suspend fun forgetCalendar(id: String) {
+        dao.getAll().map { it.toModel() }.filter { id in it.calendars }.forEach { m ->
+            val left = (m.calendars - id).ifEmpty { setOf(com.bamnat.app.data.PersonalCalendar.MAIN) }
+            dao.update(m.copy(calendars = left).toEntity())
+        }
+    }
+
     private val _lastDeleted = MutableStateFlow<DeletedMemos?>(null)
     /** The memos most recently moved to the trash, offered for undo until consumed. */
     val lastDeleted: StateFlow<DeletedMemos?> = _lastDeleted.asStateFlow()
@@ -58,10 +82,10 @@ class MemoRepository(private val db: AppDatabase, private val clock: () -> Long 
     }
 
     /** Quick memo from the calendar: one line becomes the body. */
-    suspend fun addQuick(date: LocalDate?, text: String): Memo? {
+    suspend fun addQuick(date: LocalDate?, text: String, calendars: Set<String> = emptySet()): Memo? {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return null
-        return save(Memo(date = date, body = trimmed))
+        return save(Memo(date = date, body = trimmed, calendars = calendars))
     }
 
     /** Copies a memo (as a new, unpinned memo) and returns the copy. */

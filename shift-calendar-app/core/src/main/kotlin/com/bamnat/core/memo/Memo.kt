@@ -24,7 +24,18 @@ data class Memo(
     val reminder: MemoReminder? = null,
     /** [SCHED-01] The [MemoTime.Found.key] the user last answered about, so it is asked once. */
     val reminderAsked: String? = null,
+    /**
+     * [NOTE-01] The calendars this memo shows on, by id; empty for every calendar (the 공용 메모 of
+     * every calendar, and every memo written before calendars had their own).
+     */
+    val calendars: Set<String> = emptySet(),
 ) {
+    /** [NOTE-01] Shown on calendar [id]. */
+    fun showsOn(id: String): Boolean = calendars.isEmpty() || id in calendars
+
+    /** [NOTE-02] In the shared notebook: on every calendar, or on more than one. */
+    val isShared: Boolean get() = calendars.isEmpty() || calendars.size > 1
+
     val inTrash: Boolean get() = deletedAtMillis != null
 
     /** Calendar memos belong to a date; general memos do not. */
@@ -69,6 +80,32 @@ data class Memo(
     companion object {
         private val TAG = Regex("#([\\p{L}\\p{N}_]{1,30})")
     }
+}
+
+/**
+ * [NOTE-02] Which memos the memo tab lists once there is more than one calendar: the calendar on
+ * screen's own and shared ones, the shared notebook (공용 메모장), or every memo.
+ */
+enum class MemoNotebook(val label: String) {
+    CALENDAR("이 달력"),
+    SHARED("공용 메모장"),
+    ALL("모든 메모");
+
+    fun shows(memo: Memo, calendar: String): Boolean = when (this) {
+        CALENDAR -> memo.showsOn(calendar)
+        SHARED -> memo.isShared
+        ALL -> true
+    }
+
+    /** The calendars a memo written in this notebook starts on. */
+    fun newMemoCalendars(calendar: String): Set<String> = if (this == SHARED) emptySet() else setOf(calendar)
+}
+
+/** [NOTE-01] A memo's calendars in one text column: empty for all, else ",id1,id2," so a LIKE finds one. */
+object MemoCalendars {
+    fun encode(ids: Set<String>): String = if (ids.isEmpty()) "" else ids.sorted().joinToString(",", prefix = ",", postfix = ",")
+
+    fun decode(raw: String?): Set<String> = raw.orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
 }
 
 /**

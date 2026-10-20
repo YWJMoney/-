@@ -124,4 +124,6 @@ data class MemoEntity(
     @ColumnInfo(defaultValue = "0") val remindNotify: Boolean = false,
     /** [SCHED-01] The found time the user last answered about. */
     @ColumnInfo(defaultValue = "NULL") val remindAsked: String? = null,
+    /** [NOTE-01] See [com.bamnat.core.memo.MemoCalendars]; '' shows the memo on every calendar. */
+    @ColumnInfo(defaultValue = "''") val calendars: String = "",
 )

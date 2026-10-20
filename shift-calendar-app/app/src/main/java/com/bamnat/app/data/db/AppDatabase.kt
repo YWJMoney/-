@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DayExtraEntity::class, ReceivableEntity::class, ReceivablePaymentEntity::class, ImportedEventEntity::class,
         MoneyAccountEntity::class, MoneyBudgetEntity::class, MoneyCategoryEntity::class,
     ],
-    version = 15,
+    version = 16,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -34,7 +34,7 @@ abstract class AppDatabase : RoomDatabase() {
         /** [MCAL-01] Each added calendar is a database of its own with the same tables; only its schedule ones are used. */
         fun create(context: Context, name: String = "bamnat.db"): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, name)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
                 .build()
 
         /** Version 2: several alarms per shift, hand-set alarms per day, memo trash. */
@@ -230,6 +230,16 @@ abstract class AppDatabase : RoomDatabase() {
                         if (months > 1) db.execSQL("UPDATE money_entries SET installments = ? WHERE id = ?", arrayOf<Any>(months.coerceAtMost(60), c.getLong(0)))
                     }
                 }
+            }
+        }
+
+        /**
+         * Version 16 [NOTE-01]: a memo names the calendars it shows on. Every memo written before
+         * stays on every calendar ('' is all), so nothing a user wrote goes out of sight.
+         */
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE memos ADD COLUMN calendars TEXT NOT NULL DEFAULT ''")
             }
         }
 

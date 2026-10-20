@@ -14,6 +14,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import com.bamnat.app.data.ThemeMode
 import com.bamnat.app.share.ShareLinkId
 import com.bamnat.app.ui.AppRoot
@@ -95,6 +96,9 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         HomeRequests.onStart()
         appContainer.verifyAlarms()
+        // [TYPE-04] Shop days that passed with no sales become 임시휴무 when the app is opened.
+        val c = appContainer
+        c.appScope.launch { runCatching { com.bamnat.app.ui.work.ShopKeeper.catchUp(c) } }
     }
 
     override fun onStop() {

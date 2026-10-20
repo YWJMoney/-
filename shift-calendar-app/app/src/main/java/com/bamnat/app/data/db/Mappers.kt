@@ -171,6 +171,7 @@ fun MemoEntity.toModel() = Memo(
     deletedAtMillis = deletedAt,
     reminder = memoReminder(remindAt, remindRing, remindNotify),
     reminderAsked = remindAsked,
+    calendars = com.bamnat.core.memo.MemoCalendars.decode(calendars),
 )
 
 /** [SCHED-01] A stored schedule, or null when it is unreadable or neither rings nor notifies. */
@@ -196,4 +197,5 @@ fun Memo.toEntity() = MemoEntity(
     remindRing = reminder?.ring == true,
     remindNotify = reminder?.notify == true,
     remindAsked = reminderAsked,
+    calendars = com.bamnat.core.memo.MemoCalendars.encode(calendars),
 )

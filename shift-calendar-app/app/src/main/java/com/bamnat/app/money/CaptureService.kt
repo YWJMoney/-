@@ -56,10 +56,12 @@ class CaptureService : NotificationListenerService() {
         val texts = found.filter { !filter.drops(sbn.packageName, it) }
         if (texts.isEmpty()) return
         val messenger = sbn.packageName in MESSENGERS
+        val pkg = sbn.packageName
         container.appScope.launch {
             texts.forEach { text ->
                 // Any text from any app reaches the parser; one it trips on must not take the app down.
-                runCatching { container.moneyRepository.capture(text, app, sbn.postTime, messenger) }
+                // [CALS-04] Written into the calendar its card, account or app belongs to, and only there.
+                runCatching { container.capture(text, pkg, app, sbn.postTime, messenger) }
             }
         }
     }

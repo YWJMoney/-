@@ -29,6 +29,8 @@ data class PersonalCalendar(
     val style: WorkStyle? = null,
     /** [MCAL-01] Its shifts ring like the main calendar's; the main calendar follows the master switch only. */
     val alarms: Boolean = true,
+    /** [TYPE-03] For a shop: its hours and regular days off; null until set. */
+    val shop: com.bamnat.core.work.ShopRules? = null,
     /** False while its first setup is still being answered; such a calendar is not listed yet. */
     val ready: Boolean = true,
     val createdAt: Long = 0,
@@ -121,7 +123,7 @@ class CalendarBook(
     /** [MCAL-06] The main calendar's money and pay; added calendars keep their own. */
     private val mainMoney: () -> MoneyRepository = { error("No money here") },
     private val mainPay: () -> com.bamnat.app.pay.PayStore = { error("No pay here") },
-    private val moneyOf: (AppDatabase) -> MoneyRepository = { MoneyRepository(it) },
+    private val moneyOf: (String, AppDatabase) -> MoneyRepository = { _, db -> MoneyRepository(db) },
     private val payOf: (String) -> com.bamnat.app.pay.PayStore = { error("No pay here") },
 ) {
     private data class State(val calendars: List<PersonalCalendar>, val order: List<String>, val active: String)
@@ -177,7 +179,7 @@ class CalendarBook(
     fun money(id: String): MoneyRepository {
         if (id == PersonalCalendar.MAIN || get(id) == null) return mainMoney()
         val o = opened(id)
-        return o.money ?: moneyOf(o.db).also { o.money = it }
+        return o.money ?: moneyOf(id, o.db).also { o.money = it }
     }
 
     /**
@@ -276,6 +278,24 @@ class CalendarBook(
 
     fun recolor(id: String, color: Long) = update(id) { it.copy(color = color) }
 
+    /** [CALS-02] An added calendar's kind of work, changed from its own settings; the main one's lives in settings. */
+    fun setStyle(id: String, style: WorkStyle) {
+        if (id != PersonalCalendar.MAIN) update(id) { it.copy(style = style) }
+    }
+
+    /** [TYPE-03] A calendar's shop days: hours, regular days off and 임시휴무 by itself. */
+    fun setShop(id: String, rules: com.bamnat.core.work.ShopRules?) {
+        update(id) { it.copy(shop = rules) }
+    }
+
+    /** [TYPE-04] Changes a calendar's shop rules from their current value, so two writers do not undo each other. */
+    fun updateShop(id: String, transform: (com.bamnat.core.work.ShopRules) -> com.bamnat.core.work.ShopRules) {
+        update(id) { c -> c.shop?.let { c.copy(shop = transform(it)) } ?: c }
+    }
+
+    /** [CALS-02] The kind of work of calendar [id]: an added one's own, the main one's from [mainStyle]. */
+    fun styleOf(id: String, mainStyle: WorkStyle?): WorkStyle? = get(id)?.takeIf { !it.isMain }?.style ?: mainStyle
+
     fun setAlarms(id: String, on: Boolean) {
         if (id != PersonalCalendar.MAIN) update(id) { it.copy(alarms = on) }
     }
@@ -313,7 +333,7 @@ class CalendarBook(
         val s = state.value
         val main = s.calendars.firstOrNull { it.isMain } ?: defaultMain()
         val restoredMain = calendars.firstOrNull { it.isMain }
-        val list = listOf(restoredMain?.let { main.copy(name = it.name, color = it.color) } ?: main) +
+        val list = listOf(restoredMain?.let { main.copy(name = it.name, color = it.color, shop = it.shop) } ?: main) +
             calendars.filter { !it.isMain }.map { it.copy(ready = true) }
         write(State(list, order ?: s.order, PersonalCalendar.MAIN))
     }
@@ -386,6 +406,7 @@ class CalendarBook(
         fun PersonalCalendar.toJson(): JSONObject = JSONObject()
             .put("id", id).put("name", name).put("color", color).putOpt("style", style?.name)
             .put("alarms", alarms).put("ready", ready).put("created", createdAt)
+            .putOpt("shop", shop?.let(::shopJson))
 
         fun fromJson(o: JSONObject): PersonalCalendar? {
             val id = o.optString("id").takeIf { it.isNotEmpty() && it.length <= 40 && it.all { c -> c.isLetterOrDigit() } } ?: return null
@@ -397,7 +418,31 @@ class CalendarBook(
                 alarms = o.optBoolean("alarms", true),
                 ready = o.optBoolean("ready", true),
                 createdAt = o.optLong("created"),
+                shop = o.optJSONObject("shop")?.let(::shopOf),
             )
         }
+
+        /** [TYPE-03] */
+        fun shopJson(r: com.bamnat.core.work.ShopRules): JSONObject = JSONObject()
+            .put("open", r.open.toString()).put("close", r.close.toString())
+            .put("closed", r.closedWeekdays.joinToString(",") { it.name })
+            .put("monthly", com.bamnat.core.work.NthWeekday.encode(r.monthly))
+            .put("holidays", r.holidaysClosed).put("auto", r.autoClosed)
+            .putOpt("checked", r.checkedUntil?.toString())
+            .putOpt("autoDays", r.autoClosedDays.sorted().joinToString(",").ifEmpty { null })
+
+        /** A shop entry that cannot be read is left unset rather than turned into default rules. */
+        fun shopOf(o: JSONObject): com.bamnat.core.work.ShopRules? = runCatching {
+            com.bamnat.core.work.ShopRules(
+                open = java.time.LocalTime.parse(o.optString("open", "10:00")),
+                close = java.time.LocalTime.parse(o.optString("close", "22:00")),
+                closedWeekdays = o.optString("closed").split(',').mapNotNull { n -> runCatching { java.time.DayOfWeek.valueOf(n) }.getOrNull() }.toSet(),
+                monthly = com.bamnat.core.work.NthWeekday.decode(o.optString("monthly")),
+                holidaysClosed = o.optBoolean("holidays"),
+                autoClosed = o.optBoolean("auto", true),
+                checkedUntil = o.optString("checked").takeIf { it.isNotEmpty() }?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() },
+                autoClosedDays = o.optString("autoDays").split(',').mapNotNull { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }.toSet(),
+            )
+        }.getOrNull()
     }
 }

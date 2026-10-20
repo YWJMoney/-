@@ -128,6 +128,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -156,8 +157,15 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val snoozeAt: StateFlow<Long?> = container.alarmScheduler.snoozeAt
     /** [MCAL-01] The user's calendars, for 설정 > 달력. */
     val calendars: StateFlow<List<com.bamnat.app.data.PersonalCalendar>> = container.calendars.calendars
-    val snapshot: StateFlow<ScheduleSnapshot?> = container.scheduleRepository.snapshot
+    /** [CALS-02] 내 근무 and 급여 follow the calendar picked at their top (the one on the calendar tab). */
+    val activeCalendar: StateFlow<String> = container.calendars.active
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val snapshot: StateFlow<ScheduleSnapshot?> = container.calendars.activeSnapshot
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    /** [CALS-02] The settings as the calendar picked sees them: its own kind of work. */
+    val workSettings: StateFlow<AppSettings> = kotlinx.coroutines.flow.combine(container.settingsRepository.settings, container.calendars.activeCalendar) { s, cal ->
+        com.bamnat.app.data.CalendarScope.run { s.forCalendar(cal) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, container.settingsRepository.current)
     fun cancelSnooze() = container.alarmScheduler.cancelSnooze()
     fun update(transform: (AppSettings) -> AppSettings) = container.settingsRepository.update(transform)
     fun canScheduleExact() = container.alarmScheduler.canScheduleExact()
@@ -269,7 +277,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     /** [COMM-00] A company file read and checked, waiting for the user to apply it. */
     private val _pendingCompany = MutableStateFlow<Pair<String, com.bamnat.app.data.CompanySummary>?>(null)
     val pendingCompany: StateFlow<Pair<String, com.bamnat.app.data.CompanySummary>?> = _pendingCompany.asStateFlow()
-    val hasPayProfile: StateFlow<com.bamnat.core.pay.PayProfile?> = container.payStore.profile
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val hasPayProfile: StateFlow<com.bamnat.core.pay.PayProfile?> = container.calendars.active
+        .flatMapLatest { container.calendars.pay(it).profile }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, container.calendars.pay(container.calendars.active.value).profile.value)
 
     /** [ADMIN-02] 문의하기 in the app when the build has the company server, else by mail. */
     val inquiryOn: Boolean get() = container.inquiryApi.enabled
@@ -605,8 +616,9 @@ private fun SettingsHub(
         Spacer(Modifier.size(4.dp))
         Shortcuts(onFound)
         Spacer(Modifier.size(4.dp))
+        val work by vm.workSettings.collectAsStateWithLifecycle()
         for (p in SettingsPage.entries) {
-            GroupRow(p.icon, p.title, summary(p, settings, snapshot, profile != null, notificationsOk), selected == p) { onOpen(p) }
+            GroupRow(p.icon, p.title, summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk), selected == p) { onOpen(p) }
         }
         // [COMM-07] Its own row, so it is one tap away rather than inside 급여.
         if (onOpenBoard != null) GroupRow(Icons.Outlined.Forum, "회사 규칙 광장", "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론", false, onClick = onOpenBoard)

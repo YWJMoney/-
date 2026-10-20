@@ -65,6 +65,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -171,6 +173,8 @@ fun AutoRecordDialog(onPaste: () -> Unit, onDismiss: () -> Unit, onRules: (() ->
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 AutoRecordControls(onPaste = { onDismiss(); onPaste() })
+                // [CALS-04] Which calendar the notifications go to, once there is more than one.
+                CaptureCalendarControls()
                 // [LEDG-21][LEDG-22] How it sorts and what it leaves out.
                 if (onRules != null) OutlinedButton(onClick = onRules, modifier = Modifier.fillMaxWidth()) { Text("자동 분류 규칙") }
                 if (onFilter != null) OutlinedButton(onClick = onFilter, modifier = Modifier.fillMaxWidth()) { Text("알림 거르기") }
@@ -180,6 +184,69 @@ fun AutoRecordDialog(onPaste: () -> Unit, onDismiss: () -> Unit, onRules: (() ->
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
+}
+
+/**
+ * [CALS-03] Where payment notifications are written: one calendar for all of them, and any app sent
+ * to a calendar of its own. A card or account added in a calendar always takes its payments there.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun CaptureCalendarControls() {
+    val c = LocalContext.current.appContainer
+    val calendars by c.calendars.calendars.collectAsStateWithLifecycle()
+    val prefs by c.autoRecordPrefs.state.collectAsStateWithLifecycle()
+    if (calendars.size < 2) return
+    var apps by remember { mutableStateOf(false) }
+    Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("결제 알림을 쌓을 달력", style = MaterialTheme.typography.titleSmall)
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            calendars.forEach { cal ->
+                androidx.compose.material3.FilterChip(
+                    selected = prefs.calendar == cal.id || (calendars.none { it.id == prefs.calendar } && cal.isMain),
+                    onClick = { c.autoRecordPrefs.setCalendar(cal.id) },
+                    label = { Text(cal.name, maxLines = 1) },
+                )
+            }
+        }
+        Text(
+            "카드·통장을 어느 달력의 결제수단에 넣어 두면 그 카드 알림은 늘 그 달력에만 쌓여요. 다른 달력에는 보이지 않아요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (prefs.seenApps.isNotEmpty()) {
+            TextButton(onClick = { apps = true }) { Text("앱마다 달력 정하기" + prefs.appCalendars.size.takeIf { it > 0 }?.let { " ($it)" }.orEmpty()) }
+        }
+    }
+    if (apps) {
+        AlertDialog(
+            onDismissRequest = { apps = false },
+            title = { Text("앱마다 달력 정하기") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("예를 들어 가게 통장 앱의 알림은 가게 달력에만 쌓이게 할 수 있어요.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    prefs.seenApps.entries.sortedBy { it.value }.forEach { (pkg, label) ->
+                        Text(label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
+                        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            androidx.compose.material3.FilterChip(
+                                selected = prefs.appCalendars[pkg] == null,
+                                onClick = { c.autoRecordPrefs.setAppCalendar(pkg, null) },
+                                label = { Text("기본") },
+                            )
+                            calendars.forEach { cal ->
+                                androidx.compose.material3.FilterChip(
+                                    selected = prefs.appCalendars[pkg] == cal.id,
+                                    onClick = { c.autoRecordPrefs.setAppCalendar(pkg, cal.id) },
+                                    label = { Text(cal.name, maxLines = 1) },
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { apps = false }) { Text("완료") } },
+        )
+    }
 }
 
 @Composable

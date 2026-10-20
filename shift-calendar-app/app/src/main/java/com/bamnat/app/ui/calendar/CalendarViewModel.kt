@@ -47,6 +47,7 @@ import com.bamnat.core.schedule.datesBetween
 import com.bamnat.core.work.CalendarFocus
 import com.bamnat.core.work.asksHolidaysOff
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -218,7 +219,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     val memoDates: StateFlow<Set<LocalDate>> =
-        memoRepo.datesWithMemos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+        // [NOTE-01] Only the memos that show on the calendar on screen.
+        container.calendars.active.flatMapLatest { memoRepo.datesWithMemos(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
     val upcomingAlarm: StateFlow<UpcomingAlarm?> = container.alarmScheduler.upcoming
 
     /** [SETUP-01] A first setup left for later, to go on from the calendar. */
@@ -291,7 +293,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private val _messages = MutableSharedFlow<UndoMessage>(extraBufferCapacity = 4)
     val messages: SharedFlow<UndoMessage> = _messages.asSharedFlow()
 
-    fun memosOn(date: LocalDate): Flow<List<Memo>> = memoRepo.memosOn(date)
+    fun memosOn(date: LocalDate): Flow<List<Memo>> = container.calendars.active.flatMapLatest { memoRepo.memosOn(date, it) }
 
     /** [MKT-08] What was changed on [date], newest first. */
     fun changesOn(date: LocalDate): Flow<List<com.bamnat.app.data.DayChange>> = schedule.changesOn(date)
@@ -376,7 +378,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [FEAT-17] Memos that belong to a date, for the list under the calendar and memo-first cells. */
-    val datedMemos: StateFlow<List<Memo>> = memoRepo.memos
+    val datedMemos: StateFlow<List<Memo>> = combine(memoRepo.memos, container.calendars.active) { list, cal -> list.filter { it.showsOn(cal) } }
         .map { list -> list.filter { it.date != null && !it.inTrash && !it.isBlank }.sortedWith(compareBy({ it.date }, { -it.updatedAtMillis })) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -792,7 +794,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     fun addQuickMemo(date: LocalDate, text: String) {
         viewModelScope.launch {
-            val memo = memoRepo.addQuick(date, text) ?: return@launch
+            // [NOTE-01] A quick memo belongs to the calendar it was written on.
+            val memo = memoRepo.addQuick(date, text, setOf(container.calendars.active.value)) ?: return@launch
             // [SCHED-01] A quick line that names a time is asked about, like a memo written in the editor.
             val found = com.bamnat.core.memo.MemoTime.find(memo, java.time.LocalDateTime.now()) ?: return@launch
             _messages.tryEmit(UndoMessage("‘${found.phrase}’, 일정으로 넣을까요?", actionLabel = "일정으로 넣기") {
@@ -868,9 +871,12 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** [CAL-10] The day's sales as they were come back with undo, or go away when there were none. */
     override fun saveSales(sales: DailySales) {
         val money = money
+        val calendar = container.calendars.active.value
         container.appScope.launch {
             val before = money.book.first().sales.firstOrNull { it.date == sales.date }
             money.save(sales)
+            // [TYPE-04] A day closed by itself for having no sales opens again once sales are written.
+            com.bamnat.app.ui.work.ShopKeeper.salesSaved(container, calendar, sales.date, sales.sales)
             val text = when {
                 sales.sales == 0L && sales.costs == 0L && sales.note.isBlank() -> "${Fmt.monthDay(sales.date)} 매출을 지웠어요"
                 before == null -> "${Fmt.monthDay(sales.date)} 매출 ${Fmt.won(sales.sales)}을 적었어요"

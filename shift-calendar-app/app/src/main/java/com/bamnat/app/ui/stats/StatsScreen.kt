@@ -62,6 +62,10 @@ import com.bamnat.app.ui.money.wonBrief
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import com.bamnat.core.work.HourlyWeek
+import com.bamnat.core.work.WorkStats
+import com.bamnat.core.work.WorkStyle
+import com.bamnat.core.work.words
 import java.time.DayOfWeek
 import java.time.YearMonth
 
@@ -124,13 +128,9 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // [TYPE-01] The tab's own words: 출근·시급, 일감·수입, 매출·영업.
             Text(
-                when {
-                    pays -> "근무·급여"
-                    style?.usesJobs == true -> "일감 통계"
-                    style?.usesSales == true -> "매출 통계"
-                    else -> "근무 통계"
-                },
+                style.words().statsTitle,
                 style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f),
             )
             IconButton(onClick = { vm.showMonth(month.minusMonths(1)) }) {
@@ -146,7 +146,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
 
         val money = book
         if (money != null && style?.usesJobs == true) JobFigures(money, month, columns)
-        if (money != null && style?.usesSales == true) SalesFigures(money, month, columns)
+        if (money != null && style?.usesSales == true) SalesFigures(money, month, columns) { snap.resolver.resolve(it).isWorkDay }
         if (!hasHours) {
             Text("달력에 근무 시간을 넣으면 주별 근무시간과 3개월 평균도 여기서 볼 수 있어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -166,6 +166,9 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                 caption = "${summary.restDayWorkDays}일") },
         )
         TileGrid(tiles, columns)
+
+        // [TYPE-06] A part-timer's weeks against the 15 hours 주휴수당 needs.
+        if (style == WorkStyle.HOURLY) HolidayPayWeeks(summary.weeks.map { HourlyWeek(it.start, it.totalMinutes, 0) }, month)
 
         // [NAV-01] 근무·급여: the month's pay right under its hours.
         if (pays) {
@@ -440,26 +443,120 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
         { md -> StatTile("남은 돈", Fmt.won(m.jobProfit), md, caption = m.jobCosts.takeIf { it > 0 }?.let { "경비 ${wonBrief(it)}" }) },
     )
     TileGrid(tiles, columns)
+    // [TYPE-07] Who the month's work came from and who still owes.
+    val clients = remember(book, month) { WorkStats.clients(month, book.jobs) }
+    if (clients.isNotEmpty()) {
+        SectionCard(title = "거래처별") {
+            clients.take(8).forEach { c ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(c.client, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                        Text("${c.jobs}건" + (if (c.owed > 0) " · 받을 돈 ${wonBrief(c.owed)}" else ""),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (c.owed > 0) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text(Fmt.won(c.earned), style = MaterialTheme.typography.titleSmall.merge(NumberStyle))
+                }
+            }
+            if (m.jobEarned > 0) {
+                Text("3.3% 떼고 받으면 ${Fmt.won(m.jobEarned - m.jobEarned * 33 / 1000)} · 5월 종합소득세 때 돌려받을 수 있어요",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp))
+            }
+        }
+    }
     if (trend.any { it.second > 0 }) {
         SectionCard(title = "최근 6개월 번 돈") { MonthTrend(trend, floor = 1) { wonBrief(it) } }
     }
 }
 
-/** [LEDG-15][WORK-03] A shop's month in sales: the total, costs, what is left and a day's average, and six months of sales. */
+/**
+ * [LEDG-15][WORK-03][TYPE-05] A shop's month in sales: the total, costs, what is left, a typical open day,
+ * open and closed days, each weekday's average and six months of sales.
+ */
 @Composable
-private fun SalesFigures(book: MoneyBook, month: YearMonth, columns: Int) {
+private fun SalesFigures(book: MoneyBook, month: YearMonth, columns: Int, isOpen: (java.time.LocalDate) -> Boolean) {
     val m = remember(book, month) { book.month(month) }
-    val best = remember(book, month) { book.sales.filter { YearMonth.from(it.date) == month }.maxByOrNull { it.sales }?.takeIf { it.sales > 0 } }
+    val shop = remember(book, month, isOpen) { WorkStats.shop(month, book.sales, isOpen) }
     val trend = remember(book, month) { (5 downTo 0).map { month.minusMonths(it.toLong()).let { mm -> mm to book.month(mm).sales } } }
     val tiles: List<@Composable (Modifier) -> Unit> = listOf(
         { md -> StatTile("${month.monthValue}월 매출", Fmt.won(m.sales), md, caption = "${m.salesDays}일 적음") },
         { md -> StatTile("경비", Fmt.won(m.salesCosts), md) },
         { md -> StatTile("남은 돈", Fmt.won(m.salesNet), md, warning = m.salesNet < 0) },
-        { md -> StatTile("하루 평균", Fmt.won(if (m.salesDays > 0) m.sales / m.salesDays else 0), md,
-            caption = best?.let { "최고 ${it.date.monthValue}/${it.date.dayOfMonth} ${wonBrief(it.sales)}" }) },
+        { md -> StatTile("영업일 평균", Fmt.won(shop.perOpenDay), md,
+            caption = shop.best?.let { "최고 ${it.date.monthValue}/${it.date.dayOfMonth} ${wonBrief(it.sales)}" }) },
+        { md -> StatTile("영업일", "${shop.openDays}일", md, caption = "휴무 ${shop.closedDays}일") },
+        { md -> StatTile("가장 적은 날", shop.worst?.let { wonBrief(it.sales) } ?: "-", md,
+            caption = shop.worst?.let { "${it.date.monthValue}/${it.date.dayOfMonth} ${WEEKDAY[it.date.dayOfWeek.ordinal]}" }) },
     )
     TileGrid(tiles, columns)
+    if (shop.salesDays > 0) {
+        SectionCard(title = "요일별 평균 매출") {
+            val max = (shop.byWeekday.values.maxOrNull() ?: 0).coerceAtLeast(1)
+            Row(
+                Modifier.fillMaxWidth().height(120.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                DayOfWeek.entries.forEach { d ->
+                    val v = shop.byWeekday[d] ?: 0
+                    val best = d == shop.bestWeekday
+                    Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(if (v > 0) wonBrief(v) else "", style = MaterialTheme.typography.labelSmall.merge(NumberStyle),
+                            maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
+                            Box(
+                                Modifier.widthIn(max = 32.dp).fillMaxWidth()
+                                    .fillMaxHeight((v.toFloat() / max).coerceIn(0.02f, 1f))
+                                    .clip(MaterialTheme.shapes.extraSmall)
+                                    .background(if (best) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                            )
+                        }
+                        Text(WEEKDAY[d.ordinal], style = MaterialTheme.typography.labelSmall,
+                            color = if (best) MaterialTheme.colorScheme.primary else Color.Unspecified)
+                    }
+                }
+            }
+            shop.bestWeekday?.let {
+                Text("${WEEKDAY[it.ordinal]}요일이 평균 매출이 가장 높아요. 휴무일과 매출 없는 날은 평균에서 빼요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp))
+            }
+        }
+    }
     if (trend.any { it.second > 0 }) {
         SectionCard(title = "최근 6개월 매출") { MonthTrend(trend, floor = 1) { wonBrief(it) } }
+    }
+}
+
+private val WEEKDAY = listOf("월", "화", "수", "목", "금", "토", "일")
+
+/** [TYPE-06] Each week's hours with whether it reaches 주휴수당 (15 hours a week, 근로기준법 제55조·제18조). */
+@Composable
+private fun HolidayPayWeeks(weeks: List<HourlyWeek>, month: YearMonth) {
+    val cal = LocalCalendarColors.current
+    SectionCard(title = "주휴수당 (주 15시간 이상)") {
+        weeks.forEach { w ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("${Fmt.shortDate(w.start)}주", style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), modifier = Modifier.weight(1f))
+                Text(HoursFormat.korean(w.minutes) + "  ", style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    when {
+                        w.holidayPay -> "주휴 ${HoursFormat.korean(w.holidayPayMinutes)}"
+                        w.minutes == 0 -> "-"
+                        else -> "${HoursFormat.korean(w.shortBy)} 모자람"
+                    },
+                    style = MaterialTheme.typography.titleSmall.merge(NumberStyle),
+                    color = if (w.holidayPay) MaterialTheme.colorScheme.primary else cal.warning.takeIf { w.minutes > 0 } ?: Color.Unspecified,
+                )
+            }
+        }
+        val paid = weeks.count { it.holidayPay }
+        Text(
+            "${month.monthValue}월에 걸친 주 ${weeks.size}번 중 ${paid}번 주휴수당을 받을 수 있어요. 주휴 시간은 주 근무시간 ÷ 40 × 8 (최대 8시간)이고, 결근한 주는 빠져요. 참고용이에요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp),
+        )
     }
 }

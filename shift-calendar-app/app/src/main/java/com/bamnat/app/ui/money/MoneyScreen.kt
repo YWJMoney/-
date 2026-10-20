@@ -357,7 +357,13 @@ class MoneyViewModel(
     }
 
     fun runUndo(message: UndoMessage) { message.undo?.let { u -> container.appScope.launch { u() } } }
-    override fun saveSales(sales: DailySales) { container.appScope.launch { money.save(sales) } }
+    override fun saveSales(sales: DailySales) {
+        container.appScope.launch {
+            money.save(sales)
+            // [TYPE-04] Sales on a day closed by itself open it again, from 돈 as from the calendar.
+            com.bamnat.app.ui.work.ShopKeeper.salesSaved(container, calendarId, sales.date, sales.sales)
+        }
+    }
 }
 
 /**

@@ -393,7 +393,7 @@ fun AccountEditor(
                     modifier = Modifier.fillMaxWidth())
                 if (card) {
                     OutlinedTextField(value = last4, onValueChange = { v -> last4 = v.filter(Char::isDigit).take(4) }, singleLine = true,
-                        label = { Text("카드 끝 4자리 (선택)") }, supportingText = { Text("결제 알림을 이 카드로 알아서 적어요") },
+                        label = { Text("카드 끝 4자리 (선택)") }, supportingText = { Text("이 카드의 결제 알림은 이 달력에만 알아서 적어요") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done), modifier = Modifier.fillMaxWidth())
                 }
                 if (kind == AccountType.CREDIT) {

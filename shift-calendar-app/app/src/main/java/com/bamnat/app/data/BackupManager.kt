@@ -201,7 +201,9 @@ class BackupManager(
                     .putOpt("deleted", m.deletedAt)
                     // [SCHED-01] Version 13. Older apps ignore these keys and keep the memo plain.
                     .putOpt("remindAt", m.remindAt).put("remindRing", m.remindRing).put("remindNotify", m.remindNotify)
-                    .putOpt("remindAsked", m.remindAsked),
+                    .putOpt("remindAsked", m.remindAsked)
+                    // [NOTE-01] Version 16. Without it a memo shows on every calendar, as before.
+                    .putOpt("calendars", m.calendars.ifEmpty { null }),
             )
         }
         root.put("memos", memos)
@@ -440,6 +442,7 @@ class BackupManager(
                 deletedAt = if (o.isNull("deleted") || !o.has("deleted")) null else o.getLong("deleted"),
                 remindAt = o.optStringOrNull("remindAt"), remindRing = o.optBoolean("remindRing"),
                 remindNotify = o.optBoolean("remindNotify"), remindAsked = o.optStringOrNull("remindAsked"),
+                calendars = com.bamnat.core.memo.MemoCalendars.encode(com.bamnat.core.memo.MemoCalendars.decode(o.optStringOrNull("calendars"))),
             )
         }
         val sleep = root.optJSONArray("sleep")?.objects()?.map { o ->

@@ -138,15 +138,44 @@ object MoneyCategories {
     fun of(kind: MoneyKind) = when (kind) { MoneyKind.EXPENSE -> expense; MoneyKind.INCOME -> income; MoneyKind.TRANSFER -> transfer }
 
     /**
+     * [TYPE-08] The built-in categories of a calendar of [style]: field and shop work see their own
+     * costs and income first (자재비·유류비, 재료비·임대료·카드수수료 …), then the household ones, so a
+     * work calendar's money reads like a work book (근무유형별 시장조사 7절).
+     */
+    fun of(kind: MoneyKind, style: com.bamnat.core.work.WorkStyle?): List<String> {
+        val work = when (style) {
+            com.bamnat.core.work.WorkStyle.FIELD -> when (kind) {
+                MoneyKind.EXPENSE -> FIELD_EXPENSE
+                MoneyKind.INCOME -> FIELD_INCOME
+                MoneyKind.TRANSFER -> emptyList()
+            }
+            com.bamnat.core.work.WorkStyle.BUSINESS -> when (kind) {
+                MoneyKind.EXPENSE -> SHOP_EXPENSE
+                MoneyKind.INCOME -> SHOP_INCOME
+                MoneyKind.TRANSFER -> listOf("사장님 인출")
+            }
+            else -> emptyList()
+        }
+        if (work.isEmpty()) return of(kind)
+        return (work + of(kind)).distinct().filter { it != OTHER } + OTHER
+    }
+
+    val FIELD_EXPENSE = listOf("자재비", "공구·장비", "유류비", "차량유지", "톨비·주차", "현장식대", "작업복·안전", "숙박", "외주·인건비", "플랫폼수수료", "소모품")
+    val FIELD_INCOME = listOf("일감 수입", "일당", "선금", "잔금")
+    val SHOP_EXPENSE = listOf("재료비", "포장·소모품", "임대료", "관리비", "인건비", "4대보험", "카드수수료", "배달앱수수료", "광고·마케팅", "장비·수리", "세금", "대출이자")
+    val SHOP_INCOME = listOf("카드매출", "현금매출", "계좌이체", "배달앱매출")
+
+    /**
      * [LEDG-14] The categories for [kind] as the user arranged them: their order and own names
      * first, hidden ones left out, then any built-in name they never touched. 기타 is always there,
      * last, so every line has somewhere to go.
      */
-    fun of(kind: MoneyKind, edits: List<CategoryEdit>): List<String> {
+    fun of(kind: MoneyKind, edits: List<CategoryEdit>, style: com.bamnat.core.work.WorkStyle? = null): List<String> {
+        val base = of(kind, style)
         val mine = edits.filter { it.kind == kind }.sortedWith(compareBy({ it.position }, { it.name }))
-        if (mine.isEmpty()) return of(kind)
+        if (mine.isEmpty()) return base
         val touched = mine.map { it.name }.toSet()
-        val shown = mine.filter { !it.hidden }.map { it.name } + of(kind).filter { it !in touched }
+        val shown = mine.filter { !it.hidden }.map { it.name } + base.filter { it !in touched }
         return shown.filter { it != OTHER }.distinct() + OTHER
     }
 
@@ -290,6 +319,8 @@ data class MoneyBook(
     val budgets: List<MoneyBudget> = emptyList(),
     /** [LEDG-14] The user's own categories, hidden ones and their order. */
     val categories: List<CategoryEdit> = emptyList(),
+    /** [TYPE-08] The calendar's kind of work, which picks its built-in categories. */
+    val style: com.bamnat.core.work.WorkStyle? = null,
 ) {
     fun month(month: YearMonth, payEstimate: Long? = null) = MoneyCalculator.month(month, entries, jobs, sales, payEstimate)
     fun days(month: YearMonth) = MoneyCalculator.days(month, entries, jobs, sales)
@@ -298,7 +329,7 @@ data class MoneyBook(
     fun on(date: LocalDate) = DayBook(entries.filter { it.date == date }, jobs.filter { it.covers(date) }, sales.firstOrNull { it.date == date })
 
     /** [LEDG-14] The categories offered for [kind], in the user's order. */
-    fun categoriesOf(kind: MoneyKind): List<String> = MoneyCategories.of(kind, categories)
+    fun categoriesOf(kind: MoneyKind): List<String> = MoneyCategories.of(kind, categories, style)
 
     /** [LEDG-08] The accounts offered in pickers and lists, in the user's order. */
     val activeAccounts: List<MoneyAccount> get() = accounts.filter { !it.hidden }.sortedWith(compareBy({ it.order }, { it.id }))
