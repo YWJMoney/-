@@ -1852,7 +1852,9 @@ async function adminInquiries(request, env, url, path, now) {
     await env.DB.batch([
       stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)",
         row.id, body.text.normalize("NFC").replace(/\r\n?/g, "\n").trim(), actorName(env), now),
-      stmt(env, "UPDATE inquiries SET status = ?, updated_at = ? WHERE id = ?", status, now, row.id),
+      // [ADMIN-12] Whoever answers a question nobody took has taken it.
+      stmt(env, `UPDATE inquiries SET status = ?, updated_at = ?, assignee = COALESCE(assignee, ?),
+        assignee_name = CASE WHEN assignee IS NULL THEN ? ELSE assignee_name END WHERE id = ?`, status, now, env.actor?.id ?? null, actorName(env), row.id),
     ]);
     await audit(env, now, "inquiry_reply", row.id, status);
   } else if (m[2] === "/assign") {
@@ -2014,7 +2016,7 @@ async function devRoute(request, env, url, path, now) {
       stmt(env, "UPDATE dev_items SET deleted_at = NULL, updated_at = ? WHERE id = ?", now, row.id),
       devEvent(env, row.id, now, "restore"),
     ]);
-    await audit(env, now, "dev_restore", row.id, row.title);
+    await audit(env, now, "dev_restore", row.title, row.id);
   } else if (row.deleted_at !== null) {
     return json({ error: "deleted" }, 409);
   } else if (!m[2]) {
@@ -2025,7 +2027,7 @@ async function devRoute(request, env, url, path, now) {
       stmt(env, "UPDATE dev_items SET deleted_at = ?, updated_at = ? WHERE id = ?", now, now, row.id),
       devEvent(env, row.id, now, "delete", { title: row.title }),
     ]);
-    await audit(env, now, "dev_delete", row.id, row.title);
+    await audit(env, now, "dev_delete", row.title, row.id);
   } else if (m[2] === "/links" || m[2] === "/links/remove") {
     // Linking shows a question to whoever opens the item, so it takes a look at questions too.
     if (!can(env.actor, "inquiries")) return json({ error: "no_permission", area: "inquiries" }, 403);
@@ -2035,13 +2037,13 @@ async function devRoute(request, env, url, path, now) {
       const r = await run(env, "INSERT OR IGNORE INTO dev_links (item_id, inquiry_id, by, at) VALUES (?, ?, ?, ?)", row.id, inquiry, actorName(env), now);
       if (r.meta.changes) {
         await env.DB.batch([stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "link", { inquiry })]);
-        await audit(env, now, "dev_link", row.id, inquiry);
+        await audit(env, now, "dev_link", row.title, inquiry);
       }
     } else {
       const r = await run(env, "DELETE FROM dev_links WHERE item_id = ? AND inquiry_id = ?", row.id, inquiry);
       if (r.meta.changes) {
         await env.DB.batch([stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "unlink", { inquiry })]);
-        await audit(env, now, "dev_unlink", row.id, inquiry);
+        await audit(env, now, "dev_unlink", row.title, inquiry);
       }
     }
   } else if (m[2] === "/notes") {
@@ -2073,7 +2075,7 @@ async function devCreate(request, env, now) {
     ...(inquiry ? [stmt(env, "INSERT INTO dev_links (item_id, inquiry_id, by, at) VALUES (?, ?, ?, ?)", id, inquiry, actorName(env), now),
       devEvent(env, id, now, "link", { inquiry })] : []),
   ]);
-  await audit(env, now, "dev_create", id, title);
+  await audit(env, now, "dev_create", title, id);
   return json(await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", id)), 201);
 }
 
@@ -2122,7 +2124,8 @@ async function devUpdate(env, row, body, now) {
   stmts.unshift(stmt(env, `UPDATE dev_items SET ${[...cols.map((c) => `${c} = ?`), "updated_at = ?"].join(", ")} WHERE id = ?`,
     ...cols.map((c) => set[c]), now, row.id));
   await env.DB.batch(stmts);
-  for (const [action, detail] of notes) await audit(env, now, action, row.id, detail);
+  // The activity screen shows the title; the id goes with what changed.
+  for (const [action, detail] of notes) await audit(env, now, action, set.title ?? row.title, `${detail} ${row.id}`);
   return true;
 }
 
@@ -2143,13 +2146,13 @@ async function devBulk(request, env, now) {
   }
   const ids = [...new Set(body.ids)];
   const rows = await all(env, `SELECT id, status, reason FROM dev_items WHERE deleted_at IS NULL AND id IN (${ids.map(() => "?").join(", ")})`, ...ids);
-  const change = rows.filter((r) => r.status !== next.status || r.reason !== next.reason);
+  const change = rows.filter((r) => r.status !== next.status || r.reason !== next.reason).sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
   if (change.length) {
     await env.DB.batch(change.flatMap((r) => [
       stmt(env, "UPDATE dev_items SET status = ?, reason = ?, updated_at = ? WHERE id = ?", next.status, next.reason, now, r.id),
       devEvent(env, r.id, now, "status", { status: [r.status, next.status], ...(next.reason ? { reason: next.reason } : {}), bulk: change.length }),
     ]));
-    await audit(env, now, "dev_bulk", `${change.length}`, `${next.status}: ${change.map((r) => r.id).join(" ")}`);
+    await audit(env, now, "dev_bulk", `${change.length}개`, `${next.status}: ${change.map((r) => r.id).join(" ")}`);
   }
   return json({ changed: change.length, ids: change.map((r) => r.id) });
 }
@@ -2173,13 +2176,13 @@ async function devReply(env, row, body, now) {
     stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id),
     devEvent(env, row.id, now, "reply", { count: pick.length, text: cut(text), close: status === "closed" }),
   ]);
-  await audit(env, now, "dev_reply", row.id, `${pick.length} ${status}`);
+  await audit(env, now, "dev_reply", row.title, `${pick.length} ${status} ${row.id}`);
   return json({ answered: pick.length, item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) });
 }
 
-/** The list: one status (all for every one), deleted ones, mine, or words in the title or body. */
+/** The list: one status, open (접수 and 개발중), all, deleted ones, mine, or words in the title or body. */
 async function devList(env, params) {
-  const status = Object.hasOwn(DEV.statuses, params.get("status") ?? "") || ["all", "deleted"].includes(params.get("status")) ? params.get("status") : "all";
+  const status = Object.hasOwn(DEV.statuses, params.get("status") ?? "") || ["open", "all", "deleted"].includes(params.get("status")) ? params.get("status") : "all";
   const q = String(params.get("q") ?? "").trim().slice(0, 40);
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const mine = params.get("who") === "mine" ? env.actor.id : "";
@@ -2187,7 +2190,8 @@ async function devList(env, params) {
     stmt(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS links,
         (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND i.status = 'open') AS waiting
       FROM dev_items d
-      WHERE ((?1 = 'deleted' AND d.deleted_at IS NOT NULL) OR (?1 != 'deleted' AND d.deleted_at IS NULL AND (?1 = 'all' OR d.status = ?1)))
+      WHERE ((?1 = 'deleted' AND d.deleted_at IS NOT NULL) OR (?1 != 'deleted' AND d.deleted_at IS NULL
+          AND (?1 = 'all' OR d.status = ?1 OR (?1 = 'open' AND d.status IN ('todo', 'doing')))))
         AND (?2 = '' OR d.title LIKE ?3 ESCAPE '\\' OR d.body LIKE ?3 ESCAPE '\\')
         AND (?4 = '' OR d.assignee = ?4)
       ORDER BY d.updated_at DESC LIMIT ${DEV.list}`, status, q, like, mine),
@@ -2195,17 +2199,20 @@ async function devList(env, params) {
   ])).map((r) => r.results);
   const counts = { todo: 0, doing: 0, done: 0, rejected: 0, deleted: 0 };
   for (const r of countRows) if (Object.hasOwn(counts, r.s)) counts[r.s] = r.n;
-  counts.all = counts.todo + counts.doing + counts.done + counts.rejected;
+  counts.open = counts.todo + counts.doing;
+  counts.all = counts.open + counts.done + counts.rejected;
   // Still to do: most asked for first. Finished: newest first.
   const rank = { doing: 0, todo: 1, done: 2, rejected: 3 };
   const open = (r) => r.status === "todo" || r.status === "doing";
-  rows.sort((a, b) => (status === "all" ? rank[a.status] - rank[b.status] : 0) || (open(a) && open(b) ? b.links - a.links : 0) || b.updated_at - a.updated_at);
+  rows.sort((a, b) => (["all", "open"].includes(status) ? rank[a.status] - rank[b.status] : 0) || (open(a) && open(b) ? b.links - a.links : 0) || b.updated_at - a.updated_at);
   return { counts, statuses: DEV.statuses, items: rows.map(devItem) };
 }
 
 const devItem = (r) => ({
   id: r.id,
   title: r.title,
+  // The whole body too, so 일괄 복사 hands developers everything without opening each item.
+  body: r.body,
   preview: [...r.body].slice(0, 160).join(""),
   status: r.status,
   reason: r.reason,
@@ -2229,7 +2236,6 @@ async function devView(env, row) {
   const read = can(env.actor, "inquiries");
   return {
     ...devItem({ ...row, links: links.length, waiting: links.filter((l) => l.status === "open").length }),
-    body: row.body,
     statuses: DEV.statuses,
     inquiries: read ? links.filter((l) => l.kind).map((l) => ({
       id: l.inquiry_id, kind: l.kind, status: l.status, preview: [...(l.first ?? "")].slice(0, 160).join(""),

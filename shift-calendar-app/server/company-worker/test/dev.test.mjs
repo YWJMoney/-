@@ -140,6 +140,8 @@ test("the owner sets one status on many items at once; each item's history says 
   assert.deepEqual(res.data, { changed: 2, ids: ids.slice(0, 2) });
   const list = (await call("GET", "/api/admin/dev?status=done", undefined, owner)).data;
   assert.deepEqual([list.counts.done, list.counts.todo, list.counts.deleted], [2, 0, 1]);
+  assert.deepEqual(list.items.map((x) => x.status), ["done", "done"]);
+  assert.equal((await call("GET", "/api/admin/dev?status=open", undefined, owner)).data.items.length, 0);
   const one = (await call("GET", `/api/admin/dev/${ids[0]}`, undefined, owner)).data;
   assert.deepEqual(one.history[0].detail, { status: ["todo", "done"], bulk: 2 });
   // Setting what is already set changes nothing; 반려 in bulk needs its reason too.
@@ -191,8 +193,11 @@ test("내가 맡기, notes between admins and shared answers", async () => {
   assert.deepEqual([o.inquiriesFree, o.inquiriesMine], [1, 1]);
   assert.deepEqual((await call("GET", "/api/admin/inquiries?who=mine", undefined, junho)).data.inquiries.map((i) => i.id), [q.id]);
   assert.equal((await call("GET", "/api/admin/inquiries?who=free", undefined, junho)).data.inquiries.length, 1);
-  // The owner's "mine" is their own.
+  // The owner's "mine" is their own; answering a question nobody took takes it.
   assert.equal((await call("GET", "/api/admin/inquiries?who=mine", undefined, owner)).data.inquiries.length, 0);
+  const other = (await call("GET", "/api/admin/inquiries?who=free", undefined, owner)).data.inquiries[0];
+  assert.equal((await call("POST", `/api/admin/inquiries/${other.id}/reply`, { text: "확인할게요" }, owner)).data.assignee.name, "최고 관리자");
+  assert.equal((await call("POST", `/api/admin/inquiries/${q.id}/reply`, { text: "확인할게요" }, owner)).data.assignee.name, "준호");
 
   const noted = (await call("POST", `/api/admin/inquiries/${q.id}/notes`, { text: "개발사항에 올렸어요" }, junho)).data;
   assert.deepEqual(noted.notes.map((n) => [n.by, n.text]), [["준호", "개발사항에 올렸어요"]]);
