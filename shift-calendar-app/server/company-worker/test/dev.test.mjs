@@ -218,3 +218,56 @@ test("내가 맡기, notes between admins and shared answers", async () => {
   assert.ok(!(await call("GET", "/api/admin/templates", undefined, owner)).data.templates.some((x) => x.id === first.id));
   assert.equal((await call("POST", "/api/admin/templates", { label: "", text: "x" }, junho)).data.error, "label");
 });
+
+test("letting a question go is for whoever holds it or the owner", async () => {
+  const { call } = server();
+  const owner = await signIn(call);
+  const { h: junho } = await account(call, owner, "junho@example.com", "준호", SUPPORT, 41);
+  const { h: mina } = await account(call, owner, "mina@example.com", "미나", SUPPORT, 42);
+  const q = (await call("POST", "/api/inquiries", question(1), from(1))).data;
+  await call("POST", `/api/admin/inquiries/${q.id}/assign`, { to: "me" }, junho);
+  const refused = await call("POST", `/api/admin/inquiries/${q.id}/assign`, { to: null }, mina);
+  assert.equal(refused.status, 403);
+  assert.equal((await call("GET", `/api/admin/inquiries/${q.id}`, undefined, owner)).data.assignee.name, "준호");
+  assert.equal((await call("POST", `/api/admin/inquiries/${q.id}/assign`, { to: null }, junho)).data.assignee, null);
+  await call("POST", `/api/admin/inquiries/${q.id}/assign`, { to: "me" }, mina);
+  assert.equal((await call("POST", `/api/admin/inquiries/${q.id}/assign`, { to: null }, owner)).data.assignee, null);
+});
+
+test("starting answers are added once even when two admins open the list at once", async () => {
+  const { call } = server();
+  const owner = await signIn(call);
+  const [a, b] = await Promise.all([call("GET", "/api/admin/templates", undefined, owner), call("GET", "/api/admin/templates", undefined, owner)]);
+  const after = (await call("GET", "/api/admin/templates", undefined, owner)).data.templates;
+  const labels = after.map((x) => x.label);
+  assert.equal(new Set(labels).size, labels.length);
+  assert.ok(a.data.templates.length <= after.length && b.data.templates.length <= after.length);
+});
+
+test("two changes from the same screen: only the first is written, the other is told it changed", async () => {
+  const { call } = server();
+  const owner = await signIn(call);
+  const item = (await call("POST", "/api/admin/dev", { title: "위젯" }, owner)).data;
+  const [a, b] = await Promise.all([
+    call("POST", `/api/admin/dev/${item.id}`, { title: "위젯 A", since: item.updatedAt }, owner),
+    call("POST", `/api/admin/dev/${item.id}`, { title: "위젯 B", since: item.updatedAt }, owner),
+  ]);
+  assert.deepEqual([a.status, b.status].sort(), [200, 409]);
+  const now = (await call("GET", `/api/admin/dev/${item.id}`, undefined, owner)).data;
+  assert.equal(now.history.filter((x) => x.action === "edit").length, 1);
+  assert.equal(now.title, (a.status === 200 ? a : b).data.title);
+});
+
+test("an admin who may not read questions does not see the words sent to them in an item's history", async () => {
+  const { call } = server();
+  const owner = await signIn(call);
+  const { h: dev } = await account(call, owner, "dev@example.com", "개발", { ...SUPPORT, inquiries: "none", dev: "edit" }, 43);
+  const q = (await call("POST", "/api/inquiries", question(1), from(1))).data;
+  const item = (await call("POST", "/api/admin/dev", { title: "주 시작 요일", inquiry: q.id }, owner)).data;
+  await call("POST", `/api/admin/dev/${item.id}/reply`, { text: "비밀 답장 내용" }, owner);
+  const seen = await call("GET", `/api/admin/dev/${item.id}`, undefined, dev);
+  assert.equal(seen.status, 200, seen.text);
+  assert.ok(!seen.text.includes("비밀 답장 내용"));
+  assert.equal(seen.data.history[0].action, "reply");
+  assert.ok((await call("GET", `/api/admin/dev/${item.id}`, undefined, owner)).text.includes("비밀 답장 내용"));
+});
