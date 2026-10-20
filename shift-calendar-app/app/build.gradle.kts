@@ -21,8 +21,8 @@ android {
         applicationId = "com.bamnat.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 25
-        versionName = "1.16.0"
+        versionCode = 26
+        versionName = "1.17.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SHARE_BASE_URL", "\"$shareBaseUrl\"")
         buildConfigField("String", "COMPANY_BASE_URL", "\"$companyBaseUrl\"")

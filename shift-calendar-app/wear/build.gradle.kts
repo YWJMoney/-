@@ -19,8 +19,8 @@ android {
         minSdk = 30
         targetSdk = 36
         // The watch build's own number: the phone app's versionCode + 100000, so the two never clash on Play.
-        versionCode = 100025
-        versionName = "1.16.0"
+        versionCode = 100026
+        versionName = "1.17.0"
     }
 
     signingConfigs {
