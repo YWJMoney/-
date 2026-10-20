@@ -107,6 +107,24 @@ class DayP3Test {
         assertEquals(1, AttendanceImport.kindOf("오전 반반차").leave!!.quarters)
         assertEquals(LeaveKind.PAID, AttendanceImport.kindOf("병가").leave!!.kind)
         assertNull(AttendanceImport.kindOf("정상").leave)
+        // A paid day off is a day off, not leave taken.
+        assertNull(AttendanceImport.kindOf("유급휴일").leave)
+        assertNull(AttendanceImport.kindOf("주휴일").leave)
+        assertEquals(LeaveKind.PAID, AttendanceImport.kindOf("유급휴가").leave!!.kind)
+        // A plain number is hours, however many digits; Excel's fraction of a day in a number cell comes as h:mm.
+        assertEquals(15, AttendanceImport.parseMinutes("0.25"))
+        assertEquals(30, AttendanceImport.parseMinutes("0.5"))
+        assertEquals(15, AttendanceImport.parseMinutes("0.2500"))
+        assertEquals("6:00", Sheets.dayFraction("0.25"))
+        assertEquals("12:00", Sheets.dayFraction("0.5"))
+        assertEquals("8:30", Sheets.dayFraction("0.354166666666667"))
+        assertEquals("8.5", Sheets.dayFraction("8.5"))
+        assertEquals(360, AttendanceImport.parseMinutes(Sheets.dayFraction("0.25")))
+        // Without a year: the one nearest today, not more than a month ahead.
+        val jan = LocalDate.of(2027, 1, 5)
+        assertEquals(LocalDate.of(2026, 12, 28), AttendanceImport.parseDate("12/28", 2027, near = jan))
+        assertEquals(LocalDate.of(2027, 1, 20), AttendanceImport.parseDate("1/20", 2027, near = jan))
+        assertEquals(LocalDate.of(2027, 1, 3), AttendanceImport.parseDate("1월 3일", 2000, near = LocalDate.of(2026, 12, 30)))
     }
 
     @Test
@@ -160,5 +178,50 @@ class DayP3Test {
         val twice = Commute.apply(once, Commute.leave(day, null, LocalDateTime.of(thu, t(20, 0))))
         assertEquals(1, twice.extras.size)
         assertEquals(t(20), twice.extras[0].end)
+    }
+
+    @Test
+    fun `a long lunch out of the fence is put back and the evening leave counts from the planned end`() {
+        val day = resolver.resolve(thu)
+        // 12:00 out, not back within the wait: an earlier end is written.
+        val lunch = Commute.leave(day, thu.atTime(8, 50), thu.atTime(12, 0))
+        assertEquals(Commute.Write.EarlyEnd(t(9), t(12)), lunch)
+        val before = DayEntry(thu)
+        val undo = Commute.undoOf(before, lunch)!!
+        val written = Commute.apply(before, lunch)
+        assertEquals(t(12), written.customEnd)
+        // Back at 13:05: the day is as it was before the leave.
+        val back = Commute.undo(written, undo)
+        assertEquals(before, back)
+        // Even without the undo, a leave at 18:30 counts from 18:00, not from the 12:00 written.
+        val stale = ScheduleResolver(Fixtures.all, weekly, listOf(written)).resolve(thu)
+        val evening = Commute.leave(stale, thu.atTime(8, 50), thu.atTime(18, 30)) as Commute.Write.Overtime
+        assertEquals(30, evening.minutes)
+        assertEquals(t(18), evening.entry.start)
+        // And 잔업 takes away the earlier end written that day.
+        assertEquals(t(18), Commute.apply(written, evening).customEnd)
+        assertNull(Commute.apply(before, evening).customEnd)
+        // A 잔업 already there comes back when its replacement is undone.
+        val ot = Commute.leave(day, null, thu.atTime(19, 0)) as Commute.Write.Overtime
+        val withOt = Commute.apply(before, ot)
+        val later = Commute.leave(day, null, thu.atTime(20, 0))
+        assertEquals(withOt, Commute.undo(Commute.apply(withOt, later), Commute.undoOf(withOt, later)!!))
+    }
+
+    @Test
+    fun `a leave after midnight belongs to yesterday only while that arrival is open and recent`() {
+        val fri = thu.plusDays(1)
+        // Night: in at 21:00, out at 01:00.
+        assertEquals(thu, Commute.leaveDay(fri.atTime(1, 0), thu.atTime(21, 0), null))
+        assertEquals(thu, Commute.leaveDay(thu.atTime(18, 0), thu.atTime(9, 0), null))
+        // Day 2 with a missed 출근: day 1 was already left, or its arrival is too old.
+        assertNull(Commute.leaveDay(fri.atTime(18, 0), thu.atTime(9, 0), thu.atTime(18, 0)))
+        assertNull(Commute.leaveDay(fri.atTime(18, 0), thu.atTime(9, 0), null))
+        assertNull(Commute.leaveDay(fri.atTime(18, 0), null, null))
+        // The leave being finished right now is not one recorded after the arrival.
+        assertEquals(thu, Commute.leaveDay(fri.atTime(1, 0), thu.atTime(21, 0), fri.atTime(1, 0)))
+        // Back just after midnight, minutes after leaving: a walk.
+        assertTrue(Commute.cameBack(thu.atTime(23, 50), fri.atTime(0, 20), 90))
+        assertTrue(!Commute.cameBack(thu.atTime(12, 0), thu.atTime(14, 0), 90))
     }
 }

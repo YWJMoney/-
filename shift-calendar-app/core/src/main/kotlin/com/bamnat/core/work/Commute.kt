@@ -6,6 +6,7 @@ import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.schedule.LegalBreak
 import com.bamnat.core.schedule.ResolvedDay
 import java.time.Duration
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
@@ -20,6 +21,8 @@ object Commute {
     const val SLACK_MINUTES = 10
     /** Work on a day off shorter than this is not written (passing by the workplace). */
     const val MIN_REST_DAY_MINUTES = 30
+    /** An arrival older than this is no longer the one a leave after midnight belongs to. */
+    const val MAX_SHIFT_MINUTES = 20 * 60L
 
     sealed interface Write {
         /** The day starts later: [start] to the day's [end]. */
@@ -51,7 +54,8 @@ object Commute {
         val t = if (rounding) DayWork.round(at) else at
         if (day.isWorkDay && day.shiftFrom != null && day.shiftTo != null) {
             val from = day.shiftFrom!!
-            val to = day.shiftTo!!
+            // Against the planned end, never an end written earlier (a lunch walk's 퇴근 12:00).
+            val to = plannedTo(day)
             val past = Duration.between(to, t).toMinutes()
             return when {
                 past > SLACK_MINUTES -> {
@@ -70,11 +74,14 @@ object Commute {
         return Write.RestDayWork(ExtraEntry(ExtraKind.SPECIAL_ID, start = a.toLocalTime(), end = t.toLocalTime(), breakMinutes = brk), span - brk)
     }
 
-    /** [write] on [entry]. A 잔업 or 특근 already there is replaced, so a later record just moves the time. */
+    /**
+     * [write] on [entry]. A 잔업 or 특근 already there is replaced, so a later record just moves the time.
+     * 잔업 runs from the planned end, so an earlier end written that day goes back to it.
+     */
     fun apply(entry: DayEntry, write: Write): DayEntry = when (write) {
         is Write.Late -> entry.copy(customStart = write.start, customEnd = entry.customEnd ?: write.end)
         is Write.EarlyEnd -> entry.copy(customStart = entry.customStart ?: write.start, customEnd = write.end)
-        is Write.Overtime -> entry.copy(extras = replace(entry.extras, write.entry))
+        is Write.Overtime -> entry.copy(extras = replace(entry.extras, write.entry), customEnd = entry.customEnd?.let { write.entry.start ?: it })
         is Write.RestDayWork -> entry.copy(extras = replace(entry.extras, write.entry))
         Write.None -> entry
     }
@@ -84,6 +91,58 @@ object Commute {
         val s = entry.customStart ?: return day
         val e = entry.customEnd ?: day.end ?: return day
         return day.copy(start = s, end = e, hasCustomTimes = true)
+    }
+
+    /**
+     * [DAYW-07] What a leave changed on its day: the day's own times and the 잔업 or 특근 it replaced, so
+     * coming back the same day (a long lunch, not 퇴근) puts the day back as it was before the leave.
+     */
+    data class Undo(val customStart: LocalTime?, val customEnd: LocalTime?, val kindId: Long, val extra: ExtraEntry?)
+
+    /** What writing leave [write] on [entry] would change, or null when it is not a leave. */
+    fun undoOf(entry: DayEntry, write: Write): Undo? {
+        val kind = when (write) {
+            is Write.EarlyEnd, is Write.Overtime -> ExtraKind.OVERTIME_ID
+            is Write.RestDayWork -> ExtraKind.SPECIAL_ID
+            else -> return null
+        }
+        return Undo(entry.customStart, entry.customEnd, kind, entry.extras.firstOrNull { it.kindId == kind })
+    }
+
+    /** [entry] as it was before the leave [undo] was taken from. */
+    fun undo(entry: DayEntry, undo: Undo): DayEntry {
+        val extras = undo.extra?.let { replace(entry.extras, it) } ?: entry.extras.filter { it.kindId != undo.kindId }
+        return entry.copy(customStart = undo.customStart, customEnd = undo.customEnd, extras = extras)
+    }
+
+    /**
+     * [DAYW-07] The day a leave at [at] belongs to: the day arrived on when that is today; after midnight
+     * yesterday's arrival, only while it is under [MAX_SHIFT_MINUTES] old and no leave was recorded after it
+     * (a missed 출근 on day 2 must not turn day 1 into 16 hours of 잔업). Null when it belongs to none.
+     */
+    fun leaveDay(at: LocalDateTime, arrivedAt: LocalDateTime?, leftAt: LocalDateTime?): LocalDate? {
+        val arrived = arrivedAt ?: return null
+        val date = at.toLocalDate()
+        if (arrived.toLocalDate() == date) return date
+        if (arrived.toLocalDate() != date.minusDays(1)) return null
+        if (leftAt != null && leftAt.isAfter(arrived) && leftAt.isBefore(at)) return null
+        val minutes = Duration.between(arrived, at).toMinutes()
+        return if (minutes in 0 until MAX_SHIFT_MINUTES) arrived.toLocalDate() else null
+    }
+
+    /** [DAYW-07] Coming in at [at] within [waitMinutes] of a leave seen at [pending]: a walk, not 퇴근 (midnight or not). */
+    fun cameBack(pending: LocalDateTime, at: LocalDateTime, waitMinutes: Long): Boolean =
+        Math.abs(Duration.between(pending, at).toMinutes()) <= waitMinutes
+
+    /** The planned shift's end: the shift type's own times, not the day's written ones. */
+    private fun plannedTo(day: ResolvedDay): LocalDateTime {
+        val type = day.shiftType
+        val ts = type?.start
+        val te = type?.end
+        if (!day.hasCustomTimes || ts == null || te == null) return day.shiftTo!!
+        val from = day.date.atTime(ts)
+        val to = day.date.atTime(te)
+        return if (to.isAfter(from)) to else to.plusDays(1)
     }
 
     private fun replace(extras: List<ExtraEntry>, add: ExtraEntry): List<ExtraEntry> {

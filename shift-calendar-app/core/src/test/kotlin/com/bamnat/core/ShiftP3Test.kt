@@ -87,6 +87,28 @@ class ShiftP3Test {
     }
 
     @Test
+    fun `a two-letter name made of code letters stays a name`() {
+        val text = """
+            이름 1 2 3 4 5
+            주연 D E N O D
+            이나 N N O D D
+            연주 O D D E E
+        """.trimIndent()
+        val rows = DutyRoster.readText(text, codes)
+        val juyeon = rows.first { it.label == "주연" }
+        assertEquals(mapOf(1 to day, 2 to evening, 3 to night, 4 to off, 5 to day), juyeon.cells)
+        assertEquals(night, rows.first { it.label == "이나" }.cells[1])
+        assertEquals(off, rows.first { it.label == "연주" }.cells[1])
+    }
+
+    @Test
+    fun `tab-separated cells keep empty days in their place`() {
+        val text = "이름\t1\t2\t3\t4\t5\n민지\tD\t\tN\tO\tD"
+        val minji = DutyRoster.readText(text, codes).first { it.label == "민지" }
+        assertEquals(mapOf(1 to day, 3 to night, 4 to off, 5 to day), minji.cells)
+    }
+
+    @Test
     fun `a photo's words go under the day above them, blanks stay blank`() {
         fun w(t: String, x: Int, y: Int) = RosterWord(t, x - 10, y - 10, x + 10, y + 10)
         val header = (1..7).map { w("$it", it * 50, 100) }
@@ -160,6 +182,14 @@ class ShiftP3Test {
         assertNull(WatchDays.alarmAhead(back, LocalDateTime.of(2026, 10, 20, 22, 0)))
         assertEquals("3시간 전", WatchDays.age(p.syncedAt, LocalDateTime.of(2026, 10, 20, 11, 5)))
         assertNull(WatchDays.decode("garbage"))
+        // A newer copy whose phone clock went back an hour still replaces the old one: compared by epoch millis.
+        val sent = p.copy(sentAtMillis = 1_000_000L)
+        assertEquals(sent, WatchDays.decode(WatchDays.encode(sent)))
+        val later = sent.copy(syncedAt = p.syncedAt.minusHours(1), sentAtMillis = 2_000_000L)
+        assertTrue(WatchDays.replaces(later, sent))
+        assertTrue(!WatchDays.replaces(sent, later))
+        assertTrue(WatchDays.replaces(sent, p))
+        assertTrue(!WatchDays.replaces(p.copy(syncedAt = p.syncedAt.minusHours(1)), p))
         val grid = WatchDays.monthGrid(2026, 10)
         assertEquals(LocalDate.of(2026, 10, 1), grid[0][3]) // Thursday
         assertTrue(grid.all { it.size == 7 })

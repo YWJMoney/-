@@ -105,6 +105,9 @@ class DutyCodes(private val types: List<DutyType>) {
         return n.length <= 2 || (n.length <= 4 && n.all { it in 'A'..'Z' })
     }
 
+    /** True for letters A–Z only that stand for several codes ("DDEN"): never a person's name. */
+    fun mergedLatin(token: String): Boolean = norm(token).let { n -> n.isNotEmpty() && n.all { it in 'A'..'Z' } } && split(token) != null
+
     /** [token] as single-letter codes ("DDEN" → D D E N), or null when it is not one. */
     fun split(token: String): List<String>? {
         val n = norm(token)
@@ -132,7 +135,7 @@ object DutyRoster {
      * nearest row of day numbers, each code under the day it sits beneath. Most cells first.
      */
     fun read(words: List<RosterWord>, codes: DutyCodes): List<RosterRow> {
-        val rows = lines(words.filter { it.text.isNotBlank() }).map { line -> line.flatMap { w -> explode(w, codes) } }
+        val rows = lines(words.filter { it.text.isNotBlank() }).map { line -> line.flatMapIndexed { i, w -> explode(w, codes, first = i == 0) } }
         val headers = rows.withIndex().filter { (_, r) -> isDayRow(r) }
         val read = if (headers.isEmpty()) emptyList() else gridRows(rows, headers.map { it.index }, codes)
         return (merge(read) + listOfNotNull(listRow(rows, codes))).filter { it.cells.size >= MIN_CELLS }
@@ -147,12 +150,21 @@ object DutyRoster {
     fun readText(text: String, codes: DutyCodes): List<RosterRow> {
         val words = mutableListOf<RosterWord>()
         text.lines().forEachIndexed { i, line ->
-            val tokens = line.trim().split(Regex("""[\s,]+""")).filter { it.isNotBlank() }
-                .flatMap { t -> codes.split(t) ?: listOf(t) }
+            if ('\t' in line) {
+                // Copied from a spreadsheet: one cell per tab, an empty cell keeping its day's place, so each
+                // cell sits under its own column (a name's columns to the left of the days).
+                line.trimEnd().split('\t').forEachIndexed { j, cell ->
+                    if (cell.isNotBlank()) words += RosterWord(cell.trim(), j * 100, i * 100, j * 100 + 60, i * 100 + 40)
+                }
+                return@forEachIndexed
+            }
+            val raw = line.trim().split(Regex("""[\s,]+""")).filter { it.isNotBlank() }
+            // The name first, as written: a two-letter name made of code letters (주연, 이나, 연주) is not codes.
+            val lead = raw.takeWhile { t -> dayOf(t) == null && codes.match(t) == null && DutyCodes.norm(t) !in WEEKDAYS && !codes.mergedLatin(t) }
             // Days and codes are placed by their order, the name before them to the left of the first column.
-            val lead = tokens.takeWhile { t -> dayOf(t) == null && codes.match(t) == null && DutyCodes.norm(t) !in WEEKDAYS }
+            val tokens = raw.drop(lead.size).flatMap { t -> codes.split(t) ?: listOf(t) }
             lead.forEachIndexed { j, t -> words += RosterWord(t, -1000 + j * 10, i * 100, -1000 + j * 10 + 8, i * 100 + 40) }
-            tokens.drop(lead.size).forEachIndexed { j, t -> words += RosterWord(t, j * 100, i * 100, j * 100 + 60, i * 100 + 40) }
+            tokens.forEachIndexed { j, t -> words += RosterWord(t, j * 100, i * 100, j * 100 + 60, i * 100 + 40) }
         }
         return read(words, codes)
     }
@@ -179,9 +191,13 @@ object DutyRoster {
         return rows.map { r -> r.sortedBy { it.left } }
     }
 
-    /** A word that holds several cells ("1 2 3", "DDEN") becomes one word per cell across its box. */
-    private fun explode(w: RosterWord, codes: DutyCodes): List<RosterWord> {
-        val parts = w.text.trim().split(Regex("""\s+""")).filter { it.isNotEmpty() }.flatMap { p -> codes.split(p) ?: listOf(p) }
+    /**
+     * A word that holds several cells ("1 2 3", "DDEN") becomes one word per cell across its box. The
+     * [first] word of a line may be a name, so there only letters A–Z are taken apart (주연 stays a name).
+     */
+    private fun explode(w: RosterWord, codes: DutyCodes, first: Boolean = false): List<RosterWord> {
+        val parts = w.text.trim().split(Regex("""\s+""")).filter { it.isNotEmpty() }
+            .flatMap { p -> (if (first && !codes.mergedLatin(p)) null else codes.split(p)) ?: listOf(p) }
         if (parts.size <= 1) return listOf(w)
         val width = (w.right - w.left).coerceAtLeast(parts.size)
         val step = width / parts.size

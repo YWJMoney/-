@@ -366,5 +366,13 @@ class AppContainer(context: Context) {
         if (com.bamnat.app.data.CommutePrefs.get(appContext).current.enabled) {
             appScope.launch { runCatching { com.bamnat.app.commute.CommuteRecorder.sync(appContext) } }
         }
+        // [DAYW-07] Location turned off drops the geofence; when it comes back on, the geofence goes back.
+        runCatching {
+            androidx.core.content.ContextCompat.registerReceiver(
+                appContext, com.bamnat.app.commute.CommuteReceiver(),
+                android.content.IntentFilter(android.location.LocationManager.PROVIDERS_CHANGED_ACTION),
+                androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+        }
     }
 }

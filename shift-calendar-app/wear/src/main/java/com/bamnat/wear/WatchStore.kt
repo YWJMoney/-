@@ -45,7 +45,8 @@ object WatchStore {
     fun save(context: Context, text: String) {
         val next = WatchDays.decode(text) ?: return
         val now = load(context)
-        if (now != null && now.syncedAt.isAfter(next.syncedAt)) return
+        // [SHFT-08] Compared by when it was sent (epoch millis), not the phone's local clock.
+        if (!WatchDays.replaces(next, now)) return
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, text).apply()
         _payload.value = next
         changed(context)

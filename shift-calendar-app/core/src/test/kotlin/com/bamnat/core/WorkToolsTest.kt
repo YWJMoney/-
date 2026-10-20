@@ -102,6 +102,10 @@ class WorkToolsTest {
         assertFalse(QuitCheck.severance(d(2025, 6, 1), d(2026, 3, 31), 20.0, 10_320).eligible)
         assertFalse(QuitCheck.severance(d(2024, 6, 1), d(2026, 3, 31), 14.0, 10_320).eligible)
         assertFalse(QuitCheck.severance(null, d(2026, 3, 31), 20.0, 10_320).eligible)
+        // 365 days across 29 February are a day short of a year; the full year is.
+        assertFalse(QuitCheck.severance(d(2023, 3, 2), d(2024, 2, 29), 20.0, 10_320).eligible)
+        assertTrue(QuitCheck.severance(d(2023, 3, 2), d(2024, 3, 1), 20.0, 10_320).eligible)
+        assertTrue(QuitCheck.severance(d(2025, 3, 1), d(2026, 2, 28), 20.0, 10_320).eligible)
     }
 
     @Test

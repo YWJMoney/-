@@ -63,8 +63,11 @@ class RecordsTrash(
     data class Offer(val entry: Entry, val message: String)
 
     /** [UNDO-01] What clearing would take from a calendar, to say in the question before it. */
-    data class Records(val days: Int, val order: Boolean, val jobs: Int, val sales: Int, val owed: Int, val memos: Int, val pay: Boolean) {
-        val isEmpty: Boolean get() = days == 0 && !order && jobs == 0 && sales == 0 && owed == 0 && memos == 0 && !pay
+    data class Records(
+        val days: Int, val order: Boolean, val jobs: Int, val sales: Int, val owed: Int, val memos: Int, val pay: Boolean,
+        val trades: Int = 0, val invest: Boolean = false,
+    ) {
+        val isEmpty: Boolean get() = days == 0 && !order && jobs == 0 && sales == 0 && owed == 0 && memos == 0 && !pay && trades == 0 && !invest
 
         val text: String
             get() = listOfNotNull(
@@ -74,6 +77,8 @@ class RecordsTrash(
                 "일감 ${jobs}건".takeIf { jobs > 0 },
                 "매출 ${sales}일".takeIf { sales > 0 },
                 "받을 돈 ${owed}건".takeIf { owed > 0 },
+                "매매 기록 ${trades}건".takeIf { trades > 0 },
+                "입출금·일지·알람".takeIf { invest },
                 "이 달력에만 있는 메모 ${memos}개".takeIf { memos > 0 },
             ).joinToString(" · ").ifEmpty { "지울 기록이 아직 없어요" }
     }
@@ -99,6 +104,10 @@ class RecordsTrash(
             owed = count("receivables"),
             memos = ownMemoIds(calendarId).size,
             pay = calendars.pay(calendarId).profile.value != null,
+            // [INV-01][UNDO-02] An investor calendar's records: its trades, and the rest of its lines.
+            trades = count("invest_trades"),
+            // Lines the user wrote; an account made on its own, prices and daily totals do not count.
+            invest = listOf("invest_cash", "invest_journal", "invest_events", "invest_alarms").any { count(it) > 0 },
         )
     }
 
@@ -109,9 +118,9 @@ class RecordsTrash(
      * (근무 기록·순서, 급여 설정, 일감, 매출, 받을 돈, and the memos only it had); either way the change can be
      * taken back for [KEEP_DAYS] days.
      */
-    suspend fun changeStyle(calendarId: String, style: WorkStyle, clear: Boolean, message: String): Entry = lock.withLock {
+    suspend fun changeStyle(calendarId: String, style: WorkStyle, clear: Boolean, message: String): Entry? = lock.withLock {
         withContext(Dispatchers.IO) {
-            val entry = save(if (clear) Kind.STYLE_CLEARED else Kind.STYLE, calendarId, withData = clear, detail = "→ ${style.label}")
+            val entry = save(if (clear) Kind.STYLE_CLEARED else Kind.STYLE, calendarId, withData = clear, detail = "→ ${style.label}") ?: return@withContext null
             if (clear) clearNow(calendarId)
             if (calendarId == PersonalCalendar.MAIN || calendars.get(calendarId)?.isMain == true) {
                 settings.update { it.copy(workStyle = style) }
@@ -120,16 +129,19 @@ class RecordsTrash(
             }
             entry
         }
-    }.also { _offers.tryEmit(Offer(it, message)) }
+    }?.also { _offers.tryEmit(Offer(it, message)) }
 
-    /** [UNDO-02] Clears calendar [calendarId]'s records, keeping its kind of work, day kinds and 가계부. */
-    suspend fun clearRecords(calendarId: String): Entry = lock.withLock {
+    /**
+     * [UNDO-02] Clears calendar [calendarId]'s records, keeping its kind of work, day kinds and 가계부.
+     * Null, and nothing cleared, for a calendar that is not there.
+     */
+    suspend fun clearRecords(calendarId: String): Entry? = lock.withLock {
         withContext(Dispatchers.IO) {
-            val entry = save(Kind.CLEARED, calendarId, withData = true, detail = "")
+            val entry = save(Kind.CLEARED, calendarId, withData = true, detail = "") ?: return@withContext null
             clearNow(calendarId)
             entry
         }
-    }.also { _offers.tryEmit(Offer(it, "‘${it.name}’ 기록을 지웠어요")) }
+    }?.also { _offers.tryEmit(Offer(it, "‘${it.name}’ 기록을 지웠어요")) }
 
     /**
      * [UNDO-03] Keeps everything of added calendar [calendarId] right before it is removed; call it
@@ -168,8 +180,9 @@ class RecordsTrash(
                 when (kind) {
                     Kind.STYLE -> putSettings(meta, cal)
                     Kind.STYLE_CLEARED, Kind.CLEARED -> {
-                        putSettings(meta, cal)
+                        // The rows first: when they cannot be written, the kind of work stays as it is too.
                         putData(folder, cal.id)
+                        putSettings(meta, cal)
                         putPay(meta, cal.id)
                         putMemos(folder)
                     }
@@ -207,8 +220,9 @@ class RecordsTrash(
 
     // ---- inside ----
 
-    private fun save(kind: Kind, calendarId: String, withData: Boolean, detail: String): Entry {
-        val cal = calendars.get(calendarId) ?: calendars.get(PersonalCalendar.MAIN)!!
+    /** Null for a calendar no longer there: it has nothing to keep, and never stands in for 내 달력. */
+    private fun save(kind: Kind, calendarId: String, withData: Boolean, detail: String): Entry? {
+        val cal = calendars.get(calendarId) ?: return null
         val id = "${clock()}-${UUID.randomUUID().toString().take(8)}"
         val folder = File(dir, "$id.part").apply { deleteRecursively(); mkdirs() }
         val s = settings.current
@@ -229,7 +243,7 @@ class RecordsTrash(
         if (withData) {
             val live = liveOf(cal.id)
             if (live != null) {
-                val tables = if (kind == Kind.DELETED) tablesOf(live) else RECORD_TABLES.filter { it in tablesOf(live) }
+                val tables = if (kind == Kind.DELETED) tablesOf(live) else CLEARED_TABLES.filter { it in tablesOf(live) }
                 fileDb(File(folder, DATA)).use { snap -> tables.forEach { t -> dump(SupportDb(live), snap, t) } }
             }
             val memos = if (kind == Kind.DELETED) memoIdsOn(cal.id) else ownMemoIds(cal.id)
@@ -253,7 +267,7 @@ class RecordsTrash(
         val roomDb = roomOf(calendarId)
         if (live != null && roomDb != null) {
             val tables = tablesOf(live)
-            roomDb.runInTransaction(Runnable { RECORD_TABLES.reversed().filter { it in tables }.forEach { live.execSQL("DELETE FROM `$it`") } })
+            roomDb.runInTransaction(Runnable { CLEARED_TABLES.reversed().filter { it in tables }.forEach { live.execSQL("DELETE FROM `$it`") } })
         }
         val pay = calendars.pay(calendarId)
         pay.save(null, keepUndo = false)
@@ -436,11 +450,21 @@ class RecordsTrash(
         private const val DATA = "data.db"
         private const val MEMOS = "memos.db"
         private val INTERNAL = setOf("android_metadata", "room_master_table")
+        private val CLEARED_TABLES get() = RECORD_TABLES + INVEST_TABLES
 
         /**
          * [UNDO-01] A calendar's records, cleared when it starts over: its days, order, changes and extra
          * work, its jobs, sales and money owed. Its day kinds and the 가계부 lines stay.
          */
         val RECORD_TABLES = listOf("pattern", "day_entries", "day_extras", "day_changes", "jobs", "daily_sales", "receivables", "receivable_payments")
+
+        /**
+         * [INV-01][UNDO-02] An investor calendar's records: accounts, trades, money in and out, prices,
+         * journal, dates, alarms and the daily totals. Its own choices (invest_settings) stay.
+         */
+        val INVEST_TABLES = listOf(
+            "invest_accounts", "invest_trades", "invest_cash", "invest_quotes", "invest_journal",
+            "invest_events", "invest_alarms", "invest_snapshots",
+        )
     }
 }

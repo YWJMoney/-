@@ -180,12 +180,14 @@ object QuitCheck {
         val weeklyPay = ((week.minutes + week.holidayPayMinutes) / 60.0 * hourlyWage)
         val threeMonthDays = ChronoUnit.DAYS.between(lastEmployed.plusDays(1).minusMonths(3), lastEmployed.plusDays(1)).coerceAtLeast(1)
         val daily = (threeMonthPay?.takeIf { it > 0 }?.let { it.toDouble() / threeMonthDays } ?: (weeklyPay / 7)).roundToLong()
+        // A full year on the calendar (계속근로 1년), not 365 days: a year with 29 February needs 366.
+        val fullYear = !hire.plusYears(1).isAfter(lastEmployed.plusDays(1))
         val reason = when {
-            days < 365 -> "1년이 안 돼서 퇴직금이 없어요 (${days}일 다녔어요)"
+            !fullYear -> "1년이 안 돼서 퇴직금이 없어요 (${days}일 다녔어요)"
             weeklyHours < 15 -> "주 15시간이 안 돼서 퇴직금이 없어요"
             else -> "1년 이상, 주 15시간 이상이라 퇴직금을 받아요"
         }
-        val eligible = days >= 365 && weeklyHours >= 15
+        val eligible = fullYear && weeklyHours >= 15
         return Severance(eligible, years, daily, if (eligible) (daily * 30.0 * days / 365).roundToLong() else 0, reason)
     }
 

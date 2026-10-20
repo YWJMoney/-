@@ -5,6 +5,10 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.BamnatApp
 import com.bamnat.app.ui.calendar.removeCalendar
+import com.bamnat.core.invest.CashFlow
+import com.bamnat.core.invest.CashKind
+import com.bamnat.core.invest.Side
+import com.bamnat.core.invest.Trade
 import com.bamnat.core.memo.Memo
 import com.bamnat.core.memo.MemoCalendars
 import com.bamnat.core.memo.MemoSharing
@@ -78,7 +82,7 @@ class RecordsTrashTest {
         assertEquals(1, before.memos)
         assertTrue(before.pay)
 
-        val entry = c.recordsTrash.clearRecords(id)
+        val entry = c.recordsTrash.clearRecords(id)!!
         assertTrue(daysOf(id).isEmpty())
         assertTrue(c.calendars.money(id).sales.first().isEmpty())
         assertNull(c.calendars.pay(id).profile.value)
@@ -100,13 +104,13 @@ class RecordsTrashTest {
 
     @Test fun aChangedKindOfWorkCanBeTakenBackKeptOrCleared() = runBlocking {
         val (id, _) = filledCalendar("알바")
-        val kept = c.recordsTrash.changeStyle(id, WorkStyle.HOURLY, clear = false, message = "")
+        val kept = c.recordsTrash.changeStyle(id, WorkStyle.HOURLY, clear = false, message = "")!!
         assertEquals(WorkStyle.HOURLY, c.calendars.get(id)!!.style)
         assertEquals(listOf(day), daysOf(id))
         assertTrue(c.recordsTrash.restore(kept.id))
         assertEquals(WorkStyle.BUSINESS, c.calendars.get(id)!!.style)
 
-        val cleared = c.recordsTrash.changeStyle(id, WorkStyle.SHIFT, clear = true, message = "")
+        val cleared = c.recordsTrash.changeStyle(id, WorkStyle.SHIFT, clear = true, message = "")!!
         assertEquals(WorkStyle.SHIFT, c.calendars.get(id)!!.style)
         assertTrue(daysOf(id).isEmpty())
         assertTrue(c.recordsTrash.restore(cleared.id))
@@ -115,7 +119,7 @@ class RecordsTrashTest {
 
         // 내 달력's kind of work lives in the settings and comes back there.
         c.settingsRepository.update { it.copy(workStyle = WorkStyle.DAY) }
-        val main = c.recordsTrash.changeStyle(PersonalCalendar.MAIN, WorkStyle.FIELD, clear = false, message = "")
+        val main = c.recordsTrash.changeStyle(PersonalCalendar.MAIN, WorkStyle.FIELD, clear = false, message = "")!!
         assertEquals(WorkStyle.FIELD, c.settingsRepository.current.workStyle)
         assertTrue(c.recordsTrash.restore(main.id))
         assertEquals(WorkStyle.DAY, c.settingsRepository.current.workStyle)
@@ -146,7 +150,7 @@ class RecordsTrashTest {
         val dir = File(app.noBackupFilesDir, "trash_test")
         val trash = RecordsTrash(dir, c.calendars, c.database, c.settingsRepository, clock = { now })
         val (id, _) = filledCalendar("현장")
-        val entry = trash.clearRecords(id)
+        val entry = trash.clearRecords(id)!!
         now += 6 * 24 * 60 * 60 * 1000L
         trash.purge()
         assertEquals(1, trash.entries.value.size)
@@ -176,7 +180,36 @@ class RecordsTrashTest {
         assertEquals(setOf(old.id, onAlba.id), ids(PersonalCalendar.MAIN))
         assertEquals(setOf(old.id, onAlba.id), ids(alba))
         assertTrue(ids(shop).isEmpty())
+        // [SHR-01] A link shows only the calendar's own memos, never those it sees through 메모 공유.
+        assertEquals(mapOf(day to "알바 메모"), com.bamnat.app.share.ShareContent.memos(c, day, alba))
         c.memoSharing.set(MemoSharing.SEPARATE)
         assertEquals(setOf(onAlba.id), ids(alba))
+    }
+
+    @Test fun anInvestorCalendarsTradesAreClearedAndComeBack() = runBlocking {
+        val id = c.calendars.begin("주식").also { c.calendars.finishSetup(it, WorkStyle.INVEST) }
+        val repo = InvestRepository.of(c.calendars.database(id))
+        val acc = repo.ensureAccount()
+        repo.saveCash(CashFlow(accountId = acc, date = day, kind = CashKind.DEPOSIT, amount = 1_000_000))
+        repo.saveTrade(Trade(accountId = acc, date = day, symbol = "005930", name = "삼성전자", side = Side.BUY, quantity = 1.0, price = 70_000.0))
+        val before = c.recordsTrash.records(id)
+        assertEquals(1, before.trades)
+        assertFalse(before.isEmpty)
+        assertTrue(before.text.contains("매매 기록 1건"))
+
+        val entry = c.recordsTrash.clearRecords(id)!!
+        assertTrue(repo.now().trades.isEmpty())
+        assertTrue(repo.now().cash.isEmpty())
+        assertTrue(c.recordsTrash.records(id).isEmpty)
+
+        assertTrue(c.recordsTrash.restore(entry.id))
+        assertEquals(1, repo.now().trades.size)
+        assertEquals(1, repo.now().cash.size)
+    }
+
+    @Test fun aCalendarNotThereIsNeverClearedInsteadOfTheMainOne() = runBlocking {
+        c.scheduleRepository.setOverride(day, ShiftOverride.Off)
+        assertNull(c.recordsTrash.clearRecords("gone"))
+        assertEquals(listOf(day), c.scheduleRepository.snapshot.first().entries.map { it.date })
     }
 }

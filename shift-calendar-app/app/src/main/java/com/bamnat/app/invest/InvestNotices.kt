@@ -57,9 +57,11 @@ fun AppContainer.investCalendars(): List<PersonalCalendar> =
 object InvestNotices {
     private const val REQUEST = 3601
     private const val REQUEST_OPEN = 3602
+    // [INV-08][INV-14] Notice ids: an alarm's take NOTICE_BASE + 0..127, a date's EVENT_BASE + 0..127,
+    // so the bases stay at least 128 apart and the saved notice sits clear of both.
     private const val NOTICE_BASE = 7600
-    private const val EVENT_BASE = 7700
-    private const val SAVED_BASE = 7800
+    private const val EVENT_BASE = 7800
+    private const val SAVED_BASE = 7999
     private const val EXTRA_AT = "at"
     const val EXTRA_CALENDAR = "calendar"
     const val EXTRA_ALARM = "alarm"
@@ -184,6 +186,8 @@ object InvestNotices {
 
     /** [INV-08] 바로 기록: the plan's trade written as the notice said, then a notice that it was. */
     internal suspend fun saveFromNotice(context: Context, c: AppContainer, calendarId: String, alarmId: Long) {
+        // A calendar removed since the notice came has nothing to save into; never 내 달력 instead.
+        if (calendarId != PersonalCalendar.MAIN && c.calendars.get(calendarId) == null) return
         val repo = c.invest(calendarId)
         val book = repo.now()
         val alarm = book.alarms.firstOrNull { it.id == alarmId } ?: return

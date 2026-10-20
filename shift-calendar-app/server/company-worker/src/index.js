@@ -1861,6 +1861,8 @@ async function adminInquiries(request, env, url, path, now) {
     // [ADMIN-12] 내가 맡기, or let it go (to: null); one tap, so two admins do not answer the same question.
     if (body.to !== "me" && body.to !== null) refuse("to", "to");
     const a = env.actor;
+    // Letting go is for whoever holds it, or the owner; nobody releases someone else's question.
+    if (body.to === null && row.assignee && row.assignee !== a.id && !a.owner) throw new Refuse("no_permission", "assignee", 403);
     await run(env, "UPDATE inquiries SET assignee = ?, assignee_name = ? WHERE id = ?", body.to ? a.id : null, body.to ? actorName(env) : null, row.id);
     await audit(env, now, "inquiry_assign", row.id, body.to ? actorName(env) : "");
   } else if (m[2] === "/notes") {
@@ -2021,7 +2023,7 @@ async function devRoute(request, env, url, path, now) {
     return json({ error: "deleted" }, 409);
   } else if (!m[2]) {
     const changed = await devUpdate(env, row, body, now);
-    if (changed === "stale") return json({ error: "changed", item: await devView(env, row) }, 409);
+    if (changed === "stale") return json({ error: "changed", item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) }, 409);
   } else if (m[2] === "/delete") {
     await env.DB.batch([
       stmt(env, "UPDATE dev_items SET deleted_at = ?, updated_at = ? WHERE id = ?", now, now, row.id),
@@ -2121,8 +2123,11 @@ async function devUpdate(env, row, body, now) {
   }
   if (!stmts.length) return false;
   const cols = Object.keys(set);
-  stmts.unshift(stmt(env, `UPDATE dev_items SET ${[...cols.map((c) => `${c} = ?`), "updated_at = ?"].join(", ")} WHERE id = ?`,
-    ...cols.map((c) => set[c]), now, row.id));
+  // Written only over the item as this admin read it: a change that landed meanwhile makes it "stale",
+  // and then nothing (not even a history line) is written.
+  const updated = await run(env, `UPDATE dev_items SET ${[...cols.map((c) => `${c} = ?`), "updated_at = ?"].join(", ")} WHERE id = ? AND updated_at = ?`,
+    ...cols.map((c) => set[c]), now, row.id, row.updated_at);
+  if (!updated.meta.changes) return "stale";
   await env.DB.batch(stmts);
   // The activity screen shows the title; the id goes with what changed.
   for (const [action, detail] of notes) await audit(env, now, action, set.title ?? row.title, `${detail} ${row.id}`);
@@ -2248,6 +2253,8 @@ async function devView(env, row) {
       } catch {
         // An old line keeps its action; nothing more to show.
       }
+      // The words sent to questions are theirs to read who may read questions, like the previews above.
+      if (!read && h.action === "reply" && detail && typeof detail === "object") delete detail.text;
       return { id: h.id, at: iso(h.at), actor: h.actor, action: h.action, detail };
     }),
   };
@@ -2256,12 +2263,11 @@ async function devView(env, row) {
 // ---- 자주 쓰는 답, shared by every admin [ADMIN-12] ----
 
 async function templates(env, now) {
-  // A new server starts with a few; once they are written, deleting one keeps it deleted.
-  if (!(await one(env, "SELECT value FROM settings WHERE key = 'templates'"))) {
-    await env.DB.batch([
-      ...DEFAULT_TEMPLATES.map(([label, text]) => stmt(env, "INSERT INTO reply_templates (label, text, by, at) VALUES (?, ?, '', ?)", label, text, now)),
-      stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('templates', '1')"),
-    ]);
+  // A new server starts with a few; once they are written, deleting one keeps it deleted. The key goes in
+  // first and only the call that put it there seeds, so two admins opening the list at once add them once.
+  const first = await run(env, "INSERT OR IGNORE INTO settings (key, value) VALUES ('templates', '1')");
+  if (first.meta.changes) {
+    await env.DB.batch(DEFAULT_TEMPLATES.map(([label, text]) => stmt(env, "INSERT INTO reply_templates (label, text, by, at) VALUES (?, ?, '', ?)", label, text, now)));
   }
   const rows = await all(env, "SELECT id, label, text, by FROM reply_templates ORDER BY id");
   return { templates: rows.map((r) => ({ id: r.id, label: r.label, text: r.text, by: r.by })) };

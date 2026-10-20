@@ -134,6 +134,7 @@ object Sheets {
                 val text = when (attr(attrs, "t")) {
                     "s" -> v?.trim()?.toIntOrNull()?.let { strings.getOrNull(it) }
                     "inlineStr" -> Regex("""<t\b[^>]*>(.*?)</t>""", RegexOption.DOT_MATCHES_ALL).findAll(body).joinToString("") { unescape(it.groupValues[1]) }
+                    null, "n" -> v?.let(::dayFraction)
                     else -> v
                 }.orEmpty().trim()
                 if (col < 200) cells[col] = text
@@ -144,6 +145,18 @@ object Sheets {
             }
         }
         return rows
+    }
+
+    /**
+     * [DAYW-06] A number cell below 1 is Excel's fraction of a day — a clock time or a length (0.25 is 6:00,
+     * 0.5 is 12:00) — so it comes back as h:mm, read the same as a time or a length typed as text. Decided by
+     * the cell being a number, never by how many digits it has; other numbers stay as they are.
+     */
+    internal fun dayFraction(v: String): String {
+        val d = v.trim().toDoubleOrNull() ?: return v
+        if (d <= 0.0 || d >= 1.0) return v
+        val minutes = Math.round(d * 24 * 60).toInt()
+        return String.format(java.util.Locale.ROOT, "%d:%02d", minutes / 60, minutes % 60)
     }
 
     /** "C12" → 2 (A is 0). */

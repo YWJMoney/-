@@ -71,14 +71,18 @@ class WorkToolsStore internal constructor(private val dirOf: (String) -> File) {
 
     fun current(calendarId: String): WorkTools = of(calendarId).value
 
+    /**
+     * Changes [calendarId]'s tools. A number typed as NaN or Infinity is taken as 0 first, and the screens
+     * only see what could be saved: a change that cannot be written is not shown either.
+     */
     @Synchronized
     fun update(calendarId: String, change: (WorkTools) -> WorkTools) {
         of(calendarId)
         val flow = flows.getValue(calendarId)
-        val next = change(flow.value)
+        val next = finite(change(flow.value))
         if (next == flow.value) return
+        val text = runCatching { encode(next).toString() }.getOrNull() ?: return
         flow.value = next
-        val text = encode(next).toString()
         writer.execute { write(calendarId, text) }
     }
 
@@ -116,6 +120,14 @@ class WorkToolsStore internal constructor(private val dirOf: (String) -> File) {
         fun get(context: Context): WorkToolsStore = instance ?: synchronized(this) {
             val app = context.applicationContext
             instance ?: WorkToolsStore { id -> CalendarStorage.filesOf(app, id) }.also { instance = it }
+        }
+
+        /** [HRLY-09][FLD-11] [t] with every hour and quantity a number JSON can hold (NaN and Infinity as 0). */
+        internal fun finite(t: WorkTools): WorkTools {
+            fun f(v: Double) = if (v.isFinite()) v else 0.0
+            val offers = t.offers.map { o -> o.copy(hoursPerWeek = f(o.hoursPerWeek), nightHoursPerWeek = f(o.nightHoursPerWeek), holidayHoursPerWeek = f(o.holidayHoursPerWeek)) }
+            val quotes = t.quotes.map { q -> q.copy(items = q.items.map { it.copy(quantity = f(it.quantity)) }) }
+            return if (offers == t.offers && quotes == t.quotes) t else t.copy(offers = offers, quotes = quotes)
         }
 
         internal fun encode(t: WorkTools): JSONObject = JSONObject()
