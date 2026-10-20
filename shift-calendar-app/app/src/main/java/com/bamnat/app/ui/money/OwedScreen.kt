@@ -677,7 +677,7 @@ private fun Owed.paidPart(): Pair<Long, Long> = when (this) {
 @Composable
 private fun SwipeRow(o: Owed, today: LocalDate, actions: RowActions, modifier: Modifier = Modifier) {
     val haptics = LocalHapticFeedback.current
-    val state = rememberSwipeToDismissBoxState(positionalThreshold = { it * 0.35f })
+    val state = rememberSwipeToDismissBoxState(positionalThreshold = { it * SWIPE_THRESHOLD }) // [SWIPE-01] not by a slanted scroll
     LaunchedEffect(state.currentValue) {
         when (state.currentValue) {
             SwipeToDismissBoxValue.StartToEnd -> { haptics.performHapticFeedback(HapticFeedbackType.Confirm); actions.receiveAll(o); state.reset() }

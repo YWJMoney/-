@@ -41,6 +41,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.data.PersonalCalendar
+import com.bamnat.core.memo.MemoCalendars
 import com.bamnat.core.memo.MemoNotebook
 
 /**
@@ -65,7 +66,8 @@ internal fun NotebookBar(state: MemoListState, onPick: (MemoNotebook) -> Unit) {
         }
         Text(
             when (state.notebook) {
-                MemoNotebook.CALENDAR -> "‘${state.activeName}’에 보이는 메모예요. 다른 달력의 메모는 그 달력에서 보여요."
+                // [MEMO-01] Each calendar keeps its own memos unless 설정 › 메모 공유 puts calendars together.
+                MemoNotebook.CALENDAR -> "‘${state.activeName}’에 보이는 메모예요. 다른 달력의 메모는 그 달력에서 보여요. 달력끼리 함께 보려면 설정 › 메모 공유에서 묶어요."
                 MemoNotebook.SHARED -> "여러 달력에 함께 보이는 메모예요. 여기서 쓴 메모는 모든 달력에 보여요."
                 MemoNotebook.ALL -> "모든 달력의 메모예요."
             },
@@ -76,9 +78,9 @@ internal fun NotebookBar(state: MemoListState, onPick: (MemoNotebook) -> Unit) {
     }
 }
 
-/** [NOTE-02] What a memo's calendars read as: "모든 달력", one name, or "내 달력 외 1". */
+/** [NOTE-02] What a memo's calendars read as: "모든 달력", one name, or "내 달력 외 1"; [MEMO-01] none is 내 달력. */
 internal fun calendarsText(ids: Set<String>, calendars: List<PersonalCalendar>): String {
-    if (ids.isEmpty()) return "모든 달력"
+    if (MemoCalendars.EVERY in ids) return "모든 달력"
     val names = calendars.filter { it.id in ids }.map { it.name }
     return when {
         names.isEmpty() -> PersonalCalendar.MAIN_NAME
@@ -114,8 +116,11 @@ internal fun MemoCalendarsDialog(
     onSave: (Set<String>) -> Unit,
     title: String = "어느 달력에 보일까요?",
 ) {
-    var all by remember { mutableStateOf(initial.isEmpty()) }
-    var picked by remember { mutableStateOf(initial.ifEmpty { calendars.map { it.id }.toSet() }) }
+    // [MEMO-01] An old memo with no calendar is 내 달력's; "모든 달력" is the switch alone.
+    var all by remember { mutableStateOf(MemoCalendars.EVERY in initial) }
+    var picked by remember {
+        mutableStateOf((initial - MemoCalendars.EVERY).ifEmpty { if (initial.isEmpty()) setOf(PersonalCalendar.MAIN) else calendars.map { it.id }.toSet() })
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -161,7 +166,7 @@ internal fun MemoCalendarsDialog(
             TextButton(onClick = {
                 val ids = calendars.map { it.id }.toSet()
                 // Every calendar ticked one by one is still a choice of those calendars; only the switch means "all, later ones too".
-                onSave(if (all) emptySet() else picked.filter { it in ids }.toSet().ifEmpty { setOf(PersonalCalendar.MAIN) })
+                onSave(if (all) setOf(MemoCalendars.EVERY) else picked.filter { it in ids }.toSet().ifEmpty { setOf(PersonalCalendar.MAIN) })
             }) { Text("저장") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },

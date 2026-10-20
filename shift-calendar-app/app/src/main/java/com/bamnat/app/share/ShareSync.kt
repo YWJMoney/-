@@ -44,7 +44,7 @@ class ShareSync(
     /** Follows the data for as long as the app runs. */
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     suspend fun follow() {
-        // [MCAL-03][MCAL-06] The added calendars' own days, money, pay and links; memos are the same on every calendar.
+        // [MCAL-03][MCAL-06] The added calendars' own days, money, pay and links; [MEMO-01] memos as each calendar sees them.
         val added: Flow<Any?> = c.calendars.calendars.flatMapLatest { list ->
             val others = list.filter { !it.isMain }
             if (others.isEmpty()) flowOf(Unit)
@@ -55,7 +55,7 @@ class ShareSync(
             }) { Unit }
         }
         val reads: List<Flow<Any?>> = listOf(
-            c.scheduleRepository.snapshot, c.memoRepository.memos, c.moneyRepository.jobs, c.moneyRepository.sales,
+            c.scheduleRepository.snapshot, c.memoRepository.memos, c.memoRepository.sharing, c.moneyRepository.jobs, c.moneyRepository.sales,
             c.moneyRepository.entries, c.payStore.profile, c.payStore.closed, c.settingsRepository.settings, c.shareLinks.link, added,
         )
         combine(reads) { Unit }.debounce(DEBOUNCE_MILLIS).collect {
