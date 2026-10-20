@@ -324,6 +324,7 @@ details.card .steps{margin-top:.6rem}
 .chip button{width:1.9rem;height:1.9rem;border:0;border-radius:50%;background:none;cursor:pointer;font-size:1.1rem;line-height:1;color:var(--muted)}
 .chip.pick{padding:.35rem .8rem;border:1px solid var(--line-strong);background:var(--surface);cursor:pointer}
 .chip.pick:hover{background:var(--hover)}
+.chip svg{width:1rem;height:1rem}
 .chip.pick[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
 
 /* ---- home ---- */
@@ -460,6 +461,27 @@ background:var(--raised);border-top:1px solid var(--line)}
 .radio{display:flex;align-items:center;gap:.6rem;margin:0;padding:.75rem;border:1px solid var(--line-strong);border-radius:var(--r-sm);font-weight:600;cursor:pointer;font-size:.92rem}
 .radio input{flex:none;width:1.25rem;height:1.25rem;accent-color:var(--accent)}
 .radio:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+/* ---- 개발사항 [ADMIN-10] ---- */
+.row .check{flex:none;width:1.35rem;height:1.35rem;margin:0;accent-color:var(--accent)}
+.row.picked{background:var(--accent-soft)}
+.bulkbar{position:sticky;bottom:calc(4.6rem + env(safe-area-inset-bottom));z-index:4;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;
+margin:.75rem 0 0;padding:.6rem .75rem;background:var(--raised);border:1px solid var(--line-strong);border-radius:var(--r-lg);box-shadow:var(--shadow-lg)}
+.bulkbar b{margin-right:auto;font-size:.9rem}
+@media (min-width:45rem){.bulkbar{bottom:1rem}}
+.dev-body{margin:.6rem 0 0;white-space:pre-wrap;font-size:.94rem}
+.history{list-style:none;margin:0;padding:0}
+.history li{padding:.6rem 0;border-top:1px solid var(--line);font-size:.88rem}
+.history li:first-child{border-top:0}
+.history .who{font-weight:800}
+.history .when{color:var(--muted);font-size:.75rem;margin-left:.35rem}
+.history .what{display:block;margin-top:.1rem}
+.history .was{color:var(--muted);text-decoration:line-through}
+.notes{list-style:none;margin:0 0 .5rem;padding:0;display:grid;gap:.5rem}
+.notes li{padding:.5rem .65rem;border-radius:var(--r-sm);background:var(--gold-soft);font-size:.88rem;white-space:pre-wrap}
+.notes cite{margin:0 0 .15rem}
+.mini textarea{min-height:3.5rem}
+.item a.row-main{color:inherit;text-decoration:none}
+.item a.row-main:hover b{text-decoration:underline}
 .kbd{display:inline-block;min-width:1.6rem;padding:.05rem .4rem;border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:.4rem;font-size:.8rem;
 font-weight:800;text-align:center;background:var(--surface)}
 .keys{display:grid;grid-template-columns:auto 1fr;gap:.5rem .9rem;align-items:center;font-size:.9rem;margin:0 0 .5rem}
@@ -497,12 +519,16 @@ function adminApp() {
     moon: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>',
     key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 8-8M16 7l2 2M14 9l2 2"/>',
     help: '<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.5a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5V14M12 17.2v.1"/>',
+    dev: '<path d="M8 8 4 12l4 4M16 8l4 4-4 4M13.5 5l-3 14"/>',
+    check: '<path d="M5 12.5 10 17l9-10"/>',
   };
   /** Where each screen lives and who sees it; badges count what waits for someone there. */
   const NAV = [
     { key: "home", label: "홈", group: "main" },
     { key: "review", label: "검토", area: "review", group: "main", badge: (o) => (o.pending ?? 0) + (o.asks ?? 0) + (o.flagged ?? 0) },
     { key: "inquiries", label: "문의", area: "inquiries", group: "main", badge: (o) => o.inquiries ?? 0 },
+    // [ADMIN-10] 접수 waits for whoever may set 개발중·완료·반려; for the rest it is not a count to clear.
+    { key: "dev", label: "개발사항", area: "dev", group: "main", badge: (o) => (can("devStatus", "edit") ? o.devTodo ?? 0 : 0) },
     { key: "companies", label: "회사", area: "companies", group: "main" },
     // [COMM-06] The talk on rule sets: what people flagged first.
     { key: "community", label: "토론", area: "community", group: "main", badge: (o) => o.flaggedPosts ?? 0 },
@@ -512,6 +538,19 @@ function adminApp() {
     { key: "settings", label: "설정", group: "manage" },
   ];
   const LEVEL_NAMES = { none: "없음", view: "보기", edit: "고치기" };
+  /** [ADMIN-10] Areas that are a yes or no (the server's TOGGLES). */
+  const TOGGLES = ["devStatus"];
+  const DEV_NAMES = { todo: "접수", doing: "개발중", done: "완료", rejected: "반려" };
+  const DEV_TONES = { todo: "info", doing: "warn", done: "ok", rejected: "bad" };
+  const DEV_TO = { todo: "접수로", doing: "개발중으로", done: "완료로", rejected: "반려로" };
+  /** [ADMIN-11] What 반려 usually says, one tap each; the admin can still type their own. */
+  const REJECT_REASONS = ["이미 있는 기능이에요", "지금 계획과 맞지 않아요", "기술적으로 어려워요", "같은 항목이 있어요", "더 많은 요청을 기다려요"];
+  /** [ADMIN-11] The answer to linked questions when an item is 완료 or 반려, ready to send after a read. */
+  const DEV_REPLIES = {
+    done: "말씀해 주신 내용을 반영했어요. 앱을 최신 버전으로 업데이트하면 쓸 수 있어요. 알려 주셔서 고마워요.",
+    rejected: "보내 주신 의견을 꼼꼼히 살펴봤어요. 아쉽지만 지금은 넣기 어려워요. 같은 의견이 더 모이면 다시 볼게요.",
+    doing: "말씀해 주신 내용을 지금 만들고 있어요. 업데이트되면 다시 알려 드릴게요.",
+  };
   const KIND_NAMES = { question: "질문", bug: "문제 신고", problem: "문제 신고", idea: "건의·제안", company: "회사 방식", other: "그 밖의 이야기" };
   const STATUS_NAMES = { open: "답 대기", answered: "답함", closed: "닫힘" };
   const ACTION_NAMES = {
@@ -522,6 +561,10 @@ function adminApp() {
     reward_paid: "보상 지급", reward_void: "보상 취소", reward_owed: "보상 대기로 되돌림", settings: "채택 설정 바꿈",
     post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음",
     inquiry_reply: "문의에 답함", inquiry_status: "문의 상태 바꿈", inquiry_close: "문의 닫음", inquiry_open: "문의 다시 엶",
+    inquiry_hide: "모두의 문의 숨김", inquiry_show: "모두의 문의 다시 보이기", inquiry_assign: "문의 맡음",
+    dev_create: "개발사항 만듦", dev_edit: "개발사항 고침", dev_status: "개발사항 처리", dev_bulk: "개발사항 한 번에 처리",
+    dev_delete: "개발사항 지움", dev_restore: "개발사항 되살림", dev_link: "문의를 개발사항에 연결", dev_unlink: "개발사항에서 문의 뗌",
+    dev_reply: "개발사항의 문의에 한 번에 답함", template_add: "자주 쓰는 답 추가", template_remove: "자주 쓰는 답 지움",
   };
   const ERRORS = {
     exists: "이미 있어요",
@@ -545,6 +588,14 @@ function adminApp() {
     server: "서버에 문제가 생겼어요. 잠시 뒤 다시 해 주세요",
     adoptAgree: "맞았어요 비율은 50~100% 사이로 정해 주세요",
     action: "이 글에는 할 수 없는 일이에요",
+    changed: "다른 관리자가 먼저 고쳤어요. 바뀐 내용을 불러왔어요",
+    deleted: "지운 항목이에요. 최고 관리자가 되살린 뒤 고칠 수 있어요",
+    title: "제목을 1~100자로 적어 주세요",
+    body: "내용은 4000자까지 적을 수 있어요",
+    reason: "반려 이유를 적어 주세요",
+    ids: "고른 항목이 없어요",
+    label: "이름을 1~20자로 적어 주세요",
+    too_many: "더 넣을 수 없어요. 쓰지 않는 것을 먼저 지워 주세요",
   };
   const TEMPLATES = [
     ["확인 중", "알려 주셔서 고마워요. 지금 확인하고 있어요. 고치는 대로 다시 알려 드릴게요."],
@@ -553,12 +604,17 @@ function adminApp() {
     ["설정 안내", "설정에서 바로 바꿀 수 있어요. 설정 > 해당 항목에서 원하는 값으로 바꿔 보세요."],
   ];
 
+  /** [ADMIN-12] The shared answers as [label, text], or the built-in ones until they come. */
+  const templateList = () => (S.templates ? S.templates.map((t) => [t.label, t.text, t.id]) : TEMPLATES);
+
   const S = {
     phase: "boot", // boot, login, app, join, install
     me: null, overview: null, health: null,
     route: { name: "home", id: null },
     data: {}, // per screen
     reviewFilter: "all", inquiryStatus: "open", inquiryTopic: "", rewardTab: "owed", query: "", postFilter: "flagged",
+    // [ADMIN-12] Whose questions: everyone's, mine, nobody's. [ADMIN-10] The 개발사항 list's filter, words and picked items.
+    inquiryWho: "", devStatus: "open", devQuery: "", devWho: "", devPick: null, templates: null,
     draft: null, loginMode: "account", error: "", busy: 0, online: navigator.onLine,
     join: null, // invite info on the join page
     installPrompt: null, installed: matchMedia("(display-mode: standalone)").matches || navigator.standalone === true,
@@ -668,6 +724,9 @@ function adminApp() {
       if (name === "review") jobs.push(api("/queue").then((d) => { S.data.queue = d; }));
       if (name === "inquiries" && !id) jobs.push(loadInquiries());
       if (name === "inquiries" && id) jobs.push(api(`/inquiries/${id}`).then((d) => { S.data.inquiry = d; }));
+      if (name === "inquiries" && id && can("inquiries", "edit") && !S.templates) jobs.push(loadTemplates());
+      if (name === "dev" && !id) jobs.push(loadDev());
+      if (name === "dev" && id) jobs.push(api(`/dev/${id}`).then((d) => { S.data.dev = d; }));
       if (name === "companies" && !id) jobs.push(api(`/companies?q=${encodeURIComponent(S.query)}`).then((d) => { S.data.list = d; }));
       if (name === "companies" && id) jobs.push(api(`/companies/${id}`).then((d) => { S.data.company = d; }));
       if (name === "community") {
@@ -691,12 +750,25 @@ function adminApp() {
 
   async function loadInquiries() {
     try {
-      S.data.inquiries = await api(`/inquiries?status=${S.inquiryStatus}${S.inquiryTopic ? `&topic=${S.inquiryTopic}` : ""}`);
+      S.data.inquiries = await api(`/inquiries?status=${S.inquiryStatus}${S.inquiryTopic ? `&topic=${S.inquiryTopic}` : ""}${S.inquiryWho ? `&who=${S.inquiryWho}` : ""}`);
       S.data.inquiriesMissing = false;
     } catch (e) {
       // The server has no inquiry box yet: the screen says so instead of failing.
       if (e.message === "not_found") S.data.inquiriesMissing = true;
       else throw e;
+    }
+  }
+
+  async function loadDev() {
+    S.data.devList = await api(`/dev?status=${S.devStatus}&q=${encodeURIComponent(S.devQuery)}${S.devWho ? `&who=${S.devWho}` : ""}`);
+  }
+
+  /** [ADMIN-12] The answers every admin shares; until the server has them, the ones built in. */
+  async function loadTemplates() {
+    try {
+      S.templates = (await api("/templates")).templates;
+    } catch {
+      S.templates = null;
     }
   }
 
@@ -782,6 +854,10 @@ function adminApp() {
       const q = S.data.inquiry;
       return { title: q ? KIND_NAMES[q.kind] ?? "문의" : "문의", sub: q ? `${STATUS_NAMES[q.status] ?? ""} · ${moment(q.createdAt)}` : "", back: href("inquiries") };
     }
+    if (name === "dev" && id) {
+      const d = S.data.dev;
+      return { title: d && d.id === id ? d.title : "개발사항", sub: d && d.id === id ? `${DEV_NAMES[d.status]}${d.deletedAt ? " · 지움" : ""} · 문의 ${d.links}건` : "", back: href("dev") };
+    }
     if (name === "community" && id) {
       const first = S.data.posts?.posts?.[0];
       return { title: first ? first.company.name : "토론", sub: first ? `${first.dept || "회사 전체"} 규칙의 토론` : "규칙 토론", back: href("community") };
@@ -799,6 +875,7 @@ function adminApp() {
     if (name === "home") return homeView();
     if (name === "review") return reviewView();
     if (name === "inquiries") return id ? inquiryView() : inquiriesView();
+    if (name === "dev") return id ? devView() : devListView();
     if (name === "companies") return id ? companyView(S.data.company) : companiesView();
     if (name === "community") return communityView();
     if (name === "rewards") return rewardsView();
@@ -832,6 +909,9 @@ function adminApp() {
       tile("달라요", o.flagged, "다시 볼 규칙", href("review"), true);
     }
     if (can("inquiries")) tile("문의", o.inquiries, "답을 기다려요", href("inquiries"), true);
+    if (can("inquiries")) tile("내가 맡은 문의", o.inquiriesMine, "내 답을 기다려요", href("inquiries"), true);
+    if (can("dev")) tile("개발사항 접수", o.devTodo, can("devStatus", "edit") ? "처리를 기다려요" : "개발 전이에요", href("dev"), can("devStatus", "edit"));
+    if (can("dev")) tile("개발중", o.devDoing, "만들고 있어요", href("dev"), false);
     if (can("community")) tile("신고된 글", o.flaggedPosts, "토론에서 확인할 글", href("community"), true);
     if (can("rewards")) tile("보상 대기", o.owed, "드릴 프로 기간", href("rewards"), false);
     if (S.me.owner) tile("승인 대기 관리자", o.admins?.waiting, "가입한 관리자", href("admins"), true);
@@ -840,9 +920,18 @@ function adminApp() {
     if (can("review")) stats.push(["모든 제보", o.reports]);
     if (can("community")) stats.push(["토론 글", o.posts]);
     const todo = [];
-    const add = (n, text, to, tone) => n && todo.push(`<li><a href="${to}"><span class="dot ${tone}" aria-hidden="true"></span>${esc(text)}<small>${n}건</small></a></li>`);
+    // [ADMIN-12] An entry can open its screen already filtered (data-act), so the first tap lands on the work.
+    const add = (n, text, to, tone, act = "") => n && todo.push(`<li><a href="${to}"${act}><span class="dot ${tone}" aria-hidden="true"></span>${esc(text)}<small>${n}건</small></a></li>`);
     if (S.me.owner) add(o.admins?.waiting, "승인을 기다리는 관리자", href("admins"), "bad");
-    if (can("inquiries")) add(o.inquiries, "답을 기다리는 문의", href("inquiries"), "bad");
+    if (can("inquiries")) {
+      add(o.inquiriesMine, "내가 맡은, 답을 기다리는 문의", href("inquiries"), "bad", ' data-act="open-inquiries" data-key="mine"');
+      add(o.inquiriesFree, "아무도 맡지 않은 문의", href("inquiries"), "bad", ' data-act="open-inquiries" data-key="free"');
+      if (!o.inquiriesMine && !o.inquiriesFree) add(o.inquiries, "답을 기다리는 문의", href("inquiries"), "bad");
+    }
+    if (can("dev")) {
+      add(o.devMine, "내가 맡은 개발사항", href("dev"), "", ' data-act="open-dev" data-key="mine"');
+      if (can("devStatus", "edit")) add(o.devTodo, "처리를 기다리는 개발사항(접수)", href("dev"), "warn", ' data-act="open-dev" data-key="todo"');
+    }
     if (can("review")) {
       add(o.pending, "채택을 기다리는 제보", href("review"), "");
       add(o.asks, "앱에 없는 방식", href("review"), "warn");
@@ -872,13 +961,13 @@ function adminApp() {
   function permSummary(perms) {
     const areas = S.overview?.me?.areas ?? S.me?.areas ?? {};
     const on = Object.entries(perms ?? {}).filter(([, l]) => l !== "none");
-    return on.length ? on.map(([a, l]) => `${areas[a] ?? a} ${LEVEL_NAMES[l]}`).join(", ") : "아직 없음";
+    return on.length ? on.map(([a, l]) => (TOGGLES.includes(a) ? areas[a] ?? a : `${areas[a] ?? a} ${LEVEL_NAMES[l]}`)).join(", ") : "아직 없음";
   }
 
   function permPills(perms, areas) {
     const on = Object.entries(perms ?? {}).filter(([, l]) => l !== "none");
     if (!on.length) return '<span class="pill">권한 없음</span>';
-    return on.map(([a, l]) => `<span class="pill ${l === "edit" ? "info" : ""}">${esc(areas[a] ?? a)} ${LEVEL_NAMES[l]}</span>`).join("");
+    return on.map(([a, l]) => `<span class="pill ${l === "edit" ? "info" : ""}">${esc(areas[a] ?? a)}${TOGGLES.includes(a) ? "" : ` ${LEVEL_NAMES[l]}`}</span>`).join("");
   }
 
   // ---- review ----
@@ -1043,15 +1132,20 @@ function adminApp() {
     const counts = d?.counts ?? {};
     const head = `<div class="segmented" role="group" aria-label="문의 상태">
       ${seg("inquiry-status", "open", S.inquiryStatus, "답 대기", counts.open)}${seg("inquiry-status", "answered", S.inquiryStatus, "답함", counts.answered)}
-      ${seg("inquiry-status", "closed", S.inquiryStatus, "닫힘", counts.closed)}</div>${topicChips(d)}`;
+      ${seg("inquiry-status", "closed", S.inquiryStatus, "닫힘", counts.closed)}</div>
+      <div class="chips" role="group" aria-label="맡은 사람">${[["", "모두"], ["mine", "내가 맡은 것"], ["free", "아무도 안 맡은 것"]].map(([key, label]) =>
+        `<button type="button" class="chip pick" data-act="inquiry-who" data-key="${key}" aria-pressed="${S.inquiryWho === key}">${label}</button>`).join("")}</div>${topicChips(d)}`;
     if (!d) return head + skeleton();
     if (!d.inquiries.length) {
-      return head + empty(S.inquiryStatus === "open" ? "답을 기다리는 문의가 없어요" : "목록이 비어 있어요", "앱에서 문의가 오면 여기와 메뉴에 숫자로 보여요.");
+      return head + empty(S.inquiryWho === "mine" ? "내가 맡은 문의가 없어요" : S.inquiryStatus === "open" ? "답을 기다리는 문의가 없어요" : "목록이 비어 있어요",
+        S.inquiryWho === "mine" ? "문의를 열어 내가 맡기를 누르거나 답하면 여기에 모여요." : "앱에서 문의가 오면 여기와 메뉴에 숫자로 보여요.");
     }
     return head + `<ul class="rows">${d.inquiries.map((q) => `<li><a class="row${q.waiting ? " unread" : ""}" href="${href("inquiries", q.id)}">
       <span class="row-main"><b>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}${q.appVersion ? ` <span class="meta">앱 ${esc(q.appVersion)}</span>` : ""}</b>
         <span class="preview">${esc(q.preview)}</span></span>
-      <span class="row-side"><span>${esc(ago(q.updatedAt ?? q.createdAt))}</span>${q.count > 1 ? `<span class="pill">${q.count}</span>` : ""}${publicPills(q)}</span>
+      <span class="row-side"><span>${esc(ago(q.updatedAt ?? q.createdAt))}</span>${q.count > 1 ? `<span class="pill">${q.count}</span>` : ""}${publicPills(q)}
+        ${q.assignee ? `<span class="pill${q.assignee.id === S.me.id ? " info" : ""}">${q.assignee.id === S.me.id ? "내가 맡음" : esc(q.assignee.name)}</span>` : ""}
+        ${q.dev ? '<span class="pill ok">개발사항</span>' : ""}${q.notes ? `<span class="pill gold">메모 ${q.notes}</span>` : ""}</span>
       ${icon(P.chevron)}</a></li>`).join("")}</ul>`;
   }
 
@@ -1073,7 +1167,8 @@ function adminApp() {
         ${editable && q.status !== "closed" ? `<form class="composer" data-form="reply">
           <label class="sr" for="reply">답</label>
           <textarea id="reply" name="text" maxlength="2000" placeholder="${q.public ? "보낸 분 앱과 모두의 문의에" : "보낸 분 앱에"} 보일 답을 적어요. 이름, 연락처, 금액은 묻지 않아요." required></textarea>
-          <div class="chips" role="group" aria-label="자주 쓰는 답">${TEMPLATES.map(([label], i) => `<button type="button" class="chip pick" data-act="template" data-i="${i}">${esc(label)}</button>`).join("")}</div>
+          <div class="chips" role="group" aria-label="자주 쓰는 답">${templateList().map(([label], i) => `<button type="button" class="chip pick" data-act="template" data-i="${i}">${esc(label)}</button>`).join("")}
+            <button type="button" class="chip pick" data-act="templates">${icon(P.plus)}답 관리</button></div>
           <div class="actions"><span class="count" id="reply-count">0/2000</span>
             <button class="btn" type="submit" data-close="1">답하고 닫기</button><button class="btn primary" type="submit">답하기</button></div>
         </form>` : ""}
@@ -1087,10 +1182,284 @@ function adminApp() {
           ${editable ? `<div class="actions start">${q.hidden ? '<button class="btn" data-act="inquiry-show">다시 보이기</button>'
             : `${[["abuse", "욕설·비방"], ["personal", "개인 정보"], ["spam", "광고·도배"]].map(([code, label]) =>
               `<button class="btn" data-act="inquiry-hide" data-reason="${code}">숨기기: ${label}</button>`).join("")}${q.flags && !q.kept ? '<button class="btn" data-act="inquiry-show">괜찮아요</button>' : ""}`}</div>` : ""}</section>` : ""}
+        ${q.dev ? devCard(q) : ""}
         ${editable ? `<section class="card"><h2>상태</h2>
-          <div class="actions start">${q.status === "closed" ? '<button class="btn" data-act="inquiry-state" data-status="open">다시 열기</button>'
+          <p class="meta">${q.assignee ? (q.assignee.id === S.me.id ? "내가 맡았어요." : `${esc(q.assignee.name)}님이 맡았어요.`) : "아직 아무도 맡지 않았어요. 답하면 내가 맡아요."}</p>
+          <div class="actions start">${q.assignee?.id === S.me.id ? '<button class="btn" data-act="inquiry-assign" data-to="">맡기 풀기</button>'
+            : `<button class="btn" data-act="inquiry-assign" data-to="me">${q.assignee ? "내가 넘겨받기" : "내가 맡기"}</button>`}
+            ${q.status === "closed" ? '<button class="btn" data-act="inquiry-state" data-status="open">다시 열기</button>'
             : '<button class="btn" data-act="inquiry-state" data-status="closed">닫기</button>'}</div></section>` : ""}
+        <section class="card"><h2>관리자 메모</h2><p class="hint">관리자끼리만 봐요. 보낸 분 앱에는 보이지 않아요.</p>
+          ${q.notes?.length ? `<ul class="notes">${q.notes.map((n) => `<li><cite>${esc(n.by)} · ${esc(ago(n.at))}</cite>${esc(n.text)}</li>`).join("")}</ul>` : ""}
+          ${editable ? `<form class="mini" data-form="inquiry-note"><label class="sr" for="inq-note">메모</label>
+            <textarea id="inq-note" name="text" maxlength="1000" placeholder="예: 다음 버전에서 고칠 예정, 비슷한 문의 많음" required></textarea>
+            <div class="actions"><button class="btn small" type="submit">메모 남기기</button></div></form>` : ""}</section>
       </aside></div>`;
+  }
+
+  /**
+   * [ADMIN-11] On a question: the 개발사항 it is in, and one tap to add it to one (new, or one that exists).
+   * Shown to whoever may see 개발사항; adding takes changing them.
+   */
+  function devCard(q) {
+    const add = can("dev", "edit");
+    return `<section class="card"><div class="card-head"><h2>개발사항</h2>${q.dev.length ? `<span class="pill ok">${q.dev.length}</span>` : ""}</div>
+      ${q.dev.length ? `<ul class="rows">${q.dev.map((d) => `<li><a class="row" href="${href("dev", d.id)}"><span class="row-main"><b>${esc(d.title)}</b>
+        <small>문의 ${d.links}건</small></span><span class="pill ${DEV_TONES[d.status]}">${DEV_NAMES[d.status]}</span>${icon(P.chevron)}</a></li>`).join("")}</ul>`
+        : '<p class="hint">개발이 필요한 문의면 개발사항에 올려 두세요. 누가 올렸는지 남고, 같은 요청이 몇 건인지 모여요.</p>'}
+      ${add ? `<div class="actions start"><button class="btn${q.dev.length ? "" : " primary"}" data-act="dev-from-inquiry">${icon(P.plus)}개발사항에 추가</button></div>` : ""}</section>`;
+  }
+
+  const firstText = (q) => q.messages.find((m) => m.from === "user")?.text ?? "";
+  const words = (t) => new Set(String(t).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 2));
+
+  /** Items most like [text] first: how many words they share, then how many asked for them. */
+  function likeFirst(items, text) {
+    const mine = words(text);
+    const score = (d) => [...words(`${d.title} ${d.body ?? ""}`)].filter((w) => mine.has(w) || [...mine].some((m) => m.length >= 3 && (w.includes(m) || m.includes(w)))).length;
+    return items.map((d) => [score(d), d]).sort((a, b) => b[0] - a[0] || b[1].links - a[1].links).map(([n, d]) => ({ ...d, like: n }));
+  }
+
+  /** [ADMIN-11] 개발사항에 추가: a new item filled in from the question, or the question joined to one that exists. */
+  async function openDevFromInquiry(mode = "new") {
+    const q = S.data.inquiry;
+    const text = firstText(q);
+    const line = text.split("\n").find((l) => l.trim())?.trim() ?? "";
+    const title = [...line].length > 50 ? `${[...line].slice(0, 50).join("")}…` : line;
+    const body = `${text}\n\n— ${KIND_NAMES[q.kind] ?? "문의"}${q.topicName ? ` · ${q.topicName}` : ""}${q.appVersion ? ` · 앱 ${q.appVersion}` : ""}`;
+    const tabs = `<div class="segmented" role="group" aria-label="추가 방법">${seg("dev-add-mode", "new", mode, "새로 만들기")}${seg("dev-add-mode", "attach", mode, "있는 항목에 붙이기")}</div>`;
+    if (mode === "new") {
+      openDialog(`<form data-form="dev-new" data-inquiry="${q.id}"><h2>개발사항에 추가</h2>${tabs}
+        <p>문의 내용으로 채워 두었어요. 고칠 것만 고치고 추가를 누르세요. 추가한 사람으로 내 이름이 남아요.</p>
+        <div class="fieldset"><label for="dev-title">제목</label><input id="dev-title" name="title" maxlength="100" required value="${esc(title)}"></div>
+        <div class="fieldset"><label for="dev-body">내용</label><textarea id="dev-body" name="body" maxlength="4000">${esc(body)}</textarea></div>
+        <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">추가</button></div></form>`, "wide");
+      return;
+    }
+    openDialog(`<div class="box"><h2>있는 항목에 붙이기</h2>${tabs}
+      <p>비슷한 항목이 위에 있어요. 붙이면 그 항목의 요청 수가 늘어요.</p>
+      <input id="dev-find" type="search" placeholder="제목으로 찾기" autocomplete="off" aria-label="개발사항 찾기">
+      <div id="dev-found"><div class="card skeleton short"></div></div>
+      <div class="actions"><button class="btn" data-act="close">닫기</button></div></div>`, "wide");
+    try {
+      const d = await api("/dev?status=open");
+      S.devCandidates = likeFirst(d.items.filter((x) => !(q.dev ?? []).some((y) => y.id === x.id)), text);
+    } catch (e) {
+      fail(e);
+      S.devCandidates = [];
+    }
+    showCandidates("");
+  }
+
+  function showCandidates(find) {
+    const box = document.getElementById("dev-found");
+    if (!box) return;
+    const f = find.trim().toLowerCase();
+    const list = (S.devCandidates ?? []).filter((d) => !f || d.title.toLowerCase().includes(f) || (d.body ?? "").toLowerCase().includes(f)).slice(0, 20);
+    box.innerHTML = list.length ? `<ul class="rows">${list.map((d) => `<li><button class="row" data-act="dev-attach" data-id="${d.id}">
+      <span class="row-main"><b>${esc(d.title)}</b><small>${DEV_NAMES[d.status]} · 문의 ${d.links}건${d.like ? " · 비슷해요" : ""}</small></span>
+      <span class="pill">붙이기</span></button></li>`).join("")}</ul>`
+      : '<p class="meta">붙일 항목이 없어요. 새로 만들기를 눌러 주세요.</p>';
+  }
+
+  // ---- 개발사항 [ADMIN-10][ADMIN-11] ----
+
+  function devListView() {
+    const d = S.data.devList;
+    const counts = d?.counts ?? {};
+    const edit = can("dev", "edit");
+    const picking = Boolean(S.devPick);
+    const head = `<div class="segmented" role="group" aria-label="개발사항 상태">
+        ${seg("dev-status", "open", S.devStatus, "할 일", counts.open)}${seg("dev-status", "todo", S.devStatus, "접수", counts.todo)}
+        ${seg("dev-status", "doing", S.devStatus, "개발중", counts.doing)}${seg("dev-status", "done", S.devStatus, "완료", counts.done)}
+        ${seg("dev-status", "rejected", S.devStatus, "반려", counts.rejected)}${seg("dev-status", "all", S.devStatus, "전체", counts.all)}
+        ${seg("dev-status", "deleted", S.devStatus, "지움", counts.deleted)}</div>
+      <div class="searchbar"><input id="search" type="search" placeholder="제목이나 내용으로 찾기" value="${esc(S.devQuery)}" autocomplete="off" enterkeyhint="search" aria-label="개발사항 찾기">
+        ${edit && !picking ? `<button class="btn primary" data-act="dev-new">${icon(P.plus)}새 개발사항</button>` : ""}
+        <button class="btn" data-act="dev-pick" aria-pressed="${picking}">${picking ? "고르기 끝" : `${icon(P.check)}여러 개 고르기`}</button></div>
+      <div class="chips" role="group" aria-label="맡은 사람">${[["", "모두"], ["mine", "내가 맡은 것"]].map(([key, label]) =>
+        `<button type="button" class="chip pick" data-act="dev-who" data-key="${key}" aria-pressed="${S.devWho === key}">${label}</button>`).join("")}</div>
+      <p class="hint">문의에서 "개발사항에 추가"로 올리거나 여기서 바로 만들어요. 문의 수가 많은 것이 위에 와요. 고친 것은 모두 항목마다 기록에 남아요.${can("devStatus", "edit") ? " 여러 개 고르기로 한 번에 복사하거나 처리해요." : " 처리(개발중·완료·반려)는 최고 관리자나 처리 권한이 있는 관리자가 해요."}</p>`;
+    return head + `<div id="dev-list">${devRows()}</div>`;
+  }
+
+  function devRows() {
+    const d = S.data.devList;
+    if (!d) return skeleton();
+    const picking = Boolean(S.devPick);
+    if (!d.items.length) {
+      return empty(S.devQuery ? "찾는 개발사항이 없어요" : S.devStatus === "deleted" ? "지운 항목이 없어요" : "개발사항이 없어요",
+        S.devQuery ? "" : "문의를 열고 개발사항에 추가를 누르면 여기에 모여요.");
+    }
+    const row = (x) => {
+      const inner = `<span class="row-main"><b>${esc(x.title)}</b>
+          <small>${[`문의 ${x.links}건${x.waiting ? ` (답 대기 ${x.waiting})` : ""}`, `${esc(x.createdBy.name)} · ${esc(ago(x.updatedAt))}`,
+            x.assignee ? (x.assignee.id === S.me.id ? "내가 맡음" : `맡음 ${esc(x.assignee.name)}`) : ""].filter(Boolean).join(" · ")}</small>
+          ${x.preview ? `<span class="preview">${esc(x.preview)}</span>` : ""}</span>
+        <span class="pill ${DEV_TONES[x.status]}">${x.deletedAt ? "지움" : DEV_NAMES[x.status]}</span>`;
+      return picking ? `<li><label class="row${S.devPick.has(x.id) ? " picked" : ""}"><input class="check" type="checkbox" data-pick="${x.id}"${S.devPick.has(x.id) ? " checked" : ""}>${inner}</label></li>`
+        : `<li><a class="row" href="${href("dev", x.id)}">${inner}${icon(P.chevron)}</a></li>`;
+    };
+    const n = picking ? S.devPick.size : 0;
+    const status = can("devStatus", "edit");
+    return `<ul class="rows">${d.items.map(row).join("")}</ul>
+      ${picking ? `<div class="bulkbar" role="toolbar" aria-label="고른 항목"><b>${n}개 골랐어요</b>
+        <button class="btn small ghost" data-act="dev-pick-all">${n === d.items.length ? "모두 풀기" : "모두 고르기"}</button>
+        <button class="btn small" data-act="dev-copy"${n ? "" : " disabled"}>${icon(P.copy)}복사</button>
+        ${status && S.devStatus !== "deleted" ? ["doing", "done", "rejected"].map((k) => `<button class="btn small${k === "done" ? " primary" : ""}" data-act="dev-bulk" data-status="${k}"${n ? "" : " disabled"}>${DEV_NAMES[k]}</button>`).join("") : ""}
+      </div>` : ""}`;
+  }
+
+  /** [ADMIN-10] 일괄 복사: plain text that reads as a Markdown list, to hand to developers as it is. */
+  function devCopyText(items) {
+    const today = new Date().toLocaleDateString("ko-KR");
+    const out = [`# 개발사항 ${items.length}건 (${today})`, ""];
+    items.forEach((x, i) => {
+      out.push(`${i + 1}. [${DEV_NAMES[x.status]}] ${x.title} — 문의 ${x.links}건`);
+      if (x.status === "rejected" && x.reason) out.push(`   반려 이유: ${x.reason}`);
+      for (const line of (x.body ?? "").split("\n")) if (line.trim()) out.push(`   ${line}`);
+      out.push("");
+    });
+    return out.join("\n").trimEnd();
+  }
+
+  function devView() {
+    const d = S.data.dev;
+    if (!d || d.id !== S.route.id) return skeleton(3);
+    const edit = can("dev", "edit") && !d.deletedAt;
+    const status = can("devStatus", "edit") && !d.deletedAt;
+    const reply = can("inquiries", "edit") && d.inquiries.length && !d.deletedAt;
+    const mine = d.assignee?.id === S.me.id;
+    return `<div class="cols"><section>
+      <div class="card"><div class="card-head"><h2>${esc(d.title)}</h2><span class="pill ${DEV_TONES[d.status]}">${DEV_NAMES[d.status]}</span></div>
+        <p class="meta">${esc(d.createdBy.name)}님이 ${esc(moment(d.createdAt))}에 추가 · 문의 ${d.links}건${d.assignee ? ` · ${mine ? "내가 맡음" : `${esc(d.assignee.name)}님이 맡음`}` : ""}</p>
+        ${d.body ? `<p class="dev-body">${esc(d.body)}</p>` : '<p class="meta">내용이 없어요.</p>'}
+        ${d.status === "rejected" && d.reason ? `<p class="note bad">반려 이유: ${esc(d.reason)}</p>` : ""}
+        ${d.deletedAt ? `<p class="note warn">${esc(moment(d.deletedAt))}에 지운 항목이에요. 기록은 그대로 남아 있어요.${S.me.owner ? "" : " 되살리기는 최고 관리자가 해요."}</p>` : ""}
+        <div class="actions">${d.deletedAt ? (S.me.owner ? '<button class="btn primary" data-act="dev-restore">되살리기</button>' : "")
+          : `${edit ? `<button class="btn danger" data-act="dev-delete">지우기</button>
+            <button class="btn" data-act="dev-assign" data-to="${mine ? "" : "me"}">${mine ? "맡기 풀기" : d.assignee ? "내가 넘겨받기" : "내가 맡기"}</button>
+            <button class="btn" data-act="dev-edit">고치기</button>` : ""}
+            <button class="btn" data-act="dev-copy-one">${icon(P.copy)}복사</button>`}</div></div>
+      ${status ? `<section class="card"><h2>처리</h2><p class="hint">누르면 바로 바뀌고 기록에 남아요. 반려는 이유를 함께 남겨요.</p>
+        <div class="chips" role="group" aria-label="처리 상태">${Object.keys(DEV_NAMES).map((k) =>
+          `<button type="button" class="chip pick" data-act="dev-status-set" data-status="${k}" aria-pressed="${d.status === k}">${DEV_NAMES[k]}</button>`).join("")}</div></section>` : ""}
+      <section class="card"><div class="card-head"><h2>연결된 문의</h2><span class="pill">${d.links}</span></div>
+        ${d.inquiries.length ? `<ul class="rows">${d.inquiries.map((q) => `<li class="item"><a class="row-main" href="${href("inquiries", q.id)}">
+            <b>${esc(KIND_NAMES[q.kind] ?? "문의")} <span class="pill ${q.status === "open" ? "warn" : q.status === "answered" ? "ok" : ""}">${STATUS_NAMES[q.status] ?? q.status}</span></b>
+            <small>${esc(q.preview)}</small><small>${esc(q.linkedBy)}님이 ${esc(ago(q.linkedAt))} 연결</small></a>
+            ${edit ? `<button class="btn small ghost" data-act="dev-unlink" data-id="${q.id}" aria-label="연결 떼기">떼기</button>` : ""}</li>`).join("")}</ul>`
+          : `<p class="hint">${d.links && !can("inquiries") ? "문의 권한이 있어야 내용을 볼 수 있어요." : "문의 화면의 개발사항에 추가로 연결해요."}</p>`}
+        ${reply ? `<div class="actions start"><button class="btn${d.status === "done" ? " primary" : ""}" data-act="dev-reply">연결된 문의에 한 번에 답하기</button></div>` : ""}</section>
+    </section><aside>
+      ${edit ? `<form class="card mini" data-form="dev-note"><h2>메모</h2><label class="sr" for="dev-note">메모</label>
+        <textarea id="dev-note" name="text" maxlength="1000" placeholder="다른 관리자에게 남길 말. 기록에 남아요." required></textarea>
+        <div class="actions"><button class="btn small" type="submit">남기기</button></div></form>` : ""}
+      <section class="card"><h2>기록</h2><p class="hint">누가 언제 무엇을 바꿨는지 모두 남아요.</p>
+        <ul class="history">${d.history.map(historyItem).join("")}</ul></section>
+    </aside></div>`;
+  }
+
+  /** One line of an item's history, in words, with what it was before. */
+  function historyItem(h) {
+    const x = h.detail ?? {};
+    const was = (a, b) => `<span class="was">${esc(a || "없음")}</span> → ${esc(b || "없음")}`;
+    const what = {
+      create: () => "만들었어요",
+      edit: () => [x.title ? `제목: ${was(x.title[0], x.title[1])}` : "", x.body ? `내용을 고쳤어요<details><summary>전과 후</summary><blockquote>${esc(x.body[0] || "(비어 있음)")}</blockquote><blockquote>${esc(x.body[1] || "(비어 있음)")}</blockquote></details>` : ""].filter(Boolean).join("<br>"),
+      status: () => `처리: ${was(DEV_NAMES[x.status?.[0]], DEV_NAMES[x.status?.[1]])}${x.bulk > 1 ? ` <span class="meta">(${x.bulk}개 한 번에)</span>` : ""}${x.reason ? `<blockquote>${esc(x.reason)}</blockquote>` : ""}`,
+      assign: () => `맡은 사람: ${was(x.assignee?.[0], x.assignee?.[1])}`,
+      note: () => `<blockquote>${esc(x.text)}</blockquote>`,
+      link: () => `문의를 연결했어요${can("inquiries") && x.inquiry ? ` <a href="${href("inquiries", x.inquiry)}">열기</a>` : ""}`,
+      unlink: () => "문의 연결을 뗐어요",
+      delete: () => "지웠어요",
+      restore: () => "되살렸어요",
+      reply: () => `연결된 문의 ${x.count}건에 답했어요${x.close ? "(닫음)" : ""}<blockquote>${esc(x.text)}</blockquote>`,
+    }[h.action]?.() ?? esc(h.action);
+    return `<li><span class="who">${esc(h.actor || "관리자")}</span><span class="when">${esc(moment(h.at))}</span><span class="what">${what}</span></li>`;
+  }
+
+  function openDevEdit() {
+    const d = S.data.dev;
+    openDialog(`<form data-form="dev-edit" data-since="${d.updatedAt}"><h2>개발사항 고치기</h2><p>고친 내용은 전과 후가 함께 기록에 남아요.</p>
+      <div class="fieldset"><label for="dev-title">제목</label><input id="dev-title" name="title" maxlength="100" required value="${esc(d.title)}"></div>
+      <div class="fieldset"><label for="dev-body">내용</label><textarea id="dev-body" name="body" maxlength="4000">${esc(d.body)}</textarea></div>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">저장</button></div></form>`, "wide");
+  }
+
+  function openDevNew() {
+    openDialog(`<form data-form="dev-new"><h2>새 개발사항</h2><p>추가한 사람으로 내 이름이 남아요. 문의에서 추가하면 문의가 함께 연결돼요.</p>
+      <div class="fieldset"><label for="dev-title">제목</label><input id="dev-title" name="title" maxlength="100" required></div>
+      <div class="fieldset"><label for="dev-body">내용</label><textarea id="dev-body" name="body" maxlength="4000"></textarea></div>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">추가</button></div></form>`, "wide");
+  }
+
+  /** 반려 needs a reason: one tap on a usual one fills it in. [ids] is set for many items at once. */
+  function openReason(ids) {
+    openDialog(`<form data-form="dev-reject" data-ids="${ids ? ids.join(",") : ""}"><h2>${ids ? `${ids.length}개를 반려할까요?` : "반려할까요?"}</h2>
+      <p>이유는 항목마다 기록에 남아요. 연결된 문의에 답할 때도 참고해요.</p>
+      <div class="chips">${REJECT_REASONS.map((r, i) => `<button type="button" class="chip pick" data-act="reason-pick" data-i="${i}">${esc(r)}</button>`).join("")}</div>
+      <label for="dev-reason">반려 이유</label><textarea id="dev-reason" name="reason" maxlength="300" required></textarea>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit">반려</button></div></form>`);
+  }
+
+  /** [ADMIN-11] One answer to the linked questions, filled in for the item's status; the admin reads it and sends. */
+  function openDevReply() {
+    const d = S.data.dev;
+    const open = d.inquiries.filter((q) => q.status !== "closed");
+    openDialog(`<form data-form="dev-reply"><h2>연결된 문의에 답하기</h2>
+      <p>고른 문의를 보낸 분들 앱에 같은 답이 가요. 읽어 보고 보내 주세요.</p>
+      <div class="radios">${d.inquiries.map((q) => `<label class="radio"><input type="checkbox" name="ids" value="${q.id}"${q.status !== "closed" || !open.length ? " checked" : ""}>
+        <span>${esc(q.preview.slice(0, 60))} <span class="meta">${STATUS_NAMES[q.status] ?? ""}</span></span></label>`).join("")}</div>
+      <label for="dev-reply-text">답</label><textarea id="dev-reply-text" name="text" maxlength="2000" required>${esc(DEV_REPLIES[d.status] ?? DEV_REPLIES.done)}</textarea>
+      <label class="switch"><input type="checkbox" name="close"${d.status === "done" || d.status === "rejected" ? " checked" : ""}><span class="track" aria-hidden="true"></span><span>답하고 닫기</span></label>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">보내기</button></div></form>`, "wide");
+  }
+
+  /** [ADMIN-12] 자주 쓰는 답: every admin's, added from what was typed or from here, deleted with ×. */
+  function openTemplates() {
+    const list = S.templates ?? [];
+    const typed = document.getElementById("reply")?.value.trim() ?? "";
+    openDialog(`<form data-form="template-add"><h2>자주 쓰는 답</h2><p>모든 관리자가 같이 써요. 누르면 답 칸에 들어가요.</p>
+      ${list.length ? `<ul class="rows">${list.map((t) => `<li class="item"><div class="row-main"><b>${esc(t.label)}</b><small>${esc(t.text.slice(0, 80))}${t.by ? ` · ${esc(t.by)}` : ""}</small></div>
+        <button type="button" class="btn small danger" data-act="template-remove" data-id="${t.id}">지우기</button></li>`).join("")}</ul>` : ""}
+      <div class="fieldset"><label for="tpl-label">새 답 이름</label><input id="tpl-label" name="label" maxlength="20" required placeholder="예: 업데이트 안내"></div>
+      <div class="fieldset"><label for="tpl-text">내용</label><textarea id="tpl-text" name="text" maxlength="2000" required>${esc(typed)}</textarea></div>
+      <div class="actions"><button class="btn" type="button" data-act="close">닫기</button><button class="btn primary" type="submit">넣기</button></div></form>`, "wide");
+  }
+
+  async function devSave(body, done) {
+    try {
+      const d = await api(`/dev/${S.route.id}`, "POST", body);
+      S.data.dev = d;
+      if (done) toast(done);
+      render({ keepScroll: true });
+      load({ quiet: true });
+      return d;
+    } catch (e) {
+      if (e.message === "changed" && e.data?.item) {
+        S.data.dev = e.data.item;
+        render({ keepScroll: true });
+      }
+      fail(e);
+      return null;
+    }
+  }
+
+  /** Sets a status; 완료 with questions still waiting offers the one answer to all of them at once. */
+  async function devSetStatus(status, reason) {
+    const d = await devSave(reason ? { status, reason } : { status }, `${DEV_TO[status]} 바꿨어요`);
+    if (d && (status === "done" || status === "rejected") && can("inquiries", "edit") && d.inquiries.some((q) => q.status !== "closed")) openDevReply();
+  }
+
+  async function devBulk(status, reason) {
+    const ids = [...S.devPick];
+    const r = await act(() => api("/dev/bulk", "POST", reason ? { ids, status, reason } : { ids, status }),
+      (x) => `${x.changed}개를 ${DEV_TO[status]} 바꿨어요${status === "done" ? ". 항목을 열어 연결된 문의에 답할 수 있어요" : ""}`);
+    if (r) {
+      S.devPick = null;
+      load();
+    }
   }
 
   // ---- companies ----
@@ -1230,10 +1599,10 @@ function adminApp() {
       <div class="chips" role="group" aria-label="역할">${presets.map(([key, p]) => `<button type="button" class="chip pick" data-act="preset" data-key="${key}">${esc(p.name)}</button>`).join("")}</div>
       <p class="label">영역별 권한</p>
       <div class="perm-table">${Object.entries(d.areas).map(([area, label]) => `<div class="perm"><b>${esc(label)}</b>
-        <span class="levels" role="radiogroup" aria-label="${esc(label)}">${["none", "view", "edit"].map((l) => `<button type="button" data-act="level" data-area="${area}"
-          data-level="${l}" role="radio" aria-checked="${perms[area] === l}" aria-pressed="${perms[area] === l}"${l === "edit" && d.viewOnly?.includes(area) ? " disabled" : ""}>${LEVEL_NAMES[l]}</button>`).join("")}</span>
+        <span class="levels" role="radiogroup" aria-label="${esc(label)}">${(TOGGLES.includes(area) ? ["none", "edit"] : ["none", "view", "edit"]).map((l) => `<button type="button" data-act="level" data-area="${area}"
+          data-level="${l}" role="radio" aria-checked="${perms[area] === l}" aria-pressed="${perms[area] === l}"${l === "edit" && d.viewOnly?.includes(area) ? " disabled" : ""}>${TOGGLES.includes(area) ? (l === "edit" ? "줌" : "없음") : LEVEL_NAMES[l]}</button>`).join("")}</span>
         <input type="hidden" name="perm-${area}" value="${perms[area] ?? "none"}"></div>`).join("")}</div>
-      <p class="help">보기는 화면을 보기만 하고, 고치기는 채택·답하기 같은 바꾸는 일까지 해요. 관리자 관리는 최고 관리자만 해요.</p>`;
+      <p class="help">보기는 화면을 보기만 하고, 고치기는 채택·답하기 같은 바꾸는 일까지 해요. 개발사항 처리는 개발중·완료·반려를 정하고 여러 항목을 한 번에 처리하는 권한이에요. 관리자 관리는 최고 관리자만 해요.</p>`;
   }
 
   const readPermForm = (form, d) => Object.fromEntries(Object.keys(d.areas).map((a) => [a, form.elements[`perm-${a}`]?.value ?? "none"]));
@@ -1545,10 +1914,10 @@ function adminApp() {
     load();
   }
 
-  async function copy(text) {
+  async function copy(text, done = "복사했어요") {
     try {
       await navigator.clipboard.writeText(text);
-      toast("복사했어요");
+      toast(done);
     } catch {
       document.getElementById("inv-link")?.select();
       toast("링크를 길게 눌러 복사해 주세요");
@@ -1630,10 +1999,116 @@ function adminApp() {
     },
     template: ({ i }) => {
       const box = document.getElementById("reply");
-      box.value = (box.value ? `${box.value.trimEnd()}\n\n` : "") + TEMPLATES[Number(i)][1];
+      box.value = (box.value ? `${box.value.trimEnd()}\n\n` : "") + templateList()[Number(i)][1];
       box.dispatchEvent(new Event("input", { bubbles: true }));
       box.focus();
     },
+    "inquiry-who": ({ key }) => {
+      S.inquiryWho = key;
+      S.data.inquiries = null;
+      render();
+      load();
+    },
+    "open-inquiries": ({ key }) => {
+      S.inquiryWho = key;
+      S.inquiryStatus = "open";
+      S.data.inquiries = null;
+      go("inquiries");
+    },
+    "inquiry-assign": async ({ to }) => {
+      const q = await act(() => api(`/inquiries/${S.route.id}/assign`, "POST", { to: to || null }), to ? "내가 맡았어요" : "맡기를 풀었어요");
+      if (q) S.data.inquiry = q;
+      render({ keepScroll: true });
+      load({ quiet: true });
+    },
+    templates: async () => {
+      if (!S.templates) await loadTemplates();
+      openTemplates();
+    },
+    "template-remove": async ({ id }) => {
+      const r = await act(() => api(`/templates/${id}/remove`, "POST"), "지웠어요");
+      if (r) {
+        S.templates = r.templates;
+        openTemplates();
+        render({ keepScroll: true });
+      }
+    },
+    "dev-from-inquiry": () => openDevFromInquiry("new"),
+    "dev-add-mode": ({ key }) => openDevFromInquiry(key),
+    "dev-attach": async ({ id }) => {
+      const r = await act(() => api(`/dev/${id}/links`, "POST", { inquiry: S.route.id }), (d) => `"${d.title}"에 붙였어요. 문의 ${d.links}건이에요`);
+      if (r) {
+        dialog.close();
+        load();
+      }
+    },
+    "dev-status": ({ key }) => {
+      S.devStatus = key;
+      S.data.devList = null;
+      render();
+      load();
+    },
+    "dev-who": ({ key }) => {
+      S.devWho = key;
+      S.data.devList = null;
+      render();
+      load();
+    },
+    "open-dev": ({ key }) => {
+      if (key === "mine") [S.devWho, S.devStatus] = ["mine", "open"];
+      else [S.devWho, S.devStatus] = ["", key];
+      S.data.devList = null;
+      go("dev");
+    },
+    "dev-new": () => openDevNew(),
+    "dev-pick": () => {
+      S.devPick = S.devPick ? null : new Set();
+      render({ keepScroll: true });
+    },
+    "dev-pick-all": () => {
+      const items = S.data.devList?.items ?? [];
+      S.devPick = S.devPick.size === items.length ? new Set() : new Set(items.map((x) => x.id));
+      render({ keepScroll: true });
+    },
+    "dev-copy": () => {
+      const items = (S.data.devList?.items ?? []).filter((x) => S.devPick.has(x.id));
+      copy(devCopyText(items), `${items.length}개를 복사했어요. 메신저나 메모에 붙여 넣으세요`);
+    },
+    "dev-copy-one": () => copy(devCopyText([S.data.dev]), "복사했어요"),
+    "dev-bulk": ({ status }) => {
+      if (!S.devPick?.size) return;
+      if (status === "rejected") openReason([...S.devPick]);
+      else devBulk(status);
+    },
+    "dev-edit": () => openDevEdit(),
+    "dev-assign": ({ to }) => devSave({ assignee: to || null }, to ? "내가 맡았어요" : "맡기를 풀었어요"),
+    "dev-status-set": ({ status }) => {
+      if (status === S.data.dev.status) return;
+      if (status === "rejected") openReason(null);
+      else devSetStatus(status);
+    },
+    "reason-pick": ({ i }) => {
+      const box = document.getElementById("dev-reason");
+      box.value = REJECT_REASONS[Number(i)];
+      box.focus();
+    },
+    "dev-delete": () => confirmBox("이 개발사항을 지울까요?", "목록에서 빠지고 기록은 남아요. 최고 관리자가 되살릴 수 있어요.", "지우기", async () => {
+      const d = await api(`/dev/${S.route.id}/delete`, "POST");
+      S.data.dev = d;
+      toast("지웠어요");
+      go("dev");
+    }),
+    "dev-restore": async () => {
+      const d = await act(() => api(`/dev/${S.route.id}/restore`, "POST"), "되살렸어요");
+      if (d) S.data.dev = d;
+      render({ keepScroll: true });
+    },
+    "dev-unlink": ({ id }) => confirmBox("이 문의를 떼어 낼까요?", "문의는 그대로 있고 이 개발사항과의 연결만 끊겨요. 기록에 남아요.", "떼기", async () => {
+      S.data.dev = await api(`/dev/${S.route.id}/links/remove`, "POST", { inquiry: id });
+      toast("떼어 냈어요");
+      render({ keepScroll: true });
+    }),
+    "dev-reply": () => openDevReply(),
     "inquiry-hide": async ({ reason }) => {
       const q = await act(() => api(`/inquiries/${S.route.id}/visibility`, "POST", { action: "hide", reason }), "숨겼어요. 보낸 분 앱에 이유가 보여요");
       if (q) S.data.inquiry = q;
@@ -1850,6 +2325,61 @@ function adminApp() {
         load({ quiet: true });
       }
     },
+    "inquiry-note": async (form) => {
+      const q = await act(() => api(`/inquiries/${S.route.id}/notes`, "POST", { text: form.elements.text.value }), "메모를 남겼어요");
+      if (q) {
+        S.data.inquiry = q;
+        render({ keepScroll: true });
+      }
+    },
+    "template-add": async (form) => {
+      const r = await act(() => api("/templates", "POST", { label: form.elements.label.value, text: form.elements.text.value }), "넣었어요. 답 칸 아래에서 바로 써요");
+      if (r) {
+        S.templates = r.templates;
+        dialog.close();
+        render({ keepScroll: true });
+      }
+    },
+    "dev-new": async (form) => {
+      const body = { title: form.elements.title.value, body: form.elements.body.value };
+      if (form.dataset.inquiry) body.inquiry = form.dataset.inquiry;
+      const d = await act(() => api("/dev", "POST", body), form.dataset.inquiry ? "개발사항에 추가했어요. 추가한 사람으로 내 이름이 남아요" : "추가했어요");
+      if (!d) return;
+      dialog.close();
+      if (form.dataset.inquiry) load();
+      else go("dev", d.id);
+    },
+    "dev-edit": async (form) => {
+      const d = await devSave({ title: form.elements.title.value, body: form.elements.body.value, since: form.dataset.since }, "고쳤어요. 기록에 남았어요");
+      // Closed once saved, or when someone else's change came in instead (the screen shows it now).
+      if (d || S.data.dev.updatedAt !== form.dataset.since) dialog.close();
+    },
+    "dev-note": async (form) => {
+      const r = await act(() => api(`/dev/${S.route.id}/notes`, "POST", { text: form.elements.text.value }), "메모를 남겼어요");
+      if (r) {
+        S.data.dev = r;
+        render({ keepScroll: true });
+      }
+    },
+    "dev-reject": (form) => {
+      const reason = form.elements.reason.value.trim();
+      if (!reason) return toast(ERRORS.reason);
+      dialog.close();
+      if (form.dataset.ids) devBulk("rejected", reason);
+      else devSetStatus("rejected", reason);
+    },
+    "dev-reply": async (form) => {
+      const ids = [...form.querySelectorAll('input[name="ids"]:checked')].map((x) => x.value);
+      if (!ids.length) return toast(ERRORS.ids);
+      const r = await act(() => api(`/dev/${S.route.id}/reply`, "POST", { text: form.elements.text.value, ids, close: form.elements.close.checked }),
+        (x) => `문의 ${x.answered}건에 답했어요. 보낸 분들 앱에 보여요`);
+      if (r) {
+        dialog.close();
+        S.data.dev = r.item;
+        render({ keepScroll: true });
+        load({ quiet: true });
+      }
+    },
     invite: async (form) => {
       const d = S.data.admins;
       const r = await act(() => api("/invites", "POST", {
@@ -1914,6 +2444,14 @@ function adminApp() {
     FORMS[form.dataset.form]?.(form, e.submitter);
   });
   document.addEventListener("change", async (e) => {
+    // [ADMIN-10] Picking 개발사항 for 일괄 복사·처리.
+    if (e.target.dataset?.pick && S.devPick) {
+      if (e.target.checked) S.devPick.add(e.target.dataset.pick);
+      else S.devPick.delete(e.target.dataset.pick);
+      const box = document.getElementById("dev-list");
+      if (box) box.innerHTML = devRows();
+      return;
+    }
     if (e.target.dataset?.change !== "hidden" || S.route.name !== "companies") return;
     const c = await act(() => api(`/companies/${S.route.id}`, "POST", { hidden: e.target.checked }),
       (r) => (r.hidden ? "회사 찾기에서 숨겼어요" : "다시 회사 찾기에 나와요"));
@@ -1932,7 +2470,18 @@ function adminApp() {
       t.style.height = "auto";
       t.style.height = `${Math.min(t.scrollHeight + 4, window.innerHeight * 0.5)}px`;
     }
+    if (t.id === "dev-find") return showCandidates(t.value);
     if (t.id !== "search") return;
+    if (S.route.name === "dev") {
+      S.devQuery = t.value;
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(async () => {
+        await act(() => loadDev());
+        const box = document.getElementById("dev-list");
+        if (box) box.innerHTML = devRows();
+      }, 250);
+      return;
+    }
     S.query = t.value;
     clearTimeout(searchTimer);
     searchTimer = setTimeout(async () => {

@@ -20,6 +20,8 @@
 // *      /api/admin/*             behind a sign-in: the owner's password (secret ADMIN_PASSWORD), or an
 //                                 admin account the owner invited by email and approved, with only the
 //                                 permissions the owner gave it
+// *      /api/admin/dev...        개발사항 gathered from questions, each with its own history [ADMIN-10][ADMIN-11]
+// *      /api/admin/templates...  자주 쓰는 답 shared by admins; inquiries also take 내가 맡기 and notes [ADMIN-12]
 //
 // A report carries no pay amounts, names or contacts; one that looks like it does is refused, not
 // cleaned. No IP address is stored: limits and "the same network within an hour" use hashes salted
@@ -94,6 +96,10 @@ const ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
 const AREAS = {
   review: "검토",
   inquiries: "문의",
+  // [ADMIN-10] 개발사항: what admins gather from questions for the developer. Adding, changing and deleting
+  // is "dev"; setting 개발중·완료·반려 is its own switch, the owner's until given.
+  dev: "개발사항",
+  devStatus: "개발사항 처리",
   companies: "회사·규칙",
   rewards: "보상",
   settings: "채택 설정",
@@ -103,11 +109,19 @@ const AREAS = {
 };
 const LEVELS = ["none", "view", "edit"];
 const VIEW_ONLY = ["audit"];
+/** [ADMIN-10] Areas that are a yes or no: a look at them means nothing, so "view" is stored as "none". */
+const TOGGLES = ["devStatus"];
+/**
+ * [ADMIN-10] What an account made before an area existed gets: every admin may work on 개발사항, and one
+ * who answers questions may change them, so the admin already invited keeps working without a visit to
+ * the admins screen. 처리 stays the owner's until given.
+ */
+const SINCE = { dev: (p) => (p?.inquiries === "edit" ? "edit" : "view") };
 const PRESETS = {
-  manager: { name: "운영 관리자", perms: { review: "edit", inquiries: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit", audit: "view" } },
-  reviewer: { name: "검토 담당", perms: { review: "edit", inquiries: "none", companies: "view", rewards: "none", settings: "none", community: "edit", audit: "none" } },
-  support: { name: "문의 담당", perms: { review: "view", inquiries: "edit", companies: "view", rewards: "none", settings: "none", community: "view", audit: "none" } },
-  viewer: { name: "보기 전용", perms: { review: "view", inquiries: "view", companies: "view", rewards: "view", settings: "view", community: "view", audit: "view" } },
+  manager: { name: "운영 관리자", perms: { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit", audit: "view" } },
+  reviewer: { name: "검토 담당", perms: { review: "edit", inquiries: "none", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "edit", audit: "none" } },
+  support: { name: "문의 담당", perms: { review: "view", inquiries: "edit", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "view", audit: "none" } },
+  viewer: { name: "보기 전용", perms: { review: "view", inquiries: "view", dev: "view", devStatus: "none", companies: "view", rewards: "view", settings: "view", community: "view", audit: "view" } },
 };
 const OWNER = { id: "owner", name: "최고 관리자", email: "", owner: true, perms: Object.fromEntries(Object.keys(AREAS).map((a) => [a, VIEW_ONLY.includes(a) ? "view" : "edit"])) };
 
@@ -144,6 +158,9 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM codes WHERE expires < ?", now),
     stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
     stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
+    // [ADMIN-11][ADMIN-12] Admins' notes and the link to a 개발사항 go with the question; the item stays.
+    stmt(env, "DELETE FROM inquiry_notes WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
+    stmt(env, "DELETE FROM dev_links WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
     stmt(env, "DELETE FROM inquiries WHERE updated_at < ?", now - INQUIRY.keepMs),
     // [COMM-06] A hidden post nobody restored is gone after 90 days, and a 30-day 쓰기 막기 when it ends.
     stmt(env, "DELETE FROM post_flags WHERE post_id IN (SELECT id FROM posts WHERE status = 'hidden' AND hidden_at < ?)", now - LIMITS.hiddenPostDays * DAY),
@@ -249,6 +266,28 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS inquiry_marks (inquiry_id TEXT NOT NULL, device TEXT NOT NULL, kind TEXT NOT NULL,
     reason TEXT, at INTEGER NOT NULL, PRIMARY KEY (inquiry_id, device, kind))`,
   "CREATE INDEX IF NOT EXISTS inquiry_marks_device ON inquiry_marks (device)",
+  // [ADMIN-10] 개발사항: what admins gather from questions for the developer. A deleted one keeps its row
+  // (deleted_at) so its history stays and the owner can bring it back. Who made or holds it is kept by
+  // id and by name, so the name still reads after an account is removed.
+  `CREATE TABLE IF NOT EXISTS dev_items (id TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'todo', reason TEXT NOT NULL DEFAULT '', created_by TEXT NOT NULL, created_by_name TEXT NOT NULL,
+    assignee TEXT, assignee_name TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER)`,
+  "CREATE INDEX IF NOT EXISTS dev_items_status ON dev_items (status, updated_at)",
+  // [ADMIN-11] The questions behind an item; how many is how many people want it.
+  `CREATE TABLE IF NOT EXISTS dev_links (item_id TEXT NOT NULL, inquiry_id TEXT NOT NULL, by TEXT NOT NULL, at INTEGER NOT NULL,
+    PRIMARY KEY (item_id, inquiry_id))`,
+  "CREATE INDEX IF NOT EXISTS dev_links_inquiry ON dev_links (inquiry_id)",
+  // [ADMIN-10] Every change to an item, by whom, before and after (detail is JSON); shown on the item.
+  `CREATE TABLE IF NOT EXISTS dev_history (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id TEXT NOT NULL, at INTEGER NOT NULL,
+    actor_id TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '{}')`,
+  "CREATE INDEX IF NOT EXISTS dev_history_item ON dev_history (item_id, id)",
+  // [ADMIN-12] Notes admins leave each other on a question; never shown in the app.
+  `CREATE TABLE IF NOT EXISTS inquiry_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, inquiry_id TEXT NOT NULL, by TEXT NOT NULL,
+    text TEXT NOT NULL, at INTEGER NOT NULL)`,
+  "CREATE INDEX IF NOT EXISTS inquiry_notes_inquiry ON inquiry_notes (inquiry_id, id)",
+  // [ADMIN-12] Answers every admin can drop into a reply with one tap.
+  `CREATE TABLE IF NOT EXISTS reply_templates (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL, text TEXT NOT NULL,
+    by TEXT NOT NULL, at INTEGER NOT NULL)`,
   // Sign-ins before admin accounts kept only a token; they end once, and the owner signs in again.
   "DROP TABLE IF EXISTS sessions",
 ];
@@ -262,6 +301,9 @@ const COLUMNS = [
   "ALTER TABLE inquiries ADD COLUMN flags INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE inquiries ADD COLUMN kept INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE inquiries ADD COLUMN same INTEGER NOT NULL DEFAULT 0",
+  // [ADMIN-12] 내가 맡기: the admin answering a question, by id and by name.
+  "ALTER TABLE inquiries ADD COLUMN assignee TEXT",
+  "ALTER TABLE inquiries ADD COLUMN assignee_name TEXT",
 ];
 
 const schemas = new WeakMap();
@@ -1228,6 +1270,9 @@ async function forgetMine(request, env) {
     stmt(env, "DELETE FROM post_flags WHERE device = ? OR post_id NOT IN (SELECT id FROM posts)", dev),
     stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE device = ?)", dev),
     stmt(env, "DELETE FROM inquiries WHERE device = ?", dev),
+    // [ADMIN-11][ADMIN-12] What admins attached to those questions goes with them.
+    stmt(env, "DELETE FROM inquiry_notes WHERE inquiry_id NOT IN (SELECT id FROM inquiries)"),
+    stmt(env, "DELETE FROM dev_links WHERE inquiry_id NOT IN (SELECT id FROM inquiries)"),
     // [ADMIN-02] Their 나도 그래요 and 신고 on others' questions go too, and those count one fewer.
     stmt(env, `UPDATE inquiries SET same = same - 1 WHERE id IN (SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'same')`, dev),
     stmt(env, `UPDATE inquiries SET flags = flags - 1 WHERE id IN (SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'flag')`, dev),
@@ -1554,6 +1599,8 @@ async function inquiries(request, env, path) {
     await env.DB.batch([
       stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id = ?", row.id),
       stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id = ?", row.id),
+      stmt(env, "DELETE FROM inquiry_notes WHERE inquiry_id = ?", row.id),
+      stmt(env, "DELETE FROM dev_links WHERE inquiry_id = ?", row.id),
       stmt(env, "DELETE FROM inquiries WHERE id = ?", row.id),
     ]);
     return new Response(null, { status: 204 });
@@ -1654,11 +1701,20 @@ async function inquiryView(env, row, admin = false) {
   const info = JSON.parse(row.info);
   const context = {};
   for (const [label, key] of INQUIRY_INFO) if (info[key]) context[label] = info[key];
-  const reasons = await all(env, `SELECT reason, COUNT(*) AS n FROM inquiry_marks WHERE inquiry_id = ? AND kind = 'flag'
-    GROUP BY reason ORDER BY n DESC, reason`, row.id);
+  const [reasons, notes, items] = (await env.DB.batch([
+    stmt(env, `SELECT reason, COUNT(*) AS n FROM inquiry_marks WHERE inquiry_id = ? AND kind = 'flag'
+      GROUP BY reason ORDER BY n DESC, reason`, row.id),
+    stmt(env, "SELECT by, text, at FROM inquiry_notes WHERE inquiry_id = ? ORDER BY id", row.id),
+    stmt(env, `SELECT d.id, d.title, d.status, (SELECT COUNT(*) FROM dev_links x WHERE x.item_id = d.id) AS links FROM dev_links l
+      JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL WHERE l.inquiry_id = ? ORDER BY l.at`, row.id),
+  ])).map((r) => r.results);
   return {
     ...view, appVersion: info.app ?? null, context, ...triage(row.kind, messages.find((m) => m.sender === "user")?.text, info),
     flags: row.flags ?? 0, kept: row.kept === 1, reasons: reasons.map((r) => ({ code: r.reason, text: FLAGS[r.reason] ?? r.reason, n: r.n })),
+    // [ADMIN-12] Who is answering it and what admins told each other; [ADMIN-11] the 개발사항 it is in.
+    assignee: row.assignee ? { id: row.assignee, name: row.assignee_name ?? "" } : null,
+    notes: notes.map((n) => ({ by: n.by, text: n.text, at: iso(n.at) })),
+    ...(env.actor && can(env.actor, "dev") ? { dev: items.map((d) => ({ id: d.id, title: d.title, status: d.status, links: d.links })) } : {}),
   };
 }
 
@@ -1782,8 +1838,8 @@ async function inquiryMark(request, env, id, kind) {
 
 async function adminInquiries(request, env, url, path, now) {
   const method = request.method;
-  if (path === "/inquiries" && method === "GET") return json(await inquiryList(env, url.searchParams));
-  const m = path.match(/^\/inquiries\/([A-Za-z0-9]{22})(\/reply|\/status|\/visibility)?$/);
+  if (path === "/inquiries" && method === "GET") return json(await inquiryList(env, url.searchParams, env.actor?.id ?? ""));
+  const m = path.match(/^\/inquiries\/([A-Za-z0-9]{22})(\/reply|\/status|\/visibility|\/assign|\/notes)?$/);
   if (!m) return json({ error: "not_found" }, 404);
   const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", m[1]);
   if (!row) return json({ error: "not_found" }, 404);
@@ -1796,9 +1852,21 @@ async function adminInquiries(request, env, url, path, now) {
     await env.DB.batch([
       stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)",
         row.id, body.text.normalize("NFC").replace(/\r\n?/g, "\n").trim(), actorName(env), now),
-      stmt(env, "UPDATE inquiries SET status = ?, updated_at = ? WHERE id = ?", status, now, row.id),
+      // [ADMIN-12] Whoever answers a question nobody took has taken it.
+      stmt(env, `UPDATE inquiries SET status = ?, updated_at = ?, assignee = COALESCE(assignee, ?),
+        assignee_name = CASE WHEN assignee IS NULL THEN ? ELSE assignee_name END WHERE id = ?`, status, now, env.actor?.id ?? null, actorName(env), row.id),
     ]);
     await audit(env, now, "inquiry_reply", row.id, status);
+  } else if (m[2] === "/assign") {
+    // [ADMIN-12] 내가 맡기, or let it go (to: null); one tap, so two admins do not answer the same question.
+    if (body.to !== "me" && body.to !== null) refuse("to", "to");
+    const a = env.actor;
+    await run(env, "UPDATE inquiries SET assignee = ?, assignee_name = ? WHERE id = ?", body.to ? a.id : null, body.to ? actorName(env) : null, row.id);
+    await audit(env, now, "inquiry_assign", row.id, body.to ? actorName(env) : "");
+  } else if (m[2] === "/notes") {
+    // [ADMIN-12] A note for the other admins: never in the app's view of the question.
+    const text = plainText(body.text, DEV.note, "text", true);
+    await run(env, "INSERT INTO inquiry_notes (inquiry_id, by, text, at) VALUES (?, ?, ?, ?)", row.id, actorName(env), text, now);
   } else if (m[2] === "/visibility") {
     // 모두의 문의: hide (with a reason the writer's app shows) or show again; either way 신고 no longer hides it.
     if (!row.public) refuse("public", "action");
@@ -1825,19 +1893,24 @@ async function adminInquiries(request, env, url, path, now) {
 }
 
 /** Questions waiting first, then the newest; [q] finds words in what was asked or answered. */
-async function inquiryList(env, params) {
+async function inquiryList(env, params, actorId = "") {
   const status = ["open", "answered", "closed"].includes(params.get("status")) ? params.get("status") : null;
   const q = String(params.get("q") ?? "").trim().slice(0, 40);
   const topic = Object.hasOwn(TOPIC_NAMES, params.get("topic") ?? "") ? params.get("topic") : null;
+  // [ADMIN-12] mine: the ones I took; free: the ones nobody took yet.
+  const who = ["mine", "free"].includes(params.get("who")) ? params.get("who") : "";
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const [rows, statusRows] = (await env.DB.batch([stmt(env, `SELECT i.*,
       (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id) AS count,
       (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
-      (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last
+      (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last,
+      (SELECT COUNT(*) FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL WHERE l.inquiry_id = i.id) AS dev,
+      (SELECT COUNT(*) FROM inquiry_notes n WHERE n.inquiry_id = i.id) AS notes
     FROM inquiries i
     WHERE (?1 IS NULL OR i.status = ?1)
       AND (?2 = '' OR EXISTS (SELECT 1 FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.text LIKE ?3 ESCAPE '\\'))
-    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 200`, status, q, like),
+      AND (?4 = '' OR (?4 = 'mine' AND i.assignee = ?5) OR (?4 = 'free' AND i.assignee IS NULL))
+    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 200`, status, q, like, who, actorId),
   stmt(env, "SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status")])).map((r) => r.results);
   const counts = { open: 0, answered: 0, closed: 0 };
   for (const r of statusRows) {
@@ -1860,6 +1933,9 @@ async function inquiryList(env, params) {
       hidden: r.hidden ?? null,
       flags: r.flags ?? 0,
       same: r.same ?? 0,
+      assignee: r.assignee ? { id: r.assignee, name: r.assignee_name ?? "" } : null,
+      dev: r.dev,
+      notes: r.notes,
     };
   });
   // How many of this view are in each topic, so the filter shows where the questions pile up.
@@ -1872,6 +1948,347 @@ async function inquiryList(env, params) {
   const shown = listed.filter((i) => !topic || i.topic === topic)
     .sort((a, b) => waits(a) - waits(b) || (waits(a) === 0 ? rank[a.urgency] - rank[b.urgency] || b.same - a.same : 0));
   return { counts, topics, topicNames: TOPIC_NAMES, inquiries: shown };
+}
+
+// ---- 개발사항: what admins gather from questions for the developer [ADMIN-10][ADMIN-11] ----
+//
+// Any admin with "dev" adds an item (from a question in one tap, or by hand), changes or deletes it, and
+// links more questions to it; how many questions are linked is how many people asked. Setting 개발중,
+// 완료 or 반려 needs "devStatus" as well (the owner has it and gives it). Every change is written to the
+// item's own history with who made it and what it was before, and deleting only marks the item, so the
+// owner can bring it back with its history whole.
+
+const DEV = {
+  statuses: { todo: "접수", doing: "개발중", done: "완료", rejected: "반려" },
+  title: 100,
+  body: 4000,
+  reason: 300,
+  note: 1000,
+  // Before and after of a long text in the history; enough to see what changed.
+  kept: 1000,
+  bulk: 100,
+  list: 300,
+};
+
+/** [ADMIN-12] What a new server's admins start with in 자주 쓰는 답; they add their own and delete these. */
+const DEFAULT_TEMPLATES = [
+  ["확인 중", "알려 주셔서 고마워요. 지금 확인하고 있어요. 고치는 대로 다시 알려 드릴게요."],
+  ["고쳤어요", "말씀하신 문제를 고쳤어요. 앱을 최신 버전으로 업데이트한 뒤 다시 확인해 주세요."],
+  ["더 알려 주세요", "정확히 확인하려면 조금 더 알려 주세요. 언제, 어떤 화면에서, 무엇을 눌렀을 때 생겼는지 적어 주시면 큰 도움이 돼요."],
+  ["설정 안내", "설정에서 바로 바꿀 수 있어요. 설정 > 해당 항목에서 원하는 값으로 바꿔 보세요."],
+  ["개발 예정", "좋은 의견 고마워요. 개발할 목록에 올려 두었어요. 반영되면 다시 알려 드릴게요."],
+  ["반영했어요", "말씀해 주신 내용을 반영했어요. 앱을 최신 버전으로 업데이트하면 쓸 수 있어요."],
+];
+
+/** Text an admin typed: control characters out, lines kept, [max] letters; [required] refuses an empty one. */
+function plainText(v, max, field, required = false) {
+  if (v === undefined || v === null) v = "";
+  if (typeof v !== "string") refuse(field, field);
+  const text = v.normalize("NFC").replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "").trim();
+  if ((required && !text) || [...text].length > max) refuse(field, field);
+  return text;
+}
+
+const cut = (text) => ([...text].length > DEV.kept ? `${[...text].slice(0, DEV.kept).join("")}…` : text);
+
+/** One line of an item's history, by the signed-in admin. */
+const devEvent = (env, id, now, action, detail = {}) => stmt(env,
+  "INSERT INTO dev_history (item_id, at, actor_id, actor, action, detail) VALUES (?, ?, ?, ?, ?, ?)",
+  id, now, env.actor?.id ?? "", actorName(env), action, JSON.stringify(detail));
+
+async function devRoute(request, env, url, path, now) {
+  const method = request.method;
+  if (path === "/dev" && method === "GET") return json(await devList(env, url.searchParams));
+  if (path === "/dev" && method === "POST") return devCreate(request, env, now);
+  if (path === "/dev/bulk" && method === "POST") return devBulk(request, env, now);
+  const m = path.match(/^\/dev\/(d[A-Za-z0-9]{15})(\/delete|\/restore|\/links|\/links\/remove|\/notes|\/reply)?$/);
+  if (!m) return json({ error: "not_found" }, 404);
+  const row = await one(env, "SELECT * FROM dev_items WHERE id = ?", m[1]);
+  if (!row) return json({ error: "not_found" }, 404);
+  if (!m[2] && method === "GET") return json(await devView(env, row));
+  if (method !== "POST") return json({ error: "not_found" }, 404);
+  const body = await readJson(request, 16 * 1024);
+  if (m[2] === "/restore") {
+    // Only the owner brings back what someone deleted, so a deletion cannot be undone behind their back.
+    if (!env.actor.owner) return json({ error: "no_permission", area: "owner" }, 403);
+    if (row.deleted_at === null) return json(await devView(env, row));
+    await env.DB.batch([
+      stmt(env, "UPDATE dev_items SET deleted_at = NULL, updated_at = ? WHERE id = ?", now, row.id),
+      devEvent(env, row.id, now, "restore"),
+    ]);
+    await audit(env, now, "dev_restore", row.title, row.id);
+  } else if (row.deleted_at !== null) {
+    return json({ error: "deleted" }, 409);
+  } else if (!m[2]) {
+    const changed = await devUpdate(env, row, body, now);
+    if (changed === "stale") return json({ error: "changed", item: await devView(env, row) }, 409);
+  } else if (m[2] === "/delete") {
+    await env.DB.batch([
+      stmt(env, "UPDATE dev_items SET deleted_at = ?, updated_at = ? WHERE id = ?", now, now, row.id),
+      devEvent(env, row.id, now, "delete", { title: row.title }),
+    ]);
+    await audit(env, now, "dev_delete", row.title, row.id);
+  } else if (m[2] === "/links" || m[2] === "/links/remove") {
+    // Linking shows a question to whoever opens the item, so it takes a look at questions too.
+    if (!can(env.actor, "inquiries")) return json({ error: "no_permission", area: "inquiries" }, 403);
+    const inquiry = typeof body.inquiry === "string" && /^[A-Za-z0-9]{22}$/.test(body.inquiry) ? body.inquiry : refuse("inquiry", "inquiry");
+    if (m[2] === "/links") {
+      if (!(await one(env, "SELECT id FROM inquiries WHERE id = ?", inquiry))) return json({ error: "not_found" }, 404);
+      const r = await run(env, "INSERT OR IGNORE INTO dev_links (item_id, inquiry_id, by, at) VALUES (?, ?, ?, ?)", row.id, inquiry, actorName(env), now);
+      if (r.meta.changes) {
+        await env.DB.batch([stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "link", { inquiry })]);
+        await audit(env, now, "dev_link", row.title, inquiry);
+      }
+    } else {
+      const r = await run(env, "DELETE FROM dev_links WHERE item_id = ? AND inquiry_id = ?", row.id, inquiry);
+      if (r.meta.changes) {
+        await env.DB.batch([stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "unlink", { inquiry })]);
+        await audit(env, now, "dev_unlink", row.title, inquiry);
+      }
+    }
+  } else if (m[2] === "/notes") {
+    const text = plainText(body.text, DEV.note, "text", true);
+    await env.DB.batch([stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "note", { text })]);
+  } else {
+    return devReply(env, row, body, now);
+  }
+  return json(await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)));
+}
+
+/** A new item, by hand or from a question (inquiry): the question is linked in the same step. */
+async function devCreate(request, env, now) {
+  const body = await readJson(request, 16 * 1024);
+  const title = plainText(body.title, DEV.title, "title", true);
+  const text = plainText(body.body, DEV.body, "body");
+  let inquiry = null;
+  if (body.inquiry !== undefined && body.inquiry !== null) {
+    if (!can(env.actor, "inquiries")) return json({ error: "no_permission", area: "inquiries" }, 403);
+    inquiry = typeof body.inquiry === "string" && /^[A-Za-z0-9]{22}$/.test(body.inquiry) ? body.inquiry : refuse("inquiry", "inquiry");
+    if (!(await one(env, "SELECT id FROM inquiries WHERE id = ?", inquiry))) return json({ error: "not_found" }, 404);
+  }
+  const id = `d${randomId(15)}`;
+  const a = env.actor;
+  await env.DB.batch([
+    stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at)
+      VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL)`, id, title, text, a.id, actorName(env), now, now),
+    devEvent(env, id, now, "create", { title, body: cut(text) }),
+    ...(inquiry ? [stmt(env, "INSERT INTO dev_links (item_id, inquiry_id, by, at) VALUES (?, ?, ?, ?)", id, inquiry, actorName(env), now),
+      devEvent(env, id, now, "link", { inquiry })] : []),
+  ]);
+  await audit(env, now, "dev_create", title, id);
+  return json(await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", id)), 201);
+}
+
+/**
+ * Title, body, who holds it and its status, in one call; each change is one line of history with what
+ * it was. With [since] (the updatedAt the admin's screen showed), a change made meanwhile by someone
+ * else is not written over: "stale", and the screen shows the newer item.
+ */
+async function devUpdate(env, row, body, now) {
+  if (body.since !== undefined && body.since !== iso(row.updated_at)) return "stale";
+  const stmts = [];
+  const notes = [];
+  const edit = {};
+  const set = {};
+  if (body.title !== undefined) {
+    const title = plainText(body.title, DEV.title, "title", true);
+    if (title !== row.title) [edit.title, set.title] = [[row.title, title], title];
+  }
+  if (body.body !== undefined) {
+    const text = plainText(body.body, DEV.body, "body");
+    if (text !== row.body) [edit.body, set.body] = [[cut(row.body), cut(text)], text];
+  }
+  if (Object.keys(edit).length) {
+    stmts.push(devEvent(env, row.id, now, "edit", edit));
+    notes.push(["dev_edit", Object.keys(edit).join(" ")]);
+  }
+  if (body.assignee !== undefined) {
+    if (body.assignee !== "me" && body.assignee !== null) refuse("assignee", "assignee");
+    const to = body.assignee ? { id: env.actor.id, name: actorName(env) } : null;
+    if ((to?.id ?? null) !== row.assignee) {
+      set.assignee = to?.id ?? null;
+      set.assignee_name = to?.name ?? null;
+      stmts.push(devEvent(env, row.id, now, "assign", { assignee: [row.assignee_name ?? "", to?.name ?? ""] }));
+    }
+  }
+  if (body.status !== undefined) {
+    const next = devStatus(env, body.status, body.reason);
+    if (next.status !== row.status || next.reason !== row.reason) {
+      [set.status, set.reason] = [next.status, next.reason];
+      stmts.push(devEvent(env, row.id, now, "status", { status: [row.status, next.status], ...(next.reason ? { reason: next.reason } : {}) }));
+      notes.push(["dev_status", `${row.status}→${next.status}`]);
+    }
+  }
+  if (!stmts.length) return false;
+  const cols = Object.keys(set);
+  stmts.unshift(stmt(env, `UPDATE dev_items SET ${[...cols.map((c) => `${c} = ?`), "updated_at = ?"].join(", ")} WHERE id = ?`,
+    ...cols.map((c) => set[c]), now, row.id));
+  await env.DB.batch(stmts);
+  // The activity screen shows the title; the id goes with what changed.
+  for (const [action, detail] of notes) await audit(env, now, action, set.title ?? row.title, `${detail} ${row.id}`);
+  return true;
+}
+
+/** A status this admin may set: devStatus is needed, and 반려 says why (the reason is kept with it). */
+function devStatus(env, status, reason) {
+  if (!can(env.actor, "devStatus", "edit")) throw new Refuse("no_permission", "devStatus", 403);
+  if (!Object.hasOwn(DEV.statuses, status)) refuse("status", "status");
+  const why = status === "rejected" ? plainText(reason, DEV.reason, "reason", true) : "";
+  return { status, reason: why };
+}
+
+/** The owner (or whoever was given 처리) sets one status on many items at once. */
+async function devBulk(request, env, now) {
+  const body = await readJson(request, 16 * 1024);
+  const next = devStatus(env, body.status, body.reason);
+  if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length > DEV.bulk || body.ids.some((x) => typeof x !== "string" || !/^d[A-Za-z0-9]{15}$/.test(x))) {
+    refuse("ids", "ids");
+  }
+  const ids = [...new Set(body.ids)];
+  const rows = await all(env, `SELECT id, status, reason FROM dev_items WHERE deleted_at IS NULL AND id IN (${ids.map(() => "?").join(", ")})`, ...ids);
+  const change = rows.filter((r) => r.status !== next.status || r.reason !== next.reason).sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+  if (change.length) {
+    await env.DB.batch(change.flatMap((r) => [
+      stmt(env, "UPDATE dev_items SET status = ?, reason = ?, updated_at = ? WHERE id = ?", next.status, next.reason, now, r.id),
+      devEvent(env, r.id, now, "status", { status: [r.status, next.status], ...(next.reason ? { reason: next.reason } : {}), bulk: change.length }),
+    ]));
+    await audit(env, now, "dev_bulk", `${change.length}개`, `${next.status}: ${change.map((r) => r.id).join(" ")}`);
+  }
+  return json({ changed: change.length, ids: change.map((r) => r.id) });
+}
+
+/**
+ * [ADMIN-11] One answer to every linked question at once, typically when an item is 완료: the admin
+ * reads the prefilled text and sends it. [ids] limits it to some of them; [close] closes them too.
+ */
+async function devReply(env, row, body, now) {
+  if (!can(env.actor, "inquiries", "edit")) return json({ error: "no_permission", area: "inquiries" }, 403);
+  const text = plainText(body.text, INQUIRY.text, "text", true);
+  const linked = (await all(env, "SELECT l.inquiry_id AS id FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = ?", row.id)).map((r) => r.id);
+  const pick = Array.isArray(body.ids) ? linked.filter((id) => body.ids.includes(id)) : linked;
+  if (!pick.length) refuse("ids", "ids");
+  const status = body.close === true ? "closed" : "answered";
+  await env.DB.batch([
+    ...pick.flatMap((id) => [
+      stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)", id, text, actorName(env), now),
+      stmt(env, "UPDATE inquiries SET status = ?, updated_at = ? WHERE id = ?", status, now, id),
+    ]),
+    stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id),
+    devEvent(env, row.id, now, "reply", { count: pick.length, text: cut(text), close: status === "closed" }),
+  ]);
+  await audit(env, now, "dev_reply", row.title, `${pick.length} ${status} ${row.id}`);
+  return json({ answered: pick.length, item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) });
+}
+
+/** The list: one status, open (접수 and 개발중), all, deleted ones, mine, or words in the title or body. */
+async function devList(env, params) {
+  const status = Object.hasOwn(DEV.statuses, params.get("status") ?? "") || ["open", "all", "deleted"].includes(params.get("status")) ? params.get("status") : "all";
+  const q = String(params.get("q") ?? "").trim().slice(0, 40);
+  const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const mine = params.get("who") === "mine" ? env.actor.id : "";
+  const [rows, countRows] = (await env.DB.batch([
+    stmt(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS links,
+        (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND i.status = 'open') AS waiting
+      FROM dev_items d
+      WHERE ((?1 = 'deleted' AND d.deleted_at IS NOT NULL) OR (?1 != 'deleted' AND d.deleted_at IS NULL
+          AND (?1 = 'all' OR d.status = ?1 OR (?1 = 'open' AND d.status IN ('todo', 'doing')))))
+        AND (?2 = '' OR d.title LIKE ?3 ESCAPE '\\' OR d.body LIKE ?3 ESCAPE '\\')
+        AND (?4 = '' OR d.assignee = ?4)
+      ORDER BY d.updated_at DESC LIMIT ${DEV.list}`, status, q, like, mine),
+    stmt(env, `SELECT CASE WHEN deleted_at IS NULL THEN status ELSE 'deleted' END AS s, COUNT(*) AS n FROM dev_items GROUP BY s`),
+  ])).map((r) => r.results);
+  const counts = { todo: 0, doing: 0, done: 0, rejected: 0, deleted: 0 };
+  for (const r of countRows) if (Object.hasOwn(counts, r.s)) counts[r.s] = r.n;
+  counts.open = counts.todo + counts.doing;
+  counts.all = counts.open + counts.done + counts.rejected;
+  // Still to do: most asked for first. Finished: newest first.
+  const rank = { doing: 0, todo: 1, done: 2, rejected: 3 };
+  const open = (r) => r.status === "todo" || r.status === "doing";
+  rows.sort((a, b) => (["all", "open"].includes(status) ? rank[a.status] - rank[b.status] : 0) || (open(a) && open(b) ? b.links - a.links : 0) || b.updated_at - a.updated_at);
+  return { counts, statuses: DEV.statuses, items: rows.map(devItem) };
+}
+
+const devItem = (r) => ({
+  id: r.id,
+  title: r.title,
+  // The whole body too, so 일괄 복사 hands developers everything without opening each item.
+  body: r.body,
+  preview: [...r.body].slice(0, 160).join(""),
+  status: r.status,
+  reason: r.reason,
+  links: r.links ?? 0,
+  waiting: r.waiting ?? 0,
+  createdBy: { id: r.created_by, name: r.created_by_name },
+  assignee: r.assignee ? { id: r.assignee, name: r.assignee_name ?? "" } : null,
+  createdAt: iso(r.created_at),
+  updatedAt: iso(r.updated_at),
+  deletedAt: r.deleted_at ? iso(r.deleted_at) : null,
+});
+
+/** One item with its whole history and the questions behind it (their words only for who may read questions). */
+async function devView(env, row) {
+  const [links, history] = (await env.DB.batch([
+    stmt(env, `SELECT l.inquiry_id, l.by, l.at, i.kind, i.status, i.updated_at,
+        (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first
+      FROM dev_links l LEFT JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = ? ORDER BY l.at`, row.id),
+    stmt(env, "SELECT id, at, actor, action, detail FROM dev_history WHERE item_id = ? ORDER BY id DESC", row.id),
+  ])).map((r) => r.results);
+  const read = can(env.actor, "inquiries");
+  return {
+    ...devItem({ ...row, links: links.length, waiting: links.filter((l) => l.status === "open").length }),
+    statuses: DEV.statuses,
+    inquiries: read ? links.filter((l) => l.kind).map((l) => ({
+      id: l.inquiry_id, kind: l.kind, status: l.status, preview: [...(l.first ?? "")].slice(0, 160).join(""),
+      updatedAt: iso(l.updated_at), linkedBy: l.by, linkedAt: iso(l.at),
+    })) : [],
+    history: history.map((h) => {
+      let detail = {};
+      try {
+        detail = JSON.parse(h.detail);
+      } catch {
+        // An old line keeps its action; nothing more to show.
+      }
+      return { id: h.id, at: iso(h.at), actor: h.actor, action: h.action, detail };
+    }),
+  };
+}
+
+// ---- 자주 쓰는 답, shared by every admin [ADMIN-12] ----
+
+async function templates(env, now) {
+  // A new server starts with a few; once they are written, deleting one keeps it deleted.
+  if (!(await one(env, "SELECT value FROM settings WHERE key = 'templates'"))) {
+    await env.DB.batch([
+      ...DEFAULT_TEMPLATES.map(([label, text]) => stmt(env, "INSERT INTO reply_templates (label, text, by, at) VALUES (?, ?, '', ?)", label, text, now)),
+      stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('templates', '1')"),
+    ]);
+  }
+  const rows = await all(env, "SELECT id, label, text, by FROM reply_templates ORDER BY id");
+  return { templates: rows.map((r) => ({ id: r.id, label: r.label, text: r.text, by: r.by })) };
+}
+
+async function templateRoute(request, env, path, now) {
+  const method = request.method;
+  if (path === "/templates" && method === "GET") return json(await templates(env, now));
+  if (path === "/templates" && method === "POST") {
+    await templates(env, now);
+    const body = await readJson(request, 8 * 1024);
+    const label = plainText(body.label, 20, "label", true);
+    const text = plainText(body.text, INQUIRY.text, "text", true);
+    if ((await one(env, "SELECT COUNT(*) AS n FROM reply_templates")).n >= 40) return json({ error: "too_many" }, 409);
+    await run(env, "INSERT INTO reply_templates (label, text, by, at) VALUES (?, ?, ?, ?)", label, text, actorName(env), now);
+    await audit(env, now, "template_add", label);
+    return json(await templates(env, now), 201);
+  }
+  const m = path.match(/^\/templates\/(\d{1,9})\/remove$/);
+  if (m && method === "POST") {
+    const row = await one(env, "SELECT label FROM reply_templates WHERE id = ?", Number(m[1]));
+    if (!row) return json({ error: "not_found" }, 404);
+    await run(env, "DELETE FROM reply_templates WHERE id = ?", Number(m[1]));
+    await audit(env, now, "template_remove", row.label);
+    return json(await templates(env, now));
+  }
+  return json({ error: "not_found" }, 404);
 }
 
 // ---- the developer app's API [ADMIN-01] ----
@@ -1903,7 +2320,8 @@ function secretIssue(env, name, least) {
 function areaFor(path) {
   if (path === "/overview" || path === "/logout" || path.startsWith("/me")) return null;
   if (path === "/queue" || path.startsWith("/groups/") || path.startsWith("/asks/")) return "review";
-  if (path.startsWith("/inquiries")) return "inquiries";
+  if (path.startsWith("/inquiries") || path.startsWith("/templates")) return "inquiries";
+  if (path === "/dev" || path.startsWith("/dev/")) return "dev";
   if (path.startsWith("/companies") || path.startsWith("/rules/")) return "companies";
   if (path.startsWith("/rewards")) return "rewards";
   if (path === "/settings") return "settings";
@@ -1972,6 +2390,8 @@ async function admin(request, env, url) {
   m = path.match(/^\/rules\/([A-Za-z0-9]{16})$/);
   if (m && method === "POST") return setRule(request, env, m[1], now);
   if (path === "/inquiries" || path.startsWith("/inquiries/")) return adminInquiries(request, env, url, path, now);
+  if (path === "/templates" || path.startsWith("/templates/")) return templateRoute(request, env, path, now);
+  if (path === "/dev" || path.startsWith("/dev/")) return devRoute(request, env, url, path, now);
   if (path === "/rewards" && method === "GET") return json(await rewards(env, url.searchParams.get("status")));
   m = path.match(/^\/rewards\/(w[A-Za-z0-9]{22})$/);
   if (m && method === "POST") return setReward(request, env, m[1], now);
@@ -2079,8 +2499,8 @@ function readPerms(raw) {
   }
   const out = {};
   for (const area of Object.keys(AREAS)) {
-    const level = p && LEVELS.includes(p[area]) ? p[area] : "none";
-    out[area] = VIEW_ONLY.includes(area) && level === "edit" ? "view" : level;
+    const level = p && LEVELS.includes(p[area]) ? p[area] : SINCE[area]?.(p) ?? "none";
+    out[area] = VIEW_ONLY.includes(area) && level === "edit" ? "view" : TOGGLES.includes(area) && level === "view" ? "none" : level;
   }
   return out;
 }
@@ -2170,6 +2590,7 @@ async function adminList(env) {
     })),
     areas: AREAS,
     viewOnly: VIEW_ONLY,
+    toggles: TOGGLES,
     presets: PRESETS,
     mail: mailReady(env),
   };
@@ -2348,7 +2769,18 @@ async function overview(env, actor) {
       AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0)`;
     counts.reports = "SELECT COUNT(*) AS n FROM reports";
   }
-  if (can(actor, "inquiries")) counts.inquiries = "SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open'";
+  if (can(actor, "inquiries")) {
+    counts.inquiries = "SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open'";
+    // [ADMIN-12] 오늘 할 일: the waiting questions I took, and the ones nobody took yet.
+    counts.inquiriesMine = ["SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open' AND assignee = ?", actor.id];
+    counts.inquiriesFree = "SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open' AND assignee IS NULL";
+  }
+  if (can(actor, "dev")) {
+    // [ADMIN-10] 개발사항 still to look at (접수), being made (개발중), and the ones I hold.
+    counts.devTodo = "SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND status = 'todo'";
+    counts.devDoing = "SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND status = 'doing'";
+    counts.devMine = ["SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND status IN ('todo', 'doing') AND assignee = ?", actor.id];
+  }
   if (can(actor, "rewards")) counts.owed = "SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'";
   if (can(actor, "community")) {
     // [COMM-06] Flagged posts still shown, and ones the flags hid that nobody has looked at yet.
@@ -2361,7 +2793,7 @@ async function overview(env, actor) {
   }
   if (actor.owner) counts.waiting = "SELECT COUNT(*) AS n FROM admins WHERE status = 'pending'";
   const keys = Object.keys(counts);
-  const results = await env.DB.batch(keys.map((k) => env.DB.prepare(counts[k])));
+  const results = await env.DB.batch(keys.map((k) => (Array.isArray(counts[k]) ? stmt(env, ...counts[k]) : env.DB.prepare(counts[k]))));
   const got = Object.fromEntries(keys.map((k, i) => [k, results[i].results]));
   const out = { me: me(actor), settings: readSettings(got.settings), reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS,
     flagReasons: FLAGS, salt: secretIssue(env, "RATE_SALT", 1) === null };
