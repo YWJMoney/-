@@ -51,6 +51,8 @@ enum class Moment {
     UNPAID_JOB,
     /** A shift worker came off a night shift. */
     AFTER_NIGHT,
+    /** An investor calendar has its first trade. */
+    FIRST_TRADE,
 }
 
 /**
@@ -92,6 +94,7 @@ object FeatureRegistry {
     private val HOURLY = WorkStyle.HOURLY
     private val FIELD = WorkStyle.FIELD
     private val SHOP = WorkStyle.BUSINESS
+    private val INVEST = WorkStyle.INVEST
     private val PAID = setOf(SHIFT, DAY, HOURLY)
     private val ALL = emptySet<WorkStyle>()
 
@@ -248,6 +251,49 @@ object FeatureRegistry {
             setOf(SHOP), "${tab(SHOP)} › 간이과세 기준", at(Place.STATS), "간이과세", "일반과세", "연 매출", off = Off.CALENDAR),
         f("shop.capture", "SHOP-08", "카드 단말기·배달앱 알림을 매출로", "결제 알림 읽기를 켜면 단말기·배달앱 알림이 매출로, 정산 입금이 카드 입금으로 적혀요",
             setOf(SHOP), "돈 › ⋮ › 자동 기록", at(Place.AUTO_RECORD), "단말기", "배달의민족", "쿠팡이츠", "포스", "매출 알림"),
+
+        // Investing [INV-01..INV-21]: the 투자·수익 tab's tabs (한눈에·종목·기록·통계·일지·알람) and sheets.
+        f("invest.deposit", "INV-02", "원금 입금·출금", "계좌에 넣고 뺀 돈을 적으면 원금이 정해지고 수익률·현금이 바로 맞아요",
+            setOf(INVEST), "${tab(INVEST)} › 한눈에 › 입금 적기", at(Place.STATS, "invest.cash"), "원금", "입금", "출금", "계좌", "현금"),
+        f("invest.trade", "INV-03", "매매 기록", "종목·수량·단가·수수료와 이유·마음을 적어요. 수수료·거래세는 알아서 제안해요",
+            setOf(INVEST), "${tab(INVEST)} › 한눈에 › 매수·매도 (달력 날짜를 길게 눌러도)", at(Place.STATS, "invest.trade"),
+            "매수", "매도", "매매", "주식 기록", "거래", "코인"),
+        f("invest.quotes", "INV-04", "현재가 적기", "보유 종목의 현재가를 적으면 평가손익과 총자산이 보여요",
+            setOf(INVEST), "${tab(INVEST)} › 종목 › 현재가", at(Place.STATS, "invest.quotes"), "현재가", "평가손익", "보유 종목", "평단", "평균단가"),
+        f("invest.returns", "INV-05", "수익률 세 가지", "원금 대비·금액가중·시간가중 수익률을 설명과 함께 봐요",
+            setOf(INVEST), "${tab(INVEST)} › 한눈에", at(Place.STATS, "invest.overview"), "수익률", "시간가중", "금액가중", "원금 대비"),
+        f("invest.history", "INV-21", "총자산 흐름", "현재가가 다 있는 날의 총자산을 모아 흐름 그래프로 보여 줘요",
+            setOf(INVEST), "${tab(INVEST)} › 한눈에 › 총자산 흐름", at(Place.STATS, "invest.overview"), "총자산", "그래프", "자산 추이",
+            off = Off.CALENDAR),
+        f("invest.stats", "INV-06", "일·월·연 손익과 승률", "기간별 손익, 승률, 종목별 손익, 월별 막대를 봐요",
+            setOf(INVEST), "${tab(INVEST)} › 통계", at(Place.STATS, "invest.stats"), "손익", "승률", "월별", "종목별", "통계"),
+        f("invest.mind", "INV-13", "마음과 원칙별 손익", "감정 태그·원칙 지킴에 따른 손익, 손익비, 연속 수익·손실일을 봐요",
+            setOf(INVEST), "${tab(INVEST)} › 통계 › 마음과 원칙에 따라", at(Place.STATS, "invest.stats"), "감정", "원칙", "손익비", "복기",
+            off = Off.CALENDAR),
+        f("invest.weekdays", "INV-18", "요일별 손익", "요일마다 손익과 평균 보유일을 봐요",
+            setOf(INVEST), "${tab(INVEST)} › 통계 › 요일별 손익", at(Place.STATS, "invest.stats"), "요일", "보유일", off = Off.CALENDAR),
+        f("invest.tax", "INV-12", "투자 세금 미리 보기", "해외주식 양도세, 배당·금융소득, ISA·연금 계좌를 대략 계산해요",
+            setOf(INVEST), "${tab(INVEST)} › 통계 › 세금 미리 보기", at(Place.STATS, "invest.stats"), "양도세", "250만", "금융소득", "ISA", "세금",
+            off = Off.CALENDAR),
+        f("invest.journal", "INV-07", "투자일지", "날마다 시장 메모·복기·원칙 체크·하루 평가를 남겨요",
+            setOf(INVEST), "${tab(INVEST)} › 일지", at(Place.STATS, "invest.journal"), "일지", "복기", "매매일지", "원칙 체크", "메모",
+            moment = Moment.FIRST_TRADE, tip = "첫 매매를 적었어요. ‘투자일지’에 이유와 복기를 남기면 나중에 마음과 원칙별 손익을 볼 수 있어요"),
+        f("invest.alarms", "INV-08", "투자 알람", "장 시작·마감, 정기 매수일, 목표가 확인 알람을 맞추고 알림에서 바로 기록해요",
+            setOf(INVEST), "${tab(INVEST)} › 알람", at(Place.STATS, "invest.alarms"), "장 시작", "장 마감", "정기 매수", "적립식", "목표가"),
+        f("invest.dividend", "INV-09", "배당·이자 기록", "세전 금액과 원천징수, 실수령을 적고 종목별 배당 합계를 봐요",
+            setOf(INVEST), "${tab(INVEST)} › 기록 › 배당", at(Place.STATS, "invest.dividend"), "배당", "이자", "배당금", "원천징수"),
+        f("invest.goal", "INV-11", "투자 목표", "총자산·수익률 목표와 날짜를 정하면 진행률과 매달 넣을 돈을 알려 줘요",
+            setOf(INVEST), "${tab(INVEST)} › ⋮ › 목표와 수익률", at(Place.STATS, "invest.goal"), "목표", "총자산 목표", "매달 넣을 돈", "진행률",
+            off = Off.CALENDAR),
+        f("invest.events", "INV-14", "투자 일정", "배당락·실적 발표·공시·청약 날을 적으면 그날 아침 알려 줘요",
+            setOf(INVEST), "${tab(INVEST)} › 한눈에 › 다가오는 일", at(Place.STATS, "invest.event"), "배당락", "실적 발표", "공시", "청약", "일정",
+            off = Off.CALENDAR),
+        f("invest.accounts", "INV-15", "계좌별 보기", "계좌를 골라 그 계좌만의 수익률과 보유 종목을 봐요",
+            setOf(INVEST), "${tab(INVEST)} › 맨 위 계좌 칩", at(Place.STATS, "invest.overview"), "계좌별", "ISA", "연금저축", "증권사"),
+        f("invest.hide", "INV-17", "금액 가리기", "남이 볼 때 금액을 가리고 수익률만 보여요",
+            setOf(INVEST), "${tab(INVEST)} › 눈 아이콘", at(Place.STATS, "invest.overview"), "가리기", "숨기기", "금액 숨김", "개인정보"),
+        f("invest.csv", "INV-10", "투자 기록 CSV", "매매·입출금·보유·일지를 CSV로 내보내요",
+            setOf(INVEST), "${tab(INVEST)} › ⋮ › CSV로 내보내기", at(Place.STATS, "invest.overview"), "CSV", "엑셀", "내보내기"),
 
         // Money and records, for every kind of work.
         f("money.auto", "LEDG-16", "결제 알림 자동 기록", "카드·은행 결제 알림을 읽어 가계부에 저절로 적어요",

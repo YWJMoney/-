@@ -60,7 +60,7 @@ class GuideTest {
     /** [GUIDE-02] Each kind of work has 3 to 6 of its own features, in order, none twice. */
     @Test
     fun eachKindOfWorkHasAShortChecklist() {
-        for (style in listOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.HOURLY, WorkStyle.FIELD, WorkStyle.BUSINESS)) {
+        for (style in listOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.HOURLY, WorkStyle.FIELD, WorkStyle.BUSINESS, WorkStyle.INVEST)) {
             assertTrue(style.name, style in GuideChecklist.ORDER)
         }
         for ((style, ids) in GuideChecklist.ORDER) {
@@ -132,6 +132,11 @@ class GuideTest {
         assertEquals(setOf(Moment.FIRST_DAY_CLOSE), GuideMoments.of(MomentFacts(WorkStyle.BUSINESS, at, salesDays = 1)))
         assertEquals(setOf(Moment.FIRST_JOB, Moment.UNPAID_JOB), GuideMoments.of(MomentFacts(WorkStyle.FIELD, at, jobs = 2, unpaidJobs = 1)))
         assertEquals(setOf(Moment.AFTER_NIGHT), GuideMoments.of(MomentFacts(null, at, afterNight = true)))
+        // [GUIDE-03] An investor's first trade brings 투자일지; not for another kind of work.
+        assertEquals(setOf(Moment.FIRST_TRADE), GuideMoments.of(MomentFacts(WorkStyle.INVEST, at, trades = 1)))
+        assertTrue(GuideMoments.of(MomentFacts(WorkStyle.INVEST, at)).isEmpty())
+        assertTrue(GuideMoments.of(MomentFacts(WorkStyle.FIELD, at, trades = 3)).isEmpty())
+        assertEquals("invest.journal", GuideTips.pick(GuideState(), "inv", WorkStyle.INVEST, setOf(Moment.FIRST_TRADE), at.toLocalDate())?.feature?.id)
     }
 
     /** [GUIDE-03] One tip a day, the same all day, never for what was tried, hidden or put away. */

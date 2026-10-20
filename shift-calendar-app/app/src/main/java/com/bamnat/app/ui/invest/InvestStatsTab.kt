@@ -50,7 +50,7 @@ import kotlin.math.roundToLong
  * holding days, best and worst, and what tax it may come to.
  */
 @Composable
-internal fun InvestStatsTab(state: InvestState, wide: Boolean) {
+internal fun InvestStatsTab(state: InvestState, wide: Boolean, calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN) {
     var yearly by rememberSaveable { mutableStateOf(false) }
     var month by rememberSaveable { mutableStateOf(YearMonth.from(state.today).toString()) }
     val ym = YearMonth.parse(month)
@@ -78,10 +78,11 @@ internal fun InvestStatsTab(state: InvestState, wide: Boolean) {
     MonthlyBars(state, ym.year)
     if (!stats.isEmpty) {
         BySymbol(stats, hide)
-        Behaviour(stats, hide)
-        Weekdays(stats, hide)
+        // [GUIDE-05] Cards that can be turned off for this calendar.
+        com.bamnat.app.ui.guide.FeatureCard("invest.mind", calendarId) { Behaviour(stats, hide) }
+        com.bamnat.app.ui.guide.FeatureCard("invest.weekdays", calendarId) { Weekdays(stats, hide) }
     }
-    TaxCard(state, ym.year)
+    com.bamnat.app.ui.guide.FeatureCard("invest.tax", calendarId) { TaxCard(state, ym.year) }
 }
 
 @Composable

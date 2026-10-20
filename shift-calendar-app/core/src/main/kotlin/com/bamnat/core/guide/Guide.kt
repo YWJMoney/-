@@ -64,6 +64,7 @@ object GuideChecklist {
         WorkStyle.HOURLY to listOf("pay.calc", "hourly.clock", "hourly.weeks", "hourly.takeHome", "hourly.contract", "hourly.offers"),
         WorkStyle.FIELD to listOf("field.mode", "field.units", "field.status", "field.due", "field.quote", "field.year"),
         WorkStyle.BUSINESS to listOf("shop.days", "shop.dayClose", "shop.cardDue", "shop.capture", "shop.target", "shop.staff"),
+        WorkStyle.INVEST to listOf("invest.deposit", "invest.trade", "invest.quotes", "invest.journal", "invest.goal", "invest.alarms"),
     )
 
     /**
@@ -116,6 +117,8 @@ data class MomentFacts(
     val unpaidJobs: Int = 0,
     /** Yesterday (or the night that ended today) was a night shift. */
     val afterNight: Boolean = false,
+    /** Trades written down in an investor calendar. */
+    val trades: Int = 0,
 )
 
 /** [GUIDE-03] Which good moments hold now. */
@@ -140,6 +143,7 @@ object GuideMoments {
         if (style == WorkStyle.FIELD && f.jobs >= 1) out += Moment.FIRST_JOB
         if (style == WorkStyle.FIELD && f.unpaidJobs >= 1) out += Moment.UNPAID_JOB
         if (style == WorkStyle.SHIFT && f.afterNight) out += Moment.AFTER_NIGHT
+        if (style == WorkStyle.INVEST && f.trades >= 1) out += Moment.FIRST_TRADE
         return out
     }
 

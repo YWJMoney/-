@@ -81,7 +81,12 @@ fun Place.settingsPage(): SettingsPage? = when (this) {
 }
 
 /** [GUIDE-01] The tools inside a card that [FeatureLinks.focus] can open. */
-val TOOL_KEYS = setOf("offers", "contract", "quit", "quote", "staff")
+val TOOL_KEYS = setOf(
+    "offers", "contract", "quit", "quote", "staff",
+    // [GUIDE-01] The investor tab's sheets and tabs (InvestScreen).
+    "invest.cash", "invest.dividend", "invest.trade", "invest.quotes", "invest.goal", "invest.journal", "invest.event",
+    "invest.alarms", "invest.stats", "invest.records", "invest.overview",
+)
 
 /**
  * [GUIDE-05] One switch per feature that can be off, read and set in one place. The app's own switches

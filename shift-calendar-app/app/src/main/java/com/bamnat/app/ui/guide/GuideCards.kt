@@ -75,6 +75,8 @@ fun GuideArea(
     weekStart: DayOfWeek,
     modifier: Modifier = Modifier,
     now: LocalDateTime = LocalDateTime.now(),
+    /** Trades in an investor calendar ([com.bamnat.core.guide.Moment.FIRST_TRADE]). */
+    trades: Int = 0,
 ) {
     val context = LocalContext.current
     val store = remember { GuideStore.get(context) }
@@ -101,7 +103,7 @@ fun GuideArea(
         )
         return
     }
-    val facts = remember(snapshot, book, profile, style, weekStart, now.hour, today) { factsOf(style, now, snapshot, book, profile, weekStart) }
+    val facts = remember(snapshot, book, profile, style, weekStart, now.hour, today, trades) { factsOf(style, now, snapshot, book, profile, weekStart).copy(trades = trades) }
     val moments = remember(facts) { GuideMoments.of(facts) }
     val pick = remember(state, calendar, style, moments, today) { GuideTips.pick(state, calendar, style, moments, today) } ?: return
     LaunchedEffect(pick.feature.id, today) { if (pick.isNew) store.tipShown(today, pick.feature.id) }

@@ -747,7 +747,7 @@ fun CalendarScreen(
         // [GUIDE-02][GUIDE-03] What this calendar can do on its first days, then one tip at the right moment.
         if (waiting == null && paint == null && viewingReceived == null && visibleMonth == YearMonth.from(today)) {
             com.bamnat.app.ui.guide.GuideArea(activeCalendar.id, settings.workStyle, snap, moneyBook, payProfile, settings.weekStart,
-                Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                Modifier.padding(horizontal = 16.dp, vertical = 6.dp), trades = investState?.full?.trades?.size ?: 0)
         }
         // [CAL-07] Weekday work set by the week, on this month's public holidays: asked once.
         val holidayDays = remember(snap, visibleMonth, holidaysKept, settings.workStyle, activeCalendar.id) { vm.holidayWork(snap, visibleMonth) }

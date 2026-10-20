@@ -39,7 +39,7 @@ class FeatureGuideTest {
         val linked = FeatureRegistry.all.filter { it.off == Off.ELSEWHERE }.map { it.id }.toSet()
         assertEquals(linked, FeatureSwitches.LINKED)
         // Each kind of work has something to turn off, and the guide itself can always be turned off.
-        for (style in listOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.HOURLY, WorkStyle.FIELD, WorkStyle.BUSINESS)) {
+        for (style in listOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.HOURLY, WorkStyle.FIELD, WorkStyle.BUSINESS, WorkStyle.INVEST)) {
             assertTrue(style.name, FeatureRegistry.of(style).count { it.off == Off.CALENDAR } >= 2)
         }
         assertEquals(Off.APP, FeatureRegistry.get("guide.checklist")!!.off)
@@ -57,6 +57,8 @@ class FeatureGuideTest {
         assertEquals("day.leaveNow", first("퇴근 버튼", WorkStyle.DAY))
         assertEquals("shop.autoClose", first("매출 없으면 휴무"))
         assertEquals("trash.records", first("실수로 지움"))
+        assertEquals("invest.dividend", first("배당금", WorkStyle.INVEST))
+        assertEquals("invest.journal", first("매매일지"))
         assertTrue(FeatureSearch.search("ㅋㅋㅋ").isEmpty())
         assertEquals("기능 켜고 끄기", SettingsIndex.search("기능 끄기").firstOrNull()?.title)
         val idea = FeatureSearch.ideaText(" 주식 계좌 ", WorkStyle.HOURLY)

@@ -124,6 +124,11 @@ object GuideUse {
         "calendar_import" to Place.CALENDAR_IMPORT, "diagnostics" to Place.DIAGNOSTICS,
     )
 
+    /** A tool in a card or a tab ([com.bamnat.core.guide.FeatureRoute.focus]) was opened from the guide. */
+    fun focus(store: GuideStore, key: String) {
+        FeatureRegistry.all.filter { it.route.focus == key }.forEach { store.used(it.id) }
+    }
+
     /** [screen]: a route without its arguments ("pay", "shop_days"). */
     fun screen(store: GuideStore, screen: String) {
         val place = SCREENS[screen] ?: return

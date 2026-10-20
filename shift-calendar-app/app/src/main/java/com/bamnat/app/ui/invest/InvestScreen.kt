@@ -106,6 +106,27 @@ fun InvestScreen(vm: InvestViewModel, wide: Boolean, snackbar: SnackbarHostState
         }
     }
 
+    // [GUIDE-01][GUIDE-04] A feature opened from the guide or the help search: its tab, or its sheet filled in.
+    val focus by com.bamnat.app.ui.guide.FeatureLinks.focus.collectAsStateWithLifecycle()
+    LaunchedEffect(focus, state.loaded) {
+        val key = focus ?: return@LaunchedEffect
+        if (!state.loaded || !key.startsWith("invest.") || !com.bamnat.app.ui.guide.FeatureLinks.take(key)) return@LaunchedEffect
+        com.bamnat.app.ui.guide.GuideUse.focus(com.bamnat.app.data.GuideStore.get(context), key)
+        when (key) {
+            "invest.cash" -> { tab = InvestTab.OVERVIEW; sheet = InvestSheet.CashEdit(CashKind.DEPOSIT) }
+            "invest.dividend" -> sheet = InvestSheet.CashEdit(CashKind.DIVIDEND)
+            "invest.trade" -> sheet = InvestSheet.TradeEdit(TradeDraft(side = Side.BUY))
+            "invest.quotes" -> { tab = InvestTab.HOLDINGS; sheet = InvestSheet.Quotes }
+            "invest.goal" -> { tab = InvestTab.OVERVIEW; sheet = InvestSheet.Goal }
+            "invest.journal" -> { tab = InvestTab.JOURNAL; sheet = InvestSheet.Journal(state.today) }
+            "invest.event" -> { tab = InvestTab.OVERVIEW; sheet = InvestSheet.EventEdit(state.today) }
+            "invest.alarms" -> tab = InvestTab.ALARMS
+            "invest.stats" -> tab = InvestTab.STATS
+            "invest.records" -> tab = InvestTab.RECORDS
+            "invest.overview" -> tab = InvestTab.OVERVIEW
+        }
+    }
+
     if (!state.loaded) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
@@ -127,7 +148,7 @@ fun InvestScreen(vm: InvestViewModel, wide: Boolean, snackbar: SnackbarHostState
                 InvestTab.OVERVIEW -> OverviewTab(vm, state, open)
                 InvestTab.HOLDINGS -> HoldingsTab(state, open)
                 InvestTab.RECORDS -> RecordsTab(state, open)
-                InvestTab.STATS -> InvestStatsTab(state, wide)
+                InvestTab.STATS -> InvestStatsTab(state, wide, vm.calendarId)
                 InvestTab.JOURNAL -> JournalTab(state, open)
                 InvestTab.ALARMS -> AlarmsTab(vm, state, open)
             }
@@ -208,11 +229,12 @@ private fun OverviewTab(vm: InvestViewModel, state: InvestState, open: (InvestSh
         message = "산 돈보다 넣은 돈이 적게 적혀 있어요. 입금을 적으면 원금과 수익률이 맞아요.",
         action = "입금 적기", onAction = { open(InvestSheet.CashEdit(CashKind.DEPOSIT)) },
     )
-    GoalCard(state, open)
+    // [GUIDE-05] Cards that can be turned off for this calendar.
+    com.bamnat.app.ui.guide.FeatureCard("invest.goal", vm.calendarId) { GoalCard(state, open) }
     TodayCard(state, open)
     if (state.account == null && state.full.activeAccounts.isNotEmpty()) AccountsCard(state, open)
-    HistoryCard(state)
-    UpcomingCard(state, open)
+    com.bamnat.app.ui.guide.FeatureCard("invest.history", vm.calendarId) { HistoryCard(state) }
+    com.bamnat.app.ui.guide.FeatureCard("invest.events", vm.calendarId) { UpcomingCard(state, open) }
 }
 
 /** [INV-05] 총자산, 원금, 손익 and 수익률 by the chosen method, with what the method means. */
