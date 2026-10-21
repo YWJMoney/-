@@ -52,7 +52,7 @@ object WatchStore {
         changed(context)
     }
 
-    /** Asks the tile and the complication to draw again, and wakes them at the next midnight. */
+    /** Asks the tile and the complication to draw again, and wakes them at the next midnight (the complication also has its timeline). */
     fun changed(context: Context) {
         runCatching { TileService.getUpdater(context).requestUpdate(ShiftTileService::class.java) }
         runCatching {
