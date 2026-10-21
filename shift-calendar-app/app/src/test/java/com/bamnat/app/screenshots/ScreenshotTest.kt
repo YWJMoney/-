@@ -437,6 +437,13 @@ class ScreenshotTest {
             List(40) { p }
         }
 
+        /** Drags the content down by [dp] from near the top (slowly), to bring back what scrolled away. */
+        fun scrollDown(dp: Int, across: Float = 0.5f) = gesture { w, h, d ->
+            val x = w * across
+            val from = h * 0.3f
+            (0..40).map { x to from + dp * d * it / 40 } + listOf(x to from + dp * d)
+        }
+
         /** Drags the content up by [dp] (slowly, so it does not fling). */
         fun scrollUp(dp: Int, across: Float = 0.15f) = gesture { w, h, d ->
             val x = w * across
@@ -2010,6 +2017,11 @@ class ScreenshotTest {
     private fun Screen.coverAsk() {
         tapText("빠른 입력", exact = true)
         tapText("야간 칠하기", exact = true, scrolls = 0)
+        // On a small phone the open panel can leave the month scrolled past the day: back up a little.
+        repeat(3) {
+            if (runCatching { selectDay(offDay) }.isSuccess) return
+            scrollDown(120)
+        }
         selectDay(offDay)
     }
     private fun Screen.inquiryThread() {
