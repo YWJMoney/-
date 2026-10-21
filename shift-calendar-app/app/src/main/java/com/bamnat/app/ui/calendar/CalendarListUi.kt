@@ -496,6 +496,8 @@ internal suspend fun removeCalendar(c: AppContainer, id: String, keepLink: Boole
     // go to 내 달력. Moved before the calendar goes, so no memo is left on a calendar that is not there.
     c.memoRepository.forgetCalendar(id)
     c.autoRecordPrefs.forgetCalendar(id)
+    // [DAYW-07] 출퇴근 자동 기록 writing to it goes to 내 달력.
+    com.bamnat.app.data.CommutePrefs.get(c.appContext).let { if (it.current.calendarId == id) it.setCalendar(PersonalCalendar.MAIN) }
     c.calendars.delete(id)
     c.telemetry.event("calendar_delete", if (link != null) "with_link" else "")
     kept?.let(c.recordsTrash::deleted)

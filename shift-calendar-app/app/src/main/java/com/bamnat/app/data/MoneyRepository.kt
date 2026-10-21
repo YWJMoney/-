@@ -2,6 +2,7 @@ package com.bamnat.app.data
 
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.Dispatchers
+import androidx.room.withTransaction
 import com.bamnat.app.data.db.AppDatabase
 import com.bamnat.app.data.db.CategoryRuleEntity
 import com.bamnat.app.data.db.decodeParts
@@ -45,7 +46,7 @@ data class Capture(val id: Long, val postedAt: Long, val app: String, val text: 
  * [LEDG-01][WORK-02][WORK-03][LEDG-04][LEDG-05]. Everything stays on the phone.
  */
 class MoneyRepository(
-    db: AppDatabase,
+    private val db: AppDatabase,
     private val kept: CaptureStore = CaptureStore(null),
     private val clock: () -> Long = System::currentTimeMillis,
     /** [TYPE-08] The calendar's kind of work, for its built-in categories. */
@@ -144,16 +145,17 @@ class MoneyRepository(
     /**
      * [LEDG-08] Removes an account. One with lines is put away instead, so its old lines keep their
      * name and balances stay right; returns true when it was really removed. Cards that paid from a
-     * removed account no longer point at it.
+     * removed account, and repeating lines paid from it, no longer point at it.
      */
-    suspend fun remove(account: MoneyAccount): Boolean {
+    suspend fun remove(account: MoneyAccount): Boolean = db.withTransaction {
         if (dao.linesOfAccount(account.id) > 0) {
             dao.restoreAccount(account.copy(hidden = true).toEntity())
-            return false
+            return@withTransaction false
         }
         dao.deleteAccount(account.id)
         dao.allAccounts().filter { it.payFromId == account.id }.forEach { dao.restoreAccount(it.copy(payFromId = null)) }
-        return true
+        dao.unlinkFixedFromAccount(account.id)
+        true
     }
 
     /** [LEDG-08] Saves the user's order of accounts. */
@@ -172,18 +174,24 @@ class MoneyRepository(
 
     /**
      * [LEDG-14] Renames a category everywhere it is used: lines (split parts too), repeating
-     * lines, learned places and its budget, so nothing is left under the old name.
+     * lines, learned places and its budget, so nothing is left under the old name. Renamed onto a
+     * category that has a budget, that budget stays.
      */
     suspend fun renameCategory(kind: MoneyKind, from: String, to: String) {
         val name = MoneyCategories.clean(to)
         if (name.isEmpty() || name == from) return
+        db.withTransaction { renameCategoryNow(kind, from, name) }
+    }
+
+    private suspend fun renameCategoryNow(kind: MoneyKind, from: String, name: String) {
         dao.renameInEntries(kind.name, from, name)
         dao.renameInFixed(kind.name, from, name)
         if (kind == MoneyKind.EXPENSE) {
             dao.renameInRules(from, name)
-            dao.allBudgets().firstOrNull { it.category == from }?.let { b ->
+            val budgets = dao.allBudgets()
+            budgets.firstOrNull { it.category == from }?.let { b ->
                 dao.deleteBudget(from)
-                dao.upsertBudget(b.copy(category = name))
+                if (budgets.none { it.category == name }) dao.upsertBudget(b.copy(category = name))
             }
             val split = dao.entriesWithPart(from).filter { it.kind == kind.name }.mapNotNull { e ->
                 val parts = decodeParts(e.parts)

@@ -93,6 +93,12 @@ class LedgerAppTest {
         // A budget set to 0 is gone.
         money.setBudget("커피", 0)
         assertTrue(money.book.first().budgets.isEmpty())
+
+        // Renamed onto a category with a budget of its own, that budget stays.
+        money.setBudget("커피", 80_000)
+        money.setBudget("간식", 30_000)
+        money.renameCategory(MoneyKind.EXPENSE, "간식", "커피")
+        assertEquals(listOf("커피" to 80_000L), money.book.first().budgets.map { it.category to it.amount })
     }
 
     /** [LEDG-08] An account with lines is put away, one without is removed and no card pays from it any more. */
@@ -104,8 +110,11 @@ class LedgerAppTest {
         money.save(MoneyEntry(date = day, kind = MoneyKind.EXPENSE, amount = 9_000, category = "식비", accountId = wallet.id))
         assertFalse(money.remove(wallet))
         assertTrue(money.book.first().account(wallet.id)!!.hidden)
+        val rent = money.save(FixedCost(name = "월세", amount = 500_000, day = 25, accountId = bank.id))
         assertTrue(money.remove(bank))
         assertNull(money.book.first().account(check.id)!!.payFromId)
+        // Nor does a repeating line.
+        assertNull(money.allFixed().single { it.id == rent.id }.accountId)
     }
 
     /** [LEDG-07] Lines picked together are changed or removed together, and come back with undo. */

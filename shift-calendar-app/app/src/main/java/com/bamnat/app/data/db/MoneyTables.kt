@@ -287,6 +287,10 @@ interface MoneyDao {
     @Query("SELECT COUNT(*) FROM money_entries WHERE accountId = :id OR toAccountId = :id")
     suspend fun linesOfAccount(id: Long): Int
 
+    /** [LEDG-08] Repeating lines paid from a removed account no longer point at it. */
+    @Query("UPDATE fixed_costs SET accountId = NULL WHERE accountId = :id")
+    suspend fun unlinkFixedFromAccount(id: Long)
+
     // [LEDG-06] Budgets.
     @Query("SELECT * FROM money_budgets")
     fun observeBudgets(): Flow<List<MoneyBudgetEntity>>

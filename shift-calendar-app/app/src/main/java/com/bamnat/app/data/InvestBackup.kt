@@ -28,12 +28,15 @@ object InvestBackup {
             events.isEmpty() && alarms.isEmpty() && snapshots.isEmpty() && settings.isEmpty()
     }
 
-    /** The calendar's investor records; null when it has none, so other kinds of calendar stay short. */
-    suspend fun put(source: AppDatabase): JSONObject? {
+    /**
+     * The calendar's investor records; `{}` when it has none, so restoring it empties them too. Backups
+     * from before this have no "invest" at all, and those still leave the phone's.
+     */
+    suspend fun put(source: AppDatabase): JSONObject {
         val dao = source.investDao()
         val rows = Rows(dao.allAccounts(), dao.allTrades(), dao.allCash(), dao.allQuotes(), dao.allJournal(), dao.allEvents(),
             dao.allAlarms(), dao.allSnapshots(), dao.allSettings())
-        if (rows.isEmpty) return null
+        if (rows.isEmpty) return JSONObject()
         return JSONObject()
             .put("accounts", JSONArray().apply {
                 rows.accounts.forEach { a ->

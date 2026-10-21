@@ -188,10 +188,11 @@ private object Routes {
     const val PAY = "pay?calendar={calendar}"
     fun pay(calendar: String = PersonalCalendar.MAIN) = "pay?calendar=$calendar"
     const val EXTRA_KINDS = "extra_kinds"
-    const val MEMO = "memo/{id}?date={date}&checklist={checklist}"
+    const val MEMO = "memo/{id}?date={date}&checklist={checklist}&notebook={notebook}"
 
-    fun memo(id: Long, date: LocalDate? = null, checklist: Boolean = false) =
-        "memo/$id?date=${date?.toString() ?: ""}&checklist=$checklist"
+    /** [notebook]: opened from the memo tab, so a new memo goes into the notebook shown there. */
+    fun memo(id: Long, date: LocalDate? = null, checklist: Boolean = false, notebook: Boolean = false) =
+        "memo/$id?date=${date?.toString() ?: ""}&checklist=$checklist&notebook=$notebook"
 
     // [COMM-01][COMM-02] The company rules server: find a company, share a setup, follow what was sent.
     const val COMPANY_FIND = "company_find?setup={setup}&weekdays={weekdays}"
@@ -705,7 +706,7 @@ private fun AppNavHost(
             MemoListScreen(
                 vm = vm,
                 onOpen = { id -> nav.navigate(Routes.memo(id)) },
-                onNew = { checklist, date -> nav.navigate(Routes.memo(0, date, checklist)) },
+                onNew = { checklist, date -> nav.navigate(Routes.memo(0, date, checklist, notebook = true)) },
                 onOpenTrash = { nav.navigate(Routes.MEMO_TRASH) { launchSingleTop = true } },
             )
         }
@@ -980,13 +981,18 @@ private fun AppNavHost(
                     type = NavType.BoolType
                     defaultValue = false
                 },
+                navArgument("notebook") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                },
             ),
         ) { entry ->
             val args = entry.arguments
             val id = args?.getLong("id") ?: 0L
             val date = args?.getString("date")?.takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
             val checklist = args?.getBoolean("checklist") ?: false
-            val vm = appViewModel(key = "memo-$id") { MemoEditorViewModel(it, id, date, checklist) }
+            val notebook = args?.getBoolean("notebook") ?: false
+            val vm = appViewModel(key = "memo-$id") { MemoEditorViewModel(it, id, date, checklist, notebook) }
             MemoEditorScreen(vm = vm, onBack = { nav.popFrom(Routes.MEMO) })
         }
     }

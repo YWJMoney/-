@@ -178,7 +178,7 @@ class BackupManager(
             }
         })
         // [INV-10] An investor calendar's accounts, trades, deposits, journal, alarms and settings (version 18).
-        InvestBackup.put(source)?.let { into.put("invest", it) }
+        into.put("invest", InvestBackup.put(source))
     }
 
     /** [MCAL-06] A calendar's pay setup and closed months. */
@@ -361,7 +361,7 @@ class BackupManager(
         val fixed: List<FixedCostEntity>?, val rules: List<CategoryRuleEntity>?,
         val accounts: List<MoneyAccountEntity>?, val budgets: List<MoneyBudgetEntity>?, val categories: List<MoneyCategoryEntity>?,
         val owed: List<com.bamnat.app.data.db.ReceivableEntity>?, val owedPaid: List<com.bamnat.app.data.db.ReceivablePaymentEntity>?,
-        /** [INV-10] Null for a backup without investor records: the phone's then stay. */
+        /** [INV-10] Null for a backup without "invest": the phone's then stay. */
         val invest: InvestBackup.Rows? = null,
     )
 
@@ -453,7 +453,7 @@ class BackupManager(
             list.forEach { dao.restore(it) }
             rows.owedPaid?.forEach { dao.restorePayment(it) }
         }
-        // [INV-10] Backups from before version 18, or of a calendar with no investor records, leave the phone's.
+        // [INV-10] Backups without "invest" (before version 18, or with none before 1.17) leave the phone's; `{}` empties it.
         rows.invest?.let { InvestBackup.write(target, it) }
     }
 
@@ -502,9 +502,10 @@ class BackupManager(
         // [GUIDE-05] An older backup has none: the phone's own switches stay.
         root.optJSONArray("featuresOff")?.let { a -> guide?.restoreOff(a) }
         // [MCAL-05] The added calendars as the backup had them, each in its own database.
+        var goneCalendars = emptyList<String>()
         calendars?.let { book ->
             if (added != null) {
-                book.replaceAdded(listOfNotNull(mainCalendar) + added.map { it.cal }, addedOrder)
+                goneCalendars = book.replaceAdded(listOfNotNull(mainCalendar) + added.map { it.cal }, addedOrder)
                 for (a in added) {
                     book.database(a.cal.id).let { other -> other.withTransaction { writeSchedule(other, a.schedule); writeMoney(other, a.money) } }
                     // [MCAL-06] Its pay setup points at its own shift ids, restored just above.
@@ -528,6 +529,8 @@ class BackupManager(
             if (added != null) root.optJSONArray("calendars").objects().forEach { o ->
                 CalendarBook.fromJson(o)?.takeIf { !it.isMain }?.let { cal -> tools.restore(cal.id, o.optJSONObject("workTools")) }
             }
+            // A calendar the backup does not have is gone with its folder; nothing of it stays on screen.
+            goneCalendars.forEach(tools::reload)
         }
         root.optJSONObject("settings")?.let { o ->
             settings.update { s ->

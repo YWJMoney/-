@@ -240,7 +240,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         /**
          * Version 16 [NOTE-01]: a memo names the calendars it shows on. Every memo written before
-         * stays on every calendar ('' is all), so nothing a user wrote goes out of sight.
+         * gets '' and belongs to 내 달력 alone ([com.bamnat.core.memo.Memo.owners]), where it always was.
          */
         val MIGRATION_15_16 = object : Migration(15, 16) {
             override fun migrate(db: SupportSQLiteDatabase) {
