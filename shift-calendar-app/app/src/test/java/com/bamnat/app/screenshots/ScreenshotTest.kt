@@ -1995,6 +1995,60 @@ class ScreenshotTest {
         settle()
     }
 
+    // ---- 출시 전 개선 (1.18) [CREW-01][CUST-01][CAL-20][INQ-02][GUIDE-08], on a common phone and a small one ----
+    private fun Screen.teams() {
+        com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.TEAMS)
+        settle()
+    }
+    /** Through the help search's link, which opens it over the calendar. */
+    private fun Screen.customize() {
+        com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRegistry.get("calendar.customize")!!)
+        settle()
+    }
+    /** A 휴 after the seeded [coverDay], which already has its 대근. */
+    private val offDay: LocalDate get() = coverDay.plusDays(5)
+    private fun Screen.coverAsk() {
+        tapText("빠른 입력", exact = true)
+        tapText("야간 칠하기", exact = true, scrolls = 0)
+        selectDay(offDay)
+    }
+    private fun Screen.inquiryThread() {
+        askFromScreen(com.bamnat.app.ui.settings.InquiryStart(help = true))
+        tapText("내 문의:", prefix = true)
+        tapText("[알람] 야간 근무 전 알람이 가끔", prefix = true)
+    }
+    private fun Screen.whatsNew() = content {
+        com.bamnat.app.ui.guide.WhatsNewDialog(com.bamnat.core.guide.WhatsNew.releases, {}, {}, {})
+    }
+    @Test fun phoneTeams() = shoot("350_phone_teams", PHONE) { teams() }
+    @Test fun smallPhoneTeams() = shoot("351_small_phone_teams", SMALL_PHONE) { teams() }
+    @Test fun foldedTeams() = shoot("352_folded_teams", FOLDED) { teams() }
+    @Test fun unfoldedTeams() = shoot("353_unfolded_teams", UNFOLDED) { teams() }
+    @Test fun phoneTeamsHugeText() = shoot("354_phone_teams_huge_text", PHONE, fontScale = 2f) { teams() }
+    @Test fun phoneCustomize() = shoot("355_phone_customize", PHONE) { customize() }
+    @Test fun smallPhoneCustomize() = shoot("356_small_phone_customize", SMALL_PHONE) { customize() }
+    @Test fun phoneCoverAsk() = shoot("357_phone_cover_ask", PHONE) { coverAsk() }
+    @Test fun smallPhoneCoverAsk() = shoot("358_small_phone_cover_ask", SMALL_PHONE) { coverAsk() }
+    @Test fun phoneInquiryProgress() {
+        inquiriesOn(asked = true)
+        shoot("359_phone_inquiry_progress", PHONE) { inquiryThread() }
+    }
+    @Test fun smallPhoneInquiryProgress() {
+        inquiriesOn(asked = true)
+        shoot("360_small_phone_inquiry_progress", SMALL_PHONE) { inquiryThread() }
+    }
+    @Test fun phoneWhatsNew() = shoot("361_phone_whats_new", PHONE) { whatsNew() }
+    @Test fun smallPhoneWhatsNew() = shoot("362_small_phone_whats_new", SMALL_PHONE) { whatsNew() }
+    @Test fun phoneStatsCustomize() = shoot("363_phone_stats_customize", PHONE) {
+        tab(3, wide = false)
+        tapText("화면 꾸미기", exact = true, scrolls = 0)
+    }
+    @Test fun smallPhoneStats() = shoot("364_small_phone_stats", SMALL_PHONE) { tab(3, wide = false) }
+    @Test fun smallPhoneSettings() = shoot("365_small_phone_settings", SMALL_PHONE) { tab(4, wide = false) }
+    @Test fun smallPhoneMemos() = shoot("366_small_phone_memos", SMALL_PHONE) { tab(2, wide = false) }
+    @Test fun smallPhoneMoney() = shoot("367_small_phone_money", SMALL_PHONE) { tab(1, wide = false) }
+    @Test fun smallPhoneQuickInput() = shoot("368_small_phone_quick_input", SMALL_PHONE) { tapText("빠른 입력", exact = true) }
+
     @Test fun foldedCalendarShare() = shoot("320_folded_calendar_share", FOLDED)
     @Test fun unfoldedCalendarShare() = shoot("321_unfolded_calendar_share", UNFOLDED)
     @Test fun phoneCalendarShare() = shoot("322_phone_calendar_share", PHONE)

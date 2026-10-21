@@ -132,7 +132,7 @@ private fun LayoutPreview(groups: List<EditGroup>, middle: String) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Column(
             Modifier
-                .width(176.dp)
+                .width(160.dp)
                 .border(2.dp, scheme.outline, RoundedCornerShape(18.dp))
                 .padding(8.dp)
                 .animateContentSize(),
@@ -148,7 +148,7 @@ private fun LayoutPreview(groups: List<EditGroup>, middle: String) {
 
 @Composable
 private fun Block(label: String, color: Color, tall: Boolean = false) {
-    Box(Modifier.fillMaxWidth().heightIn(min = if (tall) 56.dp else 22.dp).background(color, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+    Box(Modifier.fillMaxWidth().heightIn(min = if (tall) 44.dp else 18.dp).background(color, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 1.dp),
         contentAlignment = Alignment.Center) {
         Text(label, style = MaterialTheme.typography.labelSmall, fontWeight = if (tall) FontWeight.Bold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }

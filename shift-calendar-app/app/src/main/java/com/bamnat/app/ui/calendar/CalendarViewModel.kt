@@ -160,9 +160,14 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         viewPrefs.edit().putBoolean(K_LIST, on).apply()
     }
 
-    /** [CAL-16] 오늘의 흐름 folded to one line by the user; kept on this phone until opened again. */
-    private val _flowFolded = MutableStateFlow(runCatching { viewPrefs.getBoolean(K_FLOW_FOLDED, false) }.getOrDefault(false))
-    val flowFolded: StateFlow<Boolean> = _flowFolded.asStateFlow()
+    /**
+     * [CAL-16] 오늘의 흐름 folded to one line by the user; kept on this phone until opened again. Null until
+     * the user folds or opens it: [CAL-21] then a phone too short to show the month under it starts folded.
+     */
+    private val _flowFolded = MutableStateFlow(runCatching {
+        if (viewPrefs.contains(K_FLOW_FOLDED)) viewPrefs.getBoolean(K_FLOW_FOLDED, false) else null
+    }.getOrNull())
+    val flowFolded: StateFlow<Boolean?> = _flowFolded.asStateFlow()
 
     fun setFlowFolded(folded: Boolean) {
         _flowFolded.value = folded

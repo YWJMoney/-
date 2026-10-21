@@ -1090,7 +1090,13 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
     val cal = c.calendars.active.value
     fun screen(r: String) = navigate(r) { launchSingleTop = true }
     when (link.place) {
-        Place.CALENDAR, Place.TODAY -> {
+        // [CUST-01] 화면 꾸미기 opens over the month, not over today.
+        Place.CALENDAR -> if (link.focus == "customize") navigateTopLevel(TopLevel.CALENDAR.route) else {
+            navigateTopLevel(TopLevel.CALENDAR.route)
+            com.bamnat.app.ui.guide.FeatureLinks.today(cal)
+            NoticeLinks.open(NoticeLinks.Target.TODAY)
+        }
+        Place.TODAY -> {
             navigateTopLevel(TopLevel.CALENDAR.route)
             com.bamnat.app.ui.guide.FeatureLinks.today(cal)
             NoticeLinks.open(NoticeLinks.Target.TODAY)

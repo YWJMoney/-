@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -142,11 +144,17 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // [CAL-21] A phone (or large text) puts the title on a line of its own, so it never wraps beside the month.
+        val narrow = androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenWidthDp / it.fontScale < 420 }
+        if (narrow) {
+            Text(style.words().statsTitle, style = MaterialTheme.typography.headlineSmall, maxLines = 1,
+                modifier = Modifier.semantics { heading() })
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             // [TYPE-01] The tab's own words: 출근·시급, 일감·수입, 매출·영업.
-            Text(
+            if (narrow) Spacer(Modifier.weight(1f)) else Text(
                 style.words().statsTitle,
-                style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.headlineSmall, maxLines = 1, modifier = Modifier.weight(1f),
             )
             IconButton(onClick = { vm.showMonth(month.minusMonths(1)) }) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달")
