@@ -226,14 +226,16 @@ fun CalendarEditScreen(
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(vertical = 8.dp)) {
                         if (!cal.isMain) {
-                            ToggleRow("근무 알람 울리기", "이 달력의 근무·영업 알람도 울려요", cal.alarms, vm::setAlarms)
+                            ToggleRow("근무 알람 울리기", "이 달력의 근무·영업 알람도 울려요", cal.alarms, onChange = vm::setAlarms)
                             HorizontalDivider()
                         }
                         if (state.many) {
                             ToggleRow(
                                 "결제 알림을 이 달력에 쌓기",
-                                if (state.notifications) "카드·통장을 따로 정하지 않은 결제 알림이 여기에 쌓여요" else "켜면 다른 달력 대신 이 달력에 쌓여요",
+                                // Only one calendar takes them: on here, it goes off by turning it on in another.
+                                if (state.notifications) "카드·통장을 따로 정하지 않은 결제 알림이 여기에 쌓여요. 다른 달력에서 켜면 옮겨져요" else "켜면 다른 달력 대신 이 달력에 쌓여요",
                                 state.notifications,
+                                enabled = !state.notifications,
                             ) { if (it) vm.takeNotifications() }
                         }
                     }
@@ -320,9 +322,9 @@ private fun EditRow(title: String, detail: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ToggleRow(title: String, detail: String, on: Boolean, onChange: (Boolean) -> Unit) {
+private fun ToggleRow(title: String, detail: String, on: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(role = Role.Switch) { onChange(!on) }.padding(horizontal = 16.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(enabled = enabled, role = Role.Switch) { onChange(!on) }.padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -330,6 +332,6 @@ private fun ToggleRow(title: String, detail: String, on: Boolean, onChange: (Boo
             Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.width(12.dp))
-        Switch(checked = on, onCheckedChange = onChange)
+        Switch(checked = on, onCheckedChange = onChange, enabled = enabled)
     }
 }

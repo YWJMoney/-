@@ -21,4 +21,14 @@ class AmountFieldTest {
         assertEquals(1_234L, "1234".toAmount())
         assertEquals(0L, "".toAmount())
     }
+
+    /** [SHOP-03] 센 현금 0원 is an answer; elsewhere a lone 0 empties the field as before. */
+    @Test
+    fun zeroIsKeptOnlyWhereItIsAnAnswer() {
+        assertEquals("", amountInput("0"))
+        assertEquals("0", amountInput("0", allowZero = true))
+        assertEquals("0", amountInput("000", allowZero = true))
+        assertEquals("", amountInput("", allowZero = true))
+        assertEquals("1200", amountInput("01,200", allowZero = true))
+    }
 }

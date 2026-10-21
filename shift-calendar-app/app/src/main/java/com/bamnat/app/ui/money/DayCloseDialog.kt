@@ -146,7 +146,7 @@ private fun CashCheck(day: DailySales, rules: ShopMoney, book: MoneyBook, counte
     val cashAccounts = remember(book.accounts) { book.accounts.filter { it.type == AccountType.CASH }.map { it.id }.toSet() }
     val spent = remember(book.entries, day.date, cashAccounts) { CashDrawer.cashSpent(book.entries, day.date, cashAccounts) }
     val check = CashDrawer.check(day.copy(cashCounted = counted.toLongOrNull()), rules.openingCash, spent)
-    AmountField("센 현금 (선택)", amountDigits(counted.toLongOrNull() ?: 0), { onCounted(it) })
+    AmountField("센 현금 (선택)", counted, { onCounted(it) }, allowZero = true)
     Text(
         "있어야 할 현금 ${Fmt.won(check.expected)}" +
             " (시작 ${Fmt.won(rules.openingCash)} + 현금 매출 ${Fmt.won(if (day.byMethod > 0) day.cash else 0)}" +

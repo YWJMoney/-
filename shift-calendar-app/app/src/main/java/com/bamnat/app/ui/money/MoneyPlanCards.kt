@@ -114,6 +114,7 @@ fun NewRecordsCard(
     onDelete: (List<MoneyEntry>) -> Unit = {},
 ) {
     if (unseen.isEmpty() && kept.isEmpty()) return
+    var clearing by remember { mutableStateOf(false) }
     SectionCard(
         title = (if (waiting) "확인 대기함 " else "새로 들어온 기록 ") + "${unseen.size + kept.size}건",
         trailing = {
@@ -131,8 +132,18 @@ fun NewRecordsCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(if (unseen.size > 10) "그 밖에 ${unseen.size - 10}건이 더 기다려요" else "",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                TextButton(onClick = { onDelete(unseen) }) { Text("모두 지우기", color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = { clearing = true }) { Text("모두 지우기", color = MaterialTheme.colorScheme.error) }
             }
+            // Clearing the whole box is asked first, with how many go.
+            if (clearing) AlertDialog(
+                onDismissRequest = { clearing = false },
+                title = { Text("기다리는 ${unseen.size}건을 모두 지울까요?") },
+                text = { Text("확인하지 않은 기록이 모두 지워져요.") },
+                confirmButton = {
+                    TextButton(onClick = { clearing = false; onDelete(unseen) }) { Text("모두 지우기", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(onClick = { clearing = false }) { Text("취소") } },
+            )
         }
         if (!waiting && unseen.isNotEmpty()) {
             Text("결제 알림에서 적었어요. 분류가 틀리면 눌러서 고치면 그 가게는 다음부터 그 분류로 적어요.",

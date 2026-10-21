@@ -187,7 +187,9 @@ private object Routes {
     /** [MCAL-06] The pay of one of the user's calendars; without one, the main calendar's. */
     const val PAY = "pay?calendar={calendar}"
     fun pay(calendar: String = PersonalCalendar.MAIN) = "pay?calendar=$calendar"
-    const val EXTRA_KINDS = "extra_kinds"
+    /** [MCAL-06] How extra work is paid, in one calendar's pay; without one, the main calendar's. */
+    const val EXTRA_KINDS = "extra_kinds?calendar={calendar}"
+    fun extraKinds(calendar: String = PersonalCalendar.MAIN) = "extra_kinds?calendar=$calendar"
     const val MEMO = "memo/{id}?date={date}&checklist={checklist}&notebook={notebook}"
 
     /** [notebook]: opened from the memo tab, so a new memo goes into the notebook shown there. */
@@ -437,11 +439,21 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 
     // [UNDO-01][UNDO-02][UNDO-03] A kind of work changed, records cleared or a calendar removed: 되돌리기 at
     // once, wherever it was done, and 설정 › 데이터 › 최근 지운 기록 for 7 days after.
+    val styleExtras = remember { mutableStateOf<StyleExtras?>(null) }
     LaunchedEffect(Unit) {
         container.recordsTrash.offers.collect { offer ->
             val result = snackbar.showSnackbar(offer.message, actionLabel = "되돌리기", duration = SnackbarDuration.Long)
+            // Read once the snackbar is answered: the change sets it right after it is offered.
+            val extras = styleExtras.value?.takeIf { it.entryId == offer.entry.id }
+            if (extras != null) styleExtras.value = null
             if (result == SnackbarResult.ActionPerformed) {
                 val ok = container.recordsTrash.restore(offer.entry.id)
+                if (ok && extras != null) {
+                    // [UNDO-01] The 시급 types the change added go too, and its next step closes.
+                    val schedule = container.calendars.repository(extras.calendar)
+                    extras.addedTypes.forEach { schedule.deleteShiftType(it) }
+                    extras.opened?.let { nav.popFrom(it) }
+                }
                 snackbar.showSnackbar(if (ok) "되돌렸어요" else "되돌리지 못했어요. 설정 › 데이터 › 최근 지운 기록에서 다시 해 주세요")
             }
         }
@@ -495,6 +507,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     container = container,
                     wide = wide,
                     snackbar = snackbar,
+                    styleExtras = styleExtras,
                     modifier = Modifier.weight(1f),
                 )
                 if (wide && showNav) AdSlot()
@@ -525,12 +538,16 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
 }
 
+/** [UNDO-01] A kind-of-work change's own extras, for its 되돌리기: the 시급 types it added and the next step it opened (a route pattern). */
+private class StyleExtras(val entryId: String, val calendar: String, val addedTypes: List<Long>, val opened: String?)
+
 @Composable
 private fun AppNavHost(
     nav: NavHostController,
     container: AppContainer,
     wide: Boolean,
     snackbar: SnackbarHostState,
+    styleExtras: androidx.compose.runtime.MutableState<StyleExtras?>,
     modifier: Modifier = Modifier,
 ) {
     // Outlives the screen that starts it, e.g. a message shown after 회사 찾기 closes.
@@ -571,7 +588,7 @@ private fun AppNavHost(
                 onOpenMoney = { nav.navigateTopLevel(TopLevel.MONEY.route) },
                 onOpenPay = { nav.navigate(Routes.pay(container.calendars.active.value)) { launchSingleTop = true } },
                 onOpenSettings = { nav.navigateTopLevel(TopLevel.SETTINGS.route) },
-                onOpenExtraKinds = { nav.navigate(Routes.EXTRA_KINDS) { launchSingleTop = true } },
+                onOpenExtraKinds = { nav.navigate(Routes.extraKinds(container.calendars.active.value)) { launchSingleTop = true } },
                 onSetupCalendar = { id -> nav.navigate(Routes.calendarSetup(id)) { launchSingleTop = true } },
                 onManageCalendars = { nav.navigate(Routes.CALENDARS) { launchSingleTop = true } },
                 onEditCalendar = { id -> nav.navigate(Routes.calendarEdit(id)) { launchSingleTop = true } },
@@ -656,30 +673,37 @@ private fun AppNavHost(
                     if (clear == null) {
                         // [CALS-02] Each calendar keeps its own kind of work: the main one in settings, an added one in its entry.
                         if (isMain) container.settingsRepository.update { it.copy(workStyle = style) } else container.calendars.setStyle(calendar, style)
-                    } else {
-                        // [UNDO-01] Kept or cleared, the change is offered back (되돌리기) and listed for 7 days.
-                        container.recordsTrash.changeStyle(
-                            calendar, style, clear,
-                            if (clear) "기록을 지우고 ${style.label}${com.bamnat.app.ui.Fmt.ro(style.label)} 새로 시작해요" else style.changedMessage(),
-                        )
                     }
+                    // [UNDO-01] Kept or cleared, the change is offered back (되돌리기) and listed for 7 days.
+                    val entry = if (clear == null) null else container.recordsTrash.changeStyle(
+                        calendar, style, clear,
+                        if (clear) "기록을 지우고 ${style.label}${com.bamnat.app.ui.Fmt.ro(style.label)} 새로 시작해요" else style.changedMessage(),
+                    )
                     val schedule = container.calendars.repository(calendar)
+                    val typesBefore = schedule.shiftTypes.first().map { it.id }.toSet()
                     if (style == WorkStyle.HOURLY) schedule.addHourlyTypes()
+                    val added = if (style == WorkStyle.HOURLY) schedule.shiftTypes.first().map { it.id }.filter { it !in typesBefore } else emptyList()
                     val patterns = schedule.patterns.first()
                     val pay = container.calendars.pay(calendar).profile.value != null
-                    fun go(route: String) = nav.navigate(route) { popUpTo(Routes.WORK_STYLE) { inclusive = true }; launchSingleTop = true }
+                    var opened: String? = null
+                    fun go(route: String, pattern: String) {
+                        opened = pattern
+                        nav.navigate(route) { popUpTo(Routes.WORK_STYLE) { inclusive = true }; launchSingleTop = true }
+                    }
                     when {
                         style == before -> nav.popFrom(Routes.WORK_STYLE)
-                        style == WorkStyle.SHIFT && patterns.none { it is WorkPattern.Rotation } -> go(Routes.pattern(weekdays = false, setup = !pay, calendar = calendar))
-                        style == WorkStyle.DAY && patterns.none { it is WorkPattern.Weekly } -> go(Routes.pattern(weekdays = true, setup = !pay, calendar = calendar))
-                        style == WorkStyle.HOURLY && !pay -> go(Routes.pay(calendar))
+                        style == WorkStyle.SHIFT && patterns.none { it is WorkPattern.Rotation } -> go(Routes.pattern(weekdays = false, setup = !pay, calendar = calendar), Routes.PATTERN)
+                        style == WorkStyle.DAY && patterns.none { it is WorkPattern.Weekly } -> go(Routes.pattern(weekdays = true, setup = !pay, calendar = calendar), Routes.PATTERN)
+                        style == WorkStyle.HOURLY && !pay -> go(Routes.pay(calendar), Routes.PAY)
                         // [TYPE-03] A shop sets its hours and regular days off next.
-                        style == WorkStyle.BUSINESS -> go(Routes.shopDays(calendar))
+                        style == WorkStyle.BUSINESS -> go(Routes.shopDays(calendar), Routes.SHOP_DAYS)
                         else -> {
                             nav.popFrom(Routes.WORK_STYLE)
                             if (clear == null) snackbar.showSnackbar(style.changedMessage())
                         }
                     }
+                    // [UNDO-01] What 되돌리기 takes back besides the trash entry: the types added and the step opened.
+                    if (entry != null) styleExtras.value = StyleExtras(entry.id, calendar, added, opened)
                 }
             }
             WorkStyleScreen(current = current, title = if (isMain) "근무 형태 바꾸기" else "‘${cal?.name}’ 근무 형태", onPick = { style ->
@@ -737,7 +761,7 @@ private fun AppNavHost(
                 onOpenPattern = { nav.openPattern(container, container.calendars.active.value) },
                 onOpenDiagnostics = { testing -> nav.navigate(Routes.diagnostics(testing)) { launchSingleTop = true } },
                 onOpenWorkStyle = { nav.navigate(Routes.workStyle(container.calendars.active.value)) { launchSingleTop = true } },
-                onOpenExtraKinds = { nav.navigate(Routes.EXTRA_KINDS) { launchSingleTop = true } },
+                onOpenExtraKinds = { nav.navigate(Routes.extraKinds(container.calendars.active.value)) { launchSingleTop = true } },
                 onOpenPay = { nav.navigate(Routes.pay(container.calendars.active.value)) { launchSingleTop = true } },
                 wide = wide,
                 snackbar = snackbar,
@@ -784,7 +808,7 @@ private fun AppNavHost(
                 }
             }
             PayScreen(vm = vm, onBack = { nav.popFrom(Routes.PAY) },
-                onOpenExtraKinds = { nav.navigate(Routes.EXTRA_KINDS) { launchSingleTop = true } },
+                onOpenExtraKinds = { nav.navigate(Routes.extraKinds(calendar)) { launchSingleTop = true } },
                 top = {
                     CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                         onFix = { nav.fixCompanySetup(it) })
@@ -928,11 +952,12 @@ private fun AppNavHost(
             com.bamnat.app.ui.work.CommuteScreen(vm = vm, onBack = { nav.popFrom(Routes.COMMUTE) })
         }
         composable(Routes.FEATURES) { com.bamnat.app.ui.guide.FeatureSwitchesScreen(onBack = { nav.popFrom(Routes.FEATURES) }) }
-        composable(Routes.EXTRA_KINDS) {
-            val vm = appViewModel { ExtraKindsViewModel(it) }
+        composable(Routes.EXTRA_KINDS, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+            val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
+            val vm = appViewModel(key = "extra_kinds_$calendar") { ExtraKindsViewModel(it, calendar) }
             ExtraKindsScreen(vm = vm, onBack = { nav.popFrom(Routes.EXTRA_KINDS) },
                 // Back to the pay screen when it opened this one, so the stack does not grow.
-                onOpenPay = { if (!nav.popBackStack(Routes.PAY, inclusive = false)) nav.navigate(Routes.pay()) { launchSingleTop = true } })
+                onOpenPay = { if (!nav.popBackStack(Routes.PAY, inclusive = false)) nav.navigate(Routes.pay(calendar)) { launchSingleTop = true } })
         }
         composable(
             Routes.DIAGNOSTICS,
@@ -1036,7 +1061,7 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.PAY -> screen(Routes.pay(cal))
         Place.PATTERN -> openPattern(c, cal)
         Place.SHIFT_TYPES -> screen(Routes.shiftTypes(cal))
-        Place.EXTRA_KINDS -> screen(Routes.EXTRA_KINDS)
+        Place.EXTRA_KINDS -> screen(Routes.extraKinds(cal))
         Place.WORK_STYLE -> screen(Routes.workStyle(cal))
         Place.CALENDARS -> screen(Routes.CALENDARS)
         Place.CALENDAR_EDIT -> screen(Routes.calendarEdit(cal))
@@ -1065,7 +1090,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.WORK_STYLE -> Routes.workStyle()
     SettingsGo.PATTERN -> Routes.pattern()
     SettingsGo.SHIFT_TYPES -> Routes.shiftTypes()
-    SettingsGo.EXTRA_KINDS -> Routes.EXTRA_KINDS
+    SettingsGo.EXTRA_KINDS -> Routes.extraKinds()
     SettingsGo.PAY -> Routes.pay()
     SettingsGo.CALENDARS -> Routes.CALENDARS
     SettingsGo.DIAGNOSTICS -> Routes.diagnostics(false)
