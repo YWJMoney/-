@@ -86,7 +86,8 @@ private enum class InvestTab(val label: String) { OVERVIEW("한눈에"), HOLDING
 fun InvestScreen(vm: InvestViewModel, wide: Boolean, snackbar: SnackbarHostState) {
     val state by vm.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(InvestTab.OVERVIEW) }
-    var sheet by remember { mutableStateOf<InvestSheet?>(null) }
+    // Another calendar's screen starts with no sheet of this one's open.
+    var sheet by remember(vm.calendarId) { mutableStateOf<InvestSheet?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refreshToday() }
@@ -95,7 +96,11 @@ fun InvestScreen(vm: InvestViewModel, wide: Boolean, snackbar: SnackbarHostState
     // [INV-08] A tapped alarm notice opens its trade, filled in.
     val target by NoticeLinks.target.collectAsStateWithLifecycle()
     val payload by NoticeLinks.payload.collectAsStateWithLifecycle()
-    LaunchedEffect(target, state.loaded) {
+    val noticeCalendar by NoticeLinks.calendar.collectAsStateWithLifecycle()
+    // [MCAL-03] Only the notice's own calendar takes it; another's waits for the switch to that one.
+    val mine = (noticeCalendar ?: com.bamnat.app.data.PersonalCalendar.MAIN) == vm.calendarId
+    LaunchedEffect(target, state.loaded, mine) {
+        if (!mine) return@LaunchedEffect
         when (target) {
             NoticeLinks.Target.INVEST_TRADE -> if (state.loaded) {
                 sheet = InvestSheet.TradeEdit(vm.draftFor(payload?.toLongOrNull(), null))
@@ -338,7 +343,7 @@ private fun TodayCard(state: InvestState, open: (InvestSheet) -> Unit) {
     SectionCard(title = "오늘 · ${Fmt.dayTitle(today)}", trailing = {
         TextButton(onClick = { open(InvestSheet.Journal(today)) }) { Text(if (journal == null) "일지 쓰기" else "일지 보기") }
     }) {
-        Text(if (trades.isEmpty() && pnl == 0L) "오늘은 아직 매매가 없어요" else "실현손익 ${InvestFmt.signed(pnl, state.hide)} · 매매 ${trades.size}건",
+        Text(if (trades.isEmpty() && pnl == 0L) "오늘은 아직 매매가 없어요" else "오늘 손익 ${InvestFmt.signed(pnl, state.hide)} · 매매 ${trades.size}건",
             style = MaterialTheme.typography.bodyLarge, color = pnlColor(pnl))
         trades.take(4).forEach { t -> TradeLine(t, state, onClick = { open(InvestSheet.TradeEdit(editing = t)) }) }
         if (InvestAlarms.marketClosed(today)) Text("오늘은 국내 증시가 쉬는 날이에요", style = MaterialTheme.typography.bodySmall,

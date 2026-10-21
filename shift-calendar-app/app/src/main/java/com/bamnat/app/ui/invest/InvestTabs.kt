@@ -224,8 +224,8 @@ internal fun JournalTab(state: InvestState, open: (InvestSheet) -> Unit) {
     val thisMonth = entries.filter { YearMonth.from(it.date) == month }
     if (thisMonth.isNotEmpty() && principles.isNotEmpty()) {
         SectionCard(title = "${month.monthValue}월 원칙 지킨 비율") {
-            principles.forEachIndexed { i, p ->
-                val kept = thisMonth.count { i in it.checked }
+            principles.forEach { p ->
+                val kept = thisMonth.count { p in it.checked }
                 Text("$p · ${thisMonth.size}일 중 ${kept}일", style = MaterialTheme.typography.bodyMedium)
                 androidx.compose.material3.LinearProgressIndicator(progress = { kept.toFloat() / thisMonth.size },
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
@@ -243,7 +243,7 @@ internal fun JournalTab(state: InvestState, open: (InvestSheet) -> Unit) {
             Column(Modifier.fillMaxWidth().clickable { open(InvestSheet.Journal(j.date)) }) {
                 if (j.market.isNotBlank()) Text("시장 · ${j.market}", style = MaterialTheme.typography.bodyMedium)
                 if (j.review.isNotBlank()) Text("복기 · ${j.review}", style = MaterialTheme.typography.bodyMedium)
-                if (principles.isNotEmpty()) Text("원칙 ${j.checked.count { it < principles.size }}/${principles.size} 지킴",
+                if (principles.isNotEmpty()) Text("원칙 ${principles.count { it in j.checked }}/${principles.size} 지킴",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -289,15 +289,15 @@ internal fun AlarmsTab(vm: InvestViewModel, state: InvestState, open: (InvestShe
                 val draft = InvestPlans.draft(a, state.full, state.today)
                 Text(
                     listOfNotNull(
-                        a.amount?.let { "한 번에 ${InvestFmt.short(it, state.hide)}" } ?: a.quantity?.let { "한 번에 ${InvestFmt.quantity(it)}주" },
+                        a.amount?.let { "한 번에 ${InvestFmt.short(it, state.hide)}" } ?: a.quantity?.let { "한 번에 ${InvestFmt.quantity(it)}${a.market.unit}" },
                         "지금까지 ${p.times}번 · ${InvestFmt.short(p.spent, state.hide)}",
-                        if (p.doneThisPeriod) "이번 달 완료" else null,
+                        if (p.doneThisPeriod) p.doneLabel else null,
                     ).joinToString(" · "),
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 if (!p.doneThisPeriod) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (InvestPlans.canSaveAtOnce(draft)) TextButton(onClick = { vm.recordPlanNow(a) }) {
-                        Text("오늘 ${InvestFmt.quantity(draft.quantity ?: 0.0)}주 샀어요")
+                        Text("오늘 ${InvestFmt.quantity(draft.quantity ?: 0.0)}${draft.market.unit} ${if (draft.side == Side.SELL) "팔았어요" else "샀어요"}")
                     }
                     TextButton(onClick = { open(InvestSheet.TradeEdit(vm.draftFor(a.id, null))) }) { Text("기록 창 열기") }
                 }

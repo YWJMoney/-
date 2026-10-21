@@ -19,6 +19,7 @@ import com.bamnat.core.invest.InvestAccount
 import com.bamnat.core.invest.InvestAlarm
 import com.bamnat.core.invest.InvestEvent
 import com.bamnat.core.invest.JournalEntry
+import com.bamnat.core.invest.JournalRules
 import com.bamnat.core.invest.Market
 import com.bamnat.core.invest.Quote
 import com.bamnat.core.invest.Side
@@ -99,7 +100,7 @@ data class InvestJournalEntity(
     @PrimaryKey val epochDay: Long,
     val market: String,
     val review: String,
-    /** Positions of the kept rules, "0,2". */
+    /** [INV-07] The kept rules' text, each after a line break ([JournalRules]); older rows hold positions, "0,2". */
     val checked: String,
     val grade: String?,
     val updatedAt: Long,
@@ -245,12 +246,13 @@ fun CashFlow.toEntity(now: Long = System.currentTimeMillis()) = InvestCashEntity
 fun InvestQuoteEntity.toModel() = Quote(symbol, price, LocalDate.ofEpochDay(epochDay), name, enumOr(market, Market.OTHER))
 fun Quote.toEntity() = InvestQuoteEntity(key, name, market.name, price, date.toEpochDay())
 
-fun InvestJournalEntity.toModel() = JournalEntry(
-    LocalDate.ofEpochDay(epochDay), market, review, checked.split(',').mapNotNull { it.trim().toIntOrNull() }.toSet(),
+/** [INV-07] [principles] are the rules as they stand, which an older row's positions point into. */
+fun InvestJournalEntity.toModel(principles: List<String>) = JournalEntry(
+    LocalDate.ofEpochDay(epochDay), market, review, JournalRules.decode(checked, principles),
     grade?.let { g -> DayGrade.entries.firstOrNull { it.name == g } }, updatedAt,
 )
 fun JournalEntry.toEntity(now: Long = System.currentTimeMillis()) =
-    InvestJournalEntity(date.toEpochDay(), market, review, checked.sorted().joinToString(","), grade?.name, now)
+    InvestJournalEntity(date.toEpochDay(), market, review, JournalRules.encode(checked), grade?.name, now)
 
 fun InvestEventEntity.toModel() = InvestEvent(id, LocalDate.ofEpochDay(epochDay), enumOr(kind, EventKind.OTHER), symbol, title, memo, remind)
 fun InvestEvent.toEntity() = InvestEventEntity(id, date.toEpochDay(), kind.name, symbol.trim(), title.trim(), memo.trim(), remind)

@@ -55,6 +55,8 @@ enum class Market(val label: String, val currency: String, val defaultFeeRate: D
     val foreign: Boolean get() = currency != "KRW"
     /** Coins trade in fractions; shares in whole units (US fractional shares are typed as decimals anyway). */
     val fractional: Boolean get() = this == CRYPTO || this == US_STOCK
+    /** The counting word after a quantity: 개 for coins, 주 for shares. */
+    val unit: String get() = if (this == CRYPTO) "개" else "주"
 }
 
 enum class Side(val label: String) { BUY("매수"), SELL("매도") }
@@ -162,12 +164,27 @@ data class JournalEntry(
     val date: LocalDate,
     val market: String = "",
     val review: String = "",
-    /** Positions in [InvestSettings.principles] that were kept. */
-    val checked: Set<Int> = emptySet(),
+    /** [INV-07] The text of each rule kept, so editing [InvestSettings.principles] leaves past days as they were. */
+    val checked: Set<String> = emptySet(),
     val grade: DayGrade? = null,
     val updatedAt: Long = 0,
 ) {
     val isEmpty: Boolean get() = market.isBlank() && review.isBlank() && checked.isEmpty() && grade == null
+}
+
+/**
+ * [INV-07] How a journal's kept rules are written in its one text field: each rule after a line break
+ * (a rule never holds one), "\n손절가를 지켰어요\n…". Older entries kept positions in the list ("0,2");
+ * those are read with the rules as they stand, and rewritten as text before the list changes.
+ */
+object JournalRules {
+    fun encode(rules: Set<String>): String = rules.joinToString("") { "\n" + it.replace('\n', ' ').trim() }
+
+    fun isLegacy(raw: String): Boolean = raw.isNotBlank() && '\n' !in raw
+
+    fun decode(raw: String, principles: List<String>): Set<String> =
+        if (isLegacy(raw)) raw.split(',').mapNotNull { it.trim().toIntOrNull() }.sorted().mapNotNull { principles.getOrNull(it) }.toCollection(LinkedHashSet())
+        else raw.split('\n').map { it.trim() }.filter { it.isNotEmpty() }.toCollection(LinkedHashSet())
 }
 
 /** [INV-07] 좋음·보통·나쁨, like a trade-note app's day rating. */

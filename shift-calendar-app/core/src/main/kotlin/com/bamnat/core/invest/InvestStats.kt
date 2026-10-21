@@ -46,9 +46,11 @@ data class PeriodStats(
     val longestLossStreak: Int,
     val averageHoldingDays: Double?,
     val journalDays: Int,
+    /** [INV-06] 기타 비용 written as cash: in [fees] and off [pnl], never off [income]. */
+    val otherCosts: Long = 0,
 ) {
-    /** What the period earned: sales and payouts (fees and tax already off both). */
-    val pnl: Long get() = realized + income
+    /** What the period earned: sales and payouts (fees and tax already off both), less other costs. */
+    val pnl: Long get() = realized + income - otherCosts
     /** [INV-06] 승률: sales that made money over all sales. */
     val winRate: Double? get() = if (sells > 0) wins.toDouble() / sells else null
     val averageWin: Long? get() = if (wins > 0) grossWin / wins else null
@@ -57,7 +59,7 @@ data class PeriodStats(
     val payoff: Double? get() = averageWin?.let { w -> averageLoss?.takeIf { it > 0 }?.let { w.toDouble() / it } }
     /** [INV-13] Profit factor: all wins over all losses. */
     val profitFactor: Double? get() = if (grossLoss > 0) grossWin.toDouble() / grossLoss else null
-    val isEmpty: Boolean get() = trades == 0 && income == 0L && deposits == 0L && withdrawals == 0L
+    val isEmpty: Boolean get() = trades == 0 && income == 0L && otherCosts == 0L && deposits == 0L && withdrawals == 0L
 }
 
 object InvestStats {
@@ -93,7 +95,8 @@ object InvestStats {
         return PeriodStats(
             from = from, to = to,
             realized = sales.sumOf { it.pnlWon }.roundToLong(),
-            income = cash.filter { it.kind.isIncome }.sumOf { it.amount - it.tax } - cash.filter { it.kind == CashKind.FEE }.sumOf { it.amount },
+            income = cash.filter { it.kind.isIncome }.sumOf { it.amount - it.tax },
+            otherCosts = cash.filter { it.kind == CashKind.FEE }.sumOf { it.amount },
             fees = (trades.sumOf { it.fee * it.fxRate }).roundToLong() + cash.filter { it.kind == CashKind.FEE }.sumOf { it.amount },
             taxes = (trades.sumOf { it.tax * it.fxRate }).roundToLong() + cash.filter { it.kind.isIncome }.sumOf { it.tax },
             bought = trades.filter { it.side == Side.BUY }.sumOf { it.grossWon }.roundToLong(),

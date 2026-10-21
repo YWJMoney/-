@@ -89,7 +89,15 @@ object InvestAlarms {
 }
 
 /** [INV-08] How a 정기 매수 plan is going: how many times it was kept and what went in. */
-data class PlanProgress(val alarm: InvestAlarm, val times: Int, val spent: Long, val last: LocalDate?, val doneThisPeriod: Boolean)
+data class PlanProgress(val alarm: InvestAlarm, val times: Int, val spent: Long, val last: LocalDate?, val doneThisPeriod: Boolean) {
+    /** [INV-08] Said when [doneThisPeriod], by the plan's own stretch (as [InvestPlans.progress] counts it). */
+    val doneLabel: String get() = when {
+        alarm.monthDay != null -> "이번 달 완료"
+        alarm.once != null -> "완료"
+        alarm.weekdays.size >= 5 -> "오늘 완료"
+        else -> "이번 주 완료"
+    }
+}
 
 /**
  * [INV-08] A trade sheet filled from an alarm: the plan's holding, side, account and quantity (its

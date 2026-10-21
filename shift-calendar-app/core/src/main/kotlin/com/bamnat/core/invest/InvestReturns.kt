@@ -41,6 +41,15 @@ object InvestReturns {
         return snap.value + bookValueAt(book, date) - bookValueAt(book, snap.date)
     }
 
+    /**
+     * [INV-05][INV-21] Today's summary for returns and snapshots: rows dated after [today] are left out,
+     * as [principalAt] and the flows leave them out, so a deposit written ahead is not counted as gain.
+     * [built] (the whole book's result) is reused when nothing is dated ahead.
+     */
+    fun liveSummary(book: InvestBook, today: LocalDate, built: PortfolioResult? = null): PortfolioSummary =
+        if (built != null && book.trades.none { it.date.isAfter(today) } && book.cash.none { it.date.isAfter(today) }) built.summary
+        else Portfolio.build(book, upTo = today).summary
+
     /** [INV-05] 원금 대비: everything now less everything put in, over what was put in. */
     fun simple(summary: PortfolioSummary): PeriodReturn =
         PeriodReturn(ReturnMethod.SIMPLE, summary.simpleReturn, summary.pnl, 0, summary.totalAssets, summary.principal)
