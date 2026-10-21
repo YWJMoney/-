@@ -35,37 +35,73 @@ class CommuteRecorderTest {
         CommutePrefs.get(context).setEnabled(false)
     }
 
+    // Fixtures: a day shift 09:00–18:00, a night shift 22:00–06:00 (planned end on the next day).
+    private val dayEnd = d1.atTime(18, 0)
+    private val nightEnd = d2.atTime(6, 0)
+
     @Test fun backWithinTheWaitIsAWalk() {
         val s = state(arrived = d1.atTime(9, 0), pending = d1.atTime(12, 0))
-        assertEquals(EnterPlan(false, Enter.WALK), CommuteRecorder.onEnter(s, d1.atTime(13, 0)))
+        assertEquals(EnterPlan(false, Enter.WALK), CommuteRecorder.onEnter(s, d1.atTime(13, 0), dayEnd))
     }
 
-    @Test fun backLateInTheSameShiftWhileTheWaitsAlarmIsStillDueIsAWalk() {
-        // The inexact alarm has not finished the 18:00 leave by 21:00: still the shift arrived at 9:00.
+    @Test fun anEarlyLeaveAndBackBeforeTheEndIsAWalkEvenWhenTheWaitsAlarmIsLate() {
+        // Out at 12:00, back at 13:40 (past the 90 minutes): the inexact alarm has not finished the leave yet.
+        val s = state(arrived = d1.atTime(9, 0), pending = d1.atTime(12, 0))
+        assertEquals(EnterPlan(false, Enter.WALK), CommuteRecorder.onEnter(s, d1.atTime(13, 40), dayEnd))
+        // The alarm did finish it: the early end written is taken back.
+        val left = state(arrived = d1.atTime(9, 0), left = d1.atTime(12, 0))
+        assertEquals(EnterPlan(false, Enter.UNDO_LEAVE), CommuteRecorder.onEnter(left, d1.atTime(13, 40), dayEnd))
+    }
+
+    @Test fun aNormalLeaveStillWaitingIsFinishedNotTakenBackByComingBackThatEvening() {
         val s = state(arrived = d1.atTime(9, 0), pending = d1.atTime(18, 0))
-        assertEquals(EnterPlan(false, Enter.WALK), CommuteRecorder.onEnter(s, d1.atTime(21, 0)))
+        assertEquals(EnterPlan(true, Enter.OPEN), CommuteRecorder.onEnter(s, d1.atTime(21, 0), dayEnd))
+    }
+
+    @Test fun aNormalLeaveIsNeverUndoneByComingBackInTheNight() {
+        // 09:00 in, out at the planned end 18:00, back at 03:00 (still under 20 hours): 퇴근 stays, no new arrival.
+        val s = state(arrived = d1.atTime(9, 0), left = d1.atTime(18, 0))
+        assertEquals(EnterPlan(false, Enter.OPEN), CommuteRecorder.onEnter(s, d2.atTime(3, 0), dayEnd))
+        // Nor 잔업 coming back the same evening.
+        val late = state(arrived = d1.atTime(9, 0), left = d1.atTime(19, 30))
+        assertEquals(EnterPlan(false, Enter.OPEN), CommuteRecorder.onEnter(late, d1.atTime(20, 30), dayEnd))
+    }
+
+    @Test fun anEarlyLeaveIsNotUndoneByComingBackAfterTheEnd() {
+        val s = state(arrived = d1.atTime(9, 0), left = d1.atTime(15, 0))
+        assertEquals(EnterPlan(false, Enter.OPEN), CommuteRecorder.onEnter(s, d1.atTime(19, 0), dayEnd))
     }
 
     @Test fun aLeaveStillWaitingIsFinishedBeforeTheNextShiftsArrival() {
         val s = state(arrived = d1.atTime(22, 0), pending = d2.atTime(7, 0))
-        assertEquals(EnterPlan(true, Enter.ARRIVE), CommuteRecorder.onEnter(s, d2.atTime(21, 30)))
+        assertEquals(EnterPlan(true, Enter.ARRIVE), CommuteRecorder.onEnter(s, d2.atTime(21, 30), null))
     }
 
     @Test fun aLongBreakOnANightShiftTakesTheLeaveBackAcrossMidnight() {
-        val s = state(arrived = d1.atTime(22, 0), left = d2.atTime(1, 0))
-        assertEquals(EnterPlan(false, Enter.UNDO_LEAVE), CommuteRecorder.onEnter(s, d2.atTime(3, 30)))
-        assertEquals(d1.atTime(22, 0), CommuteRecorder.openArrival(s, d2.atTime(3, 30)))
+        // 21:50 in, out at 02:00, back at 04:00: before the 06:00 end of the shift arrived on.
+        val s = state(arrived = d1.atTime(21, 50), left = d2.atTime(2, 0))
+        assertEquals(EnterPlan(false, Enter.UNDO_LEAVE), CommuteRecorder.onEnter(s, d2.atTime(4, 0), nightEnd))
+        assertEquals(d1.atTime(21, 50), CommuteRecorder.openArrival(s, d2.atTime(4, 0)))
     }
 
     @Test fun noNewArrivalWhileTheShiftIsOpenAfterMidnight() {
         val s = state(arrived = d1.atTime(22, 0))
-        assertEquals(EnterPlan(false, Enter.OPEN), CommuteRecorder.onEnter(s, d2.atTime(2, 0)))
+        assertEquals(EnterPlan(false, Enter.OPEN), CommuteRecorder.onEnter(s, d2.atTime(2, 0), nightEnd))
     }
 
     @Test fun theNextDayIsANewArrival() {
         val s = state(arrived = d1.atTime(8, 0), left = d1.atTime(17, 0))
-        assertEquals(EnterPlan(false, Enter.ARRIVE), CommuteRecorder.onEnter(s, d2.atTime(8, 0)))
-        assertEquals(EnterPlan(false, Enter.ARRIVE), CommuteRecorder.onEnter(state(), d2.atTime(8, 0)))
+        assertEquals(EnterPlan(false, Enter.ARRIVE), CommuteRecorder.onEnter(s, d2.atTime(8, 0), null))
+        assertEquals(EnterPlan(false, Enter.ARRIVE), CommuteRecorder.onEnter(state(), d2.atTime(8, 0), null))
+    }
+
+    @Test fun thePlannedEndIsTheShiftTypesOwnAndANightShiftEndsTheNextDay() {
+        val night = com.bamnat.core.model.ShiftType(2, "야간", "야", 0xFF000000, java.time.LocalTime.of(22, 0), java.time.LocalTime.of(6, 0))
+        val snapshot = com.bamnat.app.data.ScheduleSnapshot(listOf(night), com.bamnat.core.model.WorkPattern.Rotation(d1, listOf(2L)),
+            listOf(com.bamnat.core.model.DayEntry(d1, customStart = java.time.LocalTime.of(22, 0), customEnd = java.time.LocalTime.of(2, 0))))
+        // An end written earlier (02:00) does not move the planned one.
+        assertEquals(nightEnd, CommuteRecorder.plannedEnd(snapshot.resolver.resolve(d1)))
+        assertEquals(nightEnd.plusDays(1), CommuteRecorder.plannedEnd(snapshot.resolver.resolve(d2)))
     }
 
     @Test fun aLeaveAfterMidnightGoesOnTheDayArrivedOn() {

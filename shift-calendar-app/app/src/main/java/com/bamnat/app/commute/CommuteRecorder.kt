@@ -154,25 +154,54 @@ object CommuteRecorder {
     fun openArrival(s: CommutePrefs.State, at: LocalDateTime): LocalDateTime? =
         s.arrivedAt?.takeIf { Duration.between(it, at).toMinutes() in 0 until Commute.MAX_SHIFT_MINUTES }
 
-    /** [DAYW-07] Coming in at [at], read against the state before it. */
-    fun onEnter(s: CommutePrefs.State, at: LocalDateTime): EnterPlan {
+    /**
+     * [DAYW-07] Coming in at [at], read against the state before it. [plannedEnd] is the planned end of the
+     * open arrival's shift (its own day, so a night shift runs past midnight), null when it has none.
+     */
+    fun onEnter(s: CommutePrefs.State, at: LocalDateTime, plannedEnd: LocalDateTime?): EnterPlan {
         val pending = s.pendingLeave
         if (pending != null) {
             // Back within the wait: the leave was a walk, not 퇴근 — by the minutes, also across midnight.
             if (Commute.cameBack(pending, at, LEAVE_WAIT_MINUTES)) return EnterPlan(false, Enter.WALK)
-            // The wait's alarm came late (it is inexact): back while the same shift is open is still a walk.
-            val open = openArrival(s, at)
-            if (open != null && pending.isAfter(open)) return EnterPlan(false, Enter.WALK)
-            return EnterPlan(true, afterLeave(s.copy(leftAt = pending, pendingLeave = null), at))
+            // The wait's alarm came late (it is inexact): an early leave and back before the end is still a walk.
+            if (walk(s, pending, at, plannedEnd)) return EnterPlan(false, Enter.WALK)
+            return EnterPlan(true, afterLeave(s.copy(leftAt = pending, pendingLeave = null), at, plannedEnd))
         }
-        return EnterPlan(false, afterLeave(s, at))
+        return EnterPlan(false, afterLeave(s, at, plannedEnd))
     }
 
-    private fun afterLeave(s: CommutePrefs.State, at: LocalDateTime): Enter {
-        val open = openArrival(s, at) ?: return Enter.ARRIVE
-        // Back while the shift is open after a leave was already taken (a long lunch): that leave was not 퇴근.
+    private fun afterLeave(s: CommutePrefs.State, at: LocalDateTime, plannedEnd: LocalDateTime?): Enter {
+        openArrival(s, at) ?: return Enter.ARRIVE
+        // Back before the end after an early leave was taken (a long lunch): that leave was not 퇴근. A 퇴근 at
+        // or after the end (잔업 too) stays, whenever the phone comes back.
         val left = s.leftAt
-        return if (left != null && left.isAfter(open) && at.isAfter(left)) Enter.UNDO_LEAVE else Enter.OPEN
+        return if (left != null && walk(s, left, at, plannedEnd)) Enter.UNDO_LEAVE else Enter.OPEN
+    }
+
+    /** A leave at [left] in the open shift, before its planned end, and back at [at] before that end too. */
+    private fun walk(s: CommutePrefs.State, left: LocalDateTime, at: LocalDateTime, plannedEnd: LocalDateTime?): Boolean {
+        val open = openArrival(s, at) ?: return false
+        val end = plannedEnd ?: return false
+        return left.isAfter(open) && at.isAfter(left) && left.isBefore(end.minusMinutes(Commute.SLACK_MINUTES.toLong())) && at.isBefore(end)
+    }
+
+    /** [DAYW-07] The planned end of [day]'s shift: the shift type's own times, not an end written earlier. */
+    fun plannedEnd(day: com.bamnat.core.schedule.ResolvedDay): LocalDateTime? {
+        if (!day.isWorkDay) return null
+        val ts = day.shiftType?.start
+        val te = day.shiftType?.end
+        if (!day.hasCustomTimes || ts == null || te == null) return day.shiftTo
+        val from = day.date.atTime(ts)
+        val to = day.date.atTime(te)
+        return if (to.isAfter(from)) to else to.plusDays(1)
+    }
+
+    /** The planned end of the shift arrived on before [at], read off its calendar. */
+    private suspend fun openEnd(context: Context, s: CommutePrefs.State, at: LocalDateTime): LocalDateTime? {
+        val arrived = openArrival(s, at) ?: return null
+        val c = context.appContainer
+        if (c.calendars.get(s.calendarId) == null) return null
+        return plannedEnd(c.calendars.repository(s.calendarId).snapshot.first().resolver.resolve(arrived.toLocalDate()))
     }
 
     /** A geofence crossing at [at]. */
@@ -181,7 +210,7 @@ object CommuteRecorder {
         val s = prefs.current
         if (!s.enabled) return
         if (entering) {
-            val plan = onEnter(s, at)
+            val plan = onEnter(s, at, openEnd(context, s, at))
             if (plan.finishFirst) finishLeave(context)
             when (plan.then) {
                 Enter.WALK -> { prefs.leavePending(null); cancelFinish(context) }
