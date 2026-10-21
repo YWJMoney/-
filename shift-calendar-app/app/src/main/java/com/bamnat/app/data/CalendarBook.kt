@@ -89,15 +89,18 @@ sealed interface CalendarKey {
 /** Where added calendars keep their databases; tests use in-memory ones. */
 interface CalendarStorage {
     fun open(id: String): AppDatabase
-    fun delete(id: String, db: AppDatabase?)
+    /** [keepTools]: its work tools and contract photos stay, for a calendar a restore brings back. */
+    fun delete(id: String, db: AppDatabase?, keepTools: Boolean = false)
 
     class Files(private val context: android.content.Context) : CalendarStorage {
         override fun open(id: String): AppDatabase = AppDatabase.create(context, fileName(id))
-        override fun delete(id: String, db: AppDatabase?) {
+        override fun delete(id: String, db: AppDatabase?, keepTools: Boolean) {
             db?.close()
             context.deleteDatabase(fileName(id))
             // [MCAL-06] Its pay setup and closed months go with it.
-            filesOf(context, id).deleteRecursively()
+            val dir = filesOf(context, id)
+            if (!keepTools) dir.deleteRecursively()
+            else dir.listFiles()?.filter { it.name !in TOOL_FILES }?.forEach { it.deleteRecursively() }
         }
     }
 
@@ -107,6 +110,9 @@ interface CalendarStorage {
 
         /** [MCAL-06] An added calendar's other files (its pay setup), in app storage so backups carry them. */
         fun filesOf(context: android.content.Context, id: String) = File(context.filesDir, "calendars/$id")
+
+        /** [HRLY-10] What [WorkToolsStore] keeps there (contract photos are not in backups). */
+        val TOOL_FILES = setOf(WorkToolsStore.FILE, WorkToolsStore.PHOTOS)
     }
 }
 
@@ -316,8 +322,10 @@ class CalendarBook(
     }
 
     /** [MCAL-01] Removes an added calendar and everything in it. The main calendar cannot go. */
+    fun delete(id: String) = delete(id, keepTools = false)
+
     @Synchronized
-    fun delete(id: String) {
+    private fun delete(id: String, keepTools: Boolean) {
         if (id == PersonalCalendar.MAIN || get(id) == null) return
         val db = synchronized(this) { pays.remove(id); open.remove(id)?.db }
         val s = state.value
@@ -326,7 +334,7 @@ class CalendarBook(
             order = s.order.filter { it != CalendarKey.Mine(id).key },
             active = if (s.active == id) PersonalCalendar.MAIN else s.active,
         ))
-        runCatching { storage.delete(id, db) }
+        runCatching { storage.delete(id, db, keepTools) }
     }
 
     /**
@@ -357,16 +365,23 @@ class CalendarBook(
      */
     fun added(): List<PersonalCalendar> = all.filter { !it.isMain && it.ready }
 
-    /** [MCAL-05] A restore replaces the added calendars with the backup's, ids and order kept. */
+    /**
+     * [MCAL-05] A restore replaces the added calendars with the backup's, ids and order kept. One that
+     * comes back keeps its work tools and contract photos, which the backup restores over or lacks.
+     * Returns the ids that went for good.
+     */
     @Synchronized
-    fun replaceAdded(calendars: List<PersonalCalendar>, order: List<String>?) {
-        added().forEach { delete(it.id) }
+    fun replaceAdded(calendars: List<PersonalCalendar>, order: List<String>?): List<String> {
+        val back = calendars.map { it.id }.toSet()
+        val before = all.filter { !it.isMain }.map { it.id }
+        before.forEach { delete(it, keepTools = it in back) }
         val s = state.value
         val main = s.calendars.firstOrNull { it.isMain } ?: defaultMain()
         val restoredMain = calendars.firstOrNull { it.isMain }
         val list = listOf(restoredMain?.let { main.copy(name = it.name, color = it.color, shop = it.shop, field = it.field, shopMoney = it.shopMoney) } ?: main) +
             calendars.filter { !it.isMain }.map { it.copy(ready = true) }
         write(State(list, order ?: s.order, PersonalCalendar.MAIN))
+        return before.filter { it !in back }
     }
 
     @Synchronized

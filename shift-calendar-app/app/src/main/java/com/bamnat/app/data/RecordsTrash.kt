@@ -34,7 +34,8 @@ import java.util.UUID
  *   shop money settings; for 내 달력 also its kind of work from the settings), its pay setup and closed
  *   months, and its place in the calendar list;
  * - `data.db`: a copy of the calendar's tables that were cleared (every table for a removed calendar);
- * - `memos.db`: the memos that were moved to the memo trash or off the calendar.
+ * - `memos.db`: the memos that were moved to the memo trash or off the calendar;
+ * - `files/`: for a removed calendar, its folder besides the pay setup (work tools, contract photos).
  *
  * Putting back never closes or swaps a database that screens are reading: rows are written into the
  * open database in one transaction, so every list follows at once. A removed calendar comes back with
@@ -46,6 +47,11 @@ class RecordsTrash(
     private val mainDb: AppDatabase,
     private val settings: SettingsRepository,
     private val clock: () -> Long = System::currentTimeMillis,
+    /** [UNDO-03] An added calendar's own folder ([CalendarStorage.filesOf]); null keeps no files. */
+    private val filesOf: ((String) -> File)? = null,
+    private val workTools: WorkToolsStore? = null,
+    private val autoRecord: AutoRecordPrefs? = null,
+    private val commute: CommutePrefs? = null,
 ) {
     enum class Kind(val label: String) {
         STYLE("근무 형태를 바꿨어요"),
@@ -180,6 +186,8 @@ class RecordsTrash(
                 when (kind) {
                     Kind.STYLE -> putSettings(meta, cal)
                     Kind.STYLE_CLEARED, Kind.CLEARED -> {
+                        // [UNDO-02] What was written after the clear is replaced, so it is kept in turn first.
+                        if (hasRecords(cal.id)) save(Kind.CLEARED, cal.id, withData = true, detail = "되돌리기 전 기록")
                         // The rows first: when they cannot be written, the kind of work stays as it is too.
                         putData(folder, cal.id)
                         putSettings(meta, cal)
@@ -194,6 +202,7 @@ class RecordsTrash(
                         putData(folder, cal.id)
                         putPay(meta, cal.id)
                         putMemos(folder)
+                        putFiles(folder, meta, cal.id)
                     }
                 }
                 true
@@ -246,6 +255,7 @@ class RecordsTrash(
                 val tables = if (kind == Kind.DELETED) tablesOf(live) else CLEARED_TABLES.filter { it in tablesOf(live) }
                 fileDb(File(folder, DATA)).use { snap -> tables.forEach { t -> dump(SupportDb(live), snap, t) } }
             }
+            if (kind == Kind.DELETED) keepFiles(folder, meta, cal.id)
             val memos = if (kind == Kind.DELETED) memoIdsOn(cal.id) else ownMemoIds(cal.id)
             meta.put("memos", JSONArray(memos))
             if (memos.isNotEmpty()) {
@@ -274,6 +284,43 @@ class RecordsTrash(
         pay.replaceClosed(emptyMap())
         val memos = ownMemoIds(calendarId)
         if (memos.isNotEmpty()) mainDb.memoDao().moveToTrash(memos, clock())
+    }
+
+    /** [UNDO-02] Rows or a pay setup a put-back would replace. */
+    private fun hasRecords(calendarId: String): Boolean {
+        if (calendars.pay(calendarId).profile.value != null) return true
+        val live = liveOf(calendarId) ?: return false
+        val tables = tablesOf(live)
+        // Prices and daily totals are not written by the user.
+        return (CLEARED_TABLES - setOf("invest_quotes", "invest_snapshots")).filter { it in tables }.any { t -> live.query("SELECT 1 FROM `$t` LIMIT 1").use { it.moveToFirst() } }
+    }
+
+    /** [UNDO-03] A removed calendar's work tools and contract photos, and whether notifications and 출퇴근 기록 went to it. */
+    private fun keepFiles(folder: File, meta: JSONObject, calendarId: String) {
+        filesOf?.invoke(calendarId)?.takeIf { it.isDirectory }?.listFiles()?.filter { it.name != PAY_DIR }?.forEach { f ->
+            f.copyRecursively(File(File(folder, FILES), f.name), overwrite = true)
+        }
+        autoRecord?.current?.let { a ->
+            meta.put("autoRecord", a.calendar == calendarId)
+            meta.put("autoRecordApps", JSONArray(a.appCalendars.filterValues { it == calendarId }.keys.toList()))
+        }
+        commute?.current?.let { meta.put("commute", it.calendarId == calendarId) }
+    }
+
+    /** [UNDO-03] What [keepFiles] kept, back; routing only where it went to 내 달력 and was not set again since. */
+    private fun putFiles(folder: File, meta: JSONObject, calendarId: String) {
+        val kept = File(folder, FILES)
+        val target = filesOf?.invoke(calendarId)
+        if (target != null && kept.isDirectory) {
+            kept.copyRecursively(target, overwrite = true)
+            workTools?.reload(calendarId)
+        }
+        autoRecord?.let { a ->
+            if (meta.optBoolean("autoRecord") && a.current.calendar == PersonalCalendar.MAIN) a.setCalendar(calendarId)
+            val apps = meta.optJSONArray("autoRecordApps")
+            for (i in 0 until (apps?.length() ?: 0)) apps!!.optString(i).takeIf { it.isNotEmpty() && it !in a.current.appCalendars }?.let { a.setAppCalendar(it, calendarId) }
+        }
+        commute?.let { c -> if (meta.optBoolean("commute") && c.current.calendarId == PersonalCalendar.MAIN) c.setCalendar(calendarId) }
     }
 
     private fun putSettings(meta: JSONObject, cal: PersonalCalendar) {
@@ -449,6 +496,9 @@ class RecordsTrash(
         private const val META = "meta.json"
         private const val DATA = "data.db"
         private const val MEMOS = "memos.db"
+        private const val FILES = "files"
+        /** Its pay setup's folder, kept in meta.json instead. */
+        private const val PAY_DIR = "pay"
         private val INTERNAL = setOf("android_metadata", "room_master_table")
         private val CLEARED_TABLES get() = RECORD_TABLES + INVEST_TABLES
 

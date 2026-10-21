@@ -75,7 +75,7 @@ internal fun RecordsTrashDialog(entries: List<RecordsTrash.Entry>, onRestore: (R
             message = when (e.kind) {
                 RecordsTrash.Kind.STYLE -> "근무 형태를 바꾸기 전으로 돌려요. 그 뒤에 적은 기록은 그대로예요."
                 RecordsTrash.Kind.DELETED -> "지운 달력을 근무·돈 기록·급여 설정과 함께 다시 살려요. 공유 링크는 다시 만들어야 해요."
-                else -> "지우기 전의 근무 기록·근무 순서·급여 설정·일감·매출·받을 돈과 메모로 돌아가요. 지운 뒤에 새로 적은 근무 기록과 일감·매출은 없어져요."
+                else -> "지우기 전의 근무 기록·근무 순서·급여 설정·일감·매출·받을 돈과 메모로 돌아가요. 지운 뒤에 새로 적은 기록은 바뀌지만, 최근 지운 기록에 남아요."
             },
             confirmLabel = "되돌리기",
             onDismiss = { asking = null },

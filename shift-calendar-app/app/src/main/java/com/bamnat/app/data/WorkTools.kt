@@ -59,6 +59,7 @@ data class WorkTools(
  */
 class WorkToolsStore internal constructor(private val dirOf: (String) -> File) {
     private val flows = HashMap<String, MutableStateFlow<WorkTools>>()
+    private var owner: Context? = null
     private val writer = Executors.newSingleThreadExecutor { r -> Thread(r, "work-tools").apply { isDaemon = true } }
 
     fun dir(calendarId: String): File = dirOf(calendarId)
@@ -104,11 +105,28 @@ class WorkToolsStore internal constructor(private val dirOf: (String) -> File) {
     /** The tools of [calendarId] for a backup; null when there is nothing in them. */
     fun export(calendarId: String): JSONObject? = current(calendarId).takeIf { it != WorkTools() }?.let(::encode)
 
-    /** Puts back what a backup held; photos are not in backups, so their names are kept only if the files are here. */
+    /**
+     * Puts back what a backup held; photos are not in backups, so their names are kept only if the files are here.
+     * Always written, even when it equals what is shown: the file may have gone with its calendar meanwhile.
+     * A backup without tools for it leaves what is on the phone, read again from the file.
+     */
+    @Synchronized
     fun restore(calendarId: String, o: JSONObject?) {
-        val tools = o?.let { runCatching { decode(it) }.getOrNull() } ?: return
+        val tools = o?.let { runCatching { decode(it) }.getOrNull() } ?: return reload(calendarId)
         val photos = tools.contract.photos.filter { photo(calendarId, it)?.exists() == true }
-        update(calendarId) { tools.copy(contract = tools.contract.copy(photos = photos)) }
+        val next = finite(tools.copy(contract = tools.contract.copy(photos = photos)))
+        val text = runCatching { encode(next).toString() }.getOrNull() ?: return
+        of(calendarId)
+        flows.getValue(calendarId).value = next
+        writer.execute { write(calendarId, text) }
+    }
+
+    /** Shows [calendarId]'s tools as its file has them now (none once the calendar and its folder are gone). */
+    @Synchronized
+    fun reload(calendarId: String) {
+        val flow = flows[calendarId] ?: return
+        runCatching { writer.submit {}.get() } // a change still being written is read too
+        flow.value = runCatching { decode(JSONObject(file(calendarId).readText())) }.getOrDefault(WorkTools())
     }
 
     companion object {
@@ -117,9 +135,12 @@ class WorkToolsStore internal constructor(private val dirOf: (String) -> File) {
 
         @Volatile private var instance: WorkToolsStore? = null
 
-        fun get(context: Context): WorkToolsStore = instance ?: synchronized(this) {
+        /** One per app; a test's new app (with its own folders) gets its own. */
+        fun get(context: Context): WorkToolsStore {
             val app = context.applicationContext
-            instance ?: WorkToolsStore { id -> CalendarStorage.filesOf(app, id) }.also { instance = it }
+            return instance?.takeIf { it.owner === app } ?: synchronized(this) {
+                instance?.takeIf { it.owner === app } ?: WorkToolsStore { id -> CalendarStorage.filesOf(app, id) }.also { it.owner = app; instance = it }
+            }
         }
 
         /** [HRLY-09][FLD-11] [t] with every hour and quantity a number JSON can hold (NaN and Infinity as 0). */

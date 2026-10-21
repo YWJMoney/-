@@ -241,6 +241,40 @@ class PersonalCalendarsTest {
         assertFalse(CalendarStorage.filesOf(app, id).exists())
     }
 
+    /**
+     * [HRLY-10][MCAL-05] A restore, or taking an import back, keeps an added calendar's work tools on
+     * disk and its contract photos, so they are there after a restart too.
+     */
+    @Test fun aRestoreKeepsAnAddedCalendarsWorkToolsOnDisk() = runBlocking {
+        val id = listedCalendar("알바")
+        c.calendars.repository(id).ensureDefaults()
+        val tools = WorkToolsStore.get(app)
+        assertEquals(CalendarStorage.filesOf(app, id), tools.dir(id))
+        File(tools.photoDir(id).apply { mkdirs() }, "a.jpg").writeText("photo")
+        tools.update(id) { WorkTools(contract = com.bamnat.core.work.WorkContract(photos = listOf("a.jpg"), hourlyWage = 11_000)) }
+        val file = File(tools.dir(id), WorkToolsStore.FILE)
+        fun onDisk() = runCatching { WorkToolsStore.decode(org.json.JSONObject(file.readText())) }.getOrNull()
+        waitFor("the tools file") { onDisk() != null }
+        val json = c.backupManager.export()
+
+        c.backupManager.restore(json)
+        waitFor("the restored tools") { onDisk()?.contract?.hourlyWage == 11_000L }
+        assertEquals(listOf("a.jpg"), onDisk()!!.contract.photos)
+        assertTrue(tools.photo(id, "a.jpg")!!.exists())
+        // Read anew, as after a restart.
+        assertEquals(onDisk(), WorkToolsStore { CalendarStorage.filesOf(app, it) }.current(id))
+
+        // An import without the calendar takes it away with its folder; nothing of it stays on screen.
+        c.backupManager.restore(org.json.JSONObject(json).put("calendars", org.json.JSONArray()).toString())
+        assertNull(c.calendars.get(id))
+        assertFalse(file.exists())
+        assertEquals(WorkTools(), tools.current(id))
+        // Taken back: the tools are written again (photos are not in backups).
+        c.backupManager.restore(json)
+        waitFor("the tools again") { onDisk()?.contract?.hourlyWage == 11_000L }
+        assertEquals(11_000L, tools.current(id).contract.hourlyWage)
+    }
+
     /** [MCAL-06] Its money and pay are in the backup too, and come back to it. */
     @Test fun aBackupCarriesAnAddedCalendarsMoneyAndPay() = runBlocking {
         val id = listedCalendar("알바")

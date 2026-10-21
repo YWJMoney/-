@@ -145,6 +145,49 @@ class RecordsTrashTest {
         assertEquals(setOf(id), c.memoRepository.get(memo.id)!!.calendars)
     }
 
+    /** [UNDO-03] Its work tools, contract photos and where notices and 출퇴근 기록 went come back too. */
+    @Test fun aRemovedCalendarBringsBackItsWorkToolsAndRouting() = runBlocking {
+        val (id, _) = filledCalendar("편의점")
+        val tools = WorkToolsStore.get(app)
+        File(tools.photoDir(id).apply { mkdirs() }, "a.jpg").writeText("photo")
+        tools.update(id) { WorkTools(contract = com.bamnat.core.work.WorkContract(photos = listOf("a.jpg"), hourlyWage = 11_000)) }
+        val toolsFile = File(tools.dir(id), WorkToolsStore.FILE)
+        waitFor("the tools file") { toolsFile.exists() }
+        c.autoRecordPrefs.setCalendar(id)
+        c.autoRecordPrefs.setAppCalendar("com.shop.pos", id)
+        val commute = CommutePrefs.get(app)
+        commute.setCalendar(id)
+
+        assertTrue(removeCalendar(c, id, keepLink = true))
+        assertFalse(toolsFile.exists())
+        assertEquals(PersonalCalendar.MAIN, c.autoRecordPrefs.current.calendar)
+        assertEquals(PersonalCalendar.MAIN, commute.current.calendarId)
+
+        assertTrue(c.recordsTrash.restore(c.recordsTrash.entries.value.single().id))
+        assertEquals(11_000L, WorkToolsStore.decode(org.json.JSONObject(toolsFile.readText())).contract.hourlyWage)
+        assertTrue(tools.photo(id, "a.jpg")!!.exists())
+        assertEquals(listOf("a.jpg"), tools.current(id).contract.photos)
+        assertEquals(id, c.autoRecordPrefs.current.calendar)
+        assertEquals(id, c.autoRecordPrefs.current.appCalendars["com.shop.pos"])
+        assertEquals(id, commute.current.calendarId)
+        // Its pay setup came back on its own path, not twice.
+        assertEquals(profile, c.calendars.pay(id).profile.value)
+    }
+
+    /** [UNDO-02] Putting cleared records back replaces what was written since, and that is kept in turn. */
+    @Test fun puttingBackKeepsWhatWasWrittenAfterTheClear() = runBlocking {
+        val (id, _) = filledCalendar("가게")
+        val entry = c.recordsTrash.clearRecords(id)!!
+        c.calendars.money(id).save(DailySales(day.plusDays(1), 50_000))
+        assertTrue(c.recordsTrash.restore(entry.id))
+        assertEquals(listOf(day), c.calendars.money(id).sales.first().map { it.date })
+        val since = c.recordsTrash.entries.value.single()
+        assertEquals(RecordsTrash.Kind.CLEARED, since.kind)
+
+        assertTrue(c.recordsTrash.restore(since.id))
+        assertEquals(listOf(day.plusDays(1)), c.calendars.money(id).sales.first().map { it.date })
+    }
+
     @Test fun afterSevenDaysItIsGoneForGood() = runBlocking {
         var now = System.currentTimeMillis()
         val dir = File(app.noBackupFilesDir, "trash_test")

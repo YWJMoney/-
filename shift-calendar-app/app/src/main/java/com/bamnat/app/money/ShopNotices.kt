@@ -26,6 +26,8 @@ object ShopNotices {
      * different times are both added.
      */
     private var seen: ArrayDeque<String>? = null
+    /** Keys being saved right now, so the same notice posted twice at once is not added twice either. */
+    private val taking = HashSet<String>()
     private const val SEEN = 200
 
     private fun styleOf(c: AppContainer, id: String) = c.calendars.styleOf(id, c.settingsRepository.current.workStyle)
@@ -48,12 +50,12 @@ object ShopNotices {
         val date = arrived.toLocalDate()
         val key = "$id|$postedAt|${text.hashCode()}"
         ShopCapture.read(text, pkg, app)?.let { sale ->
-            if (!remember(c, key)) return MoneyRepository.Outcome.DUPLICATE
-            val day = money.book.first().sales.firstOrNull { it.date == date }
-            val next = ShopCapture.add(day, date, sale)
-            money.save(next)
-            com.bamnat.app.ui.work.ShopKeeper.salesSaved(c, id, date, next.sales)
-            return MoneyRepository.Outcome.SAVED
+            return once(c, key) {
+                val day = money.book.first().sales.firstOrNull { it.date == date }
+                val next = ShopCapture.add(day, date, sale)
+                money.save(next)
+                com.bamnat.app.ui.work.ShopKeeper.salesSaved(c, id, date, next.sales)
+            }
         }
         val parsed = (PaymentParser.parse(text, arrived) as? PaymentParser.Result.Ok)?.parsed
         val amount = ShopCapture.settlement(text, parsed) ?: return null
@@ -61,19 +63,40 @@ object ShopNotices {
         val rules = c.calendars.get(id)?.shopMoney ?: ShopMoney()
         val matched = CardSettlement.match(amount, parsed?.date ?: date, CardSettlement.expected(book.sales, rules, KoreanHolidays::isHoliday))
         if (matched.isEmpty()) return null
-        if (!remember(c, key)) return MoneyRepository.Outcome.DUPLICATE
-        for (e in matched) book.sales.firstOrNull { it.date == e.saleDate }?.let { money.save(it.copy(cardSettled = true)) }
+        return once(c, key) {
+            for (e in matched) book.sales.firstOrNull { it.date == e.saleDate }?.let { money.save(it.copy(cardSettled = true)) }
+        }
+    }
+
+    /** Runs [save] unless [key] was taken before; the key is remembered only once it saved, so a failed save can come again. */
+    private suspend fun once(c: AppContainer, key: String, save: suspend () -> Unit): MoneyRepository.Outcome {
+        if (!claim(c, key)) return MoneyRepository.Outcome.DUPLICATE
+        var saved = false
+        try {
+            save()
+            saved = true
+        } finally {
+            release(c, key, saved)
+        }
         return MoneyRepository.Outcome.SAVED
     }
 
+    private fun file(c: AppContainer) = java.io.File(c.appContext.noBackupFilesDir, "shop_notices_seen.txt")
+
     @Synchronized
-    private fun remember(c: AppContainer, key: String): Boolean {
-        val file = java.io.File(c.appContext.noBackupFilesDir, "shop_notices_seen.txt")
-        val list = seen ?: ArrayDeque(runCatching { file.readLines() }.getOrDefault(emptyList()).filter { it.isNotBlank() }).also { seen = it }
-        if (key in list) return false
+    private fun seenList(c: AppContainer): ArrayDeque<String> =
+        seen ?: ArrayDeque(runCatching { file(c).readLines() }.getOrDefault(emptyList()).filter { it.isNotBlank() }).also { seen = it }
+
+    @Synchronized
+    private fun claim(c: AppContainer, key: String): Boolean = key !in seenList(c) && taking.add(key)
+
+    @Synchronized
+    private fun release(c: AppContainer, key: String, saved: Boolean) {
+        taking.remove(key)
+        if (!saved) return
+        val list = seenList(c)
         list.addLast(key)
         while (list.size > SEEN) list.removeFirst()
-        runCatching { file.writeText(list.joinToString("\n")) }
-        return true
+        runCatching { file(c).writeText(list.joinToString("\n")) }
     }
 }

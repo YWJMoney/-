@@ -149,14 +149,20 @@ class InvestAppTest {
         assertEquals(before.settings, after.settings)
     }
 
-    @Test fun aBackupWithoutInvestorRecordsLeavesThePhonesOwn() = runBlocking {
+    @Test fun anOlderBackupWithoutInvestorRecordsLeavesThePhonesOwn() = runBlocking {
         ScheduleRepository(db).ensureDefaults()
         val backups = BackupManager(db, SettingsRepository(context))
-        val json = backups.export()
-        assertFalse(org.json.JSONObject(json).has("invest"))
+        val root = org.json.JSONObject(backups.export())
+        // Made with none: the backup says so, and restoring it empties what was written since.
+        assertEquals(0, root.getJSONObject("invest").length())
         val acc = repo.ensureAccount()
         repo.saveCash(CashFlow(accountId = acc, date = day, kind = CashKind.DEPOSIT, amount = 1_000))
-        backups.restore(json)
+        backups.restore(root.toString())
+        assertEquals(0, repo.now().cash.size)
+        // A backup from before "invest" was always written keeps the phone's.
+        repo.saveCash(CashFlow(accountId = repo.ensureAccount(), date = day, kind = CashKind.DEPOSIT, amount = 1_000))
+        root.remove("invest")
+        backups.restore(root.toString())
         assertEquals(1, repo.now().cash.size)
     }
 
