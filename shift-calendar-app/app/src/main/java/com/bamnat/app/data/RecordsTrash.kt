@@ -168,6 +168,31 @@ class RecordsTrash(
     // ---- putting back ----
 
     /**
+     * [UNDO-03][HRLY-10] An import taken back brings back calendars it removed, but not their contract photos
+     * (never in a backup): those of [calendarIds] not here now get the photos their trash entry kept, before
+     * the backup is put in (so the photo names stay). The entries used, for [forget] once it is in.
+     */
+    suspend fun putPhotosBack(calendarIds: Collection<String>): List<String> = lock.withLock {
+        withContext(Dispatchers.IO) {
+            calendarIds.filter { calendars.get(it) == null }.mapNotNull { id ->
+                val entry = _entries.value.firstOrNull { it.kind == Kind.DELETED && it.calendarId == id } ?: return@mapNotNull null
+                val kept = File(File(File(dir, entry.id), FILES), WorkToolsStore.PHOTOS)
+                val target = filesOf?.invoke(id)
+                if (target != null && kept.isDirectory) runCatching { kept.copyRecursively(File(target, WorkToolsStore.PHOTOS), overwrite = true) }
+                entry.id
+            }
+        }
+    }
+
+    /** Drops entries [ids] without putting them back. */
+    suspend fun forget(ids: Collection<String>) = lock.withLock {
+        withContext(Dispatchers.IO) {
+            ids.forEach { File(dir, it).deleteRecursively() }
+            _entries.value = load()
+        }
+    }
+
+    /**
      * Puts entry [id] back and forgets it. False when it is gone (older than [KEEP_DAYS] days) or could
      * not be read; then nothing changed.
      */

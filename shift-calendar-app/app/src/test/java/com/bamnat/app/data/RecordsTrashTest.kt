@@ -198,6 +198,29 @@ class RecordsTrashTest {
         assertEquals(setOf(id), c.memoRepository.get(memo.id)!!.calendars)
     }
 
+    /** [UNDO-03][SET-01] Taking that import back brings the calendar back with its photos, and its trash entry goes. */
+    @Test fun takingTheImportBackBringsThePhotosBackAndDropsTheEntry() = runBlocking {
+        val json = c.backupManager.export()
+        val (id, _) = filledCalendar("편의점")
+        c.calendars.repository(id).ensureDefaults()
+        val tools = WorkToolsStore.get(app)
+        File(tools.photoDir(id).apply { mkdirs() }, "a.jpg").writeText("photo")
+        tools.update(id) { WorkTools(contract = com.bamnat.core.work.WorkContract(photos = listOf("a.jpg"), hourlyWage = 11_000)) }
+        waitFor("the tools file") { File(tools.dir(id), WorkToolsStore.FILE).exists() }
+
+        c.importUndo.save()
+        c.backupManager.restore(json)
+        assertNull(c.calendars.get(id))
+        assertEquals(1, c.recordsTrash.entries.value.size)
+
+        c.importUndo.undo()
+        assertEquals("편의점", c.calendars.get(id)!!.name)
+        assertEquals("photo", tools.photo(id, "a.jpg")!!.readText())
+        assertEquals(listOf("a.jpg"), tools.current(id).contract.photos)
+        assertEquals(11_000L, tools.current(id).contract.hourlyWage)
+        assertTrue(c.recordsTrash.entries.value.isEmpty())
+    }
+
     /** [UNDO-02] Putting cleared records back replaces what was written since, and that is kept in turn. */
     @Test fun puttingBackKeepsWhatWasWrittenAfterTheClear() = runBlocking {
         val (id, _) = filledCalendar("가게")
