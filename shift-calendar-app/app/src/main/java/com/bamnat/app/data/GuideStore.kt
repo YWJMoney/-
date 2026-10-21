@@ -40,6 +40,22 @@ class GuideStore private constructor(context: Context) {
         edit { putStringSet(K_USED, current.used + id) }
     }
 
+    /**
+     * [GUIDE-08] The releases of [com.bamnat.core.guide.WhatsNew] not shown yet on this phone. The first time
+     * this version runs, a fresh install has seen everything, and an update from before it was kept
+     * starts from the version just before.
+     */
+    fun whatsNew(currentCode: Int, freshInstall: Boolean): List<com.bamnat.core.guide.WhatsNew.Release> {
+        if (!prefs.contains(K_SEEN_VERSION)) {
+            prefs.edit().putInt(K_SEEN_VERSION, if (freshInstall) currentCode else currentCode - 1).apply()
+        }
+        return com.bamnat.core.guide.WhatsNew.since(prefs.getInt(K_SEEN_VERSION, currentCode), currentCode)
+    }
+
+    fun whatsNewSeen(currentCode: Int) {
+        prefs.edit().putInt(K_SEEN_VERSION, currentCode).apply()
+    }
+
     /** [GUIDE-03] "다시 보지 않기". */
     fun never(id: String) = edit { putStringSet(K_NEVER, current.never + id) }
 
@@ -127,6 +143,7 @@ class GuideStore private constructor(context: Context) {
 
     companion object {
         private const val K_OFF = "off"
+        private const val K_SEEN_VERSION = "seen_version"
         private const val K_USED = "used"
         private const val K_NEVER = "never"
         private const val K_TIP_DAY = "tip_day"

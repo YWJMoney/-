@@ -405,6 +405,26 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess { container.inquiryStore.update(it) }
     }
 
+    // [GUIDE-08] Once after an update: what it brought, each with a way to open it.
+    val whatsNew = remember {
+        val ctx = container.appContext
+        val info = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0) }.getOrNull()
+        val fresh = info == null || info.firstInstallTime == info.lastUpdateTime
+        mutableStateOf(com.bamnat.app.data.GuideStore.get(ctx).whatsNew(com.bamnat.app.BuildConfig.VERSION_CODE, fresh))
+    }
+    if (whatsNew.value.isNotEmpty()) {
+        val closeNew = {
+            com.bamnat.app.data.GuideStore.get(container.appContext).whatsNewSeen(com.bamnat.app.BuildConfig.VERSION_CODE)
+            whatsNew.value = emptyList()
+        }
+        com.bamnat.app.ui.guide.WhatsNewDialog(
+            releases = whatsNew.value,
+            onOpen = { id -> closeNew(); com.bamnat.core.guide.FeatureRegistry.get(id)?.let(com.bamnat.app.ui.guide.FeatureLinks::open) },
+            onAsk = { closeNew(); com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "업데이트")) },
+            onDismiss = closeNew,
+        )
+    }
+
     // [SHR-02] A tapped shared calendar link opens on the calendar. Over an editor it goes on top,
     // so the editor's input is still there after back.
     val openingLink by container.received.opening.collectAsStateWithLifecycle()

@@ -218,6 +218,11 @@ fun CalendarScreen(
     val coverAsk by vm.coverAsk.collectAsStateWithLifecycle()
     // [CUST-01] 화면 꾸미기: the page's parts in the user's order, and the sheet that changes them.
     var editingLayout by remember { mutableStateOf(false) }
+    // [CUST-01] 화면 꾸미기 opened from the help search or the update notice.
+    val featureFocus by com.bamnat.app.ui.guide.FeatureLinks.focus.collectAsStateWithLifecycle()
+    LaunchedEffect(featureFocus) {
+        if (featureFocus == "customize" && com.bamnat.app.ui.guide.FeatureLinks.take("customize")) editingLayout = true
+    }
     val memoDates by vm.memoDates.collectAsStateWithLifecycle()
     val moneyBook by vm.moneyBook.collectAsStateWithLifecycle()
     val datedMemos by vm.datedMemos.collectAsStateWithLifecycle()
