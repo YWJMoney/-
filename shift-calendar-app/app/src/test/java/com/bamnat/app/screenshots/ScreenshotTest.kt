@@ -1952,10 +1952,10 @@ class ScreenshotTest {
             com.bamnat.app.company.Inquiry("q2", com.bamnat.app.company.InquiryKind.BUG, "answered", ago(30), ago(2), listOf(
                 com.bamnat.app.company.InquiryMessage(false, "[알람] 야간 근무 전 알람이 가끔 5분 늦게 울려요.", ago(30)),
                 com.bamnat.app.company.InquiryMessage(true, "알려 주셔서 고마워요. 배터리 최적화에서 밤낮을 빼 주시면 제시간에 울려요.", ago(2)),
-            ), public = true, same = 3),
+            ), public = true, same = 3, stage = "answered"),
             com.bamnat.app.company.Inquiry("q1", com.bamnat.app.company.InquiryKind.IDEA, "open", ago(50), ago(50), listOf(
                 com.bamnat.app.company.InquiryMessage(false, "달력에서 동료 근무표를 겹쳐 보면 좋겠어요.", ago(50)),
-            ), public = true),
+            ), public = true, stage = "planned"),
         )
 
         override suspend fun send(device: String, kind: com.bamnat.app.company.InquiryKind, text: String, info: com.bamnat.app.company.InquiryInfo) =
@@ -1979,6 +1979,8 @@ class ScreenshotTest {
             ), null)
         override suspend fun same(device: String, id: String, on: Boolean) = 6
         override suspend fun flag(device: String, id: String, reason: com.bamnat.app.company.InquiryFlag) = Unit
+        override suspend fun rate(device: String, id: String, good: Boolean?) =
+            mine.first { it.id == id }.copy(rating = good).also { r -> mine.replaceAll { if (it.id == id) r else it } }
     }
 
     /** [UX-05] Questions through the fake server; [asked]: this phone sent the two above, one with a new answer. */

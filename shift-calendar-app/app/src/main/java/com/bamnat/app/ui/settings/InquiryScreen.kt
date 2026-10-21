@@ -11,7 +11,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -95,6 +97,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -682,11 +685,13 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
                 i.public -> Text("모두의 문의에 올라가 있어요" + if (i.same > 0) " · 나도 그래요 ${i.same}" else "",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            ProgressSteps(i)
             i.messages.forEach { m -> Bubble(m.text, m.fromDeveloper, stampOf(m.at)) }
             if (i.waiting) {
-                Text("개발자가 읽고 답하면 여기에 보여요. 설정 탭과 설정 첫 화면에도 표시해 드려요.", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("개발자가 읽고 답하면 여기에 보여요. 보통 하루 안에 답해요. 설정 탭과 설정 첫 화면에도 표시해 드려요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            if (i.answers > 0) RateAnswer(i, busy) { good -> error = null; vm.rate(i.id, good) { why -> error = why } }
             Spacer(Modifier.height(8.dp))
         }
         Surface(tonalElevation = 2.dp) {
@@ -715,6 +720,55 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
                     ) { Icon(Icons.AutoMirrored.Outlined.Send, "보내기") }
                 }
             }
+        }
+    }
+}
+
+/**
+ * [INQ-02] Where the question stands, in the steps every question goes through: 접수 → 확인 → 답변, and for a
+ * fix or an idea 개발 목록 → 만드는 중 → 반영 (with the version), so the asker sees it was not lost.
+ */
+@Composable
+private fun ProgressSteps(i: Inquiry) {
+    val dev = i.stage in setOf("planned", "building", "released")
+    val steps = if (dev) {
+        listOf("received" to "접수", "planned" to "개발 목록", "building" to "만드는 중", "released" to (i.version?.let { "$it 반영" } ?: "반영"))
+    } else {
+        listOf("received" to "접수", "checking" to "확인 중", "answered" to "답변")
+    }
+    val at = steps.indexOfFirst { it.first == i.stage }.coerceAtLeast(0)
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = "진행 상황: ${steps[at].second}" },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        steps.forEachIndexed { n, (_, name) ->
+            val done = n <= at
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.fillMaxWidth().height(4.dp).background(if (done) scheme.primary else scheme.surfaceVariant, RoundedCornerShape(2.dp)))
+                Text(name, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = if (n == at) scheme.primary else if (done) scheme.onSurface else scheme.onSurfaceVariant,
+                    fontWeight = if (n == at) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.padding(top = 4.dp))
+            }
+            if (n < steps.lastIndex) Spacer(Modifier.width(4.dp))
+        }
+    }
+}
+
+/** [INQ-03] After an answer: was it helpful? 아쉬워요 shows the admins it needs another look. */
+@Composable
+private fun RateAnswer(i: Inquiry, busy: Boolean, onRate: (Boolean?) -> Unit) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(when (i.rating) {
+            true -> "도움이 됐다고 알려 주셨어요. 고마워요"
+            false -> "아쉬운 점을 아래에 더 적어 주시면 다시 살펴볼게요"
+            null -> "답이 도움이 됐나요?"
+        }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = i.rating == true, enabled = !busy, onClick = { onRate(if (i.rating == true) null else true) },
+                label = { Text("도움이 됐어요") })
+            FilterChip(selected = i.rating == false, enabled = !busy, onClick = { onRate(if (i.rating == false) null else false) },
+                label = { Text("아쉬워요") })
         }
     }
 }
