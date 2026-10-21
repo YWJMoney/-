@@ -22,6 +22,7 @@ import com.bamnat.core.invest.Quote
 import com.bamnat.core.invest.ReturnMethod
 import com.bamnat.core.invest.Side
 import com.bamnat.core.invest.Trade
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -105,10 +106,43 @@ class InvestAppTest {
     }
 
     @Test fun anEmptyJournalIsRemoved() = runBlocking {
-        repo.saveJournal(JournalEntry(day, market = "코스피 −1%", checked = setOf(0, 2), grade = DayGrade.OKAY))
-        assertEquals(setOf(0, 2), repo.now().journalOn(day)!!.checked)
+        repo.saveJournal(JournalEntry(day, market = "코스피 −1%", checked = setOf("손절가를 지켰어요", "계획한 종목만 샀어요"), grade = DayGrade.OKAY))
+        assertEquals(setOf("손절가를 지켰어요", "계획한 종목만 샀어요"), repo.now().journalOn(day)!!.checked)
         repo.saveJournal(JournalEntry(day))
         assertNull(repo.now().journalOn(day))
+    }
+
+    @Test fun takingARuleOffKeepsPastDaysAsTheyWere() = runBlocking {
+        // [INV-07] A row from before kept positions ("0,2"), as did a backup made then.
+        repo.saveSettings { it.copy(principles = listOf("손절", "몰빵 금지", "계획대로")) }
+        db.investDao().upsertJournal(com.bamnat.app.data.db.InvestJournalEntity(day.toEpochDay(), "", "복기", "0,2", null, 0))
+        assertEquals(setOf("손절", "계획대로"), repo.now().journalOn(day)!!.checked)
+        // The first rule taken off: the old row is rewritten as text first, so it still says the same rules.
+        repo.saveSettings { it.copy(principles = listOf("몰빵 금지", "계획대로")) }
+        assertEquals(setOf("손절", "계획대로"), repo.now().journalOn(day)!!.checked)
+        assertFalse(com.bamnat.core.invest.JournalRules.isLegacy(db.investDao().allJournal().single().checked))
+        // A new day saved by text, then the list reordered: nothing moves.
+        repo.saveJournal(JournalEntry(day.plusDays(1), checked = setOf("몰빵 금지")))
+        repo.saveSettings { it.copy(principles = listOf("계획대로", "새 원칙", "몰빵 금지")) }
+        assertEquals(setOf("몰빵 금지"), repo.now().journalOn(day.plusDays(1))!!.checked)
+        assertEquals(setOf("손절", "계획대로"), repo.now().journalOn(day)!!.checked)
+    }
+
+    @Test fun theCalendarShowsEveryAccountWhileTheTabShowsOne() {
+        // [INV-15] The 투자 tab's filter is the tab's; the calendar's cells and month bar read every account.
+        val book = com.bamnat.core.invest.InvestBook(
+            accounts = listOf(InvestAccount(1, "일반"), InvestAccount(2, "ISA", AccountType.ISA)),
+            trades = listOf(
+                Trade(1, 1, day, symbol = "A", side = Side.BUY, quantity = 1.0, price = 100.0),
+                Trade(2, 2, day.plusDays(1), symbol = "B", side = Side.BUY, quantity = 1.0, price = 100.0),
+            ),
+        )
+        val one = com.bamnat.app.ui.invest.InvestState.of(book, 1, day)
+        assertEquals(setOf(day), one.trades.keys)
+        assertEquals(setOf(day, day.plusDays(1)), one.unfiltered.trades.keys)
+        assertEquals(null, one.unfiltered.account)
+        val all = com.bamnat.app.ui.invest.InvestState.of(book, null, day)
+        assertTrue(all.unfiltered === all)
     }
 
     @Test fun everythingGoesIntoTheBackupAndComesBack() = runBlocking {
@@ -119,7 +153,7 @@ class InvestAppTest {
         repo.saveTrade(Trade(accountId = acc, date = day, minute = 23 * 60 + 35, symbol = "AAPL", name = "애플", market = Market.US_STOCK,
             side = Side.BUY, quantity = 1.5, price = 230.25, fxRate = 1_390.0, fee = 0.86, memo = "실적 기대"))
         repo.saveQuotes(listOf(Quote("AAPL", 240.0, day, "애플", Market.US_STOCK)))
-        repo.saveJournal(JournalEntry(day, review = "환율 높을 때 샀다", checked = setOf(1), grade = DayGrade.GOOD))
+        repo.saveJournal(JournalEntry(day, review = "환율 높을 때 샀다", checked = setOf("한 종목에 몰빵하지 않았어요"), grade = DayGrade.GOOD))
         repo.saveEvent(com.bamnat.core.invest.InvestEvent(date = day.plusDays(10), kind = com.bamnat.core.invest.EventKind.EARNINGS, symbol = "AAPL"))
         repo.saveAlarm(InvestAlarm(kind = AlarmKind.PLAN, minute = 9 * 60 + 10, monthDay = 25, symbol = "AAPL", market = Market.US_STOCK,
             accountId = acc, amount = 300_000, ring = true))
@@ -194,5 +228,25 @@ class InvestAppTest {
         assertEquals(listOf("정기 적립"), t.tags)
         assertEquals(id, t.alarmId)
         assertEquals("일반 계좌", r.now().account(t.accountId)?.name)
+        // [INV-08] A second tap, even two at once, writes no second trade.
+        kotlinx.coroutines.coroutineScope {
+            repeat(2) { launch { com.bamnat.app.invest.InvestNotices.saveFromNotice(context, c, PersonalCalendar.MAIN, id) } }
+        }
+        assertEquals(1, r.now().trades.size)
+    }
+
+    @Test fun aNoticeKeepsAmountsHiddenAndEachCalendarsNoticesApart() = runBlocking {
+        val plan = InvestAlarm(id = 3, kind = AlarmKind.PLAN, minute = 9 * 60 + 10, monthDay = 25, symbol = "BTC", market = Market.CRYPTO, amount = 500_000)
+        val book = com.bamnat.core.invest.InvestBook(alarms = listOf(plan), quotes = listOf(Quote("BTC", 100_000_000.0, day, market = Market.CRYPTO)))
+        val shown = com.bamnat.app.invest.InvestNotices.describe(plan, book, day)
+        assertTrue(shown, shown.contains("50만원어치"))
+        assertTrue(shown, shown.contains("개 예상"))
+        val hidden = com.bamnat.app.invest.InvestNotices.describe(plan, book.copy(settings = book.settings.copy(hideAmounts = true)), day)
+        assertFalse(hidden, hidden.contains("50만"))
+        // [INV-08] Alarm 1 and alarm 129, and alarm 1 of two calendars, are three notices.
+        val n = com.bamnat.app.invest.InvestNotices
+        assertFalse(n.rowNoticeId(1) == n.rowNoticeId(129))
+        assertFalse(n.alarmTag(PersonalCalendar.MAIN) == n.alarmTag("cal2"))
+        assertFalse(n.alarmTag("cal2") == n.eventTag("cal2"))
     }
 }

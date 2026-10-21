@@ -203,8 +203,10 @@ internal fun TradeSheet(
     val start = editing
     val d = draft ?: TradeDraft()
     var side by rememberSaveable { mutableStateOf(start?.side ?: d.side) }
+    // [INV-03] A new trade starts in the draft's account, else the chosen one, else the last used (open ones only).
     var accountId by rememberSaveable {
-        mutableStateOf(start?.accountId ?: d.accountId?.takeIf { id -> accounts.any { it.id == id } } ?: accounts.firstOrNull()?.id ?: 0L)
+        mutableStateOf(start?.accountId ?: listOf(d.accountId, state.account, book.settings.lastAccountId)
+            .firstOrNull { id -> id != null && accounts.any { it.id == id } } ?: accounts.firstOrNull()?.id ?: 0L)
     }
     val account = book.account(accountId)
     var name by rememberSaveable { mutableStateOf(start?.name ?: d.name) }
@@ -443,7 +445,7 @@ internal fun CashSheet(vm: InvestViewModel, state: InvestState, kind0: CashKind,
         OutlinedTextField(memo, { memo = it.take(200) }, label = { Text("메모") }, singleLine = true, modifier = Modifier.fillMaxWidth())
     }
     if (deleting && editing != null) ConfirmDialog(
-        title = "이 기록을 지울까요?", message = "${editing.kind.label} ${Fmt.won(editing.amount)} 기록이 없어지고 원금과 수익률도 다시 계산돼요.",
+        title = "이 기록을 지울까요?", message = "${editing.kind.label} ${InvestFmt.won(editing.amount, hide)} 기록이 없어지고 원금과 수익률도 다시 계산돼요.",
         confirmLabel = "지우기", destructive = true, onDismiss = { deleting = false },
         onConfirm = { deleting = false; vm.deleteCash(editing); onDismiss() },
     )
@@ -530,7 +532,8 @@ internal fun QuoteSheet(vm: InvestViewModel, state: InvestState, onDismiss: () -
         onDismiss = onDismiss,
         onSave = {
             val quotes = held.mapNotNull { h -> typed[h.key]?.toDecimal()?.takeIf { it > 0 }?.let { Quote(h.key, it, state.today, h.title, h.market) } }
-            val removed = held.filter { h -> h.quote != null && typed[h.key]?.toDecimal() == null }.map { it.key }
+            // [INV-04] Blank or 0 takes the price away, as a price of nothing is no price.
+            val removed = held.filter { h -> h.quote != null && (typed[h.key]?.toDecimal() ?: 0.0) <= 0 }.map { it.key }
             vm.saveQuotes(quotes, removed, if (foreign) usd.toDecimal() else null)
             onDismiss()
         },

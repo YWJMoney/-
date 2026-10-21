@@ -48,7 +48,9 @@ object InvestCsv {
         line(sb, JOURNAL_HEADER)
         val rules = book.settings.principles
         for (j in book.journal.filter { inRange(it.date, from, to) && !it.isEmpty }.sortedBy { it.date }) {
-            line(sb, listOf(j.date.toString(), j.grade?.label.orEmpty(), j.checked.sorted().mapNotNull { rules.getOrNull(it) }.joinToString(" / ").let(::text),
+            // [INV-07] Kept rules in the list's order, then ones since taken off the list.
+            val kept = rules.filter { it in j.checked } + j.checked.filter { it !in rules }
+            line(sb, listOf(j.date.toString(), j.grade?.label.orEmpty(), kept.distinct().joinToString(" / ").let(::text),
                 text(j.market), text(j.review)))
         }
         return sb.toString()

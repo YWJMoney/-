@@ -19,6 +19,8 @@ import com.bamnat.core.invest.InvestReturns
 import com.bamnat.core.invest.InvestSettings
 import com.bamnat.core.invest.InvestStats
 import com.bamnat.core.invest.InvestTaxes
+import com.bamnat.core.invest.JournalEntry
+import com.bamnat.core.invest.JournalRules
 import com.bamnat.core.invest.Market
 import com.bamnat.core.invest.Portfolio
 import com.bamnat.core.invest.Quote
@@ -382,6 +384,78 @@ class InvestTest {
         assertEquals("bamnat-invest-trades.csv", InvestCsv.fileName("trades", null, null))
         assertEquals("0.00123", Portfolio.quantityText(0.00123))
         assertEquals("15", Portfolio.quantityText(15.0))
+    }
+
+    @Test
+    fun aDepositWrittenAheadIsNotTodaysGain() {
+        // [INV-05] 1,000,000 in on the 1st, another 1,000,000 written for the 25th; today is the 20th.
+        val book = InvestBook(accounts = listOf(general), cash = listOf(deposit(1, 1_000_000), deposit(25, 1_000_000)))
+        val built = Portfolio.build(book)
+        val live = InvestReturns.liveSummary(book, d(20), built)
+        assertEquals(1_000_000L, live.totalAssets)
+        assertEquals(1_000_000L, live.principal)
+        val mw = InvestReturns.moneyWeighted(book, d(1), d(20), d(20), live)
+        assertEquals(0L, mw.pnl)
+        assertEquals(0.0, mw.rate!!, 1e-9)
+        assertEquals(0.0, InvestReturns.timeWeighted(book, d(1), d(20), d(20), live).rate!!, 1e-9)
+        assertEquals(Snapshot(d(20), 1_000_000, 1_000_000), InvestReturns.snapshotFor(d(20), live, false))
+        // The whole book's result counted it as a gain before.
+        assertEquals(1_000_000L, InvestReturns.moneyWeighted(book, d(1), d(20), d(20), built.summary).pnl)
+        // Nothing ahead: the result already built is used as it is.
+        val past = book.copy(cash = book.cash.take(1))
+        val pastBuilt = Portfolio.build(past)
+        assertTrue(InvestReturns.liveSummary(past, d(20), pastBuilt) === pastBuilt.summary)
+    }
+
+    @Test
+    fun journalKeepsRuleTextAndReadsOlderPositions() {
+        val rules = listOf("손절", "몰빵 금지", "계획대로")
+        val kept = linkedSetOf("손절", "계획대로")
+        val raw = JournalRules.encode(kept)
+        assertFalse(JournalRules.isLegacy(raw))
+        assertEquals(kept, JournalRules.decode(raw, emptyList()))
+        // A single rule, even one that looks like a number, is text.
+        assertEquals(setOf("3"), JournalRules.decode(JournalRules.encode(setOf("3")), rules))
+        // Older rows kept positions: read with the rules as they stand; ones past the end drop out.
+        assertTrue(JournalRules.isLegacy("0,2"))
+        assertEquals(kept, JournalRules.decode("2,0,7", rules))
+        assertEquals(emptySet<String>(), JournalRules.decode("", rules))
+        assertFalse(JournalRules.isLegacy(""))
+        // The CSV writes the kept rules by name: in the list's order, then ones since taken off.
+        val book = InvestBook(
+            journal = listOf(JournalEntry(d(3), review = "복기", checked = linkedSetOf("옛 원칙", "계획대로", "손절"))),
+            settings = InvestSettings(principles = rules),
+        )
+        assertTrue(InvestCsv.journal(book).contains(",손절 / 계획대로 / 옛 원칙,"))
+    }
+
+    @Test
+    fun otherCostsAreNotIncomeButComeOffThePeriod() {
+        val book = InvestBook(
+            cash = listOf(
+                CashFlow(0, 1, d(5), kind = CashKind.DIVIDEND, amount = 1_000, tax = 154, symbol = "005930"),
+                CashFlow(0, 1, d(7), kind = CashKind.FEE, amount = 3_000),
+            ),
+        )
+        val s = InvestStats.month(book, Portfolio.build(book), YearMonth.of(2026, 3))
+        assertEquals(846L, s.income)
+        assertEquals(3_000L, s.otherCosts)
+        assertEquals(3_000L, s.fees)
+        assertEquals(846L - 3_000, s.pnl)
+        assertEquals(Portfolio.dailyPnl(Portfolio.build(book), book.cash).values.sum(), s.pnl)
+        assertFalse(InvestStats.month(book.copy(cash = book.cash.drop(1)), Portfolio.build(book), YearMonth.of(2026, 3)).isEmpty)
+    }
+
+    @Test
+    fun planDoneLabelFollowsItsStretchAndCoinsCountInUnits() {
+        val trade = Trade(1, 1, d(20, 10), symbol = "X", side = Side.BUY, quantity = 1.0, price = 1.0, alarmId = 9)
+        fun label(a: InvestAlarm) = InvestPlans.progress(a.copy(id = 9), listOf(trade), d(20, 10)).also { assertTrue(it.doneThisPeriod) }.doneLabel
+        assertEquals("이번 달 완료", label(InvestAlarm(kind = AlarmKind.PLAN, minute = 0, monthDay = 20)))
+        assertEquals("오늘 완료", label(InvestAlarms.default(AlarmKind.MARKET_OPEN)))
+        assertEquals("이번 주 완료", label(InvestAlarm(kind = AlarmKind.PLAN, minute = 0, weekdays = setOf(DayOfWeek.TUESDAY))))
+        assertEquals("완료", label(InvestAlarm(kind = AlarmKind.PLAN, minute = 0, once = d(20, 10))))
+        assertEquals("개", Market.CRYPTO.unit)
+        assertEquals("주", Market.US_STOCK.unit)
     }
 
     @Test

@@ -327,10 +327,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.MONEY -> { nav.navigateTopLevel(TopLevel.MONEY.route); NoticeLinks.consume(target) }
             // [INV-08] An investor notice opens its calendar's 투자 tab, which opens the trade itself.
             NoticeLinks.Target.INVEST, NoticeLinks.Target.INVEST_TRADE -> {
-                NoticeLinks.calendar.value?.let { container.calendars.setActive(it) }
+                // [MCAL-03] No calendar named is the main one; its 투자 tab takes the notice only once it is shown.
+                val cal = NoticeLinks.calendar.value ?: com.bamnat.app.data.PersonalCalendar.MAIN
+                val gone = cal != com.bamnat.app.data.PersonalCalendar.MAIN && container.calendars.get(cal) == null
+                container.calendars.setActive(cal)
                 nav.navigateTopLevel(TopLevel.STATS.route)
-                // The trade sheet waits for the 투자 tab to read it; a plain notice is done here.
-                if (target == NoticeLinks.Target.INVEST) NoticeLinks.consume(target)
+                // The trade sheet waits for the 투자 tab to read it; a plain notice, or one of a calendar since removed, is done here.
+                if (target == NoticeLinks.Target.INVEST || gone) NoticeLinks.consume(target)
             }
             // [LEDG-16] The money tab takes this one itself, to open 자동 기록.
             NoticeLinks.Target.AUTO_RECORD -> nav.navigateTopLevel(TopLevel.MONEY.route)

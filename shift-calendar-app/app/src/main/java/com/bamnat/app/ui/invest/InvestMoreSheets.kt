@@ -316,14 +316,15 @@ internal fun PrinciplesSheet(vm: InvestViewModel, state: InvestState, onDismiss:
 internal fun JournalSheet(vm: InvestViewModel, state: InvestState, date: LocalDate, onDismiss: () -> Unit) {
     val j0 = state.full.journalOn(date) ?: JournalEntry(date)
     var grade by rememberSaveable { mutableStateOf(j0.grade) }
-    val checked = remember { mutableStateListOf<Int>().apply { addAll(j0.checked) } }
+    // [INV-07] Kept rules by their text; ones since taken off the list stay on the day as they were.
+    val checked = remember { mutableStateListOf<String>().apply { addAll(j0.checked) } }
     var market by rememberSaveable { mutableStateOf(j0.market) }
     var review by rememberSaveable { mutableStateOf(j0.review) }
     val principles = state.settings.principles
     InvestSheetFrame(
         title = "${Fmt.dayTitle(date)} 일지",
         onDismiss = onDismiss,
-        onSave = { vm.saveJournal(j0.copy(grade = grade, checked = checked.toSet(), market = market.trim(), review = review.trim())); onDismiss() },
+        onSave = { vm.saveJournal(j0.copy(grade = grade, checked = (principles.filter { it in checked } + checked).toCollection(LinkedHashSet()),market = market.trim(), review = review.trim())); onDismiss() },
     ) {
         val trades = state.tradesOn(date)
         val pnl = state.daily[date]
@@ -340,12 +341,12 @@ internal fun JournalSheet(vm: InvestViewModel, state: InvestState, date: LocalDa
         ChoiceChips(DayGrade.entries, { it == grade }, { it.label }, { g -> grade = if (grade == g) null else g })
         if (principles.isNotEmpty()) {
             FieldLabel("지킨 원칙")
-            principles.forEachIndexed { i, p ->
+            principles.distinct().forEach { p ->
                 Row(
-                    Modifier.fillMaxWidth().clickable(role = Role.Checkbox) { if (i in checked) checked.remove(i) else checked.add(i) },
+                    Modifier.fillMaxWidth().clickable(role = Role.Checkbox) { if (p in checked) checked.remove(p) else checked.add(p) },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Checkbox(checked = i in checked, onCheckedChange = null)
+                    Checkbox(checked = p in checked, onCheckedChange = null)
                     Text(p, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 8.dp))
                 }
             }

@@ -75,11 +75,14 @@ data class InvestState(
     fun tradesOn(d: LocalDate): List<Trade> = trades[d].orEmpty()
     fun cashOn(d: LocalDate): List<CashFlow> = cash[d].orEmpty()
 
+    /** [INV-15] Every account together: the calendar's cells, month bar and day sheet do not follow the 투자 tab's filter. */
+    val unfiltered: InvestState by lazy { if (account == null) this else of(full, null, today, loaded, fullResult) }
+
     companion object {
         val LOADING = of(InvestBook.EMPTY, null, LocalDate.now(), loaded = false)
 
-        fun of(b: InvestBook, account: Long?, today: LocalDate, loaded: Boolean = true): InvestState {
-            val fullResult = Portfolio.build(b)
+        fun of(b: InvestBook, account: Long?, today: LocalDate, loaded: Boolean = true, built: PortfolioResult? = null): InvestState {
+            val fullResult = built ?: Portfolio.build(b)
             val acc = account?.takeIf { id -> b.accounts.any { it.id == id } }
             val book = if (acc == null) b else b.copy(
                 accounts = b.accounts.filter { it.id == acc },
@@ -121,7 +124,9 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
             ReturnPeriod.YEAR -> maxOf(first, s.today.withDayOfYear(1))
             ReturnPeriod.MONTH -> maxOf(first, s.today.withDayOfMonth(1))
         }
-        ReturnMethod.entries.map { InvestReturns.of(it, s.book, from, s.today, s.today, s.result.summary) }
+        // [INV-05] Rows dated ahead count from their day, not as today's gain.
+        val live = InvestReturns.liveSummary(s.book, s.today, s.result)
+        ReturnMethod.entries.map { InvestReturns.of(it, s.book, from, s.today, s.today, live) }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _messages = MutableSharedFlow<UndoMessage>(extraBufferCapacity = 4)
@@ -132,7 +137,7 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
         // [INV-21] Each day the prices are complete, what everything is worth is kept for 시간가중.
         viewModelScope.launch {
             state.filter { it.loaded }
-                .map { s -> InvestReturns.snapshotFor(s.today, s.fullResult.summary, s.fullResult.held.isNotEmpty()) to s.full.snapshots }
+                .map { s -> InvestReturns.snapshotFor(s.today, InvestReturns.liveSummary(s.full, s.today, s.fullResult), s.fullResult.held.isNotEmpty()) to s.full.snapshots }
                 .distinctUntilChanged()
                 .collect { (snap, kept) ->
                     if (snap != null && kept.none { it == snap }) repo.saveSnapshot(snap)
@@ -206,12 +211,13 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
 
     // [INV-02][INV-09] 입금·출금, 배당·이자, 기타 비용.
     fun saveCash(c: CashFlow, before: CashFlow?) = viewModelScope.launch {
+        // [INV-05] 원금 as it will be, from the rows before this save (the state may or may not hold it yet).
+        val principal = state.value.full.cash.sumOf { it.principalWon } - (before?.principalWon ?: 0) + c.principalWon
         val account = homeAccount(c.accountId, before != null)
         val id = repo.saveCash(c.copy(accountId = account))
         changed()
-        val principal = state.value.full.cash.sumOf { it.principalWon } - (before?.principalWon ?: 0) + c.principalWon
         val msg = when (c.kind) {
-            CashKind.DEPOSIT, CashKind.WITHDRAW -> "${c.kind.label} 적었어요 · 원금 ${com.bamnat.app.ui.Fmt.won(principal)}"
+            CashKind.DEPOSIT, CashKind.WITHDRAW -> "${c.kind.label} 적었어요 · 원금 ${InvestFmt.won(principal, state.value.hide)}"
             else -> "${c.kind.label} 적었어요"
         }
         if (before == null) say(msg) { repo.deleteCash(id) } else say("${c.kind.label} 고쳤어요") { repo.saveCash(before) }

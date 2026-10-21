@@ -85,13 +85,13 @@ class InvestCells(
     ).joinToString(", ").ifEmpty { null }
 
     companion object {
-        fun of(state: InvestState): InvestCells = InvestCells(
+        fun of(filtered: InvestState): InvestCells = filtered.unfiltered.let { state -> InvestCells(
             pnl = state.daily,
             trades = state.trades.mapValues { it.value.size },
             events = state.full.events.map { it.date }.toSet(),
             journal = state.full.journal.filter { !it.isEmpty }.map { it.date }.toSet(),
             hide = state.hide,
-        )
+        ) }
     }
 }
 
@@ -126,7 +126,7 @@ fun investFooterColor(cells: InvestCells, date: LocalDate): Color = pnlColor(cel
  */
 @Composable
 fun TodayInvestCard(vm: InvestViewModel, today: LocalDate, onTrade: () -> Unit, onOpen: () -> Unit, modifier: Modifier = Modifier) {
-    val state by vm.state.collectAsStateWithLifecycle()
+    val state = vm.state.collectAsStateWithLifecycle().value.unfiltered
     if (!state.loaded || state.full.isEmpty) return
     val s = state.fullResult.summary
     val pnl = state.daily[today] ?: 0L
@@ -167,7 +167,7 @@ fun TodayInvestCard(vm: InvestViewModel, today: LocalDate, onTrade: () -> Unit, 
 /** [CAL-06][INV-06] The month on the investor's calendar in three figures: what it earned, 승률, 수익률. */
 @Composable
 fun InvestMonthBar(vm: InvestViewModel, month: YearMonth, onOpen: () -> Unit, modifier: Modifier = Modifier) {
-    val state by vm.state.collectAsStateWithLifecycle()
+    val state = vm.state.collectAsStateWithLifecycle().value.unfiltered
     if (!state.loaded) return
     val stats = remember(state, month) { InvestStats.month(state.book, state.result, month) }
     val hide = state.hide
@@ -198,7 +198,8 @@ fun InvestMonthBar(vm: InvestViewModel, month: YearMonth, onOpen: () -> Unit, mo
 }
 
 /** [INV-01] The day's 매매 line in the day sheet's heading. */
-fun investDaySummary(state: InvestState, date: LocalDate): String {
+fun investDaySummary(filtered: InvestState, date: LocalDate): String {
+    val state = filtered.unfiltered
     val trades = state.tradesOn(date)
     val pnl = state.daily[date]
     return listOfNotNull(
@@ -216,7 +217,7 @@ fun investDaySummary(state: InvestState, date: LocalDate): String {
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun InvestDayContent(vm: InvestViewModel, date: LocalDate, onSheet: (InvestSheet) -> Unit) {
-    val state by vm.state.collectAsStateWithLifecycle()
+    val state = vm.state.collectAsStateWithLifecycle().value.unfiltered
     if (!state.loaded) return
     Column(Modifier.fillMaxWidth()) {
         state.tradesOn(date).forEach { t -> TradeLine(t, state) { onSheet(InvestSheet.TradeEdit(editing = t)) } }
@@ -254,7 +255,7 @@ fun InvestDayGroupBody(calendarId: String, date: LocalDate) {
 @Composable
 fun rememberInvestDaySummary(calendarId: String, date: LocalDate): String {
     val vm = investViewModel(calendarId)
-    val state by vm.state.collectAsStateWithLifecycle()
+    val state = vm.state.collectAsStateWithLifecycle().value.unfiltered
     return remember(state, date) { investDaySummary(state, date) }
 }
 
