@@ -186,15 +186,8 @@ object CommuteRecorder {
     }
 
     /** [DAYW-07] The planned end of [day]'s shift: the shift type's own times, not an end written earlier. */
-    fun plannedEnd(day: com.bamnat.core.schedule.ResolvedDay): LocalDateTime? {
-        if (!day.isWorkDay) return null
-        val ts = day.shiftType?.start
-        val te = day.shiftType?.end
-        if (!day.hasCustomTimes || ts == null || te == null) return day.shiftTo
-        val from = day.date.atTime(ts)
-        val to = day.date.atTime(te)
-        return if (to.isAfter(from)) to else to.plusDays(1)
-    }
+    fun plannedEnd(day: com.bamnat.core.schedule.ResolvedDay): LocalDateTime? =
+        if (!day.isWorkDay || day.shiftFrom == null) null else Commute.plannedTo(day)
 
     /** The planned end of the shift arrived on before [at], read off its calendar. */
     private suspend fun openEnd(context: Context, s: CommutePrefs.State, at: LocalDateTime): LocalDateTime? {

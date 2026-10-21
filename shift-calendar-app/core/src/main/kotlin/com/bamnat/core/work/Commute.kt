@@ -144,7 +144,8 @@ object Commute {
      * (Commute only writes ends at or before the type's, so a later one is the user's own longer day). On a
      * 반차 day the full day's end, since the leave already shortened [ResolvedDay.end] (13:30–18:00 is not 잔업).
      */
-    private fun plannedTo(day: ResolvedDay): LocalDateTime {
+    /** When the shift on [day] is planned to end, as 퇴근 is judged against (the app's 출퇴근 자동 기록 uses it too). */
+    fun plannedTo(day: ResolvedDay): LocalDateTime {
         val from = day.shiftFrom!!
         val own = if (partialLeave(day)) {
             val fullEnd = if (day.hasCustomTimes) day.entry?.customEnd else day.shiftType?.end
