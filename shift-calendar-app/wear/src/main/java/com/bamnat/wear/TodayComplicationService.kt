@@ -7,35 +7,47 @@ import androidx.wear.watchface.complications.data.ComplicationType
 import androidx.wear.watchface.complications.data.LongTextComplicationData
 import androidx.wear.watchface.complications.data.PlainComplicationText
 import androidx.wear.watchface.complications.data.ShortTextComplicationData
+import androidx.wear.watchface.complications.datasource.ComplicationDataTimeline
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
-import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
+import androidx.wear.watchface.complications.datasource.SuspendingTimelineComplicationDataSourceService
+import androidx.wear.watchface.complications.datasource.TimeInterval
+import androidx.wear.watchface.complications.datasource.TimelineEntry
 import com.bamnat.core.work.WatchDay
-import com.bamnat.core.work.WatchDays
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
 
 /**
  * [SHFT-08] 오늘 근무 on a watch face: the short text is today's short name ("주", "야", "휴") with "근무" over it,
  * the long text the whole line ("주간 09:00–18:00") with tomorrow's in the title. Tapping opens the app.
+ * Sent as a timeline of the next days, so it turns over at midnight without the midnight alarm (kept for the tile).
  */
-class TodayComplicationService : SuspendingComplicationDataSourceService() {
-    override fun getPreviewData(type: ComplicationType): ComplicationData? =
-        data(type, WatchDay(LocalDate.now(), "주간", "주", 0xFF2F80ED, java.time.LocalTime.of(9, 0), java.time.LocalTime.of(18, 0)), null)
-
-    override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
-        val p = WatchStore.load(this)
+class TodayComplicationService : SuspendingTimelineComplicationDataSourceService() {
+    override fun getPreviewData(type: ComplicationType): ComplicationData? {
         val today = LocalDate.now()
-        return data(request.complicationType, p?.let { WatchDays.on(it.days, today) }, p?.let { WatchDays.on(it.days, today.plusDays(1)) })
+        val day = WatchDay(today, "주간", "주", 0xFF2F80ED, LocalTime.of(9, 0), LocalTime.of(18, 0))
+        return data(type, ComplicationDays.today(listOf(day), today, ZoneId.systemDefault()))
     }
 
-    private fun data(type: ComplicationType, d: WatchDay?, tomorrow: WatchDay?): ComplicationData? {
+    override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationDataTimeline? {
+        val days = WatchStore.load(this)?.days
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now(zone)
+        val now = data(request.complicationType, ComplicationDays.today(days, today, zone)) ?: return null
+        val ahead = days?.let { ComplicationDays.ahead(it, today, zone) }.orEmpty().mapNotNull { d ->
+            data(request.complicationType, d)?.let { TimelineEntry(TimeInterval(d.start, d.end), it) }
+        }
+        return ComplicationDataTimeline(now, ahead)
+    }
+
+    private fun data(type: ComplicationType, d: ComplicationDay): ComplicationData? {
         val tap = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         fun t(s: String) = PlainComplicationText.Builder(s).build()
-        val description = t(d?.let { "오늘 ${it.line}" } ?: WatchText.NO_DATA)
         return when (type) {
-            ComplicationType.SHORT_TEXT -> ShortTextComplicationData.Builder(t(d?.label ?: "-"), description)
-                .setTitle(t(if (d == null) "밤낮" else "오늘")).setTapAction(tap).build()
-            ComplicationType.LONG_TEXT -> LongTextComplicationData.Builder(t(d?.line ?: WatchText.NO_DATA), description)
-                .setTitle(t(tomorrow?.let { "내일 ${it.line}" } ?: "오늘 근무")).setTapAction(tap).build()
+            ComplicationType.SHORT_TEXT -> ShortTextComplicationData.Builder(t(d.shortText), t(d.description))
+                .setTitle(t(d.shortTitle)).setTapAction(tap).build()
+            ComplicationType.LONG_TEXT -> LongTextComplicationData.Builder(t(d.longText), t(d.description))
+                .setTitle(t(d.longTitle)).setTapAction(tap).build()
             else -> null
         }
     }
