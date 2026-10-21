@@ -80,6 +80,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.foundation.layout.BoxScope
@@ -210,6 +211,7 @@ fun CalendarScreen(
     val selected by vm.selected.collectAsStateWithLifecycle()
     val paint by vm.paint.collectAsStateWithLifecycle()
     val lastPaint by vm.lastPaint.collectAsStateWithLifecycle()
+    val coverAsk by vm.coverAsk.collectAsStateWithLifecycle()
     val memoDates by vm.memoDates.collectAsStateWithLifecycle()
     val moneyBook by vm.moneyBook.collectAsStateWithLifecycle()
     val datedMemos by vm.datedMemos.collectAsStateWithLifecycle()
@@ -301,13 +303,14 @@ fun CalendarScreen(
         return
     }
     val pendingSetup by vm.setupDraft.collectAsStateWithLifecycle()
-    val calculator = remember(snap, settings.weekStart, settings.limits) {
-        WorkHoursCalculator(snap.resolver, settings.weekStart, settings.limits)
+    // [WEEK-01] Hours always count Monday to Sunday, the week the law means; 한 주의 시작 only moves the grid.
+    val calculator = remember(snap, settings.limits) {
+        WorkHoursCalculator(snap.resolver, java.time.DayOfWeek.MONDAY, settings.limits)
     }
     // [HRLY-02][HRLY-03] An 알바 calendar's cells show times and pay, and each week its 주휴.
-    val hourlyCells = remember(settings.workStyle, payProfile, settings.weekStart) {
+    val hourlyCells = remember(settings.workStyle, payProfile) {
         if (settings.workStyle != com.bamnat.core.work.WorkStyle.HOURLY) null
-        else HourlyCells(payProfile, payProfile?.holidayWeekFrom ?: settings.weekStart)
+        else HourlyCells(payProfile, payProfile?.holidayWeekFrom ?: java.time.DayOfWeek.MONDAY)
     }
     // [CAL-14] Stable references, so the cells' painting hooks never change under them.
     val paintDays: (List<LocalDate>) -> Unit = remember(vm) { vm::paintDays }
@@ -398,10 +401,11 @@ fun CalendarScreen(
         vm.onDayTapped(date)
         val m = YearMonth.from(date)
         if (m != visibleMonth && !weekOnly) slideToMonth(m)
-        if (!wide && !painting) when (dayView) {
-            PhoneDayView.PREVIEW -> if (again) sheetOpen = true
-            PhoneDayView.SHEET -> sheetOpen = true
-            PhoneDayView.WEEK -> weekOnly = true
+        // [CAL-20] With the day card on, the first tap shows it and the second opens the day.
+        if (!wide && !painting) when {
+            dayView == PhoneDayView.WEEK -> weekOnly = true
+            settings.showDayCard -> if (again) sheetOpen = true
+            else -> sheetOpen = true
         }
     }
     // [DAY-01] ‹ › and swipes in the day header move the calendar along.
@@ -887,6 +891,7 @@ fun CalendarScreen(
                         month = pageToMonth(baseMonth, page),
                         snapshot = snap,
                         calculator = calculator,
+                        weekStart = settings.weekStart,
                         selected = selected,
                         today = today,
                         memoDates = memoDates,
@@ -913,7 +918,7 @@ fun CalendarScreen(
             // [CAL-15] Room for the floating button under the month, so its last row (the 30th, the 31st)
             // can always be scrolled clear of it.
             Spacer(Modifier.height(if (paint == null) FAB_ROOM else 12.dp))
-            if (!wide) {
+            if (!wide && settings.showDayCard) {
                 // [CAL-05] One day card for every kind of work: its jobs, sales or shift, with the chips that fit.
                 DayPreview(
                     day = remember(snap, selected) { snap.resolver.resolve(selected) },
@@ -1074,6 +1079,8 @@ fun CalendarScreen(
                 onSave = { vm.saveSales(it); quickMoney = false }, onDismiss = { quickMoney = false })
         }
     }
+
+    coverAsk?.let { ask -> CoverAskDialog(ask, onAnswer = { asCover, keep -> vm.answerCover(ask, asCover, keep) }, onDismiss = vm::dismissCover) }
 
     if (sheetOpen && !wide) {
         DaySheet(snackbar = sheetSnackbar, onDismiss = { sheetOpen = false }) { detailPart(Modifier.fillMaxWidth(), 24.dp) }
@@ -1264,6 +1271,9 @@ private fun CalendarHeader(
                 }
                 DropdownMenuItem(text = { Text("근무표 공유") }, leadingIcon = { Icon(Icons.Filled.Share, null) },
                     onClick = { menu = false; onShare() })
+                // [CREW-01] Every team of the rotation, for finding a 대근.
+                DropdownMenuItem(text = { Text("모든 조 보기") }, leadingIcon = { Icon(Icons.Outlined.Groups, null) },
+                    onClick = { menu = false; com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.TEAMS) })
                 onReceive?.let { receive ->
                     DropdownMenuItem(text = { Text("동료 근무표 받기") }, leadingIcon = { Icon(Icons.Outlined.GroupAdd, null) },
                         onClick = { menu = false; receive() })
@@ -1704,4 +1714,37 @@ private fun com.bamnat.core.work.CalendarFocus.longPressTip(): String = "날짜�
     com.bamnat.core.work.CalendarFocus.JOBS -> "일감을 바로 적을 수 있어요"
     com.bamnat.core.work.CalendarFocus.SALES -> "매출을 바로 적을 수 있어요"
     com.bamnat.core.work.CalendarFocus.INVEST -> "매매를 바로 적을 수 있어요"
+}
+
+/**
+ * [CAL-19] "근무일이 아니에요": a working shift stamped on days off. 대근 keeps the roster and adds the
+ * shift's hours as a 대근; the other answer makes them working days. Closing it writes nothing.
+ */
+@Composable
+private fun CoverAskDialog(ask: CalendarViewModel.CoverAsk, onAnswer: (asCover: Boolean, keep: Boolean) -> Unit, onDismiss: () -> Unit) {
+    var keep by remember { mutableStateOf(false) }
+    val name = ask.type.name
+    val days = if (ask.offDays.size == 1) "${Fmt.monthDay(ask.offDays.first())}은 근무일이 아니에요" else "고른 날 중 ${ask.offDays.size}일은 근무일이 아니에요"
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.WarningAmber, null) },
+        title = { Text(days) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("$name${Fmt.obj(name)} 대근으로 넣을까요?", style = MaterialTheme.typography.bodyLarge)
+                Text("대근으로 넣으면 근무표는 쉬는 날 그대로 두고, $name 시간이 대근(휴일 근무)으로 따로 잡혀 수당에 들어가요. " +
+                    "근무표가 바뀐 거라면 ‘근무일로 바꾸기’를 고르세요.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { keep = !keep },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.Checkbox(checked = keep, onCheckedChange = { keep = it })
+                    Text("이번 빠른 입력 동안 다시 묻지 않기", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onAnswer(true, keep) }) { Text("대근으로") } },
+        dismissButton = { TextButton(onClick = { onAnswer(false, keep) }) { Text("근무일로 바꾸기") } },
+    )
 }

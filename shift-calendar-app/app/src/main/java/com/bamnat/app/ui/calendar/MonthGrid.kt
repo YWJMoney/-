@@ -191,6 +191,8 @@ fun MonthGrid(
     month: YearMonth,
     snapshot: ScheduleSnapshot,
     calculator: WorkHoursCalculator,
+    /** [WEEK-01] The weekday the grid's rows start on; the hours still count Monday to Sunday. */
+    weekStart: DayOfWeek,
     selected: LocalDate,
     today: LocalDate,
     memoDates: Set<LocalDate>,
@@ -226,7 +228,7 @@ fun MonthGrid(
 ) {
     val cal = LocalCalendarColors.current
     val haptics = LocalHapticFeedback.current
-    val firstCell = remember(month, calculator) { calculator.weekStartOf(month.atDay(1)) }
+    val firstCell = remember(month, weekStart) { month.atDay(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(weekStart)) }
     val cells = remember(money, month, firstCell) {
         MonthMoneyCells.of(money, listOf(month), firstCell, firstCell.plusDays(GRID_ROWS * 7L - 1))
     }
@@ -276,7 +278,8 @@ fun MonthGrid(
     Column(modifier.fillMaxWidth().then(painting)) {
         for (row in 0 until GRID_ROWS) {
             val rowStart = firstCell.plusWeeks(row.toLong())
-            val week = remember(calculator, rowStart) { calculator.week(rowStart) }
+            // [WEEK-01] The Monday-to-Sunday week that holds most of the row: on a grid from Sunday, the row's Monday on.
+            val week = remember(calculator, rowStart) { calculator.week(rowStart.plusDays(3)) }
             val holidayWeek = hourly?.let { h -> remember(snapshot, rowStart, h) { HourlyWork.weekEndingIn(rowStart, h.holidayWeekStart, snapshot.resolver::resolve) } }
             // [CAL-01] A week over the limit gets a bar at its left instead of a tint that mixes with the shifts' colors.
             val barColor = cal.warning
@@ -330,7 +333,7 @@ fun MonthGrid(
                         quietWorkDays = quietWorkDays,
                         invest = invest,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
-                        weekNote = if (col == 0 && week.overLimit) {
+                        weekNote = if (date.dayOfWeek == DayOfWeek.MONDAY && week.overLimit) {
                             "이 주 ${HoursFormat.hours(week.totalMinutes.toDouble())}시간, ${weeklyLimitHours}시간 넘음"
                         } else {
                             null

@@ -117,8 +117,9 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
     }
-    val calc = remember(snap, settings.weekStart, settings.limits) {
-        WorkHoursCalculator(snap.resolver, settings.weekStart, settings.limits)
+    // [WEEK-01] Monday to Sunday, whatever day the calendar's rows start on.
+    val calc = remember(snap, settings.limits) {
+        WorkHoursCalculator(snap.resolver, DayOfWeek.MONDAY, settings.limits)
     }
     val summary = remember(calc, month) { calc.month(month) }
     val three = remember(calc, month) { calc.threeMonths(month) }
@@ -198,7 +199,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         // [TYPE-06] A part-timer's weeks against the 15 hours 주휴수당 needs.
         // [HRLY-02][HRLY-07] Counted from the 주휴 week's own start, with 결근 days as absences.
         if (style == WorkStyle.HOURLY) {
-            val weekStart = payProfile?.holidayWeekFrom ?: settings.weekStart
+            val weekStart = payProfile?.holidayWeekFrom ?: DayOfWeek.MONDAY
             val weeks = remember(snap, month, weekStart, payProfile?.legalBreaks) {
                 HourlyWork.weeks(month, weekStart, snap.copy(legalBreaks = payProfile?.legalBreaks == true).resolver::resolve)
             }
@@ -295,7 +296,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                 if (i != summary.weeks.lastIndex) Spacer(Modifier.height(10.dp))
             }
             Text(
-                "주는 ${weekStartLabel(settings.weekStart)}에 시작해요. 달에 걸친 주도 7일 전체를 셉니다.",
+                "주 근무시간은 월요일부터 일요일까지 세요(달력이 일요일부터 보여도 같아요). 달에 걸친 주도 7일 전체를 셉니다.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 12.dp),
@@ -317,7 +318,6 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
     }
 }
 
-private fun weekStartLabel(d: DayOfWeek) = if (d == DayOfWeek.SUNDAY) "일요일" else "월요일"
 
 @Composable
 private fun WeekRow(week: WeekSummary, limitHours: Int, maxHours: Double) {

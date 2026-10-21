@@ -248,7 +248,7 @@ class BackupManager(
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmsOn", s.alarmsEnabled)
                 .putOpt("workStyle", s.workStyle?.name).put("rosterMonthly", s.rosterMonthly)
                 .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoInCells).put("calendarMemos", s.calendarMemos)
-                .put("phoneDayView", s.phoneDayView.name).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
+                .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
                 .put("restCheck", s.restCheck)
                 .put("strictRest", s.strictRest).put("sleepTips", s.sleepTips)
                 // 1.10 and before read one switch for all sleep notices.
@@ -562,7 +562,9 @@ class BackupManager(
                     extraKinds = o.optStringOrNull("extraKinds")?.let { com.bamnat.core.model.ExtraKinds.decode(it) } ?: s.extraKinds,
                     memoInCells = o.optBoolean("memoFirst", s.memoInCells),
                     // [CAL-03][DAY-04] Added in 1.13; older backups keep what this phone has.
-                    phoneDayView = runCatching { PhoneDayView.valueOf(o.getString("phoneDayView")) }.getOrDefault(s.phoneDayView),
+                    phoneDayView = runCatching { PhoneDayView.valueOf(o.getString("phoneDayView")) }.getOrDefault(s.phoneDayView)
+                        .let { if (it == PhoneDayView.PREVIEW) PhoneDayView.SHEET else it },
+                    showDayCard = o.optBoolean("dayCard", o.optString("phoneDayView") == PhoneDayView.PREVIEW.name),
                     dayGroupOrder = o.optStringOrNull("dayGroupOrder")?.let(::decodeGroupOrder)
                         ?: if (o.optBoolean("memoFirst", false)) listOf("memo") else s.dayGroupOrder,
                     calendarMemos = o.optBoolean("calendarMemos", s.calendarMemos),

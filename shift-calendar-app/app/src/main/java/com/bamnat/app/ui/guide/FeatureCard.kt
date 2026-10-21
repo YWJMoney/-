@@ -120,7 +120,7 @@ object GuideUse {
         "pay" to Place.PAY, "pattern" to Place.PATTERN, "shift_types" to Place.SHIFT_TYPES, "extra_kinds" to Place.EXTRA_KINDS,
         "calendars" to Place.CALENDARS, "calendar_edit" to Place.CALENDAR_EDIT, "shop_days" to Place.SHOP_DAYS,
         "combined" to Place.COMBINED, "owed" to Place.OWED, "sleep" to Place.SLEEP, "duty_roster" to Place.DUTY_ROSTER,
-        "health_report" to Place.HEALTH_REPORT, "attendance_import" to Place.ATTENDANCE_IMPORT, "commute" to Place.COMMUTE,
+        "health_report" to Place.HEALTH_REPORT, "teams" to Place.TEAMS, "attendance_import" to Place.ATTENDANCE_IMPORT, "commute" to Place.COMMUTE,
         "calendar_import" to Place.CALENDAR_IMPORT, "diagnostics" to Place.DIAGNOSTICS,
     )
 

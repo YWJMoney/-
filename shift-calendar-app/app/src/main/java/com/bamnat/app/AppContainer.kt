@@ -82,6 +82,8 @@ class AppContainer(context: Context) {
     val calendarSetupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "calendar_setup_draft.json")) }
     /** [MEMO-02] 설정 › 메모 공유; 달력마다 따로 until the user groups calendars. */
     val memoSharing = com.bamnat.app.data.MemoSharingStore(java.io.File(appContext.filesDir, "memo_sharing.json"))
+    /** [CREW-01] Each calendar's teams for 모든 조 보기. */
+    val teams by lazy { com.bamnat.app.data.TeamStore(appContext) }
     /** [MEMO-01] Memos stay with the calendar they were written on, unless calendars share them. */
     val memoRepository = MemoRepository(database, sharing = kotlinx.coroutines.flow.combine(memoSharing.state, calendars.calendars) { s, list ->
         s.cleaned(list.map { it.id })

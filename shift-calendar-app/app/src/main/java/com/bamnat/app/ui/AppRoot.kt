@@ -215,6 +215,7 @@ private object Routes {
     // [SHFT-06][SHFT-07][DAYW-06][DAYW-07] Shift and day work's own tools, for the calendar on screen.
     const val DUTY_ROSTER = "duty_roster"
     const val HEALTH_REPORT = "health_report"
+    const val TEAMS = "teams"
     const val ATTENDANCE_IMPORT = "attendance_import"
     const val COMMUTE = "commute"
     /** [GUIDE-05] 설정 › 기능 켜고 끄기. */
@@ -347,6 +348,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.CALENDAR_IMPORT -> { nav.navigate(Routes.CALENDAR_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.DUTY_ROSTER -> { nav.navigate(Routes.DUTY_ROSTER) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.HEALTH_REPORT -> { nav.navigate(Routes.HEALTH_REPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.TEAMS -> { nav.navigate(Routes.TEAMS) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.ATTENDANCE_IMPORT -> { nav.navigate(Routes.ATTENDANCE_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [SET-01] Settings takes the target itself, to open on the alarm's state from wherever it was.
@@ -950,6 +952,12 @@ private fun AppNavHost(
             val vm = appViewModel(key = "duty_$calendar") { com.bamnat.app.ui.imports.DutyRosterViewModel(it, calendar) }
             com.bamnat.app.ui.imports.DutyRosterScreen(vm = vm, onBack = { nav.popFrom(Routes.DUTY_ROSTER) })
         }
+        composable(Routes.TEAMS) {
+            val calendar = remember { container.calendars.active.value }
+            val vm = appViewModel(key = "teams_$calendar") { com.bamnat.app.ui.calendar.TeamsViewModel(it, calendar) }
+            com.bamnat.app.ui.calendar.TeamsScreen(vm = vm, onBack = { nav.popFrom(Routes.TEAMS) },
+                onOpenPattern = { nav.openPattern(container, calendar) })
+        }
         composable(Routes.HEALTH_REPORT) {
             val calendar = remember { container.calendars.active.value }
             val vm = appViewModel(key = "health_$calendar") { com.bamnat.app.ui.stats.HealthReportViewModel(it, calendar) }
@@ -1084,6 +1092,7 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.SLEEP -> screen(Routes.SLEEP)
         Place.DUTY_ROSTER -> screen(Routes.DUTY_ROSTER)
         Place.HEALTH_REPORT -> screen(Routes.HEALTH_REPORT)
+        Place.TEAMS -> screen(Routes.TEAMS)
         Place.ATTENDANCE_IMPORT -> screen(Routes.ATTENDANCE_IMPORT)
         Place.COMMUTE -> screen(Routes.COMMUTE)
         Place.CALENDAR_IMPORT -> screen(Routes.CALENDAR_IMPORT)

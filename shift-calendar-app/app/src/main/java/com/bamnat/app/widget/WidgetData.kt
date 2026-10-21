@@ -90,7 +90,7 @@ class WidgetData(
                 // [HRLY-02] The same week and 법정 휴게 as the 주휴수당 card in 통계.
                 val p = container.payStore.profile.value
                 val hours = snapshot.copy(legalBreaks = p?.legalBreaks == true).resolver
-                WidgetFigures.HourlyWeek(WorkHoursCalculator(hours, p?.holidayWeekFrom ?: settings.weekStart).week(today).totalMinutes)
+                WidgetFigures.HourlyWeek(WorkHoursCalculator(hours, p?.holidayWeekFrom ?: java.time.DayOfWeek.MONDAY).week(today).totalMinutes)
             } else null
             val field = if (settings.workStyle == WorkStyle.FIELD && book != null) {
                 WidgetFigures.fieldWeek(book.jobs, CalendarGrid.weekStartOf(today, settings.weekStart), today)

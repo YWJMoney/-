@@ -107,7 +107,12 @@ data class AppSettings(
     /** [EXTRA-05] The user saw what the law would pay for work on days off and chose. */
     val restDayCompared: Boolean = false,
     /** [CAL-03] What a tap on a date does on a phone. */
-    val phoneDayView: PhoneDayView = PhoneDayView.PREVIEW,
+    val phoneDayView: PhoneDayView = PhoneDayView.SHEET,
+    /**
+     * [CAL-20] The small day card under the calendar (its times, 특근, 알람 끄기). Off unless turned on: the
+     * day sheet does all of it. On, the first tap shows the card and a second opens the day.
+     */
+    val showDayCard: Boolean = false,
     /**
      * [DAY-04] The day view's groups in the user's own order, by key ("work", "memo", ...); empty means the
      * order that fits [workStyle]. Keys the app does not know are skipped, missing ones go at the end.
@@ -199,8 +204,10 @@ class SettingsRepository(context: Context) {
             healthSleep = prefs.getBoolean(K_HEALTH_SLEEP, d.healthSleep),
             swapCoversAnswered = prefs.getBoolean(K_SWAP_COVERS, d.swapCoversAnswered),
             restDayCompared = prefs.getBoolean(K_REST_COMPARED, d.restDayCompared),
+            // [CAL-20] PREVIEW of 1.17 and before is now 바로 크게 with the card switch apart; the card starts off.
             phoneDayView = runCatching { PhoneDayView.valueOf(prefs.getString(K_PHONE_DAY_VIEW, null) ?: "") }
-                .getOrDefault(d.phoneDayView),
+                .getOrDefault(d.phoneDayView).let { if (it == PhoneDayView.PREVIEW) PhoneDayView.SHEET else it },
+            showDayCard = prefs.getBoolean(K_DAY_CARD, d.showDayCard),
             // [DAY-04] 메모 중심 of 1.12 and before put 메모 first; that carries over as the user's own order.
             dayGroupOrder = prefs.getString(K_DAY_GROUP_ORDER, null)?.let(::decodeGroupOrder)
                 ?: if (prefs.getBoolean(K_MEMO_FIRST, false)) listOf("memo") else d.dayGroupOrder,
@@ -249,6 +256,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SWAP_COVERS, s.swapCoversAnswered)
             .putBoolean(K_REST_COMPARED, s.restDayCompared)
             .putString(K_PHONE_DAY_VIEW, s.phoneDayView.name)
+            .putBoolean(K_DAY_CARD, s.showDayCard)
             .putString(K_DAY_GROUP_ORDER, s.dayGroupOrder.joinToString(","))
             .apply()
     }
@@ -257,6 +265,7 @@ class SettingsRepository(context: Context) {
         /** [CAL-02] Replaces "week_start", where 1.12 and before wrote Monday on every save. */
         const val K_WEEK_START_V2 = "week_start_v2"
         const val K_PHONE_DAY_VIEW = "phone_day_view"
+        const val K_DAY_CARD = "day_card"
         const val K_DAY_GROUP_ORDER = "day_group_order"
         const val K_WEEKLY_LIMIT = "weekly_limit"
         const val K_AVG_LIMIT = "average_limit"

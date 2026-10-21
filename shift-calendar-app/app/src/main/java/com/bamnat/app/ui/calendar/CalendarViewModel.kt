@@ -397,6 +397,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     fun setPaint(tool: PaintTool?) {
+        if (tool == null || tool != _paint.value) coverAnswer = null // [CAL-19] asked again with another shift
         _paint.value = tool
         _mark.value = null
         _rangeFrom.value = null
@@ -446,10 +447,73 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
         val target = _paint.value?.let(::stampOf) ?: return
         _lastPaint.value = null
+        // [CAL-19] A working shift on a day off is asked about first: most often it is a 대근.
+        if (askCover(listOf(date))) return
         // Stamping the same shift twice undoes it, so a mis-tap is fixed with one more tap.
         // Decided inside the write so quick double taps see each other's result.
         viewModelScope.launch { changeShift(date) { current -> if (current == target) ShiftOverride.None else target } }
     }
+
+    /**
+     * [CAL-19] Quick input with a working shift chosen, put on days the roster gives off: "근무일이
+     * 아니에요, 대근으로 넣을까요?" before anything is written, so a 대근 is never counted as the roster.
+     */
+    data class CoverAsk(val type: ShiftType, val offDays: List<LocalDate>, val workDays: List<LocalDate>)
+
+    private val _coverAsk = MutableStateFlow<CoverAsk?>(null)
+    val coverAsk: StateFlow<CoverAsk?> = _coverAsk.asStateFlow()
+
+    /** [CAL-19] The answer kept for the rest of this quick input when the user ticks "다시 묻지 않기". */
+    private var coverAnswer: Boolean? = null
+
+    /** [CAL-19] A day off (by the roster or marked off by hand) that a working [type] would turn into a working day. */
+    private fun offDayFor(day: ResolvedDay, type: ShiftType): Boolean =
+        !day.isWorkDay && day.leave == null && type.hasTimes && !type.isOff && day.coveredShift == null
+
+    /** [CAL-19] True when [dates] hold a day off for the chosen shift and the question was asked or answered for them. */
+    private fun askCover(dates: List<LocalDate>): Boolean {
+        val tool = _paint.value as? PaintTool.Shift ?: return false
+        val snap = snapshot.value ?: return false
+        val type = snap.typesById[tool.shiftTypeId] ?: return false
+        val (off, work) = dates.distinct().partition { offDayFor(snap.resolver.resolve(it), type) }
+        if (off.isEmpty()) return false
+        val ask = CoverAsk(type, off, work)
+        coverAnswer?.let { answerCover(ask, asCover = it, keep = true); return true }
+        _coverAsk.value = ask
+        return true
+    }
+
+    /** [CAL-19] The answer: [asCover] keeps the days off and adds a 대근 of the shift's hours; else the days become working days. */
+    fun answerCover(ask: CoverAsk, asCover: Boolean, keep: Boolean) {
+        _coverAsk.value = null
+        if (keep) coverAnswer = asCover
+        val snap = snapshot.value ?: return
+        if (!asCover) {
+            stampShift(ask.offDays + ask.workDays, ShiftOverride.Shift(ask.type.id), ask.type.name)
+            return
+        }
+        val kind = coverKind(snap, ask.type)
+        val cover = ExtraText.cover(kind, ask.type)
+        val coverName = ExtraText.coverName(kind, ask.type)
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
+            val work = schedule.updateDays(ask.workDays) { entry -> nextShift(entry, ShiftOverride.Shift(ask.type.id)) }
+            val off = schedule.updateDays(ask.offDays) { entry ->
+                if (entry.extras.size >= com.bamnat.app.data.ScheduleRepository.MAX_EXTRAS) entry else entry.copy(extras = entry.extras + cover)
+            }
+            val what = if (ask.offDays.size == 1) Fmt.monthDay(ask.offDays.first()) + "에" else "쉬는 날 ${ask.offDays.size}일에"
+            val rest = if (work.isNotEmpty()) " · 근무일 ${work.size}일은 ${ask.type.name}${Fmt.ro(ask.type.name)}" else ""
+            _lastPaint.value = PaintUndo("$what $coverName${Fmt.obj(coverName)} 넣었어요$rest") {
+                schedule.updateDays((work.keys + off.keys).toList()) { now ->
+                    val was = work[now.date] ?: off[now.date] ?: DayEntry(now.date)
+                    now.copy(override = was.override, customStart = was.customStart, customEnd = was.customEnd,
+                        customBreakMinutes = was.customBreakMinutes, extras = was.extras)
+                }
+            }
+        }
+    }
+
+    fun dismissCover() { _coverAsk.value = null }
 
     /** [CAL-09] One tap with a mark: on, or off again when the day has it. */
     private fun toggleMark(date: LocalDate, mark: DayMark) = viewModelScope.launch {
@@ -500,6 +564,12 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             PaintTool.Off -> "쉬는 날"
             else -> null
         }
+        if (askCover(dates)) return // [CAL-19]
+        stampShift(dates, target, name)
+    }
+
+    /** [CAL-01] Every one of [dates] gets [target] in one write, said back in the bar with undo. */
+    private fun stampShift(dates: List<LocalDate>, target: ShiftOverride, name: String?) {
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.updateDays(dates.distinct()) { entry -> nextShift(entry, target) }
