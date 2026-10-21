@@ -446,6 +446,10 @@ private fun QuickChips(
     val calendarAlarms by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
     var addingMoney by remember { mutableStateOf(false) }
     val book by vm.moneyBook.collectAsStateWithLifecycle()
+    // [HRLY-08][DAYW-03] Work run past midnight is clocked out on the day it started.
+    val now = rememberMinute()
+    val yesterday = { snapshot.resolver.resolve(today.minusDays(1)) }
+    val leaveDay = leaveNowDay(settings.workStyle, day, today, now, yesterday)
     val choices = remember(snapshot, day) {
         if (moneyFirst) emptyList() else {
             val (on, off) = ExtraText.choices(snapshot.kinds, snapshot.shiftTypes, day).partition { ExtraText.indexOf(day, it) >= 0 }
@@ -480,9 +484,9 @@ private fun QuickChips(
             }
         }
         // [HRLY-01][HRLY-08] 알바: 출근·퇴근, 지각·조퇴·결근, 대타.
-        if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) hourlyChips(day, today, snapshot, vm)
+        if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) hourlyChips(day, today, snapshot, vm, now)
         // [DAYW-03] A day worker's 지금 퇴근, first on today's working day.
-        if (offersLeaveNow(settings.workStyle, day, today)) item { LeaveNowChip(day, vm) }
+        if (leaveDay != null) item { LeaveNowChip(leaveDay, vm, yesterday = leaveDay.date != day.date) }
         for (c in choices) item {
             val i = ExtraText.indexOf(day, c)
             FilterChip(

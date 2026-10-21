@@ -336,7 +336,8 @@ class PayViewModel(
     /** What [made] does to [month] on top of [profile]: the amount (negative when it takes off) and how often it came up. */
     internal suspend fun effectOf(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth, made: MadeItem): ItemEffect =
         withContext(Dispatchers.Default) {
-            val p = profile.named(settings.value.extraKinds)
+            // The month as the pay screen works it out, 알바's 주휴 week included.
+            val p = profile.named(settings.value.extraKinds).hourlyWeek(settings.value)
             val resolve = snapshot.resolver::resolve
             val with = when (made) {
                 is MadeItem.Item -> p.copy(items = p.items.filterNot { it.id == made.item.id } + made.item)

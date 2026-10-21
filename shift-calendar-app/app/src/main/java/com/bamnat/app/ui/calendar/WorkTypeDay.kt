@@ -37,6 +37,7 @@ import com.bamnat.core.work.ShiftMonth
 import com.bamnat.core.work.WorkStyle
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 
 /** [SHFT-03] Longest name kept for who a day was swapped with. */
 internal const val MAX_SWAP_NAME = 20
@@ -49,9 +50,25 @@ internal fun WorkTypeDayRow(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Ca
     if (style == null || style == WorkStyle.SHIFT) SwapRow(day, snapshot, vm)
 }
 
-/** [DAYW-03] Whether the day's quick chips offer 지금 퇴근: today's working day on a day calendar. */
-internal fun offersLeaveNow(style: WorkStyle?, day: ResolvedDay, today: LocalDate): Boolean =
-    style == WorkStyle.DAY && day.date == today && day.isWorkDay && day.shiftFrom != null
+/** [DAYW-03] Until when after midnight 지금 퇴근 still ends yesterday's working day. */
+internal val LEAVE_NIGHT_END: LocalTime = LocalTime.of(6, 0)
+
+/**
+ * [DAYW-03] The working day 지금 퇴근 on [day]'s sheet ends, or null for no chip, on a day calendar:
+ * today's; before [LEAVE_NIGHT_END], yesterday's (work run past midnight), from its own sheet or from
+ * today's while today's work has not started.
+ */
+internal fun leaveNowDay(style: WorkStyle?, day: ResolvedDay, today: LocalDate, now: LocalDateTime, yesterday: () -> ResolvedDay): ResolvedDay? {
+    if (style != WorkStyle.DAY) return null
+    fun working(d: ResolvedDay) = d.isWorkDay && d.shiftFrom != null
+    val night = now.toLocalDate() == today && now.toLocalTime().isBefore(LEAVE_NIGHT_END)
+    return when (day.date) {
+        today -> yesterday().takeIf { y -> night && working(y) && (!working(day) || now.isBefore(day.shiftFrom)) }
+            ?: day.takeIf(::working)
+        today.minusDays(1) -> day.takeIf { night && working(it) }
+        else -> null
+    }
+}
 
 /** [SHFT-03] "근무 교환 적기" or "교환 · 김간호", and a dialog with the names used before. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -113,17 +130,18 @@ private fun SwapRow(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarVi
 
 /** [DAYW-03] 지금 퇴근 chip: the time from the end to now as 잔업, or an earlier end, said on the chip. */
 @Composable
-internal fun LeaveNowChip(day: ResolvedDay, vm: CalendarViewModel) {
+internal fun LeaveNowChip(day: ResolvedDay, vm: CalendarViewModel, yesterday: Boolean = false) {
     val now = rememberMinute()
     val plan = remember(day, now) { DayWork.leaveNow(day, now) }
+    val name = if (yesterday) "어제 퇴근" else "지금 퇴근"
     AssistChip(
         onClick = { vm.leaveNow(day) },
         label = {
             Text(
                 when (plan) {
-                    is DayWork.LeaveNow.Overtime -> "지금 퇴근 · +${HoursFormat.short(plan.minutes)}"
-                    is DayWork.LeaveNow.EarlyEnd -> "지금 퇴근 · ${Fmt.time(plan.end)}"
-                    DayWork.LeaveNow.OnTime -> "지금 퇴근"
+                    is DayWork.LeaveNow.Overtime -> "$name · +${HoursFormat.short(plan.minutes)}"
+                    is DayWork.LeaveNow.EarlyEnd -> "$name · ${Fmt.time(plan.end)}"
+                    DayWork.LeaveNow.OnTime -> name
                 },
                 maxLines = 1,
             )

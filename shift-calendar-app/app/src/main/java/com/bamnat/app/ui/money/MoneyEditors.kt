@@ -58,10 +58,12 @@ fun AmountField(
     modifier: Modifier = Modifier,
     imeAction: ImeAction = ImeAction.Next,
     textStyle: androidx.compose.ui.text.TextStyle? = null,
+    /** [SHOP-03] 0 is an answer here (센 현금 0원), not an empty field. */
+    allowZero: Boolean = false,
 ) {
     OutlinedTextField(
         value = digits,
-        onValueChange = { v -> onChange(v.filter(Char::isDigit).trimStart('0').take(MAX_DIGITS)) },
+        onValueChange = { v -> onChange(amountInput(v, allowZero)) },
         label = { Text(label) },
         textStyle = textStyle ?: androidx.compose.material3.LocalTextStyle.current,
         suffix = { Text("원") },
@@ -70,6 +72,12 @@ fun AmountField(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = imeAction),
         modifier = modifier.fillMaxWidth(),
     )
+}
+
+/** What an amount field keeps of what was typed: digits without leading zeros, a lone 0 only when [allowZero]. */
+internal fun amountInput(typed: String, allowZero: Boolean = false): String {
+    val d = typed.filter(Char::isDigit)
+    return d.trimStart('0').ifEmpty { if (allowZero && d.isNotEmpty()) "0" else "" }.take(MAX_DIGITS)
 }
 
 fun amountDigits(amount: Long): String = if (amount <= 0) "" else amount.toString()

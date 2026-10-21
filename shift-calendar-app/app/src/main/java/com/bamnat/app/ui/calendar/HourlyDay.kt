@@ -42,6 +42,7 @@ import com.bamnat.core.schedule.ResolvedDay
 import com.bamnat.core.work.HourlyWork
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 
 /**
@@ -83,9 +84,18 @@ internal fun HolidayWeekCheck(modifier: Modifier = Modifier) {
  * [HRLY-01][HRLY-08] An 알바 day's chips: 출근·퇴근 today (the time now, to 5 minutes, kept in the day's
  * change history), 지각·조퇴·결근 (a second tap takes it off), and 대타, which adds the 대근 of a shift.
  */
-internal fun LazyListScope.hourlyChips(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnapshot, vm: CalendarViewModel) {
+internal fun LazyListScope.hourlyChips(
+    day: ResolvedDay,
+    today: LocalDate,
+    snapshot: ScheduleSnapshot,
+    vm: CalendarViewModel,
+    now: LocalDateTime = LocalDateTime.now(),
+) {
     val works = day.shiftType?.isOff == false
-    if (day.date == today && works && day.entry?.attendance != Attendance.ABSENT) {
+    val clockIn = day.date == today && works && day.entry?.attendance != Attendance.ABSENT
+    // [HRLY-08] A shift past midnight is clocked out on the day it started, from either day's sheet.
+    val out = clockOutDay(day, today, now) { snapshot.resolver.resolve(today.minusDays(1)) }
+    if (clockIn) {
         item {
             AssistChip(
                 onClick = {
@@ -98,15 +108,19 @@ internal fun LazyListScope.hourlyChips(day: ResolvedDay, today: LocalDate, snaps
                 leadingIcon = { Icon(Icons.AutoMirrored.Filled.Login, null, Modifier.size(18.dp)) },
             )
         }
+    }
+    if (out != null) {
         item {
+            val other = out.date != day.date
             AssistChip(
                 onClick = {
                     val now = HourlyWork.clock(LocalTime.now())
-                    vm.changeDay(day.date, "퇴근 ${Fmt.time(now)} 적었어요", feature = "hourly.clock") { e ->
-                        e.copy(customEnd = now, customStart = e.customStart ?: day.start ?: day.shiftType?.start)
+                    val said = (if (out.date != today) "${Fmt.monthDay(out.date)} " else "") + "퇴근 ${Fmt.time(now)} 적었어요"
+                    vm.changeDay(out.date, said, feature = "hourly.clock") { e ->
+                        e.copy(customEnd = now, customStart = e.customStart ?: out.start ?: out.shiftType?.start)
                     }
                 },
-                label = { Text("퇴근", maxLines = 1) },
+                label = { Text(if (other) "어제 퇴근" else "퇴근", maxLines = 1) },
                 leadingIcon = { Icon(Icons.AutoMirrored.Filled.Logout, null, Modifier.size(18.dp)) },
             )
         }
@@ -125,6 +139,30 @@ internal fun LazyListScope.hourlyChips(day: ResolvedDay, today: LocalDate, snaps
         )
     }
     item { CoverChip(day, snapshot, vm) }
+}
+
+/** [HRLY-08] Hours past a shift's planned end that its 퇴근 still goes on it after midnight. */
+internal const val CLOCK_OUT_SLACK_HOURS = 4L
+
+/** [HRLY-08] Whether a 퇴근 at [now] still goes on [day], the day before: its shift ran on past midnight, or soon before. */
+internal fun clocksOutLate(day: ResolvedDay, now: LocalDateTime): Boolean {
+    val to = day.shiftTo ?: return false
+    return day.date == now.toLocalDate().minusDays(1) && day.shiftType?.isOff == false &&
+        day.entry?.attendance != Attendance.ABSENT && now.isBefore(to.plusHours(CLOCK_OUT_SLACK_HOURS))
+}
+
+/**
+ * [HRLY-08] The day a 퇴근 on [day]'s sheet is written to, or null for no 퇴근 chip: on today's sheet
+ * yesterday's late shift while today's has not started, else today's; on yesterday's sheet, its late shift.
+ */
+internal fun clockOutDay(day: ResolvedDay, today: LocalDate, now: LocalDateTime, yesterday: () -> ResolvedDay): ResolvedDay? {
+    val works = day.shiftType?.isOff == false && day.entry?.attendance != Attendance.ABSENT
+    return when (day.date) {
+        today -> yesterday().takeIf { y -> clocksOutLate(y, now) && (!works || day.shiftFrom?.let(now::isBefore) != false) }
+            ?: day.takeIf { works }
+        today.minusDays(1) -> day.takeIf { clocksOutLate(it, now) }
+        else -> null
+    }
 }
 
 /** [HRLY-01] 대타: the 대근 of a shift for this day; one shift adds at once, more open a list, a second tap takes it off. */

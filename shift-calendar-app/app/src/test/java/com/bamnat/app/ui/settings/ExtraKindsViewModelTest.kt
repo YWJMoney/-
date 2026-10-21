@@ -117,6 +117,31 @@ class ExtraKindsViewModelTest {
         assertEquals(tenPercent, rules().extra[ExtraKind.COVER_ID])
     }
 
+    /** [MCAL-06] Picked from an added calendar, the kind is priced in that calendar's pay; the main pay stays. */
+    @Test fun anAddedCalendarsPayIsTheOneEdited() {
+        val id = c.calendars.begin("투잡").also { c.calendars.finishSetup(it, com.bamnat.core.work.WorkStyle.SHIFT) }
+        val pay = c.calendars.pay(id)
+        runBlocking { pay.save(PayViewModel(c).sampleProfile(), keepUndo = false) }
+        val other = ExtraKindsViewModel(c, id)
+        val otherMessages = mutableListOf<UndoMessage>()
+        scope.launch { other.messages.collect { otherMessages += it } }
+        settle()
+        val mainBefore = rules()
+        val ruleBefore = pay.profile.value!!.rules.extra[ExtraKind.COVER_ID]
+
+        other.open(kinds().byId(ExtraKind.COVER_ID)!!)
+        other.edit { it.copy(rule = tenPercent) }
+        other.saveEditing()
+        settle()
+
+        assertEquals(tenPercent, pay.profile.value!!.rules.extra[ExtraKind.COVER_ID])
+        assertEquals(mainBefore, rules())
+        other.runUndo(otherMessages.last())
+        settle()
+        assertEquals(ruleBefore, pay.profile.value!!.rules.extra[ExtraKind.COVER_ID])
+        c.calendars.delete(id)
+    }
+
     @Test fun nothingChangedSavesNothing() {
         vm.open(kinds().byId(ExtraKind.OVERTIME_ID)!!)
         assertFalse(vm.editing.value!!.canSave)
