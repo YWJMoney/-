@@ -15,15 +15,22 @@ import kotlin.math.roundToLong
 
 /** What a part-timer's calendar shows and exports: times, a day's pay and the 주휴 weeks. */
 object HourlyWork {
-    /** [HRLY-02] 주휴 weeks of [month] from the days themselves: their hours, and 결근 days as absences. */
+    /** [HRLY-02] 주휴 weeks of [month] from the days themselves: their 소정 hours ([paidMinutes]), and 결근 days as absences. */
     fun weeks(month: YearMonth, weekStart: DayOfWeek, resolve: (LocalDate) -> ResolvedDay): List<HourlyWeek> =
-        WorkStats.hourlyWeeks(month, weekStart, { resolve(it).totalMinutes }, { isAbsent(resolve(it)) })
+        WorkStats.hourlyWeeks(month, weekStart, { paidMinutes(resolve(it)) }, { isAbsent(resolve(it)) })
 
     /** [HRLY-02] The 주휴 week that starts on [start]. */
     fun week(start: LocalDate, resolve: (LocalDate) -> ResolvedDay): HourlyWeek {
         val days = (0L..6L).map { resolve(start.plusDays(it)) }
-        return HourlyWeek(start, days.sumOf { it.totalMinutes }, days.count(::isAbsent))
+        return HourlyWeek(start, days.sumOf(::paidMinutes), days.count(::isAbsent))
     }
+
+    /**
+     * [HRLY-02] A day's minutes toward the 주휴 week, as the pay screen's 주휴수당 counts them: the shift up to
+     * 8 hours (extra work is not 소정근로) and paid leave as attended.
+     */
+    fun paidMinutes(day: ResolvedDay): Int =
+        day.scheduledMinutes.coerceAtMost(8 * 60) + if (day.leave?.kind?.paid == true) day.leaveMinutes else 0
 
     /**
      * [HRLY-02][HRLY-07] The 주휴 week that ends within the calendar row starting on [rowStart], so each row
@@ -70,10 +77,13 @@ object HourlyWork {
         else -> "%,d".format(Locale.ROOT, won)
     }
 
-    /** [HRLY-08] 출근·퇴근 now, to the nearest 5 minutes. */
+    /**
+     * [HRLY-08] 출근·퇴근 now, to the nearest 5 minutes. Written on today's date, so just before midnight it
+     * rounds down to 23:55 rather than to 00:00, which would be the start of today.
+     */
     fun clock(now: LocalTime): LocalTime {
-        val minutes = (now.hour * 60 + now.minute + (if (now.second >= 30) 1 else 0) + 2) / 5 * 5
-        return LocalTime.of(minutes / 60 % 24, minutes % 60)
+        val minutes = ((now.hour * 60 + now.minute + (if (now.second >= 30) 1 else 0) + 2) / 5 * 5).coerceAtMost(24 * 60 - 5)
+        return LocalTime.of(minutes / 60, minutes % 60)
     }
 }
 

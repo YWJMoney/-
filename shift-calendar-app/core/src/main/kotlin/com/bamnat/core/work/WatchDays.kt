@@ -45,10 +45,8 @@ data class WatchPayload(
 )
 
 object WatchDays {
-    /** Days the phone sends: this month and the next for the month view, and a watch away from the phone a while still knows. */
+    /** Days ahead the phone sends at least, so a watch away from the phone a while still knows. */
     const val DAYS = 45
-    /** Days before today the phone sends too, so the month view starts on the 1st. */
-    const val DAYS_BACK = 31
     const val PATH = "/bamnat/days"
     const val KEY = "payload"
     private const val OFF_COLOR = 0xFF8E9AAFL
@@ -58,9 +56,14 @@ object WatchDays {
     fun of(from: LocalDate, until: LocalDate, resolve: (LocalDate) -> ResolvedDay): List<WatchDay> =
         generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(until) }.map { day(resolve(it)) }.toList()
 
-    /** What the watch window covers around [today]: from the 1st of last month's last days to [DAYS] ahead. */
-    fun window(today: LocalDate): Pair<LocalDate, LocalDate> =
-        minOf(today.withDayOfMonth(1), today.minusDays(DAYS_BACK.toLong())) to today.plusDays(DAYS.toLong())
+    /**
+     * What the watch window covers around [today]: the watch's month view pages last, this and next month, so
+     * from last month's 1st to the end of next month, and at least [DAYS] ahead.
+     */
+    fun window(today: LocalDate): Pair<LocalDate, LocalDate> {
+        val nextMonthEnd = today.plusMonths(1).let { it.withDayOfMonth(it.lengthOfMonth()) }
+        return today.minusMonths(1).withDayOfMonth(1) to maxOf(today.plusDays(DAYS.toLong()), nextMonthEnd)
+    }
 
     fun day(d: ResolvedDay): WatchDay {
         val type = d.shiftType

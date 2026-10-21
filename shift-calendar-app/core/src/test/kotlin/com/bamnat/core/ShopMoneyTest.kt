@@ -87,6 +87,8 @@ class ShopMoneyTest {
         val check = CashDrawer.check(day, openingCash = 100_000, cashSpent = CashDrawer.cashSpent(spent, d(2), cashAccount))
         assertEquals(148_000, check.expected)
         assertEquals(0L, check.difference)
+        // A day written only as a total is taken as all cash.
+        assertEquals(250_000, CashDrawer.check(DailySales(d(2), 150_000), openingCash = 100_000).expected)
         assertNull(CashDrawer.check(day.copy(cashCounted = null), 0).difference)
     }
 
@@ -104,8 +106,15 @@ class ShopMoneyTest {
         assertEquals(430_000, h1.expenses)
         assertEquals(80_000, h1.vat)
         assertEquals(LocalDate.of(2026, 7, 25), h1.due)
+        // 간이과세 is counted for the whole year, and under 4,800만 원 of sales a year there is nothing to pay.
         val simple = VatEstimate.of(d(10, 5), sales, entries, ShopMoney(simpleTax = true, valueAddedPercent = 15))
-        assertEquals(16_500, simple.vat)
+        assertEquals(0, simple.half)
+        assertEquals(10_100_000, simple.sales)
+        assertTrue(simple.exempt)
+        assertEquals(0, simple.vat)
+        val big = VatEstimate.of(d(10, 5), sales + DailySales(d(9, 1), 50_000_000), entries, ShopMoney(simpleTax = true, valueAddedPercent = 15))
+        assertEquals(60_100_000L * 15 / 1_000, big.vat)
+        assertEquals(LocalDate.of(2027, 1, 25), big.due)
         assertEquals(LocalDate.of(2027, 1, 25), VatEstimate.of(d(1, 9), sales, entries, ShopMoney()).due)
     }
 
@@ -113,15 +122,18 @@ class ShopMoneyTest {
     fun taxRemindersGoToShopsAndFieldWork() {
         val today = LocalDate.of(2026, 7, 1)
         val shop = TaxDeadlines.alerts(today, setOf(WorkStyle.BUSINESS)).map { it.at }
-        assertTrue(LocalDateTime.of(2026, 7, 18, 9, 0) in shop)
-        assertTrue(LocalDateTime.of(2026, 7, 24, 9, 0) in shop)
+        // 2026-07-25 is a Saturday: the deadline is Monday 7/27.
+        assertTrue(LocalDateTime.of(2026, 7, 20, 9, 0) in shop)
+        assertTrue(LocalDateTime.of(2026, 7, 26, 9, 0) in shop)
+        assertEquals(LocalDate.of(2026, 7, 27), TaxDeadlines.workday(LocalDate.of(2026, 7, 25)))
+        assertEquals(LocalDate.of(2027, 1, 25), TaxDeadlines.workday(LocalDate.of(2027, 1, 25)))
         assertTrue(LocalDateTime.of(2027, 1, 18, 9, 0) in shop)
         assertTrue(LocalDateTime.of(2027, 5, 30, 9, 0) in shop)
         val field = TaxDeadlines.alerts(today, setOf(WorkStyle.FIELD))
         assertTrue(field.isNotEmpty() && field.all { it.title.contains("종합소득세") })
         assertTrue(TaxDeadlines.alerts(today, setOf(WorkStyle.SHIFT)).isEmpty())
         val viaAlerts = MoneyAlerts.all(emptyList(), emptyList(), emptyList(), today, styles = setOf(WorkStyle.BUSINESS))
-        assertTrue(viaAlerts.any { it.key == "tax-2026-07-25-7" })
+        assertTrue(viaAlerts.any { it.key == "tax-2026-07-27-7" })
         assertTrue(MoneyAlerts.all(emptyList(), emptyList(), emptyList(), today).none { it.key.startsWith("tax") })
     }
 

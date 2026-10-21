@@ -7,6 +7,7 @@ import com.bamnat.core.imports.Sheets
 import com.bamnat.core.model.Attendance
 import com.bamnat.core.model.DayEntry
 import com.bamnat.core.model.ExtraKind
+import com.bamnat.core.model.Leave
 import com.bamnat.core.model.LeaveKind
 import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.schedule.ScheduleResolver
@@ -223,5 +224,66 @@ class DayP3Test {
         // Back just after midnight, minutes after leaving: a walk.
         assertTrue(Commute.cameBack(thu.atTime(23, 50), fri.atTime(0, 20), 90))
         assertTrue(!Commute.cameBack(thu.atTime(12, 0), thu.atTime(14, 0), 90))
+    }
+
+    @Test
+    fun `a half day off with its clock times counts four hours worked and four on leave, never twice`() {
+        // 오전반차, then 14:00–18:00 at work: the leave alone, no late start or early end on top of it.
+        val half = AttendanceImport.apply(resolver.resolve(thu), DayEntry(thu), AttendanceRow(thu, t(14), t(18), leave = AttendanceImport.kindOf("오전반차").leave))
+        assertEquals(2, half.leave!!.quarters)
+        assertNull(half.customStart)
+        assertNull(half.customEnd)
+        assertTrue(half.extras.isEmpty())
+        val day = ScheduleResolver(Fixtures.all, weekly, listOf(half)).resolve(thu)
+        assertEquals(240, day.scheduledMinutes)
+        assertEquals(240, day.leaveMinutes)
+        // Staying to 20:00 is 잔업 from the full day's end.
+        val late = AttendanceImport.apply(resolver.resolve(thu), DayEntry(thu), AttendanceRow(thu, t(14), t(20), leave = AttendanceImport.kindOf("반차").leave))
+        assertEquals(t(18), late.extras.single().start)
+        assertEquals(t(20), late.extras.single().end)
+        // The 반차 already on the calendar: 13:30–18:00 is not 잔업.
+        val before = DayEntry(thu, leave = Leave(LeaveKind.ANNUAL, 2))
+        val withLeave = ScheduleResolver(Fixtures.all, weekly, listOf(before)).resolve(thu)
+        assertEquals(before, AttendanceImport.apply(withLeave, before, AttendanceRow(thu, t(14), t(18))))
+        assertEquals(Commute.Write.None, Commute.arrive(withLeave, thu.atTime(14, 0)))
+        assertEquals(Commute.Write.None, Commute.leave(withLeave, thu.atTime(14, 0), thu.atTime(18, 0)))
+        assertEquals(Commute.Write.None, Commute.leave(withLeave, thu.atTime(9, 0), thu.atTime(13, 30)))
+        val ot = Commute.leave(withLeave, thu.atTime(14, 0), thu.atTime(19, 0)) as Commute.Write.Overtime
+        assertEquals(t(18), ot.entry.start)
+        assertEquals(60, ot.minutes)
+    }
+
+    @Test
+    fun `a day the user set to other times counts 잔업 from its own end`() {
+        // 10:00–19:00 on a 09–18 day: leaving at 19:00 is on time, at 20:00 an hour of 잔업 from 19:00.
+        val custom = DayEntry(thu, customStart = t(10), customEnd = t(19))
+        val day = ScheduleResolver(Fixtures.all, weekly, listOf(custom)).resolve(thu)
+        assertEquals(Commute.Write.None, Commute.leave(day, thu.atTime(10, 0), thu.atTime(19, 0)))
+        val ot = Commute.leave(day, thu.atTime(10, 0), thu.atTime(20, 0)) as Commute.Write.Overtime
+        assertEquals(t(19), ot.entry.start)
+        assertEquals(60, ot.minutes)
+        assertEquals(t(19), Commute.apply(custom, ot).customEnd)
+    }
+
+    @Test
+    fun `a decimal hours cell stays hours, a cell shown as a time is a time`() {
+        val sheet = """<?xml version="1.0"?><worksheet><sheetData>
+            <row r="1"><c r="A1" t="inlineStr"><is><t>날짜</t></is></c><c r="B1" t="inlineStr"><is><t>출근</t></is></c><c r="C1" t="inlineStr"><is><t>연장</t></is></c><c r="D1" t="inlineStr"><is><t>근무시간</t></is></c></row>
+            <row r="2"><c r="A2"><v>46317</v></c><c r="B2" s="1"><v>0.375</v></c><c r="C2"><v>0.5</v></c><c r="D2" s="2"><v>0.354166666666667</v></c></row>
+            </sheetData></worksheet>"""
+        val styles = """<styleSheet><numFmts count="1"><numFmt numFmtId="164" formatCode="[h]:mm"/></numFmts>
+            <cellXfs count="3"><xf numFmtId="0"/><xf numFmtId="20"/><xf numFmtId="164"/></cellXfs></styleSheet>"""
+        val bytes = ByteArrayOutputStream().also { out ->
+            ZipOutputStream(out).use { z ->
+                listOf("xl/worksheets/sheet1.xml" to sheet, "xl/styles.xml" to styles)
+                    .forEach { (n, s) -> z.putNextEntry(ZipEntry(n)); z.write(s.toByteArray()); z.closeEntry() }
+            }
+        }.toByteArray()
+        val rows = Sheets.read(bytes)
+        assertEquals(listOf("46317", "9:00", "0.5", "8:30"), rows[1])
+        val day = AttendanceImport.read(rows, AttendanceImport.guess(rows)!!, 2026).single()
+        assertEquals(t(9), day.start)
+        assertEquals(30, day.overtimeMinutes)
+        assertEquals(510, day.workMinutes)
     }
 }

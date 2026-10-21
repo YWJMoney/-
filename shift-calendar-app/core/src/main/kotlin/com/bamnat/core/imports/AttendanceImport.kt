@@ -181,7 +181,7 @@ object AttendanceImport {
 
     /**
      * A length: 8:30, 8.5 (hours), 8시간 30분, 90분. A plain number is hours (0.5 is 30분); Excel's fraction
-     * of a day in a number cell already comes as h:mm from [Sheets].
+     * of a day in a cell shown as a time already comes as h:mm from [Sheets].
      */
     fun parseMinutes(text: String): Int? {
         val s = text.trim().replace(" ", "")
@@ -200,8 +200,8 @@ object AttendanceImport {
     /**
      * [DAYW-06] What one day of the export writes on [before], the day as stored, given [day] as the calendar
      * resolves it: leave as leave, 결근 as 결근, and the clock times as a later start, an earlier end or
-     * 잔업 after the day's end ([Commute.arrive], [Commute.leave] decide the same way). On a day off, times
-     * are 특근. Overtime given only as a length is 잔업 of that length.
+     * 잔업 after the day's end ([Commute.arrive], [Commute.leave] decide the same way). On a 반차 day only
+     * 잔업 past the full day's end. On a day off, times are 특근. Overtime given only as a length is 잔업 of that length.
      */
     fun apply(day: ResolvedDay, before: DayEntry, row: AttendanceRow): DayEntry {
         var e = before
@@ -211,9 +211,12 @@ object AttendanceImport {
         if (row.hasTimes) {
             val start = row.start!!
             val end = row.end!!
-            e = Commute.apply(e, Commute.arrive(day, row.date.atTime(start), rounding = false))
+            // A 반차 row's times are the half worked: with the leave on the day, Commute writes only 잔업 past
+            // the full day's end, never a late start or early end the leave already takes off.
+            val worked = if (row.leave != null && day.isWorkDay) day.copy(leave = row.leave) else day
+            e = Commute.apply(e, Commute.arrive(worked, row.date.atTime(start), rounding = false))
             // Read the day again with its new start, so an early end keeps the late start.
-            val after = Commute.withStart(day, e)
+            val after = Commute.withStart(worked, e)
             val endAt = if (end.isAfter(start)) row.date.atTime(end) else row.date.plusDays(1).atTime(end)
             e = Commute.apply(e, Commute.leave(after, row.date.atTime(start), endAt, rounding = false))
         } else if ((row.overtimeMinutes ?: 0) > 0) {

@@ -69,6 +69,10 @@ class LedgerAppTest {
         assertTrue(written.all { it.source == MoneySource.FIXED && it.fixedId != null })
         assertTrue(money.catchUpRecurring(day).isEmpty())
         assertEquals(2, money.entries.first().size)
+        // A written line the user deleted stays deleted; the next one is still written.
+        money.delete(written.single { it.merchant == "헬스장" })
+        assertTrue(money.catchUpRecurring(day).isEmpty())
+        assertEquals(listOf(LocalDate.of(2026, 11, 6)), money.catchUpRecurring(LocalDate.of(2026, 11, 6)).map { it.date })
     }
 
     /** [LEDG-14] A renamed category takes its lines, split parts, budget, learned places and repeating lines along. */

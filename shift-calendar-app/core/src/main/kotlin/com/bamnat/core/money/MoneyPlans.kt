@@ -109,7 +109,7 @@ object UpcomingPayments {
         remind = card.remind, accountId = card.payFromId,
     )
 
-    private fun replacedByCard(c: FixedCost, accounts: List<MoneyAccount>) =
+    internal fun replacedByCard(c: FixedCost, accounts: List<MoneyAccount>) =
         c.kind == MoneyKind.TRANSFER && accounts.any { it.hasBill && !it.hidden && it.name == c.name }
 
     /** Payments due from [today] for [days] days that are not yet recorded, soonest first. */
@@ -150,13 +150,19 @@ object Recurring {
 
     /**
      * Lines for every [FixedCost.auto] payment due up to [today] and not written yet, oldest
-     * first. A line is never written before the day it was set up ([FixedCost.start]).
+     * first. A line is never written before the day it was set up ([FixedCost.start]), nor on or
+     * before the day [through] says it was last caught up to, so a written line the user deleted
+     * stays deleted. Without either, only today's is written.
      */
-    fun due(costs: List<FixedCost>, entries: List<MoneyEntry>, today: LocalDate): List<MoneyEntry> =
+    fun due(costs: List<FixedCost>, entries: List<MoneyEntry>, today: LocalDate, through: Map<Long, LocalDate> = emptyMap()): List<MoneyEntry> =
         costs.filter { it.auto && it.amount > 0 }.flatMap { c ->
-            val from = maxOf(c.start ?: today, today.minusDays(CATCH_UP_DAYS))
+            val after = through[c.id]?.plusDays(1)
+            val from = listOfNotNull(c.start ?: after ?: today, after, today.minusDays(CATCH_UP_DAYS)).max()
             c.occurrences(from, today).filter { !UpcomingPayments.recorded(c, it, entries) }.map { UpcomingPayments.entry(c, it) }
         }.sortedWith(compareBy({ it.date }, { it.fixedId }))
+
+    /** [LEDG-09] The caught-up day a newly saved [cost] starts from: the day before its first, or before [today]. */
+    fun startMark(cost: FixedCost, today: LocalDate): LocalDate = (cost.start ?: today).minusDays(1)
 }
 
 /**
@@ -196,7 +202,8 @@ object MoneyAlerts {
             }
         }
         val until = YearMonth.from(today).plusMonths(1).atEndOfMonth()
-        for (c in costs.filter { it.remind }) for (due in c.occurrences(today, until)) {
+        // A 카드값 line the card's own bill stands in for is not reminded twice ([UpcomingPayments.within]).
+        for (c in costs.filter { it.remind && !UpcomingPayments.replacedByCard(it, accounts) }) for (due in c.occurrences(today, until)) {
             // [LEDG-09] A line that writes itself says so on the day; the rest are reminders until written.
             if (c.auto) {
                 add(Alert(due.atTime(BILL_AT), "bill-${c.id}-$due-0", "가계부에 적었어요", "${c.schedule} ${c.name} ${won(c.amount)}"))

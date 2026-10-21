@@ -52,6 +52,8 @@ class MoneyRepository(
     private val style: Flow<com.bamnat.core.work.WorkStyle?> = kotlinx.coroutines.flow.flowOf(null),
     /** [COMN-04] 확인하고 적기: lines not yet confirmed stay out of the book's totals. */
     private val confirmFirst: Flow<java.time.LocalDate?> = kotlinx.coroutines.flow.flowOf(null),
+    /** [LEDG-09] How far each self-writing line was caught up, so deleted lines stay deleted. */
+    private val marks: RecurringMarks = RecurringMarks(null),
 ) {
     private val dao = db.moneyDao()
 
@@ -208,7 +210,9 @@ class MoneyRepository(
         if (costs.isEmpty()) return emptyList()
         val since = today.minusDays(Recurring.CATCH_UP_DAYS + 366)
         val lines = dao.entriesFrom(since.toEpochDay()).map { it.toModel() }
-        Recurring.due(costs, lines, today).map { save(it) }
+        val written = Recurring.due(costs, lines, today, marks.all()).map { save(it) }
+        marks.put(costs.filter { c -> marks.all()[c.id]?.isBefore(today) != false }.associate { it.id to today })
+        written
     }
 
     suspend fun markAllReviewed() = dao.markAllReviewed()
@@ -280,8 +284,15 @@ class MoneyRepository(
 
     suspend fun clearSales(date: LocalDate) = dao.deleteSales(date.toEpochDay())
 
-    suspend fun save(cost: FixedCost): FixedCost =
-        if (cost.id == 0L) cost.copy(id = dao.insertFixed(cost.toEntity())) else cost.also { dao.restoreFixed(it.toEntity()) }
+    suspend fun save(cost: FixedCost): FixedCost {
+        val saved = if (cost.id == 0L) cost.copy(id = dao.insertFixed(cost.toEntity())) else cost.also { dao.restoreFixed(it.toEntity()) }
+        // [LEDG-09] A new line (its id may be a deleted one's) catches up from its first day; an older one
+        // set to write itself, from its first day or today, once.
+        if (saved.auto && (cost.id == 0L || saved.id !in marks.all())) {
+            marks.put(mapOf(saved.id to Recurring.startMark(saved, Instant.ofEpochMilli(clock()).atZone(ZoneId.systemDefault()).toLocalDate())))
+        }
+        return saved
+    }
 
     suspend fun delete(cost: FixedCost) = dao.deleteFixed(cost.id)
 

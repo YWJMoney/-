@@ -109,7 +109,7 @@ object CashDrawer {
      * was split at all.
      */
     fun check(day: DailySales, openingCash: Long, cashSpent: Long = 0): Check {
-        val cashSales = if (day.byMethod > 0) day.cash else 0
+        val cashSales = if (day.byMethod > 0) day.cash else day.sales
         return Check(openingCash + cashSales - cashSpent, day.cashCounted)
     }
 
@@ -119,14 +119,18 @@ object CashDrawer {
 }
 
 /**
- * [SHOP-04] 부가세, roughly: 일반과세 (sales − costs with a tax invoice or card/cash receipt) × 10/110;
- * 간이과세 sales × the trade's value-added rate × 10%. Half years run 1–6 (신고 7/25) and 7–12
- * (신고 다음 해 1/25). 대략·참고용: the 신고 itself works it out properly.
+ * [SHOP-04] 부가세, roughly: 일반과세 (sales − costs with a tax invoice or card/cash receipt) × 10/110,
+ * by half years 1–6 (신고 7/25) and 7–12 (신고 다음 해 1/25); 간이과세 sales × the trade's value-added
+ * rate × 10%, once for the whole year (신고 다음 해 1/25), and nothing to pay on a year's sales under
+ * [SIMPLE_EXEMPT] (부가가치세법 제69조). 대략·참고용: the 신고 itself works it out properly.
  */
 object VatEstimate {
+    /** [SHOP-04] 간이과세 납부의무 면제: a year's sales (공급대가) under 4,800만 원. */
+    const val SIMPLE_EXEMPT = 48_000_000L
+
     data class Half(
         val year: Int,
-        /** 1 for January–June, 2 for July–December. */
+        /** 1 for January–June, 2 for July–December, 0 for 간이과세's whole year. */
         val half: Int,
         val sales: Long,
         val expenses: Long,
@@ -134,30 +138,34 @@ object VatEstimate {
         val provenExpenses: Long,
         val vat: Long,
         val due: LocalDate,
+        /** 간이과세 with the year's sales so far under [SIMPLE_EXEMPT]: no 부가세 to pay. */
+        val exempt: Boolean = false,
     ) {
-        val from: LocalDate get() = LocalDate.of(year, if (half == 1) 1 else 7, 1)
+        val from: LocalDate get() = LocalDate.of(year, if (half == 2) 7 else 1, 1)
         val to: LocalDate get() = if (half == 1) LocalDate.of(year, 6, 30) else LocalDate.of(year, 12, 31)
     }
 
     /** Proofs a cost's VAT can be taken off with. */
     val DEDUCTIBLE = setOf("세금계산서", "카드 영수증", "현금영수증")
 
-    /** The half year [date] falls in. */
+    /** The half year [date] falls in, or for 간이과세 its year. */
     fun of(date: LocalDate, sales: List<DailySales>, entries: List<MoneyEntry>, rules: ShopMoney): Half {
-        val half = if (date.monthValue <= 6) 1 else 2
-        val from = LocalDate.of(date.year, if (half == 1) 1 else 7, 1)
+        val half = if (rules.simpleTax) 0 else if (date.monthValue <= 6) 1 else 2
+        val from = LocalDate.of(date.year, if (half == 2) 7 else 1, 1)
         val to = if (half == 1) LocalDate.of(date.year, 6, 30) else LocalDate.of(date.year, 12, 31)
         val inHalf = { d: LocalDate -> !d.isBefore(from) && !d.isAfter(to) }
         val s = sales.filter { inHalf(it.date) }
         val spent = entries.filter { inHalf(it.date) && it.kind == MoneyKind.EXPENSE }
         val total = s.sumOf { it.sales }
         val proven = spent.filter { it.proof in DEDUCTIBLE }.sumOf { it.amount }
-        val vat = if (rules.simpleTax) total * rules.valueAddedPercent.coerceIn(0, 100) / 1_000
+        val exempt = rules.simpleTax && total < SIMPLE_EXEMPT
+        val vat = if (exempt) 0 else if (rules.simpleTax) total * rules.valueAddedPercent.coerceIn(0, 100) / 1_000
         else ((total - proven).coerceAtLeast(0)) * 10 / 110
         return Half(
             year = date.year, half = half, sales = total, expenses = s.sumOf { it.costs } + spent.sumOf { it.amount },
             provenExpenses = proven, vat = vat,
             due = if (half == 1) LocalDate.of(date.year, 7, 25) else LocalDate.of(date.year + 1, 1, 25),
+            exempt = exempt,
         )
     }
 }

@@ -10,7 +10,7 @@ data class TakeHomeResult(val gross: Long, val deductions: List<Pair<String, Lon
 
 /**
  * [HRLY-04] 예상 실수령 from a month's pay before tax. 3.3% is [Withholding.of]. 4대보험 takes the 2026
- * employee shares (국민연금 4.75%, 건강보험 3.595%, 장기요양 = 건강보험료 × 13.14%, 고용보험 0.9%), each
+ * employee shares (국민연금 4.75% of [pensionBase], 건강보험 3.595%, 장기요양 = 건강보험료 × 13.14%, 고용보험 0.9%), each
  * cut to 10원, and a 근로소득세 worked out like the 간이세액표 from a year of this month's pay. The tax is
  * an approximation, labelled 참고용: the real one comes from the employer's table and year-end settlement.
  */
@@ -19,6 +19,9 @@ object TakeHome {
     const val HEALTH_RATE = 0.03595
     const val CARE_OF_HEALTH = 0.1314
     const val EMPLOYMENT_RATE = 0.009
+    /** 국민연금 기준소득월액 하한·상한 (2025.7~2026.6 고시): pension is on the pay kept within these. */
+    const val PENSION_BASE_MIN = 400_000L
+    const val PENSION_BASE_MAX = 6_370_000L
 
     fun estimate(gross: Long, mode: TaxMode, dependents: Int = 1): TakeHomeResult {
         val g = gross.coerceAtLeast(0)
@@ -26,7 +29,7 @@ object TakeHome {
             TaxMode.NONE -> emptyList()
             TaxMode.WITHHOLDING_3_3 -> listOf("원천징수 3.3%" to Withholding.of(g))
             TaxMode.INSURANCE_4 -> {
-                val pension = cut10(g * PENSION_RATE)
+                val pension = if (g == 0L) 0L else cut10(pensionBase(g) * PENSION_RATE)
                 val health = cut10(g * HEALTH_RATE)
                 val care = cut10(health * CARE_OF_HEALTH)
                 val employment = cut10(g * EMPLOYMENT_RATE)
@@ -43,6 +46,9 @@ object TakeHome {
         }
         return TakeHomeResult(g, deductions, g - deductions.sumOf { it.second })
     }
+
+    /** 기준소득월액: the pay, at least [PENSION_BASE_MIN] and at most [PENSION_BASE_MAX] (cut to 1,000원 as the 공단 does). */
+    fun pensionBase(gross: Long): Long = (gross / 1_000 * 1_000).coerceIn(PENSION_BASE_MIN, PENSION_BASE_MAX)
 
     /**
      * A month's 근로소득세, simplified from the 간이세액표: a year of [monthly] pay less 근로소득공제, 인적공제

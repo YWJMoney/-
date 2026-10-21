@@ -25,7 +25,7 @@ import kotlin.coroutines.resume
 
 /**
  * [SHFT-08][REL-09] Sends the main calendar (the one the home widgets show) to a paired Wear OS watch through
- * the Wearable Data Layer: the days from the start of this month to [WatchDays.DAYS] ahead, the next alarm
+ * the Wearable Data Layer: the days from last month's 1st to the end of next month ([WatchDays.window]), the next alarm
  * and when it was sent. The Data Layer goes phone to watch directly (Bluetooth or Wi-Fi via Google Play
  * services); nothing goes to the app's servers. On a phone with no watch it only keeps one small item locally.
  */

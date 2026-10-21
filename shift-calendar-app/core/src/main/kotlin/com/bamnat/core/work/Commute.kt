@@ -42,6 +42,8 @@ object Commute {
         val from = day.shiftFrom ?: return Write.None
         val to = day.shiftTo ?: return Write.None
         if (!day.isWorkDay) return Write.None
+        // On a 반차 day which half was taken is not known, so a late arrival may be the planned one.
+        if (partialLeave(day)) return Write.None
         val t = if (rounding) DayWork.round(at) else at
         return if (Duration.between(from, t).toMinutes() > SLACK_MINUTES && t.isBefore(to)) Write.Late(t.toLocalTime(), to.toLocalTime()) else Write.None
     }
@@ -62,7 +64,7 @@ object Commute {
                     val minutes = past.toInt().coerceAtMost(16 * 60)
                     Write.Overtime(ExtraEntry(ExtraKind.OVERTIME_ID, start = to.toLocalTime(), end = to.plusMinutes(minutes.toLong()).toLocalTime()), minutes)
                 }
-                past < -SLACK_MINUTES && t.isAfter(from) -> Write.EarlyEnd(from.toLocalTime(), t.toLocalTime())
+                past < -SLACK_MINUTES && t.isAfter(from) && !partialLeave(day) -> Write.EarlyEnd(from.toLocalTime(), t.toLocalTime())
                 else -> Write.None
             }
         }
@@ -134,15 +136,26 @@ object Commute {
     fun cameBack(pending: LocalDateTime, at: LocalDateTime, waitMinutes: Long): Boolean =
         Math.abs(Duration.between(pending, at).toMinutes()) <= waitMinutes
 
-    /** The planned shift's end: the shift type's own times, not the day's written ones. */
+    /** A 반차·반반차 day: the resolver shortens its end by the leave. */
+    private fun partialLeave(day: ResolvedDay): Boolean = day.leave?.isFullDay == false
+
+    /**
+     * The planned shift's end, never an end written earlier: the later of the day's end and the shift type's
+     * (Commute only writes ends at or before the type's, so a later one is the user's own longer day). On a
+     * 반차 day the full day's end, since the leave already shortened [ResolvedDay.end] (13:30–18:00 is not 잔업).
+     */
     private fun plannedTo(day: ResolvedDay): LocalDateTime {
+        val from = day.shiftFrom!!
+        val own = if (partialLeave(day)) {
+            val fullEnd = if (day.hasCustomTimes) day.entry?.customEnd else day.shiftType?.end
+            fullEnd?.let { ResolvedDay.endAfter(from, it) } ?: day.shiftTo!!
+        } else day.shiftTo!!
         val type = day.shiftType
         val ts = type?.start
         val te = type?.end
-        if (!day.hasCustomTimes || ts == null || te == null) return day.shiftTo!!
-        val from = day.date.atTime(ts)
-        val to = day.date.atTime(te)
-        return if (to.isAfter(from)) to else to.plusDays(1)
+        if (!day.hasCustomTimes || ts == null || te == null) return own
+        val typeEnd = ResolvedDay.endAfter(day.date.atTime(ts), te)
+        return if (typeEnd.isAfter(own)) typeEnd else own
     }
 
     private fun replace(extras: List<ExtraEntry>, add: ExtraEntry): List<ExtraEntry> {

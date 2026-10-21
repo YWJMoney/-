@@ -171,7 +171,11 @@ class ShiftP3Test {
         val r = ScheduleResolver(Fixtures.all, pattern, emptyList())
         val today = LocalDate.of(2026, 10, 20)
         val (from, until) = WatchDays.window(today)
-        assertEquals(LocalDate.of(2026, 9, 19), from)
+        // Last month's 1st to the end of next month (the watch's month view), at least 45 days ahead.
+        assertEquals(LocalDate.of(2026, 9, 1), from)
+        assertEquals(LocalDate.of(2026, 12, 4), until)
+        assertEquals(LocalDate.of(2026, 11, 30), WatchDays.window(LocalDate.of(2026, 10, 5)).second)
+        assertEquals(LocalDate.of(2027, 3, 16), WatchDays.window(LocalDate.of(2027, 1, 30)).second)
         val days = WatchDays.of(from, until, r::resolve)
         val p = WatchPayload(days, LocalDateTime.of(2026, 10, 20, 8, 0), LocalDateTime.of(2026, 10, 20, 21, 0), "야간 근무", "내 달력")
         val back = WatchDays.decode(WatchDays.encode(p))!!

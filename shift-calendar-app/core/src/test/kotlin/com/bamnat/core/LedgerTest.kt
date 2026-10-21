@@ -128,6 +128,20 @@ class LedgerTest {
         val alerts = MoneyAlerts.all(emptyList(), emptyList(), lines, d(10), accounts = accounts)
         assertEquals(listOf(LocalDateTime.of(2026, 11, 11, 9, 0), LocalDateTime.of(2026, 11, 14, 9, 0)),
             alerts.filter { it.key.startsWith("card-3-2026-11-14") }.map { it.at })
+        // The old 카드값 line is not reminded beside the card's own bill.
+        assertTrue(MoneyAlerts.all(emptyList(), listOf(old), lines, d(10), accounts = accounts).none { it.key.startsWith("bill-9-") })
+    }
+
+    @Test fun aSplitIncomeLineCountsItsPayShareAsPay() {
+        val pay = MoneyEntry(date = d(10), kind = MoneyKind.INCOME, amount = 2_300_000, category = MoneyCategories.SALARY, parts = listOf(EntryPart("상여", 300_000)))
+        val m = MoneyCalculator.month(nov, listOf(pay), emptyList(), emptyList(), payEstimate = 2_100_000)
+        assertEquals(2_000_000L, m.payRecorded)
+        assertEquals(300_000L, m.otherIncome)
+        assertEquals(2_000_000L, com.bamnat.core.pay.PayGaps.received(nov, null, listOf(pay))!!.first)
+        val side = MoneyEntry(date = d(12), kind = MoneyKind.INCOME, amount = 500_000, category = "부수입", parts = listOf(EntryPart(MoneyCategories.SALARY, 200_000)))
+        val m2 = MoneyCalculator.month(nov, listOf(side), emptyList(), emptyList())
+        assertEquals(200_000L, m2.payRecorded)
+        assertEquals(300_000L, m2.otherIncome)
     }
 
     @Test fun parsedInstallmentsAreKept() {
@@ -150,6 +164,15 @@ class LedgerTest {
         assertEquals(listOf(d(6), d(13)), due.map { it.date })
         assertEquals(listOf(1L, 1L), due.map { it.fixedId })
         assertTrue(Recurring.due(listOf(weekly), due, d(15)).isEmpty())
+        // Caught up to the 13th: the line deleted afterwards is not written again, the 20th is.
+        assertTrue(Recurring.due(listOf(weekly), emptyList(), d(15), mapOf(1L to d(15))).isEmpty())
+        assertEquals(listOf(d(20)), Recurring.due(listOf(weekly), emptyList(), d(21), mapOf(1L to d(15))).map { it.date })
+        // An older line without a first day catches up from the last day it was caught up to, else today only.
+        val old = weekly.copy(start = null)
+        assertEquals(listOf(d(6), d(13)), Recurring.due(listOf(old), emptyList(), d(15), mapOf(1L to d(1))).map { it.date })
+        assertTrue(Recurring.due(listOf(old), emptyList(), d(15)).isEmpty())
+        assertEquals(d(14), Recurring.startMark(old, d(15)))
+        assertEquals(d(1).minusDays(1), Recurring.startMark(weekly, d(15)))
         // A line written by hand a day late still counts for that week, even after a rename.
         val late = UpcomingPayments.entry(weekly, d(14))
         assertTrue(UpcomingPayments.recorded(weekly.copy(name = "알바 주급"), d(13), listOf(late)))

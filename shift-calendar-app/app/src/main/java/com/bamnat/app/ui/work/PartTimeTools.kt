@@ -445,7 +445,7 @@ private fun QuitScreen(calendarId: String, profile: PayProfile?, snapshot: Sched
     val week = remember(snapshot, lastWork, weekStart) {
         HourlyWork.week(lastWork.with(TemporalAdjusters.previousOrSame(weekStart)), resolve).let { w ->
             // Days after the last day worked are not worked, whatever the schedule says.
-            val cut = (0L..6L).map { w.start.plusDays(it) }.filter { it.isAfter(lastWork) }.sumOf { resolve(it).totalMinutes }
+            val cut = (0L..6L).map { w.start.plusDays(it) }.filter { it.isAfter(lastWork) }.sumOf { HourlyWork.paidMinutes(resolve(it)) }
             w.copy(minutes = w.minutes - cut)
         }
     }

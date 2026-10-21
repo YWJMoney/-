@@ -226,6 +226,8 @@ class WorkToolsTest {
         assertNull(m.ratio(0))
         // With the legal break a 4-hour shift is paid 3.5 hours.
         assertEquals(210, shift.paidMinutes(true))
-        assertEquals(60 * 7, StaffShift(LocalTime.of(22, 0), LocalTime.of(6, 0)).paidMinutes(true))
+        // 8 hours on the clock: 30 minutes off leaves 7½ hours, which needs no more.
+        assertEquals(450, StaffShift(LocalTime.of(22, 0), LocalTime.of(6, 0)).paidMinutes(true))
+        assertEquals(60 * 8, StaffShift(LocalTime.of(22, 0), LocalTime.of(7, 0)).paidMinutes(true))
     }
 }
