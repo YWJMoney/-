@@ -2071,6 +2071,42 @@ class ScreenshotTest {
     @Test fun phonePrivacyLock() = shoot("374_phone_settings_privacy_lock", PHONE) { settingsPage("개인정보와 권한") }
     @Test fun smallPhoneQuickInput() = shoot("368_small_phone_quick_input", SMALL_PHONE) { tapText("빠른 입력", exact = true) }
 
+    // ---- [208] Store pictures (1.18.0): a common phone, no one-time hints, the phone's alarm permissions given ----
+    private fun clean(then: Screen.() -> Unit = {}): Screen.() -> Unit {
+        shadowOf(app).grantPermissions(Manifest.permission.USE_FULL_SCREEN_INTENT, Manifest.permission.POST_NOTIFICATIONS)
+        // Robolectric cannot grant the full-screen permission, so the phone is told it predates Android 14,
+        // where it needs none; Robolectric puts the SDK level back before the next test.
+        org.robolectric.util.ReflectionHelpers.setStaticField(android.os.Build.VERSION::class.java, "SDK_INT", 33)
+        com.bamnat.app.ui.calendar.HintStore(app).markDone(com.bamnat.app.ui.calendar.HintStore.SHARE)
+        return then
+    }
+    @Test fun store1Calendar() = shoot("store_1_calendar", PHONE, clean())
+    @Test fun store2Teams() = shoot("store_2_teams", PHONE, clean { teams() })
+    @Test fun store3Pay() = shoot("store_3_pay", PHONE, clean(payScreen(Tier.PRO, withProfile = true)))
+    @Test fun store4CoverAsk() = shoot("store_4_cover", PHONE, clean { coverAsk() })
+    @Test fun store5Day() = shoot("store_5_day", PHONE, clean { openDay(dayCell) })
+    @Test fun store6Weeks() = shoot("store_6_weeks", PHONE, clean {
+        app.container.settingsRepository.update { it.copy(statsLayout = "weeks,three,-tiles,-pay,kinds,trend") }
+        tab(3, wide = false)
+    })
+    @Test fun store7Styles() = shoot("store_7_styles", PHONE) {
+        content { com.bamnat.app.ui.work.WorkStyleScreen(current = null, onPick = {}) }
+    }
+    @Test fun store8Inquiry() {
+        inquiriesOn(asked = true)
+        shoot("store_8_inquiry", PHONE, clean { inquiryThread() })
+    }
+    @Test fun storeTablet() = shoot("store_tablet", UNFOLDED, clean())
+    @Test fun storeTabletYear() {
+        // The sample pattern starts in July; for the store the same rotation fills the whole year.
+        runBlocking {
+            val repo = app.container.scheduleRepository
+            val p = repo.pattern.first() as WorkPattern.Rotation
+            repo.savePattern(p.copy(startDate = LocalDate.of(2026, 1, 1), anchorDate = p.startDate))
+        }
+        shoot("store_tablet_year", UNFOLDED, clean { year() })
+    }
+
     @Test fun foldedCalendarShare() = shoot("320_folded_calendar_share", FOLDED)
     @Test fun unfoldedCalendarShare() = shoot("321_unfolded_calendar_share", UNFOLDED)
     @Test fun phoneCalendarShare() = shoot("322_phone_calendar_share", PHONE)
