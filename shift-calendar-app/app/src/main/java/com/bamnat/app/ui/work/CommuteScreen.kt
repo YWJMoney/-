@@ -50,6 +50,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
+import com.bamnat.app.alarm.Notifications
 import com.bamnat.app.commute.CommuteRecorder
 import com.bamnat.app.data.CommutePrefs
 import com.bamnat.app.data.PersonalCalendar
@@ -115,10 +116,7 @@ class CommuteViewModel(private val container: AppContainer) : ViewModel() {
         CommuteRecorder.sync(container.appContext)
     }
 
-    fun turnOff() {
-        prefs.setEnabled(false)
-        CommuteRecorder.sync(container.appContext)
-    }
+    fun turnOff() = CommuteRecorder.turnOff(container.appContext)
 
     fun setRadius(m: Int) { prefs.setRadius(m); CommuteRecorder.sync(container.appContext) }
     fun setAuto(auto: Boolean) = prefs.setAuto(auto)
@@ -139,30 +137,34 @@ fun CommuteScreen(vm: CommuteViewModel, onBack: () -> Unit) {
     var disclosure by remember { mutableStateOf(false) }
     var askAlways by remember { mutableStateOf(false) }
     var refused by remember { mutableIntStateOf(0) }
+    var canNotify by remember { mutableStateOf(Notifications.canPost(context)) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         fine = CommuteRecorder.hasForeground(context)
         background = CommuteRecorder.hasBackground(context)
+        canNotify = Notifications.canPost(context)
         vm.resync()
     }
-    val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { canNotify = Notifications.canPost(context) }
+    // [DAYW-07] Asking first needs the notice: every way of turning it on (or of choosing to be asked) asks for it.
+    fun askNotices(auto: Boolean = vm.state.value.auto) {
+        if (!auto && !Notifications.canPost(context) && Build.VERSION.SDK_INT >= 33) notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+    fun turnOn() { vm.turnOn(); askNotices() }
     val backgroundAsk = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         background = ok || CommuteRecorder.hasBackground(context)
-        if (background) {
-            vm.turnOn()
-            if (Build.VERSION.SDK_INT >= 33 && !s.auto) notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else refused++
+        if (background) turnOn() else refused++
     }
     val foregroundAsk = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         fine = result[Manifest.permission.ACCESS_FINE_LOCATION] == true || CommuteRecorder.hasForeground(context)
-        if (fine) vm.useHere { if (CommuteRecorder.hasBackground(context)) vm.turnOn() else askAlways = true } else refused++
+        if (fine) vm.useHere { if (CommuteRecorder.hasBackground(context)) turnOn() else askAlways = true } else refused++
     }
 
     fun start() {
         when {
             !fine -> foregroundAsk.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-            !s.hasPlace -> vm.useHere { if (CommuteRecorder.hasBackground(context)) vm.turnOn() else askAlways = true }
+            !s.hasPlace -> vm.useHere { if (CommuteRecorder.hasBackground(context)) turnOn() else askAlways = true }
             !background -> askAlways = true
-            else -> vm.turnOn()
+            else -> turnOn()
         }
     }
 
@@ -196,6 +198,12 @@ fun CommuteScreen(vm: CommuteViewModel, onBack: () -> Unit) {
                 WarningBanner("위치 권한이 ‘항상 허용’이 아니에요", "앱을 닫아 두면 출퇴근을 적지 못해요. 위치 권한에서 ‘항상 허용’을 골라 주세요.")
                 OutlinedButton(onClick = { start() }, modifier = Modifier.fillMaxWidth()) { Text("권한 다시 확인") }
             }
+            if (!s.auto && !canNotify) {
+                WarningBanner("알림이 꺼져 있어요", "‘물어보고 적기’는 알림으로 물어봐요. 알림을 켜거나 ‘바로 적기’를 골라 주세요.")
+                OutlinedButton(onClick = {
+                    context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+                }, modifier = Modifier.fillMaxWidth()) { Text("알림 켜기") }
+            }
             SectionCard(title = "회사 위치") {
                 Text(if (s.hasPlace) "위도 %.5f, 경도 %.5f · 반경 %dm".format(s.lat, s.lng, s.radius) else "아직 정하지 않았어요",
                     style = MaterialTheme.typography.bodyMedium)
@@ -213,7 +221,7 @@ fun CommuteScreen(vm: CommuteViewModel, onBack: () -> Unit) {
             }
             SectionCard(title = "적는 방법") {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selected = !s.auto, onClick = { vm.setAuto(false) }, label = { Text("물어보고 적기") })
+                    FilterChip(selected = !s.auto, onClick = { vm.setAuto(false); askNotices(auto = false) }, label = { Text("물어보고 적기") })
                     FilterChip(selected = s.auto, onClick = { vm.setAuto(true) }, label = { Text("바로 적기") })
                 }
                 Text(if (s.auto) "도착·퇴근을 바로 달력에 적고 알림으로 알려 줘요." else "알림에서 ‘맞아요’를 누르면 달력에 적어요.",
@@ -260,7 +268,7 @@ fun CommuteScreen(vm: CommuteViewModel, onBack: () -> Unit) {
         confirmButton = {
             TextButton(onClick = {
                 askAlways = false
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) backgroundAsk.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION) else vm.turnOn()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) backgroundAsk.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION) else turnOn()
             }) { Text("계속") }
         },
         dismissButton = { TextButton(onClick = { askAlways = false }) { Text("나중에") } },

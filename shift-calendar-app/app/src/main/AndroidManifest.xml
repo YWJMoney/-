@@ -164,15 +164,12 @@
             </intent-filter>
         </service>
 
-        <!-- [DAYW-07] Workplace geofence crossings and 맞아요·아니요 on the record's notice. -->
+        <!-- [DAYW-07] Workplace geofence crossings and 맞아요·아니요 on the record's notice. Location turned
+             back on (PROVIDERS_CHANGED) no longer reaches a manifest receiver; CommuteRecorder listens for it
+             while the feature is on. -->
         <receiver
             android:name=".commute.CommuteReceiver"
-            android:exported="false">
-            <!-- Location turned back on: the geofence the system dropped is put back. -->
-            <intent-filter>
-                <action android:name="android.location.PROVIDERS_CHANGED" />
-            </intent-filter>
-        </receiver>
+            android:exported="false" />
 
         <!-- [SHFT-08] The Wear OS app asks for fresh days when it opens; only Google Play services binds it. -->
         <service

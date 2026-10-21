@@ -21,14 +21,19 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.AppContainer
 import com.bamnat.app.appContainer
+import com.bamnat.app.data.CommutePrefs
 import com.bamnat.app.data.GuideStore
 import com.bamnat.app.ui.settings.SearchText
 import com.bamnat.core.guide.AppFeature
@@ -81,9 +86,13 @@ fun FeatureHelpRow(feature: AppFeature, modifier: Modifier = Modifier) {
     val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
     val calendars by c.calendars.calendars.collectAsStateWithLifecycle()
     val active by c.calendars.active.collectAsStateWithLifecycle()
+    val commute by CommutePrefs.get(context).state.collectAsStateWithLifecycle()
+    // A switch turned on in the phone's settings (결제 알림 읽기): read again on coming back.
+    var resumed by remember { mutableIntStateOf(0) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { resumed++ }
     val style = c.calendars.styleOf(active, settings.workStyle)
     val fits = feature.fits(style)
-    val on = remember(guide, settings, calendars, active, feature.id) { FeatureSwitches.isOn(c, feature, active) }
+    val on = remember(guide, settings, calendars, active, commute, resumed, feature.id) { FeatureSwitches.isOn(c, feature, active) }
     val scheme = MaterialTheme.colorScheme
     Surface(shape = MaterialTheme.shapes.large, color = scheme.surfaceContainerLow, modifier = modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {

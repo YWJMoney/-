@@ -57,8 +57,21 @@ class GuideStore private constructor(context: Context) {
         if (next != now) writeChecklist(calendar, next)
     }
 
-    /** [GUIDE-05] '안내 카드 다시 보기': the checklist again from today, for its days. */
-    fun restartChecklist(calendar: String, style: WorkStyle?, today: LocalDate) = writeChecklist(calendar, ChecklistState(style, today))
+    /**
+     * [GUIDE-05] '안내 카드 다시 보기': the checklist again from today, for its days. The card is switched back on
+     * and its lines are untried again, else a list all tried (or switched off) would still not show.
+     */
+    fun restartChecklist(calendar: String, style: WorkStyle?, today: LocalDate) {
+        val list = GuideChecklist.features(style).map { it.id }.toSet()
+        val switch = FeatureRegistry.get(LIST_ID)
+        val offKey = switch?.let { GuideState.offKey(if (it.off == Off.APP) GuideState.ALL else calendar, it.id) }
+        val s = ChecklistState(style, today)
+        edit {
+            putStringSet(K_USED, current.used - list)
+            if (offKey != null) putStringSet(K_OFF, current.off - offKey)
+            putString(K_LIST + calendar, encode(s))
+        }
+    }
 
     fun later(calendar: String, today: LocalDate) {
         current.checklists[calendar]?.let { writeChecklist(calendar, it.copy(laterUntil = today.plusDays(GuideChecklist.LATER_DAYS))) }
@@ -68,9 +81,10 @@ class GuideStore private constructor(context: Context) {
         current.checklists[calendar]?.let { writeChecklist(calendar, it.copy(dismissed = true)) }
     }
 
-    private fun writeChecklist(calendar: String, s: ChecklistState) = edit {
-        putString(K_LIST + calendar, listOf(s.style?.name ?: "", s.startedOn, if (s.dismissed) "1" else "0", s.laterUntil ?: "").joinToString("|"))
-    }
+    private fun writeChecklist(calendar: String, s: ChecklistState) = edit { putString(K_LIST + calendar, encode(s)) }
+
+    private fun encode(s: ChecklistState) =
+        listOf(s.style?.name ?: "", s.startedOn, if (s.dismissed) "1" else "0", s.laterUntil ?: "").joinToString("|")
 
     /** [GUIDE-05] The switches turned off, for a backup. */
     fun exportOff(): JSONArray = JSONArray(current.off.sorted())
@@ -119,6 +133,7 @@ class GuideStore private constructor(context: Context) {
         private const val K_TIP_ID = "tip_id"
         private const val K_TIP_CLOSED = "tip_closed"
         private const val K_LIST = "list_"
+        private const val LIST_ID = "guide.checklist"
 
         @Volatile private var instance: GuideStore? = null
 

@@ -9,7 +9,10 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.location.LocationManager
+import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -28,6 +31,7 @@ import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -55,6 +59,8 @@ object CommuteRecorder {
     const val ACTION_NO = "com.bamnat.app.commute.NO"
     const val EXTRA_ARRIVE = "arrive"
     const val EXTRA_AT = "at"
+    const val EXTRA_DATE = "date"
+    const val EXTRA_ARRIVED = "arrived"
 
     fun hasForeground(context: Context) = granted(context, Manifest.permission.ACCESS_FINE_LOCATION)
 
@@ -69,13 +75,24 @@ object CommuteRecorder {
         return PendingIntent.getBroadcast(context, REQ_FENCE, Intent(context, CommuteReceiver::class.java).setAction(ACTION_FENCE), flags)
     }
 
-    /** Puts the geofence in place when the feature is on with a workplace and the permissions, takes it away otherwise. */
+    /**
+     * Puts the geofence in place when the feature is on with a workplace and the permissions, takes it away otherwise.
+     * [DAYW-07] The same circle already handed over is left alone (re-adding it drops a crossing on its way);
+     * [force] puts it back after a reboot, an update, GEOFENCE_NOT_AVAILABLE or location coming back on.
+     */
     @SuppressLint("MissingPermission")
-    fun sync(context: Context) {
-        val s = CommutePrefs.get(context).current
+    fun sync(context: Context, force: Boolean = false) {
+        val prefs = CommutePrefs.get(context)
+        val s = prefs.current
+        watchProviders(context, s.enabled)
         val client = runCatching { LocationServices.getGeofencingClient(context) }.getOrNull() ?: return
-        runCatching { client.removeGeofences(fenceIntent(context)) }
-        if (!s.enabled || !s.hasPlace || !hasForeground(context) || !hasBackground(context)) return
+        if (!s.enabled || !s.hasPlace || !hasForeground(context) || !hasBackground(context)) {
+            runCatching { client.removeGeofences(fenceIntent(context)) }
+            if (s.fence != null) prefs.fenceRegistered(null)
+            return
+        }
+        val key = fenceKey(s)
+        if (!force && s.fence == key) return
         val fence = Geofence.Builder()
             .setRequestId(FENCE_ID)
             .setCircularRegion(s.lat!!, s.lng!!, s.radius.toFloat())
@@ -84,8 +101,78 @@ object CommuteRecorder {
             // A couple of minutes late saves the battery; the times are rounded to 10 minutes anyway.
             .setNotificationResponsiveness(2 * 60 * 1000)
             .build()
-        val request = GeofencingRequest.Builder().setInitialTrigger(0).addGeofence(fence).build()
-        runCatching { client.addGeofences(request, fenceIntent(context)) }
+        // The same request id replaces the old circle, no removing first. Already inside says so once; a
+        // second arrival in the same shift is not taken again.
+        val request = GeofencingRequest.Builder().setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER).addGeofence(fence).build()
+        runCatching {
+            client.addGeofences(request, fenceIntent(context))
+                .addOnSuccessListener { prefs.fenceRegistered(key) }
+                .addOnFailureListener { prefs.fenceRegistered(null) }
+        }
+    }
+
+    fun fenceKey(s: CommutePrefs.State): String = "${s.lat},${s.lng},${s.radius}"
+
+    /**
+     * [DAYW-07] The one way to turn it off (출퇴근 화면, 기능 스위치): the workplace and the day's records go,
+     * the geofence is taken away and the wait after a leave is called off, so no location is checked any more.
+     */
+    fun turnOff(context: Context) {
+        CommutePrefs.get(context).setEnabled(false)
+        sync(context)
+        cancelFinish(context)
+    }
+
+    @Volatile private var providers: BroadcastReceiver? = null
+
+    /**
+     * [DAYW-07] Location turned back on: the system dropped the geofence, so it goes back. A manifest receiver
+     * no longer hears this broadcast (Android 8), so it is listened for while the app runs and the feature is on.
+     */
+    private fun watchProviders(context: Context, on: Boolean) = synchronized(this) {
+        val app = context.applicationContext
+        val current = providers
+        if (on && current == null) {
+            val r = CommuteReceiver()
+            runCatching {
+                ContextCompat.registerReceiver(app, r, IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION), ContextCompat.RECEIVER_NOT_EXPORTED)
+                providers = r
+            }
+        } else if (!on && current != null) {
+            runCatching { app.unregisterReceiver(current) }
+            providers = null
+        }
+    }
+
+    /** What coming in means: a walk out, a leave taken back, nothing new (the shift is open), or 출근. */
+    enum class Enter { WALK, UNDO_LEAVE, OPEN, ARRIVE }
+
+    /** [finishFirst]: the leave still waiting is 퇴근 and is written before [then]. */
+    data class EnterPlan(val finishFirst: Boolean, val then: Enter)
+
+    /** [DAYW-07] The arrival whose shift [at] still falls in (under [Commute.MAX_SHIFT_MINUTES] old), also across midnight. */
+    fun openArrival(s: CommutePrefs.State, at: LocalDateTime): LocalDateTime? =
+        s.arrivedAt?.takeIf { Duration.between(it, at).toMinutes() in 0 until Commute.MAX_SHIFT_MINUTES }
+
+    /** [DAYW-07] Coming in at [at], read against the state before it. */
+    fun onEnter(s: CommutePrefs.State, at: LocalDateTime): EnterPlan {
+        val pending = s.pendingLeave
+        if (pending != null) {
+            // Back within the wait: the leave was a walk, not 퇴근 — by the minutes, also across midnight.
+            if (Commute.cameBack(pending, at, LEAVE_WAIT_MINUTES)) return EnterPlan(false, Enter.WALK)
+            // The wait's alarm came late (it is inexact): back while the same shift is open is still a walk.
+            val open = openArrival(s, at)
+            if (open != null && pending.isAfter(open)) return EnterPlan(false, Enter.WALK)
+            return EnterPlan(true, afterLeave(s.copy(leftAt = pending, pendingLeave = null), at))
+        }
+        return EnterPlan(false, afterLeave(s, at))
+    }
+
+    private fun afterLeave(s: CommutePrefs.State, at: LocalDateTime): Enter {
+        val open = openArrival(s, at) ?: return Enter.ARRIVE
+        // Back while the shift is open after a leave was already taken (a long lunch): that leave was not 퇴근.
+        val left = s.leftAt
+        return if (left != null && left.isAfter(open) && at.isAfter(left)) Enter.UNDO_LEAVE else Enter.OPEN
     }
 
     /** A geofence crossing at [at]. */
@@ -94,21 +181,14 @@ object CommuteRecorder {
         val s = prefs.current
         if (!s.enabled) return
         if (entering) {
-            // Back within the wait: the leave was a walk, not 퇴근 — by the minutes, also across midnight.
-            if (s.pendingLeave != null && Commute.cameBack(s.pendingLeave, at, LEAVE_WAIT_MINUTES)) {
-                prefs.leavePending(null)
-                cancelFinish(context)
-                return
+            val plan = onEnter(s, at)
+            if (plan.finishFirst) finishLeave(context)
+            when (plan.then) {
+                Enter.WALK -> { prefs.leavePending(null); cancelFinish(context) }
+                Enter.UNDO_LEAVE -> undoLeave(context, openArrival(s, at)!!.toLocalDate())
+                Enter.OPEN -> Unit
+                Enter.ARRIVE -> { prefs.arrived(at); propose(context, arrive = true, at = at) }
             }
-            // Back the same day after a leave was already taken (a long lunch): that leave was not 퇴근.
-            val left = s.leftAt
-            if (left != null && s.arrivalOn(at.toLocalDate()) != null && left.toLocalDate() == at.toLocalDate() && at.isAfter(left)) {
-                undoLeave(context, at.toLocalDate())
-                return
-            }
-            if (s.arrivalOn(at.toLocalDate()) != null) return
-            prefs.arrived(at)
-            propose(context, arrive = true, at = at)
         } else {
             if (Commute.leaveDay(at, s.arrivedAt, s.leftAt) == null) return
             prefs.leavePending(at)
@@ -116,18 +196,19 @@ object CommuteRecorder {
         }
     }
 
-    /** The day as it was before the last leave, which turned out to be a walk; its notice goes too. */
-    private suspend fun undoLeave(context: Context, today: LocalDate) {
+    /** The shift as it was before the last leave, which turned out to be a walk; its notice goes too. */
+    private suspend fun undoLeave(context: Context, shiftDay: LocalDate) {
         val prefs = CommutePrefs.get(context)
         val s = prefs.current
         val date = s.undoDate
         val undo = s.undo
-        if (date == today && undo != null && c(context).calendars.get(s.calendarId) != null) {
+        // Only a leave written on the open shift's own day is put back.
+        if (date == shiftDay && undo != null && c(context).calendars.get(s.calendarId) != null) {
             c(context).calendars.repository(s.calendarId).updateDay(date) { Commute.undo(it, undo) }
         }
         prefs.leaveUndone()
         cancelFinish(context)
-        dismiss(context)
+        Notifications.cancel(context, NOTICE_ID, tag(false, shiftDay))
     }
 
     private fun c(context: Context) = context.appContainer
@@ -152,37 +233,61 @@ object CommuteRecorder {
         if (!now.isBefore(due)) finishLeave(context) else scheduleFinish(context, due)
     }
 
-    /** What the record writes on its calendar now, read against that day as it stands. */
-    private suspend fun plan(context: Context, arrive: Boolean, at: LocalDateTime): Pair<LocalDate, Commute.Write>? {
+    /** A record: arriving or leaving at [at], for the shift of [date] arrived on at [arrived]. */
+    data class Record(val arrive: Boolean, val at: LocalDateTime, val date: LocalDate, val arrived: LocalDateTime?)
+
+    /** Which day a record goes on, from the state when it was seen. */
+    fun record(s: CommutePrefs.State, arrive: Boolean, at: LocalDateTime): Record? {
+        if (arrive) return Record(true, at, at.toLocalDate(), at)
+        // A leave after midnight belongs to the day arrived on, while that arrival is recent and still open.
+        val date = Commute.leaveDay(at, s.arrivedAt, s.leftAt) ?: return null
+        return Record(false, at, date, s.arrivalOn(date))
+    }
+
+    /** What [r] writes on its calendar now, read against that day as it stands. */
+    private suspend fun plan(context: Context, r: Record): Commute.Write? {
         val c = context.appContainer
         val s = CommutePrefs.get(context).current
         if (c.calendars.get(s.calendarId) == null) return null
-        val resolver = c.calendars.repository(s.calendarId).snapshot.first().resolver
-        // A leave after midnight belongs to the day arrived on, while that arrival is recent and still open.
-        val date = if (arrive) at.toLocalDate() else Commute.leaveDay(at, s.arrivedAt, s.leftAt) ?: return null
-        val day = resolver.resolve(date)
-        val write = if (arrive) Commute.arrive(day, at) else Commute.leave(day, s.arrivalOn(date), at)
-        return date to write
+        val day = c.calendars.repository(s.calendarId).snapshot.first().resolver.resolve(r.date)
+        return if (r.arrive) Commute.arrive(day, r.at) else Commute.leave(day, r.arrived, r.at)
     }
 
     private suspend fun propose(context: Context, arrive: Boolean, at: LocalDateTime) {
-        val (date, write) = plan(context, arrive, at) ?: return
+        val r = record(CommutePrefs.get(context).current, arrive, at) ?: return
+        val write = plan(context, r) ?: return
         if (write == Commute.Write.None) return
         val s = CommutePrefs.get(context).current
         if (s.auto) {
-            apply(context, date, write)
-            notify(context, "${what(write)} 적었어요", "${if (arrive) "회사에 도착" else "회사에서 나감"} ${Fmt.time(at.toLocalTime())}. 달력에서 언제든 고칠 수 있어요.", null)
+            apply(context, r.date, write)
+            notify(context, "${what(write)} 적었어요", "${if (arrive) "회사에 도착" else "회사에서 나감"} ${Fmt.time(at.toLocalTime())}. 달력에서 언제든 고칠 수 있어요.", r, ask = false)
         } else {
             notify(context, "${what(write)} 적을까요?",
-                "${if (arrive) "회사에 도착했어요" else "회사에서 나왔어요"} (${Fmt.time(at.toLocalTime())}). 맞으면 ‘맞아요’를 눌러 주세요.", arrive to at)
+                "${if (arrive) "회사에 도착했어요" else "회사에서 나왔어요"} (${Fmt.time(at.toLocalTime())}). 맞으면 ‘맞아요’를 눌러 주세요.", r, ask = true)
         }
     }
 
-    /** The user said 맞아요 to a record. */
-    suspend fun confirm(context: Context, arrive: Boolean, at: LocalDateTime) {
-        val (date, write) = plan(context, arrive, at) ?: return
-        if (write != Commute.Write.None) apply(context, date, write)
-        Notifications.cancel(context, NOTICE_ID)
+    /** [DAYW-07] The user said 맞아요 to [r], as its notice carried it (not what the prefs say by now). */
+    suspend fun confirm(context: Context, r: Record) {
+        val write = plan(context, r)
+        if (write != null && write != Commute.Write.None) apply(context, r.date, write)
+        Notifications.cancel(context, NOTICE_ID, tag(r.arrive, r.date))
+    }
+
+    /** [DAYW-07] 아니요: an arrival that was not 출근 is forgotten, so the real one that day is still taken. */
+    fun refuse(context: Context, r: Record) {
+        if (r.arrive) CommutePrefs.get(context).arrivalCleared(r.at)
+        Notifications.cancel(context, NOTICE_ID, tag(r.arrive, r.date))
+    }
+
+    /** One notice per arrival or leave and day, so asking about a leave never hides the arrival's question. */
+    fun tag(arrive: Boolean, date: LocalDate) = "commute:${if (arrive) "in" else "out"}:$date"
+
+    fun recordOf(intent: Intent): Record? {
+        fun t(k: String) = intent.getStringExtra(k)?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }
+        val at = t(EXTRA_AT) ?: return null
+        val date = intent.getStringExtra(EXTRA_DATE)?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: at.toLocalDate()
+        return Record(intent.getBooleanExtra(EXTRA_ARRIVE, true), at, date, t(EXTRA_ARRIVED))
     }
 
     private suspend fun apply(context: Context, date: LocalDate, write: Commute.Write) {
@@ -206,11 +311,12 @@ object CommuteRecorder {
         Commute.Write.None -> ""
     }
 
-    private fun notify(context: Context, title: String, text: String, ask: Pair<Boolean, LocalDateTime>?) {
+    private fun notify(context: Context, title: String, text: String, r: Record, ask: Boolean) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(NotificationChannel(CHANNEL_ID, "출퇴근 자동 기록", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "회사 위치에 들어오고 나갈 때 출근·퇴근 시각을 적을지 물어봐요"
         })
+        val tag = tag(r.arrive, r.date)
         val b = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
@@ -218,24 +324,25 @@ object CommuteRecorder {
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, REQ_FENCE + 10))
             .setAutoCancel(true)
-        if (ask != null) {
+        if (ask) {
+            // The data keeps each notice's buttons apart; the extras carry the record as it was seen.
             fun action(action: String, code: Int) = PendingIntent.getBroadcast(context, code,
-                Intent(context, CommuteReceiver::class.java).setAction(action)
-                    .putExtra(EXTRA_ARRIVE, ask.first).putExtra(EXTRA_AT, ask.second.toString()),
+                Intent(context, CommuteReceiver::class.java).setAction(action).setData(Uri.parse("bamnat-commute://$tag"))
+                    .putExtra(EXTRA_ARRIVE, r.arrive).putExtra(EXTRA_AT, r.at.toString()).putExtra(EXTRA_DATE, r.date.toString())
+                    .putExtra(EXTRA_ARRIVED, r.arrived?.toString()),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             b.addAction(0, "맞아요", action(ACTION_YES, REQ_FENCE + 20)).addAction(0, "아니요", action(ACTION_NO, REQ_FENCE + 21))
         }
-        Notifications.post(context, NOTICE_ID, b.build())
+        Notifications.post(context, NOTICE_ID, b.build(), tag)
     }
-
-    fun dismiss(context: Context) = Notifications.cancel(context, NOTICE_ID)
 
     private fun finishIntent(context: Context) = PendingIntent.getBroadcast(context, REQ_FINISH,
         Intent(context, CommuteReceiver::class.java).setAction(ACTION_FINISH_LEAVE), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
     private fun scheduleFinish(context: Context, at: LocalDateTime) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
-        am.set(AlarmManager.RTC_WAKEUP, at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), finishIntent(context))
+        // Allowed while idle, so a phone left on the desk overnight still finishes the leave.
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), finishIntent(context))
     }
 
     private fun cancelFinish(context: Context) {
@@ -257,7 +364,7 @@ class CommuteReceiver : BroadcastReceiver() {
                         val event = GeofencingEvent.fromIntent(intent)
                         // Location was turned off: the system dropped the geofence; it is put back when it can be.
                         if (event != null && event.hasError() && event.errorCode == GeofenceStatusCodes.GEOFENCE_NOT_AVAILABLE) {
-                            runCatching { CommuteRecorder.sync(context) }
+                            runCatching { CommuteRecorder.sync(context, force = true) }
                         }
                         if (event != null && !event.hasError()) {
                             val at = CommuteRecorder.eventTime(event.triggeringLocation?.time)
@@ -268,12 +375,14 @@ class CommuteReceiver : BroadcastReceiver() {
                         }
                     }
                     CommuteRecorder.ACTION_FINISH_LEAVE -> CommuteRecorder.finishLeave(context)
-                    CommuteRecorder.ACTION_PROVIDERS_CHANGED -> if (CommutePrefs.get(context).current.enabled) runCatching { CommuteRecorder.sync(context) }
-                    CommuteRecorder.ACTION_YES -> {
-                        val at = intent.getStringExtra(CommuteRecorder.EXTRA_AT)?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }
-                        if (at != null) CommuteRecorder.confirm(context, intent.getBooleanExtra(CommuteRecorder.EXTRA_ARRIVE, true), at)
+                    CommuteRecorder.ACTION_PROVIDERS_CHANGED -> {
+                        // Only location coming back on needs the geofence put back.
+                        val lm = context.getSystemService(LocationManager::class.java)
+                        val on = lm == null || androidx.core.location.LocationManagerCompat.isLocationEnabled(lm)
+                        if (on && CommutePrefs.get(context).current.enabled) runCatching { CommuteRecorder.sync(context, force = true) }
                     }
-                    CommuteRecorder.ACTION_NO -> CommuteRecorder.dismiss(context)
+                    CommuteRecorder.ACTION_YES -> CommuteRecorder.recordOf(intent)?.let { CommuteRecorder.confirm(context, it) }
+                    CommuteRecorder.ACTION_NO -> CommuteRecorder.recordOf(intent)?.let { CommuteRecorder.refuse(context, it) }
                 }
             } finally {
                 pending.finish()

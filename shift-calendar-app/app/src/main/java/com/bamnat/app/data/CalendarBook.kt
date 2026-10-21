@@ -293,9 +293,12 @@ class CalendarBook(
         update(id) { it.copy(shop = rules) }
     }
 
-    /** [TYPE-04] Changes a calendar's shop rules from their current value, so two writers do not undo each other. */
+    /**
+     * [TYPE-04] Changes a calendar's shop rules from their current value (or the defaults, so 기능 스위치 can turn
+     * '매출 없으면 휴무' off before the shop days were set), so two writers do not undo each other.
+     */
     fun updateShop(id: String, transform: (com.bamnat.core.work.ShopRules) -> com.bamnat.core.work.ShopRules) {
-        update(id) { c -> c.shop?.let { c.copy(shop = transform(it)) } ?: c }
+        update(id) { c -> c.copy(shop = transform(c.shop ?: com.bamnat.core.work.ShopRules())) }
     }
 
     /** [FLD-01] Changes a calendar's field settings from their current value (or the defaults). */

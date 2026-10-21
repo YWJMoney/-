@@ -118,12 +118,16 @@ class SystemEventReceiver : BroadcastReceiver() {
         container.appScope.launch {
             // [DAYW-07] Geofences and the wait after a leave do not survive a reboot; put back on their own,
             // so a failure in the alarms below never skips them.
+            val booted = intent.action == Intent.ACTION_BOOT_COMPLETED
             runCatching {
                 if (com.bamnat.app.data.CommutePrefs.get(context).current.enabled) {
-                    com.bamnat.app.commute.CommuteRecorder.sync(context)
+                    // A clock or time zone change keeps the geofence; a reboot or an update may not.
+                    com.bamnat.app.commute.CommuteRecorder.sync(context, force = booted || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED)
                     com.bamnat.app.commute.CommuteRecorder.resume(context)
                 }
             }
+            // [REL-13] The test alarm did not survive the reboot; 알람 점검 must not wait for it.
+            if (booted) runCatching { container.alarmScheduler.cancelTest() }
             try {
                 container.rescheduleAlarms(LocalDateTime.now())
                 container.alarmScheduler.restoreSnooze()

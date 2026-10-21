@@ -62,10 +62,16 @@ object TodayShiftNotice {
         val name = day.shiftType?.name?.takeIf { it.isNotBlank() }
         val start = day.start
         val end = day.end
-        return when {
-            leave != null -> leave
+        val work = when {
             day.isWorkDay && start != null && end != null -> "${name ?: "근무"} ${hm(start)}~${hm(end)}"
             day.isWorkDay -> name ?: "근무"
+            else -> null
+        }
+        return when {
+            // A whole day off shows the leave alone; 반차 and the like keep the shift beside it.
+            leave != null && (day.leave?.isFullDay == true || work == null) -> leave
+            leave != null -> "$work · $leave"
+            work != null -> work
             name != null -> name
             else -> "쉬는 날"
         }

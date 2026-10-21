@@ -362,17 +362,10 @@ class AppContainer(context: Context) {
                 .debounce(1_000)
                 .collect { (snap, next) -> com.bamnat.app.watch.WatchSync.push(appContext, snap, next) }
         }
-        // [DAYW-07] The workplace geofence is put back if Play services lost it (cleared data, an update).
+        // [DAYW-07] The workplace geofence goes in if it is not there yet (the same circle is left alone), and
+        // location coming back on is listened for while the feature is on.
         if (com.bamnat.app.data.CommutePrefs.get(appContext).current.enabled) {
             appScope.launch { runCatching { com.bamnat.app.commute.CommuteRecorder.sync(appContext) } }
-        }
-        // [DAYW-07] Location turned off drops the geofence; when it comes back on, the geofence goes back.
-        runCatching {
-            androidx.core.content.ContextCompat.registerReceiver(
-                appContext, com.bamnat.app.commute.CommuteReceiver(),
-                android.content.IntentFilter(android.location.LocationManager.PROVIDERS_CHANGED_ACTION),
-                androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
-            )
         }
     }
 }

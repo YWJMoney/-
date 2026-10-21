@@ -128,7 +128,7 @@ object FeatureSwitches {
             Off.ELSEWHERE -> when (feature.id) {
                 "today.flow" -> c.settingsRepository.update { it.copy(sleepTips = on) }
                 "lock.today" -> if (on) { FeatureLinks.open(feature); return false } else c.settingsRepository.update { it.copy(todayShiftNotice = false) }
-                "day.commute" -> if (on) { FeatureLinks.open(feature); return false } else CommutePrefs.get(c.appContext).setEnabled(false)
+                "day.commute" -> if (on) { FeatureLinks.open(feature); return false } else com.bamnat.app.commute.CommuteRecorder.turnOff(c.appContext)
                 "shop.autoClose" -> c.calendars.updateShop(calendar) { it.copy(autoClosed = on) }
                 "money.auto" -> if (on) { FeatureLinks.open(feature); return false } else CaptureService.setOn(c.appContext, false)
                 else -> { FeatureLinks.open(feature); return false }

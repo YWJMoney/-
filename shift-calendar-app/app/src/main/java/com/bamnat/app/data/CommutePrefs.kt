@@ -35,6 +35,8 @@ class CommutePrefs private constructor(context: Context) {
         /** The day the last written leave went on, and that day as it was before it. */
         val undoDate: LocalDate? = null,
         val undo: Commute.Undo? = null,
+        /** [DAYW-07] The workplace circle last handed to Play services ("lat,lng,radius"), or null. */
+        val fence: String? = null,
     ) {
         val hasPlace: Boolean get() = lat != null && lng != null
         /** Today's arrival, when there is one. */
@@ -49,7 +51,7 @@ class CommutePrefs private constructor(context: Context) {
     fun setEnabled(on: Boolean) = edit {
         putBoolean(K_ON, on)
         // Turned off, the workplace point goes too.
-        if (!on) { remove(K_LAT); remove(K_LNG); remove(K_ARRIVED); remove(K_LEFT); remove(K_PENDING); remove(K_UNDO) }
+        if (!on) { remove(K_LAT); remove(K_LNG); remove(K_ARRIVED); remove(K_LEFT); remove(K_PENDING); remove(K_UNDO); remove(K_FENCE) }
     }
 
     fun setPlace(lat: Double, lng: Double) = edit { putString(K_LAT, lat.toString()); putString(K_LNG, lng.toString()) }
@@ -62,6 +64,9 @@ class CommutePrefs private constructor(context: Context) {
     /** [DAYW-07] Back the same day: the leave was not 퇴근, so it is forgotten. */
     fun leaveUndone() = edit { remove(K_LEFT); remove(K_UNDO); remove(K_PENDING) }
     fun left(at: LocalDateTime) = edit { putString(K_LEFT, at.toString()); remove(K_PENDING) }
+    /** [DAYW-07] 아니요 on an arrival: it was not 출근, so the real one that day can still be taken. */
+    fun arrivalCleared(at: LocalDateTime) = edit { if (time(K_ARRIVED) == at) remove(K_ARRIVED) }
+    fun fenceRegistered(key: String?) = edit { if (key == null) remove(K_FENCE) else putString(K_FENCE, key) }
     fun leavePending(at: LocalDateTime?) = edit { if (at == null) remove(K_PENDING) else putString(K_PENDING, at.toString()) }
 
     private fun edit(block: SharedPreferences.Editor.() -> Unit) {
@@ -112,6 +117,7 @@ class CommutePrefs private constructor(context: Context) {
             pendingLeave = time(K_PENDING),
             undoDate = undo?.first,
             undo = undo?.second,
+            fence = prefs.getString(K_FENCE, null),
         )
     }
 
@@ -129,6 +135,7 @@ class CommutePrefs private constructor(context: Context) {
         private const val K_LEFT = "left"
         private const val K_PENDING = "pending_leave"
         private const val K_UNDO = "leave_undo"
+        private const val K_FENCE = "fence"
 
         @Volatile private var instance: CommutePrefs? = null
 
