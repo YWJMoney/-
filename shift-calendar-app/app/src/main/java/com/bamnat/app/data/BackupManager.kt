@@ -52,6 +52,8 @@ class BackupManager(
     private val workTools: WorkToolsStore? = null,
     /** [GUIDE-05] The features turned off with the app's own switches; what was used stays on the phone. */
     private val guide: GuideStore? = null,
+    /** [UNDO-03] An added calendar an import takes away goes to 최근 지운 기록 first, contract photos too. */
+    private val recordsTrash: () -> RecordsTrash? = { null },
 ) {
     /** The schedule tables of [source] (shifts, order, changed days, extra work) as a backup holds them. */
     private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
@@ -489,6 +491,11 @@ class BackupManager(
         // Read before anything changes, so a broken pay part leaves the phone as it was.
         val pay = root.optJSONObject("pay")?.let(com.bamnat.app.pay.PayCodec::decode)
         val payClosed = root.optJSONArray("payClosed")?.objects()?.map(com.bamnat.app.pay.SnapshotCodec::decode)
+        // [UNDO-03] Kept before its memos are replaced; its photos are on this phone only, never in a backup.
+        if (calendars != null && added != null) {
+            val back = added.map { it.cal.id }.toSet()
+            calendars.calendars.value.filter { !it.isMain && it.id !in back }.forEach { cal -> runCatching { recordsTrash()?.beforeDelete(cal.id) } }
+        }
         db.withTransaction {
             writeMoney(db, money)
             // Backups from before version 11 carry no sleep log; the one on the phone then stays.

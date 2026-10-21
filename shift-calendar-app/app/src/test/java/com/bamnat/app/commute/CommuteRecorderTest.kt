@@ -153,4 +153,40 @@ class CommuteRecorderTest {
         assertNull(s.fence)
         assertTrue(shadowOf(am).scheduledAlarms.none { shadowOf(it.operation).savedIntent.action == CommuteRecorder.ACTION_FINISH_LEAVE })
     }
+
+    private fun checks() = shadowOf(context.getSystemService(AlarmManager::class.java)).scheduledAlarms
+        .filter { shadowOf(it.operation).savedIntent.action == CommuteRecorder.ACTION_CHECK }
+
+    /** [DAYW-07] The periodic check runs only while the feature is on, once, not waking the phone, and goes when it is turned off. */
+    @Test fun thePeriodicCheckIsSetWhileOnAndGoesWhenTurnedOff() {
+        val prefs = CommutePrefs.get(context)
+        CommuteRecorder.turnOff(context)
+        CommuteRecorder.catchUp(context, locationOn = true)
+        assertTrue(checks().isEmpty())
+
+        prefs.setEnabled(true)
+        prefs.setPlace(37.5, 127.0)
+        CommuteRecorder.catchUp(context, locationOn = true)
+        CommuteRecorder.sync(context)
+        val set = checks().single()
+        assertEquals(AlarmManager.RTC, set.type)
+        assertEquals(CommuteRecorder.CHECK_INTERVAL_MILLIS, set.interval)
+        assertTrue(CommuteRecorder.checkScheduled(context))
+
+        CommuteRecorder.turnOff(context)
+        assertTrue(checks().isEmpty())
+        assertFalse(CommuteRecorder.checkScheduled(context))
+    }
+
+    /** [DAYW-07] Location seen off: the system dropped the geofence, so the next check with location on puts it back. */
+    @Test fun locationSeenOffMarksTheGeofenceGone() {
+        val prefs = CommutePrefs.get(context)
+        prefs.setEnabled(true)
+        prefs.setPlace(37.5, 127.0)
+        prefs.fenceRegistered(CommuteRecorder.fenceKey(prefs.current))
+        CommuteRecorder.catchUp(context, locationOn = false)
+        assertNull(prefs.current.fence)
+        assertTrue(CommuteRecorder.checkScheduled(context))
+        CommuteRecorder.turnOff(context)
+    }
 }

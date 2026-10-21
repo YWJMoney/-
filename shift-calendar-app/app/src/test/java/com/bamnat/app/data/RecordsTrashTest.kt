@@ -174,6 +174,30 @@ class RecordsTrashTest {
         assertEquals(profile, c.calendars.pay(id).profile.value)
     }
 
+    /** [UNDO-03][HRLY-10] An import without an added calendar puts it in 최근 지운 기록 first, its contract photos too. */
+    @Test fun aCalendarAnImportTakesAwayCanBeRestoredWithItsPhotos() = runBlocking {
+        val json = c.backupManager.export()
+        val (id, memo) = filledCalendar("편의점")
+        val tools = WorkToolsStore.get(app)
+        File(tools.photoDir(id).apply { mkdirs() }, "a.jpg").writeText("photo")
+        tools.update(id) { WorkTools(contract = com.bamnat.core.work.WorkContract(photos = listOf("a.jpg"), hourlyWage = 11_000)) }
+        waitFor("the tools file") { File(tools.dir(id), WorkToolsStore.FILE).exists() }
+
+        c.backupManager.restore(json)
+        assertNull(c.calendars.get(id))
+        assertNull(tools.photo(id, "a.jpg")?.takeIf { it.exists() })
+        val entry = c.recordsTrash.entries.value.single()
+        assertEquals(RecordsTrash.Kind.DELETED, entry.kind)
+        assertEquals(id, entry.calendarId)
+
+        assertTrue(c.recordsTrash.restore(entry.id))
+        assertEquals("편의점", c.calendars.get(id)!!.name)
+        assertEquals(listOf(day), daysOf(id))
+        assertEquals("photo", tools.photo(id, "a.jpg")!!.readText())
+        assertEquals(listOf("a.jpg"), tools.current(id).contract.photos)
+        assertEquals(setOf(id), c.memoRepository.get(memo.id)!!.calendars)
+    }
+
     /** [UNDO-02] Putting cleared records back replaces what was written since, and that is kept in turn. */
     @Test fun puttingBackKeepsWhatWasWrittenAfterTheClear() = runBlocking {
         val (id, _) = filledCalendar("가게")

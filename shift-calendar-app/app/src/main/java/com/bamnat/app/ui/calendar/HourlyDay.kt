@@ -111,16 +111,9 @@ internal fun LazyListScope.hourlyChips(
     }
     if (out != null) {
         item {
-            val other = out.date != day.date
             AssistChip(
-                onClick = {
-                    val now = HourlyWork.clock(LocalTime.now())
-                    val said = (if (out.date != today) "${Fmt.monthDay(out.date)} " else "") + "퇴근 ${Fmt.time(now)} 적었어요"
-                    vm.changeDay(out.date, said, feature = "hourly.clock") { e ->
-                        e.copy(customEnd = now, customStart = e.customStart ?: out.start ?: out.shiftType?.start)
-                    }
-                },
-                label = { Text(if (other) "어제 퇴근" else "퇴근", maxLines = 1) },
+                onClick = { vm.clockOut(out, today, LocalTime.now()) },
+                label = { Text(clockOutLabel(day, out), maxLines = 1) },
                 leadingIcon = { Icon(Icons.AutoMirrored.Filled.Logout, null, Modifier.size(18.dp)) },
             )
         }
@@ -139,6 +132,18 @@ internal fun LazyListScope.hourlyChips(
         )
     }
     item { CoverChip(day, snapshot, vm) }
+}
+
+/** [HRLY-08] "어제 퇴근" on today's sheet for yesterday's late shift, else "퇴근". */
+internal fun clockOutLabel(day: ResolvedDay, out: ResolvedDay): String = if (out.date != day.date) "어제 퇴근" else "퇴근"
+
+/** [HRLY-01][HRLY-08] 퇴근 at [at] (to 5 minutes) on [out], the day [clockOutDay] picked. */
+internal fun CalendarViewModel.clockOut(out: ResolvedDay, today: LocalDate, at: LocalTime) {
+    val now = HourlyWork.clock(at)
+    val said = (if (out.date != today) "${Fmt.monthDay(out.date)} " else "") + "퇴근 ${Fmt.time(now)} 적었어요"
+    changeDay(out.date, said, feature = "hourly.clock") { e ->
+        e.copy(customEnd = now, customStart = e.customStart ?: out.start ?: out.shiftType?.start)
+    }
 }
 
 /** [HRLY-08] Hours past a shift's planned end that its 퇴근 still goes on it after midnight. */
