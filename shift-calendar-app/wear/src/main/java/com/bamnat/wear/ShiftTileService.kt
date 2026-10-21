@@ -14,7 +14,7 @@ import androidx.wear.tiles.TileBuilders
 import androidx.wear.tiles.TileService
 import com.bamnat.core.work.WatchDays
 import com.google.common.util.concurrent.ListenableFuture
-import java.time.LocalDate
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 
@@ -25,13 +25,17 @@ import java.time.ZoneId
 class ShiftTileService : TileService() {
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<TileBuilders.Tile> =
         CallbackToFutureAdapter.getFuture { done ->
-            val now = LocalDateTime.now()
             val zone = ZoneId.systemDefault()
-            val untilMidnight = LocalDate.now().plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() - System.currentTimeMillis() + 5_000
+            val nowMs = System.currentTimeMillis()
+            val now = LocalDateTime.ofInstant(Instant.ofEpochMilli(nowMs), zone)
+            val untilMidnight = now.toLocalDate().plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() - nowMs + 5_000
+            // [SHFT-08] Once the alarm shown has gone off, the tile moves on to the next one.
+            val untilAlarm = WatchStore.load(this)?.let { WatchDays.alarmAhead(it, now) }
+                ?.let { it.atZone(zone).toInstant().toEpochMilli() - nowMs + 5_000 } ?: Long.MAX_VALUE
             done.set(
                 TileBuilders.Tile.Builder()
                     .setResourcesVersion(RESOURCES)
-                    .setFreshnessIntervalMillis(untilMidnight.coerceAtLeast(60_000))
+                    .setFreshnessIntervalMillis(minOf(untilMidnight, untilAlarm).coerceAtLeast(60_000))
                     .setTileTimeline(TimelineBuilders.Timeline.fromLayoutElement(layout(now)))
                     .build(),
             )

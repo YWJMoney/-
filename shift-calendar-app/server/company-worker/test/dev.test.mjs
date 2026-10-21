@@ -26,7 +26,7 @@ test("an admin adds a 개발사항 from a question in one step, and both show th
   const { call } = server();
   const q = (await call("POST", "/api/inquiries", question(1), from(1))).data;
   const owner = await signIn(call);
-  // Invited before 개발사항 existed (no dev in perms): answering questions is enough to work on them.
+  // Invited before 개발사항 existed (no dev in perms): every admin may work on them; 처리 is not given.
   const { h: junho } = await account(call, owner, "junho@example.com", "준호", SUPPORT, 41);
   assert.deepEqual([(await call("GET", "/api/admin/me", undefined, junho)).data.perms.dev, (await call("GET", "/api/admin/me", undefined, junho)).data.perms.devStatus],
     ["edit", "none"]);
@@ -270,4 +270,55 @@ test("an admin who may not read questions does not see the words sent to them in
   assert.ok(!seen.text.includes("비밀 답장 내용"));
   assert.equal(seen.data.history[0].action, "reply");
   assert.ok((await call("GET", `/api/admin/dev/${item.id}`, undefined, owner)).text.includes("비밀 답장 내용"));
+});
+
+test("a question dropped after 180 days takes its notes and 개발사항 links with it; the item stays and counts only kept questions", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-04-01T09:00:00Z") });
+  const { call, DB } = server();
+  let owner = await signIn(call);
+  const old = (await call("POST", "/api/inquiries", question(1), from(1))).data;
+  const item = (await call("POST", "/api/admin/dev", { title: "주 시작 요일", inquiry: old.id }, owner)).data;
+  await call("POST", `/api/admin/inquiries/${old.id}/notes`, { text: "오래된 메모 내용" }, owner);
+  t.mock.timers.tick(181 * 24 * 60 * 60 * 1000);
+  // A new question sweeps out the old one on its way in.
+  const fresh = (await call("POST", "/api/inquiries", question(2, "일요일 시작이면 좋겠어요"), from(2))).data;
+  const n = async (table) => (await DB.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first()).n;
+  assert.deepEqual([await n("inquiries"), await n("inquiry_notes"), await n("dev_links"), await n("dev_items")], [1, 0, 0, 1]);
+  assert.ok(!DB.dump().includes("오래된 메모 내용"));
+  owner = await signIn(call);
+  // A link left from before never counts once its question is gone.
+  await DB.prepare("INSERT INTO dev_links (item_id, inquiry_id, by, at) VALUES (?, ?, 'x', 0)").bind(item.id, "gone".padEnd(22, "x")).run();
+  await call("POST", `/api/admin/dev/${item.id}/links`, { inquiry: fresh.id }, owner);
+  assert.equal((await call("GET", "/api/admin/dev", undefined, owner)).data.items[0].links, 1);
+  assert.equal((await call("GET", `/api/admin/dev/${item.id}`, undefined, owner)).data.links, 1);
+  assert.deepEqual((await call("GET", `/api/admin/inquiries/${fresh.id}`, undefined, owner)).data.dev.map((d) => d.links), [1]);
+});
+
+test("removing an admin frees the questions and items they had taken on", async () => {
+  const { call } = server();
+  const owner = await signIn(call);
+  const { id, h: junho } = await account(call, owner, "junho@example.com", "준호", SUPPORT, 41);
+  const q = (await call("POST", "/api/inquiries", question(1), from(1))).data;
+  await call("POST", `/api/admin/inquiries/${q.id}/assign`, { to: "me" }, junho);
+  const item = (await call("POST", "/api/admin/dev", { title: "위젯" }, junho)).data;
+  await call("POST", `/api/admin/dev/${item.id}`, { assignee: "me" }, junho);
+  assert.equal((await call("POST", `/api/admin/admins/${id}/remove`, {}, owner)).status, 200);
+  assert.equal((await call("GET", `/api/admin/inquiries/${q.id}`, undefined, owner)).data.assignee, null);
+  const it = (await call("GET", `/api/admin/dev/${item.id}`, undefined, owner)).data;
+  assert.equal(it.assignee, null);
+  assert.deepEqual([it.history[0].action, it.history[0].detail], ["assign", { assignee: ["준호", ""] }]);
+  assert.equal((await call("GET", "/api/admin/inquiries?who=free", undefined, owner)).data.inquiries.length, 1);
+});
+
+test("an admin invited before 개발사항 existed may add, change and delete them, but 처리 waits for the owner", async () => {
+  const { call } = server();
+  const owner = await signIn(call);
+  const { h: rev } = await account(call, owner, "rev@example.com", "검토", { ...SUPPORT, inquiries: "none", review: "edit" }, 44);
+  const me = (await call("GET", "/api/admin/me", undefined, rev)).data;
+  assert.deepEqual([me.perms.dev, me.perms.devStatus], ["edit", "none"]);
+  const item = await call("POST", "/api/admin/dev", { title: "위젯" }, rev);
+  assert.equal(item.status, 201, item.text);
+  assert.equal((await call("POST", `/api/admin/dev/${item.data.id}`, { title: "위젯 크기" }, rev)).status, 200);
+  assert.equal((await call("POST", `/api/admin/dev/${item.data.id}`, { status: "doing" }, rev)).status, 403);
+  assert.equal((await call("POST", `/api/admin/dev/${item.data.id}/delete`, {}, rev)).status, 200);
 });
