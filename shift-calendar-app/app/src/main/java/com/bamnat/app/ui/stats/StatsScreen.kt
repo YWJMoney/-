@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.CircularProgressIndicator
@@ -95,6 +96,9 @@ class StatsViewModel(
     fun payTotal(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): Long =
         payCalculator.calculate(profile.hourlyWeek(settings.value), month, snapshot.resolver::resolve).total
 
+    /** [CUST-01] 화면 꾸미기 changes the app's own settings. */
+    fun updateSettings(change: (AppSettings) -> AppSettings) = container.settingsRepository.update(change)
+
     /** [LEDG-15] The calendar's money: field work counts its jobs here and a shop its sales, not hours. */
     val book: StateFlow<MoneyBook?> = scope.money.book.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 }
@@ -127,6 +131,9 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
     // [LEDG-15] Field and shop work show their jobs or sales; hours only once some are on the calendar.
     val hasHours = pays || summary.totalMinutes > 0 || three.totalMinutes > 0
     val columns = if (wide) 4 else 2
+    var editing by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val statsParts = androidx.compose.runtime.remember(settings.statsLayout) { statsParts(settings.statsLayout) }
+    fun shown(p: StatsPart) = statsParts.firstOrNull { it.part == p }?.shown != false
 
     Column(
         Modifier
@@ -148,7 +155,10 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             IconButton(onClick = { vm.showMonth(month.plusMonths(1)) }) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달")
             }
+            // [CUST-01] 화면 꾸미기: the cards' order and which show.
+            IconButton(onClick = { editing = true }) { Icon(Icons.Outlined.Dashboard, "화면 꾸미기") }
         }
+        if (editing) StatsEditSheet(settings, vm::updateSettings, onDismiss = { editing = false })
         // [MCAL-06] Whose hours and pay these are, once there are several calendars; [COMN-03] or all of them.
         var everyCalendar by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
         com.bamnat.app.ui.calendar.CalendarScopeChips(androidx.compose.ui.platform.LocalContext.current.appContainer,
@@ -194,7 +204,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             { m -> StatTile("쉬는 날 근무", HoursFormat.korean(summary.restDayExtraMinutes), m,
                 caption = "${summary.restDayWorkDays}일") },
         )
-        TileGrid(tiles, columns)
+        if (shown(StatsPart.TILES)) TileGrid(tiles, columns)
 
         // [TYPE-06] A part-timer's weeks against the 15 hours 주휴수당 needs.
         // [HRLY-02][HRLY-07] Counted from the 주휴 week's own start, with 결근 days as absences.
@@ -208,7 +218,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         }
 
         // [NAV-01] 근무·급여: the month's pay right under its hours.
-        if (pays) {
+        if (pays && shown(StatsPart.PAY)) {
             val total = payTotal
             PayEntryCard(
                 month = month,
@@ -238,73 +248,88 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             }
         }
 
-        if (summary.extraByKind.isNotEmpty()) {
-            SectionCard(title = "추가 근무 종류별") {
-                val kinds = settings.extraKinds
-                for ((id, minutes) in summary.extraByKind.entries.sortedByDescending { it.value }) {
-                    val kind = kinds.of(id)
-                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        com.bamnat.app.ui.calendar.ExtraKindMark(kind, size = 20.dp)
-                        Spacer(Modifier.width(10.dp))
-                        Text(kind.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                        Text("${summary.extraCountByKind[id] ?: 0}번 · ", style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(HoursFormat.korean(minutes), style = MaterialTheme.typography.titleSmall.merge(NumberStyle))
+        // [CUST-01] The cards in the user's order (화면 꾸미기).
+        statsParts.filter { it.part.movable && it.shown }.forEach { placed ->
+            when (placed.part) {
+                StatsPart.KINDS -> {
+                if (summary.extraByKind.isNotEmpty()) {
+                    SectionCard(title = "추가 근무 종류별") {
+                        val kinds = settings.extraKinds
+                        for ((id, minutes) in summary.extraByKind.entries.sortedByDescending { it.value }) {
+                            val kind = kinds.of(id)
+                            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                com.bamnat.app.ui.calendar.ExtraKindMark(kind, size = 20.dp)
+                                Spacer(Modifier.width(10.dp))
+                                Text(kind.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                                Text("${summary.extraCountByKind[id] ?: 0}번 · ", style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(HoursFormat.korean(minutes), style = MaterialTheme.typography.titleSmall.merge(NumberStyle))
+                            }
+                        }
                     }
                 }
-            }
-        }
 
-        SectionCard(title = "3개월 평균 (${three.firstMonth.monthValue}월–${three.lastMonth.monthValue}월)") {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatTile(
-                    "주 평균",
-                    HoursFormat.hours(three.averageWeeklyMinutes) + "시간",
-                    Modifier.weight(1f),
-                    caption = "기준 ${settings.averageLimitHours}시간",
-                    warning = three.overLimit,
-                )
-                StatTile(
-                    "월 평균",
-                    HoursFormat.hours(three.averageMonthlyMinutes) + "시간",
-                    Modifier.weight(1f),
-                    caption = "합계 ${HoursFormat.hours(three.totalMinutes.toDouble())}시간",
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            LimitBar(
-                value = three.averageWeeklyMinutes / 60.0,
-                limit = settings.averageLimitHours.toDouble(),
-                max = maxOf(settings.weeklyLimitHours.toDouble(), three.averageWeeklyMinutes / 60.0),
-            )
-            if (three.overLimit) {
-                Spacer(Modifier.height(10.dp))
-                WarningBanner(
-                    "3개월 평균 주 ${settings.averageLimitHours}시간 초과",
-                    "평균 주 ${HoursFormat.hours(three.averageWeeklyMinutes)}시간이에요. 앞으로의 근무를 줄여야 평균이 내려가요.",
-                )
-            }
-        }
+                }
+                StatsPart.THREE -> {
+                SectionCard(title = "3개월 평균 (${three.firstMonth.monthValue}월–${three.lastMonth.monthValue}월)") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        StatTile(
+                            "주 평균",
+                            HoursFormat.hours(three.averageWeeklyMinutes) + "시간",
+                            Modifier.weight(1f),
+                            caption = "기준 ${settings.averageLimitHours}시간",
+                            warning = three.overLimit,
+                        )
+                        StatTile(
+                            "월 평균",
+                            HoursFormat.hours(three.averageMonthlyMinutes) + "시간",
+                            Modifier.weight(1f),
+                            caption = "합계 ${HoursFormat.hours(three.totalMinutes.toDouble())}시간",
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    LimitBar(
+                        value = three.averageWeeklyMinutes / 60.0,
+                        limit = settings.averageLimitHours.toDouble(),
+                        max = maxOf(settings.weeklyLimitHours.toDouble(), three.averageWeeklyMinutes / 60.0),
+                    )
+                    if (three.overLimit) {
+                        Spacer(Modifier.height(10.dp))
+                        WarningBanner(
+                            "3개월 평균 주 ${settings.averageLimitHours}시간 초과",
+                            "평균 주 ${HoursFormat.hours(three.averageWeeklyMinutes)}시간이에요. 앞으로의 근무를 줄여야 평균이 내려가요.",
+                        )
+                    }
+                }
 
-        SectionCard(title = "주별 근무시간 (주 ${settings.weeklyLimitHours}시간 기준)") {
-            val maxHours = maxOf(
-                settings.weeklyLimitHours.toDouble(),
-                summary.weeks.maxOfOrNull { it.totalMinutes / 60.0 } ?: 0.0,
-            )
-            summary.weeks.forEachIndexed { i, week ->
-                WeekRow(week, settings.weeklyLimitHours, maxHours)
-                if (i != summary.weeks.lastIndex) Spacer(Modifier.height(10.dp))
-            }
-            Text(
-                "주 근무시간은 월요일부터 일요일까지 세요(달력이 일요일부터 보여도 같아요). 달에 걸친 주도 7일 전체를 셉니다.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 12.dp),
-            )
-        }
+                }
+                StatsPart.WEEKS -> {
+                SectionCard(title = "주별 근무시간 (주 ${settings.weeklyLimitHours}시간 기준)") {
+                    val maxHours = maxOf(
+                        settings.weeklyLimitHours.toDouble(),
+                        summary.weeks.maxOfOrNull { it.totalMinutes / 60.0 } ?: 0.0,
+                    )
+                    summary.weeks.forEachIndexed { i, week ->
+                        WeekRow(week, settings.weeklyLimitHours, maxHours)
+                        if (i != summary.weeks.lastIndex) Spacer(Modifier.height(10.dp))
+                    }
+                    Text(
+                        "주 근무시간은 월요일부터 일요일까지 세요(달력이 일요일부터 보여도 같아요). 달에 걸친 주도 7일 전체를 셉니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                }
 
-        SectionCard(title = "최근 6개월") {
-            MonthTrend(trend.map { it.month to it.totalMinutes.toLong() }, floor = 60) { HoursFormat.decimalHours(it.toDouble()).substringBefore('.') }
+                }
+                StatsPart.TREND -> {
+                SectionCard(title = "최근 6개월") {
+                    MonthTrend(trend.map { it.month to it.totalMinutes.toLong() }, floor = 60) { HoursFormat.decimalHours(it.toDouble()).substringBefore('.') }
+                }
+
+                }
+                else -> Unit
+            }
         }
 
         Text(
@@ -603,4 +628,47 @@ private fun HolidayPayWeeks(weeks: List<HourlyWeek>, month: YearMonth) {
             modifier = Modifier.padding(top = 8.dp),
         )
     }
+}
+
+/** [CUST-01] The 근무·급여 page's cards the user can order (the hour cards) or only turn off (the month's tiles, pay). */
+internal enum class StatsPart(val id: String, val label: String, val what: String, val movable: Boolean = true) {
+    TILES("tiles", "이번 달 숫자 네 칸", "총 근무·근무표대로·추가 근무·쉬는 날 근무", movable = false),
+    PAY("pay", "급여 카드", "이번 달 예상 급여와 계산 풀이", movable = false),
+    KINDS("kinds", "추가 근무 종류별", "잔업·특근·대근마다 횟수와 시간"),
+    THREE("three", "3개월 평균", "3개월 주평균과 52시간 기준"),
+    WEEKS("weeks", "주별 근무시간", "이번 달 주마다(월~일) 시간 막대"),
+    TREND("trend", "최근 6개월", "달마다 근무시간 흐름"),
+    ;
+}
+
+internal fun statsParts(layout: String) = com.bamnat.core.layout.PageLayout.decode(layout).arrange(StatsPart.entries.toList()) { it.id }
+
+@Composable
+private fun StatsEditSheet(settings: AppSettings, update: ((AppSettings) -> AppSettings) -> Unit, onDismiss: () -> Unit) {
+    val placed = statsParts(settings.statsLayout)
+    fun write(next: List<com.bamnat.core.layout.PageLayout.Placed<StatsPart>>) =
+        update { it.copy(statsLayout = com.bamnat.core.layout.PageLayout.of(next) { p -> p.id }.encode()) }
+    val rows = { movable: Boolean ->
+        placed.filter { it.part.movable == movable }.map { com.bamnat.app.ui.components.EditRow(it.part.id, it.part.label, it.part.what, it.shown, movable, it.isNew) }
+    }
+    com.bamnat.app.ui.components.PageEditSheet(
+        title = "근무·급여 화면 꾸미기",
+        groups = listOf(
+            com.bamnat.app.ui.components.EditGroup("위쪽 (이번 달)", rows(false)),
+            com.bamnat.app.ui.components.EditGroup("아래쪽 카드 순서", rows(true)),
+        ),
+        middle = "근무 유형 카드",
+        onShow = { id, shown -> write(placed.map { if (it.part.id == id) it.copy(shown = shown) else it }) },
+        onMove = { id, by ->
+            val fixed = placed.filterNot { it.part.movable }
+            val movable = placed.filter { it.part.movable }
+            write(fixed + com.bamnat.core.layout.PageLayout.move(movable, movable.indexOfFirst { it.part.id == id }, by))
+        },
+        onReset = { update { it.copy(statsLayout = "") } },
+        onAsk = {
+            onDismiss()
+            com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "화면 꾸미기"))
+        },
+        onDismiss = onDismiss,
+    )
 }

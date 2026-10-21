@@ -113,6 +113,10 @@ data class AppSettings(
      * day sheet does all of it. On, the first tap shows the card and a second opens the day.
      */
     val showDayCard: Boolean = false,
+    /** [CUST-01] 화면 꾸미기: the calendar page's parts in the user's order, "hours,-todayFlow" ([com.bamnat.core.layout.PageLayout]). */
+    val calendarLayout: String = "",
+    /** [CUST-01] The same for the 근무·급여 (통계) page. */
+    val statsLayout: String = "",
     /**
      * [DAY-04] The day view's groups in the user's own order, by key ("work", "memo", ...); empty means the
      * order that fits [workStyle]. Keys the app does not know are skipped, missing ones go at the end.
@@ -208,6 +212,8 @@ class SettingsRepository(context: Context) {
             phoneDayView = runCatching { PhoneDayView.valueOf(prefs.getString(K_PHONE_DAY_VIEW, null) ?: "") }
                 .getOrDefault(d.phoneDayView).let { if (it == PhoneDayView.PREVIEW) PhoneDayView.SHEET else it },
             showDayCard = prefs.getBoolean(K_DAY_CARD, d.showDayCard),
+            calendarLayout = prefs.getString(K_CALENDAR_LAYOUT, null) ?: d.calendarLayout,
+            statsLayout = prefs.getString(K_STATS_LAYOUT, null) ?: d.statsLayout,
             // [DAY-04] 메모 중심 of 1.12 and before put 메모 first; that carries over as the user's own order.
             dayGroupOrder = prefs.getString(K_DAY_GROUP_ORDER, null)?.let(::decodeGroupOrder)
                 ?: if (prefs.getBoolean(K_MEMO_FIRST, false)) listOf("memo") else d.dayGroupOrder,
@@ -257,6 +263,8 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_REST_COMPARED, s.restDayCompared)
             .putString(K_PHONE_DAY_VIEW, s.phoneDayView.name)
             .putBoolean(K_DAY_CARD, s.showDayCard)
+            .putString(K_CALENDAR_LAYOUT, s.calendarLayout)
+            .putString(K_STATS_LAYOUT, s.statsLayout)
             .putString(K_DAY_GROUP_ORDER, s.dayGroupOrder.joinToString(","))
             .apply()
     }
@@ -266,6 +274,8 @@ class SettingsRepository(context: Context) {
         const val K_WEEK_START_V2 = "week_start_v2"
         const val K_PHONE_DAY_VIEW = "phone_day_view"
         const val K_DAY_CARD = "day_card"
+        const val K_CALENDAR_LAYOUT = "calendar_layout"
+        const val K_STATS_LAYOUT = "stats_layout"
         const val K_DAY_GROUP_ORDER = "day_group_order"
         const val K_WEEKLY_LIMIT = "weekly_limit"
         const val K_AVG_LIMIT = "average_limit"
