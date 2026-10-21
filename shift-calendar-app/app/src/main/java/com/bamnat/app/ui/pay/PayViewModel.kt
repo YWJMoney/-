@@ -325,7 +325,7 @@ class PayViewModel(
     /** [PAYS-02] The settings closest to [payslip]; nothing is saved until [applyMatch]. */
     suspend fun match(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth, payslip: Payslip): PayslipMatch {
         val match = withContext(Dispatchers.Default) {
-            PayslipMatcher.match(profile.named(settings.value.extraKinds), month, snapshot.resolver::resolve, payslip, calculator = calculator)
+            PayslipMatcher.match(profile.named(settings.value.extraKinds).hourlyWeek(settings.value), month, snapshot.resolver::resolve, payslip, calculator = calculator)
         }
         container.telemetry.event("pay_payslip_match", if (match.matched) "matched" else "gap")
         return match
