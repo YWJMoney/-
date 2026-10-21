@@ -16,6 +16,8 @@ class ImportUndo(
     private val file: File,
     private val backups: BackupManager,
     private val clock: () -> Long = System::currentTimeMillis,
+    /** [UNDO-03] Where the calendars the import removed wait, with their contract photos. */
+    private val recordsTrash: () -> RecordsTrash? = { null },
 ) {
     private val _savedAt = MutableStateFlow(file.takeIf { it.exists() }?.lastModified()?.takeIf { fresh(it) })
     /** When the copy was taken, or null when there is none to go back to. */
@@ -43,7 +45,13 @@ class ImportUndo(
     /** Puts the copy back. The copy is gone afterwards, so a second tap cannot undo twice. */
     suspend fun undo() {
         val json = withContext(Dispatchers.IO) { file.takeIf { it.exists() }?.readText() } ?: throw BackupException("되돌릴 데이터가 없어요")
+        // [UNDO-03][HRLY-10] Calendars the import removed come back with their photos; their trash entries go.
+        val ids = runCatching { org.json.JSONObject(json).optJSONArray("calendars") }.getOrNull()
+            ?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.optString("id")?.takeIf(String::isNotEmpty) } }.orEmpty()
+        val trash = recordsTrash()
+        val used = if (ids.isEmpty() || trash == null) emptyList() else trash.putPhotosBack(ids)
         backups.restore(json)
+        if (used.isNotEmpty()) trash?.forget(used)
         drop()
     }
 

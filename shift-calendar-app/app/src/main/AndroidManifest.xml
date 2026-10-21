@@ -166,7 +166,7 @@
 
         <!-- [DAYW-07] Workplace geofence crossings and 맞아요·아니요 on the record's notice. Location turned
              back on (PROVIDERS_CHANGED) no longer reaches a manifest receiver; CommuteRecorder listens for it
-             while the feature is on. -->
+             while the feature is on, and an inexact check every 12 hours (CHECK) catches what it missed. -->
         <receiver
             android:name=".commute.CommuteReceiver"
             android:exported="false" />

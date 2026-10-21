@@ -47,12 +47,16 @@ object CommuteRecorder {
     private const val FENCE_ID = "bamnat_workplace"
     private const val REQ_FENCE = 3101
     private const val REQ_FINISH = 3102
+    private const val REQ_CHECK = 3103
+    /** [DAYW-07] How often a check puts back a geofence lost while the app was not running. */
+    const val CHECK_INTERVAL_MILLIS = 12 * 60 * 60 * 1000L
     // A lunch out of the fence runs about an hour; 90 minutes leaves room for it.
     const val LEAVE_WAIT_MINUTES = 90L
     const val CHANNEL_ID = "commute_record_v1"
     private const val NOTICE_ID = 7320
     const val ACTION_FENCE = "com.bamnat.app.commute.FENCE"
     const val ACTION_FINISH_LEAVE = "com.bamnat.app.commute.FINISH_LEAVE"
+    const val ACTION_CHECK = "com.bamnat.app.commute.CHECK"
     /** Location turned back on (or providers changed): the system dropped the geofence, so it is put back. */
     const val ACTION_PROVIDERS_CHANGED = "android.location.PROVIDERS_CHANGED"
     const val ACTION_YES = "com.bamnat.app.commute.YES"
@@ -85,6 +89,7 @@ object CommuteRecorder {
         val prefs = CommutePrefs.get(context)
         val s = prefs.current
         watchProviders(context, s.enabled)
+        if (s.enabled && s.hasPlace) scheduleCheck(context) else cancelCheck(context)
         val client = runCatching { LocationServices.getGeofencingClient(context) }.getOrNull() ?: return
         if (!s.enabled || !s.hasPlace || !hasForeground(context) || !hasBackground(context)) {
             runCatching { client.removeGeofences(fenceIntent(context)) }
@@ -110,6 +115,49 @@ object CommuteRecorder {
                 .addOnFailureListener { prefs.fenceRegistered(null) }
         }
     }
+
+    /**
+     * [DAYW-07] At app start and every [CHECK_INTERVAL_MILLIS]: location off drops the geofence, so it is
+     * marked not there; with location on it goes back if it is not there. Location turned off and on while
+     * the app was not running is caught this way, without a forced re-add (which drops a crossing).
+     */
+    fun catchUp(context: Context, locationOn: Boolean = locationOn(context)) {
+        val prefs = CommutePrefs.get(context)
+        if (!prefs.current.enabled) { sync(context); return }
+        if (!locationOn) {
+            if (prefs.current.fence != null) prefs.fenceRegistered(null)
+            watchProviders(context, true)
+            if (prefs.current.hasPlace) scheduleCheck(context)
+            return
+        }
+        sync(context)
+    }
+
+    fun locationOn(context: Context): Boolean {
+        val lm = context.getSystemService(LocationManager::class.java) ?: return true
+        return androidx.core.location.LocationManagerCompat.isLocationEnabled(lm)
+    }
+
+    private fun checkIntent(context: Context, create: Boolean): PendingIntent? = PendingIntent.getBroadcast(context, REQ_CHECK,
+        Intent(context, CommuteReceiver::class.java).setAction(ACTION_CHECK),
+        PendingIntent.FLAG_IMMUTABLE or if (create) PendingIntent.FLAG_UPDATE_CURRENT else PendingIntent.FLAG_NO_CREATE)
+
+    /** [DAYW-07] Inexact and not waking the phone: it runs with whatever else wakes it. Left as it is when already set. */
+    fun scheduleCheck(context: Context) {
+        if (checkIntent(context, create = false) != null) return
+        val am = context.getSystemService(AlarmManager::class.java) ?: return
+        val pi = checkIntent(context, create = true) ?: return
+        am.setInexactRepeating(AlarmManager.RTC, System.currentTimeMillis() + CHECK_INTERVAL_MILLIS, CHECK_INTERVAL_MILLIS, pi)
+    }
+
+    fun cancelCheck(context: Context) {
+        val pi = checkIntent(context, create = false) ?: return
+        context.getSystemService(AlarmManager::class.java)?.cancel(pi)
+        pi.cancel()
+    }
+
+    /** Whether the periodic check is set. */
+    fun checkScheduled(context: Context): Boolean = checkIntent(context, create = false) != null
 
     fun fenceKey(s: CommutePrefs.State): String = "${s.lat},${s.lng},${s.radius}"
 
@@ -397,11 +445,10 @@ class CommuteReceiver : BroadcastReceiver() {
                         }
                     }
                     CommuteRecorder.ACTION_FINISH_LEAVE -> CommuteRecorder.finishLeave(context)
+                    CommuteRecorder.ACTION_CHECK -> runCatching { CommuteRecorder.catchUp(context) }
                     CommuteRecorder.ACTION_PROVIDERS_CHANGED -> {
                         // Only location coming back on needs the geofence put back.
-                        val lm = context.getSystemService(LocationManager::class.java)
-                        val on = lm == null || androidx.core.location.LocationManagerCompat.isLocationEnabled(lm)
-                        if (on && CommutePrefs.get(context).current.enabled) runCatching { CommuteRecorder.sync(context, force = true) }
+                        if (CommuteRecorder.locationOn(context) && CommutePrefs.get(context).current.enabled) runCatching { CommuteRecorder.sync(context, force = true) }
                     }
                     CommuteRecorder.ACTION_YES -> CommuteRecorder.recordOf(intent)?.let { CommuteRecorder.confirm(context, it) }
                     CommuteRecorder.ACTION_NO -> CommuteRecorder.recordOf(intent)?.let { CommuteRecorder.refuse(context, it) }

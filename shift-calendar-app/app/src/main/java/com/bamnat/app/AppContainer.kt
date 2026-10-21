@@ -143,7 +143,7 @@ class AppContainer(context: Context) {
     }
     val payStore = PayStore(appContext)
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars, memoSharing = memoSharing,
-        workTools = com.bamnat.app.data.WorkToolsStore.get(appContext), guide = com.bamnat.app.data.GuideStore.get(appContext))
+        workTools = com.bamnat.app.data.WorkToolsStore.get(appContext), guide = com.bamnat.app.data.GuideStore.get(appContext), recordsTrash = { recordsTrash })
     /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록: a calendar's records as they were before a change, for 7 days. */
     val recordsTrash by lazy {
         com.bamnat.app.data.RecordsTrash(java.io.File(appContext.noBackupFilesDir, "records_trash"), calendars, database, settingsRepository,
@@ -151,7 +151,7 @@ class AppContainer(context: Context) {
             autoRecord = autoRecordPrefs, commute = com.bamnat.app.data.CommutePrefs.get(appContext))
     }
     /** [SET-01] The data as it was before the last import, to take the import back. */
-    val importUndo by lazy { com.bamnat.app.data.ImportUndo(java.io.File(appContext.noBackupFilesDir, "before_import.json"), backupManager) }
+    val importUndo by lazy { com.bamnat.app.data.ImportUndo(java.io.File(appContext.noBackupFilesDir, "before_import.json"), backupManager, recordsTrash = { recordsTrash }) }
     /** [COMM-00] Company settings as a file for coworkers. */
     val companyShare by lazy { com.bamnat.app.data.CompanyShare(scheduleRepository, payStore, settingsRepository) }
     /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
@@ -366,10 +366,10 @@ class AppContainer(context: Context) {
                 .debounce(1_000)
                 .collect { (snap, next) -> com.bamnat.app.watch.WatchSync.push(appContext, snap, next) }
         }
-        // [DAYW-07] The workplace geofence goes in if it is not there yet (the same circle is left alone), and
-        // location coming back on is listened for while the feature is on.
+        // [DAYW-07] The workplace geofence goes in if it is not there yet (the same circle is left alone),
+        // location coming back on is listened for while the feature is on, and the periodic check is set.
         if (com.bamnat.app.data.CommutePrefs.get(appContext).current.enabled) {
-            appScope.launch { runCatching { com.bamnat.app.commute.CommuteRecorder.sync(appContext) } }
+            appScope.launch { runCatching { com.bamnat.app.commute.CommuteRecorder.catchUp(appContext) } }
         }
     }
 }

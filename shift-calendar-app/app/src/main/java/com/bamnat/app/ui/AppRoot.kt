@@ -447,13 +447,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             val extras = styleExtras.value?.takeIf { it.entryId == offer.entry.id }
             if (extras != null) styleExtras.value = null
             if (result == SnackbarResult.ActionPerformed) {
-                val ok = container.recordsTrash.restore(offer.entry.id)
-                if (ok && extras != null) {
-                    // [UNDO-01] The 시급 types the change added go too, and its next step closes.
-                    val schedule = container.calendars.repository(extras.calendar)
-                    extras.addedTypes.forEach { schedule.deleteShiftType(it) }
-                    extras.opened?.let { nav.popFrom(it) }
-                }
+                val ok = undoOffer(container, offer.entry.id, extras)
+                // [UNDO-01] Its next step closes too.
+                if (ok) extras?.opened?.let { nav.popFrom(it) }
                 snackbar.showSnackbar(if (ok) "되돌렸어요" else "되돌리지 못했어요. 설정 › 데이터 › 최근 지운 기록에서 다시 해 주세요")
             }
         }
@@ -539,7 +535,26 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 }
 
 /** [UNDO-01] A kind-of-work change's own extras, for its 되돌리기: the 시급 types it added and the next step it opened (a route pattern). */
-private class StyleExtras(val entryId: String, val calendar: String, val addedTypes: List<Long>, val opened: String?)
+internal class StyleExtras(val entryId: String, val calendar: String, val addedTypes: List<Long>, val opened: String?)
+
+/** [UNDO-01] Adds what [style] brings to calendar [calendar] (시급 types for hourly work); the ids added, for 되돌리기. */
+internal suspend fun addStyleTypes(container: AppContainer, calendar: String, style: WorkStyle): List<Long> {
+    if (style != WorkStyle.HOURLY) return emptyList()
+    val schedule = container.calendars.repository(calendar)
+    val typesBefore = schedule.shiftTypes.first().map { it.id }.toSet()
+    schedule.addHourlyTypes()
+    return schedule.shiftTypes.first().map { it.id }.filter { it !in typesBefore }
+}
+
+/** [UNDO-01] 되돌리기 of trash entry [entryId]; with a kind-of-work change's [extras] the 시급 types it added go too. */
+internal suspend fun undoOffer(container: AppContainer, entryId: String, extras: StyleExtras?): Boolean {
+    val ok = container.recordsTrash.restore(entryId)
+    if (ok && extras != null && extras.entryId == entryId) {
+        val schedule = container.calendars.repository(extras.calendar)
+        extras.addedTypes.forEach { schedule.deleteShiftType(it) }
+    }
+    return ok
+}
 
 @Composable
 private fun AppNavHost(
@@ -680,9 +695,7 @@ private fun AppNavHost(
                         if (clear) "기록을 지우고 ${style.label}${com.bamnat.app.ui.Fmt.ro(style.label)} 새로 시작해요" else style.changedMessage(),
                     )
                     val schedule = container.calendars.repository(calendar)
-                    val typesBefore = schedule.shiftTypes.first().map { it.id }.toSet()
-                    if (style == WorkStyle.HOURLY) schedule.addHourlyTypes()
-                    val added = if (style == WorkStyle.HOURLY) schedule.shiftTypes.first().map { it.id }.filter { it !in typesBefore } else emptyList()
+                    val added = addStyleTypes(container, calendar, style)
                     val patterns = schedule.patterns.first()
                     val pay = container.calendars.pay(calendar).profile.value != null
                     var opened: String? = null
