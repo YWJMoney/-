@@ -13,7 +13,6 @@ import com.bamnat.core.invest.InvestBook
 import com.bamnat.core.invest.InvestEvent
 import com.bamnat.core.invest.InvestSettings
 import com.bamnat.core.invest.JournalEntry
-import com.bamnat.core.invest.JournalRules
 import com.bamnat.core.invest.Quote
 import com.bamnat.core.invest.ReturnMethod
 import com.bamnat.core.invest.Snapshot
@@ -45,8 +44,7 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
         records, dao.observeEvents(), dao.observeAlarms(), dao.observeSnapshots(), dao.observeSettings(),
     ) { (b, j), e, al, s, st ->
         val settings = SettingsCodec.decode(st.associate { it.key to it.value })
-        // [INV-07] An older journal row's rule positions are read with the rules as they stand.
-        b.copy(journal = j.map { it.toModel(settings.principles) }, events = e.map { it.toModel() }, alarms = al.map { it.toModel() },
+        b.copy(journal = j.map { it.toModel() }, events = e.map { it.toModel() }, alarms = al.map { it.toModel() },
             snapshots = s.map { it.toModel() }, settings = settings)
     }.flowOn(Dispatchers.Default)
 
@@ -104,11 +102,6 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
     suspend fun saveSettings(change: (InvestSettings) -> InvestSettings) = db.withTransaction {
         val before = SettingsCodec.decode(dao.allSettings().associate { it.key to it.value })
         val after = change(before)
-        // [INV-07] Before the rules change, older journal rows' positions become the rules' text, so no day is relabelled.
-        if (after.principles != before.principles) {
-            dao.allJournal().filter { JournalRules.isLegacy(it.checked) }
-                .forEach { dao.upsertJournal(it.copy(checked = JournalRules.encode(JournalRules.decode(it.checked, before.principles)))) }
-        }
         SettingsCodec.encode(after).forEach { (k, v) -> dao.upsertSetting(InvestSettingEntity(k, v)) }
     }
 

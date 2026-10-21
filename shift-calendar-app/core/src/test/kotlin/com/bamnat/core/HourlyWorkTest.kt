@@ -96,6 +96,24 @@ class HourlyWorkTest {
     }
 
     @Test
+    fun `a paid holiday counts its scheduled day once toward weekly holiday hours`() {
+        // [PAY-13] 5인 이상: 2026-10-09 (금) 한글날 is a paid 공휴일. Week 10/5: 월·수 7.5h each plus the 금요일.
+        val big = partTime.copy(fiveOrMoreEmployees = true)
+        val fri = LocalDate.of(2026, 10, 9)
+        val others = 3 * 270
+        // Normal weeks (10/12 on, and 9/28): 22.5h → 4.5h each; the holiday worked 14~22 counts 7.5h once.
+        assertEquals(others + 270, weeklyHolidayMinutes(big, resolver()))
+        // Worked on a night shift 22~07: the hours past midnight are regular, yet the day still counts 8h once
+        // (7.5 + 7.5 + 8 = 23h → 4.6h), not 8h of 유급휴일 plus them.
+        assertEquals(others + 276, weeklyHolidayMinutes(big, resolver(listOf(DayEntry(fri, override = ShiftOverride.Shift(Fixtures.night.id))))))
+        // Paid leave on the holiday: the 유급휴일 already holds those hours.
+        val leave = DayEntry(fri, leave = com.bamnat.core.model.Leave(com.bamnat.core.model.LeaveKind.ANNUAL))
+        assertEquals(others + 270, weeklyHolidayMinutes(big, resolver(listOf(leave))))
+        // Not worked (쉬는 날): no 소정 hours that day, 15h → 3h.
+        assertEquals(others + 180, weeklyHolidayMinutes(big, resolver(listOf(DayEntry(fri, override = ShiftOverride.Off)))))
+    }
+
+    @Test
     fun `the weekly holiday week can start on another weekday`() {
         // From Sunday: 9/27, 10/4, 10/11, 10/18, 10/25 all end in October.
         assertEquals(5 * 270, weeklyHolidayMinutes(partTime.copy(holidayWeekStart = DayOfWeek.SUNDAY), resolver()))

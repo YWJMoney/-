@@ -100,7 +100,7 @@ data class InvestJournalEntity(
     @PrimaryKey val epochDay: Long,
     val market: String,
     val review: String,
-    /** [INV-07] The kept rules' text, each after a line break ([JournalRules]); older rows hold positions, "0,2". */
+    /** [INV-07] The kept rules' text, each after a line break ([JournalRules]). */
     val checked: String,
     val grade: String?,
     val updatedAt: Long,
@@ -246,9 +246,8 @@ fun CashFlow.toEntity(now: Long = System.currentTimeMillis()) = InvestCashEntity
 fun InvestQuoteEntity.toModel() = Quote(symbol, price, LocalDate.ofEpochDay(epochDay), name, enumOr(market, Market.OTHER))
 fun Quote.toEntity() = InvestQuoteEntity(key, name, market.name, price, date.toEpochDay())
 
-/** [INV-07] [principles] are the rules as they stand, which an older row's positions point into. */
-fun InvestJournalEntity.toModel(principles: List<String>) = JournalEntry(
-    LocalDate.ofEpochDay(epochDay), market, review, JournalRules.decode(checked, principles),
+fun InvestJournalEntity.toModel() = JournalEntry(
+    LocalDate.ofEpochDay(epochDay), market, review, JournalRules.decode(checked),
     grade?.let { g -> DayGrade.entries.firstOrNull { it.name == g } }, updatedAt,
 )
 fun JournalEntry.toEntity(now: Long = System.currentTimeMillis()) =

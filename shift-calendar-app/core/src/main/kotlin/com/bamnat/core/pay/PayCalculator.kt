@@ -251,8 +251,10 @@ class PayCalculator(
         // [PAYS-03] Paid breaks of hourly and daily pay; a monthly salary already holds them.
         var paidBreak = 0
         // The week's 소정근로 for 주휴 counts paid leave and paid holidays as attended.
-        val attendedByDate = days.associate { it.date to (paidLeaveByDate[it.date] ?: 0) + paidHolidayMinutes(it) }
-            .filterValues { it > 0 }
+        val attendedByDate = paidLeaveByDate.filterValues { it > 0 }
+        // [PAY-13] A paid holiday counts its scheduled day once: its minutes already hold the day's leave, and
+        // a shift spilling past midnight keeps its regular minutes, so neither is added on top.
+        val paidHolidayByDate = days.associate { it.date to paidHolidayMinutes(it) }.filterValues { it > 0 }
         // [HRLY-02] A 결근 breaks the week's 개근; 지각 and 조퇴 do not.
         val absentDates = days.filter { it.entry?.attendance == Attendance.ABSENT }.map { it.date }.toSet()
         // [HRLY-06] 수습 감액: the 수습 rate is the hourly wage of each day before the probation ends, so it
@@ -435,7 +437,7 @@ class PayCalculator(
         }
         // [PAYS-03] An approved 감시·단속 worker has no 주휴 (제55조 is in chapter 4).
         val weeklyHoliday = if (byHour && rules.weeklyHolidayPay && !supervisory) {
-            weeklyHolidayLine(allMinutes, attendedByDate, holidayWeekFrom, periodStart, periodEnd, hourly, baseEstimated, absentDates, profile::onProbation)
+            weeklyHolidayLine(allMinutes, attendedByDate, paidHolidayByDate, holidayWeekFrom, periodStart, periodEnd, hourly, baseEstimated, absentDates, profile::onProbation)
         } else null
         // [HRLY-06] 주휴 earned by days on probation, at the 수습 rate too.
         weeklyHoliday?.second?.takeIf { it > 0 }?.let { mins ->
@@ -952,7 +954,7 @@ class PayCalculator(
      * [onProbation], in each week's share of its hours.
      */
     private fun weeklyHolidayLine(
-        all: List<DayMinutes>, attended: Map<LocalDate, Int>, from: LocalDate, periodStart: LocalDate, periodEnd: LocalDate,
+        all: List<DayMinutes>, attended: Map<LocalDate, Int>, paidHolidays: Map<LocalDate, Int>, from: LocalDate, periodStart: LocalDate, periodEnd: LocalDate,
         hourly: Long, estimated: Boolean, absent: Set<LocalDate> = emptySet(), onProbation: (LocalDate) -> Boolean = { false },
     ): Pair<PayLine, Int>? {
         var weekStart = from
@@ -964,12 +966,14 @@ class PayCalculator(
             if (!end.isBefore(periodStart) && absent.none { !it.isBefore(weekStart) && !it.isAfter(end) }) {
                 // Paid leave and paid holidays count as attended hours of the week.
                 val week = all.filter { !it.date.isBefore(weekStart) && !it.date.isAfter(end) }
-                val worked = week.sumOf { it.regular + (attended[it.date] ?: 0) }
+                // [PAY-13] A paid holiday is its scheduled day, never that plus the minutes worked on it.
+                fun credit(d: DayMinutes) = maxOf(d.regular + (attended[d.date] ?: 0), paidHolidays[d.date] ?: 0)
+                val worked = week.sumOf { credit(it) }
                 if (worked >= 15 * 60) {
                     val credit = minOf(worked, 40 * 60) / 5
                     minutes += credit
                     weeks += credit
-                    probation += credit * week.filter { onProbation(it.date) }.sumOf { it.regular + (attended[it.date] ?: 0) }.toDouble() / worked
+                    probation += credit * week.filter { onProbation(it.date) }.sumOf { credit(it) }.toDouble() / worked
                 }
             }
             weekStart = weekStart.plusDays(7)

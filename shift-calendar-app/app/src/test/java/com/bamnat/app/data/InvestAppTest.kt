@@ -113,19 +113,20 @@ class InvestAppTest {
     }
 
     @Test fun takingARuleOffKeepsPastDaysAsTheyWere() = runBlocking {
-        // [INV-07] A row from before kept positions ("0,2"), as did a backup made then.
+        // [INV-07] Days keep the rules' text: taking the first rule off leaves them as they were.
         repo.saveSettings { it.copy(principles = listOf("손절", "몰빵 금지", "계획대로")) }
-        db.investDao().upsertJournal(com.bamnat.app.data.db.InvestJournalEntity(day.toEpochDay(), "", "복기", "0,2", null, 0))
-        assertEquals(setOf("손절", "계획대로"), repo.now().journalOn(day)!!.checked)
-        // The first rule taken off: the old row is rewritten as text first, so it still says the same rules.
+        repo.saveJournal(JournalEntry(day, review = "복기", checked = setOf("손절", "계획대로")))
         repo.saveSettings { it.copy(principles = listOf("몰빵 금지", "계획대로")) }
         assertEquals(setOf("손절", "계획대로"), repo.now().journalOn(day)!!.checked)
-        assertFalse(com.bamnat.core.invest.JournalRules.isLegacy(db.investDao().allJournal().single().checked))
         // A new day saved by text, then the list reordered: nothing moves.
         repo.saveJournal(JournalEntry(day.plusDays(1), checked = setOf("몰빵 금지")))
         repo.saveSettings { it.copy(principles = listOf("계획대로", "새 원칙", "몰빵 금지")) }
         assertEquals(setOf("몰빵 금지"), repo.now().journalOn(day.plusDays(1))!!.checked)
         assertEquals(setOf("손절", "계획대로"), repo.now().journalOn(day)!!.checked)
+        // A row of old positions ("0,2") keeps its notes and reads as no rules kept.
+        db.investDao().upsertJournal(com.bamnat.app.data.db.InvestJournalEntity(day.plusDays(2).toEpochDay(), "", "옛 복기", "0,2", null, 0))
+        assertEquals("옛 복기", repo.now().journalOn(day.plusDays(2))!!.review)
+        assertEquals(emptySet<String>(), repo.now().journalOn(day.plusDays(2))!!.checked)
     }
 
     @Test fun theCalendarShowsEveryAccountWhileTheTabShowsOne() {

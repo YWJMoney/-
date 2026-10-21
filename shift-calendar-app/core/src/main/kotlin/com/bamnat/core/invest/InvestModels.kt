@@ -174,17 +174,14 @@ data class JournalEntry(
 
 /**
  * [INV-07] How a journal's kept rules are written in its one text field: each rule after a line break
- * (a rule never holds one), "\n손절가를 지켰어요\n…". Older entries kept positions in the list ("0,2");
- * those are read with the rules as they stand, and rewritten as text before the list changes.
+ * (a rule never holds one), "\n손절가를 지켰어요\n…". Text without a line break (the old "0,2" positions)
+ * reads as no rules kept.
  */
 object JournalRules {
     fun encode(rules: Set<String>): String = rules.joinToString("") { "\n" + it.replace('\n', ' ').trim() }
 
-    fun isLegacy(raw: String): Boolean = raw.isNotBlank() && '\n' !in raw
-
-    fun decode(raw: String, principles: List<String>): Set<String> =
-        if (isLegacy(raw)) raw.split(',').mapNotNull { it.trim().toIntOrNull() }.sorted().mapNotNull { principles.getOrNull(it) }.toCollection(LinkedHashSet())
-        else raw.split('\n').map { it.trim() }.filter { it.isNotEmpty() }.toCollection(LinkedHashSet())
+    fun decode(raw: String): Set<String> =
+        if ('\n' !in raw) emptySet() else raw.split('\n').map { it.trim() }.filter { it.isNotEmpty() }.toCollection(LinkedHashSet())
 }
 
 /** [INV-07] 좋음·보통·나쁨, like a trade-note app's day rating. */
