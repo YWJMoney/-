@@ -61,7 +61,8 @@ object WatchStore {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         val zone = ZoneId.systemDefault()
         val midnight = LocalDate.now(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() + 5_000
-        am.set(AlarmManager.RTC, midnight, PendingIntent.getBroadcast(context, 1,
+        // [SHFT-08] Still rings in Doze, so the tile does not show yesterday until the watch is picked up.
+        am.setAndAllowWhileIdle(AlarmManager.RTC, midnight, PendingIntent.getBroadcast(context, 1,
             Intent(context, MidnightReceiver::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
     }
 
@@ -101,4 +102,18 @@ class DaysListenerService : WearableListenerService() {
 /** [SHFT-08] A new day: the tile and complication show it. */
 class MidnightReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) = WatchStore.changed(context)
+}
+
+/**
+ * [SHFT-08] A restart drops the midnight alarm, and a new time or time zone moves midnight: draw again and set
+ * it anew.
+ */
+class ClockReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action in ACTIONS) WatchStore.changed(context)
+    }
+
+    private companion object {
+        val ACTIONS = setOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_TIMEZONE_CHANGED, Intent.ACTION_TIME_CHANGED)
+    }
 }

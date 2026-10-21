@@ -104,7 +104,7 @@ apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
 
   인증서 SHA-256은 `8e7891b3e37e27c3911dcd83c87f647e6c83c8c631b248b6b694040910a97acb`이어야 해요(1.1.0부터 같은 업로드 키).
   결과물은 `app/build/outputs/apk/release/app-release.apk`와 `app/build/outputs/bundle/release/app-release.aab`이고, `Bamnat-<버전>-release.apk`, `Bamnat-<버전>.aab`로 이름을 바꿔 보관해요.
-- 버전은 `app/build.gradle.kts`의 `versionCode`와 `versionName`을 올려요. DB를 바꾸면 Room 마이그레이션과 테스트를 같이 만들어요.
+- 버전은 `gradle.properties`의 `bamnat.versionCode`와 `bamnat.versionName`을 올려요(워치는 versionCode + 100000으로 저절로 따라가요). DB를 바꾸면 Room 마이그레이션과 테스트를 같이 만들어요.
 
 ## 6. 코드 구조
 

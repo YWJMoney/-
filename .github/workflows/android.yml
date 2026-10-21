@@ -36,6 +36,8 @@ jobs:
       - run: python3 tools/check_tracker.py
       - run: sh ./gradlew -p core test
       - run: sh ./gradlew :app:testDebugUnitTest :app:lintDebug --continue
+      # [REL-09] The watch app builds and passes lint too.
+      - run: sh ./gradlew :wear:assembleDebug :wear:lintDebug --continue
       # Room writes the schema of each database version it builds. A new version has to be committed with its migration.
       - name: Room schema committed
         run: |
@@ -54,4 +56,5 @@ jobs:
             shift-calendar-app/app/build/reports
             shift-calendar-app/app/build/screenshots
             shift-calendar-app/core/build/reports
+            shift-calendar-app/wear/build/reports
           retention-days: 7

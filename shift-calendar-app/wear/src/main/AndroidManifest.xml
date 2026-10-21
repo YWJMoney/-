@@ -4,6 +4,9 @@
 
     <uses-feature android:name="android.hardware.type.watch" />
 
+    <!-- A restart drops the midnight alarm; ClockReceiver sets it again. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -75,5 +78,16 @@
         <receiver
             android:name=".MidnightReceiver"
             android:exported="false" />
+
+        <!-- A restart, a new time or a new time zone: draw again and set the midnight alarm anew. -->
+        <receiver
+            android:name=".ClockReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

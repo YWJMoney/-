@@ -1,6 +1,6 @@
 import java.util.Properties
 
-// [SHFT-08][REL-09] The Wear OS app: a tile, a watch-face complication and a small app (오늘·이번 주·이번 달)
+// [SHFT-08][REL-09] The Wear OS app: a tile, a watch-face complication and a small app (오늘·앞으로 7일·이번 달)
 // showing the days the phone app sends through the Wearable Data Layer. No internet permission.
 // It has the phone app's package name and must be signed with the same key, or the Data Layer will not pair them.
 plugins {
@@ -18,9 +18,9 @@ android {
         // Wear OS 3 and later.
         minSdk = 30
         targetSdk = 36
-        // The watch build's own number: the phone app's versionCode + 100000, so the two never clash on Play.
-        versionCode = 100026
-        versionName = "1.17.0"
+        // The watch build's own number: the phone app's versionCode (gradle.properties) + 100000, so the two never clash on Play.
+        versionCode = (project.property("bamnat.versionCode") as String).toInt() + 100_000
+        versionName = project.property("bamnat.versionName") as String
     }
 
     signingConfigs {

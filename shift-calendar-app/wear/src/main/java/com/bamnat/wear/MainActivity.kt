@@ -55,7 +55,7 @@ import java.time.LocalDateTime
 import java.time.YearMonth
 
 /**
- * [SHFT-08][REL-09] The watch app: 오늘 (today's shift, tomorrow's and the next alarm), 이번 주 (seven days as a
+ * [SHFT-08][REL-09] The watch app: 오늘 (today's shift, tomorrow's and the next alarm), 앞으로 7일 (today and six days on as a
  * list) and 월 보기 (a month at a glance, swiping to the next month). Swipe left and right between them.
  * It shows the watch's last copy of the phone's days with when they came, and asks the phone for fresh ones.
  */
@@ -132,7 +132,7 @@ private fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Uni
         WatchText.alarm(p, now)?.let { a -> item { Text(a, fontSize = 12.sp, color = Color(0xFFFFC266), textAlign = TextAlign.Center) } }
         item { Text(WatchText.synced(p, now), fontSize = 11.sp, color = Color(0xFF9AA3B5), textAlign = TextAlign.Center) }
         item { RefreshChip(refreshing, onRefresh) }
-        item { Text("옆으로 넘기면 이번 주 · 월 보기", fontSize = 10.sp, color = Color(0xFF6E7687)) }
+        item { Text("옆으로 넘기면 앞으로 7일 · 월 보기", fontSize = 10.sp, color = Color(0xFF6E7687)) }
     }
 }
 
@@ -141,7 +141,7 @@ private fun WeekPage(p: WatchPayload) {
     val today = LocalDate.now()
     val days = (0L until 7L).map { today.plusDays(it) }
     ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        item { Text("이번 주", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+        item { Text("앞으로 7일", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
         items(days) { date ->
             val d = WatchDays.on(p.days, date)
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
