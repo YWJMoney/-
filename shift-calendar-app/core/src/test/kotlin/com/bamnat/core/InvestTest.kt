@@ -408,19 +408,15 @@ class InvestTest {
     }
 
     @Test
-    fun journalKeepsRuleTextAndReadsOlderPositions() {
+    fun journalKeepsRuleText() {
         val rules = listOf("손절", "몰빵 금지", "계획대로")
         val kept = linkedSetOf("손절", "계획대로")
-        val raw = JournalRules.encode(kept)
-        assertFalse(JournalRules.isLegacy(raw))
-        assertEquals(kept, JournalRules.decode(raw, emptyList()))
+        assertEquals(kept, JournalRules.decode(JournalRules.encode(kept)))
         // A single rule, even one that looks like a number, is text.
-        assertEquals(setOf("3"), JournalRules.decode(JournalRules.encode(setOf("3")), rules))
-        // Older rows kept positions: read with the rules as they stand; ones past the end drop out.
-        assertTrue(JournalRules.isLegacy("0,2"))
-        assertEquals(kept, JournalRules.decode("2,0,7", rules))
-        assertEquals(emptySet<String>(), JournalRules.decode("", rules))
-        assertFalse(JournalRules.isLegacy(""))
+        assertEquals(setOf("3"), JournalRules.decode(JournalRules.encode(setOf("3"))))
+        // Nothing kept, or an old row of positions ("0,2"), reads as no rules rather than failing.
+        assertEquals(emptySet<String>(), JournalRules.decode(""))
+        assertEquals(emptySet<String>(), JournalRules.decode("0,2"))
         // The CSV writes the kept rules by name: in the list's order, then ones since taken off.
         val book = InvestBook(
             journal = listOf(JournalEntry(d(3), review = "복기", checked = linkedSetOf("옛 원칙", "계획대로", "손절"))),

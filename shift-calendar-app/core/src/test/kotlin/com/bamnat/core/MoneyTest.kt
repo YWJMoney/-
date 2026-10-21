@@ -202,6 +202,26 @@ class MoneyTest {
         assertEquals(listOf(com.bamnat.core.work.MonthFigure(nov, 2_800_000, "받은 급여")), f.recordedPay(months, ledger))
         assertTrue(f.sales(months, emptyList()).isEmpty())
     }
+
+    @Test
+    fun `recorded pay counts salary-like categories`() {
+        val f = com.bamnat.core.work.MoneyShareFigures
+        val nov = YearMonth.of(2026, 11)
+        for (name in listOf("급여", "월급", "10월 월급", "급여(본사)", "급여 - 알바", "상여", "상여금", "주급", "일당", "알바비", "알바 급여", "임금"))
+            assertTrue(name, f.isSalary(name))
+        for (name in listOf("부수입", "용돈", "급여통장 이자", "월급날 선물", "환급", "기타", ""))
+            assertFalse(name, f.isSalary(name))
+        fun income(day: Int, amount: Long, category: String, parts: List<com.bamnat.core.money.EntryPart> = emptyList()) =
+            com.bamnat.core.money.MoneyEntry(date = nov.atDay(day), kind = com.bamnat.core.money.MoneyKind.INCOME, amount = amount, category = category, parts = parts)
+        val ledger = listOf(
+            income(10, 2_000_000, "월급"),
+            income(15, 300_000, "상여"),
+            income(20, 50_000, "용돈"),
+            // A split line: only its salary part.
+            income(25, 100_000, "기타", listOf(com.bamnat.core.money.EntryPart("알바비", 70_000), com.bamnat.core.money.EntryPart("기타", 30_000))),
+        )
+        assertEquals(listOf(com.bamnat.core.work.MonthFigure(nov, 2_370_000, "받은 급여")), f.recordedPay(listOf(nov), ledger))
+    }
 }
 
 class JobRemindersTest {
