@@ -52,8 +52,6 @@ object PayGaps {
         return PayGap(month, expected, amount, dates)
     }
 
-    /** What of a line is 급여: all of a 급여 line, or the 급여 parts of a split one. */
-    private fun payAmount(e: MoneyEntry): Long =
-        if (e.parts.isEmpty()) e.amount.takeIf { e.category == MoneyCategories.SALARY } ?: 0
-        else e.parts.filter { it.category == MoneyCategories.SALARY }.sumOf { it.amount }
+    /** What of a line is 급여: all of a 급여 line, or the 급여 share of a split one (its main part included). */
+    private fun payAmount(e: MoneyEntry): Long = e.shareOf(MoneyCategories.SALARY)
 }

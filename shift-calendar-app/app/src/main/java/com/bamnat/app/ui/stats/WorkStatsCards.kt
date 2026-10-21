@@ -220,7 +220,7 @@ private fun TargetCard(rules: ShopMoney, book: MoneyBook, month: YearMonth, toda
 @Composable
 private fun VatCard(rules: ShopMoney, book: MoneyBook, date: LocalDate, onSimple: (Boolean) -> Unit) {
     val half = remember(book, date, rules) { VatEstimate.of(date, book.sales, book.entries, rules) }
-    SectionCard(title = "부가세 예상 (${half.year}년 ${if (half.half == 1) "1~6월" else "7~12월"})") {
+    SectionCard(title = "부가세 예상 (${half.year}년 ${when (half.half) { 1 -> "1~6월"; 2 -> "7~12월"; else -> "1~12월" }})") {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = !rules.simpleTax, onClick = { onSimple(false) }, label = { Text("일반과세") })
             FilterChip(selected = rules.simpleTax, onClick = { onSimple(true) }, label = { Text("간이과세") })
@@ -230,7 +230,8 @@ private fun VatCard(rules: ShopMoney, book: MoneyBook, date: LocalDate, onSimple
         if (!rules.simpleTax) YearLine("세금계산서·카드·현금영수증 경비", Fmt.won(half.provenExpenses))
         YearLine("부가세 대략", Fmt.won(half.vat))
         Text(
-            (if (rules.simpleTax) "간이과세: 매출 × 업종 부가가치율 ${rules.valueAddedPercent}% × 10%로 셌어요. "
+            (if (rules.simpleTax) "간이과세: 1년 매출 × 업종 부가가치율 ${rules.valueAddedPercent}% × 10%로 셌어요. " +
+                (if (half.exempt) "1년 매출이 4,800만 원 미만이면 낼 부가세가 없어요(납부 면제). " else "")
             else "일반과세: (매출 − 증빙 있는 경비) × 10/110로 셌어요. 경비에 증빙을 고르면 빠져요. ") +
                 "대략·참고용이에요. 신고 마감 ${half.due.monthValue}월 ${half.due.dayOfMonth}일.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,

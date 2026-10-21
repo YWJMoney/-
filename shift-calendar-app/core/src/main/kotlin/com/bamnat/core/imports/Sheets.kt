@@ -80,7 +80,7 @@ object Sheets {
             while (true) {
                 val e = zip.nextEntry ?: break
                 val name = e.name
-                if (name == "xl/sharedStrings.xml" || name == "xl/workbook.xml" || name == "xl/_rels/workbook.xml.rels" ||
+                if (name == "xl/sharedStrings.xml" || name == "xl/workbook.xml" || name == "xl/_rels/workbook.xml.rels" || name == "xl/styles.xml" ||
                     (name.startsWith("xl/worksheets/") && name.endsWith(".xml"))) {
                     val out = java.io.ByteArrayOutputStream()
                     val buf = ByteArray(16 * 1024)
@@ -97,7 +97,28 @@ object Sheets {
         val strings = parts["xl/sharedStrings.xml"]?.let(::sharedStrings).orEmpty()
         val sheet = parts[firstSheet(parts)] ?: parts.keys.filter { it.startsWith("xl/worksheets/") }.minOrNull()?.let { parts[it] }
             ?: throw SheetException("엑셀 파일에서 시트를 찾지 못했어요")
-        return sheetRows(sheet, strings)
+        return sheetRows(sheet, strings, parts["xl/styles.xml"]?.let(::timeStyles).orEmpty())
+    }
+
+    /**
+     * [DAYW-06] Which cell styles (their index in cellXfs) show a number as a clock time or a length (h:mm,
+     * [h]:mm, mm:ss): Excel's built-in time formats 18–21 and 45–47, or a format of its own with hours or
+     * seconds and no year or day.
+     */
+    private fun timeStyles(xml: String): Set<Int> {
+        val custom = Regex("""<numFmt\b[^>]*>""").findAll(xml).mapNotNull { m ->
+            val id = attr(m.value, "numFmtId")?.toIntOrNull() ?: return@mapNotNull null
+            id to unescape(attr(m.value, "formatCode").orEmpty())
+        }.toMap()
+        fun isTime(id: Int): Boolean {
+            if (id in 18..21 || id in 45..47) return true
+            val code = custom[id] ?: return false
+            val bare = code.replace(Regex("\"[^\"]*\""), "").replace(Regex("""\[(?![hms]+])[^\]]*]""", RegexOption.IGNORE_CASE), "").lowercase()
+            return !bare.contains('y') && !bare.contains('d') && (bare.contains('h') || bare.contains('s'))
+        }
+        val xfs = Regex("""<cellXfs\b[^>]*>(.*?)</cellXfs>""", RegexOption.DOT_MATCHES_ALL).find(xml)?.groupValues?.get(1) ?: return emptySet()
+        return Regex("""<xf\b[^>]*>""").findAll(xfs).withIndex()
+            .filter { (_, m) -> attr(m.value, "numFmtId")?.toIntOrNull()?.let(::isTime) == true }.map { it.index }.toSet()
     }
 
     /** The first sheet in the workbook's order, through its relationship id. */
@@ -117,7 +138,7 @@ object Sheets {
             Regex("""<t\b[^>]*>(.*?)</t>""", RegexOption.DOT_MATCHES_ALL).findAll(body).joinToString("") { unescape(it.groupValues[1]) }
         }.toList()
 
-    private fun sheetRows(xml: String, strings: List<String>): List<List<String>> {
+    private fun sheetRows(xml: String, strings: List<String>, timeStyles: Set<Int> = emptySet()): List<List<String>> {
         val rows = mutableListOf<List<String>>()
         val rowRe = Regex("""<row\b[^>]*?(?:/>|>(.*?)</row>)""", RegexOption.DOT_MATCHES_ALL)
         val cellRe = Regex("""<c\b([^>]*?)(?:/>|>(.*?)</c>)""", RegexOption.DOT_MATCHES_ALL)
@@ -134,7 +155,8 @@ object Sheets {
                 val text = when (attr(attrs, "t")) {
                     "s" -> v?.trim()?.toIntOrNull()?.let { strings.getOrNull(it) }
                     "inlineStr" -> Regex("""<t\b[^>]*>(.*?)</t>""", RegexOption.DOT_MATCHES_ALL).findAll(body).joinToString("") { unescape(it.groupValues[1]) }
-                    null, "n" -> v?.let(::dayFraction)
+                    // Only a cell shown as a time is a fraction of a day; 0.5 in a decimal-hours column is half an hour.
+                    null, "n" -> if (attr(attrs, "s")?.toIntOrNull() in timeStyles) v?.let(::dayFraction) else v
                     else -> v
                 }.orEmpty().trim()
                 if (col < 200) cells[col] = text
@@ -148,9 +170,10 @@ object Sheets {
     }
 
     /**
-     * [DAYW-06] A number cell below 1 is Excel's fraction of a day — a clock time or a length (0.25 is 6:00,
-     * 0.5 is 12:00) — so it comes back as h:mm, read the same as a time or a length typed as text. Decided by
-     * the cell being a number, never by how many digits it has; other numbers stay as they are.
+     * [DAYW-06] A number cell below 1 shown as a time ([timeStyles]) is Excel's fraction of a day — a clock time
+     * or a length (0.25 is 6:00, 0.5 is 12:00) — so it comes back as h:mm, read the same as text. Other numbers
+     * stay as they are: a 출근·퇴근 column still reads a bare fraction as a time ([AttendanceImport.parseTime]),
+     * a 근무시간·연장 column reads 0.5 as half an hour.
      */
     internal fun dayFraction(v: String): String {
         val d = v.trim().toDoubleOrNull() ?: return v

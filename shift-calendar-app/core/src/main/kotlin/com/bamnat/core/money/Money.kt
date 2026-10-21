@@ -291,14 +291,15 @@ object MoneyCalculator {
         val j = jobs.filter { inMonth(it.date) }
         val s = sales.filter { inMonth(it.date) }
         val incomes = e.filter { it.kind == MoneyKind.INCOME }
-        val (salary, other) = incomes.partition { it.category == MoneyCategories.SALARY }
+        // [LEDG-11] A split income line counts its 급여 share as pay, the rest as other income ([com.bamnat.core.pay.PayGaps]).
+        val salary = incomes.sumOf { it.shareOf(MoneyCategories.SALARY) }
         val spent = e.filter { it.kind == MoneyKind.EXPENSE }
         // [LEDG-11] A split payment counts under each of its categories.
         val shares = spent.flatMap { it.shares() }
         return MonthMoney(
             month = month,
             payEstimate = payEstimate,
-            payRecorded = salary.sumOf { it.amount },
+            payRecorded = salary,
             // [FLD-03] A cancelled job adds only the deposit it kept.
             jobEarned = j.sumOf { it.earned },
             jobReceived = j.sumOf { it.received },
@@ -308,7 +309,7 @@ object MoneyCalculator {
             sales = s.sumOf { it.sales },
             salesCosts = s.sumOf { it.costs },
             salesDays = s.count { it.sales != 0L || it.costs != 0L },
-            otherIncome = other.sumOf { it.amount },
+            otherIncome = incomes.sumOf { it.amount } - salary,
             expenses = spent.sumOf { it.amount },
             expenseByCategory = shares.groupBy { it.first }
                 .map { (c, list) -> CategoryTotal(c, list.sumOf { it.second }, list.size) }

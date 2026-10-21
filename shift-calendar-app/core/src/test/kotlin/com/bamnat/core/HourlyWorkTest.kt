@@ -85,6 +85,14 @@ class HourlyWorkTest {
         assertEquals(1, absentWeek.absent)
         assertFalse(absentWeek.holidayPay)
         assertTrue(weeks.single { it.start == LocalDate.of(2026, 10, 5) }.holidayPay)
+
+        // The badge counts as 주휴수당 does: extra work is not 소정근로, paid leave is attended.
+        val mon = LocalDate.of(2026, 10, 5)
+        val extra = DayEntry(LocalDate.of(2026, 10, 7), extras = listOf(com.bamnat.core.model.ExtraEntry(com.bamnat.core.model.ExtraKind.OVERTIME_ID, minutes = 120)))
+        val paidLeave = DayEntry(LocalDate.of(2026, 10, 9), leave = com.bamnat.core.model.Leave(com.bamnat.core.model.LeaveKind.ANNUAL))
+        assertEquals(1350, HourlyWork.week(mon, resolver(listOf(extra, paidLeave))::resolve).minutes)
+        val unpaid = paidLeave.copy(leave = com.bamnat.core.model.Leave(com.bamnat.core.model.LeaveKind.UNPAID))
+        assertEquals(900, HourlyWork.week(mon, resolver(listOf(unpaid))::resolve).minutes)
     }
 
     @Test
@@ -131,13 +139,19 @@ class HourlyWorkTest {
         assertEquals(i.gross - i.deductions.sumOf { it.second }, i.net)
         // A small month pays no income tax at all.
         assertTrue(TakeHome.estimate(800_000, TaxMode.INSURANCE_4).deductions.none { it.first.startsWith("근로소득세") })
+        // 국민연금 is on the 기준소득월액, kept between 40만 and 637만 원.
+        assertEquals(19_000L, TakeHome.estimate(300_000, TaxMode.INSURANCE_4).deductions.toMap()["국민연금"])
+        assertEquals(302_570L, TakeHome.estimate(10_000_000, TaxMode.INSURANCE_4).deductions.toMap()["국민연금"])
     }
 
     @Test
     fun `the legal break comes off days without one`() {
         assertEquals(0, LegalBreak.minutesFor(239))
         assertEquals(30, LegalBreak.minutesFor(240))
-        assertEquals(60, LegalBreak.minutesFor(480))
+        // 8 hours on the clock with 30 minutes off is 7½ hours worked: 30 minutes is enough.
+        assertEquals(30, LegalBreak.minutesFor(480))
+        assertEquals(30, LegalBreak.minutesFor(509))
+        assertEquals(60, LegalBreak.minutesFor(510))
         val longDay = LocalDate.of(2026, 10, 13)
         val entries = listOf(
             DayEntry(longDay, override = ShiftOverride.Shift(Fixtures.long.id)),
@@ -160,9 +174,17 @@ class HourlyWorkTest {
     fun `days before probation ends pay 90 percent`() {
         val profile = partTime.copy(probationEnd = LocalDate.of(2026, 10, 15))
         val pay = PayCalculator().calculate(profile, oct, resolver()::resolve)
-        // 10/2, 5, 7, 9, 12, 14: six days of 7.5h × 10,320원 × 10%.
-        assertEquals(-46_440L, pay.lines.single { it.label == "수습 감액" }.amount)
+        // 10/2, 5, 7, 9, 12, 14: six days of 7.5h × 10,320원 × 10%, and 주휴 at the 수습 rate too: 4.5h for
+        // the weeks of 9/28 and 10/5, two thirds of 4.5h for the week of 10/12 (10/16 is after it): 12h × 10,320원 × 10%.
+        assertEquals(-46_440L - 12_384L, pay.lines.single { it.label == "수습 감액" }.amount)
         assertEquals(-7_740L, pay.day(wed)!!.parts.single { it.label == "수습 감액" }.amount)
+        // Every hour-based part of a day on probation is at the 수습 rate, 잔업 included, as the calendar's day pay is.
+        val ot = DayEntry(wed, extras = listOf(com.bamnat.core.model.ExtraEntry(com.bamnat.core.model.ExtraKind.OVERTIME_ID, minutes = 120)))
+        val otDay = PayCalculator().calculate(profile, oct, resolver(listOf(ot))::resolve).day(wed)!!
+        val hourPay = otDay.parts.filter { it.label != "수습 감액" && it.kind in setOf(LineKind.BASE, LineKind.EXTRA_HOURS, LineKind.OVERTIME, LineKind.NIGHT, LineKind.HOLIDAY) }
+            .sumOf { it.amount }
+        assertTrue(hourPay > 77_400L)
+        assertEquals(-Math.round(hourPay * 0.1), otDay.parts.single { it.label == "수습 감액" }.amount)
         assertTrue(pay.day(LocalDate.of(2026, 10, 16))!!.parts.none { it.label == "수습 감액" })
         assertTrue(pay.warnings.none { it.contains("수습") })
         assertEquals(69_660L, HourlyWork.dayPay(resolver().resolve(wed), profile))
@@ -176,6 +198,8 @@ class HourlyWorkTest {
         assertEquals(LocalTime.of(18, 0), HourlyWork.clock(LocalTime.of(17, 58, 10)))
         assertEquals(LocalTime.of(18, 5), HourlyWork.clock(LocalTime.of(18, 3)))
         assertEquals(LocalTime.of(18, 0), HourlyWork.clock(LocalTime.of(18, 2, 20)))
+        // Just before midnight it stays on today.
+        assertEquals(LocalTime.of(23, 55), HourlyWork.clock(LocalTime.of(23, 58)))
         val r = resolver(listOf(DayEntry(wed, attendance = Attendance.ABSENT)))
         val csv = WorkLogCsv.write(r.resolveRange(LocalDate.of(2026, 10, 12), LocalDate.of(2026, 10, 14))) { HourlyWork.dayPay(it, partTime) }
         val rows = csv.removePrefix("﻿").trim().lines()
