@@ -553,6 +553,11 @@ function adminApp() {
   };
   const KIND_NAMES = { question: "질문", bug: "문제 신고", problem: "문제 신고", idea: "건의·제안", company: "회사 방식", other: "그 밖의 이야기" };
   const STATUS_NAMES = { open: "답 대기", answered: "답함", closed: "닫힘" };
+  // [INQ-02] The stages the asker's app shows.
+  const PROGRESS_NAMES = { received: "접수됨", checking: "확인 중", answered: "답변 완료", planned: "개발 목록에 올림", building: "개발 중", released: "반영됨" };
+  /** [INQ-04] How long the asker has waited: red past a day, so nothing is missed. */
+  const waitPill = (q) => q.waitingHours === null || q.waitingHours === undefined || q.status !== "open" ? ""
+    : `<span class="pill ${q.waitingHours >= 24 ? "bad" : q.waitingHours >= 8 ? "warn" : ""}">${q.waitingHours < 1 ? "방금" : q.waitingHours < 24 ? `${q.waitingHours}시간` : `${Math.floor(q.waitingHours / 24)}일`} 기다림</span>`;
   const ACTION_NAMES = {
     login: "로그인", login_failed: "로그인 실패", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
     invite: "관리자 초대", invite_remove: "초대 취소", join: "관리자 계정 만듦", admin_update: "관리자 권한·상태 바꿈", admin_remove: "관리자 삭제",
@@ -750,7 +755,9 @@ function adminApp() {
 
   async function loadInquiries() {
     try {
-      S.data.inquiries = await api(`/inquiries?status=${S.inquiryStatus}${S.inquiryTopic ? `&topic=${S.inquiryTopic}` : ""}${S.inquiryWho ? `&who=${S.inquiryWho}` : ""}`);
+      // [INQ-04] 놓친 문의 is its own filter beside who holds it.
+      const who = S.inquiryWho === "late" ? "&late=1" : S.inquiryWho ? `&who=${S.inquiryWho}` : "";
+      S.data.inquiries = await api(`/inquiries?status=${S.inquiryStatus}${S.inquiryTopic ? `&topic=${S.inquiryTopic}` : ""}${who}`);
       S.data.inquiriesMissing = false;
     } catch (e) {
       // The server has no inquiry box yet: the screen says so instead of failing.
@@ -910,6 +917,9 @@ function adminApp() {
     }
     if (can("inquiries")) tile("문의", o.inquiries, "답을 기다려요", href("inquiries"), true);
     if (can("inquiries")) tile("내가 맡은 문의", o.inquiriesMine, "내 답을 기다려요", href("inquiries"), true);
+    // [INQ-04] Nothing may wait past a day unseen, and an answer the asker found wanting is looked at again.
+    if (can("inquiries")) tile("놓친 문의", o.inquiriesLate, "하루 넘게 답을 기다려요", href("inquiries"), true);
+    if (can("inquiries")) tile("아쉬워요", o.inquiriesBad, "답이 아쉬웠다는 문의", href("inquiries"), true);
     if (can("dev")) tile("개발사항 접수", o.devTodo, can("devStatus", "edit") ? "처리를 기다려요" : "개발 전이에요", href("dev"), can("devStatus", "edit"));
     if (can("dev")) tile("개발중", o.devDoing, "만들고 있어요", href("dev"), false);
     if (can("community")) tile("신고된 글", o.flaggedPosts, "토론에서 확인할 글", href("community"), true);
@@ -926,6 +936,7 @@ function adminApp() {
     if (can("inquiries")) {
       add(o.inquiriesMine, "내가 맡은, 답을 기다리는 문의", href("inquiries"), "bad", ' data-act="open-inquiries" data-key="mine"');
       add(o.inquiriesFree, "아무도 맡지 않은 문의", href("inquiries"), "bad", ' data-act="open-inquiries" data-key="free"');
+      add(o.inquiriesLate, "하루 넘게 답을 기다리는 문의(놓친 문의)", href("inquiries"), "bad", ' data-act="open-inquiries" data-key="late"');
       if (!o.inquiriesMine && !o.inquiriesFree) add(o.inquiries, "답을 기다리는 문의", href("inquiries"), "bad");
     }
     if (can("dev")) {
@@ -1133,17 +1144,18 @@ function adminApp() {
     const head = `<div class="segmented" role="group" aria-label="문의 상태">
       ${seg("inquiry-status", "open", S.inquiryStatus, "답 대기", counts.open)}${seg("inquiry-status", "answered", S.inquiryStatus, "답함", counts.answered)}
       ${seg("inquiry-status", "closed", S.inquiryStatus, "닫힘", counts.closed)}</div>
-      <div class="chips" role="group" aria-label="맡은 사람">${[["", "모두"], ["mine", "내가 맡은 것"], ["free", "아무도 안 맡은 것"]].map(([key, label]) =>
+      <div class="chips" role="group" aria-label="맡은 사람">${[["", "모두"], ["mine", "내가 맡은 것"], ["free", "아무도 안 맡은 것"], ["late", "놓친 것(하루 넘음)"]].map(([key, label]) =>
         `<button type="button" class="chip pick" data-act="inquiry-who" data-key="${key}" aria-pressed="${S.inquiryWho === key}">${label}</button>`).join("")}</div>${topicChips(d)}`;
     if (!d) return head + skeleton();
     if (!d.inquiries.length) {
-      return head + empty(S.inquiryWho === "mine" ? "내가 맡은 문의가 없어요" : S.inquiryStatus === "open" ? "답을 기다리는 문의가 없어요" : "목록이 비어 있어요",
+      return head + empty(S.inquiryWho === "late" ? "하루 넘게 기다리는 문의가 없어요. 잘하고 있어요" : S.inquiryWho === "mine" ? "내가 맡은 문의가 없어요" : S.inquiryStatus === "open" ? "답을 기다리는 문의가 없어요" : "목록이 비어 있어요",
         S.inquiryWho === "mine" ? "문의를 열어 내가 맡기를 누르거나 답하면 여기에 모여요." : "앱에서 문의가 오면 여기와 메뉴에 숫자로 보여요.");
     }
     return head + `<ul class="rows">${d.inquiries.map((q) => `<li><a class="row${q.waiting ? " unread" : ""}" href="${href("inquiries", q.id)}">
       <span class="row-main"><b>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}${q.appVersion ? ` <span class="meta">앱 ${esc(q.appVersion)}</span>` : ""}</b>
         <span class="preview">${esc(q.preview)}</span></span>
       <span class="row-side"><span>${esc(ago(q.updatedAt ?? q.createdAt))}</span>${q.count > 1 ? `<span class="pill">${q.count}</span>` : ""}${publicPills(q)}
+        ${waitPill(q)}${q.rating ? `<span class="pill ${q.rating > 0 ? "ok" : "bad"}">${q.rating > 0 ? "도움 됐어요" : "아쉬워요"}</span>` : ""}
         ${q.assignee ? `<span class="pill${q.assignee.id === S.me.id ? " info" : ""}">${q.assignee.id === S.me.id ? "내가 맡음" : esc(q.assignee.name)}</span>` : ""}
         ${q.dev ? '<span class="pill ok">개발사항</span>' : ""}${q.notes ? `<span class="pill gold">메모 ${q.notes}</span>` : ""}</span>
       ${icon(P.chevron)}</a></li>`).join("")}</ul>`;
@@ -1160,9 +1172,12 @@ function adminApp() {
         <span class="bubble-meta ${mine ? "admin" : ""}">${mine ? esc(m.by && m.by !== "admin" ? m.by : "개발자") : "보낸 분"} · ${esc(moment(m.at))}</span>`;
     }).join("");
     const status = { open: ["warn", "답 대기"], answered: ["ok", "답함"], closed: ["", "닫힘"] }[q.status] ?? ["", q.status];
+    // [INQ-02] What the asker's app shows as the stage, so the admin answers with it in mind.
+    const stage = PROGRESS_NAMES[q.progress?.stage] ?? "";
     return `<div class="cols">
       <section>
         <div class="card"><div class="card-head"><h2>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}</h2><span class="pill ${status[0]}">${status[1]}</span></div>
+          <p class="meta">보낸 분 앱에는 <b>${esc(stage)}</b>${q.progress?.version ? ` (${esc(q.progress.version)})` : ""}로 보여요.${waitPill(q)}${q.rating ? ` <span class="pill ${q.rating > 0 ? "ok" : "bad"}">${q.rating > 0 ? "답이 도움 됐대요" : "답이 아쉬웠대요"}</span>` : ""}</p>
           <div class="thread">${thread}</div></div>
         ${editable && q.status !== "closed" ? `<form class="composer" data-form="reply">
           <label class="sr" for="reply">답</label>
@@ -1338,7 +1353,7 @@ function adminApp() {
     const mine = d.assignee?.id === S.me.id;
     return `<div class="cols"><section>
       <div class="card"><div class="card-head"><h2>${esc(d.title)}</h2><span class="pill ${DEV_TONES[d.status]}">${DEV_NAMES[d.status]}</span></div>
-        <p class="meta">${esc(d.createdBy.name)}님이 ${esc(moment(d.createdAt))}에 추가 · 문의 ${d.links}건${d.assignee ? ` · ${mine ? "내가 맡음" : `${esc(d.assignee.name)}님이 맡음`}` : ""}</p>
+        <p class="meta">${esc(d.createdBy.name)}님이 ${esc(moment(d.createdAt))}에 추가 · 문의 ${d.links}건${d.releasedIn ? ` · ${esc(d.releasedIn)}에 반영` : ""}${d.assignee ? ` · ${mine ? "내가 맡음" : `${esc(d.assignee.name)}님이 맡음`}` : ""}</p>
         ${d.body ? `<p class="dev-body">${esc(d.body)}</p>` : '<p class="meta">내용이 없어요.</p>'}
         ${d.status === "rejected" && d.reason ? `<p class="note bad">반려 이유: ${esc(d.reason)}</p>` : ""}
         ${d.deletedAt ? `<p class="note warn">${esc(moment(d.deletedAt))}에 지운 항목이에요. 기록은 그대로 남아 있어요.${S.me.owner ? "" : " 되살리기는 최고 관리자가 해요."}</p>` : ""}
@@ -1349,7 +1364,11 @@ function adminApp() {
             <button class="btn" data-act="dev-copy-one">${icon(P.copy)}복사</button>`}</div></div>
       ${status ? `<section class="card"><h2>처리</h2><p class="hint">누르면 바로 바뀌고 기록에 남아요. 반려는 이유를 함께 남겨요.</p>
         <div class="chips" role="group" aria-label="처리 상태">${Object.keys(DEV_NAMES).map((k) =>
-          `<button type="button" class="chip pick" data-act="dev-status-set" data-status="${k}" aria-pressed="${d.status === k}">${DEV_NAMES[k]}</button>`).join("")}</div></section>` : ""}
+          `<button type="button" class="chip pick" data-act="dev-status-set" data-status="${k}" aria-pressed="${d.status === k}">${DEV_NAMES[k]}</button>`).join("")}</div>
+        <form class="mini" data-form="dev-release"><label for="dev-release">반영 버전</label>
+          <p class="hint">완료한 항목이 나간 앱 버전(예: 1.18.0). 연결된 문의를 보낸 분 앱에 '반영됨 1.18.0'으로 보여요.</p>
+          <div class="actions start"><input id="dev-release" name="v" inputmode="decimal" pattern="\\d{1,2}\\.\\d{1,2}\\.\\d{1,3}" placeholder="1.18.0" value="${esc(d.releasedIn ?? "")}">
+          <button class="btn small" type="submit">저장</button></div></form></section>` : ""}
       <section class="card"><div class="card-head"><h2>연결된 문의</h2><span class="pill">${d.links}</span></div>
         ${d.inquiries.length ? `<ul class="rows">${d.inquiries.map((q) => `<li class="item"><a class="row-main" href="${href("inquiries", q.id)}">
             <b>${esc(KIND_NAMES[q.kind] ?? "문의")} <span class="pill ${q.status === "open" ? "warn" : q.status === "answered" ? "ok" : ""}">${STATUS_NAMES[q.status] ?? q.status}</span></b>
@@ -1378,6 +1397,7 @@ function adminApp() {
       note: () => `<blockquote>${esc(x.text)}</blockquote>`,
       link: () => `문의를 연결했어요${can("inquiries") && x.inquiry ? ` <a href="${href("inquiries", x.inquiry)}">열기</a>` : ""}`,
       unlink: () => "문의 연결을 뗐어요",
+      release: () => `반영 버전: ${was(x.releasedIn?.[0], x.releasedIn?.[1])}`,
       delete: () => "지웠어요",
       restore: () => "되살렸어요",
       reply: () => `연결된 문의 ${x.count}건에 답했어요${x.close ? "(닫음)" : ""}<blockquote>${esc(x.text)}</blockquote>`,
@@ -1417,7 +1437,7 @@ function adminApp() {
       <p>고른 문의를 보낸 분들 앱에 같은 답이 가요. 읽어 보고 보내 주세요.</p>
       <div class="radios">${d.inquiries.map((q) => `<label class="radio"><input type="checkbox" name="ids" value="${q.id}"${q.status !== "closed" || !open.length ? " checked" : ""}>
         <span>${esc(q.preview.slice(0, 60))} <span class="meta">${STATUS_NAMES[q.status] ?? ""}</span></span></label>`).join("")}</div>
-      <label for="dev-reply-text">답</label><textarea id="dev-reply-text" name="text" maxlength="2000" required>${esc(DEV_REPLIES[d.status] ?? DEV_REPLIES.done)}</textarea>
+      <label for="dev-reply-text">답</label><textarea id="dev-reply-text" name="text" maxlength="2000" required>${esc(d.status === "done" && d.releasedIn ? DEV_REPLIES.done.replace("반영했어요.", `${d.releasedIn}에 반영했어요.`) : DEV_REPLIES[d.status] ?? DEV_REPLIES.done)}</textarea>
       <label class="switch"><input type="checkbox" name="close"${d.status === "done" || d.status === "rejected" ? " checked" : ""}><span class="track" aria-hidden="true"></span><span>답하고 닫기</span></label>
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">보내기</button></div></form>`, "wide");
   }
@@ -2363,6 +2383,10 @@ function adminApp() {
       const d = await devSave({ title: form.elements.title.value, body: form.elements.body.value, since: form.dataset.since }, "고쳤어요. 기록에 남았어요");
       // Closed once saved, or when someone else's change came in instead (the screen shows it now).
       if (d || S.data.dev.updatedAt !== form.dataset.since) dialog.close();
+    },
+    "dev-release": async (form) => {
+      const v = form.elements.v.value.trim();
+      await devSave({ releasedIn: v || null, since: S.data.dev.updatedAt }, v ? `${v}에 반영으로 적었어요` : "반영 버전을 지웠어요");
     },
     "dev-note": async (form) => {
       const r = await act(() => api(`/dev/${S.route.id}/notes`, "POST", { text: form.elements.text.value }), "메모를 남겼어요");

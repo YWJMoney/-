@@ -311,6 +311,10 @@ const COLUMNS = [
   // [ADMIN-12] 내가 맡기: the admin answering a question, by id and by name.
   "ALTER TABLE inquiries ADD COLUMN assignee TEXT",
   "ALTER TABLE inquiries ADD COLUMN assignee_name TEXT",
+  // [INQ-03] The user's word on the answers: 1 도움이 됐어요, -1 아쉬워요.
+  "ALTER TABLE inquiries ADD COLUMN rating INTEGER",
+  // [INQ-02] The app version a finished 개발사항 went out in, for the asker's 반영됨 step.
+  "ALTER TABLE dev_items ADD COLUMN released_in TEXT",
 ];
 
 const schemas = new WeakMap();
@@ -1517,6 +1521,8 @@ const INQUIRY = {
   perDay: 5,
   perNetworkDay: 20,
   messagesPerHour: 20,
+  // [INQ-04] A question waiting on an admin longer than this is 놓친 문의.
+  lateMs: DAY,
   // Each side of a thread; a longer back and forth is better as a new question.
   messages: 40,
   keepMs: 180 * DAY,
@@ -1593,6 +1599,8 @@ async function inquiries(request, env, path) {
     for (const r of rows) out.push(await inquiryView(env, r));
     return json({ inquiries: out });
   }
+  const rated = path.match(/^\/api\/inquiries\/([A-Za-z0-9]{22})\/rating$/);
+  if (rated && method === "POST") return inquiryRating(request, env, rated[1], dev);
   const m = path.match(/^\/api\/inquiries\/([A-Za-z0-9]{22})(\/messages)?$/);
   if (!m) return json({ error: "not_found" }, 404);
   const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", m[1]);
@@ -1617,6 +1625,18 @@ async function inquiries(request, env, path) {
     return json(await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", row.id)), 201);
   }
   return json({ error: "not_found" }, 404);
+}
+
+/** [INQ-03] 도움이 됐어요 (good: true) or 아쉬워요 (false) on the answers to one's own question; null takes it back. */
+async function inquiryRating(request, env, id, dev) {
+  const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", id);
+  if (!row || row.device !== dev) return json({ error: "not_found" }, 404);
+  const body = await readJson(request, 1024);
+  if (body.good !== true && body.good !== false && body.good !== null) refuse("good", "good");
+  const answered = await one(env, "SELECT COUNT(*) AS n FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'admin'", id);
+  if (!answered.n) return json({ error: "not_answered", field: "good" }, 409);
+  await run(env, "UPDATE inquiries SET rating = ? WHERE id = ?", body.good === null ? null : body.good ? 1 : -1, id);
+  return json(await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id)));
 }
 
 /** A new question: what the user typed, and what they agreed to send with it. */
@@ -1692,6 +1712,8 @@ async function inquiryView(env, row, admin = false) {
     public: row.public === 1,
     same: row.same ?? 0,
     ...(row.hidden ? { hidden: { code: row.hidden, text: INQUIRY_HIDE[row.hidden] ?? "" } } : {}),
+    rating: row.rating ?? 0,
+    progress: await inquiryProgress(env, row, messages),
   };
   if (!admin) return view;
   const info = JSON.parse(row.info);
@@ -1705,13 +1727,31 @@ async function inquiryView(env, row, admin = false) {
       JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL WHERE l.inquiry_id = ? ORDER BY l.at`, row.id),
   ])).map((r) => r.results);
   return {
-    ...view, appVersion: info.app ?? null, context, ...triage(row.kind, messages.find((m) => m.sender === "user")?.text, info),
+    ...view, appVersion: info.app ?? null, context, waitingHours: row.status === "open" ? Math.floor((Date.now() - row.updated_at) / HOUR) : null, ...triage(row.kind, messages.find((m) => m.sender === "user")?.text, info),
     flags: row.flags ?? 0, kept: row.kept === 1, reasons: reasons.map((r) => ({ code: r.reason, text: FLAGS[r.reason] ?? r.reason, n: r.n })),
     // [ADMIN-12] Who is answering it and what admins told each other; [ADMIN-11] the 개발사항 it is in.
     assignee: row.assignee ? { id: row.assignee, name: row.assignee_name ?? "" } : null,
     notes: notes.map((n) => ({ by: n.by, text: n.text, at: iso(n.at) })),
     ...(env.actor && can(env.actor, "dev") ? { dev: items.map((d) => ({ id: d.id, title: d.title, status: d.status, links: d.links })) } : {}),
   };
+}
+
+/**
+ * [INQ-02] Where a question stands, as the asker sees it: 접수 (received), 확인 중 (an admin took it),
+ * 답변 (answered), 개발 목록 (in a 개발사항 being made) and 반영 (in a finished one, with its version). The
+ * items themselves stay the admins': only the stage and the version go to the app.
+ */
+async function inquiryProgress(env, row, messages) {
+  const items = await all(env, `SELECT d.status, d.released_in FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL
+    WHERE l.inquiry_id = ?`, row.id);
+  const done = items.filter((d) => d.status === "done");
+  if (done.length) return { stage: "released", version: done.map((d) => d.released_in).find(Boolean) ?? null };
+  if (items.some((d) => d.status === "todo" || d.status === "doing")) return { stage: items.some((d) => d.status === "doing") ? "building" : "planned" };
+  const answered = messages.some((m) => m.sender === "admin");
+  const last = messages[messages.length - 1];
+  if (answered && last?.sender === "admin") return { stage: "answered" };
+  if (row.assignee) return { stage: "checking" };
+  return { stage: answered ? "checking" : "received" };
 }
 
 /** Who answered: the signed-in admin's name once there are admin accounts, else "admin". */
@@ -1897,6 +1937,8 @@ async function inquiryList(env, params, actorId = "") {
   const topic = Object.hasOwn(TOPIC_NAMES, params.get("topic") ?? "") ? params.get("topic") : null;
   // [ADMIN-12] mine: the ones I took; free: the ones nobody took yet.
   const who = ["mine", "free"].includes(params.get("who")) ? params.get("who") : "";
+  // [INQ-04] 놓친 문의: still waiting on an admin (the user wrote last) for longer than a day.
+  const late = params.get("late") === "1" ? Date.now() - INQUIRY.lateMs : 0;
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const [rows, statusRows] = (await env.DB.batch([stmt(env, `SELECT i.*,
       (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id) AS count,
@@ -1908,7 +1950,8 @@ async function inquiryList(env, params, actorId = "") {
     WHERE (?1 IS NULL OR i.status = ?1)
       AND (?2 = '' OR EXISTS (SELECT 1 FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.text LIKE ?3 ESCAPE '\\'))
       AND (?4 = '' OR (?4 = 'mine' AND i.assignee = ?5) OR (?4 = 'free' AND i.assignee IS NULL))
-    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 200`, status, q, like, who, actorId),
+      AND (?6 = 0 OR (i.status = 'open' AND i.updated_at < ?6))
+    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 200`, status, q, like, who, actorId, late),
   stmt(env, "SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status")])).map((r) => r.results);
   const counts = { open: 0, answered: 0, closed: 0 };
   for (const r of statusRows) {
@@ -1934,6 +1977,9 @@ async function inquiryList(env, params, actorId = "") {
       assignee: r.assignee ? { id: r.assignee, name: r.assignee_name ?? "" } : null,
       dev: r.dev,
       notes: r.notes,
+      // [INQ-04] How long the user has waited on an answer, in hours; null when it is not their turn to wait.
+      waitingHours: r.status === "open" && r.last === "user" ? Math.floor((Date.now() - r.updated_at) / HOUR) : null,
+      rating: r.rating ?? 0,
     };
   });
   // How many of this view are in each topic, so the filter shows where the questions pile up.
@@ -2109,6 +2155,15 @@ async function devUpdate(env, row, body, now) {
       stmts.push(devEvent(env, row.id, now, "assign", { assignee: [row.assignee_name ?? "", to?.name ?? ""] }));
     }
   }
+  if (body.releasedIn !== undefined) {
+    // [INQ-02] The version a finished item went out in, e.g. 1.18.0; blank clears it.
+    const v = body.releasedIn === null || body.releasedIn === "" ? null : String(body.releasedIn).trim();
+    if (v !== null && !/^\d{1,2}\.\d{1,2}\.\d{1,3}$/.test(v)) refuse("releasedIn", "releasedIn");
+    if (v !== (row.released_in ?? null)) {
+      set.released_in = v;
+      stmts.push(devEvent(env, row.id, now, "release", { releasedIn: [row.released_in ?? "", v ?? ""] }));
+    }
+  }
   if (body.status !== undefined) {
     const next = devStatus(env, body.status, body.reason);
     if (next.status !== row.status || next.reason !== row.reason) {
@@ -2218,6 +2273,7 @@ const devItem = (r) => ({
   preview: [...r.body].slice(0, 160).join(""),
   status: r.status,
   reason: r.reason,
+  releasedIn: r.released_in ?? null,
   links: r.links ?? 0,
   waiting: r.waiting ?? 0,
   createdBy: { id: r.created_by, name: r.created_by_name },
@@ -2783,6 +2839,9 @@ async function overview(env, actor) {
     // [ADMIN-12] 오늘 할 일: the waiting questions I took, and the ones nobody took yet.
     counts.inquiriesMine = ["SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open' AND assignee = ?", actor.id];
     counts.inquiriesFree = "SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open' AND assignee IS NULL";
+    // [INQ-04] 놓친 문의 on the home screen, so nothing waits past a day unseen.
+    counts.inquiriesLate = ["SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open' AND updated_at < ?", Date.now() - INQUIRY.lateMs];
+    counts.inquiriesBad = "SELECT COUNT(*) AS n FROM inquiries WHERE rating = -1 AND status != 'closed'";
   }
   if (can(actor, "dev")) {
     // [ADMIN-10] 개발사항 still to look at (접수), being made (개발중), and the ones I hold.
