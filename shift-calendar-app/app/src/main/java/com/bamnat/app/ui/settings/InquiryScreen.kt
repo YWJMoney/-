@@ -119,12 +119,14 @@ import java.time.format.DateTimeFormatter
 /** [INQ-01] A company way names the workplace, so it stays with the developer; the privacy policy 1-3항 says the same. */
 internal const val INQUIRY_PRIVATE_NOTICE =
     "회사 방식은 모두의 문의에 올라가지 않고 개발자만 봐요. 이름, 메일 주소, 전화번호, 기본급·수당 금액은 적지 말아 주세요. " +
-        "보낸 문의는 언제든 지울 수 있고, 180일 동안 새 글이 없으면 저절로 지워져요."
+        "보낸 문의는 언제든 지울 수 있고, 180일 동안 새 글이 없으면 저절로 지워져요. " +
+        "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
 
 internal const val INQUIRY_SEND_NOTICE =
     "모두의 문의에 올라가요. 앱을 쓰는 다른 분도 적은 글과 개발자 답을 볼 수 있고, 보낸 분이 누구인지는 보이지 않아요. " +
         "3번의 ‘함께 보내는 정보’는 개발자만 봐요. 이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요. " +
-        "보낸 문의는 언제든 지울 수 있고, 180일 동안 새 글이 없으면 저절로 지워져요."
+        "보낸 문의는 언제든 지울 수 있고, 180일 동안 새 글이 없으면 저절로 지워져요. " +
+        "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
 
 private const val LIST = "list"
 private const val NEW = "new"

@@ -1220,17 +1220,23 @@ function adminApp() {
     return items.map((d) => [score(d), d]).sort((a, b) => b[0] - a[0] || b[1].links - a[1].links).map(([n, d]) => ({ ...d, like: n }));
   }
 
+  /**
+   * [ADMIN-11] The 개발사항 stays as an improvement record after the question goes (privacy policy 2.4), so
+   * the text copied from a question opens with this; the line itself is dropped when the item is added.
+   */
+  const SCRUB = "※ 개인을 알 수 있는 내용은 지우고 요약해 주세요";
+
   /** [ADMIN-11] 개발사항에 추가: a new item filled in from the question, or the question joined to one that exists. */
   async function openDevFromInquiry(mode = "new") {
     const q = S.data.inquiry;
     const text = firstText(q);
     const line = text.split("\n").find((l) => l.trim())?.trim() ?? "";
     const title = [...line].length > 50 ? `${[...line].slice(0, 50).join("")}…` : line;
-    const body = `${text}\n\n— ${KIND_NAMES[q.kind] ?? "문의"}${q.topicName ? ` · ${q.topicName}` : ""}${q.appVersion ? ` · 앱 ${q.appVersion}` : ""}`;
+    const body = `${SCRUB}\n\n${text}\n\n— ${KIND_NAMES[q.kind] ?? "문의"}${q.topicName ? ` · ${q.topicName}` : ""}${q.appVersion ? ` · 앱 ${q.appVersion}` : ""}`;
     const tabs = `<div class="segmented" role="group" aria-label="추가 방법">${seg("dev-add-mode", "new", mode, "새로 만들기")}${seg("dev-add-mode", "attach", mode, "있는 항목에 붙이기")}</div>`;
     if (mode === "new") {
       openDialog(`<form data-form="dev-new" data-inquiry="${q.id}"><h2>개발사항에 추가</h2>${tabs}
-        <p>문의 내용으로 채워 두었어요. 고칠 것만 고치고 추가를 누르세요. 추가한 사람으로 내 이름이 남아요.</p>
+        <p>문의 내용으로 채워 두었어요. 개발사항은 문의가 지워져도 개선 기록으로 남으니, 이름·연락처·회사처럼 개인을 알 수 있는 내용은 지우고 요약해 주세요. 추가한 사람으로 내 이름이 남아요.</p>
         <div class="fieldset"><label for="dev-title">제목</label><input id="dev-title" name="title" maxlength="100" required value="${esc(title)}"></div>
         <div class="fieldset"><label for="dev-body">내용</label><textarea id="dev-body" name="body" maxlength="4000">${esc(body)}</textarea></div>
         <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">추가</button></div></form>`, "wide");
@@ -1268,7 +1274,7 @@ function adminApp() {
     const d = S.data.devList;
     const counts = d?.counts ?? {};
     const edit = can("dev", "edit");
-    const picking = Boolean(S.devPick);
+    const picking = Boolean(S.devPick) && can("devStatus", "edit");
     const head = `<div class="segmented" role="group" aria-label="개발사항 상태">
         ${seg("dev-status", "open", S.devStatus, "할 일", counts.open)}${seg("dev-status", "todo", S.devStatus, "접수", counts.todo)}
         ${seg("dev-status", "doing", S.devStatus, "개발중", counts.doing)}${seg("dev-status", "done", S.devStatus, "완료", counts.done)}
@@ -1276,7 +1282,7 @@ function adminApp() {
         ${seg("dev-status", "deleted", S.devStatus, "지움", counts.deleted)}</div>
       <div class="searchbar"><input id="search" type="search" placeholder="제목이나 내용으로 찾기" value="${esc(S.devQuery)}" autocomplete="off" enterkeyhint="search" aria-label="개발사항 찾기">
         ${edit && !picking ? `<button class="btn primary" data-act="dev-new">${icon(P.plus)}새 개발사항</button>` : ""}
-        <button class="btn" data-act="dev-pick" aria-pressed="${picking}">${picking ? "고르기 끝" : `${icon(P.check)}여러 개 고르기`}</button></div>
+        ${can("devStatus", "edit") ? `<button class="btn" data-act="dev-pick" aria-pressed="${picking}">${picking ? "고르기 끝" : `${icon(P.check)}여러 개 고르기`}</button>` : ""}</div>
       <div class="chips" role="group" aria-label="맡은 사람">${[["", "모두"], ["mine", "내가 맡은 것"]].map(([key, label]) =>
         `<button type="button" class="chip pick" data-act="dev-who" data-key="${key}" aria-pressed="${S.devWho === key}">${label}</button>`).join("")}</div>
       <p class="hint">문의에서 "개발사항에 추가"로 올리거나 여기서 바로 만들어요. 문의 수가 많은 것이 위에 와요. 고친 것은 모두 항목마다 기록에 남아요.${can("devStatus", "edit") ? " 여러 개 고르기로 한 번에 복사하거나 처리해요." : " 처리(개발중·완료·반려)는 최고 관리자나 처리 권한이 있는 관리자가 해요."}</p>`;
@@ -1286,7 +1292,7 @@ function adminApp() {
   function devRows() {
     const d = S.data.devList;
     if (!d) return skeleton();
-    const picking = Boolean(S.devPick);
+    const picking = Boolean(S.devPick) && can("devStatus", "edit");
     if (!d.items.length) {
       return empty(S.devQuery ? "찾는 개발사항이 없어요" : S.devStatus === "deleted" ? "지운 항목이 없어요" : "개발사항이 없어요",
         S.devQuery ? "" : "문의를 열고 개발사항에 추가를 누르면 여기에 모여요.");
@@ -2062,7 +2068,8 @@ function adminApp() {
     },
     "dev-new": () => openDevNew(),
     "dev-pick": () => {
-      S.devPick = S.devPick ? null : new Set();
+      // [ADMIN-10] 여러 개 고르기 (일괄 복사·처리) is for the owner and admins given 처리.
+      S.devPick = S.devPick || !can("devStatus", "edit") ? null : new Set();
       render({ keepScroll: true });
     },
     "dev-pick-all": () => {
@@ -2342,7 +2349,10 @@ function adminApp() {
     },
     "dev-new": async (form) => {
       const body = { title: form.elements.title.value, body: form.elements.body.value };
-      if (form.dataset.inquiry) body.inquiry = form.dataset.inquiry;
+      if (form.dataset.inquiry) {
+        body.inquiry = form.dataset.inquiry;
+        body.body = body.body.replace(SCRUB, "").replace(/^\s+/, "");
+      }
       const d = await act(() => api("/dev", "POST", body), form.dataset.inquiry ? "개발사항에 추가했어요. 추가한 사람으로 내 이름이 남아요" : "추가했어요");
       if (!d) return;
       dialog.close();

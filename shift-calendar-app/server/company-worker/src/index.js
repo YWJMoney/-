@@ -112,11 +112,11 @@ const VIEW_ONLY = ["audit"];
 /** [ADMIN-10] Areas that are a yes or no: a look at them means nothing, so "view" is stored as "none". */
 const TOGGLES = ["devStatus"];
 /**
- * [ADMIN-10] What an account made before an area existed gets: every admin may work on 개발사항, and one
- * who answers questions may change them, so the admin already invited keeps working without a visit to
- * the admins screen. 처리 stays the owner's until given.
+ * [ADMIN-10] What an account made before an area existed gets: every admin may add, change and delete
+ * 개발사항, so the admin already invited keeps working without a visit to the admins screen. 처리 stays
+ * the owner's until given.
  */
-const SINCE = { dev: (p) => (p?.inquiries === "edit" ? "edit" : "view") };
+const SINCE = { dev: () => "edit" };
 const PRESETS = {
   manager: { name: "운영 관리자", perms: { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit", audit: "view" } },
   reviewer: { name: "검토 담당", perms: { review: "edit", inquiries: "none", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "edit", audit: "none" } },
@@ -156,18 +156,25 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM admin_sessions WHERE expires < ?", now),
     stmt(env, "DELETE FROM invites WHERE used_at IS NULL AND expires < ?", now),
     stmt(env, "DELETE FROM codes WHERE expires < ?", now),
-    stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
-    stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
-    // [ADMIN-11][ADMIN-12] Admins' notes and the link to a 개발사항 go with the question; the item stays.
-    stmt(env, "DELETE FROM inquiry_notes WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
-    stmt(env, "DELETE FROM dev_links WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
-    stmt(env, "DELETE FROM inquiries WHERE updated_at < ?", now - INQUIRY.keepMs),
+    ...dropInquiries(env, "updated_at < ?", now - INQUIRY.keepMs),
     // [COMM-06] A hidden post nobody restored is gone after 90 days, and a 30-day 쓰기 막기 when it ends.
     stmt(env, "DELETE FROM post_flags WHERE post_id IN (SELECT id FROM posts WHERE status = 'hidden' AND hidden_at < ?)", now - LIMITS.hiddenPostDays * DAY),
     stmt(env, "DELETE FROM posts WHERE status = 'hidden' AND hidden_at < ?", now - LIMITS.hiddenPostDays * DAY),
     stmt(env, "DELETE FROM muted WHERE until < ?", now),
     stmt(env, "DELETE FROM audit WHERE at < ?", now - 365 * DAY),
   ]);
+}
+
+/**
+ * [ADMIN-11][ADMIN-12] Deletes the questions [where] picks with everything hung on them: messages, marks,
+ * admins' notes and links to a 개발사항 (the item stays). The questions themselves go last.
+ */
+function dropInquiries(env, where, ...params) {
+  const of = `inquiry_id IN (SELECT id FROM inquiries WHERE ${where})`;
+  return [
+    ...["inquiry_messages", "inquiry_marks", "inquiry_notes", "dev_links"].map((t) => stmt(env, `DELETE FROM ${t} WHERE ${of}`, ...params)),
+    stmt(env, `DELETE FROM inquiries WHERE ${where}`, ...params),
+  ];
 }
 
 async function route(request, env) {
@@ -1259,7 +1266,7 @@ async function forgetMine(request, env) {
   const device = deviceId(request.headers.get("x-device"));
   if (!device) return json({ error: "device", field: "device" }, 400);
   const dev = await deviceHash(device);
-  const [, reports, votes, , posts, , , , asked] = await env.DB.batch([
+  const [, reports, votes, , posts, , , , , , , asked] = await env.DB.batch([
     stmt(env, "DELETE FROM rewards WHERE device = ?", dev),
     stmt(env, "DELETE FROM reports WHERE device = ?", dev),
     stmt(env, "DELETE FROM votes WHERE device = ?", dev),
@@ -1268,11 +1275,8 @@ async function forgetMine(request, env) {
     stmt(env, "DELETE FROM posts WHERE device = ?", dev),
     stmt(env, "UPDATE posts SET flags = flags - 1 WHERE id IN (SELECT post_id FROM post_flags WHERE device = ?)", dev),
     stmt(env, "DELETE FROM post_flags WHERE device = ? OR post_id NOT IN (SELECT id FROM posts)", dev),
-    stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE device = ?)", dev),
-    stmt(env, "DELETE FROM inquiries WHERE device = ?", dev),
-    // [ADMIN-11][ADMIN-12] What admins attached to those questions goes with them.
-    stmt(env, "DELETE FROM inquiry_notes WHERE inquiry_id NOT IN (SELECT id FROM inquiries)"),
-    stmt(env, "DELETE FROM dev_links WHERE inquiry_id NOT IN (SELECT id FROM inquiries)"),
+    // [ADMIN-11][ADMIN-12] Their questions, with what admins attached to them.
+    ...dropInquiries(env, "device = ?", dev),
     // [ADMIN-02] Their 나도 그래요 and 신고 on others' questions go too, and those count one fewer.
     stmt(env, `UPDATE inquiries SET same = same - 1 WHERE id IN (SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'same')`, dev),
     stmt(env, `UPDATE inquiries SET flags = flags - 1 WHERE id IN (SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'flag')`, dev),
@@ -1596,13 +1600,7 @@ async function inquiries(request, env, path) {
   if (!row || row.device !== dev) return json({ error: "not_found" }, 404);
   if (!m[2] && method === "GET") return json(await inquiryView(env, row));
   if (!m[2] && method === "DELETE") {
-    await env.DB.batch([
-      stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id = ?", row.id),
-      stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id = ?", row.id),
-      stmt(env, "DELETE FROM inquiry_notes WHERE inquiry_id = ?", row.id),
-      stmt(env, "DELETE FROM dev_links WHERE inquiry_id = ?", row.id),
-      stmt(env, "DELETE FROM inquiries WHERE id = ?", row.id),
-    ]);
+    await env.DB.batch(dropInquiries(env, "id = ?", row.id));
     return new Response(null, { status: 204 });
   }
   if (m[2] && method === "POST") {
@@ -1643,10 +1641,8 @@ async function ask(request, env) {
     stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at) VALUES (?, ?, ?, ?, 'open', ?, ?, ?)",
       id, dev, body.kind, JSON.stringify(info), body.public === true && !PRIVATE_KINDS.includes(body.kind) ? 1 : 0, now, now),
     stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, text, now),
-    // Threads with nothing new for half a year go, answers and all.
-    stmt(env, "DELETE FROM inquiry_messages WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
-    stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id IN (SELECT id FROM inquiries WHERE updated_at < ?)", now - INQUIRY.keepMs),
-    stmt(env, "DELETE FROM inquiries WHERE updated_at < ?", now - INQUIRY.keepMs),
+    // Threads with nothing new for half a year go, answers, notes and 개발사항 links and all.
+    ...dropInquiries(env, "updated_at < ?", now - INQUIRY.keepMs),
     stmt(env, "DELETE FROM counters WHERE expires < ?", now),
   ]);
   return json(await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id)), 201);
@@ -1705,7 +1701,7 @@ async function inquiryView(env, row, admin = false) {
     stmt(env, `SELECT reason, COUNT(*) AS n FROM inquiry_marks WHERE inquiry_id = ? AND kind = 'flag'
       GROUP BY reason ORDER BY n DESC, reason`, row.id),
     stmt(env, "SELECT by, text, at FROM inquiry_notes WHERE inquiry_id = ? ORDER BY id", row.id),
-    stmt(env, `SELECT d.id, d.title, d.status, (SELECT COUNT(*) FROM dev_links x WHERE x.item_id = d.id) AS links FROM dev_links l
+    stmt(env, `SELECT d.id, d.title, d.status, (SELECT COUNT(*) FROM dev_links x JOIN inquiries xi ON xi.id = x.inquiry_id WHERE x.item_id = d.id) AS links FROM dev_links l
       JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL WHERE l.inquiry_id = ? ORDER BY l.at`, row.id),
   ])).map((r) => r.results);
   return {
@@ -2192,7 +2188,8 @@ async function devList(env, params) {
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const mine = params.get("who") === "mine" ? env.actor.id : "";
   const [rows, countRows] = (await env.DB.batch([
-    stmt(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS links,
+    // Only links to questions still kept count.
+    stmt(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id) AS links,
         (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND i.status = 'open') AS waiting
       FROM dev_items d
       WHERE ((?1 = 'deleted' AND d.deleted_at IS NOT NULL) OR (?1 != 'deleted' AND d.deleted_at IS NULL
@@ -2240,7 +2237,7 @@ async function devView(env, row) {
   ])).map((r) => r.results);
   const read = can(env.actor, "inquiries");
   return {
-    ...devItem({ ...row, links: links.length, waiting: links.filter((l) => l.status === "open").length }),
+    ...devItem({ ...row, links: links.filter((l) => l.kind).length, waiting: links.filter((l) => l.status === "open").length }),
     statuses: DEV.statuses,
     inquiries: read ? links.filter((l) => l.kind).map((l) => ({
       id: l.inquiry_id, kind: l.kind, status: l.status, preview: [...(l.first ?? "")].slice(0, 160).join(""),
@@ -2731,6 +2728,12 @@ async function removeAdmin(env, id, now) {
   await env.DB.batch([
     stmt(env, "DELETE FROM admin_sessions WHERE admin = ?", id),
     stmt(env, "DELETE FROM admins WHERE id = ?", id),
+    // What they had taken on is free again for the others; an item's history says so.
+    stmt(env, "UPDATE inquiries SET assignee = NULL, assignee_name = NULL WHERE assignee = ?", id),
+    stmt(env, `INSERT INTO dev_history (item_id, at, actor_id, actor, action, detail)
+      SELECT id, ?, ?, ?, 'assign', json_object('assignee', json_array(COALESCE(assignee_name, ''), '')) FROM dev_items WHERE assignee = ?`,
+      now, env.actor?.id ?? "", actorName(env), id),
+    stmt(env, "UPDATE dev_items SET assignee = NULL, assignee_name = NULL WHERE assignee = ?", id),
     // The email can be invited again later.
     stmt(env, "DELETE FROM invites WHERE email = ?", a.email),
   ]);
