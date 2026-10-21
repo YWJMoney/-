@@ -39,6 +39,8 @@ object NoticeLinks {
         HEALTH_REPORT,
         /** [CREW-01] 모든 조 보기, for the calendar on screen. */
         TEAMS,
+        /** [CAL-22] 1년 달력, for the calendar on screen. */
+        YEAR,
         /** [DAYW-06] 근태 엑셀 가져오기. */
         ATTENDANCE_IMPORT,
         /** [DAYW-07] 출퇴근 자동 기록, from its settings row or its notice. */

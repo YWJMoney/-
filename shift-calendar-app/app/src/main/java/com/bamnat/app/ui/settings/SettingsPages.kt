@@ -509,6 +509,18 @@ private fun PrivacyPage(
         // [STAB-01] No '사용 통계 보내기' switch: the app sends no usage statistics anywhere, so it promised
         // something it does not do. It comes back only with a real place to send them (Telemetry sinks).
         NavRow("개인정보 처리방침", "무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
+        // [LOCK-01] Pay and memos behind the phone's own lock.
+        val lockable = remember(refresh) { com.bamnat.app.AppLock.available(context) }
+        SwitchRow(
+            "앱 잠금",
+            if (lockable) "열 때와 1분 넘게 다른 앱을 쓰다 돌아올 때 지문·얼굴·PIN을 물어요. 알람은 그대로 울려요"
+            else "휴대폰에 잠금(PIN·패턴·지문)을 먼저 설정하면 켤 수 있어요",
+            settings.appLock && lockable,
+            enabled = lockable,
+        ) { on ->
+            vm.update { it.copy(appLock = on) }
+            if (!on) com.bamnat.app.AppLock.release()
+        }
     }
     SectionCard(title = "권한") {
         val notificationsOk = remember(refresh) { Notifications.canPost(context) }

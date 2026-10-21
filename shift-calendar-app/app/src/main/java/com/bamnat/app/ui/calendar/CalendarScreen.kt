@@ -80,6 +80,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.CalendarViewMonth
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.runtime.getValue
@@ -1309,6 +1310,9 @@ private fun CalendarHeader(
                 // [CREW-01] Every team of the rotation, for finding a 대근.
                 DropdownMenuItem(text = { Text("모든 조 보기") }, leadingIcon = { Icon(Icons.Outlined.Groups, null) },
                     onClick = { menu = false; com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.TEAMS) })
+                // [CAL-22] The year in twelve small months.
+                DropdownMenuItem(text = { Text("1년 달력") }, leadingIcon = { Icon(Icons.Outlined.CalendarViewMonth, null) },
+                    onClick = { menu = false; com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.YEAR) })
                 onReceive?.let { receive ->
                     DropdownMenuItem(text = { Text("동료 근무표 받기") }, leadingIcon = { Icon(Icons.Outlined.GroupAdd, null) },
                         onClick = { menu = false; receive() })

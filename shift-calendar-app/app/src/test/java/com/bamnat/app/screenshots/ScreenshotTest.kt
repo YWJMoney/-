@@ -2047,6 +2047,16 @@ class ScreenshotTest {
     @Test fun smallPhoneSettings() = shoot("365_small_phone_settings", SMALL_PHONE) { tab(4, wide = false) }
     @Test fun smallPhoneMemos() = shoot("366_small_phone_memos", SMALL_PHONE) { tab(2, wide = false) }
     @Test fun smallPhoneMoney() = shoot("367_small_phone_money", SMALL_PHONE) { tab(1, wide = false) }
+    private fun Screen.year() {
+        com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.YEAR)
+        settle()
+    }
+    @Test fun phoneYear() = shoot("369_phone_year", PHONE) { year() }
+    @Test fun foldedYear() = shoot("370_folded_year", FOLDED) { year() }
+    @Test fun unfoldedYear() = shoot("371_unfolded_year", UNFOLDED) { year() }
+    @Test fun smallPhoneYear() = shoot("372_small_phone_year", SMALL_PHONE) { year() }
+    @Test fun phoneLockCover() = shoot("373_phone_lock_cover", PHONE) { content { com.bamnat.app.ui.LockCover {} } }
+    @Test fun phonePrivacyLock() = shoot("374_phone_settings_privacy_lock", PHONE) { settingsPage("개인정보와 권한") }
     @Test fun smallPhoneQuickInput() = shoot("368_small_phone_quick_input", SMALL_PHONE) { tapText("빠른 입력", exact = true) }
 
     @Test fun foldedCalendarShare() = shoot("320_folded_calendar_share", FOLDED)

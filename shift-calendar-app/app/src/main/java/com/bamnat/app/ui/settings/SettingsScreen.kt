@@ -803,7 +803,7 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
         "날짜 칸 아래 " + when { s.showLunar -> "음력"; s.showHoursInCells -> "근무시간"; else -> "비움" },
     ).joinToString(" · ")
     SettingsPage.DATA -> "백업 저장 · 불러오기 · 캘린더 가져오기·내보내기"
-    SettingsPage.PRIVACY -> "개인정보 처리방침 · 권한 확인"
+    SettingsPage.PRIVACY -> "개인정보 처리방침 · 권한 확인 · 앱 잠금"
     SettingsPage.ABOUT -> "밤낮 ${BuildConfig.VERSION_NAME} · 알람 점검 · 처리방침"
 }
 

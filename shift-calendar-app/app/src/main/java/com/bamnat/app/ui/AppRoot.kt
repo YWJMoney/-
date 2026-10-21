@@ -216,6 +216,7 @@ private object Routes {
     const val DUTY_ROSTER = "duty_roster"
     const val HEALTH_REPORT = "health_report"
     const val TEAMS = "teams"
+    const val YEAR = "year"
     const val ATTENDANCE_IMPORT = "attendance_import"
     const val COMMUTE = "commute"
     /** [GUIDE-05] 설정 › 기능 켜고 끄기. */
@@ -349,6 +350,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.DUTY_ROSTER -> { nav.navigate(Routes.DUTY_ROSTER) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.HEALTH_REPORT -> { nav.navigate(Routes.HEALTH_REPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.TEAMS -> { nav.navigate(Routes.TEAMS) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.YEAR -> { nav.navigate(Routes.YEAR) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.ATTENDANCE_IMPORT -> { nav.navigate(Routes.ATTENDANCE_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [SET-01] Settings takes the target itself, to open on the alarm's state from wherever it was.
@@ -978,6 +980,11 @@ private fun AppNavHost(
             com.bamnat.app.ui.calendar.TeamsScreen(vm = vm, onBack = { nav.popFrom(Routes.TEAMS) },
                 onOpenPattern = { nav.openPattern(container, calendar) })
         }
+        composable(Routes.YEAR) {
+            val calendar = remember { container.calendars.active.value }
+            val vm = appViewModel(key = "year_$calendar") { com.bamnat.app.ui.calendar.YearViewModel(it, calendar) }
+            com.bamnat.app.ui.calendar.YearScreen(vm = vm, onBack = { nav.popFrom(Routes.YEAR) })
+        }
         composable(Routes.HEALTH_REPORT) {
             val calendar = remember { container.calendars.active.value }
             val vm = appViewModel(key = "health_$calendar") { com.bamnat.app.ui.stats.HealthReportViewModel(it, calendar) }
@@ -1119,6 +1126,7 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.DUTY_ROSTER -> screen(Routes.DUTY_ROSTER)
         Place.HEALTH_REPORT -> screen(Routes.HEALTH_REPORT)
         Place.TEAMS -> screen(Routes.TEAMS)
+        Place.YEAR -> screen(Routes.YEAR)
         Place.ATTENDANCE_IMPORT -> screen(Routes.ATTENDANCE_IMPORT)
         Place.COMMUTE -> screen(Routes.COMMUTE)
         Place.CALENDAR_IMPORT -> screen(Routes.CALENDAR_IMPORT)
