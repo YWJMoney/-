@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -171,6 +172,8 @@ private val FAB_MARGIN = 16.dp
 private val FAB_DOCK_GAP = 8.dp
 /** [CAL-15] Room under the month for the button: the gap above it, its height and the same gap below. */
 private val FAB_ROOM = FAB_DOCK_GAP + FAB_HEIGHT + FAB_DOCK_GAP
+/** [DAILY-09] Above the month in a half-open fold's upper half: its 2026년 10월 row and weekday names. */
+private val MONTH_ROW_ROOM = 96.dp
 private const val FAB_STEP_MILLIS = 180
 /** [CAL-17] The tip comes just after the tap has shown its day, so it is read as being about the tap. */
 private const val TIP_DELAY_MILLIS = 400L
@@ -206,6 +209,10 @@ fun CalendarScreen(
     /** [COMN-01] 모든 달력 합쳐 보기. */
     onOpenCombined: () -> Unit = {},
 ) {
+    // [DAILY-09] Half open like a laptop (Flex): the day sits below the hinge as it sits beside the month when
+    // unfolded, so everything a wide screen does (no sheet, the day always shown) holds there too.
+    val tabletop = com.bamnat.app.ui.LocalTabletop.current
+    @Suppress("NAME_SHADOWING") val wide = wide || tabletop != null
     val context = LocalContext.current
     // Re-checked on every return to the app, since the user may change it in system settings.
     var notificationsAllowed by remember { mutableStateOf(Notifications.canPost(context)) }
@@ -570,6 +577,8 @@ fun CalendarScreen(
     // scrolling moves it without recomposing; a jump (another view, another layout) is animated.
     val pageScroll = rememberScrollState()
     var gridBottom by remember { mutableFloatStateOf(Float.NaN) }
+    // [DAILY-09] Where the month starts in the window, so the half above a fold's hinge can open on it.
+    var gridTop by remember { mutableFloatStateOf(Float.NaN) }
     var fabAreaBottom by remember { mutableFloatStateOf(Float.NaN) }
     val docking = paint == null && !listView && !(weekOnly && !wide)
     val density = androidx.compose.ui.platform.LocalDensity.current
@@ -931,7 +940,7 @@ fun CalendarScreen(
             BoxWithConstraints(
                 Modifier.fillMaxWidth().padding(horizontal = if (showList) 0.dp else 8.dp)
                     // [CAL-15] Where the month's last row ends, for the FAB to keep under it.
-                    .onGloballyPositioned { c -> gridBottom = c.positionInWindow().y + c.size.height },
+                    .onGloballyPositioned { c -> gridTop = c.positionInWindow().y; gridBottom = gridTop + c.size.height },
             ) {
                 val cellHeight = (maxWidth / 7 * 1.3f).coerceIn(66.dp, 100.dp) + cellTextGrowth()
                 // [CAL-09] With something to stamp, a drag paints and a long press starts a range.
@@ -1107,7 +1116,34 @@ fun CalendarScreen(
             )
         }
     } else Box(Modifier.fillMaxSize().clipToBounds()) {
-        if (wide) {
+        if (tabletop != null) {
+            // [DAILY-09] The month above the hinge, the day panel below it; nothing sits on the fold itself.
+            var areaTop by remember { mutableIntStateOf(0) }
+            // The month, not the cards above it, is what the half above the hinge is for: it opens there once.
+            LaunchedEffect(tabletop, gridTop.isNaN()) {
+                if (!gridTop.isNaN()) {
+                    val room = with(density) { MONTH_ROW_ROOM.toPx() }
+                    pageScroll.scrollTo((pageScroll.value + gridTop - areaTop - room).roundToInt().coerceAtLeast(0))
+                }
+            }
+            BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { areaTop = it.positionInWindow().y.roundToInt() }) {
+                val upper = with(density) { tabletop.upperHeight(areaTop, constraints.maxHeight).toDp() }
+                Column(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxWidth().height(upper).clipToBounds()) {
+                        Column(
+                            Modifier
+                                .fillMaxSize()
+                                .verticalScroll(pageScroll)
+                                .padding(bottom = bottomSpace),
+                        ) { calendarPart() }
+                        fab()
+                    }
+                    Spacer(Modifier.height(with(density) { tabletop.hinge.toDp() }))
+                    HorizontalDivider()
+                    detailPart(Modifier.fillMaxWidth().weight(1f).padding(top = 4.dp), 16.dp)
+                }
+            }
+        } else if (wide) {
             // [CAL-01] About 3:2, so the unfolded calendar's days are as big as on the cover screen; the
             // day panel keeps the room its title and switches need.
             BoxWithConstraints(Modifier.fillMaxSize()) {

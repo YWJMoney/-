@@ -400,7 +400,7 @@ object FeatureRegistry {
             setOf(INVEST), "${tab(INVEST)} › ⋮ › 목표와 수익률 › 월말 요약 알림", at(Place.STATS, "invest.goal"), "월말", "요약", "알림", "한 달 정리"),
         f("money.customize", "DAILY-15", "돈·메모 화면 꾸미기", "돈 관리 요약 카드와 메모 위 줄의 순서와 켜고 끄기를 바꿔요",
             ALL, "돈 › ⋮ › 화면 꾸미기, 메모 › 화면 꾸미기", at(Place.MONEY), "화면 꾸미기", "순서", "카드 숨기기", "필터 접기", under = "calendar.customize"),
-        f("pay.rateHint", "DAILY-16", "광장 시세와 견주기", "광장 임금표에서 본 지역 시세와 내 일당·시급이 10% 넘게 다르면 급여 화면에 한 줄 보여요. 휴대폰 안에서만 견줘요",
+        f("pay.rateHint", "DAILY-16", "광장 시세와 견주기", "광장 임금표에서 본 내 직군·내 지역 시세와 내 일당·시급·월급이 10% 넘게 다르면 급여 화면에 카드로 보여요. 휴대폰 안에서만 견줘요",
             setOf(SHIFT, DAY, HOURLY, FIELD), "설정 › 급여 › 광장 시세와 내 단가 견주기", at(Place.SETTINGS_PAY, "광장 시세와 내 단가 견주기"), "시세", "일당", "시급", "비교"),
     )
 

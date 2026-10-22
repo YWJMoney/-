@@ -593,7 +593,10 @@ class RatesViewModel(private val c: AppContainer) : ViewModel() {
         _state.value = _state.value.copy(loading = true, error = null)
         viewModelScope.launch {
             val next = try {
-                State(c.companyApi.rates(c.companyStore.device, f.job, f.region, f.unit).also { c.rateHints.keep(f.region, it.groups) }, loading = false)
+                State(c.companyApi.rates(c.companyStore.device, f.job, f.region, f.unit).also { b ->
+                    c.rateHints.keep(f.region, b.groups)
+                    b.entries.firstOrNull { it.mine }?.let { c.rateHints.shared(it.job, it.region, it.trade) }
+                }, loading = false)
             } catch (e: CompanyException) {
                 State(_state.value.board, loading = false, error = companyProblem(e.code, e.field))
             }
@@ -612,6 +615,7 @@ class RatesViewModel(private val c: AppContainer) : ViewModel() {
         viewModelScope.launch {
             val error = try {
                 c.companyApi.addRate(c.companyStore.device, f.job, f.region, trade, unit, amount, note)
+                c.rateHints.shared(f.job, f.region, trade)
                 c.telemetry.event("plaza_rate", "sent")
                 null
             } catch (e: CompanyException) {
