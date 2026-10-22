@@ -2223,6 +2223,82 @@ class ScreenshotTest {
     @Test fun phoneMissionSkip() = shoot("396_phone_mission_skip", PHONE) { mission(com.bamnat.core.alarm.AlarmMission.MATH, java.time.Duration.ofMinutes(6)) }
     @Test fun smallPhoneMissionMath() = shoot("397_small_phone_mission_math", SMALL_PHONE) { mission(com.bamnat.core.alarm.AlarmMission.MATH, java.time.Duration.ofSeconds(40)) }
 
+    // ==== 1.22 묶음 B [SRV-04][SRV-05][SRV-06][STAT-01][COMM-08][COMM-09][COMM-10]: 410–429 ====
+    /** The developer's notice of the day, and [off] switches paused. */
+    private fun opsOn(vararg off: com.bamnat.core.ops.ServerSwitch) {
+        val now = java.time.Instant.now()
+        app.container.remoteConfig.save(com.bamnat.app.tier.LaunchConfig(
+            notices = listOf(com.bamnat.core.ops.AppNotice("nTonight01", "오늘 밤 2시 30분 동안 점검해요",
+                "광장과 근무표 링크 만들기가 새벽 2시부터 2시 30분까지 쉬어요. 달력·알람·급여는 그대로 돼요.", important = true,
+                from = now.minus(java.time.Duration.ofHours(2)).toEpochMilli(), until = now.plus(java.time.Duration.ofDays(1)).toEpochMilli(),
+                minApp = null, maxApp = null)),
+            off = off.toSet(), fetchedAt = now,
+        ))
+    }
+    private fun writer(n: Int, nick: String?) = com.bamnat.app.company.TalkPost("p$n", n, null, true,
+        "야간 뒤 휴무가 하루뿐이라 힘들어요", java.time.Instant.now().minusSeconds(3600), mine = false, nick = nick)
+
+    @Test fun phoneNoticeLine() = shoot("410_phone_notice_line", PHONE) { opsOn() }
+    @Test fun phoneNoticeOpen() = shoot("411_phone_notice_open", PHONE) { opsOn(); settle(); tapText("오늘 밤 2시 30분 동안 점검해요", exact = true, scrolls = 0) }
+    @Test fun phonePlazaRules() = shoot("412_phone_plaza_rules", PHONE) {
+        app.container.settingsRepository.update { it.copy(plazaRulesAgreed = 0) }
+        content {
+            val gate = com.bamnat.app.ui.company.rememberPlazaRules()
+            androidx.compose.runtime.LaunchedEffect(Unit) { gate.ensure {} }
+        }
+    }
+    @Test fun phoneHideWriter() = shoot("413_phone_hide_writer", PHONE) {
+        content { com.bamnat.app.ui.company.HideWriterDialog(writer(3, "야간전담"), onDismiss = {}, onHide = {}) }
+    }
+    @Test fun phonePlazaActivityHidden() = shoot("414_phone_plaza_activity_hidden", PHONE) {
+        val at = System.currentTimeMillis()
+        app.container.settingsRepository.update {
+            it.copy(plazaHidden = com.bamnat.core.plaza.HideList().hide("a".repeat(64), "야간전담", at - 86_400_000L).hide("b".repeat(64), "참여자 7", at).encode())
+        }
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}, onRates = {}) }
+        vm.activity.show()
+        settle()
+        reveal("가린 사람")
+    }
+    @Test fun phonePlazaWritePaused() = shoot("415_phone_plaza_write_paused", PHONE) {
+        opsOn(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}, onRates = {}) }
+        vm.talk.show("c-v1", "s-v1", "가나다화학 · 품질팀")
+        settle()
+    }
+    @Test fun phoneUsageStatsRow() = shoot("416_phone_usage_stats_row", PHONE) {
+        app.container.settingsRepository.update { it.copy(shareUsageStats = true) }
+        settingsPage("개인정보와 권한"); reveal("사용 통계 보내기", exact = true)
+    }
+    @Test fun phoneUsageStatsPreview() = shoot("417_phone_usage_stats_preview", PHONE) {
+        val day = LocalDate.now().toEpochDay() - 1
+        app.getSharedPreferences("usage_stats", android.content.Context.MODE_PRIVATE).edit().putString("book",
+            com.bamnat.core.stats.UsageBook().record(com.bamnat.core.stats.UsageEvent.OPEN, day).record(com.bamnat.core.stats.UsageEvent.OPEN, day)
+                .record(com.bamnat.core.stats.UsageEvent.PAY_VIEW, day).record(com.bamnat.core.stats.UsageEvent.SHARE_MADE, day).encode()).commit()
+        app.container.settingsRepository.update { it.copy(shareUsageStats = true) }
+        settingsPage("개인정보와 권한"); reveal("보낼 내용 보기", exact = true); tapText("보낼 내용 보기", exact = true, scrolls = 0)
+    }
+    @Test fun phonePlazaNewsSwitch() = shoot("418_phone_plaza_news_switch", PHONE) {
+        settingsPage("알림"); reveal("광장 소식", exact = true)
+    }
+    @Test fun foldedReceivedReport() = shoot("419_folded_received_report", FOLDED) {
+        receivedOn()
+        settle()
+        tapText("민지의 근무표 보기", exact = true)
+        tapText("이 근무표 신고하기", exact = true)
+    }
+    @Test fun phoneInquiryPhotos() {
+        inquiriesOn(asked = true)
+        shoot("420_phone_inquiry_photos", PHONE) {
+            askFromScreen(com.bamnat.app.ui.settings.InquiryStart(about = "달력"))
+            tapText("궁금해요", exact = true)
+            reveal("사진 붙이기", exact = true)
+        }
+    }
+    @Test fun smallPhoneNoticeLine() = shoot("421_small_phone_notice_line", SMALL_PHONE) { opsOn() }
+
     // ---- [208] Store pictures (1.18.0): a common phone, no one-time hints, the phone's alarm permissions given ----
     private fun clean(then: Screen.() -> Unit = {}): Screen.() -> Unit {
         shadowOf(app).grantPermissions(Manifest.permission.USE_FULL_SCREEN_INTENT, Manifest.permission.POST_NOTIFICATIONS)

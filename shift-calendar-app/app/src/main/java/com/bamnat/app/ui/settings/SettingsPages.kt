@@ -343,6 +343,13 @@ private fun NoticesPage(
         }
         Note("일감 시작 전 알림은 일감마다 정해요.")
     }
+    // [COMM-10] The plaza's news once a day, only for someone who uses a company's rules or sent something.
+    SectionCard(title = "회사 광장") {
+        SwitchRow("광장 소식", "쓰는 회사 규칙이 바뀌거나, 보낸 규칙·제안·임금표가 채택되면 하루 한 번 묶어서 소리 없이 알려 줘요", settings.plazaNews,
+            warning = warning(settings.plazaNews, Notifications.PLAZA_CHANNEL_ID), onFix = fix(Notifications.PLAZA_CHANNEL_ID)) { on ->
+            set(on) { it.copy(plazaNews = on) }
+        }
+    }
     SectionCard(title = "자는 동안") {
         SwitchRow("자는 동안 미루기", "자는 동안 생긴 돈·연차 알림은 깨고 30분 뒤에 보내요. 근무 알람과 일감 알림은 그대로 와요",
             settings.quietWhileAsleep) { on -> vm.update { it.copy(quietWhileAsleep = on) } }

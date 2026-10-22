@@ -27,7 +27,7 @@ class OnboardingScheduleTest {
         assertEquals(ConsentItem.entries, ConsentPlan.firstStart(all))
         // A build without the calendar permission does not ask about it.
         assertEquals(
-            listOf(ConsentItem.NOTIFICATIONS, ConsentItem.ALARMS, ConsentItem.SLEEP),
+            listOf(ConsentItem.NOTIFICATIONS, ConsentItem.ALARMS, ConsentItem.SLEEP, ConsentItem.USAGE_STATS),
             ConsentPlan.firstStart(all - ConsentItem.CALENDAR),
         )
     }
@@ -35,9 +35,10 @@ class OnboardingScheduleTest {
     @Test
     fun aPhoneSetUpBeforeIsAskedOnlyAboutWhatIsNewAndNotAllowed() {
         // Never through the pages: what the app asked before counts as told.
-        assertEquals(listOf(ConsentItem.CALENDAR), ConsentPlan.newSince(null, all, granted = setOf(ConsentItem.NOTIFICATIONS)))
-        assertEquals(emptyList<ConsentItem>(), ConsentPlan.newSince(null, all, granted = setOf(ConsentItem.CALENDAR)))
-        assertEquals(emptyList<ConsentItem>(), ConsentPlan.newSince(null, all - ConsentItem.CALENDAR, granted = emptySet()))
+        // [STAT-01] 사용 통계 is new too, and a yes to it is never assumed.
+        assertEquals(listOf(ConsentItem.CALENDAR, ConsentItem.USAGE_STATS), ConsentPlan.newSince(null, all, granted = setOf(ConsentItem.NOTIFICATIONS)))
+        assertEquals(listOf(ConsentItem.USAGE_STATS), ConsentPlan.newSince(null, all, granted = setOf(ConsentItem.CALENDAR)))
+        assertEquals(listOf(ConsentItem.USAGE_STATS), ConsentPlan.newSince(null, all - ConsentItem.CALENDAR, granted = emptySet()))
         // Through the pages already: nothing again.
         assertEquals(emptyList<ConsentItem>(), ConsentPlan.newSince(all, all, granted = emptySet()))
     }

@@ -29,7 +29,7 @@ enum class ServerSwitch(val key: String, val label: String) {
         fun of(key: String): ServerSwitch? = entries.firstOrNull { it.key == key }
 
         /** What the app says where a paused feature would be. */
-        fun pausedText(s: ServerSwitch): String = "${s.label}은(는) 잠시 쉬고 있어요. 곧 다시 열게요."
+        fun pausedText(s: ServerSwitch): String = "‘${s.label}’ 기능이 잠시 쉬고 있어요. 곧 다시 열게요."
     }
 }
 
