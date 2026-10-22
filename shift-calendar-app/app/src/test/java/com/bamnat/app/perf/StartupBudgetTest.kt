@@ -98,10 +98,12 @@ class StartupBudgetTest {
 
     @Test fun theStartRunsOnlyItsBudgetOfJobs() {
         val c = app.container
-        // The jobs that follow the data for as long as the app runs (alarms, notices, widgets, the watch …).
-        val jobs = c.appScope.coroutineContext[Job]!!.children.count { it.isActive }
-        assertTrue("$jobs jobs at start (budget $JOBS_BUDGET): a new one belongs in this budget on purpose", jobs <= JOBS_BUDGET)
-        assertTrue("the start does follow the data", jobs >= 10)
+        // The jobs that follow the data for as long as the app runs (alarms, notices, widgets, the watch …), counted
+        // by name: one-off jobs of the start (a Pro check, the alarm check) end at their own pace and are not counted.
+        val jobs = c.kept.toList()
+        assertEquals("each job is kept once", jobs.size, jobs.toSet().size)
+        assertTrue("${jobs.size} jobs at start (budget $JOBS_BUDGET): a new one belongs in this budget on purpose: $jobs", jobs.size <= JOBS_BUDGET)
+        assertTrue("the start does follow the data", jobs.size >= 10)
     }
 
     @Test fun eachStepIsNotedOnce() {
@@ -121,7 +123,10 @@ class StartupBudgetTest {
          */
         const val CONTAINER_BUDGET_MS = 4_000L
         const val FIRST_MONTH_BUDGET_MS = 8_000L
-        /** The jobs [AppContainer.start] keeps running today; raising it is a decision, not an accident. */
-        const val JOBS_BUDGET = 20
+        /**
+         * The jobs [AppContainer.start] keeps running today (17 after 1.22 묶음 B); raising it is a decision,
+         * not an accident.
+         */
+        const val JOBS_BUDGET = 17
     }
 }

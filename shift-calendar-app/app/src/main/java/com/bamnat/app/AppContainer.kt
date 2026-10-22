@@ -333,12 +333,15 @@ class AppContainer(context: Context) {
         runCatching { alarmScheduler.verify(calendars.ringing.first(), settingsRepository.current.alarmsEnabled) }
     }
 
+    /** [PERF-01] The names of the jobs [keep] started, for the startup budget test. */
+    internal val kept: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+
     /**
      * [STAB-01] A job that follows the data for as long as the app runs. When it fails it is logged and
      * started again a little later, so one bad moment does not leave alarms or notices unplanned until
      * the next launch.
      */
-    private fun keep(name: String, job: suspend CoroutineScope.() -> Unit) = appScope.launch {
+    private fun keep(name: String, job: suspend CoroutineScope.() -> Unit) = appScope.also { kept += name }.launch {
         var failures = 0
         while (isActive) {
             try {
