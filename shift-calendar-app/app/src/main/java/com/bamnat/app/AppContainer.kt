@@ -351,8 +351,16 @@ class AppContainer(context: Context) {
         }
     }
 
+    /** [STAT-01] 사용 통계 보내기 on or off; off forgets what was waiting to go, right then. */
+    fun setUsageStats(on: Boolean) {
+        settingsRepository.update { it.copy(shareUsageStats = on) }
+        if (!on) usageStats.clear()
+    }
+
     @OptIn(FlowPreview::class)
     fun start() {
+        // [STAT-01] A no that came another way (a restored backup) forgets what waited, without a job of its own.
+        usageStats.forgetUnless(settingsRepository.current.shareUsageStats)
         keep("schedule") {
             scheduleRepository.ensureDefaults()
             // [SETUP-01] A first setup the app was closed in the middle of saving is finished first.
@@ -425,10 +433,6 @@ class AppContainer(context: Context) {
                         com.bamnat.app.company.PlazaNewsJob.schedule(appContext)
                     } else com.bamnat.app.company.PlazaNewsJob.cancel(appContext)
                 }
-        }
-        // [STAT-01] Turning 사용 통계 보내기 off forgets what was waiting to go.
-        keep("usage stats") {
-            settingsRepository.settings.map { it.shareUsageStats }.distinctUntilChanged().collect { on -> if (!on) usageStats.clear() }
         }
         // [MON-06] The trial's notice follows the subscription and the user's answer.
         keep("trialnotice") {
