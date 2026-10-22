@@ -116,6 +116,10 @@ class AppContainer(context: Context) {
      */
     suspend fun capture(text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean): MoneyRepository.Outcome =
         captureLock.withLock {
+            // [INV-30] A broker's 체결 notification goes to the investor calendar, not the ledger.
+            runCatching { com.bamnat.app.invest.TradeCapture.take(this, text, pkg, app, postedAt, fromMessenger) }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                .getOrDefault(false).let { if (it) return@withLock MoneyRepository.Outcome.SAVED }
             // [SHOP-08] A card terminal's or delivery app's notice goes to the shop calendar.
             val target = com.bamnat.app.money.ShopNotices.route(this, pkg, app) ?: runCatching { captureCalendar(text, pkg, postedAt) }
                 .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }

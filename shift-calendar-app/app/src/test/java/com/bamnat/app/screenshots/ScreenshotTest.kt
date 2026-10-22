@@ -932,6 +932,37 @@ class ScreenshotTest {
         settle()
         then()
     }
+    /** [INV-30][INV-31][INV-32] Trades found in 체결 notifications, waiting for 확인, and the coin/stock badges. */
+    private fun foundTrades(then: Screen.() -> Unit = {}): Screen.() -> Unit = style(WorkStyle.INVEST) {
+        val c = app.container
+        val repo = com.bamnat.app.data.InvestRepository.of(c.database)
+        val at = System.currentTimeMillis()
+        runBlocking {
+            val acc = repo.ensureAccount()
+            repo.saveCash(com.bamnat.core.invest.CashFlow(accountId = acc, date = today.minusDays(5), kind = com.bamnat.core.invest.CashKind.DEPOSIT, amount = 5_000_000))
+            repo.saveTrade(com.bamnat.core.invest.Trade(accountId = acc, date = today.minusDays(1), symbol = "005930", name = "삼성전자",
+                side = com.bamnat.core.invest.Side.BUY, quantity = 10.0, price = 71_500.0, tags = listOf("알림:한국투자")))
+            repo.saveTrade(com.bamnat.core.invest.Trade(accountId = acc, date = today.minusDays(1), symbol = "BTC", name = "비트코인",
+                market = com.bamnat.core.invest.Market.CRYPTO, side = com.bamnat.core.invest.Side.BUY, quantity = 0.01, price = 95_000_000.0, tags = listOf("알림:업비트")))
+            listOf(
+                "[체결통보] 매도 삼성전자(005930) 3주 체결 단가 73,000원" to ("한국투자" to "com.truefriend.neosmarta"),
+                "[업비트] 매수 체결 KRW-ETH 0.25 ETH @ 4,800,000원" to ("업비트" to "com.dunamu.exchange.upbit"),
+                "토스증권 구매 완료 애플(AAPL) 2주 $228.50" to ("토스" to "viva.republica.toss"),
+            ).forEachIndexed { i, (text, src) ->
+                val alert = com.bamnat.core.invest.TradeAlertParser.parse(text, src.second)!!
+                repo.addAlert(com.bamnat.core.invest.TradeAlerts.of(alert, src.first, at - i * 600_000L))
+            }
+        }
+        settle()
+        val vm = com.bamnat.app.ui.invest.InvestViewModel(c, com.bamnat.app.data.PersonalCalendar.MAIN)
+        content { com.bamnat.app.ui.invest.InvestScreen(vm, wide = false, snackbar = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() }) }
+        settle()
+        then()
+    }
+    @Test fun foldedInvestFoundTrades() = shoot("361_folded_invest_found_trades", FOLDED, foundTrades())
+    @Test fun phoneInvestFoundTradesHugeText() = shoot("362_phone_invest_found_trades_huge_text", PHONE, 1.5f, foundTrades())
+    @Test fun foldedInvestRecordsBadges() = shoot("363_folded_invest_records_badges", FOLDED, foundTrades { tapText("기록", exact = true) })
+
     @Test fun foldedOwedBusiness() = shoot("210_folded_owed_business", FOLDED, owed(WorkStyle.BUSINESS))
     @Test fun foldedOwedFieldList() = shoot("211_folded_owed_field_list", FOLDED, owed(WorkStyle.FIELD) { scrollUp(520, across = 0.5f) })
     @Test fun foldedOwedSheet() = shoot("212_folded_owed_sheet", FOLDED, owed(WorkStyle.BUSINESS) { tapText("단체 도시락 외상") })

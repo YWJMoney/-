@@ -191,6 +191,10 @@ private fun InvestHeader(vm: InvestViewModel, state: InvestState, open: (InvestS
                 DropdownMenuItem(text = { Text("목표와 수익률") }, onClick = { menu = false; open(InvestSheet.Goal) })
                 DropdownMenuItem(text = { Text("내 투자 원칙") }, onClick = { menu = false; open(InvestSheet.Principles) })
                 DropdownMenuItem(text = { Text("계좌 추가") }, onClick = { menu = false; open(InvestSheet.AccountEdit()) })
+                // [INV-32] Found trades written at once or after 확인, also when none is waiting.
+                val auto by vm.alertAuto.collectAsStateWithLifecycle()
+                DropdownMenuItem(text = { Text(if (auto) "체결 알림 바로 적기 끄기" else "체결 알림 오면 바로 적기") },
+                    onClick = { menu = false; vm.setAlertAuto(!auto) })
                 CsvKind.entries.forEach { k ->
                     DropdownMenuItem(text = { Text("${k.label} CSV로 내보내기") }, onClick = { menu = false; onCsv(k) })
                 }
@@ -222,6 +226,7 @@ private fun OverviewTab(vm: InvestViewModel, state: InvestState, open: (InvestSh
             }
         }
     }
+    FoundTradesCard(vm, state, open)
     SummaryCard(vm, state, open)
     QuickActions(open)
     if (s.missingQuotes.isNotEmpty()) WarningBanner(

@@ -50,7 +50,11 @@ class CaptureService : NotificationListenerService() {
                 .getOrDefault(sbn.packageName)
         }
         // [SHOP-08] A delivery app's order or a card terminal's approval is read too, for a shop calendar.
-        val found = bodies.map { "$title\n$it".trim() }.filter { PaymentParser.looksFinancial(it) || ShopCapture.looksLikeSale(sbn.packageName, appName.value, it) }
+        // [INV-30] A broker's or exchange's 체결 notification is read too, for an investor calendar.
+        val found = bodies.map { "$title\n$it".trim() }.filter {
+            PaymentParser.looksFinancial(it) || ShopCapture.looksLikeSale(sbn.packageName, appName.value, it) ||
+                com.bamnat.app.invest.TradeCapture.worthReading(sbn.packageName, it, sbn.packageName in MESSENGERS)
+        }
         if (found.isEmpty()) return
         val app = appName.value
         val container = applicationContext.appContainer

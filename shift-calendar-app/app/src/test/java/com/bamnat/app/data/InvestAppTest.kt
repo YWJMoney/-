@@ -22,6 +22,7 @@ import com.bamnat.core.invest.Quote
 import com.bamnat.core.invest.ReturnMethod
 import com.bamnat.core.invest.Side
 import com.bamnat.core.invest.Trade
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -255,5 +256,35 @@ class InvestAppTest {
         assertFalse(n.rowNoticeId(1) == n.rowNoticeId(129))
         assertFalse(n.alarmTag(PersonalCalendar.MAIN) == n.alarmTag("cal2"))
         assertFalse(n.alarmTag("cal2") == n.eventTag("cal2"))
+    }
+
+    // [INV-30][INV-32] A found trade waits once, becomes a trade with its app's tag and fees, then leaves the list.
+    @Test fun foundTradesWaitThenBecomeTrades() = runBlocking {
+        val alert = com.bamnat.core.invest.TradeAlertParser.parse("[체결통보] 매수 삼성전자(005930) 10주 체결 단가 71,500원", "com.truefriend.neosmarta")!!
+        val p = com.bamnat.core.invest.TradeAlerts.of(alert, "한국투자", 1_000_000L)
+        assertTrue(repo.addAlert(p))
+        assertFalse(repo.addAlert(p.copy(at = 1_060_000L)))
+        assertEquals(1, repo.pendingAlerts.first().size)
+        val t = repo.confirmAlert(p)
+        assertEquals(listOf("알림:한국투자"), t.tags)
+        assertTrue(t.fee > 0)
+        assertEquals(t.id, repo.now().trades.single().id)
+        assertTrue(repo.pendingAlerts.first().isEmpty())
+        assertFalse(repo.alertAutoNow())
+        repo.setAlertAuto(true)
+        assertTrue(repo.alertAutoNow())
+        // Settings saved later keep the waiting list and the switch.
+        repo.addAlert(p.copy(at = 9_000_000L))
+        repo.saveSettings { it.copy(goalAmount = 1) }
+        assertEquals(1, repo.pendingAlerts.first().size)
+        assertTrue(repo.alertAutoNow())
+    }
+
+    @Test fun onlyTradingTextsAreRead() {
+        val tc = com.bamnat.app.invest.TradeCapture
+        assertTrue(tc.worthReading("com.dunamu.exchange.upbit", "아무 글", false))
+        assertTrue(tc.worthReading("com.kakao.talk", "[한국투자증권] 매수 체결 안내", true))
+        assertFalse(tc.worthReading("com.kakao.talk", "나 오늘 삼성전자 매수 체결됐어", true))
+        assertFalse(tc.worthReading("com.some.card", "스타벅스 5,600원 승인", false))
     }
 }

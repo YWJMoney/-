@@ -68,12 +68,18 @@ internal fun TradeLine(t: Trade, state: InvestState, onClick: () -> Unit) {
             color = if (t.side == Side.BUY) com.bamnat.app.ui.theme.LocalCalendarColors.current.sunday else com.bamnat.app.ui.theme.LocalCalendarColors.current.saturday,
             modifier = Modifier.width(36.dp))
         Column(Modifier.weight(1f)) {
-            Text(t.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // [INV-31] Coin or share at a glance.
+                com.bamnat.core.invest.TradeAlerts.badge(t.market)?.let { MarketBadge(it, t.market) }
+                Text(t.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             Text(
                 listOfNotNull(
                     "${InvestFmt.quantity(t.quantity)}$unit × ${InvestFmt.price(t.price, t.market)}",
                     t.minute?.let { minuteText(it) },
-                    (t.tags + t.emotions.map { it.label }).take(3).joinToString(" ").ifBlank { null },
+                    // [INV-31] A trade from a notification says which app it came from.
+                    (t.tags.map { tag -> tag.removePrefix(com.bamnat.core.invest.TradeAlerts.TAG_PREFIX).let { if (it != tag) "$it 알림" else tag } } +
+                        t.emotions.map { it.label }).take(3).joinToString(" ").ifBlank { null },
                     state.full.account(t.accountId)?.name?.takeIf { state.full.activeAccounts.size > 1 },
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -86,6 +92,19 @@ internal fun TradeLine(t: Trade, state: InvestState, onClick: () -> Unit) {
                     color = pnlColor(r.pnlWon))
             }
         }
+    }
+}
+
+/** [INV-31] 코인, 주식, ETF or 해외주식 as a small label. */
+@Composable
+internal fun MarketBadge(text: String, market: Market) {
+    val coin = market == Market.CRYPTO
+    androidx.compose.material3.Surface(
+        color = if (coin) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = if (coin) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Text(text, style = MaterialTheme.typography.labelSmall, maxLines = 1, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
     }
 }
 

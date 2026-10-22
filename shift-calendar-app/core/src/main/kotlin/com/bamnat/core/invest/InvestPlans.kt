@@ -113,6 +113,10 @@ data class TradeDraft(
     val accountId: Long? = null,
     val alarmId: Long? = null,
     val date: LocalDate? = null,
+    /** [INV-32] Tags the trade starts with, such as the app a notification came from. */
+    val tags: List<String> = emptyList(),
+    /** [INV-32] The waiting notification this draft confirms; it leaves the list once saved. */
+    val alertAt: Long? = null,
 )
 
 object InvestPlans {

@@ -223,7 +223,7 @@ internal fun TradeSheet(
     var feeText by rememberSaveable { mutableStateOf(start?.fee?.let { InvestFmt.input(it) } ?: "") }
     var taxText by rememberSaveable { mutableStateOf(start?.tax?.let { InvestFmt.input(it) } ?: "") }
     var costsTyped by rememberSaveable { mutableStateOf(start != null) }
-    val tags = remember { mutableStateListOf<String>().apply { addAll(start?.tags.orEmpty()) } }
+    val tags = remember { mutableStateListOf<String>().apply { addAll(start?.tags ?: d.tags) } }
     val emotions = remember { mutableStateListOf<Emotion>().apply { addAll(start?.emotions.orEmpty()) } }
     var rules by rememberSaveable { mutableStateOf(start?.followedRules) }
     var memo by rememberSaveable { mutableStateOf(start?.memo ?: "") }
@@ -251,6 +251,7 @@ internal fun TradeSheet(
             reason = start?.reason ?: "", emotions = emotions.toSet(), tags = tags.toList(), followedRules = rules, memo = memo.trim(),
             alarmId = start?.alarmId ?: d.alarmId, createdAt = start?.createdAt ?: 0,
         ), start)
+        if (start == null) d.alertAt?.let { vm.alertSaved(it) }
         onDismiss()
     }
 
