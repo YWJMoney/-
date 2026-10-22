@@ -2719,6 +2719,149 @@ class ScreenshotTest {
         reveal("순수익", exact = true, across = 0.75f)
     })
 
+    // ==== 1.22 묶음 E ====
+    /** [DAILY-04][DAILY-15] 돈 관리 요약 in its new order, and its 화면 꾸미기 sheet. */
+    @Test fun e480FoldedMoneySummary() = shoot("480_folded_money_summary_order", FOLDED, ledgerPage(null))
+    @Test fun e481UnfoldedMoneySummary() = shoot("481_unfolded_money_summary_order", UNFOLDED, ledgerPage(null, wide = true))
+    @Test fun e482FoldedMoneyCustomize() = shoot("482_folded_money_customize", FOLDED, ledgerPage(null) {
+        content { com.bamnat.app.ui.money.MoneyEditSheet("", {}, onDismiss = {}) }
+        settle()
+    })
+    @Test fun e483PhoneMoneySummaryHugeText() = shoot("483_phone_money_summary_huge_text", PHONE, 1.5f, ledgerPage(null))
+
+    /** [DAILY-05][DAILY-15] 메모: one 새 메모 button, the filters folded into the search box, and 화면 꾸미기. */
+    @Test fun e484FoldedMemos() = shoot("484_folded_memos_one_button", FOLDED) { tab(2, wide = false) }
+    @Test fun e485UnfoldedMemos() = shoot("485_unfolded_memos_one_button", UNFOLDED) { tab(2, wide = true) }
+    @Test fun e486FoldedMemosFilters() = shoot("486_folded_memos_filters_open", FOLDED) {
+        tab(2, wide = false)
+        tapText("필터 펼치기", exact = true, scrolls = 0)
+    }
+    @Test fun e487FoldedMemoCustomize() = shoot("487_folded_memo_customize", FOLDED) {
+        tab(2, wide = false)
+        tapText("화면 꾸미기", exact = true, scrolls = 0)
+    }
+    @Test fun e488PhoneMemosHugeText() = shoot("488_phone_memos_huge_text", PHONE, 1.5f) { tab(2, wide = false) }
+
+    /** [LEDG-27] 받을 돈 with its CSV button. */
+    @Test fun e489FoldedOwedCsv() = shoot("489_folded_owed_csv", FOLDED, owed(WorkStyle.BUSINESS))
+
+    /** [LEDG-25] 지출 적기 with 영수증 사진 읽기 first. */
+    @Test fun e490FoldedReceiptScan() = shoot("490_folded_entry_receipt_scan", FOLDED, ledgerPage(null) { tapText("돈 적기", exact = true, scrolls = 0) })
+    @Test fun e491PhoneReceiptScanHugeText() = shoot("491_phone_entry_receipt_scan_huge_text", PHONE, 1.5f,
+        ledgerPage(null) { tapText("돈 적기", exact = true, scrolls = 0) })
+
+    /** [LEDG-26] 종합소득세 참고 on a field worker's 근무·급여. */
+    @Test fun e492FoldedIncomeTax() = shoot("492_folded_field_income_tax", FOLDED, style(WorkStyle.FIELD) {
+        tab(3, wide = false)
+        reveal("종합소득세 참고", across = 0.5f)
+    })
+
+    /** [DAILY-13] Card sales from notices waiting for 적기 on a shop's 근무·급여. */
+    @Test fun e493FoldedShopPendingSales() = shoot("493_folded_shop_pending_sales", FOLDED, style(WorkStyle.BUSINESS) {
+        val store = com.bamnat.app.money.ShopPendingStore.get(app)
+        listOf(38_500L to "토스플레이스", 12_000L to "배민사장님", -4_500L to "토스플레이스").forEachIndexed { i, (amount, from) ->
+            val bucket = if (from == "배민사장님") com.bamnat.core.money.ShopCapture.Bucket.DELIVERY else com.bamnat.core.money.ShopCapture.Bucket.CARD
+            store.add(com.bamnat.app.data.PersonalCalendar.MAIN, com.bamnat.core.money.ShopCapture.Pending("shot$i", today, com.bamnat.core.money.ShopCapture.Sale(bucket, amount, from)))
+        }
+        tab(3, wide = false)
+        settle()
+        reveal("확인할 매출 알림", across = 0.5f)
+    })
+
+    /** [BACK-01] 사진도 백업 in 설정 › 데이터, and the 암호 dialog saying how many photos go in. */
+    @Test fun e494FoldedSettingsBackupPhotos() = shoot("494_folded_settings_backup_photos", FOLDED) {
+        settingsPage("데이터")
+        reveal("사진도 백업", exact = true)
+    }
+    @Test fun e495FoldedBackupPasswordPhotos() = shoot("495_folded_backup_password_photos", FOLDED) {
+        com.bamnat.app.ui.money.ReceiptFiles.dir(app).apply { mkdirs() }.resolve("shot_receipt.jpg").writeBytes(ByteArray(420_000))
+        runBlocking {
+            app.container.moneyRepository.save(com.bamnat.core.money.MoneyEntry(date = today, kind = com.bamnat.core.money.MoneyKind.EXPENSE,
+                amount = 14_000, category = "식비", merchant = "김밥천국", receipt = "shot_receipt.jpg"))
+        }
+        content { com.bamnat.app.ui.settings.ExportPasswordDialog(onDismiss = {}, onExport = {}) }
+        settle()
+    }
+
+    /** [DAILY-16] The pay screen's line next to 광장 시세, and its switch in 설정 › 급여. */
+    @Test fun e496FoldedPayRateHint() = shoot("496_folded_pay_rate_hint", FOLDED, run {
+        app.container.rateHints.keep("31", listOf(com.bamnat.app.company.RateGroup("construction", "31", "형틀목수", "day", 2026, 5, 230_000, 250_000, 280_000)))
+        payScreen(Tier.PRO, withProfile = true, adjust = { p ->
+            p.copy(wageType = com.bamnat.core.pay.WageType.DAILY,
+                base = com.bamnat.core.pay.ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(today.withDayOfYear(1), 200_000))))
+        }) { vm ->
+            androidx.compose.foundation.layout.Column {
+                com.bamnat.app.ui.company.RateHintLine(vm.profile.collectAsState().value) {}
+                PayScreen(vm, onBack = {})
+            }
+        }
+    })
+    @Test fun e497FoldedSettingsPayRateHint() = shoot("497_folded_settings_pay_rate_hint", FOLDED) { settingsPage("급여와 연차") }
+
+    /** [DAILY-08] 근무 종류 with the drag handle beside the arrows. */
+    @Test fun e498FoldedShiftTypesDrag() = shoot("498_folded_shift_types_drag", FOLDED) {
+        val vm = com.bamnat.app.ui.shifts.ShiftsViewModel(app.container)
+        content { com.bamnat.app.ui.shifts.ShiftTypesScreen(vm, onBack = {}) }
+        settle()
+    }
+    @Test fun e499PhoneShiftTypesDragHugeText() = shoot("499_phone_shift_types_drag_huge_text", PHONE, 1.5f) {
+        val vm = com.bamnat.app.ui.shifts.ShiftsViewModel(app.container)
+        content { com.bamnat.app.ui.shifts.ShiftTypesScreen(vm, onBack = {}) }
+        settle()
+    }
+
+    /** [INV-33] An account's own 해외 주식 fee. */
+    @Test fun e500FoldedInvestAccountFees() = shoot("500_folded_invest_account_fees", FOLDED, style(WorkStyle.INVEST) {
+        val vm = com.bamnat.app.ui.invest.InvestViewModel(app.container, com.bamnat.app.data.PersonalCalendar.MAIN)
+        content { com.bamnat.app.ui.invest.AccountSheet(vm, null) {} }
+        settle()
+    })
+
+    /** [DAILY-07] 근무·급여's weeks, each a way to its week on the calendar. */
+    @Test fun e501FoldedStatsWeeks() = shoot("501_folded_stats_weeks_open_week", FOLDED) {
+        tab(3, wide = false)
+        reveal("주별 근무시간", across = 0.5f)
+    }
+
+    /** [DAILY-01][DAILY-03][DAILY-11] Widgets: a day's memo line, every team today, an 알바's 출근 button. */
+    @Test fun e502Widgets() = runBlocking<Unit> {
+        val c = app.container
+        c.memoRepository.save(com.bamnat.core.memo.Memo(date = today, title = "치과 3시 · 보험증 챙기기", createdAtMillis = 1))
+        settle()
+        e502Shoot(listOf(
+            Triple("502_widget_today_memo", com.bamnat.app.widget.TodayWidget() as androidx.glance.appwidget.GlanceAppWidget, 180 to 170),
+            Triple("503_widget_week_memo", com.bamnat.app.widget.WeekWidget(), 340 to 120),
+            Triple("504_widget_teams", com.bamnat.app.widget.TeamsWidget(), 250 to 180),
+        ))
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.HOURLY) }
+        settle()
+        e502Shoot(listOf(Triple("505_widget_hourly_clock", com.bamnat.app.widget.TodayWidget() as androidx.glance.appwidget.GlanceAppWidget, 200 to 180)))
+    }
+
+    private suspend fun e502Shoot(shots: List<Triple<String, androidx.glance.appwidget.GlanceAppWidget, Pair<Int, Int>>>) {
+        for ((name, widget, dims) in shots) {
+            val (wDp, hDp) = dims
+            @OptIn(androidx.glance.ExperimentalGlanceApi::class)
+            val rv = widget.compose(app, size = androidx.compose.ui.unit.DpSize(wDp.dp, hDp.dp))
+            val density = app.resources.displayMetrics.density
+            val w = (wDp * density).toInt()
+            val h = (hDp * density).toInt()
+            val parent = android.widget.FrameLayout(app)
+            parent.addView(rv.apply(app, parent), android.widget.FrameLayout.LayoutParams(w, h))
+            parent.measure(
+                android.view.View.MeasureSpec.makeMeasureSpec(w, android.view.View.MeasureSpec.EXACTLY),
+                android.view.View.MeasureSpec.makeMeasureSpec(h, android.view.View.MeasureSpec.EXACTLY),
+            )
+            parent.layout(0, 0, w, h)
+            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bmp)
+            canvas.drawColor(0xFF7A8BA8.toInt())
+            parent.draw(canvas)
+            val out = File("build/screenshots/$name.png").apply { parentFile!!.mkdirs() }
+            out.outputStream().use { st -> bmp.compress(Bitmap.CompressFormat.PNG, 100, st) }
+        }
+    }
+
     // ==== 1.22 묶음 G ====
     // [ONBOARD-03][ONBOARD-04] 추천 기능 한 번에 켜기, in place of the consent pages of 1.13~1.21.
     private fun recommended(items: Set<ConsentItem> = ConsentItem.entries.toSet(), then: Screen.() -> Unit = {}): Screen.() -> Unit {

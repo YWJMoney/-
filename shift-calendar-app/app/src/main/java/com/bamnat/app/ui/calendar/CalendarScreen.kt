@@ -287,11 +287,13 @@ fun CalendarScreen(
     }
 
     // [OPS-20] Ask for a store review once, shortly after the first pattern was saved.
-    LaunchedEffect(settings.reviewDue, settings.reviewAsked) {
-        if (settings.reviewDue && !settings.reviewAsked) {
+    // [DAILY-17] And once more after the first pay month is closed, a month or more after the first.
+    val reviewMoment = InAppReview.due(settings, LocalDate.now())
+    LaunchedEffect(reviewMoment) {
+        if (reviewMoment != null) {
             delay(1500)
             context.findActivity()?.let { InAppReview.ask(it) }
-            vm.markReviewAsked()
+            vm.markReviewAsked(reviewMoment)
         }
     }
 
@@ -608,6 +610,19 @@ fun CalendarScreen(
         vm.select(LocalDate.now())
         pagerState.scrollToPage(monthToPage(baseMonth, YearMonth.now()))
         pageScroll.scrollTo(0)
+    }
+    // [DAILY-06] A widget's date opens that day on 내 달력, as tapping it on the calendar does.
+    LaunchedEffect(noticeTarget) {
+        if (noticeTarget != NoticeLinks.Target.DAY) return@LaunchedEffect
+        NoticeLinks.consume(NoticeLinks.Target.DAY)
+        val day = NoticeLinks.payload.value?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: LocalDate.now()
+        received.view(null)
+        // [DAILY-07] 근무·급여's week bar names its calendar; a widget's date is always 내 달력.
+        vm.viewCalendar(NoticeLinks.calendar.value ?: com.bamnat.app.data.PersonalCalendar.MAIN)
+        vm.setPaint(null)
+        vm.select(day)
+        pagerState.scrollToPage(monthToPage(baseMonth, YearMonth.from(day)))
+        sheetOpen = !showsDay
     }
     // [SHR-12] The link's expiry notice opens the share sheet on the user's own calendar, to 늘리기.
     LaunchedEffect(noticeTarget) {

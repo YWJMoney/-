@@ -138,6 +138,20 @@ data class AppSettings(
     val shiftMissions: Map<Long, String> = emptyMap(),
     /** [PROV-07] Minutes after 끄기 that 일어났나요? asks (프로); 0 is off, as at first. */
     val wakeCheckMinutes: Int = 0,
+    /** [DAILY-01] The day's first memo line on the 오늘·내일 widget; on, and off from 설정 › 화면 since a home screen is seen by others. */
+    val widgetMemo: Boolean = true,
+    /** [BACK-01] Receipt and contract photos go in the backup file (결정 D13: on, off from the backup screen). */
+    val backupPhotos: Boolean = true,
+    /** [DAILY-15] 화면 꾸미기 of the 돈 page, as [calendarLayout]. */
+    val moneyLayout: String = "",
+    /** [DAILY-15] 화면 꾸미기 of the 메모 page. */
+    val memoLayout: String = "",
+    /** [DAILY-16] The 지역 시세 line on the pay screen, worked out on the phone only; off from that line. */
+    val rateHint: Boolean = true,
+    /** [DAILY-17] The second 리뷰 moment (first 급여 리포트) came, and when any review was last asked (epoch day, 0 for never). */
+    val payReviewDue: Boolean = false,
+    val payReviewAsked: Boolean = false,
+    val reviewAskedDay: Long = 0,
 ) {
     val limits: HourLimits get() = HourLimits(weeklyLimitHours, averageLimitHours)
 
@@ -247,6 +261,14 @@ class SettingsRepository(context: Context) {
             alarmMission = prefs.getString(K_ALARM_MISSION, null) ?: d.alarmMission,
             shiftMissions = prefs.getString(K_SHIFT_MISSIONS, null)?.let(::decodeShiftMissions) ?: d.shiftMissions,
             wakeCheckMinutes = prefs.getInt(K_WAKE_CHECK, d.wakeCheckMinutes),
+            widgetMemo = prefs.getBoolean(K_WIDGET_MEMO, d.widgetMemo),
+            backupPhotos = prefs.getBoolean(K_BACKUP_PHOTOS, d.backupPhotos),
+            moneyLayout = prefs.getString(K_MONEY_LAYOUT, null) ?: d.moneyLayout,
+            memoLayout = prefs.getString(K_MEMO_LAYOUT, null) ?: d.memoLayout,
+            rateHint = prefs.getBoolean(K_RATE_HINT, d.rateHint),
+            payReviewDue = prefs.getBoolean(K_PAY_REVIEW_DUE, false),
+            payReviewAsked = prefs.getBoolean(K_PAY_REVIEW_ASKED, false),
+            reviewAskedDay = prefs.getLong(K_REVIEW_DAY, 0),
         )
     }
 
@@ -303,6 +325,14 @@ class SettingsRepository(context: Context) {
             .putString(K_ALARM_MISSION, s.alarmMission)
             .putString(K_SHIFT_MISSIONS, encodeShiftMissions(s.shiftMissions))
             .putInt(K_WAKE_CHECK, s.wakeCheckMinutes)
+            .putBoolean(K_WIDGET_MEMO, s.widgetMemo)
+            .putBoolean(K_BACKUP_PHOTOS, s.backupPhotos)
+            .putString(K_MONEY_LAYOUT, s.moneyLayout)
+            .putString(K_MEMO_LAYOUT, s.memoLayout)
+            .putBoolean(K_RATE_HINT, s.rateHint)
+            .putBoolean(K_PAY_REVIEW_DUE, s.payReviewDue)
+            .putBoolean(K_PAY_REVIEW_ASKED, s.payReviewAsked)
+            .putLong(K_REVIEW_DAY, s.reviewAskedDay)
             .apply()
     }
 
@@ -319,6 +349,14 @@ class SettingsRepository(context: Context) {
         const val K_ALARM_MISSION = "alarm_mission"
         const val K_SHIFT_MISSIONS = "shift_missions"
         const val K_WAKE_CHECK = "wake_check_minutes"
+        const val K_WIDGET_MEMO = "widget_memo"
+        const val K_BACKUP_PHOTOS = "backup_photos"
+        const val K_MONEY_LAYOUT = "money_layout"
+        const val K_MEMO_LAYOUT = "memo_layout"
+        const val K_RATE_HINT = "rate_hint"
+        const val K_PAY_REVIEW_DUE = "pay_review_due"
+        const val K_PAY_REVIEW_ASKED = "pay_review_asked"
+        const val K_REVIEW_DAY = "review_asked_day"
         const val K_WEEKLY_LIMIT = "weekly_limit"
         const val K_AVG_LIMIT = "average_limit"
         const val K_THEME = "theme"

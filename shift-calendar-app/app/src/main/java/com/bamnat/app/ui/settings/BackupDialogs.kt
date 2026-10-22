@@ -20,6 +20,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.bamnat.app.appContainer
+
+/** [BACK-01] "3.2MB", or "0.4MB" for less than one. */
+fun photoMegabytes(bytes: Long): String = "%.1fMB".format(bytes / 1_048_576.0)
 
 /** [FEAT-08] A backup file that needs its password before it can be read. */
 data class LockedBackup(val text: String, val working: Boolean = false, val error: String? = null)
@@ -29,6 +33,12 @@ const val MIN_BACKUP_PASSWORD = 4
 /** [FEAT-08] Optional password for a backup, typed twice. Null means no password. */
 @Composable
 fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) {
+    // [BACK-01] Photos going in: said with their size, and a password is the better choice for them.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val c = remember { runCatching { context.appContainer }.getOrNull() }
+    val photos by androidx.compose.runtime.produceState<com.bamnat.app.data.BackupPhotos.Size?>(null) {
+        value = c?.takeIf { it.settingsRepository.current.backupPhotos }?.let { runCatching { it.backupManager.photoSize() }.getOrNull() }
+    }
     var first by remember { mutableStateOf("") }
     var second by remember { mutableStateOf("") }
     val mismatch = second.isNotEmpty() && first != second
@@ -43,6 +53,13 @@ fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) 
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                photos?.takeIf { !it.isEmpty }?.let { p ->
+                    Text(
+                        "영수증·계약서 사진 ${p.count}장(${photoMegabytes(p.bytes)})이 같이 들어가요. 사진에는 개인 정보가 있을 수 있어 암호를 거는 게 좋아요.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
                 PasswordField(first, { first = it }, "암호 (${MIN_BACKUP_PASSWORD}자 이상)")
                 PasswordField(second, { second = it }, "암호 한 번 더", error = if (mismatch) "두 암호가 달라요" else null)
             }

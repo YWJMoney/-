@@ -30,6 +30,8 @@ data class BackupSummary(
     val sleeps: Int = 0, val hasPay: Boolean = false,
     /** [MCAL-05] Added calendars besides the main one. */
     val calendars: Int = 0,
+    /** [BACK-01] Photos in the file and about how many bytes they take. */
+    val photos: Int = 0, val photoBytes: Long = 0,
 )
 
 class BackupException(message: String) : Exception(message)
@@ -61,6 +63,8 @@ class BackupManager(
     private val pro: () -> com.bamnat.app.tier.ProStore? = { null },
     /** [PROV-04] The links the user made, with their keys, so a new phone keeps updating them. */
     private val shareLinks: com.bamnat.app.share.ShareLinkBackup? = null,
+    /** [BACK-01] Receipt and contract photos, while 사진도 백업 is on. */
+    private val photos: BackupPhotos? = null,
 ) {
     /** The schedule tables of [source] (shifts, order, changed days, extra work) as a backup holds them. */
     private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
@@ -247,6 +251,11 @@ class BackupManager(
         teams?.let { t -> root.put("teams", JSONObject(t.export() as Map<*, *>)) }
         pro()?.let { root.put("pro", it.toBackup()) }
         shareLinks?.let { root.put("shareLinks", it.export()) }
+        // [BACK-01] The photos the records point at, unless the user keeps them on the phone only.
+        if (settings.current.backupPhotos) photos?.let { p ->
+            val (receipts, contracts) = photoNames(root)
+            p.export(receipts, contracts)?.let { root.put("photos", it) }
+        }
         val s = settings.current
         root.put(
             "settings",
@@ -263,6 +272,9 @@ class BackupManager(
                 .put("phoneCalendars", s.phoneCalendars.joinToString(","))
                 .put("alarmMission", s.alarmMission).put("shiftMissions", encodeShiftMissions(s.shiftMissions))
                 .put("wakeCheck", s.wakeCheckMinutes)
+                // [DAILY-01][BACK-01][DAILY-15][DAILY-16] Added in 1.22.
+                .put("widgetMemo", s.widgetMemo).put("backupPhotos", s.backupPhotos)
+                .put("moneyLayout", s.moneyLayout).put("memoLayout", s.memoLayout).put("rateHint", s.rateHint)
                 .put("restCheck", s.restCheck)
                 .put("strictRest", s.strictRest).put("restRules", s.restRules).put("sleepTips", s.sleepTips)
                 // 1.10 and before read one switch for all sleep notices.
@@ -274,6 +286,40 @@ class BackupManager(
                 .put("sleepTarget", s.sleepTargetMinutes).put("commute", s.commuteMinutes),
         )
         return root.toString(1)
+    }
+
+    /**
+     * [BACK-01] The photo names a backup's records point at: ledger lines' receipts on every calendar, and
+     * each calendar's contract photos.
+     */
+    private fun photoNames(root: JSONObject): Pair<Set<String>, Map<String, List<String>>> {
+        val receipts = HashSet<String>()
+        fun scan(o: JSONObject) = o.optJSONArray("money").objects().forEach { e -> e.optString("receipt").takeIf { it.isNotEmpty() }?.let(receipts::add) }
+        scan(root)
+        val ids = listOf(PersonalCalendar.MAIN) + root.optJSONArray("calendars").objects().mapNotNull { o ->
+            scan(o)
+            CalendarBook.fromJson(o)?.takeIf { !it.isMain }?.id
+        }
+        val contracts = workTools?.let { tools -> ids.associateWith { tools.current(it).contract.photos }.filterValues { it.isNotEmpty() } }.orEmpty()
+        return receipts to contracts
+    }
+
+    /** [BACK-01] What the photos would add to a backup made now: shown beside 사진도 백업. */
+    suspend fun photoSize(): BackupPhotos.Size {
+        val p = photos ?: return BackupPhotos.Size(0, 0)
+        val root = JSONObject()
+        db.withTransaction { putMoney(db, root) }
+        calendars?.let { book ->
+            root.put("calendars", JSONArray().apply {
+                book.added().forEach { cal ->
+                    val o = CalendarBook.run { cal.toJson() }
+                    book.database(cal.id).let { other -> other.withTransaction { putMoney(other, o) } }
+                    put(o)
+                }
+            })
+        }
+        val (receipts, contracts) = photoNames(root)
+        return p.size(receipts, contracts)
     }
 
     /** Reads a backup without changing anything. Throws [BackupException] for a file that is not ours. */
@@ -293,6 +339,8 @@ class BackupManager(
             sleeps = root.optJSONArray("sleep")?.length() ?: 0,
             hasPay = root.has("pay"),
             calendars = root.optJSONArray("calendars")?.length() ?: 0,
+            photos = BackupPhotos.count(root.optJSONObject("photos")).count,
+            photoBytes = BackupPhotos.count(root.optJSONObject("photos")).bytes,
         )
     }
 
@@ -555,6 +603,8 @@ class BackupManager(
         }
         // [PROV-04] Read once the calendars are back; a backup from before 1.20 has none, and the phone's own links always stay.
         root.optJSONArray("shareLinks")?.let { a -> shareLinks?.restore(a) }
+        // [BACK-01] Photos first, so the records and contracts that point at them find them here.
+        photos?.restore(root.optJSONObject("photos"))
         // Backups from before 1.17 carry no work tools; the phone's own then stay.
         workTools?.let { tools ->
             tools.restore(PersonalCalendar.MAIN, root.optJSONObject("workTools"))
@@ -602,6 +652,11 @@ class BackupManager(
                     alarmMission = o.optString("alarmMission", s.alarmMission),
                     shiftMissions = o.optStringOrNull("shiftMissions")?.let(::decodeShiftMissions) ?: s.shiftMissions,
                     wakeCheckMinutes = o.optInt("wakeCheck", s.wakeCheckMinutes).coerceIn(0, 30),
+                    widgetMemo = o.optBoolean("widgetMemo", s.widgetMemo),
+                    backupPhotos = o.optBoolean("backupPhotos", s.backupPhotos),
+                    moneyLayout = o.optString("moneyLayout", s.moneyLayout),
+                    memoLayout = o.optString("memoLayout", s.memoLayout),
+                    rateHint = o.optBoolean("rateHint", s.rateHint),
                     calendarMemos = o.optBoolean("calendarMemos", s.calendarMemos),
                     restCheck = o.optBoolean("restCheck", s.restCheck),
                     strictRest = o.optBoolean("strictRest", s.strictRest),

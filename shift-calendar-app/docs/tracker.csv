@@ -505,3 +505,25 @@ JOB-05,체결 알림 실제 표본 시험 틀(samples.tsv 한 줄 = 시험 하�
 NURS-04,듀티표 사진 → 한 달 연달아 넣기에서 확신 낮은 칸만 고치기 (순번 275),2 (1.22.0),완료,,"1.22.0 묶음 C: DutyRoster guessed·doubtful, DutyRosterScreen → DutyTypingSheet, DutyRosterTypingTest, 433 화면"
 NURS-05,이달 나이트 개수·나이트 수당 미리 보기 (순번 277),2 (1.22.0),완료,,"1.22.0 묶음 C: NightSummary.kt, CalendarViewModel.monthNights, NightSummaryTest, 432 화면"
 NURS-06,받은 근무표에도 근무표 점검(알려 주기) (순번 282),2 (1.22.0),완료,,"1.22.0 묶음 C: ReceivedDutyCheck.kt, ReceivedDutyCheckTest, 436 화면"
+DAILY-01,"위젯에 그날 메모 첫 줄, 설정 › 달력 ‘위젯에 메모 보이기’(기본 켬) (순번 109)",2 (1.22.0),완료,,"1.22 묶음 E: WidgetData.memoLine, DayLine 메모 줄, SettingsPages 위젯에 메모 보이기, DailyWidgetsTest"
+DAILY-02,연차·대근인 날 하루 화면에서 바로 메모 남기기 (순번 109),2 (1.22.0),완료,,"1.22 묶음 E: DayDetail.DayNoteField(연차·대근), vm.addQuickMemo"
+DAILY-03,"홈 화면 위젯 ‘오늘 모든 조’: 조마다 오늘·내일 근무, 내 조 표시, 누르면 조 화면 (순번 279)",2 (1.22.0),완료,,"1.22 묶음 E: DailyWidgets.TeamsWidget, WidgetData.teamLines, DailyWidgetsTest"
+DAILY-04,"돈 탭 요약 순서: 이번 달 합계 → 새로 들어온 기록 → 최근 기록 (순번 110, UX 검토 1)",2 (1.22.0),완료,,1.22 묶음 E: MoneyScreen.MoneyPart 기본 순서
+DAILY-05,"메모 탭 새 메모 버튼 하나(메모/체크리스트 고르기), 필터는 검색 칸 아이콘으로 접기 (순번 110, UX 검토 2)",2 (1.22.0),완료,,1.22 묶음 E: MemoListScreen FAB 메뉴·FilterList 아이콘·MemoPart.FOLD
+DAILY-06,"위젯 날짜를 누르면 그날 하루 화면, 연차·알람 끔 표시, 알람 줄 잘림 해결 (순번 110, UX 검토 3)",2 (1.22.0),완료,,"1.22 묶음 E: NoticeLinks.Target.DAY, Widgets.DayLine, CalendarScreen DAY 처리"
+DAILY-07,"근무·급여의 주 막대를 누르면 달력의 그 주로 (순번 110, UX 검토 4)",2 (1.22.0),완료,,1.22 묶음 E: StatsScreen.WeekRow → Target.DAY(달력 지정)
+DAILY-08,"근무 종류 끌어서 순서 바꾸기, 근무 종류 화면 edit 인자 (순번 110, UX 검토 5)",2 (1.22.0),완료,,"1.22 묶음 E: ShiftTypesScreen 손잡이 끌기·editId, Routes.shiftTypes(edit)"
+DAILY-10,"길게 누르기 메뉴의 근무 종류를 최근 60일 많이 바꾼 순서로 (순번 110, UX 검토 7)",2 (1.22.0),완료,,"1.22 묶음 E: QuickOrder.byUse, MonthGrid 빠른 동작, DailyBundleCoreTest"
+DAILY-11,알바 오늘 위젯에서 출근·퇴근 버튼(결정 D7-1) (순번 187),2 (1.22.0),완료,,"1.22 묶음 E: DailyWidgets.HourlyClockAction·HourlyClockButton, DailyWidgetsTest"
+DAILY-12,현장 위젯은 금액 없이 공수·일감만(결정 D7-2) (순번 187),2 (1.22.0),완료,,1.22 묶음 E: DailyWidgetsTest.fieldWidgetShowsNoAmounts로 확인
+DAILY-13,매장 매출 알림: ‘확인하고 적기’면 기다렸다가 적기·버리기·모두 적기(결정 D7-3) (순번 187),2 (1.22.0),완료,,"1.22 묶음 E: ShopCapture.Pending, ShopPendingStore, ShopNotices, WorkStatsCards.PendingSalesCard, DailyBundleCoreTest"
+DAILY-14,무료 추가 달력 1개 유지(결정 D7-4) (순번 187),2 (1.22.0),완료,,1.22 묶음 E: DailyWidgetsTest.oneAddedCalendarStaysFree로 확인
+DAILY-15,돈·메모 화면 꾸미기(카드 순서·끄기) (순번 224),2 (1.22.0),완료,,"1.22 묶음 E: MoneyScreen.MoneyEditSheet, MemoListScreen.MemoEditSheet, AppSettings.moneyLayout·memoLayout(백업 포함)"
+DAILY-16,"광장 시세와 내 일당·시급 견주기, 휴대폰 안에서만(결정 D36), 설정 › 급여에서 끄기 (순번 276)",2 (1.22.0),완료,,"1.22 묶음 E: RateHint, RateHintStore, RateHintLine, DailyBundleCoreTest"
+DAILY-17,"두 번째 리뷰 요청: 첫 급여 달 마감 뒤 한 번, 첫 요청과 30일 이상 (순번 54)",2 (1.22.0),완료,,"1.22 묶음 E: InAppReview.due, PayViewModel.closeMonth, CalendarViewModel.markReviewAsked, DailyWidgetsTest"
+LEDG-25,영수증 사진 읽기(휴대폰 안 ML Kit): 금액·날짜·시간·가게를 채워 확인 (순번 114),2 (1.22.0),완료,,"1.22 묶음 E: ReceiptReader, ReceiptProof.ReceiptScanChip, LedgerEntrySheet, DailyMoneyBundleTest"
+LEDG-26,"종합소득세 참고 카드: 한 해 수입·경비·떼인 3.3%, 5월 신고 기간(세무 조언 아님) (순번 115)",2 (1.22.0),완료,,"1.22 묶음 E: IncomeTaxNote, WorkStatsCards.IncomeTaxCard, DailyMoneyBundleTest"
+LEDG-27,받을 돈 CSV 내보내기 (순번 116),2 (1.22.0),완료,,"1.22 묶음 E: WorkCsv.receivables, OwedScreen·WorkCsvExport, DailyMoneyBundleTest"
+INV-33,"투자 계좌별 시장 수수료율(해외 주식 따로), 투자 문구 점검 (순번 189)",2 (1.22.0),완료,,"1.22 묶음 E: InvestAccount.marketFees·feeFor, InvestRepository fees 설정 줄, AccountSheet, DailyBundleCoreTest"
+INV-34,"투자 월말 요약 알림(마지막 날 20시, 기본 켬, 금액 가리기 따름) (순번 281)",2 (1.22.0),완료,,"1.22 묶음 E: InvestMonthSummary, InvestMonthNotice·InvestMonthReceiver, GoalSheet 스위치, DailyBundleCoreTest"
+BACK-01,"백업 파일에 영수증·계약서 사진 넣기(결정 D13, 기본 켬, 30MB까지) (순번 182)",2 (1.22.0),완료,,"1.22 묶음 E: BackupPhotos, BackupManager photos, ExportPasswordDialog 사진 수, DailyWidgetsTest"

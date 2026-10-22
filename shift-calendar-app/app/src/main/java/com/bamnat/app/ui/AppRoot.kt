@@ -170,7 +170,7 @@ private fun TopLevel?.adPlace(): com.bamnat.core.tier.AdRules.Place = when (this
 
 private object Routes {
     // [MCAL-01] Shifts and the order are edited for one calendar: the main one unless one is named.
-    const val SHIFT_TYPES = "shift_types?calendar={calendar}"
+    const val SHIFT_TYPES = "shift_types?calendar={calendar}&edit={edit}"
     const val PATTERN = "pattern?weekdays={weekdays}&setup={setup}&calendar={calendar}"
     // [CALS-02] The kind of work of one calendar: the main one unless one is named.
     const val WORK_STYLE = "work_style?calendar={calendar}"
@@ -182,7 +182,8 @@ private object Routes {
     const val SHOP_DAYS = "shop_days?calendar={calendar}"
     fun shopDays(calendar: String = PersonalCalendar.MAIN) = "shop_days?calendar=$calendar"
 
-    fun shiftTypes(calendar: String = PersonalCalendar.MAIN) = "shift_types?calendar=$calendar"
+    /** [DAILY-08] [edit] opens that shift type's editor at once (the day's shift, from its sheet). */
+    fun shiftTypes(calendar: String = PersonalCalendar.MAIN, edit: Long = 0L) = "shift_types?calendar=$calendar&edit=$edit"
     fun pattern(weekdays: Boolean = false, setup: Boolean = false, calendar: String = PersonalCalendar.MAIN) =
         "pattern?weekdays=$weekdays&setup=$setup&calendar=$calendar"
 
@@ -336,7 +337,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         when (target) {
             // Over an editor the calendar goes on top, so the editor's input is still there after back.
             // [SHR-12] The calendar opens its share sheet itself.
-            NoticeLinks.Target.TODAY, NoticeLinks.Target.SHARE, NoticeLinks.Target.RECEIVE -> {
+            NoticeLinks.Target.TODAY, NoticeLinks.Target.SHARE, NoticeLinks.Target.RECEIVE, NoticeLinks.Target.DAY -> {
                 val current = nav.currentBackStackEntry?.destination?.route
                 when {
                     current == TopLevel.CALENDAR.route -> Unit
@@ -885,6 +886,8 @@ private fun AppNavHost(
                 top = {
                     CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                         onFix = { nav.fixCompanySetup(it) })
+                    // [DAILY-16] 광장 시세 next to the user's own 일당·시급, compared on the phone.
+                    com.bamnat.app.ui.company.RateHintLine(profile) { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } }
                 },
                 // [ADMIN-02] 계산이 이상해요 is a question in the app; a build without the company server shares it.
                 onReport = if (container.inquiryApi.enabled) { check ->
@@ -1061,10 +1064,13 @@ private fun AppNavHost(
             val vm = appViewModel { DiagnosticsViewModel(it) }
             DiagnosticsScreen(vm = vm, testing = entry.arguments?.getBoolean("testing") == true, onBack = { nav.popFrom(Routes.DIAGNOSTICS) })
         }
-        composable(Routes.SHIFT_TYPES, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+        composable(Routes.SHIFT_TYPES, arguments = listOf(
+            navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN },
+            navArgument("edit") { type = NavType.LongType; defaultValue = 0L },
+        )) { entry ->
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
             val vm = appViewModel(key = "shifts_$calendar") { ShiftsViewModel(it, calendar) }
-            ShiftTypesScreen(vm = vm, onBack = { nav.popFrom(Routes.SHIFT_TYPES) })
+            ShiftTypesScreen(vm = vm, onBack = { nav.popFrom(Routes.SHIFT_TYPES) }, editId = entry.arguments?.getLong("edit") ?: 0L)
         }
         composable(
             Routes.PATTERN,

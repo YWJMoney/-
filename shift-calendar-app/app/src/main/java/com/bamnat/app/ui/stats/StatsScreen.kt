@@ -322,7 +322,10 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                         summary.weeks.maxOfOrNull { it.totalMinutes / 60.0 } ?: 0.0,
                     )
                     summary.weeks.forEachIndexed { i, week ->
-                        WeekRow(week, settings.weeklyLimitHours, maxHours)
+                        // [DAILY-07] A week's bar opens that week on the calendar, its Monday chosen.
+                        WeekRow(week, settings.weeklyLimitHours, maxHours) {
+                            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.DAY, vm.calendarId, week.start.toString())
+                        }
                         if (i != summary.weeks.lastIndex) Spacer(Modifier.height(10.dp))
                     }
                     Text(
@@ -359,10 +362,10 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
 
 
 @Composable
-private fun WeekRow(week: WeekSummary, limitHours: Int, maxHours: Double) {
+private fun WeekRow(week: WeekSummary, limitHours: Int, maxHours: Double, onOpen: () -> Unit) {
     val cal = LocalCalendarColors.current
     val hours = week.totalMinutes / 60.0
-    Column {
+    Column(Modifier.clickable(onClickLabel = "달력에서 이 주 보기", onClick = onOpen).padding(vertical = 2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "${Fmt.shortDate(week.start)}–${Fmt.shortDate(week.end)}",

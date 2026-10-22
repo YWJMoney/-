@@ -593,7 +593,7 @@ class RatesViewModel(private val c: AppContainer) : ViewModel() {
         _state.value = _state.value.copy(loading = true, error = null)
         viewModelScope.launch {
             val next = try {
-                State(c.companyApi.rates(c.companyStore.device, f.job, f.region, f.unit), loading = false)
+                State(c.companyApi.rates(c.companyStore.device, f.job, f.region, f.unit).also { c.rateHints.keep(f.region, it.groups) }, loading = false)
             } catch (e: CompanyException) {
                 State(_state.value.board, loading = false, error = companyProblem(e.code, e.field))
             }

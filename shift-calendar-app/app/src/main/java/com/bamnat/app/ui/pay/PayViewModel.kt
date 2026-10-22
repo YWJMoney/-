@@ -105,6 +105,8 @@ class PayViewModel(
         val snap = existing?.recalculated(result, System.currentTimeMillis()) ?: CalcSnapshot.close(result, System.currentTimeMillis())
         payStore.saveClosed(snap, result.month)
         container.telemetry.event("pay_month_close", if (existing == null) "close" else "recalc")
+        // [DAILY-17] A month closed is the second moment Play's review may be asked at, back on 내 달력.
+        if (existing == null) container.settingsRepository.update { if (it.payReviewAsked) it else it.copy(payReviewDue = true) }
     }
 
     fun reopenMonth(month: YearMonth) = viewModelScope.launch { payStore.saveClosed(null, month) }

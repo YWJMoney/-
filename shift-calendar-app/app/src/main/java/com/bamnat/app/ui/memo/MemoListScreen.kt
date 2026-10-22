@@ -29,6 +29,11 @@ import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import com.bamnat.app.appContainer
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material.icons.outlined.Dashboard
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.automirrored.outlined.StickyNote2
 import androidx.compose.material.icons.filled.CheckBox
@@ -121,6 +126,16 @@ fun MemoListScreen(
             onSave = { vm.shareSelected(it); sharing = false },
         )
     }
+    // [DAILY-15] 화면 꾸미기: which of the rows above the memos show, and in what order.
+    val container = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val appSettings by container.settingsRepository.settings.collectAsStateWithLifecycle()
+    val parts = memoParts(appSettings.memoLayout)
+    var arranging by rememberSaveable { mutableStateOf(false) }
+    // [DAILY-05] Filter chips fold into the search box's icon unless a filter is on or the user keeps them open.
+    var filtersOpen by rememberSaveable { mutableStateOf(false) }
+    val filterOn = state.tag != null ||
+        (if (state.tab == MemoTab.CALENDAR) state.calendarFilter != CalendarFilter.ALL else state.generalFilter != GeneralFilter.ALL)
+    val fold = parts.any { it.part == MemoPart.FOLD && it.shown }
     val today = LocalDate.now()
     val open: (Memo) -> Unit = { memo -> if (state.selecting) vm.toggleSelected(memo.id) else onOpen(memo.id) }
     val actions = CardActions(
@@ -145,23 +160,35 @@ fun MemoListScreen(
                     onShare = if (state.manyCalendars) ({ sharing = true }) else null,
                 )
             } else {
-                Header(state, onSort = vm::setSort, onOpenTrash = onOpenTrash)
+                Header(state, onSort = vm::setSort, onOpenTrash = onOpenTrash, onArrange = { arranging = true })
             }
-            NotebookBar(state, vm::setNotebook)
-            OutlinedTextField(
-                value = query,
-                onValueChange = vm::setQuery,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                placeholder = { Text("제목, 내용, #태그 검색") },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (state.query.isNotEmpty()) {
-                        IconButton(onClick = { vm.setQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") }
-                    }
-                },
-                singleLine = true,
-                shape = MaterialTheme.shapes.extraLarge,
-            )
+            for (p in parts) {
+                if (!p.shown) continue
+                when (p.part) {
+                    MemoPart.NOTEBOOKS -> NotebookBar(state, vm::setNotebook)
+                    MemoPart.SEARCH -> OutlinedTextField(
+                        value = query,
+                        onValueChange = vm::setQuery,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                        placeholder = { Text("제목, 내용, #태그 검색") },
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        trailingIcon = {
+                            Row {
+                                if (state.query.isNotEmpty()) {
+                                    IconButton(onClick = { vm.setQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") }
+                                }
+                                if (fold) IconButton(onClick = { filtersOpen = !filtersOpen }) {
+                                    Icon(Icons.Filled.FilterList, if (filtersOpen) "필터 접기" else "필터 펼치기",
+                                        tint = if (filterOn) MaterialTheme.colorScheme.primary else LocalContentColor.current)
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        shape = MaterialTheme.shapes.extraLarge,
+                    )
+                    MemoPart.FOLD -> Unit
+                }
+            }
             PrimaryTabRow(selectedTabIndex = state.tab.ordinal, containerColor = Color.Transparent) {
                 for (tab in MemoTab.entries) {
                     val count = if (tab == MemoTab.CALENDAR) state.calendarCount else state.generalCount
@@ -172,7 +199,8 @@ fun MemoListScreen(
                     )
                 }
             }
-            FilterRow(state, vm)
+            // With the search box hidden there is no icon to unfold them, so they stay open.
+            if (!fold || filtersOpen || filterOn || parts.none { it.part == MemoPart.SEARCH && it.shown }) FilterRow(state, vm)
             when {
                 state.loaded && state.shownCount == 0 -> EmptyMemos(state.tab, searching = state.filtering)
                 state.tab == MemoTab.CALENDAR -> CalendarMemoList(state, today, actions)
@@ -188,19 +216,68 @@ fun MemoListScreen(
             ) {
                 // On the calendar tab a new memo starts on today so it lands in that list.
                 val date = if (state.tab == MemoTab.CALENDAR) today else null
-                SmallFloatingActionButton(onClick = { onNew(true, date) }) {
-                    Icon(Icons.Filled.Checklist, contentDescription = "새 체크리스트")
+                // [DAILY-05] One button, then 메모 or 체크리스트 [UX-06]: said in words, a pencil alone was read as "edit".
+                var choosing by remember { mutableStateOf(false) }
+                Box {
+                    ExtendedFloatingActionButton(
+                        onClick = { choosing = true },
+                        icon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+                        text = { Text("새 메모") },
+                        modifier = Modifier.semantics { contentDescription = if (date != null) "오늘 날짜로 새 메모 또는 체크리스트" else "새 메모 또는 체크리스트" },
+                    )
+                    DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
+                        DropdownMenuItem(text = { Text("메모") }, leadingIcon = { Icon(Icons.Outlined.Edit, null) },
+                            onClick = { choosing = false; onNew(false, date) })
+                        DropdownMenuItem(text = { Text("체크리스트") }, leadingIcon = { Icon(Icons.Filled.Checklist, null) },
+                            onClick = { choosing = false; onNew(true, date) })
+                    }
                 }
-                // [UX-06] Said in words: a pencil alone was read as "edit" and the checklist above it was missed.
-                ExtendedFloatingActionButton(
-                    onClick = { onNew(false, date) },
-                    icon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
-                    text = { Text("새 메모") },
-                    modifier = Modifier.semantics { contentDescription = if (date != null) "오늘 날짜로 새 메모" else "새 메모" },
-                )
             }
         }
     }
+    if (arranging) MemoEditSheet(appSettings.memoLayout, container.settingsRepository::update, onDismiss = { arranging = false })
+}
+
+/**
+ * [DAILY-15] The rows above the memos the user can order or hide (화면 꾸미기). [FOLD] is a switch, not a row:
+ * on, the filter chips fold into the search box's icon ([DAILY-05], on unless turned off).
+ */
+internal enum class MemoPart(val id: String, val label: String, val what: String, val movable: Boolean = true) {
+    NOTEBOOKS("notebooks", "공책", "공책을 나눠 쓸 때 위에 고르는 줄"),
+    SEARCH("search", "검색 칸", "제목·내용·#태그 찾기"),
+    FOLD("fold", "필터는 검색 칸 아이콘으로 접기", "끄면 필터·태그 칩이 늘 펼쳐져 있어요", movable = false),
+}
+
+internal fun memoParts(layout: String) = com.bamnat.core.layout.PageLayout.decode(layout).arrange(MemoPart.entries.toList()) { it.id }
+
+@Composable
+internal fun MemoEditSheet(layout: String, update: ((com.bamnat.app.data.AppSettings) -> com.bamnat.app.data.AppSettings) -> Unit, onDismiss: () -> Unit) {
+    val placed = memoParts(layout)
+    fun write(next: List<com.bamnat.core.layout.PageLayout.Placed<MemoPart>>) =
+        update { it.copy(memoLayout = com.bamnat.core.layout.PageLayout.of(next) { p -> p.id }.encode()) }
+    val rows = { movable: Boolean ->
+        placed.filter { it.part.movable == movable }.map { com.bamnat.app.ui.components.EditRow(it.part.id, it.part.label, it.part.what, it.shown, movable, it.isNew) }
+    }
+    com.bamnat.app.ui.components.PageEditSheet(
+        title = "메모 화면 꾸미기",
+        groups = listOf(
+            com.bamnat.app.ui.components.EditGroup("위쪽 줄 순서", rows(true)),
+            com.bamnat.app.ui.components.EditGroup("위쪽 필터", rows(false)),
+        ),
+        middle = "달력 메모 · 일반 메모",
+        onShow = { id, shown -> write(placed.map { if (it.part.id == id) it.copy(shown = shown) else it }) },
+        onMove = { id, by ->
+            val fixed = placed.filterNot { it.part.movable }
+            val movable = placed.filter { it.part.movable }
+            write(com.bamnat.core.layout.PageLayout.move(movable, movable.indexOfFirst { it.part.id == id }, by) + fixed)
+        },
+        onReset = { update { it.copy(memoLayout = "") } },
+        onAsk = {
+            onDismiss()
+            com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "화면 꾸미기"))
+        },
+        onDismiss = onDismiss,
+    )
 }
 
 private class CardActions(
@@ -212,7 +289,7 @@ private class CardActions(
 )
 
 @Composable
-private fun Header(state: MemoListState, onSort: (MemoSort) -> Unit, onOpenTrash: () -> Unit) {
+private fun Header(state: MemoListState, onSort: (MemoSort) -> Unit, onOpenTrash: () -> Unit, onArrange: () -> Unit = {}) {
     var sortMenu by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().padding(start = 20.dp, top = 8.dp, end = 4.dp),
@@ -238,6 +315,8 @@ private fun Header(state: MemoListState, onSort: (MemoSort) -> Unit, onOpenTrash
                 }
             }
         }
+        // [DAILY-15] 화면 꾸미기, as on 달력 and 근무·급여.
+        IconButton(onClick = onArrange) { Icon(Icons.Outlined.Dashboard, contentDescription = "화면 꾸미기") }
         IconButton(onClick = onOpenTrash) {
             BadgedBox(badge = { if (state.trashCount > 0) IconCountBadge(state.trashCount, "메모 ${state.trashCount}개") }) {
                 Icon(Icons.Outlined.Delete, contentDescription = "휴지통")

@@ -326,7 +326,7 @@ internal fun TradeSheet(
         }
         Text(
             if (costsTyped) "직접 적은 수수료·세금으로 저장해요" else
-                "수수료 ${"%.3f".format(account?.feeRate ?: market.defaultFeeRate).trimEnd('0').trimEnd('.')}%" +
+                "수수료 ${"%.3f".format(account?.feeFor(market) ?: market.defaultFeeRate).trimEnd('0').trimEnd('.')}%" +
                     (if (side == Side.SELL && market.sellTaxRate > 0) " · 거래세 ${market.sellTaxRate}%" else "") + "로 자동 계산했어요. 고치면 그 값으로 저장해요",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -483,12 +483,18 @@ internal fun AccountSheet(vm: InvestViewModel, editing: InvestAccount?, onDismis
     var name by rememberSaveable { mutableStateOf(editing?.name ?: "") }
     var broker by rememberSaveable { mutableStateOf(editing?.broker ?: "") }
     var fee by rememberSaveable { mutableStateOf(editing?.feeRate?.let { InvestFmt.input(it) } ?: "") }
+    // [INV-33] A 국내 account's own fee on 해외 주식, which brokers charge apart.
+    var usFee by rememberSaveable { mutableStateOf(editing?.marketFees?.get(Market.US_STOCK)?.let { InvestFmt.input(it) } ?: "") }
+    val usApart = !type.market.foreign && type != AccountType.CRYPTO
     var deleting by remember { mutableStateOf(false) }
     InvestSheetFrame(
         title = if (editing == null) "계좌 추가" else "계좌 고치기",
         onDismiss = onDismiss,
         onSave = {
-            vm.saveAccount((editing ?: InvestAccount(name = "")).copy(name = name.ifBlank { type.label }, type = type, broker = broker.trim(), feeRate = fee.toDecimal()))
+            val fees = (editing?.marketFees.orEmpty() - Market.US_STOCK) +
+                (usFee.toDecimal()?.takeIf { usApart && it in 0.0..5.0 }?.let { mapOf(Market.US_STOCK to it) } ?: emptyMap())
+            vm.saveAccount((editing ?: InvestAccount(name = "")).copy(name = name.ifBlank { type.label }, type = type, broker = broker.trim(),
+                feeRate = fee.toDecimal(), marketFees = fees))
             onDismiss()
         },
         actions = {
@@ -499,7 +505,12 @@ internal fun AccountSheet(vm: InvestViewModel, editing: InvestAccount?, onDismis
         OutlinedTextField(name, { name = it.take(20) }, label = { Text("이름") }, placeholder = { Text(type.label) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(broker, { broker = it.take(20) }, label = { Text("증권사·거래소 (선택)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         DecimalField("수수료율 (선택)", fee, { fee = it }, Modifier.fillMaxWidth(), suffix = "%",
-            supporting = "비워 두면 ${type.market.label} 보통 수수료 ${type.market.defaultFeeRate}%로 계산해요", imeAction = ImeAction.Done)
+            supporting = "비워 두면 ${type.market.label} 보통 수수료 ${type.market.defaultFeeRate}%로 계산해요. 증권사 이벤트로 바뀌면 여기서 고쳐요",
+            imeAction = if (usApart) ImeAction.Next else ImeAction.Done)
+        if (usApart) {
+            DecimalField("해외 주식 수수료율 (선택)", usFee, { usFee = it }, Modifier.fillMaxWidth(), suffix = "%",
+                supporting = "이 계좌로 미국 주식도 사면 적어요. 비워 두면 위 수수료율로 계산해요", imeAction = ImeAction.Done)
+        }
         Text(
             when {
                 type == AccountType.ISA -> "ISA는 순이익 200만 원(서민형 400만 원)까지 세금이 없고, 넘는 만큼 9.9%만 내요."

@@ -36,6 +36,7 @@ import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.bamnat.app.MainActivity
 import com.bamnat.app.ui.Fmt
+import com.bamnat.app.ui.calendar.clockOutDay
 import com.bamnat.core.holiday.KoreanHolidays
 import com.bamnat.core.schedule.CalendarGrid
 import com.bamnat.core.schedule.ResolvedDay
@@ -124,13 +125,22 @@ private fun TodayContent(data: WidgetData) {
             CalendarFocus.INVEST -> { InvestToday(data); return@Column }
             CalendarFocus.SHIFTS -> Unit
         }
-        DayLine("오늘", data.day(data.today), big = true)
+        val todayDay = data.day(data.today)
+        val alarmToday = data.nextAlarm?.takeIf { it.triggerAt.toLocalDate() == data.today }
+        // [DAILY-08] Today's alarm sits on the date line, so a short widget never cuts it off.
+        DayLine("오늘", todayDay, big = true, alarm = alarmToday?.let { Fmt.time(it.triggerAt.toLocalTime()) }, memo = data.memos[data.today])
         // [COMN-05] A part-timer's week and 주휴, a day worker's 연차 and 야근.
         WorkStyleLine(data)
         // [DAYW-03] A day worker leaves work from the home screen.
-        if (LeaveNowAction.offered(data.style, data.day(data.today))) {
+        if (LeaveNowAction.offered(data.style, todayDay)) {
             Spacer(GlanceModifier.height(4.dp))
             LeaveNowWidgetButton()
+        }
+        // [DAILY-11] An 알바 clocks in and out from the home screen.
+        val now = java.time.LocalDateTime.now()
+        HourlyClockAction.offered(data.style, todayDay, now) { data.day(data.today.minusDays(1)) }?.let { out ->
+            Spacer(GlanceModifier.height(4.dp))
+            HourlyClockButton(out, yesterday = out && clockOutDay(todayDay, data.today, now) { data.day(data.today.minusDays(1)) }?.date != data.today)
         }
         val line = data.flow?.line
         if (line != null) {
@@ -145,17 +155,15 @@ private fun TodayContent(data: WidgetData) {
         // Room for 내일 too, unless the widget is short and has the flow's line to show instead.
         if (line == null || LocalSize.current.height >= 150.dp) {
             Spacer(GlanceModifier.height(8.dp))
-            DayLine("내일", data.day(data.today.plusDays(1)), big = false)
+            val alarmTomorrow = data.nextAlarm?.takeIf { it.triggerAt.toLocalDate() == data.today.plusDays(1) }
+            DayLine("내일", data.day(data.today.plusDays(1)), big = false, alarm = alarmTomorrow?.let { Fmt.time(it.triggerAt.toLocalTime()) },
+                memo = data.memos[data.today.plusDays(1)])
         }
-        data.nextAlarm?.let { alarm ->
+        // An alarm further off keeps its own line.
+        data.nextAlarm?.takeIf { it.triggerAt.toLocalDate().isAfter(data.today.plusDays(1)) }?.let { alarm ->
             Spacer(GlanceModifier.height(6.dp))
             val at = alarm.triggerAt
-            val dayLabel = when (at.toLocalDate()) {
-                data.today -> "오늘"
-                data.today.plusDays(1) -> "내일"
-                else -> Fmt.shortDate(at.toLocalDate())
-            }
-            Text("⏰ $dayLabel ${Fmt.time(at.toLocalTime())}", style = small(GlanceTheme.colors.primary))
+            Text("⏰ ${Fmt.shortDate(at.toLocalDate())} ${Fmt.time(at.toLocalTime())}", style = small(GlanceTheme.colors.primary), maxLines = 1)
         }
     }
 }
@@ -277,31 +285,44 @@ private fun InvestToday(data: WidgetData) {
     )
 }
 
+/**
+ * A day on the today widget: its date (with the alarm's time), its shift or leave, and [DAILY-01] its memo.
+ * [DAILY-06] Tapping it opens that day in the app; [DAILY-07] an alarm turned off for the day says so.
+ */
 @Composable
-private fun DayLine(title: String, day: ResolvedDay, big: Boolean) {
-    Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        DateLabel(title, day.date)
-    }
-    Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        ShiftChip(day, if (big) 28 else 22)
-        Spacer(GlanceModifier.width(8.dp))
-        Column {
-            Text(
-                dayName(day),
-                style = TextStyle(
-                    color = GlanceTheme.colors.onSurface,
-                    fontSize = if (big) 18.sp else 14.sp,
-                    fontWeight = FontWeight.Bold,
-                ),
-                maxLines = 1,
-            )
-            val start = day.start
-            val end = day.end
-            val leave = day.leave?.takeIf { !it.isFullDay }
-            if (day.isWorkDay && start != null && end != null) {
-                Text(Fmt.timeRange(start, end) + (leave?.let { " · ${it.label}" } ?: ""), style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
+private fun DayLine(title: String, day: ResolvedDay, big: Boolean, alarm: String? = null, memo: String? = null) {
+    val context = androidx.glance.LocalContext.current
+    Column(GlanceModifier.fillMaxWidth().clickable(openDay(context, day.date))) {
+        Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            DateLabel(title, day.date)
+            when {
+                day.alarmSkipped && (day.isWorkDay || day.coveredShift != null) ->
+                    Text(" · 🔕 알람 끔", style = small(GlanceTheme.colors.error), maxLines = 1)
+                alarm != null -> Text(" · ⏰ $alarm", style = small(GlanceTheme.colors.primary), maxLines = 1)
             }
         }
+        Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            ShiftChip(day, if (big) 28 else 22)
+            Spacer(GlanceModifier.width(8.dp))
+            Column {
+                Text(
+                    dayName(day),
+                    style = TextStyle(
+                        color = GlanceTheme.colors.onSurface,
+                        fontSize = if (big) 18.sp else 14.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    maxLines = 1,
+                )
+                val start = day.start
+                val end = day.end
+                val leave = day.leave?.takeIf { !it.isFullDay }
+                if (day.isWorkDay && start != null && end != null) {
+                    Text(Fmt.timeRange(start, end) + (leave?.let { " · ${it.label}" } ?: ""), style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
+                }
+            }
+        }
+        memo?.let { MemoLine(it) }
     }
 }
 
@@ -323,7 +344,8 @@ private fun WeekContent(data: WidgetData) {
         Row(GlanceModifier.fillMaxWidth()) {
             for (date in days) {
                 val day = data.day(date)
-                Column(GlanceModifier.defaultWeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+                // [DAILY-06] Each day opens itself.
+                Column(GlanceModifier.defaultWeight().clickable(openDay(androidx.glance.LocalContext.current, date)), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         if (date == data.today) "오늘" else Fmt.dayOfWeekShort(date.dayOfWeek),
                         style = small(weekdayColor(date.dayOfWeek, date == data.today, KoreanHolidays.isHoliday(date))).copy(textAlign = TextAlign.Center),
@@ -340,6 +362,10 @@ private fun WeekContent(data: WidgetData) {
                     )
                     Spacer(GlanceModifier.height(4.dp))
                     WeekMark(data, day, 26)
+                    // [DAILY-07] The day's alarm is off.
+                    if (day.alarmSkipped && (day.isWorkDay || day.coveredShift != null)) {
+                        Text("🔕", style = TextStyle(fontSize = 9.sp, textAlign = TextAlign.Center), maxLines = 1)
+                    }
                 }
             }
         }

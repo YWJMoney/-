@@ -154,3 +154,47 @@ object InvestStats {
         return bestWin to bestLoss
     }
 }
+
+/**
+ * [INV-34] 투자 월말 요약: on the month's last evening, one notice with the month's buys and sells and what
+ * the sells realised. Only what the user wrote down; no prices are fetched and nothing is advised.
+ */
+object InvestMonthSummary {
+    data class Month(val month: java.time.YearMonth, val buys: Int, val sells: Int, val bought: Long, val sold: Long, val realized: Long) {
+        val isEmpty: Boolean get() = buys == 0 && sells == 0
+
+        /** The notice's text; amounts left out while the user hides them. */
+        fun text(hide: Boolean): String = buildString {
+            append("${month.monthValue}월 매수 ${buys}건 · 매도 ${sells}건")
+            if (!hide) {
+                if (bought > 0) append(" · 산 금액 ${won(bought)}")
+                if (sells > 0) append(" · 실현 손익 ${if (realized > 0) "+" else if (realized < 0) "−" else ""}${won(kotlin.math.abs(realized))}")
+            }
+        }
+
+        private fun won(v: Long) = "%,d원".format(v)
+    }
+
+    /** The trades dated in [month] and the realised result of its sells, in won. */
+    fun of(book: InvestBook, month: java.time.YearMonth): Month {
+        val trades = book.trades.filter { java.time.YearMonth.from(it.date) == month }
+        val realized = Portfolio.build(book).realizations.filter { java.time.YearMonth.from(it.date) == month }.sumOf { it.pnlWon }
+        return Month(
+            month = month,
+            buys = trades.count { it.side == Side.BUY },
+            sells = trades.count { it.side == Side.SELL },
+            bought = trades.filter { it.side == Side.BUY }.sumOf { it.quantity * it.price * it.fxRate }.let(Math::round),
+            sold = trades.filter { it.side == Side.SELL }.sumOf { it.quantity * it.price * it.fxRate }.let(Math::round),
+            realized = Math.round(realized),
+        )
+    }
+
+    /** 20:00 on the last day of [month]: after the markets close, before the month turns. */
+    fun noticeAt(month: java.time.YearMonth): java.time.LocalDateTime = month.atEndOfMonth().atTime(20, 0)
+
+    /** The next notice time after [now]: this month's, or next month's once it has passed. */
+    fun next(now: java.time.LocalDateTime): java.time.LocalDateTime {
+        val m = java.time.YearMonth.from(now)
+        return noticeAt(m).takeIf { it.isAfter(now) } ?: noticeAt(m.plusMonths(1))
+    }
+}

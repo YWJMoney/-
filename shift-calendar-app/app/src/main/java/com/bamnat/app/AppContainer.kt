@@ -155,7 +155,8 @@ class AppContainer(context: Context) {
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars, memoSharing = memoSharing,
         workTools = com.bamnat.app.data.WorkToolsStore.get(appContext), guide = com.bamnat.app.data.GuideStore.get(appContext), recordsTrash = { recordsTrash },
         teams = teams, pro = { proStore },
-        shareLinks = com.bamnat.app.share.ShareLinkBackup({ calendars.calendars.value.map { it.id } }, { shareLinksOf(it) }))
+        shareLinks = com.bamnat.app.share.ShareLinkBackup({ calendars.calendars.value.map { it.id } }, { shareLinksOf(it) }),
+        photos = com.bamnat.app.data.BackupPhotos(com.bamnat.app.ui.money.ReceiptFiles.dir(appContext)) { id -> com.bamnat.app.data.WorkToolsStore.get(appContext).photoDir(id) })
     /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록: a calendar's records as they were before a change, for 7 days. */
     val recordsTrash by lazy {
         com.bamnat.app.data.RecordsTrash(java.io.File(appContext.noBackupFilesDir, "records_trash"), calendars, database, settingsRepository,
@@ -169,6 +170,8 @@ class AppContainer(context: Context) {
     /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
     var companyApi: com.bamnat.app.company.CompanyApi = com.bamnat.app.company.CompanyClient()
     val companyStore by lazy { com.bamnat.app.company.CompanyStore(appContext) }
+    /** [DAILY-16] The last region's 광장 시세, for the pay screen's comparison on the phone. */
+    val rateHints by lazy { com.bamnat.app.company.RateHintStore(appContext) }
     /** [ADMIN-02] 설정 > 문의하기 through the company server; screenshots and tests put a fake in its place. */
     var inquiryApi: com.bamnat.app.company.InquiryApi = com.bamnat.app.company.InquiryClient()
     /** [ADMIN-02] The pay check 계산이 이상해요 hands to 문의하기; the next 문의하기 screen takes it once. */
@@ -363,6 +366,11 @@ class AppContainer(context: Context) {
         }
         // [INV-08] An investor alarm or date saved, changed or restored re-plans the next investor notice.
         com.bamnat.app.invest.InvestNotices.follow(this)
+        // [INV-34] 월말 요약's next notice while there is an investor calendar; it reads them when it comes.
+        appScope.launch {
+            com.bamnat.app.invest.InvestNotices.plans(this@AppContainer).map { it.isNotEmpty() }.distinctUntilChanged()
+                .collect { com.bamnat.app.invest.InvestMonthNotice.schedule(appContext, it) }
+        }
         // [SLP-15] 하루 브리핑, 퇴근길 and 잘 준비 follow the schedule, the alarms and their settings.
         keep("notices") {
             val reads = settingsRepository.settings.map {
@@ -461,6 +469,17 @@ class AppContainer(context: Context) {
             }.distinctUntilChanged()
             combine(sleepRepository.recent(days = 2), reads) { log, r -> log to r }
                 .drop(1).debounce(500)
+                .collect { WidgetRefresher.refresh(appContext) }
+        }
+        // [DAILY-01] The today widget's memo lines follow 내 달력's memos for today and tomorrow, and their switch.
+        keep("widgetmemo") {
+            val on = settingsRepository.settings.map { it.widgetMemo }.distinctUntilChanged()
+            combine(memoRepository.memos, on) { list, show ->
+                if (!show) emptyMap() else {
+                    val today = java.time.LocalDate.now()
+                    listOf(today, today.plusDays(1)).associateWith { d -> list.filter { it.date == d }.map { it.title + it.preview } }
+                }
+            }.distinctUntilChanged().drop(1).debounce(500)
                 .collect { WidgetRefresher.refresh(appContext) }
         }
         // [SHFT-08][REL-09] The watch follows the main calendar and its next alarm, from app start on.

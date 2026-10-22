@@ -586,6 +586,8 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
             )
         }
     }
+    // [DAILY-02] Whose shift the 대근 covers, kept as the day's memo.
+    day.coveredShift?.let { DayNoteField(day.date, "${it.name} 대근", vm) }
     if (day.source == DaySource.OVERRIDE) {
         val patternType = snapshot.resolver.patternShiftIdOn(day.date)?.let { snapshot.typesById[it] }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -726,6 +728,8 @@ private fun LeaveContent(day: ResolvedDay, vm: CalendarViewModel) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // [DAILY-02] Why the day off, kept as the day's memo.
+        DayNoteField(day.date, leave.kind.label, vm)
     } else {
         Text(
             "반차는 근무 뒤쪽 절반을 쉬는 것으로 계산해요.",
@@ -890,6 +894,36 @@ private fun DayAlarmEditorDialog(
             picking = null
         }
     }
+}
+
+/**
+ * [DAILY-02] One line saved as the day's memo beside 연차 or a 대근 ("연차 · 병원", "주간 대근 · 민지 대신"),
+ * so the reason is on the calendar and the widget without opening 메모.
+ */
+@Composable
+private fun DayNoteField(date: LocalDate, label: String, vm: CalendarViewModel) {
+    var text by rememberSaveable(date, label) { mutableStateOf("") }
+    val save = {
+        if (text.isNotBlank()) {
+            vm.addQuickMemo(date, "$label · ${text.trim()}")
+            text = ""
+        }
+    }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { text = it.take(60) },
+        modifier = Modifier.fillMaxWidth(),
+        placeholder = { Text(if (label.endsWith("대근")) "메모 남기기 (예: 누구 대신)" else "메모 남기기 (예: 병원, 가족 행사)") },
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyMedium,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { save() }),
+        trailingIcon = {
+            IconButton(onClick = { save() }, enabled = text.isNotBlank()) {
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "$label 메모 남기기")
+            }
+        },
+    )
 }
 
 /** The day's memos: a quick line that saves with one tap, and the list; deleting asks first [DAY-03]. */

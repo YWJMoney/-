@@ -56,6 +56,33 @@ object ShopCapture {
         return Sale(bucket, if (cancel) -amount else amount, appName.ifBlank { pkg })
     }
 
+    /**
+     * [DAILY-13] 결정 D7-3: with 확인하고 적기 on, a sale read from a notice waits here until the user
+     * says 적기 or 버리기, like a payment line in 확인 대기함. [key] is the notice it came from.
+     */
+    data class Pending(val key: String, val date: java.time.LocalDate, val sale: Sale) {
+        fun encode(): String = listOf(key.replace("\t", " "), date.toString(), sale.bucket.name, sale.amount.toString(), sale.app.replace("\t", " ").replace("\n", " "))
+            .joinToString("\t")
+
+        companion object {
+            /** At most this many wait; the oldest go first. */
+            const val MAX = 60
+
+            fun decode(line: String): Pending? {
+                val p = line.split('\t')
+                if (p.size != 5) return null
+                val bucket = Bucket.entries.firstOrNull { it.name == p[2] } ?: return null
+                val date = runCatching { java.time.LocalDate.parse(p[1]) }.getOrNull() ?: return null
+                val amount = p[3].toLongOrNull()?.takeIf { it != 0L } ?: return null
+                return Pending(p[0], date, Sale(bucket, amount, p[4]))
+            }
+
+            /** [list] with [p] at the end, the same notice only once, and no more than [MAX]. */
+            fun add(list: List<Pending>, p: Pending): List<Pending> =
+                if (list.any { it.key == p.key }) list else (list + p).takeLast(MAX)
+        }
+    }
+
     /** [sales] of a day with [sale] added to its bucket; a cancellation never takes a bucket below zero. */
     fun add(day: DailySales?, date: java.time.LocalDate, sale: Sale): DailySales {
         val base = day ?: DailySales(date, 0)

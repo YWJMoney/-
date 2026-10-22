@@ -704,7 +704,15 @@ private fun DayCell(
             // or shop work only once a pattern or a painted day says it does.
             val usesShifts = focus == CalendarFocus.SHIFTS || snapshot.hasPattern || day.source == DaySource.OVERRIDE
             if (usesShifts && focus.addLabel != null) HorizontalDivider()
-            if (usesShifts) for (t in snapshot.shiftTypes) {
+            // [DAILY-10] The types changed to most in the last 60 days come first.
+            val ordered = remember(snapshot) {
+                val today = LocalDate.now()
+                com.bamnat.core.schedule.QuickOrder.byUse(snapshot.shiftTypes, { it.id },
+                    (0 until com.bamnat.core.schedule.QuickOrder.DAYS).mapNotNull { back ->
+                        snapshot.resolver.resolve(today.minusDays(back.toLong())).takeIf { it.source == DaySource.OVERRIDE }?.shiftType?.id
+                    })
+            }
+            if (usesShifts) for (t in ordered) {
                 DropdownMenuItem(
                     text = { Text(t.name) },
                     leadingIcon = { ShiftBadge(t, size = 20.dp, outlined = t.isOff) },

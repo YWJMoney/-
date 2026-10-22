@@ -44,8 +44,11 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
     val book: Flow<InvestBook> = combine(
         records, dao.observeEvents(), dao.observeAlarms(), dao.observeSnapshots(), dao.observeSettings(),
     ) { (b, j), e, al, s, st ->
-        val settings = SettingsCodec.decode(st.associate { it.key to it.value })
-        b.copy(journal = j.map { it.toModel() }, events = e.map { it.toModel() }, alarms = al.map { it.toModel() },
+        val rows = st.associate { it.key to it.value }
+        val settings = SettingsCodec.decode(rows)
+        // [INV-33] Each account's market fees sit beside the settings.
+        b.copy(accounts = b.accounts.map { a -> rows[InvestAccount.feesKey(a.id)]?.let { a.copy(marketFees = InvestAccount.decodeFees(it)) } ?: a },
+            journal = j.map { it.toModel() }, events = e.map { it.toModel() }, alarms = al.map { it.toModel() },
             snapshots = s.map { it.toModel() }, settings = settings)
     }.flowOn(Dispatchers.Default)
 
@@ -59,7 +62,12 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
         dao.allAccounts().firstOrNull { !it.hidden }?.id ?: dao.upsertAccount(InvestAccount(name = AccountType.GENERAL.label).toEntity())
     }
 
-    suspend fun saveAccount(a: InvestAccount): Long = dao.upsertAccount(a.toEntity()).let { if (a.id != 0L) a.id else it }
+    suspend fun saveAccount(a: InvestAccount): Long = db.withTransaction {
+        val id = dao.upsertAccount(a.toEntity()).let { if (a.id != 0L) a.id else it }
+        // [INV-33] Its market fees, blank when none.
+        dao.upsertSetting(InvestSettingEntity(InvestAccount.feesKey(id), InvestAccount.encodeFees(a.marketFees)))
+        id
+    }
 
     /** An account with records is hidden, so its history stays in the totals; an empty one goes. */
     suspend fun deleteAccount(id: Long) = db.withTransaction {
@@ -157,6 +165,8 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
             "isaLimit" to s.isaLimit.toString(),
             "returnMethod" to s.returnMethod.name,
             "hideAmounts" to s.hideAmounts.toString(),
+            // [INV-34] Absent means on.
+            "monthSummary" to s.monthSummary.toString(),
             LAST_ACCOUNT to (s.lastAccountId?.toString() ?: ""),
         )
 
@@ -172,6 +182,7 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
                 isaLimit = m["isaLimit"]?.toLongOrNull()?.takeIf { it >= 0 } ?: d.isaLimit,
                 returnMethod = ReturnMethod.entries.firstOrNull { it.name == m["returnMethod"] } ?: d.returnMethod,
                 hideAmounts = m["hideAmounts"] == "true",
+                monthSummary = m["monthSummary"] != "false",
                 lastAccountId = m[LAST_ACCOUNT]?.toLongOrNull(),
             )
         }
