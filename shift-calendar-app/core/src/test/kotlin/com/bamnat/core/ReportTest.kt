@@ -92,10 +92,10 @@ class ReportTest {
         val now = MonthCompare.side(calc.month(oct), pay(oct))
         val before = MonthCompare.side(calc.month(oct.minusMonths(1)), pay(oct.minusMonths(1)))
         val rows = MonthCompare.rows(now, before)
-        assertEquals(listOf("근무시간", "근무일", "야간", "휴일·쉬는 날 근무", "추가 근무", "급여(세전 예상)"), rows.map { it.label })
+        assertEquals(listOf("근무시간", "근무일", "야간", "휴일·쉬는 날 근무", "추가 근무", "급여(세전)"), rows.map { it.label })
         val worked = rows.first()
         val d = now.worked - before.worked
-        assertEquals(if (d == 0) "같아요" else (if (d > 0) "+" else "−") + com.bamnat.core.hours.HoursFormat.korean(kotlin.math.abs(d)), worked.change)
+        assertEquals(if (d == 0) "같아요" else (if (d > 0) "+" else "−") + com.bamnat.core.hours.HoursFormat.hours(kotlin.math.abs(d).toDouble()) + "시간", worked.change)
         // Without a pay calculation there is no night or pay row.
         val plain = MonthCompare.rows(MonthCompare.side(calc.month(oct), null), MonthCompare.side(calc.month(oct.minusYears(1)), null))
         assertFalse(plain.any { it.label == "야간" || it.label.startsWith("급여") })

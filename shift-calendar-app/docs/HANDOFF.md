@@ -1,11 +1,24 @@
 # 밤낮 인수인계 (다른 계정에서 이어 가기)
 
-마지막 정리 2026-10-22, 앱 1.19.0(versionCode 30, 워치 100030) 기준이에요. 맨 위 0항이 지금 판이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
+마지막 정리 2026-10-22, 앱 1.20.0(versionCode 31, 워치 100031) 기준이에요. 맨 위 0항이 지금 판(1.20.0)과 바로 앞 판(1.19.0)이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
 
 이 저장소는 공개예요(GitHub Pages로 처리방침을 올려요). 그래서 이 문서에는 비밀값, 서명 키, 사용자 개인 정보를 적지 않아요.
 그런 것은 사용자가 새 프로젝트에 파일로 따로 올려요(7항). 새 계정의 Claude는 이 문서와 그 비공개 메모를 먼저 읽고 시작해요.
 
-## 0. 지금 판: 1.19.0 수익화 기반 (2026-10-22)
+## 0. 지금 판: 1.20.0 프로 가치 (2026-10-22)
+
+프로 화면 네 기둥의 남은 줄을 모두 만들었어요. 모두 프로 기능이고, 정식 출시 스위치 전에는 1.19.0처럼 모두 열려 있어요. 다음 판은 1.21.0 출시 품질·원격 갱신·원문 대조예요(`계획/Phase2-완료-체크리스트.md` 1장).
+
+- **기능 표**: `tier/FeatureGate.kt`에 PAY_REPORT, WORK_COMPARE, DEVICE_CALENDAR, ICS_FEED, AUTO_BACKUP, MORE_LINKS, ROSTER_PDF, SURE_ALARM이 더해졌어요. 프로 화면 `ui/pro/ProScreen.kt`의 `PRO_PILLARS`는 기둥마다 여는 `Feature`를 적고, `TierAppTest`가 모든 프로 기능이 한 기둥에만 있는지, 서버의 `freeFeatures`로 하나씩 열 수 있는지 봐요. 관리자 앱 '모두에게 무료로 연 프로 기능'에는 이 이름(영어 대문자)을 적어요.
+- **급여 리포트·비교·근무표 PDF**: core `report/PayReport.kt`·`MonthCompare.kt`·`RosterReport.kt`·`ReportDoc.kt`(쪽·표 모양), 앱 `report/ReportPdf.kt`(`PdfDocument`로 A4, 글꼴은 시스템)·`ReportShare.kt`. 화면은 `ui/pay/PayReportCard.kt`, `ui/stats/CompareCards.kt`(StatsPart.COMPARE·YEAR), 공유 창의 'N월 PDF·N년 PDF'.
+- **휴대폰 캘린더**: `calendar/PhoneCalendar.kt`(동기화 어댑터로 `ACCOUNT_TYPE_LOCAL` 캘린더, 날짜마다 고정 키로 바뀐 것만 다시 씀), `calendar/PhoneCalendarSync.kt`(설정 `phoneCalendars`를 따라 몇 초 뒤, 3개월 전부터 1년 뒤까지). `WRITE_CALENDAR`는 켤 때만 물어요. 캘린더 가져오기는 이 캘린더를 목록에서 빼요.
+- **공유 링크**: `share/ShareLink.kt`의 `ShareLinkKey`(1번은 달력 ID, 2~5번은 `id~N`, 1번의 저장 파일 이름은 예전 그대로), 기간 7·30·90·180·365(180·365는 프로), 링크마다 `feed`(구독 주소). `ShareSync`가 모든 링크를 따라 보내고, 프로가 끝나면 2~5번은 기간까지 두되 늘리기는 `Result.Locked`(결정 D23). 공유 서버는 `GET /s/:id.ics`와 `ics`·`tz`를 받아요(서버 README '앱 1.20부터').
+- **매일 자동 백업**: `backup/AutoBackup.kt`(하루 한 번, 'rwt'로 쓰고 쓴 길이로 잘라 낸 뒤 다시 읽어 풀어 봄, 3일 실패 알림), `backup/AutoBackupJob.kt`(JobScheduler 6시간, 배터리 낮지 않을 때), `backup/KeyBox.kt`(암호에서 만든 열쇠를 키 저장소 AES-GCM으로 감쌈, 암호는 저장 안 함). 파일은 손으로 한 암호 백업처럼 같은 암호로 어느 휴대폰에서나 열려요. 열쇠와 파일 위치(`auto_backup` 설정 파일)는 백업에서 빠져요.
+- **확실한 알람**: core `alarm/AlarmMission.kt`(계산 3문제, 흔들기 20번, `ShakeCounter`, 5분 뒤 미션 없이 끄기), 앱 `alarm/MissionScreen.kt`, `AlarmActivity`(미션 화면), `AlarmService`(미션이 있으면 알림의 '끄기'가 미션 화면을 엶, 끄면 `WakeCheck.schedule`), `alarm/WakeCheck.kt`(끈 뒤 N분에 '일어났나요?', 90초 뒤 한 번 더 울림, 알람 시계가 아닌 정확한 알람). 설정은 `ui/settings/SureAlarmCard.kt`, 잠금 풀기 전 사본은 `BootAlarms`가 함께 둬요. 프로가 아니면 `RingSettings.of(s, sure = false)`라 예전처럼 울려요.
+- **법 문서**: `privacy/index.html` 처리방침 2.6(게시 2026-10-24·시행 2026-11-22 예정, 7일 고지, 2.5보다 먼저 시행 못 함). `docs/play-data-safety.md` 1.20.0장.
+- **시험**: core `ReportTest`·`AlarmMissionTest`·`GuideTest.whatsNewOpensRealFeatures`, 앱 `report/ReportPdfTest`, `calendar/PhoneCalendarTest`, `share/ShareLinksProTest`, `backup/AutoBackupTest`, `alarm/SureAlarmTest`, `tier/TierAppTest`, 화면 사진 385~398, 공유 서버 `worker.test.mjs`.
+
+## 0-1. 바로 앞 판: 1.19.0 수익화 기반 (2026-10-22)
 
 일하는 규칙은 `CLAUDE.md`(문서 먼저, 판마다 체크리스트, Phase 3 진입 금지). 남은 일의 정본과 판 계획은 비공개 프로젝트 파일 `계획/Phase2-완료-체크리스트.md`에 있어요. 다음 판은 1.20.0 프로 가치(자동 암호 백업, 공유 링크 여러 개, 통계 확장, 급여 리포트 PDF·CSV, 등급 최종 시험, ICS 구독, 기기 캘린더 쓰기, 확실한 알람, 근무표 PDF)예요.
 
@@ -43,7 +56,8 @@
 | 1.17.2 | REV-07~14 | 리뷰 뒤 남은 일: 공휴일 주휴 이중 계산, 급여 이름 넓히기, 가져오기로 없어지는 달력 사진 보관, 위치 다시 켠 뒤 지오펜스 다시 걸기(12시간 점검), 워치 컴플리케이션 타임라인, 투자일지 예전 번호 형식 제거, CI 워치 AAB 확인, 되돌리기·어제 퇴근 시험 |
 | 1.16.0 | LEDG-17~24·CALS·TYPE·NOTE | 가계부 자동 분류(PR #45), 달력 고치기 화면, 달력마다 따로 설정·결제 알림 쌓을 달력·카드별 달력(CALS), 근무 유형별 말·자영업 영업일·정기휴무·매출 없으면 휴무·유형별 통계(주휴수당·거래처별·요일별 매출)·유형별 분류(TYPE), 달력별 메모·공용 메모장·목록 이어쓰기·키보드 가림 방지(NOTE, DB 16). versionCode 25: 시장조사 P1·P2 전부(SHFT·DAYW·HRLY·FLD·SHOP·COMN·NOTE-05~, DB 17: 지각·조퇴·결근, 교대 바꾸기, 근무 종류 가산율, 일감 상태·공수·지급 예정일, 결제 수단별 매출·시재, 증빙·영수증 사진, 메모 반복) |
 | 1.18.0 | WEEK·CAL-19~22·CREW·CUST·GUIDE-08·INQ-02~04·LOCK | 주 근무시간 월~일, 모든 조 보기, 화면 꾸미기, 업데이트 뒤 새 기능 안내, 문의 진행 단계, 앱 잠금 |
-| 1.19.0 | MON-01~11 | 무료/프로 두 등급, 원격 설정과 정식 출시 스위치(꺼진 채), Play 결제, 체험 전환 동의, 흐린 잠금과 프로 화면, 띠·보상형 광고와 광고 동의, 보상 이용권, 관리자 휴대폰 연결, 이용약관 1.0, 처리방침 2.5 (0항) |
+| 1.19.0 | MON-01~11 | 무료/프로 두 등급, 원격 설정과 정식 출시 스위치(꺼진 채), Play 결제, 체험 전환 동의, 흐린 잠금과 프로 화면, 띠·보상형 광고와 광고 동의, 보상 이용권, 관리자 휴대폰 연결, 이용약관 1.0, 처리방침 2.5 (0-1항) |
+| 1.20.0 | PROV-01~08·FEAT-07·FEAT-15 | 급여 리포트 PDF·CSV, 지난달·작년 비교, 휴대폰 캘린더에 근무 쓰기, 캘린더 구독 주소, 링크 5개·1년, 매일 자동 암호 백업, 근무표 PDF, 끄기 미션과 일어났나요 확인, 처리방침 2.6 (0항, DB는 그대로 18) |
 
 - 서버 두 개가 사용자의 Cloudflare 계정에 있어요.
   - 공유 서버(`server/share-worker`, KV): 켜져 있고 앱이 써요(`gradle.properties`의 `bamnat.shareBaseUrl`).

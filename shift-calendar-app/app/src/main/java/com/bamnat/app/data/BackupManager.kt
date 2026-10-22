@@ -58,6 +58,8 @@ class BackupManager(
     private val teams: TeamStore? = null,
     /** [MON-08] The 프로 recovery code, so passes follow to a new phone; never the purchase itself. */
     private val pro: () -> com.bamnat.app.tier.ProStore? = { null },
+    /** [PROV-04] The links the user made, with their keys, so a new phone keeps updating them. */
+    private val shareLinks: com.bamnat.app.share.ShareLinkBackup? = null,
 ) {
     /** The schedule tables of [source] (shifts, order, changed days, extra work) as a backup holds them. */
     private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
@@ -243,6 +245,7 @@ class BackupManager(
         guide?.let { root.put("featuresOff", it.exportOff()) }
         teams?.let { t -> root.put("teams", JSONObject(t.export() as Map<*, *>)) }
         pro()?.let { root.put("pro", it.toBackup()) }
+        shareLinks?.let { root.put("shareLinks", it.export()) }
         val s = settings.current
         root.put(
             "settings",
@@ -544,6 +547,8 @@ class BackupManager(
             if (pay != null) store.save(pay, keepUndo = false)
             if (payClosed != null) store.replaceClosed(payClosed.associateBy { it.month })
         }
+        // [PROV-04] Read once the calendars are back; a backup from before 1.20 has none, and the phone's own links always stay.
+        root.optJSONArray("shareLinks")?.let { a -> shareLinks?.restore(a) }
         // Backups from before 1.17 carry no work tools; the phone's own then stay.
         workTools?.let { tools ->
             tools.restore(PersonalCalendar.MAIN, root.optJSONObject("workTools"))

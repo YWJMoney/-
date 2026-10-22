@@ -178,4 +178,49 @@ class ShareLinksProTest {
         assertEquals("근무표 2번 링크", ShareExpiryReminder.what(second, null))
         assertEquals("‘알바’ 달력 3번 링크", ShareExpiryReminder.what("abc~3", "알바"))
     }
+
+    @Test fun theLinksGoWithABackupAndNoneOnThisPhoneIsLost() = runBlocking {
+        val a = "Ab3dEfGh5JkLmNoPqRsTuv"
+        val b = "Zz9yXw8vUt7sRq6pOn5mLk"
+        c.shareLinks.save(link(a, ttl = 180))
+        c.shareLinks.apply { feed = true; auto = false; saveOptions(ShareOptions(memos = true)) }
+        c.shareLinksOf(second).save(link(b))
+        val json = c.backupManager.export()
+        fun ids() = ShareLinkKey.all(PersonalCalendar.MAIN).mapNotNull { c.shareLinksOf(it).link.value?.id }
+        fun emptyPhone() = ShareLinkKey.all(PersonalCalendar.MAIN).forEach {
+            c.shareLinksOf(it).apply { clear(); feed = false; auto = true; saveOptions(ShareOptions()) }
+        }
+
+        // A new phone keeps updating the same links, the feed and what they show too.
+        emptyPhone()
+        c.backupManager.restore(json)
+        val first = c.shareLinks
+        assertEquals(a, first.link.value?.id)
+        assertEquals(180, first.link.value?.ttlDays)
+        assertEquals("token", first.link.value?.deleteToken)
+        assertTrue(first.feed)
+        assertFalse(first.auto)
+        assertTrue(first.options().memos)
+        assertNull("sent again at the next update", first.sent)
+        assertEquals(b, c.shareLinksOf(second).link.value?.id)
+
+        // A link of this phone's own is never lost: the file's go to the free places, once.
+        emptyPhone()
+        val own = "Own1Own2Own3Own4Own5Ow"
+        c.shareLinks.save(link(own))
+        c.backupManager.restore(json)
+        assertEquals(own, c.shareLinks.link.value?.id)
+        assertEquals(listOf(own, a, b), ids())
+        c.backupManager.restore(json)
+        assertEquals(listOf(own, a, b), ids())
+
+        // A part that is not a link this app made is left out.
+        emptyPhone()
+        val bad = JSONObject(json).apply {
+            getJSONArray("shareLinks").getJSONObject(0).put("url", "https://elsewhere.example/page")
+            getJSONArray("shareLinks").getJSONObject(1).put("expires", Instant.now().minusSeconds(60).toString())
+        }
+        c.backupManager.restore(bad.toString())
+        assertEquals(emptyList<String>(), ids())
+    }
 }

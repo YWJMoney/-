@@ -335,6 +335,15 @@ class ShareLinkStore(
         _link.value = s
     }
 
+    /** [PROV-04] A link from a backup, kept like one made here and sent again at the next update. */
+    fun restore(s: ShareLinkState, auto: Boolean, feed: Boolean, options: ShareOptions) {
+        prefs.edit().remove("sent").remove("noticed").apply()
+        save(s)
+        this.auto = auto
+        this.feed = feed
+        saveOptions(options)
+    }
+
     /** Forgets the link; what the sharer ticked stays for the next one. */
     fun clear() {
         prefs.edit().remove("id").remove("url").remove("token").remove("expires").remove("title").remove("ttl").remove("from")

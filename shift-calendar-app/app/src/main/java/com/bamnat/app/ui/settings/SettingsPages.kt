@@ -460,7 +460,7 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
         )
     }
     SectionCard(title = "백업") {
-        Note("근무, 바꾼 날짜, 메모, 돈 기록, 수면 기록, 급여 설정, 앱 설정을 파일 하나로 저장해요. 휴대폰을 바꾸거나 앱을 다시 설치할 때 불러오세요. 암호를 걸면 남이 열어 볼 수 없어요.")
+        Note("근무, 바꾼 날짜, 메모, 돈 기록, 수면 기록, 급여 설정, 앱 설정, 내가 만든 근무표 링크를 파일 하나로 저장해요. 휴대폰을 바꾸거나 앱을 다시 설치할 때 불러오세요. 암호를 걸면 남이 열어 볼 수 없어요.")
         NavRow("백업 저장", "파일로 저장해요. 암호를 걸 수 있어요", files.saveBackup)
         HorizontalDivider()
         // [PROV-03] The same file every day by itself (프로).

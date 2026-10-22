@@ -2110,6 +2110,67 @@ class ScreenshotTest {
     @Test fun phoneSettingsProRow() = shoot("383_phone_settings_pro_row", PHONE, launched { tab(4, wide = false); reveal("기능 켜고 끄기", exact = true) })
     @Test fun smallPhoneQuickInput() = shoot("368_small_phone_quick_input", SMALL_PHONE) { tapText("빠른 입력", exact = true) }
 
+    // ---- [PROV-01..PROV-08] 1.20.0: the rest of 프로's four pillars ----
+    @Test fun phonePayReport() = shoot("385_phone_pay_report", PHONE) {
+        payScreen(Tier.PRO, withProfile = true).invoke(this); reveal("급여 리포트", exact = true)
+    }
+    @Test fun phonePayReportLocked() = shoot("386_phone_pay_report_locked", PHONE, launched {
+        payScreen(Tier.FREE, withProfile = true).invoke(this); reveal("급여 리포트", exact = true)
+    })
+    @Test fun phoneStatsCompare() = shoot("387_phone_stats_compare", PHONE) {
+        runBlocking { app.container.payStore.save(PayViewModel(app.container).sampleProfile().copy(rules = companyRules), keepUndo = false) }
+        tab(3, wide = false); reveal("${java.time.YearMonth.now().monthValue}월 비교", exact = true)
+    }
+    @Test fun phoneStatsYear() = shoot("388_phone_stats_year", PHONE) {
+        runBlocking { app.container.payStore.save(PayViewModel(app.container).sampleProfile().copy(rules = companyRules), keepUndo = false) }
+        tab(3, wide = false); reveal("${java.time.Year.now().value}년 근무·급여", exact = true)
+    }
+
+    /** The link 민지 made this month, with the calendar feed on. */
+    private fun Screen.shareWithFeed(then: Screen.() -> Unit = {}) {
+        val c = app.container
+        c.shareApi = shares
+        c.shareLinks.save(com.bamnat.app.share.ShareLinkState("Ab3dEfGh5JkLmNoPqRsTuv", "https://bamnat-share.example.workers.dev/s/Ab3dEfGh5JkLmNoPqRsTuv",
+            "t", java.time.Instant.now().plus(java.time.Duration.ofDays(150)), "민지", 180, java.time.YearMonth.now()))
+        c.shareLinks.feed = true
+        val snap = runBlocking { c.scheduleRepository.snapshot.first() }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}, client = shares) }
+        settle()
+        then()
+    }
+    @Test fun phoneShareFeed() = shoot("389_phone_share_feed", PHONE) { shareWithFeed { reveal("구독 주소 복사", exact = true) } }
+    @Test fun phoneShareSecondLink() = shoot("390_phone_share_second_link", PHONE) { shareWithFeed { tapText("+ 새 링크", exact = true, scrolls = 0) } }
+    @Test fun phoneShareRosterPdf() = shoot("391_phone_share_roster_pdf", PHONE) { shareWithFeed { reveal("${java.time.YearMonth.now().year}년 PDF", exact = true) } }
+
+    @Test fun phoneDataAutoBackup() = shoot("392_phone_data_auto_backup", PHONE) {
+        val c = app.container
+        c.keyBox = com.bamnat.app.backup.AutoBackupTest.FakeKeyBox()
+        val file = java.io.File(app.filesDir, "drive/${com.bamnat.app.backup.AutoBackup.FILE_NAME}").apply { parentFile!!.mkdirs(); delete() }
+        runBlocking { c.autoBackup.turnOn(android.net.Uri.fromFile(file), "밤낮1234".toCharArray()) }
+        settingsPage("데이터"); reveal("매일 자동 백업", exact = true)
+    }
+    @Test fun phoneDataPhoneCalendar() = shoot("398_phone_data_phone_calendar", PHONE) {
+        settingsPage("데이터"); reveal("휴대폰 캘린더에 근무 쓰기", exact = true)
+    }
+
+    @Test fun phoneSureAlarm() = shoot("393_phone_sure_alarm", PHONE) {
+        val c = app.container
+        val night = runBlocking { c.scheduleRepository.shiftTypes.first() }.firstOrNull { it.name.contains("야") }?.id
+        c.settingsRepository.update { it.copy(alarmMission = "math", wakeCheckMinutes = 5,
+            shiftMissions = if (night != null) mapOf(night to "shake") else emptyMap()) }
+        settingsPage("알람"); reveal("근무마다 다르게", exact = true); reveal("묻는 때", exact = false)
+    }
+    private fun Screen.mission(kind: com.bamnat.core.alarm.AlarmMission, rangFor: java.time.Duration) {
+        val sensors = app.getSystemService(android.hardware.SensorManager::class.java)
+        shadowOf(sensors).addSensor(org.robolectric.shadows.ShadowSensor.newInstance(android.hardware.Sensor.TYPE_ACCELEROMETER))
+        val since = System.currentTimeMillis() - rangFor.toMillis()
+        content { com.bamnat.app.alarm.MissionScreen(kind, since, 5, onSnooze = {}, onDone = {}) }
+    }
+    @Test fun phoneMissionMath() = shoot("394_phone_mission_math", PHONE) { mission(com.bamnat.core.alarm.AlarmMission.MATH, java.time.Duration.ofSeconds(40)) }
+    @Test fun phoneMissionShake() = shoot("395_phone_mission_shake", PHONE) { mission(com.bamnat.core.alarm.AlarmMission.SHAKE, java.time.Duration.ofMinutes(2)) }
+    @Test fun phoneMissionSkip() = shoot("396_phone_mission_skip", PHONE) { mission(com.bamnat.core.alarm.AlarmMission.MATH, java.time.Duration.ofMinutes(6)) }
+    @Test fun smallPhoneMissionMath() = shoot("397_small_phone_mission_math", SMALL_PHONE) { mission(com.bamnat.core.alarm.AlarmMission.MATH, java.time.Duration.ofSeconds(40)) }
+
     // ---- [208] Store pictures (1.18.0): a common phone, no one-time hints, the phone's alarm permissions given ----
     private fun clean(then: Screen.() -> Unit = {}): Screen.() -> Unit {
         shadowOf(app).grantPermissions(Manifest.permission.USE_FULL_SCREEN_INTENT, Manifest.permission.POST_NOTIFICATIONS)

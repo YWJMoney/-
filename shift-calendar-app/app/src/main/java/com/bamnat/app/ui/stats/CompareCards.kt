@@ -56,7 +56,7 @@ internal fun CompareCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: Sc
                 Text("작년 ${lastYear.month.year % 100}년 ${lastYear.month.monthValue}월은 달력에 근무가 없어 비교할 게 없어요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
-                CompareTable(now, lastYear, "작년 ${lastYear.month.year % 100}년 ${lastYear.month.monthValue}월")
+                CompareTable(now, lastYear, "작년 ${lastYear.month.monthValue}월")
             }
             Text(if (profile == null) "급여를 설정하면 야간과 급여도 비교해요." else "급여는 세금 떼기 전 예상이에요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
@@ -69,18 +69,18 @@ private fun CompareTable(now: MonthCompare.Side, before: MonthCompare.Side, befo
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth()) {
             Text("", Modifier.weight(1.3f))
-            Text("${now.month.monthValue}월", Modifier.weight(1.2f), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.End)
-            Text(beforeLabel, Modifier.weight(1.4f), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.End,
+            Text("${now.month.monthValue}월", Modifier.weight(1.15f), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.End)
+            Text(beforeLabel, Modifier.weight(1.25f), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.End,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("차이", Modifier.weight(1.2f), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.End)
+            Text("차이", Modifier.weight(1.45f), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.End)
         }
         MonthCompare.rows(now, before).forEach { r ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(r.label, Modifier.weight(1.3f), style = MaterialTheme.typography.bodyMedium)
-                Text(r.now, Modifier.weight(1.2f), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), textAlign = TextAlign.End)
-                Text(r.before, Modifier.weight(1.4f), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), textAlign = TextAlign.End,
+                Text(r.now, Modifier.weight(1.15f), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), textAlign = TextAlign.End)
+                Text(r.before, Modifier.weight(1.25f), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), textAlign = TextAlign.End,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(r.change, Modifier.weight(1.2f), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), textAlign = TextAlign.End,
+                Text(r.change, Modifier.weight(1.45f), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), textAlign = TextAlign.End,
                     fontWeight = FontWeight.SemiBold,
                     color = when (r.more) { true -> Color(0xFFE8590C); false -> Color(0xFF1C7ED6); null -> MaterialTheme.colorScheme.onSurfaceVariant })
             }
@@ -113,7 +113,7 @@ internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: S
                     Text(HoursFormat.korean(s.worked), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), color = color)
                     Text(s.night?.let { "야간 " + HoursFormat.korean(it) } ?: "${s.workDays}일", Modifier.weight(1f),
                         style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    s.pay?.let { Text(wonShort(it), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), color = color, textAlign = TextAlign.End) }
+                    s.pay?.let { Text(MonthCompare.man(it), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), color = color, textAlign = TextAlign.End) }
                 }
             }
             HorizontalDivider(Modifier.padding(vertical = 6.dp))
@@ -122,13 +122,10 @@ internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: S
                 Text(HoursFormat.korean(y.worked), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall.merge(NumberStyle))
                 Text(y.night?.let { "야간 " + HoursFormat.korean(it) } ?: "${y.workDays}일", Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                y.pay?.let { Text(wonShort(it), style = MaterialTheme.typography.titleSmall.merge(NumberStyle)) }
+                y.pay?.let { Text(MonthCompare.man(it), style = MaterialTheme.typography.titleSmall.merge(NumberStyle)) }
             }
             Text("근무표대로 앞으로의 달도 셌어요. 급여 리포트(PDF·CSV)는 근무·급여 화면에서 만들어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
         }
     }
 }
-
-/** "312.4만" for the year card's narrow column. */
-private fun wonShort(v: Long): String = if (v >= 10_000) "%.1f만".format(v / 10_000.0).replace(".0만", "만") else "%,d원".format(v)

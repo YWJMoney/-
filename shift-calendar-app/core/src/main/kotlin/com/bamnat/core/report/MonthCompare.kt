@@ -45,7 +45,7 @@ object MonthCompare {
     /** The rows both months can fill. */
     fun rows(now: Side, before: Side): List<Row> = buildList {
         fun minutes(label: String, a: Int, b: Int) =
-            add(Row(label, HoursFormat.korean(a), HoursFormat.korean(b), change((a - b).toLong()) { HoursFormat.korean(it.toInt()) }, sign((a - b).toLong())))
+            add(Row(label, hours(a.toLong()), hours(b.toLong()), change((a - b).toLong(), ::hours), sign((a - b).toLong())))
         minutes("근무시간", now.worked, before.worked)
         val days = (now.workDays - before.workDays).toLong()
         add(Row("근무일", "${now.workDays}일", "${before.workDays}일", change(days) { "${it}일" }, sign(days)))
@@ -54,11 +54,18 @@ object MonthCompare {
         minutes("추가 근무", now.extra, before.extra)
         if (now.pay != null && before.pay != null) {
             val d = now.pay - before.pay
-            add(Row("급여(세전 예상)", PayReport.won(now.pay), PayReport.won(before.pay), change(d) { PayReport.won(it) }, sign(d)))
+            add(Row("급여(세전)", man(now.pay), man(before.pay), change(d, ::man), sign(d)))
         }
     }
 
-    /** "+3시간 30분", "−2일", "같아요". */
+    /** Narrow enough for four columns on a phone: "106.3시간". */
+    private fun hours(minutes: Long): String = HoursFormat.hours(minutes.toDouble()) + "시간"
+
+    /** "775.8만", "9,000원", also the year card's narrow column. */
+    fun man(won: Long): String =
+        if (won >= 10_000) "%.1f만".format(java.util.Locale.ROOT, won / 10_000.0).replace(".0만", "만") else "%,d원".format(java.util.Locale.ROOT, won)
+
+    /** "+3.5시간", "−2일", "같아요". */
     private inline fun change(d: Long, text: (Long) -> String): String = when {
         d == 0L -> "같아요"
         d > 0 -> "+" + text(d)

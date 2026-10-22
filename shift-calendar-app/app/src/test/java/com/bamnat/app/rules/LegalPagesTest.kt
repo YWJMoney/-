@@ -59,6 +59,9 @@ class LegalPagesTest {
         assertTrue(text.contains("<td>움직임 센서 (권한 없이 쓰는 기능)</td>"))
         assertTrue(text.contains("값은 저장하거나 휴대폰 밖으로 보내지 않습니다"))
         assertTrue(text.contains("‘일어났나요?’"))
+        // [PROV-04] The links the user made go in a backup file, with their key, and not in Google's.
+        assertTrue(text.contains("내가 만든 근무표 링크의 주소와 끊기용 열쇠"))
+        assertTrue(text.contains("받은 근무표 링크는 넣지 않습니다"))
     }
 
     @Test fun theTermsCoverSubscriptionTrialAndRefunds() {

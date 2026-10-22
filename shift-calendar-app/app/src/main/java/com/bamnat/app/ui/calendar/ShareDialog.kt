@@ -297,7 +297,9 @@ fun ShareDialog(
             )
             // [MKT-09][OPS-13][SHR-01] Said before the data leaves the phone, in the policy's words, with what was ticked.
             Text(
-                "보내는 것: " + (listOf("근무") + chosen().partNames(kind)).joinToString(", ") + "\n" + SHARE_SERVER_NOTICE,
+                // [FEAT-15] The feed also sends the phone's time zone name (처리방침 2.6, 1항).
+                "보내는 것: " + (listOf("근무") + chosen().partNames(kind) + listOfNotNull("휴대폰 시간대 이름".takeIf { feed && feedOpen }))
+                    .joinToString(", ") + "\n" + SHARE_SERVER_NOTICE,
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (empty) {

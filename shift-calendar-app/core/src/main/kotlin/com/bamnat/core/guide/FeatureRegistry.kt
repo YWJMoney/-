@@ -138,7 +138,7 @@ object FeatureRegistry {
         f("share.feed", "FEAT-15", "캘린더 구독 주소", "근무표 링크를 구글·아이폰·아웃룩 캘린더가 구독하게 해서 바뀐 근무가 따라오게 해요",
             ALL, "달력 › 공유 › 링크 › 캘린더 구독 주소", at(Place.SHARE), "구독", "ICS", "아이폰 캘린더", "아웃룩", "캘린더 구독"),
         f("share.rosterPdf", "PROV-05", "근무표 PDF", "한 달이나 1년 근무표를 A4로 인쇄할 수 있는 PDF로 만들어요",
-            ALL, "달력 › 공유 › 근무표 PDF", at(Place.SHARE), "PDF", "인쇄", "출력", "A4", "근무표 뽑기"),
+            ALL, "달력 › 공유 › ○월 PDF·○년 PDF", at(Place.SHARE), "PDF", "인쇄", "출력", "A4", "근무표 뽑기"),
         f("shift.firstCard", "SHFT-02", "이번 달 근무 카드", "근무 코드별 횟수, 야간 횟수, 예상 급여를 한 카드로 보여 줘요",
             setOf(SHIFT), "${tab(SHIFT)} › ○월 근무", at(Place.STATS), "코드별 횟수", "야간 횟수", "근무 횟수", off = Off.CALENDAR),
         f("shift.swap", "SHFT-03", "근무 교환·대근 기록", "날짜마다 누구와 바꿨는지 적고 달마다 모아 봐요",

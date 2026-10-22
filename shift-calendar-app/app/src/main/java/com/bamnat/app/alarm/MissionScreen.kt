@@ -149,7 +149,9 @@ private fun MathMission(onSolved: () -> Unit) {
                         },
                         enabled = !action || typed.isNotEmpty(),
                         modifier = Modifier.weight(1f).height(60.dp),
-                        colors = if (action) ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B5E), contentColor = Color.White)
+                        // Readable before anything is typed too, so the key is found in the dark.
+                        colors = if (action) ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B5E), contentColor = Color.White,
+                            disabledContainerColor = Color(0xFFFF6B5E).copy(alpha = 0.35f), disabledContentColor = Color.White.copy(alpha = 0.7f))
                         else ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.14f), contentColor = Color.White),
                     ) { Text(k, style = if (k.length == 1) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium) }
                 }
