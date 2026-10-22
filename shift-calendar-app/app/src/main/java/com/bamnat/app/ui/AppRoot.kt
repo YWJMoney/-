@@ -1222,7 +1222,7 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.PRO -> screen(Routes.PRO)
         Place.RECOMMENDED -> screen(Routes.RECOMMENDED)
         Place.LEAVE -> screen(Routes.leave(cal))
-        Place.SETTINGS_WORK, Place.SETTINGS_ALARM, Place.SETTINGS_REST, Place.SETTINGS_NOTICES, Place.SETTINGS_PAY,
+        Place.SETTINGS_WORK, Place.SETTINGS_ALARM, Place.SETTINGS_NOTICES, Place.SETTINGS_PAY,
         Place.SETTINGS_CALENDAR, Place.SETTINGS_DATA, Place.SETTINGS_PRIVACY ->
             link.place.settingsPage()?.let { SettingsLinks.open(it, link.focus) }
     }

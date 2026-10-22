@@ -51,6 +51,16 @@ class GuideTest {
         assertTrue(latest.containsAll(setOf("pay.report", "stats.compare", "calendar.phone", "share.feed", "data.autoBackup", "alarm.mission", "share.rosterPdf")))
     }
 
+    /** [SIMPLE-03] 1.22.0 says what it gives in a few lines, each opening its feature, never the bundles' list. */
+    @Test
+    fun theUpdateNoticeIsShort() {
+        val lines = WhatsNew.releases.first { it.versionName == "1.22.0" }.lines
+        assertTrue("${lines.size} lines", lines.size in 6..8)
+        val ids = lines.map { it.featureId }
+        assertTrue("every line opens its feature", ids.all { it != null })
+        assertEquals(ids.size, ids.toSet().size)
+    }
+
     /** [GUIDE-01] The 1.16 and 1.17 features are all there, each for the right kind of work. */
     @Test
     fun theNewFeaturesAreThere() {

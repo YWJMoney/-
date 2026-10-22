@@ -381,7 +381,7 @@ private fun FlowInfoSheet(target: Int, commute: Int, onNumbers: (Int, Int) -> Un
             Rule("휴식", "휴식 점검을 켜 두면 근무 사이가 11시간보다 짧을 때 작은 줄로 알려 줘요.", null)
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("설정 > 수면에서 다시 켤 수 있어요", style = MaterialTheme.typography.bodySmall,
+                Text("설정 > 알림과 잠에서 다시 켤 수 있어요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                 OutlinedButton(onClick = onHide) { Text("달력에서 숨기기") }
             }

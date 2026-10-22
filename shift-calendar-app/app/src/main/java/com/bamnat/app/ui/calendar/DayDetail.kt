@@ -1236,7 +1236,7 @@ private fun healthSleepNote(state: com.bamnat.app.sleep.HealthSleep.State, measu
     com.bamnat.app.sleep.HealthSleep.State.READY ->
         if (measured > 0) "헬스 커넥트에서 수면 ${measured}번을 함께 셌어요. 직접 누른 기록과 겹치면 직접 기록을 써요."
         else "헬스 커넥트에 최근 7일 수면 기록이 없어요. 워치나 수면 앱이 헬스 커넥트에 기록하는지 확인하세요."
-    com.bamnat.app.sleep.HealthSleep.State.NEEDS_PERMISSION -> "헬스 커넥트 수면 읽기 허용이 꺼져 있어요. 설정 > 수면에서 다시 켜 주세요."
+    com.bamnat.app.sleep.HealthSleep.State.NEEDS_PERMISSION -> "헬스 커넥트 수면 읽기 허용이 꺼져 있어요. 설정 > 알림과 잠에서 다시 켜 주세요."
     com.bamnat.app.sleep.HealthSleep.State.NEEDS_UPDATE -> "헬스 커넥트를 업데이트하면 워치 수면 기록을 함께 셀 수 있어요."
     com.bamnat.app.sleep.HealthSleep.State.UNAVAILABLE -> "이 휴대폰에서는 헬스 커넥트를 쓸 수 없어요."
     com.bamnat.app.sleep.HealthSleep.State.FAILED -> "헬스 커넥트 수면 기록을 읽지 못했어요. 잠시 뒤 다시 열어 주세요."

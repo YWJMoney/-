@@ -65,20 +65,24 @@ internal fun ColumnScope.SettingsPageContent(
     onOpenExtraKinds: () -> Unit,
     onOpenPay: () -> Unit,
     company: (@Composable ColumnScope.() -> Unit)?,
-    onOpenPage: (SettingsPage) -> Unit,
-    onOpenInquiry: () -> Unit = {},
     onOpenCalendars: () -> Unit = {},
 ) {
     when (page) {
         SettingsPage.WORK -> WorkPage(vm, settings, onOpenWorkStyle, onOpenPattern, onOpenShiftTypes, onOpenExtraKinds)
         SettingsPage.ALARM -> AlarmPage(vm, settings, onOpenShiftTypes, onOpenDiagnostics)
-        SettingsPage.REST -> RestPage(vm, settings)
-        SettingsPage.NOTICES -> NoticesPage(vm, settings, refresh, askNotifications, onOpenPage)
+        // [SET-02] 알림과 잠: the notices, then sleep and the rest check.
+        SettingsPage.NOTICES -> {
+            NoticesPage(vm, settings, refresh, askNotifications)
+            RestPage(vm, settings)
+        }
         SettingsPage.PAY -> PayPage(vm, settings, files, onOpenPay, company)
         SettingsPage.CALENDAR -> CalendarPage(vm, settings, onOpenCalendars)
         SettingsPage.DATA -> DataPage(vm, files)
-        SettingsPage.PRIVACY -> PrivacyPage(vm, settings, refresh, askNotifications, onOpenPage)
-        SettingsPage.ABOUT -> AboutPage(vm, onOpenDiagnostics, onOpenInquiry)
+        // [SET-02] 개인정보·앱 정보: privacy and permissions, then the terms, licences and version.
+        SettingsPage.PRIVACY -> {
+            PrivacyPage(vm, settings, refresh, askNotifications)
+            AboutPage()
+        }
     }
 }
 
@@ -280,7 +284,6 @@ private fun NoticesPage(
     settings: AppSettings,
     refresh: Int,
     askNotifications: () -> Unit,
-    onOpenPage: (SettingsPage) -> Unit,
 ) {
     val context = LocalContext.current
     val canPost = remember(refresh) { Notifications.canPost(context) }
@@ -307,7 +310,8 @@ private fun NoticesPage(
         PermissionRow(ok = canPost && Notifications.ALARM_CHANNEL_ID !in off, title = "울릴 때 잠금 화면에 크게 떠요", fixLabel = "켜기") {
             if (!canPost) askNotifications() else SystemSettings.channel(context, Notifications.ALARM_CHANNEL_ID)
         }
-        NavRow("알람 설정", "근무 알람 켜고 끄기, 소리, 다시 울림") { onOpenPage(SettingsPage.ALARM) }
+        // [SET-02] The alarm's own switches are in 설정 › 알람 only.
+        Note("근무 알람을 켜고 끄는 것과 소리는 설정 › 알람에서 정해요.")
     }
     val planned = settings.workStyle?.usesPayEngine != false
     SectionCard(title = "하루 안내") {
@@ -401,13 +405,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             com.bamnat.app.ui.memo.MemoSharingDialog(memoSharing, calendars, onDismiss = { sharingMemos = false },
                 onSave = { vm.setMemoSharing(it); sharingMemos = false })
         }
-        HorizontalDivider()
-        // [UX-03] Sharing is also where people look for it in settings; both open the calendar with the sheet up.
-        NavRow("근무표 공유", "이미지나 링크로 동료·가족에게 보내요") { SettingsLinks.go(SettingsGo.SHARE) }
-        if (vm.shareOn) {
-            HorizontalDivider()
-            NavRow("동료 근무표 받기", "받은 링크를 넣으면 내 달력과 바꿔 가며 봐요") { SettingsLinks.go(SettingsGo.RECEIVE) }
-        }
+        // [SET-02] 근무표 공유 and 동료 근무표 받기 live in the calendar's 도구 only; settings search still finds them.
     }
     SectionCard(title = "모양") {
         // [SHFT-05] 야간 근무 중 어둡게: dark during a night shift on the calendar being viewed.
@@ -535,16 +533,7 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.CALENDAR_IMPORT)
         }
         HorizontalDivider()
-        // [SHFT-06]
-        NavRow("듀티표 넣기", "듀티표 사진, 엑셀·CSV 파일, 복사한 글자로 한 달 근무를 넣어요") {
-            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER)
-        }
-        HorizontalDivider()
-        // [DAYW-06]
-        NavRow("근태 엑셀 가져오기", "회사 근태 시스템의 엑셀(.xlsx)·CSV 파일로 출퇴근·연차를 넣어요") {
-            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.ATTENDANCE_IMPORT)
-        }
-        HorizontalDivider()
+        // [SET-02] 듀티표 넣기 and 근태 엑셀 가져오기 are in 내 근무 only (its tools for the kind of work).
         // [REL-04]
         NavRow("캘린더 앱으로 내보내기", "구글·삼성 캘린더에 근무를 넣는 파일을 만들어요 (3개월 전부터 1년 뒤까지)", files.exportIcs)
         HorizontalDivider()
@@ -584,7 +573,6 @@ private fun PrivacyPage(
     settings: AppSettings,
     refresh: Int,
     askNotifications: () -> Unit,
-    onOpenPage: (SettingsPage) -> Unit,
 ) {
     val context = LocalContext.current
     val pkg = Uri.parse("package:${context.packageName}")
@@ -638,8 +626,8 @@ private fun PrivacyPage(
         }
         // Reading sleep is a choice, not something missing: it says where it is turned on.
         HorizontalDivider()
-        NavRow("워치·휴대폰 수면 기록", if (settings.healthSleep) "헬스 커넥트에서 읽고 있어요" else "읽지 않아요 · 잠과 휴식에서 켜요") {
-            onOpenPage(SettingsPage.REST)
+        NavRow("워치·휴대폰 수면 기록", if (settings.healthSleep) "헬스 커넥트에서 읽고 있어요" else "읽지 않아요 · 알림과 잠에서 켜요") {
+            SettingsLinks.open(SettingsPage.NOTICES, "워치·휴대폰 수면 기록 함께 보기")
         }
         // [UX-04] Where 결제 알림 읽기 is turned on, as a way there.
         // [LEDG-16] Straight to the money tab's 자동 기록 sheet.
@@ -650,22 +638,14 @@ private fun PrivacyPage(
     }
 }
 
+/**
+ * [SET-02] What was 앱 정보, under privacy: the terms and licences and the version. 알람 점검 is in 설정 › 알람,
+ * 도움말과 문의 on the settings list and 처리방침 just above, each in one place.
+ */
 @Composable
-private fun AboutPage(vm: SettingsViewModel, onOpenDiagnostics: (Boolean) -> Unit, onOpenInquiry: () -> Unit) {
+private fun AboutPage() {
     val context = LocalContext.current
-    val unread by vm.inquiryUnread.collectAsStateWithLifecycle()
-    SectionCard(title = null) {
-        NavRow("알람 점검", "알람이 안 울리거나 늦을 때 원인을 찾아요") { onOpenDiagnostics(false) }
-        HorizontalDivider()
-        // [ADMIN-02][UX-05] Help first, then a question: in the app when the build has the server, by mail when not.
-        NavRow("도움말과 문의", when {
-            unread > 0 -> "개발자 답이 ${unread}개 왔어요"
-            vm.inquiryOn -> "자주 묻는 질문을 보고, 앱 안에서 묻고 답을 받아요"
-            else -> "자주 묻는 질문을 보고, 메일로 물어요"
-        }) { onOpenInquiry() }
-        HorizontalDivider()
-        NavRow("개인정보 처리방침", null) { openPrivacy(context) }
-        HorizontalDivider()
+    SectionCard(title = "앱 정보") {
         // [MON-05] What paying for 프로 agrees to.
         NavRow("이용약관", "프로 구독·체험·해지·환불") {
             runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(com.bamnat.app.ui.pro.TERMS_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }

@@ -11,7 +11,7 @@ import org.json.JSONObject
 
 /**
  * [DAILY-16] 결정 D36: the 광장 시세 groups the user looked at on 임금표, kept on the phone so the pay screen can
- * compare without asking the server again, and where the user stands: the region they picked in 설정 › 급여,
+ * compare without asking the server again, and where the user stands: the region they picked in 설정 › 급여와 연차,
  * or the job, region and trade of a rate they shared themselves. Only what the server already showed is kept;
  * the user's pay never goes into it or out of the phone.
  */
@@ -46,7 +46,7 @@ class RateHintStore(context: Context) {
         save(_own.value.copy(job = job, region = region, trade = trade.trim()))
     }
 
-    /** The 시·도 picked in 설정 › 급여; blank takes it back. */
+    /** The 시·도 picked in 설정 › 급여와 연차; blank takes it back. */
     fun pick(region: String) = save(_own.value.copy(picked = region))
 
     /** Where the user stands for a pay setup of [occupation], or null when the job or region is not known. */

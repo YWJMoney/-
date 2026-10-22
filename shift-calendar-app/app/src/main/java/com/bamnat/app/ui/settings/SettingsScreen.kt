@@ -59,11 +59,9 @@ import androidx.compose.material.icons.filled.AlarmOff
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.PrivacyTip
@@ -137,17 +135,19 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.ZoneId
 
-/** [SET-01] The settings in nine groups, in the order people look for them, under the alarm's state. */
+/**
+ * [SET-01] The settings in groups, in the order people look for them, under the alarm's state.
+ * [SET-02] Seven since 1.22: 잠과 휴식 went into 알림과 잠 (both say when the app tells you something),
+ * and 앱 정보 into 개인정보·앱 정보 (처리방침 was in both).
+ */
 enum class SettingsPage(val title: String, val icon: ImageVector) {
     WORK("내 근무", Icons.Outlined.WorkOutline),
     ALARM("알람", Icons.Outlined.Alarm),
-    REST("잠과 휴식", Icons.Outlined.Bedtime),
-    NOTICES("알림", Icons.Outlined.Notifications),
+    NOTICES("알림과 잠", Icons.Outlined.Notifications),
     PAY("급여와 연차", Icons.Outlined.Payments),
     CALENDAR("달력 화면", Icons.Outlined.CalendarMonth),
     DATA("데이터", Icons.Outlined.SettingsBackupRestore),
-    PRIVACY("개인정보와 권한", Icons.Outlined.PrivacyTip),
-    ABOUT("앱 정보", Icons.Outlined.Info),
+    PRIVACY("개인정보·앱 정보", Icons.Outlined.PrivacyTip),
 }
 
 /** A result to show once; [undo] offers to take an import back. */
@@ -570,7 +570,7 @@ fun SettingsScreen(
             page = p, vm = vm, settings = settings, refresh = refresh, files = files, askNotifications = askNotifications,
             onOpenShiftTypes = onOpenShiftTypes, onOpenPattern = onOpenPattern, onOpenDiagnostics = onOpenDiagnostics,
             onOpenWorkStyle = onOpenWorkStyle, onOpenExtraKinds = onOpenExtraKinds, onOpenPay = onOpenPay, company = company,
-            onOpenPage = openPage, onOpenInquiry = onOpenInquiry, onOpenCalendars = onOpenCalendars,
+            onOpenCalendars = onOpenCalendars,
         )
     }
     val hub: @Composable (Modifier, SettingsPage?) -> Unit = { modifier, selected ->
@@ -637,15 +637,13 @@ private fun PageColumn(page: SettingsPage, onBack: (() -> Unit)?, content: @Comp
         }
         content()
         // [UX-05] Every group ends with where to ask, with the group named so the answers start there.
-        if (page != SettingsPage.ABOUT) {
-            TextButton(
-                onClick = { InquiryLinks.ask(InquiryStart(about = "설정 > ${page.title}", help = true)) },
-                modifier = Modifier.align(Alignment.CenterHorizontally),
-            ) {
-                Icon(Icons.AutoMirrored.Outlined.HelpOutline, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("${page.title}${com.bamnat.app.ui.Fmt.ro(page.title)} 도움이 필요하면 · 도움말·문의")
-            }
+        TextButton(
+            onClick = { InquiryLinks.ask(InquiryStart(about = "설정 > ${page.title}", help = true)) },
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+        ) {
+            Icon(Icons.AutoMirrored.Outlined.HelpOutline, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("${page.title}${com.bamnat.app.ui.Fmt.ro(page.title)} 도움이 필요하면 · 도움말·문의")
         }
         Spacer(Modifier.size(24.dp))
     }
@@ -702,7 +700,7 @@ private fun SettingsHub(
         // [COMM-07] Its own row, so it is one tap away rather than inside 급여.
         if (onOpenBoard != null) GroupRow(Icons.Outlined.Forum, "회사 규칙 광장", "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론", false, onClick = onOpenBoard)
         // [GUIDE-05] Every feature that can be off, and where to turn it back on.
-        GroupRow(Icons.Outlined.Tune, "기능 켜고 끄기", "쓰지 않는 카드·안내·자동 기능 끄고 다시 켜기", false) {
+        GroupRow(Icons.Outlined.Tune, "기능 켜고 끄기", "추천 기능 한 번에 켜기 · 쓰지 않는 카드·안내 끄고 다시 켜기", false) {
             SettingsLinks.go(SettingsGo.FEATURES)
         }
         // [UX-05] Help and questions on their own row, with new answers counted on it.
@@ -853,23 +851,20 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
         snapshot?.shiftTypes?.count { !it.isOff }?.takeIf { it > 0 }?.let { "근무 ${it}가지" },
     ).joinToString(" · ")
     SettingsPage.ALARM -> if (s.alarmsEnabled) "켜짐 · 다시 울림 ${s.snoozeMinutes}분 · ${s.ringMinutes}분 뒤 꺼짐" else "모두 꺼짐"
-    SettingsPage.REST -> listOfNotNull(
-        "오늘의 흐름".takeIf { s.sleepTips },
-        "목표 ${sleepHours(s.sleepTargetMinutes)}",
-        "휴식 점검".takeIf { s.restCheck },
+    // [SET-02] Notices first (or that they are off), then sleep, in one line.
+    SettingsPage.NOTICES -> (
+        (if (!notificationsOk) listOf("알림이 꺼져 있어요") else listOfNotNull(
+            "브리핑".takeIf { s.briefing }, "퇴근길".takeIf { s.commuteNotice }, "잘 준비".takeIf { s.bedtimeNotice },
+            "돈".takeIf { s.moneyNotices }, "연차".takeIf { s.leaveNotice },
+        ).ifEmpty { listOf("근무 알람만 와요") }) + listOfNotNull("목표 수면 ${sleepHours(s.sleepTargetMinutes)}", "휴식 점검".takeIf { s.restCheck })
     ).joinToString(" · ")
-    SettingsPage.NOTICES -> if (!notificationsOk) "알림이 꺼져 있어요" else listOfNotNull(
-        "하루 브리핑".takeIf { s.briefing }, "퇴근길 안전".takeIf { s.commuteNotice }, "잘 준비".takeIf { s.bedtimeNotice },
-        "자는 중".takeIf { s.sleepingNotice }, "돈".takeIf { s.moneyNotices }, "연차".takeIf { s.leaveNotice },
-    ).ifEmpty { listOf("근무 알람만 와요") }.joinToString(" · ")
     SettingsPage.PAY -> if (hasPay) "급여 계산 · 연차 · 회사 설정 주고받기" else "급여 계산 시작하기 · 회사 설정 주고받기"
     SettingsPage.CALENDAR -> listOf(
         when (s.themeMode) { ThemeMode.SYSTEM -> "휴대폰 테마"; ThemeMode.LIGHT -> "밝게"; ThemeMode.DARK -> "어둡게"; ThemeMode.NIGHT_SHIFT -> "야간 근무 중 어둡게" },
         "날짜 칸 아래 " + when { s.showLunar -> "음력"; s.showHoursInCells -> "근무시간"; else -> "비움" },
     ).joinToString(" · ")
     SettingsPage.DATA -> "백업 저장 · 불러오기 · 캘린더 가져오기·내보내기"
-    SettingsPage.PRIVACY -> "개인정보 처리방침 · 권한 확인 · 앱 잠금"
-    SettingsPage.ABOUT -> "밤낮 ${BuildConfig.VERSION_NAME} · 알람 점검 · 처리방침"
+    SettingsPage.PRIVACY -> "처리방침 · 권한 확인 · 앱 잠금 · 약관 · 밤낮 ${BuildConfig.VERSION_NAME}"
 }
 
 /** [MON-04] The 프로 row's words: before the 정식 출시, with 프로, and without it. */
