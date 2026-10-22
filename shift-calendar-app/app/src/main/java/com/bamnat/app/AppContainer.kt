@@ -417,18 +417,16 @@ class AppContainer(context: Context) {
                 .collect { LeaveReminder.reschedule(appContext, payStore.profile.value, settingsRepository.current) }
         }
         // [COMM-10] 광장 소식 runs while it is on and this phone took part in the plaza.
-        keep("plaza news") {
-            combine(settingsRepository.settings.map { it.plazaNews to it.plazaRulesAgreed }, companyStore.sent, companyStore.applied) { a, _, _ -> a }
+        // [STAT-01] Turning 사용 통계 보내기 off forgets what was waiting to go. One job for both: [PERF-01].
+        keep("plaza news, usage stats") {
+            combine(settingsRepository.settings.map { Triple(it.plazaNews, it.plazaRulesAgreed, it.shareUsageStats) }, companyStore.sent, companyStore.applied) { a, _, _ -> a }
                 .distinctUntilChanged()
-                .collect {
-                    if (settingsRepository.current.plazaNews && com.bamnat.app.company.PlazaNewsJob.takesPart(this@AppContainer)) {
+                .collect { (news, _, stats) ->
+                    if (!stats) usageStats.clear()
+                    if (news && com.bamnat.app.company.PlazaNewsJob.takesPart(this@AppContainer)) {
                         com.bamnat.app.company.PlazaNewsJob.schedule(appContext)
                     } else com.bamnat.app.company.PlazaNewsJob.cancel(appContext)
                 }
-        }
-        // [STAT-01] Turning 사용 통계 보내기 off forgets what was waiting to go.
-        keep("usage stats") {
-            settingsRepository.settings.map { it.shareUsageStats }.distinctUntilChanged().collect { on -> if (!on) usageStats.clear() }
         }
         // [MON-06] The trial's notice follows the subscription and the user's answer.
         keep("trialnotice") {

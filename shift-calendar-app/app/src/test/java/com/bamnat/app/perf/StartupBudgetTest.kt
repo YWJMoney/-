@@ -121,7 +121,10 @@ class StartupBudgetTest {
          */
         const val CONTAINER_BUDGET_MS = 4_000L
         const val FIRST_MONTH_BUDGET_MS = 8_000L
-        /** The jobs [AppContainer.start] keeps running today; raising it is a decision, not an accident. */
-        const val JOBS_BUDGET = 20
+        /**
+         * The jobs [AppContainer.start] keeps running today; raising it is a decision, not an accident.
+         * 21 since 1.22 묶음 B: 광장 소식 and 사용 통계 share one job [COMM-10][STAT-01].
+         */
+        const val JOBS_BUDGET = 21
     }
 }
