@@ -186,8 +186,9 @@ object FeatureRegistry {
             setOf(SHIFT, DAY), "설정 › 내 근무 › 연장 휴무일 근무 지정", at(Place.EXTRA_KINDS), "잔업", "특근", "대근", "연장", "야근", "휴일 근무"),
 
         // Day work.
-        f("day.firstCard", "DAYW-02", "이번 달 한눈에", "이번 달 야근 시간, 연차 사용·잔여, 예상 실수령을 한 카드로 보여 줘요",
-            setOf(DAY), "${tab(DAY)} › ○월 한눈에", at(Place.STATS), "야근 시간", "연차 잔여", "실수령", off = Off.CALENDAR),
+        f("day.firstCard", "DAYW-02", "이번 달 한눈에", "이번 달 야근 시간, 연차 사용·잔여, 간이세액표로 계산한 예상 실수령을 한 카드로 보여 줘요",
+            setOf(DAY), "${tab(DAY)} › ○월 한눈에", at(Place.STATS), "야근 시간", "연차 잔여", "실수령", "간이세액표", "부양가족", "자녀 수",
+            off = Off.CALENDAR),
         f("day.leaveNow", "DAYW-03", "지금 퇴근", "누르면 퇴근 시각까지 남은 시간을 야근으로 적어요. 위젯에도 있어요",
             setOf(DAY), "$DAY_SHEET › 지금 퇴근", at(Place.TODAY), "퇴근", "야근 적기", "칼퇴", "퇴근 버튼",
             moment = Moment.PAST_END_TIME, tip = "퇴근 시간이 지났어요. ‘지금 퇴근’을 누르면 더 일한 시간이 야근으로 적혀요"),
@@ -247,7 +248,7 @@ object FeatureRegistry {
             setOf(FIELD), "${tab(FIELD)} › 일용직 세금", at(Place.STATS), "원천징수", "일용근로", "세금", "2.7%", off = Off.CALENDAR),
         f("field.quote", "FLD-11", "견적서", "품목·수량·단가로 견적서 사진을 만들어 보내고, 좋다고 하면 일감으로 저장해요",
             setOf(FIELD), "${tab(FIELD)} › 견적서 › 새 견적서", at(Place.STATS, "quote"), "견적", "견적서", "부가세", "단가", off = Off.CALENDAR),
-        f("field.tradeWage", "FLD-12", "공종별 평균 일당", "대한건설협회 시중노임단가를 보고 일당을 골라 넣어요",
+        f("field.tradeWage", "FLD-12", "공종별 평균 일당", "대한건설협회 시중노임단가(반기마다 저절로 새 값)를 보고 일당을 골라 넣어요",
             setOf(FIELD), "$DAY_SHEET › 공수 › 직접 › 평균 일당 보기", at(Place.TODAY), "노임단가", "평균 일당", "공종", "단가표"),
         f("field.receipt", "FLD-08", "영수증 사진", "경비를 적을 때 증빙과 영수증 사진을 함께 남겨요",
             setOf(FIELD, SHOP), "돈 › 지출 적기 › 증빙", at(Place.MONEY), "영수증", "증빙", "사진", "경비"),

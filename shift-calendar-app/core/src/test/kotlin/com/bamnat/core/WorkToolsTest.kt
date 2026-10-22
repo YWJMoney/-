@@ -150,7 +150,7 @@ class WorkToolsTest {
 
     @Test
     fun tradeWagesAreThere() {
-        assertEquals(172_068, TradeWages.find("보통인부").single().daily)
+        assertEquals(172_698, TradeWages.find("보통인부").single().daily) // [PAYR-05] 2026 하반기 (2026-09-01)
         assertTrue(TradeWages.find("").size >= 20)
         assertTrue(TradeWages.ALL.map { it.name }.toSet().size == TradeWages.ALL.size)
     }

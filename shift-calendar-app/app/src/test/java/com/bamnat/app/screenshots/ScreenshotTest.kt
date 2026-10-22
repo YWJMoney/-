@@ -2759,6 +2759,35 @@ class ScreenshotTest {
         content { com.bamnat.app.ui.guide.WhatsNewDialog(com.bamnat.core.guide.WhatsNew.releases.take(1), {}, {}, {}, recommendOff = 2) }
     }
 
+    // ==== 1.22 묶음 A ====
+    // [PAYR-04][PAYR-05] 평일 근무 통계: 예상 실수령 from the 간이세액표, with 가족·자녀 under 4대보험.
+    private fun dayTakeHome(wide: Boolean = false): Screen.() -> Unit = {
+        val c = app.container
+        runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(taxFamily = 3, taxChildren = 1), keepUndo = false) }
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.DAY) }
+        settle()
+        tab(3, wide = wide)
+        reveal("가족 3명", exact = true)
+    }
+    @Test fun foldedDayTakeHome() = shoot("400_folded_day_take_home_family", FOLDED, dayTakeHome())
+    @Test fun phoneDayTakeHomeHugeText() = shoot("401_phone_day_take_home_family_huge_text", PHONE, fontScale = 2f, dayTakeHome())
+    @Test fun unfoldedDayTakeHome() = shoot("405_unfolded_day_take_home_family", UNFOLDED, dayTakeHome(wide = true))
+    // [PAYR-06] 임금표: 보통인부 일당 next to the 대한건설협회 시중노임단가.
+    @Test fun foldedPlazaRatesGov() = shoot("402_folded_plaza_rates_gov", FOLDED) {
+        val vm = com.bamnat.app.ui.company.RatesViewModel(companyOn())
+        content { com.bamnat.app.ui.company.RatesScreen(vm, onBack = {}) }
+        reveal("정부 공표 전국 평균")
+    }
+    @Test fun phonePlazaRatesGovHugeText() = shoot("403_phone_plaza_rates_gov_huge_text", PHONE, fontScale = 2f) {
+        val vm = com.bamnat.app.ui.company.RatesViewModel(companyOn())
+        content { com.bamnat.app.ui.company.RatesScreen(vm, onBack = {}) }
+        reveal("정부 공표 전국 평균")
+    }
+    @Test fun unfoldedPlazaRatesGov() = shoot("404_unfolded_plaza_rates_gov", UNFOLDED) {
+        val vm = com.bamnat.app.ui.company.RatesViewModel(companyOn())
+        content { com.bamnat.app.ui.company.RatesScreen(vm, onBack = {}) }
+        reveal("정부 공표 전국 평균")
+    }
 }
 
 /** [SHR-02] The share server for screenshots: links people sent, answered at once. */

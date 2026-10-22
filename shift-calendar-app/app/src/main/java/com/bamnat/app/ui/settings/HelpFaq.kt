@@ -108,6 +108,14 @@ internal object HelpFaq {
             listOf("급여"),
             "급여 계산 열기" to HelpAction.Go(SettingsGo.PAY), ask = InquiryKind.BUG,
         ),
+        // [PAYR-04][REMOTE-02] Where 실수령's tax and the year's rates come from, and how they stay current.
+        HelpTopic(
+            "takeHome", "실수령", "예상 실수령의 세금은 어떻게 계산하나요?",
+            "4대보험은 그 달의 해 요율로, 근로소득세는 국세청 간이세액표 그대로예요. ‘○월 한눈에’ 카드에서 가족 수(본인·배우자 포함)와 " +
+                "8~20세 자녀 수를 고르세요. 식대 등 비과세가 있으면 명세서와 조금 달라요. 요율·세액표가 바뀌면 앱이 하루 한 번 받아 바꿔요.",
+            listOf("실수령", "세금", "소득세", "간이세액표", "부양가족", "자녀", "4대보험", "요율", "세후"),
+            listOf("통계", "급여"),
+        ),
         HelpTopic(
             "backup", "백업", "휴대폰을 바꿔도 기록을 옮길 수 있나요?",
             "기록은 이 휴대폰에만 있어요. 설정 › 데이터 › ‘백업 저장’으로 파일을 만들어 새 휴대폰에 옮긴 뒤 ‘파일 불러오기’로 열어요. " +

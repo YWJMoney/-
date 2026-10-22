@@ -62,48 +62,54 @@ data class Quote(
 }
 
 /**
- * [FLD-12] 공종별 평균 일당 참고표: 대한건설협회 건설업 임금실태조사 (시중노임단가), 2026년 상반기 적용
- * (2026-01-01 공표, 1일 8시간, 원). Built in to be refreshed once a year; a reference for setting 일당,
- * not what any site must pay.
+ * [FLD-12][PAYR-05] 공종별 평균 일당 참고표: 대한건설협회 건설업 임금실태조사 (시중노임단가, 1일 8시간, 원).
+ * The table is data (`remote/v1/wages.json`, 2026년 하반기 적용 2026-09-01, 대한건설협회 거래가격 원문과 대조
+ * 2026-10-22, research/1.22-원문대조.md 4장); the association publishes on 1월 1일 and 9월 1일 and a newer signed
+ * file replaces it without an app update. A reference for setting 일당, not what any site must pay.
  */
 object TradeWages {
     data class Trade(val name: String, val daily: Long, val group: String)
 
-    const val SOURCE = "대한건설협회 건설업 임금실태조사(시중노임단가) 2026년 상반기 적용"
-    const val SOURCE_SHORT = "대한건설협회 2026년 상반기"
+    /** One published table: [label] like "2026년 하반기", in force [from]. */
+    data class Table(val from: java.time.LocalDate, val label: String, val source: String, val trades: List<Trade>)
+
     const val NOTE = "1일 8시간 기준 평균 노임이에요. 현장·지역·숙련도에 따라 달라지는 참고값이에요."
 
-    val ALL: List<Trade> = listOf(
-        Trade("보통인부", 172_068, "공통"),
-        Trade("특별인부", 226_122, "공통"),
-        Trade("작업반장", 215_907, "공통"),
-        Trade("형틀목공", 275_790, "골조"),
-        Trade("건축목공", 277_642, "골조"),
-        Trade("철근공", 268_187, "골조"),
-        Trade("콘크리트공", 273_540, "골조"),
-        Trade("비계공", 281_939, "골조"),
-        Trade("용접공", 282_536, "골조"),
-        Trade("조적공", 270_807, "마감"),
-        Trade("미장공", 277_276, "마감"),
-        Trade("타일공", 290_939, "마감"),
-        Trade("도장공", 263_017, "마감"),
-        Trade("방수공", 228_286, "마감"),
-        Trade("내장공", 256_883, "마감"),
-        Trade("도배공", 227_614, "마감"),
-        Trade("유리공", 253_539, "마감"),
-        Trade("줄눈공", 211_653, "마감"),
-        Trade("석공", 268_908, "마감"),
-        Trade("견출공", 250_903, "마감"),
-        Trade("배관공", 247_897, "설비"),
-        Trade("배관공(수도)", 262_580, "설비"),
-        Trade("덕트공", 202_472, "설비"),
-        Trade("보온공", 217_012, "설비"),
-        Trade("내선전공", 273_676, "전기"),
-        Trade("저압케이블전공", 304_156, "전기"),
-        Trade("조경공", 235_204, "기타"),
-        Trade("건설기계운전사", 283_297, "기타"),
-        Trade("화물차운전사", 238_936, "기타"),
-    )
+    @Volatile private var table: Table? = null
+
+    /** The table in use: the built-in file, or a newer signed one ([use]). Empty only if packaging lost the file. */
+    val current: Table get() = table ?: bundled
+
+    private val bundled: Table by lazy {
+        com.bamnat.core.remote.RemoteFiles.bundled(com.bamnat.core.remote.RemoteFiles.WAGES)?.let { runCatching { read(it) }.getOrNull() }
+            ?: Table(java.time.LocalDate.MIN, "", "", emptyList())
+    }
+    private val bundledVersion: Long by lazy {
+        com.bamnat.core.remote.RemoteFiles.bundled(com.bamnat.core.remote.RemoteFiles.WAGES)?.version ?: 0L
+    }
+
+    val SOURCE: String get() = current.source
+    val SOURCE_SHORT: String get() = "대한건설협회 ${current.label}"
+    val ALL: List<Trade> get() = current.trades
+
+    /** [REMOTE-02] A downloaded wages file newer than the built-in one; null goes back to it. */
+    fun use(file: com.bamnat.core.remote.RemoteFile?) {
+        table = file?.takeIf { it.version > bundledVersion }?.let(::read)
+    }
+
+    fun read(f: com.bamnat.core.remote.RemoteFile): Table {
+        if (f.kind != com.bamnat.core.remote.RemoteFiles.WAGES) throw com.bamnat.core.remote.RemoteFileException("kind ${f.kind}")
+        val c = f.data.obj("construction")
+        val from = try { java.time.LocalDate.parse(c.str("from")) } catch (e: java.time.format.DateTimeParseException) {
+            throw com.bamnat.core.remote.RemoteFileException("from")
+        }
+        val trades = c.objs("trades").map { Trade(it.str("name"), it.long("daily"), it.strOr("group", "기타")) }
+        if (trades.isEmpty() || trades.any { it.daily !in 50_000..2_000_000 }) throw com.bamnat.core.remote.RemoteFileException("trades")
+        return Table(from, c.str("label"), c.str("source"), trades)
+    }
+
+    /** [PAYR-06] The published 일당 for a trade named like [name] (광장 임금표), null when it is not in the table. */
+    fun of(name: String): Trade? = name.replace(" ", "").let { n -> ALL.firstOrNull { it.name == n } }
 
     val GROUPS: List<String> get() = ALL.map { it.group }.distinct()
 

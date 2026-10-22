@@ -1,0 +1,54 @@
+{
+ "format": 1,
+ "kind": "rates",
+ "version": 2026102201,
+ "issued": "2026-10-22",
+ "minApp": 33,
+ "source": "최저임금 고시, 국민연금법 부칙(법률 제20903호) 제4조, 국민건강보험법 시행령 제44조, 노인장기요양보험법 시행령 제4조, 고용보험료징수법 시행령 제12조, 국민연금 기준소득월액 고시",
+ "data": {
+  "rates": [
+   {
+    "from": "2025-01-01",
+    "version": "2025.1",
+    "source": "근로기준법 제50·53·56조, 2025년 최저임금 고시(시급 10,030원)",
+    "minimumHourlyWage": 10030,
+    "pensionRate": 0.09,
+    "healthRate": 0.0709,
+    "longTermCareRate": 0.009182,
+    "unemploymentRate": 0.018
+   },
+   {
+    "from": "2026-01-01",
+    "version": "2026.1",
+    "source": "근로기준법 제50·53·56조, 2026년 최저임금 고시(시급 10,320원)",
+    "minimumHourlyWage": 10320,
+    "pensionRate": 0.095,
+    "healthRate": 0.0719,
+    "longTermCareRate": 0.009448,
+    "unemploymentRate": 0.018
+   },
+   {
+    "from": "2027-01-01",
+    "version": "2027.1",
+    "source": "근로기준법 제50·53·56조, 2027년 최저임금 고시(시급 10,700원)",
+    "minimumHourlyWage": 10700,
+    "pensionRate": 0.1,
+    "healthRate": 0.0719,
+    "longTermCareRate": null,
+    "unemploymentRate": 0.018
+   }
+  ],
+  "pensionBases": [
+   {
+    "from": "2025-07-01",
+    "min": 400000,
+    "max": 6370000
+   },
+   {
+    "from": "2026-07-01",
+    "min": 410000,
+    "max": 6590000
+   }
+  ]
+ }
+}
