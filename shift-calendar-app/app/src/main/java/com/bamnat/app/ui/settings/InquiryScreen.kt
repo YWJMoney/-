@@ -413,6 +413,20 @@ private fun InquiryForm(vm: InquiryViewModel, pay: String?, start: InquiryStart?
     var check by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var openTip by rememberSaveable { mutableStateOf<String?>(null) }
+    // [SRV-06] Up to two photos, made small and stripped on the phone; the developer's switch can pause them.
+    var photos by remember { mutableStateOf<List<ByteArray>>(emptyList()) }
+    val photosOpen = !mail && !context.appContainer.remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.INQUIRY_PHOTOS)
+    val pickPhotos = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia(com.bamnat.app.company.InquiryPhotos.MAX),
+    ) { uris ->
+        scope.launch {
+            val made = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                uris.mapNotNull { com.bamnat.app.company.InquiryPhotos.prepare(context, it) }
+            }
+            photos = (photos + made).take(com.bamnat.app.company.InquiryPhotos.MAX)
+            if (made.size < uris.size) error = "열 수 없는 사진은 빼고 붙였어요"
+        }
+    }
     val problem = if (mail) text.takeIf { it.length > InquiryClient.TEXT_MAX }?.let { "${InquiryClient.TEXT_MAX}자까지 쓸 수 있어요" } else vm.problem(text)
     // The alarm check helps most when the app misbehaves, so it is offered ticked there.
     LaunchedEffect(kind) { if (kind == InquiryKind.BUG && pay == null && check == null) withCheck = true }
@@ -504,6 +518,22 @@ private fun InquiryForm(vm: InquiryViewModel, pay: String?, start: InquiryStart?
                     Icon(if (showCheck) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null)
                 }
                 if (showCheck) Shown(check ?: "불러오는 중…")
+                if (photosOpen) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("사진 ${photos.size}/${com.bamnat.app.company.InquiryPhotos.MAX}", style = MaterialTheme.typography.bodyMedium)
+                    Text("화면을 찍은 사진이 있으면 더 빨리 알 수 있어요. 위치 같은 사진 정보는 지우고, 작게 줄여서 보내요. " +
+                        "문의를 닫고 90일 뒤에 서버에서 지워져요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (photos.size < com.bamnat.app.company.InquiryPhotos.MAX) {
+                            OutlinedButton(onClick = {
+                                pickPhotos.launch(androidx.activity.result.PickVisualMediaRequest(
+                                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }) { Text("사진 붙이기") }
+                        }
+                        if (photos.isNotEmpty()) TextButton(onClick = { photos = emptyList() }) { Text("사진 빼기") }
+                    }
+                }
             }
         }
         Text(
@@ -532,7 +562,14 @@ private fun InquiryForm(vm: InquiryViewModel, pay: String?, start: InquiryStart?
                 if (mail) sendByMail()
                 else scope.launch {
                     val diag = if (withCheck) check ?: vm.alarmCheck(context) else null
-                    vm.send(k, text, diag, pay.takeIf { withPay }) { sent, why -> if (sent != null) onSent(sent) else { error = why } }
+                    vm.send(k, text, diag, pay.takeIf { withPay }, photos.takeIf { photosOpen }.orEmpty()) { sent, why ->
+                        if (sent != null) {
+                            com.bamnat.app.company.InquiryPhotos.skipped(sent.photosSkipped)?.let {
+                                android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+                            }
+                            onSent(sent)
+                        } else { error = why }
+                    }
                 }
             },
             enabled = ready,

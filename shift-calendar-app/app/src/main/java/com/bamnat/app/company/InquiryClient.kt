@@ -48,6 +48,10 @@ data class Inquiry(
     val version: String? = null,
     /** [INQ-03] What the asker said of the answer: true 도움이 됐어요, false 아쉬워요, null not yet. */
     val rating: Boolean? = null,
+    /** [SRV-06] How many photos came with it. */
+    val photos: Int = 0,
+    /** [SRV-06] Why the photos were left out when it was sent: "paused" or "full"; null when they went (or there were none). */
+    val photosSkipped: String? = null,
 ) {
     val answers: Int get() = messages.count { it.fromDeveloper }
     val waiting: Boolean get() = status == "open"
@@ -107,6 +111,8 @@ data class InquiryInfo(
     val pay: String? = null,
     /** [INQ-01] 회사 방식 알려 주기: the kind's settings in words, without an amount. */
     val setup: String? = null,
+    /** [SRV-06] Up to two screenshots or photos, already made small and re-saved as JPEG ([InquiryPhotos]). */
+    val photos: List<ByteArray> = emptyList(),
 )
 
 /** [ADMIN-02] 설정 > 문의하기 through the company server; screenshots and tests answer with a fake. */
@@ -138,6 +144,9 @@ class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
         // [ADMIN-02] The form says the question goes to 모두의 문의; the server keeps it private without this.
         val body = JSONObject().put("v", 1).put("device", device).put("kind", kind.code).put("text", text.trim()).put("info", i)
             .put("public", kind.public)
+        if (info.photos.isNotEmpty()) {
+            body.put("photos", org.json.JSONArray(info.photos.take(InquiryPhotos.MAX).map { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }))
+        }
         inquiry(serverRequest(baseUrl, "POST", "/api/inquiries", body))
     }
 
@@ -234,6 +243,8 @@ class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
         stage = o.optJSONObject("progress")?.optString("stage")?.ifEmpty { null } ?: "received",
         version = o.optJSONObject("progress")?.takeUnless { it.isNull("version") }?.optString("version")?.ifEmpty { null },
         rating = when (o.optInt("rating")) { 1 -> true; -1 -> false; else -> null },
+        photos = o.optInt("photos"),
+        photosSkipped = o.optStringOrNull("photosSkipped"),
     )
 
     companion object {

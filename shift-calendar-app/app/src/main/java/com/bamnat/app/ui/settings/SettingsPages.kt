@@ -542,6 +542,31 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
     }
 }
 
+/**
+ * [STAT-01] 사용 통계 보내기 with what exactly goes: event names and daily counts, the app version, never
+ * the phone, the schedule, amounts or text. "보낼 내용 보기" shows the waiting bundle as it will be sent.
+ */
+@Composable
+internal fun UsageStatsRow(on: Boolean, onChange: (Boolean) -> Unit) {
+    val c = LocalContext.current.appContainer
+    var show by remember { mutableStateOf(false) }
+    SwitchRow(
+        "사용 통계 보내기",
+        "어떤 기능을 하루에 몇 번 썼는지만 보내 앱을 고치는 데 써요. 휴대폰·근무·금액·글은 보내지 않고, 꺼도 앱은 똑같이 돼요",
+        on,
+        onChange = onChange,
+    )
+    if (on) TextButton(onClick = { show = true }) { Text("보낼 내용 보기") }
+    if (show) {
+        AlertDialog(
+            onDismissRequest = { show = false },
+            title = { Text("보낼 내용") },
+            text = { Text(c.usageStats.preview() ?: "아직 보낼 내용이 없어요. 하루가 지나면 그날 쓴 기능 이름과 횟수가 여기 보여요.") },
+            confirmButton = { TextButton(onClick = { show = false }) { Text("확인") } },
+        )
+    }
+}
+
 @Composable
 private fun PrivacyPage(
     vm: SettingsViewModel,
@@ -553,9 +578,11 @@ private fun PrivacyPage(
     val context = LocalContext.current
     val pkg = Uri.parse("package:${context.packageName}")
     SectionCard(title = "개인정보") {
-        // [STAB-01] No '사용 통계 보내기' switch: the app sends no usage statistics anywhere, so it promised
-        // something it does not do. It comes back only with a real place to send them (Telemetry sinks).
         NavRow("개인정보 처리방침", "무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
+        HorizontalDivider()
+        // [STAT-01] Back with a real place to send to (UsageStats, 처리방침 2.8). Its own yes, so it starts off;
+        // the app works the same either way.
+        UsageStatsRow(settings.shareUsageStats) { on -> vm.update { it.copy(shareUsageStats = on) } }
         // [MON-07] Google's consent form again where the law gives one (EEA, UK and the like); elsewhere, what there is.
         val adPrivacy by vm.adPrivacy.collectAsStateWithLifecycle()
         var adWords by remember { mutableStateOf(false) }

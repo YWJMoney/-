@@ -41,8 +41,13 @@ enum class UsageEvent(val key: String) {
             DiagEvents.SCREEN -> if (detail == "pay") PAY_VIEW else null
             DiagEvents.BACKUP_EXPORT -> BACKUP
             DiagEvents.ICS_EXPORT -> ICS_EXPORT
-            DiagEvents.COMPANY_SHARE -> COMPANY_REPORT
             DiagEvents.ALARM_FIRED -> ALARM_RANG
+            "pay_setup_done" -> PAY_SETUP
+            "company_post" -> PLAZA_POST
+            "company_apply" -> PLAZA_APPLY
+            "share_link_create" -> SHARE_MADE
+            "received_add" -> SHARE_RECEIVED
+            "plaza_rate" -> if (detail == "applied") PLAZA_APPLY else PLAZA_POST
             else -> byKey[name]
         }
     }

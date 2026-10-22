@@ -13,6 +13,11 @@ enum class ConsentItem(val key: String) {
     SLEEP("sleep"),
     /** Events in the phone's calendar (삼성 캘린더, Google 캘린더), read only. */
     CALENDAR("calendar"),
+    /**
+     * [STAT-01] 사용 통계 보내기: an app setting, not an Android permission, with its own yes (개인정보 보호법
+     * 제22조). Asked on the first-run pages once those pages offer it (묶음 G); until then 설정 > 개인정보와 권한.
+     */
+    USAGE_STATS("usage_stats"),
     ;
 
     companion object {

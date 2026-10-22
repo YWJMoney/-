@@ -35,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -149,6 +150,8 @@ fun ProScreen(onBack: () -> Unit) {
     val billingState by c.billing.state.collectAsStateWithLifecycle()
     var message by remember { mutableStateOf<String?>(null) }
     val zone = ZoneId.systemDefault()
+    // [STAT-04] The first step of the 프로 funnel; only counted once 결제 is open.
+    LaunchedEffect(Unit) { if (config.billingLive) c.telemetry.event(com.bamnat.core.stats.UsageEvent.PAYWALL_VIEW.key) }
 
     Scaffold(topBar = {
         TopAppBar(

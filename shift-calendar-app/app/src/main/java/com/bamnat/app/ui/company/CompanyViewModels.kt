@@ -336,6 +336,19 @@ class TalkHolder(private val c: AppContainer, private val scope: kotlinx.corouti
         _open.value = null
     }
 
+    /** [SRV-04] The developer paused writing in the plaza: the talk is read only for now. */
+    val writePaused: Boolean get() = c.remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)
+
+    /** [COMM-09] 이 사람 글 안 보기: the writer's posts in every talk go, on this phone only. */
+    fun hide(p: com.bamnat.app.company.TalkPost) {
+        val mark = p.author ?: return
+        c.settingsRepository.update { s ->
+            s.copy(plazaHidden = com.bamnat.core.plaza.HideList.decode(s.plazaHidden).hide(mark, p.nick ?: "참여자 ${p.who}", System.currentTimeMillis()).encode())
+        }
+        c.telemetry.event("plaza_hide")
+        reload()
+    }
+
     fun reload() {
         val o = _open.value ?: return
         scope.launch {
@@ -436,6 +449,7 @@ fun talkProblem(code: String): String = when (code) {
     "parent" -> "답글을 달 글이 지워졌어요"
     "change" -> "무엇을 어떻게 바꾸자는지 한 줄 이상 적어 주세요"
     "same" -> "지금 규칙과 같은 설정이에요. 앱 설정을 실제와 맞게 고친 뒤 보내 주세요"
+    "paused" -> com.bamnat.core.ops.ServerSwitch.pausedText(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)
     else -> companyProblem(code)
 }
 
@@ -749,6 +763,8 @@ class CompanyReportViewModel(private val c: AppContainer) : ViewModel() {
     /** Sends the setup; a text with an amount, phone or mail address is caught here before it goes. */
     fun send(company: String, dept: String, verified: Boolean, note: String, job: String = "", region: String = "", topic: Boolean = false) {
         if (topic && job.isEmpty()) { _sending.value = Sending.Failed("job", "job"); return }
+        // [SRV-04] The developer paused new reports; nothing is sent and the form stays as written.
+        if (c.remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.COMPANY_REPORT)) { _sending.value = Sending.Failed("paused", "report"); return }
         if (!topic) CompanyText.personal(company)?.let { _sending.value = Sending.Failed(it, "company"); return }
         CompanyText.personal(dept)?.let { _sending.value = Sending.Failed(it, "dept"); return }
         CompanyText.personal(note)?.let { _sending.value = Sending.Failed(it, "note"); return }

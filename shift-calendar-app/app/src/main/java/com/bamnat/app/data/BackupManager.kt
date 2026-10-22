@@ -283,7 +283,10 @@ class BackupManager(
                 .put("todayShiftNotice", s.todayShiftNotice)
                 .put("sleepingNotice", s.sleepingNotice).put("quietWhileAsleep", s.quietWhileAsleep)
                 .put("moneyNotices", s.moneyNotices).put("leaveNotice", s.leaveNotice)
-                .put("sleepTarget", s.sleepTargetMinutes).put("commute", s.commuteMinutes),
+                .put("sleepTarget", s.sleepTargetMinutes).put("commute", s.commuteMinutes)
+                // [STAT-01][COMM-08][COMM-09][COMM-10] Added in 1.22.
+                .put("usageStats", s.shareUsageStats).put("plazaNews", s.plazaNews).put("plazaHidden", s.plazaHidden)
+                .put("plazaRules", s.plazaRulesAgreed),
         )
         return root.toString(1)
     }
@@ -673,6 +676,11 @@ class BackupManager(
                     leaveNotice = o.optBoolean("leaveNotice", s.leaveNotice),
                     sleepTargetMinutes = o.optInt("sleepTarget", s.sleepTargetMinutes).coerceIn(4 * 60, 10 * 60),
                     commuteMinutes = o.optInt("commute", s.commuteMinutes).coerceIn(0, MAX_COMMUTE_MINUTES),
+                    // [STAT-01][COMM-08][COMM-09][COMM-10] Added in 1.22; older backups keep what this phone has.
+                    shareUsageStats = o.optBoolean("usageStats", s.shareUsageStats),
+                    plazaNews = o.optBoolean("plazaNews", s.plazaNews),
+                    plazaHidden = o.optStringOrNull("plazaHidden")?.let { com.bamnat.core.plaza.HideList.decode(it).encode() } ?: s.plazaHidden,
+                    plazaRulesAgreed = o.optInt("plazaRules", s.plazaRulesAgreed).coerceAtLeast(0),
                     // Old records came back with the backup; offer to fix them again.
                     swapCoversAnswered = s.swapCoversAnswered && schedule.extras != null,
                 )

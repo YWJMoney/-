@@ -126,10 +126,15 @@ data class TalkPost(
     val trust: Int = 0,
     val myVote: Boolean? = null,
     val proposal: ProposalState? = null,
+    /** [COMM-09] The writer sealed by the server, different on every post; kept to hide this writer. Null on one's own. */
+    val author: String? = null,
 )
 
-/** [PLZ-04] [past]: an older version's talk, read only since a newer version took its place. */
-data class Talk(val posts: List<TalkPost>, val mutedUntil: Instant? = null, val past: Boolean = false)
+/**
+ * [PLZ-04] [past]: an older version's talk, read only since a newer version took its place.
+ * [COMM-09] [hiddenByYou]: posts left out because the user chose not to see their writers.
+ */
+data class Talk(val posts: List<TalkPost>, val mutedUntil: Instant? = null, val past: Boolean = false, val hiddenByYou: Int = 0)
 
 data class PostVote(val agree: Int, val disagree: Int, val trust: Int, val myVote: Boolean?)
 
@@ -321,7 +326,11 @@ interface CompanyApi {
  * settings file goes through CompanyShare.exportForServer, and the install id is random, made on
  * this phone and never tied to a person.
  */
-class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : CompanyApi {
+class CompanyClient(
+    private val baseUrl: String = BuildConfig.COMPANY_BASE_URL,
+    /** [COMM-09] The X-Hide header: the writers this phone hides, or null. */
+    private val hidden: () -> String? = { null },
+) : CompanyApi {
     override val enabled: Boolean get() = baseUrl.isNotBlank()
 
     override suspend fun search(query: String): List<CompanyHit> = serverCall {
@@ -397,7 +406,8 @@ class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
     }
 
     override suspend fun talk(device: String, company: String, setup: String): Talk = serverCall {
-        val o = request("GET", "/api/companies/$company/setups/$setup/posts", device = device)
+        val o = serverRequest(baseUrl, "GET", "/api/companies/$company/setups/$setup/posts", device = device,
+            headers = hidden()?.let { mapOf("X-Hide" to it) }.orEmpty())
         Talk(
             posts = o.optJSONArray("posts").objects().map { p ->
                 TalkPost(
@@ -411,10 +421,12 @@ class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
                     proposal = p.optJSONObject("proposal")?.let { r ->
                         ProposalState(r.optString("setup"), r.optString("status") == "adopted", r.optInt("persons"), r.optInt("threshold", 3))
                     },
+                    author = p.optStringOrNull("author")?.takeIf { com.bamnat.core.plaza.HideList.MARK.matches(it) },
                 )
             },
             mutedUntil = o.optStringOrNull("mutedUntil")?.let(Instant::parse),
             past = o.optBoolean("past"),
+            hiddenByYou = o.optInt("hiddenByYou"),
         )
     }
 
@@ -640,7 +652,9 @@ internal suspend fun <T> serverCall(block: suspend CoroutineScope.() -> T): T = 
  * One call to the company server; [device] goes in the X-Device header. A refusal comes back as
  * [CompanyException] with the server's error word, no connection as "offline". [ADMIN-02] shares it.
  */
-internal fun serverRequest(baseUrl: String, method: String, path: String, body: JSONObject? = null, device: String? = null): JSONObject {
+internal fun serverRequest(
+    baseUrl: String, method: String, path: String, body: JSONObject? = null, device: String? = null, headers: Map<String, String> = emptyMap(),
+): JSONObject {
     val conn = try {
         URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
     } catch (e: IOException) {
@@ -652,6 +666,7 @@ internal fun serverRequest(baseUrl: String, method: String, path: String, body: 
         conn.readTimeout = 15_000
         conn.setRequestProperty("Accept", "application/json")
         device?.let { conn.setRequestProperty("X-Device", it) }
+        headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
         if (body != null) {
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")

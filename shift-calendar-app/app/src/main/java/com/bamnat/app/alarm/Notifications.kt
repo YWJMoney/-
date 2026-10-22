@@ -41,6 +41,8 @@ object Notifications {
     const val PRO_CHANNEL_ID = "pro_notice_v1"
     /** [PROV-03] 자동 백업 that has not worked for days. */
     const val BACKUP_CHANNEL_ID = "auto_backup_v1"
+    /** [COMM-10] 광장 소식: one bundled notice a day. */
+    const val PLAZA_CHANNEL_ID = "plaza_news_v1"
     /** Before 1.11 every sleep tip made a sound here; a channel's importance cannot be lowered, so it goes. */
     private const val OLD_SLEEP_CHANNEL_ID = "sleep_tips_v1"
 
@@ -59,6 +61,7 @@ object Notifications {
     const val SHARE_ID = 7202
     const val PRO_ID = 7203
     const val BACKUP_ID = 7204
+    const val PLAZA_ID = 7205
     /** [PROV-07] 일어났나요? */
     const val WAKE_CHECK_ID = 7005
 
@@ -144,7 +147,11 @@ object Notifications {
             description = "매일 자동 백업이 ${com.bamnat.app.backup.AutoBackup.FAIL_DAYS}일 넘게 안 되면 알려요"
             group = GROUP_DAY
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup))
+        val plaza = NotificationChannel(PLAZA_CHANNEL_ID, "광장 소식", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "쓰는 회사 규칙이 바뀌거나 보낸 규칙·제안·시세가 채택되면 하루에 한 번 모아서 조용히 알려요"
+            group = GROUP_DAY
+        }
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
     }
 

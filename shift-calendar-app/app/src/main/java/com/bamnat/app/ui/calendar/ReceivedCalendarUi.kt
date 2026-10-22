@@ -520,6 +520,7 @@ fun ReceivedCalendarView(
             Text("${cal.expiresAt?.let(::expiry) ?: "기간 끝"}까지 볼 수 있어요 · 받은 달력은 이 휴대폰에만 있어요",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 4.dp))
+            ReportLink(vm, cal.id)
         }
     }
     if (wide) {
@@ -534,6 +535,34 @@ fun ReceivedCalendarView(
             detailPart(Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         }
     }
+}
+
+/** [SRV-05] A received link that breaks the rules can be reported; the share server never learns by whom. */
+@Composable
+private fun ReportLink(vm: ReceivedViewModel, id: String) {
+    var open by remember { mutableStateOf(false) }
+    var said by remember(id) { mutableStateOf<String?>(null) }
+    said?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 4.dp)) }
+    TextButton(onClick = { open = true }) { Text("이 근무표 신고하기") }
+    if (!open) return
+    var reason by remember { mutableStateOf(com.bamnat.app.share.ShareReport.PERSONAL) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { open = false },
+        title = { Text("이 근무표를 신고할까요?") },
+        text = {
+            Column {
+                com.bamnat.app.share.ShareReport.entries.forEach { r ->
+                    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { reason = r }.padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.RadioButton(selected = reason == r, onClick = { reason = r })
+                        Text(r.label, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { open = false; vm.report(id, reason) { said = it } }) { Text("신고하기") } },
+        dismissButton = { TextButton(onClick = { open = false }) { Text("취소") } },
+    )
 }
 
 /** How fresh the copy on this phone is, with a refresh; offline it says the copy is what shows. */

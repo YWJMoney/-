@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
@@ -93,6 +94,7 @@ internal fun ConsentItem.icon(): ImageVector = when (this) {
     ConsentItem.ALARMS -> Icons.Filled.Alarm
     ConsentItem.SLEEP -> Icons.Filled.Watch
     ConsentItem.CALENDAR -> Icons.Filled.CalendarMonth
+    ConsentItem.USAGE_STATS -> Icons.Filled.BarChart
 }
 
 internal fun ConsentItem.title(): String = when (this) {
@@ -100,6 +102,7 @@ internal fun ConsentItem.title(): String = when (this) {
     ConsentItem.ALARMS -> if (Build.VERSION.SDK_INT >= 34) "잠금 화면에 알람 띄우기" else "정확한 시간에 울리기"
     ConsentItem.SLEEP -> "워치·기기 수면 기록 (헬스 커넥트)"
     ConsentItem.CALENDAR -> "휴대폰 캘린더 읽기"
+    ConsentItem.USAGE_STATS -> "사용 통계 보내기"
 }
 
 internal fun ConsentItem.why(): String = when (this) {
@@ -107,6 +110,7 @@ internal fun ConsentItem.why(): String = when (this) {
     ConsentItem.ALARMS -> if (Build.VERSION.SDK_INT >= 34) "화면이 꺼져 있어도 알람이 크게 떠서 바로 끌 수 있어요" else "근무 알람이 몇 분 늦지 않고 제시각에 울려요"
     ConsentItem.SLEEP -> "워치가 잰 실제 수면으로 부족한 잠을 계산해요"
     ConsentItem.CALENDAR -> "삼성 캘린더·Google 캘린더의 일정을 근무와 메모로 옮겨요"
+    ConsentItem.USAGE_STATS -> "어떤 기능을 하루에 몇 번 썼는지만 보내 앱을 고치는 데 써요. 휴대폰·근무·금액은 보내지 않아요"
 }
 
 /** Where it is turned on later, said on every page. */
@@ -114,6 +118,7 @@ internal fun ConsentItem.later(): String = when (this) {
     ConsentItem.NOTIFICATIONS, ConsentItem.ALARMS -> "설정 > 개인정보와 권한"
     ConsentItem.SLEEP -> "설정 > 잠과 휴식"
     ConsentItem.CALENDAR -> "설정 > 데이터 > 캘린더에서 가져오기"
+    ConsentItem.USAGE_STATS -> "설정 > 개인정보와 권한"
 }
 
 @Composable

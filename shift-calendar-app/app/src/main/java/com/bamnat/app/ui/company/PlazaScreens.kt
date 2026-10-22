@@ -70,6 +70,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
 import com.bamnat.app.company.Activity
 import com.bamnat.app.company.Plaza
 import com.bamnat.app.company.PlazaJob
@@ -283,6 +284,8 @@ private fun ActivityBody(a: Activity, holder: ActivityHolder) {
     }
     msg?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
     HorizontalDivider()
+    PlazaPhoneSettings()
+    HorizontalDivider()
     Text("보낸 규칙 ${a.reports.size}", style = MaterialTheme.typography.titleSmall)
     if (a.reports.isEmpty()) Text("아직 없어요", style = MaterialTheme.typography.bodySmall)
     a.reports.forEach { r ->
@@ -325,12 +328,19 @@ fun RatesScreen(vm: RatesViewModel, onBack: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     var adding by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
+    val rules = rememberPlazaRules()
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("임금표") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = { adding = true }, text = { Text("시세 알려 주기") }, icon = { Icon(Icons.Filled.Add, null) })
+            ExtendedFloatingActionButton(onClick = {
+                // [SRV-04] Paused by the developer: said here, not after the form is filled.
+                if (c.remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)) {
+                    notice = com.bamnat.core.ops.ServerSwitch.pausedText(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)
+                } else rules.ensure { adding = true }
+            }, text = { Text("시세 알려 주기") }, icon = { Icon(Icons.Filled.Add, null) })
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {

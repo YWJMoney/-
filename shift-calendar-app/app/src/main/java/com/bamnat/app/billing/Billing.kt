@@ -95,6 +95,8 @@ class PlayBilling(
     private val scope: CoroutineScope,
     private val log: (String) -> Unit = {},
     private val clock: () -> Instant = Instant::now,
+    /** [STAT-04] A purchase made just now in the app: true for a free trial, false for a paid start. */
+    private val onBought: (trial: Boolean) -> Unit = {},
 ) : Billing, PurchasesUpdatedListener {
     private val client: BillingClient = BillingClient.newBuilder(context.applicationContext)
         .setListener(this)
@@ -219,6 +221,7 @@ class PlayBilling(
             )
         }
         store.setSub(record)
+        if (bought != null) runCatching { onBought(record.trial) }
     }
 
     private suspend fun acknowledge(p: Purchase) {
