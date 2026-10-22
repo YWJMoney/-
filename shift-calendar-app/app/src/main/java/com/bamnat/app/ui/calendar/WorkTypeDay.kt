@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.calendar
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -43,11 +44,24 @@ import java.time.LocalTime
 internal const val MAX_SWAP_NAME = 20
 
 /** [SHFT-03] The day sheet's work section on a shift calendar: who the shift was swapped with. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun WorkTypeDayRow(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val style = settings.workStyle
-    if (style == null || style == WorkStyle.SHIFT) SwapRow(day, snapshot, vm)
+    if (style == null || style == WorkStyle.SHIFT) {
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SwapRow(day, snapshot, vm)
+            // [CREW-04] On a working day of a rotation, who could take it if the user wants it off.
+            if (style == WorkStyle.SHIFT && day.isWorkDay && rotationOf(snapshot, day.date) != null) {
+                AssistChip(
+                    onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.TEAMS, payload = day.date.toString()) },
+                    label = { Text("쉬고 싶어요 · 대근 찾기") },
+                    leadingIcon = { Icon(androidx.compose.material.icons.Icons.Outlined.Groups, contentDescription = null, Modifier.size(18.dp)) },
+                )
+            }
+        }
+    }
 }
 
 /** [DAYW-03] Until when after midnight 지금 퇴근 still ends yesterday's working day. */

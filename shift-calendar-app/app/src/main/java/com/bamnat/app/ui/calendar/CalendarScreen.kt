@@ -6,6 +6,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.ui.semantics.heading
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.graphics.Color
@@ -317,6 +321,13 @@ fun CalendarScreen(
     // [WEEK-01] Hours always count Monday to Sunday, the week the law means; 한 주의 시작 only moves the grid.
     val calculator = remember(snap, settings.limits) {
         WorkHoursCalculator(snap.resolver, java.time.DayOfWeek.MONDAY, settings.limits)
+    }
+    // [CAL-24] A calendar of 교대 근무 whose order repeats can be split into teams: 모든 조 is on the month itself.
+    val openTeams: (() -> Unit)? = remember(snap, settings.workStyle, viewingReceived) {
+        val rotation = rotationOf(snap, LocalDate.now())
+        if (rotation != null && viewingReceived == null && settings.workStyle == com.bamnat.core.work.WorkStyle.SHIFT) {
+            { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.TEAMS) }
+        } else null
     }
     // [HRLY-02][HRLY-03] An 알바 calendar's cells show times and pay, and each week its 주휴.
     val hourlyCells = remember(settings.workStyle, payProfile) {
@@ -733,6 +744,7 @@ fun CalendarScreen(
             onEditCalendar = if (viewingReceived == null) ({ onEditCalendar(activeCalendar.id) }) else null,
             onCustomize = if (viewingReceived == null) ({ editingLayout = true }) else null,
             calendarName = activeCalendar.name,
+            onOpenTeams = openTeams,
         )
         // [SETUP-01] A first setup left for later comes first; it fills the calendar.
         val waiting = pendingSetup?.takeIf { it.later && settings.workStyle == null }
@@ -880,6 +892,15 @@ fun CalendarScreen(
             val showList = listView && paint == null
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 // The counts take what is left, so the two buttons always sit at the right edge.
+                // [CAL-24] 모든 조 보기 one tap from the month, before the counts, on every screen width.
+                openTeams?.let { open ->
+                    androidx.compose.material3.AssistChip(
+                        onClick = open,
+                        label = { Text("모든 조", maxLines = 1, softWrap = false) },
+                        leadingIcon = { Icon(Icons.Outlined.Groups, null, Modifier.size(18.dp)) },
+                        modifier = Modifier.padding(end = 8.dp).semantics { contentDescription = "모든 조 보기와 대근 찾기" },
+                    )
+                }
                 Box(Modifier.weight(1f)) { if (partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth) }
                 CalendarViewSwitch(listView = showList, onListView = { if (paint == null) vm.setListView(it) }, onLegend = { legendOpen = true })
             }
@@ -1268,6 +1289,8 @@ private fun CalendarHeader(
     calendarName: String = "",
     /** [CUST-01] 화면 꾸미기 for the calendar page; null while a received calendar is shown. */
     onCustomize: (() -> Unit)? = null,
+    /** [CAL-24] 모든 조 보기; null when the calendar has no rotation to split into teams. */
+    onOpenTeams: (() -> Unit)? = null,
 ) {
     // [QA-01] A cover screen (~344dp) cannot fit four icons, the month and 오늘: pattern and the new
     // calendar go into ⋮ there. [UX-03] 공유 is in the bar above on every screen; ⋮ keeps it too, where
@@ -1304,47 +1327,84 @@ private fun CalendarHeader(
             IconButton(onClick = onOpenPattern) { Icon(Icons.Filled.EventRepeat, "근무 주기 설정") }
             IconButton(onClick = onAddCalendar) { Icon(Icons.Outlined.LibraryAdd, "새 달력 만들기") }
         }
-        Box {
-            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "더 보기") }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                onEditCalendar?.let { edit ->
-                    DropdownMenuItem(text = { Text("‘$calendarName’ 고치기") }, leadingIcon = { Icon(Icons.Outlined.Edit, null) },
-                        onClick = { menu = false; edit() })
-                }
-                DropdownMenuItem(text = { Text("근무표 공유") }, leadingIcon = { Icon(Icons.Filled.Share, null) },
-                    onClick = { menu = false; onShare() })
-                // [CREW-01] Every team of the rotation, for finding a 대근.
-                DropdownMenuItem(text = { Text("모든 조 보기") }, leadingIcon = { Icon(Icons.Outlined.Groups, null) },
-                    onClick = { menu = false; com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.TEAMS) })
-                // [CAL-22] The year in twelve small months.
-                DropdownMenuItem(text = { Text("1년 달력") }, leadingIcon = { Icon(Icons.Outlined.CalendarViewMonth, null) },
-                    onClick = { menu = false; com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.YEAR) })
-                onReceive?.let { receive ->
-                    DropdownMenuItem(text = { Text("동료 근무표 받기") }, leadingIcon = { Icon(Icons.Outlined.GroupAdd, null) },
-                        onClick = { menu = false; receive() })
-                }
-                if (narrow) {
-                    DropdownMenuItem(text = { Text("근무 주기 설정") }, leadingIcon = { Icon(Icons.Filled.EventRepeat, null) },
-                        onClick = { menu = false; onOpenPattern() })
-                    DropdownMenuItem(text = { Text("새 달력 만들기") }, leadingIcon = { Icon(Icons.Outlined.LibraryAdd, null) },
-                        onClick = { menu = false; onAddCalendar() })
-                }
-                // [UX-04] The calendar's own look (week start, what shows under a date) is one tap from it.
-                onCustomize?.let { customize ->
-                    DropdownMenuItem(text = { Text("화면 꾸미기") }, leadingIcon = { Icon(Icons.Outlined.Dashboard, null) },
-                        onClick = { menu = false; customize() })
-                }
-                DropdownMenuItem(text = { Text("달력 보기 설정") }, leadingIcon = { Icon(Icons.Outlined.Tune, null) },
-                    onClick = { menu = false; com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.CALENDAR) })
-                // [UX-05] Help and questions from the screen people use most.
-                DropdownMenuItem(text = { Text("도움말·문의") }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.HelpOutline, null) },
-                    onClick = {
-                        menu = false
-                        com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "달력", help = true))
-                    })
-            }
+        // [CAL-23] A button with its name instead of ⋮: people did not know three dots held the tools.
+        androidx.compose.material3.FilledTonalButton(
+            onClick = { menu = true },
+            contentPadding = PaddingValues(horizontal = 12.dp),
+            modifier = Modifier.heightIn(min = 40.dp).padding(end = 4.dp),
+        ) {
+            Icon(Icons.Outlined.Apps, null, Modifier.size(18.dp))
+            Text(" 도구", maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelLarge)
         }
     }
+    if (menu) {
+        CalendarToolsSheet(
+            onDismiss = { menu = false },
+            tools = buildList {
+                onEditCalendar?.let { add(CalendarTool("‘$calendarName’ 고치기", Icons.Outlined.Edit, it)) }
+                // [CAL-24] 모든 조 is also on the calendar itself; here it stays where people learned it.
+                onOpenTeams?.let { add(CalendarTool("모든 조 보기", Icons.Outlined.Groups, it)) }
+                add(CalendarTool("근무표 공유", Icons.Filled.Share, onShare))
+                add(CalendarTool("1년 달력", Icons.Outlined.CalendarViewMonth) { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.YEAR) })
+                onReceive?.let { add(CalendarTool("동료 근무표 받기", Icons.Outlined.GroupAdd, it)) }
+                add(CalendarTool("근무 주기 설정", Icons.Filled.EventRepeat, onOpenPattern))
+                add(CalendarTool("새 달력 만들기", Icons.Outlined.LibraryAdd, onAddCalendar))
+                onCustomize?.let { add(CalendarTool("화면 꾸미기", Icons.Outlined.Dashboard, it)) }
+                add(CalendarTool("달력 보기 설정", Icons.Outlined.Tune) {
+                    com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.CALENDAR)
+                })
+                add(CalendarTool("도움말·문의", Icons.AutoMirrored.Outlined.HelpOutline) {
+                    com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "달력", help = true))
+                })
+            },
+        )
+    }
+    }
+}
+
+/** [CAL-23] One tool of the calendar's tool sheet: a name people can read, not a hidden menu row. */
+internal data class CalendarTool(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val onClick: () -> Unit)
+
+/** [CAL-23] The calendar's tools as big named tiles, three or four to a row. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun CalendarToolsSheet(tools: List<CalendarTool>, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        CalendarToolsGrid(tools, onPicked = onDismiss)
+    }
+}
+
+@Composable
+internal fun CalendarToolsGrid(tools: List<CalendarTool>, onPicked: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).navigationBarsPadding()) {
+        Text("달력 도구", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 12.dp).semantics { heading() })
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val perRow = if (maxWidth >= 480.dp) 4 else 3
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                tools.chunked(perRow).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { tool ->
+                            Surface(
+                                onClick = { onPicked(); tool.onClick() },
+                                shape = MaterialTheme.shapes.large,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                modifier = Modifier.weight(1f).heightIn(min = 84.dp),
+                            ) {
+                                Column(
+                                    Modifier.padding(horizontal = 6.dp, vertical = 12.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Icon(tool.icon, null, tint = MaterialTheme.colorScheme.primary)
+                                    Text(tool.label, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center, maxLines = 2)
+                                }
+                            }
+                        }
+                        repeat(perRow - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+        }
     }
 }
 

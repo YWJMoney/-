@@ -998,8 +998,10 @@ private fun AppNavHost(
         composable(Routes.TEAMS) {
             val calendar = remember { container.calendars.active.value }
             val vm = appViewModel(key = "teams_$calendar") { com.bamnat.app.ui.calendar.TeamsViewModel(it, calendar) }
+            // [CREW-04] Opened from a day's 대근 찾기, the finder starts on that day.
+            val startDay = remember { NoticeLinks.payload.value?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() } }
             com.bamnat.app.ui.calendar.TeamsScreen(vm = vm, onBack = { nav.popFrom(Routes.TEAMS) },
-                onOpenPattern = { nav.openPattern(container, calendar) })
+                onOpenPattern = { nav.openPattern(container, calendar) }, startDay = startDay)
         }
         composable(Routes.YEAR) {
             val calendar = remember { container.calendars.active.value }
