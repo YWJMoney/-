@@ -51,6 +51,20 @@ class HourlyWorkTest {
     private fun weeklyHolidayMinutes(profile: PayProfile, r: ScheduleResolver) =
         PayCalculator().calculate(profile, oct, r::resolve).lines.singleOrNull { it.label == "주휴수당" }?.minutes ?: 0
 
+    /** [HRLY-02] 순번 199: a night shift into 한글날 (10/9) counts whole for 주휴, as with 시작일 기준. */
+    @Test
+    fun `a night shift into a holiday counts whole for weekly holiday pay`() {
+        val nights = ScheduleResolver(Fixtures.all, listOf(WorkPattern.Weekly(LocalDate.of(2026, 9, 1), mapOf(
+            DayOfWeek.MONDAY to Fixtures.night.id, DayOfWeek.TUESDAY to Fixtures.night.id,
+            DayOfWeek.WEDNESDAY to Fixtures.night.id, DayOfWeek.THURSDAY to Fixtures.night.id,
+        ))), emptyList())
+        val five = partTime.copy(fiveOrMoreEmployees = true)
+        val byClock = weeklyHolidayMinutes(five, nights)
+        val byStart = weeklyHolidayMinutes(five.copy(rules = five.rules.copy(holidayByShiftStart = true)), nights)
+        assertTrue(byClock > 0)
+        assertEquals(byStart, byClock)
+    }
+
     @Test
     fun `an absent day has no hours or pay but keeps its shift, late keeps the hours`() {
         val absent = resolver(listOf(DayEntry(wed, attendance = Attendance.ABSENT))).resolve(wed)

@@ -437,7 +437,7 @@ class PayCalculator(
         }
         // [PAYS-03] An approved 감시·단속 worker has no 주휴 (제55조 is in chapter 4).
         val weeklyHoliday = if (byHour && rules.weeklyHolidayPay && !supervisory) {
-            weeklyHolidayLine(allMinutes, attendedByDate, paidHolidayByDate, holidayWeekFrom, periodStart, periodEnd, hourly, baseEstimated, absentDates, profile::onProbation)
+            weeklyHolidayLine(allMinutes, attendedByDate, paidHolidayByDate, holidayWeekFrom, periodStart, periodEnd, hourly, baseEstimated, absentDates, profile::onProbation, holiday)
         } else null
         // [HRLY-06] 주휴 earned by days on probation, at the 수습 rate too.
         weeklyHoliday?.second?.takeIf { it > 0 }?.let { mins ->
@@ -961,6 +961,7 @@ class PayCalculator(
     private fun weeklyHolidayLine(
         all: List<DayMinutes>, attended: Map<LocalDate, Int>, paidHolidays: Map<LocalDate, Int>, from: LocalDate, periodStart: LocalDate, periodEnd: LocalDate,
         hourly: Long, estimated: Boolean, absent: Set<LocalDate> = emptySet(), onProbation: (LocalDate) -> Boolean = { false },
+        holiday: (LocalDate) -> Boolean = { false },
     ): Pair<PayLine, Int>? {
         var weekStart = from
         var minutes = 0
@@ -972,7 +973,13 @@ class PayCalculator(
                 // Paid leave and paid holidays count as attended hours of the week.
                 val week = all.filter { !it.date.isBefore(weekStart) && !it.date.isAfter(end) }
                 // [PAY-13] A paid holiday is its scheduled day, never that plus the minutes worked on it.
-                fun credit(d: DayMinutes) = maxOf(d.regular + (attended[d.date] ?: 0), paidHolidays[d.date] ?: 0)
+                // [HRLY-02] 순번 199: a shift that starts on a working day and runs past midnight into a holiday is
+                // that working day's 소정근로 whole (one continuous shift belongs to the day it starts, the way
+                // holidayByShiftStart counts it); its minutes after midnight still earn the holiday premium.
+                // 고용노동부 행정해석 원문 확인 필요 (research/1.21-급여엔진-리뷰.md).
+                fun shiftCredit(d: DayMinutes) =
+                    if (holiday(d.date)) d.regular else minOf(d.regular + d.shift.holidayWithin8h, 8 * 60).coerceAtLeast(d.regular)
+                fun credit(d: DayMinutes) = maxOf(shiftCredit(d) + (attended[d.date] ?: 0), paidHolidays[d.date] ?: 0)
                 val worked = week.sumOf { credit(it) }
                 if (worked >= 15 * 60) {
                     val credit = minOf(worked, 40 * 60) / 5
