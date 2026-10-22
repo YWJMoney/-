@@ -203,6 +203,8 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
         SwitchRow("진동", "소리와 함께 진동해요", settings.vibrate) { v -> vm.update { it.copy(vibrate = v) } }
         SwitchRow("점점 크게", "작은 소리로 시작해 20초 동안 커져요", settings.gradualVolume) { v -> vm.update { it.copy(gradualVolume = v) } }
     }
+    // [PROV-06][PROV-07] 확실하게 깨우기 (프로).
+    SureAlarmCard(vm, settings, snapshot?.shiftTypes.orEmpty().filter { it.alarmEnabled && !it.isOff && it.start != null })
     SectionCard(title = "울리는 방식") {
         ChoiceRow("다시 울림 간격", "알람에서 ‘다시 울림’을 누르면 이만큼 뒤에 다시 울려요",
             listOf(3, 5, 10, 15, 20).map { it to "${it}분" }, settings.snoozeMinutes) { m -> vm.update { it.copy(snoozeMinutes = m) } }

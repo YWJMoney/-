@@ -59,6 +59,8 @@ object Notifications {
     const val SHARE_ID = 7202
     const val PRO_ID = 7203
     const val BACKUP_ID = 7204
+    /** [PROV-07] 일어났나요? */
+    const val WAKE_CHECK_ID = 7005
 
     fun createChannels(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return

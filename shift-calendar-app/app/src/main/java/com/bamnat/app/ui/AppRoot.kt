@@ -1204,7 +1204,7 @@ private fun RingingBanner() {
                     color = MaterialTheme.colorScheme.onErrorContainer)
             }
             TextButton(onClick = { AlarmService.snooze(context) }) { Text("다시 울림") }
-            Button(onClick = { AlarmService.dismiss(context) }) { Text("끄기") }
+            Button(onClick = { AlarmService.askToDismiss(context) }) { Text("끄기") }
         }
     }
 }

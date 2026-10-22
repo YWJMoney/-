@@ -1,5 +1,6 @@
 package com.bamnat.app.alarm
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -45,12 +46,26 @@ import com.bamnat.app.data.ThemeMode
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.app.ui.theme.BamnatTheme
+import com.bamnat.core.alarm.AlarmMission
+import com.bamnat.core.alarm.Missions
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import java.time.LocalTime
 
-/** Full-screen ringing screen, shown over the lock screen. */
+/**
+ * Full-screen ringing screen, shown over the lock screen. [PROV-06] With a mission, 알람 끄기 (here, on
+ * the notification or in the app) opens it first; after [Missions.GIVE_UP_AFTER] it can be skipped.
+ */
 class AlarmActivity : ComponentActivity() {
+    private val solving = MutableStateFlow(false)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_MISSION, false)) solving.value = true
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        if (intent?.getBooleanExtra(EXTRA_MISSION, false) == true) solving.value = true
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
@@ -77,17 +92,36 @@ class AlarmActivity : ComponentActivity() {
                     AlarmService.snooze(this@AlarmActivity)
                 }
                 val current = ring
-                if (current != null) {
-                    RingingScreen(
-                        title = current.label ?: if (current.shiftName.isBlank()) "알람" else "${current.shiftName} 근무",
-                        subtitle = AlarmService.describe(current),
+                val mission = current?.let { BootAlarms.ringSettings(this@AlarmActivity).missionFor(it) } ?: AlarmMission.NONE
+                val inMission by solving.collectAsStateWithLifecycle()
+                val since by AlarmService.ringingSince.collectAsStateWithLifecycle()
+                if (current != null && inMission && mission != AlarmMission.NONE) {
+                    MissionScreen(
+                        mission = mission,
+                        since = since ?: System.currentTimeMillis(),
                         snoozeMinutes = snoozeMinutes,
                         onSnooze = { AlarmService.snooze(this@AlarmActivity) },
-                        onDismiss = { AlarmService.dismiss(this@AlarmActivity) },
+                        onDone = { how -> AlarmService.dismiss(this@AlarmActivity, how) },
+                    )
+                } else if (current != null) {
+                    RingingScreen(
+                        title = if (current.recheck) current.title else current.label ?: if (current.shiftName.isBlank()) "알람" else "${current.shiftName} 근무",
+                        subtitle = AlarmService.describe(current),
+                        snoozeMinutes = snoozeMinutes,
+                        dismissLabel = if (mission == AlarmMission.NONE) "알람 끄기" else "알람 끄기 · ${mission.label}",
+                        onSnooze = { AlarmService.snooze(this@AlarmActivity) },
+                        onDismiss = {
+                            if (mission == AlarmMission.NONE) AlarmService.dismiss(this@AlarmActivity) else solving.value = true
+                        },
                     )
                 }
             }
         }
+    }
+
+    companion object {
+        /** [PROV-06] Open on the mission rather than the ringing screen. */
+        const val EXTRA_MISSION = "com.bamnat.app.alarm.extra.MISSION"
     }
 }
 
@@ -96,6 +130,7 @@ private fun RingingScreen(
     title: String,
     subtitle: String,
     snoozeMinutes: Int,
+    dismissLabel: String = "알람 끄기",
     onSnooze: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -146,7 +181,7 @@ private fun RingingScreen(
                 modifier = Modifier.fillMaxWidth().height(68.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B5E), contentColor = Color.White),
             ) {
-                Text("알람 끄기", style = MaterialTheme.typography.titleLarge)
+                Text(dismissLabel, style = MaterialTheme.typography.titleLarge)
             }
         }
     }

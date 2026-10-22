@@ -55,6 +55,10 @@ class LegalPagesTest {
         assertTrue(text.contains("암호는 저장하지 않으며"))
         assertTrue(text.contains("Android 키 저장소"))
         assertTrue(text.contains("${com.bamnat.app.backup.AutoBackup.FAIL_DAYS}일 넘게 저장하지 못하면"))
+        // [PROV-06][PROV-07] The motion sensor read only while ringing, and the question after 끄기.
+        assertTrue(text.contains("<td>움직임 센서 (권한 없이 쓰는 기능)</td>"))
+        assertTrue(text.contains("값은 저장하거나 휴대폰 밖으로 보내지 않습니다"))
+        assertTrue(text.contains("‘일어났나요?’"))
     }
 
     @Test fun theTermsCoverSubscriptionTrialAndRefunds() {

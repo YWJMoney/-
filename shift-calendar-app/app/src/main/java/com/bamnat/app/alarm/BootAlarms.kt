@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.UserManager
 import com.bamnat.app.appContainer
 import com.bamnat.app.data.AppSettings
+import com.bamnat.core.alarm.AlarmMission
 import org.json.JSONArray
 
 /**
@@ -24,9 +25,23 @@ object BootAlarms {
         val gradualVolume: Boolean = true,
         val snoozeMinutes: Int = 5,
         val ringMinutes: Int = 10,
+        /** [PROV-06] 끄기 미션 and each shift's own; none without 프로. */
+        val mission: AlarmMission = AlarmMission.NONE,
+        val shiftMissions: Map<Long, AlarmMission> = emptyMap(),
+        /** [PROV-07] 0 without 프로 or when off. */
+        val wakeCheckMinutes: Int = 0,
     ) {
+        /** [PROV-06] What turning [ring] off asks for. */
+        fun missionFor(ring: RingRequest): AlarmMission = AlarmMission.forAlarm(mission, shiftMissions, ring.shiftTypeId)
+
         companion object {
-            fun of(s: AppSettings) = RingSettings(s.defaultAlarmSound, s.vibrate, s.gradualVolume, s.snoozeMinutes, s.ringMinutes)
+            /** [sure] is whether 확실한 알람 is open ([com.bamnat.app.tier.Feature.SURE_ALARM]). */
+            fun of(s: AppSettings, sure: Boolean = false) = RingSettings(
+                s.defaultAlarmSound, s.vibrate, s.gradualVolume, s.snoozeMinutes, s.ringMinutes,
+                mission = if (sure) AlarmMission.of(s.alarmMission) else AlarmMission.NONE,
+                shiftMissions = if (sure) s.shiftMissions.mapValues { AlarmMission.of(it.value) } else emptyMap(),
+                wakeCheckMinutes = if (sure) s.wakeCheckMinutes.coerceIn(0, 30) else 0,
+            )
         }
     }
 
@@ -50,6 +65,9 @@ object BootAlarms {
             .putBoolean(K_GRADUAL, settings.gradualVolume)
             .putInt(K_SNOOZE_MIN, settings.snoozeMinutes)
             .putInt(K_RING_MIN, settings.ringMinutes)
+            .putString(K_MISSION, settings.mission.key)
+            .putString(K_SHIFT_MISSIONS, com.bamnat.app.data.encodeShiftMissions(settings.shiftMissions.mapValues { it.value.key }))
+            .putInt(K_WAKE_CHECK, settings.wakeCheckMinutes)
             .apply()
     }
 
@@ -61,12 +79,15 @@ object BootAlarms {
     fun settings(context: Context): RingSettings {
         val p = prefs(context)
         return RingSettings(p.getString(K_SOUND, null), p.getBoolean(K_VIBRATE, true), p.getBoolean(K_GRADUAL, true),
-            p.getInt(K_SNOOZE_MIN, 5), p.getInt(K_RING_MIN, 10))
+            p.getInt(K_SNOOZE_MIN, 5), p.getInt(K_RING_MIN, 10),
+            AlarmMission.of(p.getString(K_MISSION, null)),
+            com.bamnat.app.data.decodeShiftMissions(p.getString(K_SHIFT_MISSIONS, null).orEmpty()).mapValues { AlarmMission.of(it.value) },
+            p.getInt(K_WAKE_CHECK, 0))
     }
 
     /** The settings for a ringing alarm: the real ones when unlocked, the copy before that. */
     fun ringSettings(context: Context): RingSettings =
-        if (isLocked(context)) settings(context) else RingSettings.of(context.appContainer.settingsRepository.current)
+        if (isLocked(context)) settings(context) else context.appContainer.ringSettings()
 
     fun saveSnooze(context: Context, ring: RingRequest?, at: Long) {
         prefs(context).edit().apply {
@@ -103,6 +124,9 @@ object BootAlarms {
     private const val K_GRADUAL = "gradual"
     private const val K_SNOOZE_MIN = "snooze_minutes"
     private const val K_RING_MIN = "ring_minutes"
+    private const val K_MISSION = "mission"
+    private const val K_SHIFT_MISSIONS = "shift_missions"
+    private const val K_WAKE_CHECK = "wake_check_minutes"
     private const val K_SNOOZE = "snooze"
     private const val K_SNOOZE_AT = "snooze_at"
 }

@@ -257,6 +257,8 @@ class BackupManager(
                 .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("appLock", s.appLock)
                 .put("calendarLayout", s.calendarLayout).put("statsLayout", s.statsLayout).put("hideDayAlarmNotice", s.hideDayAlarmNotice).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
                 .put("phoneCalendars", s.phoneCalendars.joinToString(","))
+                .put("alarmMission", s.alarmMission).put("shiftMissions", encodeShiftMissions(s.shiftMissions))
+                .put("wakeCheck", s.wakeCheckMinutes)
                 .put("restCheck", s.restCheck)
                 .put("strictRest", s.strictRest).put("sleepTips", s.sleepTips)
                 // 1.10 and before read one switch for all sleep notices.
@@ -585,6 +587,10 @@ class BackupManager(
                         ?: if (o.optBoolean("memoFirst", false)) listOf("memo") else s.dayGroupOrder,
                     // [FEAT-07] Added in 1.20; the phone's calendar permission is asked again on the new phone.
                     phoneCalendars = o.optStringOrNull("phoneCalendars")?.let(::decodeGroupOrder) ?: s.phoneCalendars,
+                    // [PROV-06][PROV-07] Added in 1.20. Shift ids are the backup's own, restored with its shifts.
+                    alarmMission = o.optString("alarmMission", s.alarmMission),
+                    shiftMissions = o.optStringOrNull("shiftMissions")?.let(::decodeShiftMissions) ?: s.shiftMissions,
+                    wakeCheckMinutes = o.optInt("wakeCheck", s.wakeCheckMinutes).coerceIn(0, 30),
                     calendarMemos = o.optBoolean("calendarMemos", s.calendarMemos),
                     restCheck = o.optBoolean("restCheck", s.restCheck),
                     strictRest = o.optBoolean("strictRest", s.strictRest),

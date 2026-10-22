@@ -130,6 +130,12 @@ data class AppSettings(
     val dayGroupOrder: List<String> = emptyList(),
     /** [FEAT-07] The user's calendars written to a calendar of their own on the phone (프로); none at first. */
     val phoneCalendars: List<String> = emptyList(),
+    /** [PROV-06] What 끄기 asks for (프로), by [com.bamnat.core.alarm.AlarmMission.key]; none at first. */
+    val alarmMission: String = "none",
+    /** [PROV-06] A shift's own mission, by shift type id, in place of [alarmMission]. */
+    val shiftMissions: Map<Long, String> = emptyMap(),
+    /** [PROV-07] Minutes after 끄기 that 일어났나요? asks (프로); 0 is off, as at first. */
+    val wakeCheckMinutes: Int = 0,
 ) {
     val limits: HourLimits get() = HourLimits(weeklyLimitHours, averageLimitHours)
 
@@ -140,6 +146,14 @@ data class AppSettings(
 
 /** [DAY-04] "memo,work" back to its keys; blank parts are dropped. */
 fun decodeGroupOrder(text: String): List<String> = text.split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+
+/** [PROV-06] "3=math,5=shake": each shift's own mission; anything unreadable is left out. */
+fun decodeShiftMissions(text: String): Map<Long, String> = text.split(',').mapNotNull { part ->
+    val (id, key) = part.split('=').takeIf { it.size == 2 } ?: return@mapNotNull null
+    id.trim().toLongOrNull()?.let { it to key.trim() }?.takeIf { it.second.isNotEmpty() }
+}.toMap()
+
+fun encodeShiftMissions(map: Map<Long, String>): String = map.entries.sortedBy { it.key }.joinToString(",") { "${it.key}=${it.value}" }
 
 /**
  * Small settings store on SharedPreferences. Reads are synchronous so the very first frame
@@ -227,6 +241,9 @@ class SettingsRepository(context: Context) {
             dayGroupOrder = prefs.getString(K_DAY_GROUP_ORDER, null)?.let(::decodeGroupOrder)
                 ?: if (prefs.getBoolean(K_MEMO_FIRST, false)) listOf("memo") else d.dayGroupOrder,
             phoneCalendars = prefs.getString(K_PHONE_CALENDARS, null)?.let(::decodeGroupOrder) ?: d.phoneCalendars,
+            alarmMission = prefs.getString(K_ALARM_MISSION, null) ?: d.alarmMission,
+            shiftMissions = prefs.getString(K_SHIFT_MISSIONS, null)?.let(::decodeShiftMissions) ?: d.shiftMissions,
+            wakeCheckMinutes = prefs.getInt(K_WAKE_CHECK, d.wakeCheckMinutes),
         )
     }
 
@@ -279,6 +296,9 @@ class SettingsRepository(context: Context) {
             .putString(K_STATS_LAYOUT, s.statsLayout)
             .putString(K_DAY_GROUP_ORDER, s.dayGroupOrder.joinToString(","))
             .putString(K_PHONE_CALENDARS, s.phoneCalendars.joinToString(","))
+            .putString(K_ALARM_MISSION, s.alarmMission)
+            .putString(K_SHIFT_MISSIONS, encodeShiftMissions(s.shiftMissions))
+            .putInt(K_WAKE_CHECK, s.wakeCheckMinutes)
             .apply()
     }
 
@@ -292,6 +312,9 @@ class SettingsRepository(context: Context) {
         const val K_STATS_LAYOUT = "stats_layout"
         const val K_DAY_GROUP_ORDER = "day_group_order"
         const val K_PHONE_CALENDARS = "phone_calendars"
+        const val K_ALARM_MISSION = "alarm_mission"
+        const val K_SHIFT_MISSIONS = "shift_missions"
+        const val K_WAKE_CHECK = "wake_check_minutes"
         const val K_WEEKLY_LIMIT = "weekly_limit"
         const val K_AVG_LIMIT = "average_limit"
         const val K_THEME = "theme"

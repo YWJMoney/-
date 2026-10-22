@@ -140,9 +140,13 @@ class AppContainer(context: Context) {
         return com.bamnat.core.money.CaptureRoute.pick(parsed?.last4, parsed?.issuer, pkg, places, prefs.appCalendars, prefs.calendar)
     }
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository)
-    val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry) {
-        com.bamnat.app.alarm.BootAlarms.RingSettings.of(settingsRepository.current)
-    }
+    val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry) { ringSettings() }
+    /** How alarms ring now; [PROV-06][PROV-07] the mission and the wake check only with 프로. */
+    fun ringSettings(): com.bamnat.app.alarm.BootAlarms.RingSettings =
+        com.bamnat.app.alarm.BootAlarms.RingSettings.of(settingsRepository.current, sureAlarm())
+    // Read while the container is still being built would find no gate yet: then nothing is locked, as before the launch.
+    @Suppress("SENSELESS_COMPARISON")
+    private fun sureAlarm(): Boolean = featureGate == null || featureGate.allows(com.bamnat.app.tier.Feature.SURE_ALARM)
     val payStore = PayStore(appContext)
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars, memoSharing = memoSharing,
         workTools = com.bamnat.app.data.WorkToolsStore.get(appContext), guide = com.bamnat.app.data.GuideStore.get(appContext), recordsTrash = { recordsTrash },
@@ -426,8 +430,9 @@ class AppContainer(context: Context) {
         }
         // [REL-10] The locked-boot copy carries the ringing settings too, so it follows their changes.
         keep("bootcopy") {
-            settingsRepository.settings.map { com.bamnat.app.alarm.BootAlarms.RingSettings.of(it) }.distinctUntilChanged().drop(1)
-                .collect { alarmScheduler.saveBootCopy() }
+            combine(settingsRepository.settings, featureGate.state.map { it.allows(com.bamnat.app.tier.Feature.SURE_ALARM) }) { s, sure ->
+                com.bamnat.app.alarm.BootAlarms.RingSettings.of(s, sure)
+            }.distinctUntilChanged().drop(1).collect { alarmScheduler.saveBootCopy() }
         }
         // Widgets lay out weeks from the user's first day of the week.
         keep("widgetweek") {

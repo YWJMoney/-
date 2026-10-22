@@ -192,6 +192,11 @@
             android:name=".commute.CommuteReceiver"
             android:exported="false" />
 
+        <!-- [PROV-07] 일어났나요? a few minutes after an alarm is turned off, and the ring when nobody answers. -->
+        <receiver
+            android:name=".alarm.WakeCheckReceiver"
+            android:exported="false" />
+
         <!-- [PROV-03] 매일 자동 백업: only the system's job scheduler binds it. -->
         <service
             android:name=".backup.AutoBackupJob"
