@@ -115,6 +115,25 @@ class ShareLinksProTest {
         c.calendars.delete(id)
     }
 
+    /**
+     * [QA-03] Why the test above failed now and then in the whole app run (순번 286): the link sync that follows
+     * the data (5 s after the last change) could be sending one of the calendar's links while it was forgotten,
+     * and its answer was then saved with the old store into the file just deleted. A store kept from before
+     * now writes nothing.
+     */
+    @Test fun aSendStillOnItsWayDoesNotBringAForgottenLinkBack() = runBlocking {
+        val id = c.calendars.begin("알바").also { c.calendars.finishSetup(it, com.bamnat.core.work.WorkStyle.HOURLY) }
+        val key = ShareLinkKey.of(id, 2)
+        val inFlight = c.shareLinksOf(key).apply { save(link("Late000000000000")) }
+        c.forgetShareLinks(id)
+        inFlight.save(link("Late000000000000"), sent = "after")
+        inFlight.auto = false
+        assertNull(ShareLinkStore(app, key).load())
+        assertTrue("what the sharer ticked is gone too", ShareLinkStore(app, key).auto)
+        assertFalse(c.hasShareLink(id))
+        c.calendars.delete(id)
+    }
+
     @Test fun withoutProASecondLinkStaysButIsNotKeptOpenLonger() = runBlocking {
         c.shareLinksOf(second).save(link("Second0000000000"))
         c.shareLinks.save(link("First00000000000", ttl = 365))

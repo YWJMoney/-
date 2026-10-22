@@ -46,13 +46,14 @@ fun trialPrice(sub: SubRecord, plans: List<Plan>): String =
 @Composable
 fun TrialConsentPrompt(c: AppContainer) {
     val pro by c.proStore.state.collectAsStateWithLifecycle()
-    val plans = rememberPlans()
     var closed by rememberSaveable { mutableStateOf(false) }
     val sub = pro.sub ?: return
     val zone = ZoneId.systemDefault()
     val end = sub.trialEnd(zone)
     val stage = TrialConsent.stage(sub.play(), end, pro.consentAt, Instant.now())
     if (closed || (stage != TrialConsent.Stage.ASK && stage != TrialConsent.Stage.LAST_DAY)) return
+    // [PERF-01] Asked only when the question shows, so Play's billing client is not built at every start.
+    val plans = rememberPlans()
     val context = LocalContext.current
     val day = end.atZone(zone).toLocalDate()
     val price = trialPrice(sub, plans)

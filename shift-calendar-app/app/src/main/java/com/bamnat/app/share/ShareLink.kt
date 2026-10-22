@@ -288,6 +288,11 @@ class ShareLinkStore(
     private val clock: () -> Instant = Instant::now,
 ) {
     private val prefs = context.applicationContext.getSharedPreferences(prefsName(key), Context.MODE_PRIVATE)
+    /**
+     * [QA-03] Set once the calendar's links were forgotten ([retire]): a send still on its way with this
+     * store must not write the link back into a file that was just deleted.
+     */
+    @Volatile private var retired = false
     /** The calendar this link shows. */
     val calendarId: String get() = ShareLinkKey.calendar(key)
     /** [PROV-04] Which of the calendar's links, from 1. */
@@ -327,6 +332,7 @@ class ShareLinkStore(
 
     /** [SHR-12] Saves the link as the server now has it; [sent] is the [ShareLinkPayload.fingerprint] of what was sent. */
     fun save(s: ShareLinkState, sent: String? = null) {
+        if (retired) return
         prefs.edit().putString("id", s.id).putString("url", s.url).putString("token", s.deleteToken)
             .putString("expires", s.expiresAt.toString()).putString("title", s.title).putInt("ttl", s.ttlDays)
             .apply { if (s.from != null) putString("from", s.from.toString()) else remove("from") }
@@ -337,6 +343,7 @@ class ShareLinkStore(
 
     /** [PROV-04] A link from a backup, kept like one made here and sent again at the next update. */
     fun restore(s: ShareLinkState, auto: Boolean, feed: Boolean, options: ShareOptions) {
+        if (retired) return
         prefs.edit().remove("sent").remove("noticed").apply()
         save(s)
         this.auto = auto
@@ -351,6 +358,12 @@ class ShareLinkStore(
         _link.value = null
     }
 
+    /** [MCAL-03][QA-03] The calendar went: the link is forgotten, and nothing written with this store from now on is kept. */
+    fun retire() {
+        retired = true
+        clear()
+    }
+
     /** [SHR-02] Drops a link that ran out while the app stayed open. */
     fun expire() {
         if (_link.value?.expiresAt?.isAfter(clock()) == false) _link.value = null
@@ -362,17 +375,17 @@ class ShareLinkStore(
     /** [SHR-12] Whether a change on the calendar goes to the link by itself; on unless the sharer turned it off. */
     var auto: Boolean
         get() = prefs.getBoolean("auto", true)
-        set(value) { prefs.edit().putBoolean("auto", value).apply() }
+        set(value) { if (!retired) prefs.edit().putBoolean("auto", value).apply() }
 
     /** [SHR-12] The end date the expiry notice was last posted for, so it comes once per period. */
     var noticedFor: Instant?
         get() = prefs.getString("noticed", null)?.let { runCatching { Instant.parse(it) }.getOrNull() }
-        set(value) { prefs.edit().apply { if (value == null) remove("noticed") else putString("noticed", value.toString()) }.apply() }
+        set(value) { if (!retired) prefs.edit().apply { if (value == null) remove("noticed") else putString("noticed", value.toString()) }.apply() }
 
     /** [SHR-01] What the sharer ticked last time, used again for the next link and for 고치기. */
     fun options(): ShareOptions = ShareOptions.of(prefs.getStringSet("shows", emptySet()).orEmpty())
 
-    fun saveOptions(o: ShareOptions) = prefs.edit().putStringSet("shows", o.shows.toSet()).apply()
+    fun saveOptions(o: ShareOptions) { if (!retired) prefs.edit().putStringSet("shows", o.shows.toSet()).apply() }
 
     /**
      * [FEAT-15] Whether the link also serves a calendar feed (…/s/<id>.ics) to subscribe to; off until the
@@ -380,7 +393,7 @@ class ShareLinkStore(
      */
     var feed: Boolean
         get() = prefs.getBoolean("ics", false)
-        set(value) { prefs.edit().putBoolean("ics", value).apply() }
+        set(value) { if (!retired) prefs.edit().putBoolean("ics", value).apply() }
 }
 
 /** [FEAT-15] A link's calendar feed address: the page's address with .ics, which the server serves while the feed is on. */

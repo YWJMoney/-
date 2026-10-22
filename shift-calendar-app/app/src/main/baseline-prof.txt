@@ -1,0 +1,48 @@
+# [PERF-01] Baseline Profile written by hand: the code a cold start runs until the calendar's month is drawn,
+# compiled ahead of time when the app is installed (Play, or profileinstaller for a sideloaded APK).
+# Compose, Room and the other AndroidX libraries ship their own profiles; these rules cover 밤낮's code.
+# A Macrobenchmark on a real phone can replace this file with a generated one (사용자 할 일: 실기기 측정).
+# BaselineProfileRulesTest checks that every class and package named here exists.
+#
+# H = hot, S = run at startup, P = run after startup.
+
+# App start, the container and the first screen.
+HSPLcom/bamnat/app/BamnatApp;->**(**)**
+HSPLcom/bamnat/app/MainActivity;->**(**)**
+HSPLcom/bamnat/app/AppContainer;->**(**)**
+HSPLcom/bamnat/app/StartupTrace;->**(**)**
+HSPLcom/bamnat/app/HomeRequests;->**(**)**
+HSPLcom/bamnat/app/AppLock;->**(**)**
+HSPLcom/bamnat/app/NoticeLinks;->**(**)**
+Lcom/bamnat/app/BamnatApp;
+Lcom/bamnat/app/MainActivity;
+Lcom/bamnat/app/AppContainer;
+
+# The navigation shell, the theme and the calendar tab.
+HSPLcom/bamnat/app/ui/AppRootKt;->**(**)**
+HSPLcom/bamnat/app/ui/AppViewModel*->**(**)**
+HSPLcom/bamnat/app/ui/ShownMonth;->**(**)**
+HSPLcom/bamnat/app/ui/theme/**->**(**)**
+HSPLcom/bamnat/app/ui/calendar/**->**(**)**
+HSPLcom/bamnat/app/ui/components/**->**(**)**
+
+# Settings, the schedule and the databases read before the month shows.
+HSPLcom/bamnat/app/data/SettingsRepository;->**(**)**
+HSPLcom/bamnat/app/data/ScheduleRepository;->**(**)**
+HSPLcom/bamnat/app/data/CalendarBook*->**(**)**
+HSPLcom/bamnat/app/data/MemoRepository;->**(**)**
+HSPLcom/bamnat/app/data/MoneyRepository;->**(**)**
+HSPLcom/bamnat/app/data/db/**->**(**)**
+HSPLcom/bamnat/app/tier/**->**(**)**
+HSPLcom/bamnat/app/diag/**->**(**)**
+
+# Planning the next alarm and the notices, right after the first screen.
+PLcom/bamnat/app/alarm/**->**(**)**
+PLcom/bamnat/app/widget/**->**(**)**
+
+# The pure Kotlin core the calendar works out each month with.
+HSPLcom/bamnat/core/model/**->**(**)**
+HSPLcom/bamnat/core/schedule/**->**(**)**
+HSPLcom/bamnat/core/hours/**->**(**)**
+HSPLcom/bamnat/core/holiday/**->**(**)**
+HSPLcom/bamnat/core/memo/**->**(**)**

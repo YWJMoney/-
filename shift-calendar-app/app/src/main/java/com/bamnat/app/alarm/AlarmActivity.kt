@@ -126,7 +126,7 @@ class AlarmActivity : ComponentActivity() {
 }
 
 @Composable
-private fun RingingScreen(
+internal fun RingingScreen(
     title: String,
     subtitle: String,
     snoozeMinutes: Int,

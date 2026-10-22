@@ -19,8 +19,8 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TRACKER = ROOT / "docs" / "tracker.csv"
 STATUSES = {"대기", "진행 중", "완료", "조건부", "보류", "하지 않음", "이관"}
-ID_RE = re.compile(r"^[A-Z]+-\d{2}$")
-TAG_RE = re.compile(r"\[((?:[A-Z]+-\d{2})(?:,\s*[A-Z]+-\d{2})*)\]")
+ID_RE = re.compile(r"^[A-Z][A-Z0-9]*-\d{2}$")
+TAG_RE = re.compile(r"\[((?:[A-Z][A-Z0-9]*-\d{2})(?:,\s*[A-Z][A-Z0-9]*-\d{2})*)\]")
 SOURCE_GLOBS = ("app/src/**/*.kt", "core/src/**/*.kt", "app/src/**/*.xml", "*.kts", "app/*.kts")
 
 
