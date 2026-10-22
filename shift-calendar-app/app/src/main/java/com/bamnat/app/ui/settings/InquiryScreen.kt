@@ -522,7 +522,7 @@ private fun InquiryForm(vm: InquiryViewModel, pay: String?, start: InquiryStart?
                     Spacer(Modifier.height(4.dp))
                     Text("사진 ${photos.size}/${com.bamnat.app.company.InquiryPhotos.MAX}", style = MaterialTheme.typography.bodyMedium)
                     Text("화면을 찍은 사진이 있으면 더 빨리 알 수 있어요. 위치 같은 사진 정보는 지우고, 작게 줄여서 보내요. " +
-                        "문의를 닫고 90일 뒤에 서버에서 지워져요.",
+                        "문의를 닫고 90일 뒤에 서버에서 지워져요. 다른 사람의 얼굴·이름이나 건강 정보가 보이는 사진은 붙이지 말아 주세요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (photos.size < com.bamnat.app.company.InquiryPhotos.MAX) {
