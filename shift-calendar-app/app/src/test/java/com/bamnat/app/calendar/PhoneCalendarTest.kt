@@ -15,6 +15,7 @@ import com.bamnat.core.schedule.ShiftEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -38,11 +39,24 @@ class PhoneCalendarTest {
         shadowOf(app).grantPermissions(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
     }
 
+    /**
+     * [QA-04] The app's own [PhoneCalendarSync] starts with the app and, 3 s after the last change, deletes every
+     * 밤낮 calendar the settings do not ask for: here, the one these tests write by hand. An app from an earlier
+     * test of this class kept running too (its calendar permission given, and the fake store registered for all
+     * of them), so in a slow whole-app run its sync landed in the middle of a later test (`store.calendars`
+     * empty). Each test stops its app's background work when it ends, and the tests that use [PhoneCalendar]
+     * directly also stop their own app's before they start.
+     */
+    private fun stopTheAppsBackgroundWork() = app.container.appScope.coroutineContext[kotlinx.coroutines.Job]!!.children.forEach { it.cancel() }
+
+    @After fun tearDown() = stopTheAppsBackgroundWork()
+
     private fun event(day: Int, title: String = "주간") = LocalDate.of(2026, 10, day).let {
         ShiftEvent("$it", title, it.atTime(9, 0), it.atTime(18, 0), it, null)
     }
 
     @Test fun writesALocalCalendarAndKeepsItInStep() {
+        stopTheAppsBackgroundWork()
         val phone = PhoneCalendar(app)
         assertEquals(PhoneCalendar.Result(3, 0, 0), phone.write("main", "밤낮 근무", 0xFFC2A36B.toInt(), listOf(event(1), event(2), event(3))))
         val cal = store.calendars.values.single()
@@ -61,6 +75,7 @@ class PhoneCalendarTest {
     }
 
     @Test fun theImportDoesNotOfferTheAppsOwnCalendar() {
+        stopTheAppsBackgroundWork()
         PhoneCalendar(app).write("main", "밤낮 근무", 0, listOf(event(1)))
         store.calendars[99] = ContentValues().apply {
             put(CalendarContract.Calendars._ID, 99L); put(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, "내 캘린더")
