@@ -875,8 +875,12 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** Called once the review sheet was offered; Play decides whether it actually shows [OPS-20]. */
-    fun markReviewAsked() {
-        container.settingsRepository.update { it.copy(reviewDue = false, reviewAsked = true) }
+    fun markReviewAsked(moment: com.bamnat.app.review.InAppReview.Moment = com.bamnat.app.review.InAppReview.Moment.FIRST) {
+        val today = LocalDate.now().toEpochDay()
+        container.settingsRepository.update {
+            if (moment == com.bamnat.app.review.InAppReview.Moment.PAY) it.copy(payReviewDue = false, payReviewAsked = true, reviewAskedDay = today)
+            else it.copy(reviewDue = false, reviewAsked = true, reviewAskedDay = today)
+        }
         container.telemetry.event("review_asked")
     }
 

@@ -71,6 +71,11 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -104,9 +109,15 @@ import java.time.LocalTime
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit) {
+fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L) {
     val types by vm.shiftTypes.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<ShiftType?>(null) }
+    // [DAILY-08] Opened for one shift type: its editor first, once.
+    var editOpened by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(types, editId) {
+        if (editId == 0L || editOpened) return@LaunchedEffect
+        types?.firstOrNull { it.id == editId }?.let { editing = it; editOpened = true }
+    }
     var deleting by remember { mutableStateOf<ShiftType?>(null) }
     var addingSet by remember { mutableStateOf<ShiftTypeSet?>(null) }
 
@@ -144,7 +155,7 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit) {
             item {
                 // [SETUP-07] What can be done here, said once: tap to change, arrows to reorder.
                 Text(
-                    "달력에 보이는 근무예요. 근무를 누르면 시간과 알람을 고치고, 오른쪽 화살표로 달력에 보이는 순서를 바꿔요.",
+                    "달력에 보이는 근무예요. 근무를 누르면 시간과 알람을 고치고, 오른쪽 손잡이를 끌거나 화살표로 달력에 보이는 순서를 바꿔요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp),
@@ -173,6 +184,7 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit) {
                     onClick = { editing = type },
                     onMoveUp = { vm.move(type.id, -1) },
                     onMoveDown = { vm.move(type.id, 1) },
+                    modifier = Modifier.animateItem(),
                 )
             }
         }
@@ -235,9 +247,11 @@ private fun ShiftTypeRow(
     onClick: () -> Unit,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
         onClick = onClick,
+        modifier = modifier,
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerLowest,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
@@ -278,6 +292,25 @@ private fun ShiftTypeRow(
                     }
                 }
             }
+            // [DAILY-08] Drag the handle up or down: one place for each row's height passed.
+            val step = with(androidx.compose.ui.platform.LocalDensity.current) { 72.dp.toPx() }
+            val up by androidx.compose.runtime.rememberUpdatedState(onMoveUp)
+            val down by androidx.compose.runtime.rememberUpdatedState(onMoveDown)
+            val canUp by androidx.compose.runtime.rememberUpdatedState(canMoveUp)
+            val canDown by androidx.compose.runtime.rememberUpdatedState(canMoveDown)
+            Icon(
+                Icons.Filled.DragHandle, null,
+                Modifier.size(40.dp).padding(8.dp).pointerInput(Unit) {
+                    var moved = 0f
+                    detectVerticalDragGestures(onDragStart = { moved = 0f }) { change, dy ->
+                        change.consume()
+                        moved += dy
+                        if (moved > step && canDown) { down(); moved -= step }
+                        else if (moved < -step && canUp) { up(); moved += step }
+                    }
+                },
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             // [SETUP-07] Straight arrows that move, not the chevrons that read as "open"; TalkBack names the shift.
             Column {
                 IconButton(onClick = onMoveUp, enabled = canMoveUp) { Icon(Icons.Filled.ArrowUpward, "${type.name} 위로 옮기기", Modifier.size(20.dp)) }

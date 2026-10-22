@@ -10,6 +10,16 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        Release(33, "1.22.0", listOf(
+            // 1.22 묶음 E
+            Line("위젯에 그날 메모 첫 줄이 보이고, 날짜를 누르면 그날이 열려요. 알바는 위젯에서 출근·퇴근을 눌러 적어요", "widget.memo"),
+            Line("홈 화면 ‘오늘 모든 조’ 위젯으로 조마다 오늘·내일 근무를 봐요", "widget.teams"),
+            Line("영수증을 찍으면 금액·날짜·가게를 채워 드려요. 사진은 휴대폰 안에서만 읽어요", "money.receiptScan"),
+            Line("현장·자영업 근무·급여 화면에 종합소득세 참고 카드(수입·경비·떼인 3.3%·5월 신고 기간)가 생겼어요", "money.incomeTax"),
+            Line("백업 파일에 영수증·계약서 사진도 같이 들어가요. 설정 › 데이터에서 끌 수 있어요", "data.backupPhotos"),
+            Line("투자 달력이 달 마지막 날 저녁에 그달 매매를 요약해 알려 줘요. 계좌마다 해외 주식 수수료를 따로 적을 수 있어요", "invest.monthSummary"),
+            Line("돈 관리와 메모 화면도 ‘화면 꾸미기’로 카드 순서와 켜고 끄기를 바꿔요. 메모 필터는 검색 칸 아이콘에 접혀요", "money.customize"),
+        )),
         Release(32, "1.21.0", listOf(
             Line("‘모든 조 보기’가 새로워졌어요. 내 조가 몇 번째여도 맞게 돌고, 날짜를 누르면 대근 들어올 수 있는 조를 이유와 함께 찾아요", "shift.teams"),
             Line("달력 위 ⋮ 대신 이름이 붙은 ‘도구’ 버튼과 ‘모든 조’ 버튼이 생겼어요"),

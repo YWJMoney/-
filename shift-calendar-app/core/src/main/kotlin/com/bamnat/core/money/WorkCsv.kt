@@ -36,6 +36,21 @@ object WorkCsv {
         return sb.toString()
     }
 
+    /** [LEDG-27] 받을 돈 written down (외상·밀린 일당·빌려준 돈…), each with what came back and what is left on [today]. */
+    val RECEIVABLES_HEADER = listOf("적은 날", "누구", "무엇", "종류", "금액", "받은 돈", "남은 돈", "약속일", "상태", "마지막 받은 날", "받으면 수입", "메모")
+
+    fun receivables(list: List<Receivable>, today: LocalDate): String {
+        val sb = StringBuilder("\uFEFF")
+        line(sb, RECEIVABLES_HEADER)
+        for (r in list.sortedWith(compareBy({ it.date }, { it.id }))) {
+            line(sb, listOf(
+                r.date.toString(), text(r.who), text(r.title), r.kind.label, r.amount.toString(), r.received.toString(), r.left.toString(),
+                r.due?.toString().orEmpty(), r.status(today).label, r.lastPaid?.toString().orEmpty(), yes(r.countAsIncome), text(r.note),
+            ))
+        }
+        return sb.toString()
+    }
+
     fun fileName(kind: String, from: LocalDate?, to: LocalDate?): String =
         "bamnat-$kind" + (if (from != null && to != null) "-$from-$to" else "") + ".csv"
 

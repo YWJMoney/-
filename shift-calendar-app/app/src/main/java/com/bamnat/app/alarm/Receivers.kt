@@ -1,5 +1,6 @@
 package com.bamnat.app.alarm
 
+import com.bamnat.app.invest.investCalendars
 import kotlinx.coroutines.flow.first
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -144,6 +145,7 @@ class SystemEventReceiver : BroadcastReceiver() {
                 com.bamnat.app.memo.MemoScheduleAlarm.reschedule(context, container.memoRepository.memos.first())
                 // [INV-08] The investor's alarms too.
                 com.bamnat.app.invest.InvestNotices.reschedule(context, com.bamnat.app.invest.InvestNotices.plansNow(container))
+                com.bamnat.app.invest.InvestMonthNotice.schedule(context, container.investCalendars().isNotEmpty())
                 com.bamnat.app.sleep.DayNoticeScheduler.reschedule(context, container.scheduleRepository.snapshot.first(), settings)
                 // [MON-06] The trial's question before it turns paid.
                 com.bamnat.app.tier.TrialNotice.reschedule(context, container.proStore.current)

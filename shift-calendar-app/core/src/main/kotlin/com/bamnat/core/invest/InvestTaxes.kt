@@ -16,7 +16,8 @@ object InvestFees {
     fun suggest(market: Market, side: Side, quantity: Double, price: Double, account: InvestAccount?): Suggestion {
         val gross = quantity * price
         if (gross <= 0) return Suggestion(0.0, 0.0)
-        val rate = account?.feeRate ?: market.defaultFeeRate
+        // [INV-33] The account's own fee for this market, else its one fee, else the market's usual one.
+        val rate = account?.feeFor(market) ?: market.defaultFeeRate
         val fee = round(gross * rate / 100, market)
         // 거래세 is cut to the won below, as brokers do.
         val tax = if (side == Side.SELL && market.sellTaxRate > 0) floor(gross * market.sellTaxRate / 100) else 0.0

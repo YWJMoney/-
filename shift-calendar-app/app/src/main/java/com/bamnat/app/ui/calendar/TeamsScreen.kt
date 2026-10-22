@@ -106,6 +106,7 @@ import com.bamnat.core.schedule.TeamRoster
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
@@ -127,8 +128,17 @@ class TeamsViewModel(private val container: AppContainer, val calendarId: String
     fun save(roster: TeamRoster) {
         com.bamnat.app.data.GuideStore.get(container.appContext).used("shift.teams")
         store.set(calendarId, roster)
+        redrawWidgets()
     }
-    fun reset() = store.set(calendarId, null)
+    fun reset() {
+        store.set(calendarId, null)
+        redrawWidgets()
+    }
+
+    /** [DAILY-03] 오늘 모든 조 follows the teams as set here. */
+    private fun redrawWidgets() {
+        container.appScope.launch { com.bamnat.app.widget.WidgetRefresher.refresh(container.appContext) }
+    }
     fun setRest(minutes: Int) = store.setRest(calendarId, minutes)
 }
 

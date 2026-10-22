@@ -138,6 +138,10 @@
         <receiver
             android:name=".invest.InvestActionReceiver"
             android:exported="false" />
+        <!-- [INV-34] 월말 요약 on the last day of the month. -->
+        <receiver
+            android:name=".invest.InvestMonthReceiver"
+            android:exported="false" />
 
         <!-- [PAY-12][REL-08] 연차 lapse notice on 11/1 and 12/1. -->
         <receiver
@@ -262,6 +266,19 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_month_info" />
+        </receiver>
+
+        <!-- [DAILY-03] 오늘 모든 조. -->
+        <receiver
+            android:name=".widget.TeamsWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_teams_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_teams_info" />
         </receiver>
 
         <receiver

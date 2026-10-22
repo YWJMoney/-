@@ -53,6 +53,8 @@ object NoticeLinks {
         PRO,
         /** [PROV-03] 설정 › 데이터 at 매일 자동 백업, from its notice. */
         BACKUP,
+        /** [DAILY-06] 내 달력 on the day in [payload] (yyyy-mm-dd) with that day open, from a widget's date. */
+        DAY,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"

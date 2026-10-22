@@ -171,6 +171,9 @@ fun EntryDialog(
     // [FLD-08] 증빙 and a receipt photo, for field and shop costs.
     var proof by rememberSaveable { mutableStateOf(initial?.proof.orEmpty()) }
     var receipt by rememberSaveable { mutableStateOf(initial?.receipt.orEmpty()) }
+    // [LEDG-25] The time a receipt said, for a new line filled from it.
+    var readTime by rememberSaveable { mutableStateOf<String?>(null) }
+    var scanNote by rememberSaveable { mutableStateOf<String?>(null) }
     val proofs = ledger.style == com.bamnat.core.work.WorkStyle.FIELD || ledger.style == com.bamnat.core.work.WorkStyle.BUSINESS
     var more by rememberSaveable {
         mutableStateOf(initial != null && (initial.memo.isNotBlank() || initial.tags.isNotEmpty() || initial.parts.isNotEmpty()))
@@ -200,6 +203,7 @@ fun EntryDialog(
             parts = if (kind == MoneyKind.TRANSFER) emptyList() else parts.filter { it.amount > 0 && it.category != category },
             installments = if (credit) installments else 1,
             proof = if (kind == MoneyKind.EXPENSE) proof else "", receipt = if (kind == MoneyKind.EXPENSE) receipt else "",
+            time = readTime?.let { runCatching { java.time.LocalTime.parse(it) }.getOrNull() } ?: base.time,
         )
     }
 
@@ -234,6 +238,22 @@ fun EntryDialog(
                             },
                             shape = SegmentedButtonDefaults.itemShape(i, MoneyKind.entries.size),
                         ) { Text(k.label) }
+                    }
+                }
+                // [LEDG-25] A new spending line can be filled from a receipt photo, read on the phone.
+                if (isNew && kind == MoneyKind.EXPENSE) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        ReceiptScanChip(
+                            onRead = { d, name ->
+                                receipt = name
+                                d.amount?.let { digits = amountDigits(it) }
+                                d.date?.let { day = it.toString() }
+                                readTime = d.time?.toString()
+                                if (d.merchant.isNotBlank()) place = d.merchant
+                            },
+                            onMessage = { scanNote = it },
+                        )
+                        scanNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
                     }
                 }
                 AmountField(
