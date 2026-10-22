@@ -49,7 +49,7 @@ class ConsentStore(context: Context) {
     /** Screenshots and tests: a phone that has not seen the pages yet. */
     @androidx.annotation.VisibleForTesting
     fun forget() {
-        prefs.edit().remove(K_SEEN).remove(K_SLEEP_DEVICE).apply()
+        prefs.edit().remove(K_SEEN).remove(K_SLEEP_DEVICE).remove(K_RECOMMEND_OFFERED).apply()
         _seen.value = null
     }
 
@@ -57,8 +57,16 @@ class ConsentStore(context: Context) {
         prefs.edit().putString(K_SLEEP_DEVICE, answer.name).apply()
     }
 
+    /** [ONBOARD-04] The phone set up before 1.22 was offered 추천 기능 한 번에 켜기 once (or had the first-start screen). */
+    val recommendOffered: Boolean get() = prefs.getBoolean(K_RECOMMEND_OFFERED, false)
+
+    fun markRecommendOffered() {
+        prefs.edit().putBoolean(K_RECOMMEND_OFFERED, true).apply()
+    }
+
     private companion object {
         const val K_SEEN = "consent_seen"
+        const val K_RECOMMEND_OFFERED = "recommend_offered"
         const val K_SLEEP_DEVICE = "sleep_device"
     }
 }

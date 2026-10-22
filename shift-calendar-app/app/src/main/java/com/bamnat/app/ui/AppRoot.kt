@@ -234,6 +234,8 @@ private object Routes {
     const val FEATURES = "features"
     /** [MON-04] 프로: what it adds, the plans, passes and the admin link. */
     const val PRO = "pro"
+    /** [ONBOARD-04] 추천 기능 한 번에 켜기, from settings and the 1.22 update notice. */
+    const val RECOMMENDED = "recommended"
 
     fun companyFind(setup: Boolean = false, weekdays: Boolean = false) = "company_find?setup=$setup&weekdays=$weekdays"
     fun company(id: String, setup: Boolean, weekdays: Boolean) = "company/$id?setup=$setup&weekdays=$weekdays"
@@ -432,13 +434,25 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         val fresh = info == null || info.firstInstallTime == info.lastUpdateTime
         mutableStateOf(com.bamnat.app.data.GuideStore.get(ctx).whatsNew(com.bamnat.app.BuildConfig.VERSION_CODE, fresh))
     }
+    // [ONBOARD-04] A phone set up before 1.22 keeps its own values; the update notice offers the rest once.
+    val recommendOff = remember {
+        val ctx = container.appContext
+        val info = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0) }.getOrNull()
+        val fresh = info == null || info.firstInstallTime == info.lastUpdateTime
+        val on = com.bamnat.app.data.RecommendedSettings.on(container.settingsRepository.current)
+        if (com.bamnat.core.consent.RecommendedPlan.offerOnce(fresh, container.consentStore.recommendOffered, on))
+            com.bamnat.core.consent.RecommendedPlan.offNow(on).size else 0
+    }
     if (whatsNew.value.isNotEmpty()) {
         val closeNew = {
             com.bamnat.app.data.GuideStore.get(container.appContext).whatsNewSeen(com.bamnat.app.BuildConfig.VERSION_CODE)
+            if (recommendOff > 0) container.consentStore.markRecommendOffered()
             whatsNew.value = emptyList()
         }
         com.bamnat.app.ui.guide.WhatsNewDialog(
             releases = whatsNew.value,
+            recommendOff = recommendOff,
+            onRecommend = { closeNew(); SettingsLinks.go(SettingsGo.RECOMMENDED) },
             onOpen = { id -> closeNew(); com.bamnat.core.guide.FeatureRegistry.get(id)?.let(com.bamnat.app.ui.guide.FeatureLinks::open) },
             onAsk = { closeNew(); com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "업데이트")) },
             onDismiss = closeNew,
@@ -1030,6 +1044,9 @@ private fun AppNavHost(
         }
         composable(Routes.FEATURES) { com.bamnat.app.ui.guide.FeatureSwitchesScreen(onBack = { nav.popFrom(Routes.FEATURES) }) }
         composable(Routes.PRO) { com.bamnat.app.ui.pro.ProScreen(onBack = { nav.popFrom(Routes.PRO) }) }
+        composable(Routes.RECOMMENDED) {
+            com.bamnat.app.ui.onboarding.RecommendedScreen(container, firstStart = false, onDone = { nav.popFrom(Routes.RECOMMENDED) })
+        }
         composable(Routes.EXTRA_KINDS, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
             val vm = appViewModel(key = "extra_kinds_$calendar") { ExtraKindsViewModel(it, calendar) }
@@ -1166,6 +1183,7 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.INQUIRY -> com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(help = true))
         Place.FEATURES -> screen(Routes.FEATURES)
         Place.PRO -> screen(Routes.PRO)
+        Place.RECOMMENDED -> screen(Routes.RECOMMENDED)
         Place.SETTINGS_WORK, Place.SETTINGS_ALARM, Place.SETTINGS_REST, Place.SETTINGS_NOTICES, Place.SETTINGS_PAY,
         Place.SETTINGS_CALENDAR, Place.SETTINGS_DATA, Place.SETTINGS_PRIVACY ->
             link.place.settingsPage()?.let { SettingsLinks.open(it, link.focus) }
@@ -1185,6 +1203,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.BOARD -> Routes.COMPANY_BOARD
     SettingsGo.FEATURES -> Routes.FEATURES
     SettingsGo.PRO -> Routes.PRO
+    SettingsGo.RECOMMENDED -> Routes.RECOMMENDED
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,
     SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT, SettingsGo.COMMUTE -> null
 }

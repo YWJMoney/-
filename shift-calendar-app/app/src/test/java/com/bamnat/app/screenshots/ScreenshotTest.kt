@@ -1,6 +1,7 @@
 package com.bamnat.app.screenshots
 
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import com.bamnat.app.share.MonthImage
 import com.bamnat.core.model.LeaveKind
 import com.bamnat.core.model.Leave
@@ -1746,36 +1747,6 @@ class ScreenshotTest {
         settingsPage("데이터")
     }
 
-    // ---- [ONBOARD-01][ONBOARD-02] First-start consent pages ----
-    private fun consent(items: Set<ConsentItem> = ConsentItem.entries.toSet(), then: Screen.() -> Unit = {}): Screen.() -> Unit {
-        val c = app.container
-        c.consentStore.forget()
-        c.consentStore.availableForTest = items
-        return fresh(null, then)
-    }
-
-    @Test fun foldedConsentIntro() = shoot("180_folded_consent_intro", FOLDED, consent())
-    @Test fun unfoldedConsentIntro() = shoot("181_unfolded_consent_intro", UNFOLDED, consent())
-    @Test fun foldedConsentNotifications() = shoot("182_folded_consent_notifications", FOLDED, run {
-        shadowOf(app.getSystemService(android.app.NotificationManager::class.java)).setNotificationsEnabled(false)
-        consent { tapText("하나씩 알아보기") }
-    })
-    @Test fun foldedConsentSleepAsk() = shoot("183_folded_consent_sleep_ask", FOLDED,
-        consent(setOf(ConsentItem.SLEEP, ConsentItem.CALENDAR)) { tapText("하나씩 알아보기") })
-    @Test fun foldedConsentSleepHealth() = shoot("184_folded_consent_sleep_health", FOLDED,
-        consent(setOf(ConsentItem.SLEEP, ConsentItem.CALENDAR)) { tapText("하나씩 알아보기"); tapText("네, 차고 자요") })
-    @Test fun foldedConsentSleepNone() = shoot("185_folded_consent_sleep_none", FOLDED,
-        consent(setOf(ConsentItem.SLEEP, ConsentItem.CALENDAR)) { tapText("하나씩 알아보기"); tapText("아니요, 없어요") })
-    @Test fun foldedConsentCalendar() = shoot("186_folded_consent_calendar", FOLDED,
-        consent(setOf(ConsentItem.CALENDAR)) { tapText("하나씩 알아보기") })
-    @Test fun consentPagesLeadToTheFirstSetup() = shoot("187_folded_consent_then_setup", FOLDED,
-        consent(setOf(ConsentItem.CALENDAR)) {
-            tapText("하나씩 알아보기"); tapText("나중에 할게요")
-            // The first setup comes next, and the pages do not come back.
-            tapText("순서가 돌아가요")
-            assertTrue(app.container.consentStore.seen.value!!.contains(ConsentItem.CALENDAR))
-        })
-
     // ---- [SCHED-01] A memo that names a time ----
     @Test fun foldedMemoScheduleOffer() = shoot("188_folded_memo_schedule_offer", FOLDED) {
         tab(2, wide = false); tapText("건강검진 오전 9시")
@@ -2747,6 +2718,47 @@ class ScreenshotTest {
     @Test fun unfoldedBusinessDaySales() = shoot("258_unfolded_business_day_sales", UNFOLDED, style(WorkStyle.BUSINESS) {
         reveal("순수익", exact = true, across = 0.75f)
     })
+
+    // ==== 1.22 묶음 G ====
+    // [ONBOARD-03][ONBOARD-04] 추천 기능 한 번에 켜기, in place of the consent pages of 1.13~1.21.
+    private fun recommended(items: Set<ConsentItem> = ConsentItem.entries.toSet(), then: Screen.() -> Unit = {}): Screen.() -> Unit {
+        val c = app.container
+        c.consentStore.forget()
+        c.consentStore.availableForTest = items
+        return fresh(null, then)
+    }
+
+    @Test fun foldedRecommended() = shoot("520_folded_recommended", FOLDED, run {
+        shadowOf(app.getSystemService(android.app.NotificationManager::class.java)).setNotificationsEnabled(false)
+        recommended()
+    })
+    @Test fun unfoldedRecommended() = shoot("521_unfolded_recommended", UNFOLDED, recommended())
+    @Test fun phoneRecommendedHugeText() = shoot("522_phone_recommended_huge_text", PHONE, fontScale = 2f, recommended())
+    @Test fun recommendedLaterLeadsToTheFirstSetupWithFeaturesOn() = shoot("523_folded_recommended_then_setup", FOLDED,
+        recommended(setOf(ConsentItem.CALENDAR)) {
+            tapText("허용은 나중에 할게요")
+            // The first setup comes next, the screen does not come back, and the recommended features are on.
+            tapText("순서가 돌아가요")
+            val c = app.container
+            assertTrue(c.consentStore.seen.value!!.contains(ConsentItem.CALENDAR))
+            assertTrue(c.consentStore.recommendOffered)
+            assertEquals(com.bamnat.core.consent.RecommendedPlan.NEW_INSTALL, com.bamnat.app.data.RecommendedSettings.on(c.settingsRepository.current))
+        })
+    @Test fun foldedRecommendedFromSettings() = shoot("524_folded_recommended_settings", FOLDED) {
+        // A phone set up before keeps its own values: two on, two off.
+        app.container.settingsRepository.update { it.copy(briefing = true, todayShiftNotice = true, bedtimeNotice = false, commuteNotice = false) }
+        com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.RECOMMENDED)
+        settle()
+        tapText("퇴근길 안전")
+        tapText("이대로 저장")
+        val on = com.bamnat.app.data.RecommendedSettings.on(app.container.settingsRepository.current)
+        assertTrue("the switch tapped is saved", com.bamnat.core.consent.RecommendedFeature.COMMUTE in on)
+        assertTrue("the one left off stays off", com.bamnat.core.consent.RecommendedFeature.BEDTIME !in on)
+    }
+    @Test fun phoneWhatsNewRecommends() = shoot("525_phone_whats_new_recommend", PHONE) {
+        content { com.bamnat.app.ui.guide.WhatsNewDialog(com.bamnat.core.guide.WhatsNew.releases.take(1), {}, {}, {}, recommendOff = 2) }
+    }
+
 }
 
 /** [SHR-02] The share server for screenshots: links people sent, answered at once. */

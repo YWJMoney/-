@@ -20,6 +20,8 @@ enum class SettingsGo {
     FEATURES,
     /** [MON-04] 프로. */
     PRO,
+    /** [ONBOARD-04] 추천 기능 한 번에 켜기. */
+    RECOMMENDED,
 }
 
 /** [UX-04] Where a link inside the app goes: one group of settings (and the row to point at), or a screen. */
