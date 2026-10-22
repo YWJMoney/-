@@ -1604,11 +1604,6 @@ private fun PaintBar(
                     leadingIcon = { Icon(Icons.Filled.Autorenew, contentDescription = null) },
                     modifier = Modifier.semantics { contentDescription = "패턴대로 되돌리기" },
                 )
-                // [NURS-01] Day after day from a keypad, instead of picking and tapping each one.
-                onTypeMonth?.let { open ->
-                    AssistChip(onClick = open, label = { Text("한 달 연달아") },
-                        leadingIcon = { Icon(Icons.Outlined.Keyboard, contentDescription = null, Modifier.size(18.dp)) })
-                }
                 // [CAL-09] Leave and 알람 끄기 painted like shifts, for work kept in shifts.
                 if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS || snapshot.hasPattern) {
                     VerticalDivider(Modifier.height(32.dp).align(Alignment.CenterVertically))
@@ -1627,6 +1622,12 @@ private fun PaintBar(
                             modifier = Modifier.semantics { contentDescription = "${m.label} 칠하기" },
                         )
                     }
+                }
+                // [NURS-01] Day after day from a keypad, instead of picking and tapping each one; last, after
+                // the paint chips, since it opens a sheet rather than painting.
+                onTypeMonth?.let { open ->
+                    AssistChip(onClick = open, label = { Text("한 달 연달아") },
+                        leadingIcon = { Icon(Icons.Outlined.Keyboard, contentDescription = null, Modifier.size(18.dp)) })
                 }
             }
         }
