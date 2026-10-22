@@ -18,6 +18,20 @@ class BamnatApp : Application() {
         if (!BootAlarms.isLocked(this)) container
         StartupTrace.mark(StartupTrace.Step.APP)
     }
+
+    /**
+     * [QA-04] Never called on a phone (Android ends the process instead); Robolectric calls it when a test
+     * ends. The app's background jobs stop with it, so they cannot act on the next test's data: an earlier
+     * test's link sync or phone-calendar sync landing in a later test made ShareLinksProTest and
+     * PhoneCalendarTest fail only in the whole-app run.
+     */
+    override fun onTerminate() {
+        if (containerStarted()) container.appScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        super.onTerminate()
+    }
+
+    private fun containerStarted() = (this::class.java.getDeclaredField("container\$delegate")
+        .apply { isAccessible = true }.get(this) as Lazy<*>).isInitialized()
 }
 
 val Context.appContainer: AppContainer

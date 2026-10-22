@@ -82,7 +82,7 @@ SHR-08,"USE_EXACT_ALARM 선언, Android 14 복원 후 권한 거부, 권한 해�
 SHR-09,"로컬 우선, 서버 저장 시 책임 발생 → 서버는 링크 공유에만, 근무 데이터 최소화",2 (1.22.0),완료,,"docs/server-data.md 원칙·표 (2026-10-22 점검, 서버는 링크·회사 규칙·광장·문의·구독 확인만)"
 SHR-10,"Supabase 1주 비활동 일시정지, Firebase 일 쓰기 한도 → 백엔드 선택 기준에 반영(5.5)",2 (1.22.0),완료,,"docs/server-data.md '백엔드를 고른 기준', research/1.22-서버법령.md 6장 (Cloudflare 무료 한도 원문)"
 LIFE-01,"허브 1개 + 모듈, 검색 의도가 다른 것만 별도 앱 → 이 문서의 구조 원칙",상시,대기,,
-LIFE-02,"#3 급여·수당, #12 연차·휴무 연결, #1 스마트 알람, #2 수면, #4 가족·커플 → 각 모듈",1~3,대기,,
+LIFE-02,"#3 급여·수당, #12 연차·휴무 연결, #1 스마트 알람, #2 수면, #4 가족·커플 → 각 모듈",1~3 (1.22.0),완료,,"모듈 연결 점검(순번 111, 2026-10-22): 연차→급여·원장·알림·정산·알람·수면·워치·공유/함께 보기, 알람→수면, 수면→알림 모두 같은 ResolvedDay로 이어짐(계획/1.22-F 문서 표). 끊긴 곳 1곳 이음: 연차로 길게 쉬기가 남은 연차를 봄(LeaveBridges.fits·shortNote). 시험 core LifeLinksTest 3개, LeaveBridgesTest 2개. 오전 반차는 다음 판 후보"
 LIFE-03,#11·#33 근무표 사진 입력 → 인식 정확도 시험(기기 내 텍스트 인식) 후 결정,2,조건부,G-OCR-ROSTER,
 LIFE-04,#32 위젯·잠금화면 팩 → 기본 위젯 안정화 뒤 스타일 추가,3,대기,,
 LIFE-05,"#7 식사·단식 타이머, #8 복약 알림, #10 변동소득 가계부 → 모듈로만. 수면 카드·급여 리포트 사용 데이터를 보고",3,조건부,G-LIFE,
@@ -188,7 +188,7 @@ DAY-03,"되돌리기 안내가 시트에 가려지고 초기화가 바로 실행
 VIS-01,"밝은 배지에서 글자가 잘 안 보이고 상태 색이 섞임 → 배지 글자 대비, 상태 색 정리, 알람 끈 날 달력 표시",확장 M9,완료,,"1.9.0(M9): 주말·추가 근무 글자 4.5:1(Theme), 배지 글자 대비·글꼴(ShiftIcons), 상태 색 CalendarColors(alarmOff·changed·income·expense), 알람 끈 날 달력 표시(MonthGrid), 떠 있는 버튼 5개 화면 읽기 이름, 날짜 제목 잘림 고침(DayHeader); 스크린샷 1·5·97"
 QA-02,화면 캡처 테스트가 고정 좌표로 눌러 다른 화면이 찍힘 → 글자로 찾아 누르기,확장 M9,완료,,"1.9.0(M9): ScreenshotTest가 글자로 찾아 누름(tapText·reveal·openDay·openGroup·selectDay), 못 찾으면 화면에 보이는 글자를 알려 줌, 열린 창(Dialog)도 찍음, Compose 적용 지연을 settle에서 처리; 화면 사진 테스트 103개(새 사진 94~104·102b)"
 QA-03,ShareLinksProTest가 앱 전체 실행에서만 실패(순번 286) → 원인을 찾아 고치고 전체 실행으로 확인,1.22.0,완료,,"원인: 데이터를 따라 5초 뒤 링크를 다시 보내는 ShareSync가 달력을 지우는 사이에 답을 받아 옛 ShareLinkStore로 막 지운 설정 파일에 링크를 다시 씀(느린 전체 실행에서만). ShareLinkStore.retire()·AppContainer.forgetShareLinks, ShareLinksProTest.aSendStillOnItsWayDoesNotBringAForgottenLinkBack(고치기 전 실패 확인), 앱 전체 실행 830개 통과(2026-10-22)"
-QA-04,PhoneCalendarTest.writesALocalCalendarAndKeepsItInStep가 앱 전체 실행에서만 실패(통합 실행 1.22.0) → 원인을 찾아 고치고 전체 실행으로 확인,1.22.0,완료,,"원인: 앞 시험의 앱이 계속 돌며(권한 있음, 가짜 캘린더 저장소는 모든 앱이 같이 씀) 3초 뒤 PhoneCalendarSync가 설정에 없는 밤낮 캘린더를 지움. 4초 기다리면 혼자서도 재현. PhoneCalendarTest @After와 직접 쓰는 시험 시작에서 앱 백그라운드 작업 멈춤(앱 코드는 맞게 동작해서 그대로)"
+QA-04,PhoneCalendarTest.writesALocalCalendarAndKeepsItInStep가 앱 전체 실행에서만 실패(통합 실행 1.22.0) → 원인을 찾아 고치고 전체 실행으로 확인,1.22.0,완료,,"원인: 앞 시험의 앱이 계속 돌며(권한 있음, 가짜 캘린더 저장소는 모든 앱이 같이 씀) 3초 뒤 PhoneCalendarSync가 설정에 없는 밤낮 캘린더를 지움. 4초 기다리면 혼자서도 재현. PhoneCalendarTest @After와 직접 쓰는 시험 시작에서 앱 백그라운드 작업 멈춤(앱 코드는 맞게 동작해서 그대로). 통합 실행에서 다른 시험 클래스의 앱도 같은 일을 해서 다시 실패 → BamnatApp.onTerminate(Robolectric이 시험 끝에 부름, 폰에서는 불리지 않음)가 앱의 백그라운드 작업을 멈춤, TestIsolationTest(고치기 전 실패 확인)"
 PERF-01,"성능 예산(순번 25): 손으로 쓴 Baseline Profile + profileinstaller, 시작 작업 예산 시험(컨테이너·첫 달까지 시간, 시작 때 도는 작업 수, 늦게 만들 것), 실기기 측정은 사용자",1.22.0,완료,,"app/src/main/baseline-prof.txt, BaselineProfileRulesTest 3개, StartupBudgetTest 4개, StartupTrace·ReportDrawnWhen, Play 결제 클라이언트 늦게 만들기(AppContainer.playBilling)"
 A11Y-01,"글자색 대비(순번 28): 밝은·어두운 테마 글자 4.5:1, 테두리·점 3:1(WCAG 2.1 1.4.3·1.4.11)",1.22.0,완료,,"ContrastTest 3개, Theme.kt 밝은 테마 secondary·tertiary·error·일요일·경고·휴일근무·바꾼 날·수입·지출 색 진하게"
 A11Y-02,"터치 영역·이름 자동 점검(순번 28): 주요 화면 10곳에서 누를 수 있는 것 터치 48dp·보이는 24dp 이상, 이름 있음. TalkBack 손 점검은 사용자",1.22.0,완료,,"AccessibilityCheckTest 4개, 화면 사진 510~519, build/a11y 보고"

@@ -56,6 +56,7 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.UndoMessage
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.pro.ProLock
+import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.app.ui.work.DateField
 import com.bamnat.app.ui.work.Hint
@@ -194,7 +195,7 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
                 LinesCard(s, allLines, onAll = { allLines = true }) { id -> ui.launch { opened = vm.entry(id) } }
             }
             item { PayoutCard(s, profile, gate, vm) }
-            snapshot?.let { snap -> item { BridgesCard(snap, style) } }
+            snapshot?.let { snap -> item { BridgesCard(snap, style, left = s?.afterPlanned) } }
             item { Spacer(Modifier.height(24.dp)) }
         }
     }
@@ -343,9 +344,10 @@ private fun PayoutCard(s: LeaveSummary?, profile: PayProfile?, gate: Gate, vm: L
 
 /** [LEAVE-04] 징검다리 for the calendar's kind of work: 공휴일 for a 일근 calendar, the roster's own days off otherwise. */
 @Composable
-private fun BridgesCard(snap: ScheduleSnapshot, style: WorkStyle?) {
+private fun BridgesCard(snap: ScheduleSnapshot, style: WorkStyle?, left: Double?) {
     val today = remember { LocalDate.now() }
-    val bridges = remember(snap, style, today) { LeaveBridges.of(snap, style, today) }
+    // [LIFE-02] The ones the 연차 left can cover come first; the rest stay, marked, since more may arise before then.
+    val bridges = remember(snap, style, today, left) { LeaveBridges.of(snap, style, today).sortedByDescending { LeaveBridges.fits(it, left) } }
     if (bridges.isEmpty()) return
     SectionCard(title = "연차로 길게 쉬기") {
         bridges.take(8).forEach { b ->
@@ -355,6 +357,9 @@ private fun BridgesCard(snap: ScheduleSnapshot, style: WorkStyle?) {
                         style = MaterialTheme.typography.bodyLarge.merge(NumberStyle))
                     Text("연차: " + b.leave.joinToString(", ") { "${Fmt.shortDate(it)}(${Fmt.dayOfWeekShort(it.dayOfWeek)})" },
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    LeaveBridges.shortNote(b, left)?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+                    }
                 }
                 Text(b.text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             }
