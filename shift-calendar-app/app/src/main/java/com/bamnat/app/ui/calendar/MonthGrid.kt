@@ -80,6 +80,8 @@ import com.bamnat.core.hours.WorkHoursCalculator
 import com.bamnat.core.schedule.DaySource
 import com.bamnat.core.schedule.ResolvedDay
 import com.bamnat.core.work.CalendarFocus
+import com.bamnat.core.work.HourlyWork
+import com.bamnat.core.work.DayWork
 import androidx.compose.material.icons.automirrored.outlined.NoteAdd
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Work
@@ -154,6 +156,8 @@ internal class MonthMoneyCells(
     /** Jobs starting on each date. */
     val starts: Map<LocalDate, Int>,
     private val bestSales: Long,
+    /** [FLD-04] The jobs on each day, for field work's client-coloured bars. */
+    val field: Map<LocalDate, List<com.bamnat.core.money.Job>> = emptyMap(),
 ) {
     /** [CAL-06] How strong a shop's day was against the month's best, 0 for a day without sales. */
     fun heat(date: LocalDate): Float =
@@ -176,7 +180,8 @@ internal class MonthMoneyCells(
             }
             val sales = money.sales.filter { it.date in from..to && it.sales > 0 }.associate { it.date to it.sales }
             val starts = money.jobs.filter { it.date in from..to }.groupingBy { it.date }.eachCount()
-            return MonthMoneyCells(days, spans, sales, starts, sales.values.maxOrNull() ?: 0)
+            return MonthMoneyCells(days, spans, sales, starts, sales.values.maxOrNull() ?: 0,
+                if (money.style == com.bamnat.core.work.WorkStyle.FIELD) fieldJobsOf(money, from, to) else emptyMap())
         }
     }
 }
@@ -212,6 +217,12 @@ fun MonthGrid(
     onLongPress: ((LocalDate) -> Unit)? = null,
     /** [CAL-09] The first day of a range being painted. */
     rangeFrom: LocalDate? = null,
+    /** [HRLY-02][HRLY-03] An 알바 calendar: times and pay in the cells, a 주휴 mark on each week. */
+    hourly: HourlyCells? = null,
+    /** [DAYW-01] A day calendar: working days that just follow the pattern show no badge. */
+    quietWorkDays: Boolean = false,
+    /** [INV-01] An investor calendar: days tinted by what they earned, trades and dates marked. */
+    invest: com.bamnat.app.ui.invest.InvestCells? = null,
 ) {
     val cal = LocalCalendarColors.current
     val haptics = LocalHapticFeedback.current
@@ -219,6 +230,7 @@ fun MonthGrid(
     val cells = remember(money, month, firstCell) {
         MonthMoneyCells.of(money, listOf(month), firstCell, firstCell.plusDays(GRID_ROWS * 7L - 1))
     }
+    val cardDue = rememberCardDue(money)
     // Days under the finger while painting, shown at once and written when it lifts.
     var dragged by remember { mutableStateOf<List<LocalDate>>(emptyList()) }
     val paint by rememberUpdatedState(onPaint)
@@ -265,6 +277,7 @@ fun MonthGrid(
         for (row in 0 until GRID_ROWS) {
             val rowStart = firstCell.plusWeeks(row.toLong())
             val week = remember(calculator, rowStart) { calculator.week(rowStart) }
+            val holidayWeek = hourly?.let { h -> remember(snapshot, rowStart, h) { HourlyWork.weekEndingIn(rowStart, h.holidayWeekStart, snapshot.resolver::resolve) } }
             // [CAL-01] A week over the limit gets a bar at its left instead of a tint that mixes with the shifts' colors.
             val barColor = cal.warning
             Row(
@@ -308,8 +321,14 @@ fun MonthGrid(
                         startsHere = cells.starts[date] ?: 0,
                         sales = cells.sales[date],
                         heat = if (focus == CalendarFocus.SALES && inMonth) cells.heat(date) else 0f,
+                        fieldJobs = cells.field[date],
+                        cardDue = date in cardDue,
                         onLongPress = onLongPress?.let { f -> { f(date) } },
                         isRangeStart = date == rangeFrom,
+                        hourly = hourly,
+                        holidayWeekDone = col == 6 && holidayWeek?.holidayPay == true,
+                        quietWorkDays = quietWorkDays,
+                        invest = invest,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         weekNote = if (col == 0 && week.overLimit) {
                             "이 주 ${HoursFormat.hours(week.totalMinutes.toDouble())}시간, ${weeklyLimitHours}시간 넘음"
@@ -344,11 +363,16 @@ fun WeekStrip(
     showMoney: Boolean = false,
     memoTexts: Map<LocalDate, String> = emptyMap(),
     focus: CalendarFocus = CalendarFocus.SHIFTS,
+    hourly: HourlyCells? = null,
+    /** [DAYW-01] As in [MonthGrid]. */
+    quietWorkDays: Boolean = false,
+    invest: com.bamnat.app.ui.invest.InvestCells? = null,
 ) {
     val month = YearMonth.from(selected)
     val cells = remember(money, monday) {
         MonthMoneyCells.of(money, listOf(YearMonth.from(monday), YearMonth.from(monday.plusDays(6))), monday, monday.plusDays(6))
     }
+    val cardDue = rememberCardDue(money)
     Row(modifier.fillMaxWidth().height(cellHeight).padding(start = WEEK_BAR_SPACE)) {
         for (col in 0 until 7) {
             val date = monday.plusDays(col.toLong())
@@ -372,6 +396,11 @@ fun WeekStrip(
                 span = cells.spans[date],
                 startsHere = cells.starts[date] ?: 0,
                 sales = cells.sales[date],
+                fieldJobs = cells.field[date],
+                cardDue = date in cardDue,
+                hourly = hourly,
+                quietWorkDays = quietWorkDays,
+                invest = invest,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
         }
@@ -406,6 +435,16 @@ private fun DayCell(
     heat: Float = 0f,
     onLongPress: (() -> Unit)? = null,
     isRangeStart: Boolean = false,
+    /** [FLD-04] Field work's jobs on this day, drawn in their clients' colours. */
+    fieldJobs: List<com.bamnat.core.money.Job>? = null,
+    /** [SHOP-02] A card deposit is expected this day. */
+    cardDue: Boolean = false,
+    hourly: HourlyCells? = null,
+    holidayWeekDone: Boolean = false,
+    /** [DAYW-01] Leave out the badge of a working day that just follows the pattern; TalkBack still says it. */
+    quietWorkDays: Boolean = false,
+    /** [INV-01][INV-14] An investor calendar's day: tinted red or blue by its result, its trades and dates marked. */
+    invest: com.bamnat.app.ui.invest.InvestCells? = null,
 ) {
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
@@ -431,7 +470,7 @@ private fun DayCell(
     // Working days are tinted with their shift's color so the month reads at a glance.
     // A 대근 on a day off tints the cell with the covered shift [EXTRA-01].
     val dark = isDarkSurface()
-    val tint = (type?.takeIf { !it.isOff && day.leave?.isFullDay != true } ?: day.coveredShift)
+    val tint = invest?.tint(date, cal.sunday, cal.saturday, dark) ?: (type?.takeIf { !it.isOff && day.leave?.isFullDay != true } ?: day.coveredShift)
         ?.colorArgb?.asColor()?.copy(alpha = if (dark) 0.22f else 0.13f)
         ?: cal.income.takeIf { heat > 0f }?.copy(alpha = heat * if (dark) 0.30f else 0.20f)
     val jobs = money?.jobs ?: 0
@@ -458,6 +497,9 @@ private fun DayCell(
         // [VIS-02] Said the way the day screen says it.
         if (day.alarmSkipped) append(", 알람 꺼짐")
         if (hasMemo) append(", 메모 있음")
+        fieldUnitsText(fieldJobs)?.let { append(", ").append(it) }
+        fieldJobs?.filter { it.status == com.bamnat.core.money.JobStatus.TENTATIVE || it.cancelled }?.forEach { append(", ‘${it.title}’ ${it.status.label}") }
+        if (cardDue) append(", 카드 입금 예정")
         span?.let { append(", ‘${it.title}’ ${it.days}일 중 ${it.nth}일째") }
         money?.let { m ->
             if (m.jobs > 0 && (span == null || m.jobs > 1)) append(", 일감 ${m.jobs}건")
@@ -466,6 +508,10 @@ private fun DayCell(
             if (m.unpaid > 0) append(", 받을 돈 ").append(Fmt.won(m.unpaid))
         }
         weekNote?.let { append(", ").append(it) }
+        // [HRLY-01][HRLY-02]
+        day.entry?.attendance?.let { append(", ").append(it.label) }
+        if (holidayWeekDone) append(", 이 주 주휴 충족")
+        invest?.describe(date)?.let { append(", ").append(it) }
     }
 
     Box(
@@ -546,14 +592,20 @@ private fun DayCell(
                         modifier = Modifier.align(Alignment.TopStart).size(13.dp))
                 }
                 topStart?.let { Box(Modifier.align(Alignment.TopStart)) { CornerMark(it) } }
+                if (invest?.hasEvent(date) == true && topStart == null && !alarmOff) com.bamnat.app.ui.invest.InvestEventDot(Modifier.align(Alignment.TopStart))
+                else if (cardDue && topStart == null && !alarmOff) CardDueMark(Modifier.align(Alignment.TopStart))
+                else if (holidayWeekDone && topStart == null && !alarmOff) HolidayWeekCheck(Modifier.align(Alignment.TopStart).padding(start = 2.dp))
             }
             val fullLeave = day.leave?.takeIf { it.isFullDay }
+            val hourlyRange = hourly?.let { HourlyWork.timeRange(day) }
             val covered = day.coveredShift
             val badgeKind = day.extras.firstOrNull()?.kind?.takeIf { !day.isWorkDay && covered == null && day.leave == null }
             // [CAL-05] For field and shop work a job outranks a day-off mark; a painted 휴무 is not the day's news.
             val jobFirst = focus != CalendarFocus.SHIFTS && jobs > 0 && (type == null || type.isOff) && !day.hasCustomTimes &&
                 fullLeave == null && covered == null && badgeKind == null
-            if (jobFirst) {
+            if (jobFirst && !fieldJobs.isNullOrEmpty()) {
+                FieldJobMarks(fieldJobs, date)
+            } else if (jobFirst) {
                 JobMark(span = span, count = if (span != null && startsHere == 0) 0 else jobs, owed = (money?.unpaid ?: 0) > 0 || span?.owed == true && span.first)
             } else if (fullLeave != null) {
                 // A whole day of leave shows the leave instead of the shift it replaced [FEAT-10].
@@ -570,7 +622,13 @@ private fun DayCell(
             } else if (badgeKind != null) {
                 // [EXTRA-01] Other extra work on a day off (특근 09–18): the kind itself is the day's mark.
                 ExtraKindMark(badgeKind, size = 22.dp)
-            } else if (type != null || day.hasCustomTimes) {
+            } else if (hourly != null && hourlyRange != null) {
+                // [HRLY-03] An 알바 day's hours are its mark, not the shift code.
+                HourlyTimeMark(day, hourlyRange)
+            } else if (invest != null && invest.trades(date) > 0 && (type == null || type.isOff)) {
+                // [INV-01] A day with trades: how many.
+                com.bamnat.app.ui.invest.InvestDayMark(invest, date)
+            } else if ((type != null || day.hasCustomTimes) && !(quietWorkDays && DayWork.isRoutine(day))) {
                 ShiftBadge(type = type, text = type?.label ?: "근", size = 22.dp, outlined = type?.isOff == true)
             } else {
                 Spacer(Modifier.height(22.dp))
@@ -578,10 +636,18 @@ private fun DayCell(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                 val extraMinutes = day.extraMinutes
                 // [CAL-05] A shop's cell says its sales; field work says what came in.
-                val moneyText = if (!showMoney) null else (sales?.takeIf { focus == CalendarFocus.SALES } ?: money?.income?.takeIf { it != 0L })
-                    ?.let { Fmt.wonShort(it) }
+                val moneyText = (if (!showMoney) null else (sales?.takeIf { focus == CalendarFocus.SALES } ?: money?.income?.takeIf { it != 0L })
+                    ?.let { Fmt.wonShort(it) })
+                    // [HRLY-03] An 알바 day says what it earned.
+                    ?: hourly?.payText(day)
+                // [INV-01] An investor's day says what it earned or lost.
+                val investText = invest?.footer(date)
+                // [FLD-02] A day-rate day says its 공수 ("1공", "0.5") under the bar.
+                val unitsText = if (focus == CalendarFocus.JOBS) fieldUnitsText(fieldJobs) else null
                 val footer = when {
                     memoText != null -> memoText
+                    investText != null -> investText
+                    unitsText != null -> unitsText
                     moneyText != null -> moneyText
                     extraMinutes > 0 -> "+" + HoursFormat.short(extraMinutes)
                     // [FEAT-05] Lunar date takes the place of the hours when turned on.
@@ -600,11 +666,13 @@ private fun DayCell(
                     overflow = TextOverflow.Clip,
                     color = when {
                         memoText != null -> cal.memoDot
+                        investText != null && invest != null -> com.bamnat.app.ui.invest.investFooterColor(invest, date)
+                        unitsText != null -> scheme.onSurface
                         moneyText != null -> if ((sales ?: money?.income ?: 0L) < 0) cal.expense else cal.income
                         extraMinutes > 0 -> cal.holidayWork
                         else -> scheme.onSurfaceVariant
                     },
-                    fontWeight = if (extraMinutes > 0 || moneyText != null) FontWeight.Bold else FontWeight.Normal,
+                    fontWeight = if (extraMinutes > 0 || moneyText != null || investText != null) FontWeight.Bold else FontWeight.Normal,
                     style = NumberStyle,
                 )
                 if (hasMemo && memoText == null) {
@@ -745,10 +813,13 @@ internal sealed interface Corner {
     /** [CAL-06] A side job (부업) on a shift worker's day; amber while money is owed. */
     data class Job(val owed: Boolean) : Corner
     data object Changed : Corner
+    /** [HRLY-01] 지각·조퇴·결근. */
+    data class Attend(val attendance: com.bamnat.core.model.Attendance) : Corner
 }
 
 /** The corner marks of a day, in order; 알람 꺼짐 has its own place and is not among them. */
 private fun cornerMarks(day: ResolvedDay, job: Boolean? = null): List<Corner> = buildList {
+    day.entry?.attendance?.let { add(Corner.Attend(it)) }
     job?.let { add(Corner.Job(it)) }
     // [EXTRA-01] On a day off whose only work is extra work, the first kind is the day's badge, not a corner.
     val kinds = day.extras.map { it.kind }.distinctBy { it.id }
@@ -767,5 +838,6 @@ internal fun CornerMark(mark: Corner) {
             tint = if (mark.owed) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.secondary)
         // Days the user changed by hand.
         Corner.Changed -> Box(Modifier.padding(2.dp).size(5.dp).clip(CircleShape).background(LocalCalendarColors.current.changed))
+        is Corner.Attend -> AttendanceMark(mark.attendance)
     }
 }

@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -45,6 +46,15 @@ enum class MemoSort(val label: String) { UPDATED("최근 수정순"), CREATED("�
 /** One date in the calendar memo list, with what was worked that day. */
 data class MemoDateGroup(val date: LocalDate, val day: ResolvedDay?, val memos: List<Memo>)
 
+/**
+ * [MEMO-01] Whose shift to show beside [memos]' date: the calendar on screen when one of them is its own
+ * or on every calendar, else the one calendar they all belong to; null (no shift) for several others.
+ */
+internal fun shiftCalendar(memos: List<Memo>, active: String): String? {
+    if (memos.any { it.onEveryCalendar || active in it.owners }) return active
+    return memos.flatMapTo(HashSet()) { it.owners }.singleOrNull()
+}
+
 data class MemoListState(
     val loaded: Boolean = false,
     val tab: MemoTab = MemoTab.CALENDAR,
@@ -64,7 +74,13 @@ data class MemoListState(
     val tags: List<String> = emptyList(),
     val selection: Set<Long> = emptySet(),
     val trashCount: Int = 0,
+    /** [NOTE-02] The notebook shown, and the calendars to choose from (one: no notebooks at all). */
+    val notebook: com.bamnat.core.memo.MemoNotebook = com.bamnat.core.memo.MemoNotebook.CALENDAR,
+    val calendars: List<com.bamnat.app.data.PersonalCalendar> = emptyList(),
+    val activeCalendar: String = com.bamnat.app.data.PersonalCalendar.MAIN,
 ) {
+    val manyCalendars: Boolean get() = calendars.size > 1
+    val activeName: String get() = calendars.firstOrNull { it.id == activeCalendar }?.name ?: com.bamnat.app.data.PersonalCalendar.MAIN_NAME
     val selecting: Boolean get() = selection.isNotEmpty()
     val shownCount: Int
         get() = if (tab == MemoTab.CALENDAR) upcoming.sumOf { it.memos.size } + past.sumOf { it.memos.size } else general.size
@@ -88,20 +104,40 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
     private val selection = MutableStateFlow<Set<Long>>(emptySet())
     private var visibleIds: Set<Long> = emptySet()
 
+    private data class Where(
+        val notebook: com.bamnat.core.memo.MemoNotebook,
+        val calendars: List<com.bamnat.app.data.PersonalCalendar>,
+        val active: String,
+        val sharing: com.bamnat.core.memo.MemoSharing,
+    )
+
+    /** [NOTE-02][MEMO-01] The notebook, the calendar it is read for and who shares memos; the calendar's own schedule names the days. */
+    private val where = combine(container.memoNotebook, container.calendars.calendars, container.calendars.active, repo.sharing) { n, list, a, sh ->
+        Where(n, list, a, sh)
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val state: StateFlow<MemoListState> = combine(
         repo.memos,
-        container.scheduleRepository.snapshot,
+        // [MEMO-01] Every calendar's schedule: a date's shift is read from the calendar its memos belong to.
+        where.flatMapLatest { w ->
+            val ids = (listOf(w.active) + w.calendars.map { it.id }).distinct()
+            combine(ids.map { id -> container.calendars.repository(id).snapshot.map { id to it } }) { w to it.toMap() }
+        },
         q,
         selection,
         repo.trash.map { it.size },
-    ) { all, snapshot, query, selected, trashCount ->
-        build(all, snapshot, query, selected, trashCount, LocalDate.now())
+    ) { all, (w, snapshots), query, selected, trashCount ->
+        val notebook = if (w.calendars.size > 1) w.notebook else com.bamnat.core.memo.MemoNotebook.ALL
+        build(all.filter { notebook.shows(it, w.active, w.sharing) }, w.active, snapshots, query, selected, trashCount, LocalDate.now())
+            .copy(notebook = notebook, calendars = w.calendars, activeCalendar = w.active)
     }.flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MemoListState())
 
     private fun build(
         all: List<Memo>,
-        snapshot: ScheduleSnapshot,
+        active: String,
+        snapshots: Map<String, ScheduleSnapshot>,
         query: MemoQuery,
         selected: Set<Long>,
         trashCount: Int,
@@ -132,7 +168,7 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
                 }
             }
             val groups = filtered.groupBy { it.date!! }.map { (date, memos) ->
-                MemoDateGroup(date, snapshot.resolver.resolve(date), memos.sortedWith(MemoOrdering))
+                MemoDateGroup(date, shiftCalendar(memos, active)?.let { snapshots[it] }?.resolver?.resolve(date), memos.sortedWith(MemoOrdering))
             }
             upcoming = groups.filter { !it.date.isBefore(today) }.sortedBy { it.date }
             past = groups.filter { it.date.isBefore(today) }.sortedByDescending { it.date }
@@ -173,6 +209,19 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
             selection = selected.filterTo(HashSet()) { id -> all.any { it.id == id } },
             trashCount = trashCount,
         )
+    }
+
+    /** [NOTE-02] Shows another notebook; new memos are written into it. */
+    fun setNotebook(n: com.bamnat.core.memo.MemoNotebook) {
+        container.memoNotebook.value = n
+        clearSelection()
+    }
+
+    /** [NOTE-02] Shares the selected memos with these calendars (empty for every calendar). */
+    fun shareSelected(calendars: Set<String>) {
+        val memos = selectedMemos()
+        viewModelScope.launch { repo.setCalendars(memos, calendars) }
+        clearSelection()
     }
 
     fun setTab(tab: MemoTab) {
@@ -265,6 +314,8 @@ class MemoEditorViewModel(
     private val memoId: Long,
     initialDate: LocalDate?,
     startAsChecklist: Boolean,
+    /** Started from the memo tab, so a new memo goes into the notebook shown there; from the calendar, to that calendar. */
+    fromNotebook: Boolean = false,
 ) : ViewModel() {
     private val repo = container.memoRepository
     private val saveMutex = Mutex()
@@ -276,8 +327,16 @@ class MemoEditorViewModel(
             date = initialDate,
             isChecklist = startAsChecklist,
             checklist = if (startAsChecklist) listOf(ChecklistItem("")) else emptyList(),
+            // [NOTE-01][MEMO-01] A new memo belongs to the calendar on screen only, even with one calendar (a
+            // calendar added later does not see it), or to every one when written in the shared notebook.
+            calendars = if (fromNotebook && container.calendars.calendars.value.size > 1) {
+                container.memoNotebook.value.newMemoCalendars(container.calendars.active.value)
+            } else setOf(container.calendars.active.value),
         ),
     )
+
+    /** [NOTE-02] The user's calendars, for 어느 달력에 보일까요. */
+    val calendars: StateFlow<List<com.bamnat.app.data.PersonalCalendar>> = container.calendars.calendars
     val memo: StateFlow<Memo> = _memo.asStateFlow()
 
     private val _loaded = MutableStateFlow(memoId == 0L)
@@ -358,12 +417,30 @@ class MemoEditorViewModel(
     fun setBody(body: String) = update { it.copy(body = body) }
     fun setColor(index: Int) = update { it.copy(colorIndex = index) }
     fun togglePinned() = update { it.copy(pinned = !it.pinned) }
-    fun setDate(date: LocalDate?) = update { it.copy(date = date) }
+    /** [NOTE-05] A repeat follows the new date (same kind, its weekday or day), and goes with the date. */
+    fun setDate(date: LocalDate?) = update {
+        val kind = com.bamnat.core.memo.MemoRepeat.kindOf(it.repeat)
+        it.copy(date = date, repeat = date?.let { d -> com.bamnat.core.memo.MemoRepeat.code(kind, d) }.orEmpty())
+    }
 
-    /** What was worked on the memo's date, shown next to the date. */
-    val day: StateFlow<ResolvedDay?> = combine(_memo.map { it.date }.distinctUntilChanged(),
-        container.scheduleRepository.snapshot) { date, snapshot ->
-        date?.let { snapshot.resolver.resolve(it) }
+    /** [NOTE-05] How a dated memo comes back: every week on its weekday, every month on its day, every year. */
+    fun setRepeat(kind: com.bamnat.core.memo.MemoRepeat.Kind) = update {
+        val date = it.date ?: return@update it
+        it.copy(repeat = com.bamnat.core.memo.MemoRepeat.code(kind, date))
+    }
+    /** [NOTE-02][MEMO-01] The calendars the memo shows on; [com.bamnat.core.memo.MemoCalendars.EVERY] for every calendar. */
+    fun setCalendars(ids: Set<String>) = update { it.copy(calendars = ids) }
+
+    /**
+     * What was worked on the memo's date, shown next to the date: on the calendar the memo belongs to
+     * [MEMO-01], none for a memo of several other calendars.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val day: StateFlow<ResolvedDay?> = combine(_memo.map { it.date to it }, container.calendars.active) { (date, m), active ->
+        date to shiftCalendar(listOf(m), active)?.takeIf { container.calendars.get(it) != null }
+    }.distinctUntilChanged().flatMapLatest { (date, cal) ->
+        if (date == null || cal == null) kotlinx.coroutines.flow.flowOf(null)
+        else container.calendars.repository(cal).snapshot.map { it.resolver.resolve(date) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**

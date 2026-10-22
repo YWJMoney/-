@@ -42,11 +42,13 @@ data class ScheduleSnapshot(
     val entries: List<DayEntry>,
     /** [EXTRA-01] The user's kinds of extra work: where each piece sits on the clock and its name. */
     val kinds: ExtraKinds = ExtraKinds(),
+    /** [HRLY-05] 법정 휴게 자동 빼기 from the calendar's pay setup, so hours match pay. */
+    val legalBreaks: Boolean = false,
 ) {
     constructor(shiftTypes: List<ShiftType>, pattern: WorkPattern?, entries: List<DayEntry>, kinds: ExtraKinds = ExtraKinds()) :
         this(shiftTypes, listOfNotNull(pattern), entries, kinds)
 
-    val resolver: ScheduleResolver by lazy { ScheduleResolver(shiftTypes, patterns, entries, kinds) }
+    val resolver: ScheduleResolver by lazy { ScheduleResolver(shiftTypes, patterns, entries, kinds, legalBreaks) }
     val typesById: Map<Long, ShiftType> by lazy { shiftTypes.associateBy { it.id } }
     val isEmpty: Boolean get() = patterns.isEmpty() && entries.isEmpty()
     val hasPattern: Boolean get() = patterns.isNotEmpty()
@@ -282,6 +284,13 @@ class ScheduleRepository(
     }
 
     suspend fun clearPattern() = patternDao.clear()
+
+    /** [HRLY-11] 퇴사: the repeating schedule stops after [last]; days written by hand stay as they are. */
+    suspend fun endPatternsAfter(last: LocalDate) {
+        db.withTransaction {
+            replacePatterns(com.bamnat.core.work.QuitCheck.endPatterns(patternDao.getAll().mapNotNull { it.toModel() }, last))
+        }
+    }
 
     /** One day as stored, with its extra work; null when the day follows the pattern untouched. */
     private suspend fun readDay(epochDay: Long): DayEntry? {

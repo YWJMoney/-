@@ -34,6 +34,7 @@ fun ShiftTypeEntity.toModel() = ShiftType(
     sortOrder = sortOrder,
     icon = icon,
     breakStart = if (isOff) null else breakStartMinute?.toLocalTime(),
+    premiumPercent = premiumPercent.coerceIn(0, 300),
 )
 
 fun ShiftType.toEntity() = ShiftTypeEntity(
@@ -53,6 +54,7 @@ fun ShiftType.toEntity() = ShiftTypeEntity(
     alarmOffsets = AlarmCodec.encodeSpecs(alarms),
     icon = icon,
     breakStartMinute = breakStart?.toMinuteOfDay(),
+    premiumPercent = premiumPercent.coerceIn(0, 300),
 )
 
 internal fun encodeSteps(steps: List<Long?>): String = steps.joinToString(",") { it?.toString() ?: "" }
@@ -105,6 +107,8 @@ fun DayEntryEntity.toModel(extras: List<ExtraEntry> = emptyList()) = DayEntry(
     customAlarms = AlarmCodec.decodeDayAlarms(customAlarms),
     leave = Leave.fromCode(leave),
     extras = extras,
+    attendance = com.bamnat.core.model.Attendance.fromCode(attendance),
+    swapWith = swapWith,
 )
 
 fun DayEntry.toEntity() = DayEntryEntity(
@@ -121,6 +125,8 @@ fun DayEntry.toEntity() = DayEntryEntity(
     alarmSkipped = alarmSkipped,
     customAlarms = AlarmCodec.encodeDayAlarms(customAlarms),
     leave = leave?.code ?: 0,
+    attendance = attendance?.code ?: 0,
+    swapWith = swapWith.trim(),
 )
 
 fun DayExtraEntity.toModel() = ExtraEntry(
@@ -171,6 +177,8 @@ fun MemoEntity.toModel() = Memo(
     deletedAtMillis = deletedAt,
     reminder = memoReminder(remindAt, remindRing, remindNotify),
     reminderAsked = remindAsked,
+    calendars = com.bamnat.core.memo.MemoCalendars.decode(calendars),
+    repeat = repeat,
 )
 
 /** [SCHED-01] A stored schedule, or null when it is unreadable or neither rings nor notifies. */
@@ -196,4 +204,6 @@ fun Memo.toEntity() = MemoEntity(
     remindRing = reminder?.ring == true,
     remindNotify = reminder?.notify == true,
     remindAsked = reminderAsked,
+    calendars = com.bamnat.core.memo.MemoCalendars.encode(calendars),
+    repeat = repeat,
 )

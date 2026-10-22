@@ -29,8 +29,14 @@ data class PersonalCalendar(
     val style: WorkStyle? = null,
     /** [MCAL-01] Its shifts ring like the main calendar's; the main calendar follows the master switch only. */
     val alarms: Boolean = true,
+    /** [TYPE-03] For a shop: its hours and regular days off; null until set. */
+    val shop: com.bamnat.core.work.ShopRules? = null,
     /** False while its first setup is still being answered; such a calendar is not listed yet. */
     val ready: Boolean = true,
+    /** [FLD-01] For field work: 일당(공수)형 or 건별형, the day rate and the last 업체; null until set. */
+    val field: com.bamnat.core.money.FieldRules? = null,
+    /** [SHOP-02] For a shop: card fee and settlement days, opening cash, the sales target and VAT type; null until set. */
+    val shopMoney: com.bamnat.core.work.ShopMoney? = null,
     val createdAt: Long = 0,
 ) {
     val isMain: Boolean get() = id == MAIN
@@ -83,15 +89,18 @@ sealed interface CalendarKey {
 /** Where added calendars keep their databases; tests use in-memory ones. */
 interface CalendarStorage {
     fun open(id: String): AppDatabase
-    fun delete(id: String, db: AppDatabase?)
+    /** [keepTools]: its work tools and contract photos stay, for a calendar a restore brings back. */
+    fun delete(id: String, db: AppDatabase?, keepTools: Boolean = false)
 
     class Files(private val context: android.content.Context) : CalendarStorage {
         override fun open(id: String): AppDatabase = AppDatabase.create(context, fileName(id))
-        override fun delete(id: String, db: AppDatabase?) {
+        override fun delete(id: String, db: AppDatabase?, keepTools: Boolean) {
             db?.close()
             context.deleteDatabase(fileName(id))
             // [MCAL-06] Its pay setup and closed months go with it.
-            filesOf(context, id).deleteRecursively()
+            val dir = filesOf(context, id)
+            if (!keepTools) dir.deleteRecursively()
+            else dir.listFiles()?.filter { it.name !in TOOL_FILES }?.forEach { it.deleteRecursively() }
         }
     }
 
@@ -101,6 +110,9 @@ interface CalendarStorage {
 
         /** [MCAL-06] An added calendar's other files (its pay setup), in app storage so backups carry them. */
         fun filesOf(context: android.content.Context, id: String) = File(context.filesDir, "calendars/$id")
+
+        /** [HRLY-10] What [WorkToolsStore] keeps there (contract photos are not in backups). */
+        val TOOL_FILES = setOf(WorkToolsStore.FILE, WorkToolsStore.PHOTOS)
     }
 }
 
@@ -121,7 +133,7 @@ class CalendarBook(
     /** [MCAL-06] The main calendar's money and pay; added calendars keep their own. */
     private val mainMoney: () -> MoneyRepository = { error("No money here") },
     private val mainPay: () -> com.bamnat.app.pay.PayStore = { error("No pay here") },
-    private val moneyOf: (AppDatabase) -> MoneyRepository = { MoneyRepository(it) },
+    private val moneyOf: (String, AppDatabase) -> MoneyRepository = { _, db -> MoneyRepository(db) },
     private val payOf: (String) -> com.bamnat.app.pay.PayStore = { error("No pay here") },
 ) {
     private data class State(val calendars: List<PersonalCalendar>, val order: List<String>, val active: String)
@@ -177,7 +189,7 @@ class CalendarBook(
     fun money(id: String): MoneyRepository {
         if (id == PersonalCalendar.MAIN || get(id) == null) return mainMoney()
         val o = opened(id)
-        return o.money ?: moneyOf(o.db).also { o.money = it }
+        return o.money ?: moneyOf(id, o.db).also { o.money = it }
     }
 
     /**
@@ -192,7 +204,8 @@ class CalendarBook(
     /** [MCAL-06] [everyMoney] read now, from a notice's receiver. */
     suspend fun everyMoneyNow(): com.bamnat.core.money.MoneyBook = merged(_calendars.value.map { cal ->
         val m = money(cal.id)
-        com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed(), m.allReceivables(), m.allAccounts())
+        com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed(), m.allReceivables(), m.allAccounts(), style = m.currentStyle())
+            .holdUnconfirmed(m.holdFrom())
     })
 
     /** [LEDG-08] Accounts and repeating lines keep to their own calendar ([com.bamnat.core.money.MoneyBook.merge]). */
@@ -276,13 +289,46 @@ class CalendarBook(
 
     fun recolor(id: String, color: Long) = update(id) { it.copy(color = color) }
 
+    /** [CALS-02] An added calendar's kind of work, changed from its own settings; the main one's lives in settings. */
+    fun setStyle(id: String, style: WorkStyle) {
+        if (id != PersonalCalendar.MAIN) update(id) { it.copy(style = style) }
+    }
+
+    /** [TYPE-03] A calendar's shop days: hours, regular days off and 임시휴무 by itself. */
+    fun setShop(id: String, rules: com.bamnat.core.work.ShopRules?) {
+        update(id) { it.copy(shop = rules) }
+    }
+
+    /**
+     * [TYPE-04] Changes a calendar's shop rules from their current value (or the defaults, so 기능 스위치 can turn
+     * '매출 없으면 휴무' off before the shop days were set), so two writers do not undo each other.
+     */
+    fun updateShop(id: String, transform: (com.bamnat.core.work.ShopRules) -> com.bamnat.core.work.ShopRules) {
+        update(id) { c -> c.copy(shop = transform(c.shop ?: com.bamnat.core.work.ShopRules())) }
+    }
+
+    /** [FLD-01] Changes a calendar's field settings from their current value (or the defaults). */
+    fun updateField(id: String, transform: (com.bamnat.core.money.FieldRules) -> com.bamnat.core.money.FieldRules) {
+        update(id) { c -> c.copy(field = transform(c.field ?: com.bamnat.core.money.FieldRules())) }
+    }
+
+    /** [SHOP-02] Changes a calendar's shop money settings from their current value (or the defaults). */
+    fun updateShopMoney(id: String, transform: (com.bamnat.core.work.ShopMoney) -> com.bamnat.core.work.ShopMoney) {
+        update(id) { c -> c.copy(shopMoney = transform(c.shopMoney ?: com.bamnat.core.work.ShopMoney())) }
+    }
+
+    /** [CALS-02] The kind of work of calendar [id]: an added one's own, the main one's from [mainStyle]. */
+    fun styleOf(id: String, mainStyle: WorkStyle?): WorkStyle? = get(id)?.takeIf { !it.isMain }?.style ?: mainStyle
+
     fun setAlarms(id: String, on: Boolean) {
         if (id != PersonalCalendar.MAIN) update(id) { it.copy(alarms = on) }
     }
 
     /** [MCAL-01] Removes an added calendar and everything in it. The main calendar cannot go. */
+    fun delete(id: String) = delete(id, keepTools = false)
+
     @Synchronized
-    fun delete(id: String) {
+    private fun delete(id: String, keepTools: Boolean) {
         if (id == PersonalCalendar.MAIN || get(id) == null) return
         val db = synchronized(this) { pays.remove(id); open.remove(id)?.db }
         val s = state.value
@@ -291,7 +337,23 @@ class CalendarBook(
             order = s.order.filter { it != CalendarKey.Mine(id).key },
             active = if (s.active == id) PersonalCalendar.MAIN else s.active,
         ))
-        runCatching { storage.delete(id, db) }
+        runCatching { storage.delete(id, db, keepTools) }
+    }
+
+    /**
+     * [UNDO-01][UNDO-03] Puts a calendar's entry back as [RecordsTrash] kept it: for a calendar still
+     * here only its kind of work and shop or field settings (its name and colour stay as they are now);
+     * a removed one comes back whole with the same id, listed at [order] when given.
+     */
+    @Synchronized
+    fun restoreEntry(cal: PersonalCalendar, order: List<String>?) {
+        if (get(cal.id) != null) {
+            update(cal.id) { it.copy(style = if (it.isMain) it.style else cal.style, shop = cal.shop, field = cal.field, shopMoney = cal.shopMoney) }
+            return
+        }
+        if (cal.isMain) return
+        val s = state.value
+        write(s.copy(calendars = s.calendars + cal.copy(ready = true), order = order ?: s.order))
     }
 
     /** [MCAL-04] Stores the list exactly as the user placed it. */
@@ -306,16 +368,23 @@ class CalendarBook(
      */
     fun added(): List<PersonalCalendar> = all.filter { !it.isMain && it.ready }
 
-    /** [MCAL-05] A restore replaces the added calendars with the backup's, ids and order kept. */
+    /**
+     * [MCAL-05] A restore replaces the added calendars with the backup's, ids and order kept. One that
+     * comes back keeps its work tools and contract photos, which the backup restores over or lacks.
+     * Returns the ids that went for good.
+     */
     @Synchronized
-    fun replaceAdded(calendars: List<PersonalCalendar>, order: List<String>?) {
-        added().forEach { delete(it.id) }
+    fun replaceAdded(calendars: List<PersonalCalendar>, order: List<String>?): List<String> {
+        val back = calendars.map { it.id }.toSet()
+        val before = all.filter { !it.isMain }.map { it.id }
+        before.forEach { delete(it, keepTools = it in back) }
         val s = state.value
         val main = s.calendars.firstOrNull { it.isMain } ?: defaultMain()
         val restoredMain = calendars.firstOrNull { it.isMain }
-        val list = listOf(restoredMain?.let { main.copy(name = it.name, color = it.color) } ?: main) +
+        val list = listOf(restoredMain?.let { main.copy(name = it.name, color = it.color, shop = it.shop, field = it.field, shopMoney = it.shopMoney) } ?: main) +
             calendars.filter { !it.isMain }.map { it.copy(ready = true) }
         write(State(list, order ?: s.order, PersonalCalendar.MAIN))
+        return before.filter { it !in back }
     }
 
     @Synchronized
@@ -386,6 +455,9 @@ class CalendarBook(
         fun PersonalCalendar.toJson(): JSONObject = JSONObject()
             .put("id", id).put("name", name).put("color", color).putOpt("style", style?.name)
             .put("alarms", alarms).put("ready", ready).put("created", createdAt)
+            .putOpt("shop", shop?.let(::shopJson))
+            .putOpt("field", field?.let(::fieldJson))
+            .putOpt("shopMoney", shopMoney?.let(::shopMoneyJson))
 
         fun fromJson(o: JSONObject): PersonalCalendar? {
             val id = o.optString("id").takeIf { it.isNotEmpty() && it.length <= 40 && it.all { c -> c.isLetterOrDigit() } } ?: return null
@@ -397,7 +469,62 @@ class CalendarBook(
                 alarms = o.optBoolean("alarms", true),
                 ready = o.optBoolean("ready", true),
                 createdAt = o.optLong("created"),
+                shop = o.optJSONObject("shop")?.let(::shopOf),
+                field = o.optJSONObject("field")?.let(::fieldOf),
+                shopMoney = o.optJSONObject("shopMoney")?.let(::shopMoneyOf),
             )
         }
+
+        /** [FLD-01] */
+        fun fieldJson(r: com.bamnat.core.money.FieldRules): JSONObject = JSONObject()
+            .putOpt("mode", r.mode?.name).put("rate", r.dayRate).put("client", r.lastClient)
+            .putOpt("notMatched", r.notMatched.takeIf { it.isNotEmpty() }?.joinToString(","))
+
+        fun fieldOf(o: JSONObject): com.bamnat.core.money.FieldRules = com.bamnat.core.money.FieldRules(
+            mode = o.optString("mode").takeIf { it.isNotEmpty() }?.let { m -> runCatching { com.bamnat.core.money.FieldMode.valueOf(m) }.getOrNull() },
+            dayRate = o.optLong("rate").coerceAtLeast(0),
+            lastClient = o.optString("client").take(30),
+            notMatched = o.optString("notMatched").split(',').mapNotNull { it.toLongOrNull() },
+        )
+
+        /** [SHOP-02] */
+        fun shopMoneyJson(r: com.bamnat.core.work.ShopMoney): JSONObject = JSONObject()
+            .put("feeBp", r.cardFeeBp).put("settleDays", r.settleDays).put("opening", r.openingCash)
+            .put("target", r.monthlyTarget).put("simpleTax", r.simpleTax).put("valueAdded", r.valueAddedPercent)
+
+        fun shopMoneyOf(o: JSONObject): com.bamnat.core.work.ShopMoney {
+            val d = com.bamnat.core.work.ShopMoney()
+            return com.bamnat.core.work.ShopMoney(
+                cardFeeBp = o.optInt("feeBp", d.cardFeeBp).coerceIn(0, 1000),
+                settleDays = o.optInt("settleDays", d.settleDays).coerceIn(0, 30),
+                openingCash = o.optLong("opening").coerceAtLeast(0),
+                monthlyTarget = o.optLong("target").coerceAtLeast(0),
+                simpleTax = o.optBoolean("simpleTax"),
+                valueAddedPercent = o.optInt("valueAdded", d.valueAddedPercent).coerceIn(0, 100),
+            )
+        }
+
+        /** [TYPE-03] */
+        fun shopJson(r: com.bamnat.core.work.ShopRules): JSONObject = JSONObject()
+            .put("open", r.open.toString()).put("close", r.close.toString())
+            .put("closed", r.closedWeekdays.joinToString(",") { it.name })
+            .put("monthly", com.bamnat.core.work.NthWeekday.encode(r.monthly))
+            .put("holidays", r.holidaysClosed).put("auto", r.autoClosed)
+            .putOpt("checked", r.checkedUntil?.toString())
+            .putOpt("autoDays", r.autoClosedDays.sorted().joinToString(",").ifEmpty { null })
+
+        /** A shop entry that cannot be read is left unset rather than turned into default rules. */
+        fun shopOf(o: JSONObject): com.bamnat.core.work.ShopRules? = runCatching {
+            com.bamnat.core.work.ShopRules(
+                open = java.time.LocalTime.parse(o.optString("open", "10:00")),
+                close = java.time.LocalTime.parse(o.optString("close", "22:00")),
+                closedWeekdays = o.optString("closed").split(',').mapNotNull { n -> runCatching { java.time.DayOfWeek.valueOf(n) }.getOrNull() }.toSet(),
+                monthly = com.bamnat.core.work.NthWeekday.decode(o.optString("monthly")),
+                holidaysClosed = o.optBoolean("holidays"),
+                autoClosed = o.optBoolean("auto", true),
+                checkedUntil = o.optString("checked").takeIf { it.isNotEmpty() }?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() },
+                autoClosedDays = o.optString("autoDays").split(',').mapNotNull { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }.toSet(),
+            )
+        }.getOrNull()
     }
 }

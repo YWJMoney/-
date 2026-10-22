@@ -13,6 +13,7 @@ import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationManagerCompat
 import com.bamnat.app.appContainer
 import com.bamnat.core.money.PaymentParser
+import com.bamnat.core.money.ShopCapture
 import kotlinx.coroutines.launch
 
 /**
@@ -44,10 +45,14 @@ class CaptureService : NotificationListenerService() {
             val big = ex.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.trim().orEmpty()
             bodies += big.ifEmpty { ex.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty() }
         }
-        val found = bodies.map { "$title\n$it".trim() }.filter { PaymentParser.looksFinancial(it) }
+        val appName = lazy {
+            runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString() }
+                .getOrDefault(sbn.packageName)
+        }
+        // [SHOP-08] A delivery app's order or a card terminal's approval is read too, for a shop calendar.
+        val found = bodies.map { "$title\n$it".trim() }.filter { PaymentParser.looksFinancial(it) || ShopCapture.looksLikeSale(sbn.packageName, appName.value, it) }
         if (found.isEmpty()) return
-        val app = runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString() }
-            .getOrDefault(sbn.packageName)
+        val app = appName.value
         val container = applicationContext.appContainer
         // [LEDG-22] Listed for the user to turn off even when it is off already; then their filter.
         val prefs = container.autoRecordPrefs
@@ -56,10 +61,12 @@ class CaptureService : NotificationListenerService() {
         val texts = found.filter { !filter.drops(sbn.packageName, it) }
         if (texts.isEmpty()) return
         val messenger = sbn.packageName in MESSENGERS
+        val pkg = sbn.packageName
         container.appScope.launch {
             texts.forEach { text ->
                 // Any text from any app reaches the parser; one it trips on must not take the app down.
-                runCatching { container.moneyRepository.capture(text, app, sbn.postTime, messenger) }
+                // [CALS-04] Written into the calendar its card, account or app belongs to, and only there.
+                runCatching { container.capture(text, pkg, app, sbn.postTime, messenger) }
             }
         }
     }

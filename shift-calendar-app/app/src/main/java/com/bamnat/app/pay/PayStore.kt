@@ -195,6 +195,12 @@ object PayCodec {
         .putOpt("verified", p.verified?.let(::verified))
         // [PAYS-06] Rules in the user's own words; an empty list is left out so older files stay the same.
         .apply { if (p.customRules.isNotEmpty()) put("customRules", JSONArray(p.customRules.map(::customRule))) }
+        // [HRLY-04..HRLY-07] 알바 settings, left out at their defaults so older files stay the same.
+        .apply { if (p.taxMode != com.bamnat.core.pay.TaxMode.NONE) put("taxMode", p.taxMode.name) }
+        .apply { if (p.legalBreaks) put("legalBreaks", true) }
+        .putOpt("probationEnd", p.probationEnd?.toString())
+        .apply { if (p.probationPercent != 90) put("probationPercent", p.probationPercent) }
+        .putOpt("holidayWeekStart", p.holidayWeekStart?.name)
 
     fun decode(o: JSONObject): PayProfile = PayProfile(
         // [PAYS-03] A job or wage type from a newer version reads as 직접 설정 and 월급제 rather than failing the file.
@@ -218,6 +224,11 @@ object PayCodec {
         annual = o.optJSONObject("annual")?.let(::annualFrom),
         verified = o.optJSONObject("verified")?.let(::verifiedFrom),
         customRules = o.optJSONArray("customRules").objects().mapNotNull(::customRuleFrom).take(CustomRule.MAX),
+        taxMode = com.bamnat.core.pay.TaxMode.entries.firstOrNull { it.name == o.optString("taxMode") } ?: com.bamnat.core.pay.TaxMode.NONE,
+        legalBreaks = o.optBoolean("legalBreaks", false),
+        probationEnd = o.optString("probationEnd").takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
+        probationPercent = o.optInt("probationPercent", 90).coerceIn(50, 100),
+        holidayWeekStart = o.optString("holidayWeekStart").let { n -> DayOfWeek.entries.firstOrNull { it.name == n } },
     )
 
     /** [PAYS-06] One of the user's own rules. */

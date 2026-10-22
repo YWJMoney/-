@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.appContainer
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.tween
@@ -377,7 +378,7 @@ private fun DaySalesLine(sales: com.bamnat.core.money.DailySales) {
 @Composable
 private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings): List<DayToken> {
     val memos by vm.datedMemos.collectAsStateWithLifecycle()
-    val memoCount = remember(memos, day.date) { memos.count { it.date == day.date } }
+    val dayMemos = remember(memos, day.date) { memos.filter { it.date == day.date } }
     val alarms = remember(snapshot, day.date) { plannedAlarms(snapshot, day) }
     val rest = remember(snapshot, day.date, settings.restCheck, settings.strictRest) {
         if (settings.restCheck) vm.restIssuesOn(snapshot, day.date, settings.strictRest) else emptyList()
@@ -393,7 +394,13 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
         }
         if (day.extras.any { it.entry.needsReview }) add(DayToken("추가 근무 확인 필요", DayToken.Tone.WARNING))
         if (day.source == DaySource.OVERRIDE || day.hasCustomTimes) add(DayToken("직접 바꿈", DayToken.Tone.ACCENT))
-        if (memoCount > 0) add(DayToken("메모 $memoCount", DayToken.Tone.PLAIN))
+        // [NOTE-06] The first memo's title, cut to one line, and how many more there are.
+        dayMemos.firstOrNull()?.let { first ->
+            val title = first.title.ifBlank { first.preview }.lineSequence().firstOrNull().orEmpty().trim()
+            val shown = if (title.length > 14) title.take(13) + "…" else title
+            val more = if (dayMemos.size > 1) " 외 ${dayMemos.size - 1}" else ""
+            add(DayToken(if (shown.isEmpty()) "메모 ${dayMemos.size}" else "메모 · $shown$more", DayToken.Tone.PLAIN))
+        }
         rest.firstOrNull()?.let { add(DayToken(it.kind.label, DayToken.Tone.WARNING)) }
         // [CAL-01] A week over the limit is said in its own line under the header, with the limit.
     }
@@ -439,6 +446,10 @@ private fun QuickChips(
     val calendarAlarms by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
     var addingMoney by remember { mutableStateOf(false) }
     val book by vm.moneyBook.collectAsStateWithLifecycle()
+    // [HRLY-08][DAYW-03] Work run past midnight is clocked out on the day it started.
+    val now = rememberMinute()
+    val yesterday = { snapshot.resolver.resolve(today.minusDays(1)) }
+    val leaveDay = leaveNowDay(settings.workStyle, day, today, now, yesterday)
     val choices = remember(snapshot, day) {
         if (moneyFirst) emptyList() else {
             val (on, off) = ExtraText.choices(snapshot.kinds, snapshot.shiftTypes, day).partition { ExtraText.indexOf(day, it) >= 0 }
@@ -447,9 +458,18 @@ private fun QuickChips(
     }
     val alarms = remember(snapshot, day.date) { plannedAlarms(snapshot, day) }
     val log by vm.sleepLog.collectAsStateWithLifecycle()
+    // [FLD-01][FLD-02] A day-rate field calendar offers 공수 buttons instead of 일감 적기.
+    val calendar by vm.activeCalendar.collectAsStateWithLifecycle()
+    val calendars = androidx.compose.ui.platform.LocalContext.current.appContainer.calendars
+    val fieldRules = calendar.field ?: com.bamnat.core.money.FieldRules()
+    val dayRate = focus == CalendarFocus.JOBS && fieldRules.dayRateMode
     ChipRow(modifier, start = 12.dp, end = endSpace) {
+        if (dayRate) dayRateChips(day.date, book, fieldRules, onDelete = vm::deleteJob, onSave = { job, r ->
+            calendars.updateField(calendar.id) { it.copy(dayRate = r.dayRate, lastClient = r.lastClient) }
+            vm.saveJob(job)
+        })
         // [CAL-05] Field and shop work: the day's job or sales is the first chip.
-        focus.addLabel?.let { label ->
+        focus.addLabel?.takeIf { !dayRate }?.let { label ->
             val hasSales = focus == CalendarFocus.SALES && book.on(day.date).sales != null
             item {
                 AssistChip(
@@ -463,6 +483,10 @@ private fun QuickChips(
                 )
             }
         }
+        // [HRLY-01][HRLY-08] 알바: 출근·퇴근, 지각·조퇴·결근, 대타.
+        if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) hourlyChips(day, today, snapshot, vm, now)
+        // [DAYW-03] A day worker's 지금 퇴근, first on today's working day.
+        if (leaveDay != null) item { LeaveNowChip(leaveDay, vm, yesterday = leaveDay.date != day.date) }
         for (c in choices) item {
             val i = ExtraText.indexOf(day, c)
             FilterChip(
@@ -516,7 +540,16 @@ private fun QuickChips(
         }
     }
     if (addingMoney) {
-        if (focus == CalendarFocus.JOBS) {
+        // [FLD-01] The first 일감 적기 on a field calendar asks once how it counts its work.
+        if (focus == CalendarFocus.JOBS && calendar.field?.mode == null) {
+            FieldModePrompt { m ->
+                calendars.updateField(calendar.id) { it.copy(mode = m) }
+                if (m == com.bamnat.core.money.FieldMode.DAY_RATE) addingMoney = false
+            }
+        } else if (focus == CalendarFocus.INVEST) {
+            // [INV-03] 매매 기록 for this day.
+            com.bamnat.app.ui.invest.InvestQuickTrade(calendar.id, day.date, onDismiss = { addingMoney = false })
+        } else if (focus == CalendarFocus.JOBS) {
             com.bamnat.app.ui.money.JobDialog(day.date, null, onSave = { vm.saveJob(it); addingMoney = false }, onDismiss = { addingMoney = false })
         } else {
             com.bamnat.app.ui.money.SalesDialog(day.date, book.on(day.date).sales,

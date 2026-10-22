@@ -6,6 +6,10 @@ import com.bamnat.app.data.db.AppDatabase
 import com.bamnat.app.data.db.toEntity
 import com.bamnat.app.data.db.toModel
 import com.bamnat.core.memo.Memo
+import com.bamnat.core.memo.MemoRepeat
+import com.bamnat.core.memo.MemoSharing
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,7 +28,12 @@ data class DeletedMemos(val memos: List<Memo>) {
         }
 }
 
-class MemoRepository(private val db: AppDatabase, private val clock: () -> Long = System::currentTimeMillis) {
+class MemoRepository(
+    private val db: AppDatabase,
+    private val clock: () -> Long = System::currentTimeMillis,
+    /** [MEMO-02] Which calendars share memos (설정 › 메모 공유), gone calendars already left out; none by default. */
+    val sharing: Flow<MemoSharing> = flowOf(MemoSharing.SEPARATE),
+) {
     private val dao = db.memoDao()
 
     /** [STAB-01] Decoded off the main thread: checklists and all, for every memo. */
@@ -37,6 +46,38 @@ class MemoRepository(private val db: AppDatabase, private val clock: () -> Long 
 
     fun memosOn(date: LocalDate): Flow<List<Memo>> =
         dao.observeOn(date.toEpochDay()).map { list -> list.map { it.toModel() } }
+
+    /**
+     * [NOTE-01][MEMO-01] The memos of [date] that show on calendar [calendar] (its own, ones for every
+     * calendar, and those of calendars it shares memos with); [NOTE-05] repeating ones that come back that day too.
+     */
+    fun memosOn(date: LocalDate, calendar: String): Flow<List<Memo>> =
+        combine(memos, sharing) { list, sh -> list.filter { it.showsOn(calendar, sh) && MemoRepeat.occursOn(it, date) } }
+
+    /** [NOTE-01][MEMO-01] Dates with a memo that shows on calendar [calendar]; [NOTE-05] each day a repeating one comes back on. */
+    fun datesWithMemos(calendar: String): Flow<Set<LocalDate>> = combine(memos, sharing) { list, sh ->
+        val (from, to) = repeatWindow()
+        MemoRepeat.expand(list.filter { it.showsOn(calendar, sh) }, from, to).mapNotNullTo(HashSet()) { it.date }
+    }
+
+    /** [MEMO-01] Every memo calendar [calendar] sees, for its link and its views. */
+    fun memosFor(calendar: String): Flow<List<Memo>> = combine(memos, sharing) { list, sh -> list.filter { it.showsOn(calendar, sh) } }
+
+
+    /** [NOTE-02] Puts memos on the given calendars ([com.bamnat.core.memo.MemoCalendars.EVERY] for every calendar). */
+    suspend fun setCalendars(memos: Collection<Memo>, calendars: Set<String>) {
+        memos.filter { it.id != 0L && it.calendars != calendars }.forEach { m ->
+            dao.get(m.id)?.toModel()?.let { dao.update(it.copy(calendars = calendars).toEntity()) }
+        }
+    }
+
+    /** [NOTE-01] A calendar that goes away leaves its memos on the calendars it shared them with, or on 내 달력. */
+    suspend fun forgetCalendar(id: String) {
+        dao.getAll().map { it.toModel() }.filter { id in it.calendars }.forEach { m ->
+            val left = (m.calendars - id).ifEmpty { setOf(com.bamnat.app.data.PersonalCalendar.MAIN) }
+            dao.update(m.copy(calendars = left).toEntity())
+        }
+    }
 
     private val _lastDeleted = MutableStateFlow<DeletedMemos?>(null)
     /** The memos most recently moved to the trash, offered for undo until consumed. */
@@ -58,10 +99,10 @@ class MemoRepository(private val db: AppDatabase, private val clock: () -> Long 
     }
 
     /** Quick memo from the calendar: one line becomes the body. */
-    suspend fun addQuick(date: LocalDate?, text: String): Memo? {
+    suspend fun addQuick(date: LocalDate?, text: String, calendars: Set<String> = emptySet()): Memo? {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return null
-        return save(Memo(date = date, body = trimmed))
+        return save(Memo(date = date, body = trimmed, calendars = calendars))
     }
 
     /** Copies a memo (as a new, unpinned memo) and returns the copy. */
@@ -121,6 +162,10 @@ class MemoRepository(private val db: AppDatabase, private val clock: () -> Long 
     suspend fun purgeOldTrash() = dao.purgeTrash(clock() - TRASH_DAYS * DAY_MILLIS)
 
     companion object {
+        /** [NOTE-05] The days repeating memos are laid out on: a year back to three years on. */
+        fun repeatWindow(today: LocalDate = LocalDate.now()): Pair<LocalDate, LocalDate> =
+            today.minusYears(1).withDayOfMonth(1) to today.plusYears(3)
+
         const val TRASH_DAYS = 30L
         private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
     }

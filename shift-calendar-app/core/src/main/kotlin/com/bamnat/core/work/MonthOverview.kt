@@ -48,6 +48,8 @@ data class MonthOverview(
         CalendarFocus.SHIFTS -> workDays == 0 && leaveDays == 0.0
         CalendarFocus.JOBS -> jobs == 0 && jobDays == 0 && workDays == 0
         CalendarFocus.SALES -> openDays == 0 && sales == 0L && salesCosts == 0L
+        // [INV-01] The investor's month has its own bar from the trades; this one has nothing to say.
+        CalendarFocus.INVEST -> true
     }
 
     companion object {
@@ -63,8 +65,9 @@ data class MonthOverview(
             val days = resolver.resolveRange(first, last)
             val working = days.filter { it.totalMinutes > 0 }
             val leave = days.sumOf { d -> d.leave?.let { it.quarters / 4.0 } ?: 0.0 }
-            val started = jobs.filter { YearMonth.from(it.date) == month }
-            val running = jobs.filter { !it.lastDate.isBefore(first) && !it.date.isAfter(last) }
+            // [FLD-03] Cancelled jobs are not work.
+            val started = jobs.filter { YearMonth.from(it.date) == month && !it.cancelled }
+            val running = jobs.filter { !it.lastDate.isBefore(first) && !it.date.isAfter(last) && !it.cancelled }
             val jobDays = running.flatMap { j ->
                 generateSequence(maxOf(j.date, first)) { it.plusDays(1) }.takeWhile { !it.isAfter(minOf(j.lastDate, last)) }.toList()
             }.toSet().size

@@ -167,7 +167,7 @@ class SetupViewModel(
         val d = current
         when (style) {
             // Field and shop work are written day by day: nothing more to ask.
-            WorkStyle.FIELD, WorkStyle.BUSINESS -> save(SetupDraft(style = style))
+            WorkStyle.FIELD, WorkStyle.BUSINESS, WorkStyle.INVEST -> save(SetupDraft(style = style))
             else -> {
                 val same = d.style == style && d.rosterMonthly == (roster && style == WorkStyle.SHIFT)
                 val start = when {

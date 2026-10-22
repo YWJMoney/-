@@ -14,6 +14,10 @@ import kotlinx.coroutines.flow.getAndUpdate
 enum class SettingsGo {
     WORK_STYLE, PATTERN, SHIFT_TYPES, EXTRA_KINDS, PAY, CALENDARS, DIAGNOSTICS, INQUIRY, BOARD,
     SHARE, RECEIVE, SLEEP, CALENDAR_IMPORT,
+    /** [SHFT-06][SHFT-07][DAYW-06][DAYW-07] */
+    DUTY_ROSTER, HEALTH_REPORT, ATTENDANCE_IMPORT, COMMUTE,
+    /** [GUIDE-05] 기능 켜고 끄기. */
+    FEATURES,
 }
 
 /** [UX-04] Where a link inside the app goes: one group of settings (and the row to point at), or a screen. */
@@ -42,6 +46,10 @@ object SettingsLinks {
             SettingsGo.RECEIVE -> NoticeLinks.open(NoticeLinks.Target.RECEIVE)
             SettingsGo.SLEEP -> NoticeLinks.open(NoticeLinks.Target.SLEEP)
             SettingsGo.CALENDAR_IMPORT -> NoticeLinks.open(NoticeLinks.Target.CALENDAR_IMPORT)
+            SettingsGo.DUTY_ROSTER -> NoticeLinks.open(NoticeLinks.Target.DUTY_ROSTER)
+            SettingsGo.HEALTH_REPORT -> NoticeLinks.open(NoticeLinks.Target.HEALTH_REPORT)
+            SettingsGo.ATTENDANCE_IMPORT -> NoticeLinks.open(NoticeLinks.Target.ATTENDANCE_IMPORT)
+            SettingsGo.COMMUTE -> NoticeLinks.open(NoticeLinks.Target.COMMUTE)
             else -> _target.value = SettingsLink.Go(go)
         }
     }

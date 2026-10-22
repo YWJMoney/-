@@ -26,6 +26,8 @@ data class ShiftTypeEntity(
     @ColumnInfo(defaultValue = "NULL") val icon: String? = null,
     /** Minutes after midnight the break starts; null when unknown [PAY-01]. */
     @ColumnInfo(defaultValue = "NULL") val breakStartMinute: Int? = null,
+    /** Version 17 [SHFT-01]. */
+    @ColumnInfo(defaultValue = "0") val premiumPercent: Int = 0,
 )
 
 /**
@@ -73,6 +75,9 @@ data class DayEntryEntity(
     @ColumnInfo(defaultValue = "0") val leave: Int = 0,
     /** Version 5 to 11 [FEAT-02]; since version 12 a second shift is a [DayExtraEntity] covering it. */
     @ColumnInfo(defaultValue = "NULL") val secondShiftTypeId: Long? = null,
+    /** Version 17: [com.bamnat.core.model.Attendance.code], 0 for none [HRLY-01]; who the day was swapped with [SHFT-03]. */
+    @ColumnInfo(defaultValue = "0") val attendance: Int = 0,
+    @ColumnInfo(defaultValue = "''") val swapWith: String = "",
 ) {
     companion object {
         const val MODE_NONE = 0
@@ -124,4 +129,8 @@ data class MemoEntity(
     @ColumnInfo(defaultValue = "0") val remindNotify: Boolean = false,
     /** [SCHED-01] The found time the user last answered about. */
     @ColumnInfo(defaultValue = "NULL") val remindAsked: String? = null,
+    /** [NOTE-01] See [com.bamnat.core.memo.MemoCalendars]; '' is a memo from before calendars, 내 달력's alone. */
+    @ColumnInfo(defaultValue = "''") val calendars: String = "",
+    /** Version 17 [NOTE-05]. */
+    @ColumnInfo(defaultValue = "''") val repeat: String = "",
 )

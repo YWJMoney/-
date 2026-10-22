@@ -6,6 +6,8 @@ import android.content.pm.PackageManager
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.BuildConfig
+import com.bamnat.app.data.RecordsTrash
+import com.bamnat.core.work.WatchDays
 import com.bamnat.app.ui.calendar.SHARE_SERVER_NOTICE
 import com.bamnat.app.ui.calendar.partNames
 import com.bamnat.app.ui.settings.REPORT_EMAIL
@@ -125,5 +127,24 @@ class ShareServerTest {
         assertTrue(text.contains("1년 안에 지웁니다"))
         assertTrue(REPORT_NOTICE.contains("메일 주소"))
         assertTrue(REPORT_NOTICE.contains("지워요"))
+    }
+
+    /** [DAYW-07][SHFT-08][OPS-13] Policy 2.4: the location permissions the app asks for, the watch window and the 7-day trash, in the app's numbers. */
+    @Test fun thePrivacyPolicyCoversLocationAndTheWatch() {
+        val policy = File("../../privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val requested = context.packageManager
+            .getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS).requestedPermissions.orEmpty().toList()
+        assertTrue(requested.contains(Manifest.permission.ACCESS_BACKGROUND_LOCATION))
+        assertTrue(text.contains("2-5. 위치로 출퇴근 자동 기록"))
+        assertTrue(text.contains("백그라운드 위치"))
+        assertTrue(text.contains("끄면 회사 위치를 지웁니다") || text.contains("저장한 회사 위치를 지웁니다"))
+        assertFalse(text.contains("연락처, 위치,"))
+        assertTrue(text.contains("2-6. 워치 연동"))
+        assertTrue(text.contains("${WatchDays.DAYS}일 뒤까지"))
+        assertTrue(text.contains("운영자의 서버를 거치지 않습니다"))
+        assertTrue(text.contains("${RecordsTrash.KEEP_DAYS}일이 지나면 저절로 지움"))
     }
 }

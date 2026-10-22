@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [SHFT-08] What the tile looks like in the tile picker: a round face with today's shift. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="192dp"
+    android:height="192dp"
+    android:viewportWidth="192"
+    android:viewportHeight="192">
+    <path android:fillColor="#FF000000" android:pathData="M96,0a96,96 0,1 1,0 192a96,96 0,1 1,0 -192z" />
+    <path android:fillColor="#FF5C6475" android:pathData="M76,50h40a5,5 0,0 1,5 5a5,5 0,0 1,-5 5h-40a5,5 0,0 1,-5 -5a5,5 0,0 1,5 -5z" />
+    <path android:fillColor="#FF2F80ED" android:pathData="M56,70h80a12,12 0,0 1,12 12v16a12,12 0,0 1,-12 12h-80a12,12 0,0 1,-12 -12v-16a12,12 0,0 1,12 -12z" />
+    <path android:fillColor="#FF8E9AAF" android:pathData="M64,126h64a6,6 0,0 1,6 6a6,6 0,0 1,-6 6h-64a6,6 0,0 1,-6 -6a6,6 0,0 1,6 -6z" />
+</vector>

@@ -118,7 +118,7 @@ class PayViewModel(
         closed.value[month]?.total ?: calculate(profile, snapshot, month).total
 
     fun calculate(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): MonthPay =
-        calculator.calculate(profile.named(settings.value.extraKinds), month, snapshot.resolver::resolve)
+        calculator.calculate(profile.named(settings.value.extraKinds).hourlyWeek(settings.value), month, snapshot.resolver::resolve)
 
     /** A sample nurse profile on the user's own schedule, for the free preview and the first-time walkthrough. */
     fun sampleProfile(): PayProfile {
@@ -288,7 +288,7 @@ class PayViewModel(
 
     /** The month for the pay screen, with the range and the figures the cards compare. */
     suspend fun view(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): PayView = withContext(Dispatchers.Default) {
-        val p = profile.named(settings.value.extraKinds)
+        val p = profile.named(settings.value.extraKinds).hourlyWeek(settings.value)
         val resolve = snapshot.resolver::resolve
         val result = calculator.calculate(p, month, resolve)
         val range = if (Unknowns.of(p).isEmpty()) null else PayRange.of(p, month, resolve, calculator = calculator, rosterHours = rosterHours(p, snapshot, month))
@@ -325,7 +325,7 @@ class PayViewModel(
     /** [PAYS-02] The settings closest to [payslip]; nothing is saved until [applyMatch]. */
     suspend fun match(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth, payslip: Payslip): PayslipMatch {
         val match = withContext(Dispatchers.Default) {
-            PayslipMatcher.match(profile.named(settings.value.extraKinds), month, snapshot.resolver::resolve, payslip, calculator = calculator)
+            PayslipMatcher.match(profile.named(settings.value.extraKinds).hourlyWeek(settings.value), month, snapshot.resolver::resolve, payslip, calculator = calculator)
         }
         container.telemetry.event("pay_payslip_match", if (match.matched) "matched" else "gap")
         return match
@@ -336,7 +336,8 @@ class PayViewModel(
     /** What [made] does to [month] on top of [profile]: the amount (negative when it takes off) and how often it came up. */
     internal suspend fun effectOf(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth, made: MadeItem): ItemEffect =
         withContext(Dispatchers.Default) {
-            val p = profile.named(settings.value.extraKinds)
+            // The month as the pay screen works it out, 알바's 주휴 week included.
+            val p = profile.named(settings.value.extraKinds).hourlyWeek(settings.value)
             val resolve = snapshot.resolver::resolve
             val with = when (made) {
                 is MadeItem.Item -> p.copy(items = p.items.filterNot { it.id == made.item.id } + made.item)

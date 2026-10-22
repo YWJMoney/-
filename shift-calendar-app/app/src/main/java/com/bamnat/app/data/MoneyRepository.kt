@@ -2,6 +2,7 @@ package com.bamnat.app.data
 
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.Dispatchers
+import androidx.room.withTransaction
 import com.bamnat.app.data.db.AppDatabase
 import com.bamnat.app.data.db.CategoryRuleEntity
 import com.bamnat.app.data.db.decodeParts
@@ -27,6 +28,8 @@ import com.bamnat.core.money.Receivables
 import com.bamnat.core.money.Recurring
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -43,9 +46,15 @@ data class Capture(val id: Long, val postedAt: Long, val app: String, val text: 
  * [LEDG-01][WORK-02][WORK-03][LEDG-04][LEDG-05]. Everything stays on the phone.
  */
 class MoneyRepository(
-    db: AppDatabase,
+    private val db: AppDatabase,
     private val kept: CaptureStore = CaptureStore(null),
     private val clock: () -> Long = System::currentTimeMillis,
+    /** [TYPE-08] The calendar's kind of work, for its built-in categories. */
+    private val style: Flow<com.bamnat.core.work.WorkStyle?> = kotlinx.coroutines.flow.flowOf(null),
+    /** [COMN-04] 확인하고 적기: lines not yet confirmed stay out of the book's totals. */
+    private val confirmFirst: Flow<java.time.LocalDate?> = kotlinx.coroutines.flow.flowOf(null),
+    /** [LEDG-09] How far each self-writing line was caught up, so deleted lines stay deleted. */
+    private val marks: RecurringMarks = RecurringMarks(null),
 ) {
     private val dao = db.moneyDao()
 
@@ -72,7 +81,15 @@ class MoneyRepository(
     /** [STAB-01] Every ledger row is turned into a line off the main thread. */
     val book: Flow<MoneyBook> = combine(
         combine(entries, jobs, sales, fixed, receivables) { e, j, s, f, r -> MoneyBook(e, j, s, f, r) }, plans,
-    ) { b, (a, bu, c) -> b.copy(accounts = a, budgets = bu, categories = c) }.flowOn(Dispatchers.Default)
+    ) { b, (a, bu, c) -> b.copy(accounts = a, budgets = bu, categories = c) }
+        .combine(style.distinctUntilChanged()) { b, st -> b.copy(style = st) }
+        .combine(confirmFirst.distinctUntilChanged()) { b, from -> b.holdUnconfirmed(from) }.flowOn(Dispatchers.Default)
+
+    /** [SHOP-04] The calendar's kind of work now, for the tax deadlines that go with it. */
+    suspend fun currentStyle(): com.bamnat.core.work.WorkStyle? = style.firstOrNull()
+
+    /** [COMN-04] From when 확인하고 적기 holds lines back now, for a book read outside [book]. */
+    suspend fun holdFrom(): java.time.LocalDate? = confirmFirst.firstOrNull()
 
     /**
      * Inserts a new line or replaces the one with the same id; returns it with its id. When the user
@@ -128,16 +145,17 @@ class MoneyRepository(
     /**
      * [LEDG-08] Removes an account. One with lines is put away instead, so its old lines keep their
      * name and balances stay right; returns true when it was really removed. Cards that paid from a
-     * removed account no longer point at it.
+     * removed account, and repeating lines paid from it, no longer point at it.
      */
-    suspend fun remove(account: MoneyAccount): Boolean {
+    suspend fun remove(account: MoneyAccount): Boolean = db.withTransaction {
         if (dao.linesOfAccount(account.id) > 0) {
             dao.restoreAccount(account.copy(hidden = true).toEntity())
-            return false
+            return@withTransaction false
         }
         dao.deleteAccount(account.id)
         dao.allAccounts().filter { it.payFromId == account.id }.forEach { dao.restoreAccount(it.copy(payFromId = null)) }
-        return true
+        dao.unlinkFixedFromAccount(account.id)
+        true
     }
 
     /** [LEDG-08] Saves the user's order of accounts. */
@@ -156,18 +174,24 @@ class MoneyRepository(
 
     /**
      * [LEDG-14] Renames a category everywhere it is used: lines (split parts too), repeating
-     * lines, learned places and its budget, so nothing is left under the old name.
+     * lines, learned places and its budget, so nothing is left under the old name. Renamed onto a
+     * category that has a budget, that budget stays.
      */
     suspend fun renameCategory(kind: MoneyKind, from: String, to: String) {
         val name = MoneyCategories.clean(to)
         if (name.isEmpty() || name == from) return
+        db.withTransaction { renameCategoryNow(kind, from, name) }
+    }
+
+    private suspend fun renameCategoryNow(kind: MoneyKind, from: String, name: String) {
         dao.renameInEntries(kind.name, from, name)
         dao.renameInFixed(kind.name, from, name)
         if (kind == MoneyKind.EXPENSE) {
             dao.renameInRules(from, name)
-            dao.allBudgets().firstOrNull { it.category == from }?.let { b ->
+            val budgets = dao.allBudgets()
+            budgets.firstOrNull { it.category == from }?.let { b ->
                 dao.deleteBudget(from)
-                dao.upsertBudget(b.copy(category = name))
+                if (budgets.none { it.category == name }) dao.upsertBudget(b.copy(category = name))
             }
             val split = dao.entriesWithPart(from).filter { it.kind == kind.name }.mapNotNull { e ->
                 val parts = decodeParts(e.parts)
@@ -194,10 +218,15 @@ class MoneyRepository(
         if (costs.isEmpty()) return emptyList()
         val since = today.minusDays(Recurring.CATCH_UP_DAYS + 366)
         val lines = dao.entriesFrom(since.toEpochDay()).map { it.toModel() }
-        Recurring.due(costs, lines, today).map { save(it) }
+        val written = Recurring.due(costs, lines, today, marks.all()).map { save(it) }
+        marks.put(costs.filter { c -> marks.all()[c.id]?.isBefore(today) != false }.associate { it.id to today })
+        written
     }
 
     suspend fun markAllReviewed() = dao.markAllReviewed()
+
+    /** [COMN-04] Lines from 확인 대기함 confirmed: they count from now on. */
+    suspend fun confirm(list: List<MoneyEntry>) = saveAll(list.filter { !it.reviewed }.map { it.copy(reviewed = true) })
 
     suspend fun save(job: Job): Job =
         if (job.id == 0L) job.copy(id = dao.insertJob(job.toEntity())) else job.also { dao.restoreJob(it.toEntity()) }
@@ -263,8 +292,15 @@ class MoneyRepository(
 
     suspend fun clearSales(date: LocalDate) = dao.deleteSales(date.toEpochDay())
 
-    suspend fun save(cost: FixedCost): FixedCost =
-        if (cost.id == 0L) cost.copy(id = dao.insertFixed(cost.toEntity())) else cost.also { dao.restoreFixed(it.toEntity()) }
+    suspend fun save(cost: FixedCost): FixedCost {
+        val saved = if (cost.id == 0L) cost.copy(id = dao.insertFixed(cost.toEntity())) else cost.also { dao.restoreFixed(it.toEntity()) }
+        // [LEDG-09] A new line (its id may be a deleted one's) catches up from its first day; an older one
+        // set to write itself, from its first day or today, once.
+        if (saved.auto && (cost.id == 0L || saved.id !in marks.all())) {
+            marks.put(mapOf(saved.id to Recurring.startMark(saved, Instant.ofEpochMilli(clock()).atZone(ZoneId.systemDefault()).toLocalDate())))
+        }
+        return saved
+    }
 
     suspend fun delete(cost: FixedCost) = dao.deleteFixed(cost.id)
 
@@ -288,7 +324,14 @@ class MoneyRepository(
      * copy of the same payment is dropped; one the parser cannot finish is kept for the user (30 days).
      * Texts that are not payments are never stored.
      */
-    suspend fun capture(text: String, app: String, postedAt: Long, fromMessenger: Boolean = false): Outcome = captureLock.withLock {
+    /**
+     * [elsewhere] gives the same days' lines of the other calendars [CALS-04]: the card text can go to one
+     * calendar and the pay-app push for the same payment to another, and it is still one payment.
+     */
+    suspend fun capture(
+        text: String, app: String, postedAt: Long, fromMessenger: Boolean = false,
+        elsewhere: suspend (LocalDate) -> List<MoneyEntry> = { emptyList() },
+    ): Outcome = captureLock.withLock {
         // One at a time: the card text and the pay-app push for one payment often land together,
         // and both must not pass the duplicate check before either is saved.
         kept.purge(postedAt - KEEP_MILLIS)
@@ -317,6 +360,7 @@ class MoneyRepository(
         val day = parsed.date ?: arrived.toLocalDate()
         val recent = recent(day)
         if (PaymentParser.findDuplicate(parsed, day, recent) != null) return Outcome.DUPLICATE
+        if (PaymentParser.findDuplicate(parsed, day, elsewhere(day)) != null) return Outcome.DUPLICATE
         val category = if (parsed.type == PaymentParser.Type.CANCEL) {
             PaymentParser.findCancelTarget(parsed, day, recent)?.category ?: parsed.category
         } else parsed.category

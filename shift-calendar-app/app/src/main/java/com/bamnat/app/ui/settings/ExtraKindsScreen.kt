@@ -188,12 +188,18 @@ data class KindPreview(
 /** [EXTRA-01] A kind to start from; it opens in the editor and is added only when saved. */
 data class KindTemplate(val title: String, val detail: String, val kind: ExtraKind)
 
-class ExtraKindsViewModel(private val container: AppContainer) : ViewModel() {
+class ExtraKindsViewModel(
+    private val container: AppContainer,
+    /** [MCAL-06] The calendar whose pay prices these kinds; the kinds themselves are the app's. */
+    val calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+) : ViewModel() {
+    private val scope = container.scopeOf(calendarId)
+    private val payStore = scope.pay
     val settings: StateFlow<AppSettings> = container.settingsRepository.settings
-    val profile: StateFlow<PayProfile?> = container.payStore.profile
+    val profile: StateFlow<PayProfile?> = payStore.profile
     val tier: StateFlow<Tier> = container.featureGate.tier
     val snapshot: StateFlow<ScheduleSnapshot?> =
-        container.scheduleRepository.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val calculator = PayCalculator()
 
     private val _messages = MutableSharedFlow<UndoMessage>(extraBufferCapacity = 4)
@@ -273,16 +279,16 @@ class ExtraKindsViewModel(private val container: AppContainer) : ViewModel() {
         get() = container.companyStore.applied.value?.company ?: container.companyStore.draft.value?.company.orEmpty()
 
     private suspend fun savePay(transform: (CompanyRules) -> CompanyRules) {
-        val p = container.payStore.profile.value ?: return
+        val p = payStore.profile.value ?: return
         val rules = transform(p.rules)
-        if (rules != p.rules) container.payStore.save(p.copy(rules = rules))
+        if (rules != p.rules) payStore.save(p.copy(rules = rules))
     }
 
     private suspend fun restore(before: Pair<ExtraKinds, PayProfile?>) {
         container.settingsRepository.update { it.copy(extraKinds = before.first) }
         // Only rules go back: a pay setup made since stays.
         val p = before.second ?: return
-        if (container.payStore.profile.value != p) container.payStore.save(p, keepUndo = false)
+        if (payStore.profile.value != p) payStore.save(p, keepUndo = false)
     }
 
     /**

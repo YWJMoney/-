@@ -17,6 +17,8 @@ object JobReminders {
 
     /** The earliest reminder strictly after [now]; jobs without a start time or reminder are skipped. */
     fun next(jobs: List<Job>, now: LocalDateTime): Next? = jobs.mapNotNull { j ->
+        // [FLD-03] A cancelled job is not reminded of.
+        if (j.cancelled) return@mapNotNull null
         val start = j.start ?: return@mapNotNull null
         val before = j.remindMinutes ?: return@mapNotNull null
         val at = j.date.atTime(start).minusMinutes(before.toLong())

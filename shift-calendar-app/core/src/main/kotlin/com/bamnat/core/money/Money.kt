@@ -39,6 +39,10 @@ data class MoneyEntry(
     val installments: Int = 1,
     /** [LEDG-09] The repeating line ([FixedCost]) this one was written for. */
     val fixedId: Long? = null,
+    /** [FLD-08] What proves the cost (세금계산서, 카드 영수증, 현금영수증, 간이영수증), or empty. */
+    val proof: String = "",
+    /** [FLD-08] A receipt photo kept in the app's own folder, by file name; empty for none. */
+    val receipt: String = "",
 ) {
     /** What a list shows as the line's name. */
     val title: String get() = merchant.ifBlank { note.ifBlank { memo.ifBlank { category } } }
@@ -94,6 +98,12 @@ data class Job(
     val costs: Long = 0,
     /** Paid as 사업소득 with 3.3% withheld (freelance teaching, filming, many trades). */
     val withholding: Boolean = false,
+    /** [FLD-03] Where the job stands: 가계약, 확정, 완료 or 취소; paid follows from the payments. */
+    val status: JobStatus = JobStatus.CONFIRMED,
+    /** [FLD-02] Days of work counted as 공수 (1, 0.5, 1.5 …) for day-rate work; null for a job paid as a whole. */
+    val units: Double? = null,
+    /** [FLD-09] When the money is promised; null follows the last day. */
+    val due: LocalDate? = null,
 ) {
     val lastDate: LocalDate get() = endDate?.takeIf { it.isAfter(date) } ?: date
     val days: Int get() = (lastDate.toEpochDay() - date.toEpochDay()).toInt() + 1
@@ -106,8 +116,18 @@ data class Job(
     val payable: Long get() = amount - withheld
     val balance: Long get() = (payable - deposit).coerceAtLeast(0)
     val received: Long get() = (if (depositPaid) deposit.coerceAtMost(payable) else 0) + (if (balancePaid) balance else 0)
-    val unpaid: Long get() = (payable - received).coerceAtLeast(0)
+    /** [FLD-03] A cancelled job is owed nothing more; a deposit already paid is kept. */
+    val unpaid: Long get() = if (cancelled) 0 else (payable - received).coerceAtLeast(0)
     val profit: Long get() = payable - costs
+
+    /** [FLD-03] Called off: counts for nothing but the deposit it kept. */
+    val cancelled: Boolean get() = status == JobStatus.CANCELLED
+
+    /** [FLD-03] What the job is worth to the user: its pay, or for a cancelled one only what was already paid. */
+    val earned: Long get() = if (cancelled) received else payable
+
+    /** [FLD-03] 입금 완료 follows from the money, not from a step the user picks. */
+    val fullyPaid: Boolean get() = !cancelled && amount > 0 && unpaid == 0L
 }
 
 /** [WORK-02] Withholding on 사업소득: 소득세 3% + 지방소득세 (소득세의 10%), each below 10 won dropped. */
@@ -121,8 +141,33 @@ object Withholding {
 }
 
 /** A shop's day [WORK-03]: what came in and what the day cost. */
-data class DailySales(val date: LocalDate, val sales: Long, val costs: Long = 0, val note: String = "") {
+data class DailySales(
+    val date: LocalDate,
+    val sales: Long,
+    val costs: Long = 0,
+    val note: String = "",
+    /** [SHOP-01] The day's sales by how they were paid; all 0 when only the total was written. */
+    val card: Long = 0,
+    val cash: Long = 0,
+    val transfer: Long = 0,
+    val delivery: Long = 0,
+    /** [SHOP-03] The cash counted in the till at closing (시재); null when not counted. */
+    val cashCounted: Long? = null,
+    /** [SHOP-02] The card company has paid this day's card sales into the account. */
+    val cardSettled: Boolean = false,
+) {
     val net: Long get() = sales - costs
+    /** [SHOP-01] Sales written by how they were paid. */
+    val byMethod: Long get() = card + cash + transfer + delivery
+}
+
+/** [FLD-03] A job's steps. Cancelled jobs count for nothing. */
+enum class JobStatus(val label: String, val code: Int) {
+    TENTATIVE("가계약", 0), CONFIRMED("확정", 1), DONE("완료", 2), CANCELLED("취소", 3);
+
+    companion object {
+        fun fromCode(code: Int): JobStatus = entries.firstOrNull { it.code == code } ?: CONFIRMED
+    }
 }
 
 object MoneyCategories {
@@ -138,15 +183,44 @@ object MoneyCategories {
     fun of(kind: MoneyKind) = when (kind) { MoneyKind.EXPENSE -> expense; MoneyKind.INCOME -> income; MoneyKind.TRANSFER -> transfer }
 
     /**
+     * [TYPE-08] The built-in categories of a calendar of [style]: field and shop work see their own
+     * costs and income first (자재비·유류비, 재료비·임대료·카드수수료 …), then the household ones, so a
+     * work calendar's money reads like a work book (근무유형별 시장조사 7절).
+     */
+    fun of(kind: MoneyKind, style: com.bamnat.core.work.WorkStyle?): List<String> {
+        val work = when (style) {
+            com.bamnat.core.work.WorkStyle.FIELD -> when (kind) {
+                MoneyKind.EXPENSE -> FIELD_EXPENSE
+                MoneyKind.INCOME -> FIELD_INCOME
+                MoneyKind.TRANSFER -> emptyList()
+            }
+            com.bamnat.core.work.WorkStyle.BUSINESS -> when (kind) {
+                MoneyKind.EXPENSE -> SHOP_EXPENSE
+                MoneyKind.INCOME -> SHOP_INCOME
+                MoneyKind.TRANSFER -> listOf("사장님 인출")
+            }
+            else -> emptyList()
+        }
+        if (work.isEmpty()) return of(kind)
+        return (work + of(kind)).distinct().filter { it != OTHER } + OTHER
+    }
+
+    val FIELD_EXPENSE = listOf("자재비", "공구·장비", "유류비", "차량유지", "톨비·주차", "현장식대", "작업복·안전", "숙박", "외주·인건비", "플랫폼수수료", "소모품")
+    val FIELD_INCOME = listOf("일감 수입", "일당", "선금", "잔금")
+    val SHOP_EXPENSE = listOf("재료비", "포장·소모품", "임대료", "관리비", "인건비", "4대보험", "카드수수료", "배달앱수수료", "광고·마케팅", "장비·수리", "세금", "대출이자")
+    val SHOP_INCOME = listOf("카드매출", "현금매출", "계좌이체", "배달앱매출")
+
+    /**
      * [LEDG-14] The categories for [kind] as the user arranged them: their order and own names
      * first, hidden ones left out, then any built-in name they never touched. 기타 is always there,
      * last, so every line has somewhere to go.
      */
-    fun of(kind: MoneyKind, edits: List<CategoryEdit>): List<String> {
+    fun of(kind: MoneyKind, edits: List<CategoryEdit>, style: com.bamnat.core.work.WorkStyle? = null): List<String> {
+        val base = of(kind, style)
         val mine = edits.filter { it.kind == kind }.sortedWith(compareBy({ it.position }, { it.name }))
-        if (mine.isEmpty()) return of(kind)
+        if (mine.isEmpty()) return base
         val touched = mine.map { it.name }.toSet()
-        val shown = mine.filter { !it.hidden }.map { it.name } + of(kind).filter { it !in touched }
+        val shown = mine.filter { !it.hidden }.map { it.name } + base.filter { it !in touched }
         return shown.filter { it != OTHER }.distinct() + OTHER
     }
 
@@ -217,23 +291,25 @@ object MoneyCalculator {
         val j = jobs.filter { inMonth(it.date) }
         val s = sales.filter { inMonth(it.date) }
         val incomes = e.filter { it.kind == MoneyKind.INCOME }
-        val (salary, other) = incomes.partition { it.category == MoneyCategories.SALARY }
+        // [LEDG-11] A split income line counts its 급여 share as pay, the rest as other income ([com.bamnat.core.pay.PayGaps]).
+        val salary = incomes.sumOf { it.shareOf(MoneyCategories.SALARY) }
         val spent = e.filter { it.kind == MoneyKind.EXPENSE }
         // [LEDG-11] A split payment counts under each of its categories.
         val shares = spent.flatMap { it.shares() }
         return MonthMoney(
             month = month,
             payEstimate = payEstimate,
-            payRecorded = salary.sumOf { it.amount },
-            jobEarned = j.sumOf { it.payable },
+            payRecorded = salary,
+            // [FLD-03] A cancelled job adds only the deposit it kept.
+            jobEarned = j.sumOf { it.earned },
             jobReceived = j.sumOf { it.received },
-            jobCount = j.size,
+            jobCount = j.count { !it.cancelled },
             jobCosts = j.sumOf { it.costs },
-            jobWithheld = j.sumOf { it.withheld },
+            jobWithheld = j.filter { !it.cancelled }.sumOf { it.withheld },
             sales = s.sumOf { it.sales },
             salesCosts = s.sumOf { it.costs },
             salesDays = s.count { it.sales != 0L || it.costs != 0L },
-            otherIncome = other.sumOf { it.amount },
+            otherIncome = incomes.sumOf { it.amount } - salary,
             expenses = spent.sumOf { it.amount },
             expenseByCategory = shares.groupBy { it.first }
                 .map { (c, list) -> CategoryTotal(c, list.sumOf { it.second }, list.size) }
@@ -290,7 +366,28 @@ data class MoneyBook(
     val budgets: List<MoneyBudget> = emptyList(),
     /** [LEDG-14] The user's own categories, hidden ones and their order. */
     val categories: List<CategoryEdit> = emptyList(),
+    /** [TYPE-08] The calendar's kind of work, which picks its built-in categories. */
+    val style: com.bamnat.core.work.WorkStyle? = null,
+    /** [SHOP-04] The kinds of work of the calendars merged into this book. */
+    val styles: Set<com.bamnat.core.work.WorkStyle> = emptySet(),
+    /** [COMN-04] Lines from payment notifications waiting in 확인 대기함, kept out of every total until confirmed. */
+    val pending: List<MoneyEntry> = emptyList(),
 ) {
+    /** [SHOP-04] Every kind of work behind this book, for the tax deadlines that go with them. */
+    val allStyles: Set<com.bamnat.core.work.WorkStyle> get() = styles + setOfNotNull(style)
+
+    /**
+     * [COMN-04] With 확인하고 적기 on, lines not yet confirmed move from [entries] to [pending], so the
+     * month's totals, budgets, stats and notices count only what the user confirmed. Off (바로 적기),
+     * the book is left as it is and unconfirmed lines count at once, as before. Only lines dated
+     * on or after [from], the day the switch went on, wait: older ones were already counted.
+     */
+    fun holdUnconfirmed(from: LocalDate?): MoneyBook {
+        if (from == null) return this
+        val (waiting, seen) = entries.partition { !it.reviewed && !it.date.isBefore(from) }
+        return if (waiting.isEmpty()) this else copy(entries = seen, pending = pending + waiting)
+    }
+
     fun month(month: YearMonth, payEstimate: Long? = null) = MoneyCalculator.month(month, entries, jobs, sales, payEstimate)
     fun days(month: YearMonth) = MoneyCalculator.days(month, entries, jobs, sales)
     /** [RECV-02] Everything still owed, written down or left on a job. */
@@ -298,7 +395,7 @@ data class MoneyBook(
     fun on(date: LocalDate) = DayBook(entries.filter { it.date == date }, jobs.filter { it.covers(date) }, sales.firstOrNull { it.date == date })
 
     /** [LEDG-14] The categories offered for [kind], in the user's order. */
-    fun categoriesOf(kind: MoneyKind): List<String> = MoneyCategories.of(kind, categories)
+    fun categoriesOf(kind: MoneyKind): List<String> = MoneyCategories.of(kind, categories, style)
 
     /** [LEDG-08] The accounts offered in pickers and lists, in the user's order. */
     val activeAccounts: List<MoneyAccount> get() = accounts.filter { !it.hidden }.sortedWith(compareBy({ it.order }, { it.id }))
@@ -319,6 +416,7 @@ data class MoneyBook(
             return MoneyBook(
                 moved.flatMap { it.entries }, moved.flatMap { it.jobs }, moved.flatMap { it.sales }, moved.flatMap { it.fixed },
                 moved.flatMap { it.receivables }, moved.flatMap { it.accounts },
+                styles = books.flatMap { it.allStyles }.toSet(), pending = moved.flatMap { it.pending },
             )
         }
 

@@ -58,10 +58,12 @@ fun AmountField(
     modifier: Modifier = Modifier,
     imeAction: ImeAction = ImeAction.Next,
     textStyle: androidx.compose.ui.text.TextStyle? = null,
+    /** [SHOP-03] 0 is an answer here (센 현금 0원), not an empty field. */
+    allowZero: Boolean = false,
 ) {
     OutlinedTextField(
         value = digits,
-        onValueChange = { v -> onChange(v.filter(Char::isDigit).trimStart('0').take(MAX_DIGITS)) },
+        onValueChange = { v -> onChange(amountInput(v, allowZero)) },
         label = { Text(label) },
         textStyle = textStyle ?: androidx.compose.material3.LocalTextStyle.current,
         suffix = { Text("원") },
@@ -70,6 +72,12 @@ fun AmountField(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = imeAction),
         modifier = modifier.fillMaxWidth(),
     )
+}
+
+/** What an amount field keeps of what was typed: digits without leading zeros, a lone 0 only when [allowZero]. */
+internal fun amountInput(typed: String, allowZero: Boolean = false): String {
+    val d = typed.filter(Char::isDigit)
+    return d.trimStart('0').ifEmpty { if (allowZero && d.isNotEmpty()) "0" else "" }.take(MAX_DIGITS)
 }
 
 fun amountDigits(amount: Long): String = if (amount <= 0) "" else amount.toString()
@@ -120,6 +128,9 @@ fun JobDialog(
     var days by rememberSaveable { mutableIntStateOf(initial?.days ?: 1) }
     var costs by rememberSaveable { mutableStateOf(amountDigits(initial?.costs ?: 0)) }
     var withholding by rememberSaveable { mutableStateOf(initial?.withholding ?: false) }
+    // [FLD-03] 가계약·확정·완료·취소; [FLD-09] the day the money is promised.
+    var status by rememberSaveable { mutableStateOf(initial?.status ?: com.bamnat.core.money.JobStatus.CONFIRMED) }
+    var due by rememberSaveable { mutableStateOf(initial?.due?.toString()) }
     var picking by remember { mutableStateOf<String?>(null) }
     val startTime = start?.let(LocalTime::parse)
     val endTime = end?.let(LocalTime::parse)
@@ -133,8 +144,8 @@ fun JobDialog(
                 OutlinedTextField(value = title, onValueChange = { title = it.take(40) }, singleLine = true,
                     label = { Text("일 내용 (예: 욕실 타일)") }, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = client, onValueChange = { client = it.take(30) }, singleLine = true,
-                        label = { Text("고객") }, modifier = Modifier.weight(1f))
+                    // [FLD-02] Names from past jobs one tap away.
+                    ClientField(client, { client = it.take(30) }, Modifier.weight(1f))
                     OutlinedTextField(value = place, onValueChange = { place = it.take(40) }, singleLine = true,
                         label = { Text("장소") }, modifier = Modifier.weight(1f))
                 }
@@ -154,6 +165,7 @@ fun JobDialog(
                     Text("${days}일", style = MaterialTheme.typography.titleMedium)
                     TextButton(enabled = days < MAX_JOB_DAYS, onClick = { days++ }) { Text("+", style = MaterialTheme.typography.titleLarge) }
                 }
+                JobStatusRow(status, paid = balancePaid && (!hasDeposit || depositPaid) && amount.toAmount() > 0) { status = it }
                 AmountField("받을 금액 (전체)", amount, { amount = it })
                 SwitchRow("3.3% 떼고 받아요 (사업소득)", withholding) { withholding = it }
                 if (withholding && amount.toAmount() > 0) {
@@ -164,6 +176,7 @@ fun JobDialog(
                 AmountField("선금 (계약금)", deposit, { deposit = it })
                 if (hasDeposit) SwitchRow("선금 받음", depositPaid) { depositPaid = it }
                 SwitchRow(if (hasDeposit) "잔금 받음" else "돈 받음", balancePaid) { balancePaid = it }
+                DueRow(due?.let(LocalDate::parse)) { due = it?.toString() }
                 Text("시작 전 알림", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     JobReminders.CHOICES.forEach { m ->
@@ -195,6 +208,7 @@ fun JobDialog(
                         balancePaid = balancePaid, remindMinutes = remind.takeIf { startTime != null }, note = note.trim(),
                         endDate = (initial?.date ?: date).plusDays(days - 1L).takeIf { days > 1 },
                         costs = costs.toAmount(), withholding = withholding,
+                        status = status, units = initial?.units, due = due?.let(LocalDate::parse),
                     ),
                 )
             }) { Text("저장") }
@@ -249,28 +263,7 @@ private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
     }
 }
 
-/** A shop's sales and costs for one day [WORK-03]. */
+/** A shop's sales and costs for one day [WORK-03]; [SHOP-01] now the 하루 마감 sheet. */
 @Composable
-fun SalesDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -> Unit, onDismiss: () -> Unit) {
-    var sales by rememberSaveable { mutableStateOf(amountDigits(initial?.sales ?: 0)) }
-    var costs by rememberSaveable { mutableStateOf(amountDigits(initial?.costs ?: 0)) }
-    var note by rememberSaveable { mutableStateOf(initial?.note.orEmpty()) }
-    val net = sales.toAmount() - costs.toAmount()
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("${Fmt.dayTitle(date)} 매출") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                AmountField("매출", sales, { sales = it })
-                AmountField("경비 (재료비·인건비 등)", costs, { costs = it })
-                OutlinedTextField(value = note, onValueChange = { note = it.take(100) }, singleLine = true,
-                    label = { Text("메모 (선택)") }, modifier = Modifier.fillMaxWidth())
-                Text("순수익 ${Fmt.won(net)}", style = MaterialTheme.typography.titleMedium)
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onSave(DailySales(date, sales.toAmount(), costs.toAmount(), note.trim())) }) { Text("저장") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
-    )
-}
+fun SalesDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -> Unit, onDismiss: () -> Unit) =
+    DayCloseDialog(date, initial, onSave, onDismiss)

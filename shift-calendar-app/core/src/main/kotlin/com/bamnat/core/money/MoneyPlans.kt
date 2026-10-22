@@ -109,7 +109,7 @@ object UpcomingPayments {
         remind = card.remind, accountId = card.payFromId,
     )
 
-    private fun replacedByCard(c: FixedCost, accounts: List<MoneyAccount>) =
+    internal fun replacedByCard(c: FixedCost, accounts: List<MoneyAccount>) =
         c.kind == MoneyKind.TRANSFER && accounts.any { it.hasBill && !it.hidden && it.name == c.name }
 
     /** Payments due from [today] for [days] days that are not yet recorded, soonest first. */
@@ -150,13 +150,19 @@ object Recurring {
 
     /**
      * Lines for every [FixedCost.auto] payment due up to [today] and not written yet, oldest
-     * first. A line is never written before the day it was set up ([FixedCost.start]).
+     * first. A line is never written before the day it was set up ([FixedCost.start]), nor on or
+     * before the day [through] says it was last caught up to, so a written line the user deleted
+     * stays deleted. Without either, only today's is written.
      */
-    fun due(costs: List<FixedCost>, entries: List<MoneyEntry>, today: LocalDate): List<MoneyEntry> =
+    fun due(costs: List<FixedCost>, entries: List<MoneyEntry>, today: LocalDate, through: Map<Long, LocalDate> = emptyMap()): List<MoneyEntry> =
         costs.filter { it.auto && it.amount > 0 }.flatMap { c ->
-            val from = maxOf(c.start ?: today, today.minusDays(CATCH_UP_DAYS))
+            val after = through[c.id]?.plusDays(1)
+            val from = listOfNotNull(c.start ?: after ?: today, after, today.minusDays(CATCH_UP_DAYS)).max()
             c.occurrences(from, today).filter { !UpcomingPayments.recorded(c, it, entries) }.map { UpcomingPayments.entry(c, it) }
         }.sortedWith(compareBy({ it.date }, { it.fixedId }))
+
+    /** [LEDG-09] The caught-up day a newly saved [cost] starts from: the day before its first, or before [today]. */
+    fun startMark(cost: FixedCost, today: LocalDate): LocalDate = (cost.start ?: today).minusDays(1)
 }
 
 /**
@@ -174,8 +180,12 @@ object MoneyAlerts {
         jobs: List<Job>, costs: List<FixedCost>, entries: List<MoneyEntry>, today: LocalDate,
         receivables: List<Receivable> = emptyList(),
         accounts: List<MoneyAccount> = emptyList(),
+        /** [SHOP-04] The kinds of work the user's calendars have, for the tax deadlines that go with them. */
+        styles: Set<com.bamnat.core.work.WorkStyle> = emptySet(),
     ): List<Alert> = buildList {
         for (j in jobs) {
+            // [FLD-03] A cancelled job neither starts nor owes.
+            if (j.cancelled) continue
             val start = j.start
             val before = j.remindMinutes
             if (start != null && before != null) {
@@ -183,14 +193,17 @@ object MoneyAlerts {
                 add(Alert(j.date.atTime(start).minusMinutes(before.toLong()), "job-${j.id}", j.title.ifBlank { "일감" }, "${JobReminders.label(before)} · $text"))
             }
             if (j.unpaid > 0) {
+                // [FLD-09] The day after the promised day and a week after it; without one, after the last day.
+                val from = j.due ?: j.lastDate
                 for ((n, after) in listOf(1L, 7L).withIndex()) {
-                    add(Alert(j.lastDate.plusDays(after).atTime(NUDGE_AT), "unpaid-${j.id}-$n", "받을 돈이 남았어요",
+                    add(Alert(from.plusDays(after).atTime(NUDGE_AT), "unpaid-${j.id}-$n", if (j.due != null) "입금 약속일이 지났어요" else "받을 돈이 남았어요",
                         "${j.title.ifBlank { "일감" }}${j.client.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""} · ${won(j.unpaid)}"))
                 }
             }
         }
         val until = YearMonth.from(today).plusMonths(1).atEndOfMonth()
-        for (c in costs.filter { it.remind }) for (due in c.occurrences(today, until)) {
+        // A 카드값 line the card's own bill stands in for is not reminded twice ([UpcomingPayments.within]).
+        for (c in costs.filter { it.remind && !UpcomingPayments.replacedByCard(it, accounts) }) for (due in c.occurrences(today, until)) {
             // [LEDG-09] A line that writes itself says so on the day; the rest are reminders until written.
             if (c.auto) {
                 add(Alert(due.atTime(BILL_AT), "bill-${c.id}-$due-0", "가계부에 적었어요", "${c.schedule} ${c.name} ${won(c.amount)}"))
@@ -220,6 +233,8 @@ object MoneyAlerts {
             val who = r.who.trim().takeIf { it.isNotBlank() && it != r.name }?.let { " ($it)" } ?: ""
             add(Alert(at.first.atTime(NUDGE_AT), "owed-${r.id}-$n", at.second, "${r.name}$who · ${won(r.left)}"))
         }
+        // [SHOP-04] 부가세 and 종합소득세 deadlines for shop and field work.
+        for (t in TaxDeadlines.alerts(today, styles)) add(Alert(t.at, t.key, t.title, t.text))
     }
 
     /** The alerts at the earliest time strictly after [now]; empty when none is ahead. */
@@ -227,8 +242,9 @@ object MoneyAlerts {
         jobs: List<Job>, costs: List<FixedCost>, entries: List<MoneyEntry>, now: LocalDateTime,
         receivables: List<Receivable> = emptyList(),
         accounts: List<MoneyAccount> = emptyList(),
+        styles: Set<com.bamnat.core.work.WorkStyle> = emptySet(),
     ): List<Alert> {
-        val ahead = all(jobs, costs, entries, now.toLocalDate(), receivables, accounts).filter { it.at.isAfter(now) }
+        val ahead = all(jobs, costs, entries, now.toLocalDate(), receivables, accounts, styles).filter { it.at.isAfter(now) }
         val first = ahead.minOfOrNull { it.at } ?: return emptyList()
         return ahead.filter { it.at == first }.sortedBy { it.key }
     }
@@ -238,8 +254,9 @@ object MoneyAlerts {
         jobs: List<Job>, costs: List<FixedCost>, entries: List<MoneyEntry>, at: LocalDateTime,
         receivables: List<Receivable> = emptyList(),
         accounts: List<MoneyAccount> = emptyList(),
+        styles: Set<com.bamnat.core.work.WorkStyle> = emptySet(),
     ): List<Alert> =
-        all(jobs, costs, entries, at.toLocalDate(), receivables, accounts).filter { it.at == at }.sortedBy { it.key }
+        all(jobs, costs, entries, at.toLocalDate(), receivables, accounts, styles).filter { it.at == at }.sortedBy { it.key }
 
     private fun won(v: Long) = "%,d원".format(v)
 }

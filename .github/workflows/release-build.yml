@@ -1,5 +1,5 @@
 name: Release build (밤낮, unsigned)
-# Builds the release AAB and APK without the upload key. The key never leaves the release manager's machine,
+# Builds the release AAB and APK, and the watch app's AAB (:wear, uploaded to the same Play app), without the upload key. The key never leaves the release manager's machine,
 # where these files are signed with jarsigner (AAB) and apksigner (APK) before the Play upload.
 on:
   push:
@@ -23,11 +23,12 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
-      - run: sh ./gradlew :app:bundleRelease :app:assembleRelease
+      - run: sh ./gradlew :app:bundleRelease :app:assembleRelease :wear:bundleRelease
       # 16 KB page alignment of native libraries, required for API 35+ on Play.
       - run: |
           za=$(ls "$ANDROID_HOME"/build-tools/*/zipalign | sort -V | tail -1)
-          "$za" -c -P 16 -v 4 app/build/outputs/apk/release/app-release-unsigned.apk > /dev/null && echo "16 KB aligned"
+          "$za" -c -P 16 -v 4 app/build/outputs/apk/release/app-release-unsigned.apk > /dev/null
+          echo "16 KB aligned"
           # apksigner travels with the files so the APK can be signed where the key is, without an Android SDK.
           cp "$(dirname "$za")/lib/apksigner.jar" app/build/outputs/apk/release/
       - uses: actions/upload-artifact@v4
@@ -38,4 +39,7 @@ jobs:
             shift-calendar-app/app/build/outputs/apk/release/app-release-unsigned.apk
             shift-calendar-app/app/build/outputs/apk/release/apksigner.jar
             shift-calendar-app/app/build/outputs/mapping/release/mapping.txt
+            shift-calendar-app/wear/build/outputs/bundle/release/wear-release.aab
+            shift-calendar-app/wear/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: error
           retention-days: 14

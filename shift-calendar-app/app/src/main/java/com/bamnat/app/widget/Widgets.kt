@@ -104,6 +104,7 @@ private fun WidgetFrame(content: @Composable () -> Unit) {
 private fun emptyText(data: WidgetData): String = when {
     data.focus == CalendarFocus.JOBS -> "일감을 적으면 여기에 오늘 일이 보여요"
     data.focus == CalendarFocus.SALES -> "매출을 적으면 여기에 오늘 매출이 보여요"
+    data.focus == CalendarFocus.INVEST -> "입금과 매매를 적으면 여기에 오늘 손익과 수익률이 보여요"
     data.style == WorkStyle.DAY -> "일하는 요일을 정하면 여기에 오늘 근무가 보여요"
     data.style == WorkStyle.HOURLY -> "일한 날을 칠하면 여기에 오늘 근무가 보여요"
     else -> "근무 주기를 정하면 여기에 오늘 근무가 보여요"
@@ -120,9 +121,17 @@ private fun TodayContent(data: WidgetData) {
         when (data.focus) {
             CalendarFocus.JOBS -> { JobsToday(data); return@Column }
             CalendarFocus.SALES -> { SalesToday(data); return@Column }
+            CalendarFocus.INVEST -> { InvestToday(data); return@Column }
             CalendarFocus.SHIFTS -> Unit
         }
         DayLine("오늘", data.day(data.today), big = true)
+        // [COMN-05] A part-timer's week and 주휴, a day worker's 연차 and 야근.
+        WorkStyleLine(data)
+        // [DAYW-03] A day worker leaves work from the home screen.
+        if (LeaveNowAction.offered(data.style, data.day(data.today))) {
+            Spacer(GlanceModifier.height(4.dp))
+            LeaveNowWidgetButton()
+        }
         val line = data.flow?.line
         if (line != null) {
             Spacer(GlanceModifier.height(4.dp))
@@ -215,6 +224,8 @@ private fun JobsToday(data: WidgetData) {
             Text("다음 일감 ${Fmt.shortDate(j.date)} ${j.title}", style = small(GlanceTheme.colors.primary), maxLines = 1)
         }
     }
+    // [COMN-05] The week's days or 공수, and what is still owed.
+    if (data.style == WorkStyle.FIELD) FieldWeekLine(data)
 }
 
 /** [CAL-11] A shop's own day and month; the amounts are the user's, on their own screen, as in the calendar's cells. */
@@ -231,6 +242,39 @@ private fun SalesToday(data: WidgetData) {
     val month = YearMonth.from(data.today)
     Text("${month.monthValue}월 매출", style = small(GlanceTheme.colors.onSurfaceVariant))
     Text(Fmt.wonShort(data.monthSales(month)), style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+}
+
+/** [INV-16] The investor's today: what today earned and the total return; no amounts while they are hidden. */
+@Composable
+private fun InvestToday(data: WidgetData) {
+    val line = data.invest ?: return
+    DateLabel("오늘", data.today)
+    val v = line.todayPnl
+    Text(
+        when {
+            line.hide -> if (line.todayTrades > 0) "매매 ${line.todayTrades}건" else "매매 없음"
+            v == 0L && line.todayTrades == 0 -> "매매 없음"
+            else -> "손익 " + (if (v > 0) "+" else if (v < 0) "−" else "") + Fmt.won(kotlin.math.abs(v))
+        },
+        style = TextStyle(color = when {
+            line.hide || v == 0L -> GlanceTheme.colors.onSurface
+            v > 0 -> ColorProvider(HOLIDAY_RED)
+            else -> ColorProvider(Color(0xFF3E7BFA))
+        }, fontSize = 18.sp, fontWeight = FontWeight.Bold),
+        maxLines = 1,
+    )
+    Spacer(GlanceModifier.height(8.dp))
+    Text("총 수익률", style = small(GlanceTheme.colors.onSurfaceVariant))
+    val r = line.totalReturn
+    Text(
+        r?.let { (if (it > 0) "+" else if (it < 0) "−" else "") + "%.2f%%".format(kotlin.math.abs(it * 100)) } ?: "원금을 적어 주세요",
+        style = TextStyle(color = when {
+            r == null || r == 0.0 -> GlanceTheme.colors.onSurface
+            r > 0 -> ColorProvider(HOLIDAY_RED)
+            else -> ColorProvider(Color(0xFF3E7BFA))
+        }, fontSize = 14.sp, fontWeight = FontWeight.Bold),
+        maxLines = 1,
+    )
 }
 
 @Composable
@@ -271,6 +315,7 @@ private fun WeekContent(data: WidgetData) {
                 CalendarFocus.SHIFTS -> "이번 주 근무"
                 CalendarFocus.JOBS -> "이번 주 일감"
                 CalendarFocus.SALES -> "이번 주 매출"
+                CalendarFocus.INVEST -> "이번 주 손익"
             },
             style = small(GlanceTheme.colors.onSurfaceVariant),
         )
@@ -347,6 +392,24 @@ private fun WeekMark(data: WidgetData, day: ResolvedDay, sizeDp: Int) {
                 s?.let { Fmt.wonShort(it.sales) } ?: "–",
                 style = TextStyle(color = if (s != null) ColorProvider(INCOME_GREEN) else GlanceTheme.colors.onSurfaceVariant,
                     fontSize = 11.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
+                maxLines = 1,
+            )
+        }
+        // [INV-16] A week day's result, red or blue; only a mark while amounts are hidden.
+        CalendarFocus.INVEST -> {
+            val line = data.invest
+            val v = line?.days?.get(day.date)
+            Text(
+                when {
+                    v == null || v == 0L -> "–"
+                    line.hide -> "●"
+                    else -> (if (v > 0) "+" else "−") + Fmt.wonShort(kotlin.math.abs(v))
+                },
+                style = TextStyle(color = when {
+                    v == null || v == 0L -> GlanceTheme.colors.onSurfaceVariant
+                    v > 0 -> ColorProvider(HOLIDAY_RED)
+                    else -> ColorProvider(Color(0xFF3E7BFA))
+                }, fontSize = 11.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
                 maxLines = 1,
             )
         }

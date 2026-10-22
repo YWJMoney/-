@@ -261,10 +261,14 @@ fun CalendarSwitcherSheet(
     /** Null where links cannot be received (no share server). */
     onAddReceived: (() -> Unit)?,
     onManage: () -> Unit,
+    /** [CALS-01] One of the user's calendars' own page. */
+    onEdit: (PersonalCalendar) -> Unit = {},
     onRemove: (ReceivedCalendar) -> Unit,
     onDismiss: () -> Unit,
     /** [UX-03] Shares one of the user's calendars straight from the list. */
     onShare: ((PersonalCalendar) -> Unit)? = null,
+    /** [COMN-01] 모든 달력 합쳐 보기, offered once the user has two calendars or more. */
+    onCombined: (() -> Unit)? = null,
 ) {
     var removing by remember { mutableStateOf<ReceivedCalendar?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -285,8 +289,11 @@ fun CalendarSwitcherSheet(
                         subtitle = row.subtitle(),
                         selected = currentKey == row.key,
                         onClick = { onPick(row) },
-                        trailing = onShare?.let { share ->
-                            { IconButton(onClick = { share(row.cal) }) { Icon(Icons.Filled.Share, "${row.cal.name} 근무표 공유") } }
+                        trailing = {
+                            Row {
+                                IconButton(onClick = { onEdit(row.cal) }) { Icon(Icons.Outlined.Edit, "${row.cal.name} 고치기") }
+                                onShare?.let { share -> IconButton(onClick = { share(row.cal) }) { Icon(Icons.Filled.Share, "${row.cal.name} 근무표 공유") } }
+                            }
                         },
                     )
                     is CalendarRow.Got -> SwitchRow(
@@ -302,6 +309,9 @@ fun CalendarSwitcherSheet(
                         },
                     )
                 }
+            }
+            if (onCombined != null && rows.count { it is CalendarRow.Mine } >= 2) {
+                AddRow("모든 달력 합쳐 보기", onCombined, MineShape, detail = "달력마다 색 막대로 한 달력에 보고, 겹치는 시간을 알려 줘요")
             }
             AddRow("새 달력 만들기", onAddCalendar, MineShape, rows.newCalendarBadge(), detail = "알바·부업 근무를 따로 적고 따로 공유해요")
             // [UX-03] Said the way people think of it: a coworker's schedule, and what it is for.
@@ -396,7 +406,7 @@ internal fun proNote(): String =
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ColorRow(selected: Long, onPick: (Long) -> Unit) {
+internal fun ColorRow(selected: Long, onPick: (Long) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         PersonalCalendar.COLORS.forEachIndexed { i, c ->
             val on = c == selected
@@ -452,24 +462,7 @@ class CalendarsViewModel(private val c: AppContainer) : ViewModel() {
         if (_busy.value) return
         _busy.value = true
         viewModelScope.launch {
-            val link = c.shareLinksOf(id).link.value
-            val cut = link == null || keepLink || try {
-                c.shareApi.delete(link)
-                true
-            } catch (e: ShareLinkException) {
-                // Already gone on the server is as good as cut.
-                e.message == "not_found"
-            } catch (e: IOException) {
-                false
-            }
-            if (cut) {
-                c.forgetShareLinks(id)
-                c.calendars.delete(id)
-                c.telemetry.event("calendar_delete", if (link != null) "with_link" else "")
-                onDone()
-            } else {
-                _message.value = LINK_NOT_CUT
-            }
+            if (removeCalendar(c, id, keepLink)) onDone() else _message.value = LINK_NOT_CUT
             _busy.value = false
         }
     }
@@ -477,6 +470,38 @@ class CalendarsViewModel(private val c: AppContainer) : ViewModel() {
     companion object {
         const val LINK_NOT_CUT = "링크를 끊지 못했어요"
     }
+}
+
+/**
+ * [MCAL-01][MCAL-03] Removes an added calendar. Its open link is cut first, so what it showed stops
+ * showing; without internet that fails (false) and the calendar stays, unless [keepLink] says to go
+ * anyway and let the link close on its own date.
+ */
+internal suspend fun removeCalendar(c: AppContainer, id: String, keepLink: Boolean): Boolean {
+    val link = c.shareLinksOf(id).link.value
+    val cut = link == null || keepLink || try {
+        c.shareApi.delete(link)
+        true
+    } catch (e: ShareLinkException) {
+        // Already gone on the server is as good as cut.
+        e.message == "not_found"
+    } catch (e: IOException) {
+        false
+    }
+    if (!cut) return false
+    // [UNDO-03] Everything it had is kept for 7 days before anything moves, so it can come back whole.
+    val kept = runCatching { c.recordsTrash.beforeDelete(id) }.getOrNull()
+    c.forgetShareLinks(id)
+    // [NOTE-01][CALS-04] Its memos stay, on the calendars they were shared with or on 내 달력; its notifications
+    // go to 내 달력. Moved before the calendar goes, so no memo is left on a calendar that is not there.
+    c.memoRepository.forgetCalendar(id)
+    c.autoRecordPrefs.forgetCalendar(id)
+    // [DAYW-07] 출퇴근 자동 기록 writing to it goes to 내 달력.
+    com.bamnat.app.data.CommutePrefs.get(c.appContext).let { if (it.current.calendarId == id) it.setCalendar(PersonalCalendar.MAIN) }
+    c.calendars.delete(id)
+    c.telemetry.event("calendar_delete", if (link != null) "with_link" else "")
+    kept?.let(c.recordsTrash::deleted)
+    return true
 }
 
 /** [MCAL-01][MCAL-04] 설정 > 달력 목록, and 순서·관리 from the switcher. */
@@ -488,6 +513,8 @@ fun CalendarsScreen(
     onAddCalendar: () -> Unit,
     /** [UX-03] Opens one calendar's share sheet on the calendar tab. */
     onShare: (String) -> Unit = {},
+    /** [CALS-01] Opens one of the user's calendars' own page; without it, the small dialog. */
+    onEdit: ((String) -> Unit)? = null,
 ) {
     val rows by vm.rows.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
@@ -527,7 +554,7 @@ fun CalendarsScreen(
                         onDown = { move(i, 1) },
                         onOpen = {
                             when (row) {
-                                is CalendarRow.Mine -> editing = row.cal.id
+                                is CalendarRow.Mine -> if (onEdit != null) onEdit(row.cal.id) else editing = row.cal.id
                                 is CalendarRow.Got -> removing = row.cal
                             }
                         },
@@ -563,7 +590,7 @@ fun CalendarsScreen(
         } else {
             ConfirmDialog(
                 title = "${cal.name} 달력을 지울까요?",
-                message = "이 달력의 근무와 순서, 고친 날이 모두 지워지고 되돌릴 수 없어요. 공유한 링크도 끊어요. 메모와 다른 달력은 그대로예요.",
+                message = "이 달력의 근무와 순서, 고친 날이 모두 지워져요. 7일 안에는 설정 › 데이터 › 최근 지운 기록에서 되돌릴 수 있어요(공유한 링크는 다시 만들어야 해요). 이 달력에만 있던 메모는 내 달력으로 옮겨요.", // [UNDO-03]
                 confirmLabel = if (busy) "지우는 중…" else "지우기",
                 destructive = true,
                 onDismiss = { if (!busy) deleting = null },
@@ -729,15 +756,25 @@ fun rememberAddCalendar(c: AppContainer, onSetup: (String) -> Unit): () -> Unit 
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun CalendarScopeChips(c: AppContainer, modifier: Modifier = Modifier) {
+fun CalendarScopeChips(
+    c: AppContainer,
+    modifier: Modifier = Modifier,
+    /** [COMN-03] Where a screen offers 전체 first: whether it is picked, and what a tap on it or a calendar says. */
+    all: Boolean = false,
+    onAll: ((Boolean) -> Unit)? = null,
+) {
     val list by c.calendars.calendars.collectAsStateWithLifecycle()
     val active by c.calendars.active.collectAsStateWithLifecycle()
     if (list.size < 2) return
     FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (onAll != null) {
+            androidx.compose.material3.FilterChip(selected = all, onClick = { onAll(true) }, label = { Text("전체") })
+        }
         list.forEach { cal ->
             androidx.compose.material3.FilterChip(
-                selected = cal.id == active,
+                selected = cal.id == active && !all,
                 onClick = {
+                    onAll?.invoke(false)
                     if (cal.id != active) c.telemetry.event("calendar_switch", if (cal.isMain) "main" else "added")
                     c.calendars.setActive(cal.id)
                 },

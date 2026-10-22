@@ -359,7 +359,15 @@ private fun DayGroups(
                             }
                         },
                     ) { MemoContent(date, memos, vm, memoFocus, onOpenMemo) }
-                    G.MONEY -> {
+                    G.MONEY -> if (settings.workStyle == com.bamnat.core.work.WorkStyle.INVEST) {
+                        // [INV-01] An investor's day: its trades, deposits, journal and dates.
+                        val activeCal by vm.activeCalendar.collectAsStateWithLifecycle()
+                        DayGroup(
+                            title = "매매", icon = Icons.Outlined.Payments,
+                            summary = com.bamnat.app.ui.invest.rememberInvestDaySummary(activeCal.id, date),
+                            open = groups.isOpen(key, true), onToggle = { groups.toggle(key, true) },
+                        ) { com.bamnat.app.ui.invest.InvestDayGroupBody(activeCal.id, date) }
+                    } else {
                         val pay = insight.pay
                         val spent = dayBook.entries.filter { it.kind == com.bamnat.core.money.MoneyKind.EXPENSE }.sumOf { it.amount }
                         val payText = when {
@@ -598,6 +606,8 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
         }
     }
     if (day.isWorkDay) WorkTimeContent(day, snapshot, vm)
+    // [SHFT-03] On a shift calendar, who the shift was swapped with.
+    WorkTypeDayRow(day, snapshot, vm)
 }
 
 @Composable

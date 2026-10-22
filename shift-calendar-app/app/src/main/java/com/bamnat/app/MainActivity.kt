@@ -14,6 +14,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import com.bamnat.app.data.ThemeMode
 import com.bamnat.app.share.ShareLinkId
 import com.bamnat.app.ui.AppRoot
@@ -39,8 +40,10 @@ class MainActivity : ComponentActivity() {
         val container = appContainer
         setContent {
             val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()
-            val dark = when (settings.themeMode) {
-                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+            // [SHFT-05] 야간 근무 중 어둡게 turns into dark or the phone's theme as the night shift starts and ends.
+            val themeMode = com.bamnat.app.ui.theme.rememberThemeMode(settings.themeMode, container)
+            val dark = when (themeMode) {
+                ThemeMode.SYSTEM, ThemeMode.NIGHT_SHIFT -> isSystemInDarkTheme()
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK -> true
             }
@@ -52,7 +55,7 @@ class MainActivity : ComponentActivity() {
                 )
                 onDispose { }
             }
-            BamnatTheme(themeMode = settings.themeMode, dynamicColor = settings.dynamicColor) {
+            BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor) {
                 androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.calendar.LocalExtraKinds provides settings.extraKinds) {
                     AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container)
                 }
@@ -95,6 +98,9 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         HomeRequests.onStart()
         appContainer.verifyAlarms()
+        // [TYPE-04] Shop days that passed with no sales become 임시휴무 when the app is opened.
+        val c = appContainer
+        c.appScope.launch { runCatching { com.bamnat.app.ui.work.ShopKeeper.catchUp(c) } }
     }
 
     override fun onStop() {

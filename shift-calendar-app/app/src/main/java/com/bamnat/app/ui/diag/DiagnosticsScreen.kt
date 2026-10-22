@@ -225,7 +225,9 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh++ }
     val events by produceState<List<DiagEvent>?>(null, refresh) { value = vm.events() }
     val report = remember(events, upcoming, snoozeAt) { vm.report(context, events.orEmpty()) }
-    val testAt by vm.testAt.collectAsStateWithLifecycle()
+    val testSet by vm.testAt.collectAsStateWithLifecycle()
+    // [REL-13] A test time long past is over (the alarm was lost, say by a reboot): it can be tried again.
+    val testAt = remember(testSet, refresh) { testSet?.takeIf { it + 2 * 60_000L > System.currentTimeMillis() } }
     val checks = remember(refresh, upcoming) { vm.checks(context) }
     var confirmClear by remember { mutableStateOf(false) }
 
@@ -254,7 +256,7 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
             item {
                 Text(
                     "알람이 안 울리거나 늦게 울릴 때 원인을 찾는 화면이에요. 오른쪽 위 복사 버튼으로 내용을 복사해 문의에 붙여 주세요. " +
-                        "기록은 이 휴대폰에만 있고 메모나 근무 이름은 담지 않아요.",
+                        "기록은 이 휴대폰에만 있고 메모와 금액은 담지 않아요.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -321,7 +323,7 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
             // [UX-05] When the checks don't solve it, ask with this phone's alarm check attached.
             item {
                 SectionCard(title = "그래도 안 울리면") {
-                    Text("알람 점검 내용을 붙여 개발자에게 물어볼 수 있어요. 근무 이름과 메모는 담지 않아요.",
+                    Text("알람 점검 내용을 붙여 개발자에게 물어볼 수 있어요. 메모와 금액은 담지 않아요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedButton(onClick = {
                         InquiryLinks.ask(InquiryStart(about = "알람", kind = InquiryKind.BUG, withCheck = true))

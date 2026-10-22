@@ -18,7 +18,18 @@ class AutoRecordPrefs(context: Context) {
         /** Package → the app's name, apps that sent a notification read as a payment. */
         val seenApps: Map<String, String> = emptyMap(),
         val notRepeating: Set<String> = emptySet(),
-    )
+        /** [CALS-04] The calendar payment notifications go to when no card, account or app says otherwise. */
+        val calendar: String = PersonalCalendar.MAIN,
+        /** [CALS-04] Package → calendar: an app's notifications always go to that calendar. */
+        val appCalendars: Map<String, String> = emptyMap(),
+        /** [COMN-04] 확인하고 적기: payment lines wait in 확인 대기함 and count only once confirmed; off is 바로 적기. */
+        val confirmFirst: Boolean = false,
+        /** [COMN-04] The day 확인하고 적기 was turned on; older lines were already counted and stay counted. */
+        val confirmSince: java.time.LocalDate? = null,
+    ) {
+        /** [COMN-04] From when unconfirmed lines wait, or null for 바로 적기. */
+        val holdFrom: java.time.LocalDate? get() = if (confirmFirst) confirmSince ?: java.time.LocalDate.MIN else null
+    }
 
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences("auto_record", Context.MODE_PRIVATE)
@@ -41,6 +52,27 @@ class AutoRecordPrefs(context: Context) {
 
     fun notRepeating(key: String) = edit { putStringSet(K_NOT_REPEATING, current.notRepeating + key) }
 
+    /** [CALS-04] Where payment notifications are written down. */
+    fun setCalendar(id: String) = edit { putString(K_CALENDAR, id) }
+
+    /** [CALS-04] Sends one app's notifications to calendar [id]; null lets it follow [State.calendar]. */
+    fun setAppCalendar(pkg: String, id: String?) = edit {
+        val next = if (id == null) current.appCalendars - pkg else current.appCalendars + (pkg to id)
+        putStringSet(K_APP_CALENDARS, next.map { "${it.key}\t${it.value}" }.toSet())
+    }
+
+    /** [COMN-04] 확인하고 적기 on, or 바로 적기. */
+    fun setConfirmFirst(on: Boolean) = edit {
+        putBoolean(K_CONFIRM_FIRST, on)
+        if (on && !current.confirmFirst) putLong(K_CONFIRM_SINCE, java.time.LocalDate.now().toEpochDay())
+    }
+
+    /** [CALS-04] A calendar that goes away hands its notifications back to 내 달력. */
+    fun forgetCalendar(id: String) {
+        if (current.calendar == id) setCalendar(PersonalCalendar.MAIN)
+        current.appCalendars.filterValues { it == id }.keys.forEach { setAppCalendar(it, null) }
+    }
+
     private fun edit(block: SharedPreferences.Editor.() -> Unit) {
         synchronized(this) {
             prefs.edit().apply(block).apply()
@@ -58,6 +90,12 @@ class AutoRecordPrefs(context: Context) {
             line.split('\t', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] }
         }.toMap(),
         notRepeating = prefs.getStringSet(K_NOT_REPEATING, null).orEmpty().toSet(),
+        calendar = prefs.getString(K_CALENDAR, null) ?: PersonalCalendar.MAIN,
+        appCalendars = prefs.getStringSet(K_APP_CALENDARS, null).orEmpty().mapNotNull { line ->
+            line.split('\t', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] }
+        }.toMap(),
+        confirmFirst = prefs.getBoolean(K_CONFIRM_FIRST, false),
+        confirmSince = if (prefs.contains(K_CONFIRM_SINCE)) java.time.LocalDate.ofEpochDay(prefs.getLong(K_CONFIRM_SINCE, 0)) else null,
     )
 
     private companion object {
@@ -66,6 +104,10 @@ class AutoRecordPrefs(context: Context) {
         const val K_MIN = "min_amount"
         const val K_SEEN = "seen_apps"
         const val K_NOT_REPEATING = "not_repeating"
+        const val K_CALENDAR = "calendar"
+        const val K_APP_CALENDARS = "app_calendars"
+        const val K_CONFIRM_FIRST = "confirm_first"
+        const val K_CONFIRM_SINCE = "confirm_since"
         const val MAX_APPS = 30
     }
 }

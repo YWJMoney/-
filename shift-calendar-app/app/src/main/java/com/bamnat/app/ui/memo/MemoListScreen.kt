@@ -55,6 +55,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -110,6 +111,16 @@ fun MemoListScreen(
     // doubles or drops half-built Korean letters and moves the cursor.
     val query by vm.query.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
     BackHandler(enabled = state.selecting) { vm.clearSelection() }
+    var sharing by remember { mutableStateOf(false) }
+    if (sharing) {
+        MemoCalendarsDialog(
+            initial = setOf(state.activeCalendar),
+            calendars = state.calendars,
+            title = "고른 메모 ${state.selection.size}개를 어느 달력에 보일까요?",
+            onDismiss = { sharing = false },
+            onSave = { vm.shareSelected(it); sharing = false },
+        )
+    }
     val today = LocalDate.now()
     val open: (Memo) -> Unit = { memo -> if (state.selecting) vm.toggleSelected(memo.id) else onOpen(memo.id) }
     val actions = CardActions(
@@ -130,10 +141,13 @@ fun MemoListScreen(
                     onPin = vm::pinSelected,
                     onColor = vm::colorSelected,
                     onDelete = vm::deleteSelected,
+                    // [NOTE-02] Several memos onto other calendars at once.
+                    onShare = if (state.manyCalendars) ({ sharing = true }) else null,
                 )
             } else {
                 Header(state, onSort = vm::setSort, onOpenTrash = onOpenTrash)
             }
+            NotebookBar(state, vm::setNotebook)
             OutlinedTextField(
                 value = query,
                 onValueChange = vm::setQuery,
@@ -240,6 +254,7 @@ private fun SelectionBar(
     onPin: () -> Unit,
     onColor: (Int) -> Unit,
     onDelete: () -> Unit,
+    onShare: (() -> Unit)? = null,
 ) {
     var palette by remember { mutableStateOf(false) }
     Surface(color = MaterialTheme.colorScheme.secondaryContainer) {
@@ -271,6 +286,7 @@ private fun SelectionBar(
                     }
                 }
             }
+            onShare?.let { IconButton(onClick = it) { Icon(Icons.Outlined.Groups, "보일 달력 정하기") } }
             IconButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, "휴지통으로 옮기기") }
         }
     }

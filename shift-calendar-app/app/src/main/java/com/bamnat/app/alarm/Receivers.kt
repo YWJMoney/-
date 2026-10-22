@@ -116,6 +116,18 @@ class SystemEventReceiver : BroadcastReceiver() {
         container.telemetry.event(DiagEvents.SYSTEM_EVENT, intent.action?.substringAfterLast('.') ?: "")
         val pending = goAsync()
         container.appScope.launch {
+            // [DAYW-07] Geofences and the wait after a leave do not survive a reboot; put back on their own,
+            // so a failure in the alarms below never skips them.
+            val booted = intent.action == Intent.ACTION_BOOT_COMPLETED
+            runCatching {
+                if (com.bamnat.app.data.CommutePrefs.get(context).current.enabled) {
+                    // A clock or time zone change keeps the geofence; a reboot or an update may not.
+                    com.bamnat.app.commute.CommuteRecorder.sync(context, force = booted || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED)
+                    com.bamnat.app.commute.CommuteRecorder.resume(context)
+                }
+            }
+            // [REL-13] The test alarm did not survive the reboot; 알람 점검 must not wait for it.
+            if (booted) runCatching { container.alarmScheduler.cancelTest() }
             try {
                 container.rescheduleAlarms(LocalDateTime.now())
                 container.alarmScheduler.restoreSnooze()
@@ -130,6 +142,8 @@ class SystemEventReceiver : BroadcastReceiver() {
                 }
                 // [SCHED-01] Memo schedules did not survive the reboot either.
                 com.bamnat.app.memo.MemoScheduleAlarm.reschedule(context, container.memoRepository.memos.first())
+                // [INV-08] The investor's alarms too.
+                com.bamnat.app.invest.InvestNotices.reschedule(context, com.bamnat.app.invest.InvestNotices.plansNow(container))
                 com.bamnat.app.sleep.DayNoticeScheduler.reschedule(context, container.scheduleRepository.snapshot.first(), settings)
                 // [SLP-15] What waited while the user slept: its alarm did not survive the reboot either.
                 com.bamnat.app.sleep.QuietHold.release(context)

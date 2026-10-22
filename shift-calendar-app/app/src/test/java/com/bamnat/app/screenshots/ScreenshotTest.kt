@@ -115,6 +115,10 @@ class ScreenshotTest {
         c.consentStore.markSeen(ConsentItem.entries)
         // [CAL-17] The one-time tip on the first date tap has its own shot (295); the others tap dates past it.
         com.bamnat.app.ui.calendar.HintStore(app).markDone(com.bamnat.app.ui.calendar.HintStore.LONG_PRESS)
+        // [GUIDE-02][GUIDE-03] A settled user: the first-days card and the tips are put away, so the shots show the screens.
+        com.bamnat.app.data.GuideStore.get(app).let { g ->
+            listOf("guide.checklist", "guide.tips").forEach { id -> g.setOn(com.bamnat.core.guide.FeatureRegistry.get(id)!!, "main", false) }
+        }
         val repo = c.scheduleRepository
         repo.ensureDefaults()
         val types = repo.shiftTypes.first().associateBy { it.name }
@@ -2050,7 +2054,7 @@ class ScreenshotTest {
         shoot("335_folded_help_search", FOLDED) {
             tab(4, wide = false)
             tapText("도움말과 문의", exact = true)
-            typeInto("도움말 찾기", "알람이 안 울려요")
+            typeInto("기능과 도움말 찾기", "알람이 안 울려요")
             tapText("알람이 안 울리거나 늦게 울려요", exact = true)
         }
     }

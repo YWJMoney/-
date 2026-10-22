@@ -281,7 +281,9 @@ internal fun CustomItemDialog(
     val draft = remember { editing?.let { ItemDraft.of(it) } ?: ItemDraft(startKind, id).also { d -> if (startKind != null) prefill(d, gap) } }
     val start = profile.period.start(month)
     val base = remember(profile, editing) { if (editing == null) profile else profile.copy(customRules = profile.customRules.filterNot { it.id == editing.id }) }
-    val full = editing == null && base.customRules.size >= CustomRule.MAX
+    // Only rules count to the limit: 월 고정·일당 go in as pay items.
+    val full = editing == null && draft.kind.let { it != null && it != ItemKind.MONTHLY && it != ItemKind.PER_DAY } &&
+        base.customRules.size >= CustomRule.MAX
     val made = draft.made(start)
     val probe = draft.made(start, probe = true)
     val effect by produceState<ItemEffect?>(null, probe, base) { value = probe?.let { vm.effectOf(base, snapshot, month, it) } }

@@ -36,6 +36,8 @@ object DayChanges {
             gone.filter { g -> added.none { it.kindId == g.kindId } }.map { extraName(it.kindId) }.distinct().forEach { parts += "$it 지움" }
         }
         if (b.leave != after.leave) parts += after.leave?.label ?: "${b.leave?.label ?: "휴가"} 취소"
+        // [HRLY-01] 지각·조퇴·결근 kept with the day's other changes.
+        if (b.attendance != after.attendance) parts += after.attendance?.label ?: "${b.attendance?.label} 취소"
         if (b.alarmSkipped != after.alarmSkipped) parts += if (after.alarmSkipped) "알람 끔" else "알람 켬"
         if (b.customAlarms != after.customAlarms) parts += if (after.customAlarms == null) "알람 원래대로" else "알람 바꿈"
         return parts.takeIf { it.isNotEmpty() }?.joinToString(", ")

@@ -63,6 +63,15 @@ class AlarmSelfCheckTest {
         assertEquals(expected, next!!.triggerAtTime)
     }
 
+    /** Between an alarm ringing and its re-plan the alarm is not lost: no repair is logged then. */
+    @Test fun anAlarmThatJustRangIsNotRepaired() {
+        val now = LocalDateTime.now()
+        scheduler.reschedule(calendars, true, now)
+        scheduler.markFired(scheduler.upcoming.value!!.triggerAtMillis)
+        assertFalse(scheduler.systemHolds())
+        assertFalse("still settling", scheduler.verify(calendars, true, now))
+    }
+
     @Test fun alarmsSwitchedOffNeedNoRepair() {
         scheduler.reschedule(calendars, false)
         assertFalse(scheduler.verify(calendars, false))
@@ -107,5 +116,15 @@ class AlarmSelfCheckTest {
             listOf(com.bamnat.core.model.DayEntry(start.plusDays(2), leave = com.bamnat.core.model.Leave(com.bamnat.core.model.LeaveKind.UNPAID))))
         assertEquals("오늘 주간 07:00~19:00" to "내일 휴무", TodayShiftNotice.lines(snapshot.resolver, start))
         assertEquals("휴가", TodayShiftNotice.lines(snapshot.resolver, start.plusDays(1)).second.removePrefix("내일 "))
+    }
+
+    /** 반차 keeps the shift on the lock screen, with the leave beside it; a whole day off shows the leave alone. */
+    @Test fun aHalfDayLeaveStillShowsTheShift() {
+        val start = LocalDate.of(2026, 11, 2)
+        val snapshot = ScheduleSnapshot(listOf(day), WorkPattern.Rotation(start, listOf(1L)),
+            listOf(com.bamnat.core.model.DayEntry(start, leave = com.bamnat.core.model.Leave(com.bamnat.core.model.LeaveKind.ANNUAL, 2))))
+        val today = TodayShiftNotice.lines(snapshot.resolver, start).first.removePrefix("오늘 ")
+        assertTrue(today, today.startsWith("주간 ") && today.endsWith(" · 반차"))
+        assertEquals("주간 07:00~19:00", TodayShiftNotice.lines(snapshot.resolver, start).second.removePrefix("내일 "))
     }
 }

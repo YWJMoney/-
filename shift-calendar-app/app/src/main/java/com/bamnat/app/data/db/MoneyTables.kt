@@ -53,6 +53,9 @@ data class MoneyEntryEntity(
     @ColumnInfo(defaultValue = "''") val parts: String = "",
     @ColumnInfo(defaultValue = "1") val installments: Int = 1,
     @ColumnInfo(defaultValue = "NULL") val fixedId: Long? = null,
+    /** Version 17 [FLD-08]. */
+    @ColumnInfo(defaultValue = "''") val proof: String = "",
+    @ColumnInfo(defaultValue = "''") val receipt: String = "",
 )
 
 /** [LEDG-05] Money leaving on a set day each month; version 9. [LEDG-09] Any repeating line since version 15. */
@@ -135,6 +138,10 @@ data class JobEntity(
     @ColumnInfo(defaultValue = "NULL") val endEpochDay: Long? = null,
     @ColumnInfo(defaultValue = "0") val costs: Long = 0,
     @ColumnInfo(defaultValue = "0") val withholding: Boolean = false,
+    /** Version 17: [com.bamnat.core.money.JobStatus.code] [FLD-03], 공수 [FLD-02], due day [FLD-09]. */
+    @ColumnInfo(defaultValue = "1") val status: Int = 1,
+    @ColumnInfo(defaultValue = "NULL") val units: Double? = null,
+    @ColumnInfo(defaultValue = "NULL") val dueEpochDay: Long? = null,
 )
 
 /** [WORK-03] One row per day a shop recorded; version 7. */
@@ -144,6 +151,13 @@ data class DailySalesEntity(
     val sales: Long,
     val costs: Long,
     val note: String,
+    /** Version 17: by payment method [SHOP-01], cash counted [SHOP-03], card sales paid in [SHOP-02]. */
+    @ColumnInfo(defaultValue = "0") val card: Long = 0,
+    @ColumnInfo(defaultValue = "0") val cash: Long = 0,
+    @ColumnInfo(defaultValue = "0") val transfer: Long = 0,
+    @ColumnInfo(defaultValue = "0") val delivery: Long = 0,
+    @ColumnInfo(defaultValue = "NULL") val cashCounted: Long? = null,
+    @ColumnInfo(defaultValue = "0") val cardSettled: Boolean = false,
 )
 
 @Dao
@@ -273,6 +287,10 @@ interface MoneyDao {
     @Query("SELECT COUNT(*) FROM money_entries WHERE accountId = :id OR toAccountId = :id")
     suspend fun linesOfAccount(id: Long): Int
 
+    /** [LEDG-08] Repeating lines paid from a removed account no longer point at it. */
+    @Query("UPDATE fixed_costs SET accountId = NULL WHERE accountId = :id")
+    suspend fun unlinkFixedFromAccount(id: Long)
+
     // [LEDG-06] Budgets.
     @Query("SELECT * FROM money_budgets")
     fun observeBudgets(): Flow<List<MoneyBudgetEntity>>
@@ -338,6 +356,8 @@ fun MoneyEntryEntity.toModel() = MoneyEntry(
     parts = decodeParts(parts),
     installments = installments.coerceAtLeast(1),
     fixedId = fixedId,
+    proof = proof,
+    receipt = receipt,
 )
 
 fun MoneyEntry.toEntity(createdAt: Long = System.currentTimeMillis()) = MoneyEntryEntity(
@@ -346,6 +366,7 @@ fun MoneyEntry.toEntity(createdAt: Long = System.currentTimeMillis()) = MoneyEnt
     cardLast4 = cardLast4, reviewed = reviewed,
     accountId = accountId, toAccountId = toAccountId, memo = memo, tags = tags.joinToString(","),
     parts = encodeParts(parts), installments = installments.coerceAtLeast(1), fixedId = fixedId,
+    proof = proof, receipt = receipt,
 )
 
 /** [LEDG-11] Split parts as "amount<TAB>category" lines; categories never hold a tab ([MoneyCategories.clean]). */
@@ -399,6 +420,8 @@ fun JobEntity.toModel() = Job(
     amount = amount, deposit = deposit, depositPaid = depositPaid, balancePaid = balancePaid,
     remindMinutes = remindMinutes, note = note,
     endDate = endEpochDay?.let(LocalDate::ofEpochDay), costs = costs, withholding = withholding,
+    status = com.bamnat.core.money.JobStatus.fromCode(status), units = units?.takeIf { it > 0 },
+    due = dueEpochDay?.let(LocalDate::ofEpochDay),
 )
 
 fun Job.toEntity() = JobEntity(
@@ -407,8 +430,15 @@ fun Job.toEntity() = JobEntity(
     amount = amount, deposit = deposit, depositPaid = depositPaid, balancePaid = balancePaid,
     remindMinutes = remindMinutes, note = note,
     endEpochDay = endDate?.takeIf { it.isAfter(date) }?.toEpochDay(), costs = costs, withholding = withholding,
+    status = status.code, units = units?.takeIf { it > 0 }, dueEpochDay = due?.toEpochDay(),
 )
 
-fun DailySalesEntity.toModel() = DailySales(LocalDate.ofEpochDay(epochDay), sales, costs, note)
+fun DailySalesEntity.toModel() = DailySales(
+    LocalDate.ofEpochDay(epochDay), sales, costs, note,
+    card = card, cash = cash, transfer = transfer, delivery = delivery, cashCounted = cashCounted, cardSettled = cardSettled,
+)
 
-fun DailySales.toEntity() = DailySalesEntity(date.toEpochDay(), sales, costs, note)
+fun DailySales.toEntity() = DailySalesEntity(
+    date.toEpochDay(), sales, costs, note,
+    card = card, cash = cash, transfer = transfer, delivery = delivery, cashCounted = cashCounted, cardSettled = cardSettled,
+)

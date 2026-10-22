@@ -62,6 +62,7 @@ import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Payments
@@ -128,6 +129,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -156,8 +158,28 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val snoozeAt: StateFlow<Long?> = container.alarmScheduler.snoozeAt
     /** [MCAL-01] The user's calendars, for 설정 > 달력. */
     val calendars: StateFlow<List<com.bamnat.app.data.PersonalCalendar>> = container.calendars.calendars
-    val snapshot: StateFlow<ScheduleSnapshot?> = container.scheduleRepository.snapshot
+
+    /** [MEMO-02] 메모 공유: 달력마다 따로, or calendars grouped to see each other's memos. */
+    val memoSharing: StateFlow<com.bamnat.core.memo.MemoSharing> = container.memoSharing.state
+    fun setMemoSharing(sharing: com.bamnat.core.memo.MemoSharing) = container.memoSharing.set(sharing)
+
+    /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록, newest first. */
+    val recentlyCleared: StateFlow<List<com.bamnat.app.data.RecordsTrash.Entry>> = container.recordsTrash.entries
+    fun restoreCleared(entry: com.bamnat.app.data.RecordsTrash.Entry) {
+        container.appScope.launch {
+            val ok = container.recordsTrash.restore(entry.id)
+            _message.value = SettingsMessage(if (ok) "‘${entry.name}’ 기록을 되돌렸어요" else "되돌리지 못했어요. 7일이 지났거나 파일을 읽지 못했어요")
+        }
+    }
+    /** [CALS-02] 내 근무 and 급여 follow the calendar picked at their top (the one on the calendar tab). */
+    val activeCalendar: StateFlow<String> = container.calendars.active
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val snapshot: StateFlow<ScheduleSnapshot?> = container.calendars.activeSnapshot
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    /** [CALS-02] The settings as the calendar picked sees them: its own kind of work. */
+    val workSettings: StateFlow<AppSettings> = kotlinx.coroutines.flow.combine(container.settingsRepository.settings, container.calendars.activeCalendar) { s, cal ->
+        com.bamnat.app.data.CalendarScope.run { s.forCalendar(cal) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, container.settingsRepository.current)
     fun cancelSnooze() = container.alarmScheduler.cancelSnooze()
     fun update(transform: (AppSettings) -> AppSettings) = container.settingsRepository.update(transform)
     fun canScheduleExact() = container.alarmScheduler.canScheduleExact()
@@ -269,7 +291,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     /** [COMM-00] A company file read and checked, waiting for the user to apply it. */
     private val _pendingCompany = MutableStateFlow<Pair<String, com.bamnat.app.data.CompanySummary>?>(null)
     val pendingCompany: StateFlow<Pair<String, com.bamnat.app.data.CompanySummary>?> = _pendingCompany.asStateFlow()
-    val hasPayProfile: StateFlow<com.bamnat.core.pay.PayProfile?> = container.payStore.profile
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val hasPayProfile: StateFlow<com.bamnat.core.pay.PayProfile?> = container.calendars.active
+        .flatMapLatest { container.calendars.pay(it).profile }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, container.calendars.pay(container.calendars.active.value).profile.value)
 
     /** [ADMIN-02] 문의하기 in the app when the build has the company server, else by mail. */
     val inquiryOn: Boolean get() = container.inquiryApi.enabled
@@ -605,11 +630,16 @@ private fun SettingsHub(
         Spacer(Modifier.size(4.dp))
         Shortcuts(onFound)
         Spacer(Modifier.size(4.dp))
+        val work by vm.workSettings.collectAsStateWithLifecycle()
         for (p in SettingsPage.entries) {
-            GroupRow(p.icon, p.title, summary(p, settings, snapshot, profile != null, notificationsOk), selected == p) { onOpen(p) }
+            GroupRow(p.icon, p.title, summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk), selected == p) { onOpen(p) }
         }
         // [COMM-07] Its own row, so it is one tap away rather than inside 급여.
         if (onOpenBoard != null) GroupRow(Icons.Outlined.Forum, "회사 규칙 광장", "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론", false, onClick = onOpenBoard)
+        // [GUIDE-05] Every feature that can be off, and where to turn it back on.
+        GroupRow(Icons.Outlined.Tune, "기능 켜고 끄기", "쓰지 않는 카드·안내·자동 기능 끄고 다시 켜기", false) {
+            SettingsLinks.go(SettingsGo.FEATURES)
+        }
         // [UX-05] Help and questions on their own row, with new answers counted on it.
         GroupRow(
             Icons.AutoMirrored.Outlined.HelpOutline, "도움말과 문의",
@@ -702,13 +732,21 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
             }
         }
     }
+    // [GUIDE-07] Features too: where each is, what it does, whether it is off here.
+    val features = remember(query) { com.bamnat.app.ui.guide.FeatureSearch.search(query, limit = 3) }
+    if (features.isNotEmpty()) {
+        Text("기능 ${features.size}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp))
+        for (f in features) com.bamnat.app.ui.guide.FeatureHelpRow(f, Modifier.padding(bottom = 8.dp))
+    }
     // Nothing found is not a dead end: the same words go to the help answers, and on to a question.
+    val nothing = results.isEmpty() && answers.isEmpty() && features.isEmpty()
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(if (results.isEmpty() && answers.isEmpty()) "도움말에서 더 찾거나 개발자에게 물어봐요" else "찾는 게 아니면 도움말에서 더 찾아봐요",
+            Text(if (nothing) "찾는 기능이 있나요? 기능 찾기에서 더 찾고, 없으면 의견을 보내요" else "찾는 게 아니면 도움말에서 더 찾아봐요",
                 style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            TextButton(onClick = { InquiryLinks.ask(InquiryStart(help = true, text = query)) }) { Text("도움말") }
+            TextButton(onClick = { InquiryLinks.ask(InquiryStart(help = true, text = query)) }) { Text(if (nothing) "기능 찾기" else "도움말") }
         }
     }
 }
@@ -761,7 +799,7 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
     ).ifEmpty { listOf("근무 알람만 와요") }.joinToString(" · ")
     SettingsPage.PAY -> if (hasPay) "급여 계산 · 연차 · 회사 설정 주고받기" else "급여 계산 시작하기 · 회사 설정 주고받기"
     SettingsPage.CALENDAR -> listOf(
-        when (s.themeMode) { ThemeMode.SYSTEM -> "휴대폰 테마"; ThemeMode.LIGHT -> "밝게"; ThemeMode.DARK -> "어둡게" },
+        when (s.themeMode) { ThemeMode.SYSTEM -> "휴대폰 테마"; ThemeMode.LIGHT -> "밝게"; ThemeMode.DARK -> "어둡게"; ThemeMode.NIGHT_SHIFT -> "야간 근무 중 어둡게" },
         "날짜 칸 아래 " + when { s.showLunar -> "음력"; s.showHoursInCells -> "근무시간"; else -> "비움" },
     ).joinToString(" · ")
     SettingsPage.DATA -> "백업 저장 · 불러오기 · 캘린더 가져오기·내보내기"

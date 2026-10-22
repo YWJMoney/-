@@ -126,6 +126,8 @@ internal fun MonthSummaryBar(
             Figure("하루 평균", Fmt.wonShort(overview.salesPerDay),
                 overview.bestDay?.let { "최고 ${it.monthValue}/${it.dayOfMonth} ${Fmt.wonShort(overview.bestSales)}" }),
         )
+        // [INV-06] The investor's month has its own bar (InvestMonthBar); this one only names the tab.
+        CalendarFocus.INVEST -> listOf(Figure("${month}월", "투자·수익 탭에서", null))
     }
     val spoken = figures.joinToString(", ") { f -> "${f.label} ${f.value}" + (f.note?.let { " $it" } ?: "") }
     val target = when (overview.focus) {
@@ -278,6 +280,14 @@ internal fun CalendarLegendSheet(focus: CalendarFocus, snapshot: ScheduleSnapsho
                         Box(Modifier.size(width = 40.dp, height = 8.dp).clip(RoundedCornerShape(4.dp)).background(scheme.secondaryContainer))
                     }
                     LegendRow("받은 돈", "칸 아래 초록 숫자 (만 원 단위)") { Text("45만", color = cal.income, fontWeight = FontWeight.Bold, style = NumberStyle) }
+                }
+                CalendarFocus.INVEST -> {
+                    LegendRow("수익 난 날", "빨간 칸과 +숫자 · 많이 벌수록 진해요") { Text("+12만", color = cal.sunday, fontWeight = FontWeight.Bold, style = NumberStyle) }
+                    LegendRow("손실 난 날", "파란 칸과 −숫자") { Text("−5만", color = cal.saturday, fontWeight = FontWeight.Bold, style = NumberStyle) }
+                    LegendRow("매매한 날", "매2는 그날 매매 2건") { Text("매", fontWeight = FontWeight.Bold) }
+                    LegendRow("투자 일정", "왼쪽 위 점: 배당락일·실적 발표처럼 적어 둔 날") {
+                        Box(Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(scheme.tertiary))
+                    }
                 }
                 CalendarFocus.SALES -> {
                     LegendRow("매출", "칸 아래 초록 숫자 (만 원 단위)") { Text("120만", color = cal.income, fontWeight = FontWeight.Bold, style = NumberStyle) }

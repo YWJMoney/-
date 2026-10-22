@@ -46,6 +46,14 @@ class BackupManager(
     private val payStore: com.bamnat.app.pay.PayStore? = null,
     /** [MCAL-05] The added calendars belong in the backup too. */
     private val calendars: CalendarBook? = null,
+    /** [MEMO-02] Which calendars share memos. */
+    private val memoSharing: MemoSharingStore? = null,
+    /** [HRLY-09][FLD-11][SHOP-10][SHOP-11] Each calendar's work tools (offers, contract fields, quotes, weather, staff); photos stay on the phone. */
+    private val workTools: WorkToolsStore? = null,
+    /** [GUIDE-05] The features turned off with the app's own switches; what was used stays on the phone. */
+    private val guide: GuideStore? = null,
+    /** [UNDO-03] An added calendar an import takes away goes to 최근 지운 기록 first, contract photos too. */
+    private val recordsTrash: () -> RecordsTrash? = { null },
 ) {
     /** The schedule tables of [source] (shifts, order, changed days, extra work) as a backup holds them. */
     private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
@@ -58,7 +66,7 @@ class BackupManager(
                     .put("break", t.breakMinutes).put("off", t.isOff)
                     .put("alarm", t.alarmEnabled).put("alarmOffset", t.alarmOffsetMinutes)
                     .putOpt("sound", t.alarmSoundUri).put("order", t.sortOrder).put("alarms", t.alarmOffsets).putOpt("icon", t.icon)
-                    .putOpt("breakStart", t.breakStartMinute),
+                    .putOpt("breakStart", t.breakStartMinute).putOpt("premium", t.premiumPercent.takeIf { it > 0 }),
             )
         }
         into.put("shiftTypes", types)
@@ -77,7 +85,9 @@ class BackupManager(
                     .put("day", d.epochDay).put("mode", d.overrideMode).putOpt("type", d.overrideShiftTypeId)
                     .putOpt("start", d.customStartMinute).putOpt("end", d.customEndMinute)
                     .putOpt("break", d.customBreakMinutes).put("skip", d.alarmSkipped)
-                    .putOpt("alarms", d.customAlarms).put("leave", d.leave),
+                    .putOpt("alarms", d.customAlarms).put("leave", d.leave)
+                    // [HRLY-01][SHFT-03] Version 17; older apps ignore them.
+                    .putOpt("attendance", d.attendance.takeIf { it != 0 }).putOpt("swap", d.swapWith.ifEmpty { null }),
             )
         }
         into.put("days", days)
@@ -104,7 +114,8 @@ class BackupManager(
                     // [LEDG-08][LEDG-09][LEDG-11] Version 15; only what is set, so a plain line stays short.
                     .putOpt("account", e.accountId).putOpt("toAccount", e.toAccountId).putOpt("fixedId", e.fixedId)
                     .putOpt("memo", e.memo.ifEmpty { null }).putOpt("tags", e.tags.ifEmpty { null })
-                    .putOpt("parts", e.parts.ifEmpty { null }).putOpt("installments", e.installments.takeIf { it > 1 }))
+                    .putOpt("parts", e.parts.ifEmpty { null }).putOpt("installments", e.installments.takeIf { it > 1 })
+                    .putOpt("proof", e.proof.ifEmpty { null }).putOpt("receipt", e.receipt.ifEmpty { null }))
             }
         })
         into.put("jobs", JSONArray().apply {
@@ -113,11 +124,17 @@ class BackupManager(
                     .put("place", j.place).putOpt("start", j.startMinute).putOpt("end", j.endMinute).put("amount", j.amount)
                     .put("deposit", j.deposit).put("depositPaid", j.depositPaid).put("balancePaid", j.balancePaid)
                     .putOpt("remind", j.remindMinutes).put("note", j.note)
-                    .putOpt("endDay", j.endEpochDay).put("costs", j.costs).put("withholding", j.withholding))
+                    .putOpt("endDay", j.endEpochDay).put("costs", j.costs).put("withholding", j.withholding)
+                    .put("status", j.status).putOpt("units", j.units).putOpt("due", j.dueEpochDay))
             }
         })
         into.put("sales", JSONArray().apply {
-            money.allSales().forEach { d -> put(JSONObject().put("day", d.epochDay).put("sales", d.sales).put("costs", d.costs).put("note", d.note)) }
+            money.allSales().forEach { d ->
+                put(JSONObject().put("day", d.epochDay).put("sales", d.sales).put("costs", d.costs).put("note", d.note)
+                    // [SHOP-01][SHOP-02][SHOP-03] Version 17.
+                    .put("card", d.card).put("cash", d.cash).put("transfer", d.transfer).put("delivery", d.delivery)
+                    .putOpt("counted", d.cashCounted).put("settled", d.cardSettled))
+            }
         })
         // [LEDG-05][LEDG-04] Fixed costs and learned categories (version 9). Unread notification texts are never backed up.
         into.put("fixed", JSONArray().apply {
@@ -162,6 +179,8 @@ class BackupManager(
                 put(JSONObject().put("id", p.id).put("owed", p.receivableId).put("day", p.epochDay).put("amount", p.amount).putOpt("entry", p.entryId))
             }
         })
+        // [INV-10] An investor calendar's accounts, trades, deposits, journal, alarms and settings (version 18).
+        into.put("invest", InvestBackup.put(source))
     }
 
     /** [MCAL-06] A calendar's pay setup and closed months. */
@@ -185,6 +204,7 @@ class BackupManager(
                     val o = CalendarBook.run { cal.toJson() }
                     book.database(cal.id).let { other -> other.withTransaction { putSchedule(other, o); putMoney(other, o) } }
                     putPay(book.pay(cal.id), o)
+                    o.putOpt("workTools", workTools?.export(cal.id))
                     put(o)
                 }
             })
@@ -201,16 +221,22 @@ class BackupManager(
                     .putOpt("deleted", m.deletedAt)
                     // [SCHED-01] Version 13. Older apps ignore these keys and keep the memo plain.
                     .putOpt("remindAt", m.remindAt).put("remindRing", m.remindRing).put("remindNotify", m.remindNotify)
-                    .putOpt("remindAsked", m.remindAsked),
+                    .putOpt("remindAsked", m.remindAsked)
+                    // [NOTE-01] Version 16. [MEMO-01] Without it the memo is 내 달력's; ",*," is every calendar.
+                    .putOpt("calendars", m.calendars.ifEmpty { null })
+                    .putOpt("repeat", m.repeat.ifEmpty { null }),
             )
         }
         root.put("memos", memos)
+        memoSharing?.let { root.put("memoSharing", MemoSharingStore.toJson(it.state.value)) }
         putMoney(db, root)
         // [SLP-06] The sleep log goes with the rest of the user's data.
         root.put("sleep", JSONArray().apply {
             db.sleepDao().all().forEach { l -> put(JSONObject().put("start", l.startMillis).putOpt("end", l.endMillis)) }
         })
         payStore?.let { putPay(it, root) }
+        root.putOpt("workTools", workTools?.export(PersonalCalendar.MAIN))
+        guide?.let { root.put("featuresOff", it.exportOff()) }
         val s = settings.current
         root.put(
             "settings",
@@ -247,7 +273,9 @@ class BackupManager(
             exportedAtMillis = root.optLong("exportedAt"),
             moneyLines = (root.optJSONArray("money")?.length() ?: 0) + (root.optJSONArray("jobs")?.length() ?: 0) +
                 (root.optJSONArray("sales")?.length() ?: 0) + (root.optJSONArray("fixed")?.length() ?: 0) +
-                (root.optJSONArray("owed")?.length() ?: 0),
+                (root.optJSONArray("owed")?.length() ?: 0) +
+                // [INV-10] The main calendar's trades and deposits.
+                (root.optJSONObject("invest")?.let { (it.optJSONArray("trades")?.length() ?: 0) + (it.optJSONArray("cash")?.length() ?: 0) } ?: 0),
             sleeps = root.optJSONArray("sleep")?.length() ?: 0,
             hasPay = root.has("pay"),
             calendars = root.optJSONArray("calendars")?.length() ?: 0,
@@ -267,7 +295,7 @@ class BackupManager(
                 breakMinutes = o.optInt("break"), isOff = o.optBoolean("off"), alarmEnabled = o.optBoolean("alarm"),
                 alarmOffsetMinutes = o.optInt("alarmOffset", 60), alarmSoundUri = o.optStringOrNull("sound"),
                 sortOrder = o.optInt("order"), alarmOffsets = o.optString("alarms", ""), icon = o.optStringOrNull("icon"),
-                breakStartMinute = o.optIntOrNull("breakStart"),
+                breakStartMinute = o.optIntOrNull("breakStart"), premiumPercent = o.optInt("premium").coerceIn(0, 300),
             )
         }
         if (types.isEmpty()) throw BackupException("근무 종류가 없는 백업 파일이에요")
@@ -292,6 +320,7 @@ class BackupManager(
                 holidayWorkMinutes = o.optInt("holiday").coerceIn(0, 24 * 60), alarmSkipped = o.optBoolean("skip"),
                 customAlarms = o.optStringOrNull("alarms"), extraWork = o.optInt("extra"), leave = o.optInt("leave"),
                 secondShiftTypeId = if (o.has("second") && !o.isNull("second")) o.getLong("second") else null,
+                attendance = o.optInt("attendance"), swapWith = o.optString("swap"),
             )
         }
         val extras = from.optJSONArray("extras")?.objects()?.map { o ->
@@ -334,6 +363,8 @@ class BackupManager(
         val fixed: List<FixedCostEntity>?, val rules: List<CategoryRuleEntity>?,
         val accounts: List<MoneyAccountEntity>?, val budgets: List<MoneyBudgetEntity>?, val categories: List<MoneyCategoryEntity>?,
         val owed: List<com.bamnat.app.data.db.ReceivableEntity>?, val owedPaid: List<com.bamnat.app.data.db.ReceivablePaymentEntity>?,
+        /** [INV-10] Null for a backup without "invest": the phone's then stay. */
+        val invest: InvestBackup.Rows? = null,
     )
 
     private fun readMoney(from: JSONObject): MoneyRows {
@@ -345,7 +376,7 @@ class BackupManager(
                 cardLast4 = o.optString("card"), reviewed = o.optBoolean("reviewed", true),
                 accountId = o.optLongOrNull("account"), toAccountId = o.optLongOrNull("toAccount"), memo = o.optString("memo"),
                 tags = o.optString("tags"), parts = o.optString("parts"), installments = o.optInt("installments", 1).coerceIn(1, 60),
-                fixedId = o.optLongOrNull("fixedId"),
+                fixedId = o.optLongOrNull("fixedId"), proof = o.optString("proof"), receipt = o.optString("receipt"),
             )
         }
         val fixed = from.optJSONArray("fixed")?.objects()?.map { o ->
@@ -377,6 +408,8 @@ class BackupManager(
                 balancePaid = o.optBoolean("balancePaid"), remindMinutes = o.optIntOrNull("remind"), note = o.optString("note"),
                 endEpochDay = if (o.has("endDay") && !o.isNull("endDay")) o.getLong("endDay") else null,
                 costs = o.optLong("costs"), withholding = o.optBoolean("withholding"),
+                status = o.optInt("status", 1), units = if (o.has("units") && !o.isNull("units")) o.getDouble("units") else null,
+                dueEpochDay = o.optLongOrNull("due"),
             )
         }
         val owed = from.optJSONArray("owed")?.objects()?.map { o ->
@@ -392,9 +425,14 @@ class BackupManager(
                 if (o.has("entry") && !o.isNull("entry")) o.getLong("entry") else null)
         }
         val sales = from.optJSONArray("sales")?.objects()?.map { o ->
-            DailySalesEntity(o.getLong("day"), o.optLong("sales"), o.optLong("costs"), o.optString("note"))
+            DailySalesEntity(
+                o.getLong("day"), o.optLong("sales"), o.optLong("costs"), o.optString("note"),
+                card = o.optLong("card"), cash = o.optLong("cash"), transfer = o.optLong("transfer"), delivery = o.optLong("delivery"),
+                cashCounted = o.optLongOrNull("counted"), cardSettled = o.optBoolean("settled"),
+            )
         }
-        return MoneyRows(entries, jobs, sales, fixed, rules, accounts, budgets, categories, owed, owedPaid)
+        val invest = from.optJSONObject("invest")?.let(InvestBackup::read)
+        return MoneyRows(entries, jobs, sales, fixed, rules, accounts, budgets, categories, owed, owedPaid, invest)
     }
 
     /** [MCAL-06] Replaces a calendar's money with a backup's, part by part; call inside its transaction. */
@@ -417,6 +455,8 @@ class BackupManager(
             list.forEach { dao.restore(it) }
             rows.owedPaid?.forEach { dao.restorePayment(it) }
         }
+        // [INV-10] Backups without "invest" (before version 18, or with none before 1.17) leave the phone's; `{}` empties it.
+        rows.invest?.let { InvestBackup.write(target, it) }
     }
 
     suspend fun restore(json: String) {
@@ -440,6 +480,8 @@ class BackupManager(
                 deletedAt = if (o.isNull("deleted") || !o.has("deleted")) null else o.getLong("deleted"),
                 remindAt = o.optStringOrNull("remindAt"), remindRing = o.optBoolean("remindRing"),
                 remindNotify = o.optBoolean("remindNotify"), remindAsked = o.optStringOrNull("remindAsked"),
+                calendars = com.bamnat.core.memo.MemoCalendars.encode(com.bamnat.core.memo.MemoCalendars.decode(o.optStringOrNull("calendars"))),
+                repeat = o.optString("repeat"),
             )
         }
         val sleep = root.optJSONArray("sleep")?.objects()?.map { o ->
@@ -449,6 +491,11 @@ class BackupManager(
         // Read before anything changes, so a broken pay part leaves the phone as it was.
         val pay = root.optJSONObject("pay")?.let(com.bamnat.app.pay.PayCodec::decode)
         val payClosed = root.optJSONArray("payClosed")?.objects()?.map(com.bamnat.app.pay.SnapshotCodec::decode)
+        // [UNDO-03] Kept before its memos are replaced; its photos are on this phone only, never in a backup.
+        if (calendars != null && added != null) {
+            val back = added.map { it.cal.id }.toSet()
+            calendars.calendars.value.filter { !it.isMain && it.id !in back }.forEach { cal -> runCatching { recordsTrash()?.beforeDelete(cal.id) } }
+        }
         db.withTransaction {
             writeMoney(db, money)
             // Backups from before version 11 carry no sleep log; the one on the phone then stays.
@@ -457,10 +504,15 @@ class BackupManager(
             writeSchedule(db, schedule)
             memos.forEach { db.memoDao().restore(it) }
         }
+        // [MEMO-02] An older backup has no sharing: the phone's own choice stays.
+        root.optJSONArray("memoSharing")?.let { a -> memoSharing?.set(MemoSharingStore.fromJson(a)) }
+        // [GUIDE-05] An older backup has none: the phone's own switches stay.
+        root.optJSONArray("featuresOff")?.let { a -> guide?.restoreOff(a) }
         // [MCAL-05] The added calendars as the backup had them, each in its own database.
+        var goneCalendars = emptyList<String>()
         calendars?.let { book ->
             if (added != null) {
-                book.replaceAdded(listOfNotNull(mainCalendar) + added.map { it.cal }, addedOrder)
+                goneCalendars = book.replaceAdded(listOfNotNull(mainCalendar) + added.map { it.cal }, addedOrder)
                 for (a in added) {
                     book.database(a.cal.id).let { other -> other.withTransaction { writeSchedule(other, a.schedule); writeMoney(other, a.money) } }
                     // [MCAL-06] Its pay setup points at its own shift ids, restored just above.
@@ -477,6 +529,15 @@ class BackupManager(
         payStore?.let { store ->
             if (pay != null) store.save(pay, keepUndo = false)
             if (payClosed != null) store.replaceClosed(payClosed.associateBy { it.month })
+        }
+        // Backups from before 1.17 carry no work tools; the phone's own then stay.
+        workTools?.let { tools ->
+            tools.restore(PersonalCalendar.MAIN, root.optJSONObject("workTools"))
+            if (added != null) root.optJSONArray("calendars").objects().forEach { o ->
+                CalendarBook.fromJson(o)?.takeIf { !it.isMain }?.let { cal -> tools.restore(cal.id, o.optJSONObject("workTools")) }
+            }
+            // A calendar the backup does not have is gone with its folder; nothing of it stays on screen.
+            goneCalendars.forEach(tools::reload)
         }
         root.optJSONObject("settings")?.let { o ->
             settings.update { s ->

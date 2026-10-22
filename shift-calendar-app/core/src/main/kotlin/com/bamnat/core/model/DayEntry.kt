@@ -37,13 +37,30 @@ data class DayEntry(
      * the user added them. A 대근 for a 나이트 [FEAT-02] is one of these with the night's times.
      */
     val extras: List<ExtraEntry> = emptyList(),
+    /** [HRLY-01] How the day went for a part-timer: 지각, 조퇴 or 결근; null for a normal day. */
+    val attendance: Attendance? = null,
+    /** [SHFT-03] Who the day was swapped with (근무 교환), or empty. */
+    val swapWith: String = "",
 ) {
     val hasCustomTimes: Boolean get() = customStart != null && customEnd != null
 
     /** True when this entry changes nothing and can be deleted. */
     val isEmpty: Boolean
         get() = override == ShiftOverride.None && customStart == null && customEnd == null &&
-            customBreakMinutes == null && !alarmSkipped && customAlarms == null && leave == null && extras.isEmpty()
+            customBreakMinutes == null && !alarmSkipped && customAlarms == null && leave == null && extras.isEmpty() &&
+            attendance == null && swapWith.isBlank()
+}
+
+/**
+ * [HRLY-01] A part-timer's attendance. 지각 and 조퇴 keep the week's 개근 for 주휴수당; 결근 does not
+ * and the day is not worked (고용노동부 해석: 지각·조퇴는 결근이 아님).
+ */
+enum class Attendance(val label: String, val code: Int) {
+    LATE("지각", 1), EARLY("조퇴", 2), ABSENT("결근", 3);
+
+    companion object {
+        fun fromCode(code: Int): Attendance? = entries.firstOrNull { it.code == code }
+    }
 }
 
 /** An alarm at a clock time on one date, set from the calendar. */

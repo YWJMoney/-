@@ -11,7 +11,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.time.DayOfWeek
 
-enum class ThemeMode { SYSTEM, LIGHT, DARK }
+enum class ThemeMode {
+    SYSTEM, LIGHT, DARK,
+    /** [SHFT-05] Dark while the calendar tab's calendar is in a night shift, the phone's theme otherwise. */
+    NIGHT_SHIFT,
+}
 
 /** [CAL-03] What a tap on a date does on a phone-sized screen (unfolded, the day is always beside the calendar). */
 enum class PhoneDayView {

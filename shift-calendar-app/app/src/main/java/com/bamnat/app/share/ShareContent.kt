@@ -4,6 +4,7 @@ import com.bamnat.app.AppContainer
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.pay.named
+import com.bamnat.core.memo.MemoSharing
 import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.work.MoneyShare
 import com.bamnat.core.work.MoneyShareFigures
@@ -17,12 +18,12 @@ import java.time.LocalDate
 object ShareContent {
     suspend fun payload(
         c: AppContainer, snapshot: ScheduleSnapshot, from: LocalDate, title: String, ttlDays: Int?, options: ShareOptions,
-        /** [MCAL-03][MCAL-06] Whose calendar: its own kind of work, money and pay; memos are the same on every calendar. */
+        /** [MCAL-03][MCAL-06] Whose calendar: its own kind of work, money and pay; [MEMO-01] the memos it sees. */
         calendar: String = PersonalCalendar.MAIN,
     ): JSONObject =
         withContext(Dispatchers.Default) {
             val kind = kind(c, calendar)
-            val memos = if (options.memos) memos(c, from) else emptyMap()
+            val memos = if (options.memos) memos(c, from, calendar) else emptyMap()
             val pay = if (options.pay) money(c, snapshot, from, kind, calendar) else emptyList()
             val jobs = if (options.jobs) jobs(c, from, calendar) else emptyMap()
             ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs)
@@ -66,11 +67,15 @@ object ShareContent {
         return out
     }
 
-    /** Each day's memos in the link's days, as one line a day, newest first as under the calendar. */
-    suspend fun memos(c: AppContainer, from: LocalDate): Map<LocalDate, String> {
+    /**
+     * Each day's memos in the link's days, as one line a day, newest first as under the calendar.
+     * [SHR-01][MEMO-02] Only the calendar's own memos and those for every calendar: 메모 공유 shows a
+     * grouped calendar's memos in the app, never on another calendar's link.
+     */
+    suspend fun memos(c: AppContainer, from: LocalDate, calendar: String = PersonalCalendar.MAIN): Map<LocalDate, String> {
         val until = from.plusDays(ShareLinkPayload.DAYS.toLong())
         return c.memoRepository.memos.first()
-            .filter { m -> !m.inTrash && !m.isBlank && m.date?.let { !it.isBefore(from) && it.isBefore(until) } == true }
+            .filter { m -> m.showsOn(calendar, MemoSharing.SEPARATE) && !m.inTrash && !m.isBlank && m.date?.let { !it.isBefore(from) && it.isBefore(until) } == true }
             .sortedByDescending { it.updatedAtMillis }
             .groupBy { it.date!! }
             .mapNotNull { (date, list) -> ShareLinkPayload.memoLine(list)?.let { date to it } }

@@ -7,6 +7,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -19,6 +20,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
+import com.bamnat.core.work.words
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.alarm.AlarmScheduler
 import com.bamnat.app.alarm.Notifications
@@ -81,24 +87,65 @@ private fun WorkPage(
     onOpenExtraKinds: () -> Unit,
 ) {
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
+    // [CALS-02] Each calendar's work is its own: the one picked here is the one these rows set up.
+    val work by vm.workSettings.collectAsStateWithLifecycle()
+    val words = work.workStyle.words()
     // [SETUP-12] A first setup left for later goes on from here too; nothing shows when none is waiting.
     com.bamnat.app.ui.setup.SetupResumeCard()
+    CalendarPick()
     SectionCard(title = null) {
         // [WORK-01] Changing the kind of work keeps every record; it only changes what screens show.
-        NavRow("일하는 방식", settings.workStyle?.let { "${it.label} · ${it.description}" } ?: "교대·일근·시급·현장·자영업 중에서 골라요", onOpenWorkStyle)
+        NavRow("일하는 방식", work.workStyle?.let { "${it.label} · ${it.description}" } ?: "교대·일근·시급·현장·자영업 중에서 골라요", onOpenWorkStyle)
         HorizontalDivider()
-        NavRow("근무 주기", when (settings.workStyle) {
-            WorkStyle.SHIFT, null -> "주주휴휴야야휴휴처럼 돌아가는 순서와 시작일"
-            WorkStyle.DAY -> "일하는 요일과 시작일"
-            else -> "되풀이되는 근무가 있으면 정해요"
-        }, onOpenPattern)
+        NavRow(words.pattern, words.patternHint, onOpenPattern)
         HorizontalDivider()
-        NavRow("근무 종류와 시간", shiftsLine(snapshot?.shiftTypes.orEmpty()), onOpenShiftTypes)
-        HorizontalDivider()
-        // [EXTRA-04][EXTRA-07] Each company names, times and pays work on a day off and extra hours its own way.
-        NavRow("연장 휴무일 근무 지정", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·가산 임금", onOpenExtraKinds)
+        NavRow(words.types, shiftsLine(snapshot?.shiftTypes.orEmpty()), onOpenShiftTypes)
+        if (work.workStyle?.usesPayEngine != false) {
+            HorizontalDivider()
+            // [EXTRA-04][EXTRA-07] Each company names, times and pays work on a day off and extra hours its own way.
+            NavRow("연장 휴무일 근무 지정", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·가산 임금", onOpenExtraKinds)
+        }
     }
     Note("일하는 방식을 바꿔도 적어 둔 기록은 그대로 남아요.")
+    WorkTools(work.workStyle)
+}
+
+/** [SHFT-06][SHFT-07][DAYW-06][DAYW-07] Tools of the calendar's own kind of work, for the calendar picked above. */
+@Composable
+private fun WorkTools(style: com.bamnat.core.work.WorkStyle?) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val commute by remember { com.bamnat.app.data.CommutePrefs.get(context).state }.collectAsStateWithLifecycle()
+    fun open(t: com.bamnat.app.NoticeLinks.Target) = com.bamnat.app.NoticeLinks.open(t)
+    when (style) {
+        null, com.bamnat.core.work.WorkStyle.SHIFT -> SectionCard(title = "교대 근무 도구") {
+            NavRow("듀티표 사진으로 넣기", "한 달 듀티표 사진을 읽어 근무를 한 번에 넣어요") { open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER) }
+            HorizontalDivider()
+            NavRow("연간 건강 지표", "야간 비율, 연속 야간, 짧은 휴식, 주말·공휴일 근무") { open(com.bamnat.app.NoticeLinks.Target.HEALTH_REPORT) }
+        }
+        com.bamnat.core.work.WorkStyle.DAY -> SectionCard(title = "일근 도구") {
+            NavRow("근태 엑셀 가져오기", "회사 근태 시스템의 엑셀·CSV로 출퇴근·연차·야근을 넣어요") { open(com.bamnat.app.NoticeLinks.Target.ATTENDANCE_IMPORT) }
+            HorizontalDivider()
+            NavRow("출퇴근 자동 기록", if (commute.enabled) "켜져 있어요 · 회사 위치에 들어오고 나갈 때 적어요" else "꺼져 있어요 · 회사 위치로 출근·퇴근 시각을 적어요") {
+                open(com.bamnat.app.NoticeLinks.Target.COMMUTE)
+            }
+        }
+        else -> Unit
+    }
+}
+
+/**
+ * [CALS-02] Which calendar the rows below set up, once there is more than one: the one on the calendar
+ * tab, switched here too, so a calendar made later is set up from here like the first one.
+ */
+@Composable
+private fun CalendarPick() {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val list by c.calendars.calendars.collectAsStateWithLifecycle()
+    if (list.size < 2) return
+    Column(Modifier.padding(horizontal = 4.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("설정할 달력", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        com.bamnat.app.ui.calendar.CalendarScopeChips(c)
+    }
 }
 
 /** "주간 07:00–19:00 · 야간 19:00–07:00 외 2개". */
@@ -294,6 +341,8 @@ private fun NoticesPage(
 @Composable
 private fun PayPage(vm: SettingsViewModel, files: SettingsFiles, onOpenPay: () -> Unit, company: (@Composable ColumnScope.() -> Unit)?) {
     val profile by vm.hasPayProfile.collectAsStateWithLifecycle()
+    // [CALS-02] Each calendar has its own pay setup.
+    CalendarPick()
     SectionCard(title = null) {
         NavRow("급여 계산", if (profile != null) "기본급·수당·회사 규칙·연차·급여일" else "기본급만 넣으면 이번 달 예상 급여가 보여요", onOpenPay)
     }
@@ -319,6 +368,15 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         NavRow("달력 목록", if (calendars.size > 1) "${calendars.size}개 · " + calendars.joinToString(", ") { it.name }
             else "새 달력을 만들어 근무를 따로 적고 따로 공유해요", onOpenCalendars)
         HorizontalDivider()
+        // [MEMO-02] Memos stay with their own calendar unless calendars are grouped here.
+        val memoSharing by vm.memoSharing.collectAsStateWithLifecycle()
+        var sharingMemos by remember { mutableStateOf(false) }
+        NavRow("메모 공유", com.bamnat.app.ui.memo.memoSharingText(memoSharing, calendars)) { if (calendars.size > 1) sharingMemos = true }
+        if (sharingMemos) {
+            com.bamnat.app.ui.memo.MemoSharingDialog(memoSharing, calendars, onDismiss = { sharingMemos = false },
+                onSave = { vm.setMemoSharing(it); sharingMemos = false })
+        }
+        HorizontalDivider()
         // [UX-03] Sharing is also where people look for it in settings; both open the calendar with the sheet up.
         NavRow("근무표 공유", "이미지나 링크로 동료·가족에게 보내요") { SettingsLinks.go(SettingsGo.SHARE) }
         if (vm.shareOn) {
@@ -327,7 +385,10 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         }
     }
     SectionCard(title = "모양") {
-        ChoiceRow("테마", null, listOf(ThemeMode.SYSTEM to "휴대폰 따라", ThemeMode.LIGHT to "밝게", ThemeMode.DARK to "어둡게"), settings.themeMode) { m ->
+        // [SHFT-05] 야간 근무 중 어둡게: dark during a night shift on the calendar being viewed.
+        ChoiceRow("테마", if (settings.themeMode == ThemeMode.NIGHT_SHIFT) "22~06시에 걸친 근무 중에는 어둡게, 그 밖에는 휴대폰 따라" else null,
+            listOf(ThemeMode.SYSTEM to "휴대폰 따라", ThemeMode.LIGHT to "밝게", ThemeMode.DARK to "어둡게", ThemeMode.NIGHT_SHIFT to "야간 근무 중 어둡게"),
+            settings.themeMode) { m ->
             vm.update { it.copy(themeMode = m) }
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -402,11 +463,28 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
             HorizontalDivider()
             NavRow("불러오기 전으로 되돌리기", "$savedLabel 불러오기 전 데이터로 돌아가요") { confirmUndo = true }
         }
+        // [UNDO-01][UNDO-02][UNDO-03] A changed kind of work, cleared records or a removed calendar, for 7 days.
+        val cleared by vm.recentlyCleared.collectAsStateWithLifecycle()
+        var showCleared by remember { mutableStateOf(false) }
+        HorizontalDivider()
+        NavRow("최근 지운 기록", if (cleared.isEmpty()) "근무 형태를 바꾸거나 기록·달력을 지우면 7일 동안 여기서 되돌릴 수 있어요"
+            else "${cleared.size}개 · 7일 안에 되돌릴 수 있어요") { showCleared = true }
+        if (showCleared) RecordsTrashDialog(cleared, onRestore = vm::restoreCleared, onDismiss = { showCleared = false })
     }
     SectionCard(title = "다른 캘린더 앱과") {
         // [IMPORT-01]
         NavRow("캘린더에서 가져오기", "삼성·구글 캘린더 일정을 읽어 근무와 메모로 옮겨요") {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.CALENDAR_IMPORT)
+        }
+        HorizontalDivider()
+        // [SHFT-06]
+        NavRow("듀티표 사진으로 넣기", "듀티표 사진이나 복사한 글자로 한 달 근무를 넣어요") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER)
+        }
+        HorizontalDivider()
+        // [DAYW-06]
+        NavRow("근태 엑셀 가져오기", "회사 근태 시스템의 엑셀(.xlsx)·CSV 파일로 출퇴근·연차를 넣어요") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.ATTENDANCE_IMPORT)
         }
         HorizontalDivider()
         // [REL-04]

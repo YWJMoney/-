@@ -1,5 +1,6 @@
 package com.bamnat.app
 
+import kotlinx.coroutines.sync.withLock
 import android.content.Context
 import com.bamnat.app.alarm.AlarmScheduler
 import com.bamnat.app.data.BackupManager
@@ -65,13 +66,26 @@ class AppContainer(context: Context) {
         },
         mainMoney = { moneyRepository },
         mainPay = { payStore },
+        // [CALS-04] One shelf of unfinished payment texts, whichever calendar they were meant for.
+        moneyOf = { id, db ->
+            MoneyRepository(db, captureStore, style = kotlinx.coroutines.flow.combine(calendarsFlow, settingsRepository.settings) { list, s ->
+                // [CALS-02] An added calendar without a kind of work of its own follows the main one, as its tabs do.
+                list.firstOrNull { it.id == id }?.takeIf { !it.isMain }?.style ?: s.workStyle
+            }, confirmFirst = autoRecordPrefs.state.map { it.holdFrom },
+                marks = com.bamnat.app.data.RecurringMarks(java.io.File(com.bamnat.app.data.CalendarStorage.filesOf(appContext, id), "recurring_marks.json")))
+        },
         payOf = { id -> PayStore(appContext, java.io.File(com.bamnat.app.data.CalendarStorage.filesOf(appContext, id), "pay")) },
     )
     /** [MCAL-06] Calendar [id]'s days, money and pay as a screen sees them. */
     fun scopeOf(id: String) = com.bamnat.app.data.CalendarScope(calendars, settingsRepository, id)
     /** [MCAL-02] The setup of a calendar being added, kept apart from the app's first setup. */
     val calendarSetupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "calendar_setup_draft.json")) }
-    val memoRepository = MemoRepository(database)
+    /** [MEMO-02] 설정 › 메모 공유; 달력마다 따로 until the user groups calendars. */
+    val memoSharing = com.bamnat.app.data.MemoSharingStore(java.io.File(appContext.filesDir, "memo_sharing.json"))
+    /** [MEMO-01] Memos stay with the calendar they were written on, unless calendars share them. */
+    val memoRepository = MemoRepository(database, sharing = kotlinx.coroutines.flow.combine(memoSharing.state, calendars.calendars) { s, list ->
+        s.cleaned(list.map { it.id })
+    })
     val sleepRepository = com.bamnat.app.data.SleepRepository(database)
     /** [ONBOARD-01] What this phone was told about on the first-start consent pages. */
     val consentStore by lazy { com.bamnat.app.data.ConsentStore(appContext) }
@@ -79,15 +93,65 @@ class AppContainer(context: Context) {
     val healthSleep = com.bamnat.app.sleep.HealthSleep(context)
     /** [LEDG-22][LEDG-24] How 결제 알림으로 적기 was tuned, and repeats the user turned down. */
     val autoRecordPrefs by lazy { com.bamnat.app.data.AutoRecordPrefs(appContext) }
-    val moneyRepository = MoneyRepository(database, com.bamnat.app.data.CaptureStore(java.io.File(appContext.noBackupFilesDir, "captures.json")))
+    private val captureStore by lazy { com.bamnat.app.data.CaptureStore(java.io.File(appContext.noBackupFilesDir, "captures.json")) }
+    val moneyRepository = MoneyRepository(database, captureStore, style = settingsRepository.settings.map { it.workStyle },
+        confirmFirst = autoRecordPrefs.state.map { it.holdFrom },
+        marks = com.bamnat.app.data.RecurringMarks(java.io.File(appContext.filesDir, "recurring_marks.json")))
+    /** The calendar list as a flow, for repositories made before [calendars] is there. */
+    private val calendarsFlow: kotlinx.coroutines.flow.Flow<List<com.bamnat.app.data.PersonalCalendar>>
+        get() = calendars.calendars
+
+    /**
+     * [CALS-04] The calendar a payment notification belongs to: by its card's last four digits, the
+     * issuer a calendar's account is named after, the app it came from, or the chosen calendar.
+     */
+    private val captureLock = kotlinx.coroutines.sync.Mutex()
+
+    /**
+     * [CALS-04] A payment notification into the calendar it belongs to, one at a time across calendars
+     * and checked against every calendar's lines, so one payment is written once. If picking the
+     * calendar fails, it goes to the main one rather than being lost.
+     */
+    suspend fun capture(text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean): MoneyRepository.Outcome =
+        captureLock.withLock {
+            // [SHOP-08] A card terminal's or delivery app's notice goes to the shop calendar.
+            val target = com.bamnat.app.money.ShopNotices.route(this, pkg, app) ?: runCatching { captureCalendar(text, pkg, postedAt) }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                .getOrDefault(com.bamnat.app.data.PersonalCalendar.MAIN)
+            // [SHOP-08] On a shop calendar its sales and card deposits are taken as sales, not ledger lines.
+            runCatching { com.bamnat.app.money.ShopNotices.take(this, target, text, pkg, app, postedAt) }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                .getOrNull()?.let { return@withLock it }
+            val others = calendars.calendars.value.map { it.id }.filter { it != target }
+            calendars.money(target).capture(text, app, postedAt, fromMessenger) { day ->
+                others.flatMap { id -> runCatching { calendars.money(id).recent(day) }.getOrDefault(emptyList()) }
+            }
+        }
+
+    suspend fun captureCalendar(text: String, pkg: String, postedAt: Long): String {
+        val list = calendars.calendars.value
+        val prefs = autoRecordPrefs.current
+        if (list.size < 2) return com.bamnat.app.data.PersonalCalendar.MAIN
+        val arrived = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(postedAt), java.time.ZoneId.systemDefault())
+        val parsed = (com.bamnat.core.money.PaymentParser.parse(text, arrived) as? com.bamnat.core.money.PaymentParser.Result.Ok)?.parsed
+        val places = list.map { com.bamnat.core.money.CaptureRoute.Place(it.id, calendars.money(it.id).allAccounts()) }
+        return com.bamnat.core.money.CaptureRoute.pick(parsed?.last4, parsed?.issuer, pkg, places, prefs.appCalendars, prefs.calendar)
+    }
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository)
     val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry) {
         com.bamnat.app.alarm.BootAlarms.RingSettings.of(settingsRepository.current)
     }
     val payStore = PayStore(appContext)
-    val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars)
+    val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars, memoSharing = memoSharing,
+        workTools = com.bamnat.app.data.WorkToolsStore.get(appContext), guide = com.bamnat.app.data.GuideStore.get(appContext), recordsTrash = { recordsTrash })
+    /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록: a calendar's records as they were before a change, for 7 days. */
+    val recordsTrash by lazy {
+        com.bamnat.app.data.RecordsTrash(java.io.File(appContext.noBackupFilesDir, "records_trash"), calendars, database, settingsRepository,
+            filesOf = { id -> com.bamnat.app.data.CalendarStorage.filesOf(appContext, id) }, workTools = com.bamnat.app.data.WorkToolsStore.get(appContext),
+            autoRecord = autoRecordPrefs, commute = com.bamnat.app.data.CommutePrefs.get(appContext))
+    }
     /** [SET-01] The data as it was before the last import, to take the import back. */
-    val importUndo by lazy { com.bamnat.app.data.ImportUndo(java.io.File(appContext.noBackupFilesDir, "before_import.json"), backupManager) }
+    val importUndo by lazy { com.bamnat.app.data.ImportUndo(java.io.File(appContext.noBackupFilesDir, "before_import.json"), backupManager, recordsTrash = { recordsTrash }) }
     /** [COMM-00] Company settings as a file for coworkers. */
     val companyShare by lazy { com.bamnat.app.data.CompanyShare(scheduleRepository, payStore, settingsRepository) }
     /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
@@ -133,6 +197,8 @@ class AppContainer(context: Context) {
     }
     /** [NAV-01] The month the calendar, 돈 and 근무·급여 show together. */
     val shownMonth = com.bamnat.app.ui.ShownMonth()
+    /** [NOTE-02] The memo tab's notebook, kept while the app runs so coming back finds the same list. */
+    val memoNotebook = kotlinx.coroutines.flow.MutableStateFlow(com.bamnat.core.memo.MemoNotebook.CALENDAR)
 
     private companion object {
         /** A shorter sleep (a tap and an undo, a doze) gets no "잤어요" line. */
@@ -178,6 +244,8 @@ class AppContainer(context: Context) {
             // [SETUP-01] A first setup the app was closed in the middle of saving is finished first.
             runCatching { firstSetup.finishInterrupted() }
             memoRepository.purgeOldTrash()
+            // [UNDO-01] What was cleared or removed more than 7 days ago goes for good.
+            runCatching { recordsTrash.purge() }
             moneyRepository.purgeCaptures()
             // [MCAL-02] A calendar whose setup was left before saving is not kept.
             if (calendarSetupDrafts.draft.value == null) calendars.dropUnfinished(before = startedAt)
@@ -206,6 +274,8 @@ class AppContainer(context: Context) {
                 .debounce(300)
                 .collect { com.bamnat.app.memo.MemoScheduleAlarm.reschedule(appContext, it) }
         }
+        // [INV-08] An investor alarm or date saved, changed or restored re-plans the next investor notice.
+        com.bamnat.app.invest.InvestNotices.follow(this)
         // [SLP-15] 하루 브리핑, 퇴근길 and 잘 준비 follow the schedule, the alarms and their settings.
         keep("notices") {
             val reads = settingsRepository.settings.map {
@@ -289,6 +359,17 @@ class AppContainer(context: Context) {
             combine(sleepRepository.recent(days = 2), reads) { log, r -> log to r }
                 .drop(1).debounce(500)
                 .collect { WidgetRefresher.refresh(appContext) }
+        }
+        // [SHFT-08][REL-09] The watch follows the main calendar and its next alarm, from app start on.
+        keep("watch") {
+            combine(scheduleRepository.snapshot, alarmScheduler.upcoming) { snap, next -> snap to next }
+                .debounce(1_000)
+                .collect { (snap, next) -> com.bamnat.app.watch.WatchSync.push(appContext, snap, next) }
+        }
+        // [DAYW-07] The workplace geofence goes in if it is not there yet (the same circle is left alone),
+        // location coming back on is listened for while the feature is on, and the periodic check is set.
+        if (com.bamnat.app.data.CommutePrefs.get(appContext).current.enabled) {
+            appScope.launch { runCatching { com.bamnat.app.commute.CommuteRecorder.catchUp(appContext) } }
         }
     }
 }

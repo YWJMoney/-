@@ -96,6 +96,8 @@ class AlarmScheduler(
      */
     @Synchronized
     fun verify(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, now: LocalDateTime = LocalDateTime.now()): Boolean {
+        // An alarm that just rang is being planned past; until that is done nothing is missing.
+        if (System.currentTimeMillis() - firedAtMillis < SETTLE_MILLIS) return false
         val expected = if (enabled) nextOf(calendars, planFrom(now)) else null
         val held = systemHolds()
         val pending = prefs.getLong(K_PENDING, 0L)
@@ -157,8 +159,12 @@ class AlarmScheduler(
 
     /** The alarm that was registered has rung (or was dropped as stale): plan past it from now on. */
     fun markFired(triggerAt: Long) {
+        firedAtMillis = System.currentTimeMillis()
         if (prefs.getLong(K_PENDING, 0L) <= triggerAt) prefs.edit().remove(K_PENDING).apply()
     }
+
+    /** [REL-13] When [markFired] last ran; [verify] waits [SETTLE_MILLIS] for the re-plan after it. */
+    @Volatile private var firedAtMillis = 0L
 
     private var lastAhead: List<RingRequest> = emptyList()
 
@@ -287,6 +293,7 @@ class AlarmScheduler(
         private const val K_PENDING = "pending_trigger"
         /** A registered alarm overdue by more than this is not kept; the receiver drops it as stale too. */
         private const val LATE_KEEP_MILLIS = 2 * 60 * 60 * 1000L
+        private const val SETTLE_MILLIS = 10_000L
         private const val REQ_SHIFT = 1001
         private const val REQ_SNOOZE = 1002
         private const val REQ_SHOW = 1003

@@ -65,6 +65,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -96,6 +98,8 @@ import java.time.LocalDateTime
 /**
  * [LEDG-02] Lines the app wrote down from notifications, waiting for a glance, and texts it kept
  * because it could not finish them. Totals already include the lines; this is only a check.
+ * [COMN-04] With 확인하고 적기 on ([waiting]) it is 확인 대기함: the lines count only once confirmed,
+ * one by one (swipe or ✓) or all at once, and a wrong one is swiped away.
  */
 @Composable
 fun NewRecordsCard(
@@ -105,18 +109,48 @@ fun NewRecordsCard(
     onAllSeen: () -> Unit,
     onFinish: (Capture) -> Unit,
     onDrop: (Capture) -> Unit,
+    waiting: Boolean = false,
+    onConfirm: (List<MoneyEntry>) -> Unit = {},
+    onDelete: (List<MoneyEntry>) -> Unit = {},
 ) {
     if (unseen.isEmpty() && kept.isEmpty()) return
+    var clearing by remember { mutableStateOf(false) }
     SectionCard(
-        title = "새로 들어온 기록 ${unseen.size + kept.size}건",
-        trailing = { if (unseen.isNotEmpty()) TextButton(onClick = onAllSeen) { Text("모두 확인") } },
+        title = (if (waiting) "확인 대기함 " else "새로 들어온 기록 ") + "${unseen.size + kept.size}건",
+        trailing = {
+            if (unseen.isNotEmpty()) TextButton(onClick = { if (waiting) onConfirm(unseen) else onAllSeen() }) { Text("모두 확인") }
+        },
     ) {
-        if (unseen.isNotEmpty()) {
+        if (waiting && unseen.isNotEmpty()) {
+            Text("결제 알림에서 읽었어요. 확인한 것만 합계에 들어가요. 오른쪽으로 밀면 확인, 왼쪽으로 밀면 지워요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            unseen.take(10).forEach { e ->
+                androidx.compose.runtime.key(e.id) {
+                    PendingRow(e, onOpen = { onOpen(e) }, onConfirm = { onConfirm(listOf(e)) }, onDelete = { onDelete(listOf(e)) })
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(if (unseen.size > 10) "그 밖에 ${unseen.size - 10}건이 더 기다려요" else "",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                TextButton(onClick = { clearing = true }) { Text("모두 지우기", color = MaterialTheme.colorScheme.error) }
+            }
+            // Clearing the whole box is asked first, with how many go.
+            if (clearing) AlertDialog(
+                onDismissRequest = { clearing = false },
+                title = { Text("기다리는 ${unseen.size}건을 모두 지울까요?") },
+                text = { Text("확인하지 않은 기록이 모두 지워져요.") },
+                confirmButton = {
+                    TextButton(onClick = { clearing = false; onDelete(unseen) }) { Text("모두 지우기", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(onClick = { clearing = false }) { Text("취소") } },
+            )
+        }
+        if (!waiting && unseen.isNotEmpty()) {
             Text("결제 알림에서 적었어요. 분류가 틀리면 눌러서 고치면 그 가게는 다음부터 그 분류로 적어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        unseen.take(10).forEach { e -> EntryRow(e, showDate = true) { onOpen(e) } }
-        if (unseen.size > 10) {
+        if (!waiting) unseen.take(10).forEach { e -> EntryRow(e, showDate = true) { onOpen(e) } }
+        if (!waiting && unseen.size > 10) {
             Text("그 밖에 ${unseen.size - 10}건은 아래 기록에 있어요", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -171,6 +205,10 @@ fun AutoRecordDialog(onPaste: () -> Unit, onDismiss: () -> Unit, onRules: (() ->
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 AutoRecordControls(onPaste = { onDismiss(); onPaste() })
+                // [COMN-04] 바로 적기 or 확인하고 적기.
+                ConfirmFirstControl()
+                // [CALS-04] Which calendar the notifications go to, once there is more than one.
+                CaptureCalendarControls()
                 // [LEDG-21][LEDG-22] How it sorts and what it leaves out.
                 if (onRules != null) OutlinedButton(onClick = onRules, modifier = Modifier.fillMaxWidth()) { Text("자동 분류 규칙") }
                 if (onFilter != null) OutlinedButton(onClick = onFilter, modifier = Modifier.fillMaxWidth()) { Text("알림 거르기") }
@@ -180,6 +218,69 @@ fun AutoRecordDialog(onPaste: () -> Unit, onDismiss: () -> Unit, onRules: (() ->
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
+}
+
+/**
+ * [CALS-03] Where payment notifications are written: one calendar for all of them, and any app sent
+ * to a calendar of its own. A card or account added in a calendar always takes its payments there.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun CaptureCalendarControls() {
+    val c = LocalContext.current.appContainer
+    val calendars by c.calendars.calendars.collectAsStateWithLifecycle()
+    val prefs by c.autoRecordPrefs.state.collectAsStateWithLifecycle()
+    if (calendars.size < 2) return
+    var apps by remember { mutableStateOf(false) }
+    Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("결제 알림을 쌓을 달력", style = MaterialTheme.typography.titleSmall)
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            calendars.forEach { cal ->
+                androidx.compose.material3.FilterChip(
+                    selected = prefs.calendar == cal.id || (calendars.none { it.id == prefs.calendar } && cal.isMain),
+                    onClick = { c.autoRecordPrefs.setCalendar(cal.id) },
+                    label = { Text(cal.name, maxLines = 1) },
+                )
+            }
+        }
+        Text(
+            "카드·통장을 어느 달력의 결제수단에 넣어 두면 그 카드 알림은 늘 그 달력에만 쌓여요. 다른 달력에는 보이지 않아요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (prefs.seenApps.isNotEmpty()) {
+            TextButton(onClick = { apps = true }) { Text("앱마다 달력 정하기" + prefs.appCalendars.size.takeIf { it > 0 }?.let { " ($it)" }.orEmpty()) }
+        }
+    }
+    if (apps) {
+        AlertDialog(
+            onDismissRequest = { apps = false },
+            title = { Text("앱마다 달력 정하기") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("예를 들어 가게 통장 앱의 알림은 가게 달력에만 쌓이게 할 수 있어요.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    prefs.seenApps.entries.sortedBy { it.value }.forEach { (pkg, label) ->
+                        Text(label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
+                        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            androidx.compose.material3.FilterChip(
+                                selected = prefs.appCalendars[pkg] == null,
+                                onClick = { c.autoRecordPrefs.setAppCalendar(pkg, null) },
+                                label = { Text("기본") },
+                            )
+                            calendars.forEach { cal ->
+                                androidx.compose.material3.FilterChip(
+                                    selected = prefs.appCalendars[pkg] == cal.id,
+                                    onClick = { c.autoRecordPrefs.setAppCalendar(pkg, cal.id) },
+                                    label = { Text(cal.name, maxLines = 1) },
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { apps = false }) { Text("완료") } },
+        )
+    }
 }
 
 @Composable
