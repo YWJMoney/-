@@ -120,6 +120,9 @@ const ADMIN_HTML = `<!doctype html>
 
 // Sizes are in rem so the phone's text size setting scales everything together; layouts reflow instead of clipping.
 const ADMIN_CSS = `
+.photos{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.photos img{width:120px;height:120px;object-fit:cover;border-radius:12px;border:1px solid var(--line)}
+.bars{list-style:none;display:flex;align-items:flex-end;gap:2px;height:96px;padding:0;margin:8px 0}.bars li{flex:1;height:100%;display:flex;align-items:flex-end}
+.bars span{display:block;width:100%;min-height:2px;border-radius:3px 3px 0 0;background:var(--gold, #C2A36B)}
 :root{--bg:#F5F3EE;--surface:#fff;--raised:#fff;--fg:#14182A;--muted:#5B6075;--faint:#8A8EA0;--line:#E3DFD6;--line-strong:#D2CCBF;
 --soft:#EFEBE3;--hover:#F2EFE8;--accent:#2B57E0;--accent-soft:#E6ECFD;--on-accent:#fff;--gold:#B8955A;--gold-soft:#F4EBDC;--nav:#15192B;
 --nav-fg:#C9CCDA;--nav-on:#fff;--nav-hi:rgba(255,255,255,.08);--ok:#17784A;--ok-bg:#E1F2E8;--warn:#8A5300;--warn-bg:#FBEED5;--bad:#BE3326;
@@ -522,6 +525,10 @@ function adminApp() {
     help: '<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.5a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5V14M12 17.2v.1"/>',
     dev: '<path d="M8 8 4 12l4 4M16 8l4 4-4 4M13.5 5l-3 14"/>',
     check: '<path d="M5 12.5 10 17l9-10"/>',
+    // [SRV-04][ADMIN-14] 운영, [ADMIN-13] 지표, [SRV-05] 공유 링크 신고.
+    ops: '<path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2.5"/>',
+    metrics: '<path d="M4 20V4M4 20h16"/><path d="M8 16v-4M12 16V8M16 16v-6"/>',
+    shares: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   };
   /** Where each screen lives and who sees it; badges count what waits for someone there. */
   const NAV = [
@@ -534,6 +541,11 @@ function adminApp() {
     // [COMM-06] The talk on rule sets: what people flagged first.
     { key: "community", label: "토론", area: "community", group: "main", badge: (o) => o.flaggedPosts ?? 0 },
     { key: "rewards", label: "보상", area: "rewards", group: "main", badge: (o) => o.owed ?? 0 },
+    // [SRV-05] Reported share links live on the share server; this screen reads them through the company server.
+    { key: "shares", label: "공유 링크", area: "shares", group: "main" },
+    // [SRV-04][ADMIN-14] Notices, switches and this month's chores; the badge is the chores left.
+    { key: "ops", label: "운영", area: "ops", group: "manage", badge: (o) => o.opsLeft ?? 0 },
+    { key: "metrics", label: "지표", area: "metrics", group: "manage" },
     { key: "admins", label: "관리자", owner: true, group: "manage", badge: (o) => (o.admins?.waiting ?? 0) + (o.admins?.phones ?? 0) },
     { key: "audit", label: "활동 기록", area: "audit", group: "manage" },
     { key: "settings", label: "설정", group: "manage" },
@@ -575,6 +587,9 @@ function adminApp() {
     launch_on: "정식 출시 켬(결제·광고)", launch_off: "정식 출시 끔", launch_settings: "정식 출시 설정 바꿈",
     device_link: "관리자 휴대폰 연결", device_approve: "관리자 휴대폰 승인", device_remove: "관리자 휴대폰 끊음",
     pass_move: "이용권을 새 휴대폰으로 옮김", trial_stop: "동의 없는 무료 체험의 다음 결제 멈춤",
+    // [SRV-04][SRV-05][ADMIN-14]
+    notice_add: "공지 올림", notice_edit: "공지 고침", notice_remove: "공지 내림", switch_off: "기능 끔", switch_on: "기능 다시 켬",
+    ops_done: "이달 할 일 마침", ops_undo: "이달 할 일 되돌림", share_remove: "공유 링크 내림",
   };
   const ERRORS = {
     exists: "이미 있어요",
@@ -604,8 +619,8 @@ function adminApp() {
     action: "이 글에는 할 수 없는 일이에요",
     changed: "다른 관리자가 먼저 고쳤어요. 바뀐 내용을 불러왔어요",
     deleted: "지운 항목이에요. 최고 관리자가 되살린 뒤 고칠 수 있어요",
-    title: "제목을 1~100자로 적어 주세요",
-    body: "내용은 4000자까지 적을 수 있어요",
+    title: "제목을 적어 주세요. 공지는 40자, 개발사항은 100자까지예요",
+    body: "내용이 너무 길어요. 공지는 500자, 개발사항은 4000자까지예요",
     reason: "반려 이유를 적어 주세요",
     ids: "고른 항목이 없어요",
     label: "이름을 1~20자로 적어 주세요",
@@ -613,6 +628,14 @@ function adminApp() {
     months: "보상은 1~12개월로 골라 주세요",
     thanksMonths: "감사 보상은 0~12개월로 정해 주세요",
     freeFeatures: "기능 이름은 영어 대문자와 _로 적어 주세요(예: MONEY_STATS)",
+    // [SRV-04][SRV-05]
+    level: "공지 종류를 골라 주세요",
+    from: "시작 날짜를 확인해 주세요",
+    until: "끝 날짜는 시작보다 뒤, 오늘 이후, 90일 안으로 정해 주세요",
+    app: "앱 버전 번호(versionCode)를 숫자로 적어 주세요. 끝 번호는 시작보다 크거나 같아야 해요",
+    share_server: "공유 서버에 닿지 않았어요. SHARE_BASE_URL과 SHARE_ADMIN_TOKEN을 확인해 주세요",
+    paused: "지금은 꺼 둔 기능이에요",
+    key: "없는 항목이에요",
   };
   const TEMPLATES = [
     ["확인 중", "알려 주셔서 고마워요. 지금 확인하고 있어요. 고치는 대로 다시 알려 드릴게요."],
@@ -629,6 +652,8 @@ function adminApp() {
     me: null, overview: null, health: null,
     route: { name: "home", id: null },
     data: {}, // per screen
+    // [ADMIN-13] 지표 기간(일), [ADMIN-14] 운영 화면의 달(YYYY-MM, 비면 이번 달).
+    metricDays: 28, opsMonth: "",
     reviewFilter: "all", inquiryStatus: "open", inquiryTopic: "", rewardTab: "owed", query: "", postFilter: "flagged", rateFilter: "review",
     // [ADMIN-12] Whose questions: everyone's, mine, nobody's. [ADMIN-10] The 개발사항 list's filter, words and picked items.
     inquiryWho: "", devStatus: "open", devQuery: "", devWho: "", devPick: null, templates: null,
@@ -755,6 +780,9 @@ function adminApp() {
       if (name === "rewards") jobs.push(api(`/rewards?status=${S.rewardTab}`).then((d) => { S.data.rewards = d; }));
       if (name === "admins") jobs.push(api("/admins").then((d) => { S.data.admins = d; }), api("/devices").then((d) => { S.data.phones = d; }));
       if (name === "audit") jobs.push(api("/audit").then((d) => { S.data.audit = d; }));
+      if (name === "ops") jobs.push(api("/notices").then((d) => { S.data.notices = d; }), api(`/ops${S.opsMonth ? `?month=${S.opsMonth}` : ""}`).then((d) => { S.data.ops = d; }));
+      if (name === "metrics") jobs.push(api(`/metrics?days=${S.metricDays}`).then((d) => { S.data.metrics = d; }));
+      if (name === "shares") jobs.push(api("/shares").then((d) => { S.data.shares = d; }));
       if (name === "settings") jobs.push(health().then((h) => { S.health = h; }));
       // [MON-10] The 정식 출시 card is the owner's; S.me is known from the last overview.
       if (name === "settings" && S.me?.owner) jobs.push(api("/launch").then((d) => { S.data.launch = d; }));
@@ -887,7 +915,7 @@ function adminApp() {
     if (name === "account") return { title: "내 계정", back: matchMedia("(min-width:45rem)").matches ? null : href("more") };
     if (name === "more") return { title: "더 보기" };
     const n = NAV.find((x) => x.key === name);
-    const back = ["rewards", "admins", "audit", "settings"].includes(name) && !matchMedia("(min-width:45rem)").matches && NAV.filter(visible).indexOf(n) >= 4
+    const back = ["rewards", "shares", "ops", "metrics", "admins", "audit", "settings"].includes(name) && !matchMedia("(min-width:45rem)").matches && NAV.filter(visible).indexOf(n) >= 4
       ? href("more") : null;
     return { title: name === "home" ? "밤낮 관리자" : n?.label ?? "", back };
   }
@@ -903,6 +931,9 @@ function adminApp() {
     if (name === "rewards") return rewardsView();
     if (name === "admins") return adminsView();
     if (name === "audit") return auditView();
+    if (name === "ops") return opsView();
+    if (name === "metrics") return metricsView();
+    if (name === "shares") return sharesView();
     if (name === "settings") return settingsView();
     if (name === "account") return accountView();
     if (name === "more") return moreView();
@@ -940,6 +971,8 @@ function adminApp() {
     if (can("community")) tile("신고된 글", o.flaggedPosts, "토론에서 확인할 글", href("community"), true);
     if (can("rewards")) tile("보상 대기", o.owed, "드릴 프로 기간", href("rewards"), false);
     if (S.me.owner) tile("승인 대기 관리자", o.admins?.waiting, "가입한 관리자", href("admins"), true);
+    // [ADMIN-14] 이달 할 일 in place of reminder mail (결정 D1).
+    if (can("ops")) tile("이달 할 일", o.opsLeft, "요율·공휴일·처리방침 점검", href("ops"), false);
     const stats = [];
     if (can("companies")) stats.push(["회사", o.companies], ["쓰는 규칙", o.rules]);
     if (can("review")) stats.push(["모든 제보", o.reports]);
@@ -965,6 +998,7 @@ function adminApp() {
     }
     if (can("community")) add(o.flaggedPosts, "신고된 토론 글", href("community"), "warn");
     if (can("rewards")) add(o.owed, "드릴 보상", href("rewards"), "");
+    if (can("ops")) add(o.opsLeft, "이달 운영 할 일", href("ops"), "");
     // Sign-ins would crowd out the work; they stay on the activity screen.
     const feed = S.data.feed?.entries?.filter((e) => !e.action.startsWith("login")).slice(0, 8) ?? null;
     return `<div class="hello"><h2>${esc(hi)}, ${esc(S.me.name)}님</h2>
@@ -1222,7 +1256,10 @@ function adminApp() {
       <section>
         <div class="card"><div class="card-head"><h2>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}</h2><span class="pill ${status[0]}">${status[1]}</span></div>
           <p class="meta">보낸 분 앱에는 <b>${esc(stage)}</b>${q.progress?.version ? ` (${esc(q.progress.version)})` : ""}로 보여요.${waitPill(q)}${q.rating ? ` <span class="pill ${q.rating > 0 ? "ok" : "bad"}">${q.rating > 0 ? "답이 도움 됐대요" : "답이 아쉬웠대요"}</span>` : ""}</p>
-          <div class="thread">${thread}</div></div>
+          <div class="thread">${thread}</div>
+          ${q.photos ? `<div class="photos">${Array.from({ length: q.photos }, (_, i) =>
+            `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" alt="보낸 분이 붙인 사진 ${i + 1}" loading="lazy"></a>`).join("")}</div>
+            <p class="meta">사진은 위치 정보를 지운 채로 받았어요. 문의를 닫고 90일 뒤에 지워져요.</p>` : ""}</div>
         ${editable && q.status !== "closed" ? `<form class="composer" data-form="reply">
           <label class="sr" for="reply">답</label>
           <textarea id="reply" name="text" maxlength="2000" placeholder="${q.public ? "보낸 분 앱과 모두의 문의에" : "보낸 분 앱에"} 보일 답을 적어요. 이름, 연락처, 금액은 묻지 않아요." required></textarea>
@@ -1755,6 +1792,115 @@ function adminApp() {
       ${d.more ? '<div class="actions start"><button class="btn wide" data-act="audit-more">더 보기</button></div>' : ""}`;
   }
 
+  // ---- [SRV-04][ADMIN-14] 운영 ----
+
+  const NOTICE_STATE = { on: ["ok", "보이는 중"], later: ["info", "예정"], ended: ["", "끝남"] };
+  const kstDate = (iso) => new Date(new Date(iso).getTime() + 9 * 3600e3).toISOString().slice(0, 10);
+
+  function opsView() {
+    const n = S.data.notices;
+    const o = S.data.ops;
+    const edit = can("ops", "edit");
+    if (!n || !o) return skeleton(3);
+    const [y, m] = o.month.split("-").map(Number);
+    const left = o.items.filter((i) => !i.done).length;
+    const chores = `<section class="card"><div class="card-head"><h2>${y}년 ${m}월에 할 일</h2>
+        <div class="actions start"><button class="icon-btn" data-act="ops-month" data-d="-1" aria-label="지난달">${icon(P.back)}</button>
+        <button class="icon-btn" data-act="ops-month" data-d="1" aria-label="다음 달">${icon(P.chevron)}</button></div></div>
+      <p class="hint">해마다 이 달에 하는 일이에요. ${left ? `${left}개 남았어요.` : "모두 마쳤어요."} 근거는 docs/ops-calendar.md에 있어요.</p>
+      <ul class="rows">${o.items.map((i) => `<li><div class="row"><span class="row-main"><b>${esc(i.text)}</b><small>${esc(i.source)}</small></span>
+        <span class="row-side">${edit ? `<button class="btn small${i.done ? "" : " primary"}" data-act="ops-tick" data-key="${i.key}" data-done="${i.done ? "" : "1"}">${i.done ? "되돌리기" : "마침"}</button>`
+          : `<span class="pill ${i.done ? "ok" : ""}">${i.done ? "마침" : "남음"}</span>`}</span></div></li>`).join("")}</ul></section>`;
+    const notices = `<section class="card"><div class="card-head"><h2>앱 공지</h2>${edit ? `<button class="btn small primary" data-act="notice-new">${icon(P.plus)}새 공지</button>` : ""}</div>
+      <p class="hint">앱 달력 위에 한 줄로 보이고, 누르면 내용이 열려요. 사용자가 닫으면 그 공지는 다시 보이지 않아요. 앱은 하루에 한 번, 그리고 열 때 새로 받아요.</p>
+      ${n.notices.length ? `<ul class="rows">${n.notices.map((x) => {
+        const [tone, label] = NOTICE_STATE[x.state] ?? ["", x.state];
+        const range = x.minApp || x.maxApp ? ` · 앱 ${x.minApp ?? "처음"}~${x.maxApp ?? "최신"}` : "";
+        return `<li><div class="row"><span class="row-main"><b>${x.level === "important" ? '<span class="pill bad">중요</span> ' : ""}${esc(x.title)}</b>
+          <small>${esc(kstDate(x.from))} ~ ${esc(kstDate(x.until))}${esc(range)}</small><small>${esc(x.body)}</small></span>
+          <span class="row-side"><span class="pill ${tone}">${label}</span>${edit ? `<button class="btn small" data-act="notice-edit" data-id="${x.id}">고치기</button>
+            <button class="btn small" data-act="notice-remove" data-id="${x.id}">내리기</button>` : ""}</span></div></li>`;
+      }).join("")}</ul>` : '<p class="meta">지금 올린 공지가 없어요.</p>'}</section>`;
+    const switches = `<section class="card"><h2>기능 스위치</h2>
+      <p class="hint">문제가 생겼을 때 앱 업데이트 없이 그 기능만 잠시 꺼요. 서버도 바로 받지 않고, 앱은 하루 안에 따라와요. 끈 기능은 앱에 "잠시 쉬고 있어요"로 보여요.</p>
+      <ul class="rows">${n.switches.map((w) => `<li><div class="row"><span class="row-main"><b>${esc(w.label)}</b><small>${esc(w.key)}</small></span>
+        <span class="row-side"><span class="pill ${w.off ? "bad" : "ok"}">${w.off ? "꺼짐" : "켜짐"}</span>
+        ${edit ? `<button class="btn small${w.off ? " primary" : ""}" data-act="switch" data-key="${w.key}" data-off="${w.off ? "" : "1"}">${w.off ? "다시 켜기" : "끄기"}</button>` : ""}</span></div></li>`).join("")}</ul>
+      ${edit ? "" : '<p class="note">보기 권한이라 바꿀 수 없어요.</p>'}</section>`;
+    return `<div class="grid two">${chores}${notices}${switches}</div>`;
+  }
+
+  function openNotice(x) {
+    const now = new Date();
+    const from = x ? kstDate(x.from) : kstDate(now.toISOString());
+    const until = x ? kstDate(new Date(new Date(x.until).getTime() - 1).toISOString()) : kstDate(new Date(now.getTime() + 7 * 864e5).toISOString());
+    openDialog(`<form data-form="notice" data-id="${x?.id ?? ""}"><h2>${x ? "공지 고치기" : "새 공지"}</h2>
+      <p>이름·연락처·금액은 적지 않아요. 앱을 쓰는 모두에게 보여요.</p>
+      <div class="fieldset"><label for="nt-title">제목</label><input id="nt-title" name="title" maxlength="40" required value="${esc(x?.title ?? "")}" placeholder="예: 10월 25일 새벽 서버 점검"></div>
+      <div class="fieldset"><label for="nt-body">내용</label><textarea id="nt-body" name="body" maxlength="500" required>${esc(x?.body ?? "")}</textarea></div>
+      <div class="radios"><label class="radio"><input type="radio" name="level" value="info"${x?.level === "important" ? "" : " checked"}><span>알림</span></label>
+        <label class="radio"><input type="radio" name="level" value="important"${x?.level === "important" ? " checked" : ""}><span>중요(색을 넣어 보여요)</span></label></div>
+      <div class="fieldset"><label for="nt-from">시작(한국 시간 0시)</label><input id="nt-from" name="from" type="date" required value="${from}"></div>
+      <div class="fieldset"><label for="nt-until">마지막 날(그날 밤까지, 90일 안)</label><input id="nt-until" name="until" type="date" required value="${until}"></div>
+      <div class="fieldset"><label for="nt-min">앱 버전 번호부터(선택)</label><input id="nt-min" name="minApp" type="number" min="1" value="${x?.minApp ?? ""}">
+        <span class="help">특정 버전에만 보일 때. 예: 1.22.0은 33</span></div>
+      <div class="fieldset"><label for="nt-max">앱 버전 번호까지(선택)</label><input id="nt-max" name="maxApp" type="number" min="1" value="${x?.maxApp ?? ""}"></div>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">${x ? "저장" : "올리기"}</button></div></form>`);
+  }
+
+  // ---- [ADMIN-13][STAT-03][STAT-04] 지표 ----
+
+  const GATE_STATE = { pass: ["ok", "통과"], fail: ["bad", "못 미침"], few: ["warn", "데이터 부족"], play: ["", "Play Console에서 확인"] };
+
+  function metricsView() {
+    const d = S.data.metrics;
+    const head = `<div class="segmented" role="group" aria-label="기간">${[7, 28, 90].map((n) => seg("metric-days", String(n), String(S.metricDays), `${n}일`)).join("")}</div>`;
+    if (!d) return head + skeleton(3);
+    const pct = (v) => (v === null || v === undefined ? "–" : `${v}%`);
+    const gates = `<section class="card"><h2>출시 관문</h2>
+      <p class="hint">사용 통계 보내기에 동의한 분들만 세요(첫 실행에서 묻고, 언제든 끌 수 있어요). 하루 평균 30대 미만이면 숫자가 흔들려서 "데이터 부족"으로 보여요. 지금 하루 평균 ${d.daily}대예요.</p>
+      <ul class="rows">${d.gates.map((g) => {
+        const [tone, label] = GATE_STATE[g.status] ?? ["", g.status];
+        return `<li><div class="row"><span class="row-main"><b>${esc(g.gate)} · ${esc(g.name)}</b><small>기준 ${esc(g.rule)}</small></span>
+          <span class="row-side"><b>${g.value === null ? "" : pct(g.value)}</b><span class="pill ${tone}">${label}</span></span></div></li>`;
+      }).join("")}</ul></section>`;
+    const f = d.funnel;
+    const funnel = `<section class="card"><h2>프로 전환</h2>
+      <dl class="kv"><dt>프로 화면을 본 휴대폰(날 합)</dt><dd>${f.paywall}</dd><dt>무료 체험 시작</dt><dd>${f.trial}</dd><dt>구독 시작</dt><dd>${f.subscribe}</dd>
+        <dt>지금 체험 중(서버 확인)</dt><dd>${f.trials}</dd><dt>지금 유료 구독(서버 확인)</dt><dd>${f.paid}</dd><dt>자동 갱신 끈 구독</dt><dd>${f.ending}</dd></dl>
+      <p class="hint">위 셋은 사용 통계, 아래 셋은 Play 구매 확인으로 센 숫자라 서로 다를 수 있어요.</p></section>`;
+    const max = Math.max(1, ...d.series.map((x) => x.phones));
+    const series = `<section class="card"><h2>날마다 보낸 휴대폰</h2>
+      ${d.series.length ? `<ul class="bars" aria-label="날마다 보낸 휴대폰 수">${d.series.map((x) =>
+        `<li title="${esc(x.day)} ${x.phones}대"><span style="height:${Math.round((x.phones / max) * 100)}%"></span></li>`).join("")}</ul>
+        <p class="meta">${esc(d.from)} ~ ${esc(d.to)} · 휴대폰-날 ${d.phoneDays}</p>` : '<p class="meta">아직 받은 통계가 없어요.</p>'}</section>`;
+    const events = `<section class="card"><h2>기능별</h2><p class="hint">비율은 최근 28일 안에 한 번이라도 한 휴대폰의 비율이에요.</p>
+      <ul class="rows">${d.events.map((e) => `<li><div class="row"><span class="row-main"><b>${esc(e.label)}</b><small>${esc(e.event)} · ${e.total}번</small></span>
+        <span class="row-side"><b>${pct(e.share)}</b></span></div></li>`).join("")}</ul></section>`;
+    const sh = d.shares;
+    const shares = `<section class="card"><h2>근무표 링크</h2>${sh ? `<dl class="kv"><dt>만든 링크</dt><dd>${sh.created}</dd><dt>페이지 열람</dt><dd>${sh.views}</dd>
+        <dt>신고</dt><dd>${sh.reports ?? 0}</dd><dt>내린 링크</dt><dd>${sh.removed ?? 0}</dd></dl><p class="hint">공유 서버가 5분마다 모아 세는 대략의 숫자예요.</p>`
+      : '<p class="meta">공유 서버가 연결되지 않았어요. 설정 → 서버 상태를 봐 주세요.</p>'}</section>`;
+    return head + `<div class="grid two">${gates}${funnel}${series}${shares}${events}</div>`;
+  }
+
+  // ---- [SRV-05] 공유 링크 신고 ----
+
+  const SHARE_REASONS = { personal: "다른 사람의 개인정보", abuse: "욕설·괴롭힘", spam: "광고·스팸", illegal: "불법 정보", other: "그 밖의 문제" };
+
+  function sharesView() {
+    const d = S.data.shares;
+    if (!d) return skeleton(2);
+    if (!d.connected) return empty("공유 서버가 연결되지 않았어요", "Worker 설정에 SHARE_BASE_URL과 SHARE_ADMIN_TOKEN을 넣으면 신고된 근무표 링크가 여기 보여요.");
+    if (!d.reports.length) return empty("신고된 링크가 없어요", "근무표 링크 페이지와 앱의 받은 달력에서 신고하면 여기 모여요.");
+    const edit = can("shares", "edit");
+    return `<p class="hint">링크를 열어 확인하고, 운영 규칙에 어긋나면 내려요. 내린 링크는 근무표가 바로 지워지고 "운영 규칙에 따라 내려졌어요"로 보여요. 신고한 사람은 남지 않아요.</p>
+      <ul class="rows">${d.reports.map((r) => `<li><div class="row"><span class="row-main"><b>신고 ${r.count}건</b>
+        <small>${Object.entries(r.reasons ?? {}).map(([k, n]) => `${esc(SHARE_REASONS[k] ?? k)} ${n}`).join(" · ")}</small><small>마지막 신고 ${esc(ago(r.last))}</small></span>
+        <span class="row-side"><a class="btn small" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">열어 보기</a>
+        ${edit ? `<button class="btn small danger" data-act="share-remove" data-id="${esc(r.id)}">내리기</button>` : ""}</span></div></li>`).join("")}</ul>`;
+  }
+
   // ---- settings, account, more ----
 
   function healthList() {
@@ -1771,6 +1917,9 @@ function adminApp() {
         "Worker → 설정 → 런타임 변수에 ADMIN_PASSWORD를 Secret으로, 10자 이상 넣고 Add variable and deploy를 눌러 주세요")],
       [h.salt, "RATE_SALT가 정해져 있어요", todo("RATE_SALT", h.why?.salt,
         "같은 곳에 RATE_SALT를 Secret으로 넣어 주세요 (아무 긴 글자). 넣은 뒤 이 화면을 새로 고쳐요")],
+      // [SRV-05] Optional: without it the 공유 링크 screen only says it is not connected.
+      [h.share, "공유 서버와 연결돼 있어요 (신고된 링크·링크 숫자)",
+        "선택: 공유 서버의 신고를 보려면 SHARE_BASE_URL(텍스트)과 SHARE_ADMIN_TOKEN(Secret, 공유 서버와 같은 값)을 넣어 주세요"],
     ];
     return `<ul class="checks">${rows.map(([ok, good, todo]) =>
       `<li class="${ok ? "ok" : "todo"}"><span aria-hidden="true">${ok ? "✓" : "!"}</span>${esc(ok ? good : todo)}</li>`).join("")}</ul>`;
@@ -2341,6 +2490,48 @@ function adminApp() {
       render({ keepScroll: true });
       load({ quiet: true });
     }),
+    // [SRV-04][ADMIN-14]
+    "ops-month": ({ d }) => {
+      const [y, m] = (S.data.ops?.month ?? new Date().toISOString().slice(0, 7)).split("-").map(Number);
+      const next = new Date(Date.UTC(y, m - 1 + Number(d), 1));
+      S.opsMonth = next.toISOString().slice(0, 7);
+      load({ overview: false });
+    },
+    "ops-tick": async ({ key, done }) => {
+      const o = await act(() => api("/ops", "POST", { month: S.data.ops.month, key, done: Boolean(done) }), done ? "마쳤어요" : "되돌렸어요");
+      if (o) S.data.ops = o;
+      load();
+    },
+    "notice-new": () => openNotice(null),
+    "notice-edit": ({ id }) => openNotice(S.data.notices?.notices.find((x) => x.id === id)),
+    "notice-remove": ({ id }) => confirmBox("공지를 내릴까요?", "앱은 다음에 새로 받을 때 이 공지를 빼요.", "내리기", async () => {
+      const n = await act(() => api(`/notices/${id}/remove`, "POST", {}), "공지를 내렸어요");
+      if (n) S.data.notices = n;
+      render({ keepScroll: true });
+    }),
+    switch: ({ key, off }) => {
+      const label = S.data.notices?.switches.find((w) => w.key === key)?.label ?? key;
+      const flip = async () => {
+        const n = await act(() => api("/switches", "POST", { key, off: Boolean(off) }), off ? `${label}을(를) 껐어요` : `${label}을(를) 다시 켰어요`);
+        if (n) S.data.notices = n;
+        render({ keepScroll: true });
+      };
+      if (off) confirmBox(`${label}을(를) 끌까요?`, "서버가 바로 받지 않고, 앱은 하루 안에 이 기능을 잠시 쉬게 해요. 다시 켜면 돌아와요.", "끄기", flip);
+      else flip();
+    },
+    // [ADMIN-13]
+    "metric-days": ({ key }) => {
+      S.metricDays = Number(key);
+      S.data.metrics = null;
+      render({ keepScroll: true });
+      load({ overview: false });
+    },
+    // [SRV-05]
+    "share-remove": ({ id }) => confirmBox("이 링크를 내릴까요?", "근무표가 바로 지워지고 되돌릴 수 없어요. 공유한 분은 새 링크를 만들 수 있어요.", "내리기", async () => {
+      const d = await act(() => api(`/shares/${id}/remove`, "POST", { reason: "운영 규칙 위반" }), "링크를 내렸어요");
+      if (d) S.data.shares = d;
+      render({ keepScroll: true });
+    }),
     "audit-more": async () => {
       const d = S.data.audit;
       const next = await act(() => api(`/audit?before=${d.entries[d.entries.length - 1].id}`));
@@ -2471,6 +2662,22 @@ function adminApp() {
       setReward(form.dataset.id, "paid", data.get("memo"), Number(data.get("months")) || undefined);
     },
     // [MON-10] 감사 보상 개월 수와 서버가 무료로 연 기능.
+    // [SRV-04] Dates are Korean days: from 0시 of the first to the end of the last.
+    notice: async (form) => {
+      const data = new FormData(form);
+      const at = (d, plus = 0) => new Date(Date.parse(`${d}T00:00:00+09:00`) + plus).toISOString();
+      const num = (v) => (String(v ?? "").trim() ? Number(v) : null);
+      const body = {
+        ...(form.dataset.id ? { id: form.dataset.id } : {}),
+        title: data.get("title"), body: data.get("body"), level: data.get("level"),
+        from: at(data.get("from")), until: at(data.get("until"), 864e5), minApp: num(data.get("minApp")), maxApp: num(data.get("maxApp")),
+      };
+      const n = await act(() => api("/notices", "POST", body), form.dataset.id ? "공지를 고쳤어요" : "공지를 올렸어요. 앱은 하루 안에 받아요");
+      if (!n) return;
+      S.data.notices = n;
+      dialog.close();
+      render({ keepScroll: true });
+    },
     launch: async (form) => {
       const data = new FormData(form);
       const free = String(data.get("free") ?? "").split(/[\s,]+/).map((f) => f.trim().toUpperCase()).filter(Boolean);
