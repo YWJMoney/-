@@ -18,6 +18,8 @@
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
     <!-- [IMPORT-01] Read only, asked when the user opens 캘린더에서 가져오기; nothing read leaves the phone. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <!-- [FEAT-07] 휴대폰 캘린더에 근무 쓰기 (프로): asked only when the user turns it on. -->
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <!-- [DAYW-07] 출퇴근 자동 기록 only, off by default and asked when the user turns it on after a plain
          explanation: one geofence around the workplace, used on the phone; no location is sent or kept. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />

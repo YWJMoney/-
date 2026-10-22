@@ -121,3 +121,35 @@ class ReportTest {
         assertTrue(LocalDate.of(2026, 10, 3) in y.holidays)
     }
 }
+
+/** [FEAT-07] The shifts as the phone's calendar events, and what a change rewrites. */
+class ShiftEventsTest {
+    private val monday = LocalDate.of(2026, 9, 7)
+    private val resolver = ScheduleResolver(Fixtures.all,
+        WorkPattern.Rotation(monday, listOf(Fixtures.night.id, Fixtures.day.id, Fixtures.off.id)), emptyList())
+
+    @Test fun workDaysAreEventsAndDaysOffAreNot() {
+        val days = resolver.resolveRange(monday, monday.plusDays(5))
+        val events = com.bamnat.core.schedule.ShiftEvents.of(days)
+        assertEquals(4, events.size)
+        val night = events.first()
+        assertEquals("야간", night.title)
+        assertEquals(monday.atTime(22, 0), night.start)
+        assertEquals(monday.plusDays(1).atTime(7, 0), night.end)
+        assertEquals("${monday}", night.key)
+    }
+
+    @Test fun onlyWhatChangedIsRewritten() {
+        val days = resolver.resolveRange(monday, monday.plusDays(5))
+        val events = com.bamnat.core.schedule.ShiftEvents.of(days)
+        val existing = events.associate { it.key to it.fingerprint }.toMutableMap()
+        assertTrue(com.bamnat.core.schedule.ShiftEvents.plan(existing, events).empty)
+        existing[events[1].key] = "old"
+        existing["2020-01-01"] = "gone"
+        existing.remove(events[2].key)
+        val plan = com.bamnat.core.schedule.ShiftEvents.plan(existing, events)
+        assertEquals(listOf(events[2]), plan.insert)
+        assertEquals(listOf(events[1]), plan.update)
+        assertEquals(setOf("2020-01-01"), plan.delete)
+    }
+}

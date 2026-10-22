@@ -190,6 +190,8 @@ class AppContainer(context: Context) {
     }
     /** [SHR-12] Sends the link again when the calendar changes. */
     val shareSync by lazy { com.bamnat.app.share.ShareSync(this) }
+    /** [FEAT-07] Writes the chosen calendars to the phone's calendar store. */
+    val phoneCalendarSync by lazy { com.bamnat.app.calendar.PhoneCalendarSync(this) }
     /** [SHR-02] Schedules others shared, kept beside the user's own and never backed up. */
     val received by lazy { com.bamnat.app.share.ReceivedCalendarStore(java.io.File(appContext.noBackupFilesDir, "received_calendars.json")) }
     /** [MON-07][MON-10] When this app was first installed: the testers' thank-you and the first days without ads. */
@@ -356,6 +358,8 @@ class AppContainer(context: Context) {
         }
         // [SHR-12] The link this phone made follows the calendar, and its expiry notice follows the link.
         keep("share") { if (shareApi.enabled) shareSync.follow() }
+        // [FEAT-07] The phone's 밤낮 calendars follow the calendars written there.
+        keep("phonecal") { phoneCalendarSync.follow() }
         // [MCAL-03] Each of the user's calendars has its own link and so its own notice.
         keep("shareexpiry") {
             calendars.calendars.map { list -> list.map { it.id } }.distinctUntilChanged().collectLatest { ids ->

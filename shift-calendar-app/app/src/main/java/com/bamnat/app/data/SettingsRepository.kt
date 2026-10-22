@@ -128,6 +128,8 @@ data class AppSettings(
      * order that fits [workStyle]. Keys the app does not know are skipped, missing ones go at the end.
      */
     val dayGroupOrder: List<String> = emptyList(),
+    /** [FEAT-07] The user's calendars written to a calendar of their own on the phone (프로); none at first. */
+    val phoneCalendars: List<String> = emptyList(),
 ) {
     val limits: HourLimits get() = HourLimits(weeklyLimitHours, averageLimitHours)
 
@@ -224,6 +226,7 @@ class SettingsRepository(context: Context) {
             // [DAY-04] 메모 중심 of 1.12 and before put 메모 first; that carries over as the user's own order.
             dayGroupOrder = prefs.getString(K_DAY_GROUP_ORDER, null)?.let(::decodeGroupOrder)
                 ?: if (prefs.getBoolean(K_MEMO_FIRST, false)) listOf("memo") else d.dayGroupOrder,
+            phoneCalendars = prefs.getString(K_PHONE_CALENDARS, null)?.let(::decodeGroupOrder) ?: d.phoneCalendars,
         )
     }
 
@@ -275,6 +278,7 @@ class SettingsRepository(context: Context) {
             .putString(K_CALENDAR_LAYOUT, s.calendarLayout)
             .putString(K_STATS_LAYOUT, s.statsLayout)
             .putString(K_DAY_GROUP_ORDER, s.dayGroupOrder.joinToString(","))
+            .putString(K_PHONE_CALENDARS, s.phoneCalendars.joinToString(","))
             .apply()
     }
 
@@ -287,6 +291,7 @@ class SettingsRepository(context: Context) {
         const val K_CALENDAR_LAYOUT = "calendar_layout"
         const val K_STATS_LAYOUT = "stats_layout"
         const val K_DAY_GROUP_ORDER = "day_group_order"
+        const val K_PHONE_CALENDARS = "phone_calendars"
         const val K_WEEKLY_LIMIT = "weekly_limit"
         const val K_AVG_LIMIT = "average_limit"
         const val K_THEME = "theme"

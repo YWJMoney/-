@@ -493,6 +493,9 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
         HorizontalDivider()
         // [REL-04]
         NavRow("캘린더 앱으로 내보내기", "구글·삼성 캘린더에 근무를 넣는 파일을 만들어요 (3개월 전부터 1년 뒤까지)", files.exportIcs)
+        HorizontalDivider()
+        // [FEAT-07] The same, kept up to date by itself (프로).
+        PhoneCalendarRows(vm)
     }
 }
 

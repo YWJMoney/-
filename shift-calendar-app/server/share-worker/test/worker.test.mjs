@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import worker, { validate, renderSchedule } from "../src/index.js";
+import worker, { validate, renderSchedule, renderIcs } from "../src/index.js";
 
 function memoryKv() {
   const map = new Map();
@@ -90,7 +90,8 @@ test("anything outside the schedule shape is refused", () => {
   // Unknown fields such as a memo are dropped, not stored.
   const kept = validate({ ...sample, memo: "비밀", days: [{ date: "2026-11-01", type: 1, memo: "비밀" }] });
   assert.ok(!JSON.stringify(kept.schedule).includes("비밀"));
-  assert.equal(validate({ ...sample, ttlDays: 365 }).ttlDays, 30);
+  // [PROV-04] 180 and 365 are allowed since 1.20; anything else is 30.
+  assert.equal(validate({ ...sample, ttlDays: 366 }).ttlDays, 30);
 });
 
 test("bodies over the size limit and non-JSON are refused", async () => {
@@ -351,3 +352,49 @@ for (const name of ["share-payload.json", "share-payload-v2.json", "share-payloa
     assert.deepEqual(out.schedule.pay ?? [], body.pay ?? []);
   });
 }
+
+test("[FEAT-15] a link's calendar feed exists only when the sharer turned it on", async () => {
+  const env = { SHARES: memoryKv() };
+  const plain = await (await call(env, "POST", "/api/share", sample)).json();
+  assert.equal((await call(env, "GET", `/s/${plain.id}.ics`)).status, 404);
+
+  const made = await (await call(env, "POST", "/api/share", { ...sample, ics: true, tz: "Asia/Seoul" })).json();
+  const res = await call(env, "GET", `/s/${made.id}.ics`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("content-type"), /^text\/calendar/);
+  const ics = await res.text();
+  assert.match(ics, /^BEGIN:VCALENDAR\r\n/);
+  assert.match(ics, /X-WR-CALNAME:민지의 근무/);
+  // The night shift ends the next morning; the day off is left out; the leave is an all-day event.
+  assert.match(ics, /UID:2026-11-02-t@[A-Za-z0-9]+\.bamnat\r\nDTSTAMP:\d{8}T\d{6}Z\r\nDTSTART;TZID=Asia\/Seoul:20261102T190000\r\nDTEND;TZID=Asia\/Seoul:20261103T070000/);
+  assert.doesNotMatch(ics, /SUMMARY:휴무/);
+  assert.match(ics, /DTSTART;VALUE=DATE:20261103\r\nDTEND;VALUE=DATE:20261104\r\nSUMMARY:연차/);
+  assert.equal((ics.match(/BEGIN:VEVENT/g) ?? []).length, 4);
+  // The page does not change, and the token never shows.
+  assert.doesNotMatch(ics, new RegExp(made.deleteToken));
+
+  // Turned off again by an update, the address goes away.
+  await call(env, "PUT", `/api/share/${made.id}`, sample, { "x-delete-token": made.deleteToken });
+  assert.equal((await call(env, "GET", `/s/${made.id}.ics`)).status, 404);
+});
+
+test("[FEAT-15] the feed refuses a time zone that is not one", () => {
+  assert.equal(validate({ ...sample, ics: true, tz: "Asia/Seoul\r\nX-EVIL:1" }).error, "tz");
+  assert.equal(validate({ ...sample, ics: "yes" }).error, "ics");
+  assert.equal(validate({ ...sample, ics: true }).schedule.tz, "Asia/Seoul");
+  assert.equal(validate({ ...sample, ics: true, tz: "America/Los_Angeles" }).schedule.tz, "America/Los_Angeles");
+});
+
+test("[PROV-04] links can stay open 180 days or a year", async () => {
+  const env = { SHARES: memoryKv() };
+  await call(env, "POST", "/api/share", { ...sample, ttlDays: 365 });
+  assert.ok(env.SHARES.lastTtl > 364 * 86400 && env.SHARES.lastTtl <= 365 * 86400);
+  assert.equal(validate({ ...sample, ttlDays: 180 }).ttlDays, 180);
+  assert.equal(validate({ ...sample, ttlDays: 200 }).ttlDays, 30);
+});
+
+test("[FEAT-15] long names fold without splitting a character", () => {
+  const ics = renderIcs({ ...sample, title: "가".repeat(30), ics: true, tz: "Asia/Seoul" }, "abcdefghijklmnop", null);
+  for (const line of ics.split("\r\n")) assert.ok(new TextEncoder().encode(line).length <= 75, line);
+  assert.match(ics, /X-WR-CALNAME:가+\r\n 가+/);
+});
