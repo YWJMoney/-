@@ -146,7 +146,7 @@ class AppContainer(context: Context) {
     val payStore = PayStore(appContext)
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars, memoSharing = memoSharing,
         workTools = com.bamnat.app.data.WorkToolsStore.get(appContext), guide = com.bamnat.app.data.GuideStore.get(appContext), recordsTrash = { recordsTrash },
-        teams = teams)
+        teams = teams, pro = { proStore })
     /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록: a calendar's records as they were before a change, for 7 days. */
     val recordsTrash by lazy {
         com.bamnat.app.data.RecordsTrash(java.io.File(appContext.noBackupFilesDir, "records_trash"), calendars, database, settingsRepository,
@@ -192,7 +192,54 @@ class AppContainer(context: Context) {
     val shareSync by lazy { com.bamnat.app.share.ShareSync(this) }
     /** [SHR-02] Schedules others shared, kept beside the user's own and never backed up. */
     val received by lazy { com.bamnat.app.share.ReceivedCalendarStore(java.io.File(appContext.noBackupFilesDir, "received_calendars.json")) }
-    val featureGate = FeatureGate(settingsRepository, appScope)
+    /** [MON-07][MON-10] When this app was first installed: the testers' thank-you and the first days without ads. */
+    val installedAt: java.time.Instant? by lazy {
+        runCatching { java.time.Instant.ofEpochMilli(appContext.packageManager.getPackageInfo(appContext.packageName, 0).firstInstallTime) }.getOrNull()
+    }
+    /** [MON-02] The 정식 출시 switch and what goes with it, from the company server once a day. */
+    val remoteConfig = com.bamnat.app.tier.RemoteConfigStore(appContext)
+    /** [MON-02] Everything on this phone that can give it 프로. */
+    val proStore = com.bamnat.app.tier.ProStore(appContext)
+    /** [MON-02] 프로 on the company server; screenshots and tests put a fake in its place. */
+    var tierApi: com.bamnat.app.tier.TierApi = com.bamnat.app.tier.TierClient()
+    val featureGate = FeatureGate(settingsRepository, remoteConfig, proStore, appScope, installedAt = { installedAt })
+    /** [MON-03] Play billing; screenshots and tests put a fake in its place. */
+    var billing: com.bamnat.app.billing.Billing = com.bamnat.app.billing.PlayBilling(appContext, proStore, api = { tierApi },
+        device = { companyStore.device }, scope = appScope, log = { runCatching { telemetry.event("billing", it) } })
+    /** [MON-07] Google's consent form and the ads SDK. */
+    val ads = com.bamnat.app.ads.Ads(appScope)
+
+    /**
+     * [MON-02][MON-08][MON-09] On coming to the front: the 정식 출시 switch (once a day), this phone's
+     * passes and admin link when it has any reason to, and Play's purchases; then the gate again.
+     */
+    fun syncPro(force: Boolean = false) = appScope.launch {
+        runCatching { remoteConfig.refresh(tierApi, force = force) }
+        runCatching { syncPasses(force) }
+        // Play is asked only once paying is possible, or for a subscription this phone already knew.
+        if (remoteConfig.current.billingLive || proStore.current.sub != null) runCatching { billing.refresh() }
+        featureGate.refresh()
+    }
+
+    /** [MON-08] Only a phone that sent a report or a question, holds passes or brought a code asks the server. */
+    suspend fun syncPasses(force: Boolean = false) {
+        if (!tierApi.enabled) return
+        val s = proStore.current
+        val device = companyStore.device
+        s.pendingClaim?.let { code ->
+            try {
+                proStore.setPasses(tierApi.claim(device, code))
+                proStore.claimLater(null)
+            } catch (e: com.bamnat.app.company.CompanyException) {
+                // A spent or unknown code is not tried again; no connection is.
+                if (e.code != "offline" && e.code != "rate_limited") proStore.claimLater(null)
+            }
+        }
+        val reason = s.passes != null || companyStore.sent.value.isNotEmpty() || inquiryStore.asked || s.code != null
+        val last = proStore.current.passes?.checkedAt
+        if (!reason || (!force && last != null && java.time.Duration.between(last, java.time.Instant.now()) < PASSES_EVERY)) return
+        proStore.setPasses(tierApi.passes(device))
+    }
     /** [IMPORT-01] Samsung Calendar and the phone's other calendars, brought in on request. */
     val calendarImporter by lazy {
         com.bamnat.app.imports.CalendarImporter(appContext, com.bamnat.app.imports.DeviceCalendars(appContext), scheduleRepository,
@@ -208,6 +255,8 @@ class AppContainer(context: Context) {
         const val WOKE_SUMMARY_MINUTES = 20L
         const val RETRY_FIRST_MILLIS = 2_000L
         const val RETRY_MAX_MILLIS = 60_000L
+        /** [MON-09] Often enough for the admin link's weekly check, rare enough to stay quiet. */
+        val PASSES_EVERY: java.time.Duration = java.time.Duration.ofHours(6)
     }
 
     suspend fun rescheduleAlarms(after: LocalDateTime = LocalDateTime.now()) {
@@ -299,6 +348,11 @@ class AppContainer(context: Context) {
             val on = settingsRepository.settings.map { it.leaveNotice }.distinctUntilChanged()
             combine(entered, on) { a, b -> a to b }
                 .collect { LeaveReminder.reschedule(appContext, payStore.profile.value, settingsRepository.current) }
+        }
+        // [MON-06] The trial's notice follows the subscription and the user's answer.
+        keep("trialnotice") {
+            proStore.state.map { Triple(it.sub, it.consentAt, it.trialNoticeFor) }.distinctUntilChanged()
+                .collect { com.bamnat.app.tier.TrialNotice.reschedule(appContext, proStore.current) }
         }
         // [SHR-12] The link this phone made follows the calendar, and its expiry notice follows the link.
         keep("share") { if (shareApi.enabled) shareSync.follow() }

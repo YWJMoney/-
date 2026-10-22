@@ -171,6 +171,8 @@ export async function prune(env, now) {
     // [MON-03][MON-09] Spent link codes, and purchases 30 days after they ended.
     stmt(env, "DELETE FROM link_codes WHERE expires < ?", now),
     stmt(env, "DELETE FROM subs WHERE expiry IS NOT NULL AND expiry < ?", now - MONEY.subKeepMs),
+    // [MON-06][MON-11] Consent answers are the record of a contract: kept 5 years (전자상거래법 시행령 제6조), then gone.
+    stmt(env, "DELETE FROM consents WHERE at < ?", now - MONEY.consentKeepMs),
   ]);
 }
 
@@ -3443,6 +3445,8 @@ const MONEY = {
   passMonths: 12,
   // [MON-03] What the server keeps of a purchase, and for how long after it ends.
   subKeepMs: 30 * DAY,
+  // [MON-11] 계약 또는 청약철회 등에 관한 기록: 5년 (전자상거래법 시행령 제6조 제1항).
+  consentKeepMs: 5 * 365 * DAY,
   freeFeatures: 30,
 };
 

@@ -43,6 +43,17 @@
         android:theme="@style/Theme.Bamnat.Starting"
         android:enableOnBackInvokedCallback="true">
 
+        <!-- [MON-07] AdMob app id (gradle.properties bamnat.admobAppId; Google's sample id when blank).
+             No ad is asked for before the 정식 출시 switch, for 프로, or without ad unit ids. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="${admobAppId}" />
+        <!-- [MON-07] The ads SDK starts its measurement only when MobileAds.initialize runs (Ads.startSdk: after the
+             정식 출시 switch and Google's consent), not at every app start. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.DELAY_APP_MEASUREMENT_INIT"
+            android:value="true" />
+
         <!-- resizeableActivity + configChanges keep state smooth when a Fold opens or closes.
              singleTop: a shared calendar link tapped while the app is open comes to onNewIntent [SHR-02]. -->
         <activity
@@ -129,6 +140,11 @@
         <!-- [PAY-12][REL-08] 연차 lapse notice on 11/1 and 12/1. -->
         <receiver
             android:name=".pay.LeaveReminderReceiver"
+            android:exported="false" />
+
+        <!-- [MON-06] The trial's question, 7 days before it turns paid. -->
+        <receiver
+            android:name=".tier.TrialNoticeReceiver"
             android:exported="false" />
 
         <!-- [SHR-12] The shared link closing soon, and its 늘리기 button. -->

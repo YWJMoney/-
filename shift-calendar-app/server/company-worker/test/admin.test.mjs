@@ -420,6 +420,11 @@ test("the developer app's files are served safely", async () => {
   }
   const css = await call("GET", "/admin/app.css");
   assert.match(css.headers.get("content-type"), /^text\/css/);
+  // [MON-08][MON-09][MON-10] The 정식 출시 switch, the phone link code, phone approval and reward months are on the page.
+  const app = (await call("GET", "/admin/app.js")).text;
+  for (const part of ['data-form="launch"', 'data-act="launch-switch"', 'data-act="link-code"', 'data-act="phone"', "내 휴대폰 밤낮 연결", "프로 이용권"]) {
+    assert.ok(app.includes(part), part);
+  }
 
   const manifest = JSON.parse((await call("GET", "/admin/manifest.webmanifest")).text);
   assert.equal(manifest.start_url, "/admin/");

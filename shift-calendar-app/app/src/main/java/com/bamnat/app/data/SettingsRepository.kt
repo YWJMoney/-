@@ -53,8 +53,12 @@ data class AppSettings(
     val hideDayAlarmNotice: Boolean = false,
     /** Opt-in: send anonymous usage statistics once a remote service is connected [MEAS-03]. */
     val shareUsageStats: Boolean = false,
-    /** Subscription tier; set by billing later, by testers for now [TIER-01]. */
-    val tier: Tier = Tier.FREE,
+    /**
+     * [MON-02] A tester's preview of the screens after launch (alarm check screen): null shows the real
+     * state. It counts before the 정식 출시 switch and in debug builds only. The old "tier" key, saved as
+     * FREE for everyone, is not read, so nobody sees locks they did not choose.
+     */
+    val previewTier: Tier? = null,
     /**
      * [WORK-01] How the user works; null until chosen on first launch. [SETUP-01] The first setup
      * writes it only when it saves, so null also means the first setup is not done.
@@ -187,7 +191,7 @@ class SettingsRepository(context: Context) {
             alarmsEnabled = prefs.getBoolean(K_ALARMS_ON, d.alarmsEnabled),
             hideDayAlarmNotice = prefs.getBoolean(K_HIDE_DAY_NOTICE, d.hideDayAlarmNotice),
             shareUsageStats = prefs.getBoolean(K_SHARE_STATS, d.shareUsageStats),
-            tier = runCatching { Tier.valueOf(prefs.getString(K_TIER, null) ?: "") }.getOrDefault(d.tier),
+            previewTier = Tier.parse(prefs.getString(K_PREVIEW_TIER, null)),
             workStyle = prefs.getString(K_WORK_STYLE, null)?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } },
             rosterMonthly = prefs.getBoolean(K_ROSTER_MONTHLY, d.rosterMonthly),
             extraKinds = ExtraKinds.decode(prefs.getString(K_EXTRA_KINDS, null)),
@@ -242,7 +246,8 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_ALARMS_ON, s.alarmsEnabled)
             .putBoolean(K_HIDE_DAY_NOTICE, s.hideDayAlarmNotice)
             .putBoolean(K_SHARE_STATS, s.shareUsageStats)
-            .putString(K_TIER, s.tier.name)
+            .putString(K_PREVIEW_TIER, s.previewTier?.name)
+            .remove(K_OLD_TIER)
             .putString(K_WORK_STYLE, s.workStyle?.name)
             .putBoolean(K_ROSTER_MONTHLY, s.rosterMonthly)
             .putString(K_EXTRA_KINDS, s.extraKinds.encode())
@@ -298,7 +303,8 @@ class SettingsRepository(context: Context) {
         const val K_ALARMS_ON = "alarms_on"
         const val K_HIDE_DAY_NOTICE = "hide_day_alarm_notice"
         const val K_SHARE_STATS = "share_usage_stats"
-        const val K_TIER = "tier"
+        const val K_OLD_TIER = "tier"
+        const val K_PREVIEW_TIER = "tier_preview"
         const val K_WORK_STYLE = "work_style"
         const val K_ROSTER_MONTHLY = "roster_monthly"
         const val K_EXTRA_KINDS = "extra_kinds"

@@ -56,6 +56,8 @@ class BackupManager(
     private val recordsTrash: () -> RecordsTrash? = { null },
     /** [CREW-01] Each calendar's teams for 모든 조 보기. */
     private val teams: TeamStore? = null,
+    /** [MON-08] The 프로 recovery code, so passes follow to a new phone; never the purchase itself. */
+    private val pro: () -> com.bamnat.app.tier.ProStore? = { null },
 ) {
     /** The schedule tables of [source] (shifts, order, changed days, extra work) as a backup holds them. */
     private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
@@ -240,6 +242,7 @@ class BackupManager(
         root.putOpt("workTools", workTools?.export(PersonalCalendar.MAIN))
         guide?.let { root.put("featuresOff", it.exportOff()) }
         teams?.let { t -> root.put("teams", JSONObject(t.export() as Map<*, *>)) }
+        pro()?.let { root.put("pro", it.toBackup()) }
         val s = settings.current
         root.put(
             "settings",
@@ -514,6 +517,8 @@ class BackupManager(
         root.optJSONArray("featuresOff")?.let { a -> guide?.restoreOff(a) }
         // [CREW-01] An older backup has no teams: the phone's own stay.
         root.optJSONObject("teams")?.let { o -> teams?.import(o.keys().asSequence().associateWith { o.optString(it) }) }
+        // [MON-08] A backup's recovery code moves its passes here at the next sync; an older backup has none.
+        root.optJSONObject("pro")?.let { o -> pro()?.fromBackup(o) }
         // [MCAL-05] The added calendars as the backup had them, each in its own database.
         var goneCalendars = emptyList<String>()
         calendars?.let { book ->

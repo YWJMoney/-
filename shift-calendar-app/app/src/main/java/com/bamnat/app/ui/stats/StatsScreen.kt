@@ -50,9 +50,6 @@ import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.ScheduleSnapshot
-import com.bamnat.app.tier.Feature
-import com.bamnat.app.tier.FeatureGate
-import com.bamnat.app.tier.Tier
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
@@ -92,7 +89,6 @@ class StatsViewModel(
         scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val settings: StateFlow<AppSettings> = scope.settings.stateIn(viewModelScope, SharingStarted.Eagerly, scope.currentSettings())
     val payProfile: StateFlow<PayProfile?> = scope.pay.profile
-    val tier: StateFlow<Tier> = container.featureGate.tier
     private val payCalculator = PayCalculator()
 
     fun payTotal(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): Long =
@@ -109,7 +105,6 @@ class StatsViewModel(
 fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val payProfile by vm.payProfile.collectAsStateWithLifecycle()
-    val tier by vm.tier.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     // [NAV-01] The same month as the calendar and 돈.
     val month by vm.shownMonth.collectAsStateWithLifecycle()
@@ -192,8 +187,9 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         // [NAV-01] The month's pay, worked out once for the pay card and the work type's cards.
         // [STAB-01] A month of pay is worked out off the main thread, and an odd profile shows no total
         // instead of closing the app.
-        val payTotal = produceState<Long?>(null, payProfile, snap, month, tier) {
-            value = payProfile?.takeIf { pays && FeatureGate.allows(tier, Feature.PAY_ENGINE) }?.let { p ->
+        // [MON-01] The month's pay is free.
+        val payTotal = produceState<Long?>(null, payProfile, snap, month) {
+            value = payProfile?.takeIf { pays }?.let { p ->
                 runCatching { withContext(Dispatchers.Default) { vm.payTotal(p, snap, month) } }
                     .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
             }
@@ -464,7 +460,7 @@ private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, on
                 Text(
                     when {
                         total != null -> "%,d원".format(total)
-                        hasProfile -> "${Tier.PRO.label}에서 금액이 보여요"
+                        hasProfile -> "계산하는 중이에요"
                         else -> "근무표로 급여 계산하기"
                     },
                     style = MaterialTheme.typography.titleLarge,

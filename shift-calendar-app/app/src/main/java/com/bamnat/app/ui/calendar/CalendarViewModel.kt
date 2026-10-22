@@ -8,7 +8,6 @@ import com.bamnat.app.alarm.UpcomingAlarm
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.pay.named
-import com.bamnat.app.tier.Tier
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.UndoMessage
 import com.bamnat.app.ui.money.MoneyActions
@@ -221,10 +220,10 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     /**
      * [CAL-06] The month's pay as the pay screen counts it, for the summary over the calendar; null
-     * without a pay setup or while pay is locked. Heavy enough to run off the main thread.
+     * without a pay setup. [MON-01] Free for everyone. Heavy enough to run off the main thread.
      */
     fun monthEstimate(profile: PayProfile?, snapshot: ScheduleSnapshot, month: YearMonth): Long? {
-        if (profile == null || !com.bamnat.app.tier.FeatureGate.allows(tier.value, com.bamnat.app.tier.Feature.PAY_ENGINE)) return null
+        if (profile == null) return null
         return runCatching { monthPay(profile.named(snapshot.kinds), snapshot, month).total }.getOrNull()
     }
 
@@ -245,10 +244,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         container.calendars.active.flatMapLatest { container.calendars.repository(it).extrasToReview }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
-    /** Pay setup and tier, so a day on the calendar shows what it adds to pay [PAYX-08]. [MCAL-06] The calendar on screen's own. */
+    /** Pay setup, so a day on the calendar shows what it adds to pay [PAYX-08]. [MCAL-06] The calendar on screen's own. */
     val payProfile: StateFlow<PayProfile?> = container.calendars.active.flatMapLatest { container.calendars.pay(it).profile }
         .stateIn(viewModelScope, SharingStarted.Eagerly, container.calendars.pay(container.calendars.active.value).profile.value)
-    val tier: StateFlow<Tier> = container.featureGate.tier
     private val payCalculator = PayCalculator()
 
     // Moving from day to day in one month reuses that month's result instead of recalculating it.

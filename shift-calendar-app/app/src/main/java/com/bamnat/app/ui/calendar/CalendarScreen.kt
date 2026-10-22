@@ -235,7 +235,6 @@ fun CalendarScreen(
     val rangeFrom by vm.rangeFrom.collectAsStateWithLifecycle()
     val holidaysKept by vm.holidaysKept.collectAsStateWithLifecycle()
     val payProfile by vm.payProfile.collectAsStateWithLifecycle()
-    val tier by vm.tier.collectAsStateWithLifecycle()
     var legendOpen by remember { mutableStateOf(false) }
     // [SHR-02] Calendars others shared, switched to like accounts.
     val received = appViewModel { ReceivedViewModel(it) }
@@ -336,7 +335,7 @@ fun CalendarScreen(
     val overview = remember(snap, visibleMonth, focus, moneyBook) {
         com.bamnat.core.work.MonthOverview.of(visibleMonth, focus, snap.resolver, moneyBook.jobs, moneyBook.sales)
     }
-    val payEstimate by produceState<Long?>(null, payProfile, snap, visibleMonth, tier, focus) {
+    val payEstimate by produceState<Long?>(null, payProfile, snap, visibleMonth, focus) {
         value = null
         if (focus != com.bamnat.core.work.CalendarFocus.SHIFTS || payProfile == null) return@produceState
         delay(150)

@@ -76,7 +76,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.tier.Feature
-import com.bamnat.app.tier.Tier
+import com.bamnat.app.tier.Gate
+import com.bamnat.app.ui.money.ProPill
+import com.bamnat.app.ui.pro.openPro
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.core.holiday.KoreanHolidays
@@ -132,7 +134,7 @@ fun PayScreen(
 ) {
     val profile by vm.profile.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
-    val tier by vm.tier.collectAsStateWithLifecycle()
+    val gate by vm.gate.collectAsStateWithLifecycle()
     var editingSetup by rememberSaveable { mutableStateOf(false) }
     var editingRules by rememberSaveable { mutableStateOf(false) }
     // The back gesture does what the arrow does: close the editor, not the whole pay screen.
@@ -186,7 +188,7 @@ fun PayScreen(
                     val month by vm.month.collectAsStateWithLifecycle()
                     CompanyRulesEditor(vm, profile!!, snap, month, onClose = { editingRules = false }, onOpenKinds = onOpenExtraKinds)
                 }
-                else -> PayResult(vm, profile!!, snap, tier, onEditSetup = { editingSetup = true }, onEditRules = { editingRules = true }, top = top,
+                else -> PayResult(vm, profile!!, snap, gate, onEditSetup = { editingSetup = true }, onEditRules = { editingRules = true }, top = top,
                     onReport = onReport, onShareWay = onShareWay)
             }
         }
@@ -199,7 +201,7 @@ private fun PayResult(
     vm: PayViewModel,
     profile: PayProfile,
     snapshot: ScheduleSnapshot,
-    tier: Tier,
+    gate: Gate,
     onEditSetup: () -> Unit,
     onEditRules: () -> Unit,
     top: @Composable () -> Unit = {},
@@ -208,7 +210,10 @@ private fun PayResult(
 ) {
     val month by vm.month.collectAsStateWithLifecycle()
     val undo by vm.undoAvailable.collectAsStateWithLifecycle()
-    val unlocked = vm.canUse(Feature.PAY_ENGINE, tier)
+    // [MON-01] The month's pay, its lines and its settings are free (결정 2). 명세서 대조, 규칙 글로 채우기
+    // and 값 일괄 적용 (기간 지정, 연도별 인상) are pro; locked, they open the 프로 screen.
+    val unlocked = true
+    val bulkOpen = gate.allows(Feature.PAY_BULK_EDIT)
     val closed by vm.closed.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     // [PAYS-01] Worked out on a background thread; the month shown stays until the next one is ready.
@@ -287,10 +292,6 @@ private fun PayResult(
             }
         }
 
-        if (!unlocked) {
-            LockedCard()
-        }
-
         // [EXTRA-05] 1.8 paid a day off as 휴일근로; the law's way is shown next to it once.
         val law = v.restDayLaw
         if (unlocked && closedSnap == null && law != null && law != result.total) {
@@ -360,7 +361,7 @@ private fun PayResult(
                 estimated = Unknowns.BASE in profile.estimatedFields,
                 enabled = unlocked,
                 onEdit = { editTarget = ValueTarget.Base },
-                onRaise = { raiseTarget = ValueTarget.Base },
+                onRaise = { if (bulkOpen) raiseTarget = ValueTarget.Base else openPro() },
                 onEstimate = { estimate = Estimates.forValue(profile, month, null) },
             )
             profile.items.forEach { item ->
@@ -379,7 +380,7 @@ private fun PayResult(
                     unknownAmount = Unknowns.item(item.id) in profile.estimatedFields,
                     enabled = unlocked,
                     onEdit = { editTarget = ValueTarget.Item(item.id) },
-                    onRaise = { raiseTarget = ValueTarget.Item(item.id) },
+                    onRaise = { if (bulkOpen) raiseTarget = ValueTarget.Item(item.id) else openPro() },
                     ordinary = item.ordinary,
                     onOrdinary = { on -> vm.updateItem(item.id) { it.copy(ordinary = on) } },
                     onRemove = { vm.removeItem(item.id) },
@@ -405,8 +406,9 @@ private fun PayResult(
                 OutlinedButton(onClick = { addingBonus = true }, enabled = unlocked) {
                     Icon(Icons.Filled.Add, null); Text(" 상여금 추가")
                 }
-                OutlinedButton(onClick = { importing = true }, enabled = vm.canUse(Feature.PAY_RULE_IMPORT, tier)) {
+                OutlinedButton(onClick = { if (gate.allows(Feature.PAY_RULE_IMPORT)) importing = true else openPro() }) {
                     Icon(Icons.Filled.ContentPaste, null); Text(" 규칙 글로 채우기")
+                    if (gate.locked(Feature.PAY_RULE_IMPORT)) { Spacer(Modifier.width(6.dp)); ProPill() }
                 }
                 if (undo != null) {
                     TextButton(onClick = vm::undo) { Icon(Icons.Filled.Undo, null); Text(" 방금 바꾼 것 되돌리기") }
@@ -443,8 +445,9 @@ private fun PayResult(
                 summary.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                OutlinedButton(onClick = { matching = true }, enabled = unlocked) {
+                OutlinedButton(onClick = { if (gate.allows(Feature.PAYSLIP_MATCH)) matching = true else openPro() }) {
                     Icon(Icons.Filled.ReceiptLong, null); Text(" 명세서로 맞춰 보기")
+                    if (gate.locked(Feature.PAYSLIP_MATCH)) { Spacer(Modifier.width(6.dp)); ProPill() }
                 }
                 TextButton(onClick = onEditSetup) { Icon(Icons.Filled.Edit, null); Text(" 처음부터 설정") }
             }
@@ -466,7 +469,7 @@ private fun PayResult(
 
     detail?.let { LineDetailDialog(it, shown) { detail = null } }
     editTarget?.let { target ->
-        EditValueDialog(vm, profile, snapshot, target, month, onDismiss = { editTarget = null })
+        EditValueDialog(vm, profile, snapshot, target, month, onDismiss = { editTarget = null }, rangeOpen = bulkOpen)
     }
     raiseTarget?.let { target ->
         RaiseDialog(vm, profile, target, onDismiss = { raiseTarget = null })
@@ -663,23 +666,6 @@ internal fun EstimatedChip(text: String = "추정 포함", onClick: (() -> Unit)
             .then(if (onClick == null) Modifier else Modifier.clickable(onClickLabel = "무엇을 넣으면 확정되는지 보기", role = Role.Button, onClick = onClick))
             .background(MaterialTheme.colorScheme.tertiaryContainer).padding(horizontal = 8.dp, vertical = 2.dp),
     )
-}
-
-@Composable
-private fun LockedCard() {
-    SectionCard(title = null) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Lock, null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text("${Tier.PRO.label} 등급에서 열려요", style = MaterialTheme.typography.titleSmall)
-                Text("내 급여 합계, 항목별 계산 풀이, 연도별 인상 계산, 일괄 수정, 명세서 대조를 쓸 수 있어요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        Text("결제는 Play 출시 때 열려요.", style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
-    }
 }
 
 /**

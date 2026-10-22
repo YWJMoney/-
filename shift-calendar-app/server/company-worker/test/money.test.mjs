@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { server, report, device, from, signIn, ORIGIN } from "./helpers.mjs";
-import { addMonths, stack, readSub, stopUnconsentedTrials } from "../src/index.js";
+import worker, { addMonths, stack, readSub, stopUnconsentedTrials } from "../src/index.js";
 
 const APP = { "x-admin": "1", origin: ORIGIN };
 const phone = (n) => ({ "x-device": device(n) });
@@ -314,4 +314,19 @@ test("a reward for someone already paying moves their next payment instead", asy
   const paid = (await call("GET", "/api/admin/rewards?status=paid", undefined, owner)).data.rewards[0];
   assert.equal(paid.deferred, true);
   assert.match(paid.memo, /^Play 결제 미룸\(다음 결제 2027-04-05\)/);
+});
+
+test("consent answers are kept five years, then the hourly clean-up deletes them", async (t) => {
+  const { env, DB } = server();
+  const now = Date.parse("2032-01-10T00:00:00Z");
+  const year = 365 * 24 * 60 * 60 * 1000;
+  // The table is made on the first request.
+  await worker.fetch(new Request("https://x/api/config"), env, { waitUntil() {} });
+  DB.db.prepare("INSERT INTO consents (device, kind, detail, at) VALUES (?, 'trial_paid', '{}', ?)").run("old", now - 5 * year - 1000);
+  DB.db.prepare("INSERT INTO consents (device, kind, detail, at) VALUES (?, 'trial_paid', '{}', ?)").run("kept", now - 5 * year + 60000);
+  t.mock.timers.enable({ apis: ["Date"], now });
+  const waits = [];
+  await worker.scheduled({ cron: "17 * * * *", scheduledTime: now }, env, { waitUntil: (p) => waits.push(p) });
+  await Promise.all(waits);
+  assert.deepEqual(DB.db.prepare("SELECT device FROM consents").all().map((r) => r.device), ["kept"]);
 });

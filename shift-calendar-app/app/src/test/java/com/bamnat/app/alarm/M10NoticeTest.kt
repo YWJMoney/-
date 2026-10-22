@@ -58,8 +58,9 @@ class M10NoticeTest {
         val channels = nm.notificationChannels
         assertNull(channels.firstOrNull { it.id == "sleep_tips_v1" })
         // [SCHED-01] 메모 일정 is the ninth, [SHR-12] 근무표 링크 기간 the tenth, [FEAT-18] 잠금 화면 오늘 근무 the eleventh.
-        // [INV-08] 투자 알림 the twelfth.
-        assertEquals(12, channels.size)
+        // [INV-08] 투자 알림 the twelfth, [MON-06] 구독 안내 (the trial's question) the thirteenth.
+        assertEquals(13, channels.size)
+        assertEquals("돈과 휴가", nm.notificationChannelGroups.first { it.id == nm.getNotificationChannel(Notifications.PRO_CHANNEL_ID).group }.name.toString())
         assertTrue(channels.all { it.group != null })
         // No two lines read the same in the system settings.
         assertEquals(channels.size, channels.map { it.name.toString() }.toSet().size)

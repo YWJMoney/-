@@ -58,7 +58,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import com.bamnat.app.tier.Feature
-import com.bamnat.app.tier.FeatureGate
 import com.bamnat.app.tier.Tier
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -374,6 +373,8 @@ fun NewCalendarDialog(
     suggested: String, colorIndex: Int, onCreate: (String, Long) -> Unit, onDismiss: () -> Unit,
     /** [MCAL-07] This one would be past the free ones, so a pro calendar. */
     pro: Boolean = false,
+    /** The 정식 출시 switch: before it the note says the calendar will be pro later. */
+    live: Boolean = false,
 ) {
     var name by remember { mutableStateOf("") }
     var color by remember { mutableLongStateOf(PersonalCalendar.COLORS[colorIndex % PersonalCalendar.COLORS.size]) }
@@ -386,7 +387,7 @@ fun NewCalendarDialog(
                     "근무 형태부터 처음 시작할 때처럼 하나씩 물어볼게요. 지금 달력은 그대로예요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (pro) Text(proNote(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                if (pro) Text(proNote(live), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 OutlinedTextField(
                     value = name, onValueChange = { if (it.length <= PersonalCalendar.MAX_NAME) name = it }, singleLine = true,
                     label = { Text("이름") }, placeholder = { Text(suggested) }, modifier = Modifier.fillMaxWidth(),
@@ -399,10 +400,10 @@ fun NewCalendarDialog(
     )
 }
 
-/** [MCAL-07] What a calendar past the free ones is, before and after paid features open. */
-internal fun proNote(): String =
-    if (FeatureGate.BILLING_LIVE) "추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료이고, 이 달력부터는 ${Tier.PRO.label} 기능이에요."
-    else "추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료이고, 그다음부터는 ${Tier.PRO.label} 기능이 될 거예요. 지금은 모든 기능이 무료예요."
+/** [MCAL-07] What a calendar past the free ones is, before and after the 정식 출시 switch. */
+internal fun proNote(live: Boolean): String =
+    if (live) "추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료이고, 이 달력부터는 ${Tier.PRO.label} 기능이에요."
+    else "추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료이고, 그다음부터는 정식 출시 뒤 ${Tier.PRO.label} 기능이 돼요. 지금은 모든 기능이 무료예요."
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -713,20 +714,22 @@ fun rememberAddCalendar(c: AppContainer, onSetup: (String) -> Unit): () -> Unit 
     val scope = rememberCoroutineScope()
     val setup by androidx.compose.runtime.rememberUpdatedState(onSetup)
     val calendars by c.calendars.calendars.collectAsStateWithLifecycle()
-    val tier by c.featureGate.tier.collectAsStateWithLifecycle()
+    val gate by c.featureGate.state.collectAsStateWithLifecycle()
     val made = calendars.count { !it.isMain }
     val pro = made >= PersonalCalendar.FREE_ADDED
-    if (naming && pro && !FeatureGate.allows(tier, Feature.MORE_CALENDARS)) {
+    if (naming && pro && !gate.allows(Feature.MORE_CALENDARS)) {
         // [MCAL-07] Past the free calendars once paid features are on: said, not made.
         AlertDialog(
             onDismissRequest = { naming = false },
             title = { Text("달력을 더 만들려면 ${Tier.PRO.label}가 필요해요") },
             text = { Text("내 달력과 추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료예요. ${Tier.PRO.label}에서 달력을 더 만들 수 있어요.") },
-            confirmButton = { TextButton(onClick = { naming = false }) { Text("확인") } },
+            confirmButton = { TextButton(onClick = { naming = false; com.bamnat.app.ui.pro.openPro() }) { Text("프로 알아보기") } },
+            dismissButton = { TextButton(onClick = { naming = false }) { Text("닫기") } },
         )
     } else if (naming) {
         NewCalendarDialog(
             pro = pro,
+            live = gate.live,
             suggested = "달력 ${made + 2}",
             colorIndex = made,
             onDismiss = { naming = false },

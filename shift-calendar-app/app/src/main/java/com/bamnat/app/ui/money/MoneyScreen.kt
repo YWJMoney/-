@@ -74,9 +74,7 @@ import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.AutoRecordPrefs
 import com.bamnat.app.data.Capture
 import com.bamnat.app.data.ScheduleSnapshot
-import com.bamnat.app.tier.Feature
-import com.bamnat.app.tier.FeatureGate
-import com.bamnat.app.tier.Tier
+import com.bamnat.app.tier.Gate
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.UndoMessage
 import com.bamnat.app.ui.components.SectionCard
@@ -134,7 +132,7 @@ class MoneyViewModel(
         scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val settings: StateFlow<AppSettings> = scope.settings.stateIn(viewModelScope, SharingStarted.Eagerly, scope.currentSettings())
     val payProfile: StateFlow<PayProfile?> = scope.pay.profile
-    val tier: StateFlow<Tier> = container.featureGate.tier
+    val gate: StateFlow<Gate> = container.featureGate.state
     private val payCalculator = PayCalculator()
 
     init {
@@ -169,26 +167,25 @@ class MoneyViewModel(
         _page.value = Page.LIST
     }
 
-    /** [WORK-04] Wages come from the existing pay engine; null when it is not set up or not unlocked. */
-    fun payEstimate(style: WorkStyle?, profile: PayProfile?, snapshot: ScheduleSnapshot?, tier: Tier, month: YearMonth): Long? {
+    /** [WORK-04] Wages come from the existing pay engine; null when it is not set up. [MON-01] Free for everyone. */
+    fun payEstimate(style: WorkStyle?, profile: PayProfile?, snapshot: ScheduleSnapshot?, month: YearMonth): Long? {
         if (style?.usesPayEngine == false || profile == null || snapshot == null) return null
-        if (!FeatureGate.allows(tier, Feature.PAY_ENGINE)) return null
         return runCatching { payCalculator.calculate(profile, month, snapshot.resolver::resolve).total }.getOrNull()
     }
 
     /** The month with its wage estimate, off the main thread. */
-    suspend fun month(book: MoneyBook, style: WorkStyle?, profile: PayProfile?, snapshot: ScheduleSnapshot?, tier: Tier, month: YearMonth): MonthMoney =
-        withContext(Dispatchers.Default) { book.month(month, payEstimate(style, profile, snapshot, tier, month)) }
+    suspend fun month(book: MoneyBook, style: WorkStyle?, profile: PayProfile?, snapshot: ScheduleSnapshot?, month: YearMonth): MonthMoney =
+        withContext(Dispatchers.Default) { book.month(month, payEstimate(style, profile, snapshot, month)) }
 
     /**
      * [LEDG-10] The month against the one before, and its year month by month, each with that
      * month's wage estimate. Months still ahead are counted without one.
      */
-    suspend fun analysis(book: MoneyBook, style: WorkStyle?, profile: PayProfile?, snapshot: ScheduleSnapshot?, tier: Tier,
+    suspend fun analysis(book: MoneyBook, style: WorkStyle?, profile: PayProfile?, snapshot: ScheduleSnapshot?,
                          month: YearMonth, today: LocalDate): LedgerAnalysis = withContext(Dispatchers.Default) {
         val now = YearMonth.from(today)
         val pays = HashMap<YearMonth, Long?>()
-        val at = { m: YearMonth -> book.month(m, if (m.isAfter(now)) null else pays.getOrPut(m) { payEstimate(style, profile, snapshot, tier, m) }) }
+        val at = { m: YearMonth -> book.month(m, if (m.isAfter(now)) null else pays.getOrPut(m) { payEstimate(style, profile, snapshot, m) }) }
         val current = at(month)
         val year = (1..12).map { at(YearMonth.of(month.year, it)) }
         LedgerAnalysis(current, Reports.month(current, at(month.minusMonths(1)), book, today), Reports.year(month.year, year))
@@ -387,7 +384,7 @@ fun MoneyScreen(
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val profile by vm.payProfile.collectAsStateWithLifecycle()
-    val tier by vm.tier.collectAsStateWithLifecycle()
+    val gate by vm.gate.collectAsStateWithLifecycle()
     // [NAV-01] The same month as the calendar and 근무·급여.
     val month by vm.shownMonth.collectAsStateWithLifecycle()
     val page by vm.page.collectAsStateWithLifecycle()
@@ -434,13 +431,12 @@ fun MoneyScreen(
     val autoRecord by vm.autoRecord.collectAsStateWithLifecycle()
     val book = bookOrNull ?: MoneyBook.EMPTY
     val style = settings.workStyle
-    val statsOpen = FeatureGate.allows(tier, Feature.MONEY_STATS)
     // Records show at once; the wage estimate joins when the pay engine has run.
-    val m by produceState(book.month(month), book, style, profile, snapshot, tier, month) {
-        value = vm.month(book, style, profile, snapshot, tier, month)
+    val m by produceState(book.month(month), book, style, profile, snapshot, month) {
+        value = vm.month(book, style, profile, snapshot, month)
     }
-    val analysis by produceState<LedgerAnalysis?>(null, book, style, profile, snapshot, tier, month, page == MoneyViewModel.Page.REPORT) {
-        if (page == MoneyViewModel.Page.REPORT) value = vm.analysis(book, style, profile, snapshot, tier, month, today)
+    val analysis by produceState<LedgerAnalysis?>(null, book, style, profile, snapshot, month, page == MoneyViewModel.Page.REPORT) {
+        if (page == MoneyViewModel.Page.REPORT) value = vm.analysis(book, style, profile, snapshot, month, today)
     }
     LaunchedEffect(snackbar) {
         val host = snackbar ?: return@LaunchedEffect
@@ -565,7 +561,7 @@ fun MoneyScreen(
                 }
                 MoneyViewModel.Page.LIST -> LedgerListPane(book, month, view, vm::setView, selection, vm::select, listActions, wide,
                     onAdd = { adding = MoneyKind.EXPENSE })
-                MoneyViewModel.Page.REPORT -> LedgerReportsPane(analysis, book, budget.total?.budget, style, statsOpen, wide, today,
+                MoneyViewModel.Page.REPORT -> LedgerReportsPane(analysis, book, budget.total?.budget, style, gate, wide, today,
                     onCategory = vm::showCategory, onOpen = { editing = it }, onPlace = vm::showPlace, month = month)
             }
         }

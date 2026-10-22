@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -509,6 +510,21 @@ private fun PrivacyPage(
         // [STAB-01] No '사용 통계 보내기' switch: the app sends no usage statistics anywhere, so it promised
         // something it does not do. It comes back only with a real place to send them (Telemetry sinks).
         NavRow("개인정보 처리방침", "무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
+        // [MON-07] Google's consent form again where the law gives one (EEA, UK and the like); elsewhere, what there is.
+        val adPrivacy by vm.adPrivacy.collectAsStateWithLifecycle()
+        var adWords by remember { mutableStateOf(false) }
+        NavRow("광고 개인정보 선택", if (adPrivacy) "광고에 쓰는 정보 동의를 다시 골라요" else "광고가 무엇을 쓰는지와 끄는 방법") {
+            val activity = with(com.bamnat.app.review.InAppReview) { context.findActivity() }
+            if (adPrivacy && activity != null) vm.showAdPrivacy(activity) else adWords = true
+        }
+        if (adWords) {
+            AlertDialog(
+                onDismissRequest = { adWords = false },
+                title = { Text("광고 개인정보") },
+                text = { Text(AD_PRIVACY_WORDS) },
+                confirmButton = { TextButton(onClick = { adWords = false }) { Text("확인") } },
+            )
+        }
         // [LOCK-01] Pay and memos behind the phone's own lock.
         val lockable = remember(refresh) { com.bamnat.app.AppLock.available(context) }
         SwitchRow(
@@ -566,6 +582,11 @@ private fun AboutPage(vm: SettingsViewModel, onOpenDiagnostics: (Boolean) -> Uni
         HorizontalDivider()
         NavRow("개인정보 처리방침", null) { openPrivacy(context) }
         HorizontalDivider()
+        // [MON-05] What paying for 프로 agrees to.
+        NavRow("이용약관", "프로 구독·체험·해지·환불") {
+            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(com.bamnat.app.ui.pro.TERMS_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        }
+        HorizontalDivider()
         // [OPS-23] The libraries the app ships with.
         var licenses by remember { mutableStateOf(false) }
         NavRow("오픈소스 라이선스", null) { licenses = true }
@@ -574,6 +595,13 @@ private fun AboutPage(vm: SettingsViewModel, onOpenDiagnostics: (Boolean) -> Uni
     Text("밤낮 ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.focusMark("버전"))
 }
+
+/** [MON-07] Said where Google gives no consent form of its own to open again. */
+internal const val AD_PRIVACY_WORDS =
+    "정식 출시 뒤 무료로 쓸 때만 근무·급여 탭과 돈 탭 아래에 광고 한 줄이 나와요. 프로를 쓰면 광고가 아예 없어요.\n\n" +
+        "광고는 Google AdMob이 보여 주고, 휴대폰의 광고 ID와 기기 정보를 써요. 근무표·급여·메모·돈 기록은 광고에 쓰지 않아요.\n\n" +
+        "맞춤 광고를 끄려면 휴대폰 설정 › 개인정보 보호(또는 Google) › 광고에서 광고 ID를 지우면 돼요. " +
+        "유럽처럼 법이 따로 묻는 지역에서는 여기서 Google의 동의 화면이 다시 열려요."
 
 // [ADMIN-02] The 밤낮 policy; privacy.html at the site root is another app's.
 private const val PRIVACY_URL = "https://ywjmoney.github.io/-/privacy/"

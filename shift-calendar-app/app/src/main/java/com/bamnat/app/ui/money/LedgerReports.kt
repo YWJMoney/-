@@ -37,7 +37,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.bamnat.app.tier.FeatureGate
+import com.bamnat.app.tier.Feature
 import com.bamnat.app.tier.Tier
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
@@ -73,7 +73,7 @@ fun LedgerReportsPane(
     book: MoneyBook,
     budget: Long?,
     style: WorkStyle?,
-    statsOpen: Boolean,
+    gate: com.bamnat.app.tier.Gate,
     wide: Boolean,
     today: LocalDate,
     onCategory: (String) -> Unit,
@@ -82,27 +82,32 @@ fun LedgerReportsPane(
     month: YearMonth,
 ) {
     if (analysis == null) return
-    val places = remember(book, month, statsOpen) { if (statsOpen) MoneyStats.places(book.entries, month) else emptyList() }
+    val places = remember(book, month) { MoneyStats.places(book.entries, month) }
     val r = analysis.report
     val m = analysis.month
     val first: @Composable () -> Unit = {
         OverviewCard(m, r, today)
-        if (!statsOpen) LockedCard() else {
-            if (r.categories.isNotEmpty()) CategoriesCard(r, onCategory)
-            PaceCard(r, budget, today)
-            InOutCard(m, style)
+        // [MON-04] Locked, the user's own analysis shows blurred under the lock.
+        com.bamnat.app.ui.pro.ProLock(Feature.MONEY_STATS, gate) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (r.categories.isNotEmpty()) CategoriesCard(r, onCategory)
+                PaceCard(r, budget, today)
+                InOutCard(m, style)
+            }
         }
     }
     val second: @Composable () -> Unit = {
-        if (statsOpen) {
+        if (gate.allows(Feature.MONEY_STATS)) {
             YearCard(analysis.year, r.month)
             if (r.byAccount.size > 1 || r.byAccount.any { it.first != null }) AccountsShareCard(r, book)
             if (places.isNotEmpty()) PlacesCard(places, onPlace)
             if (r.byTag.isNotEmpty()) TagsCard(r)
             if (r.spent > 0) WeekdayCard(r)
             if (r.biggest.isNotEmpty()) BiggestCard(r, onOpen)
+        } else {
+            com.bamnat.app.ui.pro.ProLock(Feature.MONEY_STATS, gate) { YearCard(analysis.year, r.month) }
         }
-        ProNote()
+        if (!gate.live) ProNote()
     }
     if (!r.hasData && analysis.year.activeMonths == 0) {
         LedgerEmpty(Icons.Outlined.Insights, "분석할 기록이 아직 없어요", "돈을 적으면 어디에 얼마 썼는지, 지난달보다 어떤지 그림으로 보여 드려요.")
@@ -141,29 +146,16 @@ private fun OverviewCard(m: MonthMoney, r: MonthReport, today: LocalDate) {
     }
 }
 
-/** [TIER-05] Before billing opens, the one line that says what will be pro. */
+/** [TIER-05] Before the 정식 출시 switch, the one line that says what will be pro. */
 @Composable
 private fun ProNote() {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
         ProPill()
         Spacer(Modifier.width(8.dp))
         Text(
-            if (FeatureGate.BILLING_LIVE) "지난달 비교·분류별·올해 흐름 분석은 ${Tier.PRO.label} 기능이에요. 기록과 합계는 무료예요."
-            else "지난달 비교·분류별·올해 흐름 분석은 나중에 ${Tier.PRO.label} 기능이 될 거예요. 지금은 모두 무료예요.",
+            "지난달 비교·분류별·올해 흐름 분석은 정식 출시 뒤 ${Tier.PRO.label} 기능이 돼요. 지금은 모두 무료예요. 기록과 합계는 계속 무료예요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-    }
-}
-
-@Composable
-private fun LockedCard() {
-    SectionCard(title = null) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Lock, null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(10.dp))
-            Text("지난달 비교, 분류별 지출, 쓰는 속도, 올해 흐름은 ${Tier.PRO.label}에서 볼 수 있어요. 기록과 합계는 지난달도 모두 무료예요.",
-                style = MaterialTheme.typography.bodyMedium)
-        }
     }
 }
 

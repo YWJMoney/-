@@ -45,6 +45,12 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
 7. **주소 알려 주기**
    workers.dev 주소만 Claude에게 알려 주세요. 앱 연결은 Claude가 해요. 비밀번호와 RATE_SALT는 알려 주지 않아요.
 
+5-2. **(정식 출시 전에만) Play 구매 확인 키** [MON-03]
+   Play Console › 설정 › API 액세스(또는 Google Cloud)에서 서비스 계정을 만들고, Play Console › 사용자 및 권한에서 그 계정에 '재무 데이터 보기, 주문 및 구독 관리'를 줘요.
+   받은 JSON 키 파일 내용을 통째로 5번과 같은 곳에 Secret `PLAY_SERVICE_ACCOUNT`로 넣어요. 채팅이나 메신저로 보내지 마세요.
+   없으면 서버는 구매를 `verified:false`로 답하고(앱은 휴대폰의 Play 상태를 써요), 체험 전환 동의가 없을 때 다음 결제를 멈추지 못해요.
+   패키지 이름이 `com.bamnat.app`이 아니면 일반 변수 `PLAY_PACKAGE`도 넣어요.
+
 코드를 고친 뒤에는 3번만 다시 하면 돼요. 데이터베이스와 비밀값, 크론 트리거는 그대로 남아요.
 
 ## 개발자 앱 (/admin)
@@ -129,6 +135,22 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
 | `GET /api/inquiries/:id` | 문의 하나와 답 (헤더 `X-Device`, 다른 휴대폰에는 없는 것으로 보여요) |
 | `POST /api/inquiries/:id/messages` | 같은 문의에 더 묻기 `{text}` (헤더 `X-Device`). 다시 답을 기다리는 상태가 돼요 |
 | `DELETE /api/inquiries/:id` | 문의 지우기 (헤더 `X-Device`). `DELETE /api/mine`도 문의를 함께 지워요 |
+| `GET /api/config` | 정식 출시 스위치(`billingLive`, 처음 켠 시각 `launchedAt`), 감사 보상 개월 수, 서버가 무료로 연 기능, 광고 없는 날 수. 앱이 하루 한 번 받아요. 아무것도 보내지 않아요 [MON-02][MON-10] |
+| `GET /api/passes` | 이 설치의 보상 이용권(끝 날짜, 받은 것)과 관리자 휴대폰 연결 상태 (헤더 `X-Device`) [MON-08][MON-09] |
+| `POST /api/passes/code` | 백업에 넣을 복구 코드 만들기 (헤더 `X-Device`). 새 코드가 옛 코드를 대신하고, 서버에는 해시만 남아요. 하루 10번까지 |
+| `POST /api/passes/claim` | 새 휴대폰으로 이용권 옮기기 `{code}` (헤더 `X-Device`). 한 코드는 한 번, 옮기면 옛 휴대폰의 이용권은 끝나요 |
+| `POST /api/admin-link` | 관리자 앱의 6자리 코드로 이 휴대폰을 그 관리자에 잇기 `{code}` (헤더 `X-Device`, 10분, 한 번, 관리자당 2대). 최고 관리자가 승인하면 프로. `DELETE`는 연결 끊기 |
+| `POST /api/purchases` | Play 구매 토큰 확인 `{product, token}` (헤더 `X-Device`) → `subscriptionsv2.get`으로 상태·만료·체험·자동 갱신. 키가 없으면 `verified:false` [MON-03] |
+| `POST /api/consents` | 무료 체험이 유료로 바뀌기 전 답 `{answer: keep\|cancel, product, price, trialEnd, shown}` (헤더 `X-Device`, 전자상거래법 제13조 제6항) [MON-06] |
+
+## 프로·결제·보상 이용권 [MON-02]~[MON-11]
+
+- 관리자 앱 › 설정 › '정식 출시'(최고 관리자만): 켜면 앱이 다음에 `/api/config`를 받을 때부터 결제·광고·잠금을 적용해요. 처음 켠 시각이 `launchedAt`이고, 껐다 다시 켜도 그대로예요. 켜고 끈 것은 활동 기록에 남아요. 감사 보상 개월 수(기본 1)와 서버가 무료로 연 기능(프로 → 무료만)도 여기서 정해요.
+- 보상: 제보 보상을 '드림'으로 하면 그 휴대폰의 이용권이 1~12개월 생기고 끝 날짜 뒤에 쌓여요. 출시 전에 준 것은 출시 날부터 세요. 그 휴대폰에 구독이 있고 키가 있으면 Play 결제 미루기(`subscriptionsv2.defer`)로 대신해요(`rewards.deferred`).
+- 관리자 휴대폰: 관리자 앱 › 내 정보 › '내 휴대폰 밤낮 연결'이 6자리 코드를 줘요. 관리자를 지우면 연결도 끝나요. 최고 관리자 자기 휴대폰은 바로 승인돼요. 앱은 7일 넘게 확인하지 못하면 이 이유의 프로를 쉬어요.
+- 매시간 크론: 끝나기 24시간 안인 체험 구독에 '계속 쓸게요'가 없으면 Play에 다음 결제 멈춤(`subscriptionsv2.cancel`, `USER_REQUESTED_STOP_RENEWALS`, 이용자가 Play에서 되살릴 수 있음)을 요청하고 기록해요. 끝나고 30일 지난 구매 기록과 5년 지난 동의 기록(전자상거래법 시행령 제6조)을 지워요.
+- `DELETE /api/mine`은 복구 코드와 관리자 휴대폰 연결을 지우고, 구매·동의 기록은 법에 따라 보관 기간까지 남겨요.
+- 표는 서버가 처음 쓸 때 스스로 만들어요(`pass_codes`, `link_codes`, `admin_devices`, `subs`, `consents`, `rewards.deferred`).
 
 ## 앱 문의 [ADMIN-02]
 

@@ -89,9 +89,6 @@ import com.bamnat.app.BuildConfig
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.pay.named
-import com.bamnat.app.tier.Feature
-import com.bamnat.app.tier.FeatureGate
-import com.bamnat.app.tier.Tier
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.UndoMessage
 import com.bamnat.app.ui.calendar.ExtraKindMark
@@ -197,7 +194,6 @@ class ExtraKindsViewModel(
     private val payStore = scope.pay
     val settings: StateFlow<AppSettings> = container.settingsRepository.settings
     val profile: StateFlow<PayProfile?> = payStore.profile
-    val tier: StateFlow<Tier> = container.featureGate.tier
     val snapshot: StateFlow<ScheduleSnapshot?> =
         scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val calculator = PayCalculator()
@@ -208,7 +204,6 @@ class ExtraKindsViewModel(
     private val _editing = MutableStateFlow<KindEdit?>(null)
     val editing: StateFlow<KindEdit?> = _editing.asStateFlow()
 
-    fun canUsePay(tier: Tier) = FeatureGate.allows(tier, Feature.PAY_ENGINE)
 
     fun open(kind: ExtraKind) {
         val rules = profile.value?.rules ?: CompanyRules()
@@ -441,7 +436,6 @@ fun ExtraKindsScreen(vm: ExtraKindsViewModel, onBack: () -> Unit, onOpenPay: () 
     val settings by vm.settings.collectAsStateWithLifecycle()
     val profile by vm.profile.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
-    val tier by vm.tier.collectAsStateWithLifecycle()
     // [STAB-01] Read at once, on the same frame as the key: a text box one frame behind the keyboard
     // doubles or drops half-built Korean letters and moves the cursor.
     val edit by vm.editing.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
@@ -517,7 +511,7 @@ fun ExtraKindsScreen(vm: ExtraKindsViewModel, onBack: () -> Unit, onOpenPay: () 
             )
         }
         edit?.let { e ->
-            KindEditor(e, vm, kinds, profile, snap, vm.canUsePay(tier), onOpenPay)
+            KindEditor(e, vm, kinds, profile, snap, payUnlocked = true, onOpenPay = onOpenPay)
         }
     }
 }
@@ -739,7 +733,6 @@ private fun KindEditor(
                                 Hint("급여 계산을 설정하면 ${kind.name.ifBlank { "이 일" }}${Fmt.obj(kind.name.ifBlank { "이 일" })} 회사가 주는 방식대로 계산하고 금액도 미리 볼 수 있어요.")
                                 OutlinedButton(onClick = { close(); onOpenPay() }, modifier = Modifier.padding(top = 4.dp)) { Text("급여 계산 설정하기") }
                             }
-                            !payUnlocked -> Hint("급여 방식은 프로 등급에서 정할 수 있어요. 지금은 법대로 계산해요.")
                             else -> {
                                 val start = remember(profile, kind.offDay) { lawStart(kind, profile, today) }
                                 val legal = legalText(kind, profile, nightLabel)

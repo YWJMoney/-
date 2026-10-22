@@ -119,6 +119,8 @@ fun EditValueDialog(
     target: ValueTarget,
     month: YearMonth,
     onDismiss: () -> Unit,
+    /** [MON-01] 기간 지정 is 값 일괄 적용, a pro feature; locked, it opens the 프로 screen. */
+    rangeOpen: Boolean = true,
 ) {
     val timeline = remember(profile, target) { vm.timelineOf(profile, target) }
     val current = timeline.on(month).value
@@ -151,8 +153,10 @@ fun EditValueDialog(
                 MoneyField("새 금액", value, { value = it }, Modifier.padding(top = 8.dp))
                 Text("어디에 적용할까요?", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
                 ScopeKind.entries.forEach { k ->
-                    Row(Modifier.fillMaxWidth().clickable { scope = k }, verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = scope == k, onClick = { scope = k })
+                    val locked = k == ScopeKind.RANGE && !rangeOpen
+                    val pick = { if (locked) { onDismiss(); com.bamnat.app.ui.pro.openPro() } else scope = k }
+                    Row(Modifier.fillMaxWidth().clickable(onClick = pick), verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = scope == k, onClick = pick)
                         Text(
                             when (k) {
                                 ScopeKind.ONLY -> "${month.monthValue}월만 (다음 달부터는 원래대로)"
@@ -161,6 +165,7 @@ fun EditValueDialog(
                             },
                             style = MaterialTheme.typography.bodyMedium,
                         )
+                        if (locked) com.bamnat.app.ui.money.ProPill(Modifier.padding(start = 8.dp))
                     }
                 }
                 if (scope == ScopeKind.RANGE) {

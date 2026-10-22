@@ -581,7 +581,7 @@ class ScreenshotTest {
         body: (@androidx.compose.runtime.Composable (PayViewModel) -> Unit)? = null,
     ): Screen.() -> Unit = {
         val c = app.container
-        c.settingsRepository.update { it.copy(tier = tier) }
+        c.settingsRepository.update { it.copy(previewTier = tier.takeIf { t -> t != Tier.PRO }) }
         val vm = PayViewModel(c)
         runBlocking { c.payStore.save(if (withProfile) adjust(vm.sampleProfile().copy(rules = companyRules)) else null, keepUndo = false) }
         settle()
@@ -591,7 +591,7 @@ class ScreenshotTest {
 
     @Test fun foldedDayPay() = shoot("33_folded_day_pay", FOLDED) {
         val c = app.container
-        c.settingsRepository.update { it.copy(tier = Tier.PRO) }
+        c.settingsRepository.update { it.copy(previewTier = null) }
         runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(rules = companyRules), keepUndo = false) }
         settle()
         openDay(restDayExtra)
@@ -656,7 +656,7 @@ class ScreenshotTest {
     // ---- M3 [FEAT-16][FEAT-17][PAYX-09..13] ----
     private fun rulesEditor(rules: (nightId: Long) -> CompanyRules): Screen.() -> Unit = {
         val c = app.container
-        c.settingsRepository.update { it.copy(tier = Tier.PRO) }
+        c.settingsRepository.update { it.copy(previewTier = null) }
         val vm = PayViewModel(c)
         val nightId = runBlocking { c.scheduleRepository.snapshot.first().shiftTypes.first { it.name == "야간" }.id }
         runBlocking { c.payStore.save(vm.sampleProfile().copy(rules = rules(nightId)), keepUndo = false) }
@@ -672,7 +672,7 @@ class ScreenshotTest {
     /** The 잔업·특근·대근 screen with pay set up, so the editor shows the company's way and the preview. */
     private fun kindsScreen(rules: (nightId: Long) -> CompanyRules = { companyRules }): Screen.() -> Unit = {
         val c = app.container
-        c.settingsRepository.update { it.copy(tier = Tier.PRO) }
+        c.settingsRepository.update { it.copy(previewTier = null) }
         val nightId = runBlocking { c.scheduleRepository.snapshot.first().shiftTypes.first { it.name == "야간" }.id }
         runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(rules = rules(nightId)), keepUndo = false) }
         settle()
@@ -1750,7 +1750,7 @@ class ScreenshotTest {
     /** [CAL-06] Pay set up on Pro, so the summary over a shift calendar shows the month's pay. */
     private fun withPay(then: Screen.() -> Unit = {}): Screen.() -> Unit {
         val c = app.container
-        c.settingsRepository.update { it.copy(tier = Tier.PRO) }
+        c.settingsRepository.update { it.copy(previewTier = null) }
         runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(rules = companyRules), keepUndo = false) }
         return then
     }
@@ -2069,6 +2069,45 @@ class ScreenshotTest {
     @Test fun smallPhoneYear() = shoot("372_small_phone_year", SMALL_PHONE) { year() }
     @Test fun phoneLockCover() = shoot("373_phone_lock_cover", PHONE) { content { com.bamnat.app.ui.LockCover {} } }
     @Test fun phonePrivacyLock() = shoot("374_phone_settings_privacy_lock", PHONE) { settingsPage("개인정보와 권한") }
+
+    // ---- [MON-04..MON-10] 1.19.0: 프로, its lock, the trial's question, the thank-you, ad privacy ----
+    private val samplePlans = listOf(
+        com.bamnat.app.billing.Plan("monthly", "4,990원", 4_990_000_000, "KRW", "P1M", trial = true, offerToken = "m"),
+        com.bamnat.app.billing.Plan("yearly", "39,000원", 39_000_000_000, "KRW", "P1Y", trial = true, offerToken = "y"),
+    )
+
+    /** After the 정식 출시 switch, with Play's plans, as a phone without 프로 sees it. */
+    private fun launched(config: com.bamnat.app.tier.LaunchConfig = com.bamnat.app.tier.LaunchConfig(billingLive = true),
+                         then: Screen.() -> Unit = {}): Screen.() -> Unit = {
+        val c = app.container
+        c.billing = com.bamnat.app.billing.NoBilling(samplePlans)
+        c.remoteConfig.save(config.copy(fetchedAt = java.time.Instant.now()))
+        c.featureGate.refresh()
+        settle()
+        then()
+    }
+    private fun pro(): Screen.() -> Unit = { content { com.bamnat.app.ui.pro.ProScreen(onBack = {}) } }
+
+    @Test fun phoneProBeforeLaunch() = shoot("375_phone_pro_before_launch", PHONE, pro())
+    @Test fun phoneProLaunched() = shoot("376_phone_pro_launched", PHONE, launched(then = pro()))
+    @Test fun phoneProPlans() = shoot("377_phone_pro_plans", PHONE, launched { pro().invoke(this); reveal("구매 복원", exact = true) })
+    @Test fun unfoldedProLaunched() = shoot("378_unfolded_pro_launched", UNFOLDED, launched(then = pro()))
+    // Robolectric draws no blur, so this shows the cover Android 11 and older get (ProLock); 12+ blurs under a lighter one.
+    @Test fun foldedMoneyStatsLocked() = shoot("379_folded_money_stats_locked", FOLDED, launched {
+        org.robolectric.util.ReflectionHelpers.setStaticField(android.os.Build.VERSION::class.java, "SDK_INT", 30)
+        tab(1, wide = false); tapText("분석", exact = true, scrolls = 0); reveal("돈 통계", exact = true)
+    })
+    @Test fun phoneTrialQuestion() = shoot("380_phone_trial_question", PHONE, launched {
+        val start = java.time.Instant.now().minus(java.time.Duration.ofDays(26))
+        app.container.proStore.setSub(com.bamnat.app.tier.SubRecord("bamnat_pro", "monthly", com.bamnat.core.tier.PlaySub.State.ACTIVE,
+            java.time.Instant.now().plus(java.time.Duration.ofDays(3)), trial = true, autoRenew = true, purchasedAt = start, verified = false,
+            checkedAt = java.time.Instant.now()))
+    })
+    @Test fun phoneLaunchThanks() = shoot("381_phone_launch_thanks", PHONE, launched(com.bamnat.app.tier.LaunchConfig(billingLive = true,
+        launchedAt = java.time.Instant.now().minus(java.time.Duration.ofDays(1)), thanksMonths = 3)))
+    @Test fun phoneAdPrivacy() = shoot("382_phone_ad_privacy", PHONE) { settingsPage("개인정보와 권한"); tapText("광고 개인정보 선택", exact = true) }
+    @Test fun phoneProLargeText() = shoot("384_phone_pro_large_text", PHONE, fontScale = 1.5f, launched(then = pro()))
+    @Test fun phoneSettingsProRow() = shoot("383_phone_settings_pro_row", PHONE, launched { tab(4, wide = false); reveal("기능 켜고 끄기", exact = true) })
     @Test fun smallPhoneQuickInput() = shoot("368_small_phone_quick_input", SMALL_PHONE) { tapText("빠른 입력", exact = true) }
 
     // ---- [208] Store pictures (1.18.0): a common phone, no one-time hints, the phone's alarm permissions given ----

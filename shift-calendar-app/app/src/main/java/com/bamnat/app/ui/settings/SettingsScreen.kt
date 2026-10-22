@@ -69,6 +69,7 @@ import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material.icons.outlined.WorkOutline
+import androidx.compose.material.icons.outlined.WorkspacePremium
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -158,6 +159,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val snoozeAt: StateFlow<Long?> = container.alarmScheduler.snoozeAt
     /** [MCAL-01] The user's calendars, for 설정 > 달력. */
     val calendars: StateFlow<List<com.bamnat.app.data.PersonalCalendar>> = container.calendars.calendars
+    /** [MON-04] What 프로 is on this phone now. */
+    val gate: StateFlow<com.bamnat.app.tier.Gate> = container.featureGate.state
+    /** [MON-07] Google says this phone's region has its own ad consent form to open again. */
+    val adPrivacy: StateFlow<Boolean> = container.ads.privacyOptions
+    fun showAdPrivacy(activity: android.app.Activity) = container.ads.showPrivacyOptions(activity)
 
     /** [MEMO-02] 메모 공유: 달력마다 따로, or calendars grouped to see each other's memos. */
     val memoSharing: StateFlow<com.bamnat.core.memo.MemoSharing> = container.memoSharing.state
@@ -634,6 +640,9 @@ private fun SettingsHub(
         for (p in SettingsPage.entries) {
             GroupRow(p.icon, p.title, summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk), selected == p) { onOpen(p) }
         }
+        // [MON-04] 프로: what it is now, and the screen to start, manage or restore it.
+        val gate by vm.gate.collectAsStateWithLifecycle()
+        GroupRow(Icons.Outlined.WorkspacePremium, "프로", proSummary(gate), false) { SettingsLinks.go(SettingsGo.PRO) }
         // [COMM-07] Its own row, so it is one tap away rather than inside 급여.
         if (onOpenBoard != null) GroupRow(Icons.Outlined.Forum, "회사 규칙 광장", "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론", false, onClick = onOpenBoard)
         // [GUIDE-05] Every feature that can be off, and where to turn it back on.
@@ -805,6 +814,13 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
     SettingsPage.DATA -> "백업 저장 · 불러오기 · 캘린더 가져오기·내보내기"
     SettingsPage.PRIVACY -> "개인정보 처리방침 · 권한 확인 · 앱 잠금"
     SettingsPage.ABOUT -> "밤낮 ${BuildConfig.VERSION_NAME} · 알람 점검 · 처리방침"
+}
+
+/** [MON-04] The 프로 row's words: before the 정식 출시, with 프로, and without it. */
+internal fun proSummary(gate: com.bamnat.app.tier.Gate): String = when {
+    !gate.live -> "정식 출시 전이라 모든 기능이 무료예요"
+    gate.access.pro -> gate.access.reason.words
+    else -> "광고 없애기 · 명세서 대조 · 돈 통계 · 1개월 무료 체험"
 }
 
 /** "7시간", "6시간 반". */

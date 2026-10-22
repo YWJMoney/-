@@ -37,6 +37,8 @@ object Notifications {
     const val TODAY_CHANNEL_ID = "today_shift_v1"
     /** [INV-08] The investor's 장 시작·마감, 정기 매수일, 목표가 확인 and date notices. */
     const val INVEST_CHANNEL_ID = "invest_alarm_v1"
+    /** [MON-06] The one notice before a free trial turns paid. */
+    const val PRO_CHANNEL_ID = "pro_notice_v1"
     /** Before 1.11 every sleep tip made a sound here; a channel's importance cannot be lowered, so it goes. */
     private const val OLD_SLEEP_CHANNEL_ID = "sleep_tips_v1"
 
@@ -53,6 +55,7 @@ object Notifications {
     const val SLEEPING_ID = 7313
     const val LEAVE_ID = 7201
     const val SHARE_ID = 7202
+    const val PRO_ID = 7203
 
     fun createChannels(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
@@ -128,7 +131,11 @@ object Notifications {
             group = GROUP_MONEY
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest))
+        val pro = NotificationChannel(PRO_CHANNEL_ID, "구독 안내", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "1개월 무료 체험이 유료로 바뀌기 7일 전에 계속 쓸지 한 번 여쭤봐요"
+            group = GROUP_MONEY
+        }
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
     }
 

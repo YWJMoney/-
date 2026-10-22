@@ -171,6 +171,10 @@ internal object SettingsIndex {
         row(V, "알림 허용", "알림 권한", "권한", row = "알림"),
         row(V, "잠금 화면에 알람 띄우기", "전체 화면", "권한", "잠금 화면"),
         row(V, "결제 알림 읽기", "카드 알림", "은행 알림", "문자", "자동 기록", "가계부"),
+        row(V, "광고 개인정보 선택", "광고", "맞춤 광고", "광고 ID", "동의", "GDPR", "광고 끄기"), // [MON-07]
+        // [MON-04][MON-05] 프로 and what paying for it agrees to.
+        screen("설정", "프로", SettingsGo.PRO, "구독", "결제", "광고 없애기", "광고 제거", "무료 체험", "이용권", "복구 코드", "관리자 연결", "환불", "해지", "유료"),
+        row(I, "이용약관", "약관", "환불 규정", "청약철회", "구독 약관"),
         // [GUIDE-05] Every switch of a feature that can be off, in one place.
         screen("설정", "기능 켜고 끄기", SettingsGo.FEATURES, "기능 끄기", "기능 켜기", "숨기기", "안 보이게", "카드 끄기", "안내 끄기", "팁 끄기", "위젯 줄"),
         screen(I.title, "문의하기", SettingsGo.INQUIRY, "질문", "건의", "제안", "오류", "버그", "고객센터", "도움말", "메일", "신고"),

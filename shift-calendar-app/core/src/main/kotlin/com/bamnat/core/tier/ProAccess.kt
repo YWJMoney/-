@@ -40,6 +40,8 @@ enum class ProReason(val words: String) {
     THANKS("테스트에 참여해 주셔서 드린 프로 기간이에요"),
     DAY_PASS("광고를 보고 오늘 하루 프로 기능을 열었어요"),
     NONE("무료로 쓰고 있어요"),
+    /** A tester's preview from the alarm check screen; [ProAccess.resolve] never answers it. */
+    PREVIEW("알람 점검 화면에서 고른 등급으로 미리 보고 있어요"),
 }
 
 /** Everything that can give this phone 프로, as last known on the phone. */

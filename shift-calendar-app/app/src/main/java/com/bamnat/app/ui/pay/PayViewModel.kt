@@ -6,9 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
 import com.bamnat.app.data.ScheduleSnapshot
-import com.bamnat.app.tier.Feature
-import com.bamnat.app.tier.FeatureGate
-import com.bamnat.app.tier.Tier
+import com.bamnat.app.tier.Gate
 import com.bamnat.core.diag.DiagEvents
 import com.bamnat.core.pay.BulkEditPlanner
 import com.bamnat.core.pay.CalcSnapshot
@@ -81,7 +79,7 @@ class PayViewModel(
     private val payStore = scope.pay
     val profile: StateFlow<PayProfile?> = payStore.profile
     val undoAvailable: StateFlow<PayProfile?> = payStore.canUndo
-    val tier: StateFlow<Tier> = container.featureGate.tier
+    val gate: StateFlow<Gate> = container.featureGate.state
     val snapshot: StateFlow<ScheduleSnapshot?> =
         scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -98,8 +96,6 @@ class PayViewModel(
         scope.settings.stateIn(viewModelScope, SharingStarted.Eagerly, scope.currentSettings())
 
     init { container.telemetry.event(DiagEvents.SCREEN, "pay") }
-
-    fun canUse(feature: Feature, tier: Tier) = FeatureGate.allows(tier, feature)
 
     val closed: StateFlow<Map<YearMonth, CalcSnapshot>> = payStore.closed
 
