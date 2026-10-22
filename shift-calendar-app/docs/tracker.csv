@@ -481,16 +481,20 @@ PLZ-12,"근무 유형별 광장(교대·간호·공무원·최저시급·건설 
 PLZ-13,병원 단위 간호사 광장 (순번 262),2 (1.21.0),완료,,"1.21.0 03621db: PlazaPicker(직군=간호, 장소), plaza.test.mjs"
 PLZ-14,"목수·일용직 지역별 임금표(시·도, 3명 자동 채택, 중앙값 2배 검토) (순번 263)",2 (1.21.0),완료,,"1.21.0 c1d64a2·03621db: rates API, 357/358 화면, research/1.21-직군-조사.md 5장"
 PLZ-15,"관리자 앱 광장 운영: 채택 기준 설정, 임금표 검토·내리기 (순번 264)",2 (1.21.0),완료,,"1.21.0 c1d64a2: admin-app.js ratesView, admin.test.mjs"
-REMOTE-01,"서명한 원격 파일: GitHub Pages remote/v1/*.json + Ed25519 서명(.sig), core 순수 Kotlin 검증·엄격한 JSON, 서명 도구 tools/remote_sign.py, 비공개 키는 저장소 밖 (순번 38, 결정 D3)",2 (1.22.0),진행 중,,
-REMOTE-02,"요율 원격 갱신: rates.json을 하루 한 번 받아 서명 확인 뒤 적용, 앱에 든 값이 기본, 더 새 판만, 오프라인은 마지막 값 (순번 39)",2 (1.22.0),대기,,
-REMOTE-03,"프리셋을 데이터 파일로: 근무 순서·근무 종류 묶음·직군 급여를 presets.json으로, 원격 파일로 더하기 (순번 41)",2 (1.22.0),진행 중,,
-LAWX-01,"근로기준법·퇴직급여법·최저임금법 계산 조문 전체 원문 대조 (순번 44)",2 (1.22.0),대기,,
+REMOTE-01,"서명한 원격 파일: GitHub Pages remote/v1/*.json + Ed25519 서명(.sig), core 순수 Kotlin 검증·엄격한 JSON, 서명 도구 tools/remote_sign.py, 비공개 키는 저장소 밖 (순번 38, 결정 D3)",2 (1.22.0),완료,,"core remote/Ed25519.kt·Json.kt·RemoteFile.kt, tools/remote_sign.py, Ed25519Test·RemoteFileTest (PR #51)"
+REMOTE-02,"요율 원격 갱신: rates.json을 하루 한 번 받아 서명 확인 뒤 적용, 앱에 든 값이 기본, 더 새 판만, 오프라인은 마지막 값 (순번 39)",2 (1.22.0),완료,,"core pay/Rates.kt RateTable.use·RateFile, app remote/RemoteFilesStore.kt (하루 1번·서명·minApp·더 새 판만), RemoteDataTest·RemoteFilesStoreTest"
+REMOTE-03,"프리셋을 데이터 파일로: 근무 순서·근무 종류 묶음·직군 급여를 presets.json으로, 원격 파일로 더하기 (순번 41)",2 (1.22.0),완료,,"remote/v1/presets.json, core remote/PresetFile.kt PresetBook, PresetFileTest (PR #51)"
+LAWX-01,"근로기준법·퇴직급여법·최저임금법 계산 조문 전체 원문 대조 (순번 44)",2 (1.22.0),완료,,"research/1.22-원문대조.md 2장 (국가법령정보센터 원문, 2026-10-22)"
 LAWX-02,"연차 유급휴가 근로기준법 제60·61조 원문 대조, 묶음 D에 전달 (순번 44)",2 (1.22.0),완료,,"research/1.22-원문대조.md 1장 (2026-10-22, 근기법 2026-10-08 시행본, 판례 2021다227100)"
-LAWX-03,"1.16~1.17 세금·노동 숫자(일용직·간이과세·3.3%·최저임금) 원문 대조 (순번 184)",2 (1.22.0),대기,,
-PAYR-03,"2027 요율 원문 대조: 장기요양보험료율, 국민연금 10%·기준소득월액, 건강보험, 고용보험, 비과세 요건 (순번 42·45)",2 (1.22.0),대기,,
-PAYR-04,"실수령 추정을 근로소득 간이세액표(소득세법 시행령 별표 2)로, 부양가족·자녀 수 입력 (순번 100)",2 (1.22.0),대기,,
-PAYR-05,"공종별 일당 표 대한건설협회 2026 하반기 시중노임단가 원문 대조 (순번 183)",2 (1.22.0),대기,,
-PAYR-06,"광장 임금표 옆 정부 공표 시중노임단가 참고 줄, 원격 갱신 (순번 272)",2 (1.22.0),대기,,
+LAWX-03,"1.16~1.17 세금·노동 숫자(일용직·간이과세·3.3%·최저임금) 원문 대조 (순번 184)",2 (1.22.0),완료,,"research/1.22-원문대조.md 6장, ShopTools LaborCost 연도별 요율로 고침, RemoteDataTest.laborCostFollowsTheYear"
+PAYR-03,"2027 요율 원문 대조: 장기요양보험료율, 국민연금 10%·기준소득월액, 건강보험, 고용보험, 비과세 요건 (순번 42·45)",2 (1.22.0),완료,,"research/1.22-원문대조.md 3장, remote/v1/rates.json (장기요양 2027은 결정 전이라 비움), RemoteDataTest"
+PAYR-04,"실수령 추정을 근로소득 간이세액표(소득세법 시행령 별표 2)로, 부양가족·자녀 수 입력 (순번 100)",2 (1.22.0),완료,,"core pay/WithholdingTable.kt + remote/v1/taxtable.json (2026-03-01 별표 2 전체), PayProfile.taxFamily·taxChildren, RemoteDataTest.simplifiedTaxTableGoldenRows, 스크린샷 400·401"
+PAYR-05,"공종별 일당 표 대한건설협회 2026 하반기 시중노임단가 원문 대조 (순번 183)",2 (1.22.0),완료,,"research/1.22-원문대조.md 4장, remote/v1/wages.json (2026-09-01 하반기), RemoteDataTest.constructionWagesAreTheSecondHalf2026"
+PAYR-06,"광장 임금표 옆 정부 공표 시중노임단가 참고 줄, 원격 갱신 (순번 272)",2 (1.22.0),완료,,"PlazaScreens GovernmentWageLine, 스크린샷 402·403"
+SIMPLE-01,"메뉴·설정이 너무 많다는 피드백(2026-10-22, S10) → 탭·달력 도구·설정 줄·첫 실행·권한 요청·기본값 전수 조사, 권한 요청 시점 원문 조사, 지울·합칠·숨길 것 설계 (순번 283)",2 (1.22.0),진행 중,,"1.22.0 묶음 G 1단계: 계획/1.22-G-메뉴설정정리-설계.md 1~6장. 2단계(설정 화면 정리)는 다른 묶음이 합쳐진 뒤"
+SIMPLE-02,"끄는 법 안내와 '켜 둬도 괜찮아요' 안내 (순번 284)",2 (1.22.0),완료,,"1.22.0 묶음 G: 첫 화면 문구, 설정 찾기 '추천 기능 한 번에 켜기', 도움말 '켜져 있는 알림이나 기능을 끄고 싶어요', 기능 켜고 끄기 맨 위 입구, FeatureRegistry settings.recommended"
+ONBOARD-03,"첫 실행을 '추천 기능 한 번에 켜기' 한 화면으로: 좋은 기능은 기본 켜짐(새 설치), 필요한 허용을 차례로 받고 거절해도 진행, 서버로 가는 것은 넣지 않음 (순번 284, S10, D42)",2 (1.22.0),완료,,"core consent/Recommended.kt + RecommendedTest; 앱 ui/onboarding/RecommendedScreen.kt(ConsentPages가 부름), data/RecommendedSettings.kt; 하루 브리핑·잘 준비·퇴근길 안전·잠금 화면 오늘 근무 새 설치 켜짐; 화면 사진 520~523"
+ONBOARD-04,"1.22 전에 설정한 휴대폰: 값은 그대로, 1.22 새 기능 안내에서 꺼진 추천 기능을 한 번 권함, 설정에서 언제든 같은 화면 (순번 284)",2 (1.22.0),완료,,"WhatsNewDialog recommendOff, ConsentStore.recommendOffered, 경로 recommended(SettingsGo·Place RECOMMENDED); 화면 사진 524~525"
 DAILY-01,"위젯에 그날 메모 첫 줄, 설정 › 달력 ‘위젯에 메모 보이기’(기본 켬) (순번 109)",2 (1.22.0),완료,,"1.22 묶음 E: WidgetData.memoLine, DayLine 메모 줄, SettingsPages 위젯에 메모 보이기, DailyWidgetsTest"
 DAILY-02,연차·대근인 날 하루 화면에서 바로 메모 남기기 (순번 109),2 (1.22.0),완료,,"1.22 묶음 E: DayDetail.DayNoteField(연차·대근), vm.addQuickMemo"
 DAILY-03,"홈 화면 위젯 ‘오늘 모든 조’: 조마다 오늘·내일 근무, 내 조 표시, 누르면 조 화면 (순번 279)",2 (1.22.0),완료,,"1.22 묶음 E: DailyWidgets.TeamsWidget, WidgetData.teamLines, DailyWidgetsTest"

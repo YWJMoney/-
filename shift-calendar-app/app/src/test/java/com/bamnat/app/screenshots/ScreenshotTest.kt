@@ -1,6 +1,7 @@
 package com.bamnat.app.screenshots
 
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import com.bamnat.app.share.MonthImage
 import com.bamnat.core.model.LeaveKind
 import com.bamnat.core.model.Leave
@@ -1746,36 +1747,6 @@ class ScreenshotTest {
         settingsPage("데이터")
     }
 
-    // ---- [ONBOARD-01][ONBOARD-02] First-start consent pages ----
-    private fun consent(items: Set<ConsentItem> = ConsentItem.entries.toSet(), then: Screen.() -> Unit = {}): Screen.() -> Unit {
-        val c = app.container
-        c.consentStore.forget()
-        c.consentStore.availableForTest = items
-        return fresh(null, then)
-    }
-
-    @Test fun foldedConsentIntro() = shoot("180_folded_consent_intro", FOLDED, consent())
-    @Test fun unfoldedConsentIntro() = shoot("181_unfolded_consent_intro", UNFOLDED, consent())
-    @Test fun foldedConsentNotifications() = shoot("182_folded_consent_notifications", FOLDED, run {
-        shadowOf(app.getSystemService(android.app.NotificationManager::class.java)).setNotificationsEnabled(false)
-        consent { tapText("하나씩 알아보기") }
-    })
-    @Test fun foldedConsentSleepAsk() = shoot("183_folded_consent_sleep_ask", FOLDED,
-        consent(setOf(ConsentItem.SLEEP, ConsentItem.CALENDAR)) { tapText("하나씩 알아보기") })
-    @Test fun foldedConsentSleepHealth() = shoot("184_folded_consent_sleep_health", FOLDED,
-        consent(setOf(ConsentItem.SLEEP, ConsentItem.CALENDAR)) { tapText("하나씩 알아보기"); tapText("네, 차고 자요") })
-    @Test fun foldedConsentSleepNone() = shoot("185_folded_consent_sleep_none", FOLDED,
-        consent(setOf(ConsentItem.SLEEP, ConsentItem.CALENDAR)) { tapText("하나씩 알아보기"); tapText("아니요, 없어요") })
-    @Test fun foldedConsentCalendar() = shoot("186_folded_consent_calendar", FOLDED,
-        consent(setOf(ConsentItem.CALENDAR)) { tapText("하나씩 알아보기") })
-    @Test fun consentPagesLeadToTheFirstSetup() = shoot("187_folded_consent_then_setup", FOLDED,
-        consent(setOf(ConsentItem.CALENDAR)) {
-            tapText("하나씩 알아보기"); tapText("나중에 할게요")
-            // The first setup comes next, and the pages do not come back.
-            tapText("순서가 돌아가요")
-            assertTrue(app.container.consentStore.seen.value!!.contains(ConsentItem.CALENDAR))
-        })
-
     // ---- [SCHED-01] A memo that names a time ----
     @Test fun foldedMemoScheduleOffer() = shoot("188_folded_memo_schedule_offer", FOLDED) {
         tab(2, wide = false); tapText("건강검진 오전 9시")
@@ -2889,6 +2860,76 @@ class ScreenshotTest {
             val out = File("build/screenshots/$name.png").apply { parentFile!!.mkdirs() }
             out.outputStream().use { st -> bmp.compress(Bitmap.CompressFormat.PNG, 100, st) }
         }
+    }
+
+    // ==== 1.22 묶음 G ====
+    // [ONBOARD-03][ONBOARD-04] 추천 기능 한 번에 켜기, in place of the consent pages of 1.13~1.21.
+    private fun recommended(items: Set<ConsentItem> = ConsentItem.entries.toSet(), then: Screen.() -> Unit = {}): Screen.() -> Unit {
+        val c = app.container
+        c.consentStore.forget()
+        c.consentStore.availableForTest = items
+        return fresh(null, then)
+    }
+
+    @Test fun foldedRecommended() = shoot("520_folded_recommended", FOLDED, run {
+        shadowOf(app.getSystemService(android.app.NotificationManager::class.java)).setNotificationsEnabled(false)
+        recommended()
+    })
+    @Test fun unfoldedRecommended() = shoot("521_unfolded_recommended", UNFOLDED, recommended())
+    @Test fun phoneRecommendedHugeText() = shoot("522_phone_recommended_huge_text", PHONE, fontScale = 2f, recommended())
+    @Test fun recommendedLaterLeadsToTheFirstSetupWithFeaturesOn() = shoot("523_folded_recommended_then_setup", FOLDED,
+        recommended(setOf(ConsentItem.CALENDAR)) {
+            tapText("허용은 나중에 할게요")
+            // The first setup comes next, the screen does not come back, and the recommended features are on.
+            tapText("순서가 돌아가요")
+            val c = app.container
+            assertTrue(c.consentStore.seen.value!!.contains(ConsentItem.CALENDAR))
+            assertTrue(c.consentStore.recommendOffered)
+            assertEquals(com.bamnat.core.consent.RecommendedPlan.NEW_INSTALL, com.bamnat.app.data.RecommendedSettings.on(c.settingsRepository.current))
+        })
+    @Test fun foldedRecommendedFromSettings() = shoot("524_folded_recommended_settings", FOLDED) {
+        // A phone set up before keeps its own values: two on, two off.
+        app.container.settingsRepository.update { it.copy(briefing = true, todayShiftNotice = true, bedtimeNotice = false, commuteNotice = false) }
+        com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.RECOMMENDED)
+        settle()
+        tapText("퇴근길 안전")
+        tapText("이대로 저장")
+        val on = com.bamnat.app.data.RecommendedSettings.on(app.container.settingsRepository.current)
+        assertTrue("the switch tapped is saved", com.bamnat.core.consent.RecommendedFeature.COMMUTE in on)
+        assertTrue("the one left off stays off", com.bamnat.core.consent.RecommendedFeature.BEDTIME !in on)
+    }
+    @Test fun phoneWhatsNewRecommends() = shoot("525_phone_whats_new_recommend", PHONE) {
+        content { com.bamnat.app.ui.guide.WhatsNewDialog(com.bamnat.core.guide.WhatsNew.releases.take(1), {}, {}, {}, recommendOff = 2) }
+    }
+
+    // ==== 1.22 묶음 A ====
+    // [PAYR-04][PAYR-05] 평일 근무 통계: 예상 실수령 from the 간이세액표, with 가족·자녀 under 4대보험.
+    private fun dayTakeHome(wide: Boolean = false): Screen.() -> Unit = {
+        val c = app.container
+        runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(taxFamily = 3, taxChildren = 1), keepUndo = false) }
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.DAY) }
+        settle()
+        tab(3, wide = wide)
+        reveal("가족 3명", exact = true)
+    }
+    @Test fun foldedDayTakeHome() = shoot("400_folded_day_take_home_family", FOLDED, dayTakeHome())
+    @Test fun phoneDayTakeHomeHugeText() = shoot("401_phone_day_take_home_family_huge_text", PHONE, fontScale = 2f, dayTakeHome())
+    @Test fun unfoldedDayTakeHome() = shoot("405_unfolded_day_take_home_family", UNFOLDED, dayTakeHome(wide = true))
+    // [PAYR-06] 임금표: 보통인부 일당 next to the 대한건설협회 시중노임단가.
+    @Test fun foldedPlazaRatesGov() = shoot("402_folded_plaza_rates_gov", FOLDED) {
+        val vm = com.bamnat.app.ui.company.RatesViewModel(companyOn())
+        content { com.bamnat.app.ui.company.RatesScreen(vm, onBack = {}) }
+        reveal("정부 공표 전국 평균")
+    }
+    @Test fun phonePlazaRatesGovHugeText() = shoot("403_phone_plaza_rates_gov_huge_text", PHONE, fontScale = 2f) {
+        val vm = com.bamnat.app.ui.company.RatesViewModel(companyOn())
+        content { com.bamnat.app.ui.company.RatesScreen(vm, onBack = {}) }
+        reveal("정부 공표 전국 평균")
+    }
+    @Test fun unfoldedPlazaRatesGov() = shoot("404_unfolded_plaza_rates_gov", UNFOLDED) {
+        val vm = com.bamnat.app.ui.company.RatesViewModel(companyOn())
+        content { com.bamnat.app.ui.company.RatesScreen(vm, onBack = {}) }
+        reveal("정부 공표 전국 평균")
     }
 }
 

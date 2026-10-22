@@ -165,9 +165,9 @@ class HourlyWorkTest {
         assertEquals(9_440L, d["장기요양"])
         assertEquals(18_000L, d["고용보험"])
         // 간이세액표 says 19,520원 for 200만 원 and one person; the approximation is close and labelled 참고용.
-        val tax = d.getValue("근로소득세 (참고용)")
+        val tax = d.getValue(TakeHome.TAX_LABEL)
         assertTrue(tax in 15_000L..25_000L)
-        assertEquals(tax / 10 / 10 * 10, d["지방소득세 (참고용)"])
+        assertEquals(tax / 10 / 10 * 10, d[TakeHome.LOCAL_TAX_LABEL])
         assertEquals(i.gross - i.deductions.sumOf { it.second }, i.net)
         // A small month pays no income tax at all.
         assertTrue(TakeHome.estimate(800_000, TaxMode.INSURANCE_4).deductions.none { it.first.startsWith("근로소득세") })

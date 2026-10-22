@@ -224,6 +224,15 @@ class AppContainer(context: Context) {
     }
     /** [MON-02] The 정식 출시 switch and what goes with it, from the company server once a day. */
     val remoteConfig = com.bamnat.app.tier.RemoteConfigStore(appContext)
+    /**
+     * [REMOTE-02] Signed 요율·간이세액표·노임단가·프리셋 files from GitHub Pages; the last good ones are laid over the
+     * built-in data as the app starts.
+     */
+    val remoteFiles = com.bamnat.app.remote.RemoteFilesStore(
+        java.io.File(appContext.noBackupFilesDir, "remote"),
+        com.bamnat.app.remote.HttpRemoteFetcher(BuildConfig.REMOTE_BASE_URL),
+        BuildConfig.VERSION_CODE,
+    ).also { runCatching { it.applySaved() } }
     /** [MON-02] Everything on this phone that can give it 프로. */
     val proStore = com.bamnat.app.tier.ProStore(appContext)
     /** [MON-02] 프로 on the company server; screenshots and tests put a fake in its place. */
@@ -241,6 +250,7 @@ class AppContainer(context: Context) {
      */
     fun syncPro(force: Boolean = false) = appScope.launch {
         runCatching { remoteConfig.refresh(tierApi, force = force) }
+        runCatching { remoteFiles.refresh() }
         runCatching { syncPasses(force) }
         // Play is asked only once paying is possible, or for a subscription this phone already knew.
         if (remoteConfig.current.billingLive || proStore.current.sub != null) runCatching { billing.refresh() }

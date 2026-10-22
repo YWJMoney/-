@@ -63,7 +63,7 @@ class DayWorkTest {
         assertEquals(142_500L, d["국민연금"])
         assertEquals(107_850L, d["건강보험"])
         assertEquals(14_170L, d["장기요양"])
-        assertTrue((d["근로소득세 (참고용)"] ?: 0) > 0)
+        assertTrue((d[TakeHome.TAX_LABEL] ?: 0) > 0)
         assertEquals(3_000_000 - r.deductions.sumOf { it.second }, r.net)
         // More dependents mean less income tax.
         assertTrue(TakeHome.estimate(3_000_000, TaxMode.INSURANCE_4, dependents = 3).net > r.net)

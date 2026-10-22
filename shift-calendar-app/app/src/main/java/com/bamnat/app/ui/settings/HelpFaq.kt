@@ -108,6 +108,14 @@ internal object HelpFaq {
             listOf("급여"),
             "급여 계산 열기" to HelpAction.Go(SettingsGo.PAY), ask = InquiryKind.BUG,
         ),
+        // [PAYR-04][REMOTE-02] Where 실수령's tax and the year's rates come from, and how they stay current.
+        HelpTopic(
+            "takeHome", "실수령", "예상 실수령의 세금은 어떻게 계산하나요?",
+            "4대보험은 그 달의 해 요율로, 근로소득세는 국세청 간이세액표 그대로예요. ‘○월 한눈에’ 카드에서 가족 수(본인·배우자 포함)와 " +
+                "8~20세 자녀 수를 고르세요. 식대 등 비과세가 있으면 명세서와 조금 달라요. 요율·세액표가 바뀌면 앱이 하루 한 번 받아 바꿔요.",
+            listOf("실수령", "세금", "소득세", "간이세액표", "부양가족", "자녀", "4대보험", "요율", "세후"),
+            listOf("통계", "급여"),
+        ),
         HelpTopic(
             "backup", "백업", "휴대폰을 바꿔도 기록을 옮길 수 있나요?",
             "기록은 이 휴대폰에만 있어요. 설정 › 데이터 › ‘백업 저장’으로 파일을 만들어 새 휴대폰에 옮긴 뒤 ‘파일 불러오기’로 열어요. " +
@@ -187,6 +195,16 @@ internal object HelpFaq {
             listOf("영수증", "사진", "OCR", "읽기", "금액"),
             listOf("돈"),
             "데이터 설정 열기" to HelpAction.Page(SettingsPage.DATA, "사진도 백업"),
+        ),
+        // [SIMPLE-02] Where the features that start on are turned off, and why leaving them on is fine.
+        HelpTopic(
+            "turnOff", "기능", "켜져 있는 알림이나 기능을 끄고 싶어요",
+            "설정 › 기능 켜고 끄기에서 모두 끄고 다시 켤 수 있어요. 처음에 켜 둔 하루 브리핑·잘 준비·잠금 화면 오늘 근무는 소리가 없고, " +
+                "퇴근길 안전은 야간이 끝날 때 한 번뿐이에요. 모두 이 휴대폰 안에서만 돌아서 켜 둬도 괜찮아요. " +
+                "‘추천 기능 한 번에 켜기’에서 한 화면으로 보고 바꿀 수도 있어요.",
+            listOf("끄기", "끄고", "알림 끄기", "너무 많", "귀찮", "브리핑", "잠금 화면", "추천", "기본", "켜져"),
+            listOf("기능 켜고 끄기", "알림", "추천 기능"),
+            "추천 기능 열기" to HelpAction.Go(SettingsGo.RECOMMENDED),
         ),
         HelpTopic(
             "privacy", "개인정보", "내 기록은 어디에 저장되나요?",

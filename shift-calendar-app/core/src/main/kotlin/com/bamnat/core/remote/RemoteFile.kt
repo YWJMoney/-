@@ -32,8 +32,9 @@ object RemoteFiles {
     const val PRESETS = "presets"
     const val RATES = "rates"
     const val WAGES = "wages"
+    const val TAXTABLE = "taxtable"
     /** The files the app reads; each ships inside the app and is published at [path]. */
-    val KINDS = listOf(PRESETS)
+    val KINDS = listOf(PRESETS, RATES, WAGES, TAXTABLE)
 
     /** Where the files live on the site, below the app's `bamnat.remoteBaseUrl`. */
     fun path(kind: String) = "remote/v1/$kind.json"

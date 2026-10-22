@@ -13,6 +13,8 @@ enum class Place {
     PAY, PATTERN, SHIFT_TYPES, EXTRA_KINDS, WORK_STYLE, CALENDARS, CALENDAR_EDIT, SHOP_DAYS, COMBINED, OWED,
     SLEEP, DUTY_ROSTER, HEALTH_REPORT, TEAMS, YEAR, ATTENDANCE_IMPORT, COMMUTE, CALENDAR_IMPORT, SHARE, RECEIVE,
     DIAGNOSTICS, INQUIRY, FEATURES, PRO,
+    /** [ONBOARD-04] 추천 기능 한 번에 켜기. */
+    RECOMMENDED,
     SETTINGS_WORK, SETTINGS_ALARM, SETTINGS_REST, SETTINGS_NOTICES, SETTINGS_PAY, SETTINGS_CALENDAR,
     SETTINGS_DATA, SETTINGS_PRIVACY,
     ;
@@ -115,6 +117,10 @@ object FeatureRegistry {
             ALL, "달력 맨 위 카드", at(Place.FEATURES), "처음", "시작", "체크리스트", "안내 카드", "할 수 있는 것", off = Off.APP),
         f("guide.tips", "GUIDE-03", "알맞은 때 한 줄 안내", "급여일·첫 하루 마감처럼 알맞은 때 쓸 만한 기능을 하루 한 번까지 한 줄로 알려 줘요",
             ALL, "달력 맨 위 한 줄", at(Place.FEATURES), "팁", "안내", "알려 주기", "추천", off = Off.APP),
+        // [ONBOARD-03][ONBOARD-04] The recommended features and what they need, on one screen.
+        f("settings.recommended", "ONBOARD-04", "추천 기능 한 번에 켜기", "켜 둬도 괜찮은 알림과 필요한 허용을 한 화면에서 켜고, 끄는 곳을 알려 줘요",
+            ALL, "설정 › 기능 켜고 끄기 › 추천 기능 한 번에 켜기", at(Place.RECOMMENDED),
+            "추천 기능", "한 번에 켜기", "모두 켜기", "권한 한 번에", "허용", "기본 설정", "끄는 법"),
 
         // Shift work.
         f("shift.pattern", "SET-01", "근무 주기", "주주야야휴휴처럼 돌아가는 순서와 시작일을 정하면 달력이 채워져요",
@@ -180,8 +186,9 @@ object FeatureRegistry {
             setOf(SHIFT, DAY), "설정 › 내 근무 › 연장 휴무일 근무 지정", at(Place.EXTRA_KINDS), "잔업", "특근", "대근", "연장", "야근", "휴일 근무"),
 
         // Day work.
-        f("day.firstCard", "DAYW-02", "이번 달 한눈에", "이번 달 야근 시간, 연차 사용·잔여, 예상 실수령을 한 카드로 보여 줘요",
-            setOf(DAY), "${tab(DAY)} › ○월 한눈에", at(Place.STATS), "야근 시간", "연차 잔여", "실수령", off = Off.CALENDAR),
+        f("day.firstCard", "DAYW-02", "이번 달 한눈에", "이번 달 야근 시간, 연차 사용·잔여, 간이세액표로 계산한 예상 실수령을 한 카드로 보여 줘요",
+            setOf(DAY), "${tab(DAY)} › ○월 한눈에", at(Place.STATS), "야근 시간", "연차 잔여", "실수령", "간이세액표", "부양가족", "자녀 수",
+            off = Off.CALENDAR),
         f("day.leaveNow", "DAYW-03", "지금 퇴근", "누르면 퇴근 시각까지 남은 시간을 야근으로 적어요. 위젯에도 있어요",
             setOf(DAY), "$DAY_SHEET › 지금 퇴근", at(Place.TODAY), "퇴근", "야근 적기", "칼퇴", "퇴근 버튼",
             moment = Moment.PAST_END_TIME, tip = "퇴근 시간이 지났어요. ‘지금 퇴근’을 누르면 더 일한 시간이 야근으로 적혀요"),
@@ -241,7 +248,7 @@ object FeatureRegistry {
             setOf(FIELD), "${tab(FIELD)} › 일용직 세금", at(Place.STATS), "원천징수", "일용근로", "세금", "2.7%", off = Off.CALENDAR),
         f("field.quote", "FLD-11", "견적서", "품목·수량·단가로 견적서 사진을 만들어 보내고, 좋다고 하면 일감으로 저장해요",
             setOf(FIELD), "${tab(FIELD)} › 견적서 › 새 견적서", at(Place.STATS, "quote"), "견적", "견적서", "부가세", "단가", off = Off.CALENDAR),
-        f("field.tradeWage", "FLD-12", "공종별 평균 일당", "대한건설협회 시중노임단가를 보고 일당을 골라 넣어요",
+        f("field.tradeWage", "FLD-12", "공종별 평균 일당", "대한건설협회 시중노임단가(반기마다 저절로 새 값)를 보고 일당을 골라 넣어요",
             setOf(FIELD), "$DAY_SHEET › 공수 › 직접 › 평균 일당 보기", at(Place.TODAY), "노임단가", "평균 일당", "공종", "단가표"),
         f("field.receipt", "FLD-08", "영수증 사진", "경비를 적을 때 증빙과 영수증 사진을 함께 남겨요",
             setOf(FIELD, SHOP), "돈 › 지출 적기 › 증빙", at(Place.MONEY), "영수증", "증빙", "사진", "경비"),

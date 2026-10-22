@@ -197,6 +197,9 @@ object PayCodec {
         .apply { if (p.customRules.isNotEmpty()) put("customRules", JSONArray(p.customRules.map(::customRule))) }
         // [HRLY-04..HRLY-07] 알바 settings, left out at their defaults so older files stay the same.
         .apply { if (p.taxMode != com.bamnat.core.pay.TaxMode.NONE) put("taxMode", p.taxMode.name) }
+        // [PAYR-04] 간이세액표 가족·자녀 수, left out at 1·0.
+        .apply { if (p.taxFamily != 1) put("taxFamily", p.taxFamily) }
+        .apply { if (p.taxChildren != 0) put("taxChildren", p.taxChildren) }
         .apply { if (p.legalBreaks) put("legalBreaks", true) }
         .putOpt("probationEnd", p.probationEnd?.toString())
         .apply { if (p.probationPercent != 90) put("probationPercent", p.probationPercent) }
@@ -225,6 +228,8 @@ object PayCodec {
         verified = o.optJSONObject("verified")?.let(::verifiedFrom),
         customRules = o.optJSONArray("customRules").objects().mapNotNull(::customRuleFrom).take(CustomRule.MAX),
         taxMode = com.bamnat.core.pay.TaxMode.entries.firstOrNull { it.name == o.optString("taxMode") } ?: com.bamnat.core.pay.TaxMode.NONE,
+        taxFamily = o.optInt("taxFamily", 1).coerceIn(1, 20),
+        taxChildren = o.optInt("taxChildren", 0).coerceIn(0, 19),
         legalBreaks = o.optBoolean("legalBreaks", false),
         probationEnd = o.optString("probationEnd").takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
         probationPercent = o.optInt("probationPercent", 90).coerceIn(50, 100),
