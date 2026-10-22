@@ -5,11 +5,23 @@ import { d1 } from "./d1.mjs";
 export const ORIGIN = "https://company.example";
 export const PASSWORD = "night-and-day-admin";
 
-/** A worker with its own empty database; [call] sends one request and reads the answer. */
-export function server(extra = {}) {
+/**
+ * A worker with its own empty database; [call] sends one request and reads the answer. Tests written
+ * before 1.21 adopt with two people and give rewards by hand; [plaza] true keeps the server's own
+ * defaults instead (three people, rewards given by themselves, 결정 D32·D33).
+ */
+export function server({ plaza = false, ...extra } = {}) {
   const DB = d1();
   const env = { DB, RATE_SALT: "test-salt", ADMIN_PASSWORD: PASSWORD, ...extra };
+  let seeded = plaza || !env.DB;
   const call = async (method, path, body, headers = {}) => {
+    if (!seeded) {
+      seeded = true;
+      await worker.fetch(new Request(`${ORIGIN}/api/terms`), env);
+      for (const [k, v] of [["adopt_persons", "2"], ["amend_persons", "2"], ["auto_reward", "0"]]) {
+        await DB.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)").bind(k, v).run();
+      }
+    }
     const res = await worker.fetch(new Request(ORIGIN + path, {
       method,
       headers: {

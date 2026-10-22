@@ -338,10 +338,17 @@ test("a sender takes a report back, with its reward", async () => {
   const path = `/api/reports/${a.data.id}`;
   assert.equal((await call("DELETE", path)).status, 403);
   assert.equal((await call("DELETE", path, undefined, { "x-device": device(2) })).status, 403);
-  assert.equal((await call("DELETE", path, undefined, { "x-device": device(1) })).status, 204);
-  assert.equal((await call("GET", path)).status, 404);
+  // [PLZ-04] It was adopted: the rule stays as everyone's, only the tie to the sender and their reward go (결정 D34).
+  const kept = await call("DELETE", path, undefined, { "x-device": device(1) });
+  assert.equal(kept.status, 200);
+  assert.equal(kept.data.kept, true);
+  assert.equal((await call("GET", path)).data.status, "adopted");
   assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM rewards").get().n, 1);
-  assert.equal((await call("DELETE", path, undefined, { "x-device": device(1) })).status, 404);
+  assert.equal((await call("DELETE", path, undefined, { "x-device": device(1) })).status, 403);
+  // One still waiting goes whole.
+  const b = await call("POST", "/api/reports", report(3, { company: "다른회사" }), from(3));
+  assert.equal((await call("DELETE", `/api/reports/${b.data.id}`, undefined, { "x-device": device(3) })).status, 204);
+  assert.equal((await call("GET", `/api/reports/${b.data.id}`)).status, 404);
 });
 
 test("everything one install sent can be deleted", async () => {

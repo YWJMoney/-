@@ -116,7 +116,7 @@ test("the developer adopts or turns down what coworkers sent", async () => {
   assert.equal((await call("POST", `/api/admin/groups/${a.data.company.id}/${a.data.setup}/adopt`, {}, h)).status, 404);
   const o = (await call("GET", "/api/admin/overview", undefined, h)).data;
   assert.deepEqual([o.pending, o.flagged, o.owed, o.companies, o.rules, o.reports], [0, 0, 1, 2, 1, 2]);
-  assert.deepEqual(o.settings, { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75 });
+  assert.deepEqual(o.settings, { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75, adoptPersons: 2, amendPersons: 2, autoReward: 0, rewardCapMonths: 3, rewardCapDays: 90 });
   assert.equal(o.reasons.wrong, "실제와 다른 정보로 보여요");
 });
 
@@ -226,7 +226,7 @@ test("a lower bar adopts what already meets it", async () => {
   assert.equal((await call("POST", "/api/admin/settings", { adoptPoints: 1, rewardMonths: 3 }, h)).data.error, "adoptPoints");
   assert.equal((await call("POST", "/api/admin/settings", { adoptPoints: 3, rewardMonths: 25 }, h)).data.error, "rewardMonths");
   const saved = await call("POST", "/api/admin/settings", { adoptPoints: 2, rewardMonths: 6 }, h);
-  assert.deepEqual(saved.data, { adoptPoints: 2, rewardMonths: 6, adoptAgree: 75 });
+  assert.deepEqual(saved.data, { adoptPoints: 2, rewardMonths: 6, adoptAgree: 75, adoptPersons: 2, amendPersons: 2, autoReward: 0, rewardCapMonths: 3, rewardCapDays: 90 });
   const mine = (await call("GET", `/api/reports/${a.data.id}`)).data;
   assert.deepEqual([mine.status, mine.threshold, mine.rewardMonths], ["adopted", 2, 6]);
   assert.deepEqual(mine.reward, { months: 6, status: "owed" });

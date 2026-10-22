@@ -115,7 +115,7 @@ test("개발중·완료·반려 need 처리: the owner has it and gives it per a
   const perms = (await call("GET", "/api/admin/me", undefined, junho)).data.perms;
   const viewed = (await call("POST", `/api/admin/admins/${id}`, { perms: { ...perms, devStatus: "view" } }, owner)).data;
   assert.equal(viewed.admins[0].perms.devStatus, "none");
-  assert.deepEqual(viewed.toggles, ["devStatus"]);
+  assert.deepEqual(viewed.toggles, ["devStatus", "takedown"]);
   await call("POST", `/api/admin/admins/${id}`, { perms: { ...perms, devStatus: "edit" } }, owner);
   assert.equal((await call("POST", `/api/admin/dev/${item.id}`, { status: "doing" }, junho)).data.status, "doing");
   // Without "dev" at all, nothing of it.

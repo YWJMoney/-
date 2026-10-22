@@ -597,6 +597,10 @@ function adminApp() {
     text: "답을 적어 주세요",
     server: "서버에 문제가 생겼어요. 잠시 뒤 다시 해 주세요",
     adoptAgree: "맞았어요 비율은 50~100% 사이로 정해 주세요",
+    adoptPersons: "채택에 필요한 사람은 2~10명 사이로 정해 주세요",
+    amendPersons: "규칙 고치기에 필요한 사람은 2~10명 사이로 정해 주세요",
+    rewardCapMonths: "한 사람 상한은 1~24개월 사이로 정해 주세요",
+    rewardCapDays: "상한을 세는 기간은 30~365일 사이로 정해 주세요",
     action: "이 글에는 할 수 없는 일이에요",
     changed: "다른 관리자가 먼저 고쳤어요. 바뀐 내용을 불러왔어요",
     deleted: "지운 항목이에요. 최고 관리자가 되살린 뒤 고칠 수 있어요",
@@ -625,7 +629,7 @@ function adminApp() {
     me: null, overview: null, health: null,
     route: { name: "home", id: null },
     data: {}, // per screen
-    reviewFilter: "all", inquiryStatus: "open", inquiryTopic: "", rewardTab: "owed", query: "", postFilter: "flagged",
+    reviewFilter: "all", inquiryStatus: "open", inquiryTopic: "", rewardTab: "owed", query: "", postFilter: "flagged", rateFilter: "review",
     // [ADMIN-12] Whose questions: everyone's, mine, nobody's. [ADMIN-10] The 개발사항 list's filter, words and picked items.
     inquiryWho: "", devStatus: "open", devQuery: "", devWho: "", devPick: null, templates: null,
     draft: null, loginMode: "account", error: "", busy: 0, online: navigator.onLine,
@@ -745,7 +749,8 @@ function adminApp() {
       if (name === "community") {
         // An id is one talk: company.setup, opened from the review screen.
         const [company, setup] = (id ?? "").split(".");
-        jobs.push(api(id ? `/posts?company=${company}&setup=${setup}` : `/posts?status=${S.postFilter}`).then((d) => { S.data.posts = d; }));
+        if (!id && S.postFilter === "rates") jobs.push(api(`/rates?status=${S.rateFilter}`).then((d) => { S.data.rates = d; }));
+        else jobs.push(api(id ? `/posts?company=${company}&setup=${setup}` : `/posts?status=${S.postFilter}`).then((d) => { S.data.posts = d; }));
       }
       if (name === "rewards") jobs.push(api(`/rewards?status=${S.rewardTab}`).then((d) => { S.data.rewards = d; }));
       if (name === "admins") jobs.push(api("/admins").then((d) => { S.data.admins = d; }), api("/devices").then((d) => { S.data.phones = d; }));
@@ -1001,7 +1006,7 @@ function adminApp() {
     const head = `<div class="segmented" role="group" aria-label="보기">
         ${seg("review-filter", "all", S.reviewFilter, "전체", counts.all)}${seg("review-filter", "groups", S.reviewFilter, "제보", counts.groups)}
         ${seg("review-filter", "asks", S.reviewFilter, "앱에 없는 방식", counts.asks)}${seg("review-filter", "flagged", S.reviewFilter, "달라요", counts.flagged)}</div>
-      <p class="hint">같은 규칙을 서로 다른 2명 이상이 보내 ${points}점이 되고, 투표한 분의 ${S.overview?.settings?.adoptAgree ?? 75}% 이상이 맞았어요라고 하면 자동으로 채택돼요. 명세서로 맞춰 본 제보는 2점이에요.${editable ? "" : " 보기 권한이라 채택·거절은 할 수 없어요."}</p>`;
+      <p class="hint">같은 규칙을 서로 다른 ${S.overview?.settings?.adoptPersons ?? 3}명 이상이 보내 ${points}점이 되고, 투표한 분의 ${S.overview?.settings?.adoptAgree ?? 75}% 이상이 맞았어요라고 하면 자동으로 채택돼요. 명세서로 맞춰 본 제보는 2점이에요.${editable ? "" : " 보기 권한이라 채택·거절은 할 수 없어요."}</p>`;
     if (!q) return head + skeleton();
     const f = S.reviewFilter;
     const parts = [];
@@ -1072,25 +1077,54 @@ function adminApp() {
       <p class="meta">맞았어요 ${f.good}명 · 달라요 ${f.bad}명${f.names ? ` · 이름이 이상해요 ${f.names}` : ""}${f.old ? ` · 예전 정보 ${f.old}` : ""}</p>
       <details><summary>규칙 내용</summary>${lines(f.lines)}</details>
       <div class="actions">${can("companies") ? `<a class="btn ghost" href="${href("companies", f.company.id)}">회사 열기</a>` : ""}
-        ${can("companies", "edit") ? `<button class="btn danger" data-act="withdraw-rule" data-id="${f.rule}">규칙 내리기</button>` : ""}</div>
+        ${can("takedown", "edit") ? `<button class="btn danger" data-act="withdraw-rule" data-id="${f.rule}">규칙 내리기</button>` : ""}</div>
     </article>`;
   }
 
   // ---- the talk on rule sets [COMM-06] ----
 
   function communityView() {
+    if (S.postFilter === "rates" && !S.route.id) return ratesView();
     const d = S.data.posts;
     const edit = can("community", "edit");
     const talk = Boolean(S.route.id);
     const head = talk ? `<p class="hint">이 규칙에 남긴 글 전부예요. 가려진 글도 보여요.${edit ? "" : " 보기 권한이라 가리거나 지울 수 없어요."}</p>`
       : `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
-        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}</div>
+        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "rates", S.postFilter, "임금표")}</div>
         <p class="hint">앱 사용자가 회사 규칙마다 남긴 글이에요. 서로 다른 세 분이 신고하면 개발자가 볼 때까지 가려져요. 다시 보이게 한 글은 신고로 가려지지 않아요.${edit ? "" : " 보기 권한이라 가리거나 지울 수 없어요."}</p>`;
     if (!d) return head + skeleton();
     if (!d.posts.length) {
       return head + empty(S.postFilter === "flagged" && !talk ? "신고된 글이 없어요" : "글이 없어요", "신고가 오면 여기와 메뉴에 숫자로 보여요.");
     }
     return head + `<div class="grid">${d.posts.map((p) => postCard(p, edit, talk)).join("")}</div>`;
+  }
+
+  /**
+   * [PLZ-14] 임금표: market rates people sent. 확인 필요 is one far from the adopted ones that enough people
+   * agreed to; an admin adopts it or hides it. Taking an adopted one down needs 광장 규칙 내리기.
+   */
+  function ratesView() {
+    const d = S.data.rates;
+    const edit = can("community", "edit");
+    const n = d?.counts ?? {};
+    const head = `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
+        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "rates", S.postFilter, "임금표")}</div>
+      <div class="chips" role="group" aria-label="임금표 상태">${[["review", "확인 필요"], ["pending", "투표 중"], ["adopted", "채택"], ["hidden", "가려짐"]]
+        .map(([k, label]) => `<button type="button" class="chip pick" data-act="rate-filter" data-key="${k}" aria-pressed="${S.rateFilter === k}">${label}${n[k] ? ` ${n[k]}` : ""}</button>`).join("")}</div>
+      <p class="hint">직군·지역별 일당·시급·월급 시세예요. 서로 다른 분들이 맞아요라고 하면 채택되고, 이미 채택된 시세와 두 배 넘게 차이 나면 여기서 확인을 기다려요.</p>`;
+    if (!d) return head + skeleton();
+    if (!d.rates.length) return head + empty("시세가 없어요", "앱에서 임금표에 시세를 올리면 여기에 보여요.");
+    const won = (v) => `${Number(v).toLocaleString("ko-KR")}원`;
+    return head + `<div class="grid">${d.rates.map((r) => `<article class="card">
+      <div class="head"><h3>${esc(r.trade)} <span class="dept">${esc(r.unitName)} ${esc(won(r.amount))}</span></h3><span class="pill">${esc(r.year)}년</span></div>
+      <p class="meta">${esc(r.jobName)} · ${esc(r.regionName)} · 맞아요 ${r.agree} · 달라요 ${r.disagree} · 글쓴이 ${esc(r.writer)} · ${esc(ago(r.at))}</p>
+      ${r.note ? `<blockquote>${esc(r.note)}</blockquote>` : ""}
+      ${edit ? `<div class="actions">
+        ${r.status === "adopted" ? "" : `<button class="btn primary" data-act="rate-set" data-id="${r.id}" data-key="adopted">채택</button>`}
+        ${r.status === "adopted" && !can("takedown", "edit") ? "" : `${r.status === "hidden" ? "" : `<button class="btn danger" data-act="rate-set" data-id="${r.id}" data-key="hidden">가리기</button>`}
+          ${r.status === "pending" ? "" : `<button class="btn" data-act="rate-set" data-id="${r.id}" data-key="pending">투표로 되돌리기</button>`}`}
+      </div>` : ""}
+    </article>`).join("")}</div>`;
   }
 
   function postCard(p, edit, talk) {
@@ -1555,7 +1589,8 @@ function adminApp() {
 
   function ruleCard(r, edit) {
     const [tone, label] = r.withdrawn ? ["bad", "내림"] : r.superseded ? ["", "이전 버전"] : ["ok", "쓰는 중"];
-    const action = !edit ? "" : r.withdrawn ? `<button class="btn" data-act="restore-rule" data-id="${r.id}">다시 올리기</button>`
+    // [PLZ-06] 내리기·다시 올리기 need 광장 규칙 내리기 (결정 D35).
+    const action = !edit || !can("takedown", "edit") ? "" : r.withdrawn ? `<button class="btn" data-act="restore-rule" data-id="${r.id}">다시 올리기</button>`
       : r.superseded ? "" : `<button class="btn danger" data-act="withdraw-rule" data-id="${r.id}">내리기</button>`;
     return `<div class="rule${r.withdrawn || r.superseded ? " dim" : ""}">
       <div class="head"><div><b>${esc(r.dept || "회사 전체")}</b> <span class="ver">v${r.version}</span>
@@ -1753,6 +1788,15 @@ function adminApp() {
         <p class="hint">투표한 분 가운데 이만큼이 맞았어요라고 해야 자동으로 채택해요. 모자라면 검토에 남아 개발자가 정해요. 앱의 신뢰도는 이 비율과 점수를 함께 봐요.</p>
         ${stepper("rewardMonths", "채택 보상", s.rewardMonths, "개월", edit)}
         <p class="hint">채택된 정보를 보낸 분께 드릴 프로 이용 기간이에요. 0개월이면 보상을 기록하지 않아요.</p>
+        ${stepper("adoptPersons", "채택에 필요한 사람", s.adoptPersons ?? 3, "명", edit)}
+        <p class="hint">점수와 비율을 채워도 서로 다른 휴대폰이 이만큼은 돼야 자동으로 채택해요(결정 D32). 임금표 시세도 같아요.</p>
+        ${stepper("amendPersons", "쓰는 규칙 고치기", s.amendPersons ?? 3, "명", edit)}
+        <p class="hint">토론의 고치자는 제안이나 개정 제보에 이만큼 맞아요가 모이면 개발자 없이 다음 버전으로 바꿔요. 이전 버전은 이력에 남아요.</p>
+        ${stepper("autoReward", "보상 자동 지급", (s.autoReward ?? 1) ? "켬" : "끔", "", edit)}
+        <p class="hint">켜면 채택될 때 처음 보낸 세 분과 제안한 분께 바로 프로를 드려요. 그 뒤 분들은 보상 화면에서 정해요. 투표한 분께는 드리지 않아요.</p>
+        ${stepper("rewardCapMonths", "한 사람 상한", s.rewardCapMonths ?? 3, "개월", edit)}
+        ${stepper("rewardCapDays", "상한을 세는 기간", s.rewardCapDays ?? 90, "일", edit)}
+        <p class="hint">한 휴대폰이 이 기간에 자동으로 받는 보상은 상한까지예요. 넘는 보상은 보상 화면에 남아요.</p>
         ${edit ? `<button class="btn primary wide" data-act="save-settings"${S.draft ? "" : " disabled"}>저장</button>` : '<p class="note">보기 권한이라 바꿀 수 없어요.</p>'}
       </section>` : ""}
       ${S.me?.owner ? launchCard() : ""}
@@ -2046,6 +2090,17 @@ function adminApp() {
       render();
       load();
     },
+    "rate-filter": ({ key }) => {
+      S.rateFilter = key;
+      S.data.rates = null;
+      render();
+      load();
+    },
+    "rate-set": async ({ id, key }) => {
+      await act(() => api(`/rates/${id}`, "POST", { status: key }), key === "adopted" ? "채택했어요" : key === "hidden" ? "가렸어요" : "투표로 되돌렸어요");
+      S.data.rates = null;
+      load();
+    },
     "post-show": ({ id }) => moderate(id, { action: "show" }, "다시 보이게 했어요. 신고로는 더 가려지지 않아요"),
     "post-hide": ({ id }) => openHidePost(id, false),
     "post-mute": ({ id }) => openHidePost(id, true),
@@ -2058,8 +2113,11 @@ function adminApp() {
     reward: ({ id, status, months }) => (status === "paid" ? openPaid(id, months) : setReward(id, status)),
     step: ({ key, d }) => {
       const s = { adoptAgree: 75, ...(S.draft ?? S.overview?.settings ?? { adoptPoints: 3, rewardMonths: 3 }) };
-      const [lo, hi, by] = key === "adoptPoints" ? [2, 20, 1] : key === "adoptAgree" ? [50, 100, 5] : [0, 24, 1];
-      s[key] = Math.min(hi, Math.max(lo, s[key] + Number(d) * by));
+      const RANGES = { adoptPoints: [2, 20, 1], adoptAgree: [50, 100, 5], adoptPersons: [2, 10, 1], amendPersons: [2, 10, 1], autoReward: [0, 1, 1],
+        rewardCapMonths: [1, 24, 1], rewardCapDays: [30, 365, 30] };
+      const DEFAULT = { adoptPersons: 3, amendPersons: 3, autoReward: 1, rewardCapMonths: 3, rewardCapDays: 90 };
+      const [lo, hi, by] = RANGES[key] ?? [0, 24, 1];
+      s[key] = Math.min(hi, Math.max(lo, (s[key] ?? DEFAULT[key]) + Number(d) * by));
       S.draft = s;
       render({ keepScroll: true });
     },

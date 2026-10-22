@@ -68,7 +68,7 @@ const LIMITS = {
 
 /** Until changed in the developer app. */
 // [COMM-07] adoptAgree: the share of 맞았어요 among everyone who voted that a rule set needs to be adopted on its own.
-const DEFAULTS = { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75 };
+const DEFAULTS = { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75, adoptPersons: 3, amendPersons: 3, autoReward: 1, rewardCapMonths: 3, rewardCapDays: 90 };
 
 /** The newest company settings file this server reads (CompanyShare.VERSION in the app). */
 // [PAYS-03] 3 carries 감시·단속 승인, 5인 미만 공휴일, 유급 휴게 and allowances paid instead of a premium.
@@ -111,12 +111,14 @@ const AREAS = {
   settings: "채택 설정",
   // [COMM-06] The talk on rule sets: what people flagged, hiding, showing again and muting a writer.
   community: "토론",
+  // [PLZ-06] Taking an adopted rule down (내리기) is its own switch: only an admin given it, or the owner.
+  takedown: "광장 규칙 내리기",
   audit: "활동 기록",
 };
 const LEVELS = ["none", "view", "edit"];
 const VIEW_ONLY = ["audit"];
 /** [ADMIN-10] Areas that are a yes or no: a look at them means nothing, so "view" is stored as "none". */
-const TOGGLES = ["devStatus"];
+const TOGGLES = ["devStatus", "takedown"];
 /**
  * [ADMIN-10] What an account made before an area existed gets: every admin may add, change and delete
  * 개발사항, so the admin already invited keeps working without a visit to the admins screen. 처리 stays
@@ -124,10 +126,10 @@ const TOGGLES = ["devStatus"];
  */
 const SINCE = { dev: () => "edit" };
 const PRESETS = {
-  manager: { name: "운영 관리자", perms: { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit", audit: "view" } },
-  reviewer: { name: "검토 담당", perms: { review: "edit", inquiries: "none", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "edit", audit: "none" } },
-  support: { name: "문의 담당", perms: { review: "view", inquiries: "edit", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "view", audit: "none" } },
-  viewer: { name: "보기 전용", perms: { review: "view", inquiries: "view", dev: "view", devStatus: "none", companies: "view", rewards: "view", settings: "view", community: "view", audit: "view" } },
+  manager: { name: "운영 관리자", perms: { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit", takedown: "edit", audit: "view" } },
+  reviewer: { name: "검토 담당", perms: { review: "edit", inquiries: "none", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "edit", takedown: "none", audit: "none" } },
+  support: { name: "문의 담당", perms: { review: "view", inquiries: "edit", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "view", takedown: "none", audit: "none" } },
+  viewer: { name: "보기 전용", perms: { review: "view", inquiries: "view", dev: "view", devStatus: "none", companies: "view", rewards: "view", settings: "view", community: "view", takedown: "none", audit: "view" } },
 };
 const OWNER = { id: "owner", name: "최고 관리자", email: "", owner: true, perms: Object.fromEntries(Object.keys(AREAS).map((a) => [a, VIEW_ONLY.includes(a) ? "view" : "edit"])) };
 
@@ -158,6 +160,8 @@ export async function prune(env, now) {
   await env.DB.batch([
     stmt(env, "UPDATE reports SET net = NULL WHERE net IS NOT NULL AND created_at < ?", now - 2 * HOUR),
     stmt(env, "UPDATE votes SET net = NULL WHERE net IS NOT NULL AND at < ?", now - 2 * HOUR),
+    stmt(env, "UPDATE rates SET net = NULL WHERE net IS NOT NULL AND created_at < ?", now - 2 * HOUR),
+    stmt(env, "UPDATE rate_votes SET net = NULL WHERE net IS NOT NULL AND at < ?", now - 2 * HOUR),
     stmt(env, "DELETE FROM counters WHERE expires < ?", now),
     stmt(env, "DELETE FROM admin_sessions WHERE expires < ?", now),
     stmt(env, "DELETE FROM invites WHERE used_at IS NULL AND expires < ?", now),
@@ -218,6 +222,19 @@ async function route(request, env) {
   m = path.match(/^\/api\/posts\/(p[A-Za-z0-9]{15})(\/flag)?$/);
   if (m && method === "DELETE" && !m[2]) return takePostBack(request, env, m[1]);
   if (m && method === "POST" && m[2]) return flag(request, env, m[1]);
+  m = path.match(/^\/api\/posts\/(p[A-Za-z0-9]{15})\/vote$/);
+  if (m && method === "POST") return postVote(request, env, m[1]);
+  if (path === "/api/uses" && (method === "POST" || method === "DELETE")) return useRule(request, env, method === "POST");
+  if (path === "/api/nick" && method === "POST") return setNick(request, env);
+  if (path === "/api/plazas" && method === "GET") return json(await plazas(env));
+  m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})\/history$/);
+  if (m && method === "GET") return history(env, m[1], url);
+  if (path === "/api/rates" && method === "GET") return rates(request, env, url);
+  if (path === "/api/rates" && method === "POST") return addRate(request, env);
+  m = path.match(/^\/api\/rates\/([A-Za-z0-9]{22})(\/vote)?$/);
+  if (m && method === "POST" && m[2]) return rateVote(request, env, m[1]);
+  if (m && method === "DELETE" && !m[2]) return takeRateBack(request, env, m[1]);
+  if (path === "/api/activity" && method === "GET") return activity(request, env);
   if (path === "/api/inquiries" || path.startsWith("/api/inquiries/")) return inquiries(request, env, path);
   if (path === "/api/config" && method === "GET") return json(await config(env));
   if (path.startsWith("/api/passes") || path === "/api/admin-link" || path === "/api/purchases" || path === "/api/consents") {
@@ -329,6 +346,26 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS consents (id INTEGER PRIMARY KEY AUTOINCREMENT, device TEXT NOT NULL, kind TEXT NOT NULL,
     detail TEXT NOT NULL, at INTEGER NOT NULL)`,
   "CREATE INDEX IF NOT EXISTS consents_device ON consents (device)",
+  // [PLZ-01] 맞아요·달라요 on a post, once per install.
+  `CREATE TABLE IF NOT EXISTS post_votes (post_id TEXT NOT NULL, device TEXT NOT NULL, ok INTEGER NOT NULL, at INTEGER NOT NULL,
+    PRIMARY KEY (post_id, device))`,
+  "CREATE INDEX IF NOT EXISTS post_votes_device ON post_votes (device)",
+  // [PLZ-08] Phones that use a rule set (applied it in the app), once each: 쓰는 사람.
+  `CREATE TABLE IF NOT EXISTS uses (company_id TEXT NOT NULL, grp TEXT NOT NULL, device TEXT NOT NULL, at INTEGER NOT NULL,
+    PRIMARY KEY (company_id, grp, device))`,
+  "CREATE INDEX IF NOT EXISTS uses_device ON uses (device)",
+  // [PLZ-08] A name the user chose to be shown by on the plaza, instead of 참여자 N. Optional.
+  "CREATE TABLE IF NOT EXISTS nicks (device TEXT PRIMARY KEY, nick TEXT NOT NULL, norm TEXT NOT NULL UNIQUE, at INTEGER NOT NULL)",
+  // [PLZ-14] 임금표: market rates people share for a job and region (일당·시급·월급), never one person's pay slip.
+  `CREATE TABLE IF NOT EXISTS rates (id TEXT PRIMARY KEY, job TEXT NOT NULL, region TEXT NOT NULL, trade TEXT NOT NULL,
+    trade_norm TEXT NOT NULL, unit TEXT NOT NULL, year INTEGER NOT NULL, amount INTEGER NOT NULL, note TEXT NOT NULL DEFAULT '',
+    device TEXT NOT NULL, cluster TEXT NOT NULL, net TEXT, status TEXT NOT NULL, created_at INTEGER NOT NULL, decided_at INTEGER,
+    agree INTEGER NOT NULL DEFAULT 0, disagree INTEGER NOT NULL DEFAULT 0)`,
+  "CREATE INDEX IF NOT EXISTS rates_key ON rates (job, region, trade_norm, unit, year)",
+  "CREATE INDEX IF NOT EXISTS rates_device ON rates (device)",
+  `CREATE TABLE IF NOT EXISTS rate_votes (rate_id TEXT NOT NULL, device TEXT NOT NULL, ok INTEGER NOT NULL, cluster TEXT NOT NULL,
+    net TEXT, at INTEGER NOT NULL, PRIMARY KEY (rate_id, device))`,
+  "CREATE INDEX IF NOT EXISTS rate_votes_device ON rate_votes (device)",
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -349,6 +386,20 @@ const COLUMNS = [
   "ALTER TABLE dev_items ADD COLUMN released_in TEXT",
   // [MON-08] A reward Play gave as a later renewal of a running subscription, not as a pass.
   "ALTER TABLE rewards ADD COLUMN deferred INTEGER NOT NULL DEFAULT 0",
+  // [PLZ-12] What kind of place it is (company, hospital, topic for rules not tied to one place), its job plaza and region.
+  "ALTER TABLE companies ADD COLUMN kind TEXT NOT NULL DEFAULT 'company'",
+  "ALTER TABLE companies ADD COLUMN job TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE companies ADD COLUMN region TEXT NOT NULL DEFAULT ''",
+  // [PLZ-02] A setup sent to change the rule in use (its id), and the post that proposed it.
+  "ALTER TABLE reports ADD COLUMN amends TEXT",
+  "ALTER TABLE reports ADD COLUMN post_id TEXT",
+  // [PLZ-01][PLZ-05][PLZ-09] Replies, the kind of post, a structured change and its votes.
+  "ALTER TABLE posts ADD COLUMN parent TEXT",
+  "ALTER TABLE posts ADD COLUMN kind TEXT NOT NULL DEFAULT 'talk'",
+  "ALTER TABLE posts ADD COLUMN change TEXT",
+  "ALTER TABLE posts ADD COLUMN report_id TEXT",
+  "ALTER TABLE posts ADD COLUMN agree INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE posts ADD COLUMN disagree INTEGER NOT NULL DEFAULT 0",
 ];
 
 const schemas = new WeakMap();
@@ -393,8 +444,10 @@ const one = (env, sql, ...params) => stmt(env, sql, ...params).first();
 const all = async (env, sql, ...params) => (await stmt(env, sql, ...params).all()).results;
 const run = (env, sql, ...params) => stmt(env, sql, ...params).run();
 
+const SETTING_KEYS = "'adopt_points', 'reward_months', 'adopt_agree', 'adopt_persons', 'amend_persons', 'auto_reward', 'reward_cap_months', 'reward_cap_days'";
+
 async function settings(env) {
-  return readSettings(await all(env, "SELECT key, value FROM settings WHERE key IN ('adopt_points', 'reward_months', 'adopt_agree')"));
+  return readSettings(await all(env, `SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`));
 }
 
 function readSettings(rows) {
@@ -403,7 +456,12 @@ function readSettings(rows) {
     return Number.isInteger(n) ? n : fallback;
   };
   return { adoptPoints: read("adopt_points", DEFAULTS.adoptPoints), rewardMonths: read("reward_months", DEFAULTS.rewardMonths),
-    adoptAgree: read("adopt_agree", DEFAULTS.adoptAgree) };
+    adoptAgree: read("adopt_agree", DEFAULTS.adoptAgree),
+    // [PLZ-03] How many different people adopt a rule on their own, and an amendment of one in use (결정 D32).
+    adoptPersons: read("adopt_persons", DEFAULTS.adoptPersons), amendPersons: read("amend_persons", DEFAULTS.amendPersons),
+    // [PLZ-03] Rewards go out as passes by themselves, up to a cap per phone (결정 D33).
+    autoReward: read("auto_reward", DEFAULTS.autoReward), rewardCapMonths: read("reward_cap_months", DEFAULTS.rewardCapMonths),
+    rewardCapDays: read("reward_cap_days", DEFAULTS.rewardCapDays) };
 }
 
 async function salt(env) {
@@ -789,8 +847,14 @@ function item(raw, names, say) {
 export function readReport(body) {
   object(body, "body");
   if (body.v !== 1) refuse("version", "v");
-  const company = str(body.company, LIMITS.company, "company", { empty: false, code: "company" });
+  // [PLZ-12] The job plaza and region it belongs to; a rule for a whole job (범용) needs no company.
+  const job = given(body.job) ? oneOf(body.job, Object.keys(JOBS), "job") : "";
+  const region = given(body.region) && body.region !== "" ? oneOf(body.region, Object.keys(REGIONS), "region") : "";
+  const topic = body.topic === true;
+  if (topic && !job) refuse("job", "job");
+  const company = topic ? topicName(job, region) : str(body.company, LIMITS.company, "company", { empty: false, code: "company" });
   if (normName(company).length < 2) refuse("company", "company");
+  const amends = given(body.amends) ? (typeof body.amends === "string" && /^[A-Za-z0-9]{16}$/.test(body.amends) ? body.amends : refuse("amends", "amends")) : null;
   const dept = given(body.dept) ? str(body.dept, LIMITS.dept, "dept", { code: "dept" }) : "";
   if (typeof body.verified !== "boolean") refuse("verified", "verified");
   // [EXTRA-06] A way the app cannot set yet: the setup is only as close as the sender could get.
@@ -804,8 +868,36 @@ export function readReport(body) {
     const why = personal(text);
     if (why) refuse(why, field);
   }
-  return { company, dept, deptNorm: normName(dept), verified: body.verified, note, setup, ask };
+  return { company, dept, deptNorm: normName(dept), verified: body.verified, note, setup, ask, job, region, topic, amends };
 }
+
+// ---- 직군별 광장 [PLZ-12][PLZ-13][PLZ-14] ----
+
+/** The job plazas (결정 D38): every company, hospital and topic sits in one, and the board can show one. */
+export const JOBS = {
+  shift: "교대 근무",
+  factory: "제조·생산",
+  nurse: "간호사·병원",
+  public: "공무원",
+  police: "경찰",
+  fire: "소방",
+  care: "요양·돌봄",
+  security: "경비·시설",
+  transport: "운수·운전",
+  hourly: "알바·시급",
+  construction: "건설 일용직·기능공",
+  field: "현장·프리랜서",
+  shop: "자영업",
+};
+
+/** 시·도 by the code 통계청 gives them (행정구역 분류), so the app and the server agree on the same key. */
+export const REGIONS = {
+  "11": "서울", "21": "부산", "22": "대구", "23": "인천", "24": "광주", "25": "대전", "26": "울산", "29": "세종",
+  "31": "경기", "32": "강원", "33": "충북", "34": "충남", "35": "전북", "36": "전남", "37": "경북", "38": "경남", "39": "제주",
+};
+
+/** A rule for a whole job, not one company: "간호사·병원 공통", "건설 일용직·기능공 공통 (서울)". */
+const topicName = (job, region) => `${JOBS[job]} 공통${region ? ` (${REGIONS[region]})` : ""}`;
 
 // ---- the same rule ----
 
@@ -1061,7 +1153,7 @@ async function company(env, id) {
     shown.set(rep.dept_norm, n + 1);
     setups.push({ ...s, dept: rep.dept, setup: shared(rep.setup, c.name), lines: describe(JSON.parse(rep.setup)) });
   }
-  return json({ id: c.id, name: c.name, aliases, setups });
+  return json({ id: c.id, name: c.name, kind: c.kind ?? "company", job: c.job ?? "", region: c.region ?? "", aliases, setups });
 }
 
 const shared = (text, name) => ({ ...JSON.parse(text), company: name });
@@ -1069,8 +1161,17 @@ const shared = (text, name) => ({ ...JSON.parse(text), company: name });
 async function state(env, companyId, grp, threshold, adopted) {
   const s = await score(env, companyId, grp);
   const posts = await one(env, "SELECT COUNT(*) AS n FROM posts WHERE company_id = ? AND grp = ? AND status = 'shown'", companyId, grp);
+  // [PLZ-08] Who stands behind it: how many sent it, how many checked it on a pay slip, how many use it,
+  // and the names they chose to be shown by (no one else's).
+  const who = await one(env, `SELECT
+      (SELECT COUNT(*) FROM uses WHERE company_id = ?1 AND grp = ?2) AS uses,
+      (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted')) AS senders,
+      (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1)
+        + (SELECT COUNT(*) FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1) AS checked`, companyId, grp);
+  const names = (await all(env, `SELECT n.nick FROM reports r JOIN nicks n ON n.device = r.device
+      WHERE r.company_id = ? AND r.grp = ? AND r.status IN ('pending', 'adopted') ORDER BY r.created_at LIMIT 5`, companyId, grp)).map((n) => n.nick);
   return { id: grp, status: adopted ? "adopted" : "pending", points: s.points, persons: s.persons, bad: s.bad, threshold,
-    ...trust(s, threshold), posts: posts.n };
+    ...trust(s, threshold), posts: posts.n, uses: who.uses, senders: who.senders, checked: who.checked, by: names };
 }
 
 /**
@@ -1095,7 +1196,7 @@ async function report(request, env) {
       !(await allow(env, `report|${net.day}`, LIMITS.reportsPerNetworkDay, DAY, now))) {
     return json({ error: "rate_limited" }, 429);
   }
-  const c = await companyFor(env, r.company, now);
+  const c = await companyFor(env, r.company, now, r);
   const grp = (await sha256(`${r.deptNorm}|${await fingerprint(r.setup)}`)).slice(0, 16);
   await forgetNetworks(env, now);
   if (r.ask) return askDeveloper(env, c, grp, r, dev, net, now);
@@ -1111,9 +1212,11 @@ async function report(request, env) {
     stmt(env, "UPDATE reports SET status = 'replaced', decided_at = ? WHERE company_id = ? AND dept_norm = ? AND device = ? AND status = 'pending'",
       now, c.id, r.deptNorm, dev),
     stmt(env, `INSERT INTO reports (id, company_id, dept, dept_norm, grp, setup, verified, note, device, net, cluster, points, status,
-      rule_id, reason, created_at, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+      rule_id, reason, created_at, decided_at, amends) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
       id, c.id, r.dept, r.deptNorm, grp, JSON.stringify(r.setup), r.verified ? 1 : 0, r.note, dev, net.now, cluster, r.verified ? 2 : 1,
-      adopted ? "adopted" : "pending", adopted ? active.id : null, now, adopted ? now : null),
+      adopted ? "adopted" : "pending", adopted ? active.id : null, now, adopted ? now : null,
+      // [PLZ-02] Only a change of the rule in use counts as one.
+      !adopted && active && r.amends === active.id ? active.id : null),
   ]);
   if (!adopted) await settle(env, c.id, grp, now);
   return json(await reportView(env, id), 201);
@@ -1134,13 +1237,24 @@ async function askDeveloper(env, c, grp, r, dev, net, now) {
   return json(await reportView(env, id), 201);
 }
 
-async function companyFor(env, name, now) {
+async function companyFor(env, name, now, r = {}) {
   const norm = normName(name);
   const found = (await one(env, "SELECT id FROM companies WHERE norm = ? ORDER BY merged_into IS NOT NULL, created_at LIMIT 1", norm))
     ?? (await one(env, "SELECT company_id AS id FROM aliases WHERE norm = ?", norm));
-  if (found) return follow(env, found.id);
+  if (found) {
+    const c = await follow(env, found.id);
+    // [PLZ-12] A place without a plaza takes the first one a sender says; a developer can change it.
+    if (c && ((!c.job && r.job) || (!c.region && r.region))) {
+      await run(env, "UPDATE companies SET job = CASE WHEN job = '' THEN ? ELSE job END, region = CASE WHEN region = '' THEN ? ELSE region END WHERE id = ?",
+        r.job ?? "", r.region ?? "", c.id);
+      return one(env, "SELECT * FROM companies WHERE id = ?", c.id);
+    }
+    return c;
+  }
   const id = randomId(12);
-  await run(env, "INSERT INTO companies (id, name, norm, hidden, merged_into, created_at) VALUES (?, ?, ?, 0, NULL, ?)", id, name, norm, now);
+  const kind = r.topic ? "topic" : r.job === "nurse" ? "hospital" : "company";
+  await run(env, `INSERT INTO companies (id, name, norm, hidden, merged_into, created_at, kind, job, region) VALUES (?, ?, ?, 0, NULL, ?, ?, ?, ?)`,
+    id, name, norm, now, kind, r.job ?? "", r.region ?? "");
   return one(env, "SELECT * FROM companies WHERE id = ?", id);
 }
 
@@ -1209,14 +1323,27 @@ const activeRule = (env, companyId, deptNorm) => one(env, `SELECT * FROM rules W
 
 /** [COMM-03] Adopts a setup once different people agree on it, unless it is the developer's call. */
 async function settle(env, companyId, grp, now) {
-  const { adoptPoints, adoptAgree } = await settings(env);
+  const { adoptPoints, adoptAgree, adoptPersons, amendPersons } = await settings(env);
   const s = await score(env, companyId, grp);
-  if (s.persons < 2 || s.points < adoptPoints || s.networks < 2) return;
+  if (s.points < adoptPoints || s.networks < 2) return;
   // [COMM-07] Too many 달라요 for the 맞았어요: the developer decides, however many points it has.
   if (s.persons * 100 < adoptAgree * (s.persons + s.bad)) return;
   const rep = await representative(env, companyId, grp);
-  if (!rep || (await blocker(env, companyId, grp, rep.dept_norm))) return;
-  await adopt(env, companyId, grp, "auto", now);
+  if (!rep) return;
+  const why = await blocker(env, companyId, grp, rep.dept_norm);
+  if (!why) {
+    // [PLZ-03] At least this many different people (결정 D32).
+    if (s.persons >= adoptPersons) await adopt(env, companyId, grp, "auto", now);
+    return;
+  }
+  // [PLZ-02] A setup sent to change the rule in use takes its place as the next version once enough
+  // people agree, without the developer: the rule grows by what people find, and the old version stays
+  // in the history. Anything else for a department with a rule waits for the developer as before.
+  if (why !== "active" || s.persons < amendPersons) return;
+  const active = await activeRule(env, companyId, rep.dept_norm);
+  const amends = await one(env, `SELECT 1 FROM reports WHERE company_id = ? AND grp = ? AND status = 'pending' AND amends = ? LIMIT 1`,
+    companyId, grp, active?.id ?? "");
+  if (amends) await adopt(env, companyId, grp, "amend", now);
 }
 
 /**
@@ -1252,7 +1379,45 @@ async function adopt(env, companyId, grp, source, now) {
     rewardMonths, now, companyId, grp, ruleId));
   }
   await env.DB.batch(stmts);
+  await payOut(env, ruleId, now);
   return ruleId;
+}
+
+/**
+ * [PLZ-03] Rewards for an adopted rule go out by themselves (결정 D33): the first three phones that sent
+ * it, and whoever proposed it in the talk, get their months as a pass at once. A phone past the cap
+ * (months in the last days set) keeps its reward 'owed' for an admin to look at, and so does everyone
+ * after the first three. Voters get nothing: rewarding votes would buy them.
+ */
+async function payOut(env, ruleId, now) {
+  const { autoReward, rewardCapMonths, rewardCapDays } = await settings(env);
+  if (!autoReward) return;
+  const owed = await all(env, `SELECT w.id, w.device, w.months, p.post_id FROM rewards w JOIN reports p ON p.id = w.report_id
+    WHERE w.rule_id = ? AND w.status = 'owed' ORDER BY p.post_id IS NULL, p.created_at LIMIT 3`, ruleId);
+  await payEach(env, owed, { rewardCapMonths, rewardCapDays }, now);
+}
+
+/**
+ * Gives each owed reward of [owed] (id, device, months) as setReward does by hand: a later renewal from
+ * Play for someone already paying, a pass for anyone else, unless the phone is past the cap.
+ */
+async function payEach(env, owed, { rewardCapMonths, rewardCapDays }, now) {
+  for (const w of owed) {
+    if (w.device.startsWith("gone")) continue;
+    const got = await one(env, "SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ? AND status = 'paid' AND paid_at > ?",
+      w.device, now - rewardCapDays * DAY);
+    if (got.m + w.months > rewardCapMonths) continue;
+    let deferred = null;
+    try {
+      deferred = await deferFor(env, w.device, w.months, now);
+    } catch (e) {
+      console.error(`defer ${w.id}: ${e?.code ?? e}`);
+    }
+    const memo = deferred ? `자동 지급 · Play 결제 미룸(다음 결제 ${iso(deferred).slice(0, 10)})` : "자동 지급";
+    await run(env, "UPDATE rewards SET status = 'paid', paid_at = ?, memo = ?, deferred = ? WHERE id = ? AND status = 'owed'",
+      now, memo, deferred ? 1 : 0, w.id);
+    await audit(env, now, "reward_auto", w.id, `${w.months}개월${deferred ? " 미룸" : ""}`);
+  }
 }
 
 async function reportView(env, id) {
@@ -1295,6 +1460,16 @@ async function takeBack(request, env, id) {
   const r = await one(env, "SELECT device FROM reports WHERE id = ?", id);
   if (!r) return json({ error: "not_found" }, 404);
   if (!device || (await deviceHash(device)) !== r.device) return json({ error: "forbidden" }, 403);
+  // [PLZ-04] An adopted rule belongs to everyone who checked it: taking it back only cuts the sender's
+  // tie to it (결정 D34). The rule, its versions and its score stay; a pass already given stays theirs.
+  const full = await one(env, "SELECT status FROM reports WHERE id = ?", id);
+  if (full.status === "adopted") {
+    await env.DB.batch([
+      stmt(env, "DELETE FROM rewards WHERE report_id = ? AND status = 'owed'", id),
+      stmt(env, "UPDATE reports SET device = ? WHERE id = ?", `gone${randomId(12)}`, id),
+    ]);
+    return json({ kept: true, text: "채택된 규칙은 모두가 쓰는 규칙이라 남아요. 보낸 분과의 연결만 지웠어요." });
+  }
   await env.DB.batch([stmt(env, "DELETE FROM rewards WHERE report_id = ?", id), stmt(env, "DELETE FROM reports WHERE id = ?", id)]);
   return new Response(null, { status: 204 });
 }
@@ -1304,6 +1479,21 @@ async function forgetMine(request, env) {
   const device = deviceId(request.headers.get("x-device"));
   if (!device) return json({ error: "device", field: "device" }, 400);
   const dev = await deviceHash(device);
+  // [PLZ-04] Adopted rules and the posts that proposed them stay, cut loose from this install (결정 D34).
+  const gone = `gone${randomId(12)}`;
+  await env.DB.batch([
+    stmt(env, `UPDATE posts SET device = ?2 WHERE device = ?1 AND report_id IN (SELECT id FROM reports WHERE device = ?1 AND status = 'adopted')`, dev, gone),
+    stmt(env, "UPDATE reports SET device = ? WHERE device = ? AND status = 'adopted'", gone, dev),
+    // [PLZ-01] Their votes on posts come off the posts' counts.
+    stmt(env, "UPDATE posts SET agree = agree - 1 WHERE id IN (SELECT post_id FROM post_votes WHERE device = ? AND ok = 1)", dev),
+    stmt(env, "UPDATE posts SET disagree = disagree - 1 WHERE id IN (SELECT post_id FROM post_votes WHERE device = ? AND ok = 0)", dev),
+    stmt(env, "DELETE FROM post_votes WHERE device = ?", dev),
+    stmt(env, "DELETE FROM uses WHERE device = ?", dev),
+    stmt(env, "DELETE FROM nicks WHERE device = ?", dev),
+    stmt(env, "DELETE FROM rate_votes WHERE device = ?", dev),
+    stmt(env, "UPDATE rates SET device = ? WHERE device = ? AND status = 'adopted'", gone, dev),
+    stmt(env, "DELETE FROM rates WHERE device = ?", dev),
+  ]);
   const [, reports, votes, , posts, , , , , , , asked] = await env.DB.batch([
     stmt(env, "DELETE FROM rewards WHERE device = ?", dev),
     stmt(env, "DELETE FROM reports WHERE device = ?", dev),
@@ -1388,13 +1578,20 @@ async function board(env, url) {
   // A company's name or another name for it, written any way 회사 찾기 accepts; one letter narrows nothing.
   const q = normName(url.searchParams.get("q")).slice(0, 40);
   const like = q.length < 2 ? "" : `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-  const named = `(?3 = '' OR c.norm LIKE ?3 ESCAPE '\\' OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.norm LIKE ?3 ESCAPE '\\'))`;
+  const named = `(?3 = '' OR c.norm LIKE ?3 ESCAPE '\\' OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.norm LIKE ?3 ESCAPE '\\'))
+    AND (?4 = '' OR c.job = ?4) AND (?5 = '' OR c.region = ?5)`;
+  // [PLZ-12] One job plaza, one region, or all of them.
+  const job = Object.hasOwn(JOBS, url.searchParams.get("job") ?? "") ? url.searchParams.get("job") : "";
+  const region = Object.hasOwn(REGIONS, url.searchParams.get("region") ?? "") ? url.searchParams.get("region") : "";
+  // [PLZ-05] Newest first, or the most trusted, or the most used.
+  const sort = ["trust", "used"].includes(url.searchParams.get("sort")) ? url.searchParams.get("sort") : "recent";
   const rows = tab === "adopted"
-    ? await all(env, `SELECT r.company_id, r.grp, r.dept, r.setup, r.version, r.adopted_at AS at, c.name
+    ? await all(env, `SELECT r.company_id, r.grp, r.dept, r.setup, r.version, r.adopted_at AS at, c.name, c.kind, c.job, c.region
         FROM rules r JOIN companies c ON c.id = r.company_id
         WHERE r.withdrawn = 0 AND r.superseded = 0 AND c.hidden = 0 AND c.merged_into IS NULL AND ${named}
-        ORDER BY r.adopted_at DESC LIMIT ?1 OFFSET ?2`, size + 1, offset, like)
-    : await all(env, `SELECT p.company_id, p.grp, c.name,
+        ORDER BY ${sort === "used" ? "(SELECT COUNT(*) FROM uses u WHERE u.company_id = r.company_id AND u.grp = r.grp) DESC," : ""} r.adopted_at DESC
+        LIMIT ?1 OFFSET ?2`, size + 1, offset, like, job, region)
+    : await all(env, `SELECT p.company_id, p.grp, c.name, c.kind, c.job, c.region,
           MAX(MAX(p.created_at),
             COALESCE((SELECT MAX(v.at) FROM votes v WHERE v.company_id = p.company_id AND v.grp = p.grp), 0),
             COALESCE((SELECT MAX(t.created_at) FROM posts t WHERE t.company_id = p.company_id AND t.grp = p.grp AND t.status = 'shown'), 0)) AS at
@@ -1402,7 +1599,7 @@ async function board(env, url) {
         WHERE p.status = 'pending' AND c.hidden = 0 AND c.merged_into IS NULL AND ${named}
           AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = p.company_id AND x.grp = p.grp AND x.status = 'rejected')
           AND NOT EXISTS (SELECT 1 FROM rules w WHERE w.company_id = p.company_id AND w.grp = p.grp AND (w.withdrawn = 1 OR w.superseded = 0))
-        GROUP BY p.company_id, p.grp ORDER BY at DESC LIMIT ?1 OFFSET ?2`, size + 1, offset, like);
+        GROUP BY p.company_id, p.grp ORDER BY at DESC LIMIT ?1 OFFSET ?2`, size + 1, offset, like, job, region);
   const items = [];
   for (const r of rows.slice(0, size)) {
     const rep = tab === "adopted" ? r : await representative(env, r.company_id, r.grp);
@@ -1411,7 +1608,7 @@ async function board(env, url) {
     if (s.persons === 0 && tab === "voting") continue;
     const lines = describe(JSON.parse(rep.setup));
     items.push({
-      company: { id: r.company_id, name: r.name },
+      company: { id: r.company_id, name: r.name, kind: r.kind ?? "company", job: r.job ?? "", region: r.region ?? "" },
       dept: rep.dept,
       ...s,
       version: r.version ?? null,
@@ -1421,16 +1618,22 @@ async function board(env, url) {
       pay: lines.some(([label]) => label === "사업장"),
     });
   }
-  return { tab, ...(like ? { q } : {}), items, next: rows.length > size ? offset + size : null, threshold: adoptPoints };
+  // [PLZ-05] The most trusted first, within the page the database gave.
+  if (sort === "trust") items.sort((a, b) => b.trust - a.trust || b.persons - a.persons);
+  return { tab, ...(like ? { q } : {}), ...(job ? { job } : {}), ...(region ? { region } : {}), sort, items,
+    next: rows.length > size ? offset + size : null, threshold: adoptPoints };
 }
 
-/** A rule set people may talk about: adopted and in use, or still gathering votes. */
-async function talkable(env, companyId, grp) {
+/**
+ * A rule set people may talk about: adopted and in use, or still gathering votes. [past] also takes an
+ * older version a newer one replaced, whose talk stays readable as part of the rule's history ([PLZ-04]).
+ */
+async function talkable(env, companyId, grp, past = false) {
   const c = await follow(env, companyId);
   if (!c || c.hidden) return null;
   const live = await one(env, `SELECT
-      EXISTS (SELECT 1 FROM rules WHERE company_id = ?1 AND grp = ?2 AND withdrawn = 0 AND superseded = 0) AS rule,
-      EXISTS (SELECT 1 FROM reports WHERE company_id = ?1 AND grp = ?2 AND status = 'pending') AS pending`, c.id, grp);
+      EXISTS (SELECT 1 FROM rules WHERE company_id = ?1 AND grp = ?2 AND withdrawn = 0 AND (superseded = 0 OR ?3)) AS rule,
+      EXISTS (SELECT 1 FROM reports WHERE company_id = ?1 AND grp = ?2 AND status = 'pending') AS pending`, c.id, grp, past ? 1 : 0);
   return live.rule || live.pending ? c : null;
 }
 
@@ -1440,7 +1643,7 @@ async function talkable(env, companyId, grp) {
  * posts are marked, and their own hidden ones show with why.
  */
 async function talk(request, env, companyId, grp) {
-  const c = await talkable(env, companyId, grp);
+  const c = await talkable(env, companyId, grp, true);
   if (!c) return json({ error: "not_found" }, 404);
   const device = deviceId(request.headers.get("x-device"));
   const me = device ? await deviceHash(device) : null;
@@ -1453,29 +1656,52 @@ async function talk(request, env, companyId, grp) {
     .map((r) => r.device));
   const numbers = new Map();
   const posts = [];
+  // [PLZ-01][PLZ-08] My votes on these posts, and the names writers chose to be shown by.
+  const myVotes = me ? new Map((await all(env, `SELECT v.post_id, v.ok FROM post_votes v JOIN posts p ON p.id = v.post_id
+    WHERE v.device = ? AND p.company_id = ? AND p.grp = ?`, me, c.id, grp)).map((v) => [v.post_id, v.ok === 1])) : new Map();
+  const nicks = new Map((await all(env, `SELECT n.device, n.nick FROM nicks n WHERE n.device IN
+    (SELECT device FROM posts WHERE company_id = ? AND grp = ?)`, c.id, grp)).map((n) => [n.device, n.nick]));
+  const { adoptPoints } = await settings(env);
   for (const p of rows) {
     if (!numbers.has(p.device)) numbers.set(p.device, numbers.size + 1);
     const mine = p.device === me;
     if (p.status !== "shown" && !mine) continue;
     const v = votes.get(p.device);
+    // [PLZ-02] A proposal shows where its setup stands: points, people, adopted.
+    let proposal = null;
+    if (p.report_id) {
+      const r = await one(env, "SELECT grp, status FROM reports WHERE id = ?", p.report_id);
+      if (r) proposal = { setup: r.grp, ...(await state(env, c.id, r.grp, adoptPoints, r.status === "adopted")), lines: [] };
+    }
     posts.push({
       id: p.id,
       who: numbers.get(p.device),
+      nick: nicks.get(p.device) ?? null,
       stance: senders.has(p.device) ? "sender" : v ? (v.ok ? "ok" : "bad") : null,
       verified: verified.has(p.device) || v?.verified === 1,
       body: p.body,
       at: iso(p.created_at),
       mine,
+      parent: p.parent ?? null,
+      kind: p.kind ?? "talk",
+      change: p.change ? JSON.parse(p.change) : null,
+      agree: p.agree ?? 0,
+      disagree: p.disagree ?? 0,
+      ...postTrust(p),
+      ...(myVotes.has(p.id) ? { myVote: myVotes.get(p.id) } : {}),
+      ...(proposal ? { proposal } : {}),
       ...(p.status === "shown" ? {} : { hidden: { code: p.hide_reason ?? "flags", text: HIDE_REASONS[p.hide_reason ?? "flags"] ?? "" } }),
     });
   }
   const muted = me ? await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", me, Date.now()) : null;
-  return json({ company: { id: c.id, name: c.name }, setup: grp, posts, ...(muted ? { mutedUntil: iso(muted.until) } : {}) });
+  // [PLZ-04] An older version's talk is read only; the app points to the version in use.
+  const past = !(await talkable(env, c.id, grp));
+  return json({ company: { id: c.id, name: c.name }, setup: grp, posts, ...(past ? { past: true } : {}), ...(muted ? { mutedUntil: iso(muted.until) } : {}) });
 }
 
 /** [COMM-06] A post in the talk on a rule set: no email, phone number or amount, like everything else sent here. */
 async function post(request, env) {
-  const body = await readJson(request, 4096);
+  const body = await readJson(request, LIMITS.reportBytes + 4096);
   const device = deviceId(body.device);
   if (!device) refuse("device", "device");
   if (typeof body.company !== "string" || !/^[A-Za-z0-9]{12}$/.test(body.company)) refuse("company", "company");
@@ -1495,10 +1721,475 @@ async function post(request, env) {
       !(await allow(env, `post|${net.day}`, LIMITS.postsPerNetworkDay, DAY, now))) {
     return json({ error: "rate_limited" }, 429);
   }
+  // [PLZ-05] A reply goes under a post of the same talk; replies to replies go under the same first post.
+  let parent = null;
+  if (given(body.parent)) {
+    const top = typeof body.parent === "string" ? await one(env, "SELECT id, parent FROM posts WHERE id = ? AND company_id = ? AND grp = ?",
+      body.parent, c.id, body.setup) : null;
+    if (!top) refuse("parent", "parent");
+    parent = top.parent ?? top.id;
+  }
+  const kind = given(body.kind) ? oneOf(body.kind, ["talk", "question", "proposal"], "kind") : "talk";
+  const change = kind === "proposal" ? readChange(body.change) : null;
   const id = `p${randomId(15)}`;
-  await run(env, `INSERT INTO posts (id, company_id, grp, device, body, status, flags, kept, hide_reason, created_at, hidden_at)
-    VALUES (?, ?, ?, ?, ?, 'shown', 0, 0, NULL, ?, NULL)`, id, c.id, body.setup, dev, text, now);
-  return json({ id, at: iso(now) }, 201);
+  // [PLZ-02][PLZ-09] A proposal carries the whole setup as it should be: it is sent like a report, as a
+  // change of the rule this talk is about when that rule is in use, and the post's 맞아요 count for it.
+  let reportId = null;
+  let proposal = null;
+  if (kind === "proposal" && given(body.proposal)) {
+    const texts = [];
+    const setup = cleanSetup(body.proposal, texts);
+    for (const [field, t] of texts) {
+      const why = personal(t);
+      if (why) refuse(why, field);
+    }
+    const base = await one(env, `SELECT dept, dept_norm FROM rules WHERE company_id = ?1 AND grp = ?2
+      UNION ALL SELECT dept, dept_norm FROM reports WHERE company_id = ?1 AND grp = ?2 LIMIT 1`, c.id, body.setup);
+    const grp = (await sha256(`${base.dept_norm}|${await fingerprint(setup)}`)).slice(0, 16);
+    if (grp === body.setup) refuse("same", "proposal");
+    const active = await activeRule(env, c.id, base.dept_norm);
+    reportId = randomId(22);
+    await run(env, `INSERT INTO reports (id, company_id, dept, dept_norm, grp, setup, verified, note, device, net, cluster, points, status,
+      rule_id, reason, created_at, decided_at, amends, post_id) VALUES (?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, 1, 'pending', NULL, NULL, ?, NULL, ?, ?)`,
+    reportId, c.id, base.dept, base.dept_norm, grp, JSON.stringify(setup), dev, net.now, await clusterFor(env, c.id, net), now,
+    active && active.grp === body.setup ? active.id : null, id);
+    proposal = grp;
+  }
+  await run(env, `INSERT INTO posts (id, company_id, grp, device, body, status, flags, kept, hide_reason, created_at, hidden_at,
+      parent, kind, change, report_id, agree, disagree)
+    VALUES (?, ?, ?, ?, ?, 'shown', 0, 0, NULL, ?, NULL, ?, ?, ?, ?, 0, 0)`, id, c.id, body.setup, dev, text, now,
+  parent, kind, change ? JSON.stringify(change) : null, reportId);
+  if (proposal) await settle(env, c.id, proposal, now);
+  return json({ id, at: iso(now), ...(proposal ? { proposal } : {}) }, 201);
+}
+
+/**
+ * [PLZ-09] What a proposal says is different, in fields anyone can read without opening the setup:
+ * up to six lines of what (one of CHANGE_FIELDS), how it is now, how it should be, and why. No amounts
+ * (the same rule as everything else sent here), so 기본급의 10% rather than a sum.
+ */
+const CHANGE_FIELDS = {
+  shift: "근무 시간", order: "근무 순서", break: "휴게", overtime: "연장 근무", night: "야간", holiday: "휴일 근무",
+  allowance: "수당", bonus: "상여", leave: "연차·휴가", other: "그 밖의 것",
+};
+
+function readChange(raw) {
+  const lines = list(raw ?? [], 6, "change");
+  if (!lines.length) refuse("change", "change");
+  return lines.map((l, i) => {
+    object(l, `change.${i}`);
+    const out = {
+      field: oneOf(l.field, Object.keys(CHANGE_FIELDS), `change.${i}.field`),
+      now: str(l.now ?? "", 80, `change.${i}.now`, { code: "change" }),
+      want: str(l.want, 80, `change.${i}.want`, { empty: false, code: "change" }),
+      why: str(l.why ?? "", 160, `change.${i}.why`, { lines: true, code: "change" }),
+    };
+    for (const [k, v] of Object.entries(out)) {
+      const why = k === "field" ? null : personal(v);
+      if (why) refuse(why, `change.${i}.${k}`);
+    }
+    return out;
+  });
+}
+
+/**
+ * [PLZ-01] How far people trust a post, 0 to 100, from its 맞아요·달라요: the share who agree, held back
+ * until a few have voted (3), so one vote never reads as 100.
+ */
+export function postTrust(p) {
+  const n = (p.agree ?? 0) + (p.disagree ?? 0);
+  return { trust: n ? Math.round((100 * (p.agree ?? 0)) / Math.max(n, 3)) : 0 };
+}
+
+/**
+ * [PLZ-01] 맞아요 (ok true), 달라요 (false) or taking the vote back (null) on someone's post. On a
+ * proposal it is also a vote on the proposed setup, so a proposal people agree with is adopted like any rule.
+ */
+async function postVote(request, env, id) {
+  const body = await readJson(request, 1024);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  if (body.ok !== null && typeof body.ok !== "boolean") refuse("ok", "ok");
+  const now = Date.now();
+  const net = await network(request, env, now);
+  if (!(await allow(env, `vote|${net.now}`, LIMITS.votesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
+  const dev = await deviceHash(device);
+  const p = await one(env, "SELECT * FROM posts WHERE id = ?", id);
+  if (!p || p.status !== "shown") return json({ error: "not_found" }, 404);
+  if (p.device === dev) return json({ error: "own" }, 400);
+  const before = await one(env, "SELECT ok FROM post_votes WHERE post_id = ? AND device = ?", id, dev);
+  const stmts = [];
+  if (before) stmts.push(stmt(env, `UPDATE posts SET ${before.ok ? "agree = agree - 1" : "disagree = disagree - 1"} WHERE id = ?`, id));
+  if (body.ok === null) {
+    stmts.push(stmt(env, "DELETE FROM post_votes WHERE post_id = ? AND device = ?", id, dev));
+  } else {
+    stmts.push(stmt(env, `INSERT INTO post_votes (post_id, device, ok, at) VALUES (?, ?, ?, ?)
+      ON CONFLICT (post_id, device) DO UPDATE SET ok = excluded.ok, at = excluded.at`, id, dev, body.ok ? 1 : 0, now));
+    stmts.push(stmt(env, `UPDATE posts SET ${body.ok ? "agree = agree + 1" : "disagree = disagree + 1"} WHERE id = ?`, id));
+  }
+  await env.DB.batch(stmts);
+  if (p.report_id) {
+    const r = await one(env, "SELECT company_id, grp, status FROM reports WHERE id = ?", p.report_id);
+    if (r) {
+      if (body.ok === null) {
+        await run(env, "DELETE FROM votes WHERE company_id = ? AND grp = ? AND device = ?", r.company_id, r.grp, dev);
+      } else {
+        await forgetNetworks(env, now);
+        const cluster = await clusterFor(env, r.company_id, net);
+        await run(env, `INSERT INTO votes (company_id, grp, device, cluster, ok, verified, why, net, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (company_id, grp, device) DO UPDATE SET cluster = excluded.cluster, ok = excluded.ok, verified = excluded.verified,
+            why = excluded.why, net = excluded.net, at = excluded.at`, r.company_id, r.grp, dev, cluster, body.ok ? 1 : 0,
+        body.ok && body.verified === true ? 1 : 0, body.ok ? null : "wrong", net.now, now);
+        if (body.ok && r.status === "pending") await settle(env, r.company_id, r.grp, now);
+      }
+    }
+  }
+  const after = await one(env, "SELECT agree, disagree FROM posts WHERE id = ?", id);
+  return json({ agree: after.agree, disagree: after.disagree, ...postTrust(after), myVote: body.ok });
+}
+
+/** [PLZ-08] This phone uses a rule set (applied it in the app), or stopped: 쓰는 사람, counted once. */
+async function useRule(request, env, on) {
+  const body = await readJson(request, 1024);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  if (typeof body.company !== "string" || !/^[A-Za-z0-9]{12}$/.test(body.company)) refuse("company", "company");
+  if (typeof body.setup !== "string" || !/^[0-9a-f]{16}$/.test(body.setup)) refuse("setup", "setup");
+  const dev = await deviceHash(device);
+  const now = Date.now();
+  const net = await network(request, env, now);
+  if (!(await allow(env, `vote|${net.now}`, LIMITS.votesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
+  const c = await talkable(env, body.company, body.setup);
+  if (!c) return json({ error: "not_found" }, 404);
+  if (on) await run(env, "INSERT OR IGNORE INTO uses (company_id, grp, device, at) VALUES (?, ?, ?, ?)", c.id, body.setup, dev, now);
+  else await run(env, "DELETE FROM uses WHERE company_id = ? AND grp = ? AND device = ?", c.id, body.setup, dev);
+  const n = await one(env, "SELECT COUNT(*) AS n FROM uses WHERE company_id = ? AND grp = ?", c.id, body.setup);
+  return json({ uses: n.n, using: on });
+}
+
+/**
+ * [PLZ-08] The name a phone is shown by on the plaza (2~12 letters, no contact or amount, not taken by
+ * another phone, not 관리자·개발자·운영자), or none with an empty name.
+ */
+async function setNick(request, env) {
+  const body = await readJson(request, 1024);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  const dev = await deviceHash(device);
+  const nick = str(body.nick ?? "", 12, "nick", { code: "nick" }).trim();
+  if (!nick) {
+    await run(env, "DELETE FROM nicks WHERE device = ?", dev);
+    return json({ nick: null });
+  }
+  const norm = normName(nick);
+  if ([...nick].length < 2 || norm.length < 2 || /관리자|개발자|운영자|밤낮|admin/i.test(nick)) refuse("nick", "nick");
+  const why = personal(nick);
+  if (why) refuse(why, "nick");
+  const now = Date.now();
+  const net = await network(request, env, now);
+  if (!(await allow(env, `nick|${net.day}`, 20, DAY, now))) return json({ error: "rate_limited" }, 429);
+  const taken = await one(env, "SELECT device FROM nicks WHERE norm = ?", norm);
+  if (taken && taken.device !== dev) return json({ error: "taken", field: "nick" }, 409);
+  await run(env, `INSERT INTO nicks (device, nick, norm, at) VALUES (?, ?, ?, ?)
+    ON CONFLICT (device) DO UPDATE SET nick = excluded.nick, norm = excluded.norm, at = excluded.at`, dev, nick, norm, now);
+  return json({ nick });
+}
+
+/** [PLZ-12] The plazas and how much is in each: adopted rule sets and ones being voted on, per job. */
+async function plazas(env) {
+  const rows = await all(env, `SELECT c.job,
+      COUNT(DISTINCT CASE WHEN r.id IS NOT NULL THEN r.id END) AS adopted
+    FROM companies c LEFT JOIN rules r ON r.company_id = c.id AND r.withdrawn = 0 AND r.superseded = 0
+    WHERE c.hidden = 0 AND c.merged_into IS NULL GROUP BY c.job`);
+  const voting = await all(env, `SELECT c.job, COUNT(DISTINCT p.company_id || p.grp) AS n FROM reports p JOIN companies c ON c.id = p.company_id
+    WHERE p.status = 'pending' AND c.hidden = 0 GROUP BY c.job`);
+  const rates = await all(env, "SELECT job, COUNT(*) AS n FROM rates WHERE status = 'adopted' GROUP BY job");
+  const count = (list, job, key = "n") => list.find((r) => r.job === job)?.[key] ?? 0;
+  return {
+    jobs: Object.entries(JOBS).map(([key, name]) => ({ key, name, adopted: count(rows, key, "adopted"), voting: count(voting, key), rates: count(rates, key) })),
+    regions: Object.entries(REGIONS).map(([key, name]) => ({ key, name })),
+    changeFields: Object.entries(CHANGE_FIELDS).map(([key, name]) => ({ key, name })),
+    rateUnits: Object.entries(RATE_UNITS).map(([key, u]) => ({ key, name: u.name })),
+  };
+}
+
+/**
+ * [PLZ-04][PLZ-05] Every version a department's rule went through, newest first: how it was adopted
+ * (people, an amendment, the developer), when, what changed from the one before, and whether it was
+ * taken down. Adopted versions never disappear; this is how the rule grew.
+ */
+async function history(env, companyId, url) {
+  const c = await follow(env, companyId);
+  if (!c || c.hidden) return json({ error: "not_found" }, 404);
+  const grp = url.searchParams.get("setup") ?? "";
+  const dept = await one(env, `SELECT dept_norm FROM rules WHERE company_id = ?1 AND grp = ?2
+    UNION ALL SELECT dept_norm FROM reports WHERE company_id = ?1 AND grp = ?2 LIMIT 1`, c.id, grp);
+  if (!dept) return json({ error: "not_found" }, 404);
+  const rules = await all(env, "SELECT * FROM rules WHERE company_id = ? AND dept_norm = ? ORDER BY version", c.id, dept.dept_norm);
+  const versions = [];
+  let before = null;
+  for (const r of rules) {
+    const setup = JSON.parse(r.setup);
+    const proposed = await one(env, `SELECT p.post_id FROM reports p WHERE p.rule_id = ? AND p.post_id IS NOT NULL LIMIT 1`, r.id);
+    const senders = await one(env, "SELECT COUNT(*) AS n FROM reports WHERE rule_id = ?", r.id);
+    versions.push({
+      version: r.version, setup: r.grp, source: r.source, adoptedAt: iso(r.adopted_at),
+      state: r.withdrawn ? "withdrawn" : r.superseded ? "superseded" : "active",
+      senders: senders.n, post: proposed?.post_id ?? null,
+      changes: before ? diffLines(describe(before), describe(setup)) : [],
+    });
+    before = setup;
+  }
+  return json({ company: { id: c.id, name: c.name }, versions: versions.reverse() });
+}
+
+// ---- [PLZ-14] 임금표: market rates for a job and region ----
+
+/**
+ * What a rate is per, and the amounts it may be: tight enough to catch a 0 too many or too few, wide
+ * enough for 기능공 일당 in 서울 or a 전문의 월급. 최저시급 is well above the hour floor.
+ */
+const RATE_UNITS = {
+  day: { name: "일당", min: 50000, max: 1000000 },
+  hour: { name: "시급", min: 5000, max: 200000 },
+  month: { name: "월급", min: 500000, max: 20000000 },
+};
+
+/** The year it is in Korea, which a rate is for. */
+const koreaYear = (now) => new Date(now + 9 * HOUR).getUTCFullYear();
+
+/** A rate further than this from the adopted middle of its kind waits for an admin however many agree. */
+const RATE_FAR = 2;
+
+async function rateCluster(env, net) {
+  const row = await one(env, `SELECT cluster FROM rates WHERE net IN (?1, ?2)
+    UNION ALL SELECT cluster FROM rate_votes WHERE net IN (?1, ?2) LIMIT 1`, net.now, net.prev);
+  return row?.cluster ?? randomId(12);
+}
+
+/** The middle of sorted amounts (the lower of the two middle ones for an even count). */
+const middle = (sorted) => sorted[Math.floor((sorted.length - 1) / 2)];
+
+function rateView(r, me, myVotes, nicks) {
+  return {
+    id: r.id, job: r.job, region: r.region, trade: r.trade, unit: r.unit, year: r.year, amount: r.amount, note: r.note,
+    status: r.status, agree: r.agree, disagree: r.disagree, ...postTrust(r), at: iso(r.created_at),
+    mine: r.device === me, nick: nicks.get(r.device) ?? null,
+    ...(myVotes.has(r.id) ? { myVote: myVotes.get(r.id) } : {}),
+  };
+}
+
+/**
+ * [PLZ-14][PLZ-15] The rates of one job (and region, trade, unit): every rate people sent and its
+ * 맞아요·달라요, newest first, and for each kind (region, trade, unit, year) the adopted ones' low,
+ * middle and high, which is what the app shows as 광장 시세. With X-Device the caller's are marked.
+ */
+async function rates(request, env, url) {
+  const p = url.searchParams;
+  const job = Object.hasOwn(JOBS, p.get("job") ?? "") ? p.get("job") : "";
+  const region = Object.hasOwn(REGIONS, p.get("region") ?? "") ? p.get("region") : "";
+  const unit = Object.hasOwn(RATE_UNITS, p.get("unit") ?? "") ? p.get("unit") : "";
+  const trade = normName(p.get("trade")).slice(0, 20);
+  const device = deviceId(request.headers.get("x-device"));
+  const me = device ? await deviceHash(device) : null;
+  const where = `status IN ('pending', 'adopted', 'review') AND (?1 = '' OR job = ?1) AND (?2 = '' OR region = ?2)
+    AND (?3 = '' OR unit = ?3) AND (?4 = '' OR trade_norm = ?4)`;
+  const rows = await all(env, `SELECT * FROM rates WHERE ${where} ORDER BY created_at DESC LIMIT 200`, job, region, unit, trade);
+  const adopted = await all(env, `SELECT job, region, trade, trade_norm, unit, year, amount FROM rates WHERE ${where} AND status = 'adopted'
+    ORDER BY amount LIMIT 2000`, job, region, unit, trade);
+  const kinds = new Map();
+  for (const r of adopted) {
+    const key = [r.job, r.region, r.trade_norm, r.unit, r.year].join("|");
+    if (!kinds.has(key)) kinds.set(key, { job: r.job, region: r.region, trade: r.trade, unit: r.unit, year: r.year, amounts: [] });
+    kinds.get(key).amounts.push(r.amount);
+  }
+  const myVotes = me ? new Map((await all(env, "SELECT rate_id, ok FROM rate_votes WHERE device = ?", me)).map((v) => [v.rate_id, v.ok === 1])) : new Map();
+  const nicks = new Map((await all(env, `SELECT device, nick FROM nicks WHERE device IN (SELECT device FROM rates WHERE ${where})`,
+    job, region, unit, trade)).map((n) => [n.device, n.nick]));
+  return json({
+    ...(job ? { job } : {}), ...(region ? { region } : {}), ...(unit ? { unit } : {}),
+    groups: [...kinds.values()].map(({ amounts, ...k }) => ({ ...k, n: amounts.length, low: amounts[0], mid: middle(amounts), high: amounts[amounts.length - 1] }))
+      .sort((a, b) => b.year - a.year || b.n - a.n),
+    entries: rows.map((r) => rateView(r, me, myVotes, nicks)),
+  });
+}
+
+function readRate(body, now) {
+  const year = koreaYear(now);
+  const unit = oneOf(body.unit, Object.keys(RATE_UNITS), "unit");
+  const u = RATE_UNITS[unit];
+  const out = {
+    job: oneOf(body.job, Object.keys(JOBS), "job"),
+    region: oneOf(body.region ?? "", ["", ...Object.keys(REGIONS)], "region"),
+    trade: str(body.trade, 20, "trade", { empty: false, code: "trade" }).trim(),
+    unit,
+    year: int(body.year ?? year, year - 1, year + 1, "year"),
+    amount: int(body.amount, u.min, u.max, "amount"),
+    note: str(body.note ?? "", 100, "note", { code: "note" }).trim(),
+  };
+  if ([...out.trade].length < 2) refuse("trade", "trade");
+  for (const k of ["trade", "note"]) {
+    const why = personal(out[k]);
+    if (why) refuse(why, k);
+  }
+  return out;
+}
+
+/**
+ * [PLZ-14] A market rate: what a trade is paid in a region per day, hour or month, as heard or as the
+ * sender is paid, never with a name or a pay slip. One per phone for each kind; sending again changes it
+ * while it is not adopted.
+ */
+async function addRate(request, env) {
+  const body = await readJson(request, 2048);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  const now = Date.now();
+  const r = readRate(body, now);
+  const dev = await deviceHash(device);
+  const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
+  if (muted) return json({ error: "muted", until: iso(muted.until) }, 403);
+  const net = await network(request, env, now);
+  if (!(await allow(env, `rate|${dev}`, LIMITS.reportsPerDay, DAY, now)) ||
+      !(await allow(env, `rate|${net.day}`, LIMITS.reportsPerNetworkDay, DAY, now))) {
+    return json({ error: "rate_limited" }, 429);
+  }
+  const norm = normName(r.trade);
+  const before = await one(env, `SELECT id, status FROM rates WHERE device = ? AND job = ? AND region = ? AND trade_norm = ? AND unit = ? AND year = ?
+    AND status IN ('pending', 'adopted', 'review')`, dev, r.job, r.region, norm, r.unit, r.year);
+  if (before && before.status !== "pending") return json({ error: "adopted", id: before.id }, 409);
+  let id = before?.id;
+  if (id) {
+    // What others agreed to was the old amount: their votes go with it.
+    await env.DB.batch([
+      stmt(env, "UPDATE rates SET trade = ?, amount = ?, note = ?, agree = 0, disagree = 0, created_at = ? WHERE id = ?", r.trade, r.amount, r.note, now, id),
+      stmt(env, "DELETE FROM rate_votes WHERE rate_id = ?", id),
+    ]);
+  } else {
+    id = randomId(22);
+    await run(env, `INSERT INTO rates (id, job, region, trade, trade_norm, unit, year, amount, note, device, cluster, net, status, created_at, decided_at, agree, disagree)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL, 0, 0)`,
+    id, r.job, r.region, r.trade, norm, r.unit, r.year, r.amount, r.note, dev, await rateCluster(env, net), net.now, now);
+  }
+  return json({ id, status: "pending", at: iso(now) }, before ? 200 : 201);
+}
+
+/** [PLZ-14] 맞아요 (ok true), 달라요 (false) or taking it back (null) on someone's rate. */
+async function rateVote(request, env, id) {
+  const body = await readJson(request, 1024);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  if (body.ok !== null && typeof body.ok !== "boolean") refuse("ok", "ok");
+  const now = Date.now();
+  const net = await network(request, env, now);
+  if (!(await allow(env, `vote|${net.now}`, LIMITS.votesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
+  const dev = await deviceHash(device);
+  const r = await one(env, "SELECT * FROM rates WHERE id = ?", id);
+  if (!r || !["pending", "adopted", "review"].includes(r.status)) return json({ error: "not_found" }, 404);
+  if (r.device === dev) return json({ error: "own" }, 400);
+  const before = await one(env, "SELECT ok FROM rate_votes WHERE rate_id = ? AND device = ?", id, dev);
+  const stmts = [];
+  if (before) stmts.push(stmt(env, `UPDATE rates SET ${before.ok ? "agree = agree - 1" : "disagree = disagree - 1"} WHERE id = ?`, id));
+  if (body.ok === null) {
+    stmts.push(stmt(env, "DELETE FROM rate_votes WHERE rate_id = ? AND device = ?", id, dev));
+  } else {
+    stmts.push(stmt(env, `INSERT INTO rate_votes (rate_id, device, ok, cluster, net, at) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT (rate_id, device) DO UPDATE SET ok = excluded.ok, cluster = excluded.cluster, net = excluded.net, at = excluded.at`,
+    id, dev, body.ok ? 1 : 0, await rateCluster(env, net), net.now, now));
+    stmts.push(stmt(env, `UPDATE rates SET ${body.ok ? "agree = agree + 1" : "disagree = disagree + 1"} WHERE id = ?`, id));
+  }
+  await env.DB.batch(stmts);
+  if (body.ok && r.status === "pending") await settleRate(env, id, now);
+  const after = await one(env, "SELECT agree, disagree, status FROM rates WHERE id = ?", id);
+  return json({ agree: after.agree, disagree: after.disagree, ...postTrust(after), status: after.status, myVote: body.ok });
+}
+
+/**
+ * [PLZ-14] Adopts a rate the way a rule is (결정 D32): enough different people from more than one
+ * network agree, and few enough say 달라요. A rate far from what is already adopted for its kind waits
+ * for an admin ('review'). The sender earns the reward, given at once like a rule's (결정 D33).
+ */
+async function settleRate(env, id, now) {
+  const set = await settings(env);
+  const r = await one(env, "SELECT * FROM rates WHERE id = ?", id);
+  if (!r || r.status !== "pending") return;
+  const votes = await all(env, "SELECT device, ok, cluster FROM rate_votes WHERE rate_id = ?", id);
+  const s = tally([{ device: r.device, points: 1, cluster: r.cluster }, ...votes.filter((v) => v.ok).map((v) => ({ ...v, points: 1 }))],
+    votes.filter((v) => !v.ok).map((v) => v.device));
+  if (s.persons < set.adoptPersons || s.networks < 2) return;
+  if (s.persons * 100 < set.adoptAgree * (s.persons + s.bad)) return;
+  const same = (await all(env, `SELECT amount FROM rates WHERE job = ? AND region = ? AND trade_norm = ? AND unit = ? AND year = ? AND status = 'adopted'
+    ORDER BY amount`, r.job, r.region, r.trade_norm, r.unit, r.year)).map((x) => x.amount);
+  const mid = same.length >= 3 ? middle(same) : null;
+  if (mid && (r.amount > mid * RATE_FAR || r.amount * RATE_FAR < mid)) {
+    await run(env, "UPDATE rates SET status = 'review' WHERE id = ?", id);
+    return;
+  }
+  await adoptRate(env, r, set, now);
+}
+
+async function adoptRate(env, r, set, now) {
+  await run(env, "UPDATE rates SET status = 'adopted', decided_at = ? WHERE id = ?", now, r.id);
+  if (set.rewardMonths <= 0 || r.device.startsWith("gone")) return;
+  await run(env, `INSERT OR IGNORE INTO rewards (id, report_id, rule_id, device, months, status, memo, created_at, paid_at)
+    VALUES (?, ?, 'rate', ?, ?, 'owed', '', ?, NULL)`, `w${r.id}`, r.id, r.device, set.rewardMonths, now);
+  if (set.autoReward) await payEach(env, [{ id: `w${r.id}`, device: r.device, months: set.rewardMonths }], set, now);
+}
+
+/** [PLZ-14] Takes my rate back; an adopted one stays as everyone's, only my tie to it goes (결정 D34). */
+async function takeRateBack(request, env, id) {
+  const device = deviceId(request.headers.get("x-device"));
+  const r = await one(env, "SELECT device, status FROM rates WHERE id = ?", id);
+  if (!r) return json({ error: "not_found" }, 404);
+  if (!device || (await deviceHash(device)) !== r.device) return json({ error: "forbidden" }, 403);
+  if (r.status === "adopted") {
+    await env.DB.batch([
+      stmt(env, "DELETE FROM rewards WHERE report_id = ? AND status = 'owed'", id),
+      stmt(env, "UPDATE rates SET device = ? WHERE id = ?", `gone${randomId(12)}`, id),
+    ]);
+    return json({ kept: true, text: "채택된 시세는 모두가 쓰는 정보라 남아요. 보낸 분과의 연결만 지웠어요." });
+  }
+  await env.DB.batch([
+    stmt(env, "DELETE FROM rate_votes WHERE rate_id = ?", id),
+    stmt(env, "DELETE FROM rewards WHERE report_id = ?", id),
+    stmt(env, "DELETE FROM rates WHERE id = ?", id),
+  ]);
+  return new Response(null, { status: 204 });
+}
+
+/**
+ * [PLZ-08] 내 활동: what this phone sent to the plaza and where it stands, its proposals with their
+ * 맞아요·달라요, its rates, rewards and the name it is shown by. Only for the phone itself (X-Device).
+ */
+async function activity(request, env) {
+  const dev = await installOf(request);
+  const { adoptPoints } = await settings(env);
+  const reports = await all(env, `SELECT r.id, r.company_id, r.grp, r.dept, r.status, r.created_at, c.name, u.version, u.withdrawn
+    FROM reports r JOIN companies c ON c.id = r.company_id LEFT JOIN rules u ON u.id = r.rule_id
+    WHERE r.device = ? ORDER BY r.created_at DESC LIMIT 50`, dev);
+  const sent = [];
+  for (const r of reports) {
+    const s = await score(env, r.company_id, r.grp);
+    const uses = await one(env, "SELECT COUNT(*) AS n FROM uses WHERE company_id = ? AND grp = ?", r.company_id, r.grp);
+    sent.push({ id: r.id, company: { id: r.company_id, name: r.name }, dept: r.dept, setup: r.grp,
+      status: r.status === "adopted" && r.withdrawn ? "withdrawn" : r.status, version: r.version ?? null,
+      persons: s.persons, bad: s.bad, threshold: adoptPoints, uses: uses.n, at: iso(r.created_at) });
+  }
+  const posts = await all(env, `SELECT p.id, p.company_id, p.grp, p.kind, p.agree, p.disagree, p.body, p.created_at, c.name
+    FROM posts p JOIN companies c ON c.id = p.company_id WHERE p.device = ? AND p.status = 'shown' AND p.kind = 'proposal'
+    ORDER BY p.created_at DESC LIMIT 30`, dev);
+  const mine = await all(env, "SELECT * FROM rates WHERE device = ? ORDER BY created_at DESC LIMIT 50", dev);
+  const rewardRows = await all(env, "SELECT months, status, rule_id, created_at, paid_at FROM rewards WHERE device = ? ORDER BY created_at DESC LIMIT 50", dev);
+  const nick = await one(env, "SELECT nick FROM nicks WHERE device = ?", dev);
+  return json({
+    nick: nick?.nick ?? null,
+    reports: sent,
+    proposals: posts.map((p) => ({ id: p.id, company: { id: p.company_id, name: p.name }, setup: p.grp, body: p.body,
+      agree: p.agree, disagree: p.disagree, ...postTrust(p), at: iso(p.created_at) })),
+    rates: mine.map((r) => rateView(r, dev, new Map(), new Map())),
+    rewards: rewardRows.map((w) => ({ months: w.months, status: w.status, why: w.rule_id === "rate" ? "rate" : w.rule_id ? "rule" : "idea",
+      at: iso(w.created_at), paidAt: w.paid_at ? iso(w.paid_at) : null })),
+  });
 }
 
 async function takePostBack(request, env, id) {
@@ -2423,7 +3114,7 @@ function areaFor(path) {
   if (path.startsWith("/companies") || path.startsWith("/rules/")) return "companies";
   if (path.startsWith("/rewards")) return "rewards";
   if (path === "/settings") return "settings";
-  if (path.startsWith("/posts")) return "community";
+  if (path.startsWith("/posts") || path.startsWith("/rates")) return "community";
   if (path === "/audit") return "audit";
   return "owner";
 }
@@ -2505,6 +3196,10 @@ async function admin(request, env, url) {
   if (path === "/posts" && method === "GET") return json(await postList(env, url));
   m = path.match(/^\/posts\/(p[A-Za-z0-9]{15})$/);
   if (m && method === "POST") return moderate(request, env, m[1], now);
+  // [PLZ-14] 임금표 to look at, and an admin's call on one.
+  if (path === "/rates" && method === "GET") return json(await rateList(env, url));
+  m = path.match(/^\/rates\/([A-Za-z0-9]{22})$/);
+  if (m && method === "POST") return setRate(request, env, actor, m[1], now);
   return json({ error: "not_found" }, 404);
 }
 
@@ -2876,7 +3571,7 @@ async function auditLog(env, url) {
 /** The home screen's numbers, only for the areas this admin can see. */
 async function overview(env, actor) {
   // One trip to the database for every number: the home screen waits on this call.
-  const counts = { settings: "SELECT key, value FROM settings WHERE key IN ('adopt_points', 'reward_months', 'adopt_agree')",
+  const counts = { settings: `SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`,
     // [MON-10] Every screen shows whether 정식 출시 is on.
     live: "SELECT value FROM settings WHERE key = 'billing_live'" };
   if (can(actor, "review")) {
@@ -2971,7 +3666,7 @@ async function queue(env) {
     fg AS (SELECT DISTINCT r.company_id, r.grp FROM rules r JOIN f ON f.id = r.id)`;
   const [settingRows, groups, companyRows, reports, votes, posts, ruleRows, rejected, flaggedRows, flaggedReports, flaggedVotes, askRows] =
     (await env.DB.batch([
-      env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('adopt_points', 'reward_months', 'adopt_agree')"),
+      env.DB.prepare(`SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`),
       env.DB.prepare(`${waiting} SELECT * FROM g`),
       env.DB.prepare(`${waiting} SELECT id, name, hidden FROM companies WHERE id IN (SELECT company_id FROM g)`),
       env.DB.prepare(`${waiting} SELECT r.* FROM reports r JOIN g ON g.company_id = r.company_id AND g.grp = r.grp
@@ -3242,6 +3937,9 @@ async function setRule(request, env, id, now) {
   if (typeof body.withdrawn !== "boolean") refuse("withdrawn", "withdrawn");
   const r = await one(env, "SELECT * FROM rules WHERE id = ?", id);
   if (!r) return json({ error: "not_found" }, 404);
+  // [PLZ-06] Taking an adopted rule down is for the owner and admins given 광장 규칙 내리기 (결정 D35);
+  // nobody else, the sender included, can make it disappear.
+  if (!can(env.actor, "takedown", "edit")) return json({ error: "no_permission", area: "takedown" }, 403);
   if (body.withdrawn) {
     await run(env, "UPDATE rules SET withdrawn = 1 WHERE id = ?", id);
   } else {
@@ -3263,14 +3961,19 @@ async function rewards(env, status) {
   const wanted = ["owed", "paid", "void"].includes(status) ? status : "owed";
   const rows = await all(env, `
     SELECT w.id, w.months, w.status, w.memo, w.created_at, w.paid_at, w.rule_id, w.deferred, p.dept, c.id AS company_id, c.name AS company, u.version
-    FROM rewards w JOIN reports p ON p.id = w.report_id JOIN companies c ON c.id = p.company_id LEFT JOIN rules u ON u.id = w.rule_id
+      , t.trade, t.unit, t.region, t.job
+    FROM rewards w LEFT JOIN reports p ON p.id = w.report_id LEFT JOIN companies c ON c.id = p.company_id LEFT JOIN rules u ON u.id = w.rule_id
+      LEFT JOIN rates t ON t.id = w.report_id
     WHERE w.status = ? ORDER BY w.created_at DESC LIMIT 200`, wanted);
   const counts = await all(env, "SELECT status, COUNT(*) AS n FROM rewards GROUP BY status");
   return {
     status: wanted,
     counts: Object.fromEntries(counts.map((x) => [x.status, x.n])),
     rewards: rows.map((w) => ({
-      id: w.id, months: w.months, status: w.status, memo: w.memo, company: { id: w.company_id, name: w.company }, dept: w.dept,
+      id: w.id, months: w.months, status: w.status, memo: w.memo,
+      // [PLZ-14] A rate's reward names the rate instead of a company.
+      company: w.trade ? { id: "", name: `임금표 · ${JOBS[w.job] ?? ""} ${REGIONS[w.region] ?? "전국"}` } : { id: w.company_id, name: w.company ?? "" },
+      dept: w.trade ? `${w.trade} ${RATE_UNITS[w.unit]?.name ?? ""}` : w.dept, rate: Boolean(w.trade),
       version: w.version, ask: w.rule_id === "", createdAt: iso(w.created_at), paidAt: w.paid_at ? iso(w.paid_at) : null, deferred: Boolean(w.deferred),
     })),
   };
@@ -3310,17 +4013,58 @@ async function saveSettings(request, env, now) {
   // [COMM-07] Left out by a developer app from before it, the agreement share stays as it was.
   const agree = body.adoptAgree ?? (await settings(env)).adoptAgree;
   if (!Number.isInteger(agree) || agree < 50 || agree > 100) refuse("adoptAgree", "adoptAgree");
+  // [PLZ-03] The plaza's own bars (결정 D32·D33); a developer app from before them leaves them as they were.
+  const was = await settings(env);
+  const pick = (key, lo, hi) => {
+    const v = body[key] ?? was[key];
+    if (!Number.isInteger(v) || v < lo || v > hi) refuse(key, key);
+    return v;
+  };
+  const extra = { adopt_persons: pick("adoptPersons", 2, 10), amend_persons: pick("amendPersons", 2, 10), auto_reward: pick("autoReward", 0, 1),
+    reward_cap_months: pick("rewardCapMonths", 1, 24), reward_cap_days: pick("rewardCapDays", 30, 365) };
   await env.DB.batch([
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('adopt_points', ?)", String(body.adoptPoints)),
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('reward_months', ?)", String(body.rewardMonths)),
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('adopt_agree', ?)", String(agree)),
+    ...Object.entries(extra).map(([k, v]) => stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", k, String(v))),
   ]);
   // A lower bar may already be met.
   for (const g of await all(env, "SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending' LIMIT 200")) {
     await settle(env, g.company_id, g.grp, now);
   }
-  await audit(env, now, "settings", "", `${body.adoptPoints}/${body.rewardMonths}/${agree}%`);
+  for (const t of await all(env, "SELECT id FROM rates WHERE status = 'pending' ORDER BY created_at DESC LIMIT 200")) await settleRate(env, t.id, now);
+  await audit(env, now, "settings", "", `${body.adoptPoints}/${body.rewardMonths}/${agree}% · ${extra.adopt_persons}명/${extra.amend_persons}명 · 자동 ${extra.auto_reward ? "켬" : "끔"} ${extra.reward_cap_months}개월/${extra.reward_cap_days}일`);
   return json(await settings(env));
+}
+
+/** [PLZ-14] Rates for admins: "review" (far from the rest, waiting), "pending", "adopted", "hidden". */
+async function rateList(env, url) {
+  const status = ["review", "pending", "adopted", "hidden"].includes(url.searchParams.get("status")) ? url.searchParams.get("status") : "review";
+  const rows = await all(env, "SELECT * FROM rates WHERE status = ? ORDER BY created_at DESC LIMIT 200", status);
+  const counts = await all(env, "SELECT status, COUNT(*) AS n FROM rates GROUP BY status");
+  return {
+    status,
+    counts: Object.fromEntries(counts.map((x) => [x.status, x.n])),
+    rates: rows.map((r) => ({ id: r.id, job: r.job, jobName: JOBS[r.job] ?? r.job, region: r.region, regionName: REGIONS[r.region] ?? "전국",
+      trade: r.trade, unit: r.unit, unitName: RATE_UNITS[r.unit]?.name ?? r.unit, year: r.year, amount: r.amount, note: r.note,
+      agree: r.agree, disagree: r.disagree, writer: r.device.slice(0, 6), at: iso(r.created_at), decidedAt: r.decided_at ? iso(r.decided_at) : null })),
+  };
+}
+
+/**
+ * [PLZ-14] An admin adopts a rate waiting for review, hides one, or brings one back to voting. Taking an
+ * adopted rate down needs 광장 규칙 내리기 like a rule (결정 D35).
+ */
+async function setRate(request, env, actor, id, now) {
+  const body = await readJson(request, 1024);
+  const status = oneOf(body.status, ["adopted", "hidden", "pending"], "status");
+  const r = await one(env, "SELECT * FROM rates WHERE id = ?", id);
+  if (!r) return json({ error: "not_found" }, 404);
+  if (r.status === "adopted" && status !== "adopted" && !can(actor, "takedown", "edit")) return json({ error: "no_permission", area: "takedown" }, 403);
+  if (status === "adopted" && r.status !== "adopted") await adoptRate(env, r, await settings(env), now);
+  else await run(env, "UPDATE rates SET status = ?, decided_at = ? WHERE id = ?", status, now, id);
+  await audit(env, now, `rate_${status}`, id, `${r.trade} ${r.amount}`);
+  return json({ ok: true, status });
 }
 
 // ---- the talk on rule sets, for the developer [COMM-06] ----
@@ -3557,7 +4301,7 @@ async function passes(env, dev, now) {
   return {
     until: p.until ? iso(p.until) : null,
     waitingMonths: p.waiting,
-    items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: r.rule_id ? "rule" : "idea" })),
+    items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: r.rule_id === "rate" ? "rate" : r.rule_id ? "rule" : "idea" })),
     deferred: rows.filter((r) => r.status === "paid" && r.deferred).length,
     admin: link ? { status: link.status, name: link.admin_name } : null,
     code: Boolean(code),
