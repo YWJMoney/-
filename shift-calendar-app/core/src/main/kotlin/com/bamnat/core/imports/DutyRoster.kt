@@ -54,12 +54,14 @@ data class RosterRow(val label: String, val cells: Map<Int, DutyCell>) {
 class DutyCodes(private val types: List<DutyType>) {
     private enum class Group(val words: Set<String>) {
         DAY(setOf("D", "DAY", "DY", "데", "데이", "주", "주간", "낮")),
-        EVENING(setOf("E", "EV", "EVE", "이", "이브", "이브닝", "오후", "저녁", "S")),
+        EVENING(setOf("E", "EV", "EVE", "이", "이브", "이브닝", "오후", "저녁")),
         NIGHT(setOf("N", "NT", "NIGHT", "나", "나이트", "야", "야간", "밤")),
-        MID(setOf("M", "MD", "MID", "미", "미드")),
+        // [NURS-03] S is a middle shift (09~18) on the rosters seen, not an evening.
+        MID(setOf("M", "MD", "MID", "미", "미드", "S", "중", "중간")),
         DUTY(setOf("당", "당직", "당번")),
-        OFF(setOf("O", "OF", "OFF", "0", "휴", "휴무", "휴일", "X", "-", "/", "비", "비번", "오프", "OH", "공", "공휴")),
-        LEAVE(setOf("연", "연차", "V", "VA", "VAC", "AL", "휴가", "년", "년차")),
+        OFF(setOf("O", "OF", "OFF", "0", "휴", "휴무", "휴일", "X", "-", "/", "비", "비번", "오프", "OH", "공", "공휴", "PH", "주휴")),
+        // [NURS-03] Leave of every kind a roster writes: annual, sick, 생리휴가, 경조, 공가, 특별휴가.
+        LEAVE(setOf("연", "연차", "V", "VA", "VAC", "AL", "휴가", "년", "년차", "SL", "병", "병가", "생", "생휴", "보", "보건", "경조", "공가", "특휴", "반", "반차")),
     }
 
     private val exact: Map<String, Long> = buildMap {
@@ -123,7 +125,8 @@ class DutyCodes(private val types: List<DutyType>) {
 }
 
 object DutyRoster {
-    private val DAY_TOKEN = Regex("""^(\d{1,2})일?$""")
+    // [NURS-03] "1", "1일", "01", and a day with its weekday in one cell: "1(월)". "1월" is a month, never a day.
+    private val DAY_TOKEN = Regex("""^(\d{1,2})일?(?:\((?:월|화|수|목|금|토|일)\))?$""")
     private val WEEKDAYS = setOf("월", "화", "수", "목", "금", "토", "일", "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
     /** Fewest days in a row of numbers for it to be the roster's row of days. */
     const val MIN_DAYS = 5
@@ -220,7 +223,7 @@ object DutyRoster {
             if (i in headers || isWeekdayRow(row)) return@forEachIndexed
             // The row of days this line belongs under: the nearest above, or below for a table drawn upside down.
             val h = headers.lastOrNull { it < i } ?: headers.first()
-            val columns = rows[h].mapNotNull { w -> dayOf(w.text)?.let { it to w.centerX } }
+            val columns = monthColumns(rows[h].mapNotNull { w -> dayOf(w.text)?.let { it to w.centerX } })
             val spacing = columns.zipWithNext().map { (a, b) -> abs(b.second - a.second) }.sorted().let { it.getOrNull(it.size / 2) } ?: return@forEachIndexed
             val firstX = columns.minOf { it.second }
             val cells = LinkedHashMap<Int, DutyCell>()
@@ -238,6 +241,19 @@ object DutyRoster {
             if (cells.size >= MIN_CELLS) out += RosterRow(label.toString(), cells.toSortedMap())
         }
         return out
+    }
+
+    /**
+     * [NURS-03] A roster that starts in the month before (…29 30 31 1 2 3…) or runs into the next: only the
+     * longer run of days is one month, so the other side's numbers never land on this month's same dates.
+     */
+    internal fun monthColumns(cols: List<Pair<Int, Int>>): List<Pair<Int, Int>> {
+        val sorted = cols.sortedBy { it.second }
+        val wrap = sorted.zipWithNext().indexOfFirst { (a, b) -> b.first < a.first - 20 }
+        if (wrap < 0) return cols
+        val before = sorted.subList(0, wrap + 1)
+        val after = sorted.subList(wrap + 1, sorted.size)
+        return if (after.size >= before.size) after else before
     }
 
     /** Lines of the same person under the 1–15 and 16–31 rows of days become one. */
