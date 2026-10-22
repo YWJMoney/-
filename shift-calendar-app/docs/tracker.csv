@@ -1,5 +1,5 @@
 id,requirement,phase,status,gate,evidence
-REL-01,"업데이트 후 실행 불가·지연 → DB 마이그레이션마다 실제 이전 버전 DB로 테스트, Play 단계적 출시(소수 비율부터),…",0,진행 중,,"릴리스 서명(업로드 키, 키 파일은 git 밖)·R8·백업 규칙 오류 수정, 서명된 AAB 1.0.0 생성(2026-10-15). 단계적 출시는 정식 출시 때"
+REL-01,"업데이트 후 실행 불가·지연 → DB 마이그레이션마다 실제 이전 버전 DB로 테스트, Play 단계적 출시(소수 비율부터),…",0,진행 중,,"릴리스 서명(업로드 키, 키 파일은 git 밖)·R8·백업 규칙 오류 수정, 서명된 AAB 1.0.0 생성(2026-10-15). 단계적 출시는 정식 출시 때. 1.22.0(2026-10-22): 판마다(1~17) 스키마 JSON으로 만든 DB에 같은 데이터를 넣어 최신 판으로 올리고 새로 설치한 DB와 칸칸이 같음·백업 왕복(MigrationAllVersionsTest 17개), 마이그레이션 목록 한 곳(AppDatabase.MIGRATIONS). 단계적 출시는 정식 출시 때"
 REL-02,"광고 불만(닫기 없음, 실행 때마다 영상) → 배너 1곳만 허용, 앱 시작·전면·영상·알람 화면 광고 금지를 설계 규칙으로 …","0(규칙), 2(적용)",완료,,"규칙: AdAndLicenseRulesTest가 배너 한 곳(AppRoot)만 허용하고 전면·보상형·앱 열기·네이티브·알람 화면 광고와 광고 SDK를 막음(1.15.0). 적용은 M17 / 1.19.0(2026-10-22): 적용(MON-07): 띠는 AppRoot 한 곳, 보상형은 RewardedAds.kt 한 곳, 전면·앱 열기·네이티브 금지, 알람 화면 광고 없음"
 REL-03,"위젯 오류(근무 미표시, 날짜 고정) → Glance 위젯, 자정·시간대 변경·데이터 변경 시 갱신, 다크·투명 배경 화면 …",0,완료,,"widget/Widgets.kt·WidgetRefresher.kt: 일정 변경·자정·시간대 변경 때 갱신, GlanceTheme 다크 대응; 23~25_widget_*.png"
 REL-04,"계정·데이터 소실 → 계정 없는 로컬 우선 유지, 자동 백업 규칙, JSON·ICS 내보내기와 복원",0,완료,,"res/xml 백업 규칙, JSON 백업, core IcsWriter + IcsWriterTest, 설정 > 캘린더 파일로 내보내기"
@@ -146,7 +146,7 @@ MEAS-06,관리자 게이트 대시보드,1,대기,,
 MEAS-07,Play Reporting API·구독 데이터 주간 수집,1,대기,,
 PROC-01,요구사항 ID와 추적표,0,완료,,docs/tracker.csv
 PROC-02,추적표 검사 스크립트(누락·근거 없는 완료·게이트 없는 조건부),0,완료,,tools/check_tracker.py
-PROC-03,단계 종료 점검(해당 단계 행이 완료 또는 사유 있는 이월),상시,대기,,
+PROC-03,단계 종료 점검(해당 단계 행이 완료 또는 사유 있는 이월),상시 (1.22.0),완료,,"1.22.0(2026-10-22): tools/check_checklist.py(장마다 끝남·옮김·남음, 맨 위 숫자표 대조, --who·--version·--fail-open), tools/test_check_checklist.py 6개"
 WORK-01,"처음 실행 근무 형태 선택(교대·일근·자영업·현장/프리랜서·시급) → 형태별 처음 설정, 설정에서 변경",확장 M1,완료,,"core/work/WorkStyle.kt 5형태; ui/work/WorkStyleScreen.kt 첫 실행 선택(교대→패턴, 일근→월~금 요일 패턴, 시급→급여 설정, 현장·자영업→달력), 패턴 있는 기존 사용자는 교대로 자동 지정(AppRoot), 설정 > 근무 형태에서 변경; 스크린샷 49·50; 1.2: 시급 선택 시 오전·오후·저녁 알바 근무 유형 추가(DefaultShiftTypes.hourly)"
 WORK-02,현장·프리랜서 일정(고객·장소·시간·금액·선금/잔금·입금 상태) + 시작 전 알림 → 월 수입,확장 M1,완료,,"core/money/Money.kt Job(선금·잔금·받을 돈), JobReminders + money/JobReminderScheduler(부팅 후 재설정); ui/money JobDialog·JobsSection, 달력 칸 일감 배지·금액, 돈 탭 받을 돈 목록; MoneyTest·JobRemindersTest; 스크린샷 54~57; 재검토: 여러 날 공사(endDate, 칸마다 배지·금액은 첫날 1회), 3.3% 원천징수(Withholding 10원 미만 절사, 실수령 기준), 자재비·경비와 일감별 남는 돈, 정확 알림(setExactAndAllowWhileIdle 허용 시); DB v8 MIGRATION_7_8; MoneyTest.withholdingFollowsTheTenWonRule·jobCostsComeOffIncome·aJobOverSeveralDaysMarksEachDayButCountsOnce; 스크린샷 63"
 WORK-03,자영업 일별 매출·경비 → 일·주·월 순수익,확장 M1,완료,,"DailySales(매출·경비·순수익), SalesSection·SalesDialog, 돈 탭 가게 순수익; MoneyTest; 스크린샷 58·59"
@@ -187,6 +187,10 @@ DAY-02,하루 화면 카드 11~13개가 모두 펼쳐져 있음 → 접히는 �
 DAY-03,"되돌리기 안내가 시트에 가려지고 초기화가 바로 실행됨 → 미리보기 안 되돌리기, 초기화·메모 삭제 확인",확장 M9,완료,,"1.9.0(M9): 시트가 열려 있으면 시트 위 스낵바로 되돌리기, 달력 길게 누르기·빠른 칩 동작도 되돌리기와 함께 알림, 이 날 초기화·메모 지우기 확인 창(DayDetail ConfirmDialog); 스크린샷 2"
 VIS-01,"밝은 배지에서 글자가 잘 안 보이고 상태 색이 섞임 → 배지 글자 대비, 상태 색 정리, 알람 끈 날 달력 표시",확장 M9,완료,,"1.9.0(M9): 주말·추가 근무 글자 4.5:1(Theme), 배지 글자 대비·글꼴(ShiftIcons), 상태 색 CalendarColors(alarmOff·changed·income·expense), 알람 끈 날 달력 표시(MonthGrid), 떠 있는 버튼 5개 화면 읽기 이름, 날짜 제목 잘림 고침(DayHeader); 스크린샷 1·5·97"
 QA-02,화면 캡처 테스트가 고정 좌표로 눌러 다른 화면이 찍힘 → 글자로 찾아 누르기,확장 M9,완료,,"1.9.0(M9): ScreenshotTest가 글자로 찾아 누름(tapText·reveal·openDay·openGroup·selectDay), 못 찾으면 화면에 보이는 글자를 알려 줌, 열린 창(Dialog)도 찍음, Compose 적용 지연을 settle에서 처리; 화면 사진 테스트 103개(새 사진 94~104·102b)"
+QA-03,ShareLinksProTest가 앱 전체 실행에서만 실패(순번 286) → 원인을 찾아 고치고 전체 실행으로 확인,1.22.0,진행 중,,
+PERF-01,"성능 예산(순번 25): 손으로 쓴 Baseline Profile + profileinstaller, 시작 작업 예산 시험(컨테이너·첫 달까지 시간, 시작 때 도는 작업 수, 늦게 만들 것), 실기기 측정은 사용자",1.22.0,완료,,"app/src/main/baseline-prof.txt, BaselineProfileRulesTest 3개, StartupBudgetTest 4개, StartupTrace·ReportDrawnWhen, Play 결제 클라이언트 늦게 만들기(AppContainer.playBilling)"
+A11Y-01,"글자색 대비(순번 28): 밝은·어두운 테마 글자 4.5:1, 테두리·점 3:1(WCAG 2.1 1.4.3·1.4.11)",1.22.0,완료,,"ContrastTest 3개, Theme.kt 밝은 테마 secondary·tertiary·error·일요일·경고·휴일근무·바꾼 날·수입·지출 색 진하게"
+A11Y-02,"터치 영역·이름 자동 점검(순번 28): 주요 화면 10곳에서 누를 수 있는 것 터치 48dp·보이는 24dp 이상, 이름 있음. TalkBack 손 점검은 사용자",1.22.0,완료,,"AccessibilityCheckTest 4개, 화면 사진 510~519, build/a11y 보고"
 SLP-14,"수면 알림이 잦고 자야 할 시간에도 옴 → 오늘의 흐름: 대근·당번·짧은 휴식·실제 알람을 반영한 계산, 달력 카드, 위젯 한 줄",확장 M10,완료,,"1.10.0: core SleepSchedule 하나로 잠·낮잠·알람 계산(같은 날 대근, 24시간 당번, 실제 알람 시각, 퇴근 후 잠들기까지), TodayFlow가 지금 할 일 하나와 이유·버튼·24시간 띠를 정함(TodayFlowTest); 달력 맨 위 카드, 하루 화면 '몸' 묶음과 오늘 위젯에 같은 한 줄, 잠 기록 되돌리기; 스크린샷 105~107 (e22846f)"
 SLP-15,"소리 나는 알림이 일주일에 15번쯤 → 브리핑·퇴근길·자는 중 세 묶음, 자는 동안 미루기, 누르면 관련 화면, 권한은 맥락 있게",확장 M10,완료,,"1.11.0: 수면 알림을 하루 브리핑(소리 없음)·퇴근길 안전(야간 끝날 때 한 번, 10분 넘게 늦으면 안 보냄)·잘 준비(선택)·자는 중(계속 표시, 깼어요)으로, 주주야야휴 한 바퀴에 소리 나는 알림 2번(core DayNoticesTest); 자는 동안 돈·연차 알림은 깨고 30분 뒤로(QuietHold, 최대 16시간), 알림 채널 근무 알람·하루 안내·돈과 휴가 세 묶음, 누르면 오늘·돈·급여·알람 점검으로(NoticeLinks), 알림 권한은 알람이 있을 때 이유와 함께(M10NoticeTest) (d12b51b)"
 SET-01,"설정 항목이 흩어져 있음 → 설정 다시 묶기, 알람 준비 카드, 알람 전체 끄기 확인, 불러오기 전 자동 사본",확장 M10,완료,,"1.11.0: 설정 9묶음(내 근무·알람·잠과 휴식·알림·급여와 연차·달력 화면·데이터·개인정보와 권한·앱 정보, SettingsPages), 맨 위 알람 준비 카드(다음 알람, 문제가 있을 때만 고치기, 알림이 알람 점검으로 바로 엶), '알람을 모두 끌까요?' 확인, 백업 불러오기 전 자동 사본 7일과 되돌리기(ImportUndo, 사본은 백업에서 뺌), '근무 패턴' → '근무 주기' 등 말 바꾸기, 펼친 화면 왼쪽 목록·오른쪽 내용; M10SettingsTest 3개, 처리방침 1.7, 스크린샷 140~144 (ec21db3)"
