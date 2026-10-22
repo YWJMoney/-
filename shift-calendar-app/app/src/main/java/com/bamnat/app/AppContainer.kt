@@ -203,7 +203,7 @@ class AppContainer(context: Context) {
     fun forgetShareLinks(calendarId: String) {
         if (calendarId == PersonalCalendar.MAIN) return
         for (key in com.bamnat.app.share.ShareLinkKey.all(calendarId)) {
-            addedShareLinks.remove(key)?.clear()
+            addedShareLinks.remove(key)?.retire()
             com.bamnat.app.share.ShareExpiryReminder.reschedule(appContext, key, null, null)
         }
         com.bamnat.app.share.ShareLinkStore.forget(appContext, calendarId)
