@@ -102,13 +102,11 @@ internal object SettingsIndex {
 
     private val W = SettingsPage.WORK
     private val A = SettingsPage.ALARM
-    private val R = SettingsPage.REST
     private val N = SettingsPage.NOTICES
     private val P = SettingsPage.PAY
     private val C = SettingsPage.CALENDAR
     private val D = SettingsPage.DATA
     private val V = SettingsPage.PRIVACY
-    private val I = SettingsPage.ABOUT
 
     /** [board]: the build has 회사 규칙 광장; [share]: it can make and take links. */
     fun entries(board: Boolean = true, share: Boolean = true): List<SettingEntry> = listOfNotNull(
@@ -133,16 +131,16 @@ internal object SettingsIndex {
         row(A, "다시 울림 간격", "스누즈", "미루기", "다시 울림"),
         row(A, "자동으로 끄기", "울리는 시간", "알람 길이"),
         screen(A.title, "알람 점검", SettingsGo.DIAGNOSTICS, "알람이 안 울려요", "늦게 울려요", "원인", "진단", "점검"),
-        row(R, "오늘의 흐름 보기", "잘 시간", "수면 제안", "카페인", "낮잠", "오늘 카드"),
-        row(R, "목표 수면 시간", "잠", "수면 목표"),
-        row(R, "퇴근 후 잠들기까지", "출퇴근", "씻는 시간", "퇴근"),
-        row(R, "워치·휴대폰 수면 기록 함께 보기", "헬스 커넥트", "갤럭시 워치", "삼성 헬스", "워치", "수면 측정"),
-        screen(R.title, "수면 기록 보기", SettingsGo.SLEEP, "수면 기록", "잠든 시간", "잠들었어요", "깼어요"),
-        row(R, "휴식 점검", "11시간", "연속 야간", "휴식"),
+        row(N, "오늘의 흐름 보기", "잘 시간", "수면 제안", "카페인", "낮잠", "오늘 카드"),
+        row(N, "목표 수면 시간", "잠", "수면 목표"),
+        row(N, "퇴근 후 잠들기까지", "출퇴근", "씻는 시간", "퇴근"),
+        row(N, "워치·휴대폰 수면 기록 함께 보기", "헬스 커넥트", "갤럭시 워치", "삼성 헬스", "워치", "수면 측정"),
+        screen(N.title, "수면 기록 보기", SettingsGo.SLEEP, "수면 기록", "잠든 시간", "잠들었어요", "깼어요"),
+        row(N, "휴식 점검", "11시간", "연속 야간", "휴식"),
         // [REST-01] The limits sheet, also opened from the calendar's check card.
-        row(R, "근무표 점검 기준", "병원 기준", "나이트 뒤 쉬는 날", "연속 나이트", "한 달 나이트", "연속 근무", "N-O-D", "나오데", "이브데이", "점검 끄기"),
-        row(R, "한 주 근무 경고", "64시간", "근무시간 경고", "주 52시간"),
-        row(R, "최근 3개월 한 주 평균 경고", "평균", "3개월"),
+        row(N, "근무표 점검 기준", "병원 기준", "나이트 뒤 쉬는 날", "연속 나이트", "한 달 나이트", "연속 근무", "N-O-D", "나오데", "이브데이", "점검 끄기"),
+        row(N, "한 주 근무 경고", "64시간", "근무시간 경고", "주 52시간"),
+        row(N, "최근 3개월 한 주 평균 경고", "평균", "3개월"),
         row(N, "하루 브리핑", "커피", "낮잠 알림", "알림"),
         row(N, "퇴근길 안전", "운전", "졸음"),
         row(N, "잘 준비", "취침 알림", "잘 시간 알림"),
@@ -154,15 +152,19 @@ internal object SettingsIndex {
         row(N, "잠금 화면 오늘 근무", "잠금 화면", "상시 알림", "오늘 근무 알림"), // [GUIDE-01]
         row(N, "광장 소식", "광장 알림", "규칙 바뀜", "채택", "회사 소식", "규칙 제안"), // [COMM-10]
         row(N, "자는 동안 미루기", "방해 금지", "조용히"),
-        screen(P.title, "급여 계산", SettingsGo.PAY, "월급", "기본급", "수당", "연차", "급여일", "시급", "명세서", "통상임금"),
+        screen(P.title, "급여 계산", SettingsGo.PAY, "월급", "기본급", "수당", "연차", "급여일", "시급", "명세서", "통상임금",
+            // [SET-03] 1.22 묶음 A·C·D: what is set in the pay settings.
+            "부양가족", "자녀 수", "간이세액", "공무원 봉급", "계급", "호봉", "호봉표", "탄력근무", "포괄임금", "연차 세는 기준", "회계연도"),
         row(P, "광장 시세와 내 단가 견주기", "시세", "일당", "시급 비교", "임금표"), // [DAILY-16]
         row(P, "견줄 내 지역", "시세 지역", "광장 시세", "내 지역"), // [DAILY-16]
         row(P, "회사 설정 보내기", "동료", "회사 설정 파일", "같은 회사"),
         row(P, "회사 설정 불러오기", "동료에게 받은 파일"),
         screen("설정", "회사 규칙 광장", SettingsGo.BOARD, "회사 규칙", "투표", "토론").takeIf { board },
         row(P, "회사 찾기", "회사 설정", "같은 회사", "회사 근무표", "회사 계산").takeIf { board },
-        screen(C.title, "근무표 공유", SettingsGo.SHARE, "공유", "링크", "이미지", "보내기", "카톡", "가족", "동료에게"),
-        screen(C.title, "동료 근무표 받기", SettingsGo.RECEIVE, "받은 링크", "받은 근무표", "바꿔 보기", "같이 쉬는 날", "동료 달력").takeIf { share },
+        // [SET-03] 1.22 묶음 B: someone hidden in the plaza comes back from 내 활동.
+        screen("광장 › 내 활동", "가린 사람", SettingsGo.BOARD, "차단", "차단 해제", "안 보기", "가리기", "글 안 보기").takeIf { board },
+        screen("달력 › 도구", "근무표 공유", SettingsGo.SHARE, "공유", "링크", "이미지", "보내기", "카톡", "가족", "동료에게"),
+        screen("달력 › 도구", "동료 근무표 받기", SettingsGo.RECEIVE, "받은 링크", "받은 근무표", "바꿔 보기", "같이 쉬는 날", "동료 달력").takeIf { share },
         screen(C.title, "달력 목록", SettingsGo.CALENDARS, "새 달력", "달력 추가", "달력 여러 개", "알바", "부업", "순서", "달력 이름"),
         row(C, "테마", "다크 모드", "어둡게", "밝게", "야간 모드", "검은 화면"),
         row(C, "휴대폰 배경색에 맞추기", "색", "배경화면", "앱 색"),
@@ -190,15 +192,15 @@ internal object SettingsIndex {
         row(V, "광고 개인정보 선택", "광고", "맞춤 광고", "광고 ID", "동의", "GDPR", "광고 끄기"), // [MON-07]
         // [MON-04][MON-05] 프로 and what paying for it agrees to.
         screen("설정", "프로", SettingsGo.PRO, "구독", "결제", "광고 없애기", "광고 제거", "무료 체험", "이용권", "복구 코드", "관리자 연결", "환불", "해지", "유료"),
-        row(I, "이용약관", "약관", "환불 규정", "청약철회", "구독 약관"),
+        row(V, "이용약관", "약관", "환불 규정", "청약철회", "구독 약관"),
         // [GUIDE-05] Every switch of a feature that can be off, in one place.
         // [ONBOARD-04][SIMPLE-02] The recommended features on one screen, and where each is turned off.
         screen("설정 › 기능 켜고 끄기", "추천 기능 한 번에 켜기", SettingsGo.RECOMMENDED, "추천", "모두 켜기", "한 번에", "권한 한 번에",
             "허용 한 번에", "기본 설정", "처음 설정", "끄는 법", "끄기", "알림 끄기", "켜도 괜찮", "브리핑", "잠금 화면 근무"),
         screen("설정", "기능 켜고 끄기", SettingsGo.FEATURES, "기능 끄기", "기능 켜기", "숨기기", "안 보이게", "카드 끄기", "안내 끄기", "팁 끄기", "위젯 줄"),
-        screen(I.title, "문의하기", SettingsGo.INQUIRY, "질문", "건의", "제안", "오류", "버그", "고객센터", "도움말", "메일", "신고"),
-        screen(I.title, "자주 묻는 질문", SettingsGo.INQUIRY, "도움말", "사용법", "어떻게", "FAQ"),
-        row(I, "앱 버전", "버전", "업데이트", row = "버전"),
+        screen("설정 › 도움말과 문의", "문의하기", SettingsGo.INQUIRY, "질문", "건의", "제안", "오류", "버그", "고객센터", "도움말", "메일", "신고"),
+        screen("설정 › 도움말과 문의", "자주 묻는 질문", SettingsGo.INQUIRY, "도움말", "사용법", "어떻게", "FAQ"),
+        row(V, "앱 버전", "버전", "업데이트", row = "버전"),
     )
 
     /** The best fits for [query], best first. */

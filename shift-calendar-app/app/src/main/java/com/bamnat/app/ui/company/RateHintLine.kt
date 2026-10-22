@@ -16,7 +16,7 @@ import java.time.YearMonth
 /**
  * [DAILY-16] 결정 D36: a card on the pay screen when the user's 일당·시급·월급 is 10% or more off the 광장 시세 of
  * their own job, region and kind of pay. Nothing shows when the phone has no such group. Worked out here;
- * 설정 › 급여 turns it off.
+ * 설정 › 급여와 연차 turns it off.
  */
 @Composable
 fun RateHintLine(profile: PayProfile?, onOpenRates: () -> Unit) {

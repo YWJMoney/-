@@ -217,7 +217,7 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
 
 /**
  * Alarm diagnostics [MEAS-04, OPS-19, SHR-08]: why an alarm may not ring, and a report to copy.
- * [SET-01] Reached from settings › 알람 and 앱 정보; the testers' tier switch shows only when it was
+ * [SET-01] Reached from settings › 알람 and the version line; the testers' tier switch shows only when it was
  * opened by tapping the version seven times ([testing]), or in a debug build.
  */
 @OptIn(ExperimentalMaterial3Api::class)

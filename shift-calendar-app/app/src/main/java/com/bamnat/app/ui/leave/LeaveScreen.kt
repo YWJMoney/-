@@ -166,7 +166,7 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
             item { NowCard(s, profile) }
             item { RulesCard(profile, onEditRules, vm) }
             item {
-                // [LEAVE-03] On by default (S10); turned off here or in 설정 › 알림.
+                // [LEAVE-03] On by default (S10); turned off here or in 설정 › 알림과 잠.
                 SectionCard(title = "쓰라고 알려 주기") {
                     SwitchLine("연차 사용 촉진 알림", notice, vm::setNotice,
                         "연차가 없어지기 6개월 전과 2개월 전(첫해 월 연차는 3개월 전·1개월 전) 아침 9시에, 쓸 예정을 빼고도 남는 날을 알려 드려요.")

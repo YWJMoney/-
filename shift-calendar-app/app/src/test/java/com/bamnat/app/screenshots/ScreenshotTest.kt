@@ -2,6 +2,7 @@ package com.bamnat.app.screenshots
 
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import com.bamnat.app.share.MonthImage
 import com.bamnat.core.model.LeaveKind
 import com.bamnat.core.model.Leave
@@ -1151,7 +1152,7 @@ class ScreenshotTest {
 
     // ---- M6 [SLP-08][QA-01] ----
     @Test fun foldedSettingsHealthSleep() = shoot("89_folded_settings_health_sleep", FOLDED) {
-        settingsPage("잠과 휴식")
+        settingsPage("알림과 잠")
         reveal("워치·휴대폰 수면 기록 함께 보기", exact = true)
     }
     @Test fun foldedTodayHealthSleep() = shoot("90_folded_today_health_sleep", FOLDED) {
@@ -1723,9 +1724,9 @@ class ScreenshotTest {
 
     // ---- M10 [SET-01][SLP-15] Settings in groups ----
     @Test fun foldedSettingsAlarm() = shoot("140_folded_settings_alarm", FOLDED) { settingsPage("알람") }
-    @Test fun foldedSettingsNotices() = shoot("141_folded_settings_notices", FOLDED) { settingsPage("알림") }
-    @Test fun foldedSettingsRest() = shoot("142_folded_settings_rest", FOLDED) { settingsPage("잠과 휴식") }
-    @Test fun unfoldedSettingsNotices() = shoot("143_unfolded_settings_notices", UNFOLDED) { settingsPage("알림", wide = true) }
+    @Test fun foldedSettingsNotices() = shoot("141_folded_settings_notices", FOLDED) { settingsPage("알림과 잠") }
+    @Test fun foldedSettingsRest() = shoot("142_folded_settings_rest", FOLDED) { settingsPage("알림과 잠"); reveal("오늘의 흐름 보기", exact = true) }
+    @Test fun unfoldedSettingsNotices() = shoot("143_unfolded_settings_notices", UNFOLDED) { settingsPage("알림과 잠", wide = true) }
     // [CAL-15] The FAB keeps under the month's last row, so on the cover screen it is a scroll away.
     @Test fun foldedQuickInput() = shoot("145_folded_quick_input", FOLDED) { tapText("빠른 입력", exact = true) }
     @Test fun foldedQuickInputDrag() = shoot("146_folded_quick_input_drag", FOLDED) {
@@ -2133,7 +2134,7 @@ class ScreenshotTest {
     @Test fun unfoldedYear() = shoot("371_unfolded_year", UNFOLDED) { year() }
     @Test fun smallPhoneYear() = shoot("372_small_phone_year", SMALL_PHONE) { year() }
     @Test fun phoneLockCover() = shoot("373_phone_lock_cover", PHONE) { content { com.bamnat.app.ui.LockCover {} } }
-    @Test fun phonePrivacyLock() = shoot("374_phone_settings_privacy_lock", PHONE) { settingsPage("개인정보와 권한") }
+    @Test fun phonePrivacyLock() = shoot("374_phone_settings_privacy_lock", PHONE) { settingsPage("개인정보·앱 정보") }
 
     // ---- [MON-04..MON-10] 1.19.0: 프로, its lock, the trial's question, the thank-you, ad privacy ----
     private val samplePlans = listOf(
@@ -2170,7 +2171,7 @@ class ScreenshotTest {
     })
     @Test fun phoneLaunchThanks() = shoot("381_phone_launch_thanks", PHONE, launched(com.bamnat.app.tier.LaunchConfig(billingLive = true,
         launchedAt = java.time.Instant.now().minus(java.time.Duration.ofDays(1)), thanksMonths = 3)))
-    @Test fun phoneAdPrivacy() = shoot("382_phone_ad_privacy", PHONE) { settingsPage("개인정보와 권한"); tapText("광고 개인정보 선택", exact = true) }
+    @Test fun phoneAdPrivacy() = shoot("382_phone_ad_privacy", PHONE) { settingsPage("개인정보·앱 정보"); tapText("광고 개인정보 선택", exact = true) }
     @Test fun phoneProLargeText() = shoot("384_phone_pro_large_text", PHONE, fontScale = 1.5f, launched(then = pro()))
     @Test fun phoneSettingsProRow() = shoot("383_phone_settings_pro_row", PHONE, launched { tab(4, wide = false); reveal("기능 켜고 끄기", exact = true) })
     @Test fun smallPhoneQuickInput() = shoot("368_small_phone_quick_input", SMALL_PHONE) { tapText("빠른 입력", exact = true) }
@@ -2283,7 +2284,7 @@ class ScreenshotTest {
     }
     @Test fun phoneUsageStatsRow() = shoot("416_phone_usage_stats_row", PHONE) {
         app.container.settingsRepository.update { it.copy(shareUsageStats = true) }
-        settingsPage("개인정보와 권한"); reveal("사용 통계 보내기", exact = true)
+        settingsPage("개인정보·앱 정보"); reveal("사용 통계 보내기", exact = true)
     }
     @Test fun phoneUsageStatsPreview() = shoot("417_phone_usage_stats_preview", PHONE) {
         val day = LocalDate.now().toEpochDay() - 1
@@ -2291,10 +2292,10 @@ class ScreenshotTest {
             com.bamnat.core.stats.UsageBook().record(com.bamnat.core.stats.UsageEvent.OPEN, day).record(com.bamnat.core.stats.UsageEvent.OPEN, day)
                 .record(com.bamnat.core.stats.UsageEvent.PAY_VIEW, day).record(com.bamnat.core.stats.UsageEvent.SHARE_MADE, day).encode()).commit()
         app.container.settingsRepository.update { it.copy(shareUsageStats = true) }
-        settingsPage("개인정보와 권한"); reveal("보낼 내용 보기", exact = true); tapText("보낼 내용 보기", exact = true, scrolls = 0)
+        settingsPage("개인정보·앱 정보"); reveal("보낼 내용 보기", exact = true); tapText("보낼 내용 보기", exact = true, scrolls = 0)
     }
     @Test fun phonePlazaNewsSwitch() = shoot("418_phone_plaza_news_switch", PHONE) {
-        settingsPage("알림"); reveal("광장 소식", exact = true)
+        settingsPage("알림과 잠"); reveal("광장 소식", exact = true)
     }
     @Test fun foldedReceivedReport() = shoot("419_folded_received_report", FOLDED) {
         receivedOn()
@@ -3003,6 +3004,34 @@ class ScreenshotTest {
         content { com.bamnat.app.ui.guide.WhatsNewDialog(com.bamnat.core.guide.WhatsNew.releases.take(1), {}, {}, {}, recommendOff = 2) }
     }
 
+    // [ONBOARD-05] 사용 통계 at the end of the first-start screen: unticked; only a tick turns it on (D42).
+    @Test fun foldedRecommendedUsageStats() = shoot("526_folded_recommended_usage_stats", FOLDED,
+        recommended(setOf(ConsentItem.CALENDAR)) {
+            reveal("개발자에게 익명 사용 통계 보내기 (선택)", exact = true)
+            assertFalse(app.container.settingsRepository.current.shareUsageStats)
+        })
+    @Test fun recommendedUsageStatsOnlyWithATick() = shoot("527_folded_recommended_stats_then_setup", FOLDED,
+        recommended(setOf(ConsentItem.CALENDAR)) {
+            tapText("개발자에게 익명 사용 통계 보내기 (선택)", exact = true)
+            tapText("허용은 나중에 할게요")
+            assertTrue("ticked, it is on", app.container.settingsRepository.current.shareUsageStats)
+        })
+    // [SET-02] The settings list in seven groups, and the two that took in another.
+    @Test fun phoneSettingsSevenGroups() = shoot("528_phone_settings_seven_groups", PHONE) {
+        tab(4, wide = false)
+        reveal("도움말과 문의", exact = true)
+    }
+    @Test fun foldedSettingsNoticesAndSleep() = shoot("529_folded_settings_notices_sleep", FOLDED) {
+        settingsPage("알림과 잠"); reveal("휴식 점검", exact = true)
+    }
+    @Test fun foldedSettingsPrivacyAbout() = shoot("530_folded_settings_privacy_about", FOLDED) {
+        settingsPage("개인정보·앱 정보"); reveal("오픈소스 라이선스", exact = true)
+    }
+    // [SIMPLE-03] The 1.22.0 notice, eight lines grouped by what they give.
+    @Test fun phoneWhatsNewShort() = shoot("531_phone_whats_new_1_22", PHONE) {
+        content { com.bamnat.app.ui.guide.WhatsNewDialog(com.bamnat.core.guide.WhatsNew.releases.take(1), {}, {}, {}) }
+    }
+
     // ==== 1.22 묶음 A ====
     // [PAYR-04][PAYR-05] 평일 근무 통계: 예상 실수령 from the 간이세액표, with 가족·자녀 under 4대보험.
     private fun dayTakeHome(wide: Boolean = false): Screen.() -> Unit = {
@@ -3095,7 +3124,7 @@ class ScreenshotTest {
     }
     // [REST-01] Settings keeps one row for it, beside 휴식 점검.
     @Test fun foldedSettingsRestRules() = shoot("437_folded_settings_rest_rules", FOLDED) {
-        settingsPage("잠과 휴식")
+        settingsPage("알림과 잠")
         reveal("근무표 점검 기준", exact = true)
     }
 

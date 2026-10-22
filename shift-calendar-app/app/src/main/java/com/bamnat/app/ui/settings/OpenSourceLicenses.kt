@@ -55,7 +55,7 @@ val OPEN_SOURCE_NOTICES: List<OpenSourceNotice> = listOf(
 
 private const val APACHE_2 = "Apache License 2.0"
 
-/** 설정 › 앱 정보 › 오픈소스 라이선스: names, owners and licences, each opening its page. */
+/** 설정 › 개인정보·앱 정보 › 오픈소스 라이선스: names, owners and licences, each opening its page. */
 @Composable
 fun OpenSourceLicensesDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current

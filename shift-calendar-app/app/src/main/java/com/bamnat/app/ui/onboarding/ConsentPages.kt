@@ -115,10 +115,10 @@ internal fun ConsentItem.why(): String = when (this) {
 
 /** Where it is turned on later, said on every page. */
 internal fun ConsentItem.later(): String = when (this) {
-    ConsentItem.NOTIFICATIONS, ConsentItem.ALARMS -> "설정 > 개인정보와 권한"
-    ConsentItem.SLEEP -> "설정 > 잠과 휴식"
+    ConsentItem.NOTIFICATIONS, ConsentItem.ALARMS -> "설정 > 개인정보·앱 정보 > 권한"
+    ConsentItem.SLEEP -> "설정 > 알림과 잠"
     ConsentItem.CALENDAR -> "설정 > 데이터 > 캘린더에서 가져오기"
-    ConsentItem.USAGE_STATS -> "설정 > 개인정보와 권한"
+    ConsentItem.USAGE_STATS -> "설정 > 개인정보·앱 정보"
 }
 
 @Composable

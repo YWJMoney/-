@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -91,6 +92,8 @@ fun RecommendedScreen(container: AppContainer, firstStart: Boolean, onDone: () -
         mutableStateOf((if (firstStart) RecommendedPlan.NEW_INSTALL else RecommendedSettings.on(start)).map { it.key })
     }
     var watch by rememberSaveable { mutableStateOf(!firstStart && start.healthSleep) }
+    // [ONBOARD-05] Usage statistics go to a server: their own yes, never ticked beforehand (D42).
+    var stats by rememberSaveable { mutableStateOf(false) }
 
     // Read again when the user comes back from a settings screen or a system question.
     var refresh by remember { mutableIntStateOf(0) }
@@ -149,6 +152,7 @@ fun RecommendedScreen(container: AppContainer, firstStart: Boolean, onDone: () -
         val chosen = on.mapNotNull(RecommendedFeature::ofKey).toSet()
         container.settingsRepository.update { RecommendedSettings.apply(it, chosen).let { s -> if (watch) s else s.copy(healthSleep = false) } }
         container.consentStore.setSleepDevice(if (watch) SleepDevice.WEARS else SleepDevice.NONE)
+        if (firstStart && stats) container.setUsageStats(true)
         val asks = if (ask) RecommendedPlan.asks(available, granted, watch) else emptyList()
         if (asks.isEmpty()) finish() else { asked = 0; queue = asks.map { it.key } }
     }
@@ -192,11 +196,19 @@ fun RecommendedScreen(container: AppContainer, firstStart: Boolean, onDone: () -
                         asks.forEach { item -> PermissionLine(item, item in granted, asking = item == current) }
                     }
 
-                    Notice(Icons.Filled.Lock, "근무표·메모·급여는 이 휴대폰에만 있어요. 여기서 켜는 것은 서버로 아무것도 보내지 않아요.")
+                    Notice(Icons.Filled.Lock, "근무표·메모·급여는 이 휴대폰에만 있어요. 위 기능은 서버로 아무것도 보내지 않아요.")
                     Notice(Icons.Outlined.Info, "끄고 싶으면 ${RecommendedPlan.TURN_OFF}에서 언제든 꺼요. 설정 찾기에 ‘끄기’라고 써도 돼요. " +
                         "출퇴근 자동 기록(위치)과 결제 알림 읽기는 쓰는 화면에서 따로 켜요.")
+                    if (firstStart) StatsLine(stats) { stats = it }
                 }
                 Column(Modifier.fillMaxWidth().padding(bottom = 12.dp, top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // [ONBOARD-06] With large text the 허용할 것 card can sit below the fold: what the button asks, said beside it.
+                    val toAsk = RecommendedPlan.asks(available, granted, watch)
+                    if (queue == null && toAsk.isNotEmpty()) {
+                        Text("누르면 휴대폰이 허용 ${toAsk.size}개를 차례로 물어요. 거절해도 넘어가요",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth())
+                    }
                     Button(onClick = { save(true) }, enabled = queue == null, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                         Text(if (firstStart) "추천대로 켜고 시작하기" else "이대로 저장")
                     }
@@ -211,7 +223,7 @@ fun RecommendedScreen(container: AppContainer, firstStart: Boolean, onDone: () -
     }
 }
 
-/** Health Connect allowed: read sleep from now on, as 설정 › 잠과 휴식 does. */
+/** Health Connect allowed: read sleep from now on, as 설정 › 알림과 잠 does. */
 private fun turnOnSleep(container: AppContainer, scope: kotlinx.coroutines.CoroutineScope) {
     container.settingsRepository.update { it.copy(healthSleep = true) }
     scope.launch { container.healthSleep.refresh(true, force = true) }
@@ -241,6 +253,27 @@ private fun SwitchLine(title: String, what: String, okay: String, on: Boolean, o
         }
         Spacer(Modifier.width(12.dp))
         Switch(checked = on, onCheckedChange = null)
+    }
+}
+
+/**
+ * [ONBOARD-05] 사용 통계 보내기 on the first start: a box the user ticks, said plainly as going to the
+ * developer, and that the app is the same without it (D42, 개인정보 보호법 제22조).
+ */
+@Composable
+private fun StatsLine(on: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).toggleable(value = on, role = Role.Checkbox, onValueChange = onChange).padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Checkbox(checked = on, onCheckedChange = null)
+        Column(Modifier.weight(1f)) {
+            Text("개발자에게 익명 사용 통계 보내기 (선택)", style = MaterialTheme.typography.bodyLarge)
+            Text("어떤 기능을 하루에 몇 번 썼는지만 보내 앱을 고치는 데 써요. 근무·금액·메모·휴대폰 정보는 보내지 않고, " +
+                "체크하지 않아도 앱은 똑같이 돼요. 설정 › 개인정보·앱 정보에서 바꿔요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

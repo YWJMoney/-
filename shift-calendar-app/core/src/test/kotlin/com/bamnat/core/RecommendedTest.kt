@@ -17,6 +17,8 @@ class RecommendedTest {
         RecommendedFeature.entries.forEach {
             assertTrue("${it.title} says why it is fine on", it.okay.isNotBlank())
             assertTrue("${it.title} says where it turns off", it.offAt.startsWith("설정"))
+            // [SIMPLE-04] One place, said the same under the switches and on each line.
+            assertEquals(RecommendedPlan.TURN_OFF, it.offAt)
             assertEquals(it, RecommendedFeature.ofKey(it.key))
         }
         assertEquals("keys are stored and must stay apart", RecommendedFeature.entries.size, RecommendedFeature.entries.map { it.key }.toSet().size)

@@ -2,7 +2,7 @@ package com.bamnat.app.data
 
 import com.bamnat.core.consent.RecommendedFeature
 
-/** [ONBOARD-03] The recommended features as the app's own switches, so the one screen reads and writes the same values as 설정 › 알림. */
+/** [ONBOARD-03] The recommended features as the app's own switches, so the one screen reads and writes the same values as 설정 › 알림과 잠. */
 object RecommendedSettings {
     fun isOn(s: AppSettings, f: RecommendedFeature): Boolean = when (f) {
         RecommendedFeature.BRIEFING -> s.briefing

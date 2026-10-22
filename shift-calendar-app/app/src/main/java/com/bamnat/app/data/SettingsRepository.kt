@@ -147,7 +147,7 @@ data class AppSettings(
     val shiftMissions: Map<Long, String> = emptyMap(),
     /** [PROV-07] Minutes after 끄기 that 일어났나요? asks (프로); 0 is off, as at first. */
     val wakeCheckMinutes: Int = 0,
-    /** [DAILY-01] The day's first memo line on the 오늘·내일 widget; on, and off from 설정 › 화면 since a home screen is seen by others. */
+    /** [DAILY-01] The day's first memo line on the 오늘·내일 widget; on, and off from 설정 › 달력 화면 since a home screen is seen by others. */
     val widgetMemo: Boolean = true,
     /** [BACK-01] Receipt and contract photos go in the backup file (결정 D13: on, off from the backup screen). */
     val backupPhotos: Boolean = true,

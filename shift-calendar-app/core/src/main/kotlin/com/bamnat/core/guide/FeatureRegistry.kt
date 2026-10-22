@@ -17,7 +17,7 @@ enum class Place {
     RECOMMENDED,
     // [LEAVE-06] 1.22 묶음 D: the 연차 원장 of the calendar on screen.
     LEAVE,
-    SETTINGS_WORK, SETTINGS_ALARM, SETTINGS_REST, SETTINGS_NOTICES, SETTINGS_PAY, SETTINGS_CALENDAR,
+    SETTINGS_WORK, SETTINGS_ALARM, SETTINGS_NOTICES, SETTINGS_PAY, SETTINGS_CALENDAR,
     SETTINGS_DATA, SETTINGS_PRIVACY,
     ;
 
@@ -163,7 +163,7 @@ object FeatureRegistry {
             setOf(SHIFT), "달력 › 도구 › 한 달 근무 연달아 넣기 (빠른 입력 › 한 달 연달아)", at(Place.CALENDAR),
             "연달아", "키패드", "한 달 입력", "듀티 입력", "간호사", "나이트", "역순", "근무표 점검"),
         f("shift.restRules", "REST-01", "근무표 점검 기준", "휴식 11시간·나이트 뒤 쉬는 날·연속 나이트·연속 근무·한 달 나이트 기준을 병원·회사에 맞추고, 이달 나이트 수와 시간외를 함께 봐요",
-            setOf(SHIFT), "달력 › 휴식 점검 카드 › 기준 바꾸기 (설정 › 잠과 휴식 › 근무표 점검 기준)", at(Place.SETTINGS_REST, "근무표 점검 기준"),
+            setOf(SHIFT), "달력 › 휴식 점검 카드 › 기준 바꾸기 (설정 › 알림과 잠 › 근무표 점검 기준)", at(Place.SETTINGS_NOTICES, "근무표 점검 기준"),
             "휴식 점검", "근무표 점검", "N-O-D", "나오데", "이브데이", "연속 나이트", "나이트 개수", "11시간", "점검 끄기", off = Off.ELSEWHERE),
         f("shift.health", "SHFT-07", "연간 건강 지표", "야간 비율, 가장 길게 이어진 야간, 11시간 못 쉰 날을 1년으로 봐요",
             setOf(SHIFT), "${tab(SHIFT)} › ○년 건강 지표", at(Place.HEALTH_REPORT), "야간 비율", "연속 야간", "건강", "휴식",
@@ -174,7 +174,7 @@ object FeatureRegistry {
         f("sleep.log", "SLP-16", "수면 기록", "잠든 시간과 깬 시간을 적고 근무별 평균을 봐요",
             setOf(SHIFT), "달력 › 오늘의 흐름 › 수면 기록", at(Place.SLEEP), "잠", "수면", "잠들었어요", "깼어요", "낮잠"),
         f("today.flow", "SLP-14", "오늘의 흐름", "달력 맨 위에 지금 할 일 하나와 잘 시간·다음 근무를 보여 줘요",
-            PAID, "설정 › 잠과 휴식 › 오늘의 흐름 보기", at(Place.SETTINGS_REST, "오늘의 흐름 보기"), "잘 시간", "카페인", "낮잠", "오늘 카드",
+            PAID, "설정 › 알림과 잠 › 오늘의 흐름 보기", at(Place.SETTINGS_NOTICES, "오늘의 흐름 보기"), "잘 시간", "카페인", "낮잠", "오늘 카드",
             off = Off.ELSEWHERE),
 
         // Pay, for every kind of work paid by the hour or the month.
@@ -374,7 +374,7 @@ object FeatureRegistry {
         f("calendar.year", "CAL-22", "1년 달력", "열두 달을 한 화면에 근무 색으로 보고, 한 해의 근무 종류별 날 수와 휴가를 세요",
             ALL, "달력 › ⋮ › 1년 달력", at(Place.YEAR), "연간 달력", "1년", "한 해", "열두 달", "휴가 계획", "연간 근무"),
         f("privacy.lock", "LOCK-01", "앱 잠금", "열 때 지문·얼굴·PIN을 물어 급여·메모를 지켜요. 알람은 그대로 울려요",
-            ALL, "설정 › 개인정보와 권한 › 앱 잠금", at(Place.SETTINGS_PRIVACY, "앱 잠금"), "잠금", "비밀번호", "지문", "생체 인증", "PIN", "숨기기"),
+            ALL, "설정 › 개인정보·앱 정보 › 앱 잠금", at(Place.SETTINGS_PRIVACY, "앱 잠금"), "잠금", "비밀번호", "지문", "생체 인증", "PIN", "숨기기"),
         f("calendar.combined", "COMN-01", "모든 달력 합쳐 보기", "모든 달력을 한 달력에 색 막대로 보고 겹치는 시간을 알려 줘요",
             ALL, "달력 › 달력 이름 › 모든 달력 합쳐 보기", at(Place.COMBINED), "합쳐 보기", "겹치는", "한눈에", "모든 달력"),
         f("stats.all", "COMN-03", "통계 전체 보기", "모든 달력의 총수입·총지출·순저축을 한 번에 봐요",
@@ -394,19 +394,19 @@ object FeatureRegistry {
         f("app.pro", "MON-04", "프로", "광고 없이 쓰고, 명세서 대조·급여 리포트·휴대폰 캘린더 쓰기·매일 자동 백업·끄기 미션·돈 통계·달력 여러 개를 열어요. 1개월 무료로 써 볼 수 있어요",
             ALL, "설정 › 프로", at(Place.PRO), "구독", "광고 없애기", "무료 체험", "유료", "결제", "이용권", "복구 코드"),
         f("privacy.adChoices", "MON-07", "광고 개인정보 선택", "광고가 쓰는 정보를 보고, 법이 묻는 지역에서는 동의를 다시 골라요",
-            ALL, "설정 › 개인정보와 권한 › 광고 개인정보 선택", at(Place.SETTINGS_PRIVACY, "광고 개인정보 선택"), "광고", "맞춤 광고", "광고 ID", "동의"),
+            ALL, "설정 › 개인정보·앱 정보 › 광고 개인정보 선택", at(Place.SETTINGS_PRIVACY, "광고 개인정보 선택"), "광고", "맞춤 광고", "광고 ID", "동의"),
         // [STAT-01][COMM-10] 1.22.0: usage stats only with a yes, the plaza's daily news on for those who take part.
         f("privacy.usageStats", "STAT-01", "사용 통계 보내기", "어떤 기능을 하루에 몇 번 썼는지만 보내요. 보낼 내용을 미리 볼 수 있고, 꺼도 앱은 똑같이 돼요",
-            ALL, "설정 › 개인정보와 권한 › 사용 통계 보내기", at(Place.SETTINGS_PRIVACY, "사용 통계 보내기"), "통계", "사용 기록", "보내기", "익명", off = Off.ELSEWHERE),
+            ALL, "설정 › 개인정보·앱 정보 › 사용 통계 보내기", at(Place.SETTINGS_PRIVACY, "사용 통계 보내기"), "통계", "사용 기록", "보내기", "익명", off = Off.ELSEWHERE),
         f("plaza.news", "COMM-10", "광장 소식", "쓰는 회사 규칙이 바뀌거나, 보낸 규칙·제안·임금표가 채택되면 하루 한 번 묶어서 알려 줘요",
-            ALL, "설정 › 알림 › 광장 소식", at(Place.SETTINGS_NOTICES, "광장 소식"), "광장", "규칙 바뀜", "채택", "회사 소식", "알림 끄기", off = Off.ELSEWHERE),
+            ALL, "설정 › 알림과 잠 › 광장 소식", at(Place.SETTINGS_NOTICES, "광장 소식"), "광장", "규칙 바뀜", "채택", "회사 소식", "알림 끄기", off = Off.ELSEWHERE),
         f("lock.today", "FEAT-18", "잠금 화면 오늘 근무", "오늘·내일 근무를 소리 없는 알림으로 잠금 화면에 늘 보여 줘요",
-            PAID, "설정 › 알림 › 잠금 화면 오늘 근무", at(Place.SETTINGS_NOTICES, "잠금 화면 오늘 근무"), "잠금 화면", "상시 알림", off = Off.ELSEWHERE),
+            PAID, "설정 › 알림과 잠 › 잠금 화면 오늘 근무", at(Place.SETTINGS_NOTICES, "잠금 화면 오늘 근무"), "잠금 화면", "상시 알림", off = Off.ELSEWHERE),
         f("widget.lines", "COMN-05", "위젯 근무 유형 줄", "오늘 위젯에 알바 주 시간·주휴, 일근 남은 연차·야근, 현장 이번 주 공수를 한 줄 더 보여 줘요",
             setOf(DAY, HOURLY, FIELD), "홈 화면 › 밤낮 오늘 위젯", at(Place.FEATURES), "위젯", "홈 화면", off = Off.APP),
         // 1.22 묶음 E: on by default (S10); each says where it turns off.
         f("widget.memo", "DAILY-01", "위젯에 메모 줄", "오늘·이번 주 위젯에 그날 메모 첫 줄이 보여요. 날짜를 누르면 그날이 열려요",
-            ALL, "설정 › 달력 › 위젯에 메모 보이기", at(Place.SETTINGS_CALENDAR, "위젯에 메모 보이기"), "위젯", "메모", "홈 화면", "끄기"),
+            ALL, "설정 › 달력 화면 › 위젯에 메모 보이기", at(Place.SETTINGS_CALENDAR, "위젯에 메모 보이기"), "위젯", "메모", "홈 화면", "끄기"),
         f("widget.teams", "DAILY-03", "오늘 모든 조 위젯", "홈 화면에서 조마다 오늘·내일 근무를 봐요. 내 조는 굵게 보여요",
             setOf(SHIFT), "홈 화면 › 위젯 › 밤낮 오늘 모든 조", at(Place.TEAMS), "위젯", "모든 조", "조별 근무", "홈 화면"),
         f("money.receiptScan", "LEDG-25", "영수증 사진 읽기", "영수증을 찍으면 금액·날짜·시간·가게를 채워요. 휴대폰 안에서만 읽고 저장 전에 확인해요",
@@ -420,7 +420,7 @@ object FeatureRegistry {
         f("money.customize", "DAILY-15", "돈·메모 화면 꾸미기", "돈 관리 요약 카드와 메모 위 줄의 순서와 켜고 끄기를 바꿔요",
             ALL, "돈 › ⋮ › 화면 꾸미기, 메모 › 화면 꾸미기", at(Place.MONEY), "화면 꾸미기", "순서", "카드 숨기기", "필터 접기", under = "calendar.customize"),
         f("pay.rateHint", "DAILY-16", "광장 시세와 견주기", "광장 임금표에서 본 내 직군·내 지역 시세와 내 일당·시급·월급이 10% 넘게 다르면 급여 화면에 카드로 보여요. 휴대폰 안에서만 견줘요",
-            setOf(SHIFT, DAY, HOURLY, FIELD), "설정 › 급여 › 광장 시세와 내 단가 견주기", at(Place.SETTINGS_PAY, "광장 시세와 내 단가 견주기"), "시세", "일당", "시급", "비교"),
+            setOf(SHIFT, DAY, HOURLY, FIELD), "설정 › 급여와 연차 › 광장 시세와 내 단가 견주기", at(Place.SETTINGS_PAY, "광장 시세와 내 단가 견주기"), "시세", "일당", "시급", "비교"),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }

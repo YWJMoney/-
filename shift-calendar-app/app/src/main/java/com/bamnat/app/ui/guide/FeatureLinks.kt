@@ -71,7 +71,6 @@ object FeatureLinks {
 fun Place.settingsPage(): SettingsPage? = when (this) {
     Place.SETTINGS_WORK -> SettingsPage.WORK
     Place.SETTINGS_ALARM -> SettingsPage.ALARM
-    Place.SETTINGS_REST -> SettingsPage.REST
     Place.SETTINGS_NOTICES -> SettingsPage.NOTICES
     Place.SETTINGS_PAY -> SettingsPage.PAY
     Place.SETTINGS_CALENDAR -> SettingsPage.CALENDAR

@@ -39,7 +39,7 @@ import com.bamnat.core.schedule.RotationSpeed
 
 /**
  * [REST-01][REST-02][REST-03] 근무표 점검 기준: one sheet for the calendar's 휴식 점검, the month typed at once and
- * received rosters. Opened from the check's own card (기준 바꾸기) and from 설정 › 잠과 휴식, never a menu of its own.
+ * received rosters. Opened from the check's own card (기준 바꾸기) and from 설정 › 알림과 잠, never a menu of its own.
  * A hospital's rules are a preset away, each limit can be moved one by one (0 is not checked), and the whole check
  * turns off here.
  */
@@ -85,7 +85,7 @@ fun RestRulesSheet(rules: RestRules, speed: RotationSpeed, onDismiss: () -> Unit
                 Text("0으로 두면 그 항목은 보지 않아요. 기본값의 근거: ${RestRules.Sources.REST}, ${RestRules.Sources.NIGHTS}, ${RestRules.Sources.WEEK}.",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text("끄는 법: 이 화면 맨 위 '근무표 점검'을 끄거나 설정 › 잠과 휴식 › 휴식 점검을 꺼요.",
+            Text("끄는 법: 이 화면 맨 위 '근무표 점검'을 끄거나 설정 › 알림과 잠 › 휴식 점검을 꺼요.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                 TextButton(onClick = { draft = RestRules() }) { Text("기본값으로") }
