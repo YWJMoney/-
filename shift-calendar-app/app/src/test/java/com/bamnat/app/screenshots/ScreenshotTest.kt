@@ -932,6 +932,20 @@ class ScreenshotTest {
         settle()
         then()
     }
+    /** [NURS-01][NURS-02] A month typed from the keypad, with 역순 and a night run without days off flagged. */
+    private fun dutyTyping(): Screen.() -> Unit = style(WorkStyle.SHIFT) {
+        val c = app.container
+        val snap = runBlocking { c.scheduleRepository.snapshot.first() }
+        val t = snap.shiftTypes.associateBy { it.name }
+        val month = java.time.YearMonth.of(2026, 11)
+        val codes = listOf("주간", "주간", "오후", "주간", "야간", "야간", "주간", "휴무", "휴무", "오후", "오후", "야간")
+        val initial = codes.mapIndexed { i, n -> month.atDay(i + 1) to ShiftOverride.Shift(t.getValue(n).id) as ShiftOverride }.toMap()
+        content { com.bamnat.app.ui.calendar.DutyTypingSheet(snap, month, onDismiss = {}, onSave = {}, initial = initial) }
+        settle()
+    }
+    @Test fun foldedDutyTyping() = shoot("364_folded_duty_typing", FOLDED, dutyTyping())
+    @Test fun phoneDutyTypingHugeText() = shoot("365_phone_duty_typing_huge_text", PHONE, 1.5f, dutyTyping())
+
     /** [INV-30][INV-31][INV-32] Trades found in 체결 notifications, waiting for 확인, and the coin/stock badges. */
     private fun foundTrades(then: Screen.() -> Unit = {}): Screen.() -> Unit = style(WorkStyle.INVEST) {
         val c = app.container

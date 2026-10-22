@@ -590,6 +590,26 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
+    /** [NURS-01] A month typed at once: each day its own shift, in one write, said back with one undo. */
+    fun applyDuty(changes: Map<LocalDate, ShiftOverride>) {
+        if (changes.isEmpty()) return
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule
+            val before = schedule.updateDays(changes.keys.toList()) { entry -> changes[entry.date]?.let { nextShift(entry, it) } ?: entry }
+            _lastPaint.value = PaintUndo(
+                "${changes.size}일 근무를 넣었어요",
+                undo = {
+                    schedule.updateDays(before.keys.toList()) { now ->
+                        val was = before[now.date] ?: DayEntry(now.date)
+                        now.copy(override = was.override, customStart = was.customStart, customEnd = was.customEnd, customBreakMinutes = was.customBreakMinutes)
+                    }
+                },
+            )
+            // The bar says it and holds 되돌리기, so it is opened if it was not.
+            if (_paint.value == null) _paint.value = PaintTool.Pick
+        }
+    }
+
     /** [CAL-01] Takes the last drag back; once, so a second tap cannot undo something else. */
     fun undoLastPaint() {
         val last = _lastPaint.value ?: return

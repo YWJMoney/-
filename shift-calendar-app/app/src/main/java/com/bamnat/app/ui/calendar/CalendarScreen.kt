@@ -9,6 +9,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.Keyboard
+import androidx.compose.material3.AssistChip
 import androidx.compose.ui.semantics.heading
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -219,6 +221,7 @@ fun CalendarScreen(
     fun partShown(p: CalendarPart) = calendarParts.firstOrNull { it.part == p }?.shown != false
     val selected by vm.selected.collectAsStateWithLifecycle()
     val paint by vm.paint.collectAsStateWithLifecycle()
+    var typingMonth by remember { mutableStateOf<YearMonth?>(null) }
     val lastPaint by vm.lastPaint.collectAsStateWithLifecycle()
     val coverAsk by vm.coverAsk.collectAsStateWithLifecycle()
     // [CUST-01] 화면 꾸미기: the page's parts in the user's order, and the sheet that changes them.
@@ -745,6 +748,8 @@ fun CalendarScreen(
             onCustomize = if (viewingReceived == null) ({ editingLayout = true }) else null,
             calendarName = activeCalendar.name,
             onOpenTeams = openTeams,
+            // [NURS-01] A month's duty typed one day after another, for rosters that come as a sheet.
+            onTypeMonth = if (viewingReceived == null && snap.shiftTypes.isNotEmpty()) ({ typingMonth = visibleMonth }) else null,
         )
         // [SETUP-01] A first setup left for later comes first; it fills the calendar.
         val waiting = pendingSetup?.takeIf { it.later && settings.workStyle == null }
@@ -1114,9 +1119,13 @@ fun CalendarScreen(
         if (paint != null) {
             Box(Modifier.align(Alignment.BottomCenter)) {
                 PaintBar(snapshot = snap, tool = paint, last = lastPaint, onTool = vm::setPaint, onUndo = vm::undoLastPaint,
-                    mark = mark, onMark = vm::setMark, focus = focus)
+                    mark = mark, onMark = vm::setMark, focus = focus, onTypeMonth = { typingMonth = visibleMonth })
             }
         }
+    }
+
+    typingMonth?.let { m ->
+        DutyTypingSheet(snap, m, onDismiss = { typingMonth = null }, onSave = { changes -> vm.applyDuty(changes); typingMonth = null })
     }
 
     if (investVm != null) {
@@ -1291,6 +1300,7 @@ private fun CalendarHeader(
     onCustomize: (() -> Unit)? = null,
     /** [CAL-24] 모든 조 보기; null when the calendar has no rotation to split into teams. */
     onOpenTeams: (() -> Unit)? = null,
+    onTypeMonth: (() -> Unit)? = null,
 ) {
     // [QA-01] A cover screen (~344dp) cannot fit four icons, the month and 오늘: pattern and the new
     // calendar go into ⋮ there. [UX-03] 공유 is in the bar above on every screen; ⋮ keeps it too, where
@@ -1344,6 +1354,7 @@ private fun CalendarHeader(
                 onEditCalendar?.let { add(CalendarTool("‘$calendarName’ 고치기", Icons.Outlined.Edit, it)) }
                 // [CAL-24] 모든 조 is also on the calendar itself; here it stays where people learned it.
                 onOpenTeams?.let { add(CalendarTool("모든 조 보기", Icons.Outlined.Groups, it)) }
+                onTypeMonth?.let { add(CalendarTool("한 달 근무 연달아 넣기", Icons.Outlined.Keyboard, it)) }
                 add(CalendarTool("근무표 공유", Icons.Filled.Share, onShare))
                 add(CalendarTool("1년 달력", Icons.Outlined.CalendarViewMonth) { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.YEAR) })
                 onReceive?.let { add(CalendarTool("동료 근무표 받기", Icons.Outlined.GroupAdd, it)) }
@@ -1531,6 +1542,7 @@ private fun PaintBar(
     mark: DayMark? = null,
     onMark: (DayMark?) -> Unit = {},
     focus: com.bamnat.core.work.CalendarFocus = com.bamnat.core.work.CalendarFocus.SHIFTS,
+    onTypeMonth: (() -> Unit)? = null,
 ) {
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     Surface(
@@ -1592,6 +1604,11 @@ private fun PaintBar(
                     leadingIcon = { Icon(Icons.Filled.Autorenew, contentDescription = null) },
                     modifier = Modifier.semantics { contentDescription = "패턴대로 되돌리기" },
                 )
+                // [NURS-01] Day after day from a keypad, instead of picking and tapping each one.
+                onTypeMonth?.let { open ->
+                    AssistChip(onClick = open, label = { Text("한 달 연달아") },
+                        leadingIcon = { Icon(Icons.Outlined.Keyboard, contentDescription = null, Modifier.size(18.dp)) })
+                }
                 // [CAL-09] Leave and 알람 끄기 painted like shifts, for work kept in shifts.
                 if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS || snapshot.hasPattern) {
                     VerticalDivider(Modifier.height(32.dp).align(Alignment.CenterVertically))
