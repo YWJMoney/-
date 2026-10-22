@@ -259,6 +259,7 @@ label,.label{display:block;font-size:.88rem;font-weight:800;margin:0 0 .4rem}
 font-size:.74rem;font-weight:800;white-space:nowrap;line-height:1.5}
 .pill.warn{background:var(--warn-bg);color:var(--warn)}
 .pill.ok{background:var(--ok-bg);color:var(--ok)}
+.code-big{font-size:2.2rem;font-weight:700;letter-spacing:.12em;text-align:center;font-variant-numeric:tabular-nums;margin:.6rem 0}
 .pill.bad{background:var(--bad-bg);color:var(--bad)}
 .pill.info{background:var(--info-bg);color:var(--info)}
 .pill.gold{background:var(--gold-soft);color:var(--gold)}
@@ -533,7 +534,7 @@ function adminApp() {
     // [COMM-06] The talk on rule sets: what people flagged first.
     { key: "community", label: "토론", area: "community", group: "main", badge: (o) => o.flaggedPosts ?? 0 },
     { key: "rewards", label: "보상", area: "rewards", group: "main", badge: (o) => o.owed ?? 0 },
-    { key: "admins", label: "관리자", owner: true, group: "manage", badge: (o) => o.admins?.waiting ?? 0 },
+    { key: "admins", label: "관리자", owner: true, group: "manage", badge: (o) => (o.admins?.waiting ?? 0) + (o.admins?.phones ?? 0) },
     { key: "audit", label: "활동 기록", area: "audit", group: "manage" },
     { key: "settings", label: "설정", group: "manage" },
   ];
@@ -570,6 +571,10 @@ function adminApp() {
     dev_create: "개발사항 만듦", dev_edit: "개발사항 고침", dev_status: "개발사항 처리", dev_bulk: "개발사항 한 번에 처리",
     dev_delete: "개발사항 지움", dev_restore: "개발사항 되살림", dev_link: "문의를 개발사항에 연결", dev_unlink: "개발사항에서 문의 뗌",
     dev_reply: "개발사항의 문의에 한 번에 답함", template_add: "자주 쓰는 답 추가", template_remove: "자주 쓰는 답 지움",
+    // [MON-08][MON-09][MON-10]
+    launch_on: "정식 출시 켬(결제·광고)", launch_off: "정식 출시 끔", launch_settings: "정식 출시 설정 바꿈",
+    device_link: "관리자 휴대폰 연결", device_approve: "관리자 휴대폰 승인", device_remove: "관리자 휴대폰 끊음",
+    pass_move: "이용권을 새 휴대폰으로 옮김", trial_stop: "동의 없는 무료 체험의 다음 결제 멈춤",
   };
   const ERRORS = {
     exists: "이미 있어요",
@@ -601,6 +606,9 @@ function adminApp() {
     ids: "고른 항목이 없어요",
     label: "이름을 1~20자로 적어 주세요",
     too_many: "더 넣을 수 없어요. 쓰지 않는 것을 먼저 지워 주세요",
+    months: "보상은 1~12개월로 골라 주세요",
+    thanksMonths: "감사 보상은 0~12개월로 정해 주세요",
+    freeFeatures: "기능 이름은 영어 대문자와 _로 적어 주세요(예: MONEY_STATS)",
   };
   const TEMPLATES = [
     ["확인 중", "알려 주셔서 고마워요. 지금 확인하고 있어요. 고치는 대로 다시 알려 드릴게요."],
@@ -740,9 +748,11 @@ function adminApp() {
         jobs.push(api(id ? `/posts?company=${company}&setup=${setup}` : `/posts?status=${S.postFilter}`).then((d) => { S.data.posts = d; }));
       }
       if (name === "rewards") jobs.push(api(`/rewards?status=${S.rewardTab}`).then((d) => { S.data.rewards = d; }));
-      if (name === "admins") jobs.push(api("/admins").then((d) => { S.data.admins = d; }));
+      if (name === "admins") jobs.push(api("/admins").then((d) => { S.data.admins = d; }), api("/devices").then((d) => { S.data.phones = d; }));
       if (name === "audit") jobs.push(api("/audit").then((d) => { S.data.audit = d; }));
       if (name === "settings") jobs.push(health().then((h) => { S.health = h; }));
+      // [MON-10] The 정식 출시 card is the owner's; S.me is known from the last overview.
+      if (name === "settings" && S.me?.owner) jobs.push(api("/launch").then((d) => { S.data.launch = d; }));
       const results = await Promise.allSettled(jobs);
       const failed = results.find((r) => r.status === "rejected");
       if (failed && !quiet) fail(failed.reason);
@@ -1562,18 +1572,19 @@ function adminApp() {
     const r = S.data.rewards;
     const counts = r?.counts ?? {};
     const edit = can("rewards", "edit");
-    const segs = [["owed", "지급 대기"], ["paid", "지급함"], ["void", "취소"]].map(([key, label]) => seg("reward-tab", key, S.rewardTab, label, counts[key])).join("");
+    const segs = [["owed", "드릴 보상"], ["paid", "드림"], ["void", "취소"]].map(([key, label]) => seg("reward-tab", key, S.rewardTab, label, counts[key])).join("");
     const body = !r || r.status !== S.rewardTab ? skeleton() : !r.rewards.length ? empty(S.rewardTab === "owed" ? "드릴 보상이 없어요" : "목록이 비어 있어요", "")
       : `<ul class="rows">${r.rewards.map((w) => `<li class="item">
         <div class="row-main"><b>${esc(w.company.name)}${w.dept ? ` · ${esc(w.dept)}` : ""}</b>
-          <small>프로 ${w.months}개월 · ${day(w.createdAt)} ${w.ask ? "앱에 없는 방식" : "채택"}${w.version ? ` · 규칙 v${w.version}` : ""}${w.paidAt ? ` · ${day(w.paidAt)} 지급` : ""}</small>
+          <small>프로 ${w.months}개월 · ${day(w.createdAt)} ${w.ask ? "앱에 없는 방식" : "채택"}${w.version ? ` · 규칙 v${w.version}` : ""}${w.paidAt ? ` · ${day(w.paidAt)} 드림` : ""}</small>
+          ${w.deferred ? '<span class="pill ok">Play 결제 미룸</span>' : ""}
           ${w.memo ? `<small class="memo">${esc(w.memo)}</small>` : ""}</div>
         ${edit ? `<div class="actions">${w.status === "owed" ? `<button class="btn" data-act="reward" data-id="${w.id}" data-status="void">취소</button>
-          <button class="btn primary" data-act="reward" data-id="${w.id}" data-status="paid">지급함</button>`
+          <button class="btn primary" data-act="reward" data-id="${w.id}" data-status="paid" data-months="${w.months}">드림</button>`
           : `<button class="btn" data-act="reward" data-id="${w.id}" data-status="owed">대기로 되돌리기</button>`}</div>` : ""}
       </li>`).join("")}</ul>`;
     return `<div class="segmented" role="group" aria-label="보상 상태">${segs}</div>
-      <p class="hint">채택된 정보를 보낸 분들께 드릴 프로 이용 기간이에요. 유료 기능이 시작되면 앱에서 받게 할 예정이고, 스토어 리뷰와는 묶지 않아요.</p>${body}`;
+      <p class="hint">[드림]을 누르면 보낸 분 휴대폰에 프로 이용권이 생겨요. 이용권은 쌓이고, 정식 출시 전에 드린 것은 출시 날부터 세요. 이미 구독 중인 분은 Play의 다음 결제일이 그만큼 미뤄져요(서버에 Play 키가 있을 때). 스토어 리뷰와는 묶지 않아요.</p>${body}`;
   }
 
   // ---- admins (the owner only) ----
@@ -1608,6 +1619,7 @@ function adminApp() {
               : `<button class="btn small" data-act="admin-status" data-id="${a.id}" data-status="active">다시 쓰기</button>`}
             <button class="btn small danger" data-act="admin-remove" data-id="${a.id}" data-name="${esc(a.name)}">삭제</button></div></li>`).join("")}
       </ul>
+      ${phonesSection()}
       <h2 class="section">초대한 메일<span class="count">${invites.length}</span></h2>
       ${invites.length ? `<ul class="rows">${invites.map((i) => `<li class="item">
         <div class="row-main"><b>${esc(i.email)}</b><small>${i.state === "expired" ? "링크 만료" : `${esc(day(i.expiresAt))}까지`}${i.note ? ` · ${esc(i.note)}` : ""}</small>
@@ -1616,6 +1628,21 @@ function adminApp() {
         <div class="actions"><button class="btn small" data-act="invite-again" data-email="${esc(i.email)}">새 링크</button>
           <button class="btn small danger" data-act="invite-remove" data-email="${esc(i.email)}">취소</button></div></li>`).join("")}</ul>`
         : '<p class="hint">가입을 기다리는 초대가 없어요.</p>'}`;
+  }
+
+  /** [MON-09] Admins' phones tied with a code from 내 정보: approved ones get 프로 free while the admin stays. */
+  function phonesSection() {
+    const p = S.data.phones;
+    if (!p) return "";
+    const pill = (d) => (d.status === "approved" ? '<span class="pill ok">프로 무료</span>' : '<span class="pill warn">승인 대기</span>');
+    return `<h2 class="section">관리자 휴대폰<span class="count">${p.devices.length}</span></h2>
+      <p class="hint">관리자가 내 정보 › '내 휴대폰 밤낮 연결'로 만든 코드를 앱에 넣으면 여기에 나와요. 승인하면 그 휴대폰은 프로를 무료로 써요. 한 사람당 ${p.perAdmin}대, 관리자를 지우면 같이 끊겨요.</p>
+      ${p.devices.length ? `<ul class="rows">${p.devices.map((d) => `<li class="item">
+        <div class="row-main"><b>${esc(d.adminName)}의 휴대폰</b><small>${esc(ago(d.createdAt))} 연결${d.seenAt ? ` · 마지막 확인 ${esc(ago(d.seenAt))}` : ""}</small></div>
+        ${pill(d)}
+        <div class="actions">${d.status === "approved" ? "" : `<button class="btn small primary" data-act="phone" data-id="${d.id}" data-key="approve">승인</button>`}
+          <button class="btn small danger" data-act="phone" data-id="${d.id}" data-key="remove">끊기</button></div></li>`).join("")}</ul>`
+        : '<p class="hint">연결된 휴대폰이 없어요.</p>'}`;
   }
 
   /** Area by area: nothing, a look, or changes too; presets fill the table in one tap. */
@@ -1728,6 +1755,7 @@ function adminApp() {
         <p class="hint">채택된 정보를 보낸 분께 드릴 프로 이용 기간이에요. 0개월이면 보상을 기록하지 않아요.</p>
         ${edit ? `<button class="btn primary wide" data-act="save-settings"${S.draft ? "" : " disabled"}>저장</button>` : '<p class="note">보기 권한이라 바꿀 수 없어요.</p>'}
       </section>` : ""}
+      ${S.me?.owner ? launchCard() : ""}
       <section class="card"><h2>앱으로 설치</h2>
         <p class="hint">${S.installed ? "이 기기에는 앱으로 설치돼 있어요." : "홈 화면에 두면 앱처럼 바로 열리고, 주소창 없이 넓게 보여요."}</p>
         <div class="actions start">${S.installPrompt ? `<button class="btn primary" data-act="install">${icon(P.install)}지금 설치</button>` : ""}
@@ -1737,6 +1765,29 @@ function adminApp() {
         <p class="meta">가입 확인 메일: ${S.health?.mail ? "켜짐 (MAIL_API_KEY)" : "꺼짐, 초대 링크를 메일로 보내 확인해요"}</p></section>` : ""}
       <section class="card"><h2>단축키</h2><p class="hint">키보드가 있으면 <span class="kbd">?</span>로 단축키를 볼 수 있어요.</p></section>
       </div>`;
+  }
+
+  /**
+   * [MON-10] 정식 출시: the switch every app reads once a day. On, the app charges for 프로, shows the ad
+   * banner and gives phones installed before today the thank-you months. Off, everything is free again.
+   */
+  function launchCard() {
+    const l = S.data.launch;
+    if (!l) return '<section class="card"><h2>정식 출시</h2>' + skeleton(1) + "</section>";
+    return `<section class="card"><div class="card-head"><h2>정식 출시 (결제·광고)</h2>
+        <span class="pill ${l.billingLive ? "ok" : "warn"}">${l.billingLive ? "켜짐" : "꺼짐"}</span></div>
+      <p class="hint">${l.billingLive ? `${esc(day(l.launchedAt))}에 켰어요. 앱은 하루 안에 따라와요. 끄면 다시 모두 무료가 돼요.`
+        : "켜기 전에는 모든 기능이 무료이고 광고가 없어요. 켜면 앱이 하루 안에 결제·광고·프로 잠금을 시작해요."}</p>
+      <dl class="kv"><dt>Play 구매 확인</dt><dd>${l.play ? "연결됨 (PLAY_SERVICE_ACCOUNT)" : "꺼짐: 휴대폰의 Play 결제로만 판단, 체험 동의가 없어도 결제를 멈출 수 없어요"}</dd>
+        <dt>구독 중</dt><dd>${l.subscribers}명 (서버가 확인한 수)</dd></dl>
+      <form data-form="launch">
+        <div class="fieldset"><label for="thanks">테스트 참여자 감사 보상</label><input id="thanks" name="thanks" type="number" min="0" max="12" value="${l.thanksMonths}">
+          <span class="help">정식 출시 전에 설치한 휴대폰에 출시 날부터 드릴 프로 개월 수</span></div>
+        <div class="fieldset"><label for="free">모두에게 무료로 연 프로 기능</label><input id="free" name="free" value="${esc(l.freeFeatures.join(", "))}" placeholder="예: MONEY_STATS">
+          <span class="help">프로 기능을 모두에게 열 때만 적어요. 연 기능을 다시 잠그지는 않아요(이미 준 것은 거두지 않음).</span></div>
+        <div class="actions"><button class="btn" type="submit">저장</button></div></form>
+      <div class="actions start"><button class="btn ${l.billingLive ? "danger" : "primary"}" data-act="launch-switch" data-key="${l.billingLive ? "off" : "on"}">${l.billingLive ? "정식 출시 끄기" : "정식 출시 켜기"}</button></div>
+    </section>`;
   }
 
   function stepper(key, label, value, unit, edit) {
@@ -1761,6 +1812,9 @@ function adminApp() {
             <meter id="pw-meter" class="strength" min="0" max="4" low="2" high="3" optimum="4" value="0" aria-label="비밀번호 안전도"></meter>
             <span class="help">10자 이상. 바꾸면 다른 기기의 로그인은 끝나요.</span></div>
           <div class="actions"><button class="btn primary" type="submit">바꾸기</button></div></form>`}
+      <section class="card"><h2>내 휴대폰 밤낮 연결</h2>
+        <p class="hint">관리자 휴대폰은 프로를 무료로 써요. 코드를 만들어 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 10분 안에 넣어요${m.owner ? "" : ". 최고 관리자가 승인하면 시작돼요"}. 한 사람당 2대까지예요.</p>
+        <div class="actions start"><button class="btn primary" data-act="link-code">연결 코드 만들기</button></div></section>
       <section class="card"><h2>로그인</h2><p class="hint">휴대폰을 잃어버렸다면 모든 기기에서 로그아웃해요.</p>
         <div class="actions start"><button class="btn" data-act="logout">${icon(P.logout)}로그아웃</button>
           <button class="btn danger" data-act="logout-all">모든 기기에서 로그아웃</button></div></section>
@@ -1900,10 +1954,14 @@ function adminApp() {
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">만들기</button></div></form>`);
   }
 
-  function openPaid(id) {
-    openDialog(`<form data-form="paid" data-id="${id}"><h2>지급했어요</h2><p>어떻게 드렸는지 적어 두면 나중에 찾기 쉬워요. 보낸 분의 이름이나 연락처는 적지 마세요.</p>
-      <label for="memo">메모 (선택)</label><input id="memo" name="memo" maxlength="200" placeholder="예: 프로 3개월 쿠폰">
-      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">기록하기</button></div></form>`);
+  function openPaid(id, months = 3) {
+    // [MON-08] 회사 방식 채택 3개월, 제안 1개월, 큰 개선 6개월~1년 (수익화 확정 4장 7).
+    const choices = [[1, "제안 채택"], [3, "회사 방식 채택"], [6, "큰 개선"], [12, "아주 큰 개선"]];
+    openDialog(`<form data-form="paid" data-id="${id}"><h2>프로 이용권 드리기</h2><p>보낸 분 휴대폰에 이용권이 생겨요. 이미 받은 이용권 뒤에 이어져요.</p>
+      <p class="label">기간</p><div class="chips" role="radiogroup" aria-label="기간">${choices.map(([n, why]) => `<label class="chip pick"><input type="radio" name="months" value="${n}"${Number(months) === n ? " checked" : ""}> ${n}개월 · ${why}</label>`).join("")}</div>
+      <label for="memo">메모 (선택)</label><input id="memo" name="memo" maxlength="200" placeholder="예: 근태 방식 제보 채택">
+      <p class="help">보낸 분의 이름이나 연락처는 적지 마세요.</p>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">드리기</button></div></form>`);
   }
 
   function openShortcuts() {
@@ -1934,9 +1992,11 @@ function adminApp() {
     load();
   }
 
-  async function setReward(id, status, memo) {
-    await act(() => api(`/rewards/${id}`, "POST", memo === undefined ? { status } : { status, memo }),
-      status === "paid" ? "지급을 기록했어요" : status === "void" ? "보상을 취소했어요" : "대기로 되돌렸어요");
+  async function setReward(id, status, memo, months) {
+    const body = { status, ...(memo === undefined ? {} : { memo }), ...(months ? { months } : {}) };
+    await act(() => api(`/rewards/${id}`, "POST", body),
+      (r) => status === "paid" ? (r?.deferred ? `Play 다음 결제를 ${r.months}개월 미뤘어요` : `프로 ${r?.months ?? months}개월 이용권을 드렸어요`)
+        : status === "void" ? "보상을 취소했어요" : "대기로 되돌렸어요");
     load();
   }
 
@@ -1995,7 +2055,7 @@ function adminApp() {
       render();
       load();
     },
-    reward: ({ id, status }) => (status === "paid" ? openPaid(id) : setReward(id, status)),
+    reward: ({ id, status, months }) => (status === "paid" ? openPaid(id, months) : setReward(id, status)),
     step: ({ key, d }) => {
       const s = { adoptAgree: 75, ...(S.draft ?? S.overview?.settings ?? { adoptPoints: 3, rewardMonths: 3 }) };
       const [lo, hi, by] = key === "adoptPoints" ? [2, 20, 1] : key === "adoptAgree" ? [50, 100, 5] : [0, 24, 1];
@@ -2175,6 +2235,37 @@ function adminApp() {
     },
     level: ({ area, level }) => setLevel(area, level),
     "admin-approve": ({ id }) => openAdminEdit(id, true),
+    // [MON-09]
+    phone: async ({ id, key }) => {
+      const go = async () => {
+        const d = await act(() => api(`/devices/${id}/${key}`, "POST", {}), key === "approve" ? "승인했어요. 그 휴대폰은 프로를 무료로 써요" : "끊었어요");
+        if (d) S.data.phones = d;
+        load();
+      };
+      if (key === "remove") confirmBox("이 휴대폰을 끊을까요?", "그 휴대폰은 다음 확인 때부터 무료 등급이 돼요.", "끊기", go);
+      else go();
+    },
+    "link-code": async () => {
+      const r = await act(() => api("/me/link-code", "POST", {}));
+      if (!r) return;
+      openDialog(`<div class="box"><h2>연결 코드</h2><p class="code-big" aria-label="연결 코드">${esc(r.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</p>
+        <p class="hint">${esc(clock(r.expiresAt))}까지 한 번 쓸 수 있어요. 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 넣어 주세요.</p>
+        <div class="actions"><button class="btn" data-act="close">닫기</button></div></div>`);
+    },
+    // [MON-10]
+    "launch-switch": ({ key }) => {
+      const on = key === "on";
+      const go = async () => {
+        const d = await act(() => api("/launch", "POST", { billingLive: on }), on ? "정식 출시를 켰어요. 앱이 하루 안에 따라와요" : "정식 출시를 껐어요. 다시 모두 무료예요");
+        if (d) S.data.launch = d;
+        load();
+      };
+      if (on) {
+        confirmBox("정식 출시를 켤까요?", "켜기 전에 차례대로 확인해 주세요: ① Play 정기 결제 상품 활성 ② 이용약관·처리방침 개정판 게시 뒤 7일 ③ Play 데이터 보안·광고 포함 선언 ④ 1.19.0 이상이 프로덕션에. 켜면 결제·광고가 시작되고 출시 전에 설치한 분들께 감사 보상이 가요.", "켜기", go);
+      } else {
+        confirmBox("정식 출시를 끌까요?", "앱이 다음 확인 때부터 모든 기능을 무료로 열고 광고를 멈춰요. 이미 구독한 분의 Play 결제는 그대로예요.", "끄기", go);
+      }
+    },
     "admin-edit": ({ id }) => openAdminEdit(id, false),
     "admin-status": ({ id, status, name }) => {
       const run = async () => {
@@ -2318,7 +2409,16 @@ function adminApp() {
     },
     paid: (form) => {
       dialog.close();
-      setReward(form.dataset.id, "paid", new FormData(form).get("memo"));
+      const data = new FormData(form);
+      setReward(form.dataset.id, "paid", data.get("memo"), Number(data.get("months")) || undefined);
+    },
+    // [MON-10] 감사 보상 개월 수와 서버가 무료로 연 기능.
+    launch: async (form) => {
+      const data = new FormData(form);
+      const free = String(data.get("free") ?? "").split(/[\s,]+/).map((f) => f.trim().toUpperCase()).filter(Boolean);
+      const d = await act(() => api("/launch", "POST", { thanksMonths: Number(data.get("thanks")), freeFeatures: free }), "저장했어요");
+      if (d) S.data.launch = d;
+      render({ keepScroll: true });
     },
     rename: async (form) => {
       const c = await act(() => api(`/companies/${S.route.id}`, "POST", { name: new FormData(form).get("name") }), "이름을 바꿨어요. 예전 이름으로도 찾아져요");

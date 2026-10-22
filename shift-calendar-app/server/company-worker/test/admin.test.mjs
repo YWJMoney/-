@@ -70,14 +70,14 @@ test("without a password set, sign-in says what is missing", async () => {
   const { call } = server({ ADMIN_PASSWORD: "short", RATE_SALT: undefined });
   assert.deepEqual((await call("POST", "/api/admin/login", { password: "short" }, APP)).data, { error: "not_set" });
   assert.deepEqual((await call("GET", "/api/admin/health")).data,
-    { database: true, password: false, salt: false, mail: false, why: { password: "short", salt: "missing" } });
+    { database: true, password: false, salt: false, mail: false, play: false, why: { password: "short", salt: "missing" } });
 });
 
 test("the setup screen says why a secret is not read, never what it is", async () => {
   // Typed under a slightly different name, and bound from the Secrets Store instead of set on the Worker.
   const { call } = server({ ADMIN_PASSWORD: undefined, " admin_password": "a-long-password", RATE_SALT: { get: async () => "x" } });
   const h = (await call("GET", "/api/admin/health")).data;
-  assert.deepEqual(h, { database: true, password: false, salt: false, mail: false, why: { password: "name", salt: "store" } });
+  assert.deepEqual(h, { database: true, password: false, salt: false, mail: false, play: false, why: { password: "name", salt: "store" } });
   assert.equal(JSON.stringify(h).includes("a-long-password"), false);
 });
 
