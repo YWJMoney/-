@@ -21,7 +21,7 @@ class LegalPagesTest {
         val policy = File(site, "privacy/index.html")
         assumeTrue(policy.exists())
         val text = policy.readText()
-        assertTrue(text.contains("처리방침 2.5 · 앱 버전 1.19.0"))
+        assertTrue(text.contains("2.5에서 바뀐 점: 앱 1.19.0부터"))
         listOf("1-5. 정식 출시 확인", "1-6. 프로 구독과 무료 체험 동의", "1-7. 보상 이용권, 복구 코드, 관리자 휴대폰 연결", "1-8. 광고").forEach {
             assertTrue(it, text.contains(it))
         }
@@ -39,7 +39,7 @@ class LegalPagesTest {
         val policy = File(site, "privacy/index.html")
         assumeTrue(policy.exists())
         val text = policy.readText()
-        assertTrue(text.contains("처리방침 2.6 · 앱 버전 1.20.0"))
+        assertTrue(text.contains("2.6에서 바뀐 점: 앱 1.20.0부터"))
         assertTrue(text.contains("2-7. 휴대폰 캘린더에 근무 쓰기"))
         assertTrue("쓰기 권한", text.contains("<td>캘린더 쓰기 (선택, 이용자가 허용)</td>"))
         assertTrue("‘${com.bamnat.app.calendar.PhoneCalendar.ACCOUNT}’ 캘린더", text.contains("‘${com.bamnat.app.calendar.PhoneCalendar.ACCOUNT}’ 캘린더"))
@@ -62,6 +62,20 @@ class LegalPagesTest {
         // [PROV-04] The links the user made go in a backup file, with their key, and not in Google's.
         assertTrue(text.contains("내가 만든 근무표 링크의 주소와 끊기용 열쇠"))
         assertTrue(text.contains("받은 근무표 링크는 넣지 않습니다"))
+    }
+
+    /** [PLZ-01][PLZ-08][PLZ-14][INV-30] 2.7 for 1.21.0: the plaza's votes, names and 임금표, and trades read from 체결 알림. */
+    @Test fun thePrivacyPolicyCoversThePlazaAndTradeAlerts() {
+        val policy = File(site, "privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        assertTrue(text.contains("처리방침 2.7 · 앱 버전 1.21.0"))
+        assertTrue("광장 이름 2~12자", text.contains("광장 이름(선택, 2~12자)"))
+        assertTrue("임금표만 금액", text.contains("<b>금액을 받는 유일한 곳</b>"))
+        assertTrue("채택된 것은 남음", text.contains("<b>채택된 규칙은 모두의 것으로 남습니다.</b>"))
+        assertTrue("찾은 거래 ${com.bamnat.core.invest.TradeAlerts.MAX}개", text.contains("최대 ${com.bamnat.core.invest.TradeAlerts.MAX}개까지만"))
+        assertTrue(text.contains("알림 글 자체는 저장하지 않습니다"))
+        assertTrue(text.contains("결제 알림 자동 기록과 투자 체결 알림으로 거래 찾기"))
     }
 
     @Test fun theTermsCoverSubscriptionTrialAndRefunds() {
