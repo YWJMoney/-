@@ -201,6 +201,8 @@ data class PayProfile(
     val scheduleIsRegular: Boolean = false,
     /** [PAYX-07] 탄력적 근로시간제 단위기간, used with [scheduleIsRegular]; null when there is none. */
     val flexPeriod: FlexPeriod? = null,
+    /** [PAYX-17] For a 2주 단위기간: a day one of the periods starts on; null runs them from a Monday. */
+    val flexStart: LocalDate? = null,
     val weekStart: DayOfWeek = DayOfWeek.MONDAY,
     /**
      * Values the user skipped and the app guessed; shown with an "추정" label. [PAYS-01] Also the

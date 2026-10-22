@@ -117,7 +117,9 @@ internal object SettingsIndex {
         screen(W.title, "근무 종류와 시간", SettingsGo.SHIFT_TYPES, "주간", "야간", "근무 시간", "출근 시간", "색", "아이콘", "근무 전 알람", "휴게"),
         screen(W.title, "연장 휴무일 근무 지정", SettingsGo.EXTRA_KINDS, "잔업", "특근", "대근", "연장", "휴일 근무", "가산"),
         // [SHFT-06][SHFT-07][DAYW-06][DAYW-07]
-        screen(W.title, "듀티표 사진으로 넣기", SettingsGo.DUTY_ROSTER, "듀티표", "근무표 사진", "글자 인식", "사진으로 입력", "간호사", "한 달 입력"),
+        screen(W.title, "듀티표 넣기", SettingsGo.DUTY_ROSTER, "듀티표", "근무표 사진", "글자 인식", "사진으로 입력", "간호사", "한 달 입력",
+            // [IMPORT-03]
+            "근무표 파일", "엑셀 근무표", "CSV", "불규칙 근무표", "편의점 근무표", "병동"),
         screen(W.title, "연간 건강 지표", SettingsGo.HEALTH_REPORT, "야간 비율", "연속 야간", "건강", "1년", "연간 통계"),
         screen(W.title, "근태 엑셀 가져오기", SettingsGo.ATTENDANCE_IMPORT, "엑셀", "CSV", "근태", "출퇴근 기록", "회사 시스템", "xlsx"),
         screen(W.title, "출퇴근 자동 기록", SettingsGo.COMMUTE, "위치", "지오펜스", "자동 출근", "자동 퇴근", "GPS", "회사 위치"),
@@ -146,7 +148,9 @@ internal object SettingsIndex {
         row(N, "잘 준비", "취침 알림", "잘 시간 알림"),
         row(N, "자는 중 표시", "자는 중", "알림창"),
         row(N, "나갈 돈·받을 돈", "고정비", "미수금", "돈 알림", "받을 돈"),
-        row(N, "연차 소멸 안내", "연차", "휴가 알림"),
+        row(N, "연차 사용 촉진 알림", "연차", "휴가 알림", "연차 소멸 안내", "소멸", "사용 촉진"),
+        // [LEAVE-06]
+        screen(P.title, "연차", SettingsGo.PAY, "연차 원장", "남은 연차", "연차 계산", "입사일", "이월", "보상휴가", "연차수당"),
         row(N, "잠금 화면 오늘 근무", "잠금 화면", "상시 알림", "오늘 근무 알림"), // [GUIDE-01]
         row(N, "광장 소식", "광장 알림", "규칙 바뀜", "채택", "회사 소식", "규칙 제안"), // [COMM-10]
         row(N, "자는 동안 미루기", "방해 금지", "조용히"),

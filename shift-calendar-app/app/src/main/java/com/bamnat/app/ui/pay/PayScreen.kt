@@ -123,6 +123,8 @@ fun PayScreen(
     vm: PayViewModel,
     onBack: () -> Unit,
     onOpenExtraKinds: () -> Unit = {},
+    /** [LEAVE-06] The 연차 screen of this calendar. */
+    onOpenLeave: () -> Unit = {},
     /** [COMM-02][COMM-03] Cards above the result: sharing a hand-made setup, 맞았어요·달라요. */
     top: @Composable () -> Unit = {},
     /** [DAILY-16] A card right under the month's total (광장 시세와 견주기). */
@@ -142,6 +144,27 @@ fun PayScreen(
     // The back gesture does what the arrow does: close the editor, not the whole pay screen.
     androidx.activity.compose.BackHandler(enabled = editingSetup || editingRules) {
         if (editingSetup) editingSetup = false else editingRules = false
+    }
+    // [PAYX-22] A change that moves a month matched with a payslip.
+    val verified by vm.verifiedPrompt.collectAsStateWithLifecycle()
+    verified?.let { v ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = vm::keepVerifiedChange,
+            title = { Text("명세서와 맞춘 달이 바뀌어요") },
+            text = {
+                Text(v.change.text + if (v.scoped != null) " 이번 급여기간부터 바꾸면 그 달은 그대로예요." else " 이 바꿈은 날짜가 없는 규칙이라 그 달에도 적용돼요.")
+            },
+            confirmButton = {
+                if (v.scoped != null) TextButton(onClick = vm::startChangeNow) { Text("이번 급여기간부터") }
+                else TextButton(onClick = vm::keepVerifiedChange) { Text("그대로 두기") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = vm::undoVerifiedChange) { Text("되돌리기") }
+                    if (v.scoped != null) TextButton(onClick = vm::keepVerifiedChange) { Text("모든 달에") }
+                }
+            },
+        )
     }
 
     Scaffold(
@@ -191,7 +214,7 @@ fun PayScreen(
                     CompanyRulesEditor(vm, profile!!, snap, month, onClose = { editingRules = false }, onOpenKinds = onOpenExtraKinds)
                 }
                 else -> PayResult(vm, profile!!, snap, gate, onEditSetup = { editingSetup = true }, onEditRules = { editingRules = true }, top = top,
-                    underTotal = underTotal, onReport = onReport, onShareWay = onShareWay)
+                    underTotal = underTotal, onReport = onReport, onShareWay = onShareWay, onOpenLeave = onOpenLeave)
             }
         }
     }
@@ -210,6 +233,7 @@ private fun PayResult(
     underTotal: @Composable () -> Unit = {},
     onReport: ((String) -> Unit)? = null,
     onShareWay: (() -> Unit)? = null,
+    onOpenLeave: () -> Unit = {},
 ) {
     val month by vm.month.collectAsStateWithLifecycle()
     val undo by vm.undoAvailable.collectAsStateWithLifecycle()
@@ -316,7 +340,7 @@ private fun PayResult(
 
         DayLedger(result, unlocked)
 
-        LeaveCard(profile, snapshot, month, onEditRules = onEditRules)
+        LeaveCard(vm, snapshot, month, onOpenLeave)
 
         if (unlocked && closedSnap == null && v.holidayModes.isNotEmpty()) {
             HolidayModes(vm, profile, v.holidayModes)
@@ -433,7 +457,7 @@ private fun PayResult(
             val summary = profile.named(com.bamnat.app.ui.calendar.LocalExtraKinds.current).rules.summary(profile)
             Text(
                 (if (profile.fiveOrMoreEmployees) "5인 이상" else "5인 미만") +
-                    (if (profile.scheduleIsRegular) " · 근무표 시간은 기본 근무" + (profile.flexPeriod?.let { " (탄력제 ${it.months}개월)" } ?: "")
+                    (if (profile.scheduleIsRegular) " · 근무표 시간은 기본 근무" + (profile.flexPeriod?.let { " (탄력제 ${it.unit})" } ?: "")
                     else if (profile.dailyLimitMinutes == null) " · 하루 8시간 기준 없음" else "") +
                     (if (profile.wageType == WageType.MONTHLY) " · 월급제 휴일 ${profile.holidayPayMode.label} · 월 ${profile.monthlyHours}시간" else "") +
                     (if (profile.wageType == WageType.DAILY) " · 일당은 하루 ${PayCalculator.hours(profile.dailyHours)}분" else ""),
@@ -985,46 +1009,47 @@ private fun HolidayModes(vm: PayViewModel, profile: PayProfile, totals: List<Pai
     }
 }
 
-/** 연차 used, planned and left this year [FEAT-10]. */
+/** 연차 usable, planned and lapsing, from the 연차 원장 [FEAT-10][LEAVE-01]; the whole ledger is one tap away. */
 @Composable
-private fun LeaveCard(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth, onEditRules: () -> Unit) {
-    val today = remember { java.time.LocalDate.now() }
-    val balance = remember(profile.rules, snapshot, month.year) {
-        LeaveBook.balance(month.year, profile.rules.annualLeaveDays, today, snapshot.resolver::resolve,
-            free = { profile.rules.holidayLeaveFree && com.bamnat.core.holiday.KoreanHolidays.isHoliday(it) },
-            carried = if (month.year == today.year) profile.rules.annualLeaveCarry else 0.0)
+private fun LeaveCard(vm: PayViewModel, snapshot: ScheduleSnapshot, month: YearMonth, onOpenLeave: () -> Unit) {
+    val s by vm.leave.collectAsStateWithLifecycle()
+    val summary = s ?: return
+    val others = remember(snapshot, month.year) {
+        (1..month.lengthOfYear()).map { month.withMonth(1).atDay(1).plusDays(it - 1L) }
+            .mapNotNull { snapshot.resolver.resolve(it).leave }.filter { !it.kind.annual }
+            .groupBy { it.kind }.mapValues { (_, l) -> l.sumOf { it.days } }
     }
-    if (balance.byKind.isEmpty() && balance.granted == null) return
-    SectionCard(title = "${month.year}년 휴가", trailing = { TextButton(onClick = onEditRules) { Text("연차 일수") } }) {
+    if (summary.lines.isEmpty() && others.isEmpty()) {
+        SectionCard(title = "연차", trailing = { TextButton(onClick = onOpenLeave) { Text("연차 화면") } }) {
+            Text("입사일을 넣으면 연차를 법대로 세고, 쓴 날과 없어질 날을 알려 드려요. 달력에서 날을 길게 눌러 연차·반차를 넣어요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+    SectionCard(title = "연차", trailing = { TextButton(onClick = onOpenLeave) { Text("연차 화면") } }) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LeaveStat("쓴 연차", LeaveBook.days(balance.used), Modifier.weight(1f))
-            LeaveStat("예정", LeaveBook.days(balance.planned), Modifier.weight(1f))
-            LeaveStat("남은 연차", balance.remaining?.let(LeaveBook::days) ?: "—", Modifier.weight(1f),
-                warn = (balance.remaining ?: 0.0) < 0)
+            LeaveStat("쓸 수 있는", LeaveBook.days(summary.available), Modifier.weight(1f), warn = summary.available < 0)
+            LeaveStat("예정", LeaveBook.days(summary.planned), Modifier.weight(1f))
+            LeaveStat("예정 뒤 남는", LeaveBook.days(summary.afterPlanned), Modifier.weight(1f), warn = summary.afterPlanned < 0)
         }
-        if (balance.carried > 0) {
-            Text("받은 연차 ${LeaveBook.days(balance.granted ?: 0.0)} (이월 ${LeaveBook.days(balance.carried)} 포함)",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp))
-        }
-        // [PAY-12][REL-08] From November, days that lapse on 12/31 unless used.
-        balance.expiring(today)?.let { left ->
-            Text("${balance.expiresOn.monthValue}/${balance.expiresOn.dayOfMonth} 소멸 예정 ${LeaveBook.days(left)}. 회사 규정에 따라 이월·수당으로 바뀔 수 있어요.",
+        // [LEAVE-03] The next lapse with what would go after the planned days.
+        summary.nextLapse?.takeIf { it.second > 0 && !it.first.isAfter(summary.today.plusMonths(6)) }?.let { (date, days) ->
+            Text("${date.monthValue}/${date.dayOfMonth} 소멸 예정 ${LeaveBook.days(days)}. 회사 규정에 따라 이월·수당으로 바뀔 수 있어요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(top = 8.dp))
         }
-        val others = balance.byKind.filterKeys { !it.annual }
+        if (summary.comp > 0) {
+            Text("보상휴가 ${LeaveBook.days(summary.comp)}", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+        }
         if (others.isNotEmpty()) {
-            Text(others.entries.joinToString(" · ") { "${it.key.label} ${LeaveBook.days(it.value)}" },
+            Text("${month.year}년 " + others.entries.joinToString(" · ") { "${it.key.label} ${LeaveBook.days(it.value)}" },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp))
         }
-        Text(
-            if (balance.granted == null) "올해 받은 연차 일수를 넣으면 남은 날을 알려 드려요. 달력에서 날을 길게 눌러 연차·반차를 넣어요."
-            else "달력에서 날을 길게 눌러 연차·반차·반반차를 넣으면 여기와 급여에 바로 반영돼요.",
+        Text("달력에서 날을 길게 눌러 연차·반차·반반차를 넣으면 여기와 급여에 바로 반영돼요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 6.dp),
-        )
+            modifier = Modifier.padding(top = 6.dp))
     }
 }
 

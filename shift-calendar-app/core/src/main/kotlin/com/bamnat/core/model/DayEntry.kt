@@ -71,6 +71,8 @@ enum class LeaveKind(val label: String, val paid: Boolean, val annual: Boolean) 
     ANNUAL("연차", paid = true, annual = true),
     PAID("유급 휴가", paid = true, annual = false),
     UNPAID("무급 휴가", paid = false, annual = false),
+    /** [PAYX-18] 보상휴가 (근로기준법 제57조): paid, taken from the 보상휴가 earned, not from 연차. Last, so codes stay. */
+    COMP("보상휴가", paid = true, annual = false),
     ;
 
     companion object {
@@ -105,7 +107,7 @@ data class Leave(val kind: LeaveKind = LeaveKind.ANNUAL, val quarters: Int = 4) 
         }
 
     /** Short mark for calendar cells. */
-    val short: String get() = when (quarters) { 4 -> if (kind == LeaveKind.UNPAID) "무" else "연"; 3 -> "¾"; 2 -> "반"; else -> "¼" }
+    val short: String get() = when (quarters) { 4 -> when (kind) { LeaveKind.UNPAID -> "무"; LeaveKind.COMP -> "보"; else -> "연" }; 3 -> "¾"; 2 -> "반"; else -> "¼" }
 
     /** One stored integer: kind code × 10 + quarters; 0 means no leave. */
     val code: Int get() = kind.code * 10 + quarters

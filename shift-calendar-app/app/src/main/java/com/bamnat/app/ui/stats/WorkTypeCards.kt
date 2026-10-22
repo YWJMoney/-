@@ -102,9 +102,10 @@ internal fun WorkTypeMoreCards(
     if (style.isShift()) FeatureCard("shift.swapCard", calendarId) { SwapCard(snapshot, month) }
     // [SHFT-07] The year's night share, runs of nights and short rests.
     if (style.isShift()) FeatureCard("shift.health", calendarId) { HealthYearCard(snapshot) }
-    if (style == WorkStyle.DAY) {
-        FeatureCard("day.overtimeCap", calendarId) { OvertimeCapCard(calendarId, summary) }
-        FeatureCard("day.bridges", calendarId) { BridgeCard(snapshot) }
+    if (style == WorkStyle.DAY) FeatureCard("day.overtimeCap", calendarId) { OvertimeCapCard(calendarId, summary) }
+    // [LEAVE-04] 징검다리 for every kind of work that takes leave.
+    if (style == null || style == WorkStyle.DAY || style == WorkStyle.SHIFT || style == WorkStyle.HOURLY) {
+        FeatureCard("day.bridges", calendarId) { BridgeCard(snapshot, style) }
     }
 }
 
@@ -178,16 +179,18 @@ private fun DayFirstCard(
     profile: PayProfile?,
     columns: Int,
 ) {
-    val prefs = WorkTypePrefs.get(LocalContext.current)
+    val context = LocalContext.current
+    val prefs = WorkTypePrefs.get(context)
     val choices by prefs.all.collectAsStateWithLifecycle()
     val mode = choices[calendarId]?.taxMode ?: TaxMode.INSURANCE_4
     val today = remember { LocalDate.now() }
-    val balance = remember(profile?.rules, snapshot, month.year) {
-        val rules = profile?.rules
-        LeaveBook.balance(month.year, rules?.annualLeaveDays, today, snapshot.resolver::resolve,
-            free = { rules?.holidayLeaveFree == true && KoreanHolidays.isHoliday(it) },
-            carried = if (rules != null && month.year == today.year) rules.annualLeaveCarry else 0.0)
+    // [LEAVE-01] The 연차 원장 of this calendar.
+    val ledger by remember(calendarId) { context.appContainer.calendars.leave(calendarId).summary }
+        .collectAsStateWithLifecycle(null)
+    val used = remember(snapshot, month) {
+        (1..month.lengthOfMonth()).mapNotNull { snapshot.resolver.resolve(month.atDay(it)).leave }.filter { it.kind.annual }.sumOf { it.days }
     }
+    val left = ledger?.takeIf { it.lots.isNotEmpty() }?.available
     val takeHome = payTotal?.let { TakeHome.estimate(it, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0) }
     val overtimeDays = remember(snapshot, month) {
         (1..month.lengthOfMonth()).count { snapshot.resolver.resolve(month.atDay(it)).hasExtraWork }
@@ -196,9 +199,9 @@ private fun DayFirstCard(
         val tiles: List<@Composable (Modifier) -> Unit> = listOf(
             { m -> StatTile("야근", HoursFormat.korean(summary.extraMinutes), m, caption = "${overtimeDays}일") },
             { m ->
-                StatTile("연차", "${LeaveBook.days(balance.used)} 씀", m,
-                    caption = balance.remaining?.let { "남은 ${LeaveBook.days(it)}" } ?: "연차 일수를 넣으면 남은 날이 보여요",
-                    warning = (balance.remaining ?: 0.0) < 0)
+                StatTile("연차", "${LeaveBook.days(used)} 씀", m,
+                    caption = left?.let { "남은 ${LeaveBook.days(it)}" } ?: "입사일을 넣으면 남은 날이 보여요",
+                    warning = (left ?: 0.0) < 0)
             },
             { m ->
                 StatTile("예상 실수령", takeHome?.let { Fmt.won(it.net) } ?: "-", m,
@@ -380,17 +383,15 @@ private fun OvertimeCapCard(calendarId: String, summary: MonthSummary) {
 
 /** [DAYW-04] 징검다리 연휴 in the next 12 months: 연차 1~2일로 길게 쉬는 날. */
 @Composable
-private fun BridgeCard(snapshot: ScheduleSnapshot) {
+private fun BridgeCard(snapshot: ScheduleSnapshot, style: WorkStyle?) {
     val today = remember { LocalDate.now() }
-    val bridges = remember(snapshot, today) {
-        DayWork.bridges(today, isWorkDay = { snapshot.resolver.resolve(it).let { d -> d.isWorkDay && d.leave == null } })
-    }
+    val bridges = remember(snapshot, style, today) { com.bamnat.app.ui.leave.LeaveBridges.of(snapshot, style, today) }
     if (bridges.isEmpty()) return
     SectionCard(title = "징검다리 연휴") {
         bridges.take(8).forEach { b ->
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("${Fmt.shortDate(b.from)}~${Fmt.shortDate(b.to)} · ${b.holidays.joinToString("·")}",
+                    Text("${Fmt.shortDate(b.from)}~${Fmt.shortDate(b.to)}" + if (b.holidays.isNotEmpty()) " · ${b.holidays.joinToString("·")}" else "",
                         style = MaterialTheme.typography.bodyLarge.merge(NumberStyle))
                     Text("연차: " + b.leave.joinToString(", ") { "${Fmt.shortDate(it)}(${Fmt.dayOfWeekShort(it.dayOfWeek)})" },
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -398,7 +399,7 @@ private fun BridgeCard(snapshot: ScheduleSnapshot) {
                 Text(b.text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             }
         }
-        Text("앞으로 12개월의 공휴일과 쉬는 요일로 찾았어요.", style = MaterialTheme.typography.bodySmall,
+        Text(com.bamnat.app.ui.leave.LeaveBridges.caption(style), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
     }
 }

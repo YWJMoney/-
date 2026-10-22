@@ -924,7 +924,7 @@ private fun QuestionStep(
     }
     answers.forEach { a -> AnswerCard(a.title, a.detail, a.selected, a.pick) }
     if (q.question == SetupQuestion.SCHEDULE_IS_REGULAR && known && s.scheduleRegular) {
-        FlexPicker(s.flexPeriod) { s.flexPeriod = it }
+        FlexPicker(s.flexPeriod, onFlex = { s.flexPeriod = it })
     }
     AnswerCard("모르겠어요", "$unknownText. ‘확인 필요’로 표시하고 범위로 보여 드려요", key in s.unknown, onUnknown)
 }
@@ -972,7 +972,7 @@ private fun PaySetupQuestion.label(s: PaySetupState): String =
 private fun PaySetupQuestion.answerText(s: PaySetupState, p: PayProfile): String = when (question) {
     SetupQuestion.FIVE_OR_MORE -> if (p.fiveOrMoreEmployees) "5명 이상" else "5명 미만"
     SetupQuestion.SUPERVISORY -> if (p.rules.supervisoryApproved) "승인 있음" else "승인 없음"
-    SetupQuestion.SCHEDULE_IS_REGULAR -> if (p.scheduleIsRegular) "기본 근무" + (p.flexPeriod?.let { " (탄력제 ${it.months}개월)" } ?: "") else "연장으로 따로"
+    SetupQuestion.SCHEDULE_IS_REGULAR -> if (p.scheduleIsRegular) "기본 근무" + (p.flexPeriod?.let { " (탄력제 ${it.unit})" } ?: "") else "연장으로 따로"
     SetupQuestion.PUBLIC_HOLIDAYS -> if (p.fiveOrMoreEmployees) (if (p.rules.publicHolidaysPaid) "휴일근로" else "휴일 대체")
         else if (p.rules.holidaysUnderFive) "유급휴일로 줌" else "평일처럼"
     SetupQuestion.REST_DAY_WORK -> p.rules.restDayWork.label
@@ -1100,7 +1100,13 @@ private fun ItemRowEditor(row: ItemRow) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun FlexPicker(flex: FlexPeriod?, onFlex: (FlexPeriod?) -> Unit) {
+internal fun FlexPicker(
+    flex: FlexPeriod?,
+    onFlex: (FlexPeriod?) -> Unit,
+    /** [PAYX-17] The day a 2주 period starts, as the company set it; null counts from a Monday. */
+    start: java.time.LocalDate? = null,
+    onStart: ((java.time.LocalDate?) -> Unit)? = null,
+) {
     Text("회사에 탄력적 근로시간제가 있나요?", style = MaterialTheme.typography.titleSmall)
     Text("법으로는 이 제도를 둔 회사만 긴 근무를 연장 없이 계산할 수 있어요. 있으면 기간 평균 주 40시간을 넘는 시간만 연장이 되고, " +
         "없거나 모르면 법정 기준과의 차액을 결과 화면에 따로 알려 드려요. 취업규칙이나 노사 합의서에 적혀 있어요.",
@@ -1108,6 +1114,12 @@ internal fun FlexPicker(flex: FlexPeriod?, onFlex: (FlexPeriod?) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         FilterChip(selected = flex == null, onClick = { onFlex(null) }, label = { Text("없거나 몰라요") })
         FlexPeriod.entries.forEach { p -> FilterChip(selected = flex == p, onClick = { onFlex(p) }, label = { Text(p.label) }) }
+    }
+    if (flex == FlexPeriod.TWO_WEEKS) {
+        if (onStart != null) com.bamnat.app.ui.work.DateField("2주가 시작하는 날", start, onStart)
+        Text("2주 단위는 취업규칙으로 정해요(근로기준법 제51조 제1항). 한 주는 48시간까지예요. " +
+            if (onStart == null) "시작하는 날은 회사 규칙에서 넣을 수 있어요." else "정하지 않으면 월요일부터 2주씩 세요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

@@ -106,6 +106,8 @@ data class DayExtraEntity(
     /** [EXTRA-05] Moved from a version 11 record that may hold hours nobody meant. */
     @ColumnInfo(defaultValue = "0") val needsReview: Boolean = false,
     @ColumnInfo(defaultValue = "0") val position: Int = 0,
+    /** [PAYX-18] Version 19: paid in time off (보상휴가) instead of money. */
+    @ColumnInfo(defaultValue = "0") val compLeave: Boolean = false,
 )
 
 @Entity(tableName = "memos", indices = [Index("epochDay"), Index("updatedAt"), Index("deletedAt")])

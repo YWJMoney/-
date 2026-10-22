@@ -393,6 +393,47 @@ class MigrationTest {
         }
     }
 
+    /**
+     * [LEAVE-01] Version 18 rows come through version 19 as they were (a day's leave, a piece of extra work, an
+     * investor account); the 연차 원장 arrives empty and takes rows, and old extra work is paid in money, not 보상휴가.
+     */
+    @Test
+    fun version18RowsKeepTheirMeaning() = runBlocking {
+        val name = "migration-18.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val sql = createTables(file, 18)
+        sql.execSQL("INSERT INTO day_entries (epochDay, overrideMode, overtimeMinutes, holidayWorkMinutes, alarmSkipped, attendance, swapWith) " +
+            "VALUES (20740, 0, 0, 0, 0, 2, '민지')")
+        sql.execSQL("INSERT INTO day_extras (id, epochDay, kindId, startMinute, endMinute, breakMinutes, minutes, needsReview, position) " +
+            "VALUES (1, 20741, 2, 1080, 1260, 0, 180, 0, 0)")
+        sql.execSQL("INSERT INTO invest_accounts (id, name, type, broker, feeRate, sortOrder, hidden) VALUES (1, '일반 계좌', 'GENERAL', '', NULL, 0, 0)")
+        sql.version = 18
+        sql.close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+            .addMigrations(*AppDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            assertEquals("민지", db.dayEntryDao().getAll().single().swapWith)
+            val extra = db.dayExtraDao().getAll().single()
+            assertEquals(180, extra.minutes)
+            assertTrue(!extra.compLeave)
+            assertEquals("일반 계좌", db.investDao().allAccounts().single().name)
+            val ledger = db.leaveLedgerDao()
+            assertTrue(ledger.all().isEmpty())
+            val start = java.time.LocalDate.of(2026, 1, 1)
+            ledger.insert(com.bamnat.core.leave.LedgerEntry(kind = com.bamnat.core.leave.EntryKind.CARRY, date = start, days = 2.5,
+                expires = start.plusYears(1).minusDays(1), note = "이월").toEntity(1))
+            val row = ledger.all().single().toModel()!!
+            assertEquals(com.bamnat.core.leave.EntryKind.CARRY, row.kind)
+            assertEquals(2.5, row.days, 1e-9)
+            assertEquals(java.time.LocalDate.of(2026, 12, 31), row.expires)
+        } finally {
+            db.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     private fun createTables(file: File, version: Int): SQLiteDatabase {
         val schema = JSONObject(File(SCHEMA_DIR, "$version.json").readText()).getJSONObject("database")
         val sql = SQLiteDatabase.openOrCreateDatabase(file, null)

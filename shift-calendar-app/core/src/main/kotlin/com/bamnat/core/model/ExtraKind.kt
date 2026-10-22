@@ -94,6 +94,8 @@ data class ExtraEntry(
     val coveredShiftId: Long? = null,
     /** [EXTRA-05] Moved from an older record that may hold hours nobody meant; asks the user once. */
     val needsReview: Boolean = false,
+    /** [PAYX-18] Paid in time off instead of money (보상휴가, 근로기준법 제57조). */
+    val compLeave: Boolean = false,
 ) {
     val hasTimes: Boolean get() = start != null && end != null
 

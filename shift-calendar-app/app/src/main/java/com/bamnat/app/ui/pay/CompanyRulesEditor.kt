@@ -29,6 +29,7 @@ import com.bamnat.app.ui.calendar.ExtraKindMark
 import java.time.DayOfWeek
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -93,6 +94,7 @@ fun CompanyRulesEditor(
     onOpenKinds: () -> Unit,
 ) {
     var draft by remember { mutableStateOf(saved) }
+    var example by remember { mutableStateOf<com.bamnat.core.pay.PayExamples.Example?>(null) }
     val kinds = com.bamnat.app.ui.calendar.LocalExtraKinds.current
     val rates = remember(month) { com.bamnat.core.pay.RateTable.on(month.atDay(1)) }
     var pickHire by remember { mutableStateOf(false) }
@@ -119,10 +121,8 @@ fun CompanyRulesEditor(
                 TextButton(onClick = {
                     state.selectedDateMillis?.let { ms ->
                         val hire = Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC).toLocalDate()
-                        draft = draft.copy(
-                            hireDate = hire,
-                            rules = draft.rules.copy(annualLeaveDays = LeaveBook.legalDays(hire, LocalDate.now()).toDouble()),
-                        )
+                        // [LEAVE-02] The 연차 원장 counts the law's leave from this date by itself.
+                        draft = draft.copy(hireDate = hire)
                     }
                     pickHire = false
                 }) { Text("확인") }
@@ -157,7 +157,10 @@ fun CompanyRulesEditor(
                     draft.scheduleIsRegular) {
                     draft = draft.copy(scheduleIsRegular = it, flexPeriod = if (it) draft.flexPeriod else null).settled(Unknowns.SCHEDULE_IS_REGULAR)
                 }
-                if (draft.scheduleIsRegular) FlexPicker(draft.flexPeriod) { draft = draft.copy(flexPeriod = it).settled(Unknowns.SCHEDULE_IS_REGULAR) }
+                if (draft.scheduleIsRegular) {
+                    FlexPicker(draft.flexPeriod, { draft = draft.copy(flexPeriod = it).settled(Unknowns.SCHEDULE_IS_REGULAR) },
+                        start = draft.flexStart, onStart = { draft = draft.copy(flexStart = it) })
+                }
                 if (!draft.scheduleIsRegular) {
                     Toggle("하루 8시간 넘으면 연장", "탄력적·선택적 근로시간제라면 꺼 주세요", draft.dailyLimitMinutes != null) {
                         draft = draft.copy(dailyLimitMinutes = if (it) 480 else null)
@@ -420,38 +423,41 @@ fun CompanyRulesEditor(
                     }
                 }
             }
-            SectionCard(title = "연차") {
-                // [FEAT-10] Days granted this year; the pay screen shows used and left.
-                val days = rules.annualLeaveDays
+            // [PAYX-16] 포괄임금·탄력제: ready examples with what each does; the app never decides whether the company's is valid.
+            SectionCard(title = "예시 규칙") {
+                Hint("계약서에 포괄임금(고정 연장수당)이나 탄력적 근로시간제가 있으면 예시를 넣고 숫자만 고쳐요. 유효한지는 앱이 판단하지 않아요.")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selected = days == null, onClick = { setRules(rules.copy(annualLeaveDays = null)) }, label = { Text("입력 안 함") })
-                    listOf(11.0, 15.0, 20.0, 25.0).forEach { d ->
-                        FilterChip(selected = days == d, onClick = { setRules(rules.copy(annualLeaveDays = d)) }, label = { Text(LeaveBook.days(d)) })
+                    com.bamnat.core.pay.PayExamples.all.forEach { ex ->
+                        OutlinedButton(onClick = { example = ex }) { Text(ex.title) }
                     }
-                    OutlinedButton(onClick = { setRules(rules.copy(annualLeaveDays = ((days ?: 15.0) - 0.5).coerceAtLeast(0.0))) }) { Text("−") }
-                    Text(days?.let(LeaveBook::days) ?: "—", style = MaterialTheme.typography.titleSmall, modifier = Modifier.align(Alignment.CenterVertically))
-                    OutlinedButton(onClick = { setRules(rules.copy(annualLeaveDays = ((days ?: 15.0) + 0.5).coerceAtMost(40.0))) }) { Text("+") }
                 }
-                // [PAY-12][REL-08] Days left over from last year that the company lets you carry.
-                val carry = rules.annualLeaveCarry
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-                    Column(Modifier.weight(1f)) {
-                        Text("작년에서 넘어온 연차", style = MaterialTheme.typography.bodyLarge)
-                        Text("회사가 이월해 준 날만 넣어요. 올해 연차에 더해 셈해요",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    OutlinedButton(onClick = { setRules(rules.copy(annualLeaveCarry = (carry - 0.5).coerceAtLeast(0.0))) }, enabled = carry > 0) { Text("−") }
-                    Text(LeaveBook.days(carry), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 8.dp))
-                    OutlinedButton(onClick = { setRules(rules.copy(annualLeaveCarry = (carry + 0.5).coerceAtMost(40.0))) }) { Text("+") }
-                }
-                // [PAY-10] 입사일 gives the legal number (근로기준법 제60조), which the user can still adjust.
+            }
+            example?.let { ex ->
+                AlertDialog(
+                    onDismissRequest = { example = null },
+                    title = { Text(ex.title) },
+                    text = { Text(ex.summary + "\n\n" + ex.guide) },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            draft = com.bamnat.core.pay.PayExamples.apply(ex.kind, draft, month.atDay(1))
+                                .let { if (ex.kind == com.bamnat.core.pay.PayExamples.Kind.FIXED_OVERTIME) it else it.settled(Unknowns.SCHEDULE_IS_REGULAR) }
+                            example = null
+                        }) { Text("넣기") }
+                    },
+                    dismissButton = { TextButton(onClick = { example = null }) { Text("닫기") } },
+                )
+            }
+            SectionCard(title = "연차") {
+                // [LEAVE-02] The 연차 원장 makes the law's leave from the hire date; days the company gave, 이월 and
+                // 조정 go in on the 연차 screen (급여 › 연차 카드).
+                val policy = rules.leave
                 val today = remember { LocalDate.now() }
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("입사일", style = MaterialTheme.typography.bodyLarge)
                         val legal = draft.hireDate?.let { LeaveBook.legalDays(it, today) }
                         Text(
-                            if (legal == null) "넣으면 법정 연차를 계산해 채워요"
+                            if (legal == null) "넣으면 연차를 법대로 세어 연차 원장에 넣어요"
                             else "오늘 기준 법정 연차 ${legal}일 (80% 이상 출근 가정)",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -461,7 +467,28 @@ fun CompanyRulesEditor(
                         Text(draft.hireDate?.let { "${it.year}.${it.monthValue}.${it.dayOfMonth}" } ?: "선택")
                     }
                 }
-                Hint("1년 이상 다니면 15일, 그 뒤 2년마다 1일씩 늘어 최대 25일이에요. 1년 안 됐으면 한 달 개근마다 1일(최대 11일)이에요. 근로기준법 제60조 · 5인 미만 사업장은 해당 없음.")
+                Toggle("연차 법대로 세기", "입사일부터 근로기준법 제60조대로 생기는 날을 원장에 넣어요", policy.auto) {
+                    setRules(rules.copy(leave = policy.copy(auto = it)))
+                }
+                if (policy.auto) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        com.bamnat.core.leave.LeaveBasis.entries.forEach { b ->
+                            FilterChip(selected = policy.basis == b, onClick = { setRules(rules.copy(leave = policy.copy(basis = b))) },
+                                label = { Text(b.label) })
+                        }
+                    }
+                    if (policy.basis == com.bamnat.core.leave.LeaveBasis.FISCAL) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                            Text("회계연도 시작", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                            OutlinedButton(onClick = { setRules(rules.copy(leave = policy.copy(fiscalStartMonth = (policy.fiscalStartMonth + 10) % 12 + 1))) }) { Text("−") }
+                            Text("${policy.fiscalStartMonth}월 1일", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 8.dp))
+                            OutlinedButton(onClick = { setRules(rules.copy(leave = policy.copy(fiscalStartMonth = policy.fiscalStartMonth % 12 + 1))) }) { Text("+") }
+                        }
+                        Hint("회계연도 기준은 법이 아니라 회사 편의예요. 입사일 기준보다 적으면 안 되고, 그만둘 때 입사일 기준으로 다시 따져요(고용노동부 해석, 원문 확인 필요).")
+                    }
+                }
+                Hint("1년 이상 다니면 15일, 그 뒤 2년마다 1일씩 늘어 최대 25일이에요. 1년 안 됐으면 한 달 개근마다 1일(최대 11일)이에요. " +
+                    "근로기준법 제60조 · 5인 미만 사업장은 해당 없음. 회사가 준 날·이월·조정은 급여 화면의 연차 카드에서 넣어요.")
             }
             Spacer(Modifier.padding(bottom = 16.dp))
         }
@@ -534,7 +561,7 @@ fun CompanyRules.summary(profile: PayProfile): List<String> = buildList {
     }
     if (profile.wageType == WageType.MONTHLY && profile.monthlyHours != 209) add("월 소정근로 ${profile.monthlyHours}시간")
     if (profile.wageType != WageType.MONTHLY && !weeklyHolidayPay) add("주휴수당 없음")
-    annualLeaveDays?.let { add("연차 ${LeaveBook.days(it)}" + if (annualLeaveCarry > 0) " + 이월 ${LeaveBook.days(annualLeaveCarry)}" else "") }
+    if (!leave.auto) add("연차 직접 넣기") else if (leave.basis == com.bamnat.core.leave.LeaveBasis.FISCAL) add("연차 회계연도 기준 (${leave.fiscalStartMonth}월)")
 }
 
 /** [PAYS-03] Which premiums [item] stands in for: a night allowance either way, a 고정 연장수당 up to all three. */

@@ -77,7 +77,9 @@ class CompanyShare(
                 .apply { team.trim().take(MAX_TEAM).takeIf { it.isNotEmpty() }?.let { put("team", it) } })
         }
         payStore.profile.value?.let { p ->
-            val rules = p.rules.copy(annualLeaveDays = null, annualLeaveCarry = 0.0, extraNames = emptyMap())
+            // [LEAVE-02] The company's leave year goes along; whether the app counts and the 80% years are the user's own.
+            val rules = p.rules.copy(annualLeaveDays = null, annualLeaveCarry = 0.0, extraNames = emptyMap(),
+                leave = p.rules.leave.copy(auto = true, lowAttendanceYears = emptySet()))
             val rulesJson = PayCodec.rulesJson(rules)
             // Rules per shift type are keyed by name in the file.
             rulesJson.optJSONObject("extraByShift")?.let { by -> rulesJson.put("extraByShift", rekey(by) { names[it.toLongOrNull()] }) }
@@ -86,6 +88,7 @@ class CompanyShare(
                 .put("holidayMode", p.holidayPayMode.name)
                 .put("dailyLimit", p.dailyLimitMinutes ?: -1).put("weeklyLimit", p.weeklyLimitMinutes ?: -1)
                 .put("scheduleIsRegular", p.scheduleIsRegular).putOpt("flexPeriod", p.flexPeriod?.name)
+                .putOpt("flexStart", p.flexStart?.toString())
                 .put("weekStart", p.weekStart.name)
                 .put("period", PayCodec.period(p.period))
                 .put("rules", rulesJson)
@@ -394,11 +397,13 @@ class CompanyShare(
             weeklyLimitMinutes = if (pay.has("weeklyLimit")) pay.getInt("weeklyLimit").takeIf { it in 1..168 * 60 } else p.weeklyLimitMinutes,
             scheduleIsRegular = pay.optBoolean("scheduleIsRegular", p.scheduleIsRegular),
             flexPeriod = pay.optString("flexPeriod").let { n -> FlexPeriod.entries.firstOrNull { it.name == n } },
+            flexStart = pay.optString("flexStart").takeIf { it.isNotEmpty() }?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() },
             weekStart = runCatching { DayOfWeek.valueOf(pay.getString("weekStart")) }.getOrDefault(p.weekStart),
             period = pay.optJSONObject("period")?.let(PayCodec::periodFrom) ?: p.period,
             items = p.items + items,
             // The user's own leave days stay theirs.
-            rules = merged?.copy(annualLeaveDays = p.rules.annualLeaveDays, annualLeaveCarry = p.rules.annualLeaveCarry) ?: p.rules,
+            rules = merged?.copy(annualLeaveDays = p.rules.annualLeaveDays, annualLeaveCarry = p.rules.annualLeaveCarry,
+                leave = merged.leave.copy(auto = p.rules.leave.auto, lowAttendanceYears = p.rules.leave.lowAttendanceYears)) ?: p.rules,
         )
     }
 

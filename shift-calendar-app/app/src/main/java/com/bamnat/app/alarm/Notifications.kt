@@ -115,7 +115,7 @@ object Notifications {
             description = "곧 나갈 돈과 아직 못 받은 돈을 알려요. 자는 동안에는 깬 뒤로 미뤄요"
             group = GROUP_MONEY
         }
-        val leave = NotificationChannel(LEAVE_CHANNEL_ID, "연차 소멸 안내", NotificationManager.IMPORTANCE_DEFAULT).apply {
+        val leave = NotificationChannel(LEAVE_CHANNEL_ID, "연차 사용 촉진", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "올해 안 쓰면 없어지는 연차를 11월과 12월 첫날에 알려요"
             group = GROUP_MONEY
         }

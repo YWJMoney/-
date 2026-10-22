@@ -109,6 +109,8 @@ class TierAppTest {
                 // [PROV-08] 1.20.0: the rest of 수익화 확정 5-2's four pillars.
                 "PAY_REPORT" to Tier.PRO, "WORK_COMPARE" to Tier.PRO, "DEVICE_CALENDAR" to Tier.PRO, "ICS_FEED" to Tier.PRO,
                 "AUTO_BACKUP" to Tier.PRO, "MORE_LINKS" to Tier.PRO, "ROSTER_PDF" to Tier.PRO, "SURE_ALARM" to Tier.PRO,
+                // [LEAVE-05] 1.22.0.
+                "LEAVE_PAYOUT" to Tier.PRO,
                 "TEAM_ROSTER" to Tier.LEADER,
             ),
             Feature.entries.associate { it.name to it.minTier },

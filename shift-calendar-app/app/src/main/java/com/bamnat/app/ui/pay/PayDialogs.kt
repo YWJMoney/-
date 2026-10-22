@@ -1,5 +1,8 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.core.pay.Unknowns
+import java.time.LocalDate
+import com.bamnat.core.pay.PayScale
 import com.bamnat.app.ui.components.labelWidth
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -215,6 +218,11 @@ fun RaiseDialog(vm: PayViewModel, profile: PayProfile, target: ValueTarget, onDi
     var text by remember { mutableStateOf(existing?.let { it.percent?.toString() ?: it.amount?.toString() } ?: "") }
     var unit by remember { mutableStateOf(existing?.unit ?: 10L) }
     var rounding by remember { mutableStateOf(existing?.rounding ?: Rounding.UP) }
+    var scale by remember { mutableStateOf(false) }
+    if (scale) {
+        PayScaleDialog(vm, profile, onDismiss = { scale = false; onDismiss() })
+        return
+    }
     val rule = runCatching {
         val n = text.toDouble()
         require(n > 0)
@@ -229,6 +237,8 @@ fun RaiseDialog(vm: PayViewModel, profile: PayProfile, target: ValueTarget, onDi
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("입력한 값이 없는 해는 이 규칙으로 올려서 계산해요. 실제로 받은 금액을 입력하면 그 값이 우선이에요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // [PAYX-20] A company with a 호봉표 raises by step, not by a rate.
+                if (target == ValueTarget.Base) OutlinedButton(onClick = { scale = true }) { Text("호봉표로 넣기") }
                 Text("인상되는 달", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     (1..12).forEach { m -> FilterChip(selected = month == m, onClick = { month = m }, label = { Text("${m}월") }) }
@@ -476,6 +486,54 @@ fun AddItemDialog(onDismiss: () -> Unit, allowUnknownAmount: Boolean = false, on
                 onClick = { onAdd(name, amount?.takeIf { it > 0 }, cadence, ordinary && fixedOtHours == 0, if (cadence == Cadence.MONTHLY) fixedOtHours * 60 else 0) },
                 enabled = name.isNotBlank() && (allowUnknownAmount || (amount ?: 0) > 0),
             ) { Text("추가") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
+
+/**
+ * [PAYX-20] 호봉표: the company's table pasted as text, the step now and the month a step goes up. Applied, it
+ * becomes the 기본급's dated values from [PayScale.since] on (the table is the raise, so no yearly rule).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun PayScaleDialog(vm: PayViewModel, profile: PayProfile, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf("") }
+    var stepMonth by remember { mutableStateOf(1) }
+    var step by remember { mutableStateOf(1) }
+    val since = remember { LocalDate.now().withDayOfMonth(1) }
+    val steps = remember(text) { PayScale.parse(text) }
+    val scale = runCatching { PayScale(steps, stepMonth, step.coerceIn(steps.keys.minOrNull() ?: 1, steps.keys.maxOrNull() ?: 1), since) }.getOrNull()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("호봉표로 기본급 넣기") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("한 줄에 한 호봉씩 붙여 넣어요. 예: 1호봉 2,400,000", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(text, { text = it.take(4000) }, label = { Text("호봉표") }, minLines = 4, modifier = Modifier.fillMaxWidth())
+                if (steps.isNotEmpty()) {
+                    Text("지금 호봉", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        steps.keys.sorted().forEach { n -> FilterChip(selected = step == n, onClick = { step = n }, label = { Text("${n}호봉") }) }
+                    }
+                }
+                Text("승급하는 달", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    (1..12).forEach { m -> FilterChip(selected = stepMonth == m, onClick = { stepMonth = m }, label = { Text("${m}월") }) }
+                }
+                scale?.let { sc ->
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    Text(sc.describe(), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    sc.values(since.plusYears(4)).take(5).forEach { v -> Fact(Fmt.month(YearMonth.from(v.from)), won(v.value)) }
+                }
+            }
+        },
+        confirmButton = {
+            Button(enabled = scale != null, onClick = {
+                scale?.let { sc -> vm.update { p -> p.copy(base = sc.applyTo(p.base, since.plusYears(40)), estimatedFields = p.estimatedFields - Unknowns.BASE) } }
+                onDismiss()
+            }) { Text("적용") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )

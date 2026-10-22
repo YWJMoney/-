@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -82,6 +83,9 @@ class PayViewModel(
     val gate: StateFlow<Gate> = container.featureGate.state
     val snapshot: StateFlow<ScheduleSnapshot?> =
         scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    /** [LEAVE-01] The calendar's 연차 원장 today. */
+    val leave: StateFlow<com.bamnat.core.leave.LeaveSummary?> =
+        scope.leave.summary.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     // [PAYX-15] Opens on the pay month today belongs to: after a 20일 close, 10/25 is November's pay.
     // [NAV-01] Opened while the calendar or 근무·급여 shows another month, pay opens on that month;
@@ -138,7 +142,49 @@ class PayViewModel(
     fun undo() = viewModelScope.launch { payStore.undo() }
 
     fun update(transform: (PayProfile) -> PayProfile) = viewModelScope.launch {
+        val before = payStore.profile.value
         payStore.update(transform)
+        checkVerified(before, payStore.profile.value)
+    }
+
+    /** [PAYX-22] A change that would move a month matched with a payslip, until the user picks what to do. */
+    data class VerifiedPrompt(val change: com.bamnat.core.pay.VerifiedChange.Change, val before: PayProfile, val scoped: PayProfile?)
+
+    private val _verifiedPrompt = MutableStateFlow<VerifiedPrompt?>(null)
+    val verifiedPrompt: StateFlow<VerifiedPrompt?> = _verifiedPrompt.asStateFlow()
+
+    private suspend fun checkVerified(before: PayProfile?, after: PayProfile?) {
+        if (before == null || after == null || before == after) return
+        // A month kept as it was ([closeMonth]) does not move.
+        if ((after.verified ?: before.verified)?.month in closed.value) return
+        val snap = snapshot.value ?: scope.schedule.snapshot.first()
+        val prompt = withContext(Dispatchers.Default) {
+            val total = { p: PayProfile, m: YearMonth ->
+                calculator.calculate(p.named(settings.value.extraKinds).hourlyWeek(settings.value), m, snap.resolver::resolve, checks = false).total
+            }
+            com.bamnat.core.pay.VerifiedChange.check(before, after, total)?.let { c ->
+                val start = after.period.start(after.period.monthOf(LocalDate.now()))
+                VerifiedPrompt(c, before, com.bamnat.core.pay.VerifiedChange.startingOn(before, after, start))
+            }
+        }
+        _verifiedPrompt.value = prompt
+    }
+
+    /** [PAYX-22] Keep the change as made; the matched month shows its new total. */
+    fun keepVerifiedChange() { _verifiedPrompt.value = null }
+
+    /** [PAYX-22] The change from this pay period on; the matched month keeps its total. */
+    fun startChangeNow() = viewModelScope.launch {
+        val p = _verifiedPrompt.value?.scoped ?: return@launch
+        _verifiedPrompt.value = null
+        payStore.update { p }
+    }
+
+    /** [PAYX-22] Back to before the change. */
+    fun undoVerifiedChange() = viewModelScope.launch {
+        val p = _verifiedPrompt.value?.before ?: return@launch
+        _verifiedPrompt.value = null
+        payStore.update { p }
     }
 
     // ---- values over time ----

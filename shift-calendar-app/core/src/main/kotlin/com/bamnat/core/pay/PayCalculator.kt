@@ -78,6 +78,8 @@ data class MonthPay(
     val missing: List<MissingItem> = emptyList(),
     /** [PAYS-02] How many times each allowance paid per shift came up this month, by [PayItem.id]. */
     val itemTimes: Map<String, Int> = emptyMap(),
+    /** [PAYX-18] Minutes of 보상휴가 earned each day instead of pay (근로기준법 제57조), premiums included. */
+    val compLeave: Map<LocalDate, Int> = emptyMap(),
 ) {
     val total: Long get() = lines.sumOf { it.amount }
     val estimated: Boolean get() = lines.any { it.estimated } || minutes.any { it.estimated }
@@ -135,13 +137,14 @@ class PayCalculator(
         }
         // [PAYX-07] 탄력적 근로시간제 settles scheduled hours over its period; an approved 감시·단속 worker has no limits to settle.
         val flex = profile.flexPeriod?.takeIf { profile.scheduleIsRegular && !supervisory }
+        val flexWarnings = mutableListOf<String>()
         // Start at the week containing the 1st so weekly overtime counts the days before it, or at the
         // 탄력적 근로시간제 period's start so a period ending this month is settled whole. End with the
         // week holding the last day: extra work is the week's last hours, so the whole week decides.
         val weekFrom = periodStart.with(TemporalAdjusters.previousOrSame(profile.weekStart))
         // [HRLY-07] 주휴 weeks may start on another weekday; the days read reach over their weeks too.
         val holidayWeekFrom = periodStart.with(TemporalAdjusters.previousOrSame(profile.holidayWeekFrom))
-        val from = minOf(flex?.start(periodStart)?.let { minOf(it, weekFrom) } ?: weekFrom, holidayWeekFrom)
+        val from = minOf(flex?.start(periodStart, profile.flexStart)?.let { minOf(it, weekFrom) } ?: weekFrom, holidayWeekFrom)
         val to = maxOf(periodEnd.with(TemporalAdjusters.nextOrSame(profile.weekStart.minus(1))),
             periodEnd.with(TemporalAdjusters.nextOrSame(profile.holidayWeekFrom.minus(1))))
         // [PAYS-03] A break counted as work is work from the start: it can make 연장, 야간 and 주휴 hours.
@@ -158,9 +161,18 @@ class PayCalculator(
             // [PAYS-03] No 8시간·40시간 for an approved 감시·단속 worker: every hour is paid at 100%.
             options = ClassifyOptions(profile.dailyLimitMinutes.takeUnless { supervisory }, profile.weeklyLimitMinutes.takeUnless { supervisory },
                 profile.weekStart, restDayWork = rules.restDayWork, scheduleIsRegular = profile.scheduleIsRegular,
-                flexPeriod = flex, holidayByClock = !rules.holidayByShiftStart),
+                flexPeriod = flex, flexStart = profile.flexStart, holidayByClock = !rules.holidayByShiftStart),
         )
         val allMinutes = classifier.classify(days, holiday).map { roundOvertime(it, rules.overtimeRounding) }
+        // [PAYX-17] 탄력적 근로시간제 still caps a single week: 48시간 for 2주, 52시간 for 3개월 이내 (제51조 단서).
+        if (flex != null) {
+            days.filter { inPeriod(it.date) }.groupBy { it.date.with(TemporalAdjusters.previousOrSame(profile.weekStart)) }
+                .filter { (_, w) -> w.sumOf { it.scheduledMinutes } > flex.weekCapMinutes }
+                .keys.sorted().forEach { wk ->
+                    flexWarnings += "${wk.monthValue}/${wk.dayOfMonth} 주 근무표가 ${flex.weekCapMinutes / 60}시간을 넘어요. " +
+                        "탄력적 근로시간제여도 한 주에 ${flex.weekCapMinutes / 60}시간까지만 일할 수 있어요 (근로기준법 제51조)"
+                }
+        }
         val minutes = allMinutes.filter { inPeriod(it.date) }
         val byDate = minutes.associateBy { it.date }
         val monthDays = days.filter { inPeriod(it.date) }
@@ -220,7 +232,7 @@ class PayCalculator(
             if (profile.wageType == WageType.DAILY) (min.toDouble() * base.value / dailyMinutes).roundToLong() else money(min, 1.0)
 
         val lines = mutableListOf<PayLine>()
-        val warnings = mutableListOf<String>()
+        val warnings = mutableListOf<String>().apply { addAll(flexWarnings) }
         val baseEstimated = "base" in profile.estimatedFields || base.source == ValueSource.RAISED
         // Keyed by kind, the covered shift type for a per-shift rule [PAYX-11], and whether it is a
         // 공휴일 shift paid that kind's way.
@@ -230,6 +242,8 @@ class PayCalculator(
         var restDayWorked = false
         val itemCounts = HashMap<String, Int>()
         val dayPays = mutableListOf<DayPay>()
+        // [PAYX-18] Minutes of 보상휴가 earned each day, premiums included.
+        val compLeave = linkedMapOf<LocalDate, Int>()
         // [PAYS-06] What each of the user's own rules paid this month, by [CustomRule.id].
         val customTotals = linkedMapOf<String, CustomTotal>()
         // [JOB-03] The 시간외근무수당 rule's minutes by day, for the 1-hour deduction and 57-hour cap.
@@ -305,14 +319,31 @@ class PayCalculator(
             // [EXTRA-03] Each piece of extra work by its own kind's rule, on its own minutes.
             for ((i, e) in day.extras.withIndex()) {
                 val em = m.extra(i) ?: continue
+                // [PAYX-18] 보상휴가 (제57조): the piece is paid in time off, its premiums included, not in money.
+                if (e.entry.compLeave) {
+                    val w = em.minutes
+                    xr -= w.regular; ot -= w.overtime; hw -= w.holidayWithin8h; ho -= w.holidayOver8h
+                    rw -= w.restWithin8h; ro -= w.restOver8h; n -= w.night
+                    val credit = (w.regular + w.overtime * mOt + w.holidayWithin8h * (1.0 + pr.holidayWithin8h) +
+                        w.holidayOver8h * (1.0 + pr.holidayOver8h) + w.restWithin8h * mRw + w.restOver8h * mRo +
+                        w.night * pr.night).roundToLong().toInt()
+                    compLeave[day.date] = (compLeave[day.date] ?: 0) + credit
+                    parts += DayPart(LineKind.LEAVE, "${rules.extraName(e.kind.id)} → 보상휴가", 0,
+                        "${hours(w.worked)} 일한 것을 돈 대신 휴가 ${hours(credit)}로 (가산 포함)")
+                    continue
+                }
                 // [PAYX-11] The shift the work covered: its own, else the day's.
                 val covered = e.covered ?: day.shiftType?.takeIf { day.isWorkDay }
                 val perShift = covered?.id?.let { rules.extraByShift[e.kind.id]?.get(it) }?.takeUnless { it.isLegal }
                 val rule = rules.extraRule(e.kind.id, covered?.id) ?: continue
                 val name = rules.extraName(e.kind.id) + if (perShift != null) " · ${covered!!.name}" else ""
                 if (rule.basis != ExtraBasis.LEGAL) takeOut(em.minutes, rule, shiftPart = false)
+                // [PAYX-21] The day's work before this piece on the clock: the shift, then pieces that start earlier.
+                val before = m.shift.worked + day.extras.withIndex().filter { (j, o) ->
+                    j != i && o.from != null && (e.from == null || o.from.isBefore(e.from))
+                }.sumOf { it.value.minutes }
                 pay(Triple(e.kind.id, perShift?.let { covered!!.id }, false), name, rule, em.minutes,
-                    PieceAt(day.isRestDay, e.from, e.to, e.minutes, e.breakMinutes, e.breakStart))
+                    PieceAt(day.isRestDay, e.from, e.to, e.minutes, e.breakMinutes, e.breakStart, before = before))
             }
             if (day.isRestDay && day.extras.isNotEmpty()) restDayWorked = true
 
@@ -701,9 +732,16 @@ class PayCalculator(
                 "승인은 고용노동부 지방관서에서 받아야 해요"
         }
 
+        // [PAYX-18] 보상휴가 earned this month, as a line of no money that says where the pay went.
+        compLeave.values.sum().takeIf { it > 0 }?.let { mins ->
+            lines += PayLine(LineKind.LEAVE, "보상휴가로 받음", 0,
+                formula = "${compLeave.size}일 근무를 돈 대신 휴가 ${hours(mins)}로 (가산 포함, 연차 원장에 들어가요)",
+                minutes = mins,
+                basis = "근로기준법 제57조 (근로자대표와 서면 합의가 있을 때)")
+        }
         return MonthPay(month, lines, hourly, rates.version, minutes, warnings, dayPays,
             periodStart.takeUnless { profile.period.isCalendarMonth }, periodEnd.takeUnless { profile.period.isCalendarMonth },
-            profile.period.payDate(month), missing, itemCounts.toMap()).withHourlyNote(hourlyFormula)
+            profile.period.payDate(month), missing, itemCounts.toMap(), compLeave.toMap()).withHourlyNote(hourlyFormula)
     }
 
     /**
@@ -766,6 +804,8 @@ class PayCalculator(
         val breakStart: java.time.LocalTime?,
         /** The part of the span the rule pays, for a 공휴일 shift paid only for its holiday minutes. */
         val share: Double = 1.0,
+        /** [PAYX-21] Minutes of the day worked before this piece: the shift and earlier pieces on the clock. */
+        val before: Int = 0,
     )
 
     /**
@@ -798,8 +838,9 @@ class PayCalculator(
             ExtraBasis.PERCENT_OF_BASE -> Math.round(monthlyBase * rule.percentOfBase)
                 .also { parts += "$baseLabel ${won(monthlyBase)} × ${ExtraRule.percent(rule.percentOfBase)} = ${won(it)}" }
             ExtraBasis.FIXED_PER_HOUR -> (credited / 60.0 * rule.amount).roundToLong().also { parts += "${hours(credited)} × ${won(rule.amount)}" }
-            ExtraBasis.TIERED -> rule.tieredAmount(credited, hourly, night)
-                .also { parts += "${if (night) "야간" else "주간"} ${rule.describeTiers(night)} · ${hours(credited)}" }
+            ExtraBasis.TIERED -> rule.tieredAmount(credited, hourly, night, piece.before)
+                .also { parts += "${if (night) "야간" else "주간"} ${rule.describeTiers(night)} · ${hours(credited)}" +
+                    if (rule.tiersFromDayStart && piece.before > 0) " (그날 앞선 ${hours(piece.before)}부터 셈)" else "" }
             ExtraBasis.LEGAL, ExtraBasis.UNIT -> 0L
         }
         // Hours beyond what one payment covers are paid like any other hour.

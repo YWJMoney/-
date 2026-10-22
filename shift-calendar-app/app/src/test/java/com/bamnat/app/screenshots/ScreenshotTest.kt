@@ -3080,6 +3080,8 @@ class ScreenshotTest {
     }
     @Test fun phonePublicGradeHugeText() = shoot("435_phone_public_grade_huge_text", PHONE, 1.5f) {
         payScreen(Tier.PRO, withProfile = true, adjust = { it.copy(occupation = com.bamnat.core.pay.Occupation.PUBLIC) }).invoke(this)
+        // The 연차 card above it is longer since 1.22 묶음 D: two steps, each within reveal's scrolls.
+        reveal("공무원 봉급표", exact = true)
         reveal("교대·현업 근무", exact = true)
     }
     // [NURS-06] A received roster read with the user's own rules.
@@ -3095,6 +3097,140 @@ class ScreenshotTest {
     @Test fun foldedSettingsRestRules() = shoot("437_folded_settings_rest_rules", FOLDED) {
         settingsPage("잠과 휴식")
         reveal("근무표 점검 기준", exact = true)
+    }
+
+    // ==== 1.22 묶음 D ====
+    /**
+     * [LEAVE-01..06][PAYX-18] Pay set up with a hire date 3년 4개월 ago, 이월 2일, the seeded 반차 and 연차, and a 특근
+     * taken as 보상휴가: the 연차 screen as 설정 › 연차, the pay screen's card and the notice open it.
+     */
+    private fun leaveSeed(adjust: (com.bamnat.core.pay.PayProfile) -> com.bamnat.core.pay.PayProfile = { it }) {
+        val c = app.container
+        twoOnTwoOff()
+        c.settingsRepository.update { it.copy(previewTier = null) }
+        runBlocking {
+            c.payStore.save(adjust(PayViewModel(c).sampleProfile().copy(rules = companyRules.copy(annualLeaveDays = null),
+                hireDate = today.minusYears(3).minusMonths(4))), keepUndo = false)
+            val year = today.withDayOfYear(1)
+            c.leaveRepository.add(com.bamnat.core.leave.LedgerEntry(kind = com.bamnat.core.leave.EntryKind.CARRY, date = year, days = 2.0,
+                expires = year.plusYears(1).minusDays(1), note = "작년에서 넘어온 날"))
+            val repo = c.scheduleRepository
+            val pattern = repo.snapshot.first()
+            val compDay = (11..25).map { today.minusDays(it.toLong()) }.first { pattern.resolver.resolve(it).isOff }
+            repo.addExtra(compDay, ExtraEntry(ExtraKind.SPECIAL_ID, LocalTime.of(9, 0), LocalTime.of(14, 0), compLeave = true))
+            repo.setLeave((15..40).map { today.minusDays(it.toLong()) }.first { !pattern.resolver.resolve(it).isOff }, Leave())
+        }
+        settle()
+    }
+
+    /** 4조 2교대 (주주휴휴야야휴휴): two working days between two days off, so 연차 2일 makes 6 days off [LEAVE-04]. */
+    private fun twoOnTwoOff() = runBlocking {
+        val repo = app.container.scheduleRepository
+        val types = repo.shiftTypes.first().associateBy { it.name }
+        val day = types.getValue("주간").id
+        val night = types.getValue("야간").id
+        val off = types.getValue("휴무").id
+        repo.savePattern(WorkPattern.Rotation(LocalDate.of(2026, 7, 1), listOf(day, day, off, off, night, night, off, off)))
+    }
+
+    private fun leaveScreen(then: Screen.() -> Unit = {}): Screen.() -> Unit = {
+        leaveSeed()
+        val vm = com.bamnat.app.ui.leave.LeaveViewModel(app.container, com.bamnat.app.data.PersonalCalendar.MAIN)
+        content { com.bamnat.app.ui.leave.LeaveScreen(vm, onBack = {}, onEditRules = {}) }
+        settle()
+        then()
+    }
+
+    @Test fun foldedLeave() = shoot("460_folded_leave", FOLDED, leaveScreen())
+    @Test fun foldedLeaveLots() = shoot("461_folded_leave_lots", FOLDED, leaveScreen { reveal("없어지는 날 순서", exact = true) })
+    @Test fun foldedLeaveLines() = shoot("462_folded_leave_lines", FOLDED, leaveScreen { reveal("연차 원장", exact = true) })
+    @Test fun foldedLeavePayout() = shoot("463_folded_leave_payout", FOLDED, leaveScreen { reveal("못 쓴 연차, 돈으로는", exact = true) })
+    @Test fun foldedLeaveBridges() = shoot("464_folded_leave_bridges", FOLDED, leaveScreen { reveal("연차로 길게 쉬기", exact = true) })
+    @Test fun foldedLeaveAdd() = shoot("465_folded_leave_add", FOLDED, leaveScreen { tapText("이월", exact = true) })
+    @Test fun unfoldedLeave() = shoot("466_unfolded_leave", UNFOLDED, leaveScreen())
+    @Test fun phoneLeaveHugeText() = shoot("467_phone_leave_huge_text", PHONE, fontScale = 2f, leaveScreen())
+    @Test fun foldedLeaveDark() = shoot("468_folded_leave_dark", "w369dp-h905dp-port-night-420dpi", leaveScreen())
+    @Test fun foldedPayLeaveCard() = shoot("469_folded_pay_leave_card", FOLDED) {
+        leaveSeed()
+        payScreen(Tier.PRO, withProfile = true, adjust = {
+            it.copy(hireDate = today.minusYears(3).minusMonths(4), rules = it.rules.copy(annualLeaveDays = null))
+        }).invoke(this)
+        reveal("연차 화면", exact = true)
+    }
+    /** [PAYX-18] The kinds of leave as chips, 보상휴가 among them, and the choice on a piece of extra work. */
+    @Test fun foldedDayLeaveKinds() = shoot("470_folded_day_leave_kinds", FOLDED) {
+        // 휴가 after 알람 and 메모, so it opens below the day's fixed header.
+        app.container.settingsRepository.update { it.copy(dayGroupOrder = listOf("alarm", "memo", "leave")) }
+        settle()
+        openDay(halfDay)
+        openGroup("휴가")
+        reveal("반반차", exact = true)
+        tapText("보상휴가", exact = true, scrolls = 0)
+    }
+    @Test fun foldedExtraCompLeave() = shoot("471_folded_extra_comp_leave", FOLDED) {
+        openDay(restDayExtra)
+        // A piece just added opens for editing.
+        reveal("더 넣기", exact = true)
+        tapText("잔업 2시간", exact = true, scrolls = 0)
+        tapText("돈 대신 보상휴가로 받기", exact = true)
+        reveal("가산을 더한 시간만큼")
+    }
+    /** [PAYX-16][PAYX-17] Ready examples, one opened; a 2주 탄력제 with the day it starts. */
+    private fun leaveRulesEditor(adjust: (com.bamnat.core.pay.PayProfile) -> com.bamnat.core.pay.PayProfile = { it }) =
+        payScreen(Tier.PRO, withProfile = true, adjust = adjust) { vm ->
+            val profile = vm.profile.collectAsState().value
+            val snap = vm.snapshot.collectAsState().value
+            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {}, onOpenKinds = {})
+        }
+    @Test fun foldedPayExamples() = shoot("472_folded_pay_examples", FOLDED) {
+        leaveRulesEditor().invoke(this)
+        reveal("예시 규칙", exact = true)
+    }
+    @Test fun foldedPayExampleDialog() = shoot("473_folded_pay_example_dialog", FOLDED) {
+        leaveRulesEditor().invoke(this)
+        reveal("예시 규칙", exact = true)
+        tapText("탄력적 근로시간제 2주", exact = true, scrolls = 0)
+    }
+    @Test fun foldedPayFlexTwoWeeks() = shoot("474_folded_pay_flex_two_weeks", FOLDED) {
+        leaveRulesEditor { it.copy(scheduleIsRegular = true, flexPeriod = com.bamnat.core.pay.FlexPeriod.TWO_WEEKS, flexStart = today.minusDays(3)) }.invoke(this)
+        reveal("2주 단위는 취업규칙으로")
+    }
+    /** [PAYX-20] 호봉표 pasted, the step now chosen, the values it gives. */
+    @Test fun foldedPayScale() = shoot("475_folded_pay_scale", FOLDED) {
+        payScreen(Tier.PRO, withProfile = true) { vm ->
+            vm.profile.collectAsState().value?.let { p -> com.bamnat.app.ui.pay.PayScaleDialog(vm, p, onDismiss = {}) }
+        }.invoke(this)
+        typeInto("호봉표", "1호봉 2,400,000\n2호봉 2,480,000\n3호봉 2,565,000\n4호봉 2,650,000")
+        tapText("2호봉", exact = true, scrolls = 0)
+    }
+    /** [PAYX-22] A matched month would change: keep, from this pay period, or undo. */
+    @Test fun foldedPayVerifiedChange() = shoot("476_folded_pay_verified_change", FOLDED) {
+        lateinit var vm: PayViewModel
+        payScreen(Tier.PRO, withProfile = true, adjust = {
+            it.copy(verified = com.bamnat.core.pay.PayslipCheck(java.time.YearMonth.now().minusMonths(1), 3_120_000, 3_118_500, 1_760_000_000_000))
+        }) { v ->
+            vm = v
+            PayScreen(v, onBack = {})
+        }.invoke(this)
+        vm.update { p -> p.copy(base = p.base.copy(entries = p.base.entries.map { it.copy(value = it.value + 50_000) })) }
+        settle()
+    }
+    /** [IMPORT-03] 듀티표 넣기 with the file button, and the 징검다리 card on a shift calendar [LEAVE-04]. */
+    @Test fun foldedDutyRosterFile() = shoot("477_folded_duty_roster_file", FOLDED) {
+        val vm = com.bamnat.app.ui.imports.DutyRosterViewModel(app.container, com.bamnat.app.data.PersonalCalendar.MAIN)
+        content { com.bamnat.app.ui.imports.DutyRosterScreen(vm, onBack = {}) }
+        settle()
+    }
+    @Test fun foldedShiftBridges() = shoot("478_folded_shift_bridges", FOLDED, style(WorkStyle.SHIFT) {
+        twoOnTwoOff()
+        tab(3, wide = false)
+        reveal("징검다리 연휴", exact = true)
+    })
+    @Test fun phonePayScaleHugeText() = shoot("479_phone_pay_scale_huge_text", PHONE, fontScale = 2f) {
+        payScreen(Tier.PRO, withProfile = true) { vm ->
+            vm.profile.collectAsState().value?.let { p -> com.bamnat.app.ui.pay.PayScaleDialog(vm, p, onDismiss = {}) }
+        }.invoke(this)
+        typeInto("호봉표", "1호봉 2,400,000\n2호봉 2,480,000")
     }
 }
 

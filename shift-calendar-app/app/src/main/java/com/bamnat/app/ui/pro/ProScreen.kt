@@ -76,8 +76,9 @@ data class Pillar(val title: String, val lines: List<String>, val features: Set<
 val PRO_PILLARS = listOf(
     Pillar("월급을 증명해요",
         listOf("급여 명세서 사진으로 맞춰 보고 다른 곳 짚기", "회사 임금 규칙 글로 자동 채우기", "기간을 골라 값 한 번에 바꾸기, 연도별 인상 계산",
-            "월·연 급여 리포트 PDF·CSV(어떻게 계산했는지까지)", "지난달·작년 같은 달과 비교, 1년 급여·근무 흐름"),
-        setOf(Feature.PAYSLIP_MATCH, Feature.PAY_RULE_IMPORT, Feature.PAY_BULK_EDIT, Feature.PAY_REPORT, Feature.WORK_COMPARE)),
+            "월·연 급여 리포트 PDF·CSV(어떻게 계산했는지까지)", "지난달·작년 같은 달과 비교, 1년 급여·근무 흐름",
+            "못 쓴 연차가 돈으로 얼마인지(미사용 연차수당)"),
+        setOf(Feature.PAYSLIP_MATCH, Feature.PAY_RULE_IMPORT, Feature.PAY_BULK_EDIT, Feature.PAY_REPORT, Feature.WORK_COMPARE, Feature.LEAVE_PAYOUT)),
     Pillar("근무를 어디서나",
         listOf("휴대폰 캘린더(삼성·구글 캘린더 앱)에 근무 자동 쓰기", "다른 캘린더 앱이 따라오는 구독 주소", "매일 자동 암호 백업(드라이브 같은 고른 파일에)",
             "달력마다 공유 링크 5개까지, 180일·1년", "근무표 PDF(한 달·1년, 인쇄용)"),

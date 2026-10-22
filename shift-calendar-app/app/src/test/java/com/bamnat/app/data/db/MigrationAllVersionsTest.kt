@@ -228,6 +228,9 @@ class MigrationAllVersionsTest(private val from: Int) {
                 "accountId" to null, "side" to "BUY", "quantity" to null, "amount" to null, "targetPrice" to null, "enabled" to 1, "ring" to 0, "createdAt" to 1),
             "invest_snapshots" to mapOf("epochDay" to 20745, "value" to 1000000, "principal" to 1000000),
             "invest_settings" to mapOf("key" to "fee", "value" to "0.015"),
+            // [LEAVE-01] Version 19's 연차 원장: no older version had it, so it arrives empty and takes this row on a fresh install.
+            "leave_ledger" to mapOf("id" to 1, "epochDay" to 20454, "kind" to "CARRY", "days" to 2.5, "expiresEpochDay" to 20818,
+                "yearStartEpochDay" to null, "note" to "이월", "pool" to "ANNUAL", "createdAt" to 1),
         )
 
         /**

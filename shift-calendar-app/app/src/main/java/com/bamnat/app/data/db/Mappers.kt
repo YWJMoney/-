@@ -138,6 +138,7 @@ fun DayExtraEntity.toModel() = ExtraEntry(
     minutes = minutes.coerceAtLeast(0),
     coveredShiftId = coveredShiftTypeId,
     needsReview = needsReview,
+    compLeave = compLeave,
 )
 
 fun ExtraEntry.toEntity(epochDay: Long, position: Int) = DayExtraEntity(
@@ -152,6 +153,7 @@ fun ExtraEntry.toEntity(epochDay: Long, position: Int) = DayExtraEntity(
     coveredShiftTypeId = coveredShiftId,
     needsReview = needsReview,
     position = position,
+    compLeave = compLeave,
 )
 
 /** [EXTRA-01] Days as the calendar sees them: each stored day with its extra work, and days that have only extra work. */

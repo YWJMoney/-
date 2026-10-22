@@ -105,9 +105,9 @@ class WidgetData(
             val field = if (settings.workStyle == WorkStyle.FIELD && book != null) {
                 WidgetFigures.fieldWeek(book.jobs, CalendarGrid.weekStartOf(today, settings.weekStart), today)
             } else null
-            val leaveLeft = if (settings.workStyle == WorkStyle.DAY) container.payStore.profile.value?.let { p ->
-                LeaveBook.balance(today.year, p.rules.annualLeaveDays, today, snapshot.resolver::resolve,
-                    free = { p.rules.holidayLeaveFree && KoreanHolidays.isHoliday(it) }, carried = p.rules.annualLeaveCarry).remaining
+            // [LEAVE-01] What the 연차 원장 says is usable today; nothing until it has a lot.
+            val leaveLeft = if (settings.workStyle == WorkStyle.DAY && container.payStore.profile.value != null) {
+                container.leaveRepository.now().takeIf { it.lots.isNotEmpty() }?.available
             } else null
             return WidgetData(
                 today = now.toLocalDate(),

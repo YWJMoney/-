@@ -75,6 +75,7 @@ class AppContainer(context: Context) {
                 marks = com.bamnat.app.data.RecurringMarks(java.io.File(com.bamnat.app.data.CalendarStorage.filesOf(appContext, id), "recurring_marks.json")))
         },
         payOf = { id -> PayStore(appContext, java.io.File(com.bamnat.app.data.CalendarStorage.filesOf(appContext, id), "pay")) },
+        mainLeave = { leaveRepository },
     )
     /** [MCAL-06] Calendar [id]'s days, money and pay as a screen sees them. */
     fun scopeOf(id: String) = com.bamnat.app.data.CalendarScope(calendars, settingsRepository, id)
@@ -154,6 +155,8 @@ class AppContainer(context: Context) {
     @Suppress("SENSELESS_COMPARISON")
     private fun sureAlarm(): Boolean = featureGate == null || featureGate.allows(com.bamnat.app.tier.Feature.SURE_ALARM)
     val payStore = PayStore(appContext)
+    /** [LEAVE-01] The main calendar's 연차 원장. */
+    val leaveRepository by lazy { com.bamnat.app.leave.LeaveRepository(database, scheduleRepository, payStore) }
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars, memoSharing = memoSharing,
         workTools = com.bamnat.app.data.WorkToolsStore.get(appContext), guide = com.bamnat.app.data.GuideStore.get(appContext), recordsTrash = { recordsTrash },
         teams = teams, pro = { proStore },
@@ -417,12 +420,12 @@ class AppContainer(context: Context) {
             settingsRepository.settings.map { it.todayShiftNotice }.distinctUntilChanged().drop(1)
                 .collect { WidgetRefresher.refresh(appContext) }
         }
-        // [PAY-12][REL-08] 연차 notices follow whether the user entered their days, and their switch.
+        // [LEAVE-03] 연차 사용 촉진 notices follow the ledger's lots (제61조 dates) and their switch.
         keep("leave") {
-            val entered = payStore.profile.map { it?.rules?.annualLeaveDays != null }.distinctUntilChanged()
+            val lots = leaveRepository.summary.map { s -> s.lots.map { it.lot } }.distinctUntilChanged()
             val on = settingsRepository.settings.map { it.leaveNotice }.distinctUntilChanged()
-            combine(entered, on) { a, b -> a to b }
-                .collect { LeaveReminder.reschedule(appContext, payStore.profile.value, settingsRepository.current) }
+            combine(lots, on) { l, o -> l to o }
+                .collect { (l, o) -> LeaveReminder.reschedule(appContext, l, o) }
         }
         // [COMM-10] 광장 소식 runs while it is on and this phone took part in the plaza.
         keep("plaza news") {
