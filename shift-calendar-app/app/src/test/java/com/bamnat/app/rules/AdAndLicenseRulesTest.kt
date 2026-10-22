@@ -68,7 +68,7 @@ class AdAndLicenseRulesTest {
             "androidx.compose.material3" to "Jetpack Compose", "androidx.compose.material" to "Jetpack Compose",
             "androidx.compose" to "Jetpack Compose",
             "androidx.core" to "AndroidX Core", "androidx.activity" to "AndroidX Core", "androidx.lifecycle" to "AndroidX Core",
-            "androidx.navigation" to "AndroidX Core", "androidx.profileinstaller" to "AndroidX Core",
+            "androidx.navigation" to "AndroidX Core", "androidx.profileinstaller" to "AndroidX Core", "androidx.window" to "AndroidX Core",
             "androidx.glance" to "Jetpack Glance", "androidx.room" to "AndroidX Room",
             "androidx.health.connect" to "Health Connect", "org.jetbrains.kotlinx" to "Kotlin",
             "com.google.mlkit" to "ML Kit", "com.google.android.play" to "Google Play",
