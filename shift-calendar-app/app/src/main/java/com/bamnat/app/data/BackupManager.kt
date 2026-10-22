@@ -15,6 +15,7 @@ import com.bamnat.app.data.db.MoneyCategoryEntity
 import com.bamnat.app.data.db.MemoEntity
 import com.bamnat.app.data.db.PatternEntity
 import com.bamnat.app.data.db.ShiftTypeEntity
+import com.bamnat.app.data.db.toEntity
 import com.bamnat.core.work.WorkStyle
 import org.json.JSONArray
 import org.json.JSONObject
@@ -300,8 +301,12 @@ class BackupManager(
         val types: List<ShiftTypeEntity>, val patterns: List<PatternEntity>, val days: List<DayEntryEntity>, val extras: List<DayExtraEntity>?,
     )
 
-    private fun readSchedule(from: JSONObject): ScheduleRows {
-        val types = from.getJSONArray("shiftTypes").objects().map { o ->
+    /**
+     * [orDefaults] is for an added calendar: one kept for money or investing may hold no kinds of work
+     * (순번 200), so it comes back with the default kinds instead of turning the whole backup away.
+     */
+    private fun readSchedule(from: JSONObject, orDefaults: Boolean = false): ScheduleRows {
+        val read = from.getJSONArray("shiftTypes").objects().map { o ->
             ShiftTypeEntity(
                 id = o.getLong("id"), name = o.getString("name"), label = o.getString("label"),
                 colorArgb = o.getLong("color"), startMinute = o.optIntOrNull("start"), endMinute = o.optIntOrNull("end"),
@@ -311,6 +316,7 @@ class BackupManager(
                 breakStartMinute = o.optIntOrNull("breakStart"), premiumPercent = o.optInt("premium").coerceIn(0, 300),
             )
         }
+        val types = read.ifEmpty { if (orDefaults) DefaultShiftTypes.all().map { it.toEntity() } else emptyList() }
         if (types.isEmpty()) throw BackupException("근무 종류가 없는 백업 파일이에요")
         // Older backups held one "pattern" object instead of the "patterns" history.
         val patternObjects = from.optJSONArray("patterns")?.objects()
@@ -478,7 +484,7 @@ class BackupManager(
         // [MCAL-05] Added calendars come back only from a backup that has them; read before anything changes.
         val added = if (calendars != null && root.has("calendars")) root.optJSONArray("calendars").objects().mapNotNull { o ->
             CalendarBook.fromJson(o)?.takeIf { !it.isMain }?.let { cal ->
-                AddedRows(cal, readSchedule(o), readMoney(o), o.optJSONObject("pay")?.let(com.bamnat.app.pay.PayCodec::decode),
+                AddedRows(cal, readSchedule(o, orDefaults = true), readMoney(o), o.optJSONObject("pay")?.let(com.bamnat.app.pay.PayCodec::decode),
                     o.optJSONArray("payClosed")?.objects()?.map(com.bamnat.app.pay.SnapshotCodec::decode))
             }
         }.distinctBy { it.cal.id } else null

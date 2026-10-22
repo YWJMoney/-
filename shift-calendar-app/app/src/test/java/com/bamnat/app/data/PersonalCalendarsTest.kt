@@ -215,6 +215,18 @@ class PersonalCalendarsTest {
         assertEquals(PersonalCalendar.MAIN, c.calendars.active.value)
     }
 
+    /** [MCAL-05] 순번 200: an added calendar saved with no kinds of work comes back with the default kinds. */
+    @Test fun anAddedCalendarWithNoKindsOfWorkStillRestores() = runBlocking {
+        val id = addWeekdayCalendar("가계부")
+        val root = org.json.JSONObject(c.backupManager.export())
+        val cals = root.getJSONArray("calendars")
+        for (i in 0 until cals.length()) cals.getJSONObject(i).takeIf { it.has("shiftTypes") }?.put("shiftTypes", org.json.JSONArray())
+        c.calendars.delete(id)
+        c.backupManager.restore(root.toString())
+        assertEquals("가계부", c.calendars.get(id)?.name)
+        assertTrue(c.calendars.repository(id).snapshot.first().shiftTypes.isNotEmpty())
+    }
+
     /** [MCAL-06] An added calendar keeps its own jobs, ledger and pay; the main calendar's stay as they were. */
     @Test fun anAddedCalendarKeepsItsOwnMoneyAndPay() = runBlocking {
         val id = listedCalendar("알바")
