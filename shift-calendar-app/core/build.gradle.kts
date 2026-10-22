@@ -19,6 +19,19 @@ kotlin {
     }
 }
 
+// [REMOTE-01] The remote data files (remote/v1/*.json at the top of the repository, published by GitHub
+// Pages) ship inside the app as resources, so the app and the site start from the same file.
+val bundleRemoteFiles = tasks.register<Sync>("bundleRemoteFiles") {
+    from(projectDir.resolve("../../remote/v1")) {
+        include("*.json")
+        into("com/bamnat/core/remote/v1")
+    }
+    into(layout.buildDirectory.dir("generated/remote"))
+}
+sourceSets.main {
+    resources.srcDir(bundleRemoteFiles)
+}
+
 dependencies {
     testImplementation("junit:junit:4.13.2")
 }

@@ -22,6 +22,7 @@
 | 약관·처리방침이 앱의 숫자(체험 질문 7일, 광고 없는 3일)와 같음 | `LegalPagesTest` | |
 | 오픈소스 라이선스 목록이 의존성과 같음 | `AdAndLicenseRulesTest` | |
 | 서명 인증서 SHA-256이 업로드 키와 같음 | `apksigner verify --print-certs` (HANDOFF 5항) | |
+| 원격 파일(`remote/v1/*.json`)을 고쳤으면 `version`을 올리고 다시 서명, 서명 확인 통과 [REMOTE-01] | `python3 tools/remote_sign.py sign --key <release-key/bamnat-remote-ed25519.pem>` → `check` | |
 
 ## 1. 실행
 
