@@ -40,10 +40,9 @@ import java.time.YearMonth
 internal fun rememberAllCalendarsMonth(month: YearMonth): AllCalendarsMonth? {
     val c = LocalContext.current.appContainer
     val parts by remember(c) { EveryCalendar.parts(c) }.collectAsStateWithLifecycle(null)
-    val tier by c.featureGate.tier.collectAsStateWithLifecycle()
-    val all by produceState<AllCalendarsMonth?>(null, parts, month, tier) {
+    val all by produceState<AllCalendarsMonth?>(null, parts, month) {
         val p = parts ?: return@produceState
-        value = withContext(Dispatchers.Default) { EveryCalendar.month(p, month, tier) }
+        value = withContext(Dispatchers.Default) { EveryCalendar.month(p, month) }
     }
     return all
 }

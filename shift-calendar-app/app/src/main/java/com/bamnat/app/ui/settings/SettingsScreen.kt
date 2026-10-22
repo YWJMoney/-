@@ -69,6 +69,7 @@ import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material.icons.outlined.WorkOutline
+import androidx.compose.material.icons.outlined.WorkspacePremium
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -158,6 +159,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val snoozeAt: StateFlow<Long?> = container.alarmScheduler.snoozeAt
     /** [MCAL-01] The user's calendars, for 설정 > 달력. */
     val calendars: StateFlow<List<com.bamnat.app.data.PersonalCalendar>> = container.calendars.calendars
+    /** [MON-04] What 프로 is on this phone now. */
+    val gate: StateFlow<com.bamnat.app.tier.Gate> = container.featureGate.state
+    /** [MON-07] Google says this phone's region has its own ad consent form to open again. */
+    val adPrivacy: StateFlow<Boolean> = container.ads.privacyOptions
+    fun showAdPrivacy(activity: android.app.Activity) = container.ads.showPrivacyOptions(activity)
 
     /** [MEMO-02] 메모 공유: 달력마다 따로, or calendars grouped to see each other's memos. */
     val memoSharing: StateFlow<com.bamnat.core.memo.MemoSharing> = container.memoSharing.state
@@ -261,6 +267,62 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             }.getOrElse { "백업을 저장하지 못했어요" })
             password?.fill(' ')
         }
+    }
+
+    /** [PROV-03] 매일 자동 백업 as it stands. */
+    val autoBackup: StateFlow<com.bamnat.app.backup.AutoBackup.State> get() = container.autoBackup.state
+
+    /** [PROV-03] The password chosen before the file picker opens, for [startAutoBackup]; never stored. */
+    private var autoBackupPassword: CharArray? = null
+
+    fun prepareAutoBackup(password: CharArray?) {
+        autoBackupPassword?.fill(' ')
+        autoBackupPassword = password
+    }
+
+    /** [PROV-03] Turns 자동 백업 on with the file just made, and makes the first backup there. */
+    fun startAutoBackup(context: Context, uri: Uri) {
+        val password = autoBackupPassword
+        autoBackupPassword = null
+        if (password == null) {
+            // The app was closed while the picker was open and the password went with it.
+            runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
+            _message.value = SettingsMessage("암호가 지워져 켜지 않았어요. 다시 켜 주세요")
+            return
+        }
+        viewModelScope.launch {
+            _message.value = SettingsMessage(when (val r = container.autoBackup.turnOn(uri, password)) {
+                is com.bamnat.app.backup.AutoBackup.Result.Ok -> "자동 백업을 켰어요. 첫 백업을 저장했어요"
+                is com.bamnat.app.backup.AutoBackup.Result.Failed -> if (container.autoBackup.on) "켰지만 첫 백업을 저장하지 못했어요. ${r.why}" else r.why
+                else -> "자동 백업을 켰어요"
+            })
+        }
+    }
+
+    fun moveAutoBackup(uri: Uri) {
+        viewModelScope.launch {
+            _message.value = SettingsMessage(when (val r = container.autoBackup.moveTo(uri)) {
+                is com.bamnat.app.backup.AutoBackup.Result.Ok -> "새 위치에 백업했어요"
+                is com.bamnat.app.backup.AutoBackup.Result.Failed -> r.why
+                else -> "위치를 바꿨어요"
+            })
+        }
+    }
+
+    fun backupNow() {
+        viewModelScope.launch {
+            _message.value = SettingsMessage(when (val r = container.autoBackup.runNow()) {
+                is com.bamnat.app.backup.AutoBackup.Result.Ok -> "백업했어요"
+                is com.bamnat.app.backup.AutoBackup.Result.Failed -> r.why
+                com.bamnat.app.backup.AutoBackup.Result.Locked -> "자동 백업은 프로에서 돼요"
+                com.bamnat.app.backup.AutoBackup.Result.Off -> "자동 백업이 꺼져 있어요"
+            })
+        }
+    }
+
+    fun stopAutoBackup() {
+        container.autoBackup.turnOff()
+        _message.value = SettingsMessage("자동 백업을 껐어요. 저장한 파일은 그대로 있어요")
     }
 
     /** [FEAT-08] A sealed backup waiting for its password. */
@@ -634,6 +696,9 @@ private fun SettingsHub(
         for (p in SettingsPage.entries) {
             GroupRow(p.icon, p.title, summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk), selected == p) { onOpen(p) }
         }
+        // [MON-04] 프로: what it is now, and the screen to start, manage or restore it.
+        val gate by vm.gate.collectAsStateWithLifecycle()
+        GroupRow(Icons.Outlined.WorkspacePremium, "프로", proSummary(gate), false) { SettingsLinks.go(SettingsGo.PRO) }
         // [COMM-07] Its own row, so it is one tap away rather than inside 급여.
         if (onOpenBoard != null) GroupRow(Icons.Outlined.Forum, "회사 규칙 광장", "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론", false, onClick = onOpenBoard)
         // [GUIDE-05] Every feature that can be off, and where to turn it back on.
@@ -805,6 +870,13 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
     SettingsPage.DATA -> "백업 저장 · 불러오기 · 캘린더 가져오기·내보내기"
     SettingsPage.PRIVACY -> "개인정보 처리방침 · 권한 확인 · 앱 잠금"
     SettingsPage.ABOUT -> "밤낮 ${BuildConfig.VERSION_NAME} · 알람 점검 · 처리방침"
+}
+
+/** [MON-04] The 프로 row's words: before the 정식 출시, with 프로, and without it. */
+internal fun proSummary(gate: com.bamnat.app.tier.Gate): String = when {
+    !gate.live -> "정식 출시 전이라 모든 기능이 무료예요"
+    gate.access.pro -> gate.access.reason.words
+    else -> "광고 없애기 · 명세서 대조 · 돈 통계 · 1개월 무료 체험"
 }
 
 /** "7시간", "6시간 반". */

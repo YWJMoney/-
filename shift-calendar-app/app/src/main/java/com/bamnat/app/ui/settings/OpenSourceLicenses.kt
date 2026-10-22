@@ -42,9 +42,15 @@ val OPEN_SOURCE_NOTICES: List<OpenSourceNotice> = listOf(
     OpenSourceNotice("ML Kit 글자 인식 (한국어)", "Google", "ML Kit 이용약관", "https://developers.google.com/ml-kit/terms"),
     OpenSourceNotice("Google Play 인앱 리뷰", "Google", "Play Core 소프트웨어 개발 키트 서비스 약관",
         "https://developer.android.com/guide/playcore/license"),
-    // [DAYW-07][SHFT-08]
-    OpenSourceNotice("Google Play 서비스 (위치, Wear OS 연결)", "Google", "Android 소프트웨어 개발 키트 라이선스",
+    // [DAYW-07][SHFT-08][MON-07]
+    OpenSourceNotice("Google Play 서비스 (위치, Wear OS 연결, 모바일 광고 AdMob)", "Google", "Android 소프트웨어 개발 키트 라이선스",
         "https://developer.android.com/studio/terms"),
+    // [MON-03]
+    OpenSourceNotice("Google Play 결제 라이브러리", "Google", "Android 소프트웨어 개발 키트 라이선스",
+        "https://developer.android.com/google/play/billing"),
+    // [MON-07]
+    OpenSourceNotice("Google 사용자 메시지 플랫폼 (광고 동의)", "Google", "Android 소프트웨어 개발 키트 라이선스",
+        "https://developers.google.com/admob/android/privacy"),
 )
 
 private const val APACHE_2 = "Apache License 2.0"

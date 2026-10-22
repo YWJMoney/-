@@ -70,14 +70,14 @@ test("without a password set, sign-in says what is missing", async () => {
   const { call } = server({ ADMIN_PASSWORD: "short", RATE_SALT: undefined });
   assert.deepEqual((await call("POST", "/api/admin/login", { password: "short" }, APP)).data, { error: "not_set" });
   assert.deepEqual((await call("GET", "/api/admin/health")).data,
-    { database: true, password: false, salt: false, mail: false, why: { password: "short", salt: "missing" } });
+    { database: true, password: false, salt: false, mail: false, play: false, why: { password: "short", salt: "missing" } });
 });
 
 test("the setup screen says why a secret is not read, never what it is", async () => {
   // Typed under a slightly different name, and bound from the Secrets Store instead of set on the Worker.
   const { call } = server({ ADMIN_PASSWORD: undefined, " admin_password": "a-long-password", RATE_SALT: { get: async () => "x" } });
   const h = (await call("GET", "/api/admin/health")).data;
-  assert.deepEqual(h, { database: true, password: false, salt: false, mail: false, why: { password: "name", salt: "store" } });
+  assert.deepEqual(h, { database: true, password: false, salt: false, mail: false, play: false, why: { password: "name", salt: "store" } });
   assert.equal(JSON.stringify(h).includes("a-long-password"), false);
 });
 
@@ -420,6 +420,11 @@ test("the developer app's files are served safely", async () => {
   }
   const css = await call("GET", "/admin/app.css");
   assert.match(css.headers.get("content-type"), /^text\/css/);
+  // [MON-08][MON-09][MON-10] The 정식 출시 switch, the phone link code, phone approval and reward months are on the page.
+  const app = (await call("GET", "/admin/app.js")).text;
+  for (const part of ['data-form="launch"', 'data-act="launch-switch"', 'data-act="link-code"', 'data-act="phone"', "내 휴대폰 밤낮 연결", "프로 이용권"]) {
+    assert.ok(app.includes(part), part);
+  }
 
   const manifest = JSON.parse((await call("GET", "/admin/manifest.webmanifest")).text);
   assert.equal(manifest.start_url, "/admin/");

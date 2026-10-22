@@ -55,12 +55,14 @@ class ShareServerTest {
         assertTrue(text.contains("처리방침 2.4"))
         assertTrue(text.contains("Cloudflare, Inc."))
         assertTrue(text.contains("<td>인터넷</td>"))
-        assertTrue(text.contains("7일·30일·90일"))
+        // [PROV-04] 2.6: the 180-day and 1-year periods, 프로's.
+        assertTrue(text.contains("7일·30일·90일·180일·1년(180일과 1년은 프로)"))
         assertFalse(text.contains("인터넷 접속 권한 자체가 없습니다"))
         assertFalse(text.contains("인터넷 권한은 쓰지 않습니다"))
         // The day counts the policy states are the ones the app sends.
         assertTrue(text.contains("${ShareLinkPayload.DAYS}일"))
-        assertEquals(listOf(7, 30, 90), ShareLinkPayload.TTL_DAYS)
+        assertEquals(listOf(7, 30, 90, 180, 365), ShareLinkPayload.TTL_DAYS)
+        assertEquals(setOf(180, 365), ShareLinkPayload.PRO_TTL_DAYS)
     }
 
     /**

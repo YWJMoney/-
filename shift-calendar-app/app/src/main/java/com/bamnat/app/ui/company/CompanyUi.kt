@@ -57,12 +57,10 @@ fun companyProblem(code: String, field: String? = null): String = when (code) {
 fun rewardLine(terms: CompanyTerms?): String? = terms?.rewardMonths?.takeIf { it > 0 }?.let(::rewardText)
 
 /**
- * [COMM-05] Until billing ships every feature is free, so the reward is said as what it is: months
- * of 프로 once paid features come, never something to have now.
+ * [COMM-05][MON-08] The reward is a 프로 pass on this phone (설정 › 프로); months given before the
+ * 정식 출시 switch start counting on launch day, so nothing is used up while everything is free.
  */
-fun rewardText(months: Int): String =
-    if (com.bamnat.app.tier.FeatureGate.BILLING_LIVE) "채택되면 프로 ${months}개월을 드려요"
-    else "지금은 모든 기능이 무료예요. 유료 기능이 생기면 채택된 설정을 보낸 분께 프로 ${months}개월을 드려요"
+fun rewardText(months: Int): String = "채택되면 프로 ${months}개월을 드려요. 정식 출시 전에 받으면 출시 날부터 세요"
 
 /** The same in a few words, for a pill next to a button. */
 fun rewardShort(terms: CompanyTerms?): String? = terms?.rewardMonths?.takeIf { it > 0 }?.let { "채택되면 프로 ${it}개월" }

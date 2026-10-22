@@ -58,7 +58,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import com.bamnat.app.tier.Feature
-import com.bamnat.app.tier.FeatureGate
 import com.bamnat.app.tier.Tier
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -374,6 +373,8 @@ fun NewCalendarDialog(
     suggested: String, colorIndex: Int, onCreate: (String, Long) -> Unit, onDismiss: () -> Unit,
     /** [MCAL-07] This one would be past the free ones, so a pro calendar. */
     pro: Boolean = false,
+    /** The 정식 출시 switch: before it the note says the calendar will be pro later. */
+    live: Boolean = false,
 ) {
     var name by remember { mutableStateOf("") }
     var color by remember { mutableLongStateOf(PersonalCalendar.COLORS[colorIndex % PersonalCalendar.COLORS.size]) }
@@ -386,7 +387,7 @@ fun NewCalendarDialog(
                     "근무 형태부터 처음 시작할 때처럼 하나씩 물어볼게요. 지금 달력은 그대로예요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (pro) Text(proNote(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                if (pro) Text(proNote(live), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 OutlinedTextField(
                     value = name, onValueChange = { if (it.length <= PersonalCalendar.MAX_NAME) name = it }, singleLine = true,
                     label = { Text("이름") }, placeholder = { Text(suggested) }, modifier = Modifier.fillMaxWidth(),
@@ -399,10 +400,10 @@ fun NewCalendarDialog(
     )
 }
 
-/** [MCAL-07] What a calendar past the free ones is, before and after paid features open. */
-internal fun proNote(): String =
-    if (FeatureGate.BILLING_LIVE) "추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료이고, 이 달력부터는 ${Tier.PRO.label} 기능이에요."
-    else "추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료이고, 그다음부터는 ${Tier.PRO.label} 기능이 될 거예요. 지금은 모든 기능이 무료예요."
+/** [MCAL-07] What a calendar past the free ones is, before and after the 정식 출시 switch. */
+internal fun proNote(live: Boolean): String =
+    if (live) "추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료이고, 이 달력부터는 ${Tier.PRO.label} 기능이에요."
+    else "추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료이고, 그다음부터는 정식 출시 뒤 ${Tier.PRO.label} 기능이 돼요. 지금은 모든 기능이 무료예요."
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -426,7 +427,9 @@ class CalendarsViewModel(private val c: AppContainer) : ViewModel() {
 
     val rows: StateFlow<List<CalendarRow>> =
         combine(c.calendars.order, c.calendars.calendars, c.received.calendars, links) { order, mine, got, _ ->
-            CalendarRow.of(order, mine, if (c.shareApi.enabled) got else emptyList()) { id -> c.shareLinksOf(id).link.value }
+            CalendarRow.of(order, mine, if (c.shareApi.enabled) got else emptyList()) { id ->
+                com.bamnat.app.share.ShareLinkKey.all(id).firstNotNullOfOrNull { c.shareLinksOf(it).link.value }
+            }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _message = MutableStateFlow<String?>(null)
@@ -475,18 +478,20 @@ class CalendarsViewModel(private val c: AppContainer) : ViewModel() {
 /**
  * [MCAL-01][MCAL-03] Removes an added calendar. Its open link is cut first, so what it showed stops
  * showing; without internet that fails (false) and the calendar stays, unless [keepLink] says to go
- * anyway and let the link close on its own date.
+ * anyway and let the link close on its own date. [PROV-04] All of its links.
  */
 internal suspend fun removeCalendar(c: AppContainer, id: String, keepLink: Boolean): Boolean {
-    val link = c.shareLinksOf(id).link.value
-    val cut = link == null || keepLink || try {
-        c.shareApi.delete(link)
-        true
-    } catch (e: ShareLinkException) {
-        // Already gone on the server is as good as cut.
-        e.message == "not_found"
-    } catch (e: IOException) {
-        false
+    val links = com.bamnat.app.share.ShareLinkKey.all(id).mapNotNull { c.shareLinksOf(it).link.value }
+    val cut = keepLink || links.all { link ->
+        try {
+            c.shareApi.delete(link)
+            true
+        } catch (e: ShareLinkException) {
+            // Already gone on the server is as good as cut.
+            e.message == "not_found"
+        } catch (e: IOException) {
+            false
+        }
     }
     if (!cut) return false
     // [UNDO-03] Everything it had is kept for 7 days before anything moves, so it can come back whole.
@@ -499,7 +504,7 @@ internal suspend fun removeCalendar(c: AppContainer, id: String, keepLink: Boole
     // [DAYW-07] 출퇴근 자동 기록 writing to it goes to 내 달력.
     com.bamnat.app.data.CommutePrefs.get(c.appContext).let { if (it.current.calendarId == id) it.setCalendar(PersonalCalendar.MAIN) }
     c.calendars.delete(id)
-    c.telemetry.event("calendar_delete", if (link != null) "with_link" else "")
+    c.telemetry.event("calendar_delete", if (links.isNotEmpty()) "with_link" else "")
     kept?.let(c.recordsTrash::deleted)
     return true
 }
@@ -713,20 +718,22 @@ fun rememberAddCalendar(c: AppContainer, onSetup: (String) -> Unit): () -> Unit 
     val scope = rememberCoroutineScope()
     val setup by androidx.compose.runtime.rememberUpdatedState(onSetup)
     val calendars by c.calendars.calendars.collectAsStateWithLifecycle()
-    val tier by c.featureGate.tier.collectAsStateWithLifecycle()
+    val gate by c.featureGate.state.collectAsStateWithLifecycle()
     val made = calendars.count { !it.isMain }
     val pro = made >= PersonalCalendar.FREE_ADDED
-    if (naming && pro && !FeatureGate.allows(tier, Feature.MORE_CALENDARS)) {
+    if (naming && pro && !gate.allows(Feature.MORE_CALENDARS)) {
         // [MCAL-07] Past the free calendars once paid features are on: said, not made.
         AlertDialog(
             onDismissRequest = { naming = false },
             title = { Text("달력을 더 만들려면 ${Tier.PRO.label}가 필요해요") },
             text = { Text("내 달력과 추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료예요. ${Tier.PRO.label}에서 달력을 더 만들 수 있어요.") },
-            confirmButton = { TextButton(onClick = { naming = false }) { Text("확인") } },
+            confirmButton = { TextButton(onClick = { naming = false; com.bamnat.app.ui.pro.openPro() }) { Text("프로 알아보기") } },
+            dismissButton = { TextButton(onClick = { naming = false }) { Text("닫기") } },
         )
     } else if (naming) {
         NewCalendarDialog(
             pro = pro,
+            live = gate.live,
             suggested = "달력 ${made + 2}",
             colorIndex = made,
             onDismiss = { naming = false },

@@ -136,15 +136,17 @@ class SystemEventReceiver : BroadcastReceiver() {
                 com.bamnat.app.money.JobReminderScheduler.reschedule(context, container.calendars.everyMoneyNow(), settings)
                 com.bamnat.app.pay.LeaveReminder.reschedule(context, container.payStore.profile.value, settings)
                 // [SHR-12] The link's expiry notice did not survive the reboot either.
-                container.calendars.calendars.value.forEach { cal ->
-                    val links = container.shareLinksOf(cal.id)
-                    com.bamnat.app.share.ShareExpiryReminder.reschedule(context, cal.id, links.link.value, links.noticedFor)
+                container.calendars.calendars.value.flatMap { com.bamnat.app.share.ShareLinkKey.all(it.id) }.forEach { key ->
+                    val links = container.shareLinksOf(key)
+                    com.bamnat.app.share.ShareExpiryReminder.reschedule(context, key, links.link.value, links.noticedFor)
                 }
                 // [SCHED-01] Memo schedules did not survive the reboot either.
                 com.bamnat.app.memo.MemoScheduleAlarm.reschedule(context, container.memoRepository.memos.first())
                 // [INV-08] The investor's alarms too.
                 com.bamnat.app.invest.InvestNotices.reschedule(context, com.bamnat.app.invest.InvestNotices.plansNow(container))
                 com.bamnat.app.sleep.DayNoticeScheduler.reschedule(context, container.scheduleRepository.snapshot.first(), settings)
+                // [MON-06] The trial's question before it turns paid.
+                com.bamnat.app.tier.TrialNotice.reschedule(context, container.proStore.current)
                 // [SLP-15] What waited while the user slept: its alarm did not survive the reboot either.
                 com.bamnat.app.sleep.QuietHold.release(context)
                 // A new date or time zone changes what "today" is on the widgets.

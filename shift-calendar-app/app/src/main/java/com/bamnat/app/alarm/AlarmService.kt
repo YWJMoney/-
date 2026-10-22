@@ -27,6 +27,7 @@ import androidx.core.content.ContextCompat
 import com.bamnat.app.R
 import com.bamnat.app.appContainer
 import com.bamnat.app.data.AppSettings
+import com.bamnat.core.alarm.AlarmMission
 import com.bamnat.core.diag.DiagEvents
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -86,8 +87,12 @@ class AlarmService : Service() {
             }
             else -> {
                 // ACTION_DISMISS, or a restart with no intent
-                if (intent?.action == ACTION_DISMISS && _ringing.value != null && !BootAlarms.isLocked(this)) {
-                    appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED)
+                val ring = _ringing.value
+                if (intent?.action == ACTION_DISMISS && ring != null && !BootAlarms.isLocked(this)) {
+                    appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED, intent.getStringExtra(EXTRA_HOW).orEmpty())
+                    // [PROV-07] A few minutes on, 일어났나요?; once per alarm, never for a memo's schedule.
+                    val minutes = BootAlarms.ringSettings(this).wakeCheckMinutes
+                    if (minutes > 0 && !ring.recheck && ring.label == null) WakeCheck.schedule(this, ring, minutes)
                 }
                 finish()
             }
@@ -97,7 +102,10 @@ class AlarmService : Service() {
 
     private fun startRinging(ring: RingRequest) {
         stopOutputs()
+        // [PROV-06] The mission's 5 minutes count from the first ring, not from a ring that replaced it.
+        if (_ringing.value == null) _since.value = System.currentTimeMillis()
         _ringing.value = ring
+        if (!ring.recheck && !BootAlarms.isLocked(this)) WakeCheck.cancel(this)
         startInForeground(ring)
 
         val settings = BootAlarms.ringSettings(this)
@@ -153,7 +161,11 @@ class AlarmService : Service() {
             .setFullScreenIntent(fullScreen, true)
             // [REL-12] Both buttons work from the lock screen without unlocking the phone.
             .addAction(lockScreenAction("${snoozeMinutes}분 뒤 다시 울림", ACTION_SNOOZE, REQ_SNOOZE))
-            .addAction(lockScreenAction("끄기", ACTION_DISMISS, REQ_DISMISS))
+            // [PROV-06] With a mission, 끄기 opens it over the lock screen instead of turning the alarm off.
+            .addAction(
+                if (BootAlarms.ringSettings(this).missionFor(ring) == AlarmMission.NONE) lockScreenAction("끄기", ACTION_DISMISS, REQ_DISMISS)
+                else NotificationCompat.Action.Builder(0, "끄기", missionIntent(this)).setAuthenticationRequired(false).build(),
+            )
             // Swiping the notification away must not leave the alarm ringing with no controls.
             .setDeleteIntent(serviceIntent(this, ACTION_SNOOZE, REQ_DELETE))
             .build()
@@ -276,6 +288,7 @@ class AlarmService : Service() {
     private fun finish() {
         stopOutputs()
         _ringing.value = null
+        _since.value = null
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         NotificationManagerCompat.from(this).cancel(Notifications.ALARM_NOTIFICATION_ID)
         stopSelf()
@@ -284,6 +297,7 @@ class AlarmService : Service() {
     override fun onDestroy() {
         stopOutputs()
         _ringing.value = null
+        _since.value = null
         super.onDestroy()
     }
 
@@ -291,6 +305,8 @@ class AlarmService : Service() {
         const val ACTION_START = "com.bamnat.app.alarm.START"
         const val ACTION_DISMISS = "com.bamnat.app.alarm.DISMISS"
         const val ACTION_SNOOZE = "com.bamnat.app.alarm.SNOOZE"
+        /** [PROV-06] How it was turned off, for the log: "mission", "skip" or none. */
+        private const val EXTRA_HOW = "com.bamnat.app.alarm.extra.HOW"
 
         /**
          * [OPS-10] The alarm-app type on Android 14+, open to apps holding USE_EXACT_ALARM; older
@@ -303,6 +319,7 @@ class AlarmService : Service() {
         private const val REQ_SNOOZE = 2002
         private const val REQ_DISMISS = 2003
         private const val REQ_DELETE = 2004
+        private const val REQ_MISSION = 2005
         private const val GRADUAL_START = 0.15f
         private const val RAMP_INCREMENT = 0.085f
         private const val RAMP_STEP_MILLIS = 2_000L
@@ -313,6 +330,26 @@ class AlarmService : Service() {
         /** The alarm currently ringing, observed by [AlarmActivity]. */
         val ringing: StateFlow<RingRequest?> = _ringing.asStateFlow()
 
+        private val _since = MutableStateFlow<Long?>(null)
+        /** [PROV-06] When the ringing began (epoch ms), for the mission's time limit. */
+        val ringingSince: StateFlow<Long?> = _since.asStateFlow()
+
+        /** [PROV-06] The ringing screen, opened on the mission. */
+        fun missionIntent(context: Context): PendingIntent = PendingIntent.getActivity(
+            context, REQ_MISSION,
+            Intent(context, AlarmActivity::class.java).putExtra(AlarmActivity.EXTRA_MISSION, true)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        /** [PROV-06] 끄기 from the app's own banner: the mission when there is one. */
+        fun askToDismiss(context: Context) {
+            val ring = _ringing.value ?: return
+            if (BootAlarms.ringSettings(context).missionFor(ring) == AlarmMission.NONE) dismiss(context)
+            else context.startActivity(Intent(context, AlarmActivity::class.java).putExtra(AlarmActivity.EXTRA_MISSION, true)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        }
+
         private val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
 
         fun describe(ring: RingRequest): String {
@@ -320,6 +357,8 @@ class AlarmService : Service() {
             val work = ring.shiftName.isNotBlank()
             return when {
                 // [SCHED-01] A memo's schedule: when it is.
+                // [PROV-07] 일어났나요? had no answer.
+                ring.recheck -> "끈 뒤 답이 없어 다시 울려요"
                 ring.label != null && ring.isSnooze -> "$start 일정 · 다시 울림"
                 ring.label != null -> "$start 일정"
                 ring.isSnooze && work -> "$start 근무 시작 · 다시 울림"
@@ -335,8 +374,8 @@ class AlarmService : Service() {
             ContextCompat.startForegroundService(context, intent)
         }
 
-        fun dismiss(context: Context) {
-            context.startService(Intent(context, AlarmService::class.java).setAction(ACTION_DISMISS))
+        fun dismiss(context: Context, how: String? = null) {
+            context.startService(Intent(context, AlarmService::class.java).setAction(ACTION_DISMISS).putExtra(EXTRA_HOW, how))
         }
 
         fun snooze(context: Context) {

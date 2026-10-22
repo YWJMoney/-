@@ -102,8 +102,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.ScheduleRepository
 import com.bamnat.app.data.ScheduleSnapshot
-import com.bamnat.app.tier.Feature
-import com.bamnat.app.tier.FeatureGate
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.ConfirmDialog
 import com.bamnat.app.ui.components.LeaveMark
@@ -235,13 +233,12 @@ private fun DayGroups(
     val book by vm.moneyBook.collectAsStateWithLifecycle()
     val dayBook = remember(book, date) { book.on(date) }
     val profile by vm.payProfile.collectAsStateWithLifecycle()
-    val tier by vm.tier.collectAsStateWithLifecycle()
-    val unlocked = FeatureGate.allows(tier, Feature.PAY_ENGINE)
     // [EXTRA-02][EXTRA-03] Minutes and pay are worked out off the main thread, for this date only.
-    val insightFor by produceState<Pair<LocalDate, DayInsight>?>(null, profile, snapshot, date, unlocked) {
+    // [MON-01] A day's pay is free.
+    val insightFor by produceState<Pair<LocalDate, DayInsight>?>(null, profile, snapshot, date) {
         // [STAB-01] Days passed by quickly, or a stepper held down, start no calculation that is thrown away.
         delay(INSIGHT_SETTLE_MILLIS)
-        value = date to (runCatching { withContext(Dispatchers.Default) { vm.dayInsight(profile, snapshot, date, unlocked) } }
+        value = date to (runCatching { withContext(Dispatchers.Default) { vm.dayInsight(profile, snapshot, date, true) } }
             .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull() ?: DayInsight())
     }
     val insight = insightFor?.takeIf { it.first == date }?.second ?: DayInsight()
@@ -312,7 +309,7 @@ private fun DayGroups(
                             summaryColor = if (review) cal.warning else if (names.isNotEmpty()) cal.holidayWork else null,
                             open = groups.isOpen(key, day.hasExtraWork), onToggle = { groups.toggle(key, day.hasExtraWork) },
                         ) {
-                            ExtrasContent(day, snapshot, vm, insight, showAmounts = profile != null && unlocked, onOpenExtraKinds = onOpenExtraKinds)
+                            ExtrasContent(day, snapshot, vm, insight, showAmounts = profile != null, onOpenExtraKinds = onOpenExtraKinds)
                         }
                     }
                     G.LEAVE -> {
@@ -373,7 +370,6 @@ private fun DayGroups(
                         val payText = when {
                             moneyFirst -> null
                             profile == null -> "급여 설정 전"
-                            !unlocked -> "급여는 프로 등급에서 보여요"
                             pay == null -> null
                             pay.amount == 0L -> "더해지는 급여 없음"
                             profile?.wageType == WageType.MONTHLY -> "급여 +${Fmt.won(pay.amount)}"
@@ -390,7 +386,7 @@ private fun DayGroups(
                             summary = moneyText,
                             open = groups.isOpen(key, moneyFirst), onToggle = { groups.toggle(key, moneyFirst) },
                         ) {
-                            if (!moneyFirst) DayPayContent(insight, profile?.wageType, profile != null, unlocked, onOpenPay)
+                            if (!moneyFirst) DayPayContent(insight, profile?.wageType, profile != null, onOpenPay)
                             val memoText = remember(memos) {
                                 memos.joinToString("\n") { m -> (listOf(m.title, m.body) + m.checklist.map { it.text }).filter { it.isNotBlank() }.joinToString("\n") }
                             }
@@ -990,18 +986,11 @@ private fun MemoRow(memo: Memo, onClick: () -> Unit, onDelete: () -> Unit) {
  * work and the holiday show up here as soon as they change on the calendar.
  */
 @Composable
-private fun DayPayContent(insight: DayInsight, wageType: WageType?, hasProfile: Boolean, unlocked: Boolean, onOpenPay: () -> Unit) {
+private fun DayPayContent(insight: DayInsight, wageType: WageType?, hasProfile: Boolean, onOpenPay: () -> Unit) {
     if (!hasProfile) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("급여 계산을 설정하면 이 날 더해지는 돈이 보여요.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             TextButton(onClick = onOpenPay) { Text("설정하기") }
-        }
-        return
-    }
-    if (!unlocked) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("이 날 급여는 프로 등급에서 보여요.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            TextButton(onClick = onOpenPay) { Text("급여 화면") }
         }
         return
     }

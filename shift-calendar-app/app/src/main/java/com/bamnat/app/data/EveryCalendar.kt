@@ -1,9 +1,6 @@
 package com.bamnat.app.data
 
 import com.bamnat.app.AppContainer
-import com.bamnat.app.tier.Feature
-import com.bamnat.app.tier.FeatureGate
-import com.bamnat.app.tier.Tier
 import com.bamnat.core.money.AllCalendarsMonth
 import com.bamnat.core.money.CalendarMonth
 import com.bamnat.core.money.MoneyBook
@@ -45,8 +42,9 @@ object EveryCalendar {
      * Every calendar's [month]: its money with its own wage estimate (as its money tab counts it), and
      * its days and hours of work. Heavy for wage calendars; call it off the main thread.
      */
-    fun month(parts: List<CalendarParts>, month: YearMonth, tier: Tier): AllCalendarsMonth = AllCalendarsMonth(parts.map { p ->
-        val estimate = p.profile?.takeIf { p.style?.usesPayEngine != false && FeatureGate.allows(tier, Feature.PAY_ENGINE) }?.let { profile ->
+    fun month(parts: List<CalendarParts>, month: YearMonth): AllCalendarsMonth = AllCalendarsMonth(parts.map { p ->
+        // [MON-01] The wage estimate is free.
+        val estimate = p.profile?.takeIf { p.style?.usesPayEngine != false }?.let { profile ->
             runCatching { PayCalculator().calculate(profile, month, p.snapshot.resolver::resolve).total }.getOrNull()
         }
         val days = (1..month.lengthOfMonth()).map { p.snapshot.resolver.resolve(month.atDay(it)) }

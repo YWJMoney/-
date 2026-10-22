@@ -22,6 +22,12 @@
 //                                 permissions the owner gave it
 // *      /api/admin/dev...        개발사항 gathered from questions, each with its own history [ADMIN-10][ADMIN-11]
 // *      /api/admin/templates...  자주 쓰는 답 shared by admins; inquiries also take 내가 맡기 and notes [ADMIN-12]
+// GET    /api/config              the 정식 출시 switch and what goes with it, for every app once a day [MON-02]
+// GET    /api/passes              header X-Device: this install's 프로 passes and admin phone link [MON-08][MON-09]
+// POST   /api/passes/code         a recovery code for the backup; /claim moves passes to a new phone with it
+// POST   /api/admin-link          a six-digit code from the developer app ties this phone to that admin
+// POST   /api/purchases           a Play purchase token, checked with Play when PLAY_SERVICE_ACCOUNT is set [MON-03]
+// POST   /api/consents            the user's answer before a free trial turns paid (전자상거래법 제13조 6항) [MON-06]
 //
 // A report carries no pay amounts, names or contacts; one that looks like it does is refused, not
 // cleaned. No IP address is stored: limits and "the same network within an hour" use hashes salted
@@ -139,7 +145,7 @@ export default {
   // time even when nobody sends anything.
   async scheduled(event, env, ctx) {
     if (!env.DB) return;
-    ctx.waitUntil(ready(env).then(() => prune(env, Date.now())));
+    ctx.waitUntil(ready(env).then(() => prune(env, Date.now())).then(() => stopUnconsentedTrials(env, Date.now())));
   },
 };
 
@@ -162,6 +168,11 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM posts WHERE status = 'hidden' AND hidden_at < ?", now - LIMITS.hiddenPostDays * DAY),
     stmt(env, "DELETE FROM muted WHERE until < ?", now),
     stmt(env, "DELETE FROM audit WHERE at < ?", now - 365 * DAY),
+    // [MON-03][MON-09] Spent link codes, and purchases 30 days after they ended.
+    stmt(env, "DELETE FROM link_codes WHERE expires < ?", now),
+    stmt(env, "DELETE FROM subs WHERE expiry IS NOT NULL AND expiry < ?", now - MONEY.subKeepMs),
+    // [MON-06][MON-11] Consent answers are the record of a contract: kept 5 years (전자상거래법 시행령 제6조), then gone.
+    stmt(env, "DELETE FROM consents WHERE at < ?", now - MONEY.consentKeepMs),
   ]);
 }
 
@@ -208,6 +219,10 @@ async function route(request, env) {
   if (m && method === "DELETE" && !m[2]) return takePostBack(request, env, m[1]);
   if (m && method === "POST" && m[2]) return flag(request, env, m[1]);
   if (path === "/api/inquiries" || path.startsWith("/api/inquiries/")) return inquiries(request, env, path);
+  if (path === "/api/config" && method === "GET") return json(await config(env));
+  if (path.startsWith("/api/passes") || path === "/api/admin-link" || path === "/api/purchases" || path === "/api/consents") {
+    return money(request, env, path);
+  }
   return json({ error: "not_found" }, 404);
 }
 
@@ -297,6 +312,23 @@ const SCHEMA = [
     by TEXT NOT NULL, at INTEGER NOT NULL)`,
   // Sign-ins before admin accounts kept only a token; they end once, and the owner signs in again.
   "DROP TABLE IF EXISTS sessions",
+  // [MON-08] A recovery code per install, as a hash, to move its passes to a new phone once.
+  "CREATE TABLE IF NOT EXISTS pass_codes (hash TEXT PRIMARY KEY, device TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL)",
+  // [MON-09] Codes the developer app shows an admin, and the phones tied to admins.
+  "CREATE TABLE IF NOT EXISTS link_codes (code TEXT PRIMARY KEY, admin TEXT NOT NULL, admin_name TEXT NOT NULL, expires INTEGER NOT NULL)",
+  `CREATE TABLE IF NOT EXISTS admin_devices (id TEXT PRIMARY KEY, device TEXT NOT NULL UNIQUE, admin TEXT NOT NULL, admin_name TEXT NOT NULL,
+    status TEXT NOT NULL, created_at INTEGER NOT NULL, approved_at INTEGER, seen_at INTEGER)`,
+  "CREATE INDEX IF NOT EXISTS admin_devices_admin ON admin_devices (admin)",
+  // [MON-03] A subscription Play confirmed, kept while it lasts and 30 days after (consent and reward deferral need it).
+  `CREATE TABLE IF NOT EXISTS subs (hash TEXT PRIMARY KEY, device TEXT NOT NULL, token TEXT NOT NULL, product TEXT NOT NULL,
+    base_plan TEXT NOT NULL DEFAULT '', state TEXT NOT NULL, expiry INTEGER, trial INTEGER NOT NULL DEFAULT 0,
+    auto_renew INTEGER NOT NULL DEFAULT 0, consent_at INTEGER, stopped_at INTEGER, created_at INTEGER NOT NULL, checked_at INTEGER NOT NULL)`,
+  "CREATE INDEX IF NOT EXISTS subs_device ON subs (device)",
+  "CREATE INDEX IF NOT EXISTS subs_trial ON subs (trial, auto_renew, expiry)",
+  // [MON-06] Answers before a trial turns paid, kept as the law's evidence.
+  `CREATE TABLE IF NOT EXISTS consents (id INTEGER PRIMARY KEY AUTOINCREMENT, device TEXT NOT NULL, kind TEXT NOT NULL,
+    detail TEXT NOT NULL, at INTEGER NOT NULL)`,
+  "CREATE INDEX IF NOT EXISTS consents_device ON consents (device)",
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -315,6 +347,8 @@ const COLUMNS = [
   "ALTER TABLE inquiries ADD COLUMN rating INTEGER",
   // [INQ-02] The app version a finished 개발사항 went out in, for the asker's 반영됨 step.
   "ALTER TABLE dev_items ADD COLUMN released_in TEXT",
+  // [MON-08] A reward Play gave as a later renewal of a running subscription, not as a pass.
+  "ALTER TABLE rewards ADD COLUMN deferred INTEGER NOT NULL DEFAULT 0",
 ];
 
 const schemas = new WeakMap();
@@ -1285,6 +1319,10 @@ async function forgetMine(request, env) {
     stmt(env, `UPDATE inquiries SET same = same - 1 WHERE id IN (SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'same')`, dev),
     stmt(env, `UPDATE inquiries SET flags = flags - 1 WHERE id IN (SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'flag')`, dev),
     stmt(env, "DELETE FROM inquiry_marks WHERE device = ? OR inquiry_id NOT IN (SELECT id FROM inquiries)", dev),
+    // [MON-08][MON-09] Its recovery code and admin phone link. Purchases and consent answers stay as the
+    // law's record of a sale until they expire (처리방침 보관 기간).
+    stmt(env, "DELETE FROM pass_codes WHERE device = ?", dev),
+    stmt(env, "DELETE FROM admin_devices WHERE device = ?", dev),
   ]);
   return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes });
 }
@@ -2358,7 +2396,8 @@ const cookie = (value, maxAge) => `${COOKIE}=${value}; Path=/; Secure; HttpOnly;
 /** What is still missing on a new server, shown on the login screen, with why; never a name or value that was set. */
 function health(env) {
   const why = { password: secretIssue(env, "ADMIN_PASSWORD", 10), salt: secretIssue(env, "RATE_SALT", 1) };
-  return { database: Boolean(env.DB), password: why.password === null, salt: why.salt === null, mail: mailReady(env), why };
+  // [MON-03] PLAY_SERVICE_ACCOUNT is optional: without it purchases are not checked with Play.
+  return { database: Boolean(env.DB), password: why.password === null, salt: why.salt === null, mail: mailReady(env), play: playReady(env) !== null, why };
 }
 
 /**
@@ -2418,6 +2457,8 @@ async function admin(request, env, url) {
     return json({ ok: true }, 200, { "set-cookie": cookie("", 0) });
   }
   if (path === "/me" && method === "GET") return json(me(actor));
+  // [MON-09] A code for this admin's own phone.
+  if (path === "/me/link-code" && method === "POST") return linkCode(env, actor, now);
   if (path === "/me/password" && method === "POST") return changePassword(request, env, actor, session.token, now);
   if (path === "/me/logout-all" && method === "POST") {
     await run(env, "DELETE FROM admin_sessions WHERE admin = ?", actor.id);
@@ -2455,6 +2496,12 @@ async function admin(request, env, url) {
   m = path.match(/^\/rewards\/(w[A-Za-z0-9]{22})$/);
   if (m && method === "POST") return setReward(request, env, m[1], now);
   if (path === "/settings" && method === "POST") return saveSettings(request, env, now);
+  // [MON-10] The 정식 출시 switch and [MON-09] admins' phones are the owner's (areaFor gives "owner").
+  if (path === "/launch" && method === "GET") return json(await launchView(env));
+  if (path === "/launch" && method === "POST") return setLaunch(request, env, now);
+  if (path === "/devices" && method === "GET") return json(await phoneList(env));
+  m = path.match(/^\/devices\/(d[A-Za-z0-9]{15})\/(approve|remove)$/);
+  if (m && method === "POST") return setPhone(env, m[1], m[2], now);
   if (path === "/posts" && method === "GET") return json(await postList(env, url));
   m = path.match(/^\/posts\/(p[A-Za-z0-9]{15})$/);
   if (m && method === "POST") return moderate(request, env, m[1], now);
@@ -2792,6 +2839,9 @@ async function removeAdmin(env, id, now) {
     stmt(env, "UPDATE dev_items SET assignee = NULL, assignee_name = NULL WHERE assignee = ?", id),
     // The email can be invited again later.
     stmt(env, "DELETE FROM invites WHERE email = ?", a.email),
+    // [MON-09] Their phones stop getting 프로 with them.
+    stmt(env, "DELETE FROM admin_devices WHERE admin = ?", id),
+    stmt(env, "DELETE FROM link_codes WHERE admin = ?", id),
   ]);
   await audit(env, now, "admin_remove", a.email);
   return json(await adminList(env));
@@ -2826,7 +2876,9 @@ async function auditLog(env, url) {
 /** The home screen's numbers, only for the areas this admin can see. */
 async function overview(env, actor) {
   // One trip to the database for every number: the home screen waits on this call.
-  const counts = { settings: "SELECT key, value FROM settings WHERE key IN ('adopt_points', 'reward_months', 'adopt_agree')" };
+  const counts = { settings: "SELECT key, value FROM settings WHERE key IN ('adopt_points', 'reward_months', 'adopt_agree')",
+    // [MON-10] Every screen shows whether 정식 출시 is on.
+    live: "SELECT value FROM settings WHERE key = 'billing_live'" };
   if (can(actor, "review")) {
     counts.pending = "SELECT COUNT(*) AS n FROM (SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending')";
     counts.asks = "SELECT COUNT(*) AS n FROM reports WHERE status = 'ask'";
@@ -2859,17 +2911,22 @@ async function overview(env, actor) {
     counts.companies = "SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL";
     counts.rules = "SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0";
   }
-  if (actor.owner) counts.waiting = "SELECT COUNT(*) AS n FROM admins WHERE status = 'pending'";
+  if (actor.owner) {
+    counts.waiting = "SELECT COUNT(*) AS n FROM admins WHERE status = 'pending'";
+    // [MON-09] Admins' phones waiting for the owner's 승인.
+    counts.phones = "SELECT COUNT(*) AS n FROM admin_devices WHERE status = 'pending'";
+  }
   const keys = Object.keys(counts);
   const results = await env.DB.batch(keys.map((k) => (Array.isArray(counts[k]) ? stmt(env, ...counts[k]) : env.DB.prepare(counts[k]))));
   const got = Object.fromEntries(keys.map((k, i) => [k, results[i].results]));
   const out = { me: me(actor), settings: readSettings(got.settings), reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS,
     flagReasons: FLAGS, salt: secretIssue(env, "RATE_SALT", 1) === null };
   for (const k of keys) {
-    if (k === "settings" || k === "waiting") continue;
+    if (k === "settings" || k === "waiting" || k === "phones" || k === "live") continue;
     out[k] = got[k][0].n;
   }
-  if (actor.owner) out.admins = { waiting: got.waiting[0].n };
+  if (actor.owner) out.admins = { waiting: got.waiting[0].n, phones: got.phones[0].n };
+  out.billingLive = got.live[0]?.value === "1";
   return out;
 }
 
@@ -3205,7 +3262,7 @@ async function setRule(request, env, id, now) {
 async function rewards(env, status) {
   const wanted = ["owed", "paid", "void"].includes(status) ? status : "owed";
   const rows = await all(env, `
-    SELECT w.id, w.months, w.status, w.memo, w.created_at, w.paid_at, w.rule_id, p.dept, c.id AS company_id, c.name AS company, u.version
+    SELECT w.id, w.months, w.status, w.memo, w.created_at, w.paid_at, w.rule_id, w.deferred, p.dept, c.id AS company_id, c.name AS company, u.version
     FROM rewards w JOIN reports p ON p.id = w.report_id JOIN companies c ON c.id = p.company_id LEFT JOIN rules u ON u.id = w.rule_id
     WHERE w.status = ? ORDER BY w.created_at DESC LIMIT 200`, wanted);
   const counts = await all(env, "SELECT status, COUNT(*) AS n FROM rewards GROUP BY status");
@@ -3214,7 +3271,7 @@ async function rewards(env, status) {
     counts: Object.fromEntries(counts.map((x) => [x.status, x.n])),
     rewards: rows.map((w) => ({
       id: w.id, months: w.months, status: w.status, memo: w.memo, company: { id: w.company_id, name: w.company }, dept: w.dept,
-      version: w.version, ask: w.rule_id === "", createdAt: iso(w.created_at), paidAt: w.paid_at ? iso(w.paid_at) : null,
+      version: w.version, ask: w.rule_id === "", createdAt: iso(w.created_at), paidAt: w.paid_at ? iso(w.paid_at) : null, deferred: Boolean(w.deferred),
     })),
   };
 }
@@ -3223,11 +3280,27 @@ async function setReward(request, env, id, now) {
   const body = await readJson(request, 2048);
   if (!["owed", "paid", "void"].includes(body.status)) refuse("status", "status");
   const memo = typeof body.memo === "string" ? body.memo.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 200) : null;
-  const r = await run(env, "UPDATE rewards SET status = ?, memo = COALESCE(?, memo), paid_at = ? WHERE id = ?",
-    body.status, memo, body.status === "paid" ? now : null, id);
-  if (!r.meta.changes) return json({ error: "not_found" }, 404);
-  await audit(env, now, `reward_${body.status}`, id, memo ?? "");
-  return json({ ok: true });
+  // [MON-08] How long, chosen when it is given: 회사 방식 3, 제안 1, 큰 개선 6~12 (수익화 확정 4장 7).
+  if (given(body.months) && (!Number.isInteger(body.months) || body.months < 1 || body.months > MONEY.passMonths)) refuse("months", "months");
+  const r = await one(env, "SELECT * FROM rewards WHERE id = ?", id);
+  if (!r) return json({ error: "not_found" }, 404);
+  const months = body.status === "paid" && given(body.months) ? body.months : r.months;
+  // Someone already paying gets the months as a later renewal from Play; anyone else a pass.
+  let deferred = null;
+  if (body.status === "paid" && r.status !== "paid") {
+    try {
+      deferred = await deferFor(env, r.device, months, now);
+    } catch (e) {
+      console.error(`defer ${id}: ${e?.code ?? e}`);
+    }
+  }
+  const note = deferred ? `Play 결제 미룸(다음 결제 ${iso(deferred).slice(0, 10)})${memo ? ` · ${memo}` : ""}` : memo;
+  const paidAt = body.status === "paid" ? (r.status === "paid" ? r.paid_at : now) : null;
+  const wasDeferred = body.status === "paid" ? (deferred ? 1 : r.status === "paid" ? r.deferred : 0) : 0;
+  await run(env, "UPDATE rewards SET status = ?, months = ?, memo = COALESCE(?, memo), paid_at = ?, deferred = ? WHERE id = ?",
+    body.status, months, note, paidAt, wasDeferred, id);
+  await audit(env, now, `reward_${body.status}`, id, `${months}개월${deferred ? " 미룸" : ""}${memo ? ` ${memo}` : ""}`);
+  return json({ ok: true, months, deferred: Boolean(deferred) });
 }
 
 async function saveSettings(request, env, now) {
@@ -3351,6 +3424,429 @@ async function moderate(request, env, id, now) {
 }
 
 // ---- input and output ----
+
+// ---- 정식 출시, 프로 이용권, 관리자 휴대폰, 구매 확인 [MON-02][MON-03][MON-06][MON-08][MON-09][MON-10] ----
+
+const MONEY = {
+  // [MON-10] Phones installed before the launch get this many months of 프로 from it, until changed.
+  thanksMonths: 1,
+  // [MON-07] Days after install without ads; the app has the same default.
+  adQuietDays: 3,
+  // [MON-06] Days before a trial ends that the app asks for consent (결정 D17: day 23 of 30).
+  trialAskDays: 7,
+  // [MON-09] A code from the developer app ties a phone to an admin for ten minutes, once; two phones each.
+  linkMs: 10 * 60 * 1000,
+  linkCodesPerHour: 10,
+  linkTriesPerHour: 10,
+  phonesPerAdmin: 2,
+  // [MON-08] A recovery code moves passes to a new phone once.
+  codesPerDay: 10,
+  claimsPerHour: 10,
+  passMonths: 12,
+  // [MON-03] What the server keeps of a purchase, and for how long after it ends.
+  subKeepMs: 30 * DAY,
+  // [MON-11] 계약 또는 청약철회 등에 관한 기록: 5년 (전자상거래법 시행령 제6조 제1항).
+  consentKeepMs: 5 * 365 * DAY,
+  freeFeatures: 30,
+};
+
+/** The app's names for features the server may open to everyone; never the other way round. */
+const FEATURE = /^[A-Z][A-Z_]{1,39}$/;
+
+async function launchState(env) {
+  const rows = await all(env, "SELECT key, value FROM settings WHERE key IN ('billing_live', 'launched_at', 'thanks_months', 'free_features')");
+  const get = (k) => rows.find((r) => r.key === k)?.value;
+  const thanks = Number(get("thanks_months"));
+  let free = [];
+  try {
+    free = JSON.parse(get("free_features") ?? "[]").filter((f) => typeof f === "string" && FEATURE.test(f));
+  } catch {
+    free = [];
+  }
+  const launched = Number(get("launched_at"));
+  return {
+    billingLive: get("billing_live") === "1",
+    launchedAt: Number.isFinite(launched) && launched > 0 ? launched : null,
+    thanksMonths: Number.isInteger(thanks) && thanks >= 0 ? thanks : MONEY.thanksMonths,
+    freeFeatures: free,
+  };
+}
+
+/** [MON-02] What every app reads once a day: the 정식 출시 switch and what goes with it. No device, nothing kept. */
+async function config(env) {
+  const s = await launchState(env);
+  return {
+    v: 1, billingLive: s.billingLive, launchedAt: s.launchedAt ? iso(s.launchedAt) : null, thanksMonths: s.thanksMonths,
+    freeFeatures: s.freeFeatures, adQuietDays: MONEY.adQuietDays, trialAskDays: MONEY.trialAskDays,
+  };
+}
+
+/** [MON-10] The owner's switch. The first time it goes on is the launch; switching it off and on keeps that day. */
+async function setLaunch(request, env, now) {
+  const body = await readJson(request, 4096);
+  const before = await launchState(env);
+  const live = body.billingLive ?? before.billingLive;
+  if (typeof live !== "boolean") refuse("billingLive", "billingLive");
+  const thanks = body.thanksMonths ?? before.thanksMonths;
+  if (!Number.isInteger(thanks) || thanks < 0 || thanks > 12) refuse("thanksMonths", "thanksMonths");
+  const free = body.freeFeatures ?? before.freeFeatures;
+  if (!Array.isArray(free) || free.length > MONEY.freeFeatures || !free.every((f) => typeof f === "string" && FEATURE.test(f))) {
+    refuse("freeFeatures", "freeFeatures");
+  }
+  const launchedAt = before.launchedAt ?? (live ? now : null);
+  await env.DB.batch([
+    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('billing_live', ?)", live ? "1" : "0"),
+    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('thanks_months', ?)", String(thanks)),
+    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('free_features', ?)", JSON.stringify([...new Set(free)])),
+    ...(launchedAt ? [stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('launched_at', ?)", String(launchedAt))] : []),
+  ]);
+  if (live !== before.billingLive) await audit(env, now, live ? "launch_on" : "launch_off", "", launchedAt ? iso(launchedAt) : "");
+  if (thanks !== before.thanksMonths || JSON.stringify(free) !== JSON.stringify(before.freeFeatures)) {
+    await audit(env, now, "launch_settings", "", `감사 ${thanks}개월 · 무료로 연 기능 ${free.join(",") || "없음"}`);
+  }
+  return json(await launchView(env));
+}
+
+async function launchView(env) {
+  const s = await launchState(env);
+  const n = await one(env, "SELECT COUNT(*) AS n FROM subs WHERE state IN ('ACTIVE', 'GRACE') AND expiry > ?", Date.now());
+  return { ...(await config(env)), play: playReady(env) !== null, subscribers: n.n, launched: s.launchedAt !== null };
+}
+
+/** [MON-08] A date [months] calendar months after [ms], on the last day of a shorter month when needed. */
+export function addMonths(ms, months) {
+  const d = new Date(ms);
+  const day = d.getUTCDate();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() + months);
+  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(day, last));
+  return d.getTime();
+}
+
+/**
+ * [MON-08] Passes given to one install, stacked: each starts when the one before ends, when it was given,
+ * or at the launch, whichever is last, so months given while everything was free are not used up.
+ * A reward Play paid as a deferred renewal is not a pass.
+ */
+export function stack(rows, launchedAt) {
+  const given = rows.filter((r) => r.status === "paid" && !r.deferred).sort((a, b) => a.paid_at - b.paid_at);
+  const months = given.reduce((n, r) => n + r.months, 0);
+  if (!launchedAt) return { until: null, waiting: months, items: given };
+  let until = 0;
+  for (const r of given) until = addMonths(Math.max(until, r.paid_at, launchedAt), r.months);
+  return { until: given.length ? until : null, waiting: 0, items: given };
+}
+
+async function installOf(request) {
+  const id = deviceId(request.headers.get("x-device"));
+  if (!id) throw new Refuse("device", "device");
+  return deviceHash(id);
+}
+
+/** [MON-08][MON-09] What this install has: its passes, its admin link and whether it holds a recovery code. */
+async function passes(env, dev, now) {
+  const [rows, link, code, s] = await Promise.all([
+    all(env, "SELECT months, status, paid_at, deferred, rule_id FROM rewards WHERE device = ?", dev),
+    one(env, "SELECT status, admin_name FROM admin_devices WHERE device = ?", dev),
+    one(env, "SELECT created_at FROM pass_codes WHERE device = ?", dev),
+    launchState(env),
+  ]);
+  if (link) await run(env, "UPDATE admin_devices SET seen_at = ? WHERE device = ?", now, dev);
+  const p = stack(rows, s.launchedAt);
+  return {
+    until: p.until ? iso(p.until) : null,
+    waitingMonths: p.waiting,
+    items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: r.rule_id ? "rule" : "idea" })),
+    deferred: rows.filter((r) => r.status === "paid" && r.deferred).length,
+    admin: link ? { status: link.status, name: link.admin_name } : null,
+    code: Boolean(code),
+    checkedAt: iso(now),
+  };
+}
+
+const passCode = () => randomId(16).toUpperCase().replace(/(.{4})(?=.)/g, "$1-");
+const passCodeHash = async (code) => (await sha256(`pass|${String(code).toUpperCase().replace(/[^A-Z0-9]/g, "")}`)).slice(0, 40);
+
+/** [MON-08] /api/passes, /api/passes/code, /api/passes/claim and /api/admin-link, all for one install. */
+async function money(request, env, path) {
+  const method = request.method;
+  const now = Date.now();
+  const dev = await installOf(request);
+  if (path === "/api/passes" && method === "GET") return json(await passes(env, dev, now));
+  if (path === "/api/passes/code" && method === "POST") {
+    if (!(await allow(env, `passcode|${dev}`, MONEY.codesPerDay, DAY, now))) return json({ error: "rate_limited" }, 429);
+    // A new code replaces the old one; it is shown once and kept only as a hash.
+    const code = passCode();
+    await env.DB.batch([
+      stmt(env, "DELETE FROM pass_codes WHERE device = ?", dev),
+      stmt(env, "INSERT INTO pass_codes (hash, device, created_at) VALUES (?, ?, ?)", await passCodeHash(code), dev, now),
+    ]);
+    return json({ code }, 201);
+  }
+  if (path === "/api/passes/claim" && method === "POST") {
+    const body = await readJson(request, 1024);
+    const net = await network(request, env, now);
+    if (!(await allow(env, `claim|${net.day}`, MONEY.claimsPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
+    if (typeof body.code !== "string" || body.code.length > 40) refuse("code", "code");
+    const hash = await passCodeHash(body.code);
+    const row = await one(env, "SELECT device FROM pass_codes WHERE hash = ?", hash);
+    if (!row) return json({ error: "code", field: "code" }, 404);
+    if (row.device !== dev) {
+      // The passes move; the old phone keeps nothing and the code is spent.
+      await env.DB.batch([
+        stmt(env, "UPDATE rewards SET device = ? WHERE device = ?", dev, row.device),
+        stmt(env, "DELETE FROM pass_codes WHERE device IN (?, ?)", row.device, dev),
+      ]);
+      await audit(env, now, "pass_move", dev.slice(0, 8), row.device.slice(0, 8));
+    }
+    return json(await passes(env, dev, now));
+  }
+  if (path === "/api/admin-link" && method === "POST") return linkPhone(request, env, dev, now);
+  if (path === "/api/admin-link" && method === "DELETE") {
+    await run(env, "DELETE FROM admin_devices WHERE device = ?", dev);
+    return new Response(null, { status: 204 });
+  }
+  if (path === "/api/purchases" && method === "POST") return purchase(request, env, dev, now);
+  if (path === "/api/consents" && method === "POST") return consent(request, env, dev, now);
+  return json({ error: "not_found" }, 404);
+}
+
+// ---- 관리자 휴대폰 [MON-09] ----
+
+/** The developer app makes a code for the signed-in admin's own phone. */
+async function linkCode(env, actor, now) {
+  if (!(await allow(env, `linkcode|${actor.id}`, MONEY.linkCodesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
+  let code;
+  for (let i = 0; i < 5 && !code; i++) {
+    const n = crypto.getRandomValues(new Uint32Array(1))[0] % 1000000;
+    const c = String(n).padStart(6, "0");
+    if (!(await one(env, "SELECT 1 FROM link_codes WHERE code = ? AND expires > ?", c, now))) code = c;
+  }
+  if (!code) return json({ error: "busy" }, 503);
+  await env.DB.batch([
+    stmt(env, "DELETE FROM link_codes WHERE admin = ? OR expires < ?", actor.id, now),
+    stmt(env, "INSERT INTO link_codes (code, admin, admin_name, expires) VALUES (?, ?, ?, ?)", code, actor.id, actor.name, now + MONEY.linkMs),
+  ]);
+  return json({ code, expiresAt: iso(now + MONEY.linkMs) }, 201);
+}
+
+async function linkPhone(request, env, dev, now) {
+  const body = await readJson(request, 1024);
+  const net = await network(request, env, now);
+  if (!(await allow(env, `link|${net.day}`, MONEY.linkTriesPerHour, HOUR, now)) ||
+      !(await allow(env, `link|${dev}`, MONEY.linkTriesPerHour, HOUR, now))) {
+    return json({ error: "rate_limited" }, 429);
+  }
+  if (typeof body.code !== "string" || !/^\d{6}$/.test(body.code)) refuse("code", "code");
+  const row = await one(env, "SELECT * FROM link_codes WHERE code = ? AND expires > ?", body.code, now);
+  if (!row) return json({ error: "code", field: "code" }, 404);
+  const owner = row.admin === OWNER.id;
+  if (!owner && !(await one(env, "SELECT 1 FROM admins WHERE id = ? AND status = 'active'", row.admin))) {
+    await run(env, "DELETE FROM link_codes WHERE code = ?", body.code);
+    return json({ error: "code", field: "code" }, 404);
+  }
+  const others = await one(env, "SELECT COUNT(*) AS n FROM admin_devices WHERE admin = ? AND device != ?", row.admin, dev);
+  if (others.n >= MONEY.phonesPerAdmin) return json({ error: "too_many", field: "code" }, 409);
+  const status = owner ? "approved" : "pending";
+  await env.DB.batch([
+    stmt(env, "DELETE FROM link_codes WHERE code = ?", body.code),
+    stmt(env, "DELETE FROM admin_devices WHERE device = ?", dev),
+    stmt(env, `INSERT INTO admin_devices (id, device, admin, admin_name, status, created_at, approved_at, seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, `d${randomId(15)}`, dev, row.admin, row.admin_name, status, now, owner ? now : null, now),
+  ]);
+  await audit(env, now, "device_link", row.admin_name, status);
+  return json({ status, name: row.admin_name }, 201);
+}
+
+async function phoneList(env) {
+  const rows = await all(env, "SELECT id, admin, admin_name, status, created_at, approved_at, seen_at FROM admin_devices ORDER BY created_at DESC");
+  return {
+    devices: rows.map((d) => ({
+      id: d.id, admin: d.admin, adminName: d.admin_name, status: d.status, createdAt: iso(d.created_at),
+      approvedAt: d.approved_at ? iso(d.approved_at) : null, seenAt: d.seen_at ? iso(d.seen_at) : null,
+    })),
+    perAdmin: MONEY.phonesPerAdmin,
+  };
+}
+
+async function setPhone(env, id, action, now) {
+  const d = await one(env, "SELECT * FROM admin_devices WHERE id = ?", id);
+  if (!d) return json({ error: "not_found" }, 404);
+  if (action === "approve") await run(env, "UPDATE admin_devices SET status = 'approved', approved_at = ? WHERE id = ?", now, id);
+  else await run(env, "DELETE FROM admin_devices WHERE id = ?", id);
+  await audit(env, now, action === "approve" ? "device_approve" : "device_remove", d.admin_name);
+  return json(await phoneList(env));
+}
+
+// ---- 구매 확인과 체험 전환 동의 [MON-03][MON-06] ----
+
+const PLAY = {
+  scope: "https://www.googleapis.com/auth/androidpublisher",
+  token: "https://oauth2.googleapis.com/token",
+  api: "https://androidpublisher.googleapis.com/androidpublisher/v3/applications",
+  states: {
+    SUBSCRIPTION_STATE_ACTIVE: "ACTIVE", SUBSCRIPTION_STATE_IN_GRACE_PERIOD: "GRACE", SUBSCRIPTION_STATE_CANCELED: "CANCELED",
+    SUBSCRIPTION_STATE_ON_HOLD: "ON_HOLD", SUBSCRIPTION_STATE_PAUSED: "PAUSED", SUBSCRIPTION_STATE_EXPIRED: "EXPIRED",
+    SUBSCRIPTION_STATE_PENDING: "PENDING", SUBSCRIPTION_STATE_PENDING_PURCHASE_CANCELED: "EXPIRED",
+  },
+};
+const PRODUCT = /^[a-z0-9_.]{1,40}$/;
+const playTokens = new WeakMap();
+
+/** The service account the owner pasted as the secret PLAY_SERVICE_ACCOUNT, or null; its key is never shown. */
+function playReady(env) {
+  if (typeof env.PLAY_SERVICE_ACCOUNT !== "string" || !env.PLAY_SERVICE_ACCOUNT.trim()) return null;
+  try {
+    const a = JSON.parse(env.PLAY_SERVICE_ACCOUNT);
+    return typeof a.client_email === "string" && typeof a.private_key === "string" ? a : null;
+  } catch {
+    return null;
+  }
+}
+
+const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const b64urlText = (text) => b64url(new TextEncoder().encode(text));
+
+/** An OAuth token for the Play Developer API from the service account (JWT bearer, RS256), kept until near its end. */
+async function playToken(env, account, now) {
+  const kept = playTokens.get(env.DB ?? env);
+  if (kept && kept.until > now + 60_000) return kept.token;
+  const pem = account.private_key.replace(/-----(BEGIN|END) PRIVATE KEY-----/g, "").replace(/\s+/g, "");
+  const der = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey("pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
+  const iat = Math.floor(now / 1000);
+  const head = b64urlText(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const claims = b64urlText(JSON.stringify({ iss: account.client_email, scope: PLAY.scope, aud: PLAY.token, iat, exp: iat + 3600 }));
+  const sig = b64url(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(`${head}.${claims}`)));
+  const res = await fetch(PLAY.token, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: `grant_type=${encodeURIComponent("urn:ietf:params:oauth:grant-type:jwt-bearer")}&assertion=${head}.${claims}.${sig}`,
+  });
+  if (!res.ok) throw new Refuse("play_auth", "play", 502);
+  const t = await res.json();
+  playTokens.set(env.DB ?? env, { token: t.access_token, until: now + (Number(t.expires_in) || 3600) * 1000 });
+  return t.access_token;
+}
+
+async function playCall(env, method, path, body) {
+  const account = playReady(env);
+  if (!account) throw new Refuse("play_off", "play", 503);
+  const pkg = env.PLAY_PACKAGE || "com.bamnat.app";
+  const res = await fetch(`${PLAY.api}/${encodeURIComponent(pkg)}${path}`, {
+    method,
+    headers: { authorization: `Bearer ${await playToken(env, account, Date.now())}`, ...(body ? { "content-type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 404 || res.status === 410) throw new Refuse("purchase", "token", 404);
+  if (!res.ok) throw new Refuse("play", "play", 502);
+  const text = await res.text();
+  return text ? JSON.parse(text) : {};
+}
+
+/** [MON-03] subscriptionsv2.get read the way the app needs it. */
+export function readSub(p, product) {
+  const items = Array.isArray(p.lineItems) ? p.lineItems : [];
+  const item = items.find((i) => i.productId === product) ?? items[0] ?? {};
+  const expiry = Date.parse(item.expiryTime ?? "");
+  return {
+    state: PLAY.states[p.subscriptionState] ?? "PENDING",
+    expiry: Number.isFinite(expiry) ? expiry : null,
+    trial: Boolean(item.offerPhase?.freeTrial),
+    autoRenew: item.autoRenewingPlan?.autoRenewEnabled === true,
+    basePlan: item.offerDetails?.basePlanId ?? "",
+    acknowledged: p.acknowledgementState === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED",
+    etag: typeof p.etag === "string" ? p.etag : "",
+  };
+}
+
+/**
+ * [MON-03] The app sends what Play gave it after a purchase and on each start. With the owner's service
+ * account the server asks Play itself and keeps the token while the subscription lasts (for consent and
+ * reward deferral); without one it keeps nothing and the app goes by the phone's Play.
+ */
+async function purchase(request, env, dev, now) {
+  const body = await readJson(request, 4096);
+  if (typeof body.product !== "string" || !PRODUCT.test(body.product)) refuse("product", "product");
+  if (typeof body.token !== "string" || body.token.length < 10 || body.token.length > 1000) refuse("token", "token");
+  if (!playReady(env)) return json({ verified: false });
+  const s = readSub(await playCall(env, "GET", `/purchases/subscriptionsv2/tokens/${encodeURIComponent(body.token)}`), body.product);
+  const hash = (await sha256(`sub|${body.token}`)).slice(0, 40);
+  await run(env, `INSERT INTO subs (hash, device, token, product, base_plan, state, expiry, trial, auto_renew, created_at, checked_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (hash) DO UPDATE SET device = excluded.device, state = excluded.state, expiry = excluded.expiry, trial = excluded.trial,
+      auto_renew = excluded.auto_renew, base_plan = excluded.base_plan, checked_at = excluded.checked_at`,
+  hash, dev, body.token, body.product, s.basePlan, s.state, s.expiry, s.trial ? 1 : 0, s.autoRenew ? 1 : 0, now, now);
+  const row = await one(env, "SELECT consent_at, stopped_at FROM subs WHERE hash = ?", hash);
+  return json({
+    verified: true, state: s.state, expiry: s.expiry ? iso(s.expiry) : null, trial: s.trial, autoRenew: s.autoRenew,
+    acknowledged: s.acknowledged, consentAt: row.consent_at ? iso(row.consent_at) : null, stoppedAt: row.stopped_at ? iso(row.stopped_at) : null,
+  });
+}
+
+/**
+ * [MON-06] The user's own answer before a trial turns paid (전자상거래법 제13조 6항): "keep" or "cancel",
+ * with the price and the date they were shown. Kept as evidence; the trial's record says consent was given.
+ */
+async function consent(request, env, dev, now) {
+  const body = await readJson(request, 2048);
+  if (!["keep", "cancel"].includes(body.answer)) refuse("answer", "answer");
+  if (typeof body.product !== "string" || !PRODUCT.test(body.product)) refuse("product", "product");
+  const price = typeof body.price === "string" ? body.price.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 40) : "";
+  const ends = Date.parse(body.trialEnd ?? "");
+  if (!price || !Number.isFinite(ends)) refuse("detail", "price");
+  if (!(await allow(env, `consent|${dev}`, 20, DAY, now))) return json({ error: "rate_limited" }, 429);
+  const detail = JSON.stringify({ answer: body.answer, product: body.product, price, trialEnd: iso(ends), shown: String(body.shown ?? "").slice(0, 300) });
+  await env.DB.batch([
+    stmt(env, "INSERT INTO consents (device, kind, detail, at) VALUES (?, 'trial_paid', ?, ?)", dev, detail, now),
+    ...(body.answer === "keep" ? [stmt(env, "UPDATE subs SET consent_at = ? WHERE device = ? AND trial = 1 AND product = ?", now, dev, body.product)] : []),
+  ]);
+  return json({ ok: true, at: iso(now) }, 201);
+}
+
+/**
+ * [MON-06] Hourly: a trial ending within a day whose user has not said "keep" does not turn paid. The
+ * next renewal is stopped as if the user had cancelled (they can resubscribe in Play); without the
+ * service account nothing can be stopped from here and the app keeps asking instead.
+ */
+export async function stopUnconsentedTrials(env, now) {
+  if (!playReady(env)) return 0;
+  const due = await all(env, `SELECT hash, token, product, expiry FROM subs WHERE trial = 1 AND auto_renew = 1 AND consent_at IS NULL
+    AND stopped_at IS NULL AND state IN ('ACTIVE', 'GRACE') AND expiry > ? AND expiry <= ?`, now, now + DAY);
+  let stopped = 0;
+  for (const s of due) {
+    try {
+      await playCall(env, "POST", `/purchases/subscriptionsv2/tokens/${encodeURIComponent(s.token)}:cancel`,
+        { cancellationContext: { cancellationType: "USER_REQUESTED_STOP_RENEWALS" } });
+      await run(env, "UPDATE subs SET stopped_at = ?, auto_renew = 0 WHERE hash = ?", now, s.hash);
+      await audit(env, now, "trial_stop", s.product, iso(s.expiry));
+      stopped++;
+    } catch (e) {
+      console.error(`trial stop ${s.hash.slice(0, 8)}: ${e?.code ?? e}`);
+    }
+  }
+  return stopped;
+}
+
+/**
+ * [MON-08] A reward for someone paying a running subscription is given as a later renewal (Play's
+ * deferral) instead of a pass running beside what they already pay for. Null when it cannot be.
+ */
+async function deferFor(env, dev, months, now) {
+  if (!playReady(env)) return null;
+  const sub = await one(env, `SELECT * FROM subs WHERE device = ? AND trial = 0 AND auto_renew = 1 AND state = 'ACTIVE' AND expiry > ?
+    ORDER BY expiry DESC LIMIT 1`, dev, now);
+  if (!sub) return null;
+  const path = `/purchases/subscriptionsv2/tokens/${encodeURIComponent(sub.token)}`;
+  const fresh = readSub(await playCall(env, "GET", path), sub.product);
+  if (fresh.state !== "ACTIVE" || !fresh.expiry) return null;
+  const seconds = Math.round((addMonths(fresh.expiry, months) - fresh.expiry) / 1000);
+  const r = await playCall(env, "POST", `${path}:defer`, { deferralContext: { etag: fresh.etag, deferDuration: `${seconds}s` } });
+  const next = Date.parse(r.itemExpiryTimeDetails?.[0]?.expiryTime ?? "") || addMonths(fresh.expiry, months);
+  await run(env, "UPDATE subs SET expiry = ?, checked_at = ? WHERE hash = ?", next, now, sub.hash);
+  return next;
+}
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {

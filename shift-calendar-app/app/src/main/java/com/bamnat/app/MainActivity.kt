@@ -111,6 +111,10 @@ class MainActivity : ComponentActivity() {
         // [TYPE-04] Shop days that passed with no sales become 임시휴무 when the app is opened.
         val c = appContainer
         c.appScope.launch { runCatching { com.bamnat.app.ui.work.ShopKeeper.catchUp(c) } }
+        // [MON-02] The 정식 출시 switch, passes and Play's purchases. [MON-07] Google's consent form and
+        // the ads SDK start only when an ad may show: after the switch, without 프로, with ad ids.
+        c.syncPro()
+        if (c.remoteConfig.current.billingLive && !c.featureGate.state.value.allows(com.bamnat.app.tier.Feature.NO_ADS)) c.ads.start(this)
     }
 
     override fun onStop() {

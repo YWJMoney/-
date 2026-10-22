@@ -50,9 +50,6 @@ import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.ScheduleSnapshot
-import com.bamnat.app.tier.Feature
-import com.bamnat.app.tier.FeatureGate
-import com.bamnat.app.tier.Tier
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
@@ -92,11 +89,17 @@ class StatsViewModel(
         scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val settings: StateFlow<AppSettings> = scope.settings.stateIn(viewModelScope, SharingStarted.Eagerly, scope.currentSettings())
     val payProfile: StateFlow<PayProfile?> = scope.pay.profile
-    val tier: StateFlow<Tier> = container.featureGate.tier
     private val payCalculator = PayCalculator()
 
     fun payTotal(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): Long =
         payCalculator.calculate(profile.hourlyWeek(settings.value), month, snapshot.resolver::resolve).total
+
+    /** [PROV-02] A month's pay with its minutes, for the comparison cards; null when it cannot be worked out. */
+    fun monthPay(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): com.bamnat.core.pay.MonthPay? =
+        runCatching { payCalculator.calculate(profile.hourlyWeek(settings.value), month, snapshot.resolver::resolve, checks = false) }.getOrNull()
+
+    /** [PROV-02] Whether the comparison cards are open. */
+    val gate: StateFlow<com.bamnat.app.tier.Gate> = container.featureGate.state
 
     /** [CUST-01] 화면 꾸미기 changes the app's own settings. */
     fun updateSettings(change: (AppSettings) -> AppSettings) = container.settingsRepository.update(change)
@@ -109,7 +112,6 @@ class StatsViewModel(
 fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val payProfile by vm.payProfile.collectAsStateWithLifecycle()
-    val tier by vm.tier.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     // [NAV-01] The same month as the calendar and 돈.
     val month by vm.shownMonth.collectAsStateWithLifecycle()
@@ -117,6 +119,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
     val pays = settings.workStyle?.usesPayEngine != false
     val style = settings.workStyle
     val book by vm.book.collectAsStateWithLifecycle()
+    val gate by vm.gate.collectAsStateWithLifecycle()
 
     val snap = snapshot
     if (snap == null) {
@@ -192,8 +195,9 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         // [NAV-01] The month's pay, worked out once for the pay card and the work type's cards.
         // [STAB-01] A month of pay is worked out off the main thread, and an odd profile shows no total
         // instead of closing the app.
-        val payTotal = produceState<Long?>(null, payProfile, snap, month, tier) {
-            value = payProfile?.takeIf { pays && FeatureGate.allows(tier, Feature.PAY_ENGINE) }?.let { p ->
+        // [MON-01] The month's pay is free.
+        val payTotal = produceState<Long?>(null, payProfile, snap, month) {
+            value = payProfile?.takeIf { pays }?.let { p ->
                 runCatching { withContext(Dispatchers.Default) { vm.payTotal(p, snap, month) } }
                     .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
             }
@@ -336,6 +340,8 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                 }
 
                 }
+                StatsPart.COMPARE -> CompareCard(vm, calc, snap, month, payProfile?.takeIf { pays }, gate)
+                StatsPart.YEAR -> YearWorkCard(vm, calc, snap, month, payProfile?.takeIf { pays }, gate)
                 else -> Unit
             }
         }
@@ -464,7 +470,7 @@ private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, on
                 Text(
                     when {
                         total != null -> "%,d원".format(total)
-                        hasProfile -> "${Tier.PRO.label}에서 금액이 보여요"
+                        hasProfile -> "계산하는 중이에요"
                         else -> "근무표로 급여 계산하기"
                     },
                     style = MaterialTheme.typography.titleLarge,
@@ -646,6 +652,9 @@ internal enum class StatsPart(val id: String, val label: String, val what: Strin
     THREE("three", "3개월 평균", "3개월 주평균과 52시간 기준"),
     WEEKS("weeks", "주별 근무시간", "이번 달 주마다(월~일) 시간 막대"),
     TREND("trend", "최근 6개월", "달마다 근무시간 흐름"),
+    /** [PROV-02] 프로. */
+    COMPARE("compare", "지난달·작년 비교", "근무시간·야간·휴일·추가 근무·급여를 지난달·작년 같은 달과"),
+    YEAR("year", "올해 근무·급여", "달마다 근무시간과 급여, 한 해 합계"),
     ;
 }
 

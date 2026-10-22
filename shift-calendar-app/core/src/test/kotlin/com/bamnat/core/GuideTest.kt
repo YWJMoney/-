@@ -2,6 +2,7 @@ package com.bamnat.core
 
 import com.bamnat.core.guide.ChecklistState
 import com.bamnat.core.guide.FeatureRegistry
+import com.bamnat.core.guide.WhatsNew
 import com.bamnat.core.guide.GuideChecklist
 import com.bamnat.core.guide.GuideMoments
 import com.bamnat.core.guide.GuideState
@@ -36,6 +37,18 @@ class GuideTest {
             f.under?.let { assertNotNull("${f.id} is under a feature that exists", FeatureRegistry.get(it)) }
             assertTrue(f.id, Regex("[A-Z]+-\\d{2}").matches(f.req))
         }
+    }
+
+    /** [GUIDE-08] An update's lines open features that exist, newest release first, one per version. */
+    @Test
+    fun whatsNewOpensRealFeatures() {
+        for (r in WhatsNew.releases) for (line in r.lines) line.featureId?.let { assertNotNull("${r.versionName}: $it", FeatureRegistry.get(it)) }
+        val codes = WhatsNew.releases.map { it.versionCode }
+        assertEquals(codes.sortedDescending(), codes)
+        assertEquals(codes.size, codes.toSet().size)
+        // [PROV-08] 1.20.0 names each new 프로 feature it brought.
+        val latest = WhatsNew.releases.first { it.versionName == "1.20.0" }.lines.mapNotNull { it.featureId }.toSet()
+        assertTrue(latest.containsAll(setOf("pay.report", "stats.compare", "calendar.phone", "share.feed", "data.autoBackup", "alarm.mission", "share.rosterPdf")))
     }
 
     /** [GUIDE-01] The 1.16 and 1.17 features are all there, each for the right kind of work. */

@@ -56,6 +56,10 @@ class BackupManager(
     private val recordsTrash: () -> RecordsTrash? = { null },
     /** [CREW-01] Each calendar's teams for 모든 조 보기. */
     private val teams: TeamStore? = null,
+    /** [MON-08] The 프로 recovery code, so passes follow to a new phone; never the purchase itself. */
+    private val pro: () -> com.bamnat.app.tier.ProStore? = { null },
+    /** [PROV-04] The links the user made, with their keys, so a new phone keeps updating them. */
+    private val shareLinks: com.bamnat.app.share.ShareLinkBackup? = null,
 ) {
     /** The schedule tables of [source] (shifts, order, changed days, extra work) as a backup holds them. */
     private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
@@ -240,6 +244,8 @@ class BackupManager(
         root.putOpt("workTools", workTools?.export(PersonalCalendar.MAIN))
         guide?.let { root.put("featuresOff", it.exportOff()) }
         teams?.let { t -> root.put("teams", JSONObject(t.export() as Map<*, *>)) }
+        pro()?.let { root.put("pro", it.toBackup()) }
+        shareLinks?.let { root.put("shareLinks", it.export()) }
         val s = settings.current
         root.put(
             "settings",
@@ -253,6 +259,9 @@ class BackupManager(
                 .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoInCells).put("calendarMemos", s.calendarMemos)
                 .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("appLock", s.appLock)
                 .put("calendarLayout", s.calendarLayout).put("statsLayout", s.statsLayout).put("hideDayAlarmNotice", s.hideDayAlarmNotice).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
+                .put("phoneCalendars", s.phoneCalendars.joinToString(","))
+                .put("alarmMission", s.alarmMission).put("shiftMissions", encodeShiftMissions(s.shiftMissions))
+                .put("wakeCheck", s.wakeCheckMinutes)
                 .put("restCheck", s.restCheck)
                 .put("strictRest", s.strictRest).put("sleepTips", s.sleepTips)
                 // 1.10 and before read one switch for all sleep notices.
@@ -514,6 +523,8 @@ class BackupManager(
         root.optJSONArray("featuresOff")?.let { a -> guide?.restoreOff(a) }
         // [CREW-01] An older backup has no teams: the phone's own stay.
         root.optJSONObject("teams")?.let { o -> teams?.import(o.keys().asSequence().associateWith { o.optString(it) }) }
+        // [MON-08] A backup's recovery code moves its passes here at the next sync; an older backup has none.
+        root.optJSONObject("pro")?.let { o -> pro()?.fromBackup(o) }
         // [MCAL-05] The added calendars as the backup had them, each in its own database.
         var goneCalendars = emptyList<String>()
         calendars?.let { book ->
@@ -536,6 +547,8 @@ class BackupManager(
             if (pay != null) store.save(pay, keepUndo = false)
             if (payClosed != null) store.replaceClosed(payClosed.associateBy { it.month })
         }
+        // [PROV-04] Read once the calendars are back; a backup from before 1.20 has none, and the phone's own links always stay.
+        root.optJSONArray("shareLinks")?.let { a -> shareLinks?.restore(a) }
         // Backups from before 1.17 carry no work tools; the phone's own then stay.
         workTools?.let { tools ->
             tools.restore(PersonalCalendar.MAIN, root.optJSONObject("workTools"))
@@ -577,6 +590,12 @@ class BackupManager(
                     hideDayAlarmNotice = o.optBoolean("hideDayAlarmNotice", s.hideDayAlarmNotice),
                     dayGroupOrder = o.optStringOrNull("dayGroupOrder")?.let(::decodeGroupOrder)
                         ?: if (o.optBoolean("memoFirst", false)) listOf("memo") else s.dayGroupOrder,
+                    // [FEAT-07] Added in 1.20; the phone's calendar permission is asked again on the new phone.
+                    phoneCalendars = o.optStringOrNull("phoneCalendars")?.let(::decodeGroupOrder) ?: s.phoneCalendars,
+                    // [PROV-06][PROV-07] Added in 1.20. Shift ids are the backup's own, restored with its shifts.
+                    alarmMission = o.optString("alarmMission", s.alarmMission),
+                    shiftMissions = o.optStringOrNull("shiftMissions")?.let(::decodeShiftMissions) ?: s.shiftMissions,
+                    wakeCheckMinutes = o.optInt("wakeCheck", s.wakeCheckMinutes).coerceIn(0, 30),
                     calendarMemos = o.optBoolean("calendarMemos", s.calendarMemos),
                     restCheck = o.optBoolean("restCheck", s.restCheck),
                     strictRest = o.optBoolean("strictRest", s.strictRest),
@@ -606,8 +625,14 @@ class BackupManager(
      * [FEAT-08] Wraps a backup with a password: AES-256-GCM, key from PBKDF2 (see [BackupCrypto]).
      * Slow on purpose (about a second), so call it off the main thread.
      */
-    fun seal(json: String, password: CharArray, iterations: Int = BackupCrypto.ITERATIONS): String {
-        val sealed = BackupCrypto.seal(json.toByteArray(), password, iterations)
+    fun seal(json: String, password: CharArray, iterations: Int = BackupCrypto.ITERATIONS): String =
+        write(BackupCrypto.seal(json.toByteArray(), password, iterations))
+
+    /** [PROV-03] The same file from a key kept by 자동 백업; it opens with the password the key came from. */
+    fun sealWithKey(json: String, key: ByteArray, salt: ByteArray, iterations: Int): String =
+        write(BackupCrypto.sealWithKey(json.toByteArray(), key, salt, iterations))
+
+    private fun write(sealed: BackupCrypto.Sealed): String {
         val b64 = Base64.getEncoder()
         return JSONObject()
             .put("app", APP_ID).put("format", SEALED_FORMAT).put("v", 1)
@@ -616,8 +641,14 @@ class BackupManager(
             .toString()
     }
 
-    /** The backup inside a sealed file; throws [BackupException] for a wrong password or a broken file. */
-    fun unseal(text: String, password: CharArray): String {
+    /** [PROV-03] The backup inside a file [sealWithKey] made, to check it was written whole. */
+    fun unsealWithKey(text: String, key: ByteArray): String = try {
+        BackupCrypto.openWithKey(read(text), key).decodeToString()
+    } catch (e: BackupCrypto.WrongPassword) {
+        throw BackupException("백업 파일이 손상됐어요")
+    }
+
+    private fun read(text: String): BackupCrypto.Sealed {
         val o = runCatching { JSONObject(text) }.getOrNull() ?: throw BackupException("백업 파일을 읽을 수 없어요")
         if (o.optInt("v") > 1) throw BackupException("더 새로운 버전에서 만든 백업이에요. 앱을 업데이트해 주세요")
         val sealed = runCatching {
@@ -625,6 +656,12 @@ class BackupManager(
             BackupCrypto.Sealed(b64.decode(o.getString("salt")), b64.decode(o.getString("iv")), o.getInt("iter"), b64.decode(o.getString("data")))
         }.getOrNull() ?: throw BackupException("백업 파일이 손상됐어요")
         if (sealed.iterations !in 1..MAX_ITERATIONS) throw BackupException("백업 파일이 손상됐어요")
+        return sealed
+    }
+
+    /** The backup inside a sealed file; throws [BackupException] for a wrong password or a broken file. */
+    fun unseal(text: String, password: CharArray): String {
+        val sealed = read(text)
         return try {
             BackupCrypto.open(sealed, password).decodeToString()
         } catch (e: BackupCrypto.WrongPassword) {

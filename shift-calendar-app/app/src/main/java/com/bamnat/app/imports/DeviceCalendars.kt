@@ -16,7 +16,8 @@ import java.time.ZoneOffset
 
 /**
  * [IMPORT-01] Reads Samsung Calendar (and every other calendar on the phone) through Android's
- * calendar store. Read only: nothing is ever written back, and nothing read leaves the phone.
+ * calendar store. Read only: nothing is ever written back, and nothing read leaves the phone. The app's
+ * own 밤낮 calendars ([com.bamnat.app.calendar.PhoneCalendar], [FEAT-07]) are not offered: they are its shifts.
  */
 interface CalendarSource {
     fun allowed(): Boolean
@@ -46,6 +47,7 @@ class DeviceCalendars(private val context: Context, private val zone: () -> Zone
                 }
             }.orEmpty()
         }.getOrDefault(emptyList())
+            .filterNot { com.bamnat.app.calendar.PhoneCalendar.isOwn(it.account, it.accountType) }
             // Samsung's own first, then by account and name, so the list reads the same each time.
             .sortedWith(compareBy<DeviceCalendar>({ !it.samsung }, { it.generated }, { it.account }, { it.name }))
     }

@@ -18,6 +18,8 @@ enum class SettingsGo {
     DUTY_ROSTER, HEALTH_REPORT, ATTENDANCE_IMPORT, COMMUTE,
     /** [GUIDE-05] 기능 켜고 끄기. */
     FEATURES,
+    /** [MON-04] 프로. */
+    PRO,
 }
 
 /** [UX-04] Where a link inside the app goes: one group of settings (and the row to point at), or a screen. */

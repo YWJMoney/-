@@ -87,6 +87,20 @@ class M4Test {
         assertTrue(wrong is BackupCrypto.WrongPassword)
     }
 
+    /** [PROV-03] 자동 백업 seals with the key a password gives; the file opens with the password itself. */
+    @Test
+    fun `a backup sealed with the password's key opens with the password`() {
+        val plain = "{\"format\":\"bamnat-backup\"}".toByteArray()
+        val salt = BackupCrypto.newSalt()
+        val key = BackupCrypto.deriveKey("밤낮1234".toCharArray(), salt, iterations = 1_000)
+        val a = BackupCrypto.sealWithKey(plain, key, salt, 1_000)
+        val b = BackupCrypto.sealWithKey(plain, key, salt, 1_000)
+        assertTrue("a new IV each time", !a.iv.contentEquals(b.iv))
+        assertArrayEquals(plain, BackupCrypto.open(a, "밤낮1234".toCharArray()))
+        assertArrayEquals(plain, BackupCrypto.openWithKey(b, key))
+        assertTrue(runCatching { BackupCrypto.open(a, "틀림".toCharArray()) }.exceptionOrNull() is BackupCrypto.WrongPassword)
+    }
+
     @Test
     fun leaveNoticeFallsOnNovemberAndDecemberFirst() {
         val at = { y: Int, m: Int, d: Int, h: Int -> java.time.LocalDateTime.of(y, m, d, h, 0) }

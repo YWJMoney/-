@@ -158,6 +158,16 @@ private enum class TopLevel(val route: String, val label: String, val icon: Imag
     fun labelFor(style: WorkStyle?): String = if (this == STATS) style.words().tab else label
 }
 
+/** [MON-07] Where the banner may go: under 근무·급여 and 돈 only ([com.bamnat.core.tier.AdRules.banner]). */
+private fun TopLevel?.adPlace(): com.bamnat.core.tier.AdRules.Place = when (this) {
+    TopLevel.MONEY -> com.bamnat.core.tier.AdRules.Place.MONEY
+    TopLevel.STATS -> com.bamnat.core.tier.AdRules.Place.STATS
+    TopLevel.CALENDAR -> com.bamnat.core.tier.AdRules.Place.CALENDAR
+    TopLevel.MEMOS -> com.bamnat.core.tier.AdRules.Place.MEMOS
+    TopLevel.SETTINGS -> com.bamnat.core.tier.AdRules.Place.SETTINGS
+    null -> com.bamnat.core.tier.AdRules.Place.OTHER
+}
+
 private object Routes {
     // [MCAL-01] Shifts and the order are edited for one calendar: the main one unless one is named.
     const val SHIFT_TYPES = "shift_types?calendar={calendar}"
@@ -221,6 +231,8 @@ private object Routes {
     const val COMMUTE = "commute"
     /** [GUIDE-05] 설정 › 기능 켜고 끄기. */
     const val FEATURES = "features"
+    /** [MON-04] 프로: what it adds, the plans, passes and the admin link. */
+    const val PRO = "pro"
 
     fun companyFind(setup: Boolean = false, weekdays: Boolean = false) = "company_find?setup=$setup&weekdays=$weekdays"
     fun company(id: String, setup: Boolean, weekdays: Boolean) = "company/$id?setup=$setup&weekdays=$weekdays"
@@ -353,6 +365,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.YEAR -> { nav.navigate(Routes.YEAR) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.ATTENDANCE_IMPORT -> { nav.navigate(Routes.ATTENDANCE_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.PRO -> { nav.navigate(Routes.PRO) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.BACKUP -> {
+                com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.DATA, com.bamnat.app.ui.settings.AUTO_BACKUP_ROW)
+                NoticeLinks.consume(target)
+            }
             // [SET-01] Settings takes the target itself, to open on the alarm's state from wherever it was.
             NoticeLinks.Target.ALARM_CHECK -> {
                 val current = nav.currentBackStackEntry?.destination?.route
@@ -425,6 +442,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             onAsk = { closeNew(); com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "업데이트")) },
             onDismiss = closeNew,
         )
+    } else {
+        // [MON-06][MON-10] One at a time, after what the update brought.
+        com.bamnat.app.ui.pro.TrialConsentPrompt(container)
+        com.bamnat.app.ui.pro.LaunchThanks(container)
     }
 
     // [SHR-02] A tapped shared calendar link opens on the calendar. Over an editor it goes on top,
@@ -504,7 +525,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             bottomBar = {
                 if (!wide && showNav) {
                     Column {
-                        AdSlot()
+                        AdSlot(topLevel.adPlace())
                         NavigationBar {
                             for (dest in TopLevel.entries) {
                                 val selected = dest == topLevel
@@ -530,7 +551,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     styleExtras = styleExtras,
                     modifier = Modifier.weight(1f),
                 )
-                if (wide && showNav) AdSlot()
+                if (wide && showNav) AdSlot(topLevel.adPlace())
             }
         }
     }
@@ -1000,6 +1021,7 @@ private fun AppNavHost(
             com.bamnat.app.ui.work.CommuteScreen(vm = vm, onBack = { nav.popFrom(Routes.COMMUTE) })
         }
         composable(Routes.FEATURES) { com.bamnat.app.ui.guide.FeatureSwitchesScreen(onBack = { nav.popFrom(Routes.FEATURES) }) }
+        composable(Routes.PRO) { com.bamnat.app.ui.pro.ProScreen(onBack = { nav.popFrom(Routes.PRO) }) }
         composable(Routes.EXTRA_KINDS, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
             val vm = appViewModel(key = "extra_kinds_$calendar") { ExtraKindsViewModel(it, calendar) }
@@ -1135,6 +1157,7 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.DIAGNOSTICS -> screen(Routes.diagnostics(false))
         Place.INQUIRY -> com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(help = true))
         Place.FEATURES -> screen(Routes.FEATURES)
+        Place.PRO -> screen(Routes.PRO)
         Place.SETTINGS_WORK, Place.SETTINGS_ALARM, Place.SETTINGS_REST, Place.SETTINGS_NOTICES, Place.SETTINGS_PAY,
         Place.SETTINGS_CALENDAR, Place.SETTINGS_DATA, Place.SETTINGS_PRIVACY ->
             link.place.settingsPage()?.let { SettingsLinks.open(it, link.focus) }
@@ -1153,6 +1176,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.INQUIRY -> Routes.INQUIRY
     SettingsGo.BOARD -> Routes.COMPANY_BOARD
     SettingsGo.FEATURES -> Routes.FEATURES
+    SettingsGo.PRO -> Routes.PRO
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,
     SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT, SettingsGo.COMMUTE -> null
 }
@@ -1180,7 +1204,7 @@ private fun RingingBanner() {
                     color = MaterialTheme.colorScheme.onErrorContainer)
             }
             TextButton(onClick = { AlarmService.snooze(context) }) { Text("다시 울림") }
-            Button(onClick = { AlarmService.dismiss(context) }) { Text("끄기") }
+            Button(onClick = { AlarmService.askToDismiss(context) }) { Text("끄기") }
         }
     }
 }

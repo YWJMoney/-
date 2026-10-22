@@ -7,6 +7,7 @@
 // GET    /api/share/:id        [SHR-02] the schedule for the app's 받은 달력 -> { schedule, expiresAt, updatedAt }
 //                              [SHR-12] with an ETag; If-None-Match with it answers 304 while nothing changed
 // GET    /s/:id                the schedule as a web page (noindex, no scripts)
+// GET    /s/:id.ics            [FEAT-15] the same days as a calendar to subscribe to, only when the sharer turned it on
 // GET    /.well-known/assetlinks.json   lets Android open /s/ links in the app (ANDROID_CERT_SHA256)
 //
 // Only what the page shows is stored: dates, shift names, colours and times, and since v2 [SHR-01]
@@ -23,7 +24,8 @@ export const LIMITS = {
   title: 30,
   // 연차, 반차 … up to "0.75일 무급 휴가".
   leave: 12,
-  ttlDays: [7, 30, 90],
+  // [PROV-04] 180 days and a year since 1.20 (프로 in the app).
+  ttlDays: [7, 30, 90, 180, 365],
   createsPerHour: 20,
   // [SHR-01] What a sharer may add to v2 links.
   memo: 80,
@@ -77,6 +79,8 @@ async function route(request, env) {
   if (path === "/.well-known/assetlinks.json" && request.method === "GET") return assetLinks(env);
   const page = path.match(/^\/s\/([A-Za-z0-9]{16,32})$/);
   if (page && (request.method === "GET" || request.method === "HEAD")) return view(request, env, page[1]);
+  const feed = path.match(/^\/s\/([A-Za-z0-9]{16,32})\.ics$/);
+  if (feed && (request.method === "GET" || request.method === "HEAD")) return calendar(env, feed[1]);
   if (path === "/" || path === "/robots.txt") {
     return new Response("User-agent: *\nDisallow: /\n", { headers: { "content-type": "text/plain; charset=utf-8" } });
   }
@@ -136,6 +140,26 @@ async function view(request, env, id) {
   // [SHR-02] On Android the page offers the app, which keeps it as a 받은 달력 next to the user's own.
   const android = /Android/i.test(request.headers.get("user-agent") || "");
   return html(renderSchedule(record.schedule, record.expiresAt, android ? id : null));
+}
+
+/**
+ * [FEAT-15] The link's days as an iCalendar feed that Google, Apple and Outlook calendars subscribe to.
+ * Only for a link whose sharer turned the address on; it says no more than the page does.
+ */
+async function calendar(env, id) {
+  const record = await env.SHARES.get(id, "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now() || record.schedule.ics !== true) {
+    return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
+  }
+  return new Response(renderIcs(record.schedule, id, record.updatedAt), {
+    headers: {
+      "content-type": "text/calendar; charset=utf-8",
+      "content-disposition": `inline; filename="bamnat-${id.slice(0, 6)}.ics"`,
+      // Calendar apps come back on their own schedule; a short cache spares the KV when several ask at once.
+      "cache-control": "public, max-age=900",
+      "x-robots-tag": "noindex, nofollow",
+    },
+  });
 }
 
 /** [SHR-02] What the app's 받은 달력 shows: the same schedule as the page, never the token hash. */
@@ -260,6 +284,14 @@ export function validate(body) {
   }
   days.sort((a, b) => a.date.localeCompare(b.date));
   const schedule = { v: v2 ? 2 : 1, title, types, days };
+  // [FEAT-15] The sharer turned on the address calendar apps subscribe to, in the time zone of their phone.
+  if (body.ics != null && typeof body.ics !== "boolean") return { error: "ics" };
+  if (body.ics === true) {
+    schedule.ics = true;
+    const tz = body.tz ?? "Asia/Seoul";
+    if (typeof tz !== "string" || !/^[A-Za-z]+(?:\/[A-Za-z0-9_+-]+){1,2}$/.test(tz) || tz.length > 40) return { error: "tz" };
+    schedule.tz = tz;
+  }
   if (v2) {
     schedule.shows = shows;
     if (shows.includes("pay") && body.pay != null) {
@@ -424,6 +456,71 @@ export function renderSchedule(schedule, expiresAt, appId = null) {
     : "";
   return page(title, `<h1>${esc(title)}</h1>${has}${app}${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
     `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 근무표예요. ${until}까지 열려요.</p>`);
+}
+
+/**
+ * [FEAT-15] RFC 5545: each work day an event at its shift's times (or all day without them), a second
+ * shift and timed extra work as events of their own, leave as an all-day event; days off are left out.
+ * UIDs stay the same for a date, so a changed day replaces its event in the subscriber's calendar.
+ */
+export function renderIcs(schedule, id, updatedAt) {
+  const types = new Map(schedule.types.map((t) => [t.id, t]));
+  const tz = schedule.tz || "Asia/Seoul";
+  const stamp = icsStamp(updatedAt ? new Date(updatedAt) : new Date());
+  const name = schedule.title ? `${schedule.title}의 근무` : "밤낮 근무";
+  const lines = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Bamnat//Share//KO", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    `X-WR-CALNAME:${icsText(name)}`, `X-WR-TIMEZONE:${tz}`, "REFRESH-INTERVAL;VALUE=DURATION:PT6H", "X-PUBLISHED-TTL:PT6H",
+  ];
+  const event = (uid, summary, date, time, description) => {
+    lines.push("BEGIN:VEVENT", `UID:${uid}@${id}.bamnat`, `DTSTAMP:${stamp}`);
+    const d = date.replaceAll("-", "");
+    if (time) {
+      const [from, to] = time.split("-");
+      const end = to <= from ? nextDay(date).replaceAll("-", "") : d;
+      lines.push(`DTSTART;TZID=${tz}:${d}T${from.replace(":", "")}00`, `DTEND;TZID=${tz}:${end}T${to.replace(":", "")}00`);
+    } else {
+      lines.push(`DTSTART;VALUE=DATE:${d}`, `DTEND;VALUE=DATE:${nextDay(date).replaceAll("-", "")}`);
+    }
+    lines.push(`SUMMARY:${icsText(summary)}`);
+    if (description) lines.push(`DESCRIPTION:${icsText(description)}`);
+    lines.push(time ? "TRANSP:OPAQUE" : "TRANSP:TRANSPARENT", "END:VEVENT");
+  };
+  for (const day of schedule.days) {
+    const memo = day.memo || null;
+    for (const [slot, typeId] of [["s", day.type], ["t", day.second]]) {
+      const t = typeId == null ? null : types.get(typeId);
+      if (t && !t.off) event(`${day.date}-${slot}`, t.name, day.date, t.time, slot === "s" ? memo : null);
+    }
+    if (day.leave) event(`${day.date}-l`, day.leave, day.date, null, null);
+    (day.extras ?? []).forEach((e, i) => { if (e.time) event(`${day.date}-x${i}`, e.name, day.date, e.time, null); });
+    (day.jobs ?? []).forEach((j, i) => event(`${day.date}-j${i}`, j.name, day.date, j.time, null));
+  }
+  lines.push("END:VCALENDAR");
+  return lines.map(icsFold).join("\r\n") + "\r\n";
+}
+
+function nextDay(date) {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + 86400 * 1000).toISOString().slice(0, 10);
+}
+
+const icsStamp = (d) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+const icsText = (s) => String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+
+/** Lines longer than 75 octets go on after a space, never splitting a Korean character. */
+function icsFold(line) {
+  const enc = new TextEncoder();
+  if (enc.encode(line).length <= 75) return line;
+  let out = "";
+  let count = 0;
+  let limit = 75;
+  for (const ch of line) {
+    const n = enc.encode(ch).length;
+    if (count + n > limit) { out += "\r\n "; count = 0; limit = 74; }
+    out += ch;
+    count += n;
+  }
+  return out;
 }
 
 /** 90 → "1시간 30분", 120 → "2시간". */

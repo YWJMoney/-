@@ -6,9 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
 import com.bamnat.app.data.ScheduleSnapshot
-import com.bamnat.app.tier.Feature
-import com.bamnat.app.tier.FeatureGate
-import com.bamnat.app.tier.Tier
+import com.bamnat.app.tier.Gate
 import com.bamnat.core.diag.DiagEvents
 import com.bamnat.core.pay.BulkEditPlanner
 import com.bamnat.core.pay.CalcSnapshot
@@ -81,7 +79,7 @@ class PayViewModel(
     private val payStore = scope.pay
     val profile: StateFlow<PayProfile?> = payStore.profile
     val undoAvailable: StateFlow<PayProfile?> = payStore.canUndo
-    val tier: StateFlow<Tier> = container.featureGate.tier
+    val gate: StateFlow<Gate> = container.featureGate.state
     val snapshot: StateFlow<ScheduleSnapshot?> =
         scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -98,8 +96,6 @@ class PayViewModel(
         scope.settings.stateIn(viewModelScope, SharingStarted.Eagerly, scope.currentSettings())
 
     init { container.telemetry.event(DiagEvents.SCREEN, "pay") }
-
-    fun canUse(feature: Feature, tier: Tier) = FeatureGate.allows(tier, feature)
 
     val closed: StateFlow<Map<YearMonth, CalcSnapshot>> = payStore.closed
 
@@ -306,6 +302,22 @@ class PayViewModel(
         } else emptyList()
         PayView(result, range, year, restDayLaw, holidayModes)
     }
+
+    /** [PROV-01] A month as the report shows it: the closed result when the month is closed [PAYX-03]. */
+    private fun asShown(pay: MonthPay): MonthPay =
+        closed.value[pay.month]?.let { pay.copy(lines = it.lines, ratesVersion = it.ratesVersion) } ?: pay
+
+    /** [PROV-01] The months of [year], each as the pay screen shows it, for the year's report. */
+    suspend fun yearPays(profile: PayProfile, snapshot: ScheduleSnapshot, year: Int): List<MonthPay> = withContext(Dispatchers.Default) {
+        (1..12).map { asShown(calculate(profile, snapshot, YearMonth.of(year, it))) }
+    }
+
+    /** [PROV-01] Which report was made, never what it said. */
+    fun reportMade(what: String) = container.telemetry.event("pay_report", what)
+
+    /** [PROV-01] The person and the pay at the top of a report, in the screen's words. */
+    fun reportWho(profile: PayProfile, month: YearMonth): com.bamnat.core.report.PayReport.Who =
+        com.bamnat.core.report.PayReport.Who(profile.occupation.label, "${profile.wageLabel()} ${won(profile.base.on(month).value)}")
 
     /** One month on a background thread, for editors that show the total as it changes. */
     suspend fun calculateOff(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): MonthPay =

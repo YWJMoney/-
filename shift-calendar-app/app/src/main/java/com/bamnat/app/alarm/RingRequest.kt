@@ -20,9 +20,13 @@ data class RingRequest(
     val custom: Boolean = false,
     /** [SCHED-01] A memo's schedule rings under the memo's own words instead of a shift's name. */
     val label: String? = null,
+    /** [PROV-06] The shift's type, for its own mission; 0 for a day without work or a memo schedule. */
+    val shiftTypeId: Long = 0,
+    /** [PROV-07] Rung again because 일어났나요? got no answer; it asks no more after this one. */
+    val recheck: Boolean = false,
 ) {
     /** "주간 근무 알람", "알람" for a hand-set alarm on a day without work, or a memo schedule's words. */
-    val title: String get() = label ?: if (shiftName.isBlank()) "알람" else "$shiftName 근무 알람"
+    val title: String get() = if (recheck) "일어났나요?" else label ?: if (shiftName.isBlank()) "알람" else "$shiftName 근무 알람"
 
     fun putInto(intent: Intent): Intent = intent
         .putExtra(X_NAME, shiftName)
@@ -34,6 +38,8 @@ data class RingRequest(
         .putExtra(X_SNOOZE, isSnooze)
         .putExtra(X_CUSTOM, custom)
         .putExtra(X_LABEL, label)
+        .putExtra(X_TYPE, shiftTypeId)
+        .putExtra(X_RECHECK, recheck)
 
     fun encode(): String = JSONObject()
         .put(X_NAME, shiftName)
@@ -45,6 +51,8 @@ data class RingRequest(
         .put(X_SNOOZE, isSnooze)
         .put(X_CUSTOM, custom)
         .put(X_LABEL, label ?: JSONObject.NULL)
+        .put(X_TYPE, shiftTypeId)
+        .put(X_RECHECK, recheck)
         .toString()
 
     companion object {
@@ -57,6 +65,8 @@ data class RingRequest(
         private const val X_SNOOZE = "ring_snooze"
         private const val X_CUSTOM = "ring_custom"
         private const val X_LABEL = "ring_label"
+        private const val X_TYPE = "ring_type"
+        private const val X_RECHECK = "ring_recheck"
 
         fun from(plan: PlannedAlarm, triggerAtMillis: Long) = RingRequest(
             shiftName = plan.shiftName,
@@ -66,6 +76,7 @@ data class RingRequest(
             soundUri = plan.soundUri,
             triggerAtMillis = triggerAtMillis,
             custom = plan.custom,
+            shiftTypeId = plan.shiftTypeId,
         )
 
         fun fromIntent(intent: Intent?): RingRequest? {
@@ -80,6 +91,8 @@ data class RingRequest(
                 isSnooze = intent.getBooleanExtra(X_SNOOZE, false),
                 custom = intent.getBooleanExtra(X_CUSTOM, false),
                 label = intent.getStringExtra(X_LABEL),
+                shiftTypeId = intent.getLongExtra(X_TYPE, 0L),
+                recheck = intent.getBooleanExtra(X_RECHECK, false),
             )
         }
 
@@ -97,6 +110,8 @@ data class RingRequest(
                     isSnooze = o.optBoolean(X_SNOOZE, false),
                     custom = o.optBoolean(X_CUSTOM, false),
                     label = if (o.isNull(X_LABEL)) null else o.optString(X_LABEL),
+                    shiftTypeId = o.optLong(X_TYPE, 0L),
+                    recheck = o.optBoolean(X_RECHECK, false),
                 )
             }.getOrNull()
         }

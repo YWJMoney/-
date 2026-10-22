@@ -18,6 +18,8 @@
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
     <!-- [IMPORT-01] Read only, asked when the user opens 캘린더에서 가져오기; nothing read leaves the phone. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <!-- [FEAT-07] 휴대폰 캘린더에 근무 쓰기 (프로): asked only when the user turns it on. -->
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <!-- [DAYW-07] 출퇴근 자동 기록 only, off by default and asked when the user turns it on after a plain
          explanation: one geofence around the workplace, used on the phone; no location is sent or kept. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -42,6 +44,17 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Bamnat.Starting"
         android:enableOnBackInvokedCallback="true">
+
+        <!-- [MON-07] AdMob app id (gradle.properties bamnat.admobAppId; Google's sample id when blank).
+             No ad is asked for before the 정식 출시 switch, for 프로, or without ad unit ids. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="${admobAppId}" />
+        <!-- [MON-07] The ads SDK starts its measurement only when MobileAds.initialize runs (Ads.startSdk: after the
+             정식 출시 switch and Google's consent), not at every app start. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.DELAY_APP_MEASUREMENT_INIT"
+            android:value="true" />
 
         <!-- resizeableActivity + configChanges keep state smooth when a Fold opens or closes.
              singleTop: a shared calendar link tapped while the app is open comes to onNewIntent [SHR-02]. -->
@@ -131,6 +144,11 @@
             android:name=".pay.LeaveReminderReceiver"
             android:exported="false" />
 
+        <!-- [MON-06] The trial's question, 7 days before it turns paid. -->
+        <receiver
+            android:name=".tier.TrialNoticeReceiver"
+            android:exported="false" />
+
         <!-- [SHR-12] The shared link closing soon, and its 늘리기 button. -->
         <receiver
             android:name=".share.ShareExpiryReceiver"
@@ -173,6 +191,17 @@
         <receiver
             android:name=".commute.CommuteReceiver"
             android:exported="false" />
+
+        <!-- [PROV-07] 일어났나요? a few minutes after an alarm is turned off, and the ring when nobody answers. -->
+        <receiver
+            android:name=".alarm.WakeCheckReceiver"
+            android:exported="false" />
+
+        <!-- [PROV-03] 매일 자동 백업: only the system's job scheduler binds it. -->
+        <service
+            android:name=".backup.AutoBackupJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <!-- [SHFT-08] The Wear OS app asks for fresh days when it opens; only Google Play services binds it. -->
         <service

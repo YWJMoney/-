@@ -59,6 +59,36 @@ fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) 
     )
 }
 
+/**
+ * [PROV-03] The password 자동 백업 seals every file with, typed twice; it is not optional there, since
+ * the file may sit in Google Drive. Picking where to save comes next.
+ */
+@Composable
+fun AutoBackupPasswordDialog(onDismiss: () -> Unit, onSet: (CharArray) -> Unit) {
+    var first by remember { mutableStateOf("") }
+    var second by remember { mutableStateOf("") }
+    val mismatch = second.isNotEmpty() && first != second
+    val ok = first.length >= MIN_BACKUP_PASSWORD && first == second
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("자동 백업 암호") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "매일 저장하는 백업 파일에 걸 암호예요. 휴대폰을 바꾸거나 앱을 다시 설치해 그 파일을 불러올 때 넣어요. " +
+                        "암호는 어디에도 저장하지 않아서 잊으면 열 수 없어요.\n다음 화면에서 저장할 곳을 골라요. 구글 드라이브에 두면 휴대폰을 잃어버려도 꺼낼 수 있어요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                PasswordField(first, { first = it }, "암호 (${MIN_BACKUP_PASSWORD}자 이상)")
+                PasswordField(second, { second = it }, "암호 한 번 더", error = if (mismatch) "두 암호가 달라요" else null)
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSet(first.toCharArray()) }, enabled = ok) { Text("저장할 곳 고르기") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
+
 /** [FEAT-08] Asks for the password of a sealed backup; a wrong one stays here with a message. */
 @Composable
 fun UnlockBackupDialog(locked: LockedBackup, onUnlock: (CharArray) -> Unit, onDismiss: () -> Unit) {

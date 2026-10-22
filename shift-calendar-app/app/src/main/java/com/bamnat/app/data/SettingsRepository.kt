@@ -53,8 +53,12 @@ data class AppSettings(
     val hideDayAlarmNotice: Boolean = false,
     /** Opt-in: send anonymous usage statistics once a remote service is connected [MEAS-03]. */
     val shareUsageStats: Boolean = false,
-    /** Subscription tier; set by billing later, by testers for now [TIER-01]. */
-    val tier: Tier = Tier.FREE,
+    /**
+     * [MON-02] A tester's preview of the screens after launch (alarm check screen): null shows the real
+     * state. It counts before the 정식 출시 switch and in debug builds only. The old "tier" key, saved as
+     * FREE for everyone, is not read, so nobody sees locks they did not choose.
+     */
+    val previewTier: Tier? = null,
     /**
      * [WORK-01] How the user works; null until chosen on first launch. [SETUP-01] The first setup
      * writes it only when it saves, so null also means the first setup is not done.
@@ -124,6 +128,14 @@ data class AppSettings(
      * order that fits [workStyle]. Keys the app does not know are skipped, missing ones go at the end.
      */
     val dayGroupOrder: List<String> = emptyList(),
+    /** [FEAT-07] The user's calendars written to a calendar of their own on the phone (프로); none at first. */
+    val phoneCalendars: List<String> = emptyList(),
+    /** [PROV-06] What 끄기 asks for (프로), by [com.bamnat.core.alarm.AlarmMission.key]; none at first. */
+    val alarmMission: String = "none",
+    /** [PROV-06] A shift's own mission, by shift type id, in place of [alarmMission]. */
+    val shiftMissions: Map<Long, String> = emptyMap(),
+    /** [PROV-07] Minutes after 끄기 that 일어났나요? asks (프로); 0 is off, as at first. */
+    val wakeCheckMinutes: Int = 0,
 ) {
     val limits: HourLimits get() = HourLimits(weeklyLimitHours, averageLimitHours)
 
@@ -134,6 +146,14 @@ data class AppSettings(
 
 /** [DAY-04] "memo,work" back to its keys; blank parts are dropped. */
 fun decodeGroupOrder(text: String): List<String> = text.split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+
+/** [PROV-06] "3=math,5=shake": each shift's own mission; anything unreadable is left out. */
+fun decodeShiftMissions(text: String): Map<Long, String> = text.split(',').mapNotNull { part ->
+    val (id, key) = part.split('=').takeIf { it.size == 2 } ?: return@mapNotNull null
+    id.trim().toLongOrNull()?.let { it to key.trim() }?.takeIf { it.second.isNotEmpty() }
+}.toMap()
+
+fun encodeShiftMissions(map: Map<Long, String>): String = map.entries.sortedBy { it.key }.joinToString(",") { "${it.key}=${it.value}" }
 
 /**
  * Small settings store on SharedPreferences. Reads are synchronous so the very first frame
@@ -187,7 +207,7 @@ class SettingsRepository(context: Context) {
             alarmsEnabled = prefs.getBoolean(K_ALARMS_ON, d.alarmsEnabled),
             hideDayAlarmNotice = prefs.getBoolean(K_HIDE_DAY_NOTICE, d.hideDayAlarmNotice),
             shareUsageStats = prefs.getBoolean(K_SHARE_STATS, d.shareUsageStats),
-            tier = runCatching { Tier.valueOf(prefs.getString(K_TIER, null) ?: "") }.getOrDefault(d.tier),
+            previewTier = Tier.parse(prefs.getString(K_PREVIEW_TIER, null)),
             workStyle = prefs.getString(K_WORK_STYLE, null)?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } },
             rosterMonthly = prefs.getBoolean(K_ROSTER_MONTHLY, d.rosterMonthly),
             extraKinds = ExtraKinds.decode(prefs.getString(K_EXTRA_KINDS, null)),
@@ -220,6 +240,10 @@ class SettingsRepository(context: Context) {
             // [DAY-04] 메모 중심 of 1.12 and before put 메모 first; that carries over as the user's own order.
             dayGroupOrder = prefs.getString(K_DAY_GROUP_ORDER, null)?.let(::decodeGroupOrder)
                 ?: if (prefs.getBoolean(K_MEMO_FIRST, false)) listOf("memo") else d.dayGroupOrder,
+            phoneCalendars = prefs.getString(K_PHONE_CALENDARS, null)?.let(::decodeGroupOrder) ?: d.phoneCalendars,
+            alarmMission = prefs.getString(K_ALARM_MISSION, null) ?: d.alarmMission,
+            shiftMissions = prefs.getString(K_SHIFT_MISSIONS, null)?.let(::decodeShiftMissions) ?: d.shiftMissions,
+            wakeCheckMinutes = prefs.getInt(K_WAKE_CHECK, d.wakeCheckMinutes),
         )
     }
 
@@ -242,7 +266,8 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_ALARMS_ON, s.alarmsEnabled)
             .putBoolean(K_HIDE_DAY_NOTICE, s.hideDayAlarmNotice)
             .putBoolean(K_SHARE_STATS, s.shareUsageStats)
-            .putString(K_TIER, s.tier.name)
+            .putString(K_PREVIEW_TIER, s.previewTier?.name)
+            .remove(K_OLD_TIER)
             .putString(K_WORK_STYLE, s.workStyle?.name)
             .putBoolean(K_ROSTER_MONTHLY, s.rosterMonthly)
             .putString(K_EXTRA_KINDS, s.extraKinds.encode())
@@ -270,6 +295,10 @@ class SettingsRepository(context: Context) {
             .putString(K_CALENDAR_LAYOUT, s.calendarLayout)
             .putString(K_STATS_LAYOUT, s.statsLayout)
             .putString(K_DAY_GROUP_ORDER, s.dayGroupOrder.joinToString(","))
+            .putString(K_PHONE_CALENDARS, s.phoneCalendars.joinToString(","))
+            .putString(K_ALARM_MISSION, s.alarmMission)
+            .putString(K_SHIFT_MISSIONS, encodeShiftMissions(s.shiftMissions))
+            .putInt(K_WAKE_CHECK, s.wakeCheckMinutes)
             .apply()
     }
 
@@ -282,6 +311,10 @@ class SettingsRepository(context: Context) {
         const val K_CALENDAR_LAYOUT = "calendar_layout"
         const val K_STATS_LAYOUT = "stats_layout"
         const val K_DAY_GROUP_ORDER = "day_group_order"
+        const val K_PHONE_CALENDARS = "phone_calendars"
+        const val K_ALARM_MISSION = "alarm_mission"
+        const val K_SHIFT_MISSIONS = "shift_missions"
+        const val K_WAKE_CHECK = "wake_check_minutes"
         const val K_WEEKLY_LIMIT = "weekly_limit"
         const val K_AVG_LIMIT = "average_limit"
         const val K_THEME = "theme"
@@ -298,7 +331,8 @@ class SettingsRepository(context: Context) {
         const val K_ALARMS_ON = "alarms_on"
         const val K_HIDE_DAY_NOTICE = "hide_day_alarm_notice"
         const val K_SHARE_STATS = "share_usage_stats"
-        const val K_TIER = "tier"
+        const val K_OLD_TIER = "tier"
+        const val K_PREVIEW_TIER = "tier_preview"
         const val K_WORK_STYLE = "work_style"
         const val K_ROSTER_MONTHLY = "roster_monthly"
         const val K_EXTRA_KINDS = "extra_kinds"

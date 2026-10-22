@@ -12,6 +12,11 @@ plugins {
 val shareBaseUrl = (project.findProperty("bamnat.shareBaseUrl") as String?).orEmpty().trim()
 // [COMM-04] Company rules server (server/company-worker). Blank hides 회사 찾기 and sending setups.
 val companyBaseUrl = (project.findProperty("bamnat.companyBaseUrl") as String?).orEmpty().trim()
+// [MON-07] AdMob ids, public values the owner gives. Blank: no ads in a release build (a debug build
+// uses Google's test units). The app id falls back to Google's sample id so the SDK starts without one.
+fun adProp(name: String) = (project.findProperty(name) as String?).orEmpty().trim()
+val admobAppId = adProp("bamnat.admobAppId").ifBlank { "ca-app-pub-3940256099942544~3347511713" }
+val adUnitsGiven = adProp("bamnat.admobBanner").isNotBlank() || adProp("bamnat.admobRewarded").isNotBlank()
 
 android {
     namespace = "com.bamnat.app"
@@ -27,6 +32,9 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SHARE_BASE_URL", "\"$shareBaseUrl\"")
         buildConfigField("String", "COMPANY_BASE_URL", "\"$companyBaseUrl\"")
+        buildConfigField("String", "ADMOB_BANNER", "\"${adProp("bamnat.admobBanner")}\"")
+        buildConfigField("String", "ADMOB_REWARDED", "\"${adProp("bamnat.admobRewarded")}\"")
+        manifestPlaceholders["admobAppId"] = admobAppId
         // [SHR-02] The share server's host, for its /s/ links to open in the app (src/onlineShare).
         manifestPlaceholders["shareHost"] = runCatching { URI(shareBaseUrl).host }.getOrNull() ?: "share.invalid"
     }
@@ -86,10 +94,20 @@ android {
     testOptions {
         // Robolectric screenshot tests need the merged resources and manifest.
         unitTests.isIncludeAndroidResources = true
+        // About 700 Robolectric tests and 400 screenshots in one worker outgrow Gradle's 512 MB test heap.
+        unitTests.all { it.maxHeapSize = "2g" }
     }
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+}
+
+// [MON-07] A release build without ad unit ids shows no ads, so it leaves out the advertising ID
+// permissions the ads SDK brings (src/noAdId): the test builds need no 광고 ID declaration in Play Console.
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        if (!adUnitsGiven) variant.sources.manifests.addStaticManifestFile("src/noAdId/AndroidManifest.xml")
     }
 }
 
@@ -113,6 +131,12 @@ dependencies {
     implementation("com.google.android.gms:play-services-location:21.3.0")
     // [SHFT-08] The Wear OS watch gets the days through the Wearable Data Layer, phone to watch.
     implementation("com.google.android.gms:play-services-wearable:19.0.0")
+    // [MON-03] Play billing 9.1.0 (the Java API, so the Kotlin library stays as it is).
+    implementation("com.android.billingclient:billing:9.1.0")
+    // [MON-07] AdMob and Google's consent form (UMP); nothing shows before the 정식 출시 switch.
+    // 25.3.0 and later are built with Kotlin 2.3, which this project's Kotlin 2.1 cannot read: raise both together.
+    implementation("com.google.android.gms:play-services-ads:25.2.0")
+    implementation("com.google.android.ump:user-messaging-platform:4.0.0")
 
     val composeBom = platform("androidx.compose:compose-bom:2025.05.00")
     implementation(composeBom)

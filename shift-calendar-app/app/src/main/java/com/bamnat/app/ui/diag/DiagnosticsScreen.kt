@@ -2,6 +2,9 @@ package com.bamnat.app.ui.diag
 
 import androidx.compose.runtime.produceState
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -143,9 +146,11 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** Testers switch tiers here until billing exists [TIER-01]. */
-    val tier = container.featureGate.tier
-    fun setTier(t: Tier) = container.settingsRepository.update { it.copy(tier = t) }
+    /** [MON-02] Testers preview the screens after the launch here; null shows the real state. */
+    val gate = container.featureGate.state
+    val previewTier = container.settingsRepository.settings.map { it.previewTier }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, container.settingsRepository.current.previewTier)
+    fun setPreview(t: Tier?) = container.settingsRepository.update { it.copy(previewTier = t) }
 
     fun report(context: Context, events: List<DiagEvent>): DiagReport {
         val now = System.currentTimeMillis()
@@ -296,13 +301,18 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                 }
             }
             if (testing || BuildConfig.DEBUG) item {
-                val tier by vm.tier.collectAsStateWithLifecycle()
-                SectionCard(title = "테스트용 등급") {
-                    Text("결제가 열리기 전까지 등급별 화면을 확인하는 스위치예요.",
+                val preview by vm.previewTier.collectAsStateWithLifecycle()
+                val gate by vm.gate.collectAsStateWithLifecycle()
+                SectionCard(title = "출시 뒤 화면 미리 보기") {
+                    // [MON-02] After the 정식 출시 switch only debug builds can preview; a release build shows the real state.
+                    Text(if (gate.live && !gate.preview) "정식 출시를 해서 실제 등급으로 보여요. 미리 보기는 개발용 빌드에서만 돼요."
+                        else "정식 출시 뒤 무료와 프로 화면이 어떻게 보이는지 미리 볼 수 있어요. 결제는 되지 않아요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("지금: ${gate.access.reason.words}", style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Tier.entries.forEach { t ->
-                            FilterChip(selected = tier == t, onClick = { vm.setTier(t) }, label = { Text(t.label) })
+                        FilterChip(selected = preview == null, onClick = { vm.setPreview(null) }, label = { Text("실제") })
+                        listOf(Tier.FREE, Tier.PRO).forEach { t ->
+                            FilterChip(selected = preview == t, onClick = { vm.setPreview(t) }, label = { Text(t.label) })
                         }
                     }
                 }

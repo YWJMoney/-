@@ -140,13 +140,18 @@ class AppContainer(context: Context) {
         return com.bamnat.core.money.CaptureRoute.pick(parsed?.last4, parsed?.issuer, pkg, places, prefs.appCalendars, prefs.calendar)
     }
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository)
-    val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry) {
-        com.bamnat.app.alarm.BootAlarms.RingSettings.of(settingsRepository.current)
-    }
+    val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry) { ringSettings() }
+    /** How alarms ring now; [PROV-06][PROV-07] the mission and the wake check only with 프로. */
+    fun ringSettings(): com.bamnat.app.alarm.BootAlarms.RingSettings =
+        com.bamnat.app.alarm.BootAlarms.RingSettings.of(settingsRepository.current, sureAlarm())
+    // Read while the container is still being built would find no gate yet: then nothing is locked, as before the launch.
+    @Suppress("SENSELESS_COMPARISON")
+    private fun sureAlarm(): Boolean = featureGate == null || featureGate.allows(com.bamnat.app.tier.Feature.SURE_ALARM)
     val payStore = PayStore(appContext)
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars, memoSharing = memoSharing,
         workTools = com.bamnat.app.data.WorkToolsStore.get(appContext), guide = com.bamnat.app.data.GuideStore.get(appContext), recordsTrash = { recordsTrash },
-        teams = teams)
+        teams = teams, pro = { proStore },
+        shareLinks = com.bamnat.app.share.ShareLinkBackup({ calendars.calendars.value.map { it.id } }, { shareLinksOf(it) }))
     /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록: a calendar's records as they were before a change, for 7 days. */
     val recordsTrash by lazy {
         com.bamnat.app.data.RecordsTrash(java.io.File(appContext.noBackupFilesDir, "records_trash"), calendars, database, settingsRepository,
@@ -177,22 +182,83 @@ class AppContainer(context: Context) {
     private val startedAt = System.currentTimeMillis()
     val shareLinks by lazy { com.bamnat.app.share.ShareLinkStore(appContext) }
     private val addedShareLinks = java.util.concurrent.ConcurrentHashMap<String, com.bamnat.app.share.ShareLinkStore>()
-    /** [MCAL-03] The link of one of the user's calendars; the main one is [shareLinks]. */
-    fun shareLinksOf(calendarId: String): com.bamnat.app.share.ShareLinkStore =
-        if (calendarId == PersonalCalendar.MAIN) shareLinks
-        else addedShareLinks.getOrPut(calendarId) { com.bamnat.app.share.ShareLinkStore(appContext, calendarId) }
-    /** [MCAL-03] A removed calendar's link goes with it, its expiry notice too. */
+    /**
+     * [MCAL-03] The link of one of the user's calendars; the main one's first is [shareLinks].
+     * [PROV-04] [key] is a calendar's id for its first link, or a [com.bamnat.app.share.ShareLinkKey] for another.
+     */
+    fun shareLinksOf(key: String): com.bamnat.app.share.ShareLinkStore =
+        if (key == PersonalCalendar.MAIN) shareLinks
+        else addedShareLinks.getOrPut(key) { com.bamnat.app.share.ShareLinkStore(appContext, key) }
+    /** [PROV-04] Whether any of [calendarId]'s links is open. */
+    fun hasShareLink(calendarId: String): Boolean =
+        com.bamnat.app.share.ShareLinkKey.all(calendarId).any { shareLinksOf(it).link.value != null }
+    /** [MCAL-03] A removed calendar's links go with it, their expiry notices too. */
     fun forgetShareLinks(calendarId: String) {
         if (calendarId == PersonalCalendar.MAIN) return
-        addedShareLinks.remove(calendarId)?.clear()
+        for (key in com.bamnat.app.share.ShareLinkKey.all(calendarId)) {
+            addedShareLinks.remove(key)?.clear()
+            com.bamnat.app.share.ShareExpiryReminder.reschedule(appContext, key, null, null)
+        }
         com.bamnat.app.share.ShareLinkStore.forget(appContext, calendarId)
-        com.bamnat.app.share.ShareExpiryReminder.reschedule(appContext, calendarId, null, null)
     }
     /** [SHR-12] Sends the link again when the calendar changes. */
     val shareSync by lazy { com.bamnat.app.share.ShareSync(this) }
+    /** [PROV-03] Where 자동 백업 keeps its key; tests put an in-memory one here. */
+    var keyBox: com.bamnat.app.backup.KeyBox = com.bamnat.app.backup.KeystoreKeyBox()
+    /** [PROV-03] 매일 자동 백업. */
+    val autoBackup by lazy { com.bamnat.app.backup.AutoBackup(this, { keyBox }) }
+    /** [FEAT-07] Writes the chosen calendars to the phone's calendar store. */
+    val phoneCalendarSync by lazy { com.bamnat.app.calendar.PhoneCalendarSync(this) }
     /** [SHR-02] Schedules others shared, kept beside the user's own and never backed up. */
     val received by lazy { com.bamnat.app.share.ReceivedCalendarStore(java.io.File(appContext.noBackupFilesDir, "received_calendars.json")) }
-    val featureGate = FeatureGate(settingsRepository, appScope)
+    /** [MON-07][MON-10] When this app was first installed: the testers' thank-you and the first days without ads. */
+    val installedAt: java.time.Instant? by lazy {
+        runCatching { java.time.Instant.ofEpochMilli(appContext.packageManager.getPackageInfo(appContext.packageName, 0).firstInstallTime) }.getOrNull()
+    }
+    /** [MON-02] The 정식 출시 switch and what goes with it, from the company server once a day. */
+    val remoteConfig = com.bamnat.app.tier.RemoteConfigStore(appContext)
+    /** [MON-02] Everything on this phone that can give it 프로. */
+    val proStore = com.bamnat.app.tier.ProStore(appContext)
+    /** [MON-02] 프로 on the company server; screenshots and tests put a fake in its place. */
+    var tierApi: com.bamnat.app.tier.TierApi = com.bamnat.app.tier.TierClient()
+    val featureGate = FeatureGate(settingsRepository, remoteConfig, proStore, appScope, installedAt = { installedAt })
+    /** [MON-03] Play billing; screenshots and tests put a fake in its place. */
+    var billing: com.bamnat.app.billing.Billing = com.bamnat.app.billing.PlayBilling(appContext, proStore, api = { tierApi },
+        device = { companyStore.device }, scope = appScope, log = { runCatching { telemetry.event("billing", it) } })
+    /** [MON-07] Google's consent form and the ads SDK. */
+    val ads = com.bamnat.app.ads.Ads(appScope)
+
+    /**
+     * [MON-02][MON-08][MON-09] On coming to the front: the 정식 출시 switch (once a day), this phone's
+     * passes and admin link when it has any reason to, and Play's purchases; then the gate again.
+     */
+    fun syncPro(force: Boolean = false) = appScope.launch {
+        runCatching { remoteConfig.refresh(tierApi, force = force) }
+        runCatching { syncPasses(force) }
+        // Play is asked only once paying is possible, or for a subscription this phone already knew.
+        if (remoteConfig.current.billingLive || proStore.current.sub != null) runCatching { billing.refresh() }
+        featureGate.refresh()
+    }
+
+    /** [MON-08] Only a phone that sent a report or a question, holds passes or brought a code asks the server. */
+    suspend fun syncPasses(force: Boolean = false) {
+        if (!tierApi.enabled) return
+        val s = proStore.current
+        val device = companyStore.device
+        s.pendingClaim?.let { code ->
+            try {
+                proStore.setPasses(tierApi.claim(device, code))
+                proStore.claimLater(null)
+            } catch (e: com.bamnat.app.company.CompanyException) {
+                // A spent or unknown code is not tried again; no connection is.
+                if (e.code != "offline" && e.code != "rate_limited") proStore.claimLater(null)
+            }
+        }
+        val reason = s.passes != null || companyStore.sent.value.isNotEmpty() || inquiryStore.asked || s.code != null
+        val last = proStore.current.passes?.checkedAt
+        if (!reason || (!force && last != null && java.time.Duration.between(last, java.time.Instant.now()) < PASSES_EVERY)) return
+        proStore.setPasses(tierApi.passes(device))
+    }
     /** [IMPORT-01] Samsung Calendar and the phone's other calendars, brought in on request. */
     val calendarImporter by lazy {
         com.bamnat.app.imports.CalendarImporter(appContext, com.bamnat.app.imports.DeviceCalendars(appContext), scheduleRepository,
@@ -208,6 +274,10 @@ class AppContainer(context: Context) {
         const val WOKE_SUMMARY_MINUTES = 20L
         const val RETRY_FIRST_MILLIS = 2_000L
         const val RETRY_MAX_MILLIS = 60_000L
+        /** [PROV-03] After the app has opened and settled, not while the first screen draws. */
+        const val AUTO_BACKUP_DELAY_MILLIS = 20_000L
+        /** [MON-09] Often enough for the admin link's weekly check, rare enough to stay quiet. */
+        val PASSES_EVERY: java.time.Duration = java.time.Duration.ofHours(6)
     }
 
     suspend fun rescheduleAlarms(after: LocalDateTime = LocalDateTime.now()) {
@@ -300,16 +370,31 @@ class AppContainer(context: Context) {
             combine(entered, on) { a, b -> a to b }
                 .collect { LeaveReminder.reschedule(appContext, payStore.profile.value, settingsRepository.current) }
         }
+        // [MON-06] The trial's notice follows the subscription and the user's answer.
+        keep("trialnotice") {
+            proStore.state.map { Triple(it.sub, it.consentAt, it.trialNoticeFor) }.distinctUntilChanged()
+                .collect { com.bamnat.app.tier.TrialNotice.reschedule(appContext, proStore.current) }
+        }
         // [SHR-12] The link this phone made follows the calendar, and its expiry notice follows the link.
         keep("share") { if (shareApi.enabled) shareSync.follow() }
-        // [MCAL-03] Each of the user's calendars has its own link and so its own notice.
+        // [FEAT-07] The phone's 밤낮 calendars follow the calendars written there.
+        keep("phonecal") { phoneCalendarSync.follow() }
+        // [PROV-03] A day's backup owed when the app opens goes now; the job keeps it going while closed.
+        keep("autobackup") {
+            if (autoBackup.on) {
+                com.bamnat.app.backup.AutoBackupJob.schedule(appContext)
+                delay(AUTO_BACKUP_DELAY_MILLIS)
+                autoBackup.runIfDue()
+            }
+        }
+        // [MCAL-03] Each of the user's calendars has its own link and so its own notice; [PROV-04] each of its links.
         keep("shareexpiry") {
             calendars.calendars.map { list -> list.map { it.id } }.distinctUntilChanged().collectLatest { ids ->
                 coroutineScope {
-                    ids.forEach { id ->
+                    ids.flatMap { com.bamnat.app.share.ShareLinkKey.all(it) }.forEach { key ->
                         launch {
-                            val store = shareLinksOf(id)
-                            store.link.collect { com.bamnat.app.share.ShareExpiryReminder.reschedule(appContext, id, it, store.noticedFor) }
+                            val store = shareLinksOf(key)
+                            store.link.collect { com.bamnat.app.share.ShareExpiryReminder.reschedule(appContext, key, it, store.noticedFor) }
                         }
                     }
                 }
@@ -346,8 +431,9 @@ class AppContainer(context: Context) {
         }
         // [REL-10] The locked-boot copy carries the ringing settings too, so it follows their changes.
         keep("bootcopy") {
-            settingsRepository.settings.map { com.bamnat.app.alarm.BootAlarms.RingSettings.of(it) }.distinctUntilChanged().drop(1)
-                .collect { alarmScheduler.saveBootCopy() }
+            combine(settingsRepository.settings, featureGate.state.map { it.allows(com.bamnat.app.tier.Feature.SURE_ALARM) }) { s, sure ->
+                com.bamnat.app.alarm.BootAlarms.RingSettings.of(s, sure)
+            }.distinctUntilChanged().drop(1).collect { alarmScheduler.saveBootCopy() }
         }
         // Widgets lay out weeks from the user's first day of the week.
         keep("widgetweek") {
