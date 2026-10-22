@@ -78,6 +78,47 @@ class LegalPagesTest {
         assertTrue(text.contains("결제 알림 자동 기록과 투자 체결 알림으로 거래 찾기"))
     }
 
+    /**
+     * [STAT-02][SRV-02][SRV-06][COMM-08][COMM-09][COMM-10] 2.8 for 1.22.0: usage stats only with a yes, photos with a
+     * question, notices, hiding a writer on the phone, 광장 소식, link reports, the breach procedure and the community rules,
+     * in the app's and the servers' own numbers.
+     */
+    @Test fun thePrivacyPolicyCoversUsageStatsPhotosAndThePlazaRules() {
+        val policy = File(site, "privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        assertTrue(text.contains("처리방침 2.8 · 앱 버전 1.22.0"))
+        assertTrue(text.contains("2.8에서 바뀐 점: 앱 1.22.0부터"))
+        listOf("1-9. 사용 통계 보내기 (선택, 동의한 경우만)", "1-10. 근무표 링크 신고 (선택)").forEach { assertTrue(it, text.contains(it)) }
+        // 사용 통계: the setting's name, the events the server takes, the days kept on the phone and on the server.
+        assertTrue(text.contains("‘사용 통계 보내기’"))
+        assertTrue("이벤트 ${com.bamnat.core.stats.UsageEvent.entries.size}가지", text.contains("${com.bamnat.core.stats.UsageEvent.entries.size}가지 이름만"))
+        assertTrue("최근 ${com.bamnat.core.stats.UsageBook.RECENT_DAYS}일", text.contains("최근 ${com.bamnat.core.stats.UsageBook.RECENT_DAYS}일"))
+        assertTrue("${com.bamnat.core.stats.UsageBook.MAX_DAYS}일 지나면 버림", text.contains("${com.bamnat.core.stats.UsageBook.MAX_DAYS}일이 지나도록 보내지 못한 날은 버립니다"))
+        assertTrue(text.contains("400일 뒤 삭제"))
+        assertTrue(text.contains("처음에는 꺼져 있습니다"))
+        // 문의 사진: how many, how large, and when they go.
+        assertTrue(text.contains("사진 ${com.bamnat.app.company.InquiryPhotos.MAX}장까지"))
+        assertTrue(text.contains("긴 변 1600픽셀"))
+        assertTrue(text.contains("문의가 닫히고 90일"))
+        // 광장: the rules page, hiding on the phone only (and how many), the daily news that keeps nothing.
+        assertTrue(text.contains("../community/"))
+        assertTrue(text.contains("최대 ${com.bamnat.core.plaza.HideList.MAX}개") && text.contains("가린 목록을 저장하지 않습니다"))
+        assertTrue(text.contains("새로 저장하지 않습니다"))
+        // 유출 대응: the procedure linked, the 72 hours and the 30 days a notice stays up.
+        assertTrue(text.contains("docs/incident-response.md"))
+        assertTrue(text.contains("72시간") && text.contains("30일 이상 게시"))
+        assertTrue(File(site, "shift-calendar-app/docs/incident-response.md").exists())
+        // The page before the first post says the same rules as the app and is the version the app asks for.
+        val rules = File(site, "community/index.html")
+        assertTrue("커뮤니티 운영 규칙 페이지가 있어요", rules.exists())
+        val r = rules.readText()
+        assertTrue(r.contains("운영 규칙 ${com.bamnat.core.plaza.PlazaRules.VERSION} · 앱 버전 1.22.0"))
+        assertTrue(com.bamnat.core.plaza.PlazaRules.URL.endsWith("/community/"))
+        assertTrue(r.contains("제44조의2 제5항") && r.contains("30일 안에") && r.contains("‘이 사람 글 안 보기’"))
+        assertTrue(r.contains("최대 ${com.bamnat.core.plaza.HideList.MAX}명"))
+    }
+
     @Test fun theTermsCoverSubscriptionTrialAndRefunds() {
         val terms = File(site, "terms/index.html")
         assumeTrue(File(site, "privacy/index.html").exists())
