@@ -55,6 +55,8 @@ object NoticeLinks {
         BACKUP,
         /** [DAILY-06] 내 달력 on the day in [payload] (yyyy-mm-dd) with that day open, from a widget's date. */
         DAY,
+        /** [COMM-10] 회사 규칙 광장, from 광장 소식. */
+        PLAZA,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"

@@ -319,6 +319,9 @@ fun TalkSheet(holder: TalkHolder) {
     var kind by rememberSaveable(o.setup) { mutableStateOf("talk") }
     var change by remember(o.setup) { mutableStateOf(listOf(blankChange())) }
     var withSetup by rememberSaveable(o.setup) { mutableStateOf(false) }
+    var hiding by remember { mutableStateOf<TalkPost?>(null) }
+    val rules = rememberPlazaRules()
+    HideWriterDialog(hiding, onDismiss = { hiding = null }, onHide = holder::hide)
     ModalBottomSheet(onDismissRequest = holder::close, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 16.dp).imePadding()) {
             Text("토론", style = MaterialTheme.typography.titleLarge)
@@ -340,19 +343,24 @@ fun TalkSheet(holder: TalkHolder) {
                         // [PLZ-05] Answers sit under the post they answer.
                         val tops = talk.posts.filter { it.parent == null || talk.posts.none { t -> t.id == it.parent } }
                         tops.forEach { p ->
-                            PostRow(p, onDelete = { holder.delete(p.id) }, onFlag = { flagging = p },
+                            PostRow(p, onDelete = { holder.delete(p.id) }, onFlag = { flagging = p }, onHide = { hiding = p },
                                 onVote = { ok -> holder.vote(p.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyTo = p }))
                             talk.posts.filter { it.parent == p.id }.forEach { r ->
                                 Row {
                                     Spacer(Modifier.width(20.dp))
                                     Column(Modifier.weight(1f)) {
-                                        PostRow(r, onDelete = { holder.delete(r.id) }, onFlag = { flagging = r },
+                                        PostRow(r, onDelete = { holder.delete(r.id) }, onFlag = { flagging = r }, onHide = { hiding = r },
                                             onVote = { ok -> holder.vote(r.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyTo = p }))
                                     }
                                 }
                             }
                         }
                     }
+                }
+                // [COMM-09] Said plainly, so a quiet talk is not mistaken for an empty one.
+                o.talk?.hiddenByYou?.takeIf { it > 0 }?.let { n ->
+                    Text("가린 분의 글 ${n}개는 보이지 않아요. 내 활동 > 가린 사람에서 다시 볼 수 있어요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             val muted = o.talk?.mutedUntil
@@ -362,6 +370,10 @@ fun TalkSheet(holder: TalkHolder) {
             } else if (muted != null) {
                 Text("운영 원칙을 지키지 않은 글이 있어 ${day(muted)}까지 글을 쓸 수 없어요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
+            } else if (holder.writePaused) {
+                // [SRV-04] The developer paused writing; reading, 맞아요 and 신고 still work.
+                Text(com.bamnat.core.ops.ServerSwitch.pausedText(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
             } else {
                 error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
                 // [PLZ-09] What kind of post: a word, a question, or a proposal to change the rule.
@@ -400,7 +412,7 @@ fun TalkSheet(holder: TalkHolder) {
                             val lines = change.filter { it.want.isNotBlank() }
                             if (proposing && lines.isEmpty()) {
                                 error = "무엇을 어떻게 바꾸자는지 한 줄 이상 적어 주세요"
-                            } else {
+                            } else rules.ensure {
                                 busy = true
                                 holder.send(text.trim(), parent = replyTo?.id, kind = if (replyTo != null) "talk" else kind, change = if (proposing) lines else emptyList(),
                                     withSetup = proposing && withSetup) { e ->
@@ -443,7 +455,7 @@ fun TalkSheet(holder: TalkHolder) {
 }
 
 @Composable
-private fun PostRow(p: TalkPost, onDelete: () -> Unit, onFlag: () -> Unit, onVote: (Boolean) -> Unit = {}, onReply: (() -> Unit)? = null) {
+private fun PostRow(p: TalkPost, onDelete: () -> Unit, onFlag: () -> Unit, onHide: () -> Unit = {}, onVote: (Boolean) -> Unit = {}, onReply: (() -> Unit)? = null) {
     var menu by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
@@ -473,6 +485,8 @@ private fun PostRow(p: TalkPost, onDelete: () -> Unit, onFlag: () -> Unit, onVot
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     if (p.mine) DropdownMenuItem(text = { Text("지우기") }, onClick = { menu = false; onDelete() })
                     else DropdownMenuItem(text = { Text("신고하기") }, onClick = { menu = false; onFlag() })
+                    // [COMM-09] Play's UGC rule: users can block one another.
+                    if (!p.mine && p.author != null) DropdownMenuItem(text = { Text("이 사람 글 안 보기") }, onClick = { menu = false; onHide() })
                 }
             }
         }

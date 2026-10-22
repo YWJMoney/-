@@ -201,8 +201,9 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         else -> CompanyText.personal(text)?.let(::personalProblem)
     }
 
-    fun send(kind: InquiryKind, text: String, diag: String?, pay: String?, done: (Inquiry?, String?) -> Unit) = act(done) {
-        c.inquiryApi.send(device, kind, text, info.copy(diag = diag, pay = pay)).also {
+    fun send(kind: InquiryKind, text: String, diag: String?, pay: String?, photos: List<ByteArray> = emptyList(), done: (Inquiry?, String?) -> Unit) = act(done) {
+        c.inquiryApi.send(device, kind, text, info.copy(diag = diag, pay = pay, photos = photos)).also {
+            c.telemetry.event(com.bamnat.core.stats.UsageEvent.INQUIRY.key)
             c.inquiryStore.asked = true
             c.inquiryStore.clearDraft()
             _list.value = listOf(it) + _list.value.orEmpty().filter { o -> o.id != it.id }

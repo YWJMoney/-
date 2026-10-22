@@ -143,7 +143,9 @@ class AppContainer(context: Context) {
         val places = list.map { com.bamnat.core.money.CaptureRoute.Place(it.id, calendars.money(it.id).allAccounts()) }
         return com.bamnat.core.money.CaptureRoute.pick(parsed?.last4, parsed?.issuer, pkg, places, prefs.appCalendars, prefs.calendar)
     }
-    val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository)
+    /** [STAT-01] 사용 통계 보내기: hears events only while the user said yes. */
+    val usageStats = com.bamnat.app.diag.UsageStats(context.applicationContext)
+    val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository, listOf(usageStats))
     val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry) { ringSettings() }
     /** How alarms ring now; [PROV-06][PROV-07] the mission and the wake check only with 프로. */
     fun ringSettings(): com.bamnat.app.alarm.BootAlarms.RingSettings =
@@ -168,7 +170,8 @@ class AppContainer(context: Context) {
     /** [COMM-00] Company settings as a file for coworkers. */
     val companyShare by lazy { com.bamnat.app.data.CompanyShare(scheduleRepository, payStore, settingsRepository) }
     /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
-    var companyApi: com.bamnat.app.company.CompanyApi = com.bamnat.app.company.CompanyClient()
+    var companyApi: com.bamnat.app.company.CompanyApi = com.bamnat.app.company.CompanyClient(
+        hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() })
     val companyStore by lazy { com.bamnat.app.company.CompanyStore(appContext) }
     /** [DAILY-16] The last region's 광장 시세, for the pay screen's comparison on the phone. */
     val rateHints by lazy { com.bamnat.app.company.RateHintStore(appContext) }
@@ -233,6 +236,8 @@ class AppContainer(context: Context) {
         com.bamnat.app.remote.HttpRemoteFetcher(BuildConfig.REMOTE_BASE_URL),
         BuildConfig.VERSION_CODE,
     ).also { runCatching { it.applySaved() } }
+    /** [SRV-04] The notices the user closed. */
+    val closedNotices by lazy { com.bamnat.app.ui.calendar.ClosedNotices(appContext) }
     /** [MON-02] Everything on this phone that can give it 프로. */
     val proStore = com.bamnat.app.tier.ProStore(appContext)
     /** [MON-02] 프로 on the company server; screenshots and tests put a fake in its place. */
@@ -249,7 +254,8 @@ class AppContainer(context: Context) {
     private var billingSet: com.bamnat.app.billing.Billing? = null
     private val playBilling by lazy {
         com.bamnat.app.billing.PlayBilling(appContext, proStore, api = { tierApi },
-            device = { companyStore.device }, scope = appScope, log = { runCatching { telemetry.event("billing", it) } })
+            device = { companyStore.device }, scope = appScope, log = { runCatching { telemetry.event("billing", it) } },
+            onBought = { trial -> telemetry.event(if (trial) com.bamnat.core.stats.UsageEvent.TRIAL_START.key else com.bamnat.core.stats.UsageEvent.SUBSCRIBE.key) })
     }
     /** [MON-07] Google's consent form and the ads SDK. */
     val ads = com.bamnat.app.ads.Ads(appScope)
@@ -261,10 +267,18 @@ class AppContainer(context: Context) {
     fun syncPro(force: Boolean = false) = appScope.launch {
         runCatching { remoteConfig.refresh(tierApi, force = force) }
         runCatching { remoteFiles.refresh() }
+        // [STAT-01] Yesterday's counts, once a day, only with the user's yes and the developer's switch on.
+        runCatching {
+            usageStats.sendIfDue(settingsRepository.current.shareUsageStats && !remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.USAGE_STATS))
+        }
         runCatching { syncPasses(force) }
         // Play is asked only once paying is possible, or for a subscription this phone already knew.
         if (remoteConfig.current.billingLive || proStore.current.sub != null) runCatching { billing.refresh() }
         featureGate.refresh()
+        // [STAT-04] A day with a paid subscription counts toward the G2 gate (구독 사용자 비율).
+        if (featureGate.state.value.access.reason == com.bamnat.core.tier.ProReason.SUBSCRIPTION) {
+            telemetry.event(com.bamnat.core.stats.UsageEvent.PRO_SUB.key)
+        }
     }
 
     /** [MON-08] Only a phone that sent a report or a question, holds passes or brought a code asks the server. */
@@ -401,6 +415,20 @@ class AppContainer(context: Context) {
             val on = settingsRepository.settings.map { it.leaveNotice }.distinctUntilChanged()
             combine(entered, on) { a, b -> a to b }
                 .collect { LeaveReminder.reschedule(appContext, payStore.profile.value, settingsRepository.current) }
+        }
+        // [COMM-10] 광장 소식 runs while it is on and this phone took part in the plaza.
+        keep("plaza news") {
+            combine(settingsRepository.settings.map { it.plazaNews to it.plazaRulesAgreed }, companyStore.sent, companyStore.applied) { a, _, _ -> a }
+                .distinctUntilChanged()
+                .collect {
+                    if (settingsRepository.current.plazaNews && com.bamnat.app.company.PlazaNewsJob.takesPart(this@AppContainer)) {
+                        com.bamnat.app.company.PlazaNewsJob.schedule(appContext)
+                    } else com.bamnat.app.company.PlazaNewsJob.cancel(appContext)
+                }
+        }
+        // [STAT-01] Turning 사용 통계 보내기 off forgets what was waiting to go.
+        keep("usage stats") {
+            settingsRepository.settings.map { it.shareUsageStats }.distinctUntilChanged().collect { on -> if (!on) usageStats.clear() }
         }
         // [MON-06] The trial's notice follows the subscription and the user's answer.
         keep("trialnotice") {

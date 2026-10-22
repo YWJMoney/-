@@ -6,7 +6,7 @@ import worker from "../src/index.js";
 import { server, report, from, signIn, ORIGIN } from "./helpers.mjs";
 
 const APP = { "x-admin": "1", origin: ORIGIN };
-const REVIEWER = { review: "edit", inquiries: "none", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "edit", takedown: "none", audit: "none" };
+const REVIEWER = { review: "edit", inquiries: "none", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "edit", takedown: "none", ops: "none", metrics: "none", shares: "none", audit: "none" };
 const PASSWORD = "minji-review-2026";
 
 const token = (link) => link.split("#")[1];

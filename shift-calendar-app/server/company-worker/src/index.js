@@ -28,6 +28,9 @@
 // POST   /api/admin-link          a six-digit code from the developer app ties this phone to that admin
 // POST   /api/purchases           a Play purchase token, checked with Play when PLAY_SERVICE_ACCOUNT is set [MON-03]
 // POST   /api/consents            the user's answer before a free trial turns paid (전자상거래법 제13조 6항) [MON-06]
+// POST   /api/events              [STAT-01] counts of what consenting phones did each day, no install id
+// GET    /api/plaza/news?since=   [COMM-10] header X-Device: my rule changed, my rule or proposal adopted
+// GET    /api/inquiries/:id/photos/:n  [SRV-06] header X-Device: a photo sent with one's own question
 //
 // A report carries no pay amounts, names or contacts; one that looks like it does is refused, not
 // cleaned. No IP address is stored: limits and "the same network within an hour" use hashes salted
@@ -113,6 +116,10 @@ const AREAS = {
   community: "토론",
   // [PLZ-06] Taking an adopted rule down (내리기) is its own switch: only an admin given it, or the owner.
   takedown: "광장 규칙 내리기",
+  // [SRV-04][ADMIN-14] 공지, 기능 스위치 and 이달 할 일; [ADMIN-13] the gate numbers; [SRV-05] reported share links.
+  ops: "운영(공지·기능 스위치·이달 할 일)",
+  metrics: "지표",
+  shares: "공유 링크 신고",
   audit: "활동 기록",
 };
 const LEVELS = ["none", "view", "edit"];
@@ -126,10 +133,10 @@ const TOGGLES = ["devStatus", "takedown"];
  */
 const SINCE = { dev: () => "edit" };
 const PRESETS = {
-  manager: { name: "운영 관리자", perms: { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit", takedown: "edit", audit: "view" } },
-  reviewer: { name: "검토 담당", perms: { review: "edit", inquiries: "none", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "edit", takedown: "none", audit: "none" } },
-  support: { name: "문의 담당", perms: { review: "view", inquiries: "edit", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "view", takedown: "none", audit: "none" } },
-  viewer: { name: "보기 전용", perms: { review: "view", inquiries: "view", dev: "view", devStatus: "none", companies: "view", rewards: "view", settings: "view", community: "view", takedown: "none", audit: "view" } },
+  manager: { name: "운영 관리자", perms: { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit", takedown: "edit", ops: "edit", metrics: "view", shares: "edit", audit: "view" } },
+  reviewer: { name: "검토 담당", perms: { review: "edit", inquiries: "none", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "edit", takedown: "none", ops: "none", metrics: "none", shares: "edit", audit: "none" } },
+  support: { name: "문의 담당", perms: { review: "view", inquiries: "edit", dev: "edit", devStatus: "none", companies: "view", rewards: "none", settings: "none", community: "view", takedown: "none", ops: "view", metrics: "none", shares: "view", audit: "none" } },
+  viewer: { name: "보기 전용", perms: { review: "view", inquiries: "view", dev: "view", devStatus: "none", companies: "view", rewards: "view", settings: "view", community: "view", takedown: "none", ops: "view", metrics: "view", shares: "view", audit: "view" } },
 };
 const OWNER = { id: "owner", name: "최고 관리자", email: "", owner: true, perms: Object.fromEntries(Object.keys(AREAS).map((a) => [a, VIEW_ONLY.includes(a) ? "view" : "edit"])) };
 
@@ -154,7 +161,7 @@ export default {
 /**
  * Deletes what the server only keeps for a while: network hashes after two hours, spent limits, sign-ins,
  * invites and codes, questions with nothing new for 180 days, hidden posts after 90 days, ended 쓰기 막기
- * and the admin log after a year.
+ * and the admin log after a year, usage totals after 400 days and a closed question's photos after 90.
  */
 export async function prune(env, now) {
   await env.DB.batch([
@@ -177,6 +184,12 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM subs WHERE expiry IS NOT NULL AND expiry < ?", now - MONEY.subKeepMs),
     // [MON-06][MON-11] Consent answers are the record of a contract: kept 5 years (전자상거래법 시행령 제6조), then gone.
     stmt(env, "DELETE FROM consents WHERE at < ?", now - MONEY.consentKeepMs),
+    // [STAT-01] Day totals after 400 days (a year and its month before, to compare); [SRV-06] a closed
+    // question's photos 90 days after it closed, its words stay until the question goes.
+    stmt(env, "DELETE FROM usage_days WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)),
+    stmt(env, "DELETE FROM usage_events WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)),
+    stmt(env, "DELETE FROM inquiry_photos WHERE inquiry_id IN (SELECT id FROM inquiries WHERE status = 'closed' AND updated_at < ?)",
+      now - PHOTO.keepAfterCloseMs),
   ]);
 }
 
@@ -187,7 +200,7 @@ export async function prune(env, now) {
 function dropInquiries(env, where, ...params) {
   const of = `inquiry_id IN (SELECT id FROM inquiries WHERE ${where})`;
   return [
-    ...["inquiry_messages", "inquiry_marks", "inquiry_notes", "dev_links"].map((t) => stmt(env, `DELETE FROM ${t} WHERE ${of}`, ...params)),
+    ...["inquiry_messages", "inquiry_marks", "inquiry_notes", "dev_links", "inquiry_photos"].map((t) => stmt(env, `DELETE FROM ${t} WHERE ${of}`, ...params)),
     stmt(env, `DELETE FROM inquiries WHERE ${where}`, ...params),
   ];
 }
@@ -237,6 +250,8 @@ async function route(request, env) {
   if (path === "/api/activity" && method === "GET") return activity(request, env);
   if (path === "/api/inquiries" || path.startsWith("/api/inquiries/")) return inquiries(request, env, path);
   if (path === "/api/config" && method === "GET") return json(await config(env));
+  if (path === "/api/events" && method === "POST") return usage(request, env);
+  if (path === "/api/plaza/news" && method === "GET") return plazaNews(request, env, url);
   if (path.startsWith("/api/passes") || path === "/api/admin-link" || path === "/api/purchases" || path === "/api/consents") {
     return money(request, env, path);
   }
@@ -366,6 +381,15 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS rate_votes (rate_id TEXT NOT NULL, device TEXT NOT NULL, ok INTEGER NOT NULL, cluster TEXT NOT NULL,
     net TEXT, at INTEGER NOT NULL, PRIMARY KEY (rate_id, device))`,
   "CREATE INDEX IF NOT EXISTS rate_votes_device ON rate_votes (device)",
+  // [STAT-01] What consenting phones sent, added up per day and app version: how many phones sent that
+  // day, and per event how many of them did it (phones), how often (total) and how many did it within
+  // the last 28 days (recent). No install id, address or time of day: nothing ties a row to a phone.
+  "CREATE TABLE IF NOT EXISTS usage_days (day TEXT NOT NULL, app TEXT NOT NULL, phones INTEGER NOT NULL, PRIMARY KEY (day, app))",
+  `CREATE TABLE IF NOT EXISTS usage_events (day TEXT NOT NULL, app TEXT NOT NULL, event TEXT NOT NULL, phones INTEGER NOT NULL,
+    total INTEGER NOT NULL, recent INTEGER NOT NULL, PRIMARY KEY (day, app, event))`,
+  // [SRV-06] Photos sent with a question (JPEG as base64, the metadata taken out), at most two.
+  `CREATE TABLE IF NOT EXISTS inquiry_photos (inquiry_id TEXT NOT NULL, n INTEGER NOT NULL, data TEXT NOT NULL, bytes INTEGER NOT NULL,
+    at INTEGER NOT NULL, PRIMARY KEY (inquiry_id, n))`,
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -1185,6 +1209,7 @@ export function trust(s, threshold) {
 }
 
 async function report(request, env) {
+  if (await paused(env, "COMPANY_REPORT")) return json({ error: "paused" }, 503);
   const body = await readJson(request, LIMITS.reportBytes);
   const device = deviceId(body.device);
   if (!device) refuse("device", "device");
@@ -1494,7 +1519,7 @@ async function forgetMine(request, env) {
     stmt(env, "UPDATE rates SET device = ? WHERE device = ? AND status = 'adopted'", gone, dev),
     stmt(env, "DELETE FROM rates WHERE device = ?", dev),
   ]);
-  const [, reports, votes, , posts, , , , , , , asked] = await env.DB.batch([
+  const [, reports, votes, , posts, , , , , , , , asked] = await env.DB.batch([
     stmt(env, "DELETE FROM rewards WHERE device = ?", dev),
     stmt(env, "DELETE FROM reports WHERE device = ?", dev),
     stmt(env, "DELETE FROM votes WHERE device = ?", dev),
@@ -1648,6 +1673,11 @@ async function talk(request, env, companyId, grp) {
   const device = deviceId(request.headers.get("x-device"));
   const me = device ? await deviceHash(device) : null;
   const rows = await all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, rowid LIMIT 500", c.id, grp);
+  // [COMM-09] Writers this phone chose not to see, from its own list (X-Hide); the server keeps no list.
+  const key = await authorKey(env);
+  const hidden = await hiddenAuthors(key, request.headers.get("x-hide"));
+  const dropped = new Set();
+  let hiddenByYou = 0;
   const senders = new Set((await all(env, `SELECT device FROM reports WHERE company_id = ? AND grp = ? AND status IN ('pending', 'adopted')`,
     c.id, grp)).map((r) => r.device));
   const votes = new Map((await all(env, "SELECT device, ok, verified FROM votes WHERE company_id = ? AND grp = ?", c.id, grp))
@@ -1666,6 +1696,12 @@ async function talk(request, env, companyId, grp) {
     if (!numbers.has(p.device)) numbers.set(p.device, numbers.size + 1);
     const mine = p.device === me;
     if (p.status !== "shown" && !mine) continue;
+    // A hidden writer's posts go, and the replies under them with them, so no answer hangs without its question.
+    if (!mine && (hidden.has(p.device) || (p.parent && dropped.has(p.parent)))) {
+      if (hidden.has(p.device)) hiddenByYou++;
+      dropped.add(p.id);
+      continue;
+    }
     const v = votes.get(p.device);
     // [PLZ-02] A proposal shows where its setup stands: points, people, adopted.
     let proposal = null;
@@ -1682,6 +1718,9 @@ async function talk(request, env, companyId, grp) {
       body: p.body,
       at: iso(p.created_at),
       mine,
+      // [COMM-09] Who wrote it, sealed afresh for each post: the app can say 이 사람 글 안 보기 with it, but
+      // two posts' marks never match, so nobody can tie a writer's posts together from them.
+      ...(mine ? {} : { author: await authorToken(key, p.device) }),
       parent: p.parent ?? null,
       kind: p.kind ?? "talk",
       change: p.change ? JSON.parse(p.change) : null,
@@ -1696,11 +1735,13 @@ async function talk(request, env, companyId, grp) {
   const muted = me ? await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", me, Date.now()) : null;
   // [PLZ-04] An older version's talk is read only; the app points to the version in use.
   const past = !(await talkable(env, c.id, grp));
-  return json({ company: { id: c.id, name: c.name }, setup: grp, posts, ...(past ? { past: true } : {}), ...(muted ? { mutedUntil: iso(muted.until) } : {}) });
+  return json({ company: { id: c.id, name: c.name }, setup: grp, posts, ...(past ? { past: true } : {}), ...(muted ? { mutedUntil: iso(muted.until) } : {}),
+    ...(hiddenByYou ? { hiddenByYou } : {}) });
 }
 
 /** [COMM-06] A post in the talk on a rule set: no email, phone number or amount, like everything else sent here. */
 async function post(request, env) {
+  if (await paused(env, "PLAZA_WRITE")) return json({ error: "paused" }, 503);
   const body = await readJson(request, LIMITS.reportBytes + 4096);
   const device = deviceId(body.device);
   if (!device) refuse("device", "device");
@@ -2041,6 +2082,7 @@ function readRate(body, now) {
  * while it is not adopted.
  */
 async function addRate(request, env) {
+  if (await paused(env, "PLAZA_WRITE")) return json({ error: "paused" }, 503);
   const body = await readJson(request, 2048);
   const device = deviceId(body.device);
   if (!device) refuse("device", "device");
@@ -2323,13 +2365,20 @@ async function inquiries(request, env, path) {
   if (!device) return json({ error: "device", field: "device" }, 400);
   const dev = await deviceHash(device);
   if (path === "/api/inquiries" && method === "GET") {
-    const rows = await all(env, "SELECT * FROM inquiries WHERE device = ? ORDER BY updated_at DESC LIMIT 50", dev);
+    const rows = await all(env, `SELECT i.*, (SELECT COUNT(*) FROM inquiry_photos p WHERE p.inquiry_id = i.id) AS photos
+      FROM inquiries i WHERE i.device = ? ORDER BY i.updated_at DESC LIMIT 50`, dev);
     const out = [];
     for (const r of rows) out.push(await inquiryView(env, r));
     return json({ inquiries: out });
   }
   const rated = path.match(/^\/api\/inquiries\/([A-Za-z0-9]{22})\/rating$/);
   if (rated && method === "POST") return inquiryRating(request, env, rated[1], dev);
+  // [SRV-06] A photo sent with one's own question; someone else's reads as missing.
+  const photo = path.match(/^\/api\/inquiries\/([A-Za-z0-9]{22})\/photos\/([12])$/);
+  if (photo && method === "GET") {
+    const owner = await one(env, "SELECT device FROM inquiries WHERE id = ?", photo[1]);
+    return owner && owner.device === dev ? photoFile(env, photo[1], Number(photo[2])) : json({ error: "not_found" }, 404);
+  }
   const m = path.match(/^\/api\/inquiries\/([A-Za-z0-9]{22})(\/messages)?$/);
   if (!m) return json({ error: "not_found" }, 404);
   const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", m[1]);
@@ -2370,7 +2419,8 @@ async function inquiryRating(request, env, id, dev) {
 
 /** A new question: what the user typed, and what they agreed to send with it. */
 async function ask(request, env) {
-  const body = await readJson(request, INQUIRY.bytes);
+  // [SRV-06] Room for two photos as base64 next to the words.
+  const body = await readJson(request, INQUIRY.bytes + PHOTO.max * Math.ceil((PHOTO.bytes * 4) / 3) + 1024);
   if (body.v !== 1) refuse("version", "v");
   const device = deviceId(body.device);
   if (!device) refuse("device", "device");
@@ -2384,8 +2434,12 @@ async function ask(request, env) {
       !(await allow(env, `inquiry|${net.day}`, INQUIRY.perNetworkDay, DAY, now))) {
     return json({ error: "rate_limited" }, 429);
   }
+  const photos = await readPhotos(env, body.photos);
   const id = randomId(22);
   await env.DB.batch([
+    // [SRV-06] Photos stay with the developer even on a public question.
+    ...photos.list.map((data, i) => stmt(env, "INSERT INTO inquiry_photos (inquiry_id, n, data, bytes, at) VALUES (?, ?, ?, ?, ?)",
+      id, i + 1, data.base64, data.bytes, now)),
     // Only an app that says so on its form sends public: true; a question from an older app stays the developer's.
     stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at) VALUES (?, ?, ?, ?, 'open', ?, ?, ?)",
       id, dev, body.kind, JSON.stringify(info), body.public === true && !PRIVATE_KINDS.includes(body.kind) ? 1 : 0, now, now),
@@ -2394,7 +2448,9 @@ async function ask(request, env) {
     ...dropInquiries(env, "updated_at < ?", now - INQUIRY.keepMs),
     stmt(env, "DELETE FROM counters WHERE expires < ?", now),
   ]);
-  return json(await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id)), 201);
+  const view = await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id));
+  // Photos the server could not take this time (switched off or full): the question went without them.
+  return json({ ...view, ...(photos.skipped ? { photosSkipped: photos.skipped } : {}) }, 201);
 }
 
 /** What the user typed: up to 2000 characters, without an email, phone number or amount. */
@@ -2443,6 +2499,8 @@ async function inquiryView(env, row, admin = false) {
     ...(row.hidden ? { hidden: { code: row.hidden, text: INQUIRY_HIDE[row.hidden] ?? "" } } : {}),
     rating: row.rating ?? 0,
     progress: await inquiryProgress(env, row, messages),
+    // [SRV-06] How many photos came with it; each one is read on its own address.
+    photos: row.photos ?? (await one(env, "SELECT COUNT(*) AS n FROM inquiry_photos WHERE inquiry_id = ?", row.id)).n,
   };
   if (!admin) return view;
   const info = JSON.parse(row.info);
@@ -2604,6 +2662,9 @@ async function inquiryMark(request, env, id, kind) {
 async function adminInquiries(request, env, url, path, now) {
   const method = request.method;
   if (path === "/inquiries" && method === "GET") return json(await inquiryList(env, url.searchParams, env.actor?.id ?? ""));
+  // [SRV-06] A photo sent with a question, for an admin who may read questions.
+  const photo = path.match(/^\/inquiries\/([A-Za-z0-9]{22})\/photos\/([12])$/);
+  if (photo && method === "GET") return photoFile(env, photo[1], Number(photo[2]));
   const m = path.match(/^\/inquiries\/([A-Za-z0-9]{22})(\/reply|\/status|\/visibility|\/assign|\/notes)?$/);
   if (!m) return json({ error: "not_found" }, 404);
   const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", m[1]);
@@ -3088,7 +3149,9 @@ const cookie = (value, maxAge) => `${COOKIE}=${value}; Path=/; Secure; HttpOnly;
 function health(env) {
   const why = { password: secretIssue(env, "ADMIN_PASSWORD", 10), salt: secretIssue(env, "RATE_SALT", 1) };
   // [MON-03] PLAY_SERVICE_ACCOUNT is optional: without it purchases are not checked with Play.
-  return { database: Boolean(env.DB), password: why.password === null, salt: why.salt === null, mail: mailReady(env), play: playReady(env) !== null, why };
+  // [SRV-05] SHARE_BASE_URL and SHARE_ADMIN_TOKEN are optional: without them 공유 링크 신고 says how to connect.
+  return { database: Boolean(env.DB), password: why.password === null, salt: why.salt === null, mail: mailReady(env), play: playReady(env) !== null,
+    share: shareAdmin(env) !== null, why };
 }
 
 /**
@@ -3107,7 +3170,7 @@ function secretIssue(env, name, least) {
  * "owner" for managing admins and anything not listed, so a new route stays the owner's until it is.
  */
 function areaFor(path) {
-  if (path === "/overview" || path === "/logout" || path.startsWith("/me")) return null;
+  if (path === "/overview" || path === "/logout" || path === "/me" || path.startsWith("/me/")) return null;
   if (path === "/queue" || path.startsWith("/groups/") || path.startsWith("/asks/")) return "review";
   if (path.startsWith("/inquiries") || path.startsWith("/templates")) return "inquiries";
   if (path === "/dev" || path.startsWith("/dev/")) return "dev";
@@ -3115,6 +3178,9 @@ function areaFor(path) {
   if (path.startsWith("/rewards")) return "rewards";
   if (path === "/settings") return "settings";
   if (path.startsWith("/posts") || path.startsWith("/rates")) return "community";
+  if (path.startsWith("/notices") || path === "/switches" || path === "/ops") return "ops";
+  if (path === "/metrics") return "metrics";
+  if (path.startsWith("/shares")) return "shares";
   if (path === "/audit") return "audit";
   return "owner";
 }
@@ -3200,6 +3266,18 @@ async function admin(request, env, url) {
   if (path === "/rates" && method === "GET") return json(await rateList(env, url));
   m = path.match(/^\/rates\/([A-Za-z0-9]{22})$/);
   if (m && method === "POST") return setRate(request, env, actor, m[1], now);
+  // [SRV-04] 공지 and 기능 스위치, [ADMIN-14] 이달 할 일, [ADMIN-13] 지표, [SRV-05] 공유 링크 신고.
+  if (path === "/notices" && method === "GET") return json(await noticeList(env, now));
+  if (path === "/notices" && method === "POST") return saveNotice(request, env, now);
+  m = path.match(/^\/notices\/(n[A-Za-z0-9]{9})\/remove$/);
+  if (m && method === "POST") return removeNotice(env, m[1], now);
+  if (path === "/switches" && method === "POST") return setSwitch(request, env, now);
+  if (path === "/ops" && method === "GET") return json(await opsMonth(env, url.searchParams.get("month"), now));
+  if (path === "/ops" && method === "POST") return checkOps(request, env, now);
+  if (path === "/metrics" && method === "GET") return json(await metrics(env, url, now));
+  if (path === "/shares" && method === "GET") return shareReports(env);
+  m = path.match(/^\/shares\/([A-Za-z0-9]{16,32})\/remove$/);
+  if (m && method === "POST") return removeShare(request, env, m[1], now);
   return json({ error: "not_found" }, 404);
 }
 
@@ -3606,6 +3684,8 @@ async function overview(env, actor) {
     counts.companies = "SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL";
     counts.rules = "SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0";
   }
+  // [ADMIN-14] 이달 할 일 still open on the home screen.
+  if (can(actor, "ops")) counts.opsDone = ["SELECT value FROM settings WHERE key = ?", `ops:${kstDay(Date.now()).slice(0, 7)}`];
   if (actor.owner) {
     counts.waiting = "SELECT COUNT(*) AS n FROM admins WHERE status = 'pending'";
     // [MON-09] Admins' phones waiting for the owner's 승인.
@@ -3617,11 +3697,12 @@ async function overview(env, actor) {
   const out = { me: me(actor), settings: readSettings(got.settings), reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS,
     flagReasons: FLAGS, salt: secretIssue(env, "RATE_SALT", 1) === null };
   for (const k of keys) {
-    if (k === "settings" || k === "waiting" || k === "phones" || k === "live") continue;
+    if (k === "settings" || k === "waiting" || k === "phones" || k === "live" || k === "opsDone") continue;
     out[k] = got[k][0].n;
   }
   if (actor.owner) out.admins = { waiting: got.waiting[0].n, phones: got.phones[0].n };
   out.billingLive = got.live[0]?.value === "1";
+  if (got.opsDone) out.opsLeft = opsItems(kstDay(Date.now()).slice(0, 7), got.opsDone[0]?.value).filter((i) => !i.done).length;
   return out;
 }
 
@@ -4218,10 +4299,13 @@ async function launchState(env) {
 
 /** [MON-02] What every app reads once a day: the 정식 출시 switch and what goes with it. No device, nothing kept. */
 async function config(env) {
-  const s = await launchState(env);
+  const [s, ops] = await Promise.all([launchState(env), opsState(env)]);
+  const now = Date.now();
   return {
     v: 1, billingLive: s.billingLive, launchedAt: s.launchedAt ? iso(s.launchedAt) : null, thanksMonths: s.thanksMonths,
     freeFeatures: s.freeFeatures, adQuietDays: MONEY.adQuietDays, trialAskDays: MONEY.trialAskDays,
+    // [SRV-04] 공지 running now (the app picks the ones for its version) and what is switched off.
+    notices: ops.notices.filter((n) => n.from <= now && now < n.until).map(noticeView), off: ops.off,
   };
 }
 
@@ -4590,6 +4674,489 @@ async function deferFor(env, dev, months, now) {
   const next = Date.parse(r.itemExpiryTimeDetails?.[0]?.expiryTime ?? "") || addMonths(fresh.expiry, months);
   await run(env, "UPDATE subs SET expiry = ?, checked_at = ? WHERE hash = ?", next, now, sub.hash);
   return next;
+}
+
+// ---- running the service, 1.22 [SRV-04][SRV-05][SRV-06][STAT-01][COMM-09][COMM-10][ADMIN-13][ADMIN-14] ----
+
+/** A day as people in Korea count it (KST, no daylight saving), "2026-10-22". */
+const kstDay = (ms) => new Date(ms + 9 * HOUR).toISOString().slice(0, 10);
+
+/**
+ * [SRV-04] What the developer app can switch off for every phone at once. The app hides the way in and
+ * says it is resting; the server stops its own part too, so an older app cannot go around it.
+ */
+const SWITCHES = {
+  PLAZA_WRITE: "광장 글쓰기(글·답글·제안·임금표)",
+  COMPANY_REPORT: "회사 규칙 보내기",
+  INQUIRY_PHOTOS: "문의 사진 받기",
+  SHARE_CREATE: "근무표 링크 새로 만들기",
+  USAGE_STATS: "사용 통계 받기",
+  PLAZA_NEWS: "광장 소식 알림",
+};
+
+/** [SRV-04] A notice the app shows as one line over the calendar; tapping it opens the rest. */
+const NOTICE = { max: 10, title: 40, body: 500, levels: ["info", "important"], longestDays: 90 };
+
+async function opsState(env) {
+  const rows = await all(env, "SELECT key, value FROM settings WHERE key IN ('notices', 'switches_off')");
+  const read = (k) => {
+    try {
+      const v = JSON.parse(rows.find((r) => r.key === k)?.value ?? "[]");
+      return Array.isArray(v) ? v : [];
+    } catch {
+      return [];
+    }
+  };
+  return {
+    notices: read("notices").filter((n) => n && typeof n.id === "string" && Number.isFinite(n.from) && Number.isFinite(n.until)),
+    off: read("switches_off").filter((s) => Object.hasOwn(SWITCHES, s)),
+  };
+}
+
+/** [SRV-04] Whether the developer switched [name] off. */
+const paused = async (env, name) => (await opsState(env)).off.includes(name);
+
+const noticeView = (n) => ({ id: n.id, title: n.title, body: n.body, level: n.level, from: iso(n.from), until: iso(n.until),
+  minApp: n.minApp ?? null, maxApp: n.maxApp ?? null });
+
+/** A notice as the developer app sends it; the app version range is the app's versionCode, either end open. */
+function readNotice(body, now) {
+  const title = plainText(body.title, NOTICE.title, "title", true);
+  const text = plainText(body.body, NOTICE.body, "body", true);
+  const level = NOTICE.levels.includes(body.level) ? body.level : refuse("level", "level");
+  const from = Date.parse(body.from ?? "");
+  const until = Date.parse(body.until ?? "");
+  if (!Number.isFinite(from)) refuse("from", "from");
+  if (!Number.isFinite(until) || until <= from || until < now || until - from > NOTICE.longestDays * DAY) refuse("until", "until");
+  const version = (v, field) => {
+    if (v === undefined || v === null || v === "") return null;
+    return Number.isInteger(v) && v > 0 && v < 1_000_000 ? v : refuse("app", field);
+  };
+  const minApp = version(body.minApp, "minApp");
+  const maxApp = version(body.maxApp, "maxApp");
+  if (minApp !== null && maxApp !== null && maxApp < minApp) refuse("app", "maxApp");
+  return { title, body: text, level, from, until, minApp, maxApp };
+}
+
+async function noticeList(env, now) {
+  const s = await opsState(env);
+  return {
+    notices: s.notices.sort((a, b) => b.from - a.from).map((n) => ({ ...noticeView(n), state: now < n.from ? "later" : now < n.until ? "on" : "ended" })),
+    switches: Object.entries(SWITCHES).map(([key, label]) => ({ key, label, off: s.off.includes(key) })),
+  };
+}
+
+/** Adds a notice, or changes one with the same id. Ended ones are dropped when the list is full. */
+async function saveNotice(request, env, now) {
+  const body = await readJson(request, 4096);
+  const n = readNotice(body, now);
+  const s = await opsState(env);
+  let list = s.notices.filter((x) => x.until > now - 30 * DAY);
+  const id = typeof body.id === "string" && /^n[A-Za-z0-9]{9}$/.test(body.id) ? body.id : null;
+  if (id && !list.some((x) => x.id === id)) return json({ error: "not_found" }, 404);
+  if (id) list = list.map((x) => (x.id === id ? { id, ...n } : x));
+  else {
+    if (list.length >= NOTICE.max) list = list.filter((x) => x.until > now);
+    if (list.length >= NOTICE.max) refuse("too_many", "notices");
+    list.push({ id: `n${randomId(9)}`, ...n });
+  }
+  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('notices', ?)", JSON.stringify(list));
+  await audit(env, now, id ? "notice_edit" : "notice_add", n.title);
+  return json(await noticeList(env, now));
+}
+
+async function removeNotice(env, id, now) {
+  const s = await opsState(env);
+  const gone = s.notices.find((x) => x.id === id);
+  if (!gone) return json({ error: "not_found" }, 404);
+  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('notices', ?)", JSON.stringify(s.notices.filter((x) => x.id !== id)));
+  await audit(env, now, "notice_remove", gone.title);
+  return json(await noticeList(env, now));
+}
+
+async function setSwitch(request, env, now) {
+  const body = await readJson(request, 1024);
+  if (!Object.hasOwn(SWITCHES, body.key)) refuse("key", "key");
+  if (typeof body.off !== "boolean") refuse("off", "off");
+  const s = await opsState(env);
+  const off = body.off ? [...new Set([...s.off, body.key])] : s.off.filter((k) => k !== body.key);
+  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('switches_off', ?)", JSON.stringify(off));
+  await audit(env, now, body.off ? "switch_off" : "switch_on", body.key, SWITCHES[body.key]);
+  return json(await noticeList(env, now));
+}
+
+/**
+ * [ADMIN-14] The year's chores, month by month, the same list as docs/ops-calendar.md (a test keeps the
+ * two together). Shown on the developer app's home screen in place of mail (결정 D1: no mail key).
+ */
+const OPS_CALENDAR = [
+  [1, "rates-new-year", "새해 최저임금·4대 보험 요율이 앱 계산과 맞는지 확인", "최저임금법 제10조 제2항, 국민건강보험법 시행령 제44조, 노인장기요양보험법 시행령 제4조"],
+  [1, "wages-jan", "1월 공표 시중노임단가를 remote/v1/wages.json에 넣기(판 올리고 서명)", "대한건설협회 시중노임단가(1월·9월 공표)"],
+  [1, "holidays-this-year", "올해 공휴일·대체공휴일이 달력과 맞는지 확인", "관공서의 공휴일에 관한 규정 제2조·제3조"],
+  [3, "tax-table", "근로소득 간이세액표가 바뀌었으면 remote/v1/taxtable.json 고치기(판 올리고 서명)", "소득세법 시행령 별표 2(2026년 개정은 3월 1일 이후 원천징수분부터)"],
+  [3, "privacy-review", "처리방침·데이터 보안 답안을 지금 서버와 대조", "개인정보 보호법 제30조, docs/server-data.md"],
+  [3, "incident-drill", "유출 대응 절차서를 한 번 따라 해 보기(연락 순서·공지 문구)", "개인정보 보호법 제34조, docs/incident-response.md"],
+  [4, "android-preview", "새 Android 미리보기에서 알람·알림 점검", "Play 대상 API 수준 요건(매년 8월 31일)"],
+  [5, "store-listing", "스토어 등록정보·화면 사진이 지금 앱과 맞는지 확인", "Google Play 메타데이터 정책"],
+  [6, "pension-prepare", "7월부터 쓰는 국민연금 기준소득월액 상하한 준비", "국민연금법 시행령 제5조"],
+  [7, "pension-apply", "국민연금 기준소득월액 상하한을 remote/v1/rates.json에 넣어 7월 급여부터 맞추기(판 올리고 서명)", "국민연금법 시행령 제5조"],
+  [8, "minwage-next", "다음 해 최저임금 결정(8월 5일까지)을 앱에 넣을 준비", "최저임금법 제8조 제1항"],
+  [8, "target-api", "대상 API 수준 마감(8월 31일) 전에 업데이트 출시", "Google Play 대상 API 수준 요건"],
+  [9, "wages-sep", "9월 공표 시중노임단가를 remote/v1/wages.json에 넣기(판 올리고 서명)", "대한건설협회 시중노임단가(1월·9월 공표)"],
+  [9, "holidays-next", "다음 해 공휴일·대체공휴일·선거일 확인", "관공서의 공휴일에 관한 규정"],
+  [10, "health-next", "다음 해 건강보험료율이 결정되면 remote/v1/rates.json에 넣기(결정 시기는 해마다 확인)", "국민건강보험법 시행령 제44조"],
+  [11, "ltc-next", "다음 해 장기요양보험료율이 결정되면 remote/v1/rates.json에 넣기(2027년 요율은 결정되는 대로)", "노인장기요양보험법 시행령 제4조"],
+  [12, "release-new-year", "새해 요율·최저임금·공휴일을 넣은 업데이트를 1월 1일 전에 출시", "위 항목들"],
+  [12, "server-data", "서버 최소 데이터 점검(지울 것은 지우기)", "개인정보 보호법 제21조, docs/server-data.md"],
+].map(([month, key, text, source]) => ({ month, key, text, source }));
+
+/** One month's chores with which of them are ticked ([done] is the stored list of keys). */
+function opsItems(month, done) {
+  let ticked = [];
+  try {
+    ticked = JSON.parse(done ?? "[]");
+  } catch {
+    ticked = [];
+  }
+  const m = Number(month.slice(5, 7));
+  return OPS_CALENDAR.filter((i) => i.month === m).map((i) => ({ key: i.key, text: i.text, source: i.source, done: ticked.includes(i.key) }));
+}
+
+const MONTH = /^20\d\d-(0[1-9]|1[0-2])$/;
+
+async function opsMonth(env, month, now) {
+  const m = MONTH.test(month ?? "") ? month : kstDay(now).slice(0, 7);
+  const row = await one(env, "SELECT value FROM settings WHERE key = ?", `ops:${m}`);
+  return { month: m, items: opsItems(m, row?.value) };
+}
+
+async function checkOps(request, env, now) {
+  const body = await readJson(request, 1024);
+  if (!MONTH.test(body.month ?? "")) refuse("month", "month");
+  const item = OPS_CALENDAR.find((i) => i.key === body.key && i.month === Number(body.month.slice(5, 7)));
+  if (!item) refuse("key", "key");
+  if (typeof body.done !== "boolean") refuse("done", "done");
+  const row = await one(env, "SELECT value FROM settings WHERE key = ?", `ops:${body.month}`);
+  const was = opsItems(body.month, row?.value).filter((i) => i.done).map((i) => i.key);
+  const next = body.done ? [...new Set([...was, item.key])] : was.filter((k) => k !== item.key);
+  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", `ops:${body.month}`, JSON.stringify(next));
+  await audit(env, now, body.done ? "ops_done" : "ops_undo", body.month, item.text);
+  return json(await opsMonth(env, body.month, now));
+}
+
+// [STAT-01] Usage statistics (결정 D2·D42): only phones whose user said yes send, once a day, the days
+// before today as event names and counts. The app keeps the same list (core UsageEvents.kt); a name the
+// server does not know is skipped, so a newer app still sends the rest.
+
+const USAGE = { days: 7, keepDays: 400, count: 1000, bundlesPerNetworkDay: 6, bytes: 8 * 1024 };
+
+/** Event names and what the dashboard calls them. */
+export const EVENTS = {
+  open: "앱 열기",
+  pay_view: "급여 화면",
+  pay_setup: "급여 설정 마침",
+  pay_report: "급여 리포트",
+  paywall_view: "프로 화면 보기",
+  trial_start: "무료 체험 시작",
+  subscribe: "구독 시작",
+  pro_sub: "프로 구독 중",
+  share_made: "근무표 링크 만들기",
+  share_received: "받은 근무표 넣기",
+  plaza_post: "광장 글쓰기",
+  plaza_apply: "광장 규칙 적용",
+  company_report: "회사 규칙 보내기",
+  inquiry: "문의 보내기",
+  backup: "백업 만들기",
+  alarm_rang: "근무 알람 울림",
+  ics_export: "캘린더로 내보내기",
+};
+
+async function usage(request, env) {
+  // Switched off, the server takes nothing and the app does not try again until tomorrow.
+  if (await paused(env, "USAGE_STATS")) return new Response(null, { status: 204 });
+  const body = await readJson(request, USAGE.bytes);
+  if (body.v !== 1) refuse("version", "v");
+  if (typeof body.app !== "string" || !/^\d{1,2}\.\d{1,3}\.\d{1,3}$/.test(body.app)) refuse("app", "app");
+  if (!Array.isArray(body.days) || body.days.length < 1 || body.days.length > USAGE.days) refuse("days", "days");
+  const now = Date.now();
+  const net = await network(request, env, now);
+  if (!(await allow(env, `events|${net.day}`, USAGE.bundlesPerNetworkDay, DAY, now))) return json({ error: "rate_limited" }, 429);
+  // A phone's day can be a day off Korea's; one ahead of tomorrow or older than the week is not a day it kept.
+  const latest = kstDay(now + DAY);
+  const oldest = kstDay(now - (USAGE.days + 1) * DAY);
+  const days = new Set();
+  const rows = [];
+  for (const d of body.days) {
+    if (!d || typeof d !== "object" || typeof d.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(d.day) ||
+        d.day > latest || d.day < oldest || days.has(d.day)) refuse("day", "day");
+    days.add(d.day);
+    if (!d.events || typeof d.events !== "object" || Array.isArray(d.events)) refuse("events", "events");
+    const recent = d.recent ?? [];
+    if (!Array.isArray(recent) || recent.length > Object.keys(EVENTS).length * 2) refuse("recent", "recent");
+    const counts = new Map();
+    for (const [name, n] of Object.entries(d.events)) {
+      if (!Number.isInteger(n) || n < 1 || n > USAGE.count) refuse("count", "events");
+      if (Object.hasOwn(EVENTS, name)) counts.set(name, n);
+    }
+    const lately = new Set(recent.filter((e) => typeof e === "string" && Object.hasOwn(EVENTS, e)));
+    for (const e of counts.keys()) lately.add(e);
+    for (const e of lately) rows.push([d.day, e, counts.has(e) ? 1 : 0, counts.get(e) ?? 0, 1]);
+  }
+  const app = body.app;
+  const stmts = [...days].map((day) => stmt(env, `INSERT INTO usage_days (day, app, phones) VALUES (?, ?, 1)
+    ON CONFLICT (day, app) DO UPDATE SET phones = phones + 1`, day, app));
+  // D1 binds at most 100 values a query: 16 rows of six.
+  for (let i = 0; i < rows.length; i += 16) {
+    const part = rows.slice(i, i + 16);
+    stmts.push(stmt(env, `INSERT INTO usage_events (day, app, event, phones, total, recent) VALUES ${part.map(() => "(?, ?, ?, ?, ?, ?)").join(", ")}
+      ON CONFLICT (day, app, event) DO UPDATE SET phones = phones + excluded.phones, total = total + excluded.total, recent = recent + excluded.recent`,
+    ...part.flatMap(([day, e, phones, total, recent]) => [day, app, e, phones, total, recent])));
+  }
+  await env.DB.batch(stmts);
+  return new Response(null, { status: 204 });
+}
+
+/**
+ * [ADMIN-13] The gate numbers from what consenting phones sent over the last [days] full days. A share
+ * is phone-days that did it within 28 days over all phone-days: about how many of the phones in use
+ * do it, without knowing which phones they are. Under 30 phones a day it says 데이터 부족.
+ */
+async function metrics(env, url, now) {
+  const days = Math.min(90, Math.max(7, Number.parseInt(url.searchParams.get("days") ?? "28", 10) || 28));
+  const to = kstDay(now - DAY);
+  const from = kstDay(now - days * DAY);
+  const [dayRows, eventRows, subs] = (await env.DB.batch([
+    stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day ORDER BY day", from, to),
+    stmt(env, `SELECT event, SUM(phones) AS phones, SUM(total) AS total, SUM(recent) AS recent FROM usage_events
+      WHERE day BETWEEN ? AND ? GROUP BY event`, from, to),
+    stmt(env, `SELECT SUM(CASE WHEN trial = 1 THEN 1 ELSE 0 END) AS trials, SUM(CASE WHEN trial = 0 THEN 1 ELSE 0 END) AS paid,
+      SUM(CASE WHEN auto_renew = 0 THEN 1 ELSE 0 END) AS ending FROM subs WHERE state IN ('ACTIVE', 'GRACE') AND expiry > ?`, now),
+  ])).map((r) => r.results);
+  const phoneDays = dayRows.reduce((n, r) => n + r.phones, 0);
+  const daily = dayRows.length ? Math.round(phoneDays / dayRows.length) : 0;
+  const ev = new Map(eventRows.map((r) => [r.event, r]));
+  const share = (e) => (phoneDays ? (ev.get(e)?.recent ?? 0) / phoneDays : null);
+  const enough = daily >= 30;
+  const gate = (name, rule, e, least) => {
+    const v = share(e);
+    return { name, rule, value: v === null ? null : Math.round(v * 1000) / 10, status: !enough || v === null ? "few" : v * 100 >= least ? "pass" : "fail" };
+  };
+  const s = subs[0] ?? {};
+  return {
+    from, to, days, phoneDays, daily, enough,
+    series: dayRows.map((r) => ({ day: r.day, phones: r.phones })),
+    events: Object.entries(EVENTS).map(([event, label]) => {
+      const r = ev.get(event);
+      return { event, label, phones: r?.phones ?? 0, total: r?.total ?? 0, share: share(event) === null ? null : Math.round(share(event) * 1000) / 10 };
+    }),
+    gates: [
+      // Play's numbers come with Play Reporting access (순번 52); until then the row says where to look.
+      { gate: "G0", name: "비정상 종료", rule: "1.09% 미만(내부 0.5%)", value: null, status: "play" },
+      { gate: "G0", name: "ANR", rule: "0.47% 미만(내부 0.2%)", value: null, status: "play" },
+      { gate: "G0", name: "테스터", rule: "12명이 14일", value: null, status: "play" },
+      { gate: "G1", ...gate("급여 화면을 본 사용자", "30% 이상", "pay_view", 30) },
+      { gate: "G2", ...gate("근무표 링크를 만든 사용자", "15% 이상", "share_made", 15) },
+      { gate: "G2", ...gate("유료 구독 사용자", "2.0% 이상", "pro_sub", 2) },
+    ],
+    funnel: {
+      paywall: ev.get("paywall_view")?.phones ?? 0, trial: ev.get("trial_start")?.total ?? 0, subscribe: ev.get("subscribe")?.total ?? 0,
+      trials: s.trials ?? 0, paid: s.paid ?? 0, ending: s.ending ?? 0,
+    },
+    shares: await shareStats(env, days),
+  };
+}
+
+// [COMM-09] 이 사람 글 안 보기 without a list on the server. Each post carries its writer sealed with a key
+// only this server has (AES-GCM, a fresh nonce each time), so the marks of two posts never match and
+// reading them ties nothing together. The phone keeps the marks it chose and sends them back (X-Hide);
+// the server opens them and leaves those writers out.
+
+const HIDE = { max: 50, token: /^[A-Za-z0-9_-]{64}$/ };
+const authorKeys = new Map();
+
+async function authorKey(env) {
+  const s = await salt(env);
+  let key = authorKeys.get(s);
+  if (!key) {
+    const raw = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`author|${s}`));
+    key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+    authorKeys.set(s, key);
+  }
+  return key;
+}
+
+const unb64url = (text) => Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+
+async function authorToken(key, device) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const plain = Uint8Array.from(device.match(/../g), (h) => Number.parseInt(h, 16));
+  const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain));
+  return b64url(new Uint8Array([...iv, ...sealed]));
+}
+
+/** The writers behind the marks in [header]; a mark this server did not make is skipped. */
+async function hiddenAuthors(key, header) {
+  const out = new Set();
+  const marks = String(header ?? "").split(",").map((m) => m.trim()).filter((m) => HIDE.token.test(m)).slice(0, HIDE.max);
+  for (const m of marks) {
+    try {
+      const bytes = unb64url(m);
+      const plain = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, key, bytes.slice(12)));
+      out.add([...plain].map((b) => b.toString(16).padStart(2, "0")).join(""));
+    } catch {
+      // Sealed with another salt, or not a mark at all.
+    }
+  }
+  return out;
+}
+
+/**
+ * [COMM-10] 광장 소식 for one phone since [since]: a rule set it uses was replaced by a newer version, and
+ * what it sent (a rule set, a proposal, an 임금표 entry) was adopted. Asked once a day; nothing is kept.
+ */
+async function plazaNews(request, env, url) {
+  const dev = await installOf(request);
+  const now = Date.now();
+  if (await paused(env, "PLAZA_NEWS")) return json({ items: [], now: iso(now), paused: true });
+  const asked = Date.parse(url.searchParams.get("since") ?? "");
+  const since = Math.max(Number.isFinite(asked) ? asked : now - DAY, now - 14 * DAY);
+  const [changed, adopted, rates] = (await env.DB.batch([
+    stmt(env, `SELECT n.company_id, c.name, n.dept, n.version, n.adopted_at AS at FROM uses u
+        JOIN rules o ON o.company_id = u.company_id AND o.grp = u.grp AND o.superseded = 1
+        JOIN rules n ON n.company_id = o.company_id AND n.dept_norm = o.dept_norm AND n.superseded = 0 AND n.withdrawn = 0 AND n.adopted_at > ?
+        JOIN companies c ON c.id = n.company_id
+      WHERE u.device = ? AND NOT EXISTS (SELECT 1 FROM uses x WHERE x.device = u.device AND x.company_id = n.company_id AND x.grp = n.grp)
+      GROUP BY n.id ORDER BY n.adopted_at DESC LIMIT 10`, since, dev),
+    stmt(env, `SELECT r.company_id, c.name, r.dept, r.post_id, u.version, r.decided_at AS at FROM reports r
+        JOIN companies c ON c.id = r.company_id LEFT JOIN rules u ON u.id = r.rule_id
+      WHERE r.device = ? AND r.status = 'adopted' AND r.decided_at > ? ORDER BY r.decided_at DESC LIMIT 10`, dev, since),
+    stmt(env, "SELECT trade, region, decided_at AS at FROM rates WHERE device = ? AND status = 'adopted' AND decided_at > ? ORDER BY decided_at DESC LIMIT 10",
+      dev, since),
+  ])).map((r) => r.results);
+  const items = [
+    ...changed.map((r) => ({ kind: "changed", company: { id: r.company_id, name: r.name }, dept: r.dept, version: r.version, at: iso(r.at) })),
+    ...adopted.map((r) => ({ kind: r.post_id ? "proposal" : "adopted", company: { id: r.company_id, name: r.name }, dept: r.dept,
+      version: r.version ?? null, at: iso(r.at) })),
+    ...rates.map((r) => ({ kind: "rate", trade: r.trade, region: r.region, at: iso(r.at) })),
+  ].sort((a, b) => b.at.localeCompare(a.at));
+  return json({ items, now: iso(now) });
+}
+
+// [SRV-06] Photos with a question: what the phone made (JPEG, long side 1600px, no metadata) checked again.
+
+const PHOTO = { max: 2, bytes: 700 * 1024, totalBytes: 150 * 1024 * 1024, keepAfterCloseMs: 90 * DAY };
+
+/**
+ * A JPEG without what could say where or on what it was taken: APP1~APP15 (Exif, XMP, maker notes) and
+ * comments go, the picture stays. Null when it is not a whole JPEG.
+ */
+export function cleanJpeg(bytes) {
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  const keep = [bytes.subarray(0, 2)];
+  let i = 2;
+  while (i + 4 <= bytes.length) {
+    if (bytes[i] !== 0xff) return null;
+    const marker = bytes[i + 1];
+    if (marker === 0xff) {
+      i += 1;
+      continue;
+    }
+    if (marker === 0xda) {
+      // Start of scan: the picture itself, to the end.
+      keep.push(bytes.subarray(i));
+      const out = new Uint8Array(keep.reduce((n, p) => n + p.length, 0));
+      let at = 0;
+      for (const p of keep) {
+        out.set(p, at);
+        at += p.length;
+      }
+      return out;
+    }
+    const length = (bytes[i + 2] << 8) | bytes[i + 3];
+    if (length < 2 || i + 2 + length > bytes.length) return null;
+    if (!((marker >= 0xe1 && marker <= 0xef) || marker === 0xfe)) keep.push(bytes.subarray(i, i + 2 + length));
+    i += 2 + length;
+  }
+  return null;
+}
+
+/** The photos of a new question, or why they were left out ("paused", "full"); a bad photo is refused. */
+async function readPhotos(env, raw) {
+  if (raw === undefined || raw === null) return { list: [] };
+  if (!Array.isArray(raw) || raw.length > PHOTO.max) refuse("photos", "photos");
+  const list = raw.map((p) => {
+    if (typeof p !== "string" || !/^[A-Za-z0-9+/]+=*$/.test(p) || p.length > Math.ceil((PHOTO.bytes * 4) / 3) + 4) refuse("photo", "photos");
+    let bytes;
+    try {
+      bytes = Uint8Array.from(atob(p), (c) => c.charCodeAt(0));
+    } catch {
+      refuse("photo", "photos");
+    }
+    const clean = cleanJpeg(bytes);
+    if (!clean || clean.length > PHOTO.bytes) refuse("photo", "photos");
+    let text = "";
+    for (let i = 0; i < clean.length; i += 0x8000) text += String.fromCharCode(...clean.subarray(i, i + 0x8000));
+    return { base64: btoa(text), bytes: clean.length };
+  });
+  if (!list.length) return { list };
+  if (await paused(env, "INQUIRY_PHOTOS")) return { list: [], skipped: "paused" };
+  const used = await one(env, "SELECT COALESCE(SUM(bytes), 0) AS n FROM inquiry_photos");
+  if (used.n + list.reduce((n, p) => n + p.bytes, 0) > PHOTO.totalBytes) return { list: [], skipped: "full" };
+  return { list };
+}
+
+async function photoFile(env, id, n) {
+  const row = await one(env, "SELECT data FROM inquiry_photos WHERE inquiry_id = ? AND n = ?", id, n);
+  if (!row) return json({ error: "not_found" }, 404);
+  return new Response(Uint8Array.from(atob(row.data), (c) => c.charCodeAt(0)), {
+    headers: { "content-type": "image/jpeg", "cache-control": "private, no-store", "x-content-type-options": "nosniff",
+      "content-security-policy": "default-src 'none'" },
+  });
+}
+
+// [SRV-05][STAT-04] The share server, from here: its reported links, taking one down, its day totals.
+// Both workers hold the same secret SHARE_ADMIN_TOKEN; this one also SHARE_BASE_URL. Without them the
+// developer app says how to connect, and nothing is called.
+
+function shareAdmin(env) {
+  const base = typeof env.SHARE_BASE_URL === "string" ? env.SHARE_BASE_URL.trim().replace(/\/+$/, "") : "";
+  const token = typeof env.SHARE_ADMIN_TOKEN === "string" ? env.SHARE_ADMIN_TOKEN.trim() : "";
+  return /^https:\/\/[A-Za-z0-9.-]+$/.test(base) && token.length >= 20 ? { base, token } : null;
+}
+
+async function shareCall(env, method, path) {
+  const s = shareAdmin(env);
+  if (!s) return null;
+  const res = await fetch(`${s.base}${path}`, { method, headers: { authorization: `Bearer ${s.token}` } });
+  if (res.status === 204) return {};
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Refuse(data.error === "not_found" ? "not_found" : "share_server", "share", res.status === 404 ? 404 : 502);
+  return data;
+}
+
+async function shareReports(env) {
+  if (!shareAdmin(env)) return json({ connected: false, reports: [] });
+  const data = await shareCall(env, "GET", "/api/admin/reports");
+  const s = shareAdmin(env);
+  return json({ connected: true, reports: (data.reports ?? []).map((r) => ({ ...r, url: `${s.base}/s/${r.id}` })) });
+}
+
+async function removeShare(request, env, id, now) {
+  const body = await readJson(request, 1024);
+  const reason = plainText(body.reason ?? "운영 규칙 위반", 60, "reason", true);
+  if (!shareAdmin(env)) return json({ error: "share_server" }, 409);
+  await shareCall(env, "DELETE", `/api/admin/share/${id}`);
+  await audit(env, now, "share_remove", id, reason);
+  return shareReports(env);
+}
+
+async function shareStats(env, days) {
+  if (!shareAdmin(env)) return null;
+  try {
+    return await shareCall(env, "GET", `/api/admin/stats?days=${days}`);
+  } catch {
+    return null;
+  }
 }
 
 function json(data, status = 200, headers = {}) {

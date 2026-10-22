@@ -140,7 +140,8 @@ fun RecommendedScreen(container: AppContainer, firstStart: Boolean, onDone: () -
                     else runCatching { health.launch(HealthSleep.PERMISSIONS) }.onFailure { advance() }
                 else -> advance()
             }
-            null -> advance()
+            // [STAT-01] An app setting with its own yes, not a system question: nothing to ask here.
+            ConsentItem.USAGE_STATS, null -> advance()
         }
     }
 

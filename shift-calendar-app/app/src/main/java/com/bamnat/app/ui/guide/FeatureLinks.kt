@@ -97,7 +97,7 @@ val TOOL_KEYS = setOf(
  */
 object FeatureSwitches {
     /** The features of [Off.ELSEWHERE], each with its own branch below. */
-    val LINKED = setOf("today.flow", "lock.today", "day.commute", "shop.autoClose", "money.auto", "shift.restRules")
+    val LINKED = setOf("today.flow", "lock.today", "day.commute", "shop.autoClose", "money.auto", "shift.restRules", "privacy.usageStats", "plaza.news")
 
     fun isOn(c: AppContainer, feature: AppFeature, calendar: String): Boolean = when (feature.off) {
         null -> true
@@ -109,6 +109,8 @@ object FeatureSwitches {
             "shop.autoClose" -> c.calendars.get(calendar)?.shop?.autoClosed ?: true
             "money.auto" -> CaptureService.isOn(c.appContext) && CaptureService.hasAccess(c.appContext)
             "shift.restRules" -> c.settingsRepository.current.restCheck
+            "privacy.usageStats" -> c.settingsRepository.current.shareUsageStats
+            "plaza.news" -> c.settingsRepository.current.plazaNews
             else -> true
         }
     }
@@ -135,6 +137,9 @@ object FeatureSwitches {
                 "shop.autoClose" -> c.calendars.updateShop(calendar) { it.copy(autoClosed = on) }
                 "money.auto" -> if (on) { FeatureLinks.open(feature); return false } else CaptureService.setOn(c.appContext, false)
                 "shift.restRules" -> c.settingsRepository.update { it.copy(restCheck = on) }
+                // A yes to sending is given where what goes is shown.
+                "privacy.usageStats" -> if (on) { FeatureLinks.open(feature); return false } else c.settingsRepository.update { it.copy(shareUsageStats = false) }
+                "plaza.news" -> c.settingsRepository.update { it.copy(plazaNews = on) }
                 else -> { FeatureLinks.open(feature); return false }
             }
         }

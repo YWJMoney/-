@@ -422,6 +422,18 @@ interface ShareApi {
      * A server or fake without tags always reads it.
      */
     suspend fun readIfChanged(id: String, etag: String?): ReceivedShare? = read(id)
+
+    /** [SRV-05] Reports a received link to the developer ([ShareReport] reasons); nobody learns who sent it. */
+    suspend fun report(id: String, reason: String) {}
+}
+
+/** [SRV-05] Why a link is reported: the share server's codes and the words for them. */
+enum class ShareReport(val code: String, val label: String) {
+    PERSONAL("personal", "다른 사람의 개인정보가 있어요"),
+    ABUSE("abuse", "욕설·괴롭힘이 있어요"),
+    SPAM("spam", "광고·스팸이에요"),
+    ILLEGAL("illegal", "불법 정보예요"),
+    OTHER("other", "그 밖의 문제"),
 }
 
 /** [SHR-02] The link id in a shared message: "…/s/<id>" from the web page, or bamnat://s/<id> from its app button. */
@@ -475,6 +487,11 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
         }
     }
 
+    override suspend fun report(id: String, reason: String) = withContext(Dispatchers.IO) {
+        request("POST", "/api/share/$id/report", JSONObject().put("reason", reason), null)
+        Unit
+    }
+
     private class Reply(val code: Int, val body: JSONObject, val etag: String?)
 
     private fun request(method: String, path: String, body: JSONObject?, token: String?, etag: String? = null): Reply {
@@ -493,7 +510,9 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
             val code = conn.responseCode
             if (code == HttpURLConnection.HTTP_NOT_MODIFIED) return Reply(code, JSONObject(), etag)
             val text = (if (code < 400) conn.inputStream else conn.errorStream)?.use { it.readCapped() }.orEmpty()
-            if (code >= 400) throw ShareLinkException(runCatching { JSONObject(text).getString("error") }.getOrDefault("http_$code"))
+            // [SRV-05] A link the developer took down (410 removed) is gone like one its sharer cut.
+            if (code >= 400) throw ShareLinkException(runCatching { JSONObject(text).getString("error") }.getOrDefault("http_$code")
+                .let { if (it == "removed") "not_found" else it })
             return Reply(code, if (text.isBlank()) JSONObject() else readable { JSONObject(text) }, conn.getHeaderField("ETag"))
         } finally {
             conn.disconnect()

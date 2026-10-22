@@ -100,6 +100,22 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
         }
     }
 
+    /** [SRV-05] 이 근무표 신고하기; [done] gets what to tell the user. */
+    fun report(id: String, reason: com.bamnat.app.share.ShareReport, done: (String) -> Unit) {
+        viewModelScope.launch {
+            val said = try {
+                c.shareApi.report(id, reason.code)
+                c.telemetry.event("share_report", reason.code)
+                "신고했어요. 운영자가 확인하고 운영 규칙에 어긋나면 링크를 내려요. 누가 신고했는지는 남지 않아요."
+            } catch (e: ShareLinkException) {
+                if (e.message == "rate_limited") "잠시 뒤에 다시 신고해 주세요." else "신고를 보내지 못했어요. 잠시 뒤 다시 해 주세요."
+            } catch (e: IOException) {
+                "인터넷에 연결되지 않았어요. 연결을 확인하고 다시 해 주세요."
+            }
+            done(said)
+        }
+    }
+
     /** Reads the link in [text] for a look before it is added. */
     fun preview(text: String) {
         val id = ShareLinkId.find(text.trim())

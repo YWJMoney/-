@@ -207,6 +207,12 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <!-- [COMM-10] 광장 소식 once a day: only the system's job scheduler binds it. -->
+        <service
+            android:name=".company.PlazaNewsJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- [SHFT-08] The Wear OS app asks for fresh days when it opens; only Google Play services binds it. -->
         <service
             android:name=".watch.WatchRequestService"

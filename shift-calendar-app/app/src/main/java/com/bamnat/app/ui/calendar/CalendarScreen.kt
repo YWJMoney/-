@@ -748,6 +748,8 @@ fun CalendarScreen(
 
     val calendarPart: @Composable () -> Unit = {
         identityBar()
+        // [SRV-04] The developer's notice, one line, only while it runs.
+        AppNoticeLine(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 4.dp))
         val linkMade = remember(activeCalendar.id, showShare) {
             shareLinks && context.appContainer.hasShareLink(activeCalendar.id)
         }

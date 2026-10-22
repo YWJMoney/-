@@ -52,6 +52,8 @@ fun companyProblem(code: String, field: String? = null): String = when (code) {
     "setup", "setup_version", "version", "v" -> "이 설정은 보낼 수 없어요. 앱을 최신 버전으로 업데이트해 주세요"
     "too_large" -> "설정이 너무 커서 보낼 수 없어요"
     "not_found" -> "찾을 수 없어요. 이미 지워졌을 수 있어요"
+    // [SRV-04] A feature the developer paused for a while from the developer app.
+    "paused" -> "지금은 잠시 쉬고 있어요. 곧 다시 열게요"
     else -> "서버에 문제가 생겼어요. 잠시 뒤 다시 해 주세요"
 }
 

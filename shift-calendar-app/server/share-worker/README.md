@@ -88,3 +88,30 @@ SHARE_TEST_URL=http://127.0.0.1:8787 ../../gradlew -p ../.. :app:testDebugUnitTe
 ```
 
 앱의 `ShareLinkTest`를 먼저 돌리면 앱이 만든 실제 근무표(`app/build/share-payload*.json`)를 `npm test`가 함께 검사해요.
+
+## 앱 1.22부터: 신고·내리기·통계 [SRV-05][STAT-04]
+
+- 공유 페이지 맨 아래에 **이 링크 신고하기**가 생겼어요. 스크립트 없는 폼이라 페이지는 여전히 스크립트를 쓰지 않아요.
+  앱에서도 받은 달력의 메뉴로 `POST /api/share/:id/report`(`{reason}`)를 보내요. 이유는 `personal`(다른 사람의 개인정보), `abuse`(욕설·괴롭힘), `spam`(광고·스팸), `illegal`(불법 정보), `other`예요.
+  누가 신고했는지는 남기지 않아요. 같은 사람이 같은 링크를 하루에 여러 번 신고해도 한 번으로 세고, 한 곳에서 한 시간에 10번까지 받아요.
+- 신고 목록 보기와 링크 내리기는 회사 서버의 **개발자 앱 → 공유 링크 신고** 화면에서 해요. 내린 링크는 근무표를 바로 지우고, 90일 동안
+  "운영 규칙에 따라 내려졌어요"(410)라고 답해요. 공유한 사람이 다시 고쳐 열 수는 없고, 새 링크는 만들 수 있어요.
+- 날마다 만든 링크·페이지 열람·신고·내린 수를 `stats:YYYY-MM-DD`에 400일 동안 세요. KV 무료 쓰기 한도(하루 1,000번)를 아끼려고
+  Worker가 5분마다 모아서 써요. 그래서 대략의 숫자예요.
+
+| 요청 | 하는 일 |
+| --- | --- |
+| `POST /api/share/:id/report` | 앱의 신고. 답 204 |
+| `POST /s/:id/report` | 페이지의 신고 폼 |
+| `GET /api/admin/reports` | 신고된 링크(많은 순). 헤더 `Authorization: Bearer <SHARE_ADMIN_TOKEN>` |
+| `DELETE /api/admin/share/:id` | 링크 내리기 |
+| `GET /api/admin/stats?days=28` | 날마다의 숫자(1~90일) |
+
+### 다시 올리기 전에 할 일
+
+1. 이 폴더의 `src/index.js`를 위와 같이 다시 붙여 넣고 배포해요.
+2. Worker → 설정 → 변수 및 비밀 → 추가. 유형 **비밀(Secret)**, 이름 `SHARE_ADMIN_TOKEN`, 값은 20자 넘는 아무 긴 글자(비밀번호 관리자에서 만든 것)예요.
+3. 회사 서버 Worker에도 **같은 값**으로 `SHARE_ADMIN_TOKEN`(비밀)을, 그리고 `SHARE_BASE_URL`(텍스트, 예: `https://bamnat-share.<계정 이름>.workers.dev`)을 넣어요.
+4. 넣지 않으면 관리 경로는 404로 숨어 있고, 개발자 앱은 "공유 서버가 아직 연결되지 않았어요"라고 보여 줘요.
+
+`SHARE_ADMIN_TOKEN`은 비밀값이니 채팅이나 메신저로 보내지 마세요.

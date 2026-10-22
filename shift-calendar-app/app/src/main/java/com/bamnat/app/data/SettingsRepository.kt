@@ -51,8 +51,17 @@ data class AppSettings(
     val alarmsEnabled: Boolean = true,
     /** The user ticked "다시 표시하지 않기" on the notice shown when saving a day's alarms. */
     val hideDayAlarmNotice: Boolean = false,
-    /** Opt-in: send anonymous usage statistics once a remote service is connected [MEAS-03]. */
+    /**
+     * [STAT-01] 사용 통계 보내기: event names and daily counts to the company server, nothing else. Its own
+     * consent (개인정보 보호법 제22조), so off until the user says yes; the app works the same without it.
+     */
     val shareUsageStats: Boolean = false,
+    /** [COMM-10] 광장 소식: one bundled notice a day about the user's own plaza things. On; off on the plaza screen. */
+    val plazaNews: Boolean = true,
+    /** [COMM-09] Writers this user chose not to see in the plaza ([com.bamnat.core.plaza.HideList.encode]). */
+    val plazaHidden: String = "",
+    /** [COMM-08] The version of the community rules the user agreed to before posting; 0 is not yet. */
+    val plazaRulesAgreed: Int = 0,
     /**
      * [MON-02] A tester's preview of the screens after launch (alarm check screen): null shows the real
      * state. It counts before the 정식 출시 switch and in debug builds only. The old "tier" key, saved as
@@ -223,6 +232,9 @@ class SettingsRepository(context: Context) {
             alarmsEnabled = prefs.getBoolean(K_ALARMS_ON, d.alarmsEnabled),
             hideDayAlarmNotice = prefs.getBoolean(K_HIDE_DAY_NOTICE, d.hideDayAlarmNotice),
             shareUsageStats = prefs.getBoolean(K_SHARE_STATS, d.shareUsageStats),
+            plazaNews = prefs.getBoolean(K_PLAZA_NEWS, d.plazaNews),
+            plazaHidden = prefs.getString(K_PLAZA_HIDDEN, null) ?: d.plazaHidden,
+            plazaRulesAgreed = prefs.getInt(K_PLAZA_RULES, d.plazaRulesAgreed),
             previewTier = Tier.parse(prefs.getString(K_PREVIEW_TIER, null)),
             workStyle = prefs.getString(K_WORK_STYLE, null)?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } },
             rosterMonthly = prefs.getBoolean(K_ROSTER_MONTHLY, d.rosterMonthly),
@@ -291,6 +303,9 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_ALARMS_ON, s.alarmsEnabled)
             .putBoolean(K_HIDE_DAY_NOTICE, s.hideDayAlarmNotice)
             .putBoolean(K_SHARE_STATS, s.shareUsageStats)
+            .putBoolean(K_PLAZA_NEWS, s.plazaNews)
+            .putString(K_PLAZA_HIDDEN, s.plazaHidden)
+            .putInt(K_PLAZA_RULES, s.plazaRulesAgreed)
             .putString(K_PREVIEW_TIER, s.previewTier?.name)
             .remove(K_OLD_TIER)
             .putString(K_WORK_STYLE, s.workStyle?.name)
@@ -373,6 +388,9 @@ class SettingsRepository(context: Context) {
         const val K_ALARMS_ON = "alarms_on"
         const val K_HIDE_DAY_NOTICE = "hide_day_alarm_notice"
         const val K_SHARE_STATS = "share_usage_stats"
+        const val K_PLAZA_NEWS = "plaza_news"
+        const val K_PLAZA_HIDDEN = "plaza_hidden"
+        const val K_PLAZA_RULES = "plaza_rules_agreed"
         const val K_OLD_TIER = "tier"
         const val K_PREVIEW_TIER = "tier_preview"
         const val K_WORK_STYLE = "work_style"
