@@ -185,7 +185,7 @@ private fun DayFirstCard(
             free = { rules?.holidayLeaveFree == true && KoreanHolidays.isHoliday(it) },
             carried = if (rules != null && month.year == today.year) rules.annualLeaveCarry else 0.0)
     }
-    val takeHome = payTotal?.let { TakeHome.estimate(it, mode) }
+    val takeHome = payTotal?.let { TakeHome.estimate(it, mode, on = month.atDay(1)) }
     val overtimeDays = remember(snapshot, month) {
         (1..month.lengthOfMonth()).count { snapshot.resolver.resolve(month.atDay(it)).hasExtraWork }
     }
@@ -240,7 +240,7 @@ private fun PayGapCard(calendarId: String, month: YearMonth, payTotal: Long?, pr
     val choices by prefs.all.collectAsStateWithLifecycle()
     // [HRLY-04] A part-timer chose how tax comes off on the pay screen; others choose it on the first card.
     val mode = if (style == WorkStyle.HOURLY) profile?.taxMode ?: TaxMode.NONE else choices[calendarId]?.taxMode ?: TaxMode.INSURANCE_4
-    val expected = payTotal?.let { TakeHome.estimate(it, mode).net }
+    val expected = payTotal?.let { TakeHome.estimate(it, mode, on = month.atDay(1)).net }
     val gap = remember(book, month, expected, profile) {
         book?.let { PayGaps.of(month, expected, profile?.period?.payDate(month), it.entries) }
     } ?: return

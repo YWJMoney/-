@@ -209,6 +209,11 @@ class HourlyWorkTest {
         // 10,000원 × 90% is under 90% of the minimum wage: warned.
         val low = profile.copy(base = ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 10_000))))
         assertTrue(PayCalculator().calculate(low, oct, resolver()::resolve).warnings.any { it.contains("수습") })
+        // [PAYR-02] Hired in June, a probation still cutting in October is past the three months: warned.
+        val long = profile.copy(hireDate = LocalDate.of(2026, 6, 1))
+        assertTrue(PayCalculator().calculate(long, oct, resolver()::resolve).warnings.any { it.contains("3개월") })
+        val short = profile.copy(hireDate = LocalDate.of(2026, 8, 1))
+        assertTrue(PayCalculator().calculate(short, oct, resolver()::resolve).warnings.none { it.contains("3개월") })
     }
 
     @Test
@@ -226,5 +231,27 @@ class HourlyWorkTest {
         assertEquals("2026-10-14,,,,0.00,결근,0", rows[2])
         assertEquals(3, rows.size)
         assertEquals("밤낮_근무기록_2026-10.csv", WorkLogCsv.fileName(oct))
+    }
+}
+
+/** [PAYR-01] 실수령 follows the month's year: 2027 국민연금 10% (근로자 5%), 2026.7 기준소득월액 41만~659만. */
+class TakeHomeYearTest {
+    private fun pension(gross: Long, on: java.time.LocalDate) =
+        com.bamnat.core.pay.TakeHome.estimate(gross, com.bamnat.core.pay.TaxMode.INSURANCE_4, on = on).deductions.toMap()["국민연금"]
+
+    @Test fun ratesFollowTheYear() {
+        org.junit.Assert.assertEquals(95_000L, pension(2_000_000, java.time.LocalDate.of(2026, 3, 1)))
+        org.junit.Assert.assertEquals(100_000L, pension(2_000_000, java.time.LocalDate.of(2027, 1, 1)))
+        // Limits: 2026.6 still 637만, 2026.7 659만; 2025 rates 9% (4.5%).
+        org.junit.Assert.assertEquals(302_570L, pension(10_000_000, java.time.LocalDate.of(2026, 6, 30)))
+        org.junit.Assert.assertEquals(313_020L, pension(10_000_000, java.time.LocalDate.of(2026, 7, 1)))
+        org.junit.Assert.assertEquals(19_470L, pension(300_000, java.time.LocalDate.of(2026, 8, 1)))
+        org.junit.Assert.assertEquals(90_000L, pension(2_000_000, java.time.LocalDate.of(2025, 5, 1)))
+    }
+
+    @Test fun careKeepsTheLastKnownShareUntilFixed() {
+        val d = com.bamnat.core.pay.TakeHome.estimate(3_000_000, com.bamnat.core.pay.TaxMode.INSURANCE_4, on = java.time.LocalDate.of(2027, 2, 1)).deductions.toMap()
+        org.junit.Assert.assertEquals(107_850L, d["건강보험"])
+        org.junit.Assert.assertEquals(14_170L, d["장기요양"])
     }
 }

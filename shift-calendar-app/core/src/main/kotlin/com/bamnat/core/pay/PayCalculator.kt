@@ -444,7 +444,7 @@ class PayCalculator(
             probationMinutes += mins
             probationTotal += (money(mins, 1.0) * probationCut).roundToLong()
         }
-        // [HRLY-06] 수습 기간 (근로기준법 시행령 제3조): 최저임금의 90%까지만 줄일 수 있어요.
+        // [HRLY-06] 수습 기간 (최저임금법 제5조 제2항, 시행령 제3조): 최저임금의 90%까지만 줄일 수 있어요.
         if (probationTotal > 0) {
             lines += PayLine(
                 LineKind.BASE, "수습 감액", -probationTotal,
@@ -456,6 +456,11 @@ class PayCalculator(
             if (hourly * profile.probationPercent / 100.0 < rates.minimumHourlyWage * 0.9) {
                 warnings += "수습 시급 ${won((hourly * profile.probationPercent / 100.0).roundToLong())}이 최저임금의 90%" +
                     " ${won((rates.minimumHourlyWage * 0.9).roundToLong())}보다 낮아요. 수습이어도 그 아래로는 줄일 수 없어요"
+            }
+            // [PAYR-02] 최저임금법 제5조 제2항: 수습 시작부터 3개월까지만, 1년 이상 계약일 때만 줄일 수 있어요.
+            val hired = profile.hireDate
+            if (hired != null && profile.probationEnd != null && profile.probationEnd.isAfter(hired.plusMonths(3))) {
+                warnings += "수습 감액은 입사(수습 시작)부터 3개월까지만 돼요. ${hired.plusMonths(3)} 뒤 날은 시급 그대로 받아야 해요"
             }
         }
         if (paidBreak > 0) lines += line(

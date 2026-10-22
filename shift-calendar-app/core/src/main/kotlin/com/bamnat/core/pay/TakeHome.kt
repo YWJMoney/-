@@ -1,6 +1,7 @@
 package com.bamnat.core.pay
 
 import com.bamnat.core.money.Withholding
+import java.time.LocalDate
 
 /** [HRLY-04] How tax comes off the pay: nothing, 3.3% on 사업소득, or 4대보험 with 근로소득세. */
 enum class TaxMode { NONE, WITHHOLDING_3_3, INSURANCE_4 }
@@ -23,15 +24,40 @@ object TakeHome {
     const val PENSION_BASE_MIN = 400_000L
     const val PENSION_BASE_MAX = 6_370_000L
 
-    fun estimate(gross: Long, mode: TaxMode, dependents: Int = 1): TakeHomeResult {
+    /**
+     * [PAYR-01] 기준소득월액 하한·상한 by the July they start (보건복지부 고시, 7월~이듬해 6월). 2026.7: 41만~659만
+     * (research/1.21-급여엔진-리뷰.md 출처).
+     */
+    private val PENSION_BASES = listOf(
+        LocalDate.of(2025, 7, 1) to (PENSION_BASE_MIN to PENSION_BASE_MAX),
+        LocalDate.of(2026, 7, 1) to (410_000L to 6_590_000L),
+    )
+
+    /** [PAYR-01] The employee's shares on [date]: half of each 합계 rate in [RateTable]; 장기요양 kept from the last known year until fixed. */
+    data class Shares(val pension: Double, val health: Double, val careOfHealth: Double, val baseMin: Long, val baseMax: Long)
+
+    fun sharesOn(date: LocalDate): Shares {
+        val r = RateTable.on(date)
+        val known = RateTable.builtIn.filter { !it.effectiveFrom.isAfter(date) && it.longTermCareRate != null && it.healthRate != null }
+            .maxByOrNull { it.effectiveFrom }
+        val care = known?.let { it.longTermCareRate!! / it.healthRate!! } ?: CARE_OF_HEALTH
+        val (min, max) = PENSION_BASES.filter { !it.first.isAfter(date) }.maxByOrNull { it.first }?.second ?: (PENSION_BASE_MIN to PENSION_BASE_MAX)
+        return Shares((r.pensionRate ?: PENSION_RATE * 2) / 2, (r.healthRate ?: HEALTH_RATE * 2) / 2, care, min, max)
+    }
+
+    private val DEFAULT_SHARES = Shares(PENSION_RATE, HEALTH_RATE, CARE_OF_HEALTH, PENSION_BASE_MIN, PENSION_BASE_MAX)
+
+    /** [PAYR-01] With [on], the year's rates and 기준소득월액 limits for that day; without it, the 2026 first-half ones. */
+    fun estimate(gross: Long, mode: TaxMode, dependents: Int = 1, on: LocalDate? = null): TakeHomeResult {
+        val sh = on?.let(::sharesOn) ?: DEFAULT_SHARES
         val g = gross.coerceAtLeast(0)
         val deductions: List<Pair<String, Long>> = when (mode) {
             TaxMode.NONE -> emptyList()
             TaxMode.WITHHOLDING_3_3 -> listOf("원천징수 3.3%" to Withholding.of(g))
             TaxMode.INSURANCE_4 -> {
-                val pension = if (g == 0L) 0L else cut10(pensionBase(g) * PENSION_RATE)
-                val health = cut10(g * HEALTH_RATE)
-                val care = cut10(health * CARE_OF_HEALTH)
+                val pension = if (g == 0L) 0L else cut10((g / 1_000 * 1_000).coerceIn(sh.baseMin, sh.baseMax) * sh.pension)
+                val health = cut10(g * sh.health)
+                val care = cut10(health * sh.careOfHealth)
                 val employment = cut10(g * EMPLOYMENT_RATE)
                 val tax = incomeTax(g, dependents, pension)
                 listOf(

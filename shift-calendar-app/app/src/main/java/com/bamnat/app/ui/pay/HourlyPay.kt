@@ -78,9 +78,9 @@ val TaxMode.label: String
 
 /** [HRLY-04] "예상 실수령 1,784,750원 (4대보험)" under a pay before tax; nothing when no tax is taken. */
 @Composable
-fun TakeHomeLine(gross: Long, mode: TaxMode, modifier: Modifier = Modifier) {
+fun TakeHomeLine(gross: Long, mode: TaxMode, modifier: Modifier = Modifier, on: java.time.LocalDate? = null) {
     if (mode == TaxMode.NONE) return
-    val r = remember(gross, mode) { TakeHome.estimate(gross, mode) }
+    val r = remember(gross, mode, on) { TakeHome.estimate(gross, mode, on = on) }
     Text("예상 실수령 ${won(r.net)} (${mode.label})", style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary, modifier = modifier)
 }
@@ -101,7 +101,7 @@ internal fun HourlyPayCard(vm: PayViewModel, profile: PayProfile, gross: Long, u
                 FilterChip(selected = profile.taxMode == m, onClick = { vm.update { it.copy(taxMode = m) } }, label = { Text(m.label) })
             }
         }
-        val r = remember(gross, profile.taxMode) { TakeHome.estimate(gross, profile.taxMode) }
+        val r = remember(gross, profile.taxMode) { TakeHome.estimate(gross, profile.taxMode, on = month.atDay(1)) }
         r.deductions.forEach { (name, amount) ->
             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                 Text(name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
