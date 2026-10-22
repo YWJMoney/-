@@ -24,7 +24,6 @@ import java.io.FileNotFoundException
 import java.io.IOException
 import java.time.Duration
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Base64
 
@@ -244,7 +243,7 @@ class AutoBackup(
         val since = _state.value.failingSince ?: return
         val from = _state.value.lastOk?.let { maxOf(it, since) } ?: since
         if (Duration.between(from, now) < Duration.ofDays(FAIL_DAYS)) return
-        val today = LocalDate.ofInstant(now, zone()).toString()
+        val today = now.atZone(zone()).toLocalDate().toString()
         if (prefs.getString(K_NOTICED, null) == today) return
         prefs.edit().putString(K_NOTICED, today).apply()
         post(c.appContext, _state.value.error.orEmpty(), Duration.between(from, now).toDays())

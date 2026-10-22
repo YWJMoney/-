@@ -94,6 +94,8 @@ android {
     testOptions {
         // Robolectric screenshot tests need the merged resources and manifest.
         unitTests.isIncludeAndroidResources = true
+        // About 700 Robolectric tests and 400 screenshots in one worker outgrow Gradle's 512 MB test heap.
+        unitTests.all { it.maxHeapSize = "2g" }
     }
 
     packaging {
