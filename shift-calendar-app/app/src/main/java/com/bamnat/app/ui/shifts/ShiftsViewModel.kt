@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.shifts
 
+import com.bamnat.app.data.rules
 import com.bamnat.core.model.ShiftIcon
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -113,6 +114,26 @@ class ShiftsViewModel(
             repo.clearPattern()
             onDone()
         }
+    }
+
+    /**
+     * [REST-02][REST-03] What the 근무표 점검 says about [pattern] before it is saved (순번 106-4): two of its cycles
+     * from [from] read with the user's own limits as the new order turns. Empty when the check is off.
+     */
+    fun previewIssues(types: List<com.bamnat.core.model.ShiftType>, pattern: com.bamnat.core.model.WorkPattern, from: java.time.LocalDate): Pair<com.bamnat.core.schedule.RotationSpeed, List<com.bamnat.core.schedule.RestCheck.Issue>> {
+        val speed = com.bamnat.core.schedule.RotationSpeed.of(pattern, types)
+        val s = settings.value
+        if (!s.restCheck) return speed to emptyList()
+        val rules = speed.adjust(s.rules)
+        val cycle = when (pattern) {
+            is com.bamnat.core.model.WorkPattern.Rotation -> pattern.steps.size
+            is com.bamnat.core.model.WorkPattern.Weekly -> 7
+        }.coerceIn(7, 42)
+        val resolver = com.bamnat.core.schedule.ScheduleResolver(types, pattern.withRange(from.minusDays(60), null), emptyList())
+        val until = from.plusDays(cycle * 2L - 1)
+        val days = generateSequence(com.bamnat.core.schedule.RestCheck.lookbackFrom(from, rules)) { it.plusDays(1) }
+            .takeWhile { !it.isAfter(until) }.map(resolver::resolve).toList()
+        return speed to com.bamnat.core.schedule.RestCheck.check(days, rules).filter { !it.date.isBefore(from) }
     }
 }
 

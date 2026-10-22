@@ -97,7 +97,7 @@ val TOOL_KEYS = setOf(
  */
 object FeatureSwitches {
     /** The features of [Off.ELSEWHERE], each with its own branch below. */
-    val LINKED = setOf("today.flow", "lock.today", "day.commute", "shop.autoClose", "money.auto")
+    val LINKED = setOf("today.flow", "lock.today", "day.commute", "shop.autoClose", "money.auto", "shift.restRules")
 
     fun isOn(c: AppContainer, feature: AppFeature, calendar: String): Boolean = when (feature.off) {
         null -> true
@@ -108,6 +108,7 @@ object FeatureSwitches {
             "day.commute" -> CommutePrefs.get(c.appContext).current.enabled
             "shop.autoClose" -> c.calendars.get(calendar)?.shop?.autoClosed ?: true
             "money.auto" -> CaptureService.isOn(c.appContext) && CaptureService.hasAccess(c.appContext)
+            "shift.restRules" -> c.settingsRepository.current.restCheck
             else -> true
         }
     }
@@ -133,6 +134,7 @@ object FeatureSwitches {
                 "day.commute" -> if (on) { FeatureLinks.open(feature); return false } else com.bamnat.app.commute.CommuteRecorder.turnOff(c.appContext)
                 "shop.autoClose" -> c.calendars.updateShop(calendar) { it.copy(autoClosed = on) }
                 "money.auto" -> if (on) { FeatureLinks.open(feature); return false } else CaptureService.setOn(c.appContext, false)
+                "shift.restRules" -> c.settingsRepository.update { it.copy(restCheck = on) }
                 else -> { FeatureLinks.open(feature); return false }
             }
         }

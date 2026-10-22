@@ -263,6 +263,9 @@ fun PatternScreen(
                 if (draft != null) {
                     SectionCard(title = "미리보기 (오늘부터 3주)") {
                         PatternPreview(types = types, pattern = draft, from = today)
+                        // [REST-02][REST-03] The new order read with the 근무표 점검 before it is saved.
+                        val (speed, issues) = remember(types, draft) { vm.previewIssues(types, draft, today) }
+                        PatternCheck(speed, issues)
                     }
                 }
 
@@ -339,6 +342,9 @@ fun PatternScreen(
                 if (draft != null) {
                     SectionCard(title = "미리보기 (오늘부터 3주)") {
                         PatternPreview(types = types, pattern = draft, from = today)
+                        // [REST-02][REST-03] The new order read with the 근무표 점검 before it is saved.
+                        val (speed, issues) = remember(types, draft) { vm.previewIssues(types, draft, today) }
+                        PatternCheck(speed, issues)
                     }
                 }
             }
@@ -623,6 +629,29 @@ private fun PatternPreview(types: List<ShiftType>, pattern: WorkPattern, from: L
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+    }
+}
+
+/**
+ * [REST-02][REST-03] What the 근무표 점검 will say about the order being edited, before it is saved: how fast it turns
+ * and the first few signs over two cycles. Only a hint; saving is never stopped.
+ */
+@Composable
+private fun PatternCheck(speed: com.bamnat.core.schedule.RotationSpeed, issues: List<com.bamnat.core.schedule.RestCheck.Issue>) {
+    if (speed == com.bamnat.core.schedule.RotationSpeed.NONE) return
+    Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text("이 순서: ${speed.label}", style = MaterialTheme.typography.labelLarge)
+        if (issues.isEmpty()) {
+            Text("근무표 점검에 걸리는 날이 없어요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            val kinds = issues.groupBy { it.kind }
+            kinds.entries.take(4).forEach { (kind, list) ->
+                Text("· ${kind.label} ${list.size}번 — ${list.first().text}", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error, maxLines = 2)
+            }
+            Text("두 바퀴를 내 근무표 점검 기준으로 본 참고예요. 저장은 그대로 할 수 있어요.", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

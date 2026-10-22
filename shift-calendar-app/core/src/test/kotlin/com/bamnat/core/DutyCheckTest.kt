@@ -31,16 +31,19 @@ class DutyCheckTest {
         assertTrue(w[0].text, w[0].text.contains("8시간"))
     }
 
-    @Test fun nightThenDayIsCaughtTwice() {
+    /** [REST-02] Short rest and no day off after the night say the same about one day: one sign, named N-D. */
+    @Test fun nightThenDayIsOneSign() {
         val w = DutyCheck.check(month(n, d, o, o))
-        assertEquals(setOf(Kind.SHORT_REST, Kind.NO_OFF_AFTER_NIGHT), w.map { it.kind }.toSet())
+        assertEquals(listOf(Kind.SHORT_REST), w.map { it.kind })
+        assertEquals("N-D", w[0].pattern)
+        assertTrue(w[0].text, w[0].text.startsWith("N-D · "))
     }
 
     @Test fun nightsThenTwoOffsAreFine() {
         assertTrue(DutyCheck.check(month(n, n, n, o, o, d, d)).isEmpty())
         val one = DutyCheck.check(month(n, n, o, e))
         assertEquals(listOf(Kind.NO_OFF_AFTER_NIGHT), one.map { it.kind })
-        assertTrue(DutyCheck.check(month(n, n, o, e), DutyCheck.Limits(offsAfterNights = 1)).isEmpty())
+        assertTrue(DutyCheck.check(month(n, n, o, e), com.bamnat.core.schedule.RestRules(offsAfterNights = 1)).isEmpty())
     }
 
     @Test fun manyNightsAndLongRuns() {

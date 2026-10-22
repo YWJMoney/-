@@ -1,7 +1,7 @@
 {
  "format": 1,
  "kind": "presets",
- "version": 2026102201,
+ "version": 2026102202,
  "issued": "2026-10-22",
  "minApp": 33,
  "source": "밤낮 앱에 든 근무 순서·근무 종류 묶음·직군 급여 시작값 (금액은 명세서로 바꾸는 자리 표시)",
@@ -82,14 +82,41 @@
    {
     "id": "p-24h-3",
     "name": "24시간 3조 맞교대",
-    "description": "당번 · 비번 · 휴무",
-    "codes": "XBO"
+    "description": "당번 · 비번 · 휴무 (소방 3조 1교대: 24시간 근무 뒤 이틀 쉬기)",
+    "codes": "XBO",
+    "jobs": [
+     "FIRE"
+    ],
+    "source": "뉴시스 2019-04-24 소방 3조1교대 도입 https://www.newsis.com/view/NISX20190424_0000630921",
+    "checked": "2026-10-22"
    },
    {
     "id": "p-24h-4",
     "name": "24시간 4조 맞교대",
     "description": "당번 · 비번 · 당번 · 비번 · 휴무 · 휴무 · 휴무 · 휴무",
     "codes": "XBXBOOOO"
+   },
+   {
+    "id": "p-police-4j2k",
+    "name": "4조 2교대 (경찰 지구대·파출소)",
+    "description": "주야비휴 · 12시간씩, 4일 주기",
+    "codes": "DNBO",
+    "jobs": [
+     "POLICE"
+    ],
+    "source": "위드뉴스 2025-10-13 경찰 근무체계 기사 https://car.withnews.kr/society/police-shift-system-change-chaos",
+    "checked": "2026-10-22"
+   },
+   {
+    "id": "p-fire-3j2k-21",
+    "name": "3조 2교대 21일 (소방)",
+    "description": "주간 5일 · 휴무 2일 · 야간·비번 7번 (주간 주의 쉬는 날이 다르면 고쳐 쓰세요)",
+    "codes": "DDDDDOONBNBNBNBNBNBNB",
+    "jobs": [
+     "FIRE"
+    ],
+    "source": "서울신문 2022-07-26 서울소방 3조2교대(21일) https://m.go.seoul.co.kr/news/2022/07/26/20220726500124",
+    "checked": "2026-10-22"
    }
   ],
   "shiftSets": [

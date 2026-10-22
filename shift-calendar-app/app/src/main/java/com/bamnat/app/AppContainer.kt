@@ -447,7 +447,7 @@ class AppContainer(context: Context) {
         // [SLP-14] The today widget's line of 오늘의 흐름 follows the sleep log and the settings it reads.
         keep("widgetflow") {
             val reads = settingsRepository.settings.map {
-                listOf(it.sleepTips, it.sleepTargetMinutes, it.commuteMinutes, it.restCheck, it.strictRest, it.workStyle)
+                listOf(it.sleepTips, it.sleepTargetMinutes, it.commuteMinutes, it.restCheck, it.strictRest, it.restRules, it.workStyle)
             }.distinctUntilChanged()
             combine(sleepRepository.recent(days = 2), reads) { log, r -> log to r }
                 .drop(1).debounce(500)

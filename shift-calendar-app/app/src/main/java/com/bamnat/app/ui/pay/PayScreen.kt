@@ -346,6 +346,11 @@ private fun PayResult(
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
+        // [JOB-02] 공무원·경찰·소방만: 봉급표에서 계급·호봉으로 채우기.
+        if (com.bamnat.core.pay.PublicServantPay.isPublic(profile.occupation)) {
+            PublicGradeCard(profile, month.atDay(1), unlocked) { g -> vm.update { com.bamnat.core.pay.PublicServantPay.apply(it, g, month.atDay(1)) } }
+        }
+
         SectionCard(title = "내 급여 값") {
             // [PAYS-07][PAYS-09] What was just made, and then the invitation to share the company's way.
             justMade?.let { made ->

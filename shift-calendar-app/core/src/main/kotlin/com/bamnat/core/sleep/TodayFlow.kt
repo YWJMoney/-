@@ -101,6 +101,8 @@ object TodayFlow {
         commuteMinutes: Int = SleepPlan.COMMUTE_MINUTES.toInt(),
         restCheck: Boolean = true,
         strictRest: Boolean = false,
+        /** [REST-01] The user's roster limits; null keeps the rules before 1.22 ([strictRest]). */
+        rules: com.bamnat.core.schedule.RestRules? = null,
         /** [SLP-16] How long the user's own sleeps after night work have been, from [SleepInsights.afterNightAverage]. */
         afterNightMinutes: Long? = null,
     ): Card {
@@ -253,7 +255,9 @@ object TodayFlow {
 
         val restSign = if (!restCheck) null else {
             val nextDate = next?.date?.takeIf { !it.isAfter(today.plusDays(1)) }
-            RestCheck.check((-RestCheck.NIGHT_STREAK.toLong()..2L).map { resolver.resolve(today.plusDays(it)) }, strictRest)
+            (if (rules == null) RestCheck.check((-RestCheck.NIGHT_STREAK.toLong()..2L).map { resolver.resolve(today.plusDays(it)) }, strictRest)
+            else RestCheck.check(generateSequence(RestCheck.lookbackFrom(today, rules)) { it.plusDays(1) }.takeWhile { !it.isAfter(today.plusDays(2)) }
+                .map(resolver::resolve).toList(), rules))
                 .filter { it.date == today || it.date == nextDate }
                 .firstOrNull { !(pick.saysShort && (it.kind == RestCheck.Kind.SHORT_REST || it.kind == RestCheck.Kind.AFTER_NIGHT)) }
                 ?.let { (if (it.date == today) "" else "${t.day(it.date)}· ") + it.text }

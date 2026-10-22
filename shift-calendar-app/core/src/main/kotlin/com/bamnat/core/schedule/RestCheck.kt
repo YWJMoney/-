@@ -4,12 +4,15 @@ import com.bamnat.core.model.ExtraTiming
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.YearMonth
+import java.time.temporal.ChronoUnit
 
 /**
  * [SLP-01][MKT-07][MKT-11] Rest between shifts, read off the calendar: less than 11 hours off
  * between two shifts (근로기준법 제59조 제2항 is the 11-hour rest required of 특례업종), a night shift
  * followed by a day shift within 24 hours, backward rotation (오후 → 주간, 야간 → 주간) and four
  * or more nights in a row (Delphi consensus: at most 2–3). These are reference signs, not a diagnosis.
+ * [REST-01] Since 1.22 the limits are the user's [RestRules], shared with [DutyCheck].
  */
 object RestCheck {
     enum class Kind(val label: String) {
@@ -17,11 +20,19 @@ object RestCheck {
         SHORT_REST("휴식 11시간 미만"),
         BACKWARD("역순환"),
         NIGHT_STREAK("연속 야간"),
-        /** [MKT-11] Fewer than two days off after a run of nights (strict rules only). */
+        /** [MKT-11] Fewer days off after a run of nights than [RestRules.offsAfterNights]. */
         SHORT_RECOVERY("야간 뒤 쉬는 날 부족"),
+        /** [REST-01] More work days in a row than [RestRules.maxWorkDaysInRow]. */
+        LONG_RUN("연속 근무"),
+        /** [REST-02] More nights in the month than [RestRules.maxNightsPerMonth]. */
+        MONTH_NIGHTS("한 달 야간 많음"),
     }
 
-    data class Issue(val date: LocalDate, val kind: Kind, val text: String)
+    /**
+     * One sign. [pattern] names the order behind it when it has a name on the ward (N-O-D 나오데, E-D 이브데이),
+     * [source] says where the limit comes from [REST-02].
+     */
+    data class Issue(val date: LocalDate, val kind: Kind, val text: String, val source: String = "", val pattern: String? = null)
 
     const val MIN_REST_MINUTES = 11 * 60
     const val AFTER_NIGHT_MINUTES = 24 * 60
@@ -35,54 +46,119 @@ object RestCheck {
             val total = Duration.between(from, to).toMinutes()
             return total > 0 && nightMinutes(from, to) * 2 >= total
         }
+        /** Starts in the afternoon (오후·이브닝), not a night. */
+        val evening: Boolean get() = !night && from.hour in 12..17
+        /** Starts in the morning (주간·데이). */
+        val day: Boolean get() = !night && from.hour in 4..11
     }
 
-    /** Issues for [days] (one calendar day each, in order); pass the day before the range too. */
-    fun check(days: List<ResolvedDay>, strict: Boolean = false): List<Issue> {
-        val streakLimit = if (strict) STRICT_NIGHT_STREAK else NIGHT_STREAK
+    /** Issues for [days] (one calendar day each, in order) by the rules before 1.22; pass the days before the range too. */
+    fun check(days: List<ResolvedDay>, strict: Boolean = false): List<Issue> = check(days, RestRules.legacy(strict))
+
+    /**
+     * [REST-01] Issues for [days] by [rules]. Pass the days before the range as well: [lookbackFrom] says how many.
+     * Signs that say the same thing about one day (a day shift right after nights is short rest, too few days
+     * off and backward rotation at once) come once, the most telling first [REST-02].
+     */
+    fun check(days: List<ResolvedDay>, rules: RestRules): List<Issue> {
+        if (!rules.on) return emptyList()
         val work = days.flatMap(::intervals).sortedBy { it.from }
         val issues = mutableListOf<Issue>()
+        val minRest = rules.minRestHours * 60L
         for ((a, b) in work.zipWithNext()) {
             val gap = Duration.between(a.to, b.from).toMinutes()
             if (gap < 0) continue
             val rest = if (gap == 0L) "쉬지 않고 바로" else "${hours(gap)} 쉬고"
             val end = "%02d:%02d".format(a.to.hour, a.to.minute)
+            val nextDay = b.date == a.date.plusDays(1)
             when {
                 a.night && !b.night && gap < AFTER_NIGHT_MINUTES ->
-                    issues += Issue(b.date, Kind.AFTER_NIGHT, "${a.name}(${end} 끝) 뒤 $rest ${b.name}")
-                gap < MIN_REST_MINUTES ->
-                    issues += Issue(b.date, Kind.SHORT_REST, "${a.name}(${end} 끝) 뒤 $rest ${b.name}")
-                b.date == a.date.plusDays(1) && b.from.toLocalTime() < a.from.toLocalTime() && gap < AFTER_NIGHT_MINUTES ->
-                    issues += Issue(b.date, Kind.BACKWARD, "${a.name} 다음 날 ${b.name} (시작이 앞당겨지는 순서)")
+                    issues += Issue(b.date, Kind.AFTER_NIGHT, "${a.name}(${end} 끝) 뒤 $rest ${b.name}", RestRules.Sources.NIGHTS,
+                        pattern = if (b.day) "N-D" else null)
+                gap < minRest ->
+                    issues += Issue(b.date, Kind.SHORT_REST, "${a.name}(${end} 끝) 뒤 $rest ${b.name}", RestRules.Sources.REST,
+                        pattern = if (a.evening && b.day && nextDay) "E-D(이브데이)" else null)
+                nextDay && b.from.toLocalTime() < a.from.toLocalTime() && gap < AFTER_NIGHT_MINUTES ->
+                    issues += Issue(b.date, Kind.BACKWARD, "${a.name} 다음 날 ${b.name} (시작이 앞당겨지는 순서)", RestRules.Sources.ORDER,
+                        pattern = if (a.evening && b.day) "E-D(이브데이)" else null)
             }
         }
-        // Nights in a row, counted by date; flagged on the day the streak reaches the limit.
+        // Nights in a row, counted by date; flagged on the day the streak passes the limit.
         val nightDates = work.filter { it.night }.map { it.date }.distinct().sorted()
-        var streak = 0
-        var prev: LocalDate? = null
-        for (d in nightDates) {
-            streak = if (prev != null && d == prev.plusDays(1)) streak + 1 else 1
-            if (streak == streakLimit) {
-                var len = streak
-                var next = d.plusDays(1)
-                while (next in nightDates) { len++; next = next.plusDays(1) }
-                issues += Issue(d, Kind.NIGHT_STREAK, "야간 ${len}일 연속 (${d.minusDays(streakLimit - 1L).monthValue}/${d.minusDays(streakLimit - 1L).dayOfMonth}부터)")
+        if (rules.maxNightsInRow > 0) {
+            val streakLimit = rules.maxNightsInRow + 1
+            var streak = 0
+            var prev: LocalDate? = null
+            for (d in nightDates) {
+                streak = if (prev != null && d == prev.plusDays(1)) streak + 1 else 1
+                if (streak == streakLimit) {
+                    var len = streak
+                    var next = d.plusDays(1)
+                    while (next in nightDates) { len++; next = next.plusDays(1) }
+                    val from = d.minusDays(streakLimit - 1L)
+                    issues += Issue(d, Kind.NIGHT_STREAK, "야간 ${len}일 연속 (${from.monthValue}/${from.dayOfMonth}부터, 기준 ${rules.maxNightsInRow}일)", RestRules.Sources.NIGHTS)
+                }
+                prev = d
             }
-            prev = d
         }
-        if (strict) {
-            // A run of nights ends on a night date with no night the day after; the next work
-            // day should leave two whole days off in between.
-            val workDates = work.map { it.date }.distinct().sorted()
+        val workDates = work.map { it.date }.distinct().sorted()
+        if (rules.offsAfterNights > 0) {
+            // A run of nights ends on a night date with no night the day after; the next work day should
+            // leave whole days off in between.
             for (d in nightDates.filter { it.plusDays(1) !in nightDates }) {
                 val next = workDates.firstOrNull { it.isAfter(d) } ?: continue
-                val off = java.time.temporal.ChronoUnit.DAYS.between(d, next) - 1
-                if (off < STRICT_RECOVERY_DAYS) {
-                    issues += Issue(next, Kind.SHORT_RECOVERY, "야간이 끝난 ${d.monthValue}/${d.dayOfMonth} 뒤 쉬는 날 ${off}일")
+                val off = ChronoUnit.DAYS.between(d, next) - 1
+                if (off < rules.offsAfterNights) {
+                    val nextWork = work.first { it.date == next }
+                    issues += Issue(next, Kind.SHORT_RECOVERY, "야간이 끝난 ${d.monthValue}/${d.dayOfMonth} 뒤 쉬는 날 ${off}일 (기준 ${rules.offsAfterNights}일)",
+                        RestRules.Sources.NIGHTS, pattern = if (off == 1L && nextWork.day) "N-O-D(나오데)" else null)
                 }
             }
         }
-        return issues.sortedWith(compareBy({ it.date }, { it.kind.ordinal }))
+        if (rules.maxWorkDaysInRow > 0) {
+            var run = 0
+            var prev: LocalDate? = null
+            for (d in workDates) {
+                run = if (prev != null && d == prev.plusDays(1)) run + 1 else 1
+                if (run == rules.maxWorkDaysInRow + 1) {
+                    val from = d.minusDays(run - 1L)
+                    issues += Issue(d, Kind.LONG_RUN, "${from.monthValue}/${from.dayOfMonth}부터 ${run}일째 쉬는 날 없이 근무 (기준 ${rules.maxWorkDaysInRow}일)", RestRules.Sources.WEEK)
+                }
+                prev = d
+            }
+        }
+        if (rules.maxNightsPerMonth > 0) {
+            nightDates.groupBy { YearMonth.from(it) }.forEach { (m, ds) ->
+                ds.getOrNull(rules.maxNightsPerMonth)?.let { d ->
+                    issues += Issue(d, Kind.MONTH_NIGHTS, "${m.monthValue}월 야간 ${ds.size}일 (기준 한 달 ${rules.maxNightsPerMonth}일)", RestRules.Sources.NIGHTS)
+                }
+            }
+        }
+        return dedupe(issues).sortedWith(compareBy({ it.date }, { it.kind.ordinal }))
+    }
+
+    /** The signs about the rest before one day: only the first of them is kept, with any pattern name the others had. */
+    private val SAME_REST = listOf(Kind.AFTER_NIGHT, Kind.SHORT_REST, Kind.BACKWARD, Kind.SHORT_RECOVERY)
+
+    private fun dedupe(issues: List<Issue>): List<Issue> {
+        val (rest, other) = issues.partition { it.kind in SAME_REST }
+        val kept = rest.groupBy { it.date }.map { (_, same) ->
+            val first = same.minBy { SAME_REST.indexOf(it.kind) }
+            val name = first.pattern ?: same.firstNotNullOfOrNull { it.pattern }
+            first.copy(pattern = name)
+        }
+        return (kept + other).map { i -> i.pattern?.takeUnless { i.text.startsWith(it) }?.let { i.copy(text = "$it · ${i.text}") } ?: i }
+    }
+
+    /** [NURS-05] The dates among [days] with night work (half or more of a block of work in 22:00~06:00). */
+    fun nightDates(days: List<ResolvedDay>): List<LocalDate> =
+        days.flatMap(::intervals).filter { it.night }.map { it.date }.distinct().sorted()
+
+    /** [REST-01] The first day to pass with a range starting at [from], so runs and month counts that end in it are seen. */
+    fun lookbackFrom(from: LocalDate, rules: RestRules): LocalDate {
+        val back = maxOf(NIGHT_STREAK, rules.maxNightsInRow + 1, rules.maxWorkDaysInRow + 1, rules.offsAfterNights + 2).toLong()
+        val run = from.minusDays(back)
+        return if (rules.maxNightsPerMonth > 0) minOf(run, from.withDayOfMonth(1)) else run
     }
 
     /**

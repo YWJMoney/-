@@ -171,6 +171,17 @@ class PayCodecTest {
         assertEquals(base, PayCodec.decode(plain))
     }
 
+    /** [JOB-02] 공무원 계급·호봉 round trip; a file without it, or with a grade this table lacks, reads as none. */
+    @Test fun publicGradeRoundTrip() {
+        val base = PayProfile(Occupation.FIRE, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_542_700))))
+        val g = com.bamnat.core.pay.PublicGrade("FIRE:소방교", 5, LocalDate.of(2019, 3, 1), onSite = false)
+        val p = base.copy(publicGrade = g)
+        assertEquals(p, PayCodec.decode(PayCodec.encode(p)))
+        assertEquals(false, PayCodec.encode(base).has("publicGrade"))
+        val newer = PayCodec.encode(p).apply { getJSONObject("publicGrade").put("grade", "FIRE:미래계급") }
+        assertNull(PayCodec.decode(newer).publicGrade)
+    }
+
     /** [PAYS-03] A file from 1.11 reads with the new fields at their defaults; values from a newer version do not fail it. */
     @Test fun olderAndNewerFilesStillRead() {
         val json = PayCodec.encode(PayProfile(Occupation.NURSE, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_500_000)))))

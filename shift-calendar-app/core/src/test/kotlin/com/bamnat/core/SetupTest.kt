@@ -99,7 +99,8 @@ class SetupTest {
 
     @Test fun `each bundle offers only the orders its shifts can fill`() {
         val two = ShiftBundles.byKey(ShiftBundles.TWO)!!
-        assertEquals(setOf("DDNNOO", "DNOO", "DDDNNNOOO", "DDNNOOOO", "DDOONNOO"), two.presets.map { it.codes }.toSet())
+        assertEquals(setOf("DDNNOO", "DNOO", "DDDNNNOOO", "DDNNOOOO", "DDOONNOO",
+            "DNBO", "DDDDDOONBNBNBNBNBNBNB"), two.presets.map { it.codes }.toSet())
         assertEquals(4, ShiftBundles.byKey(ShiftBundles.THREE)!!.presets.size)
         assertEquals(4, ShiftBundles.byKey(ShiftBundles.HOSPITAL)!!.presets.size)
         val duty = ShiftBundles.byKey(ShiftBundles.DUTY)!!

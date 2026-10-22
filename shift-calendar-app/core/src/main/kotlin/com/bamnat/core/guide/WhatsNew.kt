@@ -10,6 +10,16 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // [REST-01..03][JOB-02..05][NURS-04..06] 묶음 C; the other 1.22.0 lines join this release.
+        Release(33, "1.22.0", listOf(
+            Line("휴식 점검 기준을 병원·회사에 맞게 바꿔요. 달력의 휴식 점검 카드에서 ‘기준 바꾸기’를 누르고, 필요 없으면 같은 곳에서 꺼요", "shift.restRules"),
+            Line("N-O-D(나오데)·E-D(이브데이)를 이름으로 알려 주고, 한 달 나이트 수와 각 경고의 근거도 같이 보여요", "shift.restRules"),
+            Line("휴식 점검 카드에 이달 나이트 개수와 나이트 수당이 미리 보여요", "shift.restRules"),
+            Line("듀티표 사진을 읽은 뒤 확실하지 않은 칸만 키패드로 골라 고쳐요", "shift.roster"),
+            Line("동료에게 받은 근무표도 근무표 점검 기준으로 봐 줘요", "share.receive"),
+            Line("공무원·경찰·소방은 계급·호봉으로 봉급과 수당을 채우고, 시간외를 ‘이달 시간외 41/57’처럼 봐요", "pay.publicGrade"),
+            Line("근무 순서에 경찰 4조 2교대(주야비휴)와 소방 3조 2교대 21일이 생겼어요"),
+        )),
         Release(32, "1.21.0", listOf(
             Line("‘모든 조 보기’가 새로워졌어요. 내 조가 몇 번째여도 맞게 돌고, 날짜를 누르면 대근 들어올 수 있는 조를 이유와 함께 찾아요", "shift.teams"),
             Line("달력 위 ⋮ 대신 이름이 붙은 ‘도구’ 버튼과 ‘모든 조’ 버튼이 생겼어요"),

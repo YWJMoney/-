@@ -491,3 +491,13 @@ PAYR-03,"2027 요율 원문 대조: 장기요양보험료율, 국민연금 10%·
 PAYR-04,"실수령 추정을 근로소득 간이세액표(소득세법 시행령 별표 2)로, 부양가족·자녀 수 입력 (순번 100)",2 (1.22.0),대기,,
 PAYR-05,"공종별 일당 표 대한건설협회 2026 하반기 시중노임단가 원문 대조 (순번 183)",2 (1.22.0),대기,,
 PAYR-06,"광장 임금표 옆 정부 공표 시중노임단가 참고 줄, 원격 갱신 (순번 272)",2 (1.22.0),대기,,
+REST-01,"근무표 점검 기준 한 묶음(휴식 11시간·나이트 뒤 쉬는 날·연속 나이트·연속 근무·월 나이트, 끄기)을 달력 휴식 점검과 한 달 연달아 넣기가 같이 씀, 점검 카드 '기준 바꾸기' (순번 269)",2 (1.22.0),완료,,"1.22.0 묶음 C: RestRules.kt, RestRulesSheet(기준 바꾸기), RestRulesTest·RestRulesBackupTest, 430·431·432·437 화면"
+REST-02,"휴식 점검 남은 규칙: N-O-D·E-D 이름, 월 야간 상한, 겹치는 경고 한 번, 출처 표기, 패턴 편집 미리 점검 (순번 106)",2 (1.22.0),완료,,"1.22.0 묶음 C: RestCheck·DutyCheck 패턴 이름·월 나이트·출처, PatternScreen 미리 점검, DutyCheckTest·RestRulesTest"
+REST-03,순환 속도 판별(고정 야간·빠른·느린·24시간 당번)과 속도별 규칙 (순번 105),2 (1.22.0),완료,,"1.22.0 묶음 C: RotationSpeed.kt, RotationSpeedTest"
+JOB-02,"공무원 봉급표 2026(공무원보수규정 별표 3·10) 직급·호봉 → 봉급, 봉급기준액, 정근수당·가산금·명절휴가비 (순번 270)",2 (1.22.0),완료,,"1.22.0 묶음 C: PublicPayTable.kt(별표 3·10), PublicServantPay.apply, PublicGradeCard, PublicPayTableTest·PayCodecTest, 434·435 화면"
+JOB-03,"공무원 시간외: 평일 1시간 공제·월 57시간 상한(현업 제외), 달력 '이달 시간외 41/57' (순번 278)",2 (1.22.0),완료,,"1.22.0 묶음 C: PublicPayTable.overtime·PayCalculator 시간외 상한, 달력 카드 시간외 줄, PublicPayTableTest"
+JOB-04,"경찰·소방 근무 프리셋(공개 자료 근거, 묶음 A 프리셋 파일 형식) (순번 271)",2 (1.22.0),완료,,"1.22.0 묶음 C: remote/v1/presets.json p-police-4j2k·p-fire-3j2k-21·p-24h-3 출처, PresetFileTest·SetupTest"
+JOB-05,체결 알림 실제 표본 시험 틀(samples.tsv 한 줄 = 시험 하나) (순번 274),2 (1.22.0),완료,,"1.22.0 묶음 C: core/src/test/resources/trade-alerts/samples.tsv, TradeAlertSamplesTest (실제 표본은 사용자 수집 뒤 추가)"
+NURS-04,듀티표 사진 → 한 달 연달아 넣기에서 확신 낮은 칸만 고치기 (순번 275),2 (1.22.0),완료,,"1.22.0 묶음 C: DutyRoster guessed·doubtful, DutyRosterScreen → DutyTypingSheet, DutyRosterTypingTest, 433 화면"
+NURS-05,이달 나이트 개수·나이트 수당 미리 보기 (순번 277),2 (1.22.0),완료,,"1.22.0 묶음 C: NightSummary.kt, CalendarViewModel.monthNights, NightSummaryTest, 432 화면"
+NURS-06,받은 근무표에도 근무표 점검(알려 주기) (순번 282),2 (1.22.0),완료,,"1.22.0 묶음 C: ReceivedDutyCheck.kt, ReceivedDutyCheckTest, 436 화면"

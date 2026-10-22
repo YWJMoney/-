@@ -201,6 +201,10 @@ object PayCodec {
         .putOpt("probationEnd", p.probationEnd?.toString())
         .apply { if (p.probationPercent != 90) put("probationPercent", p.probationPercent) }
         .putOpt("holidayWeekStart", p.holidayWeekStart?.name)
+        // [JOB-02] 공무원 직급·호봉, left out when not set so older files stay the same.
+        .putOpt("publicGrade", p.publicGrade?.let { g ->
+            JSONObject().put("grade", g.gradeId).put("step", g.step).putOpt("start", g.serviceStart?.toString()).put("onSite", g.onSite)
+        })
 
     fun decode(o: JSONObject): PayProfile = PayProfile(
         // [PAYS-03] A job or wage type from a newer version reads as 직접 설정 and 월급제 rather than failing the file.
@@ -229,6 +233,17 @@ object PayCodec {
         probationEnd = o.optString("probationEnd").takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
         probationPercent = o.optInt("probationPercent", 90).coerceIn(50, 100),
         holidayWeekStart = o.optString("holidayWeekStart").let { n -> DayOfWeek.entries.firstOrNull { it.name == n } },
+        // [JOB-02] A grade this version's table does not have is dropped rather than failing the file.
+        publicGrade = o.optJSONObject("publicGrade")?.let { g ->
+            com.bamnat.core.pay.PublicPayTable.grade(g.optString("grade"))?.let {
+                com.bamnat.core.pay.PublicGrade(
+                    gradeId = it.id,
+                    step = g.optInt("step", 1).coerceAtLeast(1),
+                    serviceStart = g.optString("start").takeIf { s -> s.isNotEmpty() }?.let { s -> runCatching { LocalDate.parse(s) }.getOrNull() },
+                    onSite = g.optBoolean("onSite", true),
+                )
+            }
+        },
     )
 
     /** [PAYS-06] One of the user's own rules. */

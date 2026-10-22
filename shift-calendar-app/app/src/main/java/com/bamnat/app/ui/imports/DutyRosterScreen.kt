@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,6 +59,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
+import com.bamnat.app.data.rules
 import com.bamnat.app.imports.RosterScanner
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.UndoMessage
@@ -112,6 +114,8 @@ class DutyRosterViewModel(private val container: AppContainer, val calendarId: S
             }
         /** Cells that will be written: everything but the unknown ones. */
         val writable: Map<Int, DutyCell> get() = cells.filterValues { it !is DutyCell.Unknown }
+        /** [NURS-04] Days read with doubt the user has not touched yet. */
+        val doubtful: Set<Int> get() = row?.doubtful(month.lengthOfMonth())?.minus(edits.keys).orEmpty()
     }
 
     private val start = container.shownMonth.month.value.let { shown ->
@@ -121,6 +125,38 @@ class DutyRosterViewModel(private val container: AppContainer, val calendarId: S
     private val _ui = MutableStateFlow(Ui(start))
     val ui: StateFlow<Ui> = _ui.asStateFlow()
     val types: StateFlow<List<ShiftType>> = schedule.shiftTypes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /** [NURS-04] The calendar for the keypad sheet, which shows the month as it will be. */
+    val snapshot: StateFlow<com.bamnat.app.data.ScheduleSnapshot?> = schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    /** [REST-01] The same 근무표 점검 기준 as the calendar, as the month's pattern turns. */
+    fun rules(snap: com.bamnat.app.data.ScheduleSnapshot, month: YearMonth): com.bamnat.core.schedule.RestRules =
+        com.bamnat.core.schedule.RotationSpeed.of(com.bamnat.core.schedule.PatternTimeline.current(snap.patterns, month.atDay(1)), snap.shiftTypes)
+            .adjust(container.settingsRepository.current.rules)
+
+    /** [NURS-04] The roster as the keypad sheet types it: kinds of day and days off (leave stays as read). */
+    fun typing(): Map<LocalDate, com.bamnat.core.model.ShiftOverride> = _ui.value.let { u ->
+        u.cells.mapNotNull { (d, c) ->
+            when (c) {
+                is DutyCell.Shift -> u.month.atDay(d) to com.bamnat.core.model.ShiftOverride.Shift(c.shiftTypeId)
+                DutyCell.Off -> u.month.atDay(d) to com.bamnat.core.model.ShiftOverride.Off
+                else -> null
+            }
+        }.toMap()
+    }
+
+    /** [NURS-04] What the keypad sheet saved, back as the user's own cells; 'pattern' leaves the day as it is. */
+    fun fromTyping(changes: Map<LocalDate, com.bamnat.core.model.ShiftOverride>, left: Set<LocalDate> = emptySet()) = _ui.update { u ->
+        val read = u.cells
+        val edits = changes.filterKeys { YearMonth.from(it) == u.month }.mapNotNull { (date, o) ->
+            val cell: DutyCell? = when (o) {
+                is com.bamnat.core.model.ShiftOverride.Shift -> DutyCell.Shift(o.shiftTypeId)
+                com.bamnat.core.model.ShiftOverride.Off -> DutyCell.Off
+                com.bamnat.core.model.ShiftOverride.None -> null
+            }
+            // A doubtful day typed over is the user's answer even when it matches what was read.
+            (date.dayOfMonth to cell).takeIf { read[date.dayOfMonth] != cell || date.dayOfMonth in u.doubtful && date !in left }
+        }.toMap()
+        u.copy(edits = u.edits + edits)
+    }
     private val _messages = MutableSharedFlow<UndoMessage>(extraBufferCapacity = 4)
     val messages: SharedFlow<UndoMessage> = _messages.asSharedFlow()
 
@@ -181,6 +217,10 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     var pasting by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Int?>(null) }
+    // [NURS-04] The month in the keypad sheet with the doubtful cells marked.
+    var typing by remember { mutableStateOf(false) }
+    var left by remember { mutableStateOf(emptySet<LocalDate>()) }
+    val snap by vm.snapshot.collectAsStateWithLifecycle()
     // The system photo picker: no storage permission, only the photo the user picks is shared with the app.
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(vm::readPhoto) }
     LaunchedEffect(vm) {
@@ -246,18 +286,36 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                 SectionCard(title = "${ui.month.monthValue}월 미리 보기") {
                     val unknown = ui.cells.values.count { it is DutyCell.Unknown }
                     Text(
-                        if (unknown > 0) "?는 알아보지 못한 칸이에요. 눌러서 골라 주세요. 고르지 않은 칸과 빈칸은 그대로 둬요."
-                        else "칸을 누르면 바꿀 수 있어요. 빈칸인 날은 그대로 둬요.",
+                        (if (unknown > 0) "?는 알아보지 못한 칸이에요. 눌러서 골라 주세요. 고르지 않은 칸과 빈칸은 그대로 둬요."
+                        else "칸을 누르면 바꿀 수 있어요. 빈칸인 날은 그대로 둬요.") +
+                            if (ui.doubtful.isNotEmpty()) " 노란 칸은 사진에서 확실하지 않은 칸이에요." else "",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(8.dp))
-                    RosterGrid(ui.month, ui.cells, byId) { editing = it }
+                    RosterGrid(ui.month, ui.cells, byId, ui.doubtful) { editing = it }
+                    if (snap != null && types.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(onClick = { typing = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                            Text(if (ui.doubtful.isEmpty()) "키패드로 고치기" else "확실하지 않은 ${ui.doubtful.size}칸 키패드로 고치기")
+                        }
+                    }
                 }
             }
             item { Spacer(Modifier.height(24.dp)) }
         }
     }
     if (pasting) PasteDialog(onDismiss = { pasting = false }) { pasting = false; vm.readText(it) }
+    val s = snap
+    if (typing && s != null) {
+        com.bamnat.app.ui.calendar.DutyTypingSheet(
+            s, ui.month, onDismiss = { typing = false },
+            onSave = { changes -> vm.fromTyping(changes, left); typing = false },
+            onDoubtLeft = { left = it },
+            rules = vm.rules(s, ui.month),
+            initial = vm.typing(),
+            doubtful = ui.doubtful.map { ui.month.atDay(it) }.toSet(),
+        )
+    }
     editing?.let { day ->
         CellDialog(ui.month.atDay(day), types, onDismiss = { editing = null }) { cell -> vm.edit(day, cell); editing = null }
     }
@@ -265,7 +323,7 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
 
 /** The month as a calendar, Monday first, each day with what the roster says. */
 @Composable
-private fun RosterGrid(month: YearMonth, cells: Map<Int, DutyCell>, byId: Map<Long, ShiftType>, onTap: (Int) -> Unit) {
+private fun RosterGrid(month: YearMonth, cells: Map<Int, DutyCell>, byId: Map<Long, ShiftType>, doubtful: Set<Int>, onTap: (Int) -> Unit) {
     val lead = month.atDay(1).dayOfWeek.value - 1
     val slots = List(lead) { null } + (1..month.lengthOfMonth()).toList()
     Row { listOf("월", "화", "수", "목", "금", "토", "일").forEach {
@@ -277,6 +335,7 @@ private fun RosterGrid(month: YearMonth, cells: Map<Int, DutyCell>, byId: Map<Lo
             (0 until 7).forEach { i ->
                 val day = week.getOrNull(i)
                 Box(Modifier.weight(1f).aspectRatio(0.9f).padding(2.dp)
+                    .then(if (day != null && day in doubtful) Modifier.background(MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.shapes.small) else Modifier)
                     .then(if (day != null) Modifier.clickable { onTap(day) } else Modifier), contentAlignment = Alignment.TopCenter) {
                     if (day != null) Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("$day", style = MaterialTheme.typography.labelSmall)

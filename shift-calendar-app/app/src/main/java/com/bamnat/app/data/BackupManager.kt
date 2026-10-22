@@ -264,7 +264,7 @@ class BackupManager(
                 .put("alarmMission", s.alarmMission).put("shiftMissions", encodeShiftMissions(s.shiftMissions))
                 .put("wakeCheck", s.wakeCheckMinutes)
                 .put("restCheck", s.restCheck)
-                .put("strictRest", s.strictRest).put("sleepTips", s.sleepTips)
+                .put("strictRest", s.strictRest).put("restRules", s.restRules).put("sleepTips", s.sleepTips)
                 // 1.10 and before read one switch for all sleep notices.
                 .put("sleepReminders", s.briefing || s.commuteNotice)
                 .put("briefing", s.briefing).put("commuteNotice", s.commuteNotice).put("bedtimeNotice", s.bedtimeNotice)
@@ -605,6 +605,8 @@ class BackupManager(
                     calendarMemos = o.optBoolean("calendarMemos", s.calendarMemos),
                     restCheck = o.optBoolean("restCheck", s.restCheck),
                     strictRest = o.optBoolean("strictRest", s.strictRest),
+                    // [REST-01] Added in 1.22.
+                    restRules = o.optString("restRules", s.restRules),
                     sleepTips = o.optBoolean("sleepTips", s.sleepTips),
                     briefing = o.optBoolean("briefing", o.optBoolean("sleepReminders", s.briefing)),
                     commuteNotice = o.optBoolean("commuteNotice", o.optBoolean("sleepReminders", s.commuteNotice)),

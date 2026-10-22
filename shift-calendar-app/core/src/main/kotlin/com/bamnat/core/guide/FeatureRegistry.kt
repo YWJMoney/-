@@ -152,6 +152,9 @@ object FeatureRegistry {
         f("shift.dutyTyping", "NURS-01", "한 달 근무 연달아 넣기", "근무표를 보며 D·E·N·OFF를 누르면 다음 날로 넘어가며 한 달을 넣고, 역순·나이트 뒤 쉬는 날·연속 근무를 알려 줘요",
             setOf(SHIFT), "달력 › 도구 › 한 달 근무 연달아 넣기 (빠른 입력 › 한 달 연달아)", at(Place.CALENDAR),
             "연달아", "키패드", "한 달 입력", "듀티 입력", "간호사", "나이트", "역순", "근무표 점검"),
+        f("shift.restRules", "REST-01", "근무표 점검 기준", "휴식 11시간·나이트 뒤 쉬는 날·연속 나이트·연속 근무·한 달 나이트 기준을 병원·회사에 맞추고, 이달 나이트 수와 시간외를 함께 봐요",
+            setOf(SHIFT), "달력 › 휴식 점검 카드 › 기준 바꾸기 (설정 › 잠과 휴식 › 근무표 점검 기준)", at(Place.SETTINGS_REST, "근무표 점검 기준"),
+            "휴식 점검", "근무표 점검", "N-O-D", "나오데", "이브데이", "연속 나이트", "나이트 개수", "11시간", "점검 끄기", off = Off.ELSEWHERE),
         f("shift.health", "SHFT-07", "연간 건강 지표", "야간 비율, 가장 길게 이어진 야간, 11시간 못 쉰 날을 1년으로 봐요",
             setOf(SHIFT), "${tab(SHIFT)} › ○년 건강 지표", at(Place.HEALTH_REPORT), "야간 비율", "연속 야간", "건강", "휴식",
             off = Off.CALENDAR, moment = Moment.AFTER_NIGHT,
@@ -167,6 +170,8 @@ object FeatureRegistry {
         // Pay, for every kind of work paid by the hour or the month.
         f("pay.calc", "PAY-01", "급여 계산", "근무와 시간으로 이번 달 예상 급여를 계산하고 명세서와 맞춰 봐요",
             PAID, "${tab(SHIFT)} › 이번 달 급여", at(Place.PAY), "월급", "급여", "시급", "주휴수당", "명세서", "수당", "기본급"),
+        f("pay.publicGrade", "JOB-02", "공무원 봉급표", "공무원·경찰·소방은 계급·호봉으로 봉급, 시간외(월 57시간)·야간·휴일 수당, 정근수당·명절휴가비를 채워요",
+            PAID, "${tab(SHIFT)} › 이번 달 급여 › 공무원 봉급표", at(Place.PAY), "공무원", "경찰", "소방", "호봉", "봉급표", "시간외", "57시간", "정근수당", "명절휴가비"),
         f("pay.gap", "SHFT-04", "실제 입금 차이", "급여일에 들어온 급여와 계산한 급여의 차이를 알려 줘요",
             PAID, "${tab(SHIFT)} › ○월 급여 들어온 돈", at(Place.STATS), "입금", "차이", "들어온 돈", "실수령", "세후",
             off = Off.CALENDAR, moment = Moment.PAYDAY,
