@@ -117,6 +117,24 @@ class TierAppTest {
         assertEquals(1, com.bamnat.app.data.PersonalCalendar.FREE_ADDED)
     }
 
+    @Test fun everyProFeatureIsOnTheProScreenAndTheServerCanOpenIt() {
+        // [PROV-08] Each 프로 feature under exactly one pillar, nothing promised for later, 리더 not shown.
+        val shown = com.bamnat.app.ui.pro.PRO_PILLARS.flatMap { it.features }
+        assertEquals(shown.size, shown.toSet().size)
+        assertEquals(Feature.entries.filter { it.minTier == Tier.PRO }.toSet(), shown.toSet())
+        assertTrue(com.bamnat.app.ui.pro.PRO_PILLARS.all { p -> p.lines.isNotEmpty() && p.lines.none { "곧" in it } })
+        assertTrue("점점 커지는 소리 stays free", com.bamnat.app.ui.pro.PRO_COMPARE.any { (what, free, _) -> free && "점점 커지는 소리" in what })
+        assertTrue(com.bamnat.app.ui.pro.PRO_PILLARS.flatMap { it.lines }.none { "점점 커지는 소리" in it })
+        // The admin app's 모두에게 무료로 연 프로 기능 takes the names; each opens alone after the launch.
+        Feature.entries.filter { it.minTier == Tier.PRO }.forEach { f ->
+            val answer = JSONObject().put("billingLive", true).put("freeFeatures", org.json.JSONArray(listOf(f.name)))
+            val g = gate(LaunchConfig.parse(answer, now))
+            assertTrue(f.name, g.allows(f))
+            assertEquals(f.name, Feature.entries.filter { it.minTier == Tier.PRO && it != f }.toSet(),
+                Feature.entries.filter { it.minTier == Tier.PRO && g.locked(it) }.toSet())
+        }
+    }
+
     @Test fun beforeTheLaunchEverythingIsOpen() {
         val g = gate(LaunchConfig(billingLive = false))
         assertFalse(g.live)

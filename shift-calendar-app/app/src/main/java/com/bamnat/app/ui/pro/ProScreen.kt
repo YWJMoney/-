@@ -56,6 +56,7 @@ import com.bamnat.app.billing.Plan
 import com.bamnat.app.billing.ProductIds
 import com.bamnat.app.company.CompanyException
 import com.bamnat.app.review.InAppReview.findActivity
+import com.bamnat.app.tier.Feature
 import com.bamnat.app.tier.Gate
 import com.bamnat.app.tier.ProState
 import com.bamnat.app.ui.components.SectionCard
@@ -65,26 +66,43 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
-/** [MON-04] 프로's four pillars (수익화 확정 5-2): what it adds now, and what the next version brings. */
-data class Pillar(val title: String, val now: List<String>, val soon: List<String> = emptyList())
+/**
+ * [MON-04] 프로's four pillars (수익화 확정 5-2), each with the [Feature]s it opens. [PROV-08] Since 1.20.0
+ * every line is in the app; TierAppTest checks that every 프로 feature is on this screen.
+ */
+data class Pillar(val title: String, val lines: List<String>, val features: Set<Feature>)
 
 val PRO_PILLARS = listOf(
-    Pillar("월급을 증명해요", listOf("급여 명세서 사진으로 맞춰 보고 다른 곳 짚기", "회사 임금 규칙 글로 자동 채우기", "기간을 골라 값 한 번에 바꾸기, 연도별 인상 계산"),
-        listOf("월·연 급여 리포트 PDF·CSV", "지난달·작년 비교, 연간 급여·근무 리포트")),
-    Pillar("근무를 어디서나", emptyList(), listOf("구글·삼성 캘린더에 근무 자동 쓰기", "다른 캘린더 앱이 따라오는 구독 주소", "매일 자동 암호 백업", "공유 링크 여러 개와 기간 고르기", "근무표 PDF(한 달·1년)")),
-    Pillar("절대 안 놓치는 알람", emptyList(), listOf("끄기 미션(계산 문제·흔들기)", "점점 커지는 소리", "일어났는지 확인 알람")),
-    Pillar("더 넓게, 깔끔하게", listOf("돈 통계: 지난달 비교, 분류별 지출, 올해 흐름", "추가 달력 2개째부터", "광고 없음")),
+    Pillar("월급을 증명해요",
+        listOf("급여 명세서 사진으로 맞춰 보고 다른 곳 짚기", "회사 임금 규칙 글로 자동 채우기", "기간을 골라 값 한 번에 바꾸기, 연도별 인상 계산",
+            "월·연 급여 리포트 PDF·CSV(어떻게 계산했는지까지)", "지난달·작년 같은 달과 비교, 1년 급여·근무 흐름"),
+        setOf(Feature.PAYSLIP_MATCH, Feature.PAY_RULE_IMPORT, Feature.PAY_BULK_EDIT, Feature.PAY_REPORT, Feature.WORK_COMPARE)),
+    Pillar("근무를 어디서나",
+        listOf("휴대폰 캘린더(삼성·구글 캘린더 앱)에 근무 자동 쓰기", "다른 캘린더 앱이 따라오는 구독 주소", "매일 자동 암호 백업(드라이브 같은 고른 파일에)",
+            "달력마다 공유 링크 5개까지, 180일·1년", "근무표 PDF(한 달·1년, 인쇄용)"),
+        setOf(Feature.DEVICE_CALENDAR, Feature.ICS_FEED, Feature.AUTO_BACKUP, Feature.MORE_LINKS, Feature.ROSTER_PDF)),
+    Pillar("절대 안 놓치는 알람",
+        listOf("끄기 미션(계산 문제·흔들기), 근무마다 다르게", "끈 뒤 ‘일어났나요?’ 묻고 답이 없으면 한 번 더 울림"),
+        setOf(Feature.SURE_ALARM)),
+    Pillar("더 넓게, 깔끔하게",
+        listOf("돈 통계: 지난달 비교, 분류별 지출, 올해 흐름", "추가 달력 2개째부터", "광고 없음"),
+        setOf(Feature.MONEY_STATS, Feature.MORE_CALENDARS, Feature.NO_ADS)),
 )
 
 /** [MON-04] 무료 vs 프로, row by row. Everything not listed is free. */
 val PRO_COMPARE = listOf(
     Triple("근무표·패턴·빠른 입력·대근·연차", true, true),
-    Triple("알람·알람 점검·위젯·워치", true, true),
+    Triple("알람·점점 커지는 소리·알람 점검·위젯·워치", true, true),
     Triple("이번 달 예상 월급(수당·주휴·세금)", true, true),
     Triple("모든 조 보기, 1년 달력, 주 52시간 점검", true, true),
     Triple("가계부 기록·합계·받을 돈", true, true),
-    Triple("백업, 앱 잠금, 화면 꾸미기, 문의", true, true),
+    Triple("근무표 링크 1개(90일까지), 캘린더 파일 내보내기", true, true),
+    Triple("백업 파일 저장, 앱 잠금, 화면 꾸미기, 문의", true, true),
     Triple("명세서 대조, 규칙 자동 인식, 값 일괄 적용", false, true),
+    Triple("급여 리포트 PDF·CSV, 지난달·작년 비교", false, true),
+    Triple("휴대폰 캘린더 쓰기, 캘린더 구독 주소", false, true),
+    Triple("매일 자동 백업, 링크 5개·1년, 근무표 PDF", false, true),
+    Triple("끄기 미션, 일어났는지 확인", false, true),
     Triple("돈 통계(비교·분류·흐름)", false, true),
     Triple("추가 달력 2개째부터", false, true),
     Triple("광고 없음", false, true),
@@ -150,8 +168,7 @@ fun ProScreen(onBack: () -> Unit) {
                     PRO_PILLARS.forEachIndexed { i, p ->
                         if (i > 0) HorizontalDivider(Modifier.padding(vertical = 6.dp))
                         Text(p.title, style = MaterialTheme.typography.titleSmall)
-                        p.now.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
-                        p.soon.forEach { Text("• $it (곧 더해져요)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        p.lines.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
                     }
                 }
 
