@@ -96,6 +96,10 @@ import com.bamnat.app.ui.settings.ExtraKindsViewModel
 import com.bamnat.app.ui.settings.InquiryScreen
 import com.bamnat.app.ui.settings.InquiryViewModel
 import com.bamnat.app.ui.settings.SettingsScreen
+import com.bamnat.app.ui.settings.SettingsGo
+import com.bamnat.app.ui.settings.SettingsLink
+import com.bamnat.app.ui.settings.SettingsLinks
+import androidx.compose.material3.BadgedBox
 import com.bamnat.app.ui.settings.SettingsViewModel
 import com.bamnat.app.ui.shifts.PatternScreen
 import com.bamnat.app.ui.shifts.ShiftTypesScreen
@@ -285,7 +289,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         when (target) {
             // Over an editor the calendar goes on top, so the editor's input is still there after back.
             // [SHR-12] The calendar opens its share sheet itself.
-            NoticeLinks.Target.TODAY, NoticeLinks.Target.SHARE -> {
+            NoticeLinks.Target.TODAY, NoticeLinks.Target.SHARE, NoticeLinks.Target.RECEIVE -> {
                 val current = nav.currentBackStackEntry?.destination?.route
                 when {
                     current == TopLevel.CALENDAR.route -> Unit
@@ -294,6 +298,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 }
             }
             NoticeLinks.Target.MONEY -> { nav.navigateTopLevel(TopLevel.MONEY.route); NoticeLinks.consume(target) }
+            // [LEDG-16] The money tab takes this one itself, to open 자동 기록.
+            NoticeLinks.Target.AUTO_RECORD -> nav.navigateTopLevel(TopLevel.MONEY.route)
             NoticeLinks.Target.MEMOS -> { nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target) }
             NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.pay()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.SLEEP -> { nav.navigate(Routes.SLEEP) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -309,6 +315,32 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 }
             }
         }
+    }
+
+    // [UX-04] A help answer, a search result or a screen's own "설정" opens the setting or screen it names.
+    // A group of settings opens over an inner screen, so back returns there; a screen opens on top.
+    val settingsLink by SettingsLinks.target.collectAsStateWithLifecycle()
+    LaunchedEffect(settingsLink) {
+        when (val link = settingsLink ?: return@LaunchedEffect) {
+            is SettingsLink.Page -> {
+                val current = nav.currentBackStackEntry?.destination?.route
+                when {
+                    current == TopLevel.SETTINGS.route -> Unit
+                    TopLevel.entries.any { it.route == current } -> nav.navigateTopLevel(TopLevel.SETTINGS.route)
+                    else -> nav.navigate(TopLevel.SETTINGS.route) { launchSingleTop = true }
+                }
+            }
+            is SettingsLink.Go -> {
+                SettingsLinks.consume(link)
+                link.go.route()?.let { r -> nav.navigate(r) { launchSingleTop = true } }
+            }
+        }
+    }
+    // [UX-05] A new answer to the user's question shows on the 설정 tab from the moment the app opens.
+    val inquiryUnread by container.inquiryStore.unread.collectAsStateWithLifecycle()
+    LaunchedEffect(homeRequests) {
+        if (!container.inquiryApi.enabled || !container.inquiryStore.asked) return@LaunchedEffect
+        runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess { container.inquiryStore.update(it) }
     }
 
     // [SHR-02] A tapped shared calendar link opens on the calendar. Over an editor it goes on top,
@@ -356,8 +388,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     NavigationRailItem(
                         selected = selected,
                         onClick = { navigateTop(dest) },
-                        icon = { Icon(if (selected) dest.selectedIcon else dest.icon, contentDescription = null) },
-                        label = { Text(dest.labelFor(settingsNow.workStyle), maxLines = 1) },
+                        icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
+                        label = { TabLabel(dest.labelFor(settingsNow.workStyle)) },
                     )
                 }
             }
@@ -377,8 +409,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                 NavigationBarItem(
                                     selected = selected,
                                     onClick = { navigateTop(dest) },
-                                    icon = { Icon(if (selected) dest.selectedIcon else dest.icon, contentDescription = null) },
-                                    label = { Text(dest.labelFor(settingsNow.workStyle), maxLines = 1) },
+                                    icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
+                                    label = { TabLabel(dest.labelFor(settingsNow.workStyle)) },
                                 )
                             }
                         }
@@ -493,7 +525,11 @@ private fun AppNavHost(
         composable(Routes.CALENDARS) {
             val vm = appViewModel { CalendarsViewModel(it) }
             val add = rememberAddCalendar(container) { id -> nav.navigate(Routes.calendarSetup(id)) { launchSingleTop = true } }
-            CalendarsScreen(vm, onBack = { nav.popFrom(Routes.CALENDARS) }, onAddCalendar = add)
+            // [UX-03] 공유 on a calendar of the list: that calendar, on the calendar tab, with its share sheet.
+            CalendarsScreen(vm, onBack = { nav.popFrom(Routes.CALENDARS) }, onAddCalendar = add, onShare = { id ->
+                nav.navigateTopLevel(TopLevel.CALENDAR.route)
+                NoticeLinks.open(NoticeLinks.Target.SHARE, id)
+            })
         }
         composable(TopLevel.MONEY.route) {
             // [MCAL-06] The money of the calendar on the calendar tab, a view of its own per calendar.
@@ -610,7 +646,11 @@ private fun AppNavHost(
                 onReport = if (container.inquiryApi.enabled) { check ->
                     container.pendingPayCheck = check
                     nav.navigate(Routes.INQUIRY) { launchSingleTop = true }
-                } else null)
+                } else null,
+                // [PAYS-09] The invitation after a match or an item of the company's own sends to 내 설정 나누기.
+                onShareWay = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
+                // [PAYS-10][UX-05] '?' opens the pay answers first, then a question if they don't help.
+                onHelp = { com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "급여", help = true)) })
             if (inviting) {
                 InviteSheet(nudges, onShare = { inviting = false; nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                     onDismiss = { inviting = false })
@@ -784,6 +824,35 @@ private fun AppNavHost(
             MemoEditorScreen(vm = vm, onBack = { nav.popFrom(Routes.MEMO) })
         }
     }
+}
+
+/** [UX-06] A tab's name, whole at every text size: at the largest sizes "근무·급여" was cut to "근무·". */
+@Composable
+private fun TabLabel(text: String) = FitText(text, MaterialTheme.typography.labelMedium)
+
+/** [UX-05] A tab's icon; 설정 carries how many answers to the user's questions are new. */
+@Composable
+private fun TabIcon(dest: TopLevel, selected: Boolean, badge: Int) {
+    val icon = if (selected) dest.selectedIcon else dest.icon
+    if (badge <= 0) {
+        Icon(icon, contentDescription = null)
+        return
+    }
+    BadgedBox(badge = { IconCountBadge(badge, "문의에 새 답 ${badge}개", cap = 9) }) { Icon(icon, contentDescription = null) }
+}
+
+/** [UX-04] The route a [SettingsGo] opens; the calendar's own sheets are opened through [NoticeLinks] instead. */
+private fun SettingsGo.route(): String? = when (this) {
+    SettingsGo.WORK_STYLE -> Routes.WORK_STYLE
+    SettingsGo.PATTERN -> Routes.pattern()
+    SettingsGo.SHIFT_TYPES -> Routes.shiftTypes()
+    SettingsGo.EXTRA_KINDS -> Routes.EXTRA_KINDS
+    SettingsGo.PAY -> Routes.pay()
+    SettingsGo.CALENDARS -> Routes.CALENDARS
+    SettingsGo.DIAGNOSTICS -> Routes.diagnostics(false)
+    SettingsGo.INQUIRY -> Routes.INQUIRY
+    SettingsGo.BOARD -> Routes.COMPANY_BOARD
+    SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT -> null
 }
 
 /**

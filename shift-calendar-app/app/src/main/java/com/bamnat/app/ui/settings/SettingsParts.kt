@@ -1,5 +1,8 @@
 package com.bamnat.app.ui.settings
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,12 +18,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material3.Badge
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -28,18 +34,72 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.components.MinutesStepper
+import kotlinx.coroutines.delay
 
 /** [SET-01][VIS-02] Every row is at least this tall, so it is easy to hit. */
 private val ROW_MIN_HEIGHT = 56.dp
+
+/**
+ * [UX-04] The row a search result or another screen pointed at. A new object each time, so pointing at
+ * the same row twice scrolls to it again.
+ */
+internal class SettingsFocus(val row: String)
+
+/** [UX-04] The row of the open group to scroll to and light up, if any. */
+internal val LocalSettingsFocus = compositionLocalOf<SettingsFocus?> { null }
+
+/**
+ * [UX-04] Marks the row named [row]: when settings was opened for it, the group scrolls it into view
+ * once the page has slid in, and a soft band stays behind it so the eye lands on it.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun Modifier.focusMark(row: String): Modifier {
+    val focus = LocalSettingsFocus.current
+    val requester = remember { BringIntoViewRequester() }
+    val glow = remember { Animatable(0f) }
+    val pointed = focus?.row == row
+    LaunchedEffect(focus) {
+        if (!pointed) { glow.snapTo(0f); return@LaunchedEffect }
+        delay(FOCUS_DELAY_MILLIS)
+        requester.bringIntoView()
+        glow.animateTo(1f, tween(400))
+    }
+    val band = MaterialTheme.colorScheme.primary
+    return this
+        .bringIntoViewRequester(requester)
+        .drawBehind {
+            val a = glow.value
+            if (a <= 0f) return@drawBehind
+            val out = 8.dp.toPx()
+            val corner = CornerRadius(12.dp.toPx())
+            drawRoundRect(band.copy(alpha = 0.10f * a), topLeft = Offset(-out, 0f),
+                size = Size(size.width + out * 2, size.height), cornerRadius = corner)
+            drawRoundRect(band.copy(alpha = a), topLeft = Offset(-out, size.height * 0.2f),
+                size = Size(4.dp.toPx(), size.height * 0.6f), cornerRadius = CornerRadius(2.dp.toPx()))
+        }
+}
+
+/** The group page slides in for 250 ms; the row is scrolled to after that. */
+private const val FOCUS_DELAY_MILLIS = 320L
 
 /**
  * [SET-01][VIS-02] A setting that is on or off. The whole row toggles and is read once, as a switch;
@@ -57,7 +117,7 @@ internal fun SwitchRow(
     onFix: (() -> Unit)? = null,
     onChange: (Boolean) -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth()) {
+    Column(Modifier.focusMark(title).fillMaxWidth()) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -96,6 +156,7 @@ internal fun WarningLine(text: String, fixLabel: String, onFix: (() -> Unit)?) {
 internal fun NavRow(title: String, subtitle: String?, onClick: () -> Unit) {
     Row(
         Modifier
+            .focusMark(title)
             .fillMaxWidth()
             .heightIn(min = ROW_MIN_HEIGHT)
             .clickable(role = Role.Button, onClick = onClick)
@@ -115,7 +176,7 @@ internal fun NavRow(title: String, subtitle: String?, onClick: () -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun <T> ChoiceRow(title: String, subtitle: String?, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+    Column(Modifier.focusMark(title).fillMaxWidth().padding(vertical = 6.dp)) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
         subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
@@ -130,7 +191,7 @@ internal fun <T> ChoiceRow(title: String, subtitle: String?, options: List<Pair<
 @Composable
 internal fun PermissionRow(ok: Boolean, title: String, fixLabel: String, onFix: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(vertical = 4.dp),
+        Modifier.focusMark(title).fillMaxWidth().heightIn(min = 48.dp).padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -147,7 +208,7 @@ internal fun PermissionRow(ok: Boolean, title: String, fixLabel: String, onFix: 
 /** An hour limit: the title above, the stepper under it, so a narrow cover screen keeps both readable. */
 @Composable
 internal fun LimitRow(title: String, subtitle: String, hours: Int, onChange: (Int) -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+    Column(Modifier.focusMark(title).fillMaxWidth().padding(vertical = 6.dp)) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
         Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         MinutesStepper(
@@ -161,9 +222,9 @@ internal fun LimitRow(title: String, subtitle: String, hours: Int, onChange: (In
     }
 }
 
-/** [SET-01] A group on the settings list: what it holds, and how it stands now. */
+/** [SET-01] A group on the settings list: what it holds, and how it stands now. [badge]: new answers, counted. */
 @Composable
-internal fun GroupRow(icon: ImageVector, title: String, summary: String, selected: Boolean, onClick: () -> Unit) {
+internal fun GroupRow(icon: ImageVector, title: String, summary: String, selected: Boolean, badge: Int = 0, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Row(
         Modifier
@@ -184,7 +245,16 @@ internal fun GroupRow(icon: ImageVector, title: String, summary: String, selecte
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f, fill = false))
+                if (badge > 0) {
+                    Spacer(Modifier.width(8.dp))
+                    // [UX-05] Read as words, not as a bare number.
+                    Badge(Modifier.clearAndSetSemantics { contentDescription = "새 답 ${badge}개" }) {
+                        Text(if (badge > 9) "9+" else "$badge")
+                    }
+                }
+            }
             Text(summary, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 2)
         }
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = colors.outline)

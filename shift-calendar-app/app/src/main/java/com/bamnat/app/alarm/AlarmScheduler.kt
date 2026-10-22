@@ -60,9 +60,7 @@ class AlarmScheduler(
     fun reschedule(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, after: LocalDateTime = LocalDateTime.now()) {
         // [REL-11] An inexact alarm can arrive minutes late. Until it has, re-planning (another
         // alarm or a widget waking the app) must keep it rather than skip past it to the next one.
-        val pending = prefs.getLong(K_PENDING, 0L)
-        val afterMillis = after.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        val from = if (pending in (afterMillis - LATE_KEEP_MILLIS + 1)..afterMillis) millisToLocal(pending - 1_000) else after
+        val from = planFrom(after)
         val plan = if (enabled) nextOf(calendars, from) else null
         val operation = shiftAlarmIntent(plan)
         saveBootCopy(if (enabled) planAhead(calendars, from) else emptyList())
@@ -88,6 +86,73 @@ class AlarmScheduler(
             if (!exact) Notifications.postExactAlarmWarning(context)
         }
         _upcoming.value = UpcomingAlarm(plan, triggerAt, exact)
+    }
+
+    /**
+     * [FEAT-04][REL-13] Self-check when the app comes to the front: the alarm the system holds must be
+     * the one the schedule calls for. A force stop, a cleaner app or a vendor battery tool can drop it
+     * without telling anyone; then it is registered again and the repair is logged for 알람 점검.
+     * Returns true when something had to be put right.
+     */
+    @Synchronized
+    fun verify(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, now: LocalDateTime = LocalDateTime.now()): Boolean {
+        val expected = if (enabled) nextOf(calendars, planFrom(now)) else null
+        val held = systemHolds()
+        val pending = prefs.getLong(K_PENDING, 0L)
+        val problem = when {
+            expected == null -> null
+            !held -> "missing"
+            pending != expected.triggerAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() -> "different"
+            else -> null
+        } ?: return false
+        telemetry.event(DiagEvents.ALARM_REPAIRED, problem)
+        reschedule(calendars, enabled, now)
+        return true
+    }
+
+    private val _testAt = MutableStateFlow(prefs.getLong(K_TEST_AT, 0L).takeIf { it > System.currentTimeMillis() })
+    /** When the 알람 점검 test alarm will ring, or null [REL-13]. */
+    val testAt: StateFlow<Long?> = _testAt.asStateFlow()
+
+    /**
+     * [REL-13] A test alarm one minute from now, through the same receiver, ringing screen and
+     * permissions as a shift alarm, so the user hears whether alarms work on this phone. It has its
+     * own slot and never moves the shift alarm.
+     */
+    fun scheduleTest(now: LocalDateTime = LocalDateTime.now()): Long {
+        val at = now.plusMinutes(1).withSecond(0).withNano(0).let { if (it.isAfter(now.plusSeconds(30))) it else it.plusMinutes(1) }
+        val triggerAt = at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val ring = RingRequest(TEST_NAME, at.toLocalDate(), at.toLocalTime(), 0, null, triggerAt, label = TEST_NAME)
+        setAlarm(triggerAt, testIntent(context, ring))
+        prefs.edit().putLong(K_TEST_AT, triggerAt).apply()
+        _testAt.value = triggerAt
+        telemetry.event(DiagEvents.ALARM_TEST_SET, EventBook.triggerDetail(triggerAt))
+        return triggerAt
+    }
+
+    fun cancelTest() {
+        alarmManager.cancel(testIntent(context, null))
+        clearTest()
+    }
+
+    /** The test alarm rang or was called off. */
+    fun clearTest() {
+        prefs.edit().remove(K_TEST_AT).apply()
+        _testAt.value = null
+    }
+
+    /** True while the system still holds this app's shift alarm (a force stop drops it). */
+    fun systemHolds(): Boolean = PendingIntent.getBroadcast(
+        context, REQ_SHIFT,
+        Intent(context, AlarmReceiver::class.java).setAction(AlarmReceiver.ACTION_SHIFT_ALARM),
+        PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+    ) != null && prefs.getLong(K_PENDING, 0L) != 0L
+
+    /** Where planning starts: an overdue inexact alarm is kept for a while [REL-11]. */
+    private fun planFrom(after: LocalDateTime): LocalDateTime {
+        val pending = prefs.getLong(K_PENDING, 0L)
+        val afterMillis = after.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        return if (pending in (afterMillis - LATE_KEEP_MILLIS + 1)..afterMillis) millisToLocal(pending - 1_000) else after
     }
 
     /** The alarm that was registered has rung (or was dropped as stale): plan past it from now on. */
@@ -203,6 +268,14 @@ class AlarmScheduler(
             )
         }
 
+        fun testIntent(context: Context, ring: RingRequest?): PendingIntent {
+            val intent = Intent(context, AlarmReceiver::class.java).setAction(AlarmReceiver.ACTION_TEST_ALARM)
+            ring?.putInto(intent)
+            return PendingIntent.getBroadcast(
+                context, REQ_TEST, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
+
         fun snoozeIntent(context: Context, ring: RingRequest?): PendingIntent {
             val intent = Intent(context, AlarmReceiver::class.java).setAction(AlarmReceiver.ACTION_SNOOZE_ALARM)
             ring?.putInto(intent)
@@ -217,6 +290,9 @@ class AlarmScheduler(
         private const val REQ_SHIFT = 1001
         private const val REQ_SNOOZE = 1002
         private const val REQ_SHOW = 1003
+        private const val REQ_TEST = 1004
+        private const val K_TEST_AT = "test_at"
+        const val TEST_NAME = "밤낮 시험 알람"
         private const val K_SNOOZE_AT = "snooze_at"
         private const val K_SNOOZE_PAYLOAD = "snooze_payload"
         private const val K_LAST_EXACT = "last_exact"

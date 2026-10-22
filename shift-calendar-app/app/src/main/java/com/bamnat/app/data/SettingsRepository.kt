@@ -77,6 +77,8 @@ data class AppSettings(
      * [SLP-15] 하루 브리핑: one silent notice for work that needs planning. Off until the user turns it
      * on; on for those who had the sleep notices of 1.10 and before on.
      */
+    /** [FEAT-18] 잠금 화면 오늘 근무: a quiet notice that stays with today's and tomorrow's shift. */
+    val todayShiftNotice: Boolean = false,
     val briefing: Boolean = false,
     /** [SLP-15] 퇴근길 안전: the one sound when a night or a 24-hour duty ends. Like [briefing]. */
     val commuteNotice: Boolean = false,
@@ -181,6 +183,7 @@ class SettingsRepository(context: Context) {
             sleepTips = prefs.getBoolean(K_SLEEP_TIPS, d.sleepTips),
             // The sleep notices of 1.10 and before carry over to the briefing and the commute notice.
             briefing = prefs.getBoolean(K_BRIEFING, prefs.getBoolean(K_SLEEP_REMINDERS, d.briefing)),
+            todayShiftNotice = prefs.getBoolean(K_TODAY_SHIFT_NOTICE, d.todayShiftNotice),
             commuteNotice = prefs.getBoolean(K_COMMUTE_NOTICE, prefs.getBoolean(K_SLEEP_REMINDERS, d.commuteNotice)),
             bedtimeNotice = prefs.getBoolean(K_BEDTIME_NOTICE, d.bedtimeNotice),
             sleepingNotice = prefs.getBoolean(K_SLEEPING_NOTICE, d.sleepingNotice),
@@ -229,6 +232,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_STRICT_REST, s.strictRest)
             .putBoolean(K_SLEEP_TIPS, s.sleepTips)
             .putBoolean(K_BRIEFING, s.briefing)
+            .putBoolean(K_TODAY_SHIFT_NOTICE, s.todayShiftNotice)
             .putBoolean(K_COMMUTE_NOTICE, s.commuteNotice)
             .putBoolean(K_BEDTIME_NOTICE, s.bedtimeNotice)
             .putBoolean(K_SLEEPING_NOTICE, s.sleepingNotice)
@@ -278,6 +282,7 @@ class SettingsRepository(context: Context) {
         /** 1.10 and before: one switch for all sleep notices, read once to carry it over. */
         const val K_SLEEP_REMINDERS = "sleep_reminders"
         const val K_BRIEFING = "notice_briefing"
+        const val K_TODAY_SHIFT_NOTICE = "notice_today_shift"
         const val K_COMMUTE_NOTICE = "notice_commute"
         const val K_BEDTIME_NOTICE = "notice_bedtime"
         const val K_SLEEPING_NOTICE = "notice_sleeping"

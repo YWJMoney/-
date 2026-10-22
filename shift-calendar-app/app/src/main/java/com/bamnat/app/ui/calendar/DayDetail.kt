@@ -254,15 +254,23 @@ private fun DayGroups(
     }
     val style = settings.workStyle
     val moneyFirst = style != null && !style.usesPayEngine
+    val focus = com.bamnat.core.work.CalendarFocus.of(style)
+    val calendarAlarms by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
     var restShift by remember(date) { mutableStateOf<ShiftType?>(null) }
 
     // [DAY-04] The user's own order, else the one that fits the work style.
     val order = remember(settings.dayGroupOrder, moneyFirst) { G.order(settings.dayGroupOrder, moneyFirst) }
-    val showLeave = day.leave != null || day.isWorkDay && day.shiftType?.hasTimes == true
+    // [CAL-05] Field and shop work keep shifts out of the way until the calendar or the day has one,
+    // or the user asks for them: a freelancer's day is its jobs, not 주간·야간·휴무.
+    val shiftData = snapshot.hasPattern || day.shiftType != null || day.hasCustomTimes || day.extras.isNotEmpty() ||
+        day.leave != null || day.source == DaySource.OVERRIDE
+    val showShifts = !moneyFirst || shiftData || groups.isOpen(SHIFTS_KEY, false)
+    val showLeave = showShifts && (day.leave != null || day.isWorkDay && day.shiftType?.hasTimes == true)
     val showBody = rest.isNotEmpty() || settings.sleepTips && (tips.isNotEmpty() || date == today)
     val showRecord = changes.isNotEmpty() || day.entry != null
     val visible = order.filter {
         when (it) {
+            G.WORK, G.EXTRA -> showShifts
             G.LEAVE -> showLeave
             G.BODY -> showBody
             G.RECORD -> showRecord
@@ -317,25 +325,27 @@ private fun DayGroups(
                     }
                     G.ALARM -> {
                         val custom = day.entry?.customAlarms != null
-                        val off = day.alarmSkipped || !settings.alarmsEnabled
-                        val summary = alarmSummary(day, alarms, settings) + if (custom) " · 직접 정함" else ""
+                        val off = day.alarmSkipped || !settings.alarmsEnabled || !calendarAlarms
+                        val summary = (if (!calendarAlarms) "이 달력은 알람이 꺼져 있어요" else alarmSummary(day, alarms, settings)) +
+                            if (custom) " · 직접 정함" else ""
                         DayGroup(
                             title = "알람", icon = Icons.Outlined.Alarm,
                             summary = summary,
                             summaryColor = if (off && alarms.isNotEmpty()) cal.alarmOff else null,
-                            open = groups.isOpen(key, custom), onToggle = { groups.toggle(key, custom) },
-                            trailing = if (alarms.isNotEmpty()) ({
+                            open = groups.isOpen(key, custom || !calendarAlarms && alarms.isNotEmpty()),
+                            onToggle = { groups.toggle(key, custom || !calendarAlarms && alarms.isNotEmpty()) },
+                            trailing = if (alarms.isNotEmpty() && calendarAlarms) ({
                                 Switch(
                                     checked = !day.alarmSkipped,
                                     onCheckedChange = {
                                         haptics.performHapticFeedback(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
-                                        vm.setAlarmSkipped(date, !it)
+                                        vm.setAlarmSkipped(date, !it, announce = true)
                                     },
                                     // [VIS-02] Read with what it does: "이 날 알람, 06:10에 울려요, 켜짐".
                                     modifier = Modifier.semantics { contentDescription = "이 날 알람, $summary" },
                                 )
                             }) else null,
-                        ) { AlarmContent(day, snapshot, vm, alarms, settings, onOpenShiftTypes) }
+                        ) { AlarmContent(day, snapshot, vm, alarms, settings, onOpenShiftTypes, focus, calendarAlarms) }
                     }
                     G.MEMO -> DayGroup(
                         title = "메모", icon = Icons.AutoMirrored.Outlined.StickyNote2,
@@ -420,10 +430,24 @@ private fun DayGroups(
 
     // [DAY-04] The order of these groups is the user's; changed here, where it shows.
     var ordering by remember { mutableStateOf(false) }
-    TextButton(onClick = { ordering = true }, modifier = Modifier.padding(top = 4.dp)) {
-        Icon(Icons.Filled.SwapVert, contentDescription = null, Modifier.size(18.dp))
-        Spacer(Modifier.width(6.dp))
-        Text("순서 바꾸기")
+    Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = { ordering = true }) {
+            Icon(Icons.Filled.SwapVert, contentDescription = null, Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("순서 바꾸기")
+        }
+        // [CAL-05] Shifts, extra work and leave for field or shop work that has them now and then.
+        if (moneyFirst && !shiftData) {
+            TextButton(onClick = {
+                val opening = !showShifts
+                groups.toggle(SHIFTS_KEY, false)
+                if (opening && !groups.isOpen(G.WORK, false)) groups.toggle(G.WORK, false)
+            }) {
+                Icon(Icons.Outlined.Work, contentDescription = null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(if (showShifts) "근무 시간 숨기기" else "근무 시간도 적기")
+            }
+        }
     }
     if (ordering) {
         DayGroupOrderDialog(
@@ -517,6 +541,9 @@ private fun workSummary(day: ResolvedDay, snapshot: ScheduleSnapshot): String {
         else -> "$name$time"
     }
 }
+
+/** [CAL-05] The day groups' own switch for shifts on a field or shop calendar. */
+private const val SHIFTS_KEY = "shifts"
 
 private fun alarmSummary(day: ResolvedDay, alarms: List<PlannedAlarm>, settings: AppSettings): String = when {
     !settings.alarmsEnabled && alarms.isNotEmpty() -> "알람 사용이 꺼져 있어요"
@@ -711,11 +738,21 @@ private fun AlarmContent(
     planned: List<PlannedAlarm>,
     settings: AppSettings,
     onOpenShiftTypes: () -> Unit,
+    focus: com.bamnat.core.work.CalendarFocus = com.bamnat.core.work.CalendarFocus.SHIFTS,
+    calendarAlarms: Boolean = true,
 ) {
     val type = day.shiftType?.takeIf { day.isWorkDay }
     val custom = day.entry?.customAlarms
     var editing by remember(day.date) { mutableStateOf(false) }
-    if (!settings.alarmsEnabled) {
+    if (!calendarAlarms) {
+        // [CAL-13] An added calendar kept from ringing: nothing below rings until it is turned on.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.NotificationsOff, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(12.dp))
+            Text("이 달력은 알람이 꺼져 있어 아래 알람이 울리지 않아요", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            TextButton(onClick = { vm.setCalendarAlarms(true) }) { Text("켜기") }
+        }
+    } else if (!settings.alarmsEnabled) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.NotificationsOff, null, tint = MaterialTheme.colorScheme.error)
             Spacer(Modifier.width(12.dp))
@@ -730,6 +767,9 @@ private fun AlarmContent(
             type != null && type.alarmEnabled -> "${type.name} 근무 알람 설정을 따라요."
             type != null -> "${type.name} 근무는 알람이 꺼져 있어요."
             planned.isNotEmpty() -> "대근한 근무의 알람이 울려요."
+            // [CAL-05] A field or shop day without work is not called a day off.
+            focus == com.bamnat.core.work.CalendarFocus.JOBS -> "근무 알람이 없는 날이에요. 일감 알림은 일감에서 정하고, 이 날만 알람을 정할 수도 있어요."
+            focus == com.bamnat.core.work.CalendarFocus.SALES -> "울릴 알람이 없는 날이에요. 필요하면 이 날만 알람을 정할 수 있어요."
             else -> "쉬는 날이에요. 필요하면 이 날만 알람을 정할 수 있어요."
         },
         style = MaterialTheme.typography.bodySmall,

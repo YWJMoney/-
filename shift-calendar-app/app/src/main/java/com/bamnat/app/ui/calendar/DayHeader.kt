@@ -11,7 +11,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -22,7 +21,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -84,6 +82,23 @@ import com.bamnat.core.schedule.DaySource
 import com.bamnat.core.schedule.ResolvedDay
 import com.bamnat.core.schedule.ResolvedExtra
 import com.bamnat.core.schedule.ScheduleResolver
+import com.bamnat.core.work.CalendarFocus
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.EventBusy
+import androidx.compose.material.icons.outlined.Storefront
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.semantics.contentDescription
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 /** The day's alarms as they ring with its switch on, so a day turned off still shows what it would ring. */
@@ -243,6 +258,13 @@ fun DayHeader(
 @Composable
 private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings, modifier: Modifier) {
     val cal = LocalCalendarColors.current
+    val focus = CalendarFocus.of(settings.workStyle)
+    val book by vm.moneyBook.collectAsStateWithLifecycle()
+    val dayBook = remember(book, day.date) { book.on(day.date) }
+    // [CAL-05] Field and shop work show a shift only when the day has one; an empty day is not a day off.
+    val hasShift = focus == CalendarFocus.SHIFTS || day.isWorkDay || day.shiftType != null || day.leave != null ||
+        day.extras.isNotEmpty() || day.hasCustomTimes
+    val sales = dayBook.sales?.takeIf { it.sales != 0L || it.costs != 0L }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         val holiday = KoreanHolidays.nameOf(day.date)
         if (settings.showLunar || holiday != null) {
@@ -255,13 +277,26 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
                 }
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // [CAL-05] A field worker's jobs and a shop's sales come first: they are what the day is about.
+        for (j in dayBook.jobs.take(MAX_JOB_LINES)) DayJobLine(j, day.date)
+        if (dayBook.jobs.size > MAX_JOB_LINES) {
+            Text("일감 외 ${dayBook.jobs.size - MAX_JOB_LINES}건", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 28.dp))
+        }
+        sales?.let { DaySalesLine(it) }
+        if (hasShift) Row(verticalAlignment = Alignment.CenterVertically) {
             val type = day.shiftType
             val leave = day.leave
             if (leave?.isFullDay == true) LeaveMark(leave, size = 20.dp)
             else ShiftBadge(type, size = 20.dp, text = type?.label ?: "휴", outlined = type == null || type.isOff)
             Spacer(Modifier.width(8.dp))
             Text(shiftLine(day), style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        } else if (dayBook.jobs.isEmpty() && sales == null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.EventBusy, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(focus.emptyDay, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         for (e in day.extras.take(MAX_EXTRA_LINES)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -292,6 +327,52 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
 }
 
 private const val MAX_EXTRA_LINES = 3
+private const val MAX_JOB_LINES = 3
+
+/** [CAL-05] "09:00–17:00 욕실 타일 시공 · 3일 중 2일째", with what it pays or what is still owed. */
+@Composable
+private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
+    val cal = LocalCalendarColors.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        JobBadge(count = 1, owed = job.unpaid > 0)
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            val time = job.start?.let { s -> Fmt.time(s) + (job.end?.let { "–" + Fmt.time(it) } ?: "") + " " }.orEmpty()
+            Text(time + job.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val sub = listOfNotNull(
+                job.place.ifBlank { null },
+                job.client.ifBlank { null },
+                if (job.days > 1) "${job.days}일 중 ${(date.toEpochDay() - job.date.toEpochDay()).toInt() + 1}일째" else null,
+            )
+            if (sub.isNotEmpty()) {
+                Text(sub.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        if (job.unpaid > 0) {
+            Text("받을 돈 ${Fmt.wonShort(job.unpaid)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.warning)
+        } else if (job.payable > 0) {
+            Text(Fmt.wonShort(job.payable), style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.income)
+        }
+    }
+}
+
+/** [CAL-05] "매출 1,200,000원 · 남은 돈 900,000원". */
+@Composable
+private fun DaySalesLine(sales: com.bamnat.core.money.DailySales) {
+    val cal = LocalCalendarColors.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Outlined.Storefront, null, tint = cal.income, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text("매출 ${Fmt.won(sales.sales)}", style = MaterialTheme.typography.bodyLarge.merge(NumberStyle), maxLines = 1,
+            modifier = Modifier.weight(1f, fill = false))
+        if (sales.costs != 0L) {
+            Text(" · 남은 돈 ${Fmt.wonShort(sales.net)}", style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
+                color = if (sales.net < 0) cal.expense else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
+    }
+}
 
 @Composable
 private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings): List<DayToken> {
@@ -301,8 +382,11 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
     val rest = remember(snapshot, day.date, settings.restCheck, settings.strictRest) {
         if (settings.restCheck) vm.restIssuesOn(snapshot, day.date, settings.strictRest) else emptyList()
     }
+    val calendarAlarms by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
     return buildList {
-        if (alarms.isNotEmpty() && (day.alarmSkipped || !settings.alarmsEnabled)) add(DayToken("알람 끔", DayToken.Tone.ERROR))
+        // [CAL-13] An added calendar kept from ringing says so on each of its days.
+        if (alarms.isNotEmpty() && !calendarAlarms) add(DayToken("이 달력 알람 꺼짐", DayToken.Tone.PLAIN))
+        else if (alarms.isNotEmpty() && (day.alarmSkipped || !settings.alarmsEnabled)) add(DayToken("알람 끔", DayToken.Tone.ERROR))
         else if (alarms.isNotEmpty()) {
             val first = alarms.first()
             add(DayToken("알람 ${whenText(first, day.date)}" + if (alarms.size > 1) " 외 ${alarms.size - 1}" else "", DayToken.Tone.PLAIN))
@@ -350,7 +434,11 @@ private fun QuickChips(
     modifier: Modifier = Modifier,
     endSpace: Dp = 12.dp,
 ) {
-    val moneyFirst = settings.workStyle?.usesPayEngine == false
+    val focus = CalendarFocus.of(settings.workStyle)
+    val moneyFirst = focus.moneyFirst
+    val calendarAlarms by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
+    var addingMoney by remember { mutableStateOf(false) }
+    val book by vm.moneyBook.collectAsStateWithLifecycle()
     val choices = remember(snapshot, day) {
         if (moneyFirst) emptyList() else {
             val (on, off) = ExtraText.choices(snapshot.kinds, snapshot.shiftTypes, day).partition { ExtraText.indexOf(day, it) >= 0 }
@@ -359,15 +447,23 @@ private fun QuickChips(
     }
     val alarms = remember(snapshot, day.date) { plannedAlarms(snapshot, day) }
     val log by vm.sleepLog.collectAsStateWithLifecycle()
-    Row(
-        modifier
-            .fillMaxWidth()
-            .fadingRightEdge()
-            .horizontalScroll(rememberScrollState())
-            .padding(start = 12.dp, end = endSpace),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        for (c in choices) {
+    ChipRow(modifier, start = 12.dp, end = endSpace) {
+        // [CAL-05] Field and shop work: the day's job or sales is the first chip.
+        focus.addLabel?.let { label ->
+            val hasSales = focus == CalendarFocus.SALES && book.on(day.date).sales != null
+            item {
+                AssistChip(
+                    onClick = { addingMoney = true },
+                    label = { Text(if (hasSales) "매출 고치기" else label, maxLines = 1) },
+                    leadingIcon = { Icon(Icons.Filled.Add, null, Modifier.size(18.dp)) },
+                    colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer),
+                    border = null,
+                )
+            }
+        }
+        for (c in choices) item {
             val i = ExtraText.indexOf(day, c)
             FilterChip(
                 selected = i >= 0,
@@ -380,7 +476,7 @@ private fun QuickChips(
         }
         if (!moneyFirst && (day.leave != null || day.isWorkDay && day.shiftType?.hasTimes == true)) {
             val kind = day.leave?.kind ?: LeaveKind.ANNUAL
-            for (q in listOf(2, 4)) {
+            for (q in listOf(2, 4)) item {
                 val l = Leave(kind, q)
                 val on = day.leave?.quarters == q
                 FilterChip(
@@ -391,7 +487,7 @@ private fun QuickChips(
                 )
             }
         }
-        if (alarms.isNotEmpty()) {
+        if (alarms.isNotEmpty() && calendarAlarms) item {
             val off = day.alarmSkipped
             AssistChip(
                 onClick = { vm.setAlarmSkipped(day.date, !off, announce = true) },
@@ -402,7 +498,8 @@ private fun QuickChips(
                 border = if (off) BorderStroke(1.dp, LocalCalendarColors.current.alarmOff) else AssistChipDefaults.assistChipBorder(true),
             )
         }
-        if (day.date == today && settings.sleepTips) {
+        // [CAL-05] Sleep goes with shifts, as 오늘의 흐름 does; a job or shop day keeps its chips for the day's work.
+        if (day.date == today && settings.sleepTips && !moneyFirst) item {
             val asleep = log.firstOrNull { it.end == null } != null
             AssistChip(
                 onClick = { if (asleep) vm.wokeUp() else vm.fellAsleep() },
@@ -410,29 +507,107 @@ private fun QuickChips(
                 leadingIcon = { Icon(if (asleep) Icons.Filled.WbSunny else Icons.Filled.Bedtime, null, Modifier.size(18.dp)) },
             )
         }
-        AssistChip(
-            onClick = onMemo,
-            label = { Text("메모", maxLines = 1) },
-            leadingIcon = { Icon(Icons.AutoMirrored.Outlined.NoteAdd, null, Modifier.size(18.dp)) },
-        )
+        item {
+            AssistChip(
+                onClick = onMemo,
+                label = { Text("메모", maxLines = 1) },
+                leadingIcon = { Icon(Icons.AutoMirrored.Outlined.NoteAdd, null, Modifier.size(18.dp)) },
+            )
+        }
+    }
+    if (addingMoney) {
+        if (focus == CalendarFocus.JOBS) {
+            com.bamnat.app.ui.money.JobDialog(day.date, null, onSave = { vm.saveJob(it); addingMoney = false }, onDismiss = { addingMoney = false })
+        } else {
+            com.bamnat.app.ui.money.SalesDialog(day.date, book.on(day.date).sales,
+                onSave = { vm.saveSales(it); addingMoney = false }, onDismiss = { addingMoney = false })
+        }
     }
 }
 
 private const val QUICK_EXTRAS = 3
 
-/** Fades the last few dp of a row that scrolls sideways, so it reads as "there is more". */
-private fun Modifier.fadingRightEdge(): Modifier = this
+/**
+ * Fades the ends of a row that scrolls sideways, each only while there is more that way, so a cut-off
+ * row reads as "there is more" and a row shown whole is not dimmed. Read while drawing: scrolling
+ * redraws the edge without recomposing the row.
+ */
+internal fun Modifier.fadingEdges(back: () -> Boolean, forward: () -> Boolean, width: Dp = 32.dp): Modifier = this
     .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
     .drawWithContent {
         drawContent()
-        val w = 28.dp.toPx().coerceAtMost(size.width)
-        drawRect(
+        val w = width.toPx().coerceAtMost(size.width / 3)
+        if (forward()) drawRect(
             brush = Brush.horizontalGradient(listOf(Color.Black, Color.Transparent), startX = size.width - w, endX = size.width),
             topLeft = Offset(size.width - w, 0f),
             size = androidx.compose.ui.geometry.Size(w, size.height),
             blendMode = BlendMode.DstIn,
         )
+        if (back()) drawRect(
+            brush = Brush.horizontalGradient(listOf(Color.Transparent, Color.Black), startX = 0f, endX = w),
+            size = androidx.compose.ui.geometry.Size(w, size.height),
+            blendMode = BlendMode.DstIn,
+        )
     }
+
+/**
+ * [CAL-18] Chips in one line that scrolls sideways. While some are out of sight to the right, the
+ * end fades and a "+2 ›" button says how many; a tap on it brings them in.
+ */
+@Composable
+internal fun ChipRow(modifier: Modifier = Modifier, start: Dp, end: Dp, content: LazyListScope.() -> Unit) {
+    val state = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val reserve = with(LocalDensity.current) { MORE_RESERVE.toPx() }
+    // A chip that ends under the button or past the edge counts as out of sight; none once at the end.
+    val more by remember(state, reserve) {
+        derivedStateOf {
+            if (!state.canScrollForward) 0 else {
+                val info = state.layoutInfo
+                val edge = info.viewportEndOffset - reserve
+                val lastShown = info.visibleItemsInfo.lastOrNull { it.offset + it.size <= edge }?.index
+                    ?: ((info.visibleItemsInfo.firstOrNull()?.index ?: 0) - 1)
+                info.totalItemsCount - 1 - lastShown
+            }
+        }
+    }
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+        LazyRow(
+            state = state,
+            modifier = Modifier.fillMaxWidth().fadingEdges(back = { state.canScrollBackward }, forward = { state.canScrollForward }),
+            contentPadding = PaddingValues(start = start, end = end),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content,
+        )
+        if (more > 0) {
+            MoreButton(more, Modifier.padding(end = 4.dp)) {
+                scope.launch { state.animateScrollBy(state.layoutInfo.viewportSize.width * 0.6f) }
+            }
+        }
+    }
+}
+
+/** [CAL-18] "+2 ›": how many chips are out of sight, as a button that scrolls to them. */
+@Composable
+private fun MoreButton(count: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shadowElevation = 2.dp,
+        modifier = modifier,
+    ) {
+        Row(Modifier.heightIn(min = 32.dp).padding(start = 10.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("+$count", style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
+                modifier = Modifier.semantics { contentDescription = "${count}개 더 보기" })
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
+        }
+    }
+}
+
+private val MORE_RESERVE = 48.dp
 
 /**
  * [DAY-01] The selected day under the calendar on phones: the same header as the sheet, so most

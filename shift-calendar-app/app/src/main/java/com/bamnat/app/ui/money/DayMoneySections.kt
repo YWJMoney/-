@@ -8,8 +8,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.HorizontalDivider
@@ -24,22 +29,26 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.theme.LocalCalendarColors
+import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.money.DailySales
 import com.bamnat.core.money.DayBook
 import com.bamnat.core.money.Job
+import com.bamnat.core.money.MoneyBook
 import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.money.MemoAmounts
 import com.bamnat.core.money.MoneySource
 import com.bamnat.core.work.WorkStyle
 import java.time.LocalDate
-import kotlin.math.abs
 
 /** What the day sections may change; the calendar's view model implements it. */
 interface MoneyActions {
@@ -52,6 +61,8 @@ interface MoneyActions {
     fun frequentAmounts(kind: MoneyKind): List<Long> = emptyList()
     /** Places the user filed under a category; the editor follows them [LEDG-04]. */
     val categoryRules: Map<String, String> get() = emptyMap()
+    /** [LEDG-13] The whole book, for the editor's accounts, categories and smart defaults; null reads the active calendar's. */
+    val ledger: MoneyBook? get() = null
 }
 
 /** [WORK-02] The day's booked jobs, with what is still owed. */
@@ -132,12 +143,18 @@ fun SalesSection(date: LocalDate, sales: DailySales?, actions: MoneyActions) {
     if (editing) SalesDialog(date, sales, onSave = { actions.saveSales(it); editing = false }, onDismiss = { editing = false })
 }
 
+/** A label over an amount. [LEDG-15] In a narrow pane the amount shrinks to fit instead of being cut ("1,240,0"). */
 @Composable
 fun Figure(label: String, value: String, modifier: Modifier = Modifier, strong: Boolean = false) {
-    Column(modifier) {
+    Column(modifier.semantics(mergeDescendants = true) {}) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = if (strong) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
-            fontWeight = if (strong) FontWeight.Bold else FontWeight.Normal, maxLines = 1)
+        val style = (if (strong) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge).merge(NumberStyle)
+        BasicText(
+            value,
+            style = style.copy(color = MaterialTheme.colorScheme.onSurface, fontWeight = if (strong) FontWeight.Bold else FontWeight.Normal),
+            maxLines = 1,
+            autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = style.fontSize),
+        )
     }
 }
 
@@ -184,57 +201,56 @@ fun DayLedgerSection(date: LocalDate, style: WorkStyle?, entries: List<MoneyEntr
     if (addingJob) JobDialog(date, null, onSave = { actions.saveJob(it); addingJob = false }, onDismiss = { addingJob = false })
     adding?.let { k ->
         EntryDialog(date, null, k, onSave = { actions.saveEntry(it); adding = null }, onDismiss = { adding = null },
-            frequent = actions::frequentAmounts, rules = actions.categoryRules)
+            frequent = actions::frequentAmounts, rules = actions.categoryRules, book = actions.ledger)
     }
     fromMemo?.let { e ->
         EntryDialog(date, e, e.kind, onSave = { actions.saveEntry(it); fromMemo = null }, onDismiss = { fromMemo = null },
-            frequent = actions::frequentAmounts, rules = actions.categoryRules)
+            frequent = actions::frequentAmounts, rules = actions.categoryRules, book = actions.ledger)
     }
     editing?.let { e ->
         EntryDialog(date, e, e.kind, onSave = { actions.saveEntry(it); editing = null },
             onDelete = { actions.deleteEntry(it); editing = null }, onDismiss = { editing = null },
-            frequent = actions::frequentAmounts, rules = actions.categoryRules)
+            frequent = actions::frequentAmounts, rules = actions.categoryRules, book = actions.ledger)
     }
 }
 
+/**
+ * One ledger line: the category's badge, what and where, and the signed amount [LEDG-01].
+ * [LEDG-11] A split line, installments, tags and a memo show in the second line.
+ */
 @Composable
 fun EntryRow(e: MoneyEntry, showDate: Boolean = false, onClick: () -> Unit) {
-    val cal = LocalCalendarColors.current
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (e.kind == MoneyKind.TRANSFER) IconAvatar(Icons.Filled.SwapHoriz, MaterialTheme.colorScheme.onSurfaceVariant, size = 36.dp)
+        else CategoryAvatar(e.category, size = 36.dp)
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val source = when (e.source) {
                 MoneySource.NOTIFICATION -> "알림에서"
                 MoneySource.PASTE -> "문자에서"
                 MoneySource.MEMO -> "메모에서"
-                MoneySource.FIXED -> "고정 지출"
+                MoneySource.FIXED -> "반복"
                 MoneySource.MANUAL -> null
             }
             Text(
                 listOfNotNull(
-                    if (showDate) Fmt.shortDate(e.date) else null, e.time?.let(Fmt::time), e.category,
-                    if (e.kind == MoneyKind.TRANSFER) "이체" else null, source,
+                    if (showDate) Fmt.shortDate(e.date) else null, e.time?.let(Fmt::time),
+                    if (e.isSplit) "${e.shares().size}개 분류" else e.category,
+                    if (e.kind == MoneyKind.TRANSFER) "이체" else null,
+                    if (e.installments > 1) "${e.installments}개월 할부" else null, source,
                     e.note.takeIf { it.isNotBlank() && e.merchant.isNotBlank() },
+                    e.tags.takeIf { it.isNotEmpty() }?.joinToString(" ") { "#$it" },
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
-        // A cancelled payment is a negative expense: money that came back.
-        val back = e.kind == MoneyKind.EXPENSE && e.amount < 0
-        val sign = when {
-            back -> "+"
-            e.kind == MoneyKind.EXPENSE -> "-"
-            e.kind == MoneyKind.INCOME -> "+"
-            else -> ""
-        }
-        Text(sign + Fmt.won(abs(e.amount)), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
-            color = when {
-                back -> cal.income
-                e.kind == MoneyKind.EXPENSE -> cal.expense
-                e.kind == MoneyKind.INCOME -> cal.income
-                else -> MaterialTheme.colorScheme.onSurfaceVariant
-            })
+        Spacer(Modifier.width(8.dp))
+        Text(signedWon(e), style = MaterialTheme.typography.titleSmall.merge(NumberStyle), fontWeight = FontWeight.Bold, color = amountColor(e))
     }
 }
 

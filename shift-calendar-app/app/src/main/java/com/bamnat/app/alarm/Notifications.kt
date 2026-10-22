@@ -33,6 +33,8 @@ object Notifications {
     const val MEMO_CHANNEL_ID = "memo_schedule_v1"
     /** [SHR-12] The sharer's link closing soon. */
     const val SHARE_CHANNEL_ID = "share_expiry_v1"
+    /** [FEAT-18] The lock-screen 오늘 근무 notice: no sound, no badge, shown in full on the lock screen. */
+    const val TODAY_CHANNEL_ID = "today_shift_v1"
     /** Before 1.11 every sleep tip made a sound here; a channel's importance cannot be lowered, so it goes. */
     private const val OLD_SLEEP_CHANNEL_ID = "sleep_tips_v1"
 
@@ -113,7 +115,13 @@ object Notifications {
             description = "보낸 근무표 링크가 닫히기 며칠 전에 알려요. 알림에서 바로 늘릴 수 있어요"
             group = GROUP_DAY
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share))
+        val today = NotificationChannel(TODAY_CHANNEL_ID, "잠금 화면 오늘 근무", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "오늘과 내일 근무를 잠금 화면과 알림창에 늘 보여 줘요. 소리는 나지 않아요"
+            group = GROUP_DAY
+            setShowBadge(false)
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+        }
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
     }
 

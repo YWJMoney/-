@@ -36,9 +36,12 @@ import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.bamnat.app.MainActivity
 import com.bamnat.app.ui.Fmt
+import com.bamnat.core.holiday.KoreanHolidays
 import com.bamnat.core.schedule.CalendarGrid
 import com.bamnat.core.schedule.ResolvedDay
 import com.bamnat.core.sleep.TodayFlow
+import com.bamnat.core.work.CalendarFocus
+import com.bamnat.core.work.WorkStyle
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
@@ -97,12 +100,27 @@ private fun WidgetFrame(content: @Composable () -> Unit) {
     ) { content() }
 }
 
+/** [CAL-11] What an empty widget asks for, in the words of the user's kind of work. */
+private fun emptyText(data: WidgetData): String = when {
+    data.focus == CalendarFocus.JOBS -> "일감을 적으면 여기에 오늘 일이 보여요"
+    data.focus == CalendarFocus.SALES -> "매출을 적으면 여기에 오늘 매출이 보여요"
+    data.style == WorkStyle.DAY -> "일하는 요일을 정하면 여기에 오늘 근무가 보여요"
+    data.style == WorkStyle.HOURLY -> "일한 날을 칠하면 여기에 오늘 근무가 보여요"
+    else -> "근무 주기를 정하면 여기에 오늘 근무가 보여요"
+}
+
 @Composable
 private fun TodayContent(data: WidgetData) {
     Column(GlanceModifier.fillMaxSize()) {
-        if (!data.hasPattern) {
-            Text("근무 주기를 정하면 여기에 오늘 근무가 보여요", style = small(GlanceTheme.colors.onSurfaceVariant))
+        if (data.isEmpty) {
+            Text(emptyText(data), style = small(GlanceTheme.colors.onSurfaceVariant))
             return@Column
+        }
+        // [CAL-11] Field work: today's and tomorrow's jobs; a shop: today's sales and the month's.
+        when (data.focus) {
+            CalendarFocus.JOBS -> { JobsToday(data); return@Column }
+            CalendarFocus.SALES -> { SalesToday(data); return@Column }
+            CalendarFocus.SHIFTS -> Unit
         }
         DayLine("오늘", data.day(data.today), big = true)
         val line = data.flow?.line
@@ -143,21 +161,89 @@ private fun flowMark(card: TodayFlow.Card): String = when (card.state) {
     else -> if (card.line?.startsWith("낮잠") == true) "💤" else "🛏"
 }
 
+/** [CAL-11] "오늘 10/9(금) · 한글날", red on a public holiday as on the calendar. */
+@Composable
+private fun DateLabel(title: String, date: LocalDate) {
+    val holiday = KoreanHolidays.nameOf(date)
+    Text(
+        "$title ${date.monthValue}/${date.dayOfMonth}(${Fmt.dayOfWeekShort(date.dayOfWeek)})" + (holiday?.let { " · $it" } ?: ""),
+        style = small(if (holiday != null) ColorProvider(HOLIDAY_RED) else GlanceTheme.colors.onSurfaceVariant),
+        maxLines = 1,
+    )
+}
+
+/** [CAL-11] The day's name on a widget: a whole day of leave, a 대근 on a day off, or the shift. */
+private fun dayName(day: ResolvedDay): String {
+    val leave = day.leave?.takeIf { it.isFullDay }
+    val covered = day.coveredShift
+    return when {
+        leave != null -> leave.label
+        covered != null && !day.isWorkDay -> "${covered.name} 대근"
+        else -> day.shiftType?.name ?: "일정 없음"
+    }
+}
+
+@Composable
+private fun JobsToday(data: WidgetData) {
+    for ((title, date) in listOf("오늘" to data.today, "내일" to data.today.plusDays(1))) {
+        val jobs = data.jobsOn(date)
+        DateLabel(title, date)
+        Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            MarkChip(if (jobs.isEmpty()) "–" else if (jobs.size > 1) "일${jobs.size}" else "일", if (date == data.today) 28 else 22, jobs.isNotEmpty())
+            Spacer(GlanceModifier.width(8.dp))
+            Column {
+                Text(
+                    jobs.firstOrNull()?.title ?: "잡힌 일감 없음",
+                    style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = if (date == data.today) 18.sp else 14.sp, fontWeight = FontWeight.Bold),
+                    maxLines = 1,
+                )
+                jobs.firstOrNull()?.let { j ->
+                    val time = j.start?.let { s -> Fmt.time(s) + (j.end?.let { "–" + Fmt.time(it) } ?: "") }
+                    val more = if (jobs.size > 1) "외 ${jobs.size - 1}건" else null
+                    val run = if (j.days > 1) "${j.days}일 중 ${(date.toEpochDay() - j.date.toEpochDay()).toInt() + 1}일째" else null
+                    listOfNotNull(time, run, more).takeIf { it.isNotEmpty() }?.let {
+                        Text(it.joinToString(" · "), style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
+                    }
+                }
+            }
+        }
+        if (date == data.today) Spacer(GlanceModifier.height(8.dp))
+    }
+    if (data.jobsOn(data.today).isEmpty() && data.jobsOn(data.today.plusDays(1)).isEmpty()) {
+        data.nextJobAfter(data.today.plusDays(1))?.let { j ->
+            Spacer(GlanceModifier.height(6.dp))
+            Text("다음 일감 ${Fmt.shortDate(j.date)} ${j.title}", style = small(GlanceTheme.colors.primary), maxLines = 1)
+        }
+    }
+}
+
+/** [CAL-11] A shop's own day and month; the amounts are the user's, on their own screen, as in the calendar's cells. */
+@Composable
+private fun SalesToday(data: WidgetData) {
+    val today = data.sales[data.today]
+    DateLabel("오늘", data.today)
+    Text(
+        today?.let { "매출 " + Fmt.won(it.sales) } ?: "아직 안 적었어요",
+        style = TextStyle(color = if (today != null) ColorProvider(INCOME_GREEN) else GlanceTheme.colors.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Bold),
+        maxLines = 1,
+    )
+    Spacer(GlanceModifier.height(8.dp))
+    val month = YearMonth.from(data.today)
+    Text("${month.monthValue}월 매출", style = small(GlanceTheme.colors.onSurfaceVariant))
+    Text(Fmt.wonShort(data.monthSales(month)), style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+}
+
 @Composable
 private fun DayLine(title: String, day: ResolvedDay, big: Boolean) {
-    val type = day.shiftType
     Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            "$title ${day.date.monthValue}/${day.date.dayOfMonth}(${Fmt.dayOfWeekShort(day.date.dayOfWeek)})",
-            style = small(GlanceTheme.colors.onSurfaceVariant),
-        )
+        DateLabel(title, day.date)
     }
     Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         ShiftChip(day, if (big) 28 else 22)
         Spacer(GlanceModifier.width(8.dp))
         Column {
             Text(
-                type?.name ?: "일정 없음",
+                dayName(day),
                 style = TextStyle(
                     color = GlanceTheme.colors.onSurface,
                     fontSize = if (big) 18.sp else 14.sp,
@@ -167,8 +253,9 @@ private fun DayLine(title: String, day: ResolvedDay, big: Boolean) {
             )
             val start = day.start
             val end = day.end
+            val leave = day.leave?.takeIf { !it.isFullDay }
             if (day.isWorkDay && start != null && end != null) {
-                Text(Fmt.timeRange(start, end), style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
+                Text(Fmt.timeRange(start, end) + (leave?.let { " · ${it.label}" } ?: ""), style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
             }
         }
     }
@@ -179,7 +266,14 @@ private fun WeekContent(data: WidgetData) {
     // "이번 주" starts on the user's first day of the week, like the calendar.
     val days = CalendarGrid.week(CalendarGrid.weekStartOf(data.today, data.weekStart))
     Column(GlanceModifier.fillMaxSize()) {
-        Text("이번 주 근무", style = small(GlanceTheme.colors.onSurfaceVariant))
+        Text(
+            when (data.focus) {
+                CalendarFocus.SHIFTS -> "이번 주 근무"
+                CalendarFocus.JOBS -> "이번 주 일감"
+                CalendarFocus.SALES -> "이번 주 매출"
+            },
+            style = small(GlanceTheme.colors.onSurfaceVariant),
+        )
         Spacer(GlanceModifier.height(6.dp))
         Row(GlanceModifier.fillMaxWidth()) {
             for (date in days) {
@@ -187,19 +281,20 @@ private fun WeekContent(data: WidgetData) {
                 Column(GlanceModifier.defaultWeight(), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         if (date == data.today) "오늘" else Fmt.dayOfWeekShort(date.dayOfWeek),
-                        style = small(weekdayColor(date.dayOfWeek, date == data.today)).copy(textAlign = TextAlign.Center),
+                        style = small(weekdayColor(date.dayOfWeek, date == data.today, KoreanHolidays.isHoliday(date))).copy(textAlign = TextAlign.Center),
                     )
                     Text(
                         "${date.dayOfMonth}",
                         style = TextStyle(
-                            color = GlanceTheme.colors.onSurface,
+                            // [CAL-11] A public holiday is red as on the calendar.
+                            color = if (KoreanHolidays.isHoliday(date) && date != data.today) ColorProvider(HOLIDAY_RED) else GlanceTheme.colors.onSurface,
                             fontSize = 15.sp,
                             fontWeight = if (date == data.today) FontWeight.Bold else FontWeight.Normal,
                             textAlign = TextAlign.Center,
                         ),
                     )
                     Spacer(GlanceModifier.height(4.dp))
-                    ShiftChip(day, 26)
+                    WeekMark(data, day, 26)
                 }
             }
         }
@@ -236,26 +331,78 @@ private fun MonthContent(data: WidgetData) {
     }
 }
 
+/** [CAL-11] A week day's mark in the kind of work: its shift, its jobs, or its sales. */
+@Composable
+private fun WeekMark(data: WidgetData, day: ResolvedDay, sizeDp: Int) {
+    when (data.focus) {
+        CalendarFocus.SHIFTS -> ShiftChip(day, sizeDp)
+        CalendarFocus.JOBS -> {
+            val n = data.jobsOn(day.date).size
+            if (n == 0 && (day.shiftType != null || day.leave != null)) ShiftChip(day, sizeDp)
+            else MarkChip(if (n == 0) "–" else if (n > 1) "일$n" else "일", sizeDp, n > 0)
+        }
+        CalendarFocus.SALES -> {
+            val s = data.sales[day.date]
+            Text(
+                s?.let { Fmt.wonShort(it.sales) } ?: "–",
+                style = TextStyle(color = if (s != null) ColorProvider(INCOME_GREEN) else GlanceTheme.colors.onSurfaceVariant,
+                    fontSize = 11.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/** [CAL-11] A rounded square with a short word, like a shift chip, for a job day. */
+@Composable
+private fun MarkChip(text: String, sizeDp: Int, on: Boolean) {
+    Box(
+        GlanceModifier.height(sizeDp.dp).padding(horizontal = 4.dp)
+            .background(if (on) GlanceTheme.colors.secondaryContainer else ColorProvider(Color(0x22888888)))
+            .cornerRadius((sizeDp / 3).dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = TextStyle(color = if (on) GlanceTheme.colors.onSecondaryContainer else GlanceTheme.colors.onSurfaceVariant,
+            fontSize = (sizeDp * 0.42f).sp, fontWeight = FontWeight.Bold), maxLines = 1)
+    }
+}
+
 @Composable
 private fun MonthCell(data: WidgetData, date: LocalDate, inMonth: Boolean, modifier: GlanceModifier) {
     val day = data.day(date)
-    val type = day.shiftType
+    val leave = day.leave?.takeIf { it.isFullDay }
+    // [CAL-11] A whole day of leave shows the leave, and a 대근 on a day off the shift covered.
+    val type = if (leave != null) null else day.shiftType?.takeIf { !it.isOff || day.coveredShift == null } ?: day.coveredShift
     val isToday = date == data.today
+    val red = KoreanHolidays.isHoliday(date) || date.dayOfWeek == DayOfWeek.SUNDAY
     Column(modifier.padding(1.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             "${date.dayOfMonth}",
             style = TextStyle(
                 color = when {
                     isToday -> GlanceTheme.colors.primary
-                    inMonth -> GlanceTheme.colors.onSurface
-                    else -> GlanceTheme.colors.outline
+                    !inMonth -> GlanceTheme.colors.outline
+                    red -> ColorProvider(HOLIDAY_RED)
+                    else -> GlanceTheme.colors.onSurface
                 },
                 fontSize = 11.sp,
                 fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
                 textAlign = TextAlign.Center,
             ),
         )
-        if (type != null && inMonth) {
+        val jobs = if (inMonth && data.focus == CalendarFocus.JOBS) data.jobsOn(date).size else 0
+        val sold = inMonth && data.focus == CalendarFocus.SALES && data.sales[date] != null
+        if (leave != null && inMonth) {
+            Text(leave.short, style = TextStyle(color = GlanceTheme.colors.onTertiaryContainer, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center), maxLines = 1,
+                modifier = GlanceModifier.fillMaxWidth().background(GlanceTheme.colors.tertiaryContainer).cornerRadius(4.dp))
+        } else if (jobs > 0 && (type == null || type.isOff)) {
+            Text(if (jobs > 1) "일$jobs" else "일", style = TextStyle(color = GlanceTheme.colors.onSecondaryContainer, fontSize = 10.sp,
+                fontWeight = FontWeight.Bold, textAlign = TextAlign.Center), maxLines = 1,
+                modifier = GlanceModifier.fillMaxWidth().background(GlanceTheme.colors.secondaryContainer).cornerRadius(4.dp))
+        } else if (sold && type == null) {
+            Text("●", style = TextStyle(color = ColorProvider(INCOME_GREEN), fontSize = 9.sp, textAlign = TextAlign.Center), maxLines = 1)
+        } else if (type != null && inMonth) {
             val color = Color(type.colorArgb.toInt())
             Text(
                 type.label,
@@ -278,7 +425,17 @@ private fun MonthCell(data: WidgetData, date: LocalDate, inMonth: Boolean, modif
 /** A rounded square in the shift's color with its label, or a dash for an empty day. */
 @Composable
 private fun ShiftChip(day: ResolvedDay, sizeDp: Int) {
-    val type = day.shiftType
+    // [CAL-11] A whole day of leave shows the leave; a 대근 on a day off shows the shift worked.
+    day.leave?.takeIf { it.isFullDay }?.let { l ->
+        Box(
+            GlanceModifier.size(sizeDp.dp).background(GlanceTheme.colors.tertiaryContainer).cornerRadius((sizeDp / 3).dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(l.short, style = TextStyle(color = GlanceTheme.colors.onTertiaryContainer, fontSize = (sizeDp * 0.45f).sp, fontWeight = FontWeight.Bold), maxLines = 1)
+        }
+        return
+    }
+    val type = day.shiftType?.takeIf { !(it.isOff && day.coveredShift != null) } ?: day.coveredShift
     val color = type?.let { Color(it.colorArgb.toInt()) }
     Box(
         GlanceModifier
@@ -303,10 +460,13 @@ private fun ShiftChip(day: ResolvedDay, sizeDp: Int) {
     }
 }
 
+private val HOLIDAY_RED = Color(0xFFE5484D)
+private val INCOME_GREEN = Color(0xFF12805C)
+
 @Composable
-private fun weekdayColor(dow: DayOfWeek, today: Boolean): ColorProvider = when {
+private fun weekdayColor(dow: DayOfWeek, today: Boolean, holiday: Boolean = false): ColorProvider = when {
     today -> GlanceTheme.colors.primary
-    dow == DayOfWeek.SUNDAY -> ColorProvider(Color(0xFFE5484D))
+    dow == DayOfWeek.SUNDAY || holiday -> ColorProvider(HOLIDAY_RED)
     dow == DayOfWeek.SATURDAY -> ColorProvider(Color(0xFF3E7BFA))
     else -> GlanceTheme.colors.onSurfaceVariant
 }

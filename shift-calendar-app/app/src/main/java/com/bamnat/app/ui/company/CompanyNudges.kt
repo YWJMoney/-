@@ -76,7 +76,7 @@ private enum class Wrong(val label: String, val why: String, val place: FixPlace
 /** [EXTRA-06][COMM-04] What the developer gets with a way the app cannot set yet; the privacy policy says the same. */
 internal const val ASK_NOTICE =
     "앱 안 문의로 개발자에게만 가고, 모두의 문의에는 올라가지 않아요. 회사 이름과 적은 내용, 앱·기기 정보가 가요. " +
-        "기본급·이름·연락처는 적지 마세요. 답은 설정 > 앱 정보 > 문의하기에서 볼 수 있어요."
+        "기본급·이름·연락처는 적지 마세요. 답은 설정 > 도움말과 문의 > 내 문의에서 볼 수 있어요."
 
 /**
  * [COMM-02][COMM-03] The cards around a company setup, on the pay screen and in settings: the
@@ -325,11 +325,13 @@ fun AskDeveloperDialog(
     onDismiss: () -> Unit,
     onSent: () -> Unit,
     setup: String? = null,
+    /** [PAYS-09] Words to start from, e.g. the company's own items without amounts; the user reads and changes them first. */
+    prefill: String = "",
 ) {
     val container = LocalContext.current.appContainer
     val scope = rememberCoroutineScope()
     var name by rememberSaveable { mutableStateOf(company) }
-    var how by rememberSaveable { mutableStateOf("") }
+    var how by rememberSaveable { mutableStateOf(prefill.take(800)) }
     var example by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -340,7 +342,7 @@ fun AskDeveloperDialog(
         title = { Text(if (sent) "보냈어요! 💌" else "회사 방식 알려 주기") },
         text = {
             if (sent) {
-                Text("개발자가 직접 읽고 답을 드려요. 답은 설정 > 앱 정보 > 문의하기에서 볼 수 있어요.", style = MaterialTheme.typography.bodyMedium)
+                Text("개발자가 직접 읽고 답을 드려요. 답은 설정 > 도움말과 문의 > 내 문의에서 볼 수 있어요.", style = MaterialTheme.typography.bodyMedium)
             } else {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("말과 예시로 적어 주시면 개발자가 직접 읽고, 앱에 넣을 수 있는지 답을 드려요.", style = MaterialTheme.typography.bodySmall,

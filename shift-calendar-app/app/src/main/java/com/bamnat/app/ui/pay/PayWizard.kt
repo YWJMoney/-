@@ -28,8 +28,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -60,6 +63,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.data.ScheduleSnapshot
@@ -88,6 +93,7 @@ import com.bamnat.core.pay.RestDayWork
 import com.bamnat.core.pay.SetupFact
 import com.bamnat.core.pay.SetupQuestion
 import com.bamnat.core.pay.StandardHours
+import com.bamnat.core.pay.UnknownEffect
 import com.bamnat.core.pay.Unknowns
 import com.bamnat.core.pay.ValueTimeline
 import com.bamnat.core.pay.WageType
@@ -451,6 +457,25 @@ fun PayWizard(
         busy = false
     }
 
+    // [SETUP-05] What the current question can do to the month: the draft with only this answer left open,
+    // so "이 답에 따라 최대 4만 원" shows before the user picks, and 모르겠어요 is safe when it moves nothing.
+    var stake by remember { mutableStateOf<UnknownEffect?>(null) }
+    LaunchedEffect(step, draft) {
+        val p = preview ?: return@LaunchedEffect
+        val q = questions.firstOrNull { it.key == step } ?: return@LaunchedEffect
+        if (!s.amountReady) return@LaunchedEffect
+        if (stake?.key != q.key) stake = null
+        delay(200)
+        val probe = Unknowns.markUnknown(draft.copy(estimatedFields = draft.estimatedFields.filterNot(::isQuestionKey).toSet()), q.key, rosterHours)
+        try {
+            stake = p(probe).effects.firstOrNull { it.key == q.key }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // No figure is better than a wrong one; the question still works.
+        }
+    }
+
     // [PAYS-04][PAYS-05] 명세서로 한 번에 채우기, and what it filled.
     var slipFill by remember { mutableStateOf(false) }
     var slipNote by remember { mutableStateOf<String?>(null) }
@@ -468,7 +493,11 @@ fun PayWizard(
                 .padding(horizontal = 20.dp, vertical = 16.dp).widthIn(max = 640.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("${index + 1} / ${steps.size}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            WizardProgress(
+                part = when (step) { WAGE, AMOUNT, ITEMS -> 0; SUMMARY -> 2; else -> 1 },
+                left = (steps.lastIndex - index - 1).coerceAtLeast(0),
+                last = step == SUMMARY,
+            )
             AnimatedContent(
                 step,
                 transitionSpec = {
@@ -484,7 +513,8 @@ fun PayWizard(
                         key == ITEMS -> ItemsStep(s)
                         key == SUMMARY -> SummaryStep(s, draft, questions, range, snapshot) { go(it) }
                         else -> questions.firstOrNull { it.key == key }?.let { q ->
-                            QuestionStep(q, s, snapshot, rosterHours, onAnswer = ::answerAndGo, onUnknown = { answerAndGo { s.dontKnow(q.key) } })
+                            QuestionStep(q, s, snapshot, rosterHours, stake = stake?.takeIf { it.key == q.key }, showStake = preview != null && s.amountReady,
+                                onAnswer = ::answerAndGo, onUnknown = { answerAndGo { s.dontKnow(q.key) } })
                         }
                     }
                 }
@@ -519,6 +549,68 @@ fun PayWizard(
 internal fun StepTitle(title: String, body: String? = null) {
     Text(title, style = MaterialTheme.typography.headlineSmall)
     if (body != null) Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+/**
+ * [SETUP-03] Where the setup is, as three parts that stay put while answers add or drop questions
+ * (급여 › 회사 방식 › 확인), and how many steps are left, instead of a "3 / 10" whose total kept changing.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun WizardProgress(part: Int, left: Int, last: Boolean, parts: List<String> = listOf("급여", "회사 방식", "확인")) {
+    val leftText = when {
+        last -> "마지막 확인이에요"
+        left == 0 -> "다음은 확인이에요"
+        else -> "${left}단계 남았어요"
+    }
+    FlowRow(
+        Modifier.fillMaxWidth().semantics(mergeDescendants = true) {
+            contentDescription = "${parts.size}부분 중 ${part + 1}번째, ${parts[part]}. $leftText"
+        },
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            parts.forEachIndexed { i, name ->
+                if (i > 0) Text("  ›  ", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.outline)
+                val color = when {
+                    i == part -> MaterialTheme.colorScheme.primary
+                    i < part -> MaterialTheme.colorScheme.onSurface
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                if (i < part) {
+                    Icon(Icons.Filled.Check, null, tint = color, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(2.dp))
+                }
+                Text(name, style = MaterialTheme.typography.labelLarge.copy(fontWeight = if (i == part) FontWeight.Bold else FontWeight.Normal), color = color)
+            }
+        }
+        Text(leftText, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * [SETUP-05] How much one question moves this month, worked out from the user's own roster, so a question
+ * that changes nothing can be skipped without worry and one that matters says so.
+ */
+@Composable
+private fun StakeNote(effect: UnknownEffect?) {
+    val text = when {
+        effect == null -> "이 답이 이번 달에 얼마나 영향을 주는지 계산하고 있어요"
+        !effect.moves -> "이번 달 근무표로는 어떤 답이든 금액이 같아요. 잘 모르면 ‘모르겠어요’로 넘어가도 돼요."
+        effect.down < 0 && effect.up > 0 -> "답에 따라 이번 달이 −${manwon(-effect.down)}~+${manwon(effect.up)} 원 달라져요. 모르면 ‘모르겠어요’로 두고 명세서로 맞춰 볼 때 정해도 돼요."
+        else -> "답에 따라 이번 달이 최대 ${manwon(maxOf(-effect.down, effect.up))} 원 달라져요. 모르면 ‘모르겠어요’로 두고 명세서로 맞춰 볼 때 정해도 돼요."
+    }
+    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
+            if (effect == null) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+            else Icon(if (effect.moves) Icons.Filled.Payments else Icons.Filled.CheckCircle, null,
+                tint = if (effect.moves) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(10.dp))
+            Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+        }
+    }
 }
 
 @Composable
@@ -587,6 +679,11 @@ private fun AmountStep(s: PaySetupState, today: LocalDate, slipNote: String?) {
     if (s.wage == Wage.HOURLY) s.amount?.takeIf { it in 1 until rates.minimumHourlyWage }?.let {
         Text("최저시급보다 적어요. 계약서를 다시 확인해 주세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
     }
+    // [SETUP-04] The question people paid by the hour ask most, answered before they go looking.
+    if (s.wage == Wage.HOURLY || s.wage == Wage.DAILY) {
+        Hint("주휴수당은 따로 넣지 않아도 돼요. 근무표를 보고 앱이 더해요.")
+        TermLink("주휴수당")
+    }
     Label("언제부터 이 금액이에요?")
     MonthStepper(s.since, onChange = { s.since = it })
     Hint("이 달부터 계산해요. 지난달 명세서와 맞춰 보려면 그 전 달로 두세요. 그다음은 인상 규칙(나중에 설정)으로 계산해요.")
@@ -641,6 +738,8 @@ private fun ItemsStep(s: PaySetupState) {
     PayPresets.of(s.occupation ?: Occupation.CUSTOM).note.takeIf { it.isNotEmpty() && s.occupation != Occupation.PART_TIME }?.let { Hint(it) }
     s.rows.forEach { row -> ItemRowEditor(row) }
     OutlinedButton(onClick = { adding = true }) { Icon(Icons.Filled.Add, null); Text(" 다른 수당 넣기") }
+    // [SETUP-03][PAYS-07] Nothing here has to be complete: the rest of the company's way has its own place later.
+    Hint("빠진 수당이 있어도 괜찮아요. 기숙사비 같은 차감이나 회사만의 수당은 설정을 마친 뒤 ‘우리 회사 항목 만들기’로 언제든 넣어요.")
     if (s.wage == Wage.ANNUAL) {
         s.annualPay()?.let { a ->
             listOfNotNull(
@@ -691,6 +790,8 @@ private fun QuestionStep(
     s: PaySetupState,
     snapshot: ScheduleSnapshot?,
     rosterHours: Int?,
+    stake: UnknownEffect?,
+    showStake: Boolean,
     onAnswer: (() -> Unit) -> Unit,
     onUnknown: () -> Unit,
 ) {
@@ -793,10 +894,20 @@ private fun QuestionStep(
         }
     }
     StepTitle(title, body)
+    // [SETUP-04] The one word the question leans on, explained where it is asked.
+    val term = when (q.question) {
+        SetupQuestion.FIVE_OR_MORE -> "5인 이상"
+        SetupQuestion.SUPERVISORY, SetupQuestion.SCHEDULE_IS_REGULAR, SetupQuestion.COVERS -> "가산"
+        SetupQuestion.PUBLIC_HOLIDAYS, SetupQuestion.REST_DAY_WORK -> "휴일과 휴무일"
+        SetupQuestion.MONTHLY_HOURS -> "소정근로시간"
+        SetupQuestion.BREAK_PAY -> null
+    }
     q.facts.filter { it != SetupFact.EVERY_WORKPLACE }.takeIf { it.isNotEmpty() }?.let { facts ->
         Text("물어보는 까닭: ${facts.joinToString(" · ") { it.label }}", style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary)
     }
+    if (term != null) TermLink(term)
+    if (showStake) StakeNote(stake)
     if (q.question == SetupQuestion.MONTHLY_HOURS) {
         val chosen = known
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

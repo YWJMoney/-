@@ -41,7 +41,13 @@ import com.bamnat.core.sleep.SleepEntry
 import com.bamnat.core.sleep.SleepPlan
 import com.bamnat.core.sleep.SleepSchedule
 import com.bamnat.core.sleep.TodayFlow
+import com.bamnat.core.model.LeaveKind
+import com.bamnat.core.schedule.HolidayWork
+import com.bamnat.core.schedule.datesBetween
+import com.bamnat.core.work.CalendarFocus
+import com.bamnat.core.work.asksHolidaysOff
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,6 +73,15 @@ sealed interface PaintTool {
     data object Off : PaintTool
     /** Back to the pattern. */
     data object Clear : PaintTool
+}
+
+/**
+ * [CAL-09] Besides a shift, quick input can stamp a whole day's leave or turn the day's alarm off,
+ * over many days at once. Kept apart from [PaintTool], whose shift stamps the first setup shares.
+ */
+enum class DayMark(val label: String) {
+    LEAVE("연차"),
+    ALARM_OFF("알람 끄기"),
 }
 
 /**
@@ -112,6 +127,96 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }.stateIn(viewModelScope, SharingStarted.Eagerly, container.settingsRepository.current.let { s ->
         container.calendars.current().let { cal -> if (cal.isMain) s else s.copy(workStyle = cal.style ?: s.workStyle, rosterMonthly = false) }
     })
+    /** [CAL-05] What the calendar on screen is about: shifts, jobs or sales. */
+    val focus: StateFlow<CalendarFocus> = settings.map { CalendarFocus.of(it.workStyle) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, CalendarFocus.of(settings.value.workStyle))
+
+    /** [CAL-13] An added calendar can be kept from ringing; the main one always rings. */
+    val calendarAlarmsOn: StateFlow<Boolean> = activeCalendar.map { it.isMain || it.alarms }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, activeCalendar.value.let { it.isMain || it.alarms })
+
+    /** [CAL-13] Turns the alarms of the added calendar on screen on or off, said back with undo. */
+    fun setCalendarAlarms(on: Boolean) {
+        val cal = activeCalendar.value
+        if (cal.isMain) return
+        container.calendars.setAlarms(cal.id, on)
+        _messages.tryEmit(UndoMessage("‘${cal.name}’ 알람을 ${if (on) "켰어요" else "껐어요"}") { container.calendars.setAlarms(cal.id, !on) })
+    }
+
+    private val viewPrefs = container.appContext.getSharedPreferences(VIEW_PREFS, android.content.Context.MODE_PRIVATE)
+
+    /** [CAL-08] The month as a list instead of the grid; the user's choice, kept on this phone. */
+    private val _listView = MutableStateFlow(runCatching { viewPrefs.getBoolean(K_LIST, false) }.getOrDefault(false))
+    val listView: StateFlow<Boolean> = _listView.asStateFlow()
+
+    fun setListView(on: Boolean) {
+        _listView.value = on
+        viewPrefs.edit().putBoolean(K_LIST, on).apply()
+    }
+
+    /** [CAL-16] 오늘의 흐름 folded to one line by the user; kept on this phone until opened again. */
+    private val _flowFolded = MutableStateFlow(runCatching { viewPrefs.getBoolean(K_FLOW_FOLDED, false) }.getOrDefault(false))
+    val flowFolded: StateFlow<Boolean> = _flowFolded.asStateFlow()
+
+    fun setFlowFolded(folded: Boolean) {
+        _flowFolded.value = folded
+        viewPrefs.edit().putBoolean(K_FLOW_FOLDED, folded).apply()
+    }
+
+    /** [CAL-17] A tip said once in the snackbar, closed with 알겠어요; nothing to undo. */
+    fun tip(text: String) {
+        _messages.tryEmit(UndoMessage(text, actionLabel = "알겠어요") {})
+    }
+
+    /** [CAL-07] Months whose holidays the user works on purpose, per calendar: not asked again. */
+    private val _holidaysKept = MutableStateFlow(runCatching { viewPrefs.getStringSet(K_HOLIDAYS, emptySet())!!.toSet() }.getOrDefault(emptySet()))
+
+    /**
+     * [CAL-07] Public holidays the weekly pattern turns into work this month, for work by weekday
+     * only: asked once a month whether those are days off.
+     */
+    fun holidayWork(snapshot: ScheduleSnapshot, month: YearMonth): List<LocalDate> {
+        if (!settings.value.workStyle.asksHolidaysOff || holidayKey(month) in _holidaysKept.value) return emptyList()
+        return HolidayWork.patternDays(snapshot.resolver, month)
+    }
+    val holidaysKept: StateFlow<Set<String>> = _holidaysKept.asStateFlow()
+
+    private fun holidayKey(month: YearMonth) = "${activeCalendar.value.id}:$month"
+
+    /** [CAL-07] The holidays stay working days; the card goes away for this month. */
+    fun keepHolidayWork(month: YearMonth) {
+        val key = holidayKey(month)
+        _holidaysKept.value = _holidaysKept.value + key
+        viewPrefs.edit().putStringSet(K_HOLIDAYS, _holidaysKept.value).apply()
+        _messages.tryEmit(UndoMessage("${month.monthValue}월 공휴일은 그대로 일해요") {
+            _holidaysKept.value = _holidaysKept.value - key
+            viewPrefs.edit().putStringSet(K_HOLIDAYS, _holidaysKept.value).apply()
+        })
+    }
+
+    /** [CAL-07] The holidays become days off in one write, said back with undo. */
+    fun restHolidays(dates: List<LocalDate>) {
+        if (dates.isEmpty()) return
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
+            val before = schedule.updateDays(dates.distinct()) { e ->
+                e.copy(override = ShiftOverride.Off, customStart = null, customEnd = null, customBreakMinutes = null)
+            }
+            _messages.emit(UndoMessage("공휴일 ${before.size}일을 쉬는 날로 바꿨어요") {
+                before.forEach { (d, was) -> schedule.restoreDay(d, was) }
+            })
+        }
+    }
+
+    /**
+     * [CAL-06] The month's pay as the pay screen counts it, for the summary over the calendar; null
+     * without a pay setup or while pay is locked. Heavy enough to run off the main thread.
+     */
+    fun monthEstimate(profile: PayProfile?, snapshot: ScheduleSnapshot, month: YearMonth): Long? {
+        if (profile == null || !com.bamnat.app.tier.FeatureGate.allows(tier.value, com.bamnat.app.tier.Feature.PAY_ENGINE)) return null
+        return runCatching { monthPay(profile.named(snapshot.kinds), snapshot, month).total }.getOrNull()
+    }
+
     val memoDates: StateFlow<Set<LocalDate>> =
         memoRepo.datesWithMemos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
     val upcomingAlarm: StateFlow<UpcomingAlarm?> = container.alarmScheduler.upcoming
@@ -207,12 +312,13 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * the alarms that will ring and the way home.
      */
     fun sleepTips(snapshot: ScheduleSnapshot, date: LocalDate, settings: AppSettings): List<SleepPlan.Tip> =
-        SleepPlan.tips(SleepSchedule.of(snapshot.resolver, date, date.plusDays(1), settings.alarmsEnabled,
+        SleepPlan.tips(SleepSchedule.of(snapshot.resolver, date, date.plusDays(1), settings.alarmsEnabled && calendarAlarmsOn.value,
             settings.sleepTargetMinutes, settings.commuteMinutes), date)
 
     /** [SLP-14] 오늘의 흐름 at [now]. */
     fun todayFlow(snapshot: ScheduleSnapshot, settings: AppSettings, log: List<SleepEntry>, now: LocalDateTime): TodayFlow.Card =
-        TodayFlow.of(now, snapshot.resolver, settings.alarmsEnabled, log, settings.sleepTargetMinutes, settings.commuteMinutes,
+        // [CAL-13] An added calendar kept from ringing shows no alarm in the day's flow.
+        TodayFlow.of(now, snapshot.resolver, settings.alarmsEnabled && calendarAlarmsOn.value, log, settings.sleepTargetMinutes, settings.commuteMinutes,
             settings.restCheck, settings.strictRest,
             // [SLP-16] The way-home card speaks from the user's own sleeps after night work.
             afterNightMinutes = com.bamnat.core.sleep.SleepInsights.afterNightAverage(log, snapshot.resolver, now.toLocalDate()))
@@ -282,12 +388,52 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     fun setPaint(tool: PaintTool?) {
         _paint.value = tool
+        _mark.value = null
+        _rangeFrom.value = null
         _lastPaint.value = null
+    }
+
+    /** [CAL-09] Leave or 알람 끄기 chosen in quick input; null goes back to the shift stamps. */
+    private val _mark = MutableStateFlow<DayMark?>(null)
+    val mark: StateFlow<DayMark?> = _mark.asStateFlow()
+
+    fun setMark(mark: DayMark?) {
+        if (_paint.value == null) return
+        _paint.value = PaintTool.Pick
+        _mark.value = mark
+        _rangeFrom.value = null
+        _lastPaint.value = null
+    }
+
+    /** [CAL-09] The first day of a range, held by a long press in quick input; the next tap paints up to it. */
+    private val _rangeFrom = MutableStateFlow<LocalDate?>(null)
+    val rangeFrom: StateFlow<LocalDate?> = _rangeFrom.asStateFlow()
+
+    /** True while quick input has something to stamp: a shift, a day off, the pattern, leave or 알람 끄기. */
+    val canStamp: Boolean get() = _mark.value != null || _paint.value?.let(::stampOf) != null
+
+    /** [CAL-09] A long press in quick input starts a range from [date]. */
+    fun startRange(date: LocalDate) {
+        if (!canStamp) return
+        _selected.value = date
+        _rangeFrom.value = date
+        _lastPaint.value = PaintUndo("${Fmt.monthDay(date)}부터 · 끝 날짜를 누르세요", null)
     }
 
     /** A tap on a calendar cell: selects it, and stamps it when quick input has a stamp chosen. */
     fun onDayTapped(date: LocalDate) {
         _selected.value = date
+        // [CAL-09] The second tap of a range paints every day between, both ends included.
+        _rangeFrom.value?.let { from ->
+            _rangeFrom.value = null
+            paintDays(datesBetween(from, date))
+            return
+        }
+        _mark.value?.let { mark ->
+            _lastPaint.value = null
+            toggleMark(date, mark)
+            return
+        }
         val target = _paint.value?.let(::stampOf) ?: return
         _lastPaint.value = null
         // Stamping the same shift twice undoes it, so a mis-tap is fixed with one more tap.
@@ -295,11 +441,38 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         viewModelScope.launch { changeShift(date) { current -> if (current == target) ShiftOverride.None else target } }
     }
 
+    /** [CAL-09] One tap with a mark: on, or off again when the day has it. */
+    private fun toggleMark(date: LocalDate, mark: DayMark) = viewModelScope.launch {
+        val day = currentSnapshot().resolver.resolve(date)
+        when (mark) {
+            DayMark.LEAVE -> when {
+                day.leave != null -> setLeave(date, null, announceInBar = true)
+                takesLeave(day) -> setLeave(date, FULL_LEAVE, announceInBar = true)
+                else -> _lastPaint.value = PaintUndo("${Fmt.monthDay(date)}은 근무가 없어 연차를 넣지 않았어요", null)
+            }
+            DayMark.ALARM_OFF -> when {
+                day.alarmSkipped -> setAlarmSkipped(date, false, announceInBar = true)
+                ringsOn(day) -> setAlarmSkipped(date, true, announceInBar = true)
+                else -> _lastPaint.value = PaintUndo("${Fmt.monthDay(date)}은 울릴 알람이 없어요", null)
+            }
+        }
+    }
+
+    /** The calendar on screen as it is now; read once when nothing on screen holds it yet. */
+    private suspend fun currentSnapshot(): ScheduleSnapshot = snapshot.value ?: container.calendars.activeSnapshot.first()
+
+    /** [CAL-09] Leave goes on a working day with hours, never on a day off. */
+    private fun takesLeave(day: ResolvedDay) = day.leave == null && day.isWorkDay && day.shiftType?.hasTimes == true
+
+    /** [CAL-09] A day whose work would ring an alarm. */
+    private fun ringsOn(day: ResolvedDay) = !day.alarmSkipped && (day.isWorkDay || day.coveredShift != null)
+
     /**
      * [CAL-01] The last drag in quick input, said back in the bar itself: a snackbar would cover the
-     * bar and the chips under the finger.
+     * bar and the chips under the finger. [CAL-09] Without [undo] it is only a hint, such as where a
+     * range starts.
      */
-    data class PaintUndo(val text: String, val undo: suspend () -> Unit)
+    data class PaintUndo(val text: String, val undo: (suspend () -> Unit)?)
 
     private val _lastPaint = MutableStateFlow<PaintUndo?>(null)
     val lastPaint: StateFlow<PaintUndo?> = _lastPaint.asStateFlow()
@@ -309,6 +482,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * one off), in one write, said back with undo.
      */
     fun paintDays(dates: List<LocalDate>) {
+        _mark.value?.let { paintMark(dates.distinct(), it); return }
         val tool = _paint.value ?: return
         val target = stampOf(tool) ?: return
         val name = when (tool) {
@@ -336,8 +510,45 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** [CAL-01] Takes the last drag back; once, so a second tap cannot undo something else. */
     fun undoLastPaint() {
         val last = _lastPaint.value ?: return
+        val undo = last.undo ?: return
         _lastPaint.value = null
-        viewModelScope.launch { last.undo() }
+        viewModelScope.launch { undo() }
+    }
+
+    /**
+     * [CAL-09] Leave or 알람 끄기 over many days: only the days it fits get it (leave on working days,
+     * 알람 끄기 where an alarm would ring), in one write, and undo takes back only that.
+     */
+    private fun paintMark(dates: List<LocalDate>, mark: DayMark) {
+        viewModelScope.launch {
+            val resolver = currentSnapshot().resolver
+            val fits = dates.map(resolver::resolve).filter { if (mark == DayMark.LEAVE) takesLeave(it) else ringsOn(it) }.map { it.date }
+            if (fits.isEmpty()) {
+                _lastPaint.value = PaintUndo(if (mark == DayMark.LEAVE) "연차를 넣을 근무일이 없어요" else "알람이 울릴 날이 없어요", null)
+                return@launch
+            }
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
+            val before = schedule.updateDays(fits) { e ->
+                if (mark == DayMark.LEAVE) e.copy(leave = FULL_LEAVE) else e.copy(alarmSkipped = true)
+            }
+            val one = before.size == 1
+            val skipped = dates.size - fits.size
+            // "근무일 4일에 연차를 넣었어요 · 근무 없는 1일은 빼고": the count never reads as a date.
+            val done = when (mark) {
+                DayMark.LEAVE -> if (one) "${Fmt.monthDay(before.keys.first())}에 연차를 넣었어요" else "근무일 ${before.size}일에 연차를 넣었어요"
+                DayMark.ALARM_OFF -> if (one) "${Fmt.monthDay(before.keys.first())} 알람을 껐어요" else "${before.size}일 알람을 껐어요"
+            }
+            val left = if (mark == DayMark.LEAVE) "근무 없는" else "알람 없는"
+            _lastPaint.value = PaintUndo(
+                done + if (skipped > 0) " · $left ${skipped}일은 빼고" else "",
+                undo = {
+                    schedule.updateDays(before.keys.toList()) { now ->
+                        val was = before[now.date] ?: DayEntry(now.date)
+                        if (mark == DayMark.LEAVE) now.copy(leave = was.leave) else now.copy(alarmSkipped = was.alarmSkipped)
+                    }
+                },
+            )
+        }
     }
 
     private fun stampOf(tool: PaintTool): ShiftOverride? = when (tool) {
@@ -347,9 +558,23 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         PaintTool.Clear -> ShiftOverride.None
     }
 
-    /** Sets the shift for a day. Choosing what the pattern already gives stores nothing. */
-    fun assign(date: LocalDate, override: ShiftOverride) {
-        viewModelScope.launch { changeShift(date) { override } }
+    /**
+     * Sets the shift for a day. Choosing what the pattern already gives stores nothing. [CAL-10] Said
+     * back with undo, as every change on a day is.
+     */
+    fun assign(date: LocalDate, override: ShiftOverride, announce: Boolean = true) {
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
+            val before = changeShift(date) { override }
+            if (!announce) return@launch
+            val name = (override as? ShiftOverride.Shift)?.let { snapshot.value?.typesById?.get(it.shiftTypeId)?.name }
+                ?: if (override == ShiftOverride.Off) "쉬는 날" else null
+            _messages.emit(
+                UndoMessage(if (name == null) "${Fmt.monthDay(date)}을 패턴대로 되돌렸어요" else "${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요") {
+                    schedule.restoreDay(date, before)
+                },
+            )
+        }
     }
 
     /**
@@ -411,7 +636,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun setCustomTimes(date: LocalDate, start: LocalTime, end: LocalTime) {
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
-            schedule.updateDay(date) { it.copy(customStart = start, customEnd = end) }
+            val before = schedule.updateDay(date) { it.copy(customStart = start, customEnd = end) }
+            // [CAL-10] A time picked by mistake is one tap from how it was.
+            _messages.emit(UndoMessage("${Fmt.monthDay(date)} 근무 시간을 바꿨어요 (${Fmt.timeRange(start, end)})") { schedule.restoreDay(date, before) })
         }
     }
 
@@ -422,7 +649,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun clearCustomTimes(date: LocalDate) {
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
-            schedule.setCustomTimes(date, null, null, null)
+            val before = schedule.setCustomTimes(date, null, null, null)
+            _messages.emit(UndoMessage("${Fmt.monthDay(date)} 근무를 기본 시간으로 되돌렸어요") { schedule.restoreDay(date, before) })
         }
     }
 
@@ -484,14 +712,22 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun keepSwapCovers() = container.settingsRepository.update { it.copy(swapCoversAnswered = true) }
 
     /** 연차·반차 for a day; [announce] says it back with undo when it was set without the day open [DAY-03]. */
-    fun setLeave(date: LocalDate, leave: Leave?, announce: Boolean = false) {
+    /** [CAL-10] Every change says itself back with undo; [announceInBar] says it in quick input's bar instead. */
+    fun setLeave(date: LocalDate, leave: Leave?, announce: Boolean = true, announceInBar: Boolean = false) {
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.setLeave(date, leave)
-            if (!announce) return@launch
-            val text = leave?.let { "${Fmt.monthDay(date)}에 ${it.label}${Fmt.obj(it.label)} 넣었어요" }
-                ?: before?.leave?.let { "${Fmt.monthDay(date)} ${it.label}${Fmt.obj(it.label)} 뺐어요" } ?: return@launch
-            _messages.emit(UndoMessage(text) { schedule.restoreDay(date, before) })
+            if (!announce && !announceInBar) return@launch
+            val was = before?.leave
+            val text = when {
+                leave != null && was != null && was.quarters == leave.quarters ->
+                    "${Fmt.monthDay(date)} 휴가를 ${leave.kind.label}${Fmt.ro(leave.kind.label)} 바꿨어요"
+                leave != null -> "${Fmt.monthDay(date)}에 ${leave.label}${Fmt.obj(leave.label)} 넣었어요"
+                was != null -> "${Fmt.monthDay(date)} ${was.label}${Fmt.obj(was.label)} 뺐어요"
+                else -> return@launch
+            }
+            val undo: suspend () -> Unit = { schedule.restoreDay(date, before) }
+            if (announceInBar) _lastPaint.value = PaintUndo(text, undo) else _messages.emit(UndoMessage(text, undo = undo))
         }
     }
 
@@ -501,13 +737,14 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         container.telemetry.event("review_asked")
     }
 
-    fun setAlarmSkipped(date: LocalDate, skipped: Boolean, announce: Boolean = false) {
+    fun setAlarmSkipped(date: LocalDate, skipped: Boolean, announce: Boolean = false, announceInBar: Boolean = false) {
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.setAlarmSkipped(date, skipped)
-            if (announce) {
-                _messages.emit(UndoMessage("${Fmt.monthDay(date)} 알람을 ${if (skipped) "껐어요" else "켰어요"}") { schedule.restoreDay(date, before) })
-            }
+            val text = "${Fmt.monthDay(date)} 알람을 ${if (skipped) "껐어요" else "켰어요"}"
+            val undo: suspend () -> Unit = { schedule.restoreDay(date, before) }
+            if (announceInBar) _lastPaint.value = PaintUndo(text, undo)
+            else if (announce) _messages.emit(UndoMessage(text, undo = undo))
         }
     }
 
@@ -524,7 +761,17 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     fun setDayAlarms(date: LocalDate, alarms: List<DayAlarm>?) {
-        viewModelScope.launch { schedule.setDayAlarms(date, alarms) }
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
+            val before = schedule.setDayAlarms(date, alarms)
+            // [CAL-10] Hand-set alarms replace the shift's; a wrong save is one tap from how it was.
+            val text = when {
+                alarms == null -> "${Fmt.monthDay(date)} 알람을 근무 알람으로 되돌렸어요"
+                alarms.isEmpty() -> "${Fmt.monthDay(date)}은 알람이 울리지 않아요"
+                else -> "${Fmt.monthDay(date)} 알람 ${alarms.size}개를 정했어요"
+            }
+            _messages.emit(UndoMessage(text) { schedule.restoreDay(date, before) })
+        }
     }
 
     fun setAlarmsEnabled(on: Boolean) = container.settingsRepository.update { it.copy(alarmsEnabled = on) }
@@ -562,7 +809,18 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     val moneyBook: StateFlow<MoneyBook> = container.calendars.active.flatMapLatest { container.calendars.money(it).book }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MoneyBook.EMPTY)
 
-    override fun saveEntry(entry: MoneyEntry) { val money = money; container.appScope.launch { money.save(entry) } }
+    /** [CAL-10] A new line can be taken back; a changed one goes back to what it was. */
+    override fun saveEntry(entry: MoneyEntry) {
+        val money = money
+        container.appScope.launch {
+            val before = if (entry.id == 0L) null else money.book.first().entries.firstOrNull { it.id == entry.id }
+            val saved = money.save(entry)
+            _messages.tryEmit(
+                if (before == null) UndoMessage("‘${saved.title}’ ${saved.kind.label}${Fmt.obj(saved.kind.label)} 적었어요") { money.delete(saved) }
+                else UndoMessage("‘${saved.title}’ 기록을 고쳤어요") { money.save(before) },
+            )
+        }
+    }
     private val rules: StateFlow<Map<String, String>> = container.calendars.active.flatMapLatest { container.calendars.money(it).rules }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
     override val categoryRules: Map<String, String> get() = rules.value
@@ -577,7 +835,18 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
-    override fun saveJob(job: Job) { val money = money; container.appScope.launch { money.save(job) } }
+    /** [CAL-10] A new job can be taken back; a changed one (paid, moved) goes back to what it was. */
+    override fun saveJob(job: Job) {
+        val money = money
+        container.appScope.launch {
+            val before = if (job.id == 0L) null else money.job(job.id)
+            val saved = money.save(job)
+            _messages.tryEmit(
+                if (before == null) UndoMessage("${Fmt.monthDay(saved.date)}에 ‘${saved.title}’ 일감을 적었어요") { money.delete(saved) }
+                else UndoMessage("‘${saved.title}’ 일감을 고쳤어요") { money.save(before) },
+            )
+        }
+    }
 
     override fun deleteJob(job: Job) {
         val money = money
@@ -587,10 +856,31 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
-    override fun saveSales(sales: DailySales) { val money = money; container.appScope.launch { money.save(sales) } }
+    /** [CAL-10] The day's sales as they were come back with undo, or go away when there were none. */
+    override fun saveSales(sales: DailySales) {
+        val money = money
+        container.appScope.launch {
+            val before = money.book.first().sales.firstOrNull { it.date == sales.date }
+            money.save(sales)
+            val text = when {
+                sales.sales == 0L && sales.costs == 0L && sales.note.isBlank() -> "${Fmt.monthDay(sales.date)} 매출을 지웠어요"
+                before == null -> "${Fmt.monthDay(sales.date)} 매출 ${Fmt.won(sales.sales)}을 적었어요"
+                else -> "${Fmt.monthDay(sales.date)} 매출을 ${Fmt.won(sales.sales)}으로 고쳤어요"
+            }
+            _messages.tryEmit(UndoMessage(text) { money.save(before ?: DailySales(sales.date, 0, 0)) })
+        }
+    }
 
     fun runUndo(message: UndoMessage) {
         val undo = message.undo ?: return
         container.appScope.launch { undo() }
+    }
+
+    private companion object {
+        const val VIEW_PREFS = "calendar_view"
+        const val K_LIST = "list"
+        const val K_FLOW_FOLDED = "flow_folded"
+        const val K_HOLIDAYS = "holidays_kept"
+        val FULL_LEAVE = Leave(LeaveKind.ANNUAL, 4)
     }
 }

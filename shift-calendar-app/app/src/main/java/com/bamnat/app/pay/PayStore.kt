@@ -223,12 +223,17 @@ object PayCodec {
     /** [PAYS-06] One of the user's own rules. */
     private fun customRule(r: CustomRule): JSONObject {
         val w = r.whenever
-        val pay = when (val p = r.pay) {
+        val way = when (val p = r.pay) {
             is RulePay.PerHour -> JSONObject().put("type", "perHour").put("amount", p.amount)
             is RulePay.OfHourly -> JSONObject().put("type", "ofHourly").put("rate", p.rate)
             is RulePay.OfBase -> JSONObject().put("type", "ofBase").put("share", p.share).put("per", p.perMinutes)
             is RulePay.PerTime -> JSONObject().put("type", "perTime").put("amount", p.amount)
+            // [PAYS-07] Kinds 1.14 cannot read, so it drops them instead of paying them some other way.
+            is RulePay.Monthly -> JSONObject().put("type", "monthly").put("amount", p.amount)
+            is RulePay.OfBaseMonthly -> JSONObject().put("type", "ofBaseMonthly").put("share", p.share)
         }
+        // [PAYS-07] A deduction wraps its way of counting, so a version without deductions drops it rather than adding it.
+        val pay = if (r.deduct) JSONObject().put("type", "minus").put("of", way) else way
         return JSONObject()
             .put("id", r.id).put("name", r.name).put("on", r.on).put("source", r.source)
             .put("dayKind", w.dayKind.name)
@@ -243,12 +248,16 @@ object PayCodec {
 
     /** A rule this version cannot read (a newer kind of pay) is dropped rather than failing the file. */
     private fun customRuleFrom(o: JSONObject): CustomRule? = runCatching {
-        val p = o.getJSONObject("pay")
+        val outer = o.getJSONObject("pay")
+        val deduct = outer.getString("type") == "minus"
+        val p = if (deduct) outer.getJSONObject("of") else outer
         val pay: RulePay = when (p.getString("type")) {
             "perHour" -> RulePay.PerHour(p.getLong("amount"))
             "ofHourly" -> RulePay.OfHourly(p.getDouble("rate").coerceIn(0.0, Premium.MAX_RATE))
             "ofBase" -> RulePay.OfBase(p.getDouble("share"), p.optInt("per", 480).coerceAtLeast(1))
             "perTime" -> RulePay.PerTime(p.getLong("amount"))
+            "monthly" -> RulePay.Monthly(p.getLong("amount"))
+            "ofBaseMonthly" -> RulePay.OfBaseMonthly(p.getDouble("share").coerceIn(0.0, 10.0))
             else -> return null
         }
         fun longs(key: String) = o.optJSONArray(key)?.let { a -> (0 until a.length()).map { a.getLong(it) }.toSet() } ?: emptySet()
@@ -269,6 +278,7 @@ object PayCodec {
             pay = pay,
             on = o.optBoolean("on", true),
             source = o.optString("source"),
+            deduct = deduct,
         )
     }.getOrNull()
 

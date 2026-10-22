@@ -19,6 +19,7 @@ class AlarmReceiver : BroadcastReceiver() {
             // [REL-10] Rebooted and not unlocked yet: ring from the intent and line up the next one
             // from the device-protected copy; the full re-plan runs once the phone is unlocked.
             when (intent.action) {
+                ACTION_TEST_ALARM -> ring?.let { startRinging(context, it) }
                 ACTION_SHIFT_ALARM -> if (ring != null && System.currentTimeMillis() - ring.triggerAtMillis < STALE_AFTER_MILLIS) {
                     startRinging(context, ring)
                 }
@@ -59,6 +60,17 @@ class AlarmReceiver : BroadcastReceiver() {
                     }
                 }
             }
+            ACTION_TEST_ALARM -> {
+                // [REL-13] The 알람 점검 test: rings like a shift alarm, then leaves the schedule alone.
+                container.alarmScheduler.clearTest()
+                if (ring != null) {
+                    container.telemetry.event(
+                        DiagEvents.ALARM_TEST_FIRED,
+                        EventBook.triggerDetail(ring.triggerAtMillis, "late_s=${(System.currentTimeMillis() - ring.triggerAtMillis) / 1000}"),
+                    )
+                    startRinging(context, ring)
+                }
+            }
             ACTION_SNOOZE_ALARM -> {
                 container.alarmScheduler.clearSnoozeState()
                 container.telemetry.event(DiagEvents.SNOOZE_FIRED)
@@ -92,6 +104,7 @@ class AlarmReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_SHIFT_ALARM = "com.bamnat.app.action.SHIFT_ALARM"
         const val ACTION_SNOOZE_ALARM = "com.bamnat.app.action.SNOOZE_ALARM"
+        const val ACTION_TEST_ALARM = "com.bamnat.app.action.TEST_ALARM"
         private const val STALE_AFTER_MILLIS = 2 * 60 * 60 * 1000L
     }
 }

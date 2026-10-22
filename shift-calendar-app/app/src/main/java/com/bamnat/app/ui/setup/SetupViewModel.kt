@@ -207,7 +207,8 @@ class SetupViewModel(
                 when {
                     CompanyShare.isCompanyFile(text) -> importCompany(text)
                     // [MCAL-02] A backup replaces every calendar; it is not something to add one from.
-                    calendarId != null -> _message.value = "백업은 설정 > 백업에서 불러올 수 있어요. 여기서는 회사 근무 파일만 열 수 있어요"
+                    // [SETUP-13] Names the menu as it is: 설정 > 데이터 > 파일 불러오기.
+                    calendarId != null -> _message.value = "백업은 설정 > 데이터 > 파일 불러오기에서 열 수 있어요. 여기서는 회사 근무 파일만 열 수 있어요"
                     c.backupManager.isSealed(text) -> _locked.value = LockedBackup(text)
                     else -> _pendingRestore.value = text to c.backupManager.summarize(text)
                 }

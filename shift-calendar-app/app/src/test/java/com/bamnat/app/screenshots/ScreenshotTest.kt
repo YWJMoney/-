@@ -113,6 +113,8 @@ class ScreenshotTest {
         val c = app.container
         // [ONBOARD-01] Through the consent pages already; the shots of them start over.
         c.consentStore.markSeen(ConsentItem.entries)
+        // [CAL-17] The one-time tip on the first date tap has its own shot (295); the others tap dates past it.
+        com.bamnat.app.ui.calendar.HintStore(app).markDone(com.bamnat.app.ui.calendar.HintStore.LONG_PRESS)
         val repo = c.scheduleRepository
         repo.ensureDefaults()
         val types = repo.shiftTypes.first().associateBy { it.name }
@@ -527,6 +529,21 @@ class ScreenshotTest {
         c.telemetry.event(DiagEvents.SCREEN, "stats")
         val vm = DiagnosticsViewModel(c)
         content { DiagnosticsScreen(vm, onBack = {}) }
+    }
+    // [REL-13] 알람 점검: the checks with their fix buttons and a test alarm waiting.
+    @Test fun foldedAlarmChecks() = shoot("350_folded_alarm_checks", FOLDED) {
+        val c = app.container
+        c.alarmScheduler.scheduleTest()
+        val vm = DiagnosticsViewModel(c)
+        content { DiagnosticsScreen(vm, onBack = {}) }
+    }
+    @Test fun unfoldedAlarmChecks() = shoot("351_unfolded_alarm_checks", UNFOLDED) {
+        val vm = DiagnosticsViewModel(app.container)
+        content { DiagnosticsScreen(vm, onBack = {}) }
+    }
+    // [OPS-23] 설정 › 앱 정보 › 오픈소스 라이선스.
+    @Test fun foldedOpenSourceLicenses() = shoot("352_folded_open_source_licenses", FOLDED) {
+        content { com.bamnat.app.ui.settings.OpenSourceLicensesDialog(onDismiss = {}) }
     }
 
     /** [EXTRA-03] 대근 1회 기본급의 10% for 8 hours with the 연장·야간 가산 on top, 특근 a fixed amount. */
@@ -1471,7 +1488,7 @@ class ScreenshotTest {
         content { com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}, client = shares, onOpenReceived = {}) }
         tapText("메모", exact = true)
         tapText("급여", exact = true)
-        reveal("받은 근무표가 있나요?")
+        reveal("동료 근무표도 받아 볼까요?")
     }
     @Test fun foldedIdentityBar() = shoot("132_folded_identity_bar", FOLDED) { receivedOn() }
     @Test fun foldedCalendarSwitcher() = shoot("133_folded_calendar_switcher", FOLDED) {
@@ -1603,9 +1620,10 @@ class ScreenshotTest {
     @Test fun foldedSettingsNotices() = shoot("141_folded_settings_notices", FOLDED) { settingsPage("알림") }
     @Test fun foldedSettingsRest() = shoot("142_folded_settings_rest", FOLDED) { settingsPage("잠과 휴식") }
     @Test fun unfoldedSettingsNotices() = shoot("143_unfolded_settings_notices", UNFOLDED) { settingsPage("알림", wide = true) }
-    @Test fun foldedQuickInput() = shoot("145_folded_quick_input", FOLDED) { tapText("빠른 입력", exact = true, scrolls = 0) }
+    // [CAL-15] The FAB keeps under the month's last row, so on the cover screen it is a scroll away.
+    @Test fun foldedQuickInput() = shoot("145_folded_quick_input", FOLDED) { tapText("빠른 입력", exact = true) }
     @Test fun foldedQuickInputDrag() = shoot("146_folded_quick_input_drag", FOLDED) {
-        tapText("빠른 입력", exact = true, scrolls = 0)
+        tapText("빠른 입력", exact = true)
         tapText("야간 칠하기", exact = true, scrolls = 0)
         dragDays(dayCell, today)
     }
@@ -1685,6 +1703,751 @@ class ScreenshotTest {
         const val SMALL_PHONE = "w320dp-h568dp-port-xhdpi"
         const val PHONE_LANDSCAPE = "w780dp-h360dp-land-450dpi"
     }
+
+    // ---- 달력 (1.15) ----
+    // [CAL-05..CAL-14] The calendar for each kind of work: its month summary, list, legend, quick input marks
+    // and ranges, holidays, added and received calendars, large text, dark mode and the home screen widgets.
+
+    /** [CAL-05] Field or shop work as such a user keeps it: no shifts, the seeded jobs and sales, and what [more] adds. */
+    private fun plain(s: WorkStyle, more: suspend (com.bamnat.app.AppContainer) -> Unit = {}, then: Screen.() -> Unit = {}): Screen.() -> Unit {
+        val c = app.container
+        runBlocking {
+            c.scheduleRepository.clearPattern()
+            c.scheduleRepository.entries.first().forEach { c.scheduleRepository.restoreDay(it.date, null) }
+            more(c)
+        }
+        c.settingsRepository.update { it.copy(workStyle = s) }
+        return then
+    }
+
+    /** A three-day job still owed and one paid last week, beside the seeded ones. */
+    private val moreJobs: suspend (com.bamnat.app.AppContainer) -> Unit = { c ->
+        c.moneyRepository.save(Job(date = today.plusDays(6), endDate = today.plusDays(8), title = "베란다 방수", client = "이OO 고객",
+            amount = 900_000, deposit = 200_000, depositPaid = true))
+        c.moneyRepository.save(Job(date = today.minusDays(9), title = "싱크대 교체", amount = 350_000, balancePaid = true))
+    }
+
+    /** Every open day of the month so far, closed on Mondays. */
+    private val moreSales: suspend (com.bamnat.app.AppContainer) -> Unit = { c ->
+        for (d in 1 until today.dayOfMonth - 1) {
+            val date = today.withDayOfMonth(d)
+            if (date.dayOfWeek == java.time.DayOfWeek.MONDAY) continue
+            c.moneyRepository.save(DailySales(date, sales = 520_000L + d * 137_000L % 760_000L, costs = 150_000L + d * 31_000L % 90_000L))
+        }
+    }
+
+    /** [CAL-06] Pay set up on Pro, so the summary over a shift calendar shows the month's pay. */
+    private fun withPay(then: Screen.() -> Unit = {}): Screen.() -> Unit {
+        val c = app.container
+        c.settingsRepository.update { it.copy(tier = Tier.PRO) }
+        runBlocking { c.payStore.save(PayViewModel(c).sampleProfile().copy(rules = companyRules), keepUndo = false) }
+        return then
+    }
+
+    @Test fun calShiftFolded() = shoot("290_folded_shift_calendar", FOLDED, withPay())
+    @Test fun calShiftUnfolded() = shoot("291_unfolded_shift_calendar", UNFOLDED, withPay())
+    /** Hints read once when the calendar opens: set before the screen starts. */
+    private fun hints(seen: Boolean, vararg keys: String) {
+        val store = com.bamnat.app.ui.calendar.HintStore(app)
+        if (seen) keys.forEach(store::markDone)
+        else app.getSharedPreferences("hints", android.content.Context.MODE_PRIVATE).edit().apply { keys.forEach { remove(it) } }.commit()
+    }
+
+    /**
+     * [CAL-16][CAL-15] A returning user with 오늘의 흐름 folded to one line, a little way down: the month's
+     * last row ends above the FAB, which rides in its room under the month with its label.
+     */
+    @Test fun calFlowFolded() {
+        hints(seen = true, com.bamnat.app.ui.calendar.HintStore.SHARE)
+        shoot("292_folded_flow_folded", FOLDED, withPay {
+            tapText("오늘의 흐름 접기", exact = true, scrolls = 0)
+            scrollUp(140)
+        })
+    }
+    @Test fun calFieldFolded() = shoot("293_folded_field_calendar", FOLDED, plain(WorkStyle.FIELD, moreJobs))
+    @Test fun calFieldUnfolded() = shoot("294_unfolded_field_calendar", UNFOLDED, plain(WorkStyle.FIELD, moreJobs))
+    /** [CAL-17] The first tap on a date says once that a long press changes it in place. */
+    @Test fun calLongPressTip() {
+        hints(seen = false, com.bamnat.app.ui.calendar.HintStore.LONG_PRESS)
+        hints(seen = true, com.bamnat.app.ui.calendar.HintStore.SHARE)
+        app.container.settingsRepository.update { it.copy(sleepTips = false) }
+        shoot("295_folded_long_press_tip", FOLDED) { selectDay(secondRowMonday()) }
+    }
+    @Test fun calFieldDay() = shoot("296_folded_field_day", FOLDED, plain(WorkStyle.FIELD, moreJobs) { openDay(today) })
+    @Test fun calBusinessFolded() = shoot("297_folded_business_calendar", FOLDED, plain(WorkStyle.BUSINESS, moreSales))
+    @Test fun calBusinessUnfolded() = shoot("298_unfolded_business_calendar", UNFOLDED, plain(WorkStyle.BUSINESS, moreSales))
+    @Test fun calBusinessDay() = shoot("299_folded_business_day", FOLDED, plain(WorkStyle.BUSINESS, moreSales) { openDay(today) })
+
+    /** [CAL-07] 평일 근무 on the next month with a weekday holiday: asked once whether those are days off. */
+    @Test fun calDayHolidays() = shoot("300_folded_day_holiday_card", FOLDED) {
+        val c = app.container
+        runBlocking {
+            val repo = c.scheduleRepository
+            val day = repo.shiftTypes.first().first { it.name == "주간" }.id
+            repo.savePattern(WorkPattern.Weekly.fromSteps(LocalDate.of(2026, 1, 5), listOf(day, day, day, day, day, null, null)))
+        }
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.DAY) }
+        settle()
+        val ahead = (0..12).first { n ->
+            val m = java.time.YearMonth.now().plusMonths(n.toLong())
+            (1..m.lengthOfMonth()).map { m.atDay(it) }.any { it.dayOfWeek.value <= 5 && com.bamnat.core.holiday.KoreanHolidays.isHoliday(it) }
+        }
+        repeat(ahead) { tapText("다음 달", exact = true, scrolls = 0) }
+    }
+
+    /** [CAL-05] An hourly job's own calendar before any day is written: one step to start. */
+    @Test fun calHourlyStart() = shoot("301_folded_hourly_start", FOLDED) {
+        val c = app.container
+        val id = c.calendars.begin("편의점 알바")
+        runBlocking { c.calendars.repository(id).apply { ensureDefaults(); addHourlyTypes() } }
+        c.calendars.finishSetup(id, WorkStyle.HOURLY)
+    }
+
+    // [CAL-08] The month as a list, for each kind of work.
+    @Test fun calListShift() = shoot("302_folded_list_view", FOLDED) { tapText("목록으로 보기", exact = true, scrolls = 0) }
+    @Test fun calListField() = shoot("303_folded_field_list_view", FOLDED, plain(WorkStyle.FIELD, moreJobs) {
+        tapText("목록으로 보기", exact = true, scrolls = 0)
+    })
+    @Test fun calListBusiness() = shoot("304_unfolded_business_list_view", UNFOLDED, plain(WorkStyle.BUSINESS, moreSales) {
+        tapText("목록으로 보기", exact = true, scrolls = 0)
+    })
+
+    // [CAL-06] What every mark means, in the calendar's own kind of work.
+    @Test fun calLegendShift() = shoot("305_folded_legend_shift", FOLDED) { tapText("달력 표시 안내", exact = true, scrolls = 0) }
+    @Test fun calLegendField() = shoot("306_folded_legend_field", FOLDED, plain(WorkStyle.FIELD, moreJobs) {
+        tapText("달력 표시 안내", exact = true, scrolls = 0)
+    })
+
+    /** [CAL-09] 연차 painted across a week: only the working days take it, and the bar says so with undo. */
+    /** Monday of the month's second row (weeks start on Sunday): above the quick input bar on every screen. */
+    private fun secondRowMonday(): LocalDate {
+        val first = today.withDayOfMonth(1)
+        return first.plusDays((7 - first.dayOfWeek.value % 7).toLong() + 1)
+    }
+    @Test fun calPaintLeave() = shoot("307_unfolded_paint_leave", UNFOLDED) {
+        tapText("빠른 입력", exact = true)
+        tapText("연차 칠하기", exact = true, scrolls = 0)
+        dragDays(secondRowMonday(), secondRowMonday().plusDays(4))
+    }
+
+    /** [CAL-09] A long press starts a range; the next tap ends it. */
+    @Test fun calPaintRange() = shoot("308_folded_paint_range", FOLDED) {
+        tapText("빠른 입력", exact = true)
+        tapText("야간 칠하기", exact = true, scrolls = 0)
+        longPressText(Fmt.dayTitle(secondRowMonday()), prefix = true)
+    }
+
+    // [CAL-13] An added calendar kept from ringing: said above the calendar and in the day's alarms.
+    @Test fun calAddedAlarmsOff() = shoot("309_folded_added_calendar_alarms_off", FOLDED) {
+        val id = addedCalendar(show = true)
+        app.container.calendars.setAlarms(id, false)
+    }
+    @Test fun calAddedAlarmsOffDay() = shoot("310_folded_added_calendar_alarms_off_day", FOLDED) {
+        val id = addedCalendar(show = true)
+        app.container.calendars.setAlarms(id, false)
+        settle()
+        val work = (0..6).map { today.plusDays(it.toLong()) }.first { it.dayOfWeek.value in setOf(1, 3, 5) }
+        if (work.month == today.month) openDay(work) else openDayBelow(work)
+        openGroup("알람")
+        reveal("알람", exact = true)
+    }
+
+    // [CAL-12] A freelancer's link: jobs and a memo, no shifts, so no "휴" on every empty day.
+    private val jobsLinkId = "Fr9gHj3KlMnPqRsTuVwXyZ"
+    private fun jobsShare(): com.bamnat.app.share.ReceivedShare {
+        val snap = com.bamnat.app.data.ScheduleSnapshot(emptyList(), emptyList<WorkPattern>(), emptyList())
+        val jobs = linkedMapOf(
+            today to listOf(com.bamnat.app.share.SharedJob("욕실 타일 시공", "09:00-17:00")),
+            today.plusDays(2) to listOf(com.bamnat.app.share.SharedJob("현장 실측", "14:00-15:00")),
+        )
+        for (d in 6L..8L) jobs[today.plusDays(d)] = listOf(com.bamnat.app.share.SharedJob("베란다 방수", null))
+        val memos = mapOf(today.plusDays(4) to "자재 받기")
+        val body = com.bamnat.app.share.ShareLinkPayload.build(snap, today.withDayOfMonth(1), "준호", 30,
+            com.bamnat.app.share.ShareOptions(memos = true, jobs = true), memos, jobs = jobs)
+        body.remove("ttlDays")
+        return com.bamnat.app.share.ReceivedShare(body, java.time.Instant.now().plus(java.time.Duration.ofDays(30)), java.time.Instant.now())
+    }
+    private fun jobsLinkOn() {
+        val c = app.container
+        c.shareApi = shares
+        shares.links[jobsLinkId] = jobsShare()
+        c.received.put(jobsLinkId, shares.links.getValue(jobsLinkId))
+    }
+    @Test fun calReceivedJobs() = shoot("311_folded_received_jobs", FOLDED) {
+        jobsLinkOn()
+        settle()
+        tapText("준호의 근무표 보기", exact = true)
+    }
+    @Test fun calReceivedJobsDay() = shoot("312_unfolded_received_jobs", UNFOLDED) {
+        jobsLinkOn()
+        settle()
+        tapText("준호의 근무표 보기", exact = true)
+        tapText(Fmt.dayTitle(today), prefix = true, scrolls = 0)
+    }
+
+    // [CAL-06][VIS-02] 200% text: the summary's figures and the cells still fit.
+    @Test fun calShiftHugeText() = shoot("313_phone_shift_huge_text", PHONE, 2f, withPay())
+    @Test fun calFieldHugeText() = shoot("314_phone_field_huge_text", PHONE, 2f, plain(WorkStyle.FIELD, moreJobs))
+
+    /** [CAL-06] Any date, picked on a full calendar from the month list. */
+    @Test fun calDateJump() = shoot("315_folded_date_jump", FOLDED) {
+        tapText(Fmt.month(java.time.YearMonth.now()), exact = true, scrolls = 0)
+        tapText("날짜 고르기", exact = true, scrolls = 0)
+    }
+    @Test fun calFieldDark() = shoot("316_folded_field_dark", "w369dp-h905dp-port-night-420dpi", plain(WorkStyle.FIELD, moreJobs))
+
+    /** [CAL-11] The three widgets in the words of field and shop work. */
+    private fun widgetShots(prefix: String) = runBlocking {
+        val shots = listOf(
+            Triple("today", com.bamnat.app.widget.TodayWidget() as androidx.glance.appwidget.GlanceAppWidget, 180 to 150),
+            Triple("week", com.bamnat.app.widget.WeekWidget(), 340 to 110),
+            Triple("month", com.bamnat.app.widget.MonthWidget(), 340 to 330),
+        )
+        for ((name, widget, dims) in shots) {
+            val (wDp, hDp) = dims
+            @OptIn(androidx.glance.ExperimentalGlanceApi::class)
+            val rv = widget.compose(app, size = androidx.compose.ui.unit.DpSize(wDp.dp, hDp.dp))
+            val density = app.resources.displayMetrics.density
+            val w = (wDp * density).toInt()
+            val h = (hDp * density).toInt()
+            val parent = android.widget.FrameLayout(app)
+            parent.addView(rv.apply(app, parent), android.widget.FrameLayout.LayoutParams(w, h))
+            parent.measure(
+                android.view.View.MeasureSpec.makeMeasureSpec(w, android.view.View.MeasureSpec.EXACTLY),
+                android.view.View.MeasureSpec.makeMeasureSpec(h, android.view.View.MeasureSpec.EXACTLY),
+            )
+            parent.layout(0, 0, w, h)
+            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bmp)
+            canvas.drawColor(0xFF7A8BA8.toInt())
+            parent.draw(canvas)
+            val out = File("build/screenshots/${prefix}_$name.png").apply { parentFile!!.mkdirs() }
+            out.outputStream().use { st -> bmp.compress(Bitmap.CompressFormat.PNG, 100, st) }
+        }
+    }
+    @Test fun calFieldWidgets() {
+        plain(WorkStyle.FIELD, moreJobs)
+        widgetShots("317_widget_field")
+    }
+    @Test fun calBusinessWidgets() {
+        plain(WorkStyle.BUSINESS, moreSales)
+        widgetShots("318_widget_business")
+    }
+    /** [CAL-18] The day's chips past the screen's edge: the end fades and "+N ›" says how many more. */
+    @Test fun calDayChipsMore() = shoot("319_folded_day_chips_more", FOLDED) { openDay(today) }
+
+    // ---- 앱 검토·공유·설정·문의 (1.15) ----
+    // [UX-03] 공유 in sight on every screen size, [UX-04] settings found by words, [UX-05] help before a question,
+    // [UX-06] quick wins on the sleep and memo screens.
+
+    /** [UX-05] The question server for screenshots: two questions from this phone, one answered, and 모두의 문의. */
+    private class FakeInquiryApi(override val enabled: Boolean = true) : com.bamnat.app.company.InquiryApi {
+        private val now = java.time.Instant.now()
+        private fun ago(hours: Long) = now.minus(java.time.Duration.ofHours(hours))
+        private val mine = mutableListOf(
+            com.bamnat.app.company.Inquiry("q2", com.bamnat.app.company.InquiryKind.BUG, "answered", ago(30), ago(2), listOf(
+                com.bamnat.app.company.InquiryMessage(false, "[알람] 야간 근무 전 알람이 가끔 5분 늦게 울려요.", ago(30)),
+                com.bamnat.app.company.InquiryMessage(true, "알려 주셔서 고마워요. 배터리 최적화에서 밤낮을 빼 주시면 제시간에 울려요.", ago(2)),
+            ), public = true, same = 3),
+            com.bamnat.app.company.Inquiry("q1", com.bamnat.app.company.InquiryKind.IDEA, "open", ago(50), ago(50), listOf(
+                com.bamnat.app.company.InquiryMessage(false, "달력에서 동료 근무표를 겹쳐 보면 좋겠어요.", ago(50)),
+            ), public = true),
+        )
+
+        override suspend fun send(device: String, kind: com.bamnat.app.company.InquiryKind, text: String, info: com.bamnat.app.company.InquiryInfo) =
+            com.bamnat.app.company.Inquiry("q3", kind, "open", now, now, listOf(com.bamnat.app.company.InquiryMessage(false, text, now)), public = kind.public)
+                .also { mine.add(0, it) }
+        override suspend fun mine(device: String) = mine.toList()
+        override suspend fun more(device: String, id: String, text: String) = mine.first { it.id == id }
+        override suspend fun delete(device: String, id: String) = Unit
+        override suspend fun board(device: String, topic: String?, bySame: Boolean, after: Int) = com.bamnat.app.company.PublicPage(listOf(
+            com.bamnat.app.company.PublicInquiry("p1", com.bamnat.app.company.InquiryKind.BUG, "answered", "야간 근무 전 알람이 가끔 5분 늦게 울려요.",
+                1, 3, false, true, "alarm", "알람", ago(2)),
+            com.bamnat.app.company.PublicInquiry("p2", com.bamnat.app.company.InquiryKind.QUESTION, "answered", "근무표 링크를 받으면 내 달력에 같이 보이나요?",
+                1, 5, false, false, "share", "공유", ago(20)),
+            com.bamnat.app.company.PublicInquiry("p3", com.bamnat.app.company.InquiryKind.IDEA, "open", "위젯에서 다음 근무까지 남은 시간을 보고 싶어요",
+                0, 2, false, false, "widget", "위젯", ago(40)),
+        ), listOf("alarm" to "알람", "share" to "공유", "widget" to "위젯"), mapOf("alarm" to 1, "share" to 1, "widget" to 1), null)
+        override suspend fun boardThread(device: String, id: String) = com.bamnat.app.company.PublicThread(id,
+            com.bamnat.app.company.InquiryKind.QUESTION, "answered", "공유", 5, false, false, false, ago(20), listOf(
+                com.bamnat.app.company.InquiryMessage(false, "근무표 링크를 받으면 내 달력에 같이 보이나요?", ago(20)),
+                com.bamnat.app.company.InquiryMessage(true, "네, ‘동료 근무표 받기’에 링크를 넣으면 달력 이름을 눌러 바꿔 가며 볼 수 있어요.", ago(18)),
+            ), null)
+        override suspend fun same(device: String, id: String, on: Boolean) = 6
+        override suspend fun flag(device: String, id: String, reason: com.bamnat.app.company.InquiryFlag) = Unit
+    }
+
+    /** [UX-05] Questions through the fake server; [asked]: this phone sent the two above, one with a new answer. */
+    private fun inquiriesOn(enabled: Boolean = true, asked: Boolean = false) = app.container.also { c ->
+        c.inquiryApi = FakeInquiryApi(enabled)
+        c.inquiryStore.asked = asked
+    }
+
+    /** [UX-05] Opens 도움말과 문의 the way another screen does: the link, then the navigation. */
+    private fun Screen.askFromScreen(start: com.bamnat.app.ui.settings.InquiryStart) {
+        com.bamnat.app.ui.settings.InquiryLinks.ask(start)
+        settle()
+    }
+
+    @Test fun foldedCalendarShare() = shoot("320_folded_calendar_share", FOLDED)
+    @Test fun unfoldedCalendarShare() = shoot("321_unfolded_calendar_share", UNFOLDED)
+    @Test fun phoneCalendarShare() = shoot("322_phone_calendar_share", PHONE)
+    @Test fun phoneCalendarShareHugeText() = shoot("323_phone_calendar_share_huge_text", PHONE, fontScale = 2f)
+    @Test fun foldedSwitcherMineOnly() {
+        app.container.shareApi = shares
+        shoot("324_folded_switcher_mine_only", FOLDED) { tapText("달력 바꾸기", prefix = true) }
+    }
+    @Test fun foldedReceiveNoLinkYet() {
+        app.container.shareApi = shares
+        shoot("325_folded_receive_no_link", FOLDED) {
+            tapText("달력 바꾸기", prefix = true)
+            tapText("동료 근무표 받기", exact = true)
+            reveal("링크 부탁하는 메시지 보내기")
+        }
+    }
+    @Test fun foldedIdentityBarWithFaces() = shoot("326_folded_identity_bar_faces", FOLDED) { receivedOn() }
+
+    @Test fun foldedSettingsHubHelp() {
+        inquiriesOn(asked = true)
+        shoot("327_folded_settings_hub", FOLDED) { tab(4, wide = false) }
+    }
+    @Test fun foldedSettingsSearch() = shoot("328_folded_settings_search", FOLDED) {
+        tab(4, wide = false)
+        typeInto("설정 찾기", "알람 소리")
+    }
+    @Test fun foldedSettingsSearchFound() = shoot("329_folded_settings_search_found", FOLDED) {
+        tab(4, wide = false)
+        typeInto("설정 찾기", "알람 소리")
+        tapText("알람음", exact = true)
+    }
+    @Test fun unfoldedSettingsSearchFound() = shoot("330_unfolded_settings_search_found", UNFOLDED) {
+        tab(4, wide = true)
+        typeInto("설정 찾기", "다크 모드")
+        tapText("테마", exact = true)
+    }
+    @Test fun phoneSettingsSearchHugeText() = shoot("331_phone_settings_search_huge_text", PHONE, fontScale = 2f) {
+        tab(4, wide = false)
+        typeInto("설정 찾기", "백업")
+    }
+    @Test fun foldedSettingsCalendarShareRows() {
+        app.container.shareApi = shares
+        shoot("332_folded_settings_calendar_share", FOLDED) { settingsPage("달력 화면") }
+    }
+    @Test fun foldedSettingsSearchNothing() = shoot("333_folded_settings_search_nothing", FOLDED) {
+        tab(4, wide = false)
+        typeInto("설정 찾기", "화면이 자꾸 꺼져요")
+    }
+
+    @Test fun foldedHelpHome() {
+        inquiriesOn()
+        shoot("334_folded_help_home", FOLDED) {
+            tab(4, wide = false)
+            tapText("도움말과 문의", exact = true)
+        }
+    }
+    @Test fun foldedHelpSearch() {
+        inquiriesOn()
+        shoot("335_folded_help_search", FOLDED) {
+            tab(4, wide = false)
+            tapText("도움말과 문의", exact = true)
+            typeInto("도움말 찾기", "알람이 안 울려요")
+            tapText("알람이 안 울리거나 늦게 울려요", exact = true)
+        }
+    }
+    @Test fun foldedHelpFromCalendar() {
+        inquiriesOn()
+        shoot("336_folded_help_from_calendar", FOLDED) {
+            askFromScreen(com.bamnat.app.ui.settings.InquiryStart(about = "달력", help = true))
+        }
+    }
+    @Test fun foldedInquiryFormTips() {
+        inquiriesOn()
+        shoot("337_folded_inquiry_form_tips", FOLDED) {
+            askFromScreen(com.bamnat.app.ui.settings.InquiryStart(about = "근무표 공유", kind = com.bamnat.app.company.InquiryKind.QUESTION))
+            typeInto("[근무표 공유] ", "[근무표 공유] 동료에게 근무표 링크를 보내고 싶어요")
+            reveal("혹시 이런 내용인가요?")
+        }
+    }
+    @Test fun foldedInquiryMineUnread() {
+        inquiriesOn(asked = true)
+        shoot("338_folded_inquiry_mine_unread", FOLDED) {
+            tab(4, wide = false)
+            tapText("도움말과 문의", exact = true)
+        }
+    }
+    @Test fun unfoldedHelpHome() {
+        inquiriesOn()
+        shoot("339_unfolded_help_home", UNFOLDED) {
+            tab(4, wide = true)
+            askFromScreen(com.bamnat.app.ui.settings.InquiryStart(help = true))
+        }
+    }
+    @Test fun phoneHelpHugeText() {
+        inquiriesOn()
+        shoot("340_phone_help_huge_text", PHONE, fontScale = 2f) {
+            askFromScreen(com.bamnat.app.ui.settings.InquiryStart(help = true))
+        }
+    }
+    @Test fun foldedHelpDark() {
+        inquiriesOn()
+        shoot("341_folded_help_dark", "w369dp-h905dp-port-night-420dpi") {
+            askFromScreen(com.bamnat.app.ui.settings.InquiryStart(help = true))
+            tapText("근무표를 동료·가족에게 보내고 싶어요", exact = true)
+        }
+    }
+    @Test fun foldedHelpByMail() {
+        inquiriesOn(enabled = false)
+        shoot("342_folded_help_mail", FOLDED) {
+            tab(4, wide = false)
+            tapText("도움말과 문의", exact = true)
+            reveal("메일로 문의하기")
+        }
+    }
+    @Test fun foldedInquiryByMailForm() {
+        inquiriesOn(enabled = false)
+        shoot("343_folded_inquiry_mail_form", FOLDED) {
+            askFromScreen(com.bamnat.app.ui.settings.InquiryStart(about = "달력"))
+            tapText("궁금해요", exact = true)
+            reveal("메일에 함께 적는 정보")
+        }
+    }
+    @Test fun foldedSettingsSearchWithHelp() = shoot("346_folded_settings_search_help", FOLDED) {
+        tab(4, wide = false)
+        typeInto("설정 찾기", "알람이 안 울려요")
+    }
+    @Test fun phoneSettingsHubNewAnswerHugeText() {
+        inquiriesOn(asked = true)
+        shoot("347_phone_settings_new_answer_huge_text", PHONE, fontScale = 2f) { tab(4, wide = false) }
+    }
+    @Test fun foldedSleepNow() = shoot("344_folded_sleep_now", FOLDED) {
+        com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SLEEP)
+        settle()
+    }
+    @Test fun foldedMemosNewMemo() = shoot("345_folded_memos_new_memo", FOLDED) { tab(2, wide = false) }
+
+    // ---- 급여 커스텀·설정 쉽게 (1.15) [PAYS-07..11][SETUP-03..13] ----
+    /** [PAYS-07] 우리 회사 항목 만들기 over the pay screen, opened at [kind] or at the list of kinds. */
+    private fun itemBuilder(kind: com.bamnat.app.ui.pay.ItemKind? = null, gap: Long? = null): Screen.() -> Unit =
+        payScreen(Tier.PRO, withProfile = true) { vm ->
+            val profile = vm.profile.collectAsState().value
+            val snap = vm.snapshot.collectAsState().value
+            if (profile != null && snap != null) {
+                com.bamnat.app.ui.pay.CustomItemDialog(vm, profile, snap, java.time.YearMonth.now(), onDismiss = {}, onSave = {},
+                    gap = gap, startKind = kind)
+            }
+        }
+
+    private fun Screen.deductForm() {
+        itemBuilder(com.bamnat.app.ui.pay.ItemKind.DEDUCT).invoke(this)
+        typeInto("이름 (선택)", "기숙사비")
+        typeInto("한 달 금액", "50000")
+        repeat(2) { settle() }
+    }
+
+    /** [PAYS-07][PAYS-09] A deduction made from the pay screen, then the notice and the invitation to share the way. */
+    private fun Screen.madeDeduction() {
+        companyOn()
+        // As the app opens it: with the way to 회사 설정 보내기.
+        payScreen(Tier.PRO, withProfile = true) { vm -> com.bamnat.app.ui.pay.PayScreen(vm, onBack = {}, onShareWay = {}) }.invoke(this)
+        tapText("우리 회사 항목 만들기", exact = true)
+        tapText("빠지는 돈 (차감)", exact = true)
+        typeInto("이름 (선택)", "기숙사비")
+        typeInto("한 달 금액", "50000")
+        repeat(2) { settle() }
+        tapText("만들기", exact = true)
+        reveal("만들었어요", exact = false)
+    }
+
+    /** [PAYS-08] 명세서로 맞춰 보기 with the way to 회사 설정 보내기, for the invitation after a match. */
+    private fun matchWithShare(): Screen.() -> Unit = payScreen(Tier.PRO, withProfile = true) { vm ->
+        val profile = vm.profile.collectAsState().value
+        val snap = vm.snapshot.collectAsState().value
+        if (profile != null && snap != null) {
+            com.bamnat.app.ui.pay.PayslipMatchDialog(vm, profile, snap, java.time.YearMonth.now(), onDismiss = {}, onShareWay = {})
+        }
+    }
+
+    /** This month as the app has it, for a payslip a little off from it. */
+    private fun appTotalNow(): Long = runBlocking {
+        val c = app.container
+        PayViewModel(c).calculateOff(c.payStore.profile.value!!, c.scheduleRepository.snapshot.first(), java.time.YearMonth.now()).total
+    }
+
+    private fun Screen.payslipGap() {
+        matchWithShare().invoke(this)
+        // A company allowance the app does not have; no setting explains all of it. A share of the month, not a
+        // fixed amount: 52,000원 came within the 0.5% match of a 쉬는 날 근무 change on some days of the month.
+        val total = appTotalNow()
+        val gross = total + total * 35 / 1000
+        tapText("네, 같았어요", exact = true)
+        typeInto("지급 총액", gross.toString())
+        tapText("맞춰 보기", exact = true)
+        repeat(3) { settle() }
+        reveal("이 차이를 항목으로 만들기")
+    }
+
+    private fun Screen.payslipMatched() {
+        companyOn()
+        matchWithShare().invoke(this)
+        val gross = appTotalNow()
+        tapText("네, 같았어요", exact = true)
+        typeInto("지급 총액", gross.toString())
+        tapText("맞춰 보기", exact = true)
+        repeat(3) { settle() }
+        tapText("확인했어요", exact = true)
+        reveal("명세서와 맞았어요", exact = false)
+    }
+
+    /** [SETUP-03][SETUP-05] One setup question with the month worked out from this phone's roster. */
+    private fun wizardAt(key: String): Screen.() -> Unit = {
+        val c = app.container
+        val vm = PayViewModel(c)
+        val snap = runBlocking { c.scheduleRepository.snapshot.first() }
+        val month = java.time.YearMonth.now()
+        val sample = vm.sampleProfile()
+        content {
+            com.bamnat.app.ui.pay.PayWizard(sample, {}, {}, snapshot = snap, preview = { vm.preview(it, snap, month) }, startAt = key)
+        }
+        repeat(4) { settle() }
+    }
+
+    private fun shiftEditor(): Screen.() -> Unit = {
+        val day = runBlocking { app.container.scheduleRepository.shiftTypes.first().first { it.name == "주간" } }
+        content { com.bamnat.app.ui.shifts.ShiftTypeEditorDialog(day, onDismiss = {}, onSave = {}, onDelete = {}) }
+    }
+
+    @Test fun foldedPayItemKinds() = shoot("260_folded_pay_item_kinds", FOLDED, itemBuilder())
+    @Test fun unfoldedPayItemKinds() = shoot("261_unfolded_pay_item_kinds", UNFOLDED, itemBuilder())
+    @Test fun foldedPayItemPerShift() = shoot("262_folded_pay_item_per_shift", FOLDED) {
+        itemBuilder(com.bamnat.app.ui.pay.ItemKind.PER_SHIFT).invoke(this)
+        typeInto("이름 (선택)", "위험수당")
+        typeInto("1회 금액", "10000")
+        tapText("야간", exact = true)
+        repeat(2) { settle() }
+    }
+    @Test fun foldedPayItemDeduct() = shoot("263_folded_pay_item_deduct", FOLDED) { deductForm() }
+    @Test fun unfoldedPayItemDeduct() = shoot("264_unfolded_pay_item_deduct", UNFOLDED) { deductForm() }
+    @Test fun foldedPayMadeShare() = shoot("265_folded_pay_made_share", FOLDED) { madeDeduction() }
+    @Test fun unfoldedPayMadeShare() = shoot("266_unfolded_pay_made_share", UNFOLDED) { madeDeduction() }
+    @Test fun foldedPayCustomList() = shoot("267_folded_pay_custom_list", FOLDED) {
+        payScreen(Tier.PRO, withProfile = true, adjust = {
+            it.copy(customRules = listOf(
+                com.bamnat.core.pay.CustomRule("d1", "기숙사비", com.bamnat.core.pay.RuleWhen(), com.bamnat.core.pay.RulePay.Monthly(50_000), deduct = true),
+                com.bamnat.core.pay.CustomRule("d2", "식대", com.bamnat.core.pay.RuleWhen(dayKind = com.bamnat.core.pay.RuleDayKind.WORK_DAY),
+                    com.bamnat.core.pay.RulePay.PerTime(3_000), deduct = true),
+                com.bamnat.core.pay.CustomRule("s1", "근속수당", com.bamnat.core.pay.RuleWhen(), com.bamnat.core.pay.RulePay.OfBaseMonthly(0.03)),
+            ))
+        }).invoke(this)
+        reveal("직접 만든 항목", exact = true)
+    }
+    @Test fun foldedPayslipGap() = shoot("268_folded_payslip_gap", FOLDED) { payslipGap() }
+    @Test fun unfoldedPayslipGap() = shoot("269_unfolded_payslip_gap", UNFOLDED) { payslipGap() }
+    @Test fun foldedPayslipGapBuilder() = shoot("270_folded_payslip_gap_builder", FOLDED) {
+        payslipGap()
+        tapText("이 차이를 항목으로 만들기")
+    }
+    @Test fun foldedPayslipMatchedShare() = shoot("271_folded_payslip_matched_share", FOLDED) { payslipMatched() }
+    @Test fun unfoldedPayslipMatchedShare() = shoot("272_unfolded_payslip_matched_share", UNFOLDED) { payslipMatched() }
+    @Test fun foldedPayWizardQuestion() = shoot("273_folded_pay_wizard_question", FOLDED, wizardAt(com.bamnat.core.pay.Unknowns.FIVE_OR_MORE))
+    @Test fun unfoldedPayWizardQuestion() = shoot("274_unfolded_pay_wizard_question", UNFOLDED, wizardAt(com.bamnat.core.pay.Unknowns.FIVE_OR_MORE))
+    @Test fun foldedPayTermDialog() = shoot("275_folded_pay_term_dialog", FOLDED) {
+        wizardAt(com.bamnat.core.pay.Unknowns.FIVE_OR_MORE).invoke(this)
+        tapText("5인 이상이란?", exact = true)
+    }
+    @Test fun foldedPayWizardHoursTerm() = shoot("276_folded_pay_wizard_hours_term", FOLDED, wizardAt(com.bamnat.core.pay.Unknowns.MONTHLY_HOURS))
+    @Test fun foldedPayWizardItemsHint() = shoot("277_folded_pay_wizard_items_hint", FOLDED) {
+        content { com.bamnat.app.ui.pay.PayWizard(null, null, {}, scrollToEnd = true, startAt = "items") }
+    }
+    @Test fun phonePayWizardQuestionHugeText() = shoot("278_phone_pay_wizard_question_huge_text", PHONE, fontScale = 2f,
+        wizardAt(com.bamnat.core.pay.Unknowns.FIVE_OR_MORE))
+    @Test fun foldedSetupStepsLeft() = shoot("279_folded_setup_steps_left", FOLDED, fresh(null) { tapText("순서가 돌아가요") })
+    @Test fun unfoldedSetupStepsLeft() = shoot("280_unfolded_setup_steps_left", UNFOLDED, fresh(null) {
+        tapText("순서가 돌아가요"); tapText("4조 2교대 12시간")
+    })
+    @Test fun foldedShiftTypesEasy() = shoot("281_folded_shift_types_easy", FOLDED) {
+        settingsPage("내 근무")
+        tapText("근무 종류와 시간", exact = true)
+    }
+    @Test fun unfoldedShiftTypesEasy() = shoot("282_unfolded_shift_types_easy", UNFOLDED) {
+        settingsPage("내 근무", wide = true)
+        tapText("근무 종류와 시간", exact = true)
+    }
+    @Test fun foldedShiftEditorTimeFirst() = shoot("283_folded_shift_editor_time_first", FOLDED, shiftEditor())
+    @Test fun foldedShiftEditorLook() = shoot("284_folded_shift_editor_look", FOLDED) {
+        shiftEditor().invoke(this)
+        tapText("색과 아이콘 (선택)", exact = true)
+        reveal("색상", exact = true)
+    }
+    @Test fun unfoldedShiftEditorTimeFirst() = shoot("285_unfolded_shift_editor_time_first", UNFOLDED, shiftEditor())
+    @Test fun foldedPatternEasy() = shoot("286_folded_pattern_easy", FOLDED) {
+        settingsPage("내 근무")
+        tapText("근무 주기", exact = true)
+    }
+    @Test fun unfoldedPatternEasy() = shoot("287_unfolded_pattern_easy", UNFOLDED) {
+        settingsPage("내 근무", wide = true)
+        tapText("근무 주기", exact = true)
+    }
+    @Test fun foldedPayItemDeductDark() = shoot("288_folded_pay_item_deduct_dark", "w369dp-h905dp-port-night-420dpi") { deductForm() }
+    @Test fun phonePayItemDeductHugeText() = shoot("289_phone_pay_item_deduct_huge_text", PHONE, fontScale = 2f) { deductForm() }
+    // [PAYS-10][PAYS-11] The ‘?’ in the top bar, and a 추정 badge saying what to put in.
+    @Test fun foldedPayEstimateHint() = shoot("267b_folded_pay_estimate_hint", FOLDED) {
+        payScreen(Tier.PRO, withProfile = true) { vm -> com.bamnat.app.ui.pay.PayScreen(vm, onBack = {}, onHelp = {}) }.invoke(this)
+        tapText("추정 포함", exact = true)
+    }
+    // [SETUP-10] 맞았어요 said once, and the button out of the way at the end of the list.
+    @Test fun foldedCompanyBoardEnd() = shoot("271b_folded_company_board_end", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
+        settle()
+        reveal("예시정밀 2공장", exact = true)
+        scrollUp(800)
+        settle()
+    }
+    // [SETUP-12] A first setup left for later, picked up again from 설정 > 내 근무.
+    @Test fun foldedSettingsSetupResume() = shoot("280b_folded_settings_setup_resume", FOLDED, fresh(null) {
+        tapText("순서가 돌아가요")
+        tapText("나중에 할게요", exact = true)
+        settingsPage("내 근무")
+    })
+
+    // ---- 가계부 (1.15) ----
+    /**
+     * [LEDG-06][LEDG-08][LEDG-09][LEDG-11] The seeded month made a whole ledger: a pay account, cash
+     * and two cards behind the lines, budgets (배달 already over), pay-ins and bills that repeat, a
+     * split payment, tags, a memo, installments, a transfer, and the months before for the year.
+     */
+    private fun ledger() = runBlocking<Unit> {
+        val money = app.container.moneyRepository
+        val month = today.withDayOfMonth(1)
+        fun day(d: Int) = month.plusDays(d.toLong().coerceAtMost(today.dayOfMonth - 1L))
+        val bank = money.save(com.bamnat.core.money.MoneyAccount(name = "국민 월급통장", type = com.bamnat.core.money.AccountType.BANK, opening = 1_850_000))
+        val cash = money.save(com.bamnat.core.money.MoneyAccount(name = "지갑", type = com.bamnat.core.money.AccountType.CASH, opening = 62_000))
+        val credit = money.save(com.bamnat.core.money.MoneyAccount(name = "신한 Deep", type = com.bamnat.core.money.AccountType.CREDIT,
+            last4 = "1234", payDay = 14, payFromId = bank.id))
+        val check = money.save(com.bamnat.core.money.MoneyAccount(name = "KB 체크", type = com.bamnat.core.money.AccountType.CHECK,
+            last4 = "5678", payFromId = bank.id))
+        // The card's bill now comes from the card itself.
+        money.allFixed().filter { it.kind == MoneyKind.TRANSFER }.forEach { money.delete(it) }
+        val byNote = mapOf("출근길 커피" to check, "팀 점심" to credit, "이마트" to credit, "넷플릭스" to credit, "메가커피" to cash,
+            "휴대폰 요금" to bank, "배달의민족" to credit, "CU" to cash, "중고 거래" to bank)
+        money.saveAll(money.allEntries().map { e ->
+            val account = byNote[e.note] ?: when (e.cardLast4) { "1234" -> credit; "5678" -> check; else -> null }
+            when (e.note) {
+                "팀 점심" -> e.copy(accountId = account?.id, tags = listOf("회식"), memo = "민지·준호와 점심, 내가 계산")
+                "이마트" -> e.copy(accountId = account?.id, parts = listOf(com.bamnat.core.money.EntryPart("생활", 18_400)), tags = listOf("장보기"))
+                else -> e.copy(accountId = account?.id)
+            }
+        })
+        listOf(
+            MoneyEntry(date = day(9), kind = MoneyKind.INCOME, amount = 2_480_000, category = "급여", merchant = "사아자물류", accountId = bank.id),
+            MoneyEntry(date = day(4), kind = MoneyKind.TRANSFER, amount = 100_000, category = "내 계좌", merchant = "ATM 출금",
+                accountId = bank.id, toAccountId = cash.id),
+            MoneyEntry(date = day(7), kind = MoneyKind.EXPENSE, amount = 459_000, category = "생활", merchant = "라마바전자 무선청소기",
+                accountId = credit.id, installments = 3),
+            MoneyEntry(date = day(2), kind = MoneyKind.EXPENSE, amount = 120_000, category = "여가", merchant = "가나다 펜션",
+                accountId = credit.id, tags = listOf("여행")),
+            MoneyEntry(date = day(6), kind = MoneyKind.EXPENSE, amount = 12_800, category = "교통", merchant = "택시", accountId = cash.id),
+        ).forEach { money.save(it) }
+        // Last month to compare with, and the months of the year before it.
+        val last = month.minusMonths(1)
+        listOf("카페" to 26_000L, "배달" to 52_000L, "장보기·쇼핑" to 143_000L, "통신" to 55_000L, "구독" to 13_500L, "교통" to 38_000L)
+            .forEachIndexed { i, (c, a) -> money.save(MoneyEntry(date = last.plusDays(i * 3L + 2), kind = MoneyKind.EXPENSE, amount = a, category = c)) }
+        money.save(MoneyEntry(date = last.plusDays(9), kind = MoneyKind.INCOME, amount = 2_450_000, category = "급여", merchant = "사아자물류"))
+        (2 until today.monthValue).forEach { k ->
+            val m = month.minusMonths(k.toLong())
+            money.save(MoneyEntry(date = m.plusDays(9), kind = MoneyKind.INCOME, amount = 2_400_000 + k * 15_000L, category = "급여", merchant = "사아자물류"))
+            money.save(MoneyEntry(date = m.plusDays(3), kind = MoneyKind.EXPENSE, amount = 380_000 + (k % 3) * 120_000L, category = "식비"))
+            money.save(MoneyEntry(date = m.plusDays(12), kind = MoneyKind.EXPENSE, amount = 455_000 + k * 21_000L, category = "주거"))
+        }
+        money.setBudget(com.bamnat.core.money.MoneyBudget.TOTAL, 1_600_000)
+        money.setBudget("식비", 300_000)
+        money.setBudget("카페", 40_000)
+        money.setBudget("배달", 15_000)
+        money.setBudget("장보기·쇼핑", 200_000)
+        money.save(FixedCost(name = "주말 알바비", amount = 80_000, day = 6, kind = MoneyKind.INCOME, category = "부수입",
+            repeat = com.bamnat.core.money.Repeat.WEEK, accountId = bank.id))
+        money.save(FixedCost(name = "자동차 보험", amount = 642_000, day = 20, category = "보험", repeat = com.bamnat.core.money.Repeat.YEAR,
+            monthOfYear = today.plusMonths(1).monthValue, accountId = credit.id))
+    }
+
+    /** The money tab on one of its pages, with [ledger] seeded. */
+    private fun ledgerPage(page: String?, wide: Boolean = false, then: Screen.() -> Unit = {}): Screen.() -> Unit = {
+        ledger()
+        tab(1, wide)
+        if (page != null) tapText(page, exact = true, scrolls = 0)
+        then()
+    }
+
+    @Test fun foldedLedgerSummary() = shoot("230_folded_ledger_summary", FOLDED, ledgerPage(null))
+    @Test fun foldedLedgerBudgets() = shoot("231_folded_ledger_budgets", FOLDED, ledgerPage(null) { reveal("분류별 예산", exact = true) })
+    @Test fun foldedLedgerAccounts() = shoot("232_folded_ledger_accounts", FOLDED, ledgerPage(null) { reveal("곧 나갈 돈") })
+    @Test fun unfoldedLedgerSummary() = shoot("233_unfolded_ledger_summary", UNFOLDED, ledgerPage(null, wide = true))
+    @Test fun foldedLedgerList() = shoot("234_folded_ledger_list", FOLDED, ledgerPage("내역"))
+    @Test fun unfoldedLedgerList() = shoot("235_unfolded_ledger_list", UNFOLDED, ledgerPage("내역", wide = true))
+    @Test fun foldedLedgerFilter() = shoot("236_folded_ledger_filter", FOLDED, ledgerPage("내역") { tapText("거르기", exact = true, scrolls = 0) })
+    @Test fun foldedLedgerSelect() = shoot("237_folded_ledger_select", FOLDED, ledgerPage("내역") {
+        reveal("팀 점심")
+        longPressText("팀 점심")
+        tapText("이마트")
+    })
+    @Test fun foldedLedgerReport() = shoot("238_folded_ledger_report", FOLDED, ledgerPage("분석"))
+    @Test fun foldedLedgerReportMore() = shoot("239_folded_ledger_report_more", FOLDED, ledgerPage("분석") { reveal("년 흐름") })
+    @Test fun unfoldedLedgerReport() = shoot("240_unfolded_ledger_report", UNFOLDED, ledgerPage("분석", wide = true))
+    @Test fun foldedLedgerEntry() = shoot("241_folded_ledger_entry", FOLDED, ledgerPage(null) { tapText("돈 적기", exact = true, scrolls = 0) })
+    @Test fun foldedLedgerEntryMore() = shoot("242_folded_ledger_entry_more", FOLDED, ledgerPage("내역") {
+        tapText("이마트")
+        reveal("나눠 적기", exact = true)
+    })
+    @Test fun foldedLedgerRecurring() = shoot("243_folded_ledger_recurring", FOLDED, ledgerPage(null) { tapText("주말 알바비") })
+    @Test fun foldedLedgerAccount() = shoot("244_folded_ledger_account", FOLDED, ledgerPage(null) { tapText("신한 Deep", prefix = true) })
+    @Test fun foldedLedgerBudgetEditor() = shoot("245_folded_ledger_budget_editor", FOLDED, ledgerPage(null) {
+        reveal("분류별 예산", exact = true)
+        tapText("고치기", exact = true)
+    })
+    @Test fun foldedLedgerCategories() = shoot("246_folded_ledger_categories", FOLDED, ledgerPage(null) {
+        tapText("돈 적기", exact = true, scrolls = 0)
+        tapText("분류 편집", exact = true)
+    })
+    @Test fun phoneLedgerSummaryHugeText() = shoot("247_phone_ledger_summary_huge_text", PHONE, fontScale = 2f, ledgerPage(null))
+    @Test fun phoneLedgerListHugeText() = shoot("248_phone_ledger_list_huge_text", PHONE, fontScale = 2f, ledgerPage("내역"))
+    @Test fun phoneLedgerEntryHugeText() = shoot("249_phone_ledger_entry_huge_text", PHONE, fontScale = 2f,
+        ledgerPage(null) { tapText("돈 적기", exact = true, scrolls = 0) })
+    @Test fun foldedLedgerDark() = shoot("250_folded_ledger_dark", "w369dp-h905dp-port-night-420dpi", ledgerPage(null))
+    @Test fun foldedLedgerReportDark() = shoot("251_folded_ledger_report_dark", "w369dp-h905dp-port-night-420dpi", ledgerPage("분석"))
+    @Test fun foldedLedgerEmpty() = shoot("252_folded_ledger_empty", FOLDED) {
+        addedCalendar(show = true)
+        tab(1, wide = false)
+        tapText("내역", exact = true, scrolls = 0)
+    }
+    /** [LEDG-01][LEDG-11] A day's ledger lines on the calendar, with badges, a split line, tags and installments. */
+    @Test fun foldedDayLedger() = shoot("253_folded_day_ledger", FOLDED) {
+        ledger()
+        runBlocking {
+            val money = app.container.moneyRepository
+            val card = money.allAccounts().first { it.last4 == "1234" }
+            money.save(MoneyEntry(date = dayCell, kind = MoneyKind.EXPENSE, amount = 86_000, category = "식비", merchant = "가나다 한우",
+                accountId = card.id, tags = listOf("회식"), parts = listOf(com.bamnat.core.money.EntryPart("여가", 20_000))))
+            money.save(MoneyEntry(date = dayCell, kind = MoneyKind.EXPENSE, amount = 1_290_000, category = "생활", merchant = "라마바전자 냉장고",
+                accountId = card.id, installments = 6))
+            money.save(MoneyEntry(date = dayCell, kind = MoneyKind.TRANSFER, amount = 300_000, category = "저축", merchant = "적금"))
+        }
+        openDay(dayCell)
+        openGroup("돈")
+        reveal("가계부", exact = true)
+    }
+    @Test fun unfoldedLedgerEntry() = shoot("254_unfolded_ledger_entry", UNFOLDED, ledgerPage("내역", wide = true) { tapText("팀 점심") })
+    @Test fun phoneLedgerReport() = shoot("255_phone_ledger_report", PHONE, ledgerPage("분석"))
+    // [LEDG-16] 자동 기록, as settings' 결제 알림 읽기 opens it (the ⋮ menu's popup is out of the test's reach).
+    @Test fun foldedLedgerAutoRecord() = shoot("259_folded_ledger_auto_record", FOLDED, ledgerPage(null) {
+        com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.AUTO_RECORD)
+        settle()
+    })
+    // [LEDG-15] Field and shop work read jobs or sales on 통계, not 0시간; a narrow pane keeps an amount whole.
+    @Test fun foldedFieldStats() = shoot("256_folded_field_stats", FOLDED, fresh(WorkStyle.FIELD) { tab(3, wide = false) })
+    @Test fun foldedBusinessStats() = shoot("257_folded_business_stats", FOLDED, fresh(WorkStyle.BUSINESS) { tab(3, wide = false) })
+    @Test fun unfoldedBusinessDaySales() = shoot("258_unfolded_business_day_sales", UNFOLDED, style(WorkStyle.BUSINESS) {
+        reveal("순수익", exact = true, across = 0.75f)
+    })
 }
 
 /** [SHR-02] The share server for screenshots: links people sent, answered at once. */

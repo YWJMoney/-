@@ -143,6 +143,11 @@ class AppContainer(context: Context) {
         alarmScheduler.reschedule(calendars.ringing.first(), settingsRepository.current.alarmsEnabled, after)
     }
 
+    /** [REL-13] Checks, each time the app comes to the front, that the system still holds the next alarm. */
+    fun verifyAlarms() = appScope.launch {
+        runCatching { alarmScheduler.verify(calendars.ringing.first(), settingsRepository.current.alarmsEnabled) }
+    }
+
     /**
      * [STAB-01] A job that follows the data for as long as the app runs. When it fails it is logged and
      * started again a little later, so one bad moment does not leave alarms or notices unplanned until
@@ -207,6 +212,11 @@ class AppContainer(context: Context) {
             combine(scheduleRepository.snapshot, reads) { snapshot, _ -> snapshot }
                 .debounce(500)
                 .collect { DayNoticeScheduler.reschedule(appContext, it, settingsRepository.current) }
+        }
+        // [FEAT-18] Turning 잠금 화면 오늘 근무 on or off shows or removes it now, not at midnight.
+        keep("today notice") {
+            settingsRepository.settings.map { it.todayShiftNotice }.distinctUntilChanged().drop(1)
+                .collect { WidgetRefresher.refresh(appContext) }
         }
         // [PAY-12][REL-08] 연차 notices follow whether the user entered their days, and their switch.
         keep("leave") {

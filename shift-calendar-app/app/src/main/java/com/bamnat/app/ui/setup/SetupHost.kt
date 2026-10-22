@@ -120,16 +120,18 @@ fun SetupHost(vm: SetupViewModel) {
             Column {
                 TopAppBar(
                     title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column {
                             Text(if (fixing) "답 고치기" else vm.calendarName?.let { "$it 달력 설정" } ?: "근무 설정",
-                                style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false))
-                            // The count only once the kind of work says how many questions there are.
+                                style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            // [SETUP-06] What is left, once the kind of work says how many questions there are. A "2/8"
+                            // that became "3/7" when a company file skipped a question read as going backwards.
                             if (d.style != null && !fixing) {
+                                val left = d.steps.size - d.position
                                 Text(
-                                    "  ${d.position}/${d.steps.size}",
-                                    style = MaterialTheme.typography.labelLarge,
+                                    if (left <= 0) "마지막 확인이에요" else "${left}단계 남았어요",
+                                    style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
                                 )
                             }
                         }

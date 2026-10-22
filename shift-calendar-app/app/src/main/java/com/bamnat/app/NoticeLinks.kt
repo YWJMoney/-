@@ -15,6 +15,8 @@ object NoticeLinks {
         /** The calendar on today, with 오늘의 흐름 at the top. */
         TODAY,
         MONEY,
+        /** [LEDG-16] The money tab with 자동 기록 (결제 알림 읽기) open. */
+        AUTO_RECORD,
         /** The pay screen, where 연차 is. */
         LEAVE,
         /** Where the alarm's permissions are checked and fixed. */
@@ -29,6 +31,8 @@ object NoticeLinks {
         CALENDAR_IMPORT,
         /** [SHR-12] The calendar with the share sheet open, from the link's expiry notice. */
         SHARE,
+        /** [UX-03] The calendar with the sheet that takes a received link open. */
+        RECEIVE,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"
@@ -65,9 +69,12 @@ object NoticeLinks {
         return true
     }
 
-    /** Opens [target] from inside the app, from a screen that has no way there of its own. */
-    fun open(target: Target) {
-        _calendar.value = null
+    /**
+     * Opens [target] from inside the app, from a screen that has no way there of its own; [calendar]
+     * names one of the user's calendars when it is about one [UX-03].
+     */
+    fun open(target: Target, calendar: String? = null) {
+        _calendar.value = calendar
         _target.value = target
     }
 

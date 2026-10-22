@@ -33,6 +33,27 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.EventRepeat
+import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AlarmOff
 import androidx.compose.material.icons.filled.CheckCircle
@@ -252,6 +273,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     /** [ADMIN-02] 문의하기 in the app when the build has the company server, else by mail. */
     val inquiryOn: Boolean get() = container.inquiryApi.enabled
+    /** [UX-04] The build can make and take calendar links, so 동료 근무표 받기 is offered. */
+    val shareOn: Boolean get() = container.shareApi.enabled
     /** Answers from the developer not yet opened. */
     val inquiryUnread: StateFlow<Int> get() = container.inquiryStore.unread
 
@@ -412,6 +435,26 @@ fun SettingsScreen(
 
     var page by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
     val hubScroll = rememberScrollState()
+    // [UX-04] What is typed in the search, and the row a search result or another screen asked for.
+    var query by rememberSaveable { mutableStateOf("") }
+    var focus by remember { mutableStateOf<SettingsFocus?>(null) }
+    val openPage: (SettingsPage) -> Unit = { p -> focus = null; page = p }
+    val link by SettingsLinks.target.collectAsStateWithLifecycle()
+    LaunchedEffect(link) {
+        val l = link as? SettingsLink.Page ?: return@LaunchedEffect
+        SettingsLinks.consume(l)
+        query = ""
+        page = l.page
+        focus = l.row?.let(::SettingsFocus)
+    }
+    val found: (SettingEntry) -> Unit = { e ->
+        when (val place = e.place) {
+            is SettingPlace.Row -> { page = place.page; focus = SettingsFocus(place.row) }
+            // 자주 묻는 질문 opens on the answers, 문의하기 on the questions.
+            is SettingPlace.Screen -> if (place.go == SettingsGo.INQUIRY) InquiryLinks.ask(InquiryStart(help = e.title == HELP_TITLE))
+                else SettingsLinks.go(place.go)
+        }
+    }
     // [SLP-15] The notice about an alarm that may be late opens here, on the alarm's state.
     val noticeTarget by NoticeLinks.target.collectAsStateWithLifecycle()
     LaunchedEffect(noticeTarget) {
@@ -440,12 +483,13 @@ fun SettingsScreen(
             page = p, vm = vm, settings = settings, refresh = refresh, files = files, askNotifications = askNotifications,
             onOpenShiftTypes = onOpenShiftTypes, onOpenPattern = onOpenPattern, onOpenDiagnostics = onOpenDiagnostics,
             onOpenWorkStyle = onOpenWorkStyle, onOpenExtraKinds = onOpenExtraKinds, onOpenPay = onOpenPay, company = company,
-            onOpenPage = { page = it }, onOpenInquiry = onOpenInquiry, onOpenCalendars = onOpenCalendars,
+            onOpenPage = openPage, onOpenInquiry = onOpenInquiry, onOpenCalendars = onOpenCalendars,
         )
     }
     val hub: @Composable (Modifier, SettingsPage?) -> Unit = { modifier, selected ->
         SettingsHub(vm, settings, refresh, askNotifications, selected, hubScroll, modifier,
-            onOpen = { page = it }, onOpenDiagnostics = onOpenDiagnostics, onOpenShiftTypes = onOpenShiftTypes, onOpenBoard = onOpenBoard)
+            onOpen = openPage, onOpenDiagnostics = onOpenDiagnostics, onOpenShiftTypes = onOpenShiftTypes, onOpenBoard = onOpenBoard,
+            query = query, onQuery = { query = it }, onFound = found, onOpenInquiry = onOpenInquiry)
     }
 
     if (wide) {
@@ -461,12 +505,14 @@ fun SettingsScreen(
                 transitionSpec = { fadeIn(tween(PAGE_MILLIS)) togetherWith fadeOut(tween(PAGE_MILLIS)) },
                 label = "settings-page",
                 modifier = Modifier.weight(1f).fillMaxHeight(),
-            ) { p -> PageColumn(p, onBack = null) { pageContent(p) } }
+            ) { p -> CompositionLocalProvider(LocalSettingsFocus provides focus) { PageColumn(p, onBack = null) { pageContent(p) } } }
         }
         }
         return
     }
-    BackHandler(enabled = page != null) { page = null }
+    BackHandler(enabled = page != null) { page = null; focus = null }
+    // [UX-04] Back clears a search before it leaves settings.
+    BackHandler(enabled = page == null && query.isNotEmpty()) { query = "" }
     AnimatedContent(
         targetState = page,
         transitionSpec = {
@@ -477,7 +523,9 @@ fun SettingsScreen(
         label = "settings-page",
     ) { p ->
         if (p == null) hub(Modifier.fillMaxSize(), null)
-        else PageColumn(p, onBack = { page = null }) { pageContent(p) }
+        else CompositionLocalProvider(LocalSettingsFocus provides focus) {
+            PageColumn(p, onBack = { page = null; focus = null }) { pageContent(p) }
+        }
     }
 }
 
@@ -501,6 +549,17 @@ private fun PageColumn(page: SettingsPage, onBack: (() -> Unit)?, content: @Comp
             Text(page.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
         }
         content()
+        // [UX-05] Every group ends with where to ask, with the group named so the answers start there.
+        if (page != SettingsPage.ABOUT) {
+            TextButton(
+                onClick = { InquiryLinks.ask(InquiryStart(about = "설정 > ${page.title}", help = true)) },
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            ) {
+                Icon(Icons.AutoMirrored.Outlined.HelpOutline, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("${page.title}${com.bamnat.app.ui.Fmt.ro(page.title)} 도움이 필요하면 · 도움말·문의")
+            }
+        }
         Spacer(Modifier.size(24.dp))
     }
 }
@@ -519,6 +578,10 @@ private fun SettingsHub(
     onOpenDiagnostics: (Boolean) -> Unit,
     onOpenShiftTypes: () -> Unit,
     onOpenBoard: (() -> Unit)? = null,
+    query: String = "",
+    onQuery: (String) -> Unit = {},
+    onFound: (SettingEntry) -> Unit = {},
+    onOpenInquiry: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
@@ -529,19 +592,156 @@ private fun SettingsHub(
     Column(modifier.verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("설정", style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp).semantics { heading() })
+        SettingsSearchField(query, onQuery)
+        Spacer(Modifier.size(4.dp))
+        if (query.isNotBlank()) {
+            val entries = remember(onOpenBoard != null) { SettingsIndex.entries(board = onOpenBoard != null, share = vm.shareOn) }
+            SearchResults(query, remember(query, entries) { SettingsIndex.search(query, entries) }, vm.shareOn, onFound)
+            return@Column
+        }
+        // [UX-05] A new answer is said at the top, not only on the row at the end of the list.
+        if (unread > 0) NewAnswerLine(unread, onOpenInquiry)
         AlarmReadyCard(vm, settings, refresh, askNotifications, onOpenDiagnostics, onOpenShiftTypes)
-        Spacer(Modifier.size(8.dp))
+        Spacer(Modifier.size(4.dp))
+        Shortcuts(onFound)
+        Spacer(Modifier.size(4.dp))
         for (p in SettingsPage.entries) {
-            val line = summary(p, settings, snapshot, profile != null, notificationsOk)
-            // [ADMIN-02] An answer from the developer shows on the group before it is opened.
-            GroupRow(p.icon, p.title, if (p == SettingsPage.ABOUT && unread > 0) "문의에 답이 ${unread}개 왔어요 · $line" else line,
-                selected == p) { onOpen(p) }
+            GroupRow(p.icon, p.title, summary(p, settings, snapshot, profile != null, notificationsOk), selected == p) { onOpen(p) }
         }
         // [COMM-07] Its own row, so it is one tap away rather than inside 급여.
-        if (onOpenBoard != null) GroupRow(Icons.Outlined.Forum, "회사 규칙 광장", "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론", false, onOpenBoard)
+        if (onOpenBoard != null) GroupRow(Icons.Outlined.Forum, "회사 규칙 광장", "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론", false, onClick = onOpenBoard)
+        // [UX-05] Help and questions on their own row, with new answers counted on it.
+        GroupRow(
+            Icons.AutoMirrored.Outlined.HelpOutline, "도움말과 문의",
+            when {
+                unread > 0 -> "개발자 답이 ${unread}개 왔어요 · 자주 묻는 질문 · 문의하기"
+                vm.inquiryOn -> "자주 묻는 질문 · 문의하기 · 내 문의와 답"
+                else -> "자주 묻는 질문 · 메일로 문의하기"
+            },
+            false, badge = unread, onClick = onOpenInquiry,
+        )
         VersionLine(onOpenDiagnostics)
     }
 }
+
+/** [UX-05] "개발자 답이 왔어요" above everything else in settings, one tap from the answer. */
+@Composable
+private fun NewAnswerLine(unread: Int, onOpen: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        color = colors.secondaryContainer,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
+            .clickable(role = Role.Button, onClickLabel = "답 보기", onClick = onOpen),
+    ) {
+        Row(Modifier.heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Forum, null, tint = colors.onSecondaryContainer)
+            Spacer(Modifier.width(12.dp))
+            Text("문의에 개발자 답이 ${unread}개 왔어요", style = MaterialTheme.typography.titleSmall,
+                color = colors.onSecondaryContainer, modifier = Modifier.weight(1f))
+            Text("보기", style = MaterialTheme.typography.labelLarge, color = colors.primary)
+        }
+    }
+}
+
+/** [UX-04] The search over every setting, at the top of the list. */
+@Composable
+private fun SettingsSearchField(query: String, onQuery: (String) -> Unit) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = { onQuery(it.take(40)) },
+        // TalkBack names the field once the example has gone.
+        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "설정 찾기" },
+        placeholder = { Text("설정 찾기 (예: 알람 소리, 백업)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        leadingIcon = { Icon(Icons.Filled.Search, null) },
+        trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { onQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") } }) else null,
+        singleLine = true,
+        shape = MaterialTheme.shapes.extraLarge,
+    )
+}
+
+/** [UX-04] What the search found: the setting, and where it lives, so the way there is learned too. */
+@Composable
+private fun SearchResults(query: String, results: List<SettingEntry>, share: Boolean, onFound: (SettingEntry) -> Unit) {
+    Text(if (results.isEmpty()) "‘$query’에 맞는 설정이 없어요" else "찾은 설정 ${results.size}개",
+        style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp).semantics { liveRegion = LiveRegionMode.Polite })
+    for (e in results) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.medium)
+                .clickable(role = Role.Button) { onFound(e) }.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(e.title, style = MaterialTheme.typography.bodyLarge)
+                Text(if (e.where == "설정") "설정" else "설정 › ${e.where}", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
+        }
+    }
+    // [UX-05] The same words find the help answers too: "알람이 안 울려요" is a question more than a setting.
+    val answers = remember(query, share) { HelpFaq.search(query, HelpFaq.topics(share), limit = 3) }
+    if (answers.isNotEmpty()) {
+        Text("도움말의 답 ${answers.size}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp))
+        for (t in answers) {
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.medium)
+                    .clickable(role = Role.Button) { InquiryLinks.ask(InquiryStart(help = true, text = query)) }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.AutoMirrored.Outlined.HelpOutline, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(t.question, style = MaterialTheme.typography.bodyLarge)
+                    Text("도움말 › ${t.tag}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
+            }
+        }
+    }
+    // Nothing found is not a dead end: the same words go to the help answers, and on to a question.
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (results.isEmpty() && answers.isEmpty()) "도움말에서 더 찾거나 개발자에게 물어봐요" else "찾는 게 아니면 도움말에서 더 찾아봐요",
+                style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            TextButton(onClick = { InquiryLinks.ask(InquiryStart(help = true, text = query)) }) { Text("도움말") }
+        }
+    }
+}
+
+/** [UX-04] What people open most, one tap from the top: work, pay, sharing, the alarm's sound, a backup. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun Shortcuts(onFound: (SettingEntry) -> Unit) {
+    val entries = remember { SettingsIndex.entries().associateBy { it.title } }
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text("자주 찾는 것", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, bottom = 2.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for ((title, label, icon) in SHORTCUTS) {
+                val e = entries[title] ?: continue
+                AssistChip(onClick = { onFound(e) }, label = { Text(label) },
+                    leadingIcon = { Icon(icon, null, Modifier.size(AssistChipDefaults.IconSize)) })
+            }
+        }
+    }
+}
+
+private val SHORTCUTS = listOf(
+    Triple("근무 종류와 시간", "근무 시간", Icons.Outlined.Schedule),
+    Triple("근무 주기", "근무 주기", Icons.Outlined.EventRepeat),
+    Triple("급여 계산", "급여", Icons.Outlined.Payments),
+    Triple("근무표 공유", "근무표 공유", Icons.Outlined.Share),
+    Triple("알람음", "알람 소리", Icons.Outlined.MusicNote),
+    Triple("백업 저장", "백업", Icons.Outlined.SettingsBackupRestore),
+)
+
+/** [UX-04] The search result that opens the help answers rather than the question form. */
+internal const val HELP_TITLE = "자주 묻는 질문"
 
 /** How each group stands now, in a few words. */
 private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapshot?, hasPay: Boolean, notificationsOk: Boolean): String = when (page) {
@@ -566,7 +766,7 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
     ).joinToString(" · ")
     SettingsPage.DATA -> "백업 저장 · 불러오기 · 캘린더 가져오기·내보내기"
     SettingsPage.PRIVACY -> "개인정보 처리방침 · 권한 확인"
-    SettingsPage.ABOUT -> "밤낮 ${BuildConfig.VERSION_NAME} · 문의하기 · 처리방침"
+    SettingsPage.ABOUT -> "밤낮 ${BuildConfig.VERSION_NAME} · 알람 점검 · 처리방침"
 }
 
 /** "7시간", "6시간 반". */

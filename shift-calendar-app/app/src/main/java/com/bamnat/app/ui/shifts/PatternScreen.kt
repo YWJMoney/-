@@ -165,16 +165,17 @@ fun PatternScreen(
                     selected = kind == PatternKind.ROTATION,
                     onClick = { kind = PatternKind.ROTATION },
                     shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                ) { Text("교대 순환") }
+                ) { Text("순서대로 돌아요", maxLines = 1) }
                 SegmentedButton(
                     selected = kind == PatternKind.WEEKLY,
                     onClick = { kind = PatternKind.WEEKLY },
                     shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                ) { Text("요일 고정") }
+                ) { Text("요일마다 같아요", maxLines = 1) }
             }
             Text(
-                if (kind == PatternKind.ROTATION) "주주야야비휴처럼 며칠 단위로 반복되는 교대 근무"
-                else "요일마다 같은 근무 (파트타임, 상근직)",
+                // [SETUP-09] What each choice means, with an example, instead of 교대 순환·요일 고정.
+                if (kind == PatternKind.ROTATION) "교대 근무예요. 주주야야비휴처럼 정한 순서가 며칠마다 다시 돌아요."
+                else "월~금 주간처럼 요일마다 근무가 같아요. 상근직·파트타임이 주로 골라요.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -182,24 +183,6 @@ fun PatternScreen(
             if (kind == PatternKind.ROTATION) {
                 SectionCard(
                     title = "순서 (${rotation.size}일 주기)",
-                    trailing = {
-                        Row {
-                            IconButton(onClick = {
-                                val sel = selectedStep
-                                if (sel != null && sel in rotation.indices) {
-                                    rotation.removeAt(sel)
-                                    selectedStep = null
-                                } else if (rotation.isNotEmpty()) {
-                                    rotation.removeAt(rotation.lastIndex)
-                                }
-                            }, enabled = rotation.isNotEmpty()) {
-                                Icon(Icons.AutoMirrored.Filled.Backspace, if (selectedStep != null) "선택한 칸 지우기" else "마지막 칸 지우기")
-                            }
-                            IconButton(onClick = { rotation.clear(); selectedStep = null }, enabled = rotation.isNotEmpty()) {
-                                Icon(Icons.Filled.DeleteSweep, "모두 지우기")
-                            }
-                        }
-                    },
                 ) {
                     if (rotation.isEmpty()) {
                         Text(
@@ -226,8 +209,32 @@ fun PatternScreen(
                                 modifier = Modifier.padding(top = 8.dp),
                             )
                         }
+                        // [SETUP-09] Labelled buttons instead of two bare icons in the corner.
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = {
+                                val sel = selectedStep
+                                if (sel != null && sel in rotation.indices) {
+                                    rotation.removeAt(sel)
+                                    selectedStep = null
+                                } else if (rotation.isNotEmpty()) {
+                                    rotation.removeAt(rotation.lastIndex)
+                                }
+                            }) {
+                                Icon(Icons.AutoMirrored.Filled.Backspace, null, Modifier.size(18.dp))
+                                Text(if (selectedStep != null) " 고른 칸 지우기" else " 마지막 칸 지우기")
+                            }
+                            TextButton(onClick = { rotation.clear(); selectedStep = null }) {
+                                Icon(Icons.Filled.DeleteSweep, null, Modifier.size(18.dp))
+                                Text(" 모두 지우기")
+                            }
+                        }
                     }
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        if (selectedStep != null) "바꿀 근무를 눌러 주세요" else "누를 때마다 하루씩 끝에 붙어요",
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(bottom = 4.dp),
+                    )
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         val put: (Long?) -> Unit = { id ->
                             val sel = selectedStep

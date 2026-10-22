@@ -177,7 +177,7 @@ internal fun ConsentItem.why(): String = when (this) {
 
 /** Where it is turned on later, said on every page. */
 internal fun ConsentItem.later(): String = when (this) {
-    ConsentItem.NOTIFICATIONS, ConsentItem.ALARMS -> "설정 > 개인정보 > 권한"
+    ConsentItem.NOTIFICATIONS, ConsentItem.ALARMS -> "설정 > 개인정보와 권한"
     ConsentItem.SLEEP -> "설정 > 잠과 휴식"
     ConsentItem.CALENDAR -> "설정 > 데이터 > 캘린더에서 가져오기"
 }
@@ -212,7 +212,7 @@ private fun IntroPage(available: Set<ConsentItem>, onStart: () -> Unit, onLater:
         Notice(
             Icons.Filled.Lock,
             "모두 허용하지 않아도 달력, 메모, 급여 계산은 그대로 쓸 수 있어요. 근무표와 메모는 이 휴대폰에 저장돼요. " +
-                "언제든 설정 > 개인정보 > 권한에서 바꿀 수 있어요.",
+                "언제든 설정 > 개인정보와 권한에서 바꿀 수 있어요.",
         )
     }
 }

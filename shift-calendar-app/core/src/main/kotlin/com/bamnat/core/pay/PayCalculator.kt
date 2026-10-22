@@ -354,10 +354,12 @@ class PayCalculator(
             day.shiftType?.let { shiftNames[it.id] = it.name }
             day.extras.forEach { e -> e.covered?.let { shiftNames[it.id] = it.name }; extraKindNames.getOrPut(e.kind.id) { rules.extraName(e.kind.id) } }
             for (rule in profile.customRules) {
-                if (!rule.on) continue
+                // [PAYS-07] A monthly rule is one line for the month, below; a deduction takes its amount off.
+                if (!rule.on || rule.pay.monthly) continue
                 val r = customRule(rule, day, m, holiday(day.date), hourly, monthlyBase, baseLabel, rates) ?: continue
-                customTotals.getOrPut(rule.id) { CustomTotal(rule) }.apply { amount += r.amount; this.minutes += r.credited; times++ }
-                parts += DayPart(LineKind.ALLOWANCE, rule.name, r.amount, r.formula)
+                val signed = if (rule.deduct) -r.amount else r.amount
+                customTotals.getOrPut(rule.id) { CustomTotal(rule) }.apply { amount += signed; this.minutes += r.credited; times++ }
+                parts += DayPart(LineKind.ALLOWANCE, rule.name, signed, r.formula)
             }
             // "야간 대근": the covered shift goes first unless the kind's own name already says it.
             val extraNames = day.extras.map { e ->
@@ -461,18 +463,38 @@ class PayCalculator(
             }
         }
 
+        fun customBasis(rule: CustomRule) = (if (rule.deduct) "직접 넣은 차감 항목" else "직접 넣은 회사 규칙") +
+            (rule.source.takeIf { it.isNotBlank() }?.let { " “$it”" } ?: "") +
+            if (rule.deduct) " · 지급 총액에서 빼요" else " · 통상임금 제외"
         for ((_, t) in customTotals) {
             val rule = t.rule
             val pay = rule.pay
             lines += PayLine(
-                LineKind.ALLOWANCE, "${rule.name} (회사 규칙)", t.amount,
+                LineKind.ALLOWANCE, rule.lineLabel, t.amount,
                 formula = "${rule.describe(shiftNames, extraKindNames)}: ${t.times}일" +
                     (if (pay !is RulePay.PerTime && t.minutes > 0) ", ${hours(t.minutes)}" else ""),
                 minutes = t.minutes,
                 hourly = if (pay is RulePay.OfHourly) hourly else 0,
-                multiplier = if (pay is RulePay.OfHourly) pay.rate else 0.0,
-                basis = "직접 넣은 회사 규칙" + (rule.source.takeIf { it.isNotBlank() }?.let { " “$it”" } ?: "") + " · 통상임금 제외",
+                multiplier = if (pay is RulePay.OfHourly) (if (rule.deduct) -pay.rate else pay.rate) else 0.0,
+                basis = customBasis(rule),
                 estimated = baseEstimated && pay.followsWage,
+            )
+        }
+        // [PAYS-07] Rules paid once a month: a fixed amount or a share of 기본급, added or taken off.
+        for (rule in profile.customRules) {
+            if (!rule.on || !rule.pay.monthly) continue
+            val (amount, formula) = when (val pay = rule.pay) {
+                is RulePay.Monthly -> pay.amount to "매달 ${won(pay.amount)}"
+                is RulePay.OfBaseMonthly -> (monthlyBase * pay.share).roundToLong() to
+                    "$baseLabel ${won(monthlyBase)} × ${ExtraRule.percent(pay.share)}"
+                else -> continue
+            }
+            if (amount == 0L) continue
+            lines += PayLine(
+                LineKind.ALLOWANCE, rule.lineLabel, if (rule.deduct) -amount else amount,
+                formula = formula + if (rule.deduct) " 차감" else "",
+                basis = customBasis(rule),
+                estimated = baseEstimated && rule.pay.followsWage,
             )
         }
 
@@ -813,6 +835,8 @@ class PayCalculator(
             is RulePay.OfBase -> (monthlyBase * pay.share * minutes / pay.perMinutes.coerceAtLeast(1)).roundToLong() to
                 "$baseLabel ${won(monthlyBase)} × ${ExtraRule.percent(pay.share)} × ${hours(minutes)} ÷ ${hours(pay.perMinutes)}"
             is RulePay.PerTime -> pay.amount to "1회 ${won(pay.amount)}"
+            // [PAYS-07] Paid once for the month, not day by day.
+            is RulePay.Monthly, is RulePay.OfBaseMonthly -> return null
         }
         return RuleResult(amount, formula, if (rule.pay is RulePay.PerTime) 0 else minutes, 0)
     }

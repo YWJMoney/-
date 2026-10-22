@@ -106,8 +106,10 @@ object RuleText {
     private fun readSentence(line: String, kinds: List<ExtraKind>, shiftTypes: List<ShiftType>, fiveOrMore: Boolean): List<RuleFinding> {
         val c = line.replace(" ", "")
         if (isPayslipAmount(line, c)) return emptyList()
-        extraRule(line, c, kinds, fiveOrMore)?.let { return listOf(it) }
-        publicHoliday(line, c, kinds)?.let { return listOf(it) }
+        // [PAYS-07] Money taken off is never a way of paying extra work: "식대 근무일마다 3,000원 공제" holds "대근".
+        val takenOff = Regex("차감|공제|감액").containsMatchIn(c)
+        if (!takenOff) extraRule(line, c, kinds, fiveOrMore)?.let { return listOf(it) }
+        if (!takenOff) publicHoliday(line, c, kinds)?.let { return listOf(it) }
         // Several rules on a line, split at commas: "연장 150%, 야간 50%".
         return line.split(Regex("""(?<!\d)[,，]|[,，](?!\d{3})|그리고""")).map { it.trim() }.filter { it.isNotEmpty() }
             .flatMap { clause -> readClause(line, clause, clause.replace(" ", ""), shiftTypes) }
@@ -119,7 +121,10 @@ object RuleText {
         if (role !in setOf(SlipRole.OVERTIME, SlipRole.NIGHT, SlipRole.HOLIDAY, SlipRole.WEEKLY_HOLIDAY, SlipRole.GROSS,
                 SlipRole.NET, SlipRole.DEDUCTION, SlipRole.DEDUCTION_TOTAL, SlipRole.TOTAL, SlipRole.EXTRA_WORK)) return false
         val hasRuleWords = percentRe.containsMatchIn(line) || timesRe.containsMatchIn(line) ||
-            listOf("시간당", "1회", "회당", "가산", "기본급의", "통상시급", "인정", "까지", "부터").any { it in c }
+            listOf("시간당", "1회", "회당", "가산", "기본급의", "통상시급", "인정", "까지", "부터").any { it in c } ||
+            // [PAYS-07] "기숙사비 매달 5만원 차감" is a rule; "기숙사비 50,000" is a payslip line.
+            role == SlipRole.DEDUCTION && Regex("매달|매월|마다|차감").containsMatchIn(c) ||
+            Regex("차감|공제").containsMatchIn(c) && Regex("매달|매월|마다").containsMatchIn(c)
         return !hasRuleWords && RuleImport.parseAmount(line) != null || Regex("""^[가-힣]+\d{1,3}(,\d{3})+$""").matches(c)
     }
 
@@ -296,6 +301,11 @@ object RuleText {
             else one(RuleChange.Bonus(name, null, amount, months, festivals.takeIf { it.isNotEmpty() || months.isNotEmpty() } ?: setOf(Festival.SEOLLAL, Festival.CHUSEOK)), 0.7)
         }
 
+        // [PAYS-07] Money the company takes off: "지각 1회 1만원 차감", "기숙사비 매달 5만원 공제".
+        deduction(line, clause, c, amount, pct, shiftTypes)?.let { return listOf(it) }
+        // Money taken off that the calendar cannot count (지각 1회 1만원 차감) is never read as money paid.
+        if (amount != null && Regex("차감|공제|감액").containsMatchIn(c)) return emptyList()
+
         // A rule of the company's own: a condition (a day, a clock window, hours beyond some) and a way to pay.
         custom(line, clause, c, amount, pct, times, window, shiftTypes)?.let { return listOf(it) }
 
@@ -397,6 +407,33 @@ object RuleText {
         val name = (what + if (pay is RulePay.PerTime) " 수당" else " 가산").take(CustomRule.MAX_NAME)
         val rule = CustomRule("rule-" + (line + clause).hashCode().toUInt().toString(16), name, whenever, pay, source = line.trim())
         return RuleFinding(line, RuleChange.Custom(rule, shiftTypes.associate { it.id to it.name }), 0.75)
+    }
+
+    /**
+     * [PAYS-07] "기숙사비 매달 5만원 차감", "식대 근무일마다 3,000원 공제", "조합비 기본급의 1% 공제": money the company
+     * takes off what it pays. Taxes and 4대보험 come off after the total the app works out, so they are left out,
+     * and so is anything the calendar cannot count (지각, 조퇴).
+     */
+    private fun deduction(line: String, clause: String, c: String, amount: Long?, pct: Double?, shiftTypes: List<ShiftType>): RuleFinding? {
+        if (!Regex("차감|공제|빼고|빼서|뺀다|뺌|감액").containsMatchIn(c)) return null
+        if (Regex("국민연금|건강보험|고용보험|장기요양|소득세|주민세|세금|4대보험|공제합계|공제총액|공제계|지각|조퇴|외출").containsMatchIn(c)) return null
+        val days = buildSet { RuleWhen.DAY_NAMES.forEach { (d, n) -> if ("${n}요일" in c) add(d) } }
+        val shifts = shiftTypes.filter { s ->
+            val n = s.name.replace(" ", "")
+            n.isNotEmpty() && Regex("${Regex.escape(n)}(근무|조|번)").containsMatchIn(c)
+        }
+        val perDay = days.isNotEmpty() || shifts.isNotEmpty() || Regex("1회|회당|번당|건당|마다|근무일|출근").containsMatchIn(c)
+        val pay: RulePay = when {
+            pct != null && "기본급" in c -> RulePay.OfBaseMonthly(pct / 100)
+            amount == null || amount <= 0 -> return null
+            perDay -> RulePay.PerTime(amount)
+            else -> RulePay.Monthly(amount)
+        }
+        val whenever = if (pay is RulePay.PerTime) RuleWhen(RuleDayKind.WORK_DAY, days, shifts.map { it.id }.toSet()) else RuleWhen()
+        val name = nameOf(clause).replace(Regex("""\s*(근무일|출근|근무|매일|차감|공제|기본급의|기본급)\s*$"""), "").trim()
+            .ifEmpty { "차감" }.take(CustomRule.MAX_NAME)
+        val rule = CustomRule("rule-" + (line + clause).hashCode().toUInt().toString(16), name, whenever, pay, source = line.trim(), deduct = true)
+        return RuleFinding(line, RuleChange.Custom(rule, shiftTypes.associate { it.id to it.name }), 0.7)
     }
 
     /** Clock range in a clause, e.g. 19~23시, 22:00-06:00, 밤 10시부터 새벽 6시까지. */
