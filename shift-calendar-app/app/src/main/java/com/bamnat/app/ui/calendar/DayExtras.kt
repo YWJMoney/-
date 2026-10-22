@@ -181,7 +181,8 @@ private fun ExtraRow(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(name, style = MaterialTheme.typography.titleSmall)
-                Text(ExtraText.time(extra), style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = scheme.onSurfaceVariant)
+                Text(ExtraText.time(extra) + if (extra.entry.compLeave) " · 보상휴가로" else "",
+                    style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = scheme.onSurfaceVariant)
             }
             if (amount != null && amount != 0L) {
                 Text(
@@ -302,6 +303,19 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                 Spacer(Modifier.width(6.dp))
                 Text("시각으로 적기")
             }
+        }
+        // [PAYX-18] 근로기준법 제57조: the company may give time off instead of the pay, by 근로자대표 agreement.
+        FilterChip(
+            selected = e.compLeave,
+            onClick = { update(e.copy(compLeave = !e.compLeave)) },
+            label = { Text("돈 대신 보상휴가로 받기") },
+        )
+        if (e.compLeave) {
+            Text(
+                "이 시간은 급여에서 빠지고, 가산을 더한 시간만큼 연차 화면의 보상휴가로 쌓여요. 회사가 근로자대표와 서면 합의를 했을 때만 이렇게 받아요(근로기준법 제57조).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         Row {
             Spacer(Modifier.weight(1f))

@@ -198,6 +198,9 @@ private object Routes {
     /** [MCAL-06] The pay of one of the user's calendars; without one, the main calendar's. */
     const val PAY = "pay?calendar={calendar}"
     fun pay(calendar: String = PersonalCalendar.MAIN) = "pay?calendar=$calendar"
+    /** [LEAVE-06] One calendar's 연차 원장; without one, the main calendar's. */
+    const val LEAVE = "leave?calendar={calendar}"
+    fun leave(calendar: String = PersonalCalendar.MAIN) = "leave?calendar=$calendar"
     /** [MCAL-06] How extra work is paid, in one calendar's pay; without one, the main calendar's. */
     const val EXTRA_KINDS = "extra_kinds?calendar={calendar}"
     fun extraKinds(calendar: String = PersonalCalendar.MAIN) = "extra_kinds?calendar=$calendar"
@@ -359,7 +362,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             // [LEDG-16] The money tab takes this one itself, to open 자동 기록.
             NoticeLinks.Target.AUTO_RECORD -> nav.navigateTopLevel(TopLevel.MONEY.route)
             NoticeLinks.Target.MEMOS -> { nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target) }
-            NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.pay()) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.leave()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.SLEEP -> { nav.navigate(Routes.SLEEP) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.OWED -> { nav.navigate(Routes.OWED) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.CALENDAR_IMPORT -> { nav.navigate(Routes.CALENDAR_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -904,6 +907,7 @@ private fun AppNavHost(
             }
             PayScreen(vm = vm, onBack = { nav.popFrom(Routes.PAY) },
                 onOpenExtraKinds = { nav.navigate(Routes.extraKinds(calendar)) { launchSingleTop = true } },
+                onOpenLeave = { nav.navigate(Routes.leave(calendar)) { launchSingleTop = true } },
                 top = {
                     CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                         onFix = { nav.fixCompanySetup(it) })
@@ -1066,6 +1070,12 @@ private fun AppNavHost(
             val vm = appViewModel { com.bamnat.app.ui.work.CommuteViewModel(it) }
             com.bamnat.app.ui.work.CommuteScreen(vm = vm, onBack = { nav.popFrom(Routes.COMMUTE) })
         }
+        composable(Routes.LEAVE, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+            val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
+            val vm = appViewModel(key = "leave_$calendar") { com.bamnat.app.ui.leave.LeaveViewModel(it, calendar) }
+            com.bamnat.app.ui.leave.LeaveScreen(vm = vm, onBack = { nav.popFrom(Routes.LEAVE) },
+                onEditRules = { nav.navigate(Routes.pay(calendar)) { launchSingleTop = true } })
+        }
         composable(Routes.FEATURES) { com.bamnat.app.ui.guide.FeatureSwitchesScreen(onBack = { nav.popFrom(Routes.FEATURES) }) }
         composable(Routes.PRO) { com.bamnat.app.ui.pro.ProScreen(onBack = { nav.popFrom(Routes.PRO) }) }
         composable(Routes.RECOMMENDED) {
@@ -1211,6 +1221,7 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.FEATURES -> screen(Routes.FEATURES)
         Place.PRO -> screen(Routes.PRO)
         Place.RECOMMENDED -> screen(Routes.RECOMMENDED)
+        Place.LEAVE -> screen(Routes.leave(cal))
         Place.SETTINGS_WORK, Place.SETTINGS_ALARM, Place.SETTINGS_REST, Place.SETTINGS_NOTICES, Place.SETTINGS_PAY,
         Place.SETTINGS_CALENDAR, Place.SETTINGS_DATA, Place.SETTINGS_PRIVACY ->
             link.place.settingsPage()?.let { SettingsLinks.open(it, link.focus) }

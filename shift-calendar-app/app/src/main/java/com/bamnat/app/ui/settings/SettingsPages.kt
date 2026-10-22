@@ -123,7 +123,7 @@ private fun WorkTools(style: com.bamnat.core.work.WorkStyle?) {
     fun open(t: com.bamnat.app.NoticeLinks.Target) = com.bamnat.app.NoticeLinks.open(t)
     when (style) {
         null, com.bamnat.core.work.WorkStyle.SHIFT -> SectionCard(title = "교대 근무 도구") {
-            NavRow("듀티표 사진으로 넣기", "한 달 듀티표 사진을 읽어 근무를 한 번에 넣어요") { open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER) }
+            NavRow("듀티표 넣기", "듀티표 사진이나 엑셀·CSV 파일을 읽어 한 달 근무를 한 번에 넣어요") { open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER) }
             HorizontalDivider()
             NavRow("연간 건강 지표", "야간 비율, 연속 야간, 짧은 휴식, 주말·공휴일 근무") { open(com.bamnat.app.NoticeLinks.Target.HEALTH_REPORT) }
         }
@@ -340,7 +340,7 @@ private fun NoticesPage(
             settings.moneyNotices, warning = warning(settings.moneyNotices, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
             set(on) { it.copy(moneyNotices = on) }
         }
-        SwitchRow("연차 소멸 안내", "올해 안 쓰면 없어지는 연차를 11월·12월 첫날에 알려 줘요", settings.leaveNotice,
+        SwitchRow("연차 사용 촉진 알림", "연차가 없어지기 6개월 전·2개월 전에 남는 날을 알려 줘요(연차 화면에서도 끌 수 있어요)", settings.leaveNotice,
             warning = warning(settings.leaveNotice, Notifications.LEAVE_CHANNEL_ID), onFix = fix(Notifications.LEAVE_CHANNEL_ID)) { on ->
             set(on) { it.copy(leaveNotice = on) }
         }
@@ -536,7 +536,7 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
         }
         HorizontalDivider()
         // [SHFT-06]
-        NavRow("듀티표 사진으로 넣기", "듀티표 사진이나 복사한 글자로 한 달 근무를 넣어요") {
+        NavRow("듀티표 넣기", "듀티표 사진, 엑셀·CSV 파일, 복사한 글자로 한 달 근무를 넣어요") {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER)
         }
         HorizontalDivider()

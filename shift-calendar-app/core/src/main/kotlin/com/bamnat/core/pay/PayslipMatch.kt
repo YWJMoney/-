@@ -300,8 +300,9 @@ object PayslipMatcher {
             if (guardLike) add(Triple(Unknowns.SUPERVISORY,
                 if (r.supervisoryApproved) "감시·단속 승인이 없다면" else "감시·단속 승인을 받은 회사라면",
                 p.withRules { it.copy(supervisoryApproved = !r.supervisoryApproved) }))
-            if (p.flexPeriod == null) FlexPeriod.entries.forEach { f ->
-                add(Triple("flexPeriod", "탄력적 근로시간제(${f.months}개월 단위)를 쓰는 회사라면",
+            // [PAYX-17] 2주 needs the company's start date, so it is not guessed from a payslip.
+            if (p.flexPeriod == null) FlexPeriod.entries.filter { it != FlexPeriod.TWO_WEEKS }.forEach { f ->
+                add(Triple("flexPeriod", "탄력적 근로시간제(${f.unit} 단위)를 쓰는 회사라면",
                     p.copy(scheduleIsRegular = true, flexPeriod = f)))
             } else add(Triple("flexPeriod", "탄력적 근로시간제가 아니라면", p.copy(scheduleIsRegular = false, flexPeriod = null)))
         }

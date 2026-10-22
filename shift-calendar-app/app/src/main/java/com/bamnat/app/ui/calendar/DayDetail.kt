@@ -59,9 +59,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -707,13 +704,14 @@ private fun LeaveContent(day: ResolvedDay, vm: CalendarViewModel) {
         }
     }
     if (leave != null) {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            LeaveKind.entries.forEachIndexed { i, k ->
-                SegmentedButton(
+        // [PAYX-18] Four kinds with 보상휴가: chips wrap at a large font where four segments would cut the words.
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            LeaveKind.entries.forEach { k ->
+                FilterChip(
                     selected = leave.kind == k,
                     onClick = { vm.setLeave(day.date, leave.copy(kind = k)) },
-                    shape = SegmentedButtonDefaults.itemShape(i, LeaveKind.entries.size),
-                ) { Text(k.label, maxLines = 1) }
+                    label = { Text(k.label) },
+                )
             }
         }
         Text(
@@ -723,6 +721,7 @@ private fun LeaveContent(day: ResolvedDay, vm: CalendarViewModel) {
                     append(" · 남은 근무 ${Fmt.timeRange(day.start!!, day.end!!)}")
                 }
                 if (leave.kind.annual) append(" · 연차에서 ${LeaveBook.days(leave.days)} 차감")
+                if (leave.kind == LeaveKind.COMP) append(" · 보상휴가에서 ${LeaveBook.days(leave.days)} 차감")
                 if (!leave.kind.paid) append(" · 무급")
             },
             style = MaterialTheme.typography.bodySmall,

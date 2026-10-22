@@ -39,6 +39,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import com.bamnat.core.leave.LeaveBasis
+import com.bamnat.core.leave.LeavePolicy
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -185,6 +187,8 @@ object PayCodec {
         .put("weeklyLimit", p.weeklyLimitMinutes ?: -1)
         .put("scheduleIsRegular", p.scheduleIsRegular)
         .put("flexPeriod", p.flexPeriod?.name)
+        // [PAYX-17] The date a 2주 탄력 period counts from; left out when unset.
+        .putOpt("flexStart", p.flexStart?.toString())
         .put("weekStart", p.weekStart.name)
         .put("estimated", JSONArray(p.estimatedFields.toList()))
         .put("period", period(p.period))
@@ -223,6 +227,7 @@ object PayCodec {
         weeklyLimitMinutes = o.optInt("weeklyLimit", 2400).takeIf { it >= 0 },
         scheduleIsRegular = o.optBoolean("scheduleIsRegular", false),
         flexPeriod = o.optString("flexPeriod").let { n -> FlexPeriod.entries.firstOrNull { it.name == n } },
+        flexStart = o.optString("flexStart").takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
         weekStart = runCatching { DayOfWeek.valueOf(o.getString("weekStart")) }.getOrDefault(DayOfWeek.MONDAY),
         estimatedFields = o.optJSONArray("estimated")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet(),
         rules = o.optJSONObject("rules")?.let(::rules) ?: CompanyRules(),
@@ -363,6 +368,8 @@ object PayCodec {
         .put("leaveCarry", r.annualLeaveCarry)
         .putOpt("publicHolidayAs", r.publicHolidayAs?.toString())
         .put("holidayLeaveFree", r.holidayLeaveFree)
+        // [LEAVE-02] How 연차 is counted; left out at its default so older files stay the same.
+        .apply { if (r.leave != LeavePolicy()) put("leave", leavePolicy(r.leave)) }
         .put("holidayByStart", r.holidayByShiftStart)
         .putOpt("nightStart", r.nightStart?.toString()).putOpt("nightEnd", r.nightEnd?.toString())
         // [PAYS-03] 감시·단속 승인, 5인 미만 회사가 주는 공휴일, 휴게 처리.
@@ -396,6 +403,7 @@ object PayCodec {
         annualLeaveCarry = o.optDouble("leaveCarry", 0.0),
         publicHolidayAs = o.optString("publicHolidayAs").takeIf { it.isNotEmpty() && it != "null" }?.let(::kindId),
         holidayLeaveFree = o.optBoolean("holidayLeaveFree", false),
+        leave = o.optJSONObject("leave")?.let(::leavePolicyFrom) ?: LeavePolicy(),
         holidayByShiftStart = o.optBoolean("holidayByStart", false),
         supervisoryApproved = o.optBoolean("supervisory", false),
         holidaysUnderFive = o.optBoolean("holidaysU5", false),
@@ -422,6 +430,8 @@ object PayCodec {
         .put("percent", e.percentOfBase).put("cover", e.coverMinutes ?: -1).put("premiums", e.legalPremiums).put("bonus", e.bonus)
         .put("dayTiers", tiers(e.dayTiers)).put("nightTiers", tiers(e.nightTiers))
         .put("unit", e.unit.name).put("unitMin", e.unitMinutes).put("adds", premiums(e.premiums))
+        // [PAYX-21] Left out when off so older files stay the same.
+        .apply { if (e.tiersFromDayStart) put("tiersFromDay", true) }
 
     private fun extraRule(e: JSONObject): ExtraRule = ExtraRule(
         // A basis this version does not know (a newer file) is paid by law rather than guessed.
@@ -439,6 +449,17 @@ object PayCodec {
         unit = runCatching { PayUnit.valueOf(e.optString("unit")) }.getOrDefault(PayUnit.ORDINARY),
         unitMinutes = e.optInt("unitMin", 8 * 60).coerceIn(30, 24 * 60),
         premiums = e.optJSONArray("adds")?.let(::premiums).orEmpty(),
+        tiersFromDayStart = e.optBoolean("tiersFromDay", false),
+    )
+
+    private fun leavePolicy(l: LeavePolicy): JSONObject = JSONObject().put("auto", l.auto).put("basis", l.basis.name)
+        .put("fiscalMonth", l.fiscalStartMonth).put("low", JSONArray(l.lowAttendanceYears.sorted()))
+
+    private fun leavePolicyFrom(o: JSONObject): LeavePolicy = LeavePolicy(
+        auto = o.optBoolean("auto", true),
+        basis = LeaveBasis.entries.firstOrNull { it.name == o.optString("basis") } ?: LeaveBasis.HIRE,
+        fiscalStartMonth = o.optInt("fiscalMonth", 1).coerceIn(1, 12),
+        lowAttendanceYears = o.optJSONArray("low")?.let { a -> (0 until a.length()).map { a.optInt(it) }.filter { it >= 1 }.toSet() }.orEmpty(),
     )
 
     private fun premiums(p: List<Premium>): JSONArray = JSONArray(p.map {

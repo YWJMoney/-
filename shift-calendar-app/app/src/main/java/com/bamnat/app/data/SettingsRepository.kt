@@ -109,7 +109,7 @@ data class AppSettings(
     val quietWhileAsleep: Boolean = true,
     /** [SLP-15] 나갈 돈·받을 돈 notices; each fixed cost and job still has its own switch. */
     val moneyNotices: Boolean = true,
-    /** [SLP-15][PAY-12] 연차 소멸 안내 on 11/1 and 12/1. */
+    /** [SLP-15][PAY-12][LEAVE-03] 연차 사용 촉진 알림 on the 제61조 dates; on by default. */
     val leaveNotice: Boolean = true,
     /** [SLP-03][SLP-06] Hours of sleep the user aims for. */
     val sleepTargetMinutes: Int = 7 * 60,

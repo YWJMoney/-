@@ -182,6 +182,11 @@ internal fun ExtraRuleEditor(
             }
         }
         if (legacy) {
+            // [PAYX-21] Hour blocks counted from this piece's start, or from the day's first work (the shift included).
+            if (rule.basis == ExtraBasis.TIERED) {
+                Toggle("구간을 그날 첫 근무부터 세기", "끄면 이 근무를 시작한 때부터 8시간·4시간 구간을 세요. 켜면 그날 앞선 근무 시간까지 이어서 세요",
+                    rule.tiersFromDayStart) { onChange(rule.copy(tiersFromDayStart = it)) }
+            }
             Hint("이 방식대로 계속 계산해요. 연장·야간 같은 가산을 하나씩 고르려면 새로 정해 주세요.")
             OutlinedButton(onClick = { onChange(start.copy(bonus = rule.bonus, minMinutes = rule.minMinutes)) }, modifier = Modifier.padding(top = 4.dp)) {
                 Text("가산 하나씩 고르기")

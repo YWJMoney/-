@@ -10,36 +10,41 @@ import com.bamnat.app.NoticeLinks
 import com.bamnat.app.R
 import com.bamnat.app.alarm.Notifications
 import com.bamnat.app.appContainer
-import com.bamnat.app.data.AppSettings
 import com.bamnat.app.sleep.QuietHold
-import com.bamnat.core.holiday.KoreanHolidays
-import com.bamnat.core.pay.LeaveBook
-import com.bamnat.core.pay.PayProfile
-import kotlinx.coroutines.flow.first
+import com.bamnat.core.leave.LeaveLot
+import com.bamnat.core.leave.LeavePromotion
 import kotlinx.coroutines.launch
 import java.time.Instant
-import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 
 /**
- * [PAY-12][REL-08] On 11/1 and 12/1 at 09:00, a notice of 연차 that lapses on 12/31 unless used.
- * Inexact: a notice an hour late is fine and needs no exact-alarm permission. Nothing is set
- * while the user has not entered how many days they get.
- * [SLP-15] Off with its own switch, waits while the user sleeps, and opens the 연차 screen.
+ * [LEAVE-03] 연차 사용 촉진: on the dates 근로기준법 제61조 sets for the company's own notices (6개월 전·2개월 전
+ * before a year's leave lapses, 3개월 전·1개월 전 for the first year's monthly days) at 09:00, a notice of the days
+ * that would lapse after what is already planned. Replaces 1.21's 11/1 and 12/1, which only fit a 1월 leave year.
+ * On by default (S10); off with the switch on the 연차 screen or in 알림 settings.
+ * Inexact: a notice an hour late is fine and needs no exact-alarm permission.
+ * [SLP-15] Waits while the user sleeps, and opens the 연차 screen.
  */
 object LeaveReminder {
     private const val REQUEST = 3201
     const val EXTRA_AT = "at"
 
-    fun reschedule(context: Context, profile: PayProfile?, settings: AppSettings, now: LocalDateTime = LocalDateTime.now()) {
+    fun reschedule(context: Context, lots: List<LeaveLot>, on: Boolean, now: LocalDateTime = LocalDateTime.now()) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
-        if (profile?.rules?.annualLeaveDays == null || !settings.leaveNotice) {
+        val next = if (on) LeavePromotion.next(lots, now) else null
+        if (next == null) {
             am.cancel(pending(context, 0L))
             return
         }
-        val at = LeaveBook.nextNotice(now).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val at = next.at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending(context, at))
+    }
+
+    /** [reschedule] from the ledger as it is now, e.g. after a reboot. */
+    suspend fun rescheduleNow(context: Context, now: LocalDateTime = LocalDateTime.now()) {
+        val c = context.appContainer
+        reschedule(context, c.leaveRepository.now().lots.map { it.lot }, c.settingsRepository.current.leaveNotice, now)
     }
 
     private fun pending(context: Context, at: Long): PendingIntent = PendingIntent.getBroadcast(
@@ -48,25 +53,28 @@ object LeaveReminder {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    /** Works the balance out now, so leave added since the alarm was set counts, and posts it when some lapses. */
-    suspend fun postIfLapsing(context: Context) {
+    /**
+     * Works the ledger out now, so leave added since the alarm was set counts, and posts it for the notice
+     * that is due (the latest one at or before [now] whose lapse is still ahead) when some would lapse.
+     */
+    suspend fun postIfLapsing(context: Context, now: LocalDateTime = LocalDateTime.now()) {
         val c = context.appContainer
         if (!c.settingsRepository.current.leaveNotice) return
-        val rules = c.payStore.profile.value?.rules ?: return
-        val total = rules.annualLeaveDays ?: return
-        val today = LocalDate.now()
-        val snapshot = c.scheduleRepository.snapshot.first()
-        val balance = LeaveBook.balance(today.year, total, today, snapshot.resolver::resolve,
-            free = { rules.holidayLeaveFree && KoreanHolidays.isHoliday(it) }, carried = rules.annualLeaveCarry)
-        balance.expiring(today)?.let { post(context, LeaveBook.days(it), balance.expiresOn) }
+        val summary = c.leaveRepository.now()
+        val notice = LeavePromotion.notices(summary.lots.map { it.lot })
+            .filter { !it.at.isAfter(now) && !it.lapse.isBefore(now.toLocalDate()) }
+            .maxByOrNull { it.at } ?: return
+        val days = LeavePromotion.lapsing(summary, notice.lapse) ?: return
+        post(context, notice, days)
     }
 
-    fun post(context: Context, days: String, until: LocalDate) {
+    fun post(context: Context, notice: LeavePromotion.Notice, days: Double) {
         val notification = NotificationCompat.Builder(context, Notifications.LEAVE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setContentTitle("남은 연차 $days")
-            .setContentText("${until.monthValue}월 ${until.dayOfMonth}일까지 안 쓰면 없어질 수 있어요. 달력에서 날을 길게 눌러 넣어요.")
+            .setContentTitle(LeavePromotion.title(days))
+            .setContentText(LeavePromotion.text(notice))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(LeavePromotion.text(notice) + " 이 알림은 연차 화면에서 끌 수 있어요."))
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.LEAVE, 3202))
             .setAutoCancel(true)
             .build()
@@ -85,8 +93,7 @@ class LeaveReminderReceiver : BroadcastReceiver() {
                 val at = if (atMillis == 0L) LocalDateTime.now()
                 else LocalDateTime.ofInstant(Instant.ofEpochMilli(atMillis), ZoneId.systemDefault())
                 if (!QuietHold.holdIfAsleep(context, QuietHold.Source.LEAVE, at)) LeaveReminder.postIfLapsing(context)
-                LeaveReminder.reschedule(context, container.payStore.profile.value, container.settingsRepository.current,
-                    LocalDateTime.now().plusSeconds(1))
+                LeaveReminder.rescheduleNow(context, LocalDateTime.now().plusSeconds(1))
             } finally {
                 pending.finish()
             }

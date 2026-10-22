@@ -15,6 +15,8 @@ enum class Place {
     DIAGNOSTICS, INQUIRY, FEATURES, PRO,
     /** [ONBOARD-04] 추천 기능 한 번에 켜기. */
     RECOMMENDED,
+    // [LEAVE-06] 1.22 묶음 D: the 연차 원장 of the calendar on screen.
+    LEAVE,
     SETTINGS_WORK, SETTINGS_ALARM, SETTINGS_REST, SETTINGS_NOTICES, SETTINGS_PAY, SETTINGS_CALENDAR,
     SETTINGS_DATA, SETTINGS_PRIVACY,
     ;
@@ -151,8 +153,10 @@ object FeatureRegistry {
             setOf(SHIFT), "$DAY_SHEET › 바꾼 사람", at(Place.TODAY), "교환", "대근", "바꿈", "근무 바꾸기", "맞교대"),
         f("shift.swapCard", "SHFT-03", "교환·대근 모아 보기", "이번 달 바꾼 근무와 대근을 사람별로 모아 보여 줘요",
             setOf(SHIFT), "${tab(SHIFT)} › 교환·대근", at(Place.STATS), "교환 모아", "대근 횟수", off = Off.CALENDAR),
-        f("shift.roster", "SHFT-06", "듀티표 사진으로 넣기", "듀티표 사진이나 붙여 넣은 글자에서 내 줄을 찾아 한 달을 넣어요",
-            setOf(SHIFT), "설정 › 내 근무 › 듀티표 사진으로 넣기", at(Place.DUTY_ROSTER), "듀티표", "근무표 사진", "글자 인식", "간호사", "OCR"),
+        // [IMPORT-03] 1.22: an 엑셀·CSV roster too, for wards and for part-timers' irregular rosters.
+        f("shift.roster", "SHFT-06", "듀티표 넣기", "듀티표 사진, 엑셀·CSV 파일이나 붙여 넣은 글자에서 내 줄을 찾아 한 달을 넣어요",
+            setOf(SHIFT, HOURLY), "설정 › 내 근무 › 듀티표 넣기", at(Place.DUTY_ROSTER), "듀티표", "근무표 사진", "글자 인식", "간호사", "OCR",
+            "근무표 파일", "엑셀 근무표", "CSV", "불규칙 근무표", "편의점 근무표"),
         f("shift.teams", "CREW-01", "모든 조 보기", "3조 2교대·4조 2교대처럼 조가 있는 근무에서 모든 조의 근무를 날짜별로 보고, 쉬는 조를 찾아 대근을 부탁해요",
             setOf(SHIFT), "달력 › 모든 조 (또는 도구 › 모든 조 보기)", at(Place.TEAMS), "모든 조", "전체 조", "조별", "다른 조", "A조", "B조", "대근 구하기", "쉬는 조"),
         f("shift.dutyTyping", "NURS-01", "한 달 근무 연달아 넣기", "근무표를 보며 D·E·N·OFF를 누르면 다음 날로 넘어가며 한 달을 넣고, 역순·나이트 뒤 쉬는 날·연속 근무를 알려 줘요",
@@ -187,6 +191,15 @@ object FeatureRegistry {
             PAID, "${tab(SHIFT)} › 이번 달 급여 › 급여 리포트", at(Place.PAY), "리포트", "급여 PDF", "CSV", "엑셀", "근거", "급여 내역"),
         f("stats.compare", "PROV-02", "지난달·작년 비교", "근무시간·야간·휴일·추가 근무·급여를 지난달, 작년 같은 달과 나란히 보고 올해를 달마다 봐요",
             PAID, "${tab(SHIFT)} › 지난달·작년 비교", at(Place.STATS), "비교", "지난달", "작년", "올해 근무", "연간 리포트"),
+        // [LEAVE-01..06][PAYX-18] 1.22 묶음 D: 연차 원장.
+        f("leave.ledger", "LEAVE-06", "연차 원장", "입사일로 연차를 법대로 세고, 달력에 넣은 연차·받은 날·이월·소멸을 한 줄씩 보여 줘요",
+            PAID, "${tab(SHIFT)} › 이번 달 급여 › 연차 카드 › 연차 화면", at(Place.LEAVE), "연차", "남은 연차", "연차 계산", "소멸", "이월", "입사일", "회계연도"),
+        f("leave.promotion", "LEAVE-03", "연차 사용 촉진 알림", "연차가 없어지기 6개월 전·2개월 전에 쓸 예정을 빼고도 남는 날을 알려 줘요",
+            PAID, "연차 화면 › 쓰라고 알려 주기", at(Place.LEAVE), "연차 알림", "소멸 알림", "사용 촉진", "연차 촉진", off = Off.ELSEWHERE),
+        f("leave.payout", "LEAVE-05", "미사용 연차수당", "못 쓴 연차가 돈으로 얼마인지 셈하고, 받으면 원장에 정산으로 남겨요",
+            PAID, "연차 화면 › 못 쓴 연차, 돈으로는", at(Place.LEAVE), "연차수당", "미사용 연차", "연차 정산", "수당"),
+        f("pay.compLeave", "PAYX-18", "보상휴가", "추가 근무를 돈 대신 쉬는 시간으로 받으면 가산까지 더해 연차 화면에 쌓아요",
+            setOf(SHIFT, DAY), "$DAY_SHEET › 추가 근무 › 돈 대신 보상휴가로 받기", at(Place.TODAY), "보상휴가", "대체휴가", "휴가로 받기", "근로기준법 57조"),
         f("extra.kinds", "EXTRA-04", "잔업·특근·대근", "추가 근무의 이름과 가산 방식을 회사에 맞게 정하고 날짜마다 적어요",
             setOf(SHIFT, DAY), "설정 › 내 근무 › 연장 휴무일 근무 지정", at(Place.EXTRA_KINDS), "잔업", "특근", "대근", "연장", "야근", "휴일 근무"),
 
@@ -199,8 +212,9 @@ object FeatureRegistry {
             moment = Moment.PAST_END_TIME, tip = "퇴근 시간이 지났어요. ‘지금 퇴근’을 누르면 더 일한 시간이 야근으로 적혀요"),
         f("day.overtimeCap", "DAYW-05", "월 시간외 상한", "한 달 시간외 상한을 정하면 남은 시간과 넘었을 때 알려 줘요",
             setOf(DAY), "${tab(DAY)} › 시간외 상한", at(Place.STATS), "시간외", "상한", "야근 한도", "초과", off = Off.CALENDAR),
-        f("day.bridges", "DAYW-04", "징검다리 연휴", "연차 하루이틀로 길게 쉬는 날을 12개월 안에서 찾아 줘요",
-            setOf(DAY), "${tab(DAY)} › 징검다리 연휴", at(Place.STATS), "연휴", "연차 추천", "샌드위치", "휴가 계획", off = Off.CALENDAR),
+        // [LEAVE-04] 1.22: every kind of work that takes leave; 교대·알바 by the roster's own days off.
+        f("day.bridges", "DAYW-04", "징검다리 연휴", "연차 하루이틀로 길게 쉬는 날을 12개월 안에서 찾아 줘요. 교대·알바는 근무표의 쉬는 날로 찾아요",
+            PAID, "${tab(DAY)} › 징검다리 연휴 (연차 화면에도)", at(Place.STATS), "연휴", "연차 추천", "샌드위치", "휴가 계획", "길게 쉬기", off = Off.CALENDAR),
         f("day.attendance", "DAYW-06", "근태 엑셀 가져오기", "회사 근태 시스템의 엑셀·CSV를 읽어 늦은 출근·야근·연차를 적어요",
             setOf(DAY), "설정 › 내 근무 › 근태 엑셀 가져오기", at(Place.ATTENDANCE_IMPORT), "엑셀", "CSV", "근태", "xlsx", "출퇴근 기록"),
         f("day.commute", "DAYW-07", "출퇴근 자동 기록", "회사에 도착하고 떠날 때를 휴대폰이 알아채 출퇴근을 적어요. 위치는 휴대폰 안에만 있어요",

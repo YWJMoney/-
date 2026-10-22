@@ -70,6 +70,8 @@ import com.bamnat.core.imports.DutyCodes
 import com.bamnat.core.imports.DutyRoster
 import com.bamnat.core.imports.DutyType
 import com.bamnat.core.imports.RosterRow
+import com.bamnat.core.imports.RosterSheet
+import com.bamnat.core.imports.Sheets
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.isNight
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -90,6 +92,8 @@ import java.time.YearMonth
  * [SHFT-06] 듀티표 사진으로 넣기: a photo of next month's roster is read on the phone, the user picks their own
  * line and fixes any cell, and the days go on the calendar on screen as changes for those days (the pattern
  * stays). Text copied from Google Lens or a messenger works the same way.
+ * [IMPORT-03] So does a CSV or 엑셀 file of an irregular roster (병동 가로형 듀티표, 편의점 세로형 근무표):
+ * the same preview, the same fixes for codes not known, the same undo.
  */
 class DutyRosterViewModel(private val container: AppContainer, val calendarId: String) : ViewModel() {
     private val schedule get() = container.calendars.repository(calendarId)
@@ -175,6 +179,31 @@ class DutyRosterViewModel(private val container: AppContainer, val calendarId: S
         }
     }
 
+    /** [IMPORT-03] A roster file: each person's line, for the month the file has most days of. */
+    fun readFile(uri: Uri) {
+        _ui.update { it.copy(reading = true, error = null, applied = null) }
+        viewModelScope.launch {
+            val result = runCatching {
+                val (_, sheet) = SheetFiles.read(container.appContext, uri)
+                RosterSheet.read(sheet, codes(), near = _ui.value.month.atDay(1))
+            }
+            val read = result.getOrNull()
+            if (read == null) {
+                show(null, (result.exceptionOrNull() as? Sheets.SheetException)?.message
+                    ?: if (result.isFailure) "이 파일은 읽지 못했어요. 엑셀(.xlsx)이나 CSV로 저장한 파일을 골라 주세요."
+                    else "날짜와 근무를 찾지 못했어요. 첫 줄에 1 2 3 … 날짜가 있거나, 날짜·근무 열이 있는 표면 돼요.")
+                return@launch
+            }
+            val month = read.people.flatMap { p -> p.days.map { YearMonth.from(it.date) } }
+                .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: _ui.value.month
+            val rows = read.people.map { p ->
+                RosterRow(p.name, p.days.filter { YearMonth.from(it.date) == month }.associate { it.date.dayOfMonth to it.cell })
+            }.filter { it.cells.isNotEmpty() }
+            _ui.update { it.copy(month = month) }
+            show(rows, null)
+        }
+    }
+
     fun readText(text: String) {
         _ui.update { it.copy(reading = true, error = null, applied = null) }
         viewModelScope.launch { show(DutyRoster.readText(text, codes()), null) }
@@ -223,6 +252,7 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
     val snap by vm.snapshot.collectAsStateWithLifecycle()
     // The system photo picker: no storage permission, only the photo the user picks is shared with the app.
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(vm::readPhoto) }
+    val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::readFile) }
     LaunchedEffect(vm) {
         vm.messages.collect { m ->
             val r = snackbar.showSnackbar(m.message, actionLabel = m.undo?.let { m.actionLabel }, duration = SnackbarDuration.Long)
@@ -234,7 +264,7 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("듀티표 사진으로 넣기") },
+                title = { Text("듀티표 넣기") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
@@ -264,8 +294,9 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                     }
                     Button(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                         enabled = !ui.reading, modifier = Modifier.fillMaxWidth()) { Text("듀티표 사진 고르기") }
+                    OutlinedButton(onClick = { files.launch(SheetFiles.TYPES) }, enabled = !ui.reading, modifier = Modifier.fillMaxWidth()) { Text("엑셀·CSV 파일 고르기") }
                     OutlinedButton(onClick = { pasting = true }, enabled = !ui.reading, modifier = Modifier.fillMaxWidth()) { Text("글자로 붙여 넣기") }
-                    Text("표가 화면에 꽉 차고 반듯하게 나온 사진이 잘 읽혀요. 구글 렌즈 등에서 복사한 글자를 붙여 넣어도 돼요.",
+                    Text("표가 화면에 꽉 차고 반듯하게 나온 사진이 잘 읽혀요. 병동 듀티표처럼 날짜가 가로로 놓인 표도, 편의점 근무표처럼 날짜·근무 열이 있는 표도 파일로 넣을 수 있어요. 구글 렌즈 등에서 복사한 글자를 붙여 넣어도 돼요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }

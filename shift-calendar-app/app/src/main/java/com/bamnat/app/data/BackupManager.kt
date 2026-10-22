@@ -107,7 +107,17 @@ class BackupManager(
             source.dayExtraDao().getAll().forEach { x ->
                 put(JSONObject().put("day", x.epochDay).put("kind", x.kindId).putOpt("start", x.startMinute).putOpt("end", x.endMinute)
                     .put("break", x.breakMinutes).putOpt("breakStart", x.breakStartMinute).put("minutes", x.minutes)
-                    .putOpt("covered", x.coveredShiftTypeId).put("review", x.needsReview).put("pos", x.position))
+                    .putOpt("covered", x.coveredShiftTypeId).put("review", x.needsReview).put("pos", x.position)
+                    // [PAYX-18] Version 19; only when set.
+                    .apply { if (x.compLeave) put("comp", true) })
+            }
+        })
+        // [LEAVE-01] The 연차 원장's stored rows (version 19). Uses stay on the days above.
+        into.put("leave", JSONArray().apply {
+            source.leaveLedgerDao().all().forEach { l ->
+                put(JSONObject().put("day", l.epochDay).put("kind", l.kind).put("days", l.days)
+                    .putOpt("expires", l.expiresEpochDay).putOpt("year", l.yearStartEpochDay)
+                    .put("note", l.note).put("pool", l.pool).put("created", l.createdAt))
             }
         })
     }
@@ -350,6 +360,8 @@ class BackupManager(
     /** [MCAL-05] One calendar's schedule as a backup holds it; throws for one with no shifts. */
     private class ScheduleRows(
         val types: List<ShiftTypeEntity>, val patterns: List<PatternEntity>, val days: List<DayEntryEntity>, val extras: List<DayExtraEntity>?,
+        /** [LEAVE-01] Null for a backup from before the ledger. */
+        val leave: List<com.bamnat.app.data.db.LeaveLedgerEntity>? = null,
     )
 
     /**
@@ -399,10 +411,23 @@ class BackupManager(
                 endMinute = o.optIntOrNull("end"), breakMinutes = o.optInt("break").coerceIn(0, 24 * 60),
                 breakStartMinute = o.optIntOrNull("breakStart"), minutes = o.optInt("minutes").coerceIn(0, 24 * 60),
                 coveredShiftTypeId = if (o.has("covered") && !o.isNull("covered")) o.getLong("covered") else null,
-                needsReview = o.optBoolean("review"), position = o.optInt("pos"),
+                needsReview = o.optBoolean("review"), position = o.optInt("pos"), compLeave = o.optBoolean("comp"),
             )
         }
-        return ScheduleRows(types, patterns, days, extras)
+        val leave = from.optJSONArray("leave")?.objects()?.mapNotNull { o ->
+            // A kind from a newer version is left out rather than read as something else.
+            val kind = com.bamnat.core.leave.EntryKind.of(o.optString("kind")) ?: return@mapNotNull null
+            val days = o.optDouble("days", Double.NaN).takeIf { it.isFinite() && kotlin.math.abs(it) <= 400 } ?: return@mapNotNull null
+            com.bamnat.app.data.db.LeaveLedgerEntity(
+                epochDay = o.getLong("day"), kind = kind.name, days = days,
+                expiresEpochDay = if (o.has("expires") && !o.isNull("expires")) o.getLong("expires") else null,
+                yearStartEpochDay = if (o.has("year") && !o.isNull("year")) o.getLong("year") else null,
+                note = o.optString("note").take(200),
+                pool = com.bamnat.core.leave.LeavePool.entries.firstOrNull { it.name == o.optString("pool") }?.name ?: "ANNUAL",
+                createdAt = o.optLong("created"),
+            )
+        }
+        return ScheduleRows(types, patterns, days, extras, leave)
     }
 
     /** Replaces [target]'s schedule with [rows]; the change log described the days being replaced [MKT-08]. */
@@ -410,6 +435,9 @@ class BackupManager(
         target.dayChangeDao().clear()
         target.dayEntryDao().clear()
         target.dayExtraDao().clear()
+        // [LEAVE-01] An older backup has no ledger; its 연차 in the pay setup moves in again (LeaveRepository).
+        target.leaveLedgerDao().clear()
+        rows.leave?.let { target.leaveLedgerDao().insertAll(it) }
         target.patternDao().clear()
         target.shiftTypeDao().clear()
         target.shiftTypeDao().insertAll(rows.types)

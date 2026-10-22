@@ -134,6 +134,12 @@ data class ExtraRule(
     val unitMinutes: Int = 8 * 60,
     /** [EXTRA-08] For [ExtraBasis.UNIT]: the premiums, the four always listed first, then the company's own. */
     val premiums: List<Premium> = emptyList(),
+    /**
+     * [PAYX-21] For [ExtraBasis.TIERED]: count the blocks from the day's first minute of work (the shift and any
+     * work before this piece), not from this piece's start. E.g. 8시간 100% then 150%: 2 hours of 잔업 after an
+     * 8-hour shift are all in the 150% block.
+     */
+    val tiersFromDayStart: Boolean = false,
 ) {
     /** By law with nothing on top: the same as having no rule. */
     val isLegal: Boolean get() = basis == ExtraBasis.LEGAL && bonus <= 0
@@ -149,14 +155,21 @@ data class ExtraRule(
     /** [EXTRA-08] The premiums that count, in the order they are paid. */
     val ticked: List<Premium> get() = premiums.filter { it.on && it.rate > 0 }
 
-    /** Money for [minutes] of this work at [hourly], by the tiers for a day or night shift. */
-    fun tieredAmount(minutes: Int, hourly: Long, night: Boolean): Long {
+    /**
+     * Money for [minutes] of this work at [hourly], by the tiers for a day or night shift. [before] minutes of the
+     * day already worked fill the first blocks when [tiersFromDayStart] [PAYX-21].
+     */
+    fun tieredAmount(minutes: Int, hourly: Long, night: Boolean, before: Int = 0): Long {
         val tiers = (if (night) nightTiers else dayTiers).ifEmpty { listOf(Tier(minutes, 0.0)) }
+        var skip = if (tiersFromDayStart) before.coerceAtLeast(0) else 0
         var left = minutes
         var total = 0.0
         for ((i, t) in tiers.withIndex()) {
             if (left <= 0) break
-            val m = if (i == tiers.lastIndex) left else minOf(left, t.minutes)
+            val room = if (i == tiers.lastIndex) Int.MAX_VALUE else t.minutes
+            val skipped = minOf(skip, room)
+            skip -= skipped
+            val m = if (i == tiers.lastIndex) left else minOf(left, room - skipped)
             total += m / 60.0 * hourly * (1.0 + t.premium)
             left -= m
         }
@@ -205,7 +218,7 @@ data class ExtraRule(
         ExtraBasis.FIXED_PER_TIME -> "1회 ${won(amount)}"
         ExtraBasis.PERCENT_OF_BASE -> "1회 기본급의 ${percent(percentOfBase)}"
         ExtraBasis.FIXED_PER_HOUR -> "시간당 ${won(amount)}"
-        ExtraBasis.TIERED -> "주간 ${describeTiers(false)} · 야간 ${describeTiers(true)}"
+        ExtraBasis.TIERED -> "주간 ${describeTiers(false)} · 야간 ${describeTiers(true)}" + if (tiersFromDayStart) " (그날 첫 근무부터)" else ""
         ExtraBasis.UNIT -> describeUnit()
     } + (if (perTime && coverMinutes != null) " (${PayCalculator.hours(coverMinutes)}까지)" else "")
 
@@ -332,6 +345,8 @@ data class CompanyRules(
     val holidaysUnderFive: Boolean = false,
     /** [PAYS-03] How breaks are treated; unpaid, as the law has it, by default. */
     val breakPay: BreakPay = BreakPay.UNPAID,
+    /** [LEAVE-02] How 연차 arises: by the hire date or 회계연도, made by the app or entered by hand. */
+    val leave: com.bamnat.core.leave.LeavePolicy = com.bamnat.core.leave.LeavePolicy(),
 ) {
     fun extraRule(kind: Long?): ExtraRule? = kind?.let { extra[it] }?.takeUnless { it.isLegal }
 

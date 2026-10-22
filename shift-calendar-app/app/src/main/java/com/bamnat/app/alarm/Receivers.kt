@@ -135,7 +135,7 @@ class SystemEventReceiver : BroadcastReceiver() {
                 val settings = container.settingsRepository.current
                 // [MCAL-06] Every calendar's jobs and money.
                 com.bamnat.app.money.JobReminderScheduler.reschedule(context, container.calendars.everyMoneyNow(), settings)
-                com.bamnat.app.pay.LeaveReminder.reschedule(context, container.payStore.profile.value, settings)
+                com.bamnat.app.pay.LeaveReminder.rescheduleNow(context)
                 // [SHR-12] The link's expiry notice did not survive the reboot either.
                 container.calendars.calendars.value.flatMap { com.bamnat.app.share.ShareLinkKey.all(it.id) }.forEach { key ->
                     val links = container.shareLinksOf(key)

@@ -18,8 +18,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         InvestAccountEntity::class, InvestTradeEntity::class, InvestCashEntity::class, InvestQuoteEntity::class,
         InvestJournalEntity::class, InvestEventEntity::class, InvestAlarmEntity::class, InvestSnapshotEntity::class,
         InvestSettingEntity::class,
+        // [LEAVE-01] Version 19: 연차 원장.
+        LeaveLedgerEntity::class,
     ],
-    version = 18,
+    version = 19,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -34,6 +36,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun receivableDao(): ReceivableDao
     abstract fun importedEventDao(): ImportedEventDao
     abstract fun investDao(): InvestDao
+    abstract fun leaveLedgerDao(): LeaveLedgerDao
 
     companion object {
         /** [MCAL-01] Each added calendar is a database of its own with the same tables; only its schedule ones are used. */
@@ -50,7 +53,7 @@ abstract class AppDatabase : RoomDatabase() {
             get() = arrayOf(
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                 MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
-                MIGRATION_16_17, MIGRATION_17_18,
+                MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19,
             )
 
         /** Version 2: several alarms per shift, hand-set alarms per day, memo trash. */
@@ -290,6 +293,21 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_17_18 = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 INVEST_TABLES.forEach(db::execSQL)
+            }
+        }
+
+        /**
+         * Version 19 [LEAVE-01][PAYX-18]: the 연차 원장 table, and a mark on extra work paid in 보상휴가. Every row
+         * of version 18 keeps its meaning (no piece is 보상휴가 until the user says so). The 연차 the pay setup held
+         * moves to the new table once, from the app ([com.bamnat.app.leave.LeaveRepository]), since it lives in a file.
+         */
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `leave_ledger` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `epochDay` INTEGER NOT NULL, " +
+                    "`kind` TEXT NOT NULL, `days` REAL NOT NULL, `expiresEpochDay` INTEGER, `yearStartEpochDay` INTEGER, " +
+                    "`note` TEXT NOT NULL DEFAULT '', `pool` TEXT NOT NULL DEFAULT 'ANNUAL', `createdAt` INTEGER NOT NULL DEFAULT 0)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_leave_ledger_epochDay` ON `leave_ledger` (`epochDay`)")
+                db.execSQL("ALTER TABLE day_extras ADD COLUMN compLeave INTEGER NOT NULL DEFAULT 0")
             }
         }
 

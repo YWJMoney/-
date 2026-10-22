@@ -127,6 +127,50 @@ object DayWork {
         return result.sortedWith(compareBy({ it.from }, { it.leave.size }))
     }
 
+    /** [LEAVE-04] Fewest days in a row worth suggesting to a shift or part-time worker, whose rest days come in runs anyway. */
+    const val MIN_REST_BRIDGE_DAYS = 5
+
+    /**
+     * [LEAVE-04] 휴무 연결 for every kind of work (교대·알바·현장): 1 or 2 working days between two runs of days off
+     * that, taken as leave, make [minDays] or more days off in a row. A shift roster's 공휴일 are working days like
+     * any other, so only the roster's own days off count. The longest per month, at most [perMonth], earliest first.
+     */
+    fun restBridges(
+        from: LocalDate,
+        months: Long = 12,
+        isWorkDay: (LocalDate) -> Boolean,
+        minDays: Int = MIN_REST_BRIDGE_DAYS,
+        perMonth: Int = 2,
+        holidayName: (LocalDate) -> String? = KoreanHolidays::nameOf,
+    ): List<Bridge> {
+        val until = from.plusMonths(months)
+        val found = mutableListOf<Bridge>()
+        var d = from
+        while (d.isBefore(until)) {
+            // A run of 1~2 working days with a day off right before it.
+            if (isWorkDay(d) && !isWorkDay(d.minusDays(1))) {
+                var e = d
+                while (isWorkDay(e.plusDays(1)) && ChronoUnit.DAYS.between(d, e) < 2) e = e.plusDays(1)
+                val gap = ChronoUnit.DAYS.between(d, e).toInt() + 1
+                if (gap <= 2 && !isWorkDay(e.plusDays(1))) {
+                    var a = d.minusDays(1)
+                    while (!isWorkDay(a.minusDays(1)) && ChronoUnit.DAYS.between(a, d) < 30) a = a.minusDays(1)
+                    var b = e.plusDays(1)
+                    while (!isWorkDay(b.plusDays(1)) && ChronoUnit.DAYS.between(e, b) < 30) b = b.plusDays(1)
+                    val leave = generateSequence(d) { it.plusDays(1) }.takeWhile { !it.isAfter(e) }.toList()
+                    val bridge = Bridge(leave, a, b, generateSequence(a) { it.plusDays(1) }.takeWhile { !it.isAfter(b) }.mapNotNull(holidayName).distinct().toList())
+                    if (bridge.days >= minDays) found += bridge
+                }
+                d = e.plusDays(1)
+                continue
+            }
+            d = d.plusDays(1)
+        }
+        return found.groupBy { java.time.YearMonth.from(it.leave.first()) }.values
+            .flatMap { list -> list.sortedWith(compareByDescending<Bridge> { it.days }.thenBy { it.leave.size }.thenBy { it.from }).take(perMonth) }
+            .sortedWith(compareBy({ it.from }, { it.leave.size }))
+    }
+
     /** [DAYW-05] This month's extra hours against the monthly 시간외 상한. */
     data class OvertimeCap(val usedMinutes: Int, val capHours: Int) {
         val capMinutes: Int get() = capHours * 60

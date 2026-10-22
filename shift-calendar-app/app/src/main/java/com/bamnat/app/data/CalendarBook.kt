@@ -135,6 +135,8 @@ class CalendarBook(
     private val mainPay: () -> com.bamnat.app.pay.PayStore = { error("No pay here") },
     private val moneyOf: (String, AppDatabase) -> MoneyRepository = { _, db -> MoneyRepository(db) },
     private val payOf: (String) -> com.bamnat.app.pay.PayStore = { error("No pay here") },
+    /** [LEAVE-01] The main calendar's 연차 원장; an added calendar's is made over its own database. */
+    private val mainLeave: () -> com.bamnat.app.leave.LeaveRepository = { error("No leave here") },
 ) {
     private data class State(val calendars: List<PersonalCalendar>, val order: List<String>, val active: String)
 
@@ -163,6 +165,7 @@ class CalendarBook(
 
     private class Opened(val db: AppDatabase, val schedule: ScheduleRepository) {
         var money: MoneyRepository? = null
+        var leave: com.bamnat.app.leave.LeaveRepository? = null
     }
 
     private val open = HashMap<String, Opened>()
@@ -216,6 +219,14 @@ class CalendarBook(
     fun pay(id: String): com.bamnat.app.pay.PayStore {
         if (id == PersonalCalendar.MAIN || get(id) == null) return mainPay()
         return pays.getOrPut(id) { payOf(id) }
+    }
+
+    /** [LEAVE-01] Calendar [id]'s 연차 원장, in its own database with its own pay setup; the main one's otherwise. */
+    @Synchronized
+    fun leave(id: String): com.bamnat.app.leave.LeaveRepository {
+        if (id == PersonalCalendar.MAIN || get(id) == null) return mainLeave()
+        val o = opened(id)
+        return o.leave ?: com.bamnat.app.leave.LeaveRepository(o.db, o.schedule, pay(id)).also { o.leave = it }
     }
 
     /** [MCAL-01] What the calendar tab works on now; a write started here stays with this calendar. */
