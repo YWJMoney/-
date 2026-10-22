@@ -95,6 +95,16 @@ object KoreanHolidays {
     /** Years the table covers (checked against the 월력요항, with 임시공휴일 and 선거일). */
     val years: IntRange = 2025..2027
 
+    /**
+     * [OPS-18] Days outside [years] the rules cannot work out: 2024's 선거일 and 임시공휴일 (국군의 날), and the
+     * 선거일 the law already fixes ahead (제23대 국회의원 선거, 임기만료 2028-05-29).
+     */
+    private val ELECTIONS = mapOf(
+        LocalDate.of(2024, 4, 10) to "국회의원 선거일",
+        LocalDate.of(2024, 10, 1) to "임시공휴일",
+        LocalDate.of(2028, 4, 12) to "국회의원 선거일",
+    )
+
     private val computed = java.util.concurrent.ConcurrentHashMap<Int, Map<LocalDate, String>>()
 
     /**
@@ -105,6 +115,8 @@ object KoreanHolidays {
      */
     internal fun rules(year: Int): Map<LocalDate, String> {
         val days = sortedMapOf<LocalDate, String>()
+        // [OPS-18] 선거일 fixed by 공직선거법 제34조 (임기만료일 전 50일 이후 첫 수요일 등), known years ahead.
+        ELECTIONS.filterKeys { it.year == year }.forEach { (d, n) -> days[d] = n }
         fun add(d: LocalDate?, name: String) {
             if (d == null || d.year != year && name != "설날 연휴") return
             days[d] = days[d]?.let { "$it·$name" } ?: name
