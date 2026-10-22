@@ -25,6 +25,12 @@ data class RestRules(
     /** One line for the settings file, e.g. "on=1;rest=11;offs=2;nights=3;run=6;month=15". */
     fun encode(): String = "on=${if (on) 1 else 0};rest=$minRestHours;offs=$offsAfterNights;nights=$maxNightsInRow;run=$maxWorkDaysInRow;month=$maxNightsPerMonth"
 
+    /**
+     * The limit as the user set it, from their side ("4일 연속부터 알려요 · 기본"), never "기준 3일", which reads as if
+     * 3 were already too many.
+     */
+    fun note(limit: String): String = preset?.let { "$limit 알려요 · ${it.label}" } ?: "$limit 알려요"
+
     /** Which preset these values are, or null when the user changed them one by one. */
     val preset: Preset? get() = Preset.entries.firstOrNull { it.rules == copy(on = true) }
 

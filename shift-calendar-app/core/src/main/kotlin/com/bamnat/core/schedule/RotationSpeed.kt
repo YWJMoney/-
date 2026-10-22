@@ -15,12 +15,15 @@ enum class RotationSpeed(val label: String, val note: String) {
     FIXED_NIGHT("고정 야간", "야간만 하는 근무라 연속·한 달 야간 대신 휴식과 쉬는 날을 봐요"),
     FAST("빠른 순환", "같은 근무가 3일 안에 바뀌는 순서예요. 기준 그대로 봐요"),
     SLOW("느린 순환", "같은 근무가 4일 넘게 이어지는 순서예요. 연속 야간을 특히 봐요"),
-    DUTY_24H("24시간 당번", "당번 뒤 하루 쉬는 순서라 당번 뒤 쉬는 날은 1일로 봐요");
+    DUTY_24H("24시간 당번", "당번 뒤 하루 쉬는 순서라 당번 뒤 쉬는 날은 1일로 봐요"),
+    /** Every night is followed by its 비번 (경찰 주야비휴, 소방 야비야비): the 비번 is the rest after it. */
+    NIGHT_DUTY("야간 뒤 비번", "야간마다 다음 날이 비번인 순서라 야간 뒤 쉬는 날은 비번 하루로 봐요");
 
     /** [rules] as they fit this speed; the user's own numbers stay for everything the speed does not change. */
     fun adjust(rules: RestRules): RestRules = when (this) {
         FIXED_NIGHT -> rules.copy(maxNightsInRow = 0, maxNightsPerMonth = 0)
         DUTY_24H -> rules.copy(offsAfterNights = minOf(rules.offsAfterNights, 1), maxNightsInRow = 0, maxNightsPerMonth = 0)
+        NIGHT_DUTY -> rules.copy(offsAfterNights = minOf(rules.offsAfterNights, 1))
         else -> rules
     }
 
@@ -34,13 +37,14 @@ enum class RotationSpeed(val label: String, val note: String) {
             return when {
                 work.isEmpty() -> NONE
                 'X' in work -> DUTY_24H
+                'N' in work && codes.indices.all { i -> codes[i] != 'N' || codes[(i + 1) % codes.length] == 'B' } -> NIGHT_DUTY
                 work.all { it == 'N' } -> FIXED_NIGHT
                 'N' !in work && work.toSet().size == 1 -> DAY_ONLY
                 else -> if (longestRun(codes) >= 4) SLOW else FAST
             }
         }
 
-        /** [pattern]'s speed with the user's own shifts: off types are O, mostly-night shifts N, 20 hours or more X. */
+        /** [pattern]'s speed with the user's own shifts: off types are O (B when named 비번), mostly-night shifts N, 20 hours or more X. */
         fun of(pattern: WorkPattern?, types: List<ShiftType>): RotationSpeed {
             val steps = when (pattern) {
                 is WorkPattern.Rotation -> pattern.steps
@@ -53,6 +57,7 @@ enum class RotationSpeed(val label: String, val note: String) {
 
         /** One shift as a preset code. */
         fun code(t: ShiftType?): Char = when {
+            t != null && t.isOff && (t.name.contains("비번") || t.label == "비" || t.label.equals("B", ignoreCase = true)) -> 'B'
             t == null || t.isOff -> 'O'
             t.hasTimes && t.durationMinutes >= 20 * 60 -> 'X'
             mostlyNight(t) -> 'N'
