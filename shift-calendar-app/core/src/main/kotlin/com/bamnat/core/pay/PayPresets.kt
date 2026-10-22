@@ -61,10 +61,50 @@ object PayPresets {
             listOf(PresetItem("duty", "당직 수당", Cadence.PER_WORK_DAY, 0, checked = false)),
             note = "감시·단속 업무로 승인받은 경우 연장·휴일 가산이 빠질 수 있어요. 해당되면 회사 규칙에서 꺼 주세요",
         ),
+        // [JOB-01] 봉급 placeholder: 일반직 9급 10호봉 2026 (research/1.21-직군-조사.md). Each person's own 봉급 replaces it.
+        OccupationPreset(
+            Occupation.PUBLIC, WageType.MONTHLY, 2_542_700,
+            listOf(
+                PresetItem("meal", "정액급식비", Cadence.MONTHLY, 160_000, hint = "명세서 금액으로 고쳐 주세요"),
+                PresetItem("duty", "직급보조비", Cadence.MONTHLY, 0, checked = false),
+            ),
+            note = PublicServantPay.NOTE,
+        ),
+        OccupationPreset(
+            Occupation.POLICE, WageType.MONTHLY, 2_542_700,
+            listOf(
+                PresetItem("meal", "정액급식비", Cadence.MONTHLY, 160_000, hint = "명세서 금액으로 고쳐 주세요"),
+                PresetItem("risk", "위험근무수당", Cadence.MONTHLY, 0, hint = "명세서 금액"),
+                PresetItem("field", "현장 근무 수당", Cadence.MONTHLY, 0, checked = false, hint = "지구대·파출소 근무자"),
+            ),
+            note = PublicServantPay.NOTE,
+        ),
+        OccupationPreset(
+            Occupation.FIRE, WageType.MONTHLY, 2_542_700,
+            listOf(
+                PresetItem("meal", "정액급식비", Cadence.MONTHLY, 160_000, hint = "명세서 금액으로 고쳐 주세요"),
+                PresetItem("risk", "위험근무수당", Cadence.MONTHLY, 0, hint = "명세서 금액"),
+                PresetItem("fire", "화재진화수당", Cadence.MONTHLY, 0, checked = false, hint = "명세서 금액"),
+            ),
+            note = PublicServantPay.NOTE,
+        ),
         OccupationPreset(Occupation.CUSTOM, WageType.MONTHLY, 0, emptyList()),
     )
 
     fun of(occupation: Occupation): OccupationPreset = all.first { it.occupation == occupation }
+
+    /**
+     * [JOB-01] A first setup for a public servant: no 근로기준법 premiums (공무원 are paid by 공무원수당 등에
+     * 관한 규정), and its 야간·휴일·시간외 수당 as the user's own rules worked out from the 봉급 entered.
+     * Anything else, and every later setup, is left as it is.
+     */
+    fun firstSetup(p: PayProfile): PayProfile =
+        if (!PublicServantPay.isPublic(p.occupation) || p.customRules.isNotEmpty()) p
+        else p.copy(
+            rules = p.rules.copy(overtimePremium = 0.0, nightPremium = 0.0, holidayPremiumWithin8h = 0.0, holidayPremiumOver8h = 0.0),
+            customRules = PublicServantPay.rules(PublicServantPay.standardBase(p.base.entries.maxByOrNull { it.from }?.value ?: 0)),
+            estimatedFields = p.estimatedFields + PublicServantPay.ESTIMATED,
+        )
 
     /** A profile from the wizard's answers. */
     fun profile(

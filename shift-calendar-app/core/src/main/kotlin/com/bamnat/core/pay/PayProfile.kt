@@ -25,6 +25,10 @@ enum class Occupation(val label: String) {
     MANUFACTURING("제조·생산 교대"),
     CARE("요양·돌봄"),
     SECURITY("경비·시설 (24시간 맞교대)"),
+    // [JOB-01][PAYX-01] 공무원 pay follows 공무원수당 등에 관한 규정, not 근로기준법's premiums.
+    PUBLIC("공무원 (교대·현업)"),
+    POLICE("경찰 (지구대·파출소 교대)"),
+    FIRE("소방 (교대)"),
     CUSTOM("직접 설정"),
 }
 

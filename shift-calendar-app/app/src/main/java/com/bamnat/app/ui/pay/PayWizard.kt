@@ -356,7 +356,7 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
                 restDayWork = restDayWork, breakPay = breakPay,
             ),
             estimatedFields = marks,
-        )
+        ).let { if (initial == null) PayPresets.firstSetup(it) else it } // [JOB-01]
     }
 
     /** [raw] with each question answered 모르겠어요 set to what the app assumes and marked 확인 필요. */
