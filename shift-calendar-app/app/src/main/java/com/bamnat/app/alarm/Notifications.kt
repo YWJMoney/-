@@ -39,6 +39,8 @@ object Notifications {
     const val INVEST_CHANNEL_ID = "invest_alarm_v1"
     /** [MON-06] The one notice before a free trial turns paid. */
     const val PRO_CHANNEL_ID = "pro_notice_v1"
+    /** [PROV-03] 자동 백업 that has not worked for days. */
+    const val BACKUP_CHANNEL_ID = "auto_backup_v1"
     /** Before 1.11 every sleep tip made a sound here; a channel's importance cannot be lowered, so it goes. */
     private const val OLD_SLEEP_CHANNEL_ID = "sleep_tips_v1"
 
@@ -56,6 +58,7 @@ object Notifications {
     const val LEAVE_ID = 7201
     const val SHARE_ID = 7202
     const val PRO_ID = 7203
+    const val BACKUP_ID = 7204
 
     fun createChannels(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
@@ -135,7 +138,11 @@ object Notifications {
             description = "1개월 무료 체험이 유료로 바뀌기 7일 전에 계속 쓸지 한 번 여쭤봐요"
             group = GROUP_MONEY
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro))
+        val backup = NotificationChannel(BACKUP_CHANNEL_ID, "자동 백업", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "매일 자동 백업이 ${com.bamnat.app.backup.AutoBackup.FAIL_DAYS}일 넘게 안 되면 알려요"
+            group = GROUP_DAY
+        }
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
     }
 

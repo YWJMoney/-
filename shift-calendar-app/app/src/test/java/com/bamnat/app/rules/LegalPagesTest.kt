@@ -34,7 +34,7 @@ class LegalPagesTest {
         assertTrue(PRIVACY_URL.endsWith("/privacy/"))
     }
 
-    /** [FEAT-07][FEAT-15][PROV-04] 2.6 for 1.20.0: the phone calendar, the feed address and more links, in the app's numbers. */
+    /** [FEAT-07][FEAT-15][PROV-03][PROV-04] 2.6 for 1.20.0: the phone calendar, the feed address, more links and the daily backup, in the app's numbers. */
     @Test fun thePrivacyPolicyCoversThePhoneCalendarAndTheFeed() {
         val policy = File(site, "privacy/index.html")
         assumeTrue(policy.exists())
@@ -50,6 +50,11 @@ class LegalPagesTest {
         assertTrue("구독 주소", text.contains("캘린더 구독 주소") && text.contains(".ics"))
         assertTrue("시간대 이름", text.contains("시간대 이름 하나"))
         assertTrue("링크 수", text.contains("링크를 ${com.bamnat.app.share.ShareLinkKey.MAX}개까지"))
+        // [PROV-03] The daily backup: the password kept nowhere, the key on the phone only, the notice's days.
+        assertTrue(text.contains("매일 자동 백업 (선택, 프로)"))
+        assertTrue(text.contains("암호는 저장하지 않으며"))
+        assertTrue(text.contains("Android 키 저장소"))
+        assertTrue(text.contains("${com.bamnat.app.backup.AutoBackup.FAIL_DAYS}일 넘게 저장하지 못하면"))
     }
 
     @Test fun theTermsCoverSubscriptionTrialAndRefunds() {

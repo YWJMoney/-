@@ -51,6 +51,8 @@ object NoticeLinks {
         INVEST_TRADE,
         /** [MON-06] The 프로 screen, from the trial's notice. */
         PRO,
+        /** [PROV-03] 설정 › 데이터 at 매일 자동 백업, from its notice. */
+        BACKUP,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"

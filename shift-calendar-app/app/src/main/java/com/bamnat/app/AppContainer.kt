@@ -198,6 +198,10 @@ class AppContainer(context: Context) {
     }
     /** [SHR-12] Sends the link again when the calendar changes. */
     val shareSync by lazy { com.bamnat.app.share.ShareSync(this) }
+    /** [PROV-03] Where 자동 백업 keeps its key; tests put an in-memory one here. */
+    var keyBox: com.bamnat.app.backup.KeyBox = com.bamnat.app.backup.KeystoreKeyBox()
+    /** [PROV-03] 매일 자동 백업. */
+    val autoBackup by lazy { com.bamnat.app.backup.AutoBackup(this, { keyBox }) }
     /** [FEAT-07] Writes the chosen calendars to the phone's calendar store. */
     val phoneCalendarSync by lazy { com.bamnat.app.calendar.PhoneCalendarSync(this) }
     /** [SHR-02] Schedules others shared, kept beside the user's own and never backed up. */
@@ -265,6 +269,8 @@ class AppContainer(context: Context) {
         const val WOKE_SUMMARY_MINUTES = 20L
         const val RETRY_FIRST_MILLIS = 2_000L
         const val RETRY_MAX_MILLIS = 60_000L
+        /** [PROV-03] After the app has opened and settled, not while the first screen draws. */
+        const val AUTO_BACKUP_DELAY_MILLIS = 20_000L
         /** [MON-09] Often enough for the admin link's weekly check, rare enough to stay quiet. */
         val PASSES_EVERY: java.time.Duration = java.time.Duration.ofHours(6)
     }
@@ -368,6 +374,14 @@ class AppContainer(context: Context) {
         keep("share") { if (shareApi.enabled) shareSync.follow() }
         // [FEAT-07] The phone's 밤낮 calendars follow the calendars written there.
         keep("phonecal") { phoneCalendarSync.follow() }
+        // [PROV-03] A day's backup owed when the app opens goes now; the job keeps it going while closed.
+        keep("autobackup") {
+            if (autoBackup.on) {
+                com.bamnat.app.backup.AutoBackupJob.schedule(appContext)
+                delay(AUTO_BACKUP_DELAY_MILLIS)
+                autoBackup.runIfDue()
+            }
+        }
         // [MCAL-03] Each of the user's calendars has its own link and so its own notice; [PROV-04] each of its links.
         keep("shareexpiry") {
             calendars.calendars.map { list -> list.map { it.id } }.distinctUntilChanged().collectLatest { ids ->

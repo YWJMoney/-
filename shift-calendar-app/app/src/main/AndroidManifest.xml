@@ -192,6 +192,12 @@
             android:name=".commute.CommuteReceiver"
             android:exported="false" />
 
+        <!-- [PROV-03] 매일 자동 백업: only the system's job scheduler binds it. -->
+        <service
+            android:name=".backup.AutoBackupJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- [SHFT-08] The Wear OS app asks for fresh days when it opens; only Google Play services binds it. -->
         <service
             android:name=".watch.WatchRequestService"

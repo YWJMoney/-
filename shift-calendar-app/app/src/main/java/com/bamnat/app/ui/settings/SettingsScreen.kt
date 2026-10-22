@@ -269,6 +269,62 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** [PROV-03] 매일 자동 백업 as it stands. */
+    val autoBackup: StateFlow<com.bamnat.app.backup.AutoBackup.State> get() = container.autoBackup.state
+
+    /** [PROV-03] The password chosen before the file picker opens, for [startAutoBackup]; never stored. */
+    private var autoBackupPassword: CharArray? = null
+
+    fun prepareAutoBackup(password: CharArray?) {
+        autoBackupPassword?.fill(' ')
+        autoBackupPassword = password
+    }
+
+    /** [PROV-03] Turns 자동 백업 on with the file just made, and makes the first backup there. */
+    fun startAutoBackup(context: Context, uri: Uri) {
+        val password = autoBackupPassword
+        autoBackupPassword = null
+        if (password == null) {
+            // The app was closed while the picker was open and the password went with it.
+            runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
+            _message.value = SettingsMessage("암호가 지워져 켜지 않았어요. 다시 켜 주세요")
+            return
+        }
+        viewModelScope.launch {
+            _message.value = SettingsMessage(when (val r = container.autoBackup.turnOn(uri, password)) {
+                is com.bamnat.app.backup.AutoBackup.Result.Ok -> "자동 백업을 켰어요. 첫 백업을 저장했어요"
+                is com.bamnat.app.backup.AutoBackup.Result.Failed -> if (container.autoBackup.on) "켰지만 첫 백업을 저장하지 못했어요. ${r.why}" else r.why
+                else -> "자동 백업을 켰어요"
+            })
+        }
+    }
+
+    fun moveAutoBackup(uri: Uri) {
+        viewModelScope.launch {
+            _message.value = SettingsMessage(when (val r = container.autoBackup.moveTo(uri)) {
+                is com.bamnat.app.backup.AutoBackup.Result.Ok -> "새 위치에 백업했어요"
+                is com.bamnat.app.backup.AutoBackup.Result.Failed -> r.why
+                else -> "위치를 바꿨어요"
+            })
+        }
+    }
+
+    fun backupNow() {
+        viewModelScope.launch {
+            _message.value = SettingsMessage(when (val r = container.autoBackup.runNow()) {
+                is com.bamnat.app.backup.AutoBackup.Result.Ok -> "백업했어요"
+                is com.bamnat.app.backup.AutoBackup.Result.Failed -> r.why
+                com.bamnat.app.backup.AutoBackup.Result.Locked -> "자동 백업은 프로에서 돼요"
+                com.bamnat.app.backup.AutoBackup.Result.Off -> "자동 백업이 꺼져 있어요"
+            })
+        }
+    }
+
+    fun stopAutoBackup() {
+        container.autoBackup.turnOff()
+        _message.value = SettingsMessage("자동 백업을 껐어요. 저장한 파일은 그대로 있어요")
+    }
+
     /** [FEAT-08] A sealed backup waiting for its password. */
     private val _locked = MutableStateFlow<LockedBackup?>(null)
     val locked: StateFlow<LockedBackup?> = _locked.asStateFlow()

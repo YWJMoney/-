@@ -614,8 +614,14 @@ class BackupManager(
      * [FEAT-08] Wraps a backup with a password: AES-256-GCM, key from PBKDF2 (see [BackupCrypto]).
      * Slow on purpose (about a second), so call it off the main thread.
      */
-    fun seal(json: String, password: CharArray, iterations: Int = BackupCrypto.ITERATIONS): String {
-        val sealed = BackupCrypto.seal(json.toByteArray(), password, iterations)
+    fun seal(json: String, password: CharArray, iterations: Int = BackupCrypto.ITERATIONS): String =
+        write(BackupCrypto.seal(json.toByteArray(), password, iterations))
+
+    /** [PROV-03] The same file from a key kept by 자동 백업; it opens with the password the key came from. */
+    fun sealWithKey(json: String, key: ByteArray, salt: ByteArray, iterations: Int): String =
+        write(BackupCrypto.sealWithKey(json.toByteArray(), key, salt, iterations))
+
+    private fun write(sealed: BackupCrypto.Sealed): String {
         val b64 = Base64.getEncoder()
         return JSONObject()
             .put("app", APP_ID).put("format", SEALED_FORMAT).put("v", 1)
@@ -624,8 +630,14 @@ class BackupManager(
             .toString()
     }
 
-    /** The backup inside a sealed file; throws [BackupException] for a wrong password or a broken file. */
-    fun unseal(text: String, password: CharArray): String {
+    /** [PROV-03] The backup inside a file [sealWithKey] made, to check it was written whole. */
+    fun unsealWithKey(text: String, key: ByteArray): String = try {
+        BackupCrypto.openWithKey(read(text), key).decodeToString()
+    } catch (e: BackupCrypto.WrongPassword) {
+        throw BackupException("백업 파일이 손상됐어요")
+    }
+
+    private fun read(text: String): BackupCrypto.Sealed {
         val o = runCatching { JSONObject(text) }.getOrNull() ?: throw BackupException("백업 파일을 읽을 수 없어요")
         if (o.optInt("v") > 1) throw BackupException("더 새로운 버전에서 만든 백업이에요. 앱을 업데이트해 주세요")
         val sealed = runCatching {
@@ -633,6 +645,12 @@ class BackupManager(
             BackupCrypto.Sealed(b64.decode(o.getString("salt")), b64.decode(o.getString("iv")), o.getInt("iter"), b64.decode(o.getString("data")))
         }.getOrNull() ?: throw BackupException("백업 파일이 손상됐어요")
         if (sealed.iterations !in 1..MAX_ITERATIONS) throw BackupException("백업 파일이 손상됐어요")
+        return sealed
+    }
+
+    /** The backup inside a sealed file; throws [BackupException] for a wrong password or a broken file. */
+    fun unseal(text: String, password: CharArray): String {
+        val sealed = read(text)
         return try {
             BackupCrypto.open(sealed, password).decodeToString()
         } catch (e: BackupCrypto.WrongPassword) {
