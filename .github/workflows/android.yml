@@ -34,6 +34,7 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
       - run: python3 tools/check_tracker.py
+      - run: python3 tools/test_check_checklist.py
       - run: sh ./gradlew -p core test
       - run: sh ./gradlew :app:testDebugUnitTest :app:lintDebug --continue
       # [REL-09] The watch app builds and passes lint too.
