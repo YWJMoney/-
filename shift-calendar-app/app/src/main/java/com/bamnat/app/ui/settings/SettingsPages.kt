@@ -7,6 +7,9 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.AlertDialog
@@ -357,8 +360,9 @@ private fun PayPage(vm: SettingsViewModel, settings: AppSettings, files: Setting
     SectionCard(title = null) {
         NavRow("급여 계산", if (profile != null) "기본급·수당·회사 규칙·연차·급여일" else "기본급만 넣으면 이번 달 예상 급여가 보여요", onOpenPay)
         // [DAILY-16] 결정 D36: compared on the phone only; on by default, off here.
-        SwitchRow("광장 시세와 내 단가 견주기", if (settings.rateHint) "광장에서 본 지역 시세와 내 일당·시급이 10% 넘게 다르면 급여 화면에 한 줄 보여요. 내 급여는 어디로도 보내지 않아요"
-            else "급여 화면에 시세 비교 줄을 보이지 않아요", settings.rateHint) { on -> vm.update { it.copy(rateHint = on) } }
+        SwitchRow("광장 시세와 내 단가 견주기", if (settings.rateHint) "광장에서 본 내 직군·내 지역 시세와 내 일당·시급·월급이 10% 넘게 다르면 급여 화면에 카드로 보여요. 내 급여는 어디로도 보내지 않아요"
+            else "급여 화면에 시세 비교 카드를 보이지 않아요", settings.rateHint) { on -> vm.update { it.copy(rateHint = on) } }
+        if (settings.rateHint) RateRegionRow()
     }
     // [COMM-01][COMM-02]
     if (company != null) SectionCard(title = "같은 회사 사람들과", content = company)
@@ -722,4 +726,39 @@ private fun HealthSleepRow(vm: SettingsViewModel, on: Boolean) {
         }
     }
     message?.let { Note(it) }
+}
+
+/**
+ * [DAILY-16] The 시·도 the 광장 시세 card compares in. Without it (and without a rate the user shared), no card
+ * shows: a 시세 of another region says nothing about the user's pay.
+ */
+@Composable
+private fun RateRegionRow() {
+    val store = LocalContext.current.appContainer.rateHints
+    val own by store.own.collectAsStateWithLifecycle()
+    var picking by remember { mutableStateOf(false) }
+    val region = own.picked.ifBlank { own.region }
+    NavRow("견줄 내 지역", if (region.isBlank()) "고르지 않았어요. 고르면 같은 지역 시세와만 견줘요"
+        else com.bamnat.app.company.Plaza.region(region) + (if (own.picked.isBlank()) " (내가 나눈 시세의 지역)" else "")) { picking = true }
+    if (picking) {
+        AlertDialog(
+            onDismissRequest = { picking = false },
+            title = { Text("견줄 내 지역") },
+            text = {
+                androidx.compose.foundation.lazy.LazyColumn {
+                    items(com.bamnat.app.company.Plaza.REGIONS.entries.toList(), key = { it.key }) { (code, name) ->
+                        androidx.compose.foundation.layout.Row(
+                            Modifier.fillMaxWidth().clickable { store.pick(code); picking = false }.padding(vertical = 10.dp),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.RadioButton(selected = region == code, onClick = null)
+                            Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 12.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { picking = false }) { Text("닫기") } },
+            dismissButton = if (own.picked.isNotBlank()) ({ TextButton(onClick = { store.pick(""); picking = false }) { Text("고르지 않기") } }) else null,
+        )
+    }
 }

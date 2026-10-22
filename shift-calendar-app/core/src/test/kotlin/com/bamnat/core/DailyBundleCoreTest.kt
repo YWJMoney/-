@@ -76,20 +76,46 @@ class DailyBundleCoreTest {
     @Test
     fun rateHintShowsOnlyAWideGapOfTheSameKindOfPay() {
         val groups = listOf(
-            RateHint.Group("경기", "형틀목수", "day", 2026, 5, 200_000, 250_000, 280_000),
-            RateHint.Group("경기", "형틀목수", "day", 2025, 9, 190_000, 240_000, 270_000),
-            RateHint.Group("경기", "편의점", "hour", 2026, 2, 10_030, 10_500, 11_000),
+            RateHint.Group("construction", "31", "형틀목수", "day", 2026, 5, 200_000, 250_000, 280_000),
+            RateHint.Group("construction", "31", "형틀목수", "day", 2025, 9, 190_000, 240_000, 270_000),
+            RateHint.Group("hourly", "31", "편의점", "hour", 2026, 2, 10_030, 10_500, 11_000),
+            RateHint.Group("nurse", "11", "병동", "month", 2026, 4, 3_000_000, 3_500_000, 4_000_000),
         )
-        val h = RateHint.of(groups, WageType.DAILY, 200_000)!!
+        val carpenter = RateHint.Mine("construction", "31", "형틀목수")
+        val h = RateHint.of(groups, WageType.DAILY, 200_000, carpenter)!!
         assertEquals(2026, h.group.year)
         assertEquals(-20, h.percent)
         assertTrue(h.below)
-        assertTrue(h.text("일당").contains("20% 낮아요"))
-        // A 5% gap, too few people, a monthly wage: nothing to say.
-        assertNull(RateHint.of(groups, WageType.DAILY, 262_000))
-        assertNull(RateHint.of(groups, WageType.HOURLY, 8_000))
-        assertNull(RateHint.of(groups, WageType.MONTHLY, 3_000_000))
-        assertNull(RateHint.of(emptyList(), WageType.DAILY, 200_000))
+        assertTrue(h.text("일당", "경기").startsWith("경기 형틀목수 광장 시세"))
+        assertTrue(h.text("일당", "경기").contains("20% 낮아요"))
+        // A 5% gap, too few people, no user to compare: nothing to say.
+        assertNull(RateHint.of(groups, WageType.DAILY, 262_000, carpenter))
+        assertNull(RateHint.of(groups, WageType.HOURLY, 8_000, RateHint.Mine("hourly", "31")))
+        assertNull(RateHint.of(groups, WageType.DAILY, 200_000, null))
+        assertNull(RateHint.of(emptyList(), WageType.DAILY, 200_000, carpenter))
+        // 월급 compares too, with the month groups of the same job and region.
+        assertEquals(-20, RateHint.of(groups, WageType.MONTHLY, 2_800_000, RateHint.Mine("nurse", "11"))!!.percent)
+    }
+
+    @Test
+    fun rateHintNeverComparesAnotherJobRegionOrUnit() {
+        val groups = listOf(
+            RateHint.Group("construction", "31", "형틀목수", "day", 2026, 5, 230_000, 250_000, 280_000),
+            RateHint.Group("construction", "31", "철근공", "day", 2026, 4, 220_000, 240_000, 260_000),
+            RateHint.Group("nurse", "11", "병동", "day", 2026, 6, 180_000, 200_000, 220_000),
+        )
+        // A 병원 간호사 on 일당 with only 경기 형틀목수 on the phone: nothing (the 1.22 screenshot 496 case).
+        val nurse = RateHint.Mine(RateHint.jobOf(com.bamnat.core.pay.Occupation.NURSE)!!, "31")
+        assertNull(RateHint.of(groups.take(2), WageType.DAILY, 150_000, nurse))
+        // The right job in another region, or the right group in another unit.
+        assertNull(RateHint.of(groups, WageType.DAILY, 150_000, RateHint.Mine("nurse", "31")))
+        assertNull(RateHint.of(groups, WageType.HOURLY, 15_000, RateHint.Mine("nurse", "11")))
+        // Same job and region but two trades and none of the user's own: left alone; with the trade, compared.
+        assertNull(RateHint.of(groups, WageType.DAILY, 150_000, RateHint.Mine("construction", "31")))
+        assertEquals("철근공", RateHint.of(groups, WageType.DAILY, 150_000, RateHint.Mine("construction", "31", "철근공"))!!.group.trade)
+        // 직접 설정 has no job of its own; the user's own shared rate has to say it.
+        assertNull(RateHint.jobOf(com.bamnat.core.pay.Occupation.CUSTOM))
+        assertNull(RateHint.of(groups, WageType.DAILY, 150_000, RateHint.Mine("", "31")))
     }
 
     @Test

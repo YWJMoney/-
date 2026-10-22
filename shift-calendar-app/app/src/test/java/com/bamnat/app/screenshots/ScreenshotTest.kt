@@ -93,6 +93,9 @@ import com.bamnat.core.work.WorkStyle
 class ScreenshotTest {
     @get:Rule val compose = createEmptyComposeRule()
 
+    /** [DAILY-09] Stands in for the fold's hinge sensor; nothing is published unless a test asks. */
+    @get:Rule val fold = androidx.window.testing.layout.WindowLayoutInfoPublisherRule()
+
     private val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()
     private val today = LocalDate.now()
     /** The day most day screenshots open: 잔업 2시간 and a memo with an amount. */
@@ -256,6 +259,16 @@ class ScreenshotTest {
      * change can no longer land a tap on something else; only the tab bar and drags use points.
      */
     inner class Screen(private val scenario: ActivityScenario<MainActivity>) {
+        /** [DAILY-09] The fold half open with its hinge across the middle (Flex, 탁상 자세). */
+        fun halfOpen() {
+            scenario.onActivity { activity ->
+                fold.overrideWindowLayoutInfo(androidx.window.testing.layout.TestWindowLayoutInfo(listOf(
+                    androidx.window.testing.layout.FoldingFeature(activity, state = androidx.window.layout.FoldingFeature.State.HALF_OPENED,
+                        orientation = androidx.window.layout.FoldingFeature.Orientation.HORIZONTAL))))
+            }
+            settle()
+        }
+
         private fun topWindow(activity: MainActivity): View = shownDialogs().lastOrNull()?.window?.decorView ?: activity.window.decorView
 
         private fun rootOf(v: View): ViewRootForTest? {
@@ -2785,15 +2798,16 @@ class ScreenshotTest {
 
     /** [DAILY-16] The pay screen's line next to 광장 시세, and its switch in 설정 › 급여. */
     @Test fun e496FoldedPayRateHint() = shoot("496_folded_pay_rate_hint", FOLDED, run {
-        app.container.rateHints.keep("31", listOf(com.bamnat.app.company.RateGroup("construction", "31", "형틀목수", "day", 2026, 5, 230_000, 250_000, 280_000)))
+        // Only the user's own job and region count: the 경기 형틀목수 group is on the phone too and is left alone.
+        app.container.rateHints.keep("31", listOf(
+            com.bamnat.app.company.RateGroup("construction", "31", "형틀목수", "day", 2026, 5, 230_000, 250_000, 280_000),
+            com.bamnat.app.company.RateGroup("nurse", "31", "병동 간호사", "day", 2026, 4, 210_000, 240_000, 260_000)))
+        app.container.rateHints.pick("31")
         payScreen(Tier.PRO, withProfile = true, adjust = { p ->
-            p.copy(wageType = com.bamnat.core.pay.WageType.DAILY,
+            p.copy(occupation = com.bamnat.core.pay.Occupation.NURSE, wageType = com.bamnat.core.pay.WageType.DAILY,
                 base = com.bamnat.core.pay.ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(today.withDayOfYear(1), 200_000))))
         }) { vm ->
-            androidx.compose.foundation.layout.Column {
-                com.bamnat.app.ui.company.RateHintLine(vm.profile.collectAsState().value) {}
-                PayScreen(vm, onBack = {})
-            }
+            PayScreen(vm, onBack = {}, underTotal = { com.bamnat.app.ui.company.RateHintLine(vm.profile.collectAsState().value) {} })
         }
     })
     @Test fun e497FoldedSettingsPayRateHint() = shoot("497_folded_settings_pay_rate_hint", FOLDED) { settingsPage("급여와 연차") }
@@ -2860,6 +2874,17 @@ class ScreenshotTest {
             val out = File("build/screenshots/$name.png").apply { parentFile!!.mkdirs() }
             out.outputStream().use { st -> bmp.compress(Bitmap.CompressFormat.PNG, 100, st) }
         }
+    }
+
+    // ==== 1.22 묶음 E 후속 ====
+    /** [DAILY-09] Half open (Flex): the month above the hinge, the day below; a Flip and a Fold on its side. */
+    @Test fun e506FlipTabletopCalendar() = shoot("506_flip_tabletop_calendar", "w373dp-h839dp-port-420dpi") { halfOpen() }
+    @Test fun e507UnfoldedTabletopCalendar() = shoot("507_unfolded_tabletop_calendar", "w823dp-h707dp-land-420dpi") { halfOpen() }
+
+    /** [DAILY-15] Unfolded 메모: the list on the left 40%, the memo opened from it on the right 60%. */
+    @Test fun e508UnfoldedMemoPanes() = shoot("508_unfolded_memo_list_detail", UNFOLDED) {
+        tab(2, wide = true)
+        tapText("인수인계", exact = true)
     }
 
     // ==== 1.22 묶음 G ====

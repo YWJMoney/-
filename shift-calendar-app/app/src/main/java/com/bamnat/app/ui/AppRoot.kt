@@ -518,56 +518,60 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 
     val navigateTop: (TopLevel) -> Unit = { dest -> nav.navigateTopLevel(dest.route) }
 
-    Row(Modifier.fillMaxSize()) {
-        if (wide && showNav) {
-            NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
-                Spacer(Modifier.height(12.dp))
-                for (dest in TopLevel.entries) {
-                    val selected = dest == topLevel
-                    NavigationRailItem(
-                        selected = selected,
-                        onClick = { navigateTop(dest) },
-                        icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
-                        label = { TabLabel(dest.labelFor(activeStyle)) },
-                    )
+    // [DAILY-09] Half open like a laptop (Flex): the calendar splits at the hinge.
+    val tabletop = rememberTabletop()
+    androidx.compose.runtime.CompositionLocalProvider(LocalTabletop provides tabletop) {
+        Row(Modifier.fillMaxSize()) {
+            if (wide && showNav) {
+                NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+                    Spacer(Modifier.height(12.dp))
+                    for (dest in TopLevel.entries) {
+                        val selected = dest == topLevel
+                        NavigationRailItem(
+                            selected = selected,
+                            onClick = { navigateTop(dest) },
+                            icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
+                            label = { TabLabel(dest.labelFor(activeStyle)) },
+                        )
+                    }
                 }
             }
-        }
-        Scaffold(
-            modifier = Modifier.weight(1f),
-            snackbarHost = { SnackbarHost(snackbar) },
-            // Inner screens with their own top bar handle insets themselves.
-            contentWindowInsets = if (showNav) ScaffoldDefaults.contentWindowInsets else WindowInsets(0, 0, 0, 0),
-            bottomBar = {
-                if (!wide && showNav) {
-                    Column {
-                        AdSlot(topLevel.adPlace())
-                        NavigationBar {
-                            for (dest in TopLevel.entries) {
-                                val selected = dest == topLevel
-                                NavigationBarItem(
-                                    selected = selected,
-                                    onClick = { navigateTop(dest) },
-                                    icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
-                                    label = { TabLabel(dest.labelFor(activeStyle)) },
-                                )
+            Scaffold(
+                modifier = Modifier.weight(1f),
+                snackbarHost = { SnackbarHost(snackbar) },
+                // Inner screens with their own top bar handle insets themselves.
+                contentWindowInsets = if (showNav) ScaffoldDefaults.contentWindowInsets else WindowInsets(0, 0, 0, 0),
+                bottomBar = {
+                    if (!wide && showNav) {
+                        Column {
+                            AdSlot(topLevel.adPlace())
+                            NavigationBar {
+                                for (dest in TopLevel.entries) {
+                                    val selected = dest == topLevel
+                                    NavigationBarItem(
+                                        selected = selected,
+                                        onClick = { navigateTop(dest) },
+                                        icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
+                                        label = { TabLabel(dest.labelFor(activeStyle)) },
+                                    )
+                                }
                             }
                         }
                     }
+                },
+            ) { padding ->
+                Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+                    RingingBanner()
+                    AppNavHost(
+                        nav = nav,
+                        container = container,
+                        wide = wide,
+                        snackbar = snackbar,
+                        styleExtras = styleExtras,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (wide && showNav) AdSlot(topLevel.adPlace())
                 }
-            },
-        ) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-                RingingBanner()
-                AppNavHost(
-                    nav = nav,
-                    container = container,
-                    wide = wide,
-                    snackbar = snackbar,
-                    styleExtras = styleExtras,
-                    modifier = Modifier.weight(1f),
-                )
-                if (wide && showNav) AdSlot(topLevel.adPlace())
             }
         }
     }
@@ -801,12 +805,28 @@ private fun AppNavHost(
         }
         composable(TopLevel.MEMOS.route) {
             val vm = appViewModel { MemoListViewModel(it) }
-            MemoListScreen(
-                vm = vm,
-                onOpen = { id -> nav.navigate(Routes.memo(id)) },
-                onNew = { checklist, date -> nav.navigate(Routes.memo(0, date, checklist, notebook = true)) },
-                onOpenTrash = { nav.navigate(Routes.MEMO_TRASH) { launchSingleTop = true } },
-            )
+            // [DAILY-15] Unfolded, a memo opens in the right pane (list 40%, memo 60%) instead of a screen of its own.
+            var pane by rememberSaveable(stateSaver = com.bamnat.app.ui.memo.MemoPane.Saver) { mutableStateOf<com.bamnat.app.ui.memo.MemoPane?>(null) }
+            fun next(id: Long, checklist: Boolean = false, date: LocalDate? = null) =
+                com.bamnat.app.ui.memo.MemoPane(id, checklist, date, (pane?.n ?: 0) + 1)
+            val list = @Composable {
+                MemoListScreen(
+                    vm = vm,
+                    onOpen = { id -> if (wide) pane = next(id) else nav.navigate(Routes.memo(id)) },
+                    onNew = { checklist, date -> if (wide) pane = next(0, checklist, date) else nav.navigate(Routes.memo(0, date, checklist, notebook = true)) },
+                    onOpenTrash = { nav.navigate(Routes.MEMO_TRASH) { launchSingleTop = true } },
+                )
+            }
+            if (wide) com.bamnat.app.ui.memo.MemoPanes(pane, onOpenChange = { pane = it }, onNew = { pane = next(0) }) { list() }
+            else {
+                // Folded again with a memo open: it carries on full screen (a new one not yet saved is in the list).
+                LaunchedEffect(Unit) {
+                    val p = pane ?: return@LaunchedEffect
+                    pane = null
+                    if (p.id != 0L) nav.navigate(Routes.memo(p.id))
+                }
+                list()
+            }
         }
         composable(Routes.MEMO_TRASH) {
             val vm = appViewModel { MemoTrashViewModel(it) }
@@ -886,9 +906,9 @@ private fun AppNavHost(
                 top = {
                     CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                         onFix = { nav.fixCompanySetup(it) })
-                    // [DAILY-16] 광장 시세 next to the user's own 일당·시급, compared on the phone.
-                    com.bamnat.app.ui.company.RateHintLine(profile) { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } }
                 },
+                // [DAILY-16] 광장 시세 of the user's own job and region next to their pay, compared on the phone.
+                underTotal = { com.bamnat.app.ui.company.RateHintLine(profile) { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } } },
                 // [ADMIN-02] 계산이 이상해요 is a question in the app; a build without the company server shares it.
                 onReport = if (container.inquiryApi.enabled) { check ->
                     container.pendingPayCheck = check

@@ -125,6 +125,8 @@ fun PayScreen(
     onOpenExtraKinds: () -> Unit = {},
     /** [COMM-02][COMM-03] Cards above the result: sharing a hand-made setup, 맞았어요·달라요. */
     top: @Composable () -> Unit = {},
+    /** [DAILY-16] A card right under the month's total (광장 시세와 견주기). */
+    underTotal: @Composable () -> Unit = {},
     /** [ADMIN-02] 계산이 이상해요 opens 문의하기 with this month's pay check; null sends it by mail or chat app. */
     onReport: ((String) -> Unit)? = null,
     /** [PAYS-09] 회사 설정 보내기, for the invitation after a match or an item of the company's own; null leaves it out. */
@@ -189,7 +191,7 @@ fun PayScreen(
                     CompanyRulesEditor(vm, profile!!, snap, month, onClose = { editingRules = false }, onOpenKinds = onOpenExtraKinds)
                 }
                 else -> PayResult(vm, profile!!, snap, gate, onEditSetup = { editingSetup = true }, onEditRules = { editingRules = true }, top = top,
-                    onReport = onReport, onShareWay = onShareWay)
+                    underTotal = underTotal, onReport = onReport, onShareWay = onShareWay)
             }
         }
     }
@@ -205,6 +207,7 @@ private fun PayResult(
     onEditSetup: () -> Unit,
     onEditRules: () -> Unit,
     top: @Composable () -> Unit = {},
+    underTotal: @Composable () -> Unit = {},
     onReport: ((String) -> Unit)? = null,
     onShareWay: (() -> Unit)? = null,
 ) {
@@ -273,6 +276,8 @@ private fun PayResult(
 
         TotalCard(shown, range, unlocked, closed = closedSnap != null, onChecks = { checking = true },
             onEstimate = { estimate = Estimates.forMonth(shown, profile) })
+
+        underTotal()
 
         // [HRLY-04..HRLY-08] 예상 실수령 and the settings only a part-timer needs.
         if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) HourlyPayCard(vm, profile, shown.total, unlocked, snapshot, month)
