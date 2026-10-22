@@ -138,7 +138,7 @@ object FeatureSwitches {
                 "money.auto" -> if (on) { FeatureLinks.open(feature); return false } else CaptureService.setOn(c.appContext, false)
                 "shift.restRules" -> c.settingsRepository.update { it.copy(restCheck = on) }
                 // A yes to sending is given where what goes is shown.
-                "privacy.usageStats" -> if (on) { FeatureLinks.open(feature); return false } else c.settingsRepository.update { it.copy(shareUsageStats = false) }
+                "privacy.usageStats" -> if (on) { FeatureLinks.open(feature); return false } else c.setUsageStats(false)
                 "plaza.news" -> c.settingsRepository.update { it.copy(plazaNews = on) }
                 else -> { FeatureLinks.open(feature); return false }
             }
