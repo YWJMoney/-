@@ -45,6 +45,8 @@ fun companyProblem(code: String, field: String? = null): String = when (code) {
         else -> "근무나 수당 이름에 금액·연락처처럼 보이는 글자가 있어요. 이름을 바꾼 뒤 보내 주세요"
     }
     "company" -> "회사 이름을 두 글자 이상, 40자 안으로 적어 주세요"
+    "job" -> "어떤 일인지 골라 주세요"
+    "region" -> "지역을 다시 골라 주세요"
     "dept" -> "부서는 20자 안으로 적어 주세요"
     "note" -> if (field == "note") "한마디를 적어 주세요. 너무 길면 줄여 주세요" else "한마디가 너무 길어요"
     "setup", "setup_version", "version", "v" -> "이 설정은 보낼 수 없어요. 앱을 최신 버전으로 업데이트해 주세요"

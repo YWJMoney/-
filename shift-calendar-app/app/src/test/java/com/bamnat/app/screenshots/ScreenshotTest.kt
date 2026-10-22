@@ -1420,6 +1420,42 @@ class ScreenshotTest {
         vm.talk.show("c-v1", "s-v1", "가나다화학 · 품질팀")
         settle()
     }
+    // [PLZ-01][PLZ-05][PLZ-09] 맞아요·달라요 on each post, answers under the post, and a proposal in fields.
+    @Test fun foldedPlazaTalkProposal() = shoot("355_folded_plaza_talk_proposal", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}, onRates = {}) }
+        vm.talk.show("c-v1", "s-v1", "가나다화학 · 품질팀")
+        settle()
+        tapText("고치자는 제안", exact = true)
+    }
+    // [PLZ-12][PLZ-05] The job plazas, 시·도 and order as chips on the board.
+    @Test fun phonePlazaBoard() = shoot("356_phone_plaza_board", PHONE) {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}, onRates = {}) }
+    }
+    // [PLZ-14][PLZ-15] 임금표: 광장 시세 and the rates people sent.
+    @Test fun foldedPlazaRates() = shoot("357_folded_plaza_rates", FOLDED) {
+        val vm = com.bamnat.app.ui.company.RatesViewModel(companyOn())
+        content { com.bamnat.app.ui.company.RatesScreen(vm, onBack = {}) }
+    }
+    @Test fun phonePlazaRatesHugeText() = shoot("358_phone_plaza_rates_huge_text", PHONE, fontScale = 2f) {
+        val vm = com.bamnat.app.ui.company.RatesViewModel(companyOn())
+        content { com.bamnat.app.ui.company.RatesScreen(vm, onBack = {}) }
+    }
+    // [PLZ-08] 내 활동 with the plaza name.
+    @Test fun foldedPlazaActivity() = shoot("359_folded_plaza_activity", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}, onRates = {}) }
+        vm.activity.show()
+        settle()
+    }
+    // [PLZ-04] How a rule grew, version by version.
+    @Test fun foldedCompanyHistory() = shoot("360_folded_company_history", FOLDED) {
+        val vm = com.bamnat.app.ui.company.CompanyDetailViewModel(companyOn(), "c1")
+        content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, ready = true) }
+        settle()
+        tapText("바뀐 기록", exact = true)
+    }
     @Test fun foldedCompanyVoteAnySetup() = shoot("194_folded_company_vote_any", FOLDED) {
         val vm = com.bamnat.app.ui.company.CompanyDetailViewModel(companyOn(), "c1")
         content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, ready = true) }
@@ -2738,7 +2774,7 @@ private class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
         "c-$id", company, "s-$id", dept, adopted, points, persons, bad, 3, trust, agree, posts, if (adopted) 1 else null,
         now.minus(java.time.Duration.ofHours(hours)), gist, cycle, true)
 
-    override suspend fun board(adopted: Boolean, from: Int, q: String) = com.bamnat.app.company.Board(
+    override suspend fun board(adopted: Boolean, from: Int, q: String, job: String, region: String, sort: String) = com.bamnat.app.company.Board(
         (if (adopted) listOf(
             item("a1", "(주)예시정밀", "생산팀", true, 5, 3, 1, 75, 75, 4, 30, "주간 08:00~20:00 · 야간 20:00~08:00 · 휴무(쉬는 날)", "순서 5일"),
             item("a2", "사아자물류", "", true, 4, 3, 0, 100, 100, 0, 80, "주간 09:00~18:00 · 휴무(쉬는 날)", "순서 7일"),
@@ -2754,6 +2790,48 @@ private class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
         com.bamnat.app.company.TalkPost("p1", 1, "sender", true, "저희 품질팀은 이렇게 돌아요. 10월 명세서랑 맞춰 봤어요.", now.minus(java.time.Duration.ofHours(20)), false),
         com.bamnat.app.company.TalkPost("p2", 2, "ok", false, "저도 같은 팀인데 맞아요. 격주 토요일은 특근으로 넣고 있어요.", now.minus(java.time.Duration.ofHours(6)), false),
         com.bamnat.app.company.TalkPost("p3", 3, "bad", false, "올해부터 야간 시작이 18:30으로 바뀌었어요. 확인해 주세요!", now.minus(java.time.Duration.ofHours(2)), false),
-        com.bamnat.app.company.TalkPost("p4", 4, null, false, "18:30은 2공장 이야기 같아요. 본사는 그대로예요.", now.minus(java.time.Duration.ofMinutes(12)), true),
-    ))
+        com.bamnat.app.company.TalkPost("p4", 4, null, false, "18:30은 2공장 이야기 같아요. 본사는 그대로예요.", now.minus(java.time.Duration.ofMinutes(12)), true,
+            parent = "p3", agree = 2),
+        // [PLZ-09] A proposal written in fields, with its votes and where its setup stands.
+        com.bamnat.app.company.TalkPost("p5", 5, null, true, "11월부터 주간이 한 시간 줄었어요. 맞으면 맞아요 눌러 주세요.", now.minus(java.time.Duration.ofMinutes(5)), false,
+            nick = "야간요정", kind = "proposal", agree = 2, disagree = 0, trust = 67,
+            change = listOf(com.bamnat.app.company.ChangeLine("shift", "주간 08:30~17:30", "주간 08:30~16:30", "11월 공지로 바뀌었어요")),
+            proposal = com.bamnat.app.company.ProposalState("s-new", false, 2, 3)),
+    ).map { if (it.id == "p2") it.copy(nick = "품질지킴이", agree = 3, trust = 100, myVote = true) else it })
+
+    // [PLZ-01]~[PLZ-15] The plaza that grows by itself.
+    override suspend fun postVote(device: String, id: String, ok: Boolean?) = com.bamnat.app.company.PostVote(3, 0, 100, ok)
+    override suspend fun plazas() = listOf(
+        com.bamnat.app.company.PlazaJob("factory", "제조·생산", 12, 5, 0),
+        com.bamnat.app.company.PlazaJob("nurse", "간호사·병원", 4, 3, 2),
+        com.bamnat.app.company.PlazaJob("construction", "건설 일용직·기능공", 1, 2, 9),
+    )
+    override suspend fun history(company: String, setup: String) = listOf(
+        com.bamnat.app.company.RuleVersion(2, "s1", "amend", now.minus(java.time.Duration.ofDays(3)), "active", 3, "p5",
+            listOf("근무: 주간 08:00~19:00 휴게 60분"), listOf("근무: 주간 08:00~20:00 휴게 60분")),
+        com.bamnat.app.company.RuleVersion(1, "s0", "auto", now.minus(java.time.Duration.ofDays(60)), "superseded", 3, null, emptyList(), emptyList()),
+    )
+    private fun rate(id: String, trade: String, unit: String, amount: Long, status: String, agree: Int, disagree: Int, mine: Boolean = false,
+        myVote: Boolean? = null, nick: String? = null, note: String = "", hours: Long = 3) = com.bamnat.app.company.Rate(
+        id, "construction", "31", trade, unit, 2026, amount, note, status, agree, disagree, if (agree + disagree == 0) 0 else 100 * agree / maxOf(3, agree + disagree),
+        mine, myVote, nick, now.minus(java.time.Duration.ofHours(hours)))
+    override suspend fun rates(device: String, job: String, region: String, unit: String, trade: String) = com.bamnat.app.company.RateBoard(
+        listOf(
+            com.bamnat.app.company.RateGroup("construction", "31", "형틀목수", "day", 2026, 5, 230_000, 250_000, 280_000),
+            com.bamnat.app.company.RateGroup("construction", "31", "보통인부", "day", 2026, 3, 150_000, 160_000, 170_000),
+        ),
+        listOf(
+            rate("r1", "철근공", "day", 260_000, "pending", 2, 0, nick = "현장반장", note = "식대 별도, 숙련 5년", hours = 1),
+            rate("r2", "형틀목수", "day", 250_000, "adopted", 4, 1, myVote = true, hours = 20),
+            rate("r3", "보통인부", "day", 160_000, "pending", 1, 0, mine = true, hours = 30),
+        ),
+    )
+    override suspend fun activity(device: String) = com.bamnat.app.company.Activity(
+        "야간요정",
+        listOf(com.bamnat.app.company.ActivityReport("r1", "c1", "(주)예시정밀", "생산팀", "s1", "adopted", 2, 3, 0, 14, now.minus(java.time.Duration.ofDays(20))),
+            com.bamnat.app.company.ActivityReport("r2", "c2", "라마바전자", "생산1팀", "s2", "pending", null, 1, 1, 0, now.minus(java.time.Duration.ofDays(3)))),
+        listOf(com.bamnat.app.company.ActivityProposal("p5", "c-v1", "가나다화학", "s-v1", "11월부터 주간이 한 시간 줄었어요.", 2, 0, 67, now)),
+        emptyList(),
+        listOf(com.bamnat.app.company.ActivityReward(3, "paid", "rule", now.minus(java.time.Duration.ofDays(3)))),
+    )
 }

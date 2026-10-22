@@ -213,6 +213,7 @@ private object Routes {
     const val COMPANY_SENT = "company_sent"
     // [COMM-07] 회사 규칙 광장: every company's rule sets, to vote on, talk over and use.
     const val COMPANY_BOARD = "company_board"
+    const val PLAZA_RATES = "plaza_rates"
     /** [ADMIN-02] 설정 > 문의하기. */
     const val INQUIRY = "inquiry"
 
@@ -957,7 +958,12 @@ private fun AppNavHost(
                 onBack = { nav.popFrom(Routes.COMPANY_BOARD) },
                 onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) },
                 onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
+                onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
             )
+        }
+        composable(Routes.PLAZA_RATES) {
+            val vm = appViewModel { com.bamnat.app.ui.company.RatesViewModel(it) }
+            com.bamnat.app.ui.company.RatesScreen(vm = vm, onBack = { nav.popFrom(Routes.PLAZA_RATES) })
         }
         composable(Routes.COMPANY_REPORT) {
             val vm = appViewModel { CompanyReportViewModel(it) }

@@ -267,6 +267,28 @@ class CompanyShare(
 
     data class Applied(val addedTypes: Int, val cycleDays: Int?, val rules: Boolean, val pendingPay: Boolean)
 
+    /**
+     * [PLZ-10] 내 월급으로 시험: the user's own pay setup with [text]'s rules in place of the company part,
+     * nothing saved, so the same month can be worked out both ways on the phone (결정 D36). Shift types
+     * are matched by name to the user's own; kinds of extra work the user does not have keep their ids.
+     * Null when the file has no pay rules or the user has no pay setup to try them on.
+     */
+    suspend fun trial(text: String): PayProfile? {
+        val root = parse(text)
+        check(root)
+        val pay = root.optJSONObject("pay") ?: return null
+        val profile = payStore.profile.value ?: return null
+        val ids = schedule.snapshot.first().shiftTypes.associate { it.name to it.id }
+        val mine = settings.current.extraKinds
+        val kindIds = root.optString("extraKinds").takeIf { it.isNotEmpty() }?.let { encoded ->
+            ExtraKinds.decode(encoded).kinds.mapNotNull { k ->
+                val id = if (k.isBuiltIn) k.id else mine.kinds.firstOrNull { !it.isBuiltIn && it.name == k.name }?.id
+                id?.let { k.id to it }
+            }.toMap()
+        }.orEmpty()
+        return merge(profile, JSONObject(pay.toString()), ids, kindIds)
+    }
+
     /** [COMM-01] One amount a shared setup leaves to each person: an allowance or a fixed extra-work rule. */
     data class AmountNeed(val key: String, val label: String, val hint: String)
 

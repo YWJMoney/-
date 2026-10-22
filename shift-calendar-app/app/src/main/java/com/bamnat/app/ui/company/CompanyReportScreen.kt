@@ -88,6 +88,9 @@ fun CompanyReportScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onDone: 
     val payslipMonth = vm.payslipMonth
     var verified by rememberSaveable { mutableStateOf(payslipMonth != null) }
     var note by rememberSaveable { mutableStateOf("") }
+    var job by rememberSaveable { mutableStateOf("") }
+    var region by rememberSaveable { mutableStateOf("") }
+    var topic by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -119,10 +122,12 @@ fun CompanyReportScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onDone: 
                             else "내 근무표와 급여 계산 방식을 금액 없이 보내요. 같은 회사 분들이 확인하면 회사 찾기에 올라가요.",
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        OutlinedTextField(
+                        // [PLZ-12][PLZ-13] Which plaza it goes to, and where; a hospital is a place like a company.
+                        PlazaPicker(job, region, topic, onJob = { job = it }, onRegion = { region = it }, onTopic = { topic = it })
+                        if (!topic) OutlinedTextField(
                             value = company, onValueChange = { company = it.take(40) },
-                            label = { Text("회사 이름") }, singleLine = true,
-                            supportingText = { Text("띄어쓰기나 (주)는 달라도 같은 회사로 찾아요") },
+                            label = { Text(if (job == "nurse") "병원 이름" else "회사 이름") }, singleLine = true,
+                            supportingText = { Text("띄어쓰기나 (주)는 달라도 같은 곳으로 찾아요") },
                             modifier = Modifier.fillMaxWidth(),
                         )
                         OutlinedTextField(
@@ -162,8 +167,8 @@ fun CompanyReportScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onDone: 
                             }
                         }
                         Button(
-                            onClick = { vm.send(company, dept, verified, note) },
-                            enabled = s != CompanyReportViewModel.Sending.Busy && company.trim().length >= 2,
+                            onClick = { vm.send(company, dept, verified, note, job, region, topic) },
+                            enabled = s != CompanyReportViewModel.Sending.Busy && (if (topic) job.isNotEmpty() else company.trim().length >= 2),
                             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                         ) {
                             if (s == CompanyReportViewModel.Sending.Busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -392,6 +397,49 @@ private fun SentCard(r: SentReport, status: ReportStatus?, looked: Boolean, onTa
                 TextButton(onClick = onTakeBack, modifier = Modifier.align(Alignment.End)) { Text("거두기") }
             } else if (status == null && looked) {
                 TextButton(onClick = onDrop, modifier = Modifier.align(Alignment.End)) { Text("목록에서 빼기") }
+            }
+        }
+    }
+}
+
+/**
+ * [PLZ-12][PLZ-13] 어떤 일인가요: the job plaza, the 시·도 and whether the rule is for a whole job (공무원
+ * 수당, 일용직 노임처럼 한 회사가 아닌 것). Optional: left empty it goes to 모든 광장 as before.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun PlazaPicker(job: String, region: String, topic: Boolean, onJob: (String) -> Unit, onRegion: (String) -> Unit, onTopic: (Boolean) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("어떤 일인가요? (선택)", style = MaterialTheme.typography.titleSmall)
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            com.bamnat.app.company.Plaza.JOBS.forEach { (key, name) ->
+                androidx.compose.material3.FilterChip(selected = job == key, onClick = { onJob(if (job == key) "" else key) }, label = { Text(name) })
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            var open by remember { mutableStateOf(false) }
+            Box {
+                androidx.compose.material3.FilterChip(selected = region.isNotEmpty(), onClick = { open = true },
+                    label = { Text(if (region.isEmpty()) "지역 고르기 (전국)" else com.bamnat.app.company.Plaza.region(region)) })
+                androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                    androidx.compose.material3.DropdownMenuItem(text = { Text("전국") }, onClick = { open = false; onRegion("") })
+                    com.bamnat.app.company.Plaza.REGIONS.forEach { (k, n) ->
+                        androidx.compose.material3.DropdownMenuItem(text = { Text(n) }, onClick = { open = false; onRegion(k) })
+                    }
+                }
+            }
+        }
+        if (job.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(role = Role.Checkbox) { onTopic(!topic) }.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = topic, onCheckedChange = null, modifier = Modifier.padding(horizontal = 8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("한 회사가 아니라 이 일 전체의 규칙이에요", style = MaterialTheme.typography.bodyLarge)
+                    Text("예: 공무원 수당, 일용직 근무 방식. ‘${com.bamnat.app.company.Plaza.job(job)} 공통’으로 올라가요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
     }

@@ -39,11 +39,25 @@ data class SharedSetup(
     val agree: Int = 0,
     /** [COMM-06] Posts in the talk on this setup. */
     val posts: Int = 0,
+    /** [PLZ-08] Phones that applied it, phones that sent it, checks against a pay slip, and the names senders chose. */
+    val uses: Int = 0,
+    val senders: Int = 0,
+    val checked: Int = 0,
+    val by: List<String> = emptyList(),
 ) {
     val hasPay: Boolean get() = runCatching { JSONObject(text).has("pay") }.getOrDefault(false)
 }
 
-data class CompanyPage(val id: String, val name: String, val aliases: List<String>, val setups: List<SharedSetup>)
+data class CompanyPage(
+    val id: String,
+    val name: String,
+    val aliases: List<String>,
+    val setups: List<SharedSetup>,
+    /** [PLZ-12] company, hospital or topic (a whole job's rule), its job plaza and 시·도 code. */
+    val kind: String = "company",
+    val job: String = "",
+    val region: String = "",
+)
 
 /** What a setup needs to be adopted and what adoption earns, said before anyone sends [COMM-03]. */
 data class CompanyTerms(val threshold: Int, val rewardMonths: Int, val agree: Int = 75)
@@ -68,9 +82,22 @@ data class BoardItem(
     val gist: String,
     val cycle: String,
     val pay: Boolean,
+    /** [PLZ-12] company, hospital or topic, the job plaza and 시·도 code. */
+    val kind: String = "company",
+    val job: String = "",
+    val region: String = "",
+    /** [PLZ-08] Phones using it and the names its senders chose. */
+    val uses: Int = 0,
+    val by: List<String> = emptyList(),
 )
 
 data class Board(val items: List<BoardItem>, val next: Int?)
+
+/** [PLZ-09] One line of a proposal: what (a [Plaza.CHANGE_FIELDS] key), how it is now, how it should be, why. */
+data class ChangeLine(val field: String, val now: String, val want: String, val why: String)
+
+/** [PLZ-02] Where a proposal's setup stands. */
+data class ProposalState(val setup: String, val adopted: Boolean, val persons: Int, val threshold: Int)
 
 /**
  * [COMM-06] A post in the talk on a rule set. [who] is 참여자 N of this talk only; [stance] what they said
@@ -86,9 +113,113 @@ data class TalkPost(
     val at: Instant,
     val mine: Boolean,
     val hidden: String? = null,
+    /** [PLZ-08] The name the writer chose, shown instead of 참여자 N. */
+    val nick: String? = null,
+    /** [PLZ-05] The first post this one answers. */
+    val parent: String? = null,
+    /** [PLZ-09] talk, question or proposal. */
+    val kind: String = "talk",
+    val change: List<ChangeLine> = emptyList(),
+    /** [PLZ-01] 맞아요·달라요 on the post, its trust 0~100 and what this phone said. */
+    val agree: Int = 0,
+    val disagree: Int = 0,
+    val trust: Int = 0,
+    val myVote: Boolean? = null,
+    val proposal: ProposalState? = null,
 )
 
-data class Talk(val posts: List<TalkPost>, val mutedUntil: Instant? = null)
+/** [PLZ-04] [past]: an older version's talk, read only since a newer version took its place. */
+data class Talk(val posts: List<TalkPost>, val mutedUntil: Instant? = null, val past: Boolean = false)
+
+data class PostVote(val agree: Int, val disagree: Int, val trust: Int, val myVote: Boolean?)
+
+/** [PLZ-12] One job plaza and how much is in it. */
+data class PlazaJob(val key: String, val name: String, val adopted: Int, val voting: Int, val rates: Int)
+
+/** [PLZ-04] One version of a department's rule: how it came in, when, what changed and whether it is in use. */
+data class RuleVersion(
+    val version: Int,
+    val setup: String,
+    val source: String,
+    val adoptedAt: Instant,
+    val state: String,
+    val senders: Int,
+    val post: String?,
+    val added: List<String>,
+    val removed: List<String>,
+)
+
+/** [PLZ-14] A market rate someone sent: per [unit] day, hour or month, with its 맞아요·달라요. */
+data class Rate(
+    val id: String,
+    val job: String,
+    val region: String,
+    val trade: String,
+    val unit: String,
+    val year: Int,
+    val amount: Long,
+    val note: String,
+    val status: String,
+    val agree: Int,
+    val disagree: Int,
+    val trust: Int,
+    val mine: Boolean,
+    val myVote: Boolean?,
+    val nick: String?,
+    val at: Instant,
+)
+
+/** [PLZ-15] The adopted rates of one kind: low, middle and high of [n]. */
+data class RateGroup(val job: String, val region: String, val trade: String, val unit: String, val year: Int, val n: Int, val low: Long, val mid: Long, val high: Long)
+
+data class RateBoard(val groups: List<RateGroup>, val entries: List<Rate>)
+
+/** [PLZ-08] 내 활동: what this phone sent and where it stands. */
+data class Activity(
+    val nick: String?,
+    val reports: List<ActivityReport>,
+    val proposals: List<ActivityProposal>,
+    val rates: List<Rate>,
+    val rewards: List<ActivityReward>,
+)
+
+data class ActivityReport(val id: String, val companyId: String, val company: String, val dept: String, val setup: String, val status: String,
+    val version: Int?, val persons: Int, val bad: Int, val uses: Int, val at: Instant)
+
+data class ActivityProposal(val id: String, val companyId: String, val company: String, val setup: String, val body: String, val agree: Int,
+    val disagree: Int, val trust: Int, val at: Instant)
+
+data class ActivityReward(val months: Int, val status: String, val why: String, val at: Instant)
+
+/**
+ * [PLZ-12][PLZ-14] The plaza's fixed lists, the same as the server's: job plazas (결정 D38), 시·도 by
+ * 통계청 code, what a proposal can be about, and what a rate is per with the amounts it may be.
+ */
+object Plaza {
+    val JOBS = linkedMapOf(
+        "shift" to "교대 근무", "factory" to "제조·생산", "nurse" to "간호사·병원", "public" to "공무원", "police" to "경찰", "fire" to "소방",
+        "care" to "요양·돌봄", "security" to "경비·시설", "transport" to "운수·운전", "hourly" to "알바·시급", "construction" to "건설 일용직·기능공",
+        "field" to "현장·프리랜서", "shop" to "자영업",
+    )
+    val REGIONS = linkedMapOf(
+        "11" to "서울", "21" to "부산", "22" to "대구", "23" to "인천", "24" to "광주", "25" to "대전", "26" to "울산", "29" to "세종",
+        "31" to "경기", "32" to "강원", "33" to "충북", "34" to "충남", "35" to "전북", "36" to "전남", "37" to "경북", "38" to "경남", "39" to "제주",
+    )
+    val CHANGE_FIELDS = linkedMapOf(
+        "shift" to "근무 시간", "order" to "근무 순서", "break" to "휴게", "overtime" to "연장 근무", "night" to "야간", "holiday" to "휴일 근무",
+        "allowance" to "수당", "bonus" to "상여", "leave" to "연차·휴가", "other" to "그 밖의 것",
+    )
+    data class Unit(val name: String, val min: Long, val max: Long)
+    val RATE_UNITS = linkedMapOf(
+        "day" to Unit("일당", 50_000, 1_000_000),
+        "hour" to Unit("시급", 5_000, 200_000),
+        "month" to Unit("월급", 500_000, 20_000_000),
+    )
+
+    fun job(key: String): String = JOBS[key] ?: ""
+    fun region(key: String): String = REGIONS[key] ?: "전국"
+    fun unit(key: String): String = RATE_UNITS[key]?.name ?: key
+}
 
 data class Reward(val months: Int, val status: String) {
     val owed: Boolean get() = status == "owed"
@@ -135,6 +266,9 @@ interface CompanyApi {
     suspend fun company(id: String): CompanyPage
     suspend fun terms(): CompanyTerms
     suspend fun report(device: String, company: String, dept: String, verified: Boolean, note: String, setup: JSONObject, ask: Boolean = false): ReportStatus
+    /** [PLZ-12] A report that names its job plaza and 시·도, or with [topic] a rule for a whole job, not one company. */
+    suspend fun report(device: String, company: String, dept: String, verified: Boolean, note: String, setup: JSONObject, job: String,
+        region: String, topic: Boolean): ReportStatus = report(device, company, dept, verified, note, setup)
     suspend fun status(id: String): ReportStatus?
     suspend fun takeBack(device: String, id: String)
     suspend fun forgetMine(device: String): Int
@@ -144,7 +278,8 @@ interface CompanyApi {
      * [COMM-07] Every company's rule sets: [adopted] ones anyone can use, or ones still being voted on.
      * [q] finds a company by name, written any way 회사 찾기 takes it.
      */
-    suspend fun board(adopted: Boolean, from: Int = 0, q: String = ""): Board = Board(emptyList(), null)
+    suspend fun board(adopted: Boolean, from: Int = 0, q: String = "", job: String = "", region: String = "", sort: String = "recent"): Board =
+        Board(emptyList(), null)
     /** [COMM-06] The talk on one rule set; this install's own posts are marked. */
     suspend fun talk(device: String, company: String, setup: String): Talk = Talk(emptyList())
     /** Posts in it; the new post's id comes back. */
@@ -152,6 +287,33 @@ interface CompanyApi {
     suspend fun deletePost(device: String, id: String) = Unit
     /** 신고: abuse, personal, spam or false. */
     suspend fun flag(device: String, id: String, reason: String) = Unit
+
+    /**
+     * [PLZ-05][PLZ-09] A post with what it is: an answer to [parent], a question, or a proposal with its
+     * [change] lines and the whole setup as it should be ([proposal], amounts left out).
+     */
+    suspend fun post(device: String, company: String, setup: String, body: String, parent: String?, kind: String,
+        change: List<ChangeLine>, proposal: JSONObject?): String =
+        if (parent == null && kind == "talk") post(device, company, setup, body) else throw CompanyException("offline")
+    /** [PLZ-01] 맞아요 (true), 달라요 (false) or taking it back (null) on someone's post. */
+    suspend fun postVote(device: String, id: String, ok: Boolean?): PostVote = throw CompanyException("offline")
+    /** [PLZ-08] This phone uses (applied) a rule set, or stopped; how many use it comes back. */
+    suspend fun use(device: String, company: String, setup: String, on: Boolean): Int = 0
+    /** [PLZ-08] The name this phone is shown by on the plaza; empty for none. */
+    suspend fun nick(device: String, nick: String): String? = null
+    /** [PLZ-12] The job plazas with how much is in each. */
+    suspend fun plazas(): List<PlazaJob> = emptyList()
+    /** [PLZ-04] Every version a department's rule went through, newest first. */
+    suspend fun history(company: String, setup: String): List<RuleVersion> = emptyList()
+    /** [PLZ-14][PLZ-15] 임금표 of a job (and region, unit). */
+    suspend fun rates(device: String, job: String, region: String = "", unit: String = "", trade: String = ""): RateBoard = RateBoard(emptyList(), emptyList())
+    suspend fun addRate(device: String, job: String, region: String, trade: String, unit: String, amount: Long, note: String): String =
+        throw CompanyException("offline")
+    suspend fun rateVote(device: String, id: String, ok: Boolean?): PostVote = throw CompanyException("offline")
+    /** Takes a rate back; an adopted one stays as everyone's (true comes back). */
+    suspend fun takeRateBack(device: String, id: String): Boolean = false
+    /** [PLZ-08] 내 활동. */
+    suspend fun activity(device: String): Activity = Activity(null, emptyList(), emptyList(), emptyList(), emptyList())
 }
 
 /**
@@ -177,6 +339,9 @@ class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
         CompanyPage(
             id = o.getString("id"),
             name = o.getString("name"),
+            kind = o.optString("kind", "company"),
+            job = o.optString("job"),
+            region = o.optString("region"),
             aliases = o.optJSONArray("aliases")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty(),
             setups = o.optJSONArray("setups").objects().map { s ->
                 SharedSetup(
@@ -195,6 +360,10 @@ class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
                     trust = s.optInt("trust"),
                     agree = s.optInt("agree"),
                     posts = s.optInt("posts"),
+                    uses = s.optInt("uses"),
+                    senders = s.optInt("senders"),
+                    checked = s.optInt("checked"),
+                    by = s.optJSONArray("by").strings(),
                 )
             },
         )
@@ -205,9 +374,10 @@ class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
         CompanyTerms(o.optInt("threshold", 3), o.optInt("rewardMonths", 0), o.optInt("agree", 75))
     }
 
-    override suspend fun board(adopted: Boolean, from: Int, q: String): Board = serverCall {
+    override suspend fun board(adopted: Boolean, from: Int, q: String, job: String, region: String, sort: String): Board = serverCall {
         val name = q.trim().take(40).takeIf { it.isNotEmpty() }?.let { "&q=" + URLEncoder.encode(it, "UTF-8") }.orEmpty()
-        val o = request("GET", "/api/board?tab=${if (adopted) "adopted" else "voting"}&from=$from$name")
+        val plaza = (if (job.isNotEmpty()) "&job=$job" else "") + (if (region.isNotEmpty()) "&region=$region" else "") + (if (sort != "recent") "&sort=$sort" else "")
+        val o = request("GET", "/api/board?tab=${if (adopted) "adopted" else "voting"}&from=$from$name$plaza")
         Board(
             items = o.optJSONArray("items").objects().map { i ->
                 val c = i.getJSONObject("company")
@@ -218,6 +388,8 @@ class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
                     posts = i.optInt("posts"), version = if (i.has("version") && !i.isNull("version")) i.getInt("version") else null,
                     at = i.optStringOrNull("at")?.let(Instant::parse) ?: Instant.EPOCH, gist = i.optString("gist"),
                     cycle = i.optString("cycle"), pay = i.optBoolean("pay"),
+                    kind = c.optString("kind", "company"), job = c.optString("job"), region = c.optString("region"),
+                    uses = i.optInt("uses"), by = i.optJSONArray("by").strings(),
                 )
             },
             next = if (o.has("next") && !o.isNull("next")) o.getInt("next") else null,
@@ -232,11 +404,120 @@ class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
                     id = p.getString("id"), who = p.optInt("who"), stance = p.optStringOrNull("stance"), verified = p.optBoolean("verified"),
                     body = p.optString("body"), at = Instant.parse(p.getString("at")), mine = p.optBoolean("mine"),
                     hidden = p.optJSONObject("hidden")?.optString("text"),
+                    nick = p.optStringOrNull("nick"), parent = p.optStringOrNull("parent"), kind = p.optString("kind", "talk"),
+                    change = p.optJSONArray("change").objects().map { ChangeLine(it.optString("field"), it.optString("now"), it.optString("want"), it.optString("why")) },
+                    agree = p.optInt("agree"), disagree = p.optInt("disagree"), trust = p.optInt("trust"),
+                    myVote = if (p.has("myVote") && !p.isNull("myVote")) p.getBoolean("myVote") else null,
+                    proposal = p.optJSONObject("proposal")?.let { r ->
+                        ProposalState(r.optString("setup"), r.optString("status") == "adopted", r.optInt("persons"), r.optInt("threshold", 3))
+                    },
                 )
             },
             mutedUntil = o.optStringOrNull("mutedUntil")?.let(Instant::parse),
+            past = o.optBoolean("past"),
         )
     }
+
+    override suspend fun post(device: String, company: String, setup: String, body: String, parent: String?, kind: String,
+        change: List<ChangeLine>, proposal: JSONObject?): String = serverCall {
+        val o = JSONObject().put("device", device).put("company", company).put("setup", setup).put("body", body.trim()).put("kind", kind)
+        parent?.let { o.put("parent", it) }
+        if (kind == "proposal") {
+            o.put("change", JSONArray(change.map { JSONObject().put("field", it.field).put("now", it.now.trim()).put("want", it.want.trim()).put("why", it.why.trim()) }))
+            proposal?.let { o.put("proposal", it) }
+        }
+        request("POST", "/api/posts", o).getString("id")
+    }
+
+    override suspend fun postVote(device: String, id: String, ok: Boolean?): PostVote = serverCall {
+        vote(request("POST", "/api/posts/$id/vote", JSONObject().put("device", device).put("ok", ok ?: JSONObject.NULL)))
+    }
+
+    override suspend fun use(device: String, company: String, setup: String, on: Boolean): Int = serverCall {
+        request(if (on) "POST" else "DELETE", "/api/uses", JSONObject().put("device", device).put("company", company).put("setup", setup)).optInt("uses")
+    }
+
+    override suspend fun nick(device: String, nick: String): String? = serverCall {
+        request("POST", "/api/nick", JSONObject().put("device", device).put("nick", nick.trim())).optStringOrNull("nick")
+    }
+
+    override suspend fun plazas(): List<PlazaJob> = serverCall {
+        request("GET", "/api/plazas").optJSONArray("jobs").objects().map {
+            PlazaJob(it.getString("key"), it.optString("name"), it.optInt("adopted"), it.optInt("voting"), it.optInt("rates"))
+        }
+    }
+
+    override suspend fun history(company: String, setup: String): List<RuleVersion> = serverCall {
+        request("GET", "/api/companies/$company/history?setup=$setup").optJSONArray("versions").objects().map { v ->
+            val ch = v.optJSONObject("changes")
+            RuleVersion(v.getInt("version"), v.optString("setup"), v.optString("source"), Instant.parse(v.getString("adoptedAt")), v.optString("state"),
+                v.optInt("senders"), v.optStringOrNull("post"), ch?.optJSONArray("added").lines(), ch?.optJSONArray("removed").lines())
+        }
+    }
+
+    override suspend fun rates(device: String, job: String, region: String, unit: String, trade: String): RateBoard = serverCall {
+        val q = listOf("job" to job, "region" to region, "unit" to unit, "trade" to trade).filter { it.second.isNotEmpty() }
+            .joinToString("&") { (k, v) -> "$k=" + URLEncoder.encode(v, "UTF-8") }
+        val o = request("GET", "/api/rates?$q", device = device)
+        RateBoard(
+            groups = o.optJSONArray("groups").objects().map { g ->
+                RateGroup(g.optString("job"), g.optString("region"), g.optString("trade"), g.optString("unit"), g.optInt("year"), g.optInt("n"),
+                    g.optLong("low"), g.optLong("mid"), g.optLong("high"))
+            },
+            entries = o.optJSONArray("entries").objects().map(::rate),
+        )
+    }
+
+    override suspend fun addRate(device: String, job: String, region: String, trade: String, unit: String, amount: Long, note: String): String = serverCall {
+        request("POST", "/api/rates", JSONObject().put("device", device).put("job", job).put("region", region).put("trade", trade.trim())
+            .put("unit", unit).put("amount", amount).put("note", note.trim())).getString("id")
+    }
+
+    override suspend fun rateVote(device: String, id: String, ok: Boolean?): PostVote = serverCall {
+        vote(request("POST", "/api/rates/$id/vote", JSONObject().put("device", device).put("ok", ok ?: JSONObject.NULL)))
+    }
+
+    override suspend fun takeRateBack(device: String, id: String): Boolean = serverCall {
+        try {
+            request("DELETE", "/api/rates/$id", device = device).optBoolean("kept")
+        } catch (e: CompanyException) {
+            if (e.code != "not_found") throw e
+            false
+        }
+    }
+
+    override suspend fun activity(device: String): Activity = serverCall {
+        val o = request("GET", "/api/activity", device = device)
+        Activity(
+            nick = o.optStringOrNull("nick"),
+            reports = o.optJSONArray("reports").objects().map { r ->
+                val c = r.getJSONObject("company")
+                ActivityReport(r.getString("id"), c.getString("id"), c.optString("name"), r.optString("dept"), r.optString("setup"), r.optString("status"),
+                    if (r.has("version") && !r.isNull("version")) r.getInt("version") else null, r.optInt("persons"), r.optInt("bad"), r.optInt("uses"),
+                    Instant.parse(r.getString("at")))
+            },
+            proposals = o.optJSONArray("proposals").objects().map { p ->
+                val c = p.getJSONObject("company")
+                ActivityProposal(p.getString("id"), c.getString("id"), c.optString("name"), p.optString("setup"), p.optString("body"), p.optInt("agree"),
+                    p.optInt("disagree"), p.optInt("trust"), Instant.parse(p.getString("at")))
+            },
+            rates = o.optJSONArray("rates").objects().map(::rate),
+            rewards = o.optJSONArray("rewards").objects().map { w ->
+                ActivityReward(w.optInt("months"), w.optString("status"), w.optString("why"), Instant.parse(w.getString("at")))
+            },
+        )
+    }
+
+    private fun vote(o: JSONObject) = PostVote(o.optInt("agree"), o.optInt("disagree"), o.optInt("trust"),
+        if (o.has("myVote") && !o.isNull("myVote")) o.getBoolean("myVote") else null)
+
+    private fun rate(r: JSONObject) = Rate(
+        id = r.getString("id"), job = r.optString("job"), region = r.optString("region"), trade = r.optString("trade"), unit = r.optString("unit"),
+        year = r.optInt("year"), amount = r.optLong("amount"), note = r.optString("note"), status = r.optString("status"), agree = r.optInt("agree"),
+        disagree = r.optInt("disagree"), trust = r.optInt("trust"), mine = r.optBoolean("mine"),
+        myVote = if (r.has("myVote") && !r.isNull("myVote")) r.getBoolean("myVote") else null, nick = r.optStringOrNull("nick"),
+        at = Instant.parse(r.getString("at")),
+    )
 
     override suspend fun post(device: String, company: String, setup: String, body: String): String = serverCall {
         request("POST", "/api/posts", JSONObject().put("device", device).put("company", company).put("setup", setup).put("body", body.trim()))
@@ -260,11 +541,20 @@ class CompanyClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
     /** Sends a setup for coworkers, or with [ask] a way the app cannot set yet for the developer to read. */
     override suspend fun report(
         device: String, company: String, dept: String, verified: Boolean, note: String, setup: JSONObject, ask: Boolean,
-    ): ReportStatus = serverCall {
+    ): ReportStatus = send(device, company, dept, verified, note, setup, ask, "", "", false)
+
+    override suspend fun report(device: String, company: String, dept: String, verified: Boolean, note: String, setup: JSONObject, job: String,
+        region: String, topic: Boolean): ReportStatus = send(device, company, dept, verified, note, setup, false, job, region, topic)
+
+    private suspend fun send(device: String, company: String, dept: String, verified: Boolean, note: String, setup: JSONObject, ask: Boolean,
+        job: String, region: String, topic: Boolean): ReportStatus = serverCall {
         val body = JSONObject()
             .put("v", 1).put("device", device).put("company", company.trim()).put("dept", dept.trim())
             .put("verified", verified).put("note", note.trim()).put("setup", setup)
         if (ask) body.put("ask", true)
+        if (job.isNotEmpty()) body.put("job", job)
+        if (region.isNotEmpty()) body.put("region", region)
+        if (topic) body.put("topic", true)
         status(request("POST", "/api/reports", body))
     }
 
@@ -416,5 +706,12 @@ object CompanyText {
 }
 
 internal fun JSONObject.optStringOrNull(key: String): String? = if (!has(key) || isNull(key)) null else optString(key)
+
+internal fun JSONArray?.strings(): List<String> = if (this == null) emptyList() else (0 until length()).map { optString(it) }
+
+/** [PLZ-04] The changed lines of a rule, [label, text] pairs from the server, as "label: text". */
+internal fun JSONArray?.lines(): List<String> = if (this == null) emptyList() else (0 until length()).map { i ->
+    optJSONArray(i)?.let { "${it.optString(0)}: ${it.optString(1)}" } ?: optString(i)
+}
 
 internal fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else (0 until length()).map { getJSONObject(it) }
