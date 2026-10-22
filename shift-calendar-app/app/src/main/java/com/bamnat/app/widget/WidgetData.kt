@@ -2,6 +2,7 @@ package com.bamnat.app.widget
 
 import android.content.Context
 import com.bamnat.app.appContainer
+import com.bamnat.app.data.rules
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.core.alarm.AlarmPlanner
 import com.bamnat.core.alarm.PlannedAlarm
@@ -80,7 +81,9 @@ class WidgetData(
             val flow = if (!settings.sleepTips || settings.workStyle?.usesPayEngine == false || snapshot.isEmpty) null else {
                 val log = SleepMerge.merge(container.sleepRepository.recent(days = 2).first(), container.healthSleep.sleeps.value)
                 TodayFlow.of(now, snapshot.resolver, settings.alarmsEnabled, log, settings.sleepTargetMinutes, settings.commuteMinutes,
-                    settings.restCheck, settings.strictRest)
+                    settings.restCheck, settings.strictRest,
+                    rules = com.bamnat.core.schedule.RotationSpeed.of(com.bamnat.core.schedule.PatternTimeline.current(snapshot.patterns, now.toLocalDate()),
+                        snapshot.shiftTypes).adjust(settings.rules))
             }
             // [CAL-11] Field and shop work fill the widgets from the money book, read on the phone only.
             val book = if (focus == CalendarFocus.SHIFTS || focus == CalendarFocus.INVEST) null else container.calendars.money(PersonalCalendar.MAIN).book.first()

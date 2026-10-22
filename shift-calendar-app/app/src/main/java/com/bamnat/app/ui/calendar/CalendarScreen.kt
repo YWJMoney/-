@@ -125,6 +125,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.data.ScheduleSnapshot
+import com.bamnat.app.data.rules
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.appViewModel
 import com.bamnat.app.ui.components.ShiftBadge
@@ -222,6 +223,8 @@ fun CalendarScreen(
     val selected by vm.selected.collectAsStateWithLifecycle()
     val paint by vm.paint.collectAsStateWithLifecycle()
     var typingMonth by remember { mutableStateOf<YearMonth?>(null) }
+    // [REST-01] 근무표 점검 기준, opened from the check's card.
+    var rulesOpen by remember { mutableStateOf(false) }
     val lastPaint by vm.lastPaint.collectAsStateWithLifecycle()
     val coverAsk by vm.coverAsk.collectAsStateWithLifecycle()
     // [CUST-01] 화면 꾸미기: the page's parts in the user's order, and the sheet that changes them.
@@ -1004,8 +1007,14 @@ fun CalendarScreen(
                         )
                     }
                     CalendarPart.REST -> if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) {
-                        val rest = remember(snap, visibleMonth, settings.strictRest) { vm.restIssues(snap, visibleMonth, settings.strictRest) }
-                        MonthRestCard(rest, onPick = vm::select, modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp))
+                        val rules = settings.rules
+                        val rest = remember(snap, visibleMonth, rules) { vm.restIssues(snap, visibleMonth, rules) }
+                        // [NURS-05][JOB-03] Nights, night pay and a 공무원's 시간외, worked out off the main thread.
+                        val nights by produceState<CalendarViewModel.MonthNights?>(null, payProfile, snap, visibleMonth) {
+                            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.monthNights(payProfile, snap, visibleMonth) }
+                        }
+                        MonthRestCard(rest, nights, onPick = vm::select, onRules = { rulesOpen = true },
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp))
                     }
                     CalendarPart.MEMOS -> memoPart()
                     else -> Unit
@@ -1079,6 +1088,7 @@ fun CalendarScreen(
                 today = today,
                 startMonth = visibleMonth,
                 identityBar = identityBar,
+                rules = settings.rules,
             )
         }
     } else Box(Modifier.fillMaxSize().clipToBounds()) {
@@ -1125,7 +1135,13 @@ fun CalendarScreen(
     }
 
     typingMonth?.let { m ->
-        DutyTypingSheet(snap, m, onDismiss = { typingMonth = null }, onSave = { changes -> vm.applyDuty(changes); typingMonth = null })
+        DutyTypingSheet(snap, m, onDismiss = { typingMonth = null }, onSave = { changes -> vm.applyDuty(changes); typingMonth = null },
+            rules = vm.rulesFor(snap, m.atDay(1), settings.rules), onRules = { rulesOpen = true })
+    }
+    if (rulesOpen) {
+        RestRulesSheet(settings.rules, vm.rotation(snap, visibleMonth.atDay(1)), onDismiss = { rulesOpen = false }) { r ->
+            vm.setRestRules(r); rulesOpen = false
+        }
     }
 
     if (investVm != null) {
@@ -1794,11 +1810,21 @@ private const val MEMO_PREVIEW_ROWS = 4
 /**
  * [SLP-01][MKT-07] The month's rest-gap signs under the hours summary: short rest between
  * shifts, a day shift soon after a night, backward rotation, long night runs. Tapping a row
- * picks that day. Shown only when there is something to say.
+ * picks that day. Shown only when there is something to say. [NURS-05][JOB-03] Its first line is the month's
+ * nights (and night pay) and a 공무원's 시간외 against the 57-hour cap; [REST-01] '기준 바꾸기' opens the limits,
+ * and each sign says where its limit comes from [REST-02].
  */
 @Composable
-private fun MonthRestCard(issues: List<com.bamnat.core.schedule.RestCheck.Issue>, onPick: (LocalDate) -> Unit, modifier: Modifier = Modifier) {
-    if (issues.isEmpty()) return
+private fun MonthRestCard(
+    issues: List<com.bamnat.core.schedule.RestCheck.Issue>,
+    nights: CalendarViewModel.MonthNights?,
+    onPick: (LocalDate) -> Unit,
+    onRules: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val count = nights?.nights ?: 0
+    val overtime = nights?.overtime
+    if (issues.isEmpty() && count == 0 && overtime == null) return
     var all by remember(issues) { mutableStateOf(false) }
     val shown = if (all) issues else issues.take(REST_PREVIEW_ROWS)
     Surface(
@@ -1808,8 +1834,23 @@ private fun MonthRestCard(issues: List<com.bamnat.core.schedule.RestCheck.Issue>
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(vertical = 8.dp)) {
-            Text("휴식 점검 ${issues.size}건 (참고)", style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (issues.isEmpty()) "근무표 점검" else "휴식 점검 ${issues.size}건 (참고)", style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f))
+                androidx.compose.material3.TextButton(onClick = onRules) { Text("기준 바꾸기") }
+            }
+            if (count > 0 || overtime != null) {
+                val parts = listOfNotNull(
+                    count.takeIf { it > 0 }?.let { com.bamnat.core.pay.NightSummary.line(it, nights?.nightPay) },
+                    overtime?.let { "이달 시간외 ${it.text}" },
+                )
+                Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodyMedium,
+                    color = if (overtime?.over == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
+                if (overtime?.over == true) Text("시간외는 한 달 ${com.bamnat.core.pay.PublicPayTable.MONTHLY_CAP}시간까지만 수당이 나와요 (공무원수당 등에 관한 규정 제15조)",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp))
+            }
             for (issue in shown) {
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onPick(issue.date) }.padding(horizontal = 16.dp, vertical = 6.dp),
@@ -1821,12 +1862,18 @@ private fun MonthRestCard(issues: List<com.bamnat.core.schedule.RestCheck.Issue>
                         Text(issue.kind.label, style = MaterialTheme.typography.bodyMedium)
                         Text(issue.text, style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        if (all && issue.source.isNotEmpty()) Text("근거: ${issue.source}", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline)
                     }
                 }
             }
-            if (issues.size > REST_PREVIEW_ROWS) {
+            if (issues.size > REST_PREVIEW_ROWS || issues.isNotEmpty() && !all) {
                 androidx.compose.material3.TextButton(onClick = { all = !all }, modifier = Modifier.padding(start = 4.dp)) {
-                    Text(if (all) "접기" else "${issues.size - REST_PREVIEW_ROWS}개 더 보기")
+                    Text(when {
+                        all -> "접기"
+                        issues.size > REST_PREVIEW_ROWS -> "${issues.size - REST_PREVIEW_ROWS}개 더 보기 · 근거"
+                        else -> "근거 보기"
+                    })
                 }
             }
         }

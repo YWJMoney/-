@@ -2787,6 +2787,60 @@ class ScreenshotTest {
         val vm = com.bamnat.app.ui.company.RatesViewModel(companyOn())
         content { com.bamnat.app.ui.company.RatesScreen(vm, onBack = {}) }
         reveal("정부 공표 전국 평균")
+    // ==== 1.22 묶음 C ====
+    // [REST-01][REST-03] 근무표 점검 기준: one sheet, a preset away from a hospital's rules, and the switch to turn it off.
+    private fun restRules(): Screen.() -> Unit = style(WorkStyle.SHIFT) {
+        content {
+            com.bamnat.app.ui.calendar.RestRulesSheet(com.bamnat.core.schedule.RestRules(), com.bamnat.core.schedule.RotationSpeed.FAST, {}, {})
+        }
+        settle()
+    }
+    @Test fun foldedRestRules() = shoot("430_folded_rest_rules", FOLDED, restRules())
+    @Test fun phoneRestRulesHugeText() = shoot("431_phone_rest_rules_huge_text", PHONE, 1.5f, restRules())
+    // [REST-01][NURS-05][JOB-03] The calendar's check card: 기준 바꾸기, this month's nights and their pay.
+    @Test fun foldedMonthRestCard() = shoot("432_folded_month_rest_card", FOLDED, style(WorkStyle.SHIFT) {
+        app.container.settingsRepository.update { it.copy(restRules = com.bamnat.core.schedule.RestRules(maxNightsInRow = 1).encode()) }
+        settle()
+        reveal("기준 바꾸기", exact = true)
+    })
+    // [NURS-04] A roster photo's doubtful cells, the only ones left to tap.
+    @Test fun foldedDutyTypingDoubtful() = shoot("433_folded_duty_typing_doubtful", FOLDED, style(WorkStyle.SHIFT) {
+        val c = app.container
+        val snap = runBlocking { c.scheduleRepository.snapshot.first() }
+        val t = snap.shiftTypes.associateBy { it.name }
+        val month = java.time.YearMonth.of(2026, 11)
+        val codes = listOf("주간", "주간", "오후", "오후", "야간", "야간", "휴무", "휴무", "주간", "주간", "오후", "오후", "야간", "야간")
+        val initial = codes.mapIndexed { i, n -> month.atDay(i + 1) to ShiftOverride.Shift(t.getValue(n).id) as ShiftOverride }.toMap()
+        val doubtful = setOf(4, 9, 15, 16, 22).map { month.atDay(it) }.toSet()
+        content {
+            com.bamnat.app.ui.calendar.DutyTypingSheet(snap, month, onDismiss = {}, onSave = {}, initial = initial, doubtful = doubtful, onRules = {})
+        }
+        settle()
+    })
+    // [JOB-02] 공무원 봉급표 on 급여, only for 공무원·경찰·소방.
+    @Test fun foldedPublicGrade() = shoot("434_folded_public_grade", FOLDED) {
+        payScreen(Tier.PRO, withProfile = true, adjust = {
+            com.bamnat.core.pay.PublicServantPay.apply(it.copy(occupation = com.bamnat.core.pay.Occupation.FIRE),
+                com.bamnat.core.pay.PublicGrade("FIRE:소방장", 6, today.minusYears(8), onSite = true), today)
+        }).invoke(this)
+        reveal("다시 채우기", exact = true)
+    }
+    @Test fun phonePublicGradeHugeText() = shoot("435_phone_public_grade_huge_text", PHONE, 1.5f) {
+        payScreen(Tier.PRO, withProfile = true, adjust = { it.copy(occupation = com.bamnat.core.pay.Occupation.PUBLIC) }).invoke(this)
+        reveal("교대·현업 근무", exact = true)
+    }
+    // [NURS-06] A received roster read with the user's own rules.
+    @Test fun foldedReceivedDutyCheck() = shoot("436_folded_received_duty_check", FOLDED) {
+        receivedOn()
+        app.container.settingsRepository.update { it.copy(restRules = com.bamnat.core.schedule.RestRules(maxNightsInRow = 1).encode()) }
+        settle()
+        tapText("민지의 근무표 보기", exact = true)
+        reveal("님 근무표 점검")
+    }
+    // [REST-01] Settings keeps one row for it, beside 휴식 점검.
+    @Test fun foldedSettingsRestRules() = shoot("437_folded_settings_rest_rules", FOLDED) {
+        settingsPage("잠과 휴식")
+        reveal("근무표 점검 기준", exact = true)
     }
 }
 

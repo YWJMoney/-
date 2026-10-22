@@ -1,5 +1,6 @@
 package com.bamnat.core.pay
 
+import java.time.LocalDate
 import java.time.LocalTime
 import kotlin.math.roundToLong
 
@@ -18,6 +19,11 @@ object PublicServantPay {
     /** The 확인 필요 key for the rules worked out here. */
     const val ESTIMATED = "public-rules"
 
+    const val OVERTIME_ID = "public-overtime"
+    const val LONGEVITY_ID = "public-longevity"
+    const val LONGEVITY_EXTRA_ID = "public-longevity-extra"
+    const val FESTIVAL_ID = "public-festival"
+
     fun isPublic(o: Occupation?) = o == Occupation.PUBLIC || o == Occupation.POLICE || o == Occupation.FIRE
 
     fun standardBase(monthlyPay: Long, lowGrade: Boolean = false): Long =
@@ -33,7 +39,43 @@ object PublicServantPay {
             RulePay.PerHour(nightPerHour(standard)), source = "공무원수당 등에 관한 규정 제16조: 봉급기준액 ÷ 209 × 50%"),
         CustomRule("public-holiday", "휴일근무수당", RuleWhen(dayKind = RuleDayKind.HOLIDAY, pieces = RulePieces.SHIFT),
             RulePay.PerTime(holidayPerDay(standard)), source = "제17조: 봉급기준액 ÷ 26 × 150% (현업)"),
-        CustomRule("public-overtime", "시간외근무수당", RuleWhen(pieces = RulePieces.EXTRA),
+        CustomRule(OVERTIME_ID, "시간외근무수당", RuleWhen(pieces = RulePieces.EXTRA),
             RulePay.PerHour(overtimePerHour(standard)), source = "제15조: 봉급기준액 ÷ 209 × 150%, 월 57시간 상한"),
     )
+
+    /**
+     * [JOB-02] [p] with the 봉급표 계급·호봉 [g] picked on [on]: the 봉급 from the table from that month, the three
+     * 수당 rules from the 기준호봉's 봉급기준액 (replacing the ones worked out from a typed 봉급), and the regular
+     * 수당 as allowances: 정근수당 (1·7월), 정근수당 가산금 (매달) and 명절휴가비 (설·추석). Other items stay.
+     */
+    fun apply(p: PayProfile, g: PublicGrade, on: LocalDate): PayProfile {
+        val grade = PublicPayTable.grade(g.gradeId) ?: return p
+        val salary = PublicPayTable.salary(grade, g.step, on) ?: return p
+        val from = on.withDayOfMonth(1)
+        val years = PublicPayTable.years(g.serviceStart, on)
+        val own = setOf("public-night", "public-holiday", OVERTIME_ID)
+        val ids = setOf(LONGEVITY_ID, LONGEVITY_EXTRA_ID, FESTIVAL_ID)
+        fun fixed(v: Long) = ValueTimeline(listOf(DatedValue(from, v)))
+        val items = listOf(
+            PayItem(LONGEVITY_ID, "정근수당", fixed(0), Cadence.BONUS, months = setOf(1, 7),
+                percentOfBase = PublicPayTable.longevityRate(years)),
+            PayItem(LONGEVITY_EXTRA_ID, "정근수당 가산금", fixed(PublicPayTable.longevityExtra(years)), Cadence.MONTHLY),
+            PayItem(FESTIVAL_ID, "명절휴가비", fixed(0), Cadence.BONUS, festivals = setOf(Festival.SEOLLAL, Festival.CHUSEOK),
+                percentOfBase = PublicPayTable.FESTIVAL_SHARE),
+        )
+        return p.copy(
+            base = p.base.with(DatedValue(from, salary)),
+            customRules = p.customRules.filterNot { it.id in own } + rules(PublicPayTable.standardBase(grade, on)),
+            items = p.items.filterNot { it.id in ids } + items,
+            estimatedFields = p.estimatedFields - ESTIMATED - Unknowns.BASE,  // the 봉급 now comes from the table
+            rules = p.rules.copy(overtimePremium = 0.0, nightPremium = 0.0, holidayPremiumWithin8h = 0.0, holidayPremiumOver8h = 0.0),
+            publicGrade = g,
+        )
+    }
 }
+
+/**
+ * [JOB-02] A public servant's place in the 봉급표: [gradeId] is [PublicPayTable.Grade.id], [serviceStart] the first day
+ * of service for 정근수당, and [onSite] whether they are 현업·교대 (no 57-hour cap, no 1-hour deduction, 제15조).
+ */
+data class PublicGrade(val gradeId: String, val step: Int, val serviceStart: LocalDate? = null, val onSite: Boolean = true)

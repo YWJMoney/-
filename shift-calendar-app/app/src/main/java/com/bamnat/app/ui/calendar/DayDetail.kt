@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.data.rules
 import com.bamnat.app.ui.components.labelWidth
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -243,8 +244,8 @@ private fun DayGroups(
     }
     val insight = insightFor?.takeIf { it.first == date }?.second ?: DayInsight()
     val alarms = remember(snapshot, date) { plannedAlarms(snapshot, day) }
-    val rest = remember(snapshot, date, settings.restCheck, settings.strictRest) {
-        if (settings.restCheck) vm.restIssuesOn(snapshot, date, settings.strictRest) else emptyList()
+    val rest = remember(snapshot, date, settings.rules) {
+        if (settings.restCheck) vm.restIssuesOn(snapshot, date, settings.rules) else emptyList()
     }
     val tips = remember(snapshot, date, settings) {
         if (settings.sleepTips) vm.sleepTips(snapshot, date, settings) else emptyList()

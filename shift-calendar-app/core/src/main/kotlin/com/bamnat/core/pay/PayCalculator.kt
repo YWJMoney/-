@@ -232,6 +232,8 @@ class PayCalculator(
         val dayPays = mutableListOf<DayPay>()
         // [PAYS-06] What each of the user's own rules paid this month, by [CustomRule.id].
         val customTotals = linkedMapOf<String, CustomTotal>()
+        // [JOB-03] The 시간외근무수당 rule's minutes by day, for the 1-hour deduction and 57-hour cap.
+        val overtimeByDay = HashMap<LocalDate, Int>()
         // [SHFT-01] Each kind of day's own premium (야간 근무 수당 30%): minutes worked on it, by shift type id.
         val premiumTotals = linkedMapOf<Long, ShiftPremium>()
         val shiftNames = HashMap<Long, String>()
@@ -394,6 +396,7 @@ class PayCalculator(
                 val r = customRule(rule, day, m, holiday(day.date), hourly, monthlyBase, baseLabel, rates) ?: continue
                 val signed = if (rule.deduct) -r.amount else r.amount
                 customTotals.getOrPut(rule.id) { CustomTotal(rule) }.apply { amount += signed; this.minutes += r.credited; times++ }
+                if (rule.id == PublicServantPay.OVERTIME_ID) overtimeByDay[day.date] = (overtimeByDay[day.date] ?: 0) + r.credited
                 parts += DayPart(LineKind.ALLOWANCE, rule.name, signed, r.formula)
             }
             // "야간 대근": the covered shift goes first unless the kind's own name already says it.
@@ -532,6 +535,22 @@ class PayCalculator(
         for ((_, t) in customTotals) {
             val rule = t.rule
             val pay = rule.pay
+            // [JOB-03] With a 봉급표 계급 picked, 시간외 is paid by the hours 공무원수당 등에 관한 규정 제15조 counts.
+            val grade = profile.publicGrade
+            if (rule.id == PublicServantPay.OVERTIME_ID && grade != null && pay is RulePay.PerHour && !rule.deduct) {
+                val ot = PublicPayTable.overtime(overtimeByDay, grade.onSite)
+                lines += PayLine(
+                    LineKind.ALLOWANCE, rule.lineLabel, pay.amount * ot.paidHours,
+                    formula = "시간외 ${ot.paidHours}시간 × ${won(pay.amount)}" + when {
+                        grade.onSite -> " (현업: 근무한 시간 모두)"
+                        ot.over -> " (평일 1시간씩 빼고 ${ot.hours}시간, 월 ${PublicPayTable.MONTHLY_CAP}시간까지)"
+                        else -> " (평일은 1시간씩 빼고 셈)"
+                    },
+                    minutes = ot.paidHours * 60,
+                    basis = "공무원수당 등에 관한 규정 제15조 제4항·제5항",
+                )
+                continue
+            }
             lines += PayLine(
                 LineKind.ALLOWANCE, rule.lineLabel, t.amount,
                 formula = "${rule.describe(shiftNames, extraKindNames)}: ${t.times}일" +

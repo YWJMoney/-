@@ -238,6 +238,8 @@ data class PayProfile(
     val probationPercent: Int = 90,
     /** [HRLY-07] The weekday a 주휴 week starts on; null counts 주휴 by [weekStart] like the rest of the pay. */
     val holidayWeekStart: DayOfWeek? = null,
+    /** [JOB-02] A public servant's 봉급표 계급·호봉, from which the 봉급 and 수당 are set; null when not picked. */
+    val publicGrade: PublicGrade? = null,
 ) {
     /** [HRLY-07] The weekday 주휴 weeks start on. */
     val holidayWeekFrom: DayOfWeek get() = holidayWeekStart ?: weekStart

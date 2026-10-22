@@ -21,10 +21,14 @@ class PresetFileTest {
     @Test fun builtInFileKeepsThe121Presets() {
         assertEquals(
             listOf("DDNNOO", "DNOO", "DDEENNOO", "DDDDDOOEEEEEOONNNNNOO", "DO", "DDDDDOO", "DDDNNNOOO", "DDDEEENNNOOO", "DDEENNOOOO",
-                "DDNNOOOO", "DDOONNOO", "XB", "XBO", "XBXBOOOO"),
+                "DDNNOOOO", "DDOONNOO", "XB", "XBO", "XBXBOOOO", "DNBO", "DDDDDOONBNBNBNBNBNBNB"),
             PatternPresets.all.map { it.codes },
         )
         assertEquals("4조 3교대", PatternPresets.all[2].name)
+        // [JOB-04] 경찰·소방 순서는 공개 자료가 있는 것만, 출처와 함께
+        assertEquals(listOf("p-24h-3", "p-fire-3j2k-21"), PatternPresets.all.filter { "FIRE" in it.jobs }.map { it.id })
+        assertEquals(listOf("p-police-4j2k"), PatternPresets.all.filter { "POLICE" in it.jobs }.map { it.id })
+        assertTrue(PatternPresets.all.filter { it.jobs.isNotEmpty() }.all { it.source.contains("https://") })
         assertEquals(listOf("병원 3교대 (D/E/N)", "공장 3교대", "12시간 2교대", "24시간 맞교대"), ShiftTypeSets.all.map { it.name })
         val nurse = ShiftTypeSets.all[0].types
         assertEquals(listOf("D", "E", "N"), nurse.map { it.label })
@@ -70,7 +74,7 @@ class PresetFileTest {
         assertEquals("고친 설명", all.first { it.id == "p-4j2k" }.description)
         assertFalse(all.any { it.codes == "XB" })
         assertFalse(all.any { it.name == "미래" })
-        assertEquals(14, all.size)
+        assertEquals(16, all.size)
         assertEquals(3_100_000L, PayPresets.of(Occupation.NURSE).baseHint)
         assertEquals(listOf(35_000L), PayPresets.of(Occupation.NURSE).items.map { it.suggestedAmount })
         assertEquals(4, ShiftTypeSets.all.size)

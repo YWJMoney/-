@@ -415,6 +415,8 @@ fun ReceivedCalendarView(
     startMonth: YearMonth,
     identityBar: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    /** [NURS-06] The user's own 근무표 점검 기준, to read their roster with. */
+    rules: com.bamnat.core.schedule.RestRules = com.bamnat.core.schedule.RestRules(),
 ) {
     val refresh by vm.refresh.collectAsState()
     // Each time the app comes back too, so a link that ran out or changed meanwhile shows as it is now.
@@ -513,6 +515,8 @@ fun ReceivedCalendarView(
         Column(m, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ReceivedDayCard(selected, today, cal, schedule, mine.resolver.resolve(selected).takeIf { canCompare }, restTogether(selected))
             schedule.pay.firstOrNull { it.month == month }?.let { PayCard(cal, it, schedule.payKind) }
+            val duty = remember(schedule, month, rules) { com.bamnat.app.share.ReceivedDutyCheck.warnings(schedule, month, rules) }
+            if (duty.isNotEmpty()) ReceivedDutyCard(cal, duty)
             Text("${cal.expiresAt?.let(::expiry) ?: "기간 끝"}까지 볼 수 있어요 · 받은 달력은 이 휴대폰에만 있어요",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 4.dp))
@@ -855,6 +859,29 @@ private fun PayCard(cal: ReceivedCalendar, pay: com.bamnat.app.share.SharedPay, 
             // [SHR-11] Pay is the sender's estimate; job income and sales are what the sender wrote down.
             Text((pay.label.ifBlank { "예상" }) + " · " + if (kind == com.bamnat.core.work.MoneyShare.PAY && pay.label != "받은 급여") "보낸 분의 앱이 계산한 금액이라 명세서와 다를 수 있어요" else "보낸 분이 앱에 적은 금액을 달마다 더했어요",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/**
+ * [NURS-06] The shared roster read with the user's own 근무표 점검 기준: "알려 주기" only, so someone who cares can
+ * see a hard week coming. Nothing here goes back to the sharer.
+ */
+@Composable
+private fun ReceivedDutyCard(cal: ReceivedCalendar, warnings: List<com.bamnat.core.schedule.DutyCheck.Warning>) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("${cal.name}님 근무표 점검 ${warnings.size}건", style = MaterialTheme.typography.titleSmall)
+            warnings.take(5).forEach { w ->
+                Text("· ${w.text}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (warnings.size > 5) Text("그 밖에 ${warnings.size - 5}건", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            Text("내 근무표 점검 기준으로 본 참고예요. 받은 근무표는 바뀌지 않고, 상대에게 알리지도 않아요.",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
         }
     }
 }

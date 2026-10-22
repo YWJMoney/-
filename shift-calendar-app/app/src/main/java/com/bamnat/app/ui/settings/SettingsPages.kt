@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.settings
 
+import com.bamnat.app.data.rules
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -238,12 +239,19 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
     }
     // [SLP-01][MKT-07][MKT-11]
     SectionCard(title = "휴식 점검") {
-        SwitchRow("휴식 점검", "근무 사이 휴식이 11시간보다 짧거나 야간이 4일 이어지면 달력에 표시해요", settings.restCheck) { v ->
+        SwitchRow("휴식 점검", "근무 사이 휴식이 짧거나 나이트가 이어지면 달력에 알려 줘요. 병원·회사 기준에 맞출 수 있어요", settings.restCheck) { v ->
             vm.update { it.copy(restCheck = v) }
         }
         if (settings.restCheck) {
-            SwitchRow("더 엄격하게", "야간이 3일 이어지거나, 야간 뒤 쉬는 날이 2일보다 적어도 표시해요", settings.strictRest) { v ->
-                vm.update { it.copy(strictRest = v) }
+            // [REST-01] 1.21's '더 엄격하게' is a preset of the same 근무표 점검 기준 the calendar card opens.
+            var rulesOpen by remember { mutableStateOf(false) }
+            val r = settings.rules
+            NavRow("근무표 점검 기준", "${r.preset?.label ?: "직접 정함"} · 휴식 ${r.minRestHours}시간, 연속 나이트 ${r.maxNightsInRow}일, 한 달 나이트 ${r.maxNightsPerMonth}개") {
+                rulesOpen = true
+            }
+            if (rulesOpen) com.bamnat.app.ui.calendar.RestRulesSheet(r, com.bamnat.core.schedule.RotationSpeed.NONE, onDismiss = { rulesOpen = false }) { n ->
+                vm.update { it.copy(restRules = n.copy(on = true).encode(), restCheck = n.on, strictRest = false) }
+                rulesOpen = false
             }
         }
     }

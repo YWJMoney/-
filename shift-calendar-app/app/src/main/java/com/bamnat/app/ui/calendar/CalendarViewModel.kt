@@ -6,6 +6,7 @@ import com.bamnat.app.AppContainer
 import com.bamnat.app.ui.pay.hourlyWeek
 import com.bamnat.app.alarm.UpcomingAlarm
 import com.bamnat.app.data.AppSettings
+import com.bamnat.app.data.rules
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.pay.named
 import com.bamnat.app.ui.Fmt
@@ -29,7 +30,12 @@ import com.bamnat.core.pay.DayMinutes
 import com.bamnat.core.pay.DayPay
 import com.bamnat.core.pay.MonthPay
 import com.bamnat.core.pay.Occupation
+import com.bamnat.core.pay.NightSummary
 import com.bamnat.core.pay.PayCalculator
+import com.bamnat.core.pay.PublicPayTable
+import com.bamnat.core.schedule.PatternTimeline
+import com.bamnat.core.schedule.RestRules
+import com.bamnat.core.schedule.RotationSpeed
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.ValueTimeline
 import com.bamnat.core.pay.WageType
@@ -309,13 +315,40 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     /**
      * [SLP-01][MKT-07] Rest-gap signs for [month]; the days just before it are read too, so a
-     * night at the end of last month still counts against the 1st.
+     * night at the end of last month still counts against the 1st. [REST-01] By the user's [rules] as the
+     * month's pattern turns [REST-03].
      */
-    fun restIssues(snapshot: ScheduleSnapshot, month: YearMonth, strict: Boolean = false): List<RestCheck.Issue> {
-        val from = month.atDay(1).minusDays(RestCheck.NIGHT_STREAK.toLong())
+    fun restIssues(snapshot: ScheduleSnapshot, month: YearMonth, rules: RestRules): List<RestCheck.Issue> {
+        val r = rulesFor(snapshot, month.atDay(1), rules)
+        val from = RestCheck.lookbackFrom(month.atDay(1), r)
         val days = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(month.atEndOfMonth()) }
             .map(snapshot.resolver::resolve).toList()
-        return RestCheck.check(days, strict).filter { YearMonth.from(it.date) == month }
+        return RestCheck.check(days, r).filter { YearMonth.from(it.date) == month }
+    }
+
+    /** [REST-03] How the pattern on [date] turns, for the rules sheet and the checks. */
+    fun rotation(snapshot: ScheduleSnapshot, date: LocalDate): RotationSpeed =
+        RotationSpeed.of(PatternTimeline.on(snapshot.patterns, date) ?: PatternTimeline.current(snapshot.patterns, date), snapshot.shiftTypes)
+
+    /** [REST-03] [rules] as they fit the pattern on [date]. */
+    fun rulesFor(snapshot: ScheduleSnapshot, date: LocalDate, rules: RestRules): RestRules = rotation(snapshot, date).adjust(rules)
+
+    /** [REST-01] The rules sheet's answer: the limits, and 점검 끄기 as the 휴식 점검 switch. */
+    fun setRestRules(rules: RestRules) = container.settingsRepository.update {
+        it.copy(restRules = rules.copy(on = true).encode(), restCheck = rules.on, strictRest = false)
+    }
+
+    /**
+     * [NURS-05][JOB-03] The line over the month's rest signs: the nights and what they pay (with a pay setup), and a
+     * 공무원's 시간외 counted by 공무원수당 등에 관한 규정 제15조 when a 봉급표 계급 is picked. Off the main thread.
+     */
+    data class MonthNights(val nights: Int, val nightPay: Long?, val overtime: PublicPayTable.Overtime?)
+
+    fun monthNights(profile: PayProfile?, snapshot: ScheduleSnapshot, month: YearMonth): MonthNights {
+        val days = (1..month.lengthOfMonth()).map { snapshot.resolver.resolve(month.atDay(it)) }
+        val nights = RestCheck.nightDates(days).size
+        val pay = if (nights == 0 || profile == null) null else runCatching { monthPay(profile.named(snapshot.kinds), snapshot, month) }.getOrNull()
+        return MonthNights(nights, pay?.let(NightSummary::allowance), profile?.publicGrade?.let { PublicPayTable.overtime(days, it.onSite) })
     }
 
     /**
@@ -330,7 +363,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun todayFlow(snapshot: ScheduleSnapshot, settings: AppSettings, log: List<SleepEntry>, now: LocalDateTime): TodayFlow.Card =
         // [CAL-13] An added calendar kept from ringing shows no alarm in the day's flow.
         TodayFlow.of(now, snapshot.resolver, settings.alarmsEnabled && calendarAlarmsOn.value, log, settings.sleepTargetMinutes, settings.commuteMinutes,
-            settings.restCheck, settings.strictRest,
+            settings.restCheck, settings.strictRest, rules = rulesFor(snapshot, now.toLocalDate(), settings.rules),
             // [SLP-16] The way-home card speaks from the user's own sleeps after night work.
             afterNightMinutes = com.bamnat.core.sleep.SleepInsights.afterNightAverage(log, snapshot.resolver, now.toLocalDate()))
 
@@ -381,9 +414,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun deleteSleep(id: Long) { container.appScope.launch { container.sleepRepository.delete(id) } }
 
     /** Rest-gap signs that fall on [date]. */
-    fun restIssuesOn(snapshot: ScheduleSnapshot, date: LocalDate, strict: Boolean = false): List<RestCheck.Issue> {
-        val days = (RestCheck.NIGHT_STREAK.toLong() downTo 0).map { snapshot.resolver.resolve(date.minusDays(it)) }
-        return RestCheck.check(days, strict).filter { it.date == date }
+    fun restIssuesOn(snapshot: ScheduleSnapshot, date: LocalDate, rules: RestRules): List<RestCheck.Issue> {
+        val r = rulesFor(snapshot, date, rules)
+        val days = generateSequence(RestCheck.lookbackFrom(date, r)) { it.plusDays(1) }.takeWhile { !it.isAfter(date) }
+            .map(snapshot.resolver::resolve).toList()
+        return RestCheck.check(days, r).filter { it.date == date }
     }
 
     /** [FEAT-17] Memos that belong to a date, for the list under the calendar and memo-first cells. */

@@ -79,6 +79,8 @@ data class AppSettings(
     val restCheck: Boolean = true,
     /** [MKT-11] Delphi rules on top: at most 2 nights in a row, 2 days off after nights. */
     val strictRest: Boolean = false,
+    /** [REST-01] 근무표 점검 기준 ([RestRules.encode]); empty until changed. Read it as [rules]. */
+    val restRules: String = "",
     /** [SLP-03][SLP-14] 오늘의 흐름 on the calendar, and sleep times that fit the schedule in the day view. */
     val sleepTips: Boolean = true,
     /**
@@ -215,6 +217,7 @@ class SettingsRepository(context: Context) {
             calendarMemos = prefs.getBoolean(K_CAL_MEMOS, d.calendarMemos),
             restCheck = prefs.getBoolean(K_REST_CHECK, d.restCheck),
             strictRest = prefs.getBoolean(K_STRICT_REST, d.strictRest),
+            restRules = prefs.getString(K_REST_RULES, d.restRules) ?: d.restRules,
             sleepTips = prefs.getBoolean(K_SLEEP_TIPS, d.sleepTips),
             // The sleep notices of 1.10 and before carry over to the briefing and the commute notice.
             briefing = prefs.getBoolean(K_BRIEFING, prefs.getBoolean(K_SLEEP_REMINDERS, d.briefing)),
@@ -275,6 +278,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_CAL_MEMOS, s.calendarMemos)
             .putBoolean(K_REST_CHECK, s.restCheck)
             .putBoolean(K_STRICT_REST, s.strictRest)
+            .putString(K_REST_RULES, s.restRules)
             .putBoolean(K_SLEEP_TIPS, s.sleepTips)
             .putBoolean(K_BRIEFING, s.briefing)
             .putBoolean(K_TODAY_SHIFT_NOTICE, s.todayShiftNotice)
@@ -340,6 +344,7 @@ class SettingsRepository(context: Context) {
         const val K_CAL_MEMOS = "calendar_memos"
         const val K_REST_CHECK = "rest_check"
         const val K_STRICT_REST = "strict_rest"
+        const val K_REST_RULES = "rest_rules"
         const val K_SLEEP_TIPS = "sleep_tips"
         /** 1.10 and before: one switch for all sleep notices, read once to carry it over. */
         const val K_SLEEP_REMINDERS = "sleep_reminders"
@@ -358,3 +363,10 @@ class SettingsRepository(context: Context) {
         const val K_REST_COMPARED = "rest_day_compared"
     }
 }
+
+/**
+ * [REST-01] The roster limits both checks use: the saved line, or 1.21's '더 엄격하게' for those who had it on, and
+ * 휴식 점검 as the on switch.
+ */
+val AppSettings.rules: com.bamnat.core.schedule.RestRules
+    get() = com.bamnat.core.schedule.RestRules.decode(restRules, strictRest).copy(on = restCheck)

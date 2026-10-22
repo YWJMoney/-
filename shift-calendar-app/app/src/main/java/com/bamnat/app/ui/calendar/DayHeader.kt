@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.data.rules
 import com.bamnat.app.appContainer
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -380,8 +381,8 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
     val memos by vm.datedMemos.collectAsStateWithLifecycle()
     val dayMemos = remember(memos, day.date) { memos.filter { it.date == day.date } }
     val alarms = remember(snapshot, day.date) { plannedAlarms(snapshot, day) }
-    val rest = remember(snapshot, day.date, settings.restCheck, settings.strictRest) {
-        if (settings.restCheck) vm.restIssuesOn(snapshot, day.date, settings.strictRest) else emptyList()
+    val rest = remember(snapshot, day.date, settings.rules) {
+        if (settings.restCheck) vm.restIssuesOn(snapshot, day.date, settings.rules) else emptyList()
     }
     val calendarAlarms by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
     return buildList {
