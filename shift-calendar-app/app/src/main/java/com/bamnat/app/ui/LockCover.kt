@@ -18,15 +18,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.bamnat.app.review.InAppReview.findActivity
 
 /** [LOCK-01] What shows while 앱 잠금 holds: nothing of the user's, and the way to unlock, asked once at once. */
 @Composable
 fun LockCover(onUnlock: () -> Unit) {
     LaunchedEffect(Unit) { onUnlock() }
     // Back leaves the app; it never moves the screens under the cover.
-    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    val activity = LocalContext.current.findActivity()
     BackHandler { activity?.moveTaskToBack(true) }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Column(
