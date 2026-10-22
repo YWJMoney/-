@@ -56,7 +56,7 @@ test("every app reads the switch; only the owner turns it", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-20T01:00:00Z") });
   const { call } = server();
   const before = (await call("GET", "/api/config")).data;
-  assert.deepEqual(before, { v: 1, billingLive: false, launchedAt: null, thanksMonths: 1, freeFeatures: [], adQuietDays: 3, trialAskDays: 7 });
+  assert.deepEqual(before, { v: 1, billingLive: false, launchedAt: null, thanksMonths: 1, freeFeatures: [], adQuietDays: 3, trialAskDays: 7, notices: [], off: [] });
 
   const owner = await signIn(call);
   const { headers: m } = await member(call, owner);
