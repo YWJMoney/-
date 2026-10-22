@@ -105,6 +105,14 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
             ) {
                 Text("쓰지 않는 기능은 꺼 두면 화면에서 사라져요. 언제든 여기서 다시 켤 수 있어요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // [ONBOARD-04][SIMPLE-02] The recommended features and their permissions, on one screen.
+                SectionCard(title = "추천 기능 한 번에 켜기") {
+                    Text("켜 둬도 괜찮은 알림과 필요한 허용을 한 화면에서 보고 바꿔요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.RECOMMENDED) }) {
+                        Text("추천 기능 보기")
+                    }
+                }
                 if (calendars.size > 1) {
                     Text("설정할 달력", style = MaterialTheme.typography.labelLarge)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -170,6 +170,16 @@ internal object HelpFaq {
             listOf("데이터", "가져오기"),
             "캘린더에서 가져오기" to HelpAction.Go(SettingsGo.CALENDAR_IMPORT),
         ),
+        // [SIMPLE-02] Where the features that start on are turned off, and why leaving them on is fine.
+        HelpTopic(
+            "turnOff", "기능", "켜져 있는 알림이나 기능을 끄고 싶어요",
+            "설정 › 기능 켜고 끄기에서 모두 끄고 다시 켤 수 있어요. 처음에 켜 둔 하루 브리핑·잘 준비·잠금 화면 오늘 근무는 소리가 없고, " +
+                "퇴근길 안전은 야간이 끝날 때 한 번뿐이에요. 모두 이 휴대폰 안에서만 돌아서 켜 둬도 괜찮아요. " +
+                "‘추천 기능 한 번에 켜기’에서 한 화면으로 보고 바꿀 수도 있어요.",
+            listOf("끄기", "끄고", "알림 끄기", "너무 많", "귀찮", "브리핑", "잠금 화면", "추천", "기본", "켜져"),
+            listOf("기능 켜고 끄기", "알림", "추천 기능"),
+            "추천 기능 열기" to HelpAction.Go(SettingsGo.RECOMMENDED),
+        ),
         HelpTopic(
             "privacy", "개인정보", "내 기록은 어디에 저장되나요?",
             "근무, 메모, 돈 기록, 급여는 이 휴대폰에만 저장돼요. 링크 공유, 회사 규칙 광장, 문의처럼 직접 보내는 것만 서버로 가요. " +

@@ -13,6 +13,8 @@ enum class Place {
     PAY, PATTERN, SHIFT_TYPES, EXTRA_KINDS, WORK_STYLE, CALENDARS, CALENDAR_EDIT, SHOP_DAYS, COMBINED, OWED,
     SLEEP, DUTY_ROSTER, HEALTH_REPORT, TEAMS, YEAR, ATTENDANCE_IMPORT, COMMUTE, CALENDAR_IMPORT, SHARE, RECEIVE,
     DIAGNOSTICS, INQUIRY, FEATURES, PRO,
+    /** [ONBOARD-04] 추천 기능 한 번에 켜기. */
+    RECOMMENDED,
     SETTINGS_WORK, SETTINGS_ALARM, SETTINGS_REST, SETTINGS_NOTICES, SETTINGS_PAY, SETTINGS_CALENDAR,
     SETTINGS_DATA, SETTINGS_PRIVACY,
     ;
@@ -115,6 +117,10 @@ object FeatureRegistry {
             ALL, "달력 맨 위 카드", at(Place.FEATURES), "처음", "시작", "체크리스트", "안내 카드", "할 수 있는 것", off = Off.APP),
         f("guide.tips", "GUIDE-03", "알맞은 때 한 줄 안내", "급여일·첫 하루 마감처럼 알맞은 때 쓸 만한 기능을 하루 한 번까지 한 줄로 알려 줘요",
             ALL, "달력 맨 위 한 줄", at(Place.FEATURES), "팁", "안내", "알려 주기", "추천", off = Off.APP),
+        // [ONBOARD-03][ONBOARD-04] The recommended features and what they need, on one screen.
+        f("settings.recommended", "ONBOARD-04", "추천 기능 한 번에 켜기", "켜 둬도 괜찮은 알림과 필요한 허용을 한 화면에서 켜고, 끄는 곳을 알려 줘요",
+            ALL, "설정 › 기능 켜고 끄기 › 추천 기능 한 번에 켜기", at(Place.RECOMMENDED),
+            "추천 기능", "한 번에 켜기", "모두 켜기", "권한 한 번에", "허용", "기본 설정", "끄는 법"),
 
         // Shift work.
         f("shift.pattern", "SET-01", "근무 주기", "주주야야휴휴처럼 돌아가는 순서와 시작일을 정하면 달력이 채워져요",

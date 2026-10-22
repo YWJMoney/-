@@ -10,6 +10,10 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        Release(33, "1.22.0", listOf(
+            // [ONBOARD-03][ONBOARD-04]
+            Line("처음 화면이 한 장으로 줄었어요. 켜 둬도 괜찮은 추천 기능을 한 번에 켜고, 필요한 허용을 차례로 받아요", "settings.recommended"),
+        )),
         Release(32, "1.21.0", listOf(
             Line("‘모든 조 보기’가 새로워졌어요. 내 조가 몇 번째여도 맞게 돌고, 날짜를 누르면 대근 들어올 수 있는 조를 이유와 함께 찾아요", "shift.teams"),
             Line("달력 위 ⋮ 대신 이름이 붙은 ‘도구’ 버튼과 ‘모든 조’ 버튼이 생겼어요"),
