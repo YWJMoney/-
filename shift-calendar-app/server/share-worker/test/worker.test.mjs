@@ -2,19 +2,31 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import worker, { validate, renderSchedule, renderIcs } from "../src/index.js";
+import worker, { validate, renderSchedule, renderIcs, flushStats, REPORT_REASONS } from "../src/index.js";
 
 function memoryKv() {
   const map = new Map();
   return {
     map,
+    meta: new Map(),
     async get(key, type) {
       const v = map.get(key);
       if (v === undefined) return null;
       return type === "json" ? JSON.parse(v) : v;
     },
-    async put(key, value, opts) { map.set(key, value); this.lastTtl = opts?.expirationTtl; },
-    async delete(key) { map.delete(key); },
+    async getWithMetadata(key) {
+      return { value: await this.get(key), metadata: this.meta.get(key) ?? null };
+    },
+    async put(key, value, opts) {
+      map.set(key, value);
+      this.lastTtl = opts?.expirationTtl;
+      if (opts?.metadata) this.meta.set(key, opts.metadata); else this.meta.delete(key);
+    },
+    async delete(key) { map.delete(key); this.meta.delete(key); },
+    async list({ prefix = "" } = {}) {
+      const keys = [...map.keys()].filter((k) => k.startsWith(prefix)).sort().map((name) => ({ name, metadata: this.meta.get(name) }));
+      return { keys, list_complete: true };
+    },
   };
 }
 
@@ -397,4 +409,94 @@ test("[FEAT-15] long names fold without splitting a character", () => {
   const ics = renderIcs({ ...sample, title: "가".repeat(30), ics: true, tz: "Asia/Seoul" }, "abcdefghijklmnop", null);
   for (const line of ics.split("\r\n")) assert.ok(new TextEncoder().encode(line).length <= 75, line);
   assert.match(ics, /X-WR-CALNAME:가+\r\n 가+/);
+});
+
+// ---- [SRV-05][STAT-04] reports, take-downs and day counts (1.22) ----
+
+const ADMIN = "a-shared-secret-of-thirty-two-chars";
+const bearer = { authorization: `Bearer ${ADMIN}` };
+
+test("[SRV-05] the page has a script-free report form, and a report counts once per caller and day", async () => {
+  const env = { SHARES: memoryKv() };
+  const made = await (await call(env, "POST", "/api/share", sample)).json();
+  const page = await (await call(env, "GET", `/s/${made.id}`)).text();
+  assert.match(page, new RegExp(`<form method="post" action="/s/${made.id}/report">`));
+  assert.ok(!/<script/i.test(page));
+  for (const k of Object.keys(REPORT_REASONS)) assert.match(page, new RegExp(`value="${k}"`));
+  const form = (reason, ip = "203.0.113.5") => worker.fetch(new Request(`https://share.example/s/${made.id}/report`, {
+    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", "cf-connecting-ip": ip }, body: `reason=${reason}`,
+  }), env);
+  assert.equal((await form("nonsense")).status, 400);
+  const thanks = await form("personal");
+  assert.equal(thanks.status, 200);
+  assert.match(await thanks.text(), /신고를 받았어요/);
+  // Again from the same caller: thanked, not counted.
+  assert.equal((await form("abuse")).status, 200);
+  // The app's report, from someone else.
+  assert.equal((await call(env, "POST", `/api/share/${made.id}/report`, { reason: "abuse" }, { "cf-connecting-ip": "198.51.100.7" })).status, 204);
+  assert.deepEqual(env.SHARES.meta.get(`report:${made.id}`).reasons, { personal: 1, abuse: 1 });
+  // Nothing in the store says who reported.
+  assert.ok(![...env.SHARES.map.keys(), ...env.SHARES.map.values()].some((v) => String(v).includes("203.0.113.5")));
+  assert.equal((await call(env, "POST", "/api/share/AbCdEfGhJkLmNpQrStUvWx/report", { reason: "spam" })).status, 404);
+});
+
+test("[SRV-05] a caller can send only a few reports an hour", async () => {
+  const env = { SHARES: memoryKv() };
+  const ids = [];
+  for (let i = 0; i < 11; i++) ids.push((await (await call(env, "POST", "/api/share", sample, { "cf-connecting-ip": `192.0.2.${i}` })).json()).id);
+  for (let i = 0; i < 10; i++) assert.equal((await call(env, "POST", `/api/share/${ids[i]}/report`, { reason: "spam" })).status, 204);
+  assert.equal((await call(env, "POST", `/api/share/${ids[10]}/report`, { reason: "spam" })).status, 429);
+});
+
+test("[SRV-05] admin paths do not exist without a token and refuse a wrong one", async () => {
+  const env = { SHARES: memoryKv() };
+  assert.equal((await call(env, "GET", "/api/admin/reports", undefined, bearer)).status, 404);
+  env.SHARE_ADMIN_TOKEN = "short";
+  assert.equal((await call(env, "GET", "/api/admin/reports", undefined, bearer)).status, 404);
+  env.SHARE_ADMIN_TOKEN = ADMIN;
+  assert.equal((await call(env, "GET", "/api/admin/reports", undefined, { authorization: "Bearer nope" })).status, 403);
+  assert.equal((await call(env, "GET", "/api/admin/reports")).status, 403);
+  assert.deepEqual(await (await call(env, "GET", "/api/admin/reports", undefined, bearer)).json(), { reports: [] });
+});
+
+test("[SRV-05] taking a link down drops the schedule, tells visitors why, and cannot be undone by the sharer", async () => {
+  const env = { SHARES: memoryKv(), SHARE_ADMIN_TOKEN: ADMIN };
+  const made = await (await call(env, "POST", "/api/share", { ...sample, ics: true })).json();
+  await call(env, "POST", `/api/share/${made.id}/report`, { reason: "personal" });
+  const listed = (await (await call(env, "GET", "/api/admin/reports", undefined, bearer)).json()).reports;
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].id, made.id);
+  assert.equal(listed[0].count, 1);
+  assert.equal((await call(env, "DELETE", `/api/admin/share/${made.id}`, undefined, bearer)).status, 204);
+  assert.ok(!env.SHARES.map.get(made.id).includes("민지"));
+  const page = await call(env, "GET", `/s/${made.id}`);
+  assert.equal(page.status, 410);
+  assert.match(await page.text(), /운영 규칙에 따라 내려졌어요/);
+  assert.equal((await call(env, "GET", `/api/share/${made.id}`)).status, 410);
+  assert.equal((await call(env, "GET", `/s/${made.id}.ics`)).status, 404);
+  assert.equal((await call(env, "PUT", `/api/share/${made.id}`, sample, { "x-delete-token": made.deleteToken })).status, 410);
+  assert.equal((await call(env, "POST", `/api/share/${made.id}/report`, { reason: "spam" }, { "cf-connecting-ip": "198.51.100.9" })).status, 404);
+  assert.deepEqual((await (await call(env, "GET", "/api/admin/reports", undefined, bearer)).json()).reports, []);
+  assert.equal((await call(env, "DELETE", "/api/admin/share/AbCdEfGhJkLmNpQrStUvWx", undefined, bearer)).status, 404);
+});
+
+test("[STAT-04] links made, pages seen, reports and take-downs are counted per day in batches", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-22T03:00:00Z") });
+  const env = { SHARES: memoryKv(), SHARE_ADMIN_TOKEN: ADMIN };
+  const made = await (await call(env, "POST", "/api/share", sample)).json();
+  await call(env, "POST", "/api/share", sample);
+  for (let i = 0; i < 3; i++) await call(env, "GET", `/s/${made.id}`);
+  // Within five minutes nothing is written yet.
+  assert.equal(env.SHARES.map.get("stats:2026-10-22"), undefined);
+  t.mock.timers.tick(5 * 60 * 1000);
+  await call(env, "GET", `/s/${made.id}`);
+  assert.deepEqual(JSON.parse(env.SHARES.map.get("stats:2026-10-22")), { created: 2, views: 4 });
+  await call(env, "POST", `/api/share/${made.id}/report`, { reason: "spam" });
+  await call(env, "DELETE", `/api/admin/share/${made.id}`, undefined, bearer);
+  const s = await (await call(env, "GET", "/api/admin/stats?days=7", undefined, bearer)).json();
+  assert.equal(s.days.length, 7);
+  assert.deepEqual(s.days.at(-1), { day: "2026-10-22", created: 2, views: 4, reports: 1, removed: 1 });
+  assert.equal(s.created, 2);
+  assert.equal(s.views, 4);
+  await flushStats(env);
 });
