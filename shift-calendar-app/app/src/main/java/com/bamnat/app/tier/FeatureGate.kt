@@ -50,6 +50,23 @@ enum class Feature(val label: String, val minTier: Tier) {
     MONEY_STATS("돈 통계", Tier.PRO),
     /** [MCAL-07] The main calendar and one added calendar are free; a second added calendar on is pro. */
     MORE_CALENDARS("달력 여러 개", Tier.PRO),
+    // [PROV-08] 1.20.0 filled the four pillars (수익화 확정 5-2); each is its own row so the server can open one.
+    /** [PROV-01] A month's or a year's pay as a PDF and a CSV, with how each line was worked out. */
+    PAY_REPORT("급여 리포트 PDF·CSV", Tier.PRO),
+    /** [PROV-02] This month beside last month and the same month a year ago, and the year month by month. */
+    WORK_COMPARE("근무·급여 비교", Tier.PRO),
+    /** [FEAT-07] The shifts written to a calendar of their own on the phone, which the phone's calendar apps show. */
+    DEVICE_CALENDAR("휴대폰 캘린더에 근무 쓰기", Tier.PRO),
+    /** [FEAT-15] An address other calendar apps subscribe to, beside a share link. */
+    ICS_FEED("캘린더 구독 주소", Tier.PRO),
+    /** [PROV-03] A password-protected backup written to a file of the user's choosing every day. */
+    AUTO_BACKUP("매일 자동 백업", Tier.PRO),
+    /** [PROV-04] Up to five links per calendar, each with its own parts and period, and 180 days or a year. */
+    MORE_LINKS("공유 링크 여러 개", Tier.PRO),
+    /** [PROV-05] A month's and a year's roster as an A4 PDF to print. */
+    ROSTER_PDF("근무표 PDF", Tier.PRO),
+    /** [PROV-06][PROV-07] A task before the alarm stops, and a check a few minutes later that the user is up. */
+    SURE_ALARM("끄기 미션·일어났는지 확인", Tier.PRO),
     /** Phase 3 (M24), not sold yet. */
     TEAM_ROSTER("팀 근무표 만들기", Tier.LEADER),
 }

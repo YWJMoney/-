@@ -321,6 +321,9 @@ private fun PayResult(
             CloseMonthCard(vm, result, closedSnap)
         }
 
+        // [PROV-01] The month or its year as a PDF or CSV (프로).
+        PayReportCard(vm, profile, snapshot, shown, closed = closedSnap != null, gate = gate)
+
         if (result.warnings.isNotEmpty()) {
             SectionCard(title = "확인해 주세요") {
                 result.warnings.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 2.dp)) }

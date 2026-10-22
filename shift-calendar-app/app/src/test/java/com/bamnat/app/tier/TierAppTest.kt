@@ -105,7 +105,11 @@ class TierAppTest {
         assertEquals(
             mapOf(
                 "NO_ADS" to Tier.PRO, "PAYSLIP_MATCH" to Tier.PRO, "PAY_RULE_IMPORT" to Tier.PRO, "PAY_BULK_EDIT" to Tier.PRO,
-                "MONEY_STATS" to Tier.PRO, "MORE_CALENDARS" to Tier.PRO, "TEAM_ROSTER" to Tier.LEADER,
+                "MONEY_STATS" to Tier.PRO, "MORE_CALENDARS" to Tier.PRO,
+                // [PROV-08] 1.20.0: the rest of 수익화 확정 5-2's four pillars.
+                "PAY_REPORT" to Tier.PRO, "WORK_COMPARE" to Tier.PRO, "DEVICE_CALENDAR" to Tier.PRO, "ICS_FEED" to Tier.PRO,
+                "AUTO_BACKUP" to Tier.PRO, "MORE_LINKS" to Tier.PRO, "ROSTER_PDF" to Tier.PRO, "SURE_ALARM" to Tier.PRO,
+                "TEAM_ROSTER" to Tier.LEADER,
             ),
             Feature.entries.associate { it.name to it.minTier },
         )

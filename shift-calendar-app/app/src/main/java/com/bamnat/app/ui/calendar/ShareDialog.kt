@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material3.Button
@@ -165,6 +166,39 @@ fun ShareDialog(
                 Icon(Icons.Outlined.Image, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("이 달 이미지로 보내기")
+            }
+            // [PROV-05] 근무표 PDF (프로): the month on screen or its year, on A4 to print or keep.
+            val pdfOpen = container.featureGate.state.collectAsState().value.allows(com.bamnat.app.tier.Feature.ROSTER_PDF)
+            fun rosterPdf(year: Boolean) {
+                if (!pdfOpen) { com.bamnat.app.ui.pro.openPro(); return }
+                val name = when {
+                    title.isNotBlank() -> "${title.trim()}의 근무표"
+                    added && calendar != null -> "${calendar.name} 근무표"
+                    else -> "근무표"
+                }
+                scope.launch {
+                    runCatching {
+                        val today = java.time.LocalDate.now()
+                        val doc = if (year) com.bamnat.core.report.RosterReport.year(month.year, snapshot.resolver::resolve, name, today)
+                        else com.bamnat.core.report.RosterReport.month(month, snapshot.resolver::resolve, name, today)
+                        com.bamnat.app.report.ReportShare.pdf(context, doc,
+                            if (year) com.bamnat.core.report.RosterReport.fileName(month.year) else com.bamnat.core.report.RosterReport.fileName(month))
+                        container.telemetry.event("roster_pdf", if (year) "year" else "month")
+                    }.onFailure { error = "PDF를 만들지 못했어요" }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = { rosterPdf(false) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                    Icon(Icons.Outlined.Description, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("${month.monthValue}월 PDF")
+                }
+                OutlinedButton(onClick = { rosterPdf(true) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                    Icon(Icons.Outlined.Description, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("${month.year}년 PDF")
+                }
+                if (!pdfOpen) com.bamnat.app.ui.money.ProPill()
             }
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {

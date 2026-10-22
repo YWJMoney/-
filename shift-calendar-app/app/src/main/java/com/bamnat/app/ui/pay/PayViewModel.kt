@@ -303,6 +303,22 @@ class PayViewModel(
         PayView(result, range, year, restDayLaw, holidayModes)
     }
 
+    /** [PROV-01] A month as the report shows it: the closed result when the month is closed [PAYX-03]. */
+    private fun asShown(pay: MonthPay): MonthPay =
+        closed.value[pay.month]?.let { pay.copy(lines = it.lines, ratesVersion = it.ratesVersion) } ?: pay
+
+    /** [PROV-01] The months of [year], each as the pay screen shows it, for the year's report. */
+    suspend fun yearPays(profile: PayProfile, snapshot: ScheduleSnapshot, year: Int): List<MonthPay> = withContext(Dispatchers.Default) {
+        (1..12).map { asShown(calculate(profile, snapshot, YearMonth.of(year, it))) }
+    }
+
+    /** [PROV-01] Which report was made, never what it said. */
+    fun reportMade(what: String) = container.telemetry.event("pay_report", what)
+
+    /** [PROV-01] The person and the pay at the top of a report, in the screen's words. */
+    fun reportWho(profile: PayProfile, month: YearMonth): com.bamnat.core.report.PayReport.Who =
+        com.bamnat.core.report.PayReport.Who(profile.occupation.label, "${profile.wageLabel()} ${won(profile.base.on(month).value)}")
+
     /** One month on a background thread, for editors that show the total as it changes. */
     suspend fun calculateOff(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): MonthPay =
         withContext(Dispatchers.Default) { calculate(profile, snapshot, month) }
