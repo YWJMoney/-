@@ -1,11 +1,25 @@
 # 밤낮 인수인계 (다른 계정에서 이어 가기)
 
-마지막 정리 2026-10-22, 앱 1.20.0(versionCode 31, 워치 100031) 기준이에요. 맨 위 0항이 지금 판(1.20.0)과 바로 앞 판(1.19.0)이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
+마지막 정리 2026-10-22, 앱 1.21.0(versionCode 32, 워치 100032) 기준이에요. 맨 위 0항이 지금 판(1.21.0), 0-1항이 1.20.0, 0-2항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
 
 이 저장소는 공개예요(GitHub Pages로 처리방침을 올려요). 그래서 이 문서에는 비밀값, 서명 키, 사용자 개인 정보를 적지 않아요.
 그런 것은 사용자가 새 프로젝트에 파일로 따로 올려요(7항). 새 계정의 Claude는 이 문서와 그 비공개 메모를 먼저 읽고 시작해요.
 
-## 0. 지금 판: 1.20.0 프로 가치 (2026-10-22)
+## 0. 지금 판: 1.21.0 사용자 제안 (2026-10-22)
+
+사용자 제안(모든 조·달력 버튼·간호사와 직군·투자 알림·광장 고도화·직군별 광장)을 모두 만들었어요. DB는 18 그대로예요(결정 D40). 다음 판은 1.22.0이에요(비공개 `인계/다음-스레드-시작-1.22.md`).
+
+- **모든 조와 대근 찾기**: core `schedule/TeamRoster.kt`(내 조가 몇 번째여도 내 주기, 다른 조 순서 유지), `schedule/CoverFinder.kt`(쉬고 싶은 날 들어올 수 있는 조, 휴식 기본 11시간 D31), 앱 `ui/calendar/TeamsScreen.kt`, `data/TeamStore.kt`. 달력 위 도구 줄과 '모든 조' 버튼은 `CalendarScreen`의 `CalendarHeader`.
+- **간호 한 달 연달아 넣기**: core `schedule/DutyCheck.kt`(11시간, 나이트 뒤 2일, 연속 나이트 3일, 7일 연속; 알려만 줌), 앱 `ui/calendar/DutyTypingSheet.kt`, `CalendarViewModel.applyDuty`(한 번에 저장·되돌리기). 듀티표 인식은 core `imports/DutyRoster.kt`(S=미들, 병가·생휴·AL·SL·PH, '1(월)').
+- **급여 엔진**: `pay/TakeHome.kt`가 그 달 날짜로 요율표 절반과 국민연금 상하한(`PENSION_BASES`)을 써요. `PayCalculator`의 수습 3개월 경고, 주휴의 공휴일 넘어가는 밤샘(`weeklyHolidayLine`의 `holiday`). 리뷰는 비공개 `research/1.21-급여엔진-리뷰.md`.
+- **직군 프리셋**: `pay/PayProfile.kt`의 `Occupation.PUBLIC·POLICE·FIRE`, `pay/PublicServantPay.kt`(봉급기준액 55%/60%, 시간외 ÷209×1.5, 야간 ÷209×0.5, 휴일 ÷26×1.5를 내 규칙 3개로), `PayPresets.firstSetup`. `PayWizard`가 처음 만들 때만 적용해요.
+- **투자 체결 알림**: core `invest/TradeAlertParser.kt`·`TradeAlerts.kt`(대기 30개, 10분 안 같은 체결은 한 번), 앱 `invest/TradeCapture.kt`(`AppContainer.capture`가 먼저 부름, `CaptureService` 필터), `data/InvestRepository.kt`(투자 설정 표의 `pendingAlerts`·`alertAuto`), 화면 `ui/invest/InvestAlertsCard.kt`.
+- **광장**: 서버 `server/company-worker/src/index.js`(글 맞아요·달라요 `post_votes`, 답글·제안 `posts.parent/kind/change`, 자동 채택 `settle`·`payOut`(D32·D33), 판 기록, 쓰는 사람 `uses`, 광장 이름 `nicks`, 직군·지역 `companies.kind/job/region`, 임금표 `rates`·`rate_votes`(D39), 내 데이터 지우기는 채택된 것을 남김(D34)), 관리자 앱 `src/admin-app.js`(채택 기준·임금표 검토·내리기). 앱 `ui/company/PlazaScreens.kt`·`CompanyBoard.kt`·`CompanyViewModels.kt`, `company/CompanyClient.kt`, `data/CompanyShare.kt`.
+- **공휴일**: `holiday/KoreanHolidays.kt`의 `ELECTIONS`(2024 선거일·국군의 날, 2028 국회의원 선거일). **복원**: `BackupManager.readSchedule`이 근무 종류 없는 추가 달력에 기본 근무 종류를 넣어요.
+- **법 문서**: `privacy/index.html` 처리방침 2.7(게시 2026-10-22, 시행 2026-11-21, 2.5·2.6과 같은 날). `docs/play-data-safety.md` 1.21.0장.
+- **시험**: core `DutyCheckTest`, `DutyRosterNurseTest`, `TakeHomeYearTest`, `PublicServantPayTest`, `Holidays2028Test`, `TradeAlertParserTest`(+`TradeAlertsTest`), `HourlyWorkTest`, 앱 `InvestAppTest`, `PersonalCalendarsTest`, `rules/LegalPagesTest`, 화면 사진 361~365, 서버 `test/plaza.test.mjs`.
+
+## 0-1. 앞 판: 1.20.0 프로 가치 (2026-10-22)
 
 프로 화면 네 기둥의 남은 줄을 모두 만들었어요. 모두 프로 기능이고, 정식 출시 스위치 전에는 1.19.0처럼 모두 열려 있어요. 다음 판은 1.21.0 출시 품질·원격 갱신·원문 대조예요(`계획/Phase2-완료-체크리스트.md` 1장).
 
@@ -18,7 +32,7 @@
 - **법 문서**: `privacy/index.html` 처리방침 2.6(1.19.0과 1.20.0을 PR #49 하나로 합쳐 2.5와 같은 날 게시, 게시 2026-10-22·시행 2026-11-21 예정, 2.5 몫 때문에 30일 고지). `docs/play-data-safety.md` 1.20.0장.
 - **시험**: core `ReportTest`·`AlarmMissionTest`·`GuideTest.whatsNewOpensRealFeatures`, 앱 `report/ReportPdfTest`, `calendar/PhoneCalendarTest`, `share/ShareLinksProTest`, `backup/AutoBackupTest`, `alarm/SureAlarmTest`, `tier/TierAppTest`, 화면 사진 385~398, 공유 서버 `worker.test.mjs`.
 
-## 0-1. 바로 앞 판: 1.19.0 수익화 기반 (2026-10-22)
+## 0-2. 그 앞 판: 1.19.0 수익화 기반 (2026-10-22)
 
 일하는 규칙은 `CLAUDE.md`(문서 먼저, 판마다 체크리스트, Phase 3 진입 금지). 남은 일의 정본과 판 계획은 비공개 프로젝트 파일 `계획/Phase2-완료-체크리스트.md`에 있어요. 다음 판은 1.20.0 프로 가치(자동 암호 백업, 공유 링크 여러 개, 통계 확장, 급여 리포트 PDF·CSV, 등급 최종 시험, ICS 구독, 기기 캘린더 쓰기, 확실한 알람, 근무표 PDF)예요.
 
