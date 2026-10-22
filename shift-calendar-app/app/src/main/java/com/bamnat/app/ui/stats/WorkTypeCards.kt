@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.data.WorkTypePrefs
 import com.bamnat.app.ui.Fmt
@@ -51,6 +53,7 @@ import com.bamnat.core.pay.TaxMode
 import com.bamnat.core.work.DayWork
 import com.bamnat.core.work.ShiftMonth
 import com.bamnat.core.work.WorkStyle
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -185,7 +188,7 @@ private fun DayFirstCard(
             free = { rules?.holidayLeaveFree == true && KoreanHolidays.isHoliday(it) },
             carried = if (rules != null && month.year == today.year) rules.annualLeaveCarry else 0.0)
     }
-    val takeHome = payTotal?.let { TakeHome.estimate(it, mode, on = month.atDay(1)) }
+    val takeHome = payTotal?.let { TakeHome.estimate(it, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0) }
     val overtimeDays = remember(snapshot, month) {
         (1..month.lengthOfMonth()).count { snapshot.resolver.resolve(month.atDay(it)).hasExtraWork }
     }
@@ -209,6 +212,7 @@ private fun DayFirstCard(
             }
         }
         TaxModeChips(mode) { prefs.setTaxMode(calendarId, it) }
+        if (mode == TaxMode.INSURANCE_4 && profile != null) TaxFamilyRow(calendarId, profile)
         takeHome?.takeIf { it.deductions.isNotEmpty() }?.let { r ->
             Text(
                 r.deductions.joinToString(" · ") { (name, v) -> "$name ${Fmt.won(v)}" },
@@ -216,6 +220,40 @@ private fun DayFirstCard(
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
+    }
+}
+
+/**
+ * [PAYR-04] 간이세액표's two questions for 근로소득세: 공제대상가족 수 (본인 포함) and 8~20세 자녀 수, kept in the pay
+ * setup (so they go into backups with it). Small steppers right under the tax chips; no new menu.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TaxFamilyRow(calendarId: String, profile: PayProfile) {
+    val store = LocalContext.current.appContainer.calendars.pay(calendarId)
+    val scope = rememberCoroutineScope()
+    fun set(change: (PayProfile) -> PayProfile) = scope.launch { store.update(change) }
+    Column(Modifier.padding(top = 4.dp)) {
+        // Wraps under big text instead of squeezing the second label into a column.
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Stepper("가족 ${profile.taxFamily}명", profile.taxFamily > 1, profile.taxFamily < 20,
+                onMinus = { set { it.copy(taxFamily = it.taxFamily - 1, taxChildren = it.taxChildren.coerceAtMost(it.taxFamily - 2)) } },
+                onPlus = { set { it.copy(taxFamily = it.taxFamily + 1) } })
+            Stepper("8~20세 자녀 ${profile.taxChildren}명", profile.taxChildren > 0, profile.taxChildren < profile.taxFamily - 1,
+                onMinus = { set { it.copy(taxChildren = it.taxChildren - 1) } },
+                onPlus = { set { it.copy(taxChildren = it.taxChildren + 1) } })
+        }
+        Text("근로소득세는 국세청 간이세액표 값이에요. 가족 수는 본인·배우자를 포함해 세어 주세요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun Stepper(label: String, canMinus: Boolean, canPlus: Boolean, onMinus: () -> Unit, onPlus: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = onMinus, enabled = canMinus) { Text("−", style = MaterialTheme.typography.titleMedium) }
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        TextButton(onClick = onPlus, enabled = canPlus) { Text("+", style = MaterialTheme.typography.titleMedium) }
     }
 }
 
@@ -240,7 +278,7 @@ private fun PayGapCard(calendarId: String, month: YearMonth, payTotal: Long?, pr
     val choices by prefs.all.collectAsStateWithLifecycle()
     // [HRLY-04] A part-timer chose how tax comes off on the pay screen; others choose it on the first card.
     val mode = if (style == WorkStyle.HOURLY) profile?.taxMode ?: TaxMode.NONE else choices[calendarId]?.taxMode ?: TaxMode.INSURANCE_4
-    val expected = payTotal?.let { TakeHome.estimate(it, mode, on = month.atDay(1)).net }
+    val expected = payTotal?.let { TakeHome.estimate(it, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0).net }
     val gap = remember(book, month, expected, profile) {
         book?.let { PayGaps.of(month, expected, profile?.period?.payDate(month), it.entries) }
     } ?: return

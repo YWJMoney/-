@@ -118,7 +118,7 @@ internal fun HourlyPayCard(vm: PayViewModel, profile: PayProfile, gross: Long, u
             when (profile.taxMode) {
                 TaxMode.NONE -> "가게에서 세금을 떼지 않으면 세전 금액이 그대로 들어와요."
                 TaxMode.WITHHOLDING_3_3 -> "3.3%(소득세 3% + 지방소득세 0.3%)로 떼였다면 다음 해 5월 종합소득세 신고로 돌려받을 수 있어요."
-                TaxMode.INSURANCE_4 -> "4대보험은 2026년 근로자 몫이에요. 소득세는 간이세액표를 흉내 낸 참고용이고, 실제는 회사 계산과 연말정산으로 정해져요."
+                TaxMode.INSURANCE_4 -> "4대보험은 그해 근로자 몫이에요. 소득세는 국세청 간이세액표(본인 1명) 값이고, 실제는 회사 선택(80·100·120%)과 연말정산으로 정해져요."
             },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp),
         )

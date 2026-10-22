@@ -224,6 +224,10 @@ data class PayProfile(
     val customRules: List<CustomRule> = emptyList(),
     /** [HRLY-04] How tax comes off this pay, for 예상 실수령; nothing by default. */
     val taxMode: TaxMode = TaxMode.NONE,
+    /** [PAYR-04] 간이세액표 공제대상가족 수 (본인·배우자 포함, 1~20), for 예상 실수령's 근로소득세. */
+    val taxFamily: Int = 1,
+    /** [PAYR-04] Of [taxFamily], 8세 이상 20세 이하 자녀 (간이세액표 제3호). */
+    val taxChildren: Int = 0,
     /**
      * [HRLY-05] 법정 휴게 자동 빼기: a day with no break set gets the break 근로기준법 제54조 asks for, 30 minutes
      * from 4 hours and an hour from 8 (see [com.bamnat.core.schedule.LegalBreak]).

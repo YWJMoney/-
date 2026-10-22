@@ -75,6 +75,7 @@ import com.bamnat.app.company.Plaza
 import com.bamnat.app.company.PlazaJob
 import com.bamnat.app.company.Rate
 import com.bamnat.app.company.RateGroup
+import com.bamnat.core.money.TradeWages
 import com.bamnat.app.company.RuleVersion
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -412,10 +413,27 @@ private fun GroupCard(g: RateGroup, onApply: () -> Unit) {
                 modifier = Modifier.semantics { contentDescription = "가운데 값 ${won(g.mid)}" })
             Text(if (g.n > 1) "채택 ${g.n}건 · ${won(g.low)} ~ ${won(g.high)}" else "채택 1건", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+            GovernmentWageLine(g)
             // [PLZ-11] The plaza's rate as my own pay, from this month.
             OutlinedButton(onClick = onApply) { Text("내 급여에 넣기") }
         }
     }
+}
+
+/**
+ * [PAYR-06] Next to what people shared, the government-published 전국 평균 for the same trade (대한건설협회
+ * 시중노임단가, 1일 8시간), grey and only for 일당: a reference point, not a check on anyone's pay. The table is
+ * the signed `wages.json` ([TradeWages]), so a new half-year reaches phones without an update (순번 272).
+ */
+@Composable
+private fun GovernmentWageLine(g: RateGroup) {
+    if (g.unit != "day") return
+    val t = TradeWages.of(g.trade) ?: return
+    Text(
+        "정부 공표 전국 평균 ${won(t.daily)} · ${TradeWages.SOURCE_SHORT} 시중노임단가 (8시간)",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+    )
 }
 
 @Composable

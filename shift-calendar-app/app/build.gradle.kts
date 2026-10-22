@@ -12,6 +12,8 @@ plugins {
 val shareBaseUrl = (project.findProperty("bamnat.shareBaseUrl") as String?).orEmpty().trim()
 // [COMM-04] Company rules server (server/company-worker). Blank hides 회사 찾기 and sending setups.
 val companyBaseUrl = (project.findProperty("bamnat.companyBaseUrl") as String?).orEmpty().trim()
+// [REMOTE-02] Signed data files on GitHub Pages; fetched only when the build has the internet permission.
+val remoteBaseUrl = (project.findProperty("bamnat.remoteBaseUrl") as String?).orEmpty().trim()
 // [MON-07] AdMob ids, public values the owner gives. Blank: no ads in a release build (a debug build
 // uses Google's test units). The app id falls back to Google's sample id so the SDK starts without one.
 fun adProp(name: String) = (project.findProperty(name) as String?).orEmpty().trim()
@@ -32,6 +34,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SHARE_BASE_URL", "\"$shareBaseUrl\"")
         buildConfigField("String", "COMPANY_BASE_URL", "\"$companyBaseUrl\"")
+        buildConfigField("String", "REMOTE_BASE_URL", "\"${remoteBaseUrl.takeIf { shareBaseUrl.isNotBlank() || companyBaseUrl.isNotBlank() }.orEmpty()}\"")
         buildConfigField("String", "ADMOB_BANNER", "\"${adProp("bamnat.admobBanner")}\"")
         buildConfigField("String", "ADMOB_REWARDED", "\"${adProp("bamnat.admobRewarded")}\"")
         manifestPlaceholders["admobAppId"] = admobAppId

@@ -10,6 +10,12 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        Release(33, "1.22.0", listOf(
+            // ==== 1.22 묶음 A ====
+            Line("예상 실수령의 근로소득세를 국세청 간이세액표(2026년 3월 개정) 그대로 계산해요. 가족 수와 8~20세 자녀 수도 넣을 수 있어요", "day.firstCard"),
+            Line("공종별 평균 일당이 2026년 하반기 시중노임단가로 바뀌었고, 광장 임금표 옆에 정부 공표 전국 평균이 보여요", "field.tradeWage"),
+            Line("요율·세액표·노임단가·근무 순서 프리셋이 바뀌면 앱 업데이트 없이 서명된 파일로 받아요"),
+        )),
         Release(32, "1.21.0", listOf(
             Line("‘모든 조 보기’가 새로워졌어요. 내 조가 몇 번째여도 맞게 돌고, 날짜를 누르면 대근 들어올 수 있는 조를 이유와 함께 찾아요", "shift.teams"),
             Line("달력 위 ⋮ 대신 이름이 붙은 ‘도구’ 버튼과 ‘모든 조’ 버튼이 생겼어요"),

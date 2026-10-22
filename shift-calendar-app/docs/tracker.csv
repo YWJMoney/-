@@ -481,13 +481,13 @@ PLZ-12,"근무 유형별 광장(교대·간호·공무원·최저시급·건설 
 PLZ-13,병원 단위 간호사 광장 (순번 262),2 (1.21.0),완료,,"1.21.0 03621db: PlazaPicker(직군=간호, 장소), plaza.test.mjs"
 PLZ-14,"목수·일용직 지역별 임금표(시·도, 3명 자동 채택, 중앙값 2배 검토) (순번 263)",2 (1.21.0),완료,,"1.21.0 c1d64a2·03621db: rates API, 357/358 화면, research/1.21-직군-조사.md 5장"
 PLZ-15,"관리자 앱 광장 운영: 채택 기준 설정, 임금표 검토·내리기 (순번 264)",2 (1.21.0),완료,,"1.21.0 c1d64a2: admin-app.js ratesView, admin.test.mjs"
-REMOTE-01,"서명한 원격 파일: GitHub Pages remote/v1/*.json + Ed25519 서명(.sig), core 순수 Kotlin 검증·엄격한 JSON, 서명 도구 tools/remote_sign.py, 비공개 키는 저장소 밖 (순번 38, 결정 D3)",2 (1.22.0),진행 중,,
-REMOTE-02,"요율 원격 갱신: rates.json을 하루 한 번 받아 서명 확인 뒤 적용, 앱에 든 값이 기본, 더 새 판만, 오프라인은 마지막 값 (순번 39)",2 (1.22.0),대기,,
-REMOTE-03,"프리셋을 데이터 파일로: 근무 순서·근무 종류 묶음·직군 급여를 presets.json으로, 원격 파일로 더하기 (순번 41)",2 (1.22.0),진행 중,,
-LAWX-01,"근로기준법·퇴직급여법·최저임금법 계산 조문 전체 원문 대조 (순번 44)",2 (1.22.0),대기,,
+REMOTE-01,"서명한 원격 파일: GitHub Pages remote/v1/*.json + Ed25519 서명(.sig), core 순수 Kotlin 검증·엄격한 JSON, 서명 도구 tools/remote_sign.py, 비공개 키는 저장소 밖 (순번 38, 결정 D3)",2 (1.22.0),완료,,"core remote/Ed25519.kt·Json.kt·RemoteFile.kt, tools/remote_sign.py, Ed25519Test·RemoteFileTest (PR #51)"
+REMOTE-02,"요율 원격 갱신: rates.json을 하루 한 번 받아 서명 확인 뒤 적용, 앱에 든 값이 기본, 더 새 판만, 오프라인은 마지막 값 (순번 39)",2 (1.22.0),완료,,"core pay/Rates.kt RateTable.use·RateFile, app remote/RemoteFilesStore.kt (하루 1번·서명·minApp·더 새 판만), RemoteDataTest·RemoteFilesStoreTest"
+REMOTE-03,"프리셋을 데이터 파일로: 근무 순서·근무 종류 묶음·직군 급여를 presets.json으로, 원격 파일로 더하기 (순번 41)",2 (1.22.0),완료,,"remote/v1/presets.json, core remote/PresetFile.kt PresetBook, PresetFileTest (PR #51)"
+LAWX-01,"근로기준법·퇴직급여법·최저임금법 계산 조문 전체 원문 대조 (순번 44)",2 (1.22.0),완료,,"research/1.22-원문대조.md 2장 (국가법령정보센터 원문, 2026-10-22)"
 LAWX-02,"연차 유급휴가 근로기준법 제60·61조 원문 대조, 묶음 D에 전달 (순번 44)",2 (1.22.0),완료,,"research/1.22-원문대조.md 1장 (2026-10-22, 근기법 2026-10-08 시행본, 판례 2021다227100)"
-LAWX-03,"1.16~1.17 세금·노동 숫자(일용직·간이과세·3.3%·최저임금) 원문 대조 (순번 184)",2 (1.22.0),대기,,
-PAYR-03,"2027 요율 원문 대조: 장기요양보험료율, 국민연금 10%·기준소득월액, 건강보험, 고용보험, 비과세 요건 (순번 42·45)",2 (1.22.0),대기,,
-PAYR-04,"실수령 추정을 근로소득 간이세액표(소득세법 시행령 별표 2)로, 부양가족·자녀 수 입력 (순번 100)",2 (1.22.0),대기,,
-PAYR-05,"공종별 일당 표 대한건설협회 2026 하반기 시중노임단가 원문 대조 (순번 183)",2 (1.22.0),대기,,
-PAYR-06,"광장 임금표 옆 정부 공표 시중노임단가 참고 줄, 원격 갱신 (순번 272)",2 (1.22.0),대기,,
+LAWX-03,"1.16~1.17 세금·노동 숫자(일용직·간이과세·3.3%·최저임금) 원문 대조 (순번 184)",2 (1.22.0),완료,,"research/1.22-원문대조.md 6장, ShopTools LaborCost 연도별 요율로 고침, RemoteDataTest.laborCostFollowsTheYear"
+PAYR-03,"2027 요율 원문 대조: 장기요양보험료율, 국민연금 10%·기준소득월액, 건강보험, 고용보험, 비과세 요건 (순번 42·45)",2 (1.22.0),완료,,"research/1.22-원문대조.md 3장, remote/v1/rates.json (장기요양 2027은 결정 전이라 비움), RemoteDataTest"
+PAYR-04,"실수령 추정을 근로소득 간이세액표(소득세법 시행령 별표 2)로, 부양가족·자녀 수 입력 (순번 100)",2 (1.22.0),완료,,"core pay/WithholdingTable.kt + remote/v1/taxtable.json (2026-03-01 별표 2 전체), PayProfile.taxFamily·taxChildren, RemoteDataTest.simplifiedTaxTableGoldenRows, 스크린샷 400·401"
+PAYR-05,"공종별 일당 표 대한건설협회 2026 하반기 시중노임단가 원문 대조 (순번 183)",2 (1.22.0),완료,,"research/1.22-원문대조.md 4장, remote/v1/wages.json (2026-09-01 하반기), RemoteDataTest.constructionWagesAreTheSecondHalf2026"
+PAYR-06,"광장 임금표 옆 정부 공표 시중노임단가 참고 줄, 원격 갱신 (순번 272)",2 (1.22.0),완료,,"PlazaScreens GovernmentWageLine, 스크린샷 402·403"
