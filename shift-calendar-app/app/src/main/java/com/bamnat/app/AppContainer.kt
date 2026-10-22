@@ -351,8 +351,16 @@ class AppContainer(context: Context) {
         }
     }
 
+    /** [STAT-01] 사용 통계 보내기 on or off; off forgets what was waiting to go, right then. */
+    fun setUsageStats(on: Boolean) {
+        settingsRepository.update { it.copy(shareUsageStats = on) }
+        if (!on) usageStats.clear()
+    }
+
     @OptIn(FlowPreview::class)
     fun start() {
+        // [STAT-01] A no that came another way (a restored backup) forgets what waited, without a job of its own.
+        usageStats.forgetUnless(settingsRepository.current.shareUsageStats)
         keep("schedule") {
             scheduleRepository.ensureDefaults()
             // [SETUP-01] A first setup the app was closed in the middle of saving is finished first.
@@ -417,13 +425,11 @@ class AppContainer(context: Context) {
                 .collect { LeaveReminder.reschedule(appContext, payStore.profile.value, settingsRepository.current) }
         }
         // [COMM-10] 광장 소식 runs while it is on and this phone took part in the plaza.
-        // [STAT-01] Turning 사용 통계 보내기 off forgets what was waiting to go. One job for both: [PERF-01].
-        keep("plaza news, usage stats") {
-            combine(settingsRepository.settings.map { Triple(it.plazaNews, it.plazaRulesAgreed, it.shareUsageStats) }, companyStore.sent, companyStore.applied) { a, _, _ -> a }
+        keep("plaza news") {
+            combine(settingsRepository.settings.map { it.plazaNews to it.plazaRulesAgreed }, companyStore.sent, companyStore.applied) { a, _, _ -> a }
                 .distinctUntilChanged()
-                .collect { (news, _, stats) ->
-                    if (!stats) usageStats.clear()
-                    if (news && com.bamnat.app.company.PlazaNewsJob.takesPart(this@AppContainer)) {
+                .collect {
+                    if (settingsRepository.current.plazaNews && com.bamnat.app.company.PlazaNewsJob.takesPart(this@AppContainer)) {
                         com.bamnat.app.company.PlazaNewsJob.schedule(appContext)
                     } else com.bamnat.app.company.PlazaNewsJob.cancel(appContext)
                 }

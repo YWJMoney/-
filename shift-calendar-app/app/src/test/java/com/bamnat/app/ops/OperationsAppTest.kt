@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.bamnat.app.appContainer
 import com.bamnat.app.company.CompanyException
 import com.bamnat.app.data.BackupManager
 import com.bamnat.app.data.SettingsRepository
@@ -100,6 +101,23 @@ class OperationsAppTest {
         assertTrue(offline.preview() != null)
         offline.clear()
         assertNull(offline.preview())
+
+        // A no kept from elsewhere (a restored backup) is honored at the next start; a yes keeps the days.
+        prefs.edit().putString("book", UsageBook().record(UsageEvent.OPEN, today - 1).encode()).commit()
+        offline.forgetUnless(on = true)
+        assertTrue(offline.preview() != null)
+        offline.forgetUnless(on = false)
+        assertNull(offline.preview())
+    }
+
+    @Test fun turningUsageStatsOffForgetsWhatWaitedRightThen() {
+        val c = context.appContainer
+        c.setUsageStats(true)
+        c.usageStats.record(UsageEvent.OPEN)
+        assertTrue(context.getSharedPreferences("usage_stats", Context.MODE_PRIVATE).contains("book"))
+        c.setUsageStats(false)
+        assertFalse(c.settingsRepository.current.shareUsageStats)
+        assertFalse(context.getSharedPreferences("usage_stats", Context.MODE_PRIVATE).contains("book"))
     }
 
     @Test fun thePlazaSettingsGoWithTheBackup() = runBlocking {

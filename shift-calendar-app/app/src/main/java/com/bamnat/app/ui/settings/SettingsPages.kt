@@ -593,7 +593,7 @@ private fun PrivacyPage(
         HorizontalDivider()
         // [STAT-01] Back with a real place to send to (UsageStats, 처리방침 2.8). Its own yes, so it starts off;
         // the app works the same either way.
-        UsageStatsRow(settings.shareUsageStats) { on -> vm.update { it.copy(shareUsageStats = on) } }
+        UsageStatsRow(settings.shareUsageStats) { on -> context.appContainer.setUsageStats(on) }
         // [MON-07] Google's consent form again where the law gives one (EEA, UK and the like); elsewhere, what there is.
         val adPrivacy by vm.adPrivacy.collectAsStateWithLifecycle()
         var adWords by remember { mutableStateOf(false) }

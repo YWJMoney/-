@@ -45,6 +45,11 @@ class UsageStats(
     /** Turning it off forgets everything not sent yet. */
     fun clear() = synchronized(lock) { prefs.edit().clear().apply() }
 
+    /** At start: without a yes, anything still kept is dropped (a cheap look when there is nothing). */
+    fun forgetUnless(on: Boolean) {
+        if (!on && prefs.contains(K_BOOK)) clear()
+    }
+
     /**
      * Sends the finished days when [allowed] (the user's yes and the developer's switch) and not yet today.
      * A failure keeps them for tomorrow; days older than a week are dropped by [UsageBook].
