@@ -3080,6 +3080,8 @@ class ScreenshotTest {
     }
     @Test fun phonePublicGradeHugeText() = shoot("435_phone_public_grade_huge_text", PHONE, 1.5f) {
         payScreen(Tier.PRO, withProfile = true, adjust = { it.copy(occupation = com.bamnat.core.pay.Occupation.PUBLIC) }).invoke(this)
+        // The 연차 card above it is longer since 1.22 묶음 D: two steps, each within reveal's scrolls.
+        reveal("공무원 봉급표", exact = true)
         reveal("교대·현업 근무", exact = true)
     }
     // [NURS-06] A received roster read with the user's own rules.
