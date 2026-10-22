@@ -77,7 +77,7 @@ class RemoteFilesStoreTest {
         online = false
         val s = store()
         assertTrue(s.refresh(now).isEmpty())
-        assertEquals(14, PatternPresets.all.size)
+        assertEquals(16, PatternPresets.all.size)  // 14 + 묶음 C의 경찰 4조 2교대·소방 3조 2교대 21일
         assertTrue(s.due(now))
         online = true
         publish("presets", PresetBook.bundledVersion + 1, """{"patterns":[{"id":"p-new","name":"새 근무","codes":"DNO"}]}""")

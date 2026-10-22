@@ -2787,6 +2787,8 @@ class ScreenshotTest {
         val vm = com.bamnat.app.ui.company.RatesViewModel(companyOn())
         content { com.bamnat.app.ui.company.RatesScreen(vm, onBack = {}) }
         reveal("정부 공표 전국 평균")
+    }
+
     // ==== 1.22 묶음 C ====
     // [REST-01][REST-03] 근무표 점검 기준: one sheet, a preset away from a hospital's rules, and the switch to turn it off.
     private fun restRules(): Screen.() -> Unit = style(WorkStyle.SHIFT) {
