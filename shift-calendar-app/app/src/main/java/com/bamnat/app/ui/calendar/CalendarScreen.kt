@@ -1826,7 +1826,9 @@ private fun MonthRestCard(
     val overtime = nights?.overtime
     if (issues.isEmpty() && count == 0 && overtime == null) return
     var all by remember(issues) { mutableStateOf(false) }
-    val shown = if (all) issues else issues.take(REST_PREVIEW_ROWS)
+    // [REST-02] Folded, the same sign over the month is one line ("연속 야간 3번 · 2·10·18일"); 근거 opens each day.
+    val groups = remember(issues) { com.bamnat.core.schedule.RestCheck.group(issues) }
+    val shown = if (all) issues.map { com.bamnat.core.schedule.RestCheck.Group(it.kind, it.pattern, listOf(it)) } else groups.take(REST_PREVIEW_ROWS)
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1851,28 +1853,29 @@ private fun MonthRestCard(
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp))
             }
-            for (issue in shown) {
+            for (group in shown) {
+                val issue = group.issues.first()
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onPick(issue.date) }.padding(horizontal = 16.dp, vertical = 6.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onPick(group.date) }.padding(horizontal = 16.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("${issue.date.dayOfMonth}일", style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
+                    Text("${group.date.dayOfMonth}일", style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
                         color = MaterialTheme.colorScheme.error, modifier = Modifier.labelWidth(40.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(issue.kind.label, style = MaterialTheme.typography.bodyMedium)
-                        Text(issue.text, style = MaterialTheme.typography.bodySmall,
+                        Text(group.title, style = MaterialTheme.typography.bodyMedium)
+                        Text(group.text, style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         if (all && issue.source.isNotEmpty()) Text("근거: ${issue.source}", style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.outline)
                     }
                 }
             }
-            if (issues.size > REST_PREVIEW_ROWS || issues.isNotEmpty() && !all) {
+            if (issues.isNotEmpty()) {
                 androidx.compose.material3.TextButton(onClick = { all = !all }, modifier = Modifier.padding(start = 4.dp)) {
                     Text(when {
                         all -> "접기"
-                        issues.size > REST_PREVIEW_ROWS -> "${issues.size - REST_PREVIEW_ROWS}개 더 보기 · 근거"
-                        else -> "근거 보기"
+                        groups.size > REST_PREVIEW_ROWS -> "${groups.size - REST_PREVIEW_ROWS}가지 더 · 날짜별로 보기 · 근거"
+                        else -> "날짜별로 보기 · 근거"
                     })
                 }
             }

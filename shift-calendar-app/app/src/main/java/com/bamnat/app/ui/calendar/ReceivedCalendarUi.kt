@@ -876,10 +876,14 @@ private fun ReceivedDutyCard(cal: ReceivedCalendar, warnings: List<com.bamnat.co
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("${cal.name}님 근무표 점검 ${warnings.size}건", style = MaterialTheme.typography.titleSmall)
-            warnings.take(5).forEach { w ->
-                Text("· ${w.text}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // [REST-02] The same sign over the month is one line: the first in full, then the other days.
+            val groups = warnings.groupBy { it.kind to it.pattern }.values.toList()
+            groups.take(5).forEach { same ->
+                val more = same.drop(1).map { it.date.dayOfMonth }
+                Text("· ${same.first().text}" + if (more.isEmpty()) "" else " 외 ${more.size}번 (${more.take(4).joinToString("·")}${if (more.size > 4) "…" else ""}일)",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (warnings.size > 5) Text("그 밖에 ${warnings.size - 5}건", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            if (groups.size > 5) Text("그 밖에 ${groups.size - 5}가지", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
             Text("내 근무표 점검 기준으로 본 참고예요. 받은 근무표는 바뀌지 않고, 상대에게 알리지도 않아요.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
         }

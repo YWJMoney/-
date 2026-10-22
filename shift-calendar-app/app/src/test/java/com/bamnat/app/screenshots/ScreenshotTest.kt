@@ -2801,9 +2801,16 @@ class ScreenshotTest {
     @Test fun phoneRestRulesHugeText() = shoot("431_phone_rest_rules_huge_text", PHONE, 1.5f, restRules())
     // [REST-01][NURS-05][JOB-03] The calendar's check card: 기준 바꾸기, this month's nights and their pay.
     @Test fun foldedMonthRestCard() = shoot("432_folded_month_rest_card", FOLDED, style(WorkStyle.SHIFT) {
-        app.container.settingsRepository.update { it.copy(restRules = com.bamnat.core.schedule.RestRules(maxNightsInRow = 1).encode()) }
+        app.container.settingsRepository.update { it.copy(restRules = com.bamnat.core.schedule.RestRules.Preset.STRICT.rules.encode()) }
         settle()
         reveal("기준 바꾸기", exact = true)
+    })
+    // [REST-02] The same sign over the month folded to one line, and opened day by day with its source.
+    @Test fun foldedMonthRestCardOpen() = shoot("438_folded_month_rest_card_open", FOLDED, style(WorkStyle.SHIFT) {
+        app.container.settingsRepository.update { it.copy(restRules = com.bamnat.core.schedule.RestRules.Preset.STRICT.rules.encode()) }
+        settle()
+        reveal("기준 바꾸기", exact = true)
+        tapText("날짜별로 보기")
     })
     // [NURS-04] A roster photo's doubtful cells, the only ones left to tap.
     @Test fun foldedDutyTypingDoubtful() = shoot("433_folded_duty_typing_doubtful", FOLDED, style(WorkStyle.SHIFT) {
@@ -2834,7 +2841,8 @@ class ScreenshotTest {
     // [NURS-06] A received roster read with the user's own rules.
     @Test fun foldedReceivedDutyCheck() = shoot("436_folded_received_duty_check", FOLDED) {
         receivedOn()
-        app.container.settingsRepository.update { it.copy(restRules = com.bamnat.core.schedule.RestRules(maxNightsInRow = 1).encode()) }
+        // 민지's 주주휴휴야야휴휴 is quiet under 기본 and 더 엄격하게; a ward that wants 3 days off after nights sees it.
+        app.container.settingsRepository.update { it.copy(restRules = com.bamnat.core.schedule.RestRules(offsAfterNights = 3).encode()) }
         settle()
         tapText("민지의 근무표 보기", exact = true)
         reveal("님 근무표 점검")

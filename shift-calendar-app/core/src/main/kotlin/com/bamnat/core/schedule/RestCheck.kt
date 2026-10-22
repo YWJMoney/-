@@ -96,7 +96,7 @@ object RestCheck {
                     var next = d.plusDays(1)
                     while (next in nightDates) { len++; next = next.plusDays(1) }
                     val from = d.minusDays(streakLimit - 1L)
-                    issues += Issue(d, Kind.NIGHT_STREAK, "야간 ${len}일 연속 (${from.monthValue}/${from.dayOfMonth}부터, 기준 ${rules.maxNightsInRow}일)", RestRules.Sources.NIGHTS)
+                    issues += Issue(d, Kind.NIGHT_STREAK, "${from.monthValue}/${from.dayOfMonth}부터 야간 ${len}일 연속 (${rules.note("${streakLimit}일 연속부터")})", RestRules.Sources.NIGHTS)
                 }
                 prev = d
             }
@@ -108,9 +108,10 @@ object RestCheck {
             for (d in nightDates.filter { it.plusDays(1) !in nightDates }) {
                 val next = workDates.firstOrNull { it.isAfter(d) } ?: continue
                 val off = ChronoUnit.DAYS.between(d, next) - 1
-                if (off < rules.offsAfterNights) {
-                    val nextWork = work.first { it.date == next }
-                    issues += Issue(next, Kind.SHORT_RECOVERY, "야간이 끝난 ${d.monthValue}/${d.dayOfMonth} 뒤 쉬는 날 ${off}일 (기준 ${rules.offsAfterNights}일)",
+                val nextWork = work.first { it.date == next }
+                // Another night after a day off (야비야비) carries the run on; the rest is counted when the nights end.
+                if (off < rules.offsAfterNights && !nextWork.night) {
+                    issues += Issue(next, Kind.SHORT_RECOVERY, "야간이 끝난 ${d.monthValue}/${d.dayOfMonth} 뒤 쉬는 날 ${off}일 (${rules.note("${rules.offsAfterNights}일보다 적으면")})",
                         RestRules.Sources.NIGHTS, pattern = if (off == 1L && nextWork.day) "N-O-D(나오데)" else null)
                 }
             }
@@ -122,7 +123,7 @@ object RestCheck {
                 run = if (prev != null && d == prev.plusDays(1)) run + 1 else 1
                 if (run == rules.maxWorkDaysInRow + 1) {
                     val from = d.minusDays(run - 1L)
-                    issues += Issue(d, Kind.LONG_RUN, "${from.monthValue}/${from.dayOfMonth}부터 ${run}일째 쉬는 날 없이 근무 (기준 ${rules.maxWorkDaysInRow}일)", RestRules.Sources.WEEK)
+                    issues += Issue(d, Kind.LONG_RUN, "${from.monthValue}/${from.dayOfMonth}부터 ${run}일째 쉬는 날 없이 근무 (${rules.note("${rules.maxWorkDaysInRow + 1}일째부터")})", RestRules.Sources.WEEK)
                 }
                 prev = d
             }
@@ -130,7 +131,7 @@ object RestCheck {
         if (rules.maxNightsPerMonth > 0) {
             nightDates.groupBy { YearMonth.from(it) }.forEach { (m, ds) ->
                 ds.getOrNull(rules.maxNightsPerMonth)?.let { d ->
-                    issues += Issue(d, Kind.MONTH_NIGHTS, "${m.monthValue}월 야간 ${ds.size}일 (기준 한 달 ${rules.maxNightsPerMonth}일)", RestRules.Sources.NIGHTS)
+                    issues += Issue(d, Kind.MONTH_NIGHTS, "${m.monthValue}월 야간 ${ds.size}일 (${rules.note("한 달 ${rules.maxNightsPerMonth + 1}일째부터")})", RestRules.Sources.NIGHTS)
                 }
             }
         }
@@ -149,6 +150,25 @@ object RestCheck {
         }
         return (kept + other).map { i -> i.pattern?.takeUnless { i.text.startsWith(it) }?.let { i.copy(text = "$it · ${i.text}") } ?: i }
     }
+
+    /**
+     * [REST-02] The same sign over a month as one line: its kind and order name, how many times and on which days
+     * ("연속 야간 3번 · 2·7·12일"), so the card stays short; each day's own sign stays in [issues].
+     */
+    data class Group(val kind: Kind, val pattern: String?, val issues: List<Issue>) {
+        val date: LocalDate get() = issues.first().date
+        val title: String get() = if (issues.size == 1) kind.label else "${kind.label} ${issues.size}번"
+        val text: String get() = if (issues.size == 1) issues.first().text else {
+            val days = issues.map { it.date.dayOfMonth }.distinct()
+            (pattern?.let { "$it · " } ?: "") + days.take(GROUP_DAYS).joinToString("·") + (if (days.size > GROUP_DAYS) "…" else "") + "일"
+        }
+    }
+
+    private const val GROUP_DAYS = 4
+
+    /** [issues] by kind and order name, in the order they first come. */
+    fun group(issues: List<Issue>): List<Group> =
+        issues.groupBy { it.kind to it.pattern }.map { (k, list) -> Group(k.first, k.second, list) }.sortedBy { it.date }
 
     /** [NURS-05] The dates among [days] with night work (half or more of a block of work in 22:00~06:00). */
     fun nightDates(days: List<ResolvedDay>): List<LocalDate> =

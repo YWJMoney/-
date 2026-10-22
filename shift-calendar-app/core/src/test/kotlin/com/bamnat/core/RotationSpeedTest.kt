@@ -25,8 +25,10 @@ class RotationSpeedTest {
         assertEquals(RotationSpeed.FAST, RotationSpeed.ofCodes("NDDOON"))
         assertEquals(RotationSpeed.SLOW, RotationSpeed.ofCodes("NNDOONN"))
         PatternPresets.all.forEach { assertNotEquals(it.name, RotationSpeed.NONE, RotationSpeed.ofCodes(it.codes)) }
-        assertEquals(RotationSpeed.FAST, RotationSpeed.ofCodes("DNBO"))
-        assertEquals(RotationSpeed.SLOW, RotationSpeed.ofCodes("DDDDDOONBNBNBNBNBNBNB"))
+        // Each night with its 비번 the day after: 경찰 주야비휴, 소방 3조 2교대 21일.
+        assertEquals(RotationSpeed.NIGHT_DUTY, RotationSpeed.ofCodes("DNBO"))
+        assertEquals(RotationSpeed.NIGHT_DUTY, RotationSpeed.ofCodes("DDDDDOONBNBNBNBNBNBNB"))
+        assertEquals(RotationSpeed.FAST, RotationSpeed.ofCodes("DDNNBOOO"))
     }
 
     @Test fun fromTheUsersOwnShifts() {
@@ -36,6 +38,7 @@ class RotationSpeedTest {
         assertEquals('E', RotationSpeed.code(f.evening))
         assertEquals('N', RotationSpeed.code(f.night))
         assertEquals('O', RotationSpeed.code(null))
+        assertEquals('B', RotationSpeed.code(f.off.copy(name = "비번", label = "비")))
         val nights = WorkPattern.Rotation(LocalDate.of(2026, 11, 2), listOf(f.night.id, f.night.id, f.off.id))
         assertEquals(RotationSpeed.FIXED_NIGHT, RotationSpeed.of(nights, f.all))
         assertEquals(RotationSpeed.NONE, RotationSpeed.of(null, f.all))
@@ -48,5 +51,6 @@ class RotationSpeedTest {
         assertEquals(0, RotationSpeed.FIXED_NIGHT.adjust(r).maxNightsPerMonth)
         assertEquals(r.minRestHours, RotationSpeed.FIXED_NIGHT.adjust(r).minRestHours)
         assertEquals(1, RotationSpeed.DUTY_24H.adjust(r).offsAfterNights)
+        assertEquals(r.copy(offsAfterNights = 1), RotationSpeed.NIGHT_DUTY.adjust(r))
     }
 }
