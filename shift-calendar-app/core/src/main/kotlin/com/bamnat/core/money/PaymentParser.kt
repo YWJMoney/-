@@ -78,27 +78,109 @@ object PaymentParser {
         "Web발신", "국외발신", "국제발신", "광고", "승인거절", "체크카드", "신용카드",
     )
 
-    /** Default dictionary; the user's own rules (가맹점 → 분류) win over it [LEDG-04]. */
+    /**
+     * Default dictionary; the user's own rules (가맹점 → 분류) win over it [LEDG-04]. [LEDG-19] Card
+     * texts often carry the company's name, not the shop's (코리아세븐 is 세븐일레븐), and the 1.15
+     * categories have their own words. The first group that matches wins, so narrower ones come first.
+     */
     private val CATEGORY_HINTS = listOf(
-        Regex("스타벅스|커피|카페|이디야|투썸|메가|빽다방|컴포즈|폴바셋|할리스|블루보틀") to "카페",
-        Regex("GS25|CU|씨유|세븐일레븐|이마트24|미니스톱|편의점") to "편의점",
-        Regex("배달의민족|우아한형제들|배민|요기요|쿠팡이츠|땡겨요") to "배달",
-        Regex("넷플릭스|NETFLIX|유튜브|YouTube|YOUTUBE|멜론|스포티파이|Spotify|디즈니|티빙|웨이브|왓챠|쿠팡와우|네이버플러스|애플|Apple|APPLE|구글|Google|GOOGLE|ChatGPT|OpenAI|Claude|Anthropic") to "구독",
-        Regex("이마트|홈플러스|롯데마트|코스트코|쿠팡|컬리|마켓|농협하나로|트레이더스|다이소|올리브영") to "장보기·쇼핑",
-        Regex("택시|카카오T|카카오모빌리티|티머니|코레일|지하철|버스|SRT|고속|교통") to "교통",
-        Regex("주유|칼텍스|SK에너지|S-OIL|에쓰오일|현대오일뱅크|주차|하이패스") to "자동차",
-        Regex("약국|병원|의원|치과|한의원|안과|내과") to "의료",
-        Regex("통신|SKT|KT|LG유플러스|U\\+|알뜰폰") to "통신",
-        Regex("관리비|전기|가스|수도|한전|도시가스") to "공과금",
-        Regex("식당|김밥|치킨|피자|버거|맥도날드|롯데리아|맘스터치|분식|국밥|고기|횟집") to "식비",
+        Regex("동물병원|(?<!카)펫|애견|애완|강아지|고양이") to "반려동물",
+        Regex("스타벅스|커피|카페|이디야|투썸|메가MGC|메가엠지씨|메가커피|빽다방|컴포즈|폴바셋|할리스|블루보틀|파스쿠찌|엔제리너스|탐앤탐스|더벤티|매머드|공차|던킨|배스킨|파리바게|뚜레쥬르|베이커리|제과") to "카페",
+        Regex("GS25|CU|씨유|세븐일레븐|이마트24|미니스톱|편의점|코리아세븐|비지에프리테일|BGF리테일|지에스리테일|위드미") to "편의점",
+        Regex("배달의민족|우아한형제들|배민|요기요|위대한상상|쿠팡이츠|땡겨요") to "배달",
+        Regex("넷플릭스|NETFLIX|유튜브|YouTube|YOUTUBE|멜론|스포티파이|Spotify|디즈니|티빙|웨이브|왓챠|쿠팡와우|네이버플러스|밀리의서재|리디북스|RIDI|애플|Apple|APPLE|구글|Google|GOOGLE|ChatGPT|OpenAI|Claude|Anthropic") to "구독",
+        Regex("CGV|메가박스|롯데시네마|영화|노래방|코인노래|PC방|피씨방|볼링|당구|골프|헬스|필라테스|요가|수영장|캠핑|야놀자|여기어때|에어비앤비|Airbnb|AIRBNB|호텔|모텔|펜션|리조트|아고다|트립닷컴|에버랜드|롯데월드|티켓링크|인터파크|놀이공원") to "여가",
+        Regex("미용실|헤어|네일|피부관리|왁싱|바버|유니클로|UNIQLO|ZARA|H&M|무신사|에이블리|지그재그|29CM|스파오|탑텐|나이키|NIKE|아디다스|뉴발란스|ABC마트|슈마커|아울렛|백화점|갤러리아") to "의류·미용",
+        Regex("이마트|홈플러스|롯데마트|롯데슈퍼|코스트코|쿠팡|컬리|마켓|농협하나로|하나로마트|트레이더스|노브랜드|GS더프레시|다이소|아성다이소|올리브영|11번가|G마켓|지마켓|옥션|SSG|위메프|티몬|알리익스프레스|ALIEXPRESS|테무|TEMU|스마트스토어") to "장보기·쇼핑",
+        Regex("택시|카카오T|카카오모빌리티|티머니|캐시비|코레일|KTX|지하철|버스|SRT|고속|교통|대한항공|아시아나|제주항공|진에어|티웨이|에어부산") to "교통",
+        Regex("주유|칼텍스|SK에너지|S-OIL|에쓰오일|오일뱅크|주차|하이패스|세차|정비|타이어|카센터") to "자동차",
+        Regex("약국|병원|의원|치과|한의원|안과|내과|외과|피부과|이비인후과|소아과|산부인과|클리닉|메디컬|보건소") to "의료",
+        Regex("통신|SKT|SK텔레콤|KT(?![A-Za-z&])|케이티|LG유플러스|LGU|U\\+|알뜰폰|헬로모바일") to "통신",
+        Regex("관리비|관리사무소|전기|가스|수도|한전|한국전력|도시가스|지방세|국세|과태료") to "공과금",
+        Regex("보험|화재|생명|손해|라이나|메리츠|현대해상") to "보험",
+        Regex("학원|교습소|어학원|교보문고|영풍문고|알라딘|예스24|YES24|서점|클래스101|패스트캠퍼스|등록금") to "교육",
+        Regex("키즈|유아|아기|베이비|육아|어린이집|유치원|토이저러스|장난감") to "육아",
+        Regex("월세|부동산|이사|인테리어|오늘의집|한샘|이케아|IKEA|철물") to "주거",
+        Regex("축의|부의|조의|화환|꽃집|플라워") to "경조사",
+        Regex("세탁|빨래방|크린토피아|수선|열쇠|택배|대한통운|생활용품|모던하우스|무인양품|MUJI") to "생활",
+        Regex("식당|김밥|치킨|피자|버거|맥도날드|롯데리아|맘스터치|분식|국밥|고기|횟집|교촌|굽네|BBQ|BHC|도미노|서브웨이|KFC|본죽|한솥|아웃백|빕스|애슐리|샤브|돈까스|돈가스|초밥|스시|라멘|냉면|족발|보쌈|곱창|삼겹살|포차|주점|호프|이자카야|한식|중식|일식|양식|반점|레스토랑") to "식비",
     )
+
+    private val PAY_GATE = Regex(
+        "^(?:NICE|KCP|KICC|KSNET|KIS|INICIS|KG이니시스|이니시스|나이스페이|나이스|다날|토스페이먼츠|NHN|PAYCO|페이코|스마트로|JTNET|헥토|KPN|카카오페이|네이버페이)\\s*[_*\\-./]\\s*",
+        RegexOption.IGNORE_CASE,
+    )
+    private val CORP = Regex("\\(주\\)|㈜|주식회사|\\(유\\)|유한회사")
+    private val BRANCH = Regex("(점|지점|본점|직영점)$")
+
+    /**
+     * [LEDG-17] The part of a place's name that stays the same across its branches and however a
+     * card writes it: no 결제대행 prefix (NICE_, KCP_), no (주), no last word naming the branch
+     * ("김밥천국 역삼점" → 김밥천국), no spaces, lower case.
+     */
+    fun placeKey(merchant: String): String {
+        val s = merchant.trim().replace(PAY_GATE, "").replace(CORP, " ").trim()
+        val words = s.split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val kept = if (words.size >= 2 && BRANCH.containsMatchIn(words.last())) words.dropLast(1) else words
+        return kept.joinToString("").lowercase()
+    }
+
+    /** [LEDG-17] Two names for the same place: one key starts the other (a shop and its branches). */
+    fun samePlace(a: String, b: String): Boolean {
+        val ka = placeKey(a)
+        val kb = placeKey(b)
+        return ka.length >= 2 && kb.length >= 2 && (ka.startsWith(kb) || kb.startsWith(ka))
+    }
+
+    /**
+     * [LEDG-21] A rule the user wrote as "이 말이 들어가면": its word is kept with this mark in front.
+     * No place read from a text has it, since the parser drops every piece with a '*'.
+     */
+    const val CONTAINS = "*"
+
+    fun isContainsRule(key: String): Boolean = key.startsWith(CONTAINS)
+
+    /** [LEDG-21] The word of a "이 말이 들어가면" rule as it is compared: no spaces, lower case. */
+    private fun containsWord(key: String): String = key.removePrefix(CONTAINS).replace(Regex("\\s+"), "").lowercase()
+
+    /**
+     * [LEDG-17] The user's rule for [merchant]: the same name first, else the rule whose place is the
+     * longest start of this one, so a rule learned at one branch covers the others. [LEDG-21] A
+     * "이 말이 들어가면" rule counts when its word is anywhere in the name; the longest match wins.
+     */
+    fun ruleFor(merchant: String, rules: Map<String, String>): String? {
+        if (merchant.isBlank() || rules.isEmpty()) return null
+        rules[merchant]?.let { return it }
+        val key = placeKey(merchant)
+        val flat = merchant.replace(Regex("\\s+"), "").lowercase()
+        return rules.entries.mapNotNull { (m, c) ->
+            if (isContainsRule(m)) containsWord(m).takeIf { it.isNotEmpty() && flat.contains(it) }?.let { it to c }
+            else placeKey(m).takeIf { it.length >= 2 && key.length >= 2 && key.startsWith(it) }?.let { it to c }
+        }.maxByOrNull { it.first.length }?.second
+    }
 
     fun guessCategory(merchant: String, rules: Map<String, String> = emptyMap()): String {
         if (merchant.isBlank()) return "기타"
-        rules[merchant]?.let { return it }
+        ruleFor(merchant, rules)?.let { return it }
         for ((re, cat) in CATEGORY_HINTS) if (re.containsMatchIn(merchant)) return cat
         return "기타"
     }
+
+    /**
+     * [LEDG-20] Texts with an amount that are not a payment: ads, bills to come, limits and points.
+     * Null for anything else; the reason otherwise, and the notification listener drops these.
+     */
+    fun notice(text: String): String? = when {
+        Regex("\\[\\s*광고\\s*]|\\(\\s*광고\\s*\\)|수신\\s*거부|무료\\s*거부|(?<!\\d)080-?\\d{3,4}-?\\d{4}(?!\\d)").containsMatchIn(text) -> "광고 문자예요"
+        Regex("결제\\s*예정|청구\\s*(금액|예정|서)|이용\\s*대금\\s*명세|명세서|납부\\s*예정|출금\\s*예정|미납|연체").containsMatchIn(text) -> "카드값·청구 안내예요"
+        // A pay-app receipt may mention a coupon it used; only texts that do not say a payment went through.
+        !Regex("승인|결제\\s*완료|사용").containsMatchIn(text) &&
+            Regex("한도\\s*(상향|변경|안내|조정)|포인트\\s*(소멸|안내)|소멸\\s*예정|이벤트|당첨|쿠폰").containsMatchIn(text) -> "안내 문자예요"
+        else -> null
+    }
+
+    /** [LEDG-20] Money leaving the account for a card company is the card bill, not a transfer of one's own. */
+    private val CARD_BILL = Regex("카드\\s*(대금|값|결제)|(신한|KB|국민|삼성|현대|롯데|하나|우리|비씨|BC|농협|NH)\\s*카드")
 
     // Absurdly long digit runs are not amounts; toLong would throw on them.
     private fun num(s: String): Long? = s.replace(",", "").toLongOrNull()
@@ -159,6 +241,7 @@ object PaymentParser {
         val amt = findAmount(src)
         if (amt == null && fx == null) return Result.Fail("금액을 찾지 못했어요")
         if (Regex("승인\\s*거절|거절").containsMatchIn(src)) return Result.Fail("승인 거절 문자예요")
+        notice(src)?.let { return Result.Fail(it) }
         val type = when {
             src.contains("취소") -> Type.CANCEL
             src.contains("입금") -> Type.DEPOSIT
@@ -224,7 +307,7 @@ object PaymentParser {
 
         val category = when (type) {
             Type.DEPOSIT -> if (src.contains("급여")) MoneyCategories.SALARY else "부수입"
-            Type.WITHDRAW -> "내 계좌"
+            Type.WITHDRAW -> if (CARD_BILL.containsMatchIn(src)) "카드값" else "내 계좌"
             else -> guessCategory(merchant, rules)
         }
         return Result.Ok(

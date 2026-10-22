@@ -241,6 +241,9 @@ interface MoneyDao {
     @Query("DELETE FROM category_rules")
     suspend fun clearRules()
 
+    @Query("DELETE FROM category_rules WHERE merchant = :merchant")
+    suspend fun deleteRule(merchant: String)
+
     // [LEDG-07] Several lines at once, for the list's 고르기 and its undo.
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun restoreEntries(list: List<MoneyEntryEntity>)

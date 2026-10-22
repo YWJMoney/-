@@ -68,6 +68,24 @@ class MoneyCaptureTest {
         assertEquals("식비", repo.entries.first().first { it.amount == 4_000L }.category)
     }
 
+    @Test fun theOtherLinesFromAPlaceCanFollow() = runBlocking {
+        repo.capture("신한카드(1234)승인 9,000원 10/14 12:00 행운상회 역삼점", "신한카드", posted)
+        repo.capture("신한카드(1234)승인 7,000원 10/15 12:00 행운상회 강남점", "신한카드", posted + 86_400_000)
+        val first = repo.entries.first().first { it.amount == 9_000L }
+        assertEquals("기타", first.category)
+        val moved = repo.save(first.copy(category = "식비"))
+        assertEquals(listOf(7_000L), repo.samePlace(moved, "기타").map { it.amount })
+        // A rule learned at one branch covers the others from now on.
+        repo.capture("신한카드(1234)승인 5,000원 10/16 12:00 행운상회 신촌점", "신한카드", posted + 2 * 86_400_000)
+        assertEquals("식비", repo.entries.first().first { it.amount == 5_000L }.category)
+    }
+
+    @Test fun adsAndBillNoticesAreDropped() = runBlocking {
+        assertEquals(MoneyRepository.Outcome.IGNORED, repo.capture("[광고] 신한카드 50,000원 이상 결제 시 캐시백", "신한카드", posted))
+        assertEquals(MoneyRepository.Outcome.IGNORED, repo.capture("신한카드 10월 결제예정금액 1,234,560원", "신한카드", posted))
+        assertEquals(0, repo.captures.first().size)
+    }
+
     @Test fun manualLineCountsAsAPlace() = runBlocking {
         repo.save(MoneyEntry(date = LocalDate.of(2026, 10, 15), kind = MoneyKind.EXPENSE, amount = 4_500, category = "카페", merchant = "동네카페"))
         assertEquals("동네카페", repo.entries.first().single().title)

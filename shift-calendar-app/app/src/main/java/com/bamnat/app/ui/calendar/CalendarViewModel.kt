@@ -815,6 +815,15 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         container.appScope.launch {
             val before = if (entry.id == 0L) null else money.book.first().entries.firstOrNull { it.id == entry.id }
             val saved = money.save(entry)
+            // [LEDG-18] When the category changed, offer the other lines from this place instead.
+            val same = before?.let { money.samePlace(saved, it.category) }.orEmpty()
+            if (same.isNotEmpty()) {
+                _messages.tryEmit(UndoMessage("같은 곳 기록 ${same.size}건도 ‘${saved.category}’(으)로 바꿀까요?", actionLabel = "바꾸기") {
+                    same.forEach { money.save(com.bamnat.core.money.Ledger.recategorize(it, saved.category)) }
+                    _messages.tryEmit(UndoMessage("${same.size}건을 ‘${saved.category}’(으)로 옮겼어요") { money.saveAll(same) })
+                })
+                return@launch
+            }
             _messages.tryEmit(
                 if (before == null) UndoMessage("‘${saved.title}’ ${saved.kind.label}${Fmt.obj(saved.kind.label)} 적었어요") { money.delete(saved) }
                 else UndoMessage("‘${saved.title}’ 기록을 고쳤어요") { money.save(before) },

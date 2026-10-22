@@ -44,11 +44,17 @@ class CaptureService : NotificationListenerService() {
             val big = ex.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.trim().orEmpty()
             bodies += big.ifEmpty { ex.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty() }
         }
-        val texts = bodies.map { "$title\n$it".trim() }.filter { PaymentParser.looksFinancial(it) }
-        if (texts.isEmpty()) return
+        val found = bodies.map { "$title\n$it".trim() }.filter { PaymentParser.looksFinancial(it) }
+        if (found.isEmpty()) return
         val app = runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString() }
             .getOrDefault(sbn.packageName)
         val container = applicationContext.appContainer
+        // [LEDG-22] Listed for the user to turn off even when it is off already; then their filter.
+        val prefs = container.autoRecordPrefs
+        prefs.sawApp(sbn.packageName, app)
+        val filter = prefs.current.filter
+        val texts = found.filter { !filter.drops(sbn.packageName, it) }
+        if (texts.isEmpty()) return
         val messenger = sbn.packageName in MESSENGERS
         container.appScope.launch {
             texts.forEach { text ->

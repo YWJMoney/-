@@ -115,6 +115,44 @@ class PaymentParserTest {
         assertEquals("기타", PaymentParser.guessCategory("알 수 없는 가게"))
     }
 
+    @Test fun aRuleLearnedAtOneBranchCoversTheOthers() {
+        val rules = mapOf("김밥천국 역삼점" to "식비", "NICE_동네빵집" to "카페")
+        assertEquals("식비", PaymentParser.guessCategory("김밥천국 강남점", rules))
+        assertEquals("식비", PaymentParser.guessCategory("김밥천국강남역점", rules))
+        assertEquals("카페", PaymentParser.guessCategory("KCP_동네빵집 2호", rules))
+        assertEquals("기타", PaymentParser.guessCategory("행운상회", rules))
+        // The longer place wins over a shorter one it starts with.
+        assertEquals("여가", PaymentParser.guessCategory("동네빵집 클래스 강남점", rules + ("동네빵집 클래스" to "여가")))
+        assertTrue(PaymentParser.samePlace("(주)우아한형제들", "우아한형제들"))
+        assertTrue(!PaymentParser.samePlace("김밥천국 역삼점", "김밥나라 역삼점"))
+        assertEquals("김밥천국", PaymentParser.placeKey("김밥천국 역삼점"))
+    }
+
+    @Test fun companyNamesAndNewCategories() {
+        mapOf(
+            "코리아세븐" to "편의점", "(주)비지에프리테일" to "편의점", "메가박스 코엑스" to "여가", "메가MGC커피 역삼점" to "카페",
+            "KTX 코레일" to "교통", "KT 통신요금" to "통신", "행복동물병원" to "반려동물", "서울정형외과" to "의료",
+            "유니클로 강남점" to "의류·미용", "삼성화재" to "보험", "교보문고" to "교육", "토이저러스" to "육아",
+            "오늘의집" to "주거", "크린토피아" to "생활", "맘스터치" to "식비", "카펫나라" to "기타",
+        ).forEach { (place, cat) -> assertEquals(place, cat, PaymentParser.guessCategory(place)) }
+    }
+
+    @Test fun adsAndBillNoticesAreNotPayments() {
+        assertTrue(fails("[Web발신]\n(광고)신한카드 이번 달 50,000원 이상 결제 시 캐시백! 무료거부 0801234567"))
+        assertTrue(fails("[Web발신]\n신한카드 10월 결제예정금액 1,234,560원 (10/25 출금)"))
+        assertTrue(fails("[KB국민카드] 홍길동님 이용한도 상향 안내: 3,000,000원"))
+        assertEquals("광고 문자예요", PaymentParser.notice("[광고] 50,000원 결제 시 쿠폰"))
+        // A receipt that used a coupon is still a payment.
+        assertEquals(4_000L, p("토스페이 결제 완료 4,000원 쿠폰 사용 스타벅스").amount)
+    }
+
+    @Test fun cardBillWithdrawalIsTheCardBill() {
+        val r = p("[Web발신]\n우리 10/25 출금 1,234,560 신한카드대금 잔액 500,000")
+        assertEquals(MoneyKind.TRANSFER, r.kind)
+        assertEquals("카드값", r.category)
+        assertEquals("내 계좌", p("[Web발신]\n신한 10/15 14:00\n출금 50,000\n김철수").category)
+    }
+
     @Test fun duplicateWithinTenMinutes() {
         val r = p("신한카드(1234)승인 홍*동 12,500원(일시불)10/15 13:25 스타벅스")
         val a = MoneyEntry(date = LocalDate.of(2026, 10, 15), kind = MoneyKind.EXPENSE, amount = 12_500, category = "카페",
