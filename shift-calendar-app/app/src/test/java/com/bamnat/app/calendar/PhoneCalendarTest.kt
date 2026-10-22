@@ -69,6 +69,16 @@ class PhoneCalendarTest {
         assertEquals(listOf("내 캘린더"), com.bamnat.app.imports.DeviceCalendars(app).calendars().map { it.name })
     }
 
+    @Test fun whichCalendarsAreWrittenGoesWithABackup() = kotlinx.coroutines.runBlocking {
+        val c = app.container
+        c.settingsRepository.update { it.copy(phoneCalendars = listOf("main", "abc")) }
+        val json = c.backupManager.export()
+        c.settingsRepository.update { it.copy(phoneCalendars = emptyList()) }
+        c.backupManager.restore(json)
+        assertEquals(listOf("main", "abc"), c.settingsRepository.current.phoneCalendars)
+        c.settingsRepository.update { it.copy(phoneCalendars = emptyList()) }
+    }
+
     @Test fun withoutThePermissionNothingIsWritten() {
         shadowOf(app).denyPermissions(Manifest.permission.WRITE_CALENDAR)
         assertFalse(PhoneCalendar(app).allowed())

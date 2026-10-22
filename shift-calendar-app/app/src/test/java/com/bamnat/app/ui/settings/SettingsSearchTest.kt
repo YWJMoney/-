@@ -71,10 +71,14 @@ class SettingsSearchTest {
         assertEquals("backup", HelpFaq.search("휴대폰 바꾸면 기록").first().id)
         assertEquals("pay", HelpFaq.search("월급이 명세서랑 달라요").first().id)
         assertEquals("widget", HelpFaq.search("위젯").first().id)
+        // [PROV-06][FEAT-07] 1.20.0.
+        assertEquals("wake", HelpFaq.search("알람 끄고 또 잠들어요").first().id)
+        assertEquals("phoneCalendar", HelpFaq.search("구글 캘린더에 근무 보이게").first().id)
+        assertEquals("import", HelpFaq.search("캘린더에서 가져오기").first().id)
     }
 
     @Test fun helpForAScreenPutsItsAnswersFirst() {
-        assertEquals(listOf("alarm", "sound"), HelpFaq.about("설정 > 알람").map { it.id })
+        assertEquals(listOf("alarm", "sound", "wake"), HelpFaq.about("설정 > 알람").map { it.id })
         assertTrue(HelpFaq.about("달력").map { it.id }.containsAll(listOf("share", "oneday", "calendars")))
         assertEquals(listOf("import"), HelpFaq.about("캘린더에서 가져오기").map { it.id })
         assertTrue(HelpFaq.about(null).isEmpty())
