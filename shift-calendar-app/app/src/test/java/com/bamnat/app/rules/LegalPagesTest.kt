@@ -109,6 +109,8 @@ class LegalPagesTest {
         assertTrue(text.contains("docs/incident-response.md"))
         assertTrue(text.contains("72시간") && text.contains("30일 이상 게시"))
         assertTrue(File(site, "shift-calendar-app/docs/incident-response.md").exists())
+        // [REMOTE-02] The signed rate files read from GitHub Pages once a day, with nothing about the user.
+        assertTrue(text.contains("계산 자료 받기(앱 1.22.0부터, 자동)") && text.contains("remote/v1/"))
         // The page before the first post says the same rules as the app and is the version the app asks for.
         val rules = File(site, "community/index.html")
         assertTrue("커뮤니티 운영 규칙 페이지가 있어요", rules.exists())
