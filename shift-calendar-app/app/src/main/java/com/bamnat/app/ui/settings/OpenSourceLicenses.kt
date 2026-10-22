@@ -32,7 +32,7 @@ val OPEN_SOURCE_NOTICES: List<OpenSourceNotice> = listOf(
     OpenSourceNotice("Kotlin, kotlinx.coroutines", "JetBrains", APACHE_2, "https://github.com/JetBrains/kotlin"),
     OpenSourceNotice("Jetpack Compose (UI, Foundation, Material 3, Material Icons)", "The Android Open Source Project", APACHE_2,
         "https://developer.android.com/jetpack/androidx/releases/compose"),
-    OpenSourceNotice("AndroidX Core, Activity, Lifecycle, Navigation, SplashScreen", "The Android Open Source Project", APACHE_2,
+    OpenSourceNotice("AndroidX Core, Activity, Lifecycle, Navigation, SplashScreen, ProfileInstaller", "The Android Open Source Project", APACHE_2,
         "https://developer.android.com/jetpack/androidx"),
     OpenSourceNotice("AndroidX Room", "The Android Open Source Project", APACHE_2, "https://developer.android.com/jetpack/androidx/releases/room"),
     OpenSourceNotice("Jetpack Glance (홈 화면 위젯)", "The Android Open Source Project", APACHE_2,

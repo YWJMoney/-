@@ -238,9 +238,19 @@ class AppContainer(context: Context) {
     /** [MON-02] 프로 on the company server; screenshots and tests put a fake in its place. */
     var tierApi: com.bamnat.app.tier.TierApi = com.bamnat.app.tier.TierClient()
     val featureGate = FeatureGate(settingsRepository, remoteConfig, proStore, appScope, installedAt = { installedAt })
-    /** [MON-03] Play billing; screenshots and tests put a fake in its place. */
-    var billing: com.bamnat.app.billing.Billing = com.bamnat.app.billing.PlayBilling(appContext, proStore, api = { tierApi },
-        device = { companyStore.device }, scope = appScope, log = { runCatching { telemetry.event("billing", it) } })
+    /**
+     * [MON-03] Play billing; screenshots and tests put a fake in its place. [PERF-01] Play's billing client is
+     * built the first time it is used (after the 정식 출시 switch, or for a known subscription), not while
+     * the app starts.
+     */
+    var billing: com.bamnat.app.billing.Billing
+        get() = billingSet ?: playBilling
+        set(value) { billingSet = value }
+    private var billingSet: com.bamnat.app.billing.Billing? = null
+    private val playBilling by lazy {
+        com.bamnat.app.billing.PlayBilling(appContext, proStore, api = { tierApi },
+            device = { companyStore.device }, scope = appScope, log = { runCatching { telemetry.event("billing", it) } })
+    }
     /** [MON-07] Google's consent form and the ads SDK. */
     val ads = com.bamnat.app.ads.Ads(appScope)
 

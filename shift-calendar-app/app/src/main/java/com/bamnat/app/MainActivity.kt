@@ -31,6 +31,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        StartupTrace.mark(StartupTrace.Step.ACTIVITY)
         HomeRequests.onCreate(
             restoring = savedInstanceState != null,
             awaitingResult = savedInstanceState?.getBoolean(KEY_AWAITING) == true,
