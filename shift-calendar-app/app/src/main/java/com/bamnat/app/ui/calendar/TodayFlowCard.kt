@@ -106,7 +106,10 @@ internal fun rememberMinute(): LocalDateTime {
 @Composable
 internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot, settings: AppSettings, modifier: Modifier = Modifier) {
     val log by vm.sleepLog.collectAsStateWithLifecycle()
-    val folded by vm.flowFolded.collectAsStateWithLifecycle()
+    val chosen by vm.flowFolded.collectAsStateWithLifecycle()
+    // [CAL-21] On a common phone (under about 860dp tall) the open card pushes the month below the screen.
+    val short = androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenHeightDp < SHORT_SCREEN_DP && it.screenWidthDp < 600 }
+    val folded = chosen ?: short
     val now = rememberMinute()
     val card = remember(snapshot, settings, log, now) { vm.todayFlow(snapshot, settings, log, now) }
     TodayFlowCard(
@@ -130,6 +133,9 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
         onFold = vm::setFlowFolded,
     )
 }
+
+/** [CAL-21] Shorter than this, 오늘의 흐름 starts as one line; a fold's cover screen (905dp) is not. */
+private const val SHORT_SCREEN_DP = 860
 
 /**
  * [SLP-14] The card: one thing to do now in a big line and why in a small one (ⓘ beside them), a rest

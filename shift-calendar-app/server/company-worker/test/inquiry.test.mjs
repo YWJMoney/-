@@ -298,3 +298,32 @@ test("this phone's 지우기 takes its questions and its 나도 그래요 away",
   await call("DELETE", "/api/mine", undefined, mine(1));
   assert.equal((await call("GET", "/api/inquiries/public")).data.inquiries.length, 0);
 });
+
+test("[INQ-02][INQ-03][INQ-04] the asker sees where a question stands, rates the answer, and late ones are listed", async () => {
+  const { call } = server();
+  const asked = (await call("POST", "/api/inquiries", question(7))).data;
+  assert.deepEqual(asked.progress, { stage: "received" });
+  // Not answered yet: nothing to rate.
+  assert.equal((await call("POST", `/api/inquiries/${asked.id}/rating`, { good: true }, mine(7))).status, 409);
+  const admin = await signIn(call);
+  await call("POST", `/api/admin/inquiries/${asked.id}/reply`, { text: "확인해 볼게요" }, admin);
+  let view = (await call("GET", `/api/inquiries/${asked.id}`, undefined, mine(7))).data;
+  assert.equal(view.progress.stage, "answered");
+  // A 개발사항 made from it shows as 개발 목록, then 반영 with the version once it is done.
+  const item = (await call("POST", "/api/admin/dev", { title: "알람 늦음 고치기", inquiry: asked.id }, admin)).data;
+  view = (await call("GET", `/api/inquiries/${asked.id}`, undefined, mine(7))).data;
+  assert.equal(view.progress.stage, "planned");
+  const since = (await call("GET", `/api/admin/dev/${item.id}`, undefined, admin)).data.updatedAt;
+  const done = await call("POST", `/api/admin/dev/${item.id}`, { status: "done", releasedIn: "1.18.0", since }, admin);
+  assert.equal(done.data.releasedIn, "1.18.0");
+  view = (await call("GET", `/api/inquiries/${asked.id}`, undefined, mine(7))).data;
+  assert.deepEqual(view.progress, { stage: "released", version: "1.18.0" });
+  // Only the asker rates, and the admin list shows it.
+  assert.equal((await call("POST", `/api/inquiries/${asked.id}/rating`, { good: false }, mine(8))).status, 404);
+  assert.equal((await call("POST", `/api/inquiries/${asked.id}/rating`, { good: false }, mine(7))).data.rating, -1);
+  const listed = (await call("GET", "/api/admin/inquiries", undefined, admin)).data.inquiries.find((i) => i.id === asked.id);
+  assert.equal(listed.rating, -1);
+  // A fresh question is not late yet.
+  await call("POST", "/api/inquiries", question(9));
+  assert.deepEqual((await call("GET", "/api/admin/inquiries?late=1", undefined, admin)).data.inquiries, []);
+});

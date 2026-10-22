@@ -26,7 +26,7 @@ class FeatureGuideTest {
                 assertTrue("${f.id}: ${f.route.focus} is a row of ${page!!.title}", rows.any { it.page == page && it.row == f.route.focus })
             } else if (f.route.focus != null) {
                 assertTrue("${f.id}: ${f.route.focus}", f.route.focus in TOOL_KEYS)
-                assertTrue(f.id, place == Place.STATS || place == Place.MONEY)
+                assertTrue(f.id, place == Place.STATS || place == Place.MONEY || place == Place.CALENDAR && f.route.focus == "customize")
             }
         }
         // 기능 켜고 끄기 is found and opened from settings too.

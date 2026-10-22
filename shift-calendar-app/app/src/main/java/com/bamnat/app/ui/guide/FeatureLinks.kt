@@ -86,6 +86,8 @@ val TOOL_KEYS = setOf(
     // [GUIDE-01] The investor tab's sheets and tabs (InvestScreen).
     "invest.cash", "invest.dividend", "invest.trade", "invest.quotes", "invest.goal", "invest.journal", "invest.event",
     "invest.alarms", "invest.stats", "invest.records", "invest.overview",
+    // [CUST-01] 화면 꾸미기 over the calendar (CalendarScreen).
+    "customize",
 )
 
 /**

@@ -397,7 +397,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
     }
     SectionCard(title = "달력") {
         // [CAL-02] Sunday first, as most Korean calendars are.
-        ChoiceRow("한 주의 시작", "주 근무시간도 이 요일부터 세요", listOf(DayOfWeek.SUNDAY to "일요일", DayOfWeek.MONDAY to "월요일"), settings.weekStart) { d ->
+        ChoiceRow("한 주의 시작", "달력 첫 칸의 요일이에요. 주 근무시간은 늘 월~일로 세요", listOf(DayOfWeek.SUNDAY to "일요일", DayOfWeek.MONDAY to "월요일"), settings.weekStart) { d ->
             vm.update { it.copy(weekStart = d) }
         }
         // One choice: before, two switches quietly took each other's place.
@@ -417,11 +417,14 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         }
         // [CAL-03] Unfolded, the day is always beside the calendar; this is for the cover screen and phones.
         ChoiceRow("날짜를 누르면", "접은 화면과 일반 휴대폰에서 " + when (settings.phoneDayView) {
-            PhoneDayView.PREVIEW -> "달력 아래에 짧게 보이고, 한 번 더 누르면 크게 열려요"
-            PhoneDayView.SHEET -> "하루 화면이 바로 크게 열려요"
             PhoneDayView.WEEK -> "그 주(월~일)만 남고, 아래에 하루 화면이 펼쳐져요"
-        }, listOf(PhoneDayView.PREVIEW to "미리보기 먼저", PhoneDayView.SHEET to "바로 크게", PhoneDayView.WEEK to "그 주만 보기"), settings.phoneDayView) { v ->
+            else -> if (settings.showDayCard) "달력 아래 카드에 먼저 보이고, 한 번 더 누르면 크게 열려요" else "하루 화면이 바로 크게 열려요"
+        }, listOf(PhoneDayView.SHEET to "하루 화면 열기", PhoneDayView.WEEK to "그 주만 보기"), settings.phoneDayView) { v ->
             vm.update { it.copy(phoneDayView = v) }
+        }
+        // [CAL-20] Off by default; the day sheet holds the same.
+        SwitchRow("달력 아래 하루 카드", "누른 날의 근무 시간·특근·알람 끄기를 달력 아래 작은 카드로 보여 줘요", settings.showDayCard) { on ->
+            vm.update { it.copy(showDayCard = on) }
         }
         // [DAY-04] The day's groups in the user's order, beside the unfolded calendar and in the sheet alike.
         var ordering by remember { mutableStateOf(false) }
@@ -506,6 +509,18 @@ private fun PrivacyPage(
         // [STAB-01] No '사용 통계 보내기' switch: the app sends no usage statistics anywhere, so it promised
         // something it does not do. It comes back only with a real place to send them (Telemetry sinks).
         NavRow("개인정보 처리방침", "무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
+        // [LOCK-01] Pay and memos behind the phone's own lock.
+        val lockable = remember(refresh) { com.bamnat.app.AppLock.available(context) }
+        SwitchRow(
+            "앱 잠금",
+            if (lockable) "열 때와 1분 넘게 다른 앱을 쓰다 돌아올 때 지문·얼굴·PIN을 물어요. 알람은 그대로 울려요"
+            else "휴대폰에 잠금(PIN·패턴·지문)을 먼저 설정하면 켤 수 있어요",
+            settings.appLock && lockable,
+            enabled = lockable,
+        ) { on ->
+            vm.update { it.copy(appLock = on) }
+            if (!on) com.bamnat.app.AppLock.release()
+        }
     }
     SectionCard(title = "권한") {
         val notificationsOk = remember(refresh) { Notifications.canPost(context) }

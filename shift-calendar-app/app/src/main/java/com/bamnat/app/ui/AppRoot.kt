@@ -215,6 +215,8 @@ private object Routes {
     // [SHFT-06][SHFT-07][DAYW-06][DAYW-07] Shift and day work's own tools, for the calendar on screen.
     const val DUTY_ROSTER = "duty_roster"
     const val HEALTH_REPORT = "health_report"
+    const val TEAMS = "teams"
+    const val YEAR = "year"
     const val ATTENDANCE_IMPORT = "attendance_import"
     const val COMMUTE = "commute"
     /** [GUIDE-05] 설정 › 기능 켜고 끄기. */
@@ -347,6 +349,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.CALENDAR_IMPORT -> { nav.navigate(Routes.CALENDAR_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.DUTY_ROSTER -> { nav.navigate(Routes.DUTY_ROSTER) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.HEALTH_REPORT -> { nav.navigate(Routes.HEALTH_REPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.TEAMS -> { nav.navigate(Routes.TEAMS) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.YEAR -> { nav.navigate(Routes.YEAR) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.ATTENDANCE_IMPORT -> { nav.navigate(Routes.ATTENDANCE_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [SET-01] Settings takes the target itself, to open on the alarm's state from wherever it was.
@@ -401,6 +405,26 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     LaunchedEffect(homeRequests) {
         if (!container.inquiryApi.enabled || !container.inquiryStore.asked) return@LaunchedEffect
         runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess { container.inquiryStore.update(it) }
+    }
+
+    // [GUIDE-08] Once after an update: what it brought, each with a way to open it.
+    val whatsNew = remember {
+        val ctx = container.appContext
+        val info = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0) }.getOrNull()
+        val fresh = info == null || info.firstInstallTime == info.lastUpdateTime
+        mutableStateOf(com.bamnat.app.data.GuideStore.get(ctx).whatsNew(com.bamnat.app.BuildConfig.VERSION_CODE, fresh))
+    }
+    if (whatsNew.value.isNotEmpty()) {
+        val closeNew = {
+            com.bamnat.app.data.GuideStore.get(container.appContext).whatsNewSeen(com.bamnat.app.BuildConfig.VERSION_CODE)
+            whatsNew.value = emptyList()
+        }
+        com.bamnat.app.ui.guide.WhatsNewDialog(
+            releases = whatsNew.value,
+            onOpen = { id -> closeNew(); com.bamnat.core.guide.FeatureRegistry.get(id)?.let(com.bamnat.app.ui.guide.FeatureLinks::open) },
+            onAsk = { closeNew(); com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "업데이트")) },
+            onDismiss = closeNew,
+        )
     }
 
     // [SHR-02] A tapped shared calendar link opens on the calendar. Over an editor it goes on top,
@@ -950,6 +974,17 @@ private fun AppNavHost(
             val vm = appViewModel(key = "duty_$calendar") { com.bamnat.app.ui.imports.DutyRosterViewModel(it, calendar) }
             com.bamnat.app.ui.imports.DutyRosterScreen(vm = vm, onBack = { nav.popFrom(Routes.DUTY_ROSTER) })
         }
+        composable(Routes.TEAMS) {
+            val calendar = remember { container.calendars.active.value }
+            val vm = appViewModel(key = "teams_$calendar") { com.bamnat.app.ui.calendar.TeamsViewModel(it, calendar) }
+            com.bamnat.app.ui.calendar.TeamsScreen(vm = vm, onBack = { nav.popFrom(Routes.TEAMS) },
+                onOpenPattern = { nav.openPattern(container, calendar) })
+        }
+        composable(Routes.YEAR) {
+            val calendar = remember { container.calendars.active.value }
+            val vm = appViewModel(key = "year_$calendar") { com.bamnat.app.ui.calendar.YearViewModel(it, calendar) }
+            com.bamnat.app.ui.calendar.YearScreen(vm = vm, onBack = { nav.popFrom(Routes.YEAR) })
+        }
         composable(Routes.HEALTH_REPORT) {
             val calendar = remember { container.calendars.active.value }
             val vm = appViewModel(key = "health_$calendar") { com.bamnat.app.ui.stats.HealthReportViewModel(it, calendar) }
@@ -1062,7 +1097,13 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
     val cal = c.calendars.active.value
     fun screen(r: String) = navigate(r) { launchSingleTop = true }
     when (link.place) {
-        Place.CALENDAR, Place.TODAY -> {
+        // [CUST-01] 화면 꾸미기 opens over the month, not over today.
+        Place.CALENDAR -> if (link.focus == "customize") navigateTopLevel(TopLevel.CALENDAR.route) else {
+            navigateTopLevel(TopLevel.CALENDAR.route)
+            com.bamnat.app.ui.guide.FeatureLinks.today(cal)
+            NoticeLinks.open(NoticeLinks.Target.TODAY)
+        }
+        Place.TODAY -> {
             navigateTopLevel(TopLevel.CALENDAR.route)
             com.bamnat.app.ui.guide.FeatureLinks.today(cal)
             NoticeLinks.open(NoticeLinks.Target.TODAY)
@@ -1084,6 +1125,8 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.SLEEP -> screen(Routes.SLEEP)
         Place.DUTY_ROSTER -> screen(Routes.DUTY_ROSTER)
         Place.HEALTH_REPORT -> screen(Routes.HEALTH_REPORT)
+        Place.TEAMS -> screen(Routes.TEAMS)
+        Place.YEAR -> screen(Routes.YEAR)
         Place.ATTENDANCE_IMPORT -> screen(Routes.ATTENDANCE_IMPORT)
         Place.COMMUTE -> screen(Routes.COMMUTE)
         Place.CALENDAR_IMPORT -> screen(Routes.CALENDAR_IMPORT)

@@ -43,6 +43,11 @@ data class Inquiry(
     val public: Boolean = false,
     val same: Int = 0,
     val hidden: String? = null,
+    /** [INQ-02] Where it stands (received, checking, answered, planned, building, released) and the version it came in. */
+    val stage: String = "received",
+    val version: String? = null,
+    /** [INQ-03] What the asker said of the answer: true 도움이 됐어요, false 아쉬워요, null not yet. */
+    val rating: Boolean? = null,
 ) {
     val answers: Int get() = messages.count { it.fromDeveloper }
     val waiting: Boolean get() = status == "open"
@@ -118,6 +123,8 @@ interface InquiryApi {
     /** 나도 그래요, or taking it back; the count after. */
     suspend fun same(device: String, id: String, on: Boolean): Int
     suspend fun flag(device: String, id: String, reason: InquiryFlag)
+    /** [INQ-03] 도움이 됐어요 (true), 아쉬워요 (false) or taking it back (null), once there is an answer. */
+    suspend fun rate(device: String, id: String, good: Boolean?): Inquiry
 }
 
 class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : InquiryApi {
@@ -206,6 +213,10 @@ class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
         Unit
     }
 
+    override suspend fun rate(device: String, id: String, good: Boolean?): Inquiry = serverCall {
+        inquiry(serverRequest(baseUrl, "POST", "/api/inquiries/$id/rating", JSONObject().put("good", good ?: JSONObject.NULL), device))
+    }
+
     private fun messages(o: JSONObject) = o.optJSONArray("messages").objects().map {
         InquiryMessage(fromDeveloper = it.optString("from") == "admin", text = it.optString("text"), at = Instant.parse(it.getString("at")))
     }
@@ -220,6 +231,9 @@ class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
         public = o.optBoolean("public"),
         same = o.optInt("same"),
         hidden = o.optJSONObject("hidden")?.optString("text"),
+        stage = o.optJSONObject("progress")?.optString("stage")?.ifEmpty { null } ?: "received",
+        version = o.optJSONObject("progress")?.takeUnless { it.isNull("version") }?.optString("version")?.ifEmpty { null },
+        rating = when (o.optInt("rating")) { 1 -> true; -1 -> false; else -> null },
     )
 
     companion object {

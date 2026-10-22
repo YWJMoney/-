@@ -216,6 +216,13 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
+    /** [INQ-03] 도움이 됐어요 / 아쉬워요 on the answers, or taking it back; a failure keeps what was there. */
+    fun rate(id: String, good: Boolean?, done: (String?) -> Unit = {}) = act({ _, why -> done(why) }) {
+        c.inquiryApi.rate(device, id, good).also { updated ->
+            _list.value = _list.value.orEmpty().map { if (it.id == id) updated else it }
+        }
+    }
+
     fun delete(id: String, done: (Boolean) -> Unit) {
         viewModelScope.launch {
             val ok = runCatching { c.inquiryApi.delete(device, id) }.isSuccess

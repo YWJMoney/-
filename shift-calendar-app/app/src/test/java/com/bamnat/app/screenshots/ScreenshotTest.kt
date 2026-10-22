@@ -437,6 +437,13 @@ class ScreenshotTest {
             List(40) { p }
         }
 
+        /** Drags the content down by [dp] from near the top (slowly), to bring back what scrolled away. */
+        fun scrollDown(dp: Int, across: Float = 0.5f) = gesture { w, h, d ->
+            val x = w * across
+            val from = h * 0.3f
+            (0..40).map { x to from + dp * d * it / 40 } + listOf(x to from + dp * d)
+        }
+
         /** Drags the content up by [dp] (slowly, so it does not fling). */
         fun scrollUp(dp: Int, across: Float = 0.15f) = gesture { w, h, d ->
             val x = w * across
@@ -1952,10 +1959,10 @@ class ScreenshotTest {
             com.bamnat.app.company.Inquiry("q2", com.bamnat.app.company.InquiryKind.BUG, "answered", ago(30), ago(2), listOf(
                 com.bamnat.app.company.InquiryMessage(false, "[알람] 야간 근무 전 알람이 가끔 5분 늦게 울려요.", ago(30)),
                 com.bamnat.app.company.InquiryMessage(true, "알려 주셔서 고마워요. 배터리 최적화에서 밤낮을 빼 주시면 제시간에 울려요.", ago(2)),
-            ), public = true, same = 3),
+            ), public = true, same = 3, stage = "answered"),
             com.bamnat.app.company.Inquiry("q1", com.bamnat.app.company.InquiryKind.IDEA, "open", ago(50), ago(50), listOf(
                 com.bamnat.app.company.InquiryMessage(false, "달력에서 동료 근무표를 겹쳐 보면 좋겠어요.", ago(50)),
-            ), public = true),
+            ), public = true, stage = "planned"),
         )
 
         override suspend fun send(device: String, kind: com.bamnat.app.company.InquiryKind, text: String, info: com.bamnat.app.company.InquiryInfo) =
@@ -1979,6 +1986,8 @@ class ScreenshotTest {
             ), null)
         override suspend fun same(device: String, id: String, on: Boolean) = 6
         override suspend fun flag(device: String, id: String, reason: com.bamnat.app.company.InquiryFlag) = Unit
+        override suspend fun rate(device: String, id: String, good: Boolean?) =
+            mine.first { it.id == id }.copy(rating = good).also { r -> mine.replaceAll { if (it.id == id) r else it } }
     }
 
     /** [UX-05] Questions through the fake server; [asked]: this phone sent the two above, one with a new answer. */
@@ -1991,6 +2000,111 @@ class ScreenshotTest {
     private fun Screen.askFromScreen(start: com.bamnat.app.ui.settings.InquiryStart) {
         com.bamnat.app.ui.settings.InquiryLinks.ask(start)
         settle()
+    }
+
+    // ---- 출시 전 개선 (1.18) [CREW-01][CUST-01][CAL-20][INQ-02][GUIDE-08], on a common phone and a small one ----
+    private fun Screen.teams() {
+        com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.TEAMS)
+        settle()
+    }
+    /** Through the help search's link, which opens it over the calendar. */
+    private fun Screen.customize() {
+        com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRegistry.get("calendar.customize")!!)
+        settle()
+    }
+    /** A 휴 after the seeded [coverDay], which already has its 대근. */
+    private val offDay: LocalDate get() = coverDay.plusDays(5)
+    private fun Screen.coverAsk() {
+        tapText("빠른 입력", exact = true)
+        tapText("야간 칠하기", exact = true, scrolls = 0)
+        // On a small phone the open panel can leave the month scrolled past the day: back up a little.
+        repeat(3) {
+            if (runCatching { selectDay(offDay) }.isSuccess) return
+            scrollDown(120)
+        }
+        selectDay(offDay)
+    }
+    private fun Screen.inquiryThread() {
+        askFromScreen(com.bamnat.app.ui.settings.InquiryStart(help = true))
+        tapText("내 문의:", prefix = true)
+        tapText("[알람] 야간 근무 전 알람이 가끔", prefix = true)
+    }
+    private fun Screen.whatsNew() = content {
+        com.bamnat.app.ui.guide.WhatsNewDialog(com.bamnat.core.guide.WhatsNew.releases, {}, {}, {})
+    }
+    @Test fun phoneTeams() = shoot("350_phone_teams", PHONE) { teams() }
+    @Test fun smallPhoneTeams() = shoot("351_small_phone_teams", SMALL_PHONE) { teams() }
+    @Test fun foldedTeams() = shoot("352_folded_teams", FOLDED) { teams() }
+    @Test fun unfoldedTeams() = shoot("353_unfolded_teams", UNFOLDED) { teams() }
+    @Test fun phoneTeamsHugeText() = shoot("354_phone_teams_huge_text", PHONE, fontScale = 2f) { teams() }
+    @Test fun phoneCustomize() = shoot("355_phone_customize", PHONE) { customize() }
+    @Test fun smallPhoneCustomize() = shoot("356_small_phone_customize", SMALL_PHONE) { customize() }
+    @Test fun phoneCoverAsk() = shoot("357_phone_cover_ask", PHONE) { coverAsk() }
+    @Test fun smallPhoneCoverAsk() = shoot("358_small_phone_cover_ask", SMALL_PHONE) { coverAsk() }
+    @Test fun phoneInquiryProgress() {
+        inquiriesOn(asked = true)
+        shoot("359_phone_inquiry_progress", PHONE) { inquiryThread() }
+    }
+    @Test fun smallPhoneInquiryProgress() {
+        inquiriesOn(asked = true)
+        shoot("360_small_phone_inquiry_progress", SMALL_PHONE) { inquiryThread() }
+    }
+    @Test fun phoneWhatsNew() = shoot("361_phone_whats_new", PHONE) { whatsNew() }
+    @Test fun smallPhoneWhatsNew() = shoot("362_small_phone_whats_new", SMALL_PHONE) { whatsNew() }
+    @Test fun phoneStatsCustomize() = shoot("363_phone_stats_customize", PHONE) {
+        tab(3, wide = false)
+        tapText("화면 꾸미기", exact = true, scrolls = 0)
+    }
+    @Test fun smallPhoneStats() = shoot("364_small_phone_stats", SMALL_PHONE) { tab(3, wide = false) }
+    @Test fun smallPhoneSettings() = shoot("365_small_phone_settings", SMALL_PHONE) { tab(4, wide = false) }
+    @Test fun smallPhoneMemos() = shoot("366_small_phone_memos", SMALL_PHONE) { tab(2, wide = false) }
+    @Test fun smallPhoneMoney() = shoot("367_small_phone_money", SMALL_PHONE) { tab(1, wide = false) }
+    private fun Screen.year() {
+        com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.YEAR)
+        settle()
+    }
+    @Test fun phoneYear() = shoot("369_phone_year", PHONE) { year() }
+    @Test fun foldedYear() = shoot("370_folded_year", FOLDED) { year() }
+    @Test fun unfoldedYear() = shoot("371_unfolded_year", UNFOLDED) { year() }
+    @Test fun smallPhoneYear() = shoot("372_small_phone_year", SMALL_PHONE) { year() }
+    @Test fun phoneLockCover() = shoot("373_phone_lock_cover", PHONE) { content { com.bamnat.app.ui.LockCover {} } }
+    @Test fun phonePrivacyLock() = shoot("374_phone_settings_privacy_lock", PHONE) { settingsPage("개인정보와 권한") }
+    @Test fun smallPhoneQuickInput() = shoot("368_small_phone_quick_input", SMALL_PHONE) { tapText("빠른 입력", exact = true) }
+
+    // ---- [208] Store pictures (1.18.0): a common phone, no one-time hints, the phone's alarm permissions given ----
+    private fun clean(then: Screen.() -> Unit = {}): Screen.() -> Unit {
+        shadowOf(app).grantPermissions(Manifest.permission.USE_FULL_SCREEN_INTENT, Manifest.permission.POST_NOTIFICATIONS)
+        // Robolectric cannot grant the full-screen permission, so the phone is told it predates Android 14,
+        // where it needs none; Robolectric puts the SDK level back before the next test.
+        org.robolectric.util.ReflectionHelpers.setStaticField(android.os.Build.VERSION::class.java, "SDK_INT", 33)
+        com.bamnat.app.ui.calendar.HintStore(app).markDone(com.bamnat.app.ui.calendar.HintStore.SHARE)
+        return then
+    }
+    @Test fun store1Calendar() = shoot("store_1_calendar", PHONE, clean())
+    @Test fun store2Teams() = shoot("store_2_teams", PHONE, clean { teams() })
+    @Test fun store3Pay() = shoot("store_3_pay", PHONE, clean(payScreen(Tier.PRO, withProfile = true)))
+    @Test fun store4CoverAsk() = shoot("store_4_cover", PHONE, clean { coverAsk() })
+    @Test fun store5Day() = shoot("store_5_day", PHONE, clean { openDay(dayCell) })
+    @Test fun store6Weeks() = shoot("store_6_weeks", PHONE, clean {
+        app.container.settingsRepository.update { it.copy(statsLayout = "weeks,three,-tiles,-pay,kinds,trend") }
+        tab(3, wide = false)
+    })
+    @Test fun store7Styles() = shoot("store_7_styles", PHONE) {
+        content { com.bamnat.app.ui.work.WorkStyleScreen(current = null, onPick = {}) }
+    }
+    @Test fun store8Inquiry() {
+        inquiriesOn(asked = true)
+        shoot("store_8_inquiry", PHONE, clean { inquiryThread() })
+    }
+    @Test fun storeTablet() = shoot("store_tablet", UNFOLDED, clean())
+    @Test fun storeTabletYear() {
+        // The sample pattern starts in July; for the store the same rotation fills the whole year.
+        runBlocking {
+            val repo = app.container.scheduleRepository
+            val p = repo.pattern.first() as WorkPattern.Rotation
+            repo.savePattern(p.copy(startDate = LocalDate.of(2026, 1, 1), anchorDate = p.startDate))
+        }
+        shoot("store_tablet_year", UNFOLDED, clean { year() })
     }
 
     @Test fun foldedCalendarShare() = shoot("320_folded_calendar_share", FOLDED)

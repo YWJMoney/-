@@ -38,7 +38,9 @@ class CalendarSettingsTest {
     @Test fun dayViewAndOrderAreKept() {
         prefs.edit().clear().commit()
         val repo = SettingsRepository(context)
-        assertEquals(PhoneDayView.PREVIEW, repo.current.phoneDayView)
+        // [CAL-20] A tap opens the day; the small card is off until turned on.
+        assertEquals(PhoneDayView.SHEET, repo.current.phoneDayView)
+        assertEquals(false, repo.current.showDayCard)
         repo.update { it.copy(phoneDayView = PhoneDayView.WEEK, dayGroupOrder = listOf("alarm", "work")) }
         val again = SettingsRepository(context).current
         assertEquals(PhoneDayView.WEEK, again.phoneDayView)

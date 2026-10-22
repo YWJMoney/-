@@ -396,7 +396,7 @@ internal fun SetupMonth(
     onDayClick: (LocalDate) -> Unit = {},
     onPaint: ((List<LocalDate>) -> Unit)? = null,
 ) {
-    val calculator = remember(snapshot, weekStart) { WorkHoursCalculator(snapshot.resolver, weekStart) }
+    val calculator = remember(snapshot) { WorkHoursCalculator(snapshot.resolver) }
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -419,6 +419,7 @@ internal fun SetupMonth(
                     month = month,
                     snapshot = snapshot,
                     calculator = calculator,
+                    weekStart = weekStart,
                     selected = selected ?: LocalDate.MIN,
                     today = today,
                     memoDates = emptySet(),

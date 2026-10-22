@@ -54,6 +54,8 @@ class BackupManager(
     private val guide: GuideStore? = null,
     /** [UNDO-03] An added calendar an import takes away goes to 최근 지운 기록 first, contract photos too. */
     private val recordsTrash: () -> RecordsTrash? = { null },
+    /** [CREW-01] Each calendar's teams for 모든 조 보기. */
+    private val teams: TeamStore? = null,
 ) {
     /** The schedule tables of [source] (shifts, order, changed days, extra work) as a backup holds them. */
     private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
@@ -237,6 +239,7 @@ class BackupManager(
         payStore?.let { putPay(it, root) }
         root.putOpt("workTools", workTools?.export(PersonalCalendar.MAIN))
         guide?.let { root.put("featuresOff", it.exportOff()) }
+        teams?.let { t -> root.put("teams", JSONObject(t.export() as Map<*, *>)) }
         val s = settings.current
         root.put(
             "settings",
@@ -248,7 +251,8 @@ class BackupManager(
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmsOn", s.alarmsEnabled)
                 .putOpt("workStyle", s.workStyle?.name).put("rosterMonthly", s.rosterMonthly)
                 .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoInCells).put("calendarMemos", s.calendarMemos)
-                .put("phoneDayView", s.phoneDayView.name).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
+                .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("appLock", s.appLock)
+                .put("calendarLayout", s.calendarLayout).put("statsLayout", s.statsLayout).put("hideDayAlarmNotice", s.hideDayAlarmNotice).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
                 .put("restCheck", s.restCheck)
                 .put("strictRest", s.strictRest).put("sleepTips", s.sleepTips)
                 // 1.10 and before read one switch for all sleep notices.
@@ -508,6 +512,8 @@ class BackupManager(
         root.optJSONArray("memoSharing")?.let { a -> memoSharing?.set(MemoSharingStore.fromJson(a)) }
         // [GUIDE-05] An older backup has none: the phone's own switches stay.
         root.optJSONArray("featuresOff")?.let { a -> guide?.restoreOff(a) }
+        // [CREW-01] An older backup has no teams: the phone's own stay.
+        root.optJSONObject("teams")?.let { o -> teams?.import(o.keys().asSequence().associateWith { o.optString(it) }) }
         // [MCAL-05] The added calendars as the backup had them, each in its own database.
         var goneCalendars = emptyList<String>()
         calendars?.let { book ->
@@ -562,7 +568,13 @@ class BackupManager(
                     extraKinds = o.optStringOrNull("extraKinds")?.let { com.bamnat.core.model.ExtraKinds.decode(it) } ?: s.extraKinds,
                     memoInCells = o.optBoolean("memoFirst", s.memoInCells),
                     // [CAL-03][DAY-04] Added in 1.13; older backups keep what this phone has.
-                    phoneDayView = runCatching { PhoneDayView.valueOf(o.getString("phoneDayView")) }.getOrDefault(s.phoneDayView),
+                    phoneDayView = runCatching { PhoneDayView.valueOf(o.getString("phoneDayView")) }.getOrDefault(s.phoneDayView)
+                        .let { if (it == PhoneDayView.PREVIEW) PhoneDayView.SHEET else it },
+                    showDayCard = o.optBoolean("dayCard", o.optString("phoneDayView") == PhoneDayView.PREVIEW.name),
+                    appLock = o.optBoolean("appLock", false),
+                    calendarLayout = o.optString("calendarLayout", s.calendarLayout),
+                    statsLayout = o.optString("statsLayout", s.statsLayout),
+                    hideDayAlarmNotice = o.optBoolean("hideDayAlarmNotice", s.hideDayAlarmNotice),
                     dayGroupOrder = o.optStringOrNull("dayGroupOrder")?.let(::decodeGroupOrder)
                         ?: if (o.optBoolean("memoFirst", false)) listOf("memo") else s.dayGroupOrder,
                     calendarMemos = o.optBoolean("calendarMemos", s.calendarMemos),

@@ -127,7 +127,7 @@ internal fun factsOf(style: WorkStyle?, now: LocalDateTime, snapshot: ScheduleSn
     val today = now.toLocalDate()
     val day = runCatching { snapshot.resolver.resolve(today) }.getOrNull()
     val yesterday = runCatching { snapshot.resolver.resolve(today.minusDays(1)) }.getOrNull()
-    val weekFrom = today.with(TemporalAdjusters.previousOrSame(profile?.holidayWeekFrom ?: weekStart))
+    val weekFrom = today.with(TemporalAdjusters.previousOrSame(profile?.holidayWeekFrom ?: java.time.DayOfWeek.MONDAY))
     return MomentFacts(
         style = style,
         now = now,

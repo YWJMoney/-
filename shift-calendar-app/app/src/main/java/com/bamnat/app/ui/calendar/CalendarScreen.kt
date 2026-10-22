@@ -80,6 +80,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.CalendarViewMonth
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.foundation.layout.BoxScope
@@ -207,9 +210,20 @@ fun CalendarScreen(
     }
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
+    // [CUST-01] The page's parts in the user's order (화면 꾸미기).
+    val calendarParts = remember(settings) { settings.calendarParts() }
+    fun partShown(p: CalendarPart) = calendarParts.firstOrNull { it.part == p }?.shown != false
     val selected by vm.selected.collectAsStateWithLifecycle()
     val paint by vm.paint.collectAsStateWithLifecycle()
     val lastPaint by vm.lastPaint.collectAsStateWithLifecycle()
+    val coverAsk by vm.coverAsk.collectAsStateWithLifecycle()
+    // [CUST-01] 화면 꾸미기: the page's parts in the user's order, and the sheet that changes them.
+    var editingLayout by remember { mutableStateOf(false) }
+    // [CUST-01] 화면 꾸미기 opened from the help search or the update notice.
+    val featureFocus by com.bamnat.app.ui.guide.FeatureLinks.focus.collectAsStateWithLifecycle()
+    LaunchedEffect(featureFocus) {
+        if (featureFocus == "customize" && com.bamnat.app.ui.guide.FeatureLinks.take("customize")) editingLayout = true
+    }
     val memoDates by vm.memoDates.collectAsStateWithLifecycle()
     val moneyBook by vm.moneyBook.collectAsStateWithLifecycle()
     val datedMemos by vm.datedMemos.collectAsStateWithLifecycle()
@@ -301,13 +315,14 @@ fun CalendarScreen(
         return
     }
     val pendingSetup by vm.setupDraft.collectAsStateWithLifecycle()
-    val calculator = remember(snap, settings.weekStart, settings.limits) {
-        WorkHoursCalculator(snap.resolver, settings.weekStart, settings.limits)
+    // [WEEK-01] Hours always count Monday to Sunday, the week the law means; 한 주의 시작 only moves the grid.
+    val calculator = remember(snap, settings.limits) {
+        WorkHoursCalculator(snap.resolver, java.time.DayOfWeek.MONDAY, settings.limits)
     }
     // [HRLY-02][HRLY-03] An 알바 calendar's cells show times and pay, and each week its 주휴.
-    val hourlyCells = remember(settings.workStyle, payProfile, settings.weekStart) {
+    val hourlyCells = remember(settings.workStyle, payProfile) {
         if (settings.workStyle != com.bamnat.core.work.WorkStyle.HOURLY) null
-        else HourlyCells(payProfile, payProfile?.holidayWeekFrom ?: settings.weekStart)
+        else HourlyCells(payProfile, payProfile?.holidayWeekFrom ?: java.time.DayOfWeek.MONDAY)
     }
     // [CAL-14] Stable references, so the cells' painting hooks never change under them.
     val paintDays: (List<LocalDate>) -> Unit = remember(vm) { vm::paintDays }
@@ -398,10 +413,11 @@ fun CalendarScreen(
         vm.onDayTapped(date)
         val m = YearMonth.from(date)
         if (m != visibleMonth && !weekOnly) slideToMonth(m)
-        if (!wide && !painting) when (dayView) {
-            PhoneDayView.PREVIEW -> if (again) sheetOpen = true
-            PhoneDayView.SHEET -> sheetOpen = true
-            PhoneDayView.WEEK -> weekOnly = true
+        // [CAL-20] With the day card on, the first tap shows it and the second opens the day.
+        if (!wide && !painting) when {
+            dayView == PhoneDayView.WEEK -> weekOnly = true
+            settings.showDayCard -> if (again) sheetOpen = true
+            else -> sheetOpen = true
         }
     }
     // [DAY-01] ‹ › and swipes in the day header move the calendar along.
@@ -514,14 +530,13 @@ fun CalendarScreen(
 
     val memoPart: @Composable () -> Unit = {
         if (settings.calendarMemos) {
-            Spacer(Modifier.height(12.dp))
             MonthMemoCard(
                 month = visibleMonth,
                 memos = remember(datedMemos, visibleMonth) { datedMemos.filter { YearMonth.from(it.date!!) == visibleMonth } },
                 showEmpty = settings.memoInCells,
                 onOpen = onOpenMemo,
                 onNew = { onNewMemo(if (YearMonth.from(selected) == visibleMonth) selected else visibleMonth.atDay(1)) },
-                modifier = Modifier.padding(horizontal = 16.dp),
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
             )
         }
     }
@@ -710,6 +725,7 @@ fun CalendarScreen(
             onReceive = if (received.enabled) ({ adding = "" }) else null,
             // [CALS-01] The calendar on screen is changed from its own page: name, kind of work, settings.
             onEditCalendar = if (viewingReceived == null) ({ onEditCalendar(activeCalendar.id) }) else null,
+            onCustomize = if (viewingReceived == null) ({ editingLayout = true }) else null,
             calendarName = activeCalendar.name,
         )
         // [SETUP-01] A first setup left for later comes first; it fills the calendar.
@@ -785,29 +801,39 @@ fun CalendarScreen(
                         android.net.Uri.parse("package:${context.packageName}")))
             }, linePlace)
         }
-        // [SLP-14] 오늘의 흐름 while this month is on screen, for work that comes in shifts and hours.
-        if (settings.sleepTips && settings.workStyle?.usesPayEngine != false && !snap.isEmpty && visibleMonth == YearMonth.from(today)) {
-            TodayFlowSection(vm, snap, settings, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-        }
-        // [CAL-05] Today for field and shop work, where 오늘의 흐름 shows shifts.
-        if (visibleMonth == YearMonth.from(today) && paint == null) when (focus) {
-            com.bamnat.core.work.CalendarFocus.JOBS -> if (moneyBook.jobs.isNotEmpty()) TodayJobsCard(
-                today = today, jobs = moneyBook.jobs,
-                onOpen = { d -> onDateChange(d); if (!showsDay) sheetOpen = true },
-                onAdd = { vm.select(today); quickMoney = true },
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-            com.bamnat.core.work.CalendarFocus.SALES -> if (moneyBook.sales.isNotEmpty()) TodaySalesCard(
-                today = today, sales = moneyBook.sales,
-                onWrite = { vm.select(today); quickMoney = true },
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-            // [INV-01] Today's result, 총자산 and 수익률, and the next alarm.
-            com.bamnat.core.work.CalendarFocus.INVEST -> if (investVm != null) com.bamnat.app.ui.invest.TodayInvestCard(
-                vm = investVm, today = today, onTrade = { vm.select(today); quickMoney = true }, onOpen = onOpenStats,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-            else -> Unit
+        // [CUST-01] The parts above the month in the user's order (화면 꾸미기).
+        calendarParts.filter { it.part.above && it.part.movable && it.shown }.forEach { placed ->
+            when (placed.part) {
+                CalendarPart.TODAY_FLOW -> {
+                // [SLP-14] 오늘의 흐름 while this month is on screen, for work that comes in shifts and hours.
+                if (settings.sleepTips && settings.workStyle?.usesPayEngine != false && !snap.isEmpty && visibleMonth == YearMonth.from(today)) {
+                    TodayFlowSection(vm, snap, settings, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                }
+                }
+                CalendarPart.TODAY_WORK -> {
+                // [CAL-05] Today for field and shop work, where 오늘의 흐름 shows shifts.
+                if (visibleMonth == YearMonth.from(today) && paint == null) when (focus) {
+                    com.bamnat.core.work.CalendarFocus.JOBS -> if (moneyBook.jobs.isNotEmpty()) TodayJobsCard(
+                        today = today, jobs = moneyBook.jobs,
+                        onOpen = { d -> onDateChange(d); if (!showsDay) sheetOpen = true },
+                        onAdd = { vm.select(today); quickMoney = true },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                    com.bamnat.core.work.CalendarFocus.SALES -> if (moneyBook.sales.isNotEmpty()) TodaySalesCard(
+                        today = today, sales = moneyBook.sales,
+                        onWrite = { vm.select(today); quickMoney = true },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                    // [INV-01] Today's result, 총자산 and 수익률, and the next alarm.
+                    com.bamnat.core.work.CalendarFocus.INVEST -> if (investVm != null) com.bamnat.app.ui.invest.TodayInvestCard(
+                        vm = investVm, today = today, onTrade = { vm.select(today); quickMoney = true }, onOpen = onOpenStats,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                    else -> Unit
+                }
+                }
+                else -> Unit
+            }
         }
         if (swapCovers.isNotEmpty()) {
             ExtraReviewCard(
@@ -832,7 +858,8 @@ fun CalendarScreen(
             weekPart()
         } else {
             // [CAL-06] The month in the kind of work's own three figures.
-            if (focus == com.bamnat.core.work.CalendarFocus.INVEST && investVm != null) {
+            if (!partShown(CalendarPart.SUMMARY)) Unit
+            else if (focus == com.bamnat.core.work.CalendarFocus.INVEST && investVm != null) {
                 // [INV-06] The month in the investor's own figures.
                 com.bamnat.app.ui.invest.InvestMonthBar(investVm, visibleMonth, onOpen = onOpenStats, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
             } else if (!(focus == com.bamnat.core.work.CalendarFocus.SHIFTS && overview.isEmpty && payEstimate == null)) {
@@ -847,7 +874,7 @@ fun CalendarScreen(
             val showList = listView && paint == null
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 // The counts take what is left, so the two buttons always sit at the right edge.
-                Box(Modifier.weight(1f)) { MonthShiftCounts(snap, visibleMonth) }
+                Box(Modifier.weight(1f)) { if (partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth) }
                 CalendarViewSwitch(listView = showList, onListView = { if (paint == null) vm.setListView(it) }, onLegend = { legendOpen = true })
             }
             if (!showList) WeekdayHeader(settings.weekStart, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
@@ -887,6 +914,7 @@ fun CalendarScreen(
                         month = pageToMonth(baseMonth, page),
                         snapshot = snap,
                         calculator = calculator,
+                        weekStart = settings.weekStart,
                         selected = selected,
                         today = today,
                         memoDates = memoDates,
@@ -913,36 +941,44 @@ fun CalendarScreen(
             // [CAL-15] Room for the floating button under the month, so its last row (the 30th, the 31st)
             // can always be scrolled clear of it.
             Spacer(Modifier.height(if (paint == null) FAB_ROOM else 12.dp))
-            if (!wide) {
-                // [CAL-05] One day card for every kind of work: its jobs, sales or shift, with the chips that fit.
-                DayPreview(
-                    day = remember(snap, selected) { snap.resolver.resolve(selected) },
-                    today = today,
-                    snapshot = snap,
-                    vm = vm,
-                    onDateChange = onDateChange,
-                    onOpen = { sheetOpen = true },
-                    onMemo = onMemo,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    weekNote = weekNote,
-                )
-                Spacer(Modifier.height(12.dp))
-            }
-            if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) {
-                HoursLine(
-                    calculator = calculator,
-                    limits = settings.limits,
-                    selected = selected,
-                    month = visibleMonth,
-                    onOpenStats = onOpenStats,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-                if (settings.restCheck) {
-                    val rest = remember(snap, visibleMonth, settings.strictRest) { vm.restIssues(snap, visibleMonth, settings.strictRest) }
-                    MonthRestCard(rest, onPick = vm::select, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp))
+            // [CUST-01] The parts under the month in the user's order (화면 꾸미기); each keeps its own switch.
+            calendarParts.filter { !it.part.above && it.shown }.forEach { placed ->
+                when (placed.part) {
+                    CalendarPart.DAY_CARD -> {
+                        if (!wide) {
+                            // [CAL-05] One day card for every kind of work: its jobs, sales or shift, with the chips that fit.
+                            DayPreview(
+                                day = remember(snap, selected) { snap.resolver.resolve(selected) },
+                                today = today,
+                                snapshot = snap,
+                                vm = vm,
+                                onDateChange = onDateChange,
+                                onOpen = { sheetOpen = true },
+                                onMemo = onMemo,
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                weekNote = weekNote,
+                            )
+                            Spacer(Modifier.height(12.dp))
+                        }
+                    }
+                    CalendarPart.HOURS -> if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) {
+                        HoursLine(
+                            calculator = calculator,
+                            limits = settings.limits,
+                            selected = selected,
+                            month = visibleMonth,
+                            onOpenStats = onOpenStats,
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                        )
+                    }
+                    CalendarPart.REST -> if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) {
+                        val rest = remember(snap, visibleMonth, settings.strictRest) { vm.restIssues(snap, visibleMonth, settings.strictRest) }
+                        MonthRestCard(rest, onPick = vm::select, modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp))
+                    }
+                    CalendarPart.MEMOS -> memoPart()
+                    else -> Unit
                 }
             }
-            memoPart()
         }
     }
 
@@ -1074,6 +1110,11 @@ fun CalendarScreen(
                 onSave = { vm.saveSales(it); quickMoney = false }, onDismiss = { quickMoney = false })
         }
     }
+
+    if (editingLayout) {
+        CalendarEditSheet(settings, update = vm::updateSettings, onDismiss = { editingLayout = false })
+    }
+    coverAsk?.let { ask -> CoverAskDialog(ask, onAnswer = { asCover, keep -> vm.answerCover(ask, asCover, keep) }, onDismiss = vm::dismissCover) }
 
     if (sheetOpen && !wide) {
         DaySheet(snackbar = sheetSnackbar, onDismiss = { sheetOpen = false }) { detailPart(Modifier.fillMaxWidth(), 24.dp) }
@@ -1219,6 +1260,8 @@ private fun CalendarHeader(
     /** [CALS-01] The calendar on screen's own page; null while a received calendar is shown. */
     onEditCalendar: (() -> Unit)? = null,
     calendarName: String = "",
+    /** [CUST-01] 화면 꾸미기 for the calendar page; null while a received calendar is shown. */
+    onCustomize: (() -> Unit)? = null,
 ) {
     // [QA-01] A cover screen (~344dp) cannot fit four icons, the month and 오늘: pattern and the new
     // calendar go into ⋮ there. [UX-03] 공유 is in the bar above on every screen; ⋮ keeps it too, where
@@ -1264,6 +1307,12 @@ private fun CalendarHeader(
                 }
                 DropdownMenuItem(text = { Text("근무표 공유") }, leadingIcon = { Icon(Icons.Filled.Share, null) },
                     onClick = { menu = false; onShare() })
+                // [CREW-01] Every team of the rotation, for finding a 대근.
+                DropdownMenuItem(text = { Text("모든 조 보기") }, leadingIcon = { Icon(Icons.Outlined.Groups, null) },
+                    onClick = { menu = false; com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.TEAMS) })
+                // [CAL-22] The year in twelve small months.
+                DropdownMenuItem(text = { Text("1년 달력") }, leadingIcon = { Icon(Icons.Outlined.CalendarViewMonth, null) },
+                    onClick = { menu = false; com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.YEAR) })
                 onReceive?.let { receive ->
                     DropdownMenuItem(text = { Text("동료 근무표 받기") }, leadingIcon = { Icon(Icons.Outlined.GroupAdd, null) },
                         onClick = { menu = false; receive() })
@@ -1275,6 +1324,10 @@ private fun CalendarHeader(
                         onClick = { menu = false; onAddCalendar() })
                 }
                 // [UX-04] The calendar's own look (week start, what shows under a date) is one tap from it.
+                onCustomize?.let { customize ->
+                    DropdownMenuItem(text = { Text("화면 꾸미기") }, leadingIcon = { Icon(Icons.Outlined.Dashboard, null) },
+                        onClick = { menu = false; customize() })
+                }
                 DropdownMenuItem(text = { Text("달력 보기 설정") }, leadingIcon = { Icon(Icons.Outlined.Tune, null) },
                     onClick = { menu = false; com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.CALENDAR) })
                 // [UX-05] Help and questions from the screen people use most.
@@ -1704,4 +1757,37 @@ private fun com.bamnat.core.work.CalendarFocus.longPressTip(): String = "날짜�
     com.bamnat.core.work.CalendarFocus.JOBS -> "일감을 바로 적을 수 있어요"
     com.bamnat.core.work.CalendarFocus.SALES -> "매출을 바로 적을 수 있어요"
     com.bamnat.core.work.CalendarFocus.INVEST -> "매매를 바로 적을 수 있어요"
+}
+
+/**
+ * [CAL-19] "근무일이 아니에요": a working shift stamped on days off. 대근 keeps the roster and adds the
+ * shift's hours as a 대근; the other answer makes them working days. Closing it writes nothing.
+ */
+@Composable
+private fun CoverAskDialog(ask: CalendarViewModel.CoverAsk, onAnswer: (asCover: Boolean, keep: Boolean) -> Unit, onDismiss: () -> Unit) {
+    var keep by remember { mutableStateOf(false) }
+    val name = ask.type.name
+    val days = if (ask.offDays.size == 1) "${Fmt.monthDay(ask.offDays.first())}은 근무일이 아니에요" else "고른 날 중 ${ask.offDays.size}일은 근무일이 아니에요"
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.WarningAmber, null) },
+        title = { Text(days) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("$name${Fmt.obj(name)} 대근으로 넣을까요?", style = MaterialTheme.typography.bodyLarge)
+                Text("대근으로 넣으면 근무표는 쉬는 날 그대로 두고, $name 시간이 대근(휴일 근무)으로 따로 잡혀 수당에 들어가요. " +
+                    "근무표가 바뀐 거라면 ‘근무일로 바꾸기’를 고르세요.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { keep = !keep },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.Checkbox(checked = keep, onCheckedChange = { keep = it })
+                    Text("이번 빠른 입력 동안 다시 묻지 않기", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onAnswer(true, keep) }) { Text("대근으로") } },
+        dismissButton = { TextButton(onClick = { onAnswer(false, keep) }) { Text("근무일로 바꾸기") } },
+    )
 }

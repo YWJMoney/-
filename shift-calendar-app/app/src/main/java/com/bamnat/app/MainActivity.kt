@@ -22,6 +22,11 @@ import com.bamnat.app.ui.theme.BamnatTheme
 import com.bamnat.core.diag.DiagEvents
 
 class MainActivity : ComponentActivity() {
+    // [LOCK-01] The phone's own confirm screen before Android 11.
+    private val confirmLock = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) {
+        AppLock.onConfirmed(it.resultCode == RESULT_OK)
+    }
+
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -58,6 +63,9 @@ class MainActivity : ComponentActivity() {
             BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor) {
                 androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.calendar.LocalExtraKinds provides settings.extraKinds) {
                     AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container)
+                    // [LOCK-01] Over the app, so the screen the user was on is still there after.
+                    val locked by AppLock.locked.collectAsStateWithLifecycle()
+                    if (locked) com.bamnat.app.ui.LockCover { AppLock.ask(this, confirmLock::launch) }
                 }
             }
         }
@@ -96,6 +104,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        // [LOCK-01] Read before HomeRequests clears whether a screen the app opened is being returned from.
+        AppLock.onStart(this, appContainer.settingsRepository.settings.value.appLock, HomeRequests.awaitingResult)
         HomeRequests.onStart()
         appContainer.verifyAlarms()
         // [TYPE-04] Shop days that passed with no sales become 임시휴무 when the app is opened.
@@ -106,6 +116,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         HomeRequests.onStop(isChangingConfigurations)
+        AppLock.onStop(isChangingConfigurations)
     }
 
     private companion object {
