@@ -78,7 +78,23 @@ data class SharedJob(val name: String, val time: String?)
 object ShareLinkPayload {
     /** Days a link covers, from the first day of the month shown: about three months. */
     const val DAYS = 92
-    val TTL_DAYS = listOf(7, 30, 90)
+    val TTL_DAYS = listOf(7, 30, 90, 180, 365)
+    /** [PROV-04] Periods past three months are 프로's; a link with one extends by 90 days without it. */
+    val PRO_TTL_DAYS = setOf(180, 365)
+    const val FREE_TTL_MAX = 90
+
+    /** [PROV-04] "180일", and a year as "1년". */
+    fun ttlLabel(days: Int): String = if (days == 365) "1년" else "${days}일"
+
+    /** [PROV-04] The period a link is kept open for when 늘리기 asks for [days]: a 프로 period without 프로 is 90 days. */
+    fun allowedTtl(days: Int, pro: Boolean): Int = if (pro || days !in PRO_TTL_DAYS) days else FREE_TTL_MAX
+
+    /**
+     * [PROV-04] The time zone a calendar feed's times are in, as the server takes it ("Asia/Seoul"); null
+     * for one it would refuse ("UTC", "GMT+09:00"), which then reads as Seoul time.
+     */
+    fun feedZone(zone: java.time.ZoneId): String? = zone.id.takeIf { ZONE.matches(it) && it.length <= 40 }
+    private val ZONE = Regex("""[A-Za-z]+(?:/[A-Za-z0-9_+-]+){1,2}""")
 
     /** [SHR-01] The months a link made from [from] covers, for its pay. */
     fun months(from: LocalDate): List<YearMonth> =
@@ -153,6 +169,8 @@ object ShareLinkPayload {
         payKind: com.bamnat.core.work.MoneyShare = com.bamnat.core.work.MoneyShare.PAY,
         /** [SHR-11] Each day's jobs; sent only with [ShareOptions.jobs]. */
         jobs: Map<LocalDate, List<SharedJob>> = emptyMap(),
+        /** [FEAT-15] The calendar feed (…/s/<id>.ics) is on, with its times in this zone; null keeps it off. */
+        feed: java.time.ZoneId? = null,
     ): JSONObject {
         val dates = (0 until DAYS).map { from.plusDays(it.toLong()) }
         val days = JSONArray()
@@ -216,6 +234,11 @@ object ShareLinkPayload {
             put("v", if (options.any) 2 else 1)
             put("title", title.trim().take(30))
             ttlDays?.let { put("ttlDays", it) }
+            // [FEAT-15] Without "ics" the server serves no feed for the link; an older server ignores both.
+            feed?.let { z ->
+                put("ics", true)
+                feedZone(z)?.let { put("tz", it) }
+            }
             put("types", types)
             put("days", days)
             if (options.any) put("shows", JSONArray(options.shows))
@@ -234,27 +257,53 @@ object ShareLinkPayload {
 }
 
 /**
+ * [PROV-04] Which of a calendar's links: 1 is the one every calendar has, named by the calendar's id
+ * alone as links always were; 프로 adds up to [MAX] in all, "<calendar>~2" to "<calendar>~5", each sent to
+ * whom and for as long as the sharer likes. The key is what the store, the automatic update and the
+ * expiry notice go by.
+ */
+object ShareLinkKey {
+    const val MAX = 5
+    /** Links a calendar has without 프로. */
+    const val FREE = 1
+    private const val SEP = '~'
+
+    fun of(calendarId: String, slot: Int): String = if (slot <= 1) calendarId else "$calendarId$SEP$slot"
+    fun calendar(key: String): String = key.substringBefore(SEP)
+    fun slot(key: String): Int = key.substringAfter(SEP, "1").toIntOrNull()?.takeIf { it in 1..MAX } ?: 1
+    /** Every link [calendarId] can have, the first first. */
+    fun all(calendarId: String): List<String> = (1..MAX).map { of(calendarId, it) }
+}
+
+/**
  * The link this phone made for one calendar, kept so it can be updated or cut later. [SHR-12] One
- * instance per calendar in the app ([com.bamnat.app.AppContainer.shareLinks]), so the sheet, the
+ * instance per link in the app ([com.bamnat.app.AppContainer.shareLinksOf]), so the sheet, the
  * automatic update and the expiry notice all see the same link as it changes. [MCAL-03] Each of the
  * user's calendars has its own link; the main calendar keeps the file links were always kept in.
+ * [PROV-04] [key] says which calendar and which of its links, see [ShareLinkKey].
  */
 class ShareLinkStore(
     context: Context,
-    val calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+    val key: String = com.bamnat.app.data.PersonalCalendar.MAIN,
     private val clock: () -> Instant = Instant::now,
 ) {
-    private val prefs = context.applicationContext.getSharedPreferences(prefsName(calendarId), Context.MODE_PRIVATE)
+    private val prefs = context.applicationContext.getSharedPreferences(prefsName(key), Context.MODE_PRIVATE)
+    /** The calendar this link shows. */
+    val calendarId: String get() = ShareLinkKey.calendar(key)
+    /** [PROV-04] Which of the calendar's links, from 1. */
+    val slot: Int get() = ShareLinkKey.slot(key)
 
     companion object {
-        fun prefsName(calendarId: String) =
-            if (calendarId == com.bamnat.app.data.PersonalCalendar.MAIN) "share_link" else "share_link_$calendarId"
+        fun prefsName(key: String) =
+            if (key == com.bamnat.app.data.PersonalCalendar.MAIN) "share_link" else "share_link_$key"
 
-        /** [MCAL-03] A removed calendar's link details go with it. */
+        /** [MCAL-03] A removed calendar's link details go with it; [PROV-04] all of its links. */
         fun forget(context: Context, calendarId: String) {
-            if (calendarId == com.bamnat.app.data.PersonalCalendar.MAIN) return
-            context.applicationContext.getSharedPreferences(prefsName(calendarId), Context.MODE_PRIVATE).edit().clear().commit()
-            context.applicationContext.deleteSharedPreferences(prefsName(calendarId))
+            for (key in ShareLinkKey.all(calendarId)) {
+                if (key == com.bamnat.app.data.PersonalCalendar.MAIN) continue
+                context.applicationContext.getSharedPreferences(prefsName(key), Context.MODE_PRIVATE).edit().clear().commit()
+                context.applicationContext.deleteSharedPreferences(prefsName(key))
+            }
         }
     }
 
@@ -315,7 +364,18 @@ class ShareLinkStore(
     fun options(): ShareOptions = ShareOptions.of(prefs.getStringSet("shows", emptySet()).orEmpty())
 
     fun saveOptions(o: ShareOptions) = prefs.edit().putStringSet("shows", o.shows.toSet()).apply()
+
+    /**
+     * [FEAT-15] Whether the link also serves a calendar feed (…/s/<id>.ics) to subscribe to; off until the
+     * sharer turns it on. It goes out only with 프로 ([com.bamnat.app.tier.Feature.ICS_FEED]).
+     */
+    var feed: Boolean
+        get() = prefs.getBoolean("ics", false)
+        set(value) { prefs.edit().putBoolean("ics", value).apply() }
 }
+
+/** [FEAT-15] A link's calendar feed address: the page's address with .ics, which the server serves while the feed is on. */
+fun ShareLinkState.feedUrl(): String = url.substringBefore('?').trimEnd('/') + ".ics"
 
 /** [SHR-02] A link as the app reads it for 받은 달력: the schedule JSON as the server keeps it. */
 data class ReceivedShare(

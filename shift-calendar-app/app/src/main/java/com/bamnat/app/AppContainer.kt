@@ -177,16 +177,24 @@ class AppContainer(context: Context) {
     private val startedAt = System.currentTimeMillis()
     val shareLinks by lazy { com.bamnat.app.share.ShareLinkStore(appContext) }
     private val addedShareLinks = java.util.concurrent.ConcurrentHashMap<String, com.bamnat.app.share.ShareLinkStore>()
-    /** [MCAL-03] The link of one of the user's calendars; the main one is [shareLinks]. */
-    fun shareLinksOf(calendarId: String): com.bamnat.app.share.ShareLinkStore =
-        if (calendarId == PersonalCalendar.MAIN) shareLinks
-        else addedShareLinks.getOrPut(calendarId) { com.bamnat.app.share.ShareLinkStore(appContext, calendarId) }
-    /** [MCAL-03] A removed calendar's link goes with it, its expiry notice too. */
+    /**
+     * [MCAL-03] The link of one of the user's calendars; the main one's first is [shareLinks].
+     * [PROV-04] [key] is a calendar's id for its first link, or a [com.bamnat.app.share.ShareLinkKey] for another.
+     */
+    fun shareLinksOf(key: String): com.bamnat.app.share.ShareLinkStore =
+        if (key == PersonalCalendar.MAIN) shareLinks
+        else addedShareLinks.getOrPut(key) { com.bamnat.app.share.ShareLinkStore(appContext, key) }
+    /** [PROV-04] Whether any of [calendarId]'s links is open. */
+    fun hasShareLink(calendarId: String): Boolean =
+        com.bamnat.app.share.ShareLinkKey.all(calendarId).any { shareLinksOf(it).link.value != null }
+    /** [MCAL-03] A removed calendar's links go with it, their expiry notices too. */
     fun forgetShareLinks(calendarId: String) {
         if (calendarId == PersonalCalendar.MAIN) return
-        addedShareLinks.remove(calendarId)?.clear()
+        for (key in com.bamnat.app.share.ShareLinkKey.all(calendarId)) {
+            addedShareLinks.remove(key)?.clear()
+            com.bamnat.app.share.ShareExpiryReminder.reschedule(appContext, key, null, null)
+        }
         com.bamnat.app.share.ShareLinkStore.forget(appContext, calendarId)
-        com.bamnat.app.share.ShareExpiryReminder.reschedule(appContext, calendarId, null, null)
     }
     /** [SHR-12] Sends the link again when the calendar changes. */
     val shareSync by lazy { com.bamnat.app.share.ShareSync(this) }
@@ -360,14 +368,14 @@ class AppContainer(context: Context) {
         keep("share") { if (shareApi.enabled) shareSync.follow() }
         // [FEAT-07] The phone's 밤낮 calendars follow the calendars written there.
         keep("phonecal") { phoneCalendarSync.follow() }
-        // [MCAL-03] Each of the user's calendars has its own link and so its own notice.
+        // [MCAL-03] Each of the user's calendars has its own link and so its own notice; [PROV-04] each of its links.
         keep("shareexpiry") {
             calendars.calendars.map { list -> list.map { it.id } }.distinctUntilChanged().collectLatest { ids ->
                 coroutineScope {
-                    ids.forEach { id ->
+                    ids.flatMap { com.bamnat.app.share.ShareLinkKey.all(it) }.forEach { key ->
                         launch {
-                            val store = shareLinksOf(id)
-                            store.link.collect { com.bamnat.app.share.ShareExpiryReminder.reschedule(appContext, id, it, store.noticedFor) }
+                            val store = shareLinksOf(key)
+                            store.link.collect { com.bamnat.app.share.ShareExpiryReminder.reschedule(appContext, key, it, store.noticedFor) }
                         }
                     }
                 }

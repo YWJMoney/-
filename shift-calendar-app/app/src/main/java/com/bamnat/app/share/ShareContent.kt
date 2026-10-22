@@ -20,13 +20,16 @@ object ShareContent {
         c: AppContainer, snapshot: ScheduleSnapshot, from: LocalDate, title: String, ttlDays: Int?, options: ShareOptions,
         /** [MCAL-03][MCAL-06] Whose calendar: its own kind of work, money and pay; [MEMO-01] the memos it sees. */
         calendar: String = PersonalCalendar.MAIN,
+        /** [FEAT-15] Whether the link serves a calendar feed; it does only with 프로. */
+        feed: Boolean = false,
     ): JSONObject =
         withContext(Dispatchers.Default) {
             val kind = kind(c, calendar)
             val memos = if (options.memos) memos(c, from, calendar) else emptyMap()
             val pay = if (options.pay) money(c, snapshot, from, kind, calendar) else emptyList()
             val jobs = if (options.jobs) jobs(c, from, calendar) else emptyMap()
-            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs)
+            val zone = java.time.ZoneId.systemDefault().takeIf { feed && c.featureGate.allows(com.bamnat.app.tier.Feature.ICS_FEED) }
+            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone)
         }
 
     /** [SHR-11] The money a link of this user carries: pay for employees, job income for field work, sales for a shop. */

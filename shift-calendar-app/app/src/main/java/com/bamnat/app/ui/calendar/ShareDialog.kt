@@ -60,8 +60,9 @@ import com.bamnat.app.share.ShareContent
 import com.bamnat.app.share.ShareExpiryReminder
 import com.bamnat.app.share.ShareLinkException
 import com.bamnat.app.share.ShareLinkPayload
+import com.bamnat.app.share.ShareLinkKey
 import com.bamnat.app.share.ShareLinkState
-import com.bamnat.app.share.ShareLinkStore
+import com.bamnat.app.share.feedUrl
 import com.bamnat.app.share.ShareOptions
 import com.bamnat.app.share.SharedPay
 import com.bamnat.app.ui.Fmt
@@ -93,7 +94,8 @@ fun ShareDialog(
     client: ShareApi = LocalContext.current.appContainer.shareApi,
     /** [MCAL-03] The calendar on screen; each of the user's calendars has a link of its own. */
     calendar: com.bamnat.app.data.PersonalCalendar? = null,
-    store: ShareLinkStore = LocalContext.current.appContainer.shareLinksOf(calendar?.id ?: com.bamnat.app.data.PersonalCalendar.MAIN),
+    /** [PROV-04] Which of the calendar's links the sheet opens on, from 1. */
+    startSlot: Int = 1,
     preview: ShareLinkState? = null,
     /** [SHR-02] Opens the sheet that takes a received link; null hides that part. */
     onOpenReceived: (() -> Unit)? = null,
@@ -101,18 +103,29 @@ fun ShareDialog(
     val context = LocalContext.current
     val container = context.appContainer
     val scope = rememberCoroutineScope()
+    // [MCAL-03][MCAL-06] An added calendar shares as its own kind of work, with its own pay, jobs or sales.
+    val calendarId = calendar?.id ?: com.bamnat.app.data.PersonalCalendar.MAIN
+    val added = calendarId != com.bamnat.app.data.PersonalCalendar.MAIN
+    // [PROV-04] 프로 keeps up to five links per calendar, each to whom and for as long as the sharer likes.
+    val gate by container.featureGate.state.collectAsState()
+    val moreLinks = gate.allows(com.bamnat.app.tier.Feature.MORE_LINKS)
+    val feedOpen = gate.allows(com.bamnat.app.tier.Feature.ICS_FEED)
+    val links = ShareLinkKey.all(calendarId).map { container.shareLinksOf(it).link.collectAsState().value }
+    var slot by remember { mutableIntStateOf(startSlot.coerceIn(1, ShareLinkKey.MAX)) }
+    val store = remember(slot) { container.shareLinksOf(ShareLinkKey.of(calendarId, slot)) }
     val stored by store.link.collectAsState()
     val link = preview ?: stored
-    var title by remember { mutableStateOf(link?.title.orEmpty()) }
-    var ttl by remember { mutableIntStateOf(link?.ttlDays ?: 30) }
-    var auto by remember { mutableStateOf(store.auto) }
-    var saved by remember { mutableStateOf(store.options()) }
-    var options by remember { mutableStateOf(saved) }
+    // A second link starts with the name the first one went out with.
+    var title by remember(store) { mutableStateOf((link ?: links.firstNotNullOfOrNull { it })?.title.orEmpty()) }
+    var ttl by remember(store) { mutableIntStateOf(link?.ttlDays?.let { ShareLinkPayload.allowedTtl(it, moreLinks) } ?: 30) }
+    var auto by remember(store) { mutableStateOf(store.auto) }
+    var saved by remember(store) { mutableStateOf(store.options()) }
+    var options by remember(store) { mutableStateOf(saved) }
+    var feed by remember(store) { mutableStateOf(store.feed) }
     var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    // [MCAL-03][MCAL-06] An added calendar shares as its own kind of work, with its own pay, jobs or sales.
-    val calendarId = store.calendarId
-    val added = calendarId != com.bamnat.app.data.PersonalCalendar.MAIN
+    var error by remember(store) { mutableStateOf<String?>(null) }
+    // [PROV-04] Without 프로 a second link is kept until its end date but not kept open longer.
+    val extraLocked = slot > ShareLinkKey.FREE && !moreLinks
     val profile by container.calendars.pay(calendarId).profile.collectAsState()
     val settings by remember(calendarId) { container.scopeOf(calendarId).settings }.collectAsState(container.scopeOf(calendarId).currentSettings())
     val style = settings.workStyle
@@ -138,7 +151,7 @@ fun ShareDialog(
             leaveKinds = options.leaveKinds && employee, extras = options.extras && employee,
         )
     }
-    suspend fun payload(ttlDays: Int? = ttl) = ShareContent.payload(container, snapshot, month.atDay(1), title, ttlDays, chosen(), calendarId)
+    suspend fun payload(ttlDays: Int? = ttl) = ShareContent.payload(container, snapshot, month.atDay(1), title, ttlDays, chosen(), calendarId, feed)
     /** [SHR-12] Keeps what was sent, so the automatic update sends only what changes after it. */
     fun keep(made: ShareLinkState, sent: org.json.JSONObject) {
         store.saveOptions(chosen()); saved = chosen()
@@ -210,6 +223,13 @@ fun ShareDialog(
                 "받는 사람은 ${month.monthValue}월부터 3개월 근무표를 브라우저로 봐요. 밤낮 앱이 있으면 자기 달력 옆에 두고 바꿔 가며 보고, 같이 쉬는 날도 바로 알아요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // [PROV-04] The calendar's links side by side once there is one, with a new one for 프로.
+            if (preview == null && links.any { it != null }) {
+                LinkChips(links, slot, moreLinks, onPick = { slot = it }, onNew = {
+                    if (moreLinks) links.indexOfFirst { it == null }.takeIf { it >= 0 }?.let { slot = it + 1 }
+                    else com.bamnat.app.ui.pro.openPro()
+                })
+            }
             // A link already made comes first: sending it again is what most people open this for.
             val made = link
             if (made != null) {
@@ -242,14 +262,39 @@ fun ShareDialog(
                 label = { Text("이름 (선택, 예: 민지)") }, modifier = Modifier.fillMaxWidth())
             // [SHR-12] With a link made, the period is what 기간 늘리기 adds from today.
             Text(if (link == null) "열어 둘 기간" else "기간 늘리기", style = MaterialTheme.typography.labelLarge)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ShareLinkPayload.TTL_DAYS.forEach { d -> FilterChip(selected = ttl == d, onClick = { ttl = d }, label = { Text("${d}일") }) }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.Center) {
+                ShareLinkPayload.TTL_DAYS.forEach { d ->
+                    // [PROV-04] 180일 and 1년 are 프로's.
+                    val locked = d in ShareLinkPayload.PRO_TTL_DAYS && !moreLinks
+                    FilterChip(selected = ttl == d, onClick = { if (locked) com.bamnat.app.ui.pro.openPro() else ttl = d },
+                        label = { Text(ShareLinkPayload.ttlLabel(d)) })
+                }
+                if (!moreLinks) com.bamnat.app.ui.money.ProPill(Modifier.align(Alignment.CenterVertically))
             }
             // [SHR-12] On by default: whoever got the link sees the calendar as it is now.
             PartRow("고치면 링크도 바로 바꾸기", (if (added) "이 달력을" else "내 달력을") + " 고치면 몇 초 뒤 링크에도 들어가요. 받은 사람 앱은 다음에 열 때 새로 받아요", auto) {
                 auto = it; store.auto = it
                 if (it) scope.launch { container.shareSync.sync(store.calendarId) }
             }
+            // [FEAT-15] The same days as a calendar feed, for Google, iPhone or Outlook calendars on a computer.
+            FeedRow(
+                on = feed && feedOpen, open = feedOpen, busy = busy, url = link?.takeIf { feed && feedOpen }?.feedUrl(),
+                onChange = { on ->
+                    if (!feedOpen) { com.bamnat.app.ui.pro.openPro(); return@FeedRow }
+                    feed = on; store.feed = on
+                    // A link already made takes it at once; a new one goes out with it.
+                    if (link != null && preview == null) run {
+                        when (container.shareSync.resend(store.key)) {
+                            com.bamnat.app.share.ShareSync.Result.Offline -> {
+                                feed = !on; store.feed = !on
+                                error = "인터넷 연결을 확인하고 다시 해 주세요"
+                            }
+                            else -> container.telemetry.event("share_feed", if (on) "on" else "off")
+                        }
+                    }
+                },
+                onCopy = { url -> copy(context, url) },
+            )
             // [MKT-09][OPS-13][SHR-01] Said before the data leaves the phone, in the policy's words, with what was ticked.
             Text(
                 "보내는 것: " + (listOf("근무") + chosen().partNames(kind)).joinToString(", ") + "\n" + SHARE_SERVER_NOTICE,
@@ -261,11 +306,12 @@ fun ShareDialog(
             val current = link
             if (current == null) {
                 Button(enabled = !busy && !empty, onClick = {
+                    if (extraLocked) { com.bamnat.app.ui.pro.openPro(); return@Button }
                     run {
                         val sent = payload()
                         val made = client.create(sent)
                         keep(made, sent)
-                        container.telemetry.event("share_link_create", chosen().shows.joinToString(",").ifEmpty { "shifts" })
+                        container.telemetry.event("share_link_create", chosen().shows.joinToString(",").ifEmpty { "shifts" } + if (slot > 1) ",slot$slot" else "")
                         send(context, made)
                     }
                 }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
@@ -288,17 +334,20 @@ fun ShareDialog(
                     }
                 }
                 OutlinedButton(enabled = !busy && !empty, onClick = {
+                    if (extraLocked) { com.bamnat.app.ui.pro.openPro(); return@OutlinedButton }
                     run {
                         val sent = payload(ttl)
                         keep(client.update(current, sent), sent)
                         container.telemetry.event("share_link_extend", "sheet")
                     }
                 }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("오늘부터 ${ttl}일 열어 두기")
+                    if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Text("오늘부터 ${ShareLinkPayload.ttlLabel(ttl)} 열어 두기")
+                    if (extraLocked) { Spacer(Modifier.width(8.dp)); com.bamnat.app.ui.money.ProPill() }
                 }
                 TextButton(enabled = !busy, onClick = {
                     run { client.delete(current); store.clear() }
-                }, modifier = Modifier.fillMaxWidth()) { Text("링크 끊기", color = MaterialTheme.colorScheme.error) }
+                }, modifier = Modifier.fillMaxWidth()) { Text(if (slot > 1) "이 링크 끊기" else "링크 끊기", color = MaterialTheme.colorScheme.error) }
             }
             error?.let { why ->
                 Text(why, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -328,6 +377,82 @@ fun ShareDialog(
                 }
             }
         }
+    }
+}
+
+/** [PROV-04] 링크 1…5 for the links made, and 새 링크 while one is free; 새 링크 is 프로's. */
+@Composable
+private fun LinkChips(links: List<ShareLinkState?>, slot: Int, open: Boolean, onPick: (Int) -> Unit, onNew: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            links.forEachIndexed { i, l ->
+                val n = i + 1
+                // An empty slot shows only while it is the one being made.
+                if (l != null || n == slot) FilterChip(selected = n == slot, onClick = { onPick(n) }, label = { Text("링크 $n") })
+            }
+            val free = links.withIndex().any { (i, l) -> l == null && i + 1 != slot }
+            if (free) FilterChip(selected = false, onClick = onNew, label = { Text("+ 새 링크") },
+                trailingIcon = if (open) null else ({ com.bamnat.app.ui.money.ProPill() }))
+        }
+        Text(
+            if (open) "보낼 사람마다 링크를 따로 만들면 보여 줄 것과 기간을 따로 정하고, 하나만 끊을 수도 있어요. 달력마다 ${ShareLinkKey.MAX}개까지예요."
+            else "링크를 사람마다 따로 두는 건 프로에서 돼요(달력마다 ${ShareLinkKey.MAX}개까지).",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * [FEAT-15] 캘린더 구독 주소 (프로): the link's days as an .ics feed. Google Calendar takes one only on a
+ * computer (URL로 추가) and reads it again every few hours to a day, so the row says both.
+ */
+@Composable
+private fun FeedRow(on: Boolean, open: Boolean, busy: Boolean, url: String?, onChange: (Boolean) -> Unit, onCopy: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                .toggleable(value = on, enabled = !busy, role = Role.Switch, onValueChange = onChange),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("캘린더 구독 주소", style = MaterialTheme.typography.bodyLarge)
+                    if (!open) { Spacer(Modifier.width(6.dp)); com.bamnat.app.ui.money.ProPill() }
+                }
+                Text("구글·아이폰·아웃룩 캘린더에 구독으로 넣으면 이 링크의 근무가 따라 바뀌어요",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            androidx.compose.material3.Switch(checked = on, onCheckedChange = null, enabled = !busy)
+        }
+        if (url != null) {
+            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(url, style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(onClick = { onCopy(url) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("구독 주소 복사") }
+                    Text(FEED_GUIDE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        } else if (on) {
+            Text("링크를 만들면 구독 주소가 여기 나와요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** [FEAT-15] Where the address goes, as Google's help says (2026-10-22), and how soon a change shows. */
+internal const val FEED_GUIDE =
+    "구글 캘린더: 컴퓨터에서 calendar.google.com › 다른 캘린더 + › URL로 추가에 붙여 넣어요. 휴대폰 구글 캘린더 앱에서는 추가할 수 없어요. " +
+        "바뀐 근무는 구글이 다시 읽을 때(몇 시간~하루) 보여요.\n" +
+        "아이폰·맥: 설정 › 캘린더 › 계정 › 구독 캘린더 추가. 아웃룩: 캘린더 추가 › 웹에서 구독.\n" +
+        "주소를 아는 사람은 누구나 볼 수 있어요. 링크를 끊으면 구독도 끊겨요."
+
+private fun copy(context: Context, text: String) {
+    runCatching {
+        context.getSystemService(android.content.ClipboardManager::class.java)
+            .setPrimaryClip(android.content.ClipData.newPlainText("캘린더 구독 주소", text))
+    }
+    // Android 13 and later say it themselves.
+    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
+        android.widget.Toast.makeText(context, "구독 주소를 복사했어요", android.widget.Toast.LENGTH_SHORT).show()
     }
 }
 

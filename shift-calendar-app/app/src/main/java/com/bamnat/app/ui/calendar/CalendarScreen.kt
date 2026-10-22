@@ -475,11 +475,14 @@ fun CalendarScreen(
 
     var showMonthPicker by remember { mutableStateOf(false) }
     var showShare by remember { mutableStateOf(false) }
+    // [PROV-04] Which of the calendar's links the sheet opens on: the first, or the one a notice is about.
+    var shareSlot by remember { mutableIntStateOf(1) }
     val shareLinks = remember { com.bamnat.app.share.ShareLinkClient().enabled }
     // [UX-03] Pointed out once, the first time there is a schedule worth sending and nothing was sent yet.
     var shareHintDone by remember { mutableStateOf(hints.done(HintStore.SHARE)) }
     val shareCalendar: () -> Unit = {
         if (!shareHintDone) { hints.markDone(HintStore.SHARE); shareHintDone = true }
+        shareSlot = 1
         // [MKT-09] With a link server the sheet offers picture or link; without one it sends the picture.
         if (shareLinks) showShare = true
         else {
@@ -492,6 +495,7 @@ fun CalendarScreen(
         ShareDialog(
             snapshot = snap, month = visibleMonth,
             calendar = activeCalendar,
+            startSlot = shareSlot,
             onImage = { scope.launch { MonthImage.share(context, snap, visibleMonth, settings.weekStart) }; vm.logShare() },
             onDismiss = { showShare = false },
             onOpenReceived = { showShare = false; adding = "" },
@@ -500,7 +504,7 @@ fun CalendarScreen(
     // [SHR-02][MCAL-01] Whose calendar is on screen, once there is more than one.
     val calendarRows = remember(calendarOrder, myCalendars, receivedList, received.enabled, showShare, switching) {
         CalendarRow.of(calendarOrder, myCalendars, if (received.enabled) receivedList else emptyList()) { id ->
-            if (shareLinks) context.appContainer.shareLinksOf(id).link.value else null
+            if (shareLinks) com.bamnat.app.share.ShareLinkKey.all(id).firstNotNullOfOrNull { context.appContainer.shareLinksOf(it).link.value } else null
         }
     }
     val pickCalendar: (CalendarRow) -> Unit = { row ->
@@ -594,7 +598,10 @@ fun CalendarScreen(
         NoticeLinks.consume(NoticeLinks.Target.SHARE)
         received.view(null)
         // [MCAL-03] An added calendar's notice opens that calendar's sheet.
-        vm.viewCalendar(NoticeLinks.calendar.value ?: com.bamnat.app.data.PersonalCalendar.MAIN)
+        // [PROV-04] A notice about a second link names it too, and the sheet opens on it.
+        val key = NoticeLinks.calendar.value ?: com.bamnat.app.data.PersonalCalendar.MAIN
+        vm.viewCalendar(com.bamnat.app.share.ShareLinkKey.calendar(key))
+        shareSlot = com.bamnat.app.share.ShareLinkKey.slot(key)
         if (shareLinks) showShare = true
         else {
             scope.launch { MonthImage.share(context, snap, visibleMonth, settings.weekStart) }
@@ -698,7 +705,7 @@ fun CalendarScreen(
     val calendarPart: @Composable () -> Unit = {
         identityBar()
         val linkMade = remember(activeCalendar.id, showShare) {
-            shareLinks && context.appContainer.shareLinksOf(activeCalendar.id).link.value != null
+            shareLinks && context.appContainer.hasShareLink(activeCalendar.id)
         }
         if (!shareHintDone && !linkMade && !snap.isEmpty && paint == null && pendingSetup?.later != true) {
             ShareHintCard(

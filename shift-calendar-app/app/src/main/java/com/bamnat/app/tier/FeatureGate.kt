@@ -62,7 +62,7 @@ enum class Feature(val label: String, val minTier: Tier) {
     /** [PROV-03] A password-protected backup written to a file of the user's choosing every day. */
     AUTO_BACKUP("매일 자동 백업", Tier.PRO),
     /** [PROV-04] Up to five links per calendar, each with its own parts and period, and 180 days or a year. */
-    MORE_LINKS("공유 링크 여러 개", Tier.PRO),
+    MORE_LINKS("공유 링크 여러 개, 1년까지", Tier.PRO),
     /** [PROV-05] A month's and a year's roster as an A4 PDF to print. */
     ROSTER_PDF("근무표 PDF", Tier.PRO),
     /** [PROV-06][PROV-07] A task before the alarm stops, and a check a few minutes later that the user is up. */

@@ -427,7 +427,9 @@ class CalendarsViewModel(private val c: AppContainer) : ViewModel() {
 
     val rows: StateFlow<List<CalendarRow>> =
         combine(c.calendars.order, c.calendars.calendars, c.received.calendars, links) { order, mine, got, _ ->
-            CalendarRow.of(order, mine, if (c.shareApi.enabled) got else emptyList()) { id -> c.shareLinksOf(id).link.value }
+            CalendarRow.of(order, mine, if (c.shareApi.enabled) got else emptyList()) { id ->
+                com.bamnat.app.share.ShareLinkKey.all(id).firstNotNullOfOrNull { c.shareLinksOf(it).link.value }
+            }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _message = MutableStateFlow<String?>(null)
@@ -476,18 +478,20 @@ class CalendarsViewModel(private val c: AppContainer) : ViewModel() {
 /**
  * [MCAL-01][MCAL-03] Removes an added calendar. Its open link is cut first, so what it showed stops
  * showing; without internet that fails (false) and the calendar stays, unless [keepLink] says to go
- * anyway and let the link close on its own date.
+ * anyway and let the link close on its own date. [PROV-04] All of its links.
  */
 internal suspend fun removeCalendar(c: AppContainer, id: String, keepLink: Boolean): Boolean {
-    val link = c.shareLinksOf(id).link.value
-    val cut = link == null || keepLink || try {
-        c.shareApi.delete(link)
-        true
-    } catch (e: ShareLinkException) {
-        // Already gone on the server is as good as cut.
-        e.message == "not_found"
-    } catch (e: IOException) {
-        false
+    val links = com.bamnat.app.share.ShareLinkKey.all(id).mapNotNull { c.shareLinksOf(it).link.value }
+    val cut = keepLink || links.all { link ->
+        try {
+            c.shareApi.delete(link)
+            true
+        } catch (e: ShareLinkException) {
+            // Already gone on the server is as good as cut.
+            e.message == "not_found"
+        } catch (e: IOException) {
+            false
+        }
     }
     if (!cut) return false
     // [UNDO-03] Everything it had is kept for 7 days before anything moves, so it can come back whole.
@@ -500,7 +504,7 @@ internal suspend fun removeCalendar(c: AppContainer, id: String, keepLink: Boole
     // [DAYW-07] 출퇴근 자동 기록 writing to it goes to 내 달력.
     com.bamnat.app.data.CommutePrefs.get(c.appContext).let { if (it.current.calendarId == id) it.setCalendar(PersonalCalendar.MAIN) }
     c.calendars.delete(id)
-    c.telemetry.event("calendar_delete", if (link != null) "with_link" else "")
+    c.telemetry.event("calendar_delete", if (links.isNotEmpty()) "with_link" else "")
     kept?.let(c.recordsTrash::deleted)
     return true
 }

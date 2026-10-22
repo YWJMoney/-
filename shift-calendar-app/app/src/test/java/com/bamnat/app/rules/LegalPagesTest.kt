@@ -34,6 +34,24 @@ class LegalPagesTest {
         assertTrue(PRIVACY_URL.endsWith("/privacy/"))
     }
 
+    /** [FEAT-07][FEAT-15][PROV-04] 2.6 for 1.20.0: the phone calendar, the feed address and more links, in the app's numbers. */
+    @Test fun thePrivacyPolicyCoversThePhoneCalendarAndTheFeed() {
+        val policy = File(site, "privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        assertTrue(text.contains("처리방침 2.6 · 앱 버전 1.20.0"))
+        assertTrue(text.contains("2-7. 휴대폰 캘린더에 근무 쓰기"))
+        assertTrue("쓰기 권한", text.contains("<td>캘린더 쓰기 (선택, 이용자가 허용)</td>"))
+        assertTrue("‘${com.bamnat.app.calendar.PhoneCalendar.ACCOUNT}’ 캘린더", text.contains("‘${com.bamnat.app.calendar.PhoneCalendar.ACCOUNT}’ 캘린더"))
+        // The span the phone calendar is written over, as IcsWriter.defaultRange has it.
+        val (from, to) = com.bamnat.core.schedule.IcsWriter.defaultRange(java.time.LocalDate.of(2026, 10, 22))
+        assertTrue(from == java.time.LocalDate.of(2026, 7, 22) && to == java.time.LocalDate.of(2027, 10, 22))
+        assertTrue(text.contains("3개월 전부터 1년 뒤까지"))
+        assertTrue("구독 주소", text.contains("캘린더 구독 주소") && text.contains(".ics"))
+        assertTrue("시간대 이름", text.contains("시간대 이름 하나"))
+        assertTrue("링크 수", text.contains("링크를 ${com.bamnat.app.share.ShareLinkKey.MAX}개까지"))
+    }
+
     @Test fun theTermsCoverSubscriptionTrialAndRefunds() {
         val terms = File(site, "terms/index.html")
         assumeTrue(File(site, "privacy/index.html").exists())
