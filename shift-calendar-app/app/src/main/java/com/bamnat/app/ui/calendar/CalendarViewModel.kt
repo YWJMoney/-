@@ -848,6 +848,43 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** The kind for a 대근 of [type] [EXTRA-07]. */
     fun coverKind(snapshot: ScheduleSnapshot, type: ShiftType): ExtraKind = ExtraText.coverKind(snapshot.kinds, snapshot.shiftTypes, type)
 
+    /**
+     * [CAL-43] What a typed line proposed ([com.bamnat.core.schedule.QuickText]), written on its days with one
+     * undo for all of them. A 대근 copies the covered shift's hours; extra work with a start and a length is
+     * that span; otherwise the kind's usual piece.
+     */
+    fun applyQuickText(p: com.bamnat.core.schedule.QuickText.Proposal, snapshot: ScheduleSnapshot) {
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
+            val before = p.dates.associateWith { snapshot.resolver.entryOn(it) }
+            when (val a = p.act) {
+                is com.bamnat.core.schedule.QuickText.Act.Shift -> p.dates.forEach { d -> changeShift(d) { ShiftOverride.Shift(a.shiftTypeId) } }
+                com.bamnat.core.schedule.QuickText.Act.Off -> p.dates.forEach { d -> changeShift(d) { ShiftOverride.Off } }
+                is com.bamnat.core.schedule.QuickText.Act.Leave -> p.dates.forEach { d -> schedule.setLeave(d, Leave(LeaveKind.ANNUAL, a.quarters)) }
+                is com.bamnat.core.schedule.QuickText.Act.Extra -> {
+                    val entry = quickExtra(a, snapshot) ?: return@launch
+                    p.dates.forEach { d -> schedule.addExtra(d, entry) }
+                }
+            }
+            _messages.emit(UndoMessage("${p.text} 넣었어요") { before.forEach { (d, e) -> schedule.restoreDay(d, e) } })
+        }
+    }
+
+    private fun quickExtra(a: com.bamnat.core.schedule.QuickText.Act.Extra, snapshot: ScheduleSnapshot): ExtraEntry? {
+        val covered = a.coveredShiftId?.let { snapshot.typesById[it] }?.takeIf { it.hasTimes }
+        if (covered != null) {
+            val e = ExtraText.cover(snapshot.kinds.of(a.kindId), covered)
+            return a.start?.let { s -> e.copy(start = s, end = s.plusMinutes(covered.durationMinutes.toLong())) } ?: e
+        }
+        val kind = snapshot.kinds.of(a.kindId)
+        return when {
+            a.start != null && a.minutes != null -> ExtraEntry(kind.id, a.start, a.start.plusMinutes(a.minutes.toLong()))
+            a.minutes != null -> ExtraEntry(kind.id, minutes = a.minutes)
+            else -> ExtraText.default(kind)?.let { d -> if (a.start != null && d.start != null && d.end != null)
+                d.copy(start = a.start, end = a.start.plusMinutes(com.bamnat.core.model.WorkTime.spanMinutes(d.start!!, d.end!!).toLong())) else d }
+        }
+    }
+
     /** [EXTRA-01] The roster stays a day off and the shift goes in as a 대근 of its hours, said back with undo. */
     fun coverInstead(date: LocalDate, type: ShiftType, snapshot: ScheduleSnapshot) {
         val kind = coverKind(snapshot, type)

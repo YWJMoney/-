@@ -990,11 +990,17 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
             text = ""
         }
     }
+    // [CAL-43] I 리뷰 N2: a line like "내일 야간 대근 7시" is offered as a change to the calendar, asked first.
+    val snapshot by vm.snapshot.collectAsStateWithLifecycle()
+    val today = rememberToday()
+    val proposal = remember(text, snapshot, date, today) {
+        snapshot?.let { s -> com.bamnat.core.schedule.QuickText.parse(text, today, date, s.shiftTypes, s.kinds) }
+    }
     OutlinedTextField(
         value = text,
         onValueChange = { text = it },
         modifier = Modifier.fillMaxWidth().focusRequester(focus),
-        placeholder = { Text("빠른 메모 (예: 인수인계, 준비물)") },
+        placeholder = { Text("빠른 메모 (예: 인수인계, 내일 야간 대근)") },
         singleLine = true,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { submit() }),
@@ -1004,6 +1010,18 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
             }
         },
     )
+    proposal?.let { p ->
+        Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("이렇게 넣을까요? ${p.text}", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.weight(1f))
+                TextButton(onClick = {
+                    snapshot?.let { vm.applyQuickText(p, it) }
+                    text = ""
+                }) { Text("넣기") }
+            }
+        }
+    }
     for (memo in memos) {
         MemoRow(memo = memo, onClick = { onOpenMemo(memo.id) }, onDelete = { deleting = memo })
     }

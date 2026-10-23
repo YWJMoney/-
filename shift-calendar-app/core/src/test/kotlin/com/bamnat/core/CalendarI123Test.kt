@@ -12,6 +12,7 @@ import com.bamnat.core.schedule.PatternPreset
 import com.bamnat.core.schedule.PatternPresets
 import com.bamnat.core.schedule.PatternTimeline
 import com.bamnat.core.schedule.QuickOrder
+import com.bamnat.core.schedule.QuickText
 import com.bamnat.core.schedule.ShiftEvents
 import com.bamnat.core.work.CalendarFocus
 import com.bamnat.core.work.MonthOverview
@@ -367,5 +368,31 @@ class CalendarI123Test {
         assertEquals("주간 중 · 18:00에 끝나요 (2시간 10분 남음)", ShiftEvents.countdown(days, working))
         assertEquals("주간까지 15시간 · 내일 09:00", ShiftEvents.countdown(days, wed.atTime(18, 0)))
         assertNull(ShiftEvents.countdown(resolver().resolveRange(LocalDate.of(2026, 10, 10), LocalDate.of(2026, 10, 11)), LocalDate.of(2026, 10, 10).atTime(9, 0)))
+    }
+
+    /** [CAL-43] A typed line read as a change to the calendar, from the user's own names. */
+    @Test
+    fun `typed lines become shifts, extras and leave`() {
+        val today = wed // 2026-10-07, a Wednesday
+        val kinds = ExtraKinds()
+        fun p(t: String) = QuickText.parse(t, today, today, Fixtures.all, kinds)
+        val cover = p("내일 야간 대근 7시")!!
+        assertEquals(listOf(today.plusDays(1)), cover.dates)
+        assertEquals(QuickText.Act.Extra(ExtraKind.COVER_ID, coveredShiftId = 3, start = LocalTime.of(7, 0)), cover.act)
+        val leave = p("다음주 월화 연차")!!
+        assertEquals(listOf(LocalDate.of(2026, 10, 12), LocalDate.of(2026, 10, 13)), leave.dates)
+        assertEquals(QuickText.Act.Leave(4), leave.act)
+        assertEquals("10/12(월)~10/13(화) 연차", leave.text)
+        assertEquals(QuickText.Act.Leave(2), p("금요일 반차")!!.act)
+        assertEquals(listOf(LocalDate.of(2026, 10, 9)), p("금요일 반차")!!.dates)
+        assertEquals(QuickText.Act.Shift(5), p("11/3 장주간")!!.act) // the longer name wins over 주간
+        assertEquals(listOf(LocalDate.of(2026, 11, 3)), p("11/3 장주간")!!.dates)
+        assertEquals(QuickText.Act.Extra(ExtraKind.OVERTIME_ID, minutes = 120), p("잔업 2시간")!!.act)
+        assertEquals(listOf(today), p("잔업 2시간")!!.dates)
+        assertEquals(listOf(LocalDate.of(2026, 10, 3 + 28)), p("31일 휴무")!!.dates)
+        assertEquals(listOf(LocalDate.of(2026, 11, 3)), p("3일 주간")!!.dates)
+        assertEquals((12..16).map { LocalDate.of(2026, 10, it) }, p("다음 주 월~금 주간")!!.dates)
+        assertNull(p("병원 가기"))
+        assertNull(p(""))
     }
 }
