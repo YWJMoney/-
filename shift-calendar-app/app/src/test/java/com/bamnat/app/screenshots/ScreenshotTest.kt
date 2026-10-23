@@ -3279,7 +3279,8 @@ class ScreenshotTest {
         val repo = app.container.scheduleRepository
         val day = runBlocking {
             val r = repo.snapshot.first().resolver
-            (0..10).map { today.plusDays(it.toLong()) }.first { r.resolve(it).shiftType?.name == "주간" && r.resolve(it).leave == null && !r.resolve(it).hasExtraWork }
+            // An earlier day, so it sits in the month's upper rows whatever the date.
+            (1..12).map { today.minusDays(it.toLong()) }.first { r.resolve(it).shiftType?.name == "주간" && r.resolve(it).leave == null && !r.resolve(it).hasExtraWork && it.month == today.month }
         }
         runBlocking { repo.setLeave(day, Leave(LeaveKind.ANNUAL, 2, fromStart = true)) }
         app.container.settingsRepository.update { it.copy(dayGroupOrder = listOf("alarm", "memo", "leave")) }
