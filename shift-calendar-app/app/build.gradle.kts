@@ -212,7 +212,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-ads:25.2.0")
     implementation("com.google.android.ump:user-messaging-platform:4.0.0")
 
-    val composeBom = platform("androidx.compose:compose-bom:2025.05.00")
+    val composeBom = platform("androidx.compose:compose-bom:2025.06.01")
     implementation(composeBom)
     testImplementation(composeBom)
     testImplementation("androidx.window:window-testing:1.3.0")
@@ -231,9 +231,9 @@ dependencies {
     // [PERF-01] Installs src/main/baseline-prof.txt on phones that got the APK outside Play, so the start is compiled ahead too.
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("androidx.activity:activity-compose:1.10.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.0")
-    implementation("androidx.navigation:navigation-compose:2.9.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.1")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.1")
+    implementation("androidx.navigation:navigation-compose:2.9.1")
 
     // Home screen widgets [FEAT-03, REL-03].
     implementation("androidx.glance:glance-appwidget:1.1.1")
@@ -249,7 +249,7 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     // Screenshot tests: the real app rendered on the JVM, no emulator needed.
-    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("org.robolectric:robolectric:4.15.1")
     testImplementation("androidx.test.ext:junit:1.2.1")
     testImplementation("androidx.compose.ui:ui-test-junit4")
 }
