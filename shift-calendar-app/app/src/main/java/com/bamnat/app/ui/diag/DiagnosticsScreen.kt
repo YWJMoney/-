@@ -115,7 +115,7 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
         val details = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg)
         return buildList {
             add(AlarmCheck("알람 사용", settings.alarmsEnabled, "꺼져 있으면 근무 알람이 하나도 울리지 않아요.", "켜기", Fix.TurnOn))
-            add(AlarmCheck("알림 허용", Notifications.canPost(context), "알람이 울릴 때 끄기·다시 알림 버튼이 이 알림에 있어요.", "알림 설정 열기",
+            add(AlarmCheck("알림 허용", Notifications.canPost(context), "알람이 울릴 때 끄기·다시 울림 버튼이 이 알림에 있어요.", "알림 설정 열기",
                 Fix.Open(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))))
             if (Build.VERSION.SDK_INT >= 31) add(AlarmCheck("정확한 알람", container.alarmScheduler.canScheduleExact(),
                 "허용하지 않으면 알람이 몇 분 늦을 수 있어요.", "허용하러 가기", Fix.Open(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))))

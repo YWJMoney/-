@@ -570,3 +570,4 @@ PAYX-19,공휴일과 쉬는 날이 겹칠 때(순번 103-3) → 지금 동작을
 PAYX-20,호봉표(순번 103-4) → 호봉별 금액과 승급 달로 기본급 타임라인,2 (1.22.0),완료,,"core pay/PayScale, PayGolden2Test G2-7, PayDialogs PayScaleDialog; 화면 사진 475·479"
 PAYX-21,구간 가산 시작점(순번 103-5) → 그 건부터 / 그날 첫 근무부터,2 (1.22.0),완료,,"CompanyRules ExtraRule.tiersFromDayStart, PayGolden2Test G2-8, ExtraRuleEditor 토글, PayCodecTest·LeaveLedgerAppTest 왕복"
 PAYX-22,명세서와 맞춰 본 달 금액이 바뀌면 알림(순번 103-6) → 그대로·이번 급여기간부터·되돌리기,2 (1.22.0),완료,,"core pay/VerifiedChange, PayGolden2Test G2-9, PayViewModel.checkVerified·PayScreen 대화상자; 화면 사진 476"
+SET-04,"순번 285 전체 리뷰 G 몫 → 설정 첫 목록 '더 보기' 머리, 같은 순환 저장은 바로·시작일 고르면 몇째 날 자동, 쉬는 날만 순환 막기, 시각 빠른 고르기 더하기, 근무 시간 겹침 알리기, 자잘한 문구",2 (1.22.0),완료,,"notes/1.22-285/G.md 표, RestRulesTest.overlappingTimesAreSaid, SettingsHub '더 보기', PatternScreen ChangeFromDialog; 화면 사진 528"

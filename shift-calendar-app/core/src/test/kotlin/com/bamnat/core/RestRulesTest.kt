@@ -28,6 +28,15 @@ class RestRulesTest {
     private fun duty(steps: List<com.bamnat.core.model.ShiftType>, rules: RestRules = RestRules()) =
         DutyCheck.check(steps.mapIndexed { i, t -> monday.plusDays(i.toLong()) to t }, rules)
 
+    /** [SET-04] A night set to end at 10:00 runs into the next 09:00 day: said, where it used to be skipped (ux-review 1 P25). */
+    @Test fun overlappingTimesAreSaid() {
+        val late = n.copy(end = java.time.LocalTime.of(10, 0))
+        val types = Fixtures.all.map { if (it.id == late.id) late else it }
+        val r = ScheduleResolver(types, WorkPattern.Rotation(monday, listOf(late.id, d.id)), emptyList())
+        val issues = RestCheck.check((0L until 2).map { r.resolve(monday.plusDays(it)) }, RestRules())
+        assertTrue(issues.toString(), issues.any { "겹쳐요" in it.text })
+    }
+
     @Test fun encodeDecodeAndOldStrict() {
         val r = RestRules(on = false, minRestHours = 12, offsAfterNights = 1, maxNightsInRow = 4, maxWorkDaysInRow = 5, maxNightsPerMonth = 14)
         assertEquals(r, RestRules.decode(r.encode()))

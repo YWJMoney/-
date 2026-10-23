@@ -130,7 +130,8 @@ fun TimePickerDialog(
     )
 }
 
-val DEFAULT_PRESETS: List<LocalTime> = listOf(6, 7, 8, 9, 14, 18, 20, 22).map { LocalTime.of(it, 0) }
+// [SET-04] With the hospital's 15·23시 and the 12-hour shifts' 19시 (ux-review 1 P31); the row scrolls.
+val DEFAULT_PRESETS: List<LocalTime> = listOf(6, 7, 8, 9, 14, 15, 18, 19, 20, 22, 23).map { LocalTime.of(it, 0) }
 
 /**
  * One wheel with its unit, taking an equal share of the row. [TIME-02] The whole share turns the

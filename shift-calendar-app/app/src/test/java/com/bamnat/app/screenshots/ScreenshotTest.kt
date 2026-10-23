@@ -373,11 +373,14 @@ class ScreenshotTest {
         /** Holds a finger on what shows [text], for its quick menu. */
         fun longPressText(text: String, prefix: Boolean = false) = touch(reach(text, false, prefix, 0, 0.5f).boundsInWindow.center, hold = 40)
 
-        /** [DAY-01] Opens a day: a tap selects it and shows its preview, a tap on the chosen day opens it whole. */
+        /**
+         * [DAY-01] Opens a day: a tap selects it and shows its preview, a tap on the chosen day opens it whole. A day in
+         * the month's last rows sits under the cards above the grid on a short screen on some dates, so it scrolls to it.
+         */
         fun openDay(date: LocalDate) {
             val title = Fmt.dayTitle(date)
-            if (find(title, exact = false, prefix = true)?.config?.getOrNull(SemanticsProperties.Selected) != true) tapText(title, prefix = true, scrolls = 0)
-            tapText(title, prefix = true, scrolls = 0)
+            if (find(title, exact = false, prefix = true)?.config?.getOrNull(SemanticsProperties.Selected) != true) tapText(title, prefix = true, scrolls = 6)
+            tapText(title, prefix = true, scrolls = 6)
         }
 
         /** [SCALE-01] [openDay] on a screen too short to show the whole month: scrolls down to the day first. */

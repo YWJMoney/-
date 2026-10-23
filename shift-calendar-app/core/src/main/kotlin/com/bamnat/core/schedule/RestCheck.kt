@@ -67,7 +67,12 @@ object RestCheck {
         val minRest = rules.minRestHours * 60L
         for ((a, b) in work.zipWithNext()) {
             val gap = Duration.between(a.to, b.from).toMinutes()
-            if (gap < 0) continue
+            // [SET-04] Times that overlap are a wrong time more often than a real day: said, not skipped (ux-review 1 P25).
+            if (gap < 0) {
+                issues += Issue(b.date, Kind.SHORT_REST, "${a.name}(${"%02d:%02d".format(a.to.hour, a.to.minute)} 끝)과 ${b.name} 시간이 겹쳐요",
+                    RestRules.Sources.REST)
+                continue
+            }
             val rest = if (gap == 0L) "쉬지 않고 바로" else "${hours(gap)} 쉬고"
             val end = "%02d:%02d".format(a.to.hour, a.to.minute)
             val nextDay = b.date == a.date.plusDays(1)

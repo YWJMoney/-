@@ -111,7 +111,6 @@ fun PatternScreen(
     var startDate by draft0::startDate
     var endDate by draft0::endDate
     var selectedStep by remember { mutableStateOf<Int?>(null) }
-    var pickStart by remember { mutableStateOf(false) }
     var pickEnd by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     var askWhen by remember { mutableStateOf(false) }
@@ -125,11 +124,18 @@ fun PatternScreen(
             if (rotation.isEmpty()) null else WorkPattern.Rotation(startDate, clean(rotation.toList()), endDate)
         PatternKind.WEEKLY -> WorkPattern.Weekly.fromSteps(startDate, clean(weekly.toList()), endDate)
     }
-    val valid = draft != null && (endDate == null || !endDate!!.isBefore(today))
+    // [SET-04] An order with no working day would fill the calendar with days off only (ux-review 1 P28).
+    val works = when (kind) {
+        PatternKind.ROTATION -> rotation.any { id -> id?.let { typesById[it] }?.isOff == false }
+        PatternKind.WEEKLY -> weekly.any { id -> id?.let { typesById[it] }?.isOff == false }
+    }
+    val valid = draft != null && works && (endDate == null || !endDate!!.isBefore(today))
     val save: () -> Unit = {
         if (draft != null) {
             // With a pattern already in place, ask whether this is a team change and from when.
-            if (existing == null) vm.saveFirstPattern(draft, onSaved ?: onBack) else askWhen = true
+            if (existing == null) vm.saveFirstPattern(draft, onSaved ?: onBack)
+            else if (savesWithoutAsking(existing, draft, today)) vm.fixCurrentPattern(draft, onBack)
+            else askWhen = true
         }
     }
 
@@ -396,24 +402,23 @@ fun PatternScreen(
         }
     }
 
-    if (pickStart || pickEnd) {
-        val initial = if (pickStart) startDate else (endDate ?: startDate)
+    if (pickEnd) {
+        val initial = endDate ?: startDate
         val state = rememberDatePickerState(
             initialSelectedDateMillis = initial.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
         )
         DatePickerDialog(
-            onDismissRequest = { pickStart = false; pickEnd = false },
+            onDismissRequest = { pickEnd = false },
             confirmButton = {
                 TextButton(onClick = {
                     state.selectedDateMillis?.let { ms ->
                         val d = Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC).toLocalDate()
-                        if (pickStart) startDate = d else endDate = d
+                        endDate = d
                     }
-                    pickStart = false
                     pickEnd = false
                 }) { Text("확인") }
             },
-            dismissButton = { TextButton(onClick = { pickStart = false; pickEnd = false }) { Text("취소") } },
+            dismissButton = { TextButton(onClick = { pickEnd = false }) { Text("취소") } },
         ) {
             DatePicker(state = state)
         }
@@ -454,6 +459,15 @@ fun PatternScreen(
 private const val MAX_STEPS = 62
 
 /** One period in the history, e.g. "2024.10.14 – 2026.11.30 · 주주휴휴야야". */
+/**
+ * [SET-04] The same order with only "오늘은 몇 번째 날" moved, on a pattern that has no past days yet, is a fix:
+ * no "언제부터" question whose first button would undo it (ux-review 1 P9). With past days the same change is a
+ * team change (4조 2교대 moving teams), so it is asked and the past keeps the old team.
+ */
+internal fun savesWithoutAsking(existing: WorkPattern, draft: WorkPattern, today: LocalDate): Boolean =
+    existing is WorkPattern.Rotation && draft is WorkPattern.Rotation && existing.steps == draft.steps &&
+        existing.endDate == draft.endDate && !existing.startDate.isBefore(today)
+
 @Composable
 private fun PatternHistoryRow(pattern: WorkPattern, typesById: Map<Long, ShiftType>, today: LocalDate) {
     val current = pattern.covers(today)
@@ -489,10 +503,12 @@ private fun ChangeFromDialog(
 ) {
     val nextMonth = today.withDayOfMonth(1).plusMonths(1)
     var from by remember { mutableStateOf(nextMonth) }
-    // Which step of the order falls on the first new day; the 1st by default.
-    var firstStep by remember { mutableStateOf(0) }
-    var pickDate by remember { mutableStateOf(false) }
     val rotation = draft as? WorkPattern.Rotation
+    // Which step of the order falls on the first new day: [SET-04] where the order as edited puts it, so the
+    // place just set on this screen is kept unless the user picks another (ux-review 1 P9).
+    var firstStep by remember { mutableStateOf(rotation?.stepIndexOn(nextMonth) ?: 0) }
+    val start: (LocalDate) -> Unit = { d -> from = d; rotation?.let { firstStep = it.stepIndexOn(d) } }
+    var pickDate by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -505,7 +521,7 @@ private fun ChangeFromDialog(
                 )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for ((label, date) in listOf("오늘" to today, "내일" to today.plusDays(1), "다음 달 1일" to nextMonth)) {
-                        FilterChip(selected = from == date, onClick = { from = date }, label = { Text(label) })
+                        FilterChip(selected = from == date, onClick = { start(date) }, label = { Text(label) })
                     }
                     FilterChip(
                         selected = from != today && from != today.plusDays(1) && from != nextMonth,
@@ -556,7 +572,7 @@ private fun ChangeFromDialog(
             onDismissRequest = { pickDate = false },
             confirmButton = {
                 TextButton(onClick = {
-                    state.selectedDateMillis?.let { ms -> from = Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC).toLocalDate() }
+                    state.selectedDateMillis?.let { ms -> start(Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC).toLocalDate()) }
                     pickDate = false
                 }) { Text("확인") }
             },

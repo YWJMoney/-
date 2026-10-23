@@ -656,7 +656,7 @@ fun ShiftTypeEditorDialog(
                                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                                 SoundPickerRow(
                                     sound = draft.alarmSoundUri,
-                                    defaultLabel = "기본 알람음 (설정에서 변경)",
+                                    defaultLabel = "기본 알람음 (설정 › 알람 › 소리)",
                                     onPicked = { draft = draft.copy(alarmSoundUri = it) },
                                 )
                             }
