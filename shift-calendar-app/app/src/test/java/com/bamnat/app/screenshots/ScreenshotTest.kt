@@ -3275,7 +3275,7 @@ class ScreenshotTest {
         typeInto("호봉표", "1호봉 2,400,000\n2호봉 2,480,000")
     }
     /** [LEAVE-06] 오전 반차 (1.22 전체 리뷰): the part off comes from the start, so 남은 근무 is the afternoon. */
-    @Test fun foldedDayMorningHalf() = shoot("480_folded_day_morning_half", FOLDED) {
+    @Test fun foldedDayMorningHalf() = shoot("509_folded_day_morning_half", FOLDED) {
         val repo = app.container.scheduleRepository
         val day = runBlocking {
             val r = repo.snapshot.first().resolver
