@@ -15,18 +15,18 @@ object WhatsNew {
         // 1.23.0: one line per bundle's gift (J·K·L·I here; M adds its own), each opening its feature
         // (계획/1.23-*-개발계획.md). 1.22's rule of 6~8 lines holds here too.
         Release(34, "1.23.0", listOf(
+            // [SIMPLE-03] 6~8 lines, one per feature. 2026-10-23 통합: J1·K1·L2·I1·M1 = 6 lines, two kept for bundle N.
             // [VIS-03][UX-08][A11Y-04][SETUP-14][SET-05] Bundle J.
             Line("글씨를 크게 키워도 버튼·탭이 잘리지 않고, 시간은 시작·끝·휴게를 한 창에서 골라요. 근무 알람은 한 번에 앞당기거나 늦춰요", "alarm.moveAll"),
-            // Bundle K.
-            Line("‘내 월급 맞나요’: 명세서를 줄마다 맞춰 회사가 적게 준 줄과 앱에 빠진 줄을 나눠 보여 주고, 연말정산도 미리 어림해요", "pay.slipAudit"),
-            Line("연차 화면에 회사의 촉진 기록과 ‘없어지기 전에 쓰는 법’이 생기고, 원장을 PDF·CSV로 내보내요", "leave.promotionLog"),
-            // Bundle L (계획/1.23-L-서버-광장-알람-개발계획.md L2).
-            Line("‘밤낮 소식’: 문의 답·광장 소식·공지를 하루 한 번 알림 하나로 받아요. 못 보낸 문의·링크 변경은 인터넷이 되면 저절로 보내요", "plaza.news"),
-            Line("‘우리 조 모아 보기’: 6자 코드로 동료 근무를 한 주 나란히 봐요(설정 › 데이터)", "share.receive"),
+            // Bundle K ('내 월급 맞나요' + 연차 원장 together).
+            Line("‘내 월급 맞나요’: 명세서를 줄마다 맞춰 적게 준 줄과 빠진 줄을 보여 주고, 연차 화면엔 회사의 촉진 기록과 원장 PDF·CSV 내보내기가 생겼어요", "pay.slipAudit"),
+            // Bundle L (계획/1.23-L-서버-광장-알람-개발계획.md L2), 밤낮 소식 + 우리 조 모아 보기, then 알람 점검.
+            Line("‘밤낮 소식’: 문의 답·광장 소식·공지를 하루 한 번 알림 하나로 받고, ‘우리 조 모아 보기’로 동료 근무를 6자 코드로 한 주 나란히 봐요", "plaza.news"),
             Line("알람 점검에 지난 7일 성적표와 서버 연결 점검이 생기고, 보내는 것과 권한을 한눈에 봐요(설정 › 개인정보)", "alarm.check"),
             // [CAL-43][WIDG-05][SCHED-03][SCHED-07] Bundle I.
-            Line("날짜 메모에 ‘내일 야간 대근 7시’처럼 적으면 근무로 넣어 드려요. 순서가 밀린 날은 길게 눌러 그날부터 다시 맞춰요", "calendar.quickText"),
-            Line("‘다음 근무까지’ 위젯이 생기고, 달력 위젯은 지난달·다음 달로 넘겨 봐요. 모든 조에서 맞바꿀 날도 찾아요", "widget.countdown"),
+            Line("날짜 메모에 ‘내일 야간 대근 7시’처럼 적으면 근무로 넣어 드리고, ‘다음 근무까지’ 위젯이 생겼어요. 순서가 밀린 날은 길게 눌러 그날부터 다시 맞춰요", "calendar.quickText"),
+            // [PERF-04][REL-15] Bundle M.
+            Line("앱이 51MB에서 8MB로 가벼워졌고(글자 인식은 처음 쓸 때 받아요), 백업 파일은 사진까지 한 파일에 담아 비밀번호로 봉해요", "data.backup"),
         )),
         Release(33, "1.22.0", listOf(
             Line("처음 화면은 한 장, 설정은 7묶음으로 줄었어요. 켜 둬도 괜찮은 알림을 한 번에 켜고, 설정 › 알림과 잠에서 언제든 꺼요", "settings.recommended"),
