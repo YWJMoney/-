@@ -310,6 +310,11 @@ abstract class ScreenshotBase {
                 settle()
                 find(text, exact, prefix)?.let { return it }
             }
+            // [QA-05] On a busy machine a fling can carry the list past the text, so look back down step by step.
+            repeat(scrolls) {
+                scrollDown(350, across)
+                find(text, exact, prefix)?.let { return it }
+            }
             error("화면에서 ‘$text’를 찾지 못했어요. 보이는 글자: " + shownWords().joinToString(" | ").take(1500))
         }
 
