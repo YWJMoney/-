@@ -75,6 +75,13 @@ class SettingsSearchTest {
         assertEquals("wake", HelpFaq.search("알람 끄고 또 잠들어요").first().id)
         assertEquals("phoneCalendar", HelpFaq.search("구글 캘린더에 근무 보이게").first().id)
         assertEquals("import", HelpFaq.search("캘린더에서 가져오기").first().id)
+        // [EASY-01][EASY-08][OBS-02] 1.23 N.
+        assertEquals("browse", HelpFaq.search("예시 달력 그만 보기").first().id)
+        assertEquals("profile", HelpFaq.search("질문 카드가 자꾸 떠요").first().id)
+        assertEquals("journal", HelpFaq.search("밤낮이 한 일").first().id)
+        assertEquals(SettingsGo.PROFILE, (HelpFaq.topics().first { it.id == "profile" }.action!!.second as HelpAction.Go).go)
+        val found = SettingsIndex.search("내 정보").first()
+        assertEquals("내 정보", found.title)
     }
 
     @Test fun helpForAScreenPutsItsAnswersFirst() {

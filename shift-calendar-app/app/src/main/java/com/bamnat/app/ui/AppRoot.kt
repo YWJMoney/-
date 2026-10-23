@@ -1320,6 +1320,8 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.FEATURES -> Routes.FEATURES
     SettingsGo.PRO -> Routes.PRO
     SettingsGo.RECOMMENDED -> Routes.RECOMMENDED
+    SettingsGo.PROFILE -> Routes.PROFILE
+    SettingsGo.JOURNAL -> Routes.JOURNAL
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,
     SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT, SettingsGo.COMMUTE -> null
 }

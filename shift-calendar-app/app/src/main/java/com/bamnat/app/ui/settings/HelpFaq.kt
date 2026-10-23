@@ -253,6 +253,33 @@ internal object HelpFaq {
             listOf("기능 켜고 끄기", "알림과 잠", "추천 기능"),
             "알림과 잠 열기" to HelpAction.Page(SettingsPage.NOTICES, "하루 브리핑"),
         ),
+        // [EASY-01][EASY-02] 1.23 N: the example calendar, and leaving it.
+        HelpTopic(
+            "browse", "둘러보기", "예시 달력을 그만 보고 내 달력으로 시작하고 싶어요",
+            "‘우선 둘러볼게요’로 연 예시 달력은 화면 위 띠의 ‘내 정보로 시작’을 누르면 끝나요. 둘러보다 근무를 적으려 하면 ‘예시는 두고 새 달력에서 시작’도 고를 수 있어요. " +
+                "둘러보는 동안 적은 건 이 휴대폰 밖으로 나가지 않고, 알람·백업·공유에도 들어가지 않아요.",
+            listOf("둘러보기", "둘러볼게요", "예시 달력", "예시", "체험", "내 정보로 시작", "처음부터", "시작하기"),
+            listOf("달력", "내 정보"),
+            "달력 열기" to HelpAction.Tab(NoticeLinks.Target.TODAY),
+        ),
+        // [EASY-05][EASY-08][EASY-09] 1.23 N: the question cards and where every answer is kept.
+        HelpTopic(
+            "profile", "내 정보", "질문 카드가 떠요 · 답한 정보를 바꾸고 싶어요",
+            "질문 카드는 기능에 필요한 정보만 하루 두 개까지 물어요. ‘나중에’는 7일 뒤, ‘모르겠어요’는 법대로 계산해요. " +
+                "답한 것은 설정 맨 위 ‘내 정보’에 모여 있고, 누르면 바로 고쳐져 쓰는 기능에 함께 적용돼요. ‘모두 처음부터’는 값을 지우지 않고 다시 물어요.",
+            listOf("내 정보", "질문 카드", "질문", "물어봐", "프로필", "입사일", "월급날", "다시 묻기", "모두 처음부터", "정보 바꾸기"),
+            listOf("내 정보", "달력"),
+            "내 정보 열기" to HelpAction.Go(SettingsGo.PROFILE),
+        ),
+        // [OBS-01][OBS-02] 1.23 N
+        HelpTopic(
+            "journal", "밤낮이 한 일", "앱이 알아서 무엇을 했는지 보고 싶어요",
+            "설정 맨 위 ‘밤낮이 한 일’에서 알람을 다시 잡은 시각, 자동 백업, 계산 자료 갱신, 결제 알림 기록처럼 밤낮이 알아서 한 일을 날짜별로 봐요. " +
+                "금액이나 글 내용은 적지 않고, 이 휴대폰에만 남아요. 달력 위엔 평소보다 많이 한 날만 한 줄로 보여요.",
+            listOf("밤낮이 한 일", "한 일", "한 일 기록", "알아서", "자동으로", "백업 됐", "알람 다시", "갱신", "무엇을 했"),
+            listOf("밤낮이 한 일", "달력"),
+            "밤낮이 한 일 열기" to HelpAction.Go(SettingsGo.JOURNAL),
+        ),
         // [COMM-08][COMM-09] 1.22.0: what the plaza asks of a post, and how to stop seeing someone.
         HelpTopic(
             "plaza", "광장", "광장에서 불쾌한 글을 봤어요. 그 사람 글을 안 보고 싶어요",
@@ -289,7 +316,7 @@ internal object HelpFaq {
         "share" to listOf("share", "receive"),
         "company" to listOf("plaza"),
         "backup" to listOf("backup", "phoneCalendar"),
-        "app" to listOf("widget", "alarm", "turnOff"),
+        "app" to listOf("widget", "alarm", "turnOff", "profile", "journal"),
     )
 
     /**

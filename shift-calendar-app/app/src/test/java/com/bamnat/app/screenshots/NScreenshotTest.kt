@@ -15,7 +15,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * [EASY-01][EASY-02] 묶음 N's screenshots, numbers 680~709 (N-1: 680~684): 우선 둘러볼게요 from the first page and
+ * [EASY-01][EASY-02][EASY-10] 묶음 N's screenshots, numbers 680~709 (N-1: 680~684, N-4: 707~709): 우선 둘러볼게요 from the first page and
  * from the first setup question, the example calendar with its band, the card a first write brings up, and
  * 내 정보로 시작 landing on the setup with the example's kind of work chosen.
  */
@@ -144,6 +144,31 @@ class NScreenshotTest : ScreenshotBase() {
         reveal("이걸 알려 주면 시작해요", exact = false)
     })
     @Test fun settingsBoardUnfolded() = shoot("706_n_settings_board_unfolded", UNFOLDED, clean { tab(4, wide = true); reveal("밤낮이 한 일", exact = true) })
+
+    // N-4: 도움말 answers and the update notice that tell of it.
+    @Test fun helpProfile() {
+        inquiriesOn()
+        shoot("707_n_help_profile", FOLDED) {
+            tab(4, wide = false)
+            tapText("도움말과 문의", exact = true)
+            typeInto("기능과 도움말 찾기", "질문 카드")
+            tapText("질문 카드가 떠요 · 답한 정보를 바꾸고 싶어요", exact = true)
+            reveal("내 정보 열기", exact = true)
+        }
+    }
+    @Test fun helpJournal() {
+        inquiriesOn()
+        shoot("708_n_help_journal", FOLDED) {
+            tab(4, wide = false)
+            tapText("도움말과 문의", exact = true)
+            typeInto("기능과 도움말 찾기", "밤낮이 한 일")
+            tapText("앱이 알아서 무엇을 했는지 보고 싶어요", exact = true)
+            reveal("밤낮이 한 일 열기", exact = true)
+        }
+    }
+    @Test fun whatsNew() = shoot("709_n_whats_new_1_23", FOLDED) {
+        content { com.bamnat.app.ui.guide.WhatsNewDialog(com.bamnat.core.guide.WhatsNew.releases.take(1), {}, {}, {}) }
+    }
 
     @Test fun setupStyleOffersBrowse() = shoot("684_n_setup_style_browse", FOLDED, fresh(null) { reveal("우선 둘러볼게요") })
 }

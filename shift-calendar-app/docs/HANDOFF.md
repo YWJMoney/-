@@ -222,6 +222,23 @@ shift-calendar-app/
 - 받는 동작: `VIEW`(눌러 열기)와 `SEND`(공유로 보내기). `text/plain`은 받지 않아요(아무 글 공유에나 밤낮이 뜨지 않게).
 - 확장자는 `.json` 그대로 둬요. 카카오톡 등 메신저가 모르는 확장자를 막거나 이름을 바꾸는 일이 있어서예요.
 
+### 6-2. 쉬운 사용·관측성 (1.23.0 묶음 N, EASY-01~10·OBS-01~03)
+
+사용자 결정 D58: 기능은 줄이지 않고 기본으로 켜 두되, 사실은 한 곳에 한 번만 두고 모르는 건 필요한 순간에 하나씩 물어요.
+설계는 프로젝트 파일(git 밖)의 `research/1.23-N-설계.md`, 개발계획은 `계획/1.23-N-쉬운-사용-관측성-개발계획.md`, 결정은 그 문서의 N-D1~N-D8이에요.
+
+| 층 | core (순수 Kotlin) | app | 하는 일 |
+|---|---|---|---|
+| 둘러보기 | `example/Browse`, `ExamplePlan` | `BrowseStore`, `ExampleCalendar`, `ui/guide/WriteGate` | 첫 화면 '우선 둘러볼게요' → 직군별 예시 달력(`PersonalCalendar.EXAMPLE`, 알람·백업·공유·통계 없음). 쓰기 동작은 `WriteGate.request`가 한 곳에서 잡아 '내 정보로 시작할까요?'를 물어요 |
+| 사실 | `profile/Profile`, `FactCatalog`, `FactText` | `ProfileStore`, `ProfileAnswers` | 값은 늘 원래 저장소(급여 설정, 근무 종류 등)에 두고, `Profile.read`가 읽어서 사실 목록을 만들어요. 따로 두는 건 출처·확신도 메타(`profile/<달력>.json`)뿐 |
+| 질문 | `Needs`, `FeatureNeeds`, `AskScheduler`, `Questions` | `AskStore`, `ui/guide/AskCard` | 켜진 기능에 빠진 사실만, 하루 2개(`PER_DAY`), '나중에' 7일, 두 번 미루면 내 정보에만. 좋은 순간(첫 야간 뒤 등)은 그 사실을 먼저 |
+| 내 정보 | `StatusBoard` | `ui/guide/ProfileScreen`(설정 맨 위 카드) | 한 화면에서 보고 바로 고침. '모두 처음부터'는 값을 지우지 않고 `Profile.RECHECK`로 다시 묻고, 7일 안에 되돌려요 |
+| 한 일 | `journal/Journal` | `JournalStore`(noBackupFilesDir/journal.jsonl), `ui/guide/JournalScreen` | 밤낮이 알아서 한 일을 종류·작은 숫자로만 적음(금액·글 없음), 90일 보관, 백업에 안 들어감. 달력 위 줄은 알람·위젯 말고 한 일이 있는 날만 |
+
+- 새 기록 지점을 더할 때: `JournalKind`에 종류를 더하고, 같은 값이 반복되면 `noteIfChanged`를 써요. detail은 숫자와 `일치개번판시분주달회째`만 받아요.
+- 새 기능이 사실을 필요로 하면 `FeatureNeeds`에 기능 id → 사실을 적으면 질문 카드와 '이걸 알려 주면 시작해요'가 따라와요.
+- 예시 달력의 값은 휴대폰 밖으로 나가지 않아요(`ExampleCalendarGuardTest`가 지켜요).
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.
