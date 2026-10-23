@@ -300,14 +300,16 @@ fun PatternScreen(
                 // Presets sit below so the order input and its preview share the first screen.
                 SectionCard(title = "자주 쓰는 패턴") {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for (preset in PatternPresets.all) {
+                        val presets = remember(types) { PatternPresets.ordered(types).map { it to PatternPresets.fits(it, types) } }
+                        for ((preset, fits) in presets) {
                             AssistChip(
+                                // A preset with a shift the user lacks leaves those days off; said on the chip.
                                 onClick = {
                                     rotation.clear()
                                     rotation.addAll(PatternPresets.toSteps(preset, types))
                                     selectedStep = null
                                 },
-                                label = { Text("${preset.name} · ${preset.description}") },
+                                label = { Text("${preset.name} · ${preset.description}" + if (fits) "" else " (없는 근무는 쉬는 날)") },
                             )
                         }
                     }

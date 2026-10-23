@@ -62,12 +62,16 @@ class ShiftsViewModel(
         viewModelScope.launch { repo.saveShiftType(type) }
     }
 
-    /** Adds the set's shift types the user does not have yet [MKT-03]. */
-    fun addSet(set: ShiftTypeSet) {
+    /**
+     * Adds the set's shift types the user does not have yet [MKT-03]; with [retime], the user's shifts of the
+     * same name take the set's times and break too [SCHED-05].
+     */
+    fun addSet(set: ShiftTypeSet, retime: Boolean = false) {
         viewModelScope.launch {
             val existing = shiftTypes.value ?: return@launch
             // Sets come with a fitting icon [FEAT-01]; the user can change or remove it.
             ShiftTypeSets.missing(set, existing).forEach { repo.saveShiftType(it.copy(icon = it.icon ?: ShiftIcon.suggest(it)?.key)) }
+            if (retime) ShiftTypeSets.differing(set, existing).forEach { (mine, preset) -> repo.saveShiftType(ShiftTypeSets.retimed(mine, preset)) }
             container.telemetry.event("shift_set_added", set.name)
         }
     }

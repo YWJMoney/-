@@ -97,26 +97,13 @@ internal fun TeamsContent(data: WidgetData) {
                     maxLines = 1,
                     modifier = GlanceModifier.defaultWeight(),
                 )
-                TeamChip(t.today, 24)
+                ShiftSquare(t.today, 24)
                 Spacer(GlanceModifier.width(6.dp))
                 Text("내일", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 10.sp), maxLines = 1)
                 Spacer(GlanceModifier.width(3.dp))
-                TeamChip(t.tomorrow, 18)
+                ShiftSquare(t.tomorrow, 18)
             }
         }
-    }
-}
-
-@Composable
-private fun TeamChip(type: ShiftType?, sizeDp: Int) {
-    val color = type?.let { Color(it.colorArgb.toInt()) }
-    Box(
-        GlanceModifier.size(sizeDp.dp).background(color ?: Color(0x22888888)).cornerRadius((sizeDp / 3).dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(type?.label ?: "휴", style = TextStyle(
-            color = if (color == null) GlanceTheme.colors.onSurfaceVariant else ColorProvider(contentColorOn(color)),
-            fontSize = (sizeDp * 0.45f).sp, fontWeight = FontWeight.Bold), maxLines = 1)
     }
 }
 

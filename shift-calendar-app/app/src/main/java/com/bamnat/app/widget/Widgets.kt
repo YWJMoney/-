@@ -514,7 +514,7 @@ private fun MonthCell(data: WidgetData, date: LocalDate, inMonth: Boolean, modif
     }
 }
 
-/** A rounded square in the shift's color with its label, or a dash for an empty day. */
+/** A rounded square in the shift's color with its label, or [REST_GLYPH] for an empty day. */
 @Composable
 private fun ShiftChip(day: ResolvedDay, sizeDp: Int) {
     // [CAL-11] A whole day of leave shows the leave; a 대근 on a day off shows the shift worked.
@@ -527,7 +527,15 @@ private fun ShiftChip(day: ResolvedDay, sizeDp: Int) {
         }
         return
     }
-    val type = day.shiftType?.takeIf { !(it.isOff && day.coveredShift != null) } ?: day.coveredShift
+    ShiftSquare(day.shiftType?.takeIf { !(it.isOff && day.coveredShift != null) } ?: day.coveredShift, sizeDp)
+}
+
+/**
+ * [WIDG-04] One square for a shift on every widget (I 리뷰 1-5④): filled in the shift's colour, an off type
+ * as its coloured letter on grey, and a day with no shift as "휴", so the team widget and the week rows agree.
+ */
+@Composable
+internal fun ShiftSquare(type: ShiftType?, sizeDp: Int) {
     val color = type?.let { Color(it.colorArgb.toInt()) }
     Box(
         GlanceModifier
@@ -537,7 +545,7 @@ private fun ShiftChip(day: ResolvedDay, sizeDp: Int) {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            type?.label ?: "–",
+            type?.label ?: REST_GLYPH,
             style = TextStyle(
                 color = when {
                     color == null -> GlanceTheme.colors.onSurfaceVariant
@@ -551,6 +559,9 @@ private fun ShiftChip(day: ResolvedDay, sizeDp: Int) {
         )
     }
 }
+
+/** What a day with no shift shows on a widget square. */
+internal const val REST_GLYPH = "휴"
 
 // [A11Y-03] The app's own day and night shades, so red, blue and green words keep 4.5:1 on the widget in both themes.
 private val WidgetRed = DayNight(day = LightCalendarColors.sunday, night = DarkCalendarColors.sunday)

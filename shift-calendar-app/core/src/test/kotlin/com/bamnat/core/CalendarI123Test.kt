@@ -8,6 +8,10 @@ import com.bamnat.core.model.ExtraEntry
 import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.ExtraKinds
 import com.bamnat.core.schedule.ExtraStamp
+import com.bamnat.core.schedule.PatternPreset
+import com.bamnat.core.schedule.PatternPresets
+import com.bamnat.core.schedule.ShiftTypeSet
+import com.bamnat.core.schedule.ShiftTypeSets
 import com.bamnat.core.layout.Contrast
 import com.bamnat.core.work.Heat
 import com.bamnat.core.work.WatchDay
@@ -182,5 +186,31 @@ class CalendarI123Test {
         )))
         val w = WatchDays.day(r.resolve(sat))
         assertEquals("${kinds.name(ExtraKind.SPECIAL_ID)} 외 1건", w.name)
+    }
+
+    /** [DAYW-10][SCHED-05] A set's shift with a name the user has but other times is offered, not skipped. */
+    @Test
+    fun `a set's same-name shift with other times can be taken over`() {
+        val presetDay = Fixtures.day.copy(id = 0, start = LocalTime.of(8, 0), end = LocalTime.of(17, 0))
+        val set = ShiftTypeSet("공장", "", listOf(presetDay, Fixtures.evening.copy(id = 0), Fixtures.off.copy(id = 0)))
+        val diff = ShiftTypeSets.differing(set, Fixtures.all)
+        assertEquals(listOf(Fixtures.day to presetDay), diff)
+        assertTrue(ShiftTypeSets.missing(set, Fixtures.all).isEmpty())
+        val retimed = ShiftTypeSets.retimed(Fixtures.day, presetDay)
+        assertEquals(LocalTime.of(8, 0), retimed.start)
+        assertEquals(Fixtures.day.id, retimed.id)
+        assertEquals(Fixtures.day.alarms, retimed.alarms)
+    }
+
+    /** [DAYW-10] The pattern screen shows the presets the user's shifts can fill first. */
+    @Test
+    fun `presets the user's shifts fill come first`() {
+        val dn = PatternPreset("2교대", "", "DDNNOO")
+        val x = PatternPreset("당번", "", "XBO")
+        assertTrue(PatternPresets.fits(dn, Fixtures.all))
+        assertFalse(PatternPresets.fits(x, Fixtures.all))
+        val ordered = PatternPresets.ordered(Fixtures.all)
+        val firstMiss = ordered.indexOfFirst { !PatternPresets.fits(it, Fixtures.all) }
+        if (firstMiss >= 0) assertTrue(ordered.drop(firstMiss).none { PatternPresets.fits(it, Fixtures.all) })
     }
 }
