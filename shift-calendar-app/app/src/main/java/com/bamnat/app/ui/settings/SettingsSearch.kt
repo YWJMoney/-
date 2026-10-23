@@ -213,6 +213,8 @@ internal object SettingsIndex {
         screen("설정 › 도움말과 문의", "문의하기", SettingsGo.INQUIRY, "질문", "건의", "제안", "오류", "버그", "고객센터", "도움말", "메일", "신고"),
         screen("설정 › 도움말과 문의", "자주 묻는 질문", SettingsGo.INQUIRY, "도움말", "사용법", "어떻게", "FAQ"),
         row(V, "앱 버전", "버전", "업데이트", row = "버전"),
+        // O 1.23 (I)
+        row(A, "알람 제안", "스마트 알람", "알람 추천", "늦게 끔", "알람 시간", "숨긴 제안", "다시 보기"), // [ALRM-03]
     )
 
     /** The best fits for [query], best first. */

@@ -163,6 +163,10 @@ data class AppSettings(
     val reviewAskedDay: Long = 0,
     /** [CAL-46] The last month (yyyymm) whose "이번 달 내 기록" card was shown and closed; kept on this phone only. */
     val monthRecapSeen: Int = 0,
+    /** [ALRM-03] 알람 제안: a card with one suggestion for one shift's alarm; on by default (D42), in the backup. */
+    val alarmSuggest: Boolean = true,
+    /** [ALRM-03] What was answered ([com.bamnat.core.alarm.AlarmSuggest.Memory]); kept on this phone only, like [monthRecapSeen]. */
+    val alarmSuggestMemory: String = "",
 ) {
     val limits: HourLimits get() = HourLimits(weeklyLimitHours, averageLimitHours)
 
@@ -284,6 +288,8 @@ class SettingsRepository(context: Context) {
             payReviewAsked = prefs.getBoolean(K_PAY_REVIEW_ASKED, false),
             reviewAskedDay = prefs.getLong(K_REVIEW_DAY, 0),
             monthRecapSeen = prefs.getInt(K_MONTH_RECAP, 0),
+            alarmSuggest = prefs.getBoolean(K_ALARM_SUGGEST, d.alarmSuggest),
+            alarmSuggestMemory = prefs.getString(K_ALARM_SUGGEST_MEMORY, null) ?: "",
         )
     }
 
@@ -352,6 +358,8 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_PAY_REVIEW_ASKED, s.payReviewAsked)
             .putLong(K_REVIEW_DAY, s.reviewAskedDay)
             .putInt(K_MONTH_RECAP, s.monthRecapSeen)
+            .putBoolean(K_ALARM_SUGGEST, s.alarmSuggest)
+            .putString(K_ALARM_SUGGEST_MEMORY, s.alarmSuggestMemory)
             .apply()
     }
 
@@ -377,6 +385,8 @@ class SettingsRepository(context: Context) {
         const val K_PAY_REVIEW_ASKED = "pay_review_asked"
         const val K_REVIEW_DAY = "review_asked_day"
         const val K_MONTH_RECAP = "month_recap_seen"
+        const val K_ALARM_SUGGEST = "alarm_suggest"
+        const val K_ALARM_SUGGEST_MEMORY = "alarm_suggest_memory"
         const val K_WEEKLY_LIMIT = "weekly_limit"
         const val K_AVG_LIMIT = "average_limit"
         const val K_THEME = "theme"

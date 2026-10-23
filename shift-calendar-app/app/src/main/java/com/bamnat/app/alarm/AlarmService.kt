@@ -89,7 +89,7 @@ class AlarmService : Service() {
                 // ACTION_DISMISS, or a restart with no intent
                 val ring = _ringing.value
                 if (intent?.action == ACTION_DISMISS && ring != null && !BootAlarms.isLocked(this)) {
-                    appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED, intent.getStringExtra(EXTRA_HOW).orEmpty())
+                    appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED, listOfNotNull(intent.getStringExtra(EXTRA_HOW)?.takeIf { it.isNotEmpty() }, offDetail(ring)).joinToString(" "))
                     // [PROV-07] A few minutes on, 일어났나요?; once per alarm, never for a memo's schedule.
                     val minutes = BootAlarms.ringSettings(this).wakeCheckMinutes
                     if (minutes > 0 && !ring.recheck && ring.label == null) WakeCheck.schedule(this, ring, minutes)
@@ -117,9 +117,20 @@ class AlarmService : Service() {
         if (settings.vibrate || sound == AppSettings.SILENT_SOUND) startVibration()
 
         handler.postDelayed({
-            if (!BootAlarms.isLocked(this)) appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED, "auto_stop")
+            if (!BootAlarms.isLocked(this)) appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED, listOfNotNull("auto_stop", offDetail(ring)).joinToString(" "))
             finish()
         }, settings.ringMinutes.coerceIn(1, 60) * 60_000L)
+    }
+
+    /**
+     * [ALRM-03] For 알람 제안: which shift's alarm this was and when it was due, snoozes included (the due time comes
+     * from the shift, not from the snooze). Hand-set, memo and 일어났나요? alarms say nothing.
+     */
+    private fun offDetail(ring: RingRequest): String? {
+        if (ring.shiftTypeId <= 0 || ring.custom || ring.label != null || ring.recheck) return null
+        val due = ring.shiftDate.atTime(ring.shiftStart).minusMinutes(ring.offsetMinutes.toLong())
+            .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+        return com.bamnat.core.alarm.AlarmSuggest.offDetail(ring.shiftTypeId, due, ring.offsetMinutes)
     }
 
     private fun startInForeground(ring: RingRequest?) {

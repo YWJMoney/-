@@ -2,20 +2,25 @@ package com.bamnat.app.screenshots
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.ScheduleSnapshot
+import com.bamnat.app.ui.calendar.AlarmSuggestCard
 import com.bamnat.app.ui.calendar.CoverPanel
 import com.bamnat.app.ui.calendar.MonthPickerDialog
 import com.bamnat.app.ui.calendar.MonthRecapCard
@@ -23,6 +28,8 @@ import com.bamnat.app.ui.calendar.MonthSummaryBar
 import com.bamnat.app.ui.calendar.QuickTextOffer
 import com.bamnat.app.ui.calendar.RealignDialog
 import com.bamnat.app.ui.shifts.PatternPreview
+import com.bamnat.core.alarm.AlarmSuggest
+import com.bamnat.core.model.AlarmShift
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.schedule.TeamRoster
@@ -43,7 +50,8 @@ import java.time.YearMonth
 /**
  * Bundle I's screenshots, numbers 540~569 (계획/1.23-I-달력-위젯-워치-개발계획.md): the calendar's new dialogs and
  * cards, the swap helper and the weekly pattern's preview, each folded, unfolded and at 200% text. The widgets are
- * Glance and are not drawn by Robolectric; their content is checked in WidgetData's tests instead.
+ * Glance and are not drawn by Robolectric; their content is checked in WidgetData's tests instead. 710~714 are
+ * 스마트 알람 제안 (계획/1.23-O-스마트알람-증명사진-개발계획.md 1장).
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -92,6 +100,13 @@ class IScreenshotTest : ScreenshotBase() {
     @Test fun weeklyFolded() = shot("555_i_weekly_preview_folded", FOLDED) { Weekly() }
     @Test fun weeklyUnfolded() = shot("556_i_weekly_preview_unfolded", UNFOLDED) { Weekly() }
     @Test fun weeklyFoldedBigFont() = shot("557_i_weekly_preview_folded_200", FOLDED, fontScale = 2f) { Weekly() }
+
+    // [ALRM-03] 스마트 알람 제안 (순번 339): the card, what a tap says, the switch in 설정 › 알람.
+    @Test fun alarmSuggestFolded() = shot("710_o_alarm_suggest_folded", FOLDED) { Suggest() }
+    @Test fun alarmSuggestApplied() = shot("711_o_alarm_suggest_applied", FOLDED) { SuggestApplied() }
+    @Test fun alarmSuggestSettings() = shoot("712_o_alarm_suggest_settings", FOLDED) { settingsPage("알람"); reveal("알람 제안", exact = true) }
+    @Test fun alarmSuggestFoldedBigFont() = shot("713_o_alarm_suggest_folded_200", FOLDED, fontScale = 2f) { Suggest() }
+    @Test fun alarmSuggestFoldedDark() = shot("714_o_alarm_suggest_folded_dark", FOLDED_NIGHT) { Suggest() }
 
     @Composable
     private fun WithSnapshot(body: @Composable (ScheduleSnapshot) -> Unit) {
@@ -147,6 +162,25 @@ class IScreenshotTest : ScreenshotBase() {
         )
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
             PatternPreview(snap.shiftTypes, pattern, today, DayOfWeek.SUNDAY)
+        }
+    }
+
+    @Composable
+    private fun Suggest() = WithSnapshot { snap ->
+        val day = snap.shiftTypes.first { it.name == "주간" }
+        val night = snap.shiftTypes.first { it.name == "야간" }
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 16.dp)) {
+            AlarmSuggestCard(AlarmSuggest.Suggestion(AlarmSuggest.Kind.LATE, day, "주간 알람을 보통 25분 뒤에 꺼요. 알람을 20분 앞당길까요?",
+                moved = AlarmShift.move(day, AlarmSuggest.EARLIER)), onApply = {}, onNo = {}, onNever = {})
+            AlarmSuggestCard(AlarmSuggest.Suggestion(AlarmSuggest.Kind.SHORT, night, "야간 전 잠이 목표보다 보통 2시간 짧아요. 잘 시간 30분 전에 알려 드릴까요?",
+                bedtime = true), onApply = {}, onNo = {}, onNever = {})
+        }
+    }
+
+    @Composable
+    private fun SuggestApplied() = WithSnapshot {
+        Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.BottomCenter) {
+            Snackbar(action = { TextButton(onClick = {}) { Text("되돌리기") } }) { Text("주간 알람을 옮겼어요") }
         }
     }
 

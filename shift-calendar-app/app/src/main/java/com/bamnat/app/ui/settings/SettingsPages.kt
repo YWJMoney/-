@@ -232,6 +232,19 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
         ChoiceRow("자동으로 끄기", "끄지 않으면 이만큼 울리고 멈춰요",
             listOf(1, 3, 5, 10, 20, 30).map { it to "${it}분 뒤" }, settings.ringMinutes) { m -> vm.update { it.copy(ringMinutes = m) } }
     }
+    // [ALRM-03] 스마트 알람 제안: on by default, all on the phone; the hidden ones can come back.
+    SectionCard(title = null) {
+        SwitchRow("알람 제안", "알람을 끈 때와 잠 기록을 보고, 근무별로 알람을 옮기자고 가끔 물어봐요. 기록은 이 폰에만 있어요",
+            settings.alarmSuggest) { v -> vm.update { it.copy(alarmSuggest = v) } }
+        val hidden = remember(settings.alarmSuggestMemory) {
+            com.bamnat.core.alarm.AlarmSuggest.Memory.decode(settings.alarmSuggestMemory).never.size
+        }
+        if (settings.alarmSuggest && hidden > 0) {
+            NavRow("숨긴 제안 다시 보기", "‘다시 보지 않기’로 숨긴 제안 ${hidden}개") {
+                vm.update { s -> s.copy(alarmSuggestMemory = com.bamnat.core.alarm.AlarmSuggest.Memory.decode(s.alarmSuggestMemory).copy(never = emptySet()).encode()) }
+            }
+        }
+    }
     SectionCard(title = null) {
         NavRow("알람 점검", "알람이 안 울리거나 늦을 때 원인을 찾아요") { onOpenDiagnostics(false) }
     }
