@@ -261,6 +261,8 @@ class CalendarScreenshotTest : ScreenshotBase() {
     @Test fun calFlowFolded() {
         hints(seen = true, com.bamnat.app.ui.calendar.HintStore.SHARE)
         shoot("292_folded_flow_folded", FOLDED, withPay {
+            // A day off late in the day starts on the one line already: opened first, so the fold is the user's.
+            if (!shows("오늘의 흐름 접기", exact = true)) tapAction("오늘의 흐름 펼치기")
             tapText("오늘의 흐름 접기", exact = true, scrolls = 0)
             scrollUp(140)
         })

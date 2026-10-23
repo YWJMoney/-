@@ -355,6 +355,20 @@ abstract class ScreenshotBase {
             touch(reach(text, exact, prefix, 0, across).boundsInWindow.center)
         }
 
+        /** Whether [text] is on screen now, without scrolling or waiting. */
+        fun shows(text: String, exact: Boolean = false): Boolean = find(text, exact, prefix = false) != null
+
+        /** Taps what announces [label] as its tap ("오늘의 흐름 펼치기"), for a row whose own words change with the day. */
+        fun tapAction(label: String) {
+            var at: Offset? = null
+            scenario.onActivity { activity ->
+                val root = rootOf(topWindow(activity)) ?: return@onActivity
+                at = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true)
+                    .firstOrNull { it.config.getOrNull(SemanticsActions.OnClick)?.label == label }?.boundsInWindow?.center
+            }
+            touch(at ?: error("화면에서 ‘$label’ 동작을 찾지 못했어요"))
+        }
+
         /** Scrolls until [text] shows near the top of the screen, without tapping it. */
         fun reveal(text: String, exact: Boolean = false, across: Float = 0.5f) {
             val node = reach(text, exact, prefix = false, scrolls = 10, across = across)
