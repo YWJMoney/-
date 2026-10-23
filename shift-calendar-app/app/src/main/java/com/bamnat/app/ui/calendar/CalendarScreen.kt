@@ -1420,9 +1420,9 @@ private fun CalendarHeader(
             contentPadding = PaddingValues(horizontal = 12.dp),
             modifier = Modifier.heightIn(min = 40.dp).padding(end = 4.dp),
         ) {
-            // [A11Y-03] At the largest text sizes on a narrow screen the word gave way to the month, which shrank
-            // below its normal size; the icon keeps the name for TalkBack.
-            if (narrow && LocalDensity.current.fontScale >= 1.5f) {
+            // [A11Y-03] On a small phone (320dp) or at the largest text sizes the word squeezed the month to a
+            // few pixels; there only the icon shows, and TalkBack still reads its name.
+            if (maxWidth < 340.dp || narrow && LocalDensity.current.fontScale >= 1.5f) {
                 Icon(Icons.Outlined.Apps, "도구", Modifier.size(18.dp))
             } else {
                 Icon(Icons.Outlined.Apps, null, Modifier.size(18.dp))
