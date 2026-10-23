@@ -157,6 +157,28 @@ fun RecommendedScreen(container: AppContainer, firstStart: Boolean, onDone: () -
         if (asks.isEmpty()) finish() else { asked = 0; queue = asks.map { it.key } }
     }
 
+    // [A11Y-04] At a big font the pinned buttons took half the screen and the features scrolled in a slit
+    // (notes/1.22-285/F.md 4장 3번): from 150% the buttons go at the end of the one page that scrolls.
+    val pinned = androidx.compose.ui.platform.LocalDensity.current.fontScale < 1.5f
+    val actions: @Composable () -> Unit = {
+        Column(Modifier.fillMaxWidth().padding(bottom = 12.dp, top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // [ONBOARD-06] With large text the 허용할 것 card can sit below the fold: what the button asks, said beside it.
+            val toAsk = RecommendedPlan.asks(available, granted, watch)
+            if (queue == null && toAsk.isNotEmpty()) {
+                Text("누르면 휴대폰이 허용 ${toAsk.size}개를 차례로 물어요. 거절해도 넘어가요",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth())
+            }
+            Button(onClick = { save(true) }, enabled = queue == null, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                Text(if (firstStart) "추천대로 켜고 시작하기" else "이대로 저장")
+            }
+            if (firstStart) {
+                TextButton(onClick = { save(false) }, enabled = queue == null, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text("허용은 나중에 할게요")
+                }
+            }
+        }
+    }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 600.dp).fillMaxSize().padding(horizontal = 20.dp)) {
@@ -200,24 +222,9 @@ fun RecommendedScreen(container: AppContainer, firstStart: Boolean, onDone: () -
                     Notice(Icons.Outlined.Info, "끄고 싶으면 ${RecommendedPlan.TURN_OFF}에서 언제든 꺼요. 설정 찾기에 ‘끄기’라고 써도 돼요. " +
                         "출퇴근 자동 기록(위치)과 결제 알림 읽기는 쓰는 화면에서 따로 켜요.")
                     if (firstStart) StatsLine(stats) { stats = it }
+                    if (!pinned) actions()
                 }
-                Column(Modifier.fillMaxWidth().padding(bottom = 12.dp, top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    // [ONBOARD-06] With large text the 허용할 것 card can sit below the fold: what the button asks, said beside it.
-                    val toAsk = RecommendedPlan.asks(available, granted, watch)
-                    if (queue == null && toAsk.isNotEmpty()) {
-                        Text("누르면 휴대폰이 허용 ${toAsk.size}개를 차례로 물어요. 거절해도 넘어가요",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.fillMaxWidth())
-                    }
-                    Button(onClick = { save(true) }, enabled = queue == null, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                        Text(if (firstStart) "추천대로 켜고 시작하기" else "이대로 저장")
-                    }
-                    if (firstStart) {
-                        TextButton(onClick = { save(false) }, enabled = queue == null, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                            Text("허용은 나중에 할게요")
-                        }
-                    }
-                }
+                if (pinned) actions()
             }
         }
     }

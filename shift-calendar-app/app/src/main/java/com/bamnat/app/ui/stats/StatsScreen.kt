@@ -677,7 +677,7 @@ private fun StatsEditSheet(settings: AppSettings, update: ((AppSettings) -> AppS
             com.bamnat.app.ui.components.EditGroup("위쪽 (이번 달)", rows(false)),
             com.bamnat.app.ui.components.EditGroup("아래쪽 카드 순서", rows(true)),
         ),
-        middle = "근무 유형 카드",
+        middle = "일하는 방식 카드", // [SET-05]
         onShow = { id, shown -> write(placed.map { if (it.part.id == id) it.copy(shown = shown) else it }) },
         onMove = { id, by ->
             val fixed = placed.filterNot { it.part.movable }

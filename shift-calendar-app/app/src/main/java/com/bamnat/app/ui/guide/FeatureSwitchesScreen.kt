@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,12 +82,20 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { resumed++ }
     val style = c.calendars.styleOf(active, settings.workStyle)
     val name = calendars.firstOrNull { it.id == active }?.name.orEmpty()
-    val features = FeatureRegistry.of(style).filter { it.canTurnOff }
+    // [SET-05] The list is long: narrowed by a word and by on or off (I 리뷰 I17).
+    var query by rememberSaveable { mutableStateOf("") }
+    var show by rememberSaveable { mutableIntStateOf(SHOW_ALL) }
+    val all = FeatureRegistry.of(style).filter { it.canTurnOff }
     // Read again whenever a switch changes, here or where it lives.
-    val states = remember(features, guide, settings, calendars, commute, resumed, active) {
-        features.associate { it.id to FeatureSwitches.isOn(c, it, active) }
+    val states = remember(all, guide, settings, calendars, commute, resumed, active) {
+        all.associate { it.id to FeatureSwitches.isOn(c, it, active) }
     }
     val isOn: (AppFeature) -> Boolean = { f -> states[f.id] ?: true }
+    val words = query.trim()
+    val features = all.filter { f ->
+        (words.isEmpty() || words in f.name || words in f.what || f.keywords.any { words in it }) &&
+            when (show) { SHOW_ON -> isOn(f); SHOW_OFF -> !isOn(f); else -> true }
+    }
     var message by remember { mutableStateOf<String?>(null) }
     val toggle: (AppFeature, Boolean) -> Unit = { f, on ->
         message = if (FeatureSwitches.set(c, f, active, on)) null else "‘${f.name}’은 켜는 곳에서 켜요. 그 화면을 열었어요"
@@ -122,9 +131,21 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
                     }
                 }
                 message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+                androidx.compose.material3.OutlinedTextField(
+                    value = query, onValueChange = { query = it.take(20) }, singleLine = true,
+                    label = { Text("기능 이름으로 찾기") }, modifier = Modifier.fillMaxWidth(),
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(SHOW_ALL to "모두 ${all.size}", SHOW_ON to "켜진 것 ${all.count(isOn)}", SHOW_OFF to "꺼진 것 ${all.count { !isOn(it) }}")
+                        .forEach { (k, label) -> FilterChip(selected = show == k, onClick = { show = k }, label = { Text(label) }) }
+                }
+                if (features.isEmpty()) {
+                    Text("맞는 기능이 없어요. 찾는 말을 바꾸거나 ‘모두’를 골라 보세요.", style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
 
                 val guideRows = features.filter { it.id.startsWith("guide.") }
-                SectionCard(title = "안내") {
+                if (guideRows.isNotEmpty()) SectionCard(title = "안내") {
                     guideRows.forEach { f -> SwitchLine(f, isOn(f)) { toggle(f, it) } }
                     TextButton(onClick = { store.restartChecklist(active, style, LocalDate.now()); message = "달력 맨 위에 ‘이 달력으로 할 수 있는 것’을 다시 보여 드려요" }) {
                         Text("‘$name’ 안내 카드 다시 보기")
@@ -156,7 +177,7 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
                 if (app.isNotEmpty()) {
                     SectionCard(title = "위젯") { app.forEach { f -> SwitchLine(f, isOn(f)) { toggle(f, it) } } }
                 }
-                Text("다른 근무 유형 달력을 고르면 그 달력의 기능이 보여요.", style = MaterialTheme.typography.bodySmall,
+                Text("다른 일하는 방식의 달력을 고르면 그 달력의 기능이 보여요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // [GUIDE-07] Not here: the help search finds it, and a 의견 goes from there.
                 TextButton(onClick = { InquiryLinks.ask(InquiryStart(about = "기능 켜고 끄기", help = true)) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
@@ -169,6 +190,10 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
         }
     }
 }
+
+private const val SHOW_ALL = 0
+private const val SHOW_ON = 1
+private const val SHOW_OFF = 2
 
 /** One feature: name, what it does, where it is, and its switch. */
 @Composable

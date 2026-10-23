@@ -115,7 +115,7 @@ object FeatureRegistry {
 
     val all: List<AppFeature> = listOf(
         // The guide itself [GUIDE-02][GUIDE-03].
-        f("guide.checklist", "GUIDE-02", "이 달력으로 할 수 있는 것", "새 달력이나 근무 유형을 바꾼 달력에서 처음 며칠 쓸 만한 기능을 골라 보여 줘요",
+        f("guide.checklist", "GUIDE-02", "이 달력으로 할 수 있는 것", "새 달력이나 일하는 방식을 바꾼 달력에서 처음 며칠 쓸 만한 기능을 골라 보여 줘요",
             ALL, "달력 맨 위 카드", at(Place.FEATURES), "처음", "시작", "체크리스트", "안내 카드", "할 수 있는 것", off = Off.APP),
         f("guide.tips", "GUIDE-03", "알맞은 때 한 줄 안내", "급여일·첫 하루 마감처럼 알맞은 때 쓸 만한 기능을 하루 한 번까지 한 줄로 알려 줘요",
             ALL, "달력 맨 위 한 줄", at(Place.FEATURES), "팁", "안내", "알려 주기", "추천", off = Off.APP),
@@ -136,6 +136,10 @@ object FeatureRegistry {
             PAID, "설정 › 알람 › 끄기 미션", at(Place.SETTINGS_ALARM, "끄기 미션"), "미션", "계산 문제", "흔들기", "못 일어나요", "다시 잠들어요"),
         f("alarm.wakeCheck", "PROV-07", "일어났는지 확인", "알람을 끄고 몇 분 뒤 ‘일어났나요?’를 묻고, 답이 없으면 한 번 더 울려요",
             PAID, "설정 › 알람 › 일어났는지 확인", at(Place.SETTINGS_ALARM, "일어났는지 확인"), "일어났나요", "기상 확인", "또 잠들", "두 번 울림"),
+        // [SET-05] 1.23.0: every shift's alarm moved at once, for the week the bus comes earlier.
+        f("alarm.moveAll", "SET-05", "모든 근무 알람 한 번에 옮기기", "근무마다 맞춘 알람을 한꺼번에 5분 단위로 앞당기거나 늦춰요",
+            setOf(SHIFT, DAY), "설정 › 알람 › 모든 근무 알람 한 번에 옮기기", at(Place.SETTINGS_ALARM, "모든 근무 알람 한 번에 옮기기"),
+            "알람 앞당기기", "알람 늦추기", "한꺼번에", "출근 시간 바뀜", "일찍 깨우기"),
         f("share.link", "SHR-01", "근무표 공유", "이번 달을 이미지로 보내거나 앱 없이 열리는 링크를 만들어요",
             ALL, "달력 › 공유 (좁은 화면은 ⋮ › 근무표 공유)", at(Place.SHARE), "공유", "링크", "카톡", "가족", "동료", "보내기"),
         f("share.receive", "UX-03", "동료 근무표 받기", "받은 링크를 넣고 내 달력과 바꿔 보며 같이 쉬는 날을 찾아요",
@@ -365,8 +369,8 @@ object FeatureRegistry {
         // Calendars, memos and data.
         f("calendars.multi", "MCAL-01", "달력 여러 개", "알바·부업처럼 일을 달력마다 따로 적어요",
             ALL, "달력 › 달력 이름 › 새 달력 만들기", at(Place.CALENDARS), "달력 추가", "새 달력", "투잡", "부업", "알바"),
-        f("calendar.edit", "CALS-01", "달력 고치기", "달력마다 이름·색·근무 유형·알람·결제 알림·공유를 한곳에서 바꿔요",
-            ALL, "달력 › ⋮ › ‘달력 이름’ 고치기", at(Place.CALENDAR_EDIT), "달력 수정", "이름 바꾸기", "색 바꾸기", "근무 유형"),
+        f("calendar.edit", "CALS-01", "달력 고치기", "달력마다 이름·색·일하는 방식·알람·결제 알림·공유를 한곳에서 바꿔요",
+            ALL, "달력 › ⋮ › ‘달력 이름’ 고치기", at(Place.CALENDAR_EDIT), "달력 수정", "이름 바꾸기", "색 바꾸기", "일하는 방식", "근무 유형"),
         f("calendar.customize", "CUST-01", "화면 꾸미기", "달력과 근무·급여 화면의 카드를 켜고 끄고 순서를 바꿔요. 미리보기로 바로 보여요",
             ALL, "달력 › ⋮ › 화면 꾸미기", at(Place.CALENDAR, "customize"), "배치", "순서", "카드 숨기기", "하루 카드", "레이아웃", "편집"),
         f("help.inquiry", "INQ-02", "문의와 진행 상황", "불편한 점·제안을 보내면 접수부터 반영 버전까지 단계가 보이고, 답을 평가할 수 있어요",
@@ -383,7 +387,7 @@ object FeatureRegistry {
             ALL, "설정 › 달력 화면 › 메모 공유", at(Place.SETTINGS_CALENDAR, "메모 공유"), "공용 메모장", "메모 같이", "달력별 메모"),
         f("memo.repeat", "NOTE-05", "반복 메모", "매달 25일, 매주 화요일처럼 돌아오는 메모를 적어요",
             ALL, "메모 › 메모 쓰기 › 반복", at(Place.MEMOS), "반복", "매달", "매주", "정기"),
-        f("trash.records", "UNDO-01", "최근 지운 기록", "근무 유형을 바꾸거나 지운 기록·달력을 7일 동안 되돌려요",
+        f("trash.records", "UNDO-01", "최근 지운 기록", "일하는 방식을 바꾸거나 지운 기록·달력을 7일 동안 되돌려요",
             ALL, "설정 › 데이터 › 최근 지운 기록", at(Place.SETTINGS_DATA, "최근 지운 기록"), "되돌리기", "휴지통", "복구", "실수로 지움"),
         f("data.backup", "REL-04", "백업 저장", "근무·메모·돈 기록을 파일로 만들어 새 휴대폰으로 옮겨요",
             ALL, "설정 › 데이터 › 백업 저장", at(Place.SETTINGS_DATA, "백업 저장"), "백업", "옮기기", "휴대폰 바꾸기", "복원"),
@@ -402,7 +406,7 @@ object FeatureRegistry {
             ALL, "설정 › 알림과 잠 › 광장 소식", at(Place.SETTINGS_NOTICES, "광장 소식"), "광장", "규칙 바뀜", "채택", "회사 소식", "알림 끄기", off = Off.ELSEWHERE),
         f("lock.today", "FEAT-18", "잠금 화면 오늘 근무", "오늘·내일 근무를 소리 없는 알림으로 잠금 화면에 늘 보여 줘요",
             PAID, "설정 › 알림과 잠 › 잠금 화면 오늘 근무", at(Place.SETTINGS_NOTICES, "잠금 화면 오늘 근무"), "잠금 화면", "상시 알림", off = Off.ELSEWHERE),
-        f("widget.lines", "COMN-05", "위젯 근무 유형 줄", "오늘 위젯에 알바 주 시간·주휴, 일근 남은 연차·야근, 현장 이번 주 공수를 한 줄 더 보여 줘요",
+        f("widget.lines", "COMN-05", "위젯 일하는 방식 줄", "오늘 위젯에 알바 주 시간·주휴, 일근 남은 연차·야근, 현장 이번 주 공수를 한 줄 더 보여 줘요",
             setOf(DAY, HOURLY, FIELD), "홈 화면 › 밤낮 오늘 위젯", at(Place.FEATURES), "위젯", "홈 화면", off = Off.APP),
         // 1.22 묶음 E: on by default (S10); each says where it turns off.
         f("widget.memo", "DAILY-01", "위젯에 메모 줄", "오늘·이번 주 위젯에 그날 메모 첫 줄이 보여요. 날짜를 누르면 그날이 열려요",

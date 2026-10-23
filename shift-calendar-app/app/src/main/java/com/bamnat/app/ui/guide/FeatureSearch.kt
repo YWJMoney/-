@@ -63,7 +63,7 @@ internal object FeatureSearch {
 
     /** [GUIDE-07] What a 의견 starts with when the search found nothing: the words and the kind of work. */
     fun ideaText(query: String, style: WorkStyle?): String =
-        "찾던 기능: ${query.trim()}\n근무 유형: ${(style ?: WorkStyle.SHIFT).label}\n\n"
+        "찾던 기능: ${query.trim()}\n일하는 방식: ${(style ?: WorkStyle.SHIFT).label}\n\n"
 }
 
 /** The calendar on screen and its kind of work. */

@@ -136,7 +136,8 @@ fun JobDialog(
     val endTime = end?.let(LocalTime::parse)
     val hasDeposit = deposit.toAmount() > 0
 
-    AlertDialog(
+    // [UX-08] A long form with a keyboard: a sheet, not a dialog.
+    com.bamnat.app.ui.components.FormSheet(
         onDismissRequest = onDismiss,
         title = { Text(if (initial == null) "${Fmt.dayTitle(date)} 일감" else "일감 고치기") },
         text = {
@@ -161,9 +162,9 @@ fun JobDialog(
                         Text(if (days == 1) "하루" else "${Fmt.shortDate(start)} ~ ${Fmt.shortDate(start.plusDays(days - 1L))}",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    TextButton(enabled = days > 1, onClick = { days-- }) { Text("−", style = MaterialTheme.typography.titleLarge) }
-                    Text("${days}일", style = MaterialTheme.typography.titleMedium)
-                    TextButton(enabled = days < MAX_JOB_DAYS, onClick = { days++ }) { Text("+", style = MaterialTheme.typography.titleLarge) }
+                    // [UX-08] The app's one stepper.
+                    com.bamnat.app.ui.components.CountStepper(days, { days = it }, name = "작업 기간", range = 1..MAX_JOB_DAYS,
+                        format = { "${it}일" }, valueWidth = 56.dp)
                 }
                 JobStatusRow(status, paid = balancePaid && (!hasDeposit || depositPaid) && amount.toAmount() > 0) { status = it }
                 AmountField("받을 금액 (전체)", amount, { amount = it })

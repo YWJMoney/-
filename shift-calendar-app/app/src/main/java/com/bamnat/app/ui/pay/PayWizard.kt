@@ -404,11 +404,15 @@ fun PayWizard(
     preview: (suspend (PayProfile) -> PayRange)? = null,
     /** How work like the user's is usually paid, chosen to start with (시급 for 아르바이트). */
     suggestedWage: WageType? = null,
+    /** [SETUP-14] The job the user's way of working points to (아르바이트 → PART_TIME), its items ticked to start with; a new setup only. */
+    suggestedOccupation: Occupation? = null,
     /** Screenshots only: the step to open by its key ("items", a question's key, "summary"), when it is asked. */
     startAt: String? = null,
 ) {
     val today = remember { LocalDate.now() }
-    val s = remember { PaySetupState(initial, YearMonth.from(today), suggestedWage) }
+    val s = remember {
+        PaySetupState(initial, YearMonth.from(today), suggestedWage).also { st -> if (initial == null) suggestedOccupation?.let(st::choose) }
+    }
     val scope = rememberCoroutineScope()
     val rosterHours = remember(snapshot) {
         snapshot?.let { snap ->

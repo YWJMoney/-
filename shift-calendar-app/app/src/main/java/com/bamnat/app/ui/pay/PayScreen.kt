@@ -88,6 +88,7 @@ import com.bamnat.core.pay.Cadence
 import com.bamnat.core.pay.PayItem
 import com.bamnat.core.pay.HolidayPayMode
 import com.bamnat.core.pay.LineKind
+import com.bamnat.core.pay.Occupation
 import com.bamnat.core.pay.MonthPay
 import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayLine
@@ -211,6 +212,7 @@ fun PayScreen(
                         snapshot = snap,
                         preview = { draft -> vm.preview(draft, snap, month) },
                         suggestedWage = if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) WageType.HOURLY else null,
+                        suggestedOccupation = if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) Occupation.PART_TIME else null,
                     )
                 }
                 editingRules -> {

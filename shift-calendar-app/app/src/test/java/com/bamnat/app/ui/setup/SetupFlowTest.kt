@@ -139,6 +139,26 @@ class SetupFlowTest {
         assertFalse(later.earlyHours(draft))
     }
 
+    /** [SETUP-14] "잘 모르겠어요" on the today question: the shifts stay and the month is painted instead. */
+    @Test fun notKnowingTodayGoesToPaintingWithTheShiftsKept() {
+        val vm = vm()
+        vm.pickStyle(WorkStyle.SHIFT)
+        vm.next()
+        vm.pickBundle(ShiftBundles.TWO)
+        vm.confirmTimes()
+        vm.pickPreset(vm.presets(draft).first { it.codes == "DDOONNOO" })
+        vm.next()
+        assertEquals(SetupStep.TODAY, draft.step)
+        val types = draft.types
+        vm.paintInstead()
+        assertTrue(draft.rosterMonthly)
+        assertEquals(SetupStep.ORDER, draft.step)
+        assertEquals(types, draft.types)
+        assertTrue(draft.rotation.isEmpty())
+        assertNull(draft.anchor)
+        assertFalse(SetupStep.TODAY in draft.steps)
+    }
+
     @Test fun aMonthlyRosterIsPaintedAndSavedDayByDay() = runBlocking {
         val vm = vm()
         vm.pickStyle(WorkStyle.SHIFT, roster = true)

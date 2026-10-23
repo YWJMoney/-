@@ -97,7 +97,7 @@ class JScreenshotTest {
             note = "원래 22:00~07:00 · 휴게 1시간",
             onDismiss = {},
             onConfirm = {},
-            startOnBreak = onBreak,
+            startOn = if (onBreak) com.bamnat.app.ui.components.TimeRangePart.BREAK else com.bamnat.app.ui.components.TimeRangePart.START,
         )
     }
 

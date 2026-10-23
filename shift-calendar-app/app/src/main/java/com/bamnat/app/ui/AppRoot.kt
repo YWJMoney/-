@@ -17,6 +17,8 @@ import android.os.Build
 import androidx.compose.foundation.layout.Column
 import com.bamnat.app.alarm.AlarmService
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Button
@@ -1160,7 +1162,23 @@ private fun AppNavHost(
 
 /** [UX-06] A tab's name, whole at every text size: at the largest sizes "근무·급여" was cut to "근무·". */
 @Composable
-private fun TabLabel(text: String) = FitText(text, MaterialTheme.typography.labelMedium)
+private fun TabLabel(text: String) {
+    // [A11Y-04] From 150% a two-word name ("근무·급여") takes two lines, so each word stays big enough to read
+    // instead of the whole name shrinking to fit one (notes/1.22-285/F.md 4장 3번).
+    val parts = text.split('·')
+    if (parts.size == 2 && androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
+        androidx.compose.foundation.layout.Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.clearAndSetSemantics { contentDescription = text },
+        ) {
+            val style = MaterialTheme.typography.labelMedium.copy(lineHeight = MaterialTheme.typography.labelMedium.fontSize)
+            FitText(parts[0], style)
+            FitText(parts[1], style)
+        }
+    } else {
+        FitText(text, MaterialTheme.typography.labelMedium)
+    }
+}
 
 /** [UX-05] A tab's icon; 설정 carries how many answers to the user's questions are new. */
 @Composable

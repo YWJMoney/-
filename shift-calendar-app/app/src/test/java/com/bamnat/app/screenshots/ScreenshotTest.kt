@@ -3044,7 +3044,7 @@ class ScreenshotTest {
         c.settingsRepository.update { it.copy(workStyle = WorkStyle.DAY) }
         settle()
         tab(3, wide = wide)
-        reveal("가족 3명", exact = true)
+        reveal("8~20세 자녀", exact = true)
     }
     @Test fun foldedDayTakeHome() = shoot("400_folded_day_take_home_family", FOLDED, dayTakeHome())
     @Test fun phoneDayTakeHomeHugeText() = shoot("401_phone_day_take_home_family_huge_text", PHONE, fontScale = 2f, dayTakeHome())
