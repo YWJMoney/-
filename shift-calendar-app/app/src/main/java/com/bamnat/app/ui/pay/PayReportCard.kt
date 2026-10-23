@@ -87,6 +87,27 @@ internal fun PayReportCard(vm: PayViewModel, profile: PayProfile, snapshot: Sche
                 make("year_csv") { ReportShare.csv(context, PayReport.yearCsv(year(), vm.closed.value.keys), PayReport.fileName(month.year, "csv"), "${month.year}년 급여") }
             }
         }
+        // [PAYX-45] Everything a 노무사 or the 1350 상담 asks for, as files a person reads, in one zip.
+        OutlinedButton(onClick = {
+            make("counsel_zip") {
+                val today = LocalDate.now()
+                val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    val pays = (0L..2L).map { month.minusMonths(it) }.reversed().mapNotNull { m -> if (m == month) shown else vm.monthPay(profile, snapshot, m) }
+                    val files = linkedMapOf(
+                        PayReport.fileName(month, "pdf") to ReportShare.pdfBytes(PayReport.month(shown, who, today, closed)),
+                        PayReport.fileName(month, "csv") to PayReport.monthCsv(shown).toByteArray(Charsets.UTF_8),
+                        "주별_근무시간_최근3개월.csv" to com.bamnat.core.report.CounselBundle.weeksCsv(pays).toByteArray(Charsets.UTF_8),
+                    )
+                    vm.leave.value?.let { files[com.bamnat.core.leave.LeaveExport.fileName(today)] = com.bamnat.core.leave.LeaveExport.csv(it).toByteArray(Charsets.UTF_8) }
+                    files[com.bamnat.core.report.CounselBundle.README] =
+                        com.bamnat.core.report.CounselBundle.readme(today, files.keys.toList(), shown.ratesVersion).toByteArray(Charsets.UTF_8)
+                    com.bamnat.core.report.CounselBundle.zip(files)
+                }
+                ReportShare.zip(context, bytes, "bamnat-상담자료-$month.zip", "${month.year}년 ${month.monthValue}월 상담 자료")
+            }
+        }, enabled = !busy, modifier = Modifier.padding(top = 8.dp)) { Text("상담용 묶음 (급여·근무시간·연차)") }
+        Text("노무사나 고용노동부 상담(1350)에 보여 줄 파일을 한 번에 만들어요. 보내는 곳은 직접 골라요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

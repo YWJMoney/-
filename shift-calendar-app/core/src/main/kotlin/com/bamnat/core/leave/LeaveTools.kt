@@ -35,6 +35,24 @@ object LeaveExport {
 
     fun fileName(today: LocalDate): String = "연차원장_${today}.csv"
 
+    /** [LEAVE-10] The same ledger as a page to print or show the company (PDF through the app's report writer). */
+    fun doc(summary: LeaveSummary): com.bamnat.core.report.ReportDoc {
+        val r = rows(summary)
+        val lines = r.drop(1).takeWhile { it.isNotEmpty() }
+        return com.bamnat.core.report.ReportDoc("연차 원장", listOf(
+            com.bamnat.core.report.ReportDoc.Facts(listOf(
+                "기준일" to summary.today.toString(),
+                "쓸 수 있는 연차" to number(summary.available) + "일",
+                "쓸 예정" to number(summary.planned) + "일",
+                "생긴 연차 / 쓴 연차" to "${number(summary.arisen)}일 / ${number(summary.used)}일",
+            )),
+            com.bamnat.core.report.ReportDoc.Table(HEADER, lines.map { row -> row.map { it.removePrefix("'") } }, listOf(1.1f, 1.2f, 2.2f, 0.7f, 0.9f, 1.1f, 1.6f), right = setOf(3, 4)),
+            com.bamnat.core.report.ReportDoc.Paragraph("근로기준법 제60조(연차)·제61조(사용 촉진). 앱이 센 값이라 회사 기록과 다를 수 있어요.", small = true),
+        ), footer = "밤낮 · 연차 원장 · ${summary.today}")
+    }
+
+    fun pdfName(today: LocalDate): String = "연차원장_${today}.pdf"
+
     private fun number(v: Double): String = (Math.round(v * 100) / 100.0).let { if (it == Math.floor(it)) it.toLong().toString() else it.toString() }
 }
 

@@ -37,7 +37,7 @@ import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -268,6 +268,13 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
             }
             added += line.name
         }
+        // [PAYX-46] An allowance whose amount could not be read is still a row, left 금액 모름 and unticked, for the
+        // user to confirm rather than for the app to guess.
+        val unread = read.lines.filter { it.role == SlipRole.ALLOWANCE && it.amount == null && rows.none { r -> norm(r.name) == norm(it.name) } }
+        unread.forEach { line ->
+            rows += ItemRow("custom-" + System.nanoTime(), line.name.take(20), Cadence.MONTHLY, ordinary = OrdinaryGuess.of(line.name, Cadence.MONTHLY) ?: true,
+                hint = "명세서에서 · 금액을 못 읽었어요", suggested = 0, checked = false, amount = null)
+        }
         val skipped = read.lines.filter { it.role in setOf(SlipRole.OVERTIME, SlipRole.NIGHT, SlipRole.HOLIDAY, SlipRole.WEEKLY_HOLIDAY, SlipRole.EXTRA_WORK) }
         val bonuses = read.lines.filter { it.role == SlipRole.BONUS }
         return buildList {
@@ -279,6 +286,7 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
         }.joinToString(", ").ifEmpty { "읽은 금액이 없어요" }.let { "명세서에서 $it 채웠어요." } +
             (if (skipped.isNotEmpty()) " ${skipped.joinToString("·") { it.name }}은 달력 근무로 계산해요." else "") +
             (if (bonuses.isNotEmpty()) " 상여는 수당 단계에서 받는 달과 함께 넣어 주세요." else "") +
+            (if (unread.isNotEmpty()) " ${unread.joinToString("·") { it.name }}은 금액을 못 읽어 꺼 두었어요. 맞으면 켜고 금액을 넣어 주세요." else "") +
             " 끝나면 ‘명세서로 맞춰 보기’로 한 번에 확인할 수 있어요."
     }
 

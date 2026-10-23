@@ -58,7 +58,7 @@ import androidx.compose.material3.AssistChip
 import com.bamnat.core.schedule.LegalBreak
 import com.bamnat.core.schedule.ShiftTypeSet
 import com.bamnat.core.schedule.ShiftTypeSets
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton

@@ -606,12 +606,21 @@ private fun ResultStage(
  * app's estimate for the same 지급 총액.
  */
 @Composable
-private fun SlipAuditCard(m: PayslipMatch, slip: Payslip, read: PayslipRead?, snapshot: ScheduleSnapshot) {
+internal fun SlipAuditCard(m: PayslipMatch, slip: Payslip, read: PayslipRead?, snapshot: ScheduleSnapshot) {
     val pay = remember(m) { com.bamnat.core.pay.PayCalculator().calculate(m.profile, m.month, snapshot.resolver::resolve, checks = false) }
     val gaps = remember(m, slip) { com.bamnat.core.pay.SlipAudit.gaps(slip, pay) }
     val deductions = remember(m, read) { read?.let { com.bamnat.core.pay.SlipAudit.deductions(it, m.profile, m.month) }.orEmpty() }
     if (gaps.isEmpty() && deductions.isEmpty()) return
-    SectionCard(title = "줄마다 맞춰 보기") {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val ui = androidx.compose.runtime.rememberCoroutineScope()
+    SectionCard(title = "줄마다 맞춰 보기", trailing = {
+        TextButton(onClick = {
+            ui.launch {
+                com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.pay.SlipAudit.doc(m.month, m.gross, m.total, gaps, deductions, m.belowLaw),
+                    "bamnat-명세서대조-${m.month}.pdf")
+            }
+        }) { Text("PDF") }
+    }) {
         com.bamnat.core.pay.SlipAudit.Basket.entries.forEach { b ->
             val mine = gaps.filter { it.basket == b }
             if (mine.isEmpty()) return@forEach

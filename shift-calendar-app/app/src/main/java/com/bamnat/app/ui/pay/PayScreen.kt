@@ -44,7 +44,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -342,14 +342,29 @@ private fun PayResult(
             Walkthrough(shown, onClose = { walkthrough = false; hints.markDone(com.bamnat.app.ui.calendar.HintStore.PAY_WALKTHROUGH) })
         }
 
-        SectionCard(title = "항목별 내역", trailing = { Text("누르면 계산 풀이", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }) {
+        // [PAYX-37] 풀이 모두 보기: every line's formula and the law it rests on, like a 명세서 with its working.
+        var explainAll by rememberSaveable { mutableStateOf(false) }
+        SectionCard(title = "항목별 내역", trailing = {
+            if (unlocked && shown.lines.isNotEmpty()) TextButton(onClick = { explainAll = !explainAll }) { Text(if (explainAll) "풀이 접기" else "풀이 모두 보기") }
+            else Text("누르면 계산 풀이", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }) {
             for (line in shown.lines) {
                 LineRow(line, unlocked, onEstimate = { estimate = Estimates.forLine(line, profile, shown.month) }) { if (unlocked) detail = line }
+                if (explainAll && unlocked) {
+                    Text(com.bamnat.core.pay.PayExplain.explain(line), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, bottom = 6.dp))
+                }
             }
             if (shown.lines.isEmpty()) Text("이 달은 계산할 근무가 없어요", style = MaterialTheme.typography.bodyMedium)
         }
 
         DayLedger(result, unlocked)
+
+        // [PAYX-38] 만약에: a raise, more nights or another 월 소정근로시간, worked out again.
+        if (unlocked && closedSnap == null && shown.lines.isNotEmpty()) WhatIfCard(profile, snapshot, month)
+        // [PAYX-42] 연말정산 미리보기, [PAYX-44] the new year's 최저임금 once.
+        if (unlocked && shown.lines.isNotEmpty()) YearEndCard(profile, snapshot, month)
+        RateNewsCard(profile, result.ordinaryHourly)
 
         LeaveCard(vm, snapshot, month, onOpenLeave)
 
@@ -1125,6 +1140,13 @@ private fun CloseMonthCard(vm: PayViewModel, result: MonthPay, closed: CalcSnaps
             if (diff != 0L) {
                 Text("지금 다시 계산하면 ${won(result.total)} (${if (diff > 0) "+" else "−"}${won(kotlin.math.abs(diff))})",
                     style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
+            }
+            // [PAYX-39] Only the lines that changed since the 마감, and by how much.
+            if (diff != 0L) {
+                val changes = remember(closed, result) { com.bamnat.core.pay.SnapshotDiff.of(closed, result) }
+                changes.take(8).forEach { c ->
+                    Text("· ${c.text}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             if (closed.previous.isNotEmpty()) {
                 Text("이전 마감 ${closed.previous.size}개 보관 중 · 처음 ${won(closed.previous.last().total)}",

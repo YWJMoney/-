@@ -215,6 +215,7 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
             if (s != null && s.lines.isNotEmpty()) item {
                 LinesCard(s, allLines, onAll = { allLines = true },
                     onExport = { ui.launch { LedgerExport.share(context, LeaveExport.csv(s), LeaveExport.fileName(s.today)) } },
+                    onPdf = { ui.launch { com.bamnat.app.report.ReportShare.pdf(context, LeaveExport.doc(s), LeaveExport.pdfName(s.today)) } },
                 ) { id -> ui.launch { opened = vm.entry(id) } }
             }
             item { PayoutCard(s, profile, gate, vm, promotion, snapshot) }
@@ -308,17 +309,19 @@ private fun LotsCard(s: LeaveSummary) {
 }
 
 @Composable
-private fun LinesCard(s: LeaveSummary, all: Boolean, onAll: () -> Unit, onExport: () -> Unit, onOpen: (Long) -> Unit) {
+private fun LinesCard(s: LeaveSummary, all: Boolean, onAll: () -> Unit, onExport: () -> Unit, onPdf: () -> Unit, onOpen: (Long) -> Unit) {
     // Newest first; lines far ahead (lapses a year out) after the planned ones.
     val lines = s.lines.asReversed()
     val shown = if (all) lines else lines.filter { !it.date.isBefore(s.today.minusMonths(6)) && !it.date.isAfter(s.today.plusMonths(6)) }.take(20)
-    SectionCard(title = "연차 원장", trailing = { TextButton(onClick = onExport) { Text("내보내기") } }) {
+    SectionCard(title = "연차 원장", trailing = {
+        Row { TextButton(onClick = onPdf) { Text("PDF") }; TextButton(onClick = onExport) { Text("CSV") } }
+    }) {
         shown.forEachIndexed { i, l ->
             if (i > 0) HorizontalDivider(Modifier.padding(vertical = 2.dp))
             LineRow(l, onOpen)
         }
         if (!all && shown.size < lines.size) TextButton(onClick = onAll) { Text("모두 보기 (${lines.size}줄)") }
-        Hint("내보내기는 모든 줄을 표 파일(CSV)로 만들어 회사나 노무사에게 보낼 수 있게 해요. 파일은 휴대폰 밖으로 저절로 나가지 않아요.")
+        Hint("PDF는 인쇄하거나 보여 주기 좋고, CSV는 모든 줄을 표 파일로 만들어 회사나 노무사에게 보낼 수 있게 해요. 파일은 휴대폰 밖으로 저절로 나가지 않아요.")
     }
 }
 

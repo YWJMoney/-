@@ -658,7 +658,7 @@ private fun RecentCard(recent: List<MoneyEntry>, month: YearMonth, onOpen: (Mone
 }
 
 @Composable
-private fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, onOpenPay: () -> Unit, onTakeHome: (Boolean) -> Unit) {
+internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, onOpenPay: () -> Unit, onTakeHome: (Boolean) -> Unit) {
     val hasProfile = profile != null
     val net = profile?.ledgerTakeHome == true
     SectionCard(title = "수입 내역") {

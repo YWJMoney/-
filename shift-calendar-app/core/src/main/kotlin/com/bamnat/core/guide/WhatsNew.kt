@@ -12,6 +12,11 @@ object WhatsNew {
     val releases: List<Release> = listOf(
         // [SIMPLE-03] Grouped by what it gives, each line opening its feature; every bundle's own lines are in
         // 계획/1.22-*-개발계획.md.
+        // [K] 1.23 묶음 K's lines; the other bundles add theirs here (계획/1.23-*-개발계획.md).
+        Release(34, "1.23.0", listOf(
+            Line("‘내 월급 맞나요’: 명세서를 줄마다 맞춰 회사가 적게 준 줄과 앱에 빠진 줄을 나눠 보여 주고, 연말정산도 미리 어림해요", "pay.slipAudit"),
+            Line("연차 화면에 회사의 촉진 기록과 ‘없어지기 전에 쓰는 법’이 생기고, 원장을 PDF·CSV로 내보내요", "leave.promotionLog"),
+        )),
         Release(33, "1.22.0", listOf(
             Line("처음 화면은 한 장, 설정은 7묶음으로 줄었어요. 켜 둬도 괜찮은 알림을 한 번에 켜고, 설정 › 알림과 잠에서 언제든 꺼요", "settings.recommended"),
             Line("‘연차 원장’이 생겼어요. 입사일만 넣으면 연차를 법대로 세고, 없어지기 전에 알려 주고, 보상휴가도 쌓아요", "leave.ledger"),

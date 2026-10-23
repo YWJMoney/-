@@ -84,6 +84,29 @@ object SlipAudit {
         return out
     }
 
+    /** [PAYX-41] The comparison as a page to keep or show: both baskets, the 공제, and where to ask. */
+    fun doc(month: YearMonth, gross: Long, appTotal: Long, gaps: List<Gap>, deductions: List<Deduction>, belowLaw: Long?): com.bamnat.core.report.ReportDoc {
+        fun w(v: Long) = "%,d원".format(v)
+        val blocks = mutableListOf<com.bamnat.core.report.ReportDoc.Block>(
+            com.bamnat.core.report.ReportDoc.Facts(listOf("달" to "${month.year}년 ${month.monthValue}월", "명세서 지급 총액" to w(gross), "앱 계산 (세전)" to w(appTotal), "차이" to w(gross - appTotal))),
+        )
+        Basket.entries.forEach { b ->
+            val mine = gaps.filter { it.basket == b }
+            if (mine.isEmpty()) return@forEach
+            blocks += com.bamnat.core.report.ReportDoc.Heading(b.label)
+            blocks += com.bamnat.core.report.ReportDoc.Table(listOf("항목", "명세서", "앱", "차이"), mine.map { listOf(it.label, w(it.slip), w(it.app), w(it.diff)) }, listOf(2f, 1.3f, 1.3f, 1.2f), right = setOf(1, 2, 3))
+            blocks += com.bamnat.core.report.ReportDoc.Paragraph(b.hint, small = true)
+        }
+        belowLaw?.let { blocks += com.bamnat.core.report.ReportDoc.Paragraph("법 기준으로 계산하면 이 달 ${w(it)} 더 많아요.") }
+        if (deductions.isNotEmpty()) {
+            blocks += com.bamnat.core.report.ReportDoc.Heading("공제")
+            blocks += com.bamnat.core.report.ReportDoc.Table(listOf("항목", "명세서", "앱 예상"), deductions.map { listOf(it.name, it.slip?.let(::w) ?: "없음", it.estimate?.let(::w) ?: "-") },
+                listOf(2f, 1.3f, 1.3f), right = setOf(1, 2))
+        }
+        blocks += com.bamnat.core.report.ReportDoc.Paragraph(ASK_NOTE, small = true)
+        return com.bamnat.core.report.ReportDoc("${month.year}년 ${month.monthValue}월 명세서 대조", blocks, footer = "밤낮 · 명세서 대조 · 참고용")
+    }
+
     /** "회사가 적게 준 것 같아요" goes with the 1350 상담 (근로기준법 제43조 임금 전액 지급, 제56조 가산임금). */
     const val ASK_NOTE = "적게 받은 것 같으면 회사에 먼저 물어보고, 그래도 다르면 고용노동부 고객상담센터(국번 없이 1350)에 상담할 수 있어요 " +
         "(근로기준법 제43조·제56조)."

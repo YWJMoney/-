@@ -23,6 +23,15 @@ object ReportShare {
     suspend fun csv(context: Context, csv: String, name: String, subject: String) =
         share(context, name, CSV, subject) { file -> file.writeText(csv, Charsets.UTF_8) }
 
+    const val ZIP = "application/zip"
+
+    /** [PAYX-45] A bundle of files a person reads, zipped. */
+    suspend fun zip(context: Context, bytes: ByteArray, name: String, subject: String) =
+        share(context, name, ZIP, subject) { file -> file.writeBytes(bytes) }
+
+    /** [doc] as PDF bytes, for a bundle. */
+    fun pdfBytes(doc: ReportDoc): ByteArray = java.io.ByteArrayOutputStream().also { ReportPdf.write(doc, it) }.toByteArray()
+
     /** The file for [name] in the app's cache, written by [write]; older reports are removed. */
     suspend fun file(context: Context, name: String, write: (File) -> Unit): File = withContext(Dispatchers.IO) {
         val dir = File(context.cacheDir, "share/report").apply { mkdirs() }
