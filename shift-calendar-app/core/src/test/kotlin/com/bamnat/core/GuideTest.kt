@@ -54,11 +54,16 @@ class GuideTest {
     /** [SIMPLE-03] 1.22.0 says what it gives in a few lines, each opening its feature, never the bundles' list. */
     @Test
     fun theUpdateNoticeIsShort() {
-        val lines = WhatsNew.releases.first { it.versionName == "1.22.0" }.lines
-        assertTrue("${lines.size} lines", lines.size in 6..8)
-        val ids = lines.map { it.featureId }
-        assertTrue("every line opens its feature", ids.all { it != null })
-        assertEquals(ids.size, ids.toSet().size)
+        for (version in listOf("1.22.0", "1.23.0")) {
+            val lines = WhatsNew.releases.first { it.versionName == version }.lines
+            assertTrue("$version: ${lines.size} lines", lines.size in 6..8)
+            val ids = lines.map { it.featureId }
+            assertTrue("$version: every line opens its feature", ids.all { it != null })
+            assertEquals(ids.size, ids.toSet().size)
+        }
+        // [EASY-10] 1.23.0 tells of 내 정보 and 밤낮이 한 일.
+        val n = WhatsNew.releases.first { it.versionName == "1.23.0" }.lines.mapNotNull { it.featureId }
+        assertTrue(n.containsAll(listOf("profile.summary", "journal.list")))
     }
 
     /** [GUIDE-01] The 1.16 and 1.17 features are all there, each for the right kind of work. */

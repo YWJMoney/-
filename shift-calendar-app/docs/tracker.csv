@@ -704,16 +704,16 @@ QA-07,순번 330 설정 › 데이터 '데이터 점검'(integrity_check·참조
 CAL-48,"CAL-30 남은 것: 접고 펴기·회전에서 시트·편집 값이 남는지 ActivityScenario.recreate 계기 시험 (1.23에서 못 넣음, 상태 보존 코드는 들어감)",2 (1.24.0),대기,,
 CAL-49,"CAL-41 남은 것(P19): 알람을 끈 날에만 plannedAlarms가 resolver를 따로 만듦 → 공유 resolver로 (영향 작아 1.23에서 둠)",2 (1.24.0),대기,,
 ALRM-03,"스마트 알람 제안: 알람 끄기 기록·수면 기록으로 근무 종류별 제안 하나(늦게 꺼요 → 20분 앞, 이미 깨 있어요 → 15분 뒤, 잠 모자라요 → 잘 시간 알림), 한 탭 적용·되돌리기, 주 1개·30일 조용, 전부 기기 안 (순번 339, 결정 D60)",2 (1.23.0),완료,,"core alarm/AlarmSuggest.kt(근무 종류별 최근 5번·첫 알람, 3/5 기준, 주 1장·30일 쉼·다시 보지 않기) + AlarmSuggestTest 9개. AlarmService가 끈 기록에 type·due·off(기기 안 이벤트 기록만, 사용 통계 제외). 달력 맨 위 AlarmSuggestCard, 한 탭 AlarmShift.move(그 근무만)·10초 되돌리기, 잘 시간 알림 켜기. 설정 › 알람 '알람 제안'(기본 켜짐, 백업)·숨긴 제안 다시 보기, alarm.suggest. AlarmSuggestFlowTest 3개, 화면 710~714"
-EASY-01,"순번 332 둘러보기: '우선 둘러볼게요' → 직군 예시 달력('예시' 띠, 알람 안 울림, 백업·공유 밖)",2 (1.23.0),진행 중,,
-EASY-02,"순번 332 입력 순간 포착: 예시 달력에서 쓰기 동작 13종 → '내 정보로 시작할까요?' 카드(내 정보로·예시 두고·계속 둘러보기), 예시 유출 금지 가드",2 (1.23.0),진행 중,,
-EASY-03,"순번 333 프로필(사실 저장소): 값·출처(직접·공유·추정·기본)·확신도, 기존 저장소 위 어댑터, 정본 표, 다른 화면에서 고치면 직접 입력으로",2 (1.23.0),진행 중,,
-EASY-04,"순번 334 필요 목록: 기능마다 필요한 사실(FeatureNeeds), 빠진 사실과 우선순위(살리는 기능 수 × 임박도)",2 (1.23.0),진행 중,,
-EASY-05,"순번 334 질문 큐·질문 카드: 하루 2개, 알맞은 때·그 기능 화면, 나중에 7일·두 번이면 요약에만, 보상 문구, 팁과 같은 날엔 질문만",2 (1.23.0),진행 중,,
-EASY-06,순번 335 추론 연결: 듀티표·명세서·회사 공유 설정·첫 설정 → 프로필(추정·공유·직접),2 (1.23.0),대기,,
-EASY-07,"순번 335 '추정' 띠와 '어디서 왔어요?', 돈이 걸린 내보내기 전 '추정 n개 확인'",2 (1.23.0),대기,,
-EASY-08,"순번 337 설정 맨 위 프로필 요약: 모든 사실 한 화면, 그 자리에서 고침, 영향받는 기능 수",2 (1.23.0),대기,,
-EASY-09,"순번 337 '모두 처음부터'(7일 되돌리기), 기능 스위치 옆 '이걸 알려 주면 시작해요'",2 (1.23.0),대기,,
-EASY-10,순번 338 N 시험·화면 사진 680~709·도움말·HANDOFF,2 (1.23.0),대기,,
-OBS-01,"순번 336 밤낮이 한 일 기록: 자동 동작 10곳 한 줄씩(무엇·왜), 기기 안 90일·하루 300줄, 금액·이름 없음",2 (1.23.0),진행 중,,
-OBS-02,"순번 336 한 일 화면: 홈 한 줄 요약, 설정 › 밤낮이 한 일 목록, 줄마다 자세히·되돌리기 연결",2 (1.23.0),대기,,
-OBS-03,"순번 336 상태판: 알고 있는 것·추정·모르는 것, 모르는 것 → 바로 질문, L·K 점검 화면 링크 모음",2 (1.23.0),진행 중,,
+EASY-01,"순번 332 둘러보기: '우선 둘러볼게요' → 직군 예시 달력('예시' 띠, 알람 안 울림, 백업·공유 밖)",2 (1.23.0),완료,,"N-1 #88: core example/Browse·ExamplePlan, app BrowseStore·ExampleCalendar(PersonalCalendar.EXAMPLE, 알람·백업·공유·통계 밖)·SetupSteps '우선 둘러볼게요'·ExampleBand; EasyBrowseTest·BrowseFlowTest; 화면 680~684"
+EASY-02,"순번 332 입력 순간 포착: 예시 달력에서 쓰기 동작 13종 → '내 정보로 시작할까요?' 카드(내 정보로·예시 두고·계속 둘러보기), 예시 유출 금지 가드",2 (1.23.0),완료,,N-1 #88: ui/guide/WriteGate.request(쓰기 13종) → '내 정보로 시작할까요?'(내 정보로·예시 두고·계속 둘러보기); ExampleCalendarGuardTest(예시 값 유출 금지)·BrowseFlowTest
+EASY-03,"순번 333 프로필(사실 저장소): 값·출처(직접·공유·추정·기본)·확신도, 기존 저장소 위 어댑터, 정본 표, 다른 화면에서 고치면 직접 입력으로",2 (1.23.0),완료,,"N-1 #88: core profile/Profile·FactCatalog(값·출처·확신도·지문), app ProfileStore(원래 저장소 위 어댑터, 메타만 profile/<달력>.json); EasyProfileTest·ProfileStoreTest"
+EASY-04,"순번 334 필요 목록: 기능마다 필요한 사실(FeatureNeeds), 빠진 사실과 우선순위(살리는 기능 수 × 임박도)",2 (1.23.0),완료,,N-1 #88: core profile/FeatureNeeds·Needs.of·score(기능 수 × 임박도); EasyAskTest
+EASY-05,"순번 334 질문 큐·질문 카드: 하루 2개, 알맞은 때·그 기능 화면, 나중에 7일·두 번이면 요약에만, 보상 문구, 팁과 같은 날엔 질문만",2 (1.23.0),완료,,"N-2 #91: core AskScheduler(PER_DAY 2·SNOOZE_DAYS 7·MAX_SNOOZES 2·좋은 순간)·Questions, app AskStore·ui/guide/AskCard(홈 맨 위 CalendarPart.ASK, 급여 화면 위); EasyQuestionTest·AskAnswerTest; 화면 685~689"
+EASY-06,순번 335 추론 연결: 듀티표·명세서·회사 공유 설정·첫 설정 → 프로필(추정·공유·직접),2 (1.23.0),완료,,"N-2 #91: ProfileAnswers(답 → 원래 저장소, 직접), 명세서 사진 → 추정, 회사 공유 설정 → 공유, 첫 설정·급여 설정에서 답한 값 → 직접(저장된 급여 설정은 법 기본값과 같아도 직접), 근무표 사진 → 근무 추정은 뺌(가져오기는 날짜별 바뀜만 씀); AskAnswerTest"
+EASY-07,"순번 335 '추정' 띠와 '어디서 왔어요?', 돈이 걸린 내보내기 전 '추정 n개 확인'",2 (1.23.0),완료,,"N-2 #91: ui/guide/Inferred('추정으로 계산한 값'·'어디서 왔어요?'), core ExportCheck → 급여 리포트·상담 묶음 앞 '추정 n개 확인'; EasyQuestionTest; 화면 690~693"
+EASY-08,"순번 337 설정 맨 위 프로필 요약: 모든 사실 한 화면, 그 자리에서 고침, 영향받는 기능 수",2 (1.23.0),완료,,"N-3 #92: core FactText(짧은 글·비공개 값은 '정해 둠'·적용 기능 수), app ui/guide/ProfileScreen(설정 맨 위 EasyStatusCard › 내 정보, FactEditSheet로 그 자리에서 고침), profile.summary; EasyProfileTextTest·ProfileEditTest; 화면 694~700"
+EASY-09,"순번 337 '모두 처음부터'(7일 되돌리기), 기능 스위치 옆 '이걸 알려 주면 시작해요'",2 (1.23.0),완료,,"N-3 #92: ProfileStore.startOver·undoStartOver(값은 그대로, Profile.RECHECK로 다시 묻기, 7일 되돌리기, 백업 밖), FeatureSwitchesScreen '이걸 알려 주면 시작해요'(FactText.startsWith); ProfileEditTest·EasyProfileTextTest; 화면 700·705"
+EASY-10,순번 338 N 시험·화면 사진 680~709·도움말·HANDOFF,2 (1.23.0),완료,,"N-4: WhatsNew 1.23.0 N 줄 2개(profile.summary·journal.list, 모두 8줄), 도움말 browse·profile·journal + 설정 찾기 '내 정보'·'밤낮이 한 일'(SettingsGo.PROFILE·JOURNAL), HANDOFF 6-2; GuideTest·SettingsSearchTest; 화면 707~709(N 사진 모두 30장)"
+OBS-01,"순번 336 밤낮이 한 일 기록: 자동 동작 10곳 한 줄씩(무엇·왜), 기기 안 90일·하루 300줄, 금액·이름 없음",2 (1.23.0),완료,,"N-1 #88 core journal/Journal(90일·하루 300줄·같은 종류 하루 한 줄·detail은 숫자만) + app JournalStore(noBackupFilesDir, 백업 밖), N-3 #92 기록 지점 10곳(알람 다시 잡기·원격 파일·공휴일·급여 다시 계산·돈 기록·백업·백업 실패·위젯·보낼 것·연차 알림·소식); JournalTest·JournalPointsTest"
+OBS-02,"순번 336 한 일 화면: 홈 한 줄 요약, 설정 › 밤낮이 한 일 목록, 줄마다 자세히·되돌리기 연결",2 (1.23.0),완료,,"N-3 #92: ui/guide/JournalScreen(날짜별 최신 먼저, 줄마다 그 기능 열기 FeatureLinks), 달력 위 JournalHomeLine(알람·위젯 말고 한 일이 있는 날만, CalendarPart.JOURNAL), journal.list; EasyProfileTextTest·JournalPointsTest; 화면 701~704"
+OBS-03,"순번 336 상태판: 알고 있는 것·추정·모르는 것, 모르는 것 → 바로 질문, L·K 점검 화면 링크 모음",2 (1.23.0),완료,,"N-3 #92: core StatusBoard(아는 것·추정·모르는 것), ProfileScreen BoardCard(모르는 것 → 바로 질문, 알람 점검·급여 점검 링크); EasyProfileTextTest; 화면 694·706"

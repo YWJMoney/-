@@ -15,7 +15,7 @@ object WhatsNew {
         // 1.23.0: one line per bundle's gift (J·K·L·I here; M adds its own), each opening its feature
         // (계획/1.23-*-개발계획.md). 1.22's rule of 6~8 lines holds here too.
         Release(34, "1.23.0", listOf(
-            // [SIMPLE-03] 6~8 lines, one per feature. 2026-10-23 통합: J1·K1·L2·I1·M1 = 6 lines, two kept for bundle N.
+            // [SIMPLE-03] 6~8 lines, one per feature. 2026-10-23 통합: J1·K1·L2·I1·M1 = 6 lines, N2 = 8.
             // [VIS-03][UX-08][A11Y-04][SETUP-14][SET-05] Bundle J.
             Line("글씨를 크게 키워도 버튼·탭이 잘리지 않고, 시간은 시작·끝·휴게를 한 창에서 골라요. 근무 알람은 한 번에 앞당기거나 늦춰요", "alarm.moveAll"),
             // Bundle K ('내 월급 맞나요' + 연차 원장 together).
@@ -28,6 +28,9 @@ object WhatsNew {
             Line("날짜 메모에 ‘내일 야간 대근 7시’처럼 적으면 근무로 넣어 드리고, ‘다음 근무까지’ 위젯이 생겼어요. 순서가 밀린 날은 길게 눌러 그날부터 다시 맞춰요", "calendar.quickText"),
             // [PERF-04][REL-15] Bundle M.
             Line("앱이 51MB에서 8MB로 가벼워졌고(글자 인식은 처음 쓸 때 받아요), 백업 파일은 사진까지 한 파일에 담아 비밀번호로 봉해요", "data.backup"),
+            // [EASY-01..10][OBS-01..03] Bundle N, the two lines kept for it.
+            Line("‘우선 둘러볼게요’로 예시 달력부터 보고, 필요한 정보는 질문 카드로 하루 한두 개만 물어요. 설정 맨 위 ‘내 정보’에서 한곳에 보고 바로 고쳐요", "profile.summary"),
+            Line("‘밤낮이 한 일’: 알람 다시 잡기·백업·계산 자료 갱신처럼 밤낮이 알아서 한 일을 날짜별로 보여 줘요", "journal.list"),
         )),
         Release(33, "1.22.0", listOf(
             Line("처음 화면은 한 장, 설정은 7묶음으로 줄었어요. 켜 둬도 괜찮은 알림을 한 번에 켜고, 설정 › 알림과 잠에서 언제든 꺼요", "settings.recommended"),

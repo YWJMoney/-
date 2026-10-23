@@ -210,6 +210,9 @@ internal object SettingsIndex {
         screen("설정 › 기능 켜고 끄기", "추천 기능 한 번에 켜기", SettingsGo.RECOMMENDED, "추천", "모두 켜기", "한 번에", "권한 한 번에",
             "허용 한 번에", "기본 설정", "처음 설정", "끄는 법", "끄기", "알림 끄기", "켜도 괜찮", "브리핑", "잠금 화면 근무"),
         screen("설정", "기능 켜고 끄기", SettingsGo.FEATURES, "기능 끄기", "기능 켜기", "숨기기", "안 보이게", "카드 끄기", "안내 끄기", "팁 끄기", "위젯 줄"),
+        // [EASY-08][OBS-02] 1.23 N, the card at the top of settings (shown "설정 › 맨 위 카드").
+        screen("맨 위 카드", "내 정보", SettingsGo.PROFILE, "프로필", "질문 카드", "입사일", "월급날", "다시 묻기", "모두 처음부터", "내 설정"),
+        screen("맨 위 카드", "밤낮이 한 일", SettingsGo.JOURNAL, "한 일", "한 일 기록", "알아서", "자동", "로그", "관측"),
         screen("설정 › 도움말과 문의", "문의하기", SettingsGo.INQUIRY, "질문", "건의", "제안", "오류", "버그", "고객센터", "도움말", "메일", "신고"),
         screen("설정 › 도움말과 문의", "자주 묻는 질문", SettingsGo.INQUIRY, "도움말", "사용법", "어떻게", "FAQ"),
         row(V, "앱 버전", "버전", "업데이트", row = "버전"),
