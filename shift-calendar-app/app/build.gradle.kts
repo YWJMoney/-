@@ -97,7 +97,15 @@ android {
         // Robolectric screenshot tests need the merged resources and manifest.
         unitTests.isIncludeAndroidResources = true
         // About 700 Robolectric tests and 400 screenshots in one worker outgrow Gradle's 512 MB test heap.
-        unitTests.all { it.maxHeapSize = "2g" }
+        // [QA-05] The screenshots are split by topic into classes (screenshots/*ScreenshotTest), so Gradle can hand
+        // classes to several test JVMs at once: half the cores, two or three forks of 2 GB each. Each fork has its
+        // own Robolectric sandbox. -Pbamnat.testForks=1 runs them one after another as before.
+        val forks = (findProperty("bamnat.testForks") as String?)?.toIntOrNull()
+            ?: (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 3)
+        unitTests.all {
+            it.maxHeapSize = "2g"
+            it.maxParallelForks = forks
+        }
     }
 
     packaging {
