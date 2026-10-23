@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.core.profile.FactKey
 import com.bamnat.app.pay.named
 
 import androidx.lifecycle.ViewModel
@@ -133,9 +134,16 @@ class PayViewModel(
     }
 
     // [PAYS-01] A second setup over an existing one can be undone like any other change ('방금 바꾼 것 되돌리기').
-    fun saveSetup(profile: PayProfile) = viewModelScope.launch {
+    fun saveSetup(profile: PayProfile, fromSlip: Boolean = false) = viewModelScope.launch {
         payStore.save(profile)
         container.telemetry.event("pay_setup_done", profile.occupation.name)
+        // [EASY-06] What a payslip photo filled is the profile's 추정 until the user changes it (K's flow is kept as it is).
+        val read = if (fromSlip) listOfNotNull(FactKey.WAGE_TYPE, FactKey.BASE_PAY, FactKey.PAY_ITEMS.takeIf { profile.items.isNotEmpty() }) else emptyList()
+        read.forEach { container.profiles.mark(calendarId, it, com.bamnat.core.profile.Source.INFERRED, SLIP_CONFIDENCE, "명세서 사진") }
+        // What the setup asked and the user answered is theirs, even an answer that is also the law's starting value;
+        // a 모르겠어요 stays the 법대로 가정 it is.
+        WIZARD_ASKS.filter { (key, mark) -> key !in read && (mark == null || mark !in profile.estimatedFields) && profile.has(key) }
+            .forEach { (key, _) -> container.profiles.mark(calendarId, key, com.bamnat.core.profile.Source.TYPED, why = "급여 설정") }
     }
 
     fun reset() = viewModelScope.launch { payStore.save(null) }
@@ -439,4 +447,22 @@ class PayViewModel(
         val v = match.verifiedProfile(System.currentTimeMillis())
         v.copy(rules = v.rules.copy(extraNames = p.rules.extraNames))
     }
+}
+
+/** [EASY-06] How sure a payslip read is taken to be: the user saw every value it filled before saving. */
+private const val SLIP_CONFIDENCE = 0.8
+
+/** [EASY-06] The facts the pay setup asks, with the mark its 모르겠어요 leaves. */
+private val WIZARD_ASKS: List<Pair<FactKey, String?>> = listOf(
+    FactKey.WAGE_TYPE to null, FactKey.BASE_PAY to com.bamnat.core.pay.Unknowns.BASE, FactKey.PAY_ITEMS to null,
+    FactKey.PAY_DAY to null, FactKey.HIRE_DATE to null,
+    FactKey.MONTHLY_HOURS to com.bamnat.core.pay.Unknowns.MONTHLY_HOURS, FactKey.HOLIDAY_PAY to com.bamnat.core.pay.Unknowns.HOLIDAY_PAY_MODE,
+    FactKey.PUBLIC_HOLIDAYS to com.bamnat.core.pay.Unknowns.PUBLIC_HOLIDAYS, FactKey.FIVE_OR_MORE to com.bamnat.core.pay.Unknowns.FIVE_OR_MORE,
+)
+
+private fun PayProfile.has(key: FactKey): Boolean = when (key) {
+    FactKey.PAY_DAY -> period.payDay != null
+    FactKey.HIRE_DATE -> hireDate != null
+    FactKey.PAY_ITEMS -> items.isNotEmpty()
+    else -> true
 }

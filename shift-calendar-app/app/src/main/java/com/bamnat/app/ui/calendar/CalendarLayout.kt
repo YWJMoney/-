@@ -15,6 +15,8 @@ import com.bamnat.core.layout.PageLayout
  * (알람이 꺼져 있어요, 확인할 기록) are not here: they show whenever they are needed.
  */
 enum class CalendarPart(val id: String, val label: String, val what: String, val above: Boolean, val movable: Boolean = true) {
+    /** [EASY-05] The question card: one fact a feature still waits for, at most two a day. */
+    ASK("ask", "질문 카드", "기능에 필요한 정보를 하루 한두 개만 물어요", above = true, movable = false),
     TODAY_FLOW("todayFlow", "오늘의 흐름", "잘 시간·출근·쉬는 시간을 오늘 하루 줄로", above = true),
     TODAY_WORK("todayWork", "오늘 일감·매출·투자", "현장·가게·투자 달력의 오늘 카드", above = true),
     SUMMARY("summary", "이번 달 요약", "근무·급여(또는 수입·매출) 세 숫자", above = true, movable = false),

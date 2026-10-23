@@ -102,13 +102,16 @@ class ProfileStore(private val c: AppContainer, private val dir: File = File(c.a
         val prefs = WorkTypePrefs.get(c.appContext).of(scope.id)
         val defaults = PayProfile(occupation = com.bamnat.core.pay.Occupation.entries.first(), wageType = com.bamnat.core.pay.WageType.MONTHLY,
             base = com.bamnat.core.pay.ValueTimeline())
+        // [EASY-06] A pay setup that is saved was answered by the user, even where an answer is also the law's
+        // starting value: only its own 모르겠어요 marks read as guesses ([default] is kept for the record of 1장).
+        @Suppress("UNUSED_PARAMETER")
         fun p(value: (PayProfile) -> Any?, default: Any? = null, mark: String? = null) =
-            Read(pay?.let(value), default, mark != null && mark in est)
+            Read(pay?.let(value), null, mark != null && mark in est)
         return mapOf(
             FactKey.WORK_STYLE to Read(settings.workStyle),
             FactKey.SHIFTS to Read(work.takeIf { it.isNotEmpty() }?.map { listOf(it.name, it.start, it.end, it.breakMinutes) }),
             FactKey.ROTATION to Read(patterns.takeIf { it.isNotEmpty() } ?: "monthly".takeIf { settings.rosterMonthly }),
-            FactKey.EXTRA_KINDS to Read(settings.extraKinds, AppSettings().extraKinds),
+            FactKey.EXTRA_KINDS to Read(settings.extraKinds),
             FactKey.REST_RULES to Read(settings.restRules, ""),
             FactKey.TEAM to Read(c.teams.get(scope.id)),
             FactKey.OVERTIME_CAP to Read(prefs.overtimeCapHours),
@@ -127,7 +130,7 @@ class ProfileStore(private val c: AppContainer, private val dir: File = File(c.a
             FactKey.FIVE_OR_MORE to p({ it.fiveOrMoreEmployees }, true, Unknowns.FIVE_OR_MORE),
             FactKey.HIRE_DATE to p({ it.hireDate }),
             // The pay setup's own when there is one; the 통계 card's choice otherwise (결정: 정본 표 1-2).
-            FactKey.TAX_MODE to (if (pay != null) Read(pay.taxMode, defaults.taxMode) else Read(prefs.taxMode, WorkTypeChoices().taxMode)),
+            FactKey.TAX_MODE to (if (pay != null) Read(pay.taxMode) else Read(prefs.taxMode, WorkTypeChoices().taxMode)),
             FactKey.TAX_FAMILY to p({ it.taxFamily to it.taxChildren }, defaults.taxFamily to defaults.taxChildren),
             FactKey.PREVIOUS_YEAR_PAY to p({ it.previousYearPay }),
             FactKey.SLEEP_TARGET to Read(settings.sleepTargetMinutes, AppSettings().sleepTargetMinutes),

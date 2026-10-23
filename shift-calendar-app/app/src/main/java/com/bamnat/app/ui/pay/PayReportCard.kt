@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.bamnat.app.appContainer
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.report.ReportShare
 import com.bamnat.app.tier.Feature
@@ -44,14 +45,17 @@ import java.time.LocalDate
  * open the 프로 screen.
  */
 @Composable
-internal fun PayReportCard(vm: PayViewModel, profile: PayProfile, snapshot: ScheduleSnapshot, shown: MonthPay, closed: Boolean, gate: Gate) {
+internal fun PayReportCard(vm: PayViewModel, profile: PayProfile, snapshot: ScheduleSnapshot, shown: MonthPay, closed: Boolean, gate: Gate,
+    onEditSetup: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     val open = gate.allows(Feature.PAY_REPORT)
     val month = shown.month
-    fun make(what: String, block: suspend () -> Unit) {
-        if (!open) { openPro(); return }
+    // [EASY-07] The guessed values a report would carry, asked about once before it leaves; none, it goes straight out.
+    var checking by remember { mutableStateOf<Pair<List<com.bamnat.core.profile.Fact<*>>, () -> Unit>?>(null) }
+    val profiles = remember { context.appContainer.profiles }
+    fun run(what: String, block: suspend () -> Unit) {
         busy = true
         scope.launch {
             try {
@@ -64,6 +68,27 @@ internal fun PayReportCard(vm: PayViewModel, profile: PayProfile, snapshot: Sche
                 busy = false
             }
         }
+    }
+    fun make(what: String, block: suspend () -> Unit) {
+        if (!open) { openPro(); return }
+        val feature = if (what == "counsel_zip") "pay.counsel" else "pay.report"
+        scope.launch {
+            val guessed = runCatching { com.bamnat.core.profile.ExportCheck.estimated(profiles.facts(vm.calendarId), feature) }.getOrDefault(emptyList())
+            if (guessed.isEmpty()) run(what, block) else checking = guessed to { run(what, block) }
+        }
+    }
+    checking?.let { (facts, go) ->
+        com.bamnat.app.ui.guide.ExportCheckSheet(
+            facts = facts,
+            onConfirm = { f ->
+                scope.launch { profiles.mark(vm.calendarId, f.key, com.bamnat.core.profile.Source.TYPED, why = "보내기 전에 확인") }
+                val left = facts - f
+                checking = if (left.isEmpty()) null.also { go() } else left to go
+            },
+            onFix = { checking = null; onEditSetup() },
+            onGo = { checking = null; go() },
+            onDismiss = { checking = null },
+        )
     }
     val who = remember(profile, month) { vm.reportWho(profile, month) }
     suspend fun year() = vm.yearPays(profile, snapshot, month.year)

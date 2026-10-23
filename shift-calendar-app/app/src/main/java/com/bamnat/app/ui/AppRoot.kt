@@ -646,6 +646,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
 }
 
+/** [EASY-05] The features of the pay screen, for the questions asked above it. */
+private val PAY_ASKS = setOf("pay.calc", "pay.report", "pay.gap", "pay.whatIf", "pay.compLeave", "hourly.takeHome", "hourly.weeks", "leave.ledger")
+
 /** [UNDO-01] A kind-of-work change's own extras, for its 되돌리기: the 시급 types it added and the next step it opened (a route pattern). */
 internal class StyleExtras(val entryId: String, val calendar: String, val addedTypes: List<Long>, val opened: String?)
 
@@ -957,6 +960,10 @@ private fun AppNavHost(
                 onOpenExtraKinds = { nav.navigate(Routes.extraKinds(calendar)) { launchSingleTop = true } },
                 onOpenLeave = { nav.navigate(Routes.leave(calendar)) { launchSingleTop = true } },
                 top = {
+                    // [EASY-05] A pay fact still guessed, asked here where it is used: only those one tap answers.
+                    if (profile != null) com.bamnat.app.ui.guide.AskArea(container, calendar,
+                        container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle),
+                        com.bamnat.core.profile.AskPlace.Screen(PAY_ASKS), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), inCardOnly = true)
                     CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                         onFix = { nav.fixCompanySetup(it) })
                 },
