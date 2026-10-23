@@ -663,7 +663,7 @@ fun CalendarScreen(
     // [CAL-01] The picked day's week over the hour limit, said in one line under the calendar.
     val weekNote = remember(calculator, selected, settings.weeklyLimitHours) {
         calculator.week(selected).takeIf { it.overLimit }?.let {
-            "이 주 ${HoursFormat.hours(it.totalMinutes.toDouble())}시간 · ${settings.weeklyLimitHours}시간 넘음"
+            "이 주 ${HoursFormat.korean(it.totalMinutes)} · ${settings.weeklyLimitHours}시간 넘음"
         }
     }
     // [CAL-01] An alarm due within a week, whether or not the master switch lets it ring.
@@ -1563,10 +1563,10 @@ private fun HoursLine(
     ) {
         Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                HoursPart("이 주", HoursFormat.hours(week.totalMinutes.toDouble()) + "시간",
+                HoursPart("이 주", HoursFormat.korean(week.totalMinutes),
                     limits.weeklyLimitHours.takeIf { week.overLimit }, cal.warning)
                 // Its own limit (52), not the week's (64), so the number it is over is said.
-                HoursPart("3개월 주평균", HoursFormat.hours(three.averageWeeklyMinutes) + "시간",
+                HoursPart("3개월 주평균", HoursFormat.korean(Math.round(three.averageWeeklyMinutes).toInt()),
                     limits.threeMonthAverageLimitHours.takeIf { three.overLimit }, cal.warning)
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "근무·급여 열기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1574,7 +1574,7 @@ private fun HoursLine(
     }
 }
 
-/** "이 주 73.5시간", and "· 64시간 넘음" in the warning color when it is over [overLimit] hours. */
+/** "이 주 73시간 30분", and "· 64시간 넘음" in the warning color when it is over [overLimit] hours. */
 @Composable
 private fun HoursPart(label: String, value: String, overLimit: Int?, warning: Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
