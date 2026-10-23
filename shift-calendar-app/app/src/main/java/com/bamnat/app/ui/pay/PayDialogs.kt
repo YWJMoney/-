@@ -43,6 +43,7 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.core.pay.Cadence
 import com.bamnat.core.pay.EditScope
 import com.bamnat.core.pay.MonthPay
+import com.bamnat.core.pay.OrdinaryGuess
 import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayLine
 import com.bamnat.core.pay.PayProfile
@@ -441,29 +442,34 @@ fun AddItemDialog(onDismiss: () -> Unit, allowUnknownAmount: Boolean = false, on
     var amount by remember { mutableStateOf<Long?>(null) }
     var cadence by remember { mutableStateOf(Cadence.MONTHLY) }
     var ordinary by remember { mutableStateOf(false) }
+    // 순번 285: the switch follows the name until the user sets it (OrdinaryGuess).
+    var ordinaryTouched by remember { mutableStateOf(false) }
     var fixedOtHours by remember { mutableStateOf(0) }
+    fun guess() { if (!ordinaryTouched) ordinary = OrdinaryGuess.of(name, cadence) ?: false }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("수당 추가") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it.take(20) }, label = { Text("이름") },
+                OutlinedTextField(value = name, onValueChange = { name = it.take(20); guess() }, label = { Text("이름") },
                     placeholder = { Text("예: 나이트 수당") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 MoneyField(if (cadence == Cadence.MONTHLY) "한 달 금액" else "1회 금액", amount, { amount = it },
                     placeholder = if (allowUnknownAmount) "모르면 비워 두세요" else "")
                 Text("언제 받나요?", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(Cadence.MONTHLY, Cadence.PER_WORK_DAY, Cadence.PER_NIGHT_SHIFT).forEach { c ->
-                        FilterChip(selected = cadence == c, onClick = { cadence = c }, label = { Text(c.label) })
+                        FilterChip(selected = cadence == c, onClick = { cadence = c; guess() }, label = { Text(c.label) })
                     }
                 }
-                Row(Modifier.fillMaxWidth().clickable { ordinary = !ordinary }, verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().clickable(enabled = fixedOtHours == 0) { ordinary = !ordinary; ordinaryTouched = true },
+                    verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("통상임금에 포함", style = MaterialTheme.typography.bodyLarge)
-                        Text("매달 고정으로 받는 수당이면 켜 주세요. 연장·야간 수당이 함께 올라가요.",
+                        Text("매달 고정으로 받는 수당이면 켜 주세요. 연장·야간 수당이 함께 올라가요." +
+                            if (!ordinaryTouched && OrdinaryGuess.of(name, cadence) != null) " 이름을 보고 미리 골라 두었어요." else "",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Switch(checked = ordinary, onCheckedChange = { ordinary = it }, enabled = fixedOtHours == 0)
+                    Switch(checked = ordinary, onCheckedChange = { ordinary = it; ordinaryTouched = true }, enabled = fixedOtHours == 0)
                 }
                 if (cadence == Cadence.MONTHLY) {
                     // [PAY-05] 고정 연장수당: prepaid overtime, never 통상임금.
