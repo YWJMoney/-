@@ -241,4 +241,28 @@ class PayCodecTest {
         assertEquals("minus", stored.getString("type"))
         assertEquals("perTime", stored.getJSONObject("of").getString("type"))
     }
+
+    /** [PAYX-24]~[PAYX-33] 1.23's fields survive a round trip and are left out at their defaults, so older files stay the same. */
+    @Test fun fields123RoundTrip() {
+        val p = PayProfile(
+            Occupation.MANUFACTURING, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_500_000))),
+            items = listOf(PayItem("b", "상여", ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 0))), Cadence.BONUS,
+                months = setOf(12), percentOfBase = 1.0, bonusBasis = com.bamnat.core.pay.BonusBasis.ORDINARY)),
+            hireDate = LocalDate.of(2026, 3, 16), leaveDate = LocalDate.of(2026, 11, 13),
+            productionWorker = true, previousYearPay = 31_000_000, ledgerTakeHome = true,
+            rules = CompanyRules(
+                proration = com.bamnat.core.pay.ProrationBasis.WORK_DAYS, wonRounding = com.bamnat.core.pay.WonRounding.AT_END,
+                hoursException = com.bamnat.core.hours.HoursException.FLEX_3M, partTimePremium = true,
+            ),
+        )
+        assertEquals(p, PayCodec.decode(PayCodec.encode(p)))
+        val plain = PayProfile(Occupation.CUSTOM, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_500_000))))
+        val json = PayCodec.encode(plain).toString()
+        listOf("leaveDate", "production", "previousYearPay", "proration", "wonRounding", "hoursException", "partTime50", "bonusBasis", "ledgerNet")
+            .forEach { assertEquals(it, false, "\"$it\"" in json) }
+        // A value from a newer version reads as the default.
+        val newer = JSONObject(PayCodec.encode(p).toString()).apply { getJSONObject("rules").put("proration", "FUTURE").put("hoursException", "FUTURE") }
+        assertEquals(com.bamnat.core.pay.ProrationBasis.CALENDAR_DAYS, PayCodec.decode(newer).rules.proration)
+        assertEquals(com.bamnat.core.hours.HoursException.NONE, PayCodec.decode(newer).rules.hoursException)
+    }
 }

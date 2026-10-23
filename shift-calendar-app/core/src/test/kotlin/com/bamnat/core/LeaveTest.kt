@@ -128,11 +128,14 @@ class LeaveTest {
             DayEntry(LocalDate.of(2026, 10, 8), leave = Leave(quarters = 1)),
             DayEntry(LocalDate.of(2026, 10, 9), leave = Leave(LeaveKind.UNPAID)),
         )
-        val b = LeaveBook.balance(2026, 15.0, today = wed, resolve = r::resolve)
+        // [LEAVE-07] The ledger counts it now: 15 days granted for 2026, 무급 not taken from them.
+        val entries = listOf(LocalDate.of(2026, 10, 5), wed, LocalDate.of(2026, 10, 8), LocalDate.of(2026, 10, 9)).map { r.entryOn(it)!! }
+        val b = com.bamnat.core.leave.LeaveSources.summary(wed, null, entries, r::resolve,
+            listOf(com.bamnat.core.leave.LedgerEntry(kind = com.bamnat.core.leave.EntryKind.GRANT, date = LocalDate.of(2026, 1, 1), days = 15.0,
+                expires = LocalDate.of(2026, 12, 31))))
         assertEquals(1.5, b.used, 1e-9)
         assertEquals(0.25, b.planned, 1e-9)
-        assertEquals(13.25, b.remaining!!, 1e-9)
-        assertEquals(1.0, b.byKind[LeaveKind.UNPAID]!!, 1e-9)
+        assertEquals(13.25, b.afterPlanned, 1e-9)
         assertEquals("13.25일", LeaveBook.days(13.25))
         assertEquals("2일", LeaveBook.days(2.0))
     }

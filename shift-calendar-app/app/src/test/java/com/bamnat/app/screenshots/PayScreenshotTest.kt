@@ -392,7 +392,8 @@ class PayScreenshotTest : ScreenshotBase() {
     }
     @Test fun phonePublicGradeHugeText() = shoot("435_phone_public_grade_huge_text", PHONE, 1.5f) {
         payScreen(Tier.PRO, withProfile = true, adjust = { it.copy(occupation = com.bamnat.core.pay.Occupation.PUBLIC) }).invoke(this)
-        // The 연차 card above it is longer since 1.22 묶음 D: two steps, each within reveal's scrolls.
+        // The 연차 card above it is longer since 1.22 묶음 D, and 1.23 묶음 K's cards come before it: steps, each within reveal's scrolls.
+        reveal("상담용 묶음 (급여·근무시간·연차)", exact = true)
         reveal("공무원 봉급표", exact = true)
         reveal("교대·현업 근무", exact = true)
     }
@@ -438,10 +439,14 @@ class PayScreenshotTest : ScreenshotBase() {
     }
     @Test fun foldedPayExamples() = shoot("472_folded_pay_examples", FOLDED) {
         leaveRulesEditor().invoke(this)
+        // 1.23 묶음 K's 회사마다 다른 계산 sits above it: two steps, each within reveal's scrolls.
+        reveal("근로시간 제도 (주 52시간 예외)", exact = true)
         reveal("예시 규칙", exact = true)
     }
     @Test fun foldedPayExampleDialog() = shoot("473_folded_pay_example_dialog", FOLDED) {
         leaveRulesEditor().invoke(this)
+        // 1.23 묶음 K's 회사마다 다른 계산 sits above it: two steps, each within reveal's scrolls.
+        reveal("근로시간 제도 (주 52시간 예외)", exact = true)
         reveal("예시 규칙", exact = true)
         tapText("탄력적 근로시간제 2주", exact = true, scrolls = 0)
     }

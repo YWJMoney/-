@@ -47,6 +47,9 @@ internal class HintStore(context: Context) {
 
         /** [CAL-17] A long press on a date opens 빠른 설정: said once on the first tap, or found already. */
         const val LONG_PRESS = "long_press_hint"
+
+        /** [PAYR-08] The pay screen's first walkthrough (체험 풀이, notes M12) was closed: it stays closed. */
+        const val PAY_WALKTHROUGH = "pay_walkthrough"
     }
 }
 

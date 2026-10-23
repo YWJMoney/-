@@ -20,8 +20,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         InvestSettingEntity::class,
         // [LEAVE-01] Version 19: 연차 원장.
         LeaveLedgerEntity::class,
+        // [LEAVE-11] Version 20: 연차 사용 촉진 기록.
+        LeaveNoticeEntity::class,
     ],
-    version = 19,
+    version = 20,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -37,6 +39,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun importedEventDao(): ImportedEventDao
     abstract fun investDao(): InvestDao
     abstract fun leaveLedgerDao(): LeaveLedgerDao
+    abstract fun leaveNoticeDao(): LeaveNoticeDao
 
     companion object {
         /** [MCAL-01] Each added calendar is a database of its own with the same tables; only its schedule ones are used. */
@@ -53,7 +56,7 @@ abstract class AppDatabase : RoomDatabase() {
             get() = arrayOf(
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                 MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
-                MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19,
+                MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20,
             )
 
         /** Version 2: several alarms per shift, hand-set alarms per day, memo trash. */
@@ -308,6 +311,20 @@ abstract class AppDatabase : RoomDatabase() {
                     "`note` TEXT NOT NULL DEFAULT '', `pool` TEXT NOT NULL DEFAULT 'ANNUAL', `createdAt` INTEGER NOT NULL DEFAULT 0)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_leave_ledger_epochDay` ON `leave_ledger` (`epochDay`)")
                 db.execSQL("ALTER TABLE day_extras ADD COLUMN compLeave INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /**
+         * Version 20 (1.23): 휴일대체 on a piece of holiday work [PAYX-30], a kind of day's own paid break [PAYX-32] and the
+         * 연차 사용 촉진 steps the worker wrote down [LEAVE-11].
+         */
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE day_extras ADD COLUMN substituteEpochDay INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE shift_types ADD COLUMN breakPaid INTEGER DEFAULT NULL")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `leave_notices` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `lapseEpochDay` INTEGER NOT NULL, " +
+                    "`step` TEXT NOT NULL, `epochDay` INTEGER NOT NULL, `note` TEXT NOT NULL DEFAULT '', `createdAt` INTEGER NOT NULL DEFAULT 0)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_leave_notices_lapseEpochDay` ON `leave_notices` (`lapseEpochDay`)")
             }
         }
 

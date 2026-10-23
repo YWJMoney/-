@@ -279,7 +279,10 @@ private fun PayResult(
     var amountFor by remember { mutableStateOf<com.bamnat.core.pay.MissingItem?>(null) }
     var addingItem by remember { mutableStateOf(false) }
     var addingBonus by remember { mutableStateOf(false) }
-    var walkthrough by rememberSaveable { mutableStateOf(true) }
+    // [PAYR-08] Once closed, never opened again by itself on this phone (notes/1.22-285/D.md M12).
+    val hintContext = androidx.compose.ui.platform.LocalContext.current
+    val hints = remember { com.bamnat.app.ui.calendar.HintStore(hintContext) }
+    var walkthrough by rememberSaveable { mutableStateOf(!hints.done(com.bamnat.app.ui.calendar.HintStore.PAY_WALKTHROUGH)) }
     // [PAYS-07] 우리 회사 항목 만들기, a rule made before being changed, and the item just made.
     var building by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<com.bamnat.core.pay.CustomRule?>(null) }
@@ -306,11 +309,15 @@ private fun PayResult(
 
         TotalCard(shown, range, unlocked, closed = closedSnap != null, onChecks = { checking = true },
             onEstimate = { estimate = Estimates.forMonth(shown, profile) })
+        // [PAYX-23] Night minutes split by a break with no start time: say how to make them exact.
+        if (closedSnap == null) Estimates.breakNote(result)?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
 
         underTotal()
 
         // [HRLY-04..HRLY-08] 예상 실수령 and the settings only a part-timer needs.
-        if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) HourlyPayCard(vm, profile, shown.total, unlocked, snapshot, month)
+        if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) HourlyPayCard(vm, profile, shown.total, unlocked, snapshot, month, result.holidayWeeks)
 
         // [PAYS-01] Allowances whose amount is not known are in no figure; each says how often it came up.
         if (closedSnap == null && result.missing.isNotEmpty()) {
@@ -334,17 +341,32 @@ private fun PayResult(
         }
 
         if (walkthrough && unlocked) {
-            Walkthrough(shown, onClose = { walkthrough = false })
+            Walkthrough(shown, onClose = { walkthrough = false; hints.markDone(com.bamnat.app.ui.calendar.HintStore.PAY_WALKTHROUGH) })
         }
 
-        SectionCard(title = "항목별 내역", trailing = { Text("누르면 계산 풀이", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }) {
+        // [PAYX-37] 풀이 모두 보기: every line's formula and the law it rests on, like a 명세서 with its working.
+        var explainAll by rememberSaveable { mutableStateOf(false) }
+        SectionCard(title = "항목별 내역", trailing = {
+            if (unlocked && shown.lines.isNotEmpty()) TextButton(onClick = { explainAll = !explainAll }) { Text(if (explainAll) "풀이 접기" else "풀이 모두 보기") }
+            else Text("누르면 계산 풀이", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }) {
             for (line in shown.lines) {
                 LineRow(line, unlocked, onEstimate = { estimate = Estimates.forLine(line, profile, shown.month) }) { if (unlocked) detail = line }
+                if (explainAll && unlocked) {
+                    Text(com.bamnat.core.pay.PayExplain.explain(line), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, bottom = 6.dp))
+                }
             }
             if (shown.lines.isEmpty()) Text("이 달은 계산할 근무가 없어요", style = MaterialTheme.typography.bodyMedium)
         }
 
         DayLedger(result, unlocked)
+
+        // [PAYX-38] 만약에: a raise, more nights or another 월 소정근로시간, worked out again.
+        if (unlocked && closedSnap == null && shown.lines.isNotEmpty()) WhatIfCard(profile, snapshot, month)
+        // [PAYX-42] 연말정산 미리보기, [PAYX-44] the new year's 최저임금 once.
+        if (unlocked && shown.lines.isNotEmpty()) YearEndCard(profile, snapshot, month)
+        RateNewsCard(profile, result.ordinaryHourly)
 
         LeaveCard(vm, snapshot, month, onOpenLeave)
 
@@ -410,8 +432,9 @@ private fun PayResult(
             profile.items.forEach { item ->
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 if (item.cadence == Cadence.BONUS) {
-                    BonusRow(item, profile.base.on(month).value, month, unlocked,
+                    BonusRow(item, profile.bonusBase(item, month), month, unlocked,
                         onOrdinary = { on -> vm.updateItem(item.id) { it.copy(ordinary = on) } },
+                        onBasis = { b -> vm.updateItem(item.id) { it.copy(bonusBasis = b) } },
                         onRemove = { vm.removeItem(item.id) })
                     return@forEach
                 }
@@ -509,7 +532,7 @@ private fun PayResult(
         }) { Text("계산이 이상해요 (오류 제보)") }
         Text(
             "회사 급여명세서와 다를 수 있어요. 세금과 4대보험을 빼기 전 금액이에요. 계산 기준: 요율 ${shown.ratesVersion}, " +
-                "공휴일 ${KoreanHolidays.VERSION}.",
+                "공휴일 ${KoreanHolidays.version}.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 24.dp),
@@ -868,13 +891,17 @@ private fun ValueRow(
 }
 
 /** A bonus line [PAY-05]: when it is paid, how much, and whether it raises the 통상시급. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun BonusRow(item: PayItem, base: Long, month: YearMonth, enabled: Boolean, onOrdinary: (Boolean) -> Unit, onRemove: () -> Unit) {
+private fun BonusRow(
+    item: PayItem, base: Long, month: YearMonth, enabled: Boolean, onOrdinary: (Boolean) -> Unit,
+    onBasis: (com.bamnat.core.pay.BonusBasis) -> Unit, onRemove: () -> Unit,
+) {
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text("${item.name} · ${item.paidWhen()}", style = MaterialTheme.typography.bodyLarge)
         Text(
-            won(item.bonusPayment(base, month)) + (item.percentOfBase?.let { " (기본급 ${PayCalculator.pct(it)})" } ?: "") +
-                " × 연 ${item.timesInYear(month.year)}회",
+            won(item.bonusPayment(base, month)) + (item.percentOfBase?.let { " (${item.bonusBasis.label} ${PayCalculator.pct(it)})" } ?: "") +
+                " × 연 ${item.yearlyTimes}회",
             style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
         )
         Text(
@@ -882,6 +909,15 @@ private fun BonusRow(item: PayItem, base: Long, month: YearMonth, enabled: Boole
             else "통상임금에서 뺐어요 (성과에 따라 달라지는 상여 등)",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // [PAYX-31] A percent bonus: of what, as the 취업규칙 says.
+        if (item.percentOfBase != null) {
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                com.bamnat.core.pay.BonusBasis.entries.forEach { b ->
+                    com.bamnat.app.ui.components.FilterChip(selected = item.bonusBasis == b, onClick = { onBasis(b) }, enabled = enabled,
+                        label = { Text("${b.label}의 %") })
+                }
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("통상임금에 포함", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
             Switch(checked = item.ordinary, onCheckedChange = onOrdinary, enabled = enabled)
@@ -1107,6 +1143,13 @@ private fun CloseMonthCard(vm: PayViewModel, result: MonthPay, closed: CalcSnaps
                 Text("지금 다시 계산하면 ${won(result.total)} (${if (diff > 0) "+" else "−"}${won(kotlin.math.abs(diff))})",
                     style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
             }
+            // [PAYX-39] Only the lines that changed since the 마감, and by how much.
+            if (diff != 0L) {
+                val changes = remember(closed, result) { com.bamnat.core.pay.SnapshotDiff.of(closed, result) }
+                changes.take(8).forEach { c ->
+                    Text("· ${c.text}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             if (closed.previous.isNotEmpty()) {
                 Text("이전 마감 ${closed.previous.size}개 보관 중 · 처음 ${won(closed.previous.last().total)}",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1123,7 +1166,7 @@ private fun CloseMonthCard(vm: PayViewModel, result: MonthPay, closed: CalcSnaps
 private fun reportProblem(context: android.content.Context, profile: PayProfile, result: MonthPay) {
     val text = buildString {
         appendLine("[밤낮 급여 계산 오류 제보]")
-        appendLine("월: ${result.month} · 요율 ${result.ratesVersion} · 공휴일 ${KoreanHolidays.VERSION} · 앱 ${com.bamnat.app.BuildConfig.VERSION_NAME}")
+        appendLine("월: ${result.month} · 요율 ${result.ratesVersion} · 공휴일 ${KoreanHolidays.version} · 앱 ${com.bamnat.app.BuildConfig.VERSION_NAME}")
         appendLine("직군: ${profile.occupation.label} · ${profile.wageLabel()} · " +
             "${if (profile.fiveOrMoreEmployees) "5인 이상" else "5인 미만"} · 소정 ${profile.monthlyHours}시간")
         profile.rules.summary(profile).forEach { appendLine("규칙: $it") }
@@ -1147,7 +1190,7 @@ private fun reportProblem(context: android.content.Context, profile: PayProfile,
  * rate, but no amount. The server refuses amounts in a question, so a line that still holds one is left out.
  */
 internal fun payCheck(profile: PayProfile, result: MonthPay): String = buildList {
-    add("월: ${result.month} · 요율 ${result.ratesVersion} · 공휴일 ${KoreanHolidays.VERSION} · 앱 ${com.bamnat.app.BuildConfig.VERSION_NAME}")
+    add("월: ${result.month} · 요율 ${result.ratesVersion} · 공휴일 ${KoreanHolidays.version} · 앱 ${com.bamnat.app.BuildConfig.VERSION_NAME}")
     add("직군: ${profile.occupation.label} · ${profile.wageLabel()} · " +
         "${if (profile.fiveOrMoreEmployees) "5인 이상" else "5인 미만"} · 소정 ${profile.monthlyHours}시간")
     profile.rules.summary(profile).forEach { add("규칙: $it") }

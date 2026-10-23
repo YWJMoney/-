@@ -48,6 +48,11 @@ data class DayMinutes(
     val extras: List<ExtraMinutes> = emptyList(),
     /** True when a guess was needed, e.g. extra work with no clock times. */
     val estimated: Boolean = false,
+    /**
+     * [PAYX-23] A break with no start time was spread over the shift in proportion, and that moved minutes
+     * between night and day or across midnight; the break's start time would make them exact.
+     */
+    val breakGuessed: Boolean = false,
 ) {
     val total: WorkMinutes get() = extras.fold(shift) { a, e -> a + e.minutes }
 
@@ -197,8 +202,10 @@ class MinuteClassifier(
         var shift = WorkMinutes()
         val extras = mutableListOf<ExtraMinutes>()
         var estimated = false
+        var breakGuessed = false
         for (p in pieces) {
             val split = split(p, r)
+            if (split.breakGuessed) breakGuessed = true
             if (p.from == null) estimated = true
             // Paid-holiday minutes: on the clock, or the whole piece by the day it belongs to.
             val onHoliday = if (options.holidayByClock && split.date != null) {
@@ -227,11 +234,11 @@ class MinuteClassifier(
             val m = WorkMinutes(regular, overtime, hWithin, onHoliday - hWithin, rWithin, rOver, split.night)
             if (isShift) shift = m else extras += ExtraMinutes(p.index, p.kindId, m, estimated = p.from == null)
         }
-        return DayMinutes(day.date, shift, extras, estimated)
+        return DayMinutes(day.date, shift, extras, estimated, breakGuessed)
     }
 
     /** Paid minutes of a piece on the date it starts and on the next date, and its night minutes. */
-    private class Split(val date: LocalDate?, val onFirst: Int, val onNext: Int, val night: Int)
+    private class Split(val date: LocalDate?, val onFirst: Int, val onNext: Int, val night: Int, val breakGuessed: Boolean = false)
 
     private fun split(p: Piece, r: Rates): Split {
         val from = p.from
@@ -252,7 +259,9 @@ class MinuteClassifier(
             }
         }
         val next = (grossNext * p.paid.toDouble() / gross).roundToInt().coerceIn(0, p.paid)
-        return Split(from.toLocalDate(), p.paid - next, next, (nightGross * p.paid.toDouble() / gross).roundToInt())
+        // Only a break that the proportion actually splits is a guess: one in a shift all by day and on one date is not.
+        val guessed = p.breakMinutes > 0 && (nightGross in 1 until gross || grossNext in 1 until gross)
+        return Split(from.toLocalDate(), p.paid - next, next, (nightGross * p.paid.toDouble() / gross).roundToInt(), guessed)
     }
 
     private fun minutesAfter(from: LocalDateTime, to: LocalDateTime, at: LocalDateTime): Int {

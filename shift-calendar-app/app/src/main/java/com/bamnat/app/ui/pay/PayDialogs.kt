@@ -75,6 +75,48 @@ internal fun MoneyField(
     )
 }
 
+/**
+ * [PAYX-23] 월 소정근로시간 typed straight in, for a company that uses e.g. 182 or 195 hours: digits only, kept
+ * within 100~320 hours, so it needs no row of − taps.
+ */
+@Composable
+internal fun MonthlyHoursField(hours: Int, onChange: (Int) -> Unit, modifier: Modifier = Modifier) {
+    var text by remember(hours) { mutableStateOf(hours.toString()) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { s ->
+            text = s.filter(Char::isDigit).take(3)
+            text.toIntOrNull()?.takeIf { it in 100..320 }?.let(onChange)
+        },
+        label = { Text("직접 넣기") },
+        suffix = { Text("시간") },
+        supportingText = { Text(if (text.toIntOrNull() in 100..320) "통상시급 = 통상임금 ÷ ${text}시간" else "100~320시간 사이로 넣어요") },
+        isError = text.toIntOrNull() !in 100..320,
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = modifier.width(180.dp),
+    )
+}
+
+/** [PAYX-25] An amount in won typed in, e.g. 작년 총급여; empty is null. */
+@Composable
+internal fun WonField(label: String, value: Long?, onChange: (Long?) -> Unit, modifier: Modifier = Modifier, hint: String? = null) {
+    var text by remember(value) { mutableStateOf(value?.toString().orEmpty()) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { s ->
+            text = s.filter(Char::isDigit).take(11)
+            onChange(text.toLongOrNull())
+        },
+        label = { Text(label) },
+        suffix = { Text("원") },
+        supportingText = { Text(text.toLongOrNull()?.let { won(it) } ?: hint.orEmpty()) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = modifier.fillMaxWidth(),
+    )
+}
+
 @Composable
 private fun Fact(label: String, value: String) {
     Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {

@@ -68,13 +68,15 @@ data class RosterRow(val label: String, val cells: Map<Int, DutyCell>, val guess
  */
 class DutyCodes(private val types: List<DutyType>) {
     private enum class Group(val words: Set<String>) {
-        DAY(setOf("D", "DAY", "DY", "데", "데이", "주", "주간", "낮")),
+        // [IMPORT-06] 경찰 (주·야·비·휴, 일근) and 소방 (당·비·휴) words, from no real roster yet (표본 없음, 확인 필요). A lone
+        // "일" is left out: it is also 일요일 in a weekday row.
+        DAY(setOf("D", "DAY", "DY", "데", "데이", "주", "주간", "낮", "일근", "주간근무", "상시", "상시근무")),
         EVENING(setOf("E", "EV", "EVE", "이", "이브", "이브닝", "오후", "저녁")),
-        NIGHT(setOf("N", "NT", "NIGHT", "나", "나이트", "야", "야간", "밤")),
+        NIGHT(setOf("N", "NT", "NIGHT", "나", "나이트", "야", "야간", "밤", "야간근무")),
         // [NURS-03] S is a middle shift (09~18) on the rosters seen, not an evening.
         MID(setOf("M", "MD", "MID", "미", "미드", "S", "중", "중간")),
-        DUTY(setOf("당", "당직", "당번")),
-        OFF(setOf("O", "OF", "OFF", "0", "휴", "휴무", "휴일", "X", "-", "/", "비", "비번", "오프", "OH", "공", "공휴", "PH", "주휴")),
+        DUTY(setOf("당", "당직", "당번", "당무", "당직근무", "24H")),
+        OFF(setOf("O", "OF", "OFF", "0", "휴", "휴무", "휴일", "X", "-", "/", "비", "비번", "오프", "OH", "공", "공휴", "PH", "주휴", "비번일", "휴무일")),
         // [NURS-03] Leave of every kind a roster writes: annual, sick, 생리휴가, 경조, 공가, 특별휴가.
         LEAVE(setOf("연", "연차", "V", "VA", "VAC", "AL", "휴가", "년", "년차", "SL", "병", "병가", "생", "생휴", "보", "보건", "경조", "공가", "특휴", "반", "반차")),
     }

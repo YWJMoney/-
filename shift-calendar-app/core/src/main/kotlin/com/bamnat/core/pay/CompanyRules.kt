@@ -270,6 +270,29 @@ enum class BreakPay(val label: String) {
     AS_WORK("근무시간"),
 }
 
+/**
+ * [PAYX-24] How a monthly 기본급 is cut for a month worked in part (입사·퇴사 달). 근로기준법 has no rule for it, so it
+ * is the company's (취업규칙·근로계약); 달력 일수 is the usual way and the default.
+ */
+enum class ProrationBasis(val label: String) {
+    /** 기본급 × 재직 일수 ÷ 그 달(급여기간) 달력 일수. */
+    CALENDAR_DAYS("달력 일수"),
+    /** 기본급 × 재직 중 소정근로일 ÷ 그 달 소정근로일 (근무표의 근무일). */
+    WORK_DAYS("소정근로일"),
+    /** 일할하지 않고 한 달 치를 줘요. */
+    NONE("일할 안 함"),
+}
+
+/**
+ * [PAYX-27] Where 원 단위 is cut. No law sets it (research/1.23-K-원문.md 10장); companies differ, so a payslip can be a
+ * few won apart. [HOURLY_FIRST] rounds 통상시급 to the won first and multiplies (the app's way so far); [AT_END] keeps the
+ * hourly rate exact (14,354.07원) and rounds each line once.
+ */
+enum class WonRounding(val label: String) {
+    HOURLY_FIRST("시급을 먼저 원 단위로"),
+    AT_END("줄마다 마지막에"),
+}
+
 /** Rounding of overtime minutes per day, e.g. 30분 단위 버림. */
 data class MinuteRounding(val unit: Int = 1, val rounding: Rounding = Rounding.DOWN) {
     fun apply(minutes: Int): Int {
@@ -347,6 +370,18 @@ data class CompanyRules(
     val breakPay: BreakPay = BreakPay.UNPAID,
     /** [LEAVE-02] How 연차 arises: by the hire date or 회계연도, made by the app or entered by hand. */
     val leave: com.bamnat.core.leave.LeavePolicy = com.bamnat.core.leave.LeavePolicy(),
+    /** [PAYX-24] 입사·퇴사 달 일할 방식. */
+    val proration: ProrationBasis = ProrationBasis.CALENDAR_DAYS,
+    /** [PAYX-27] 원 단위 끝처리. */
+    val wonRounding: WonRounding = WonRounding.HOURLY_FIRST,
+    /** [PAYX-29] 주 52시간 예외 유형, for the 근무시간 limits; the pay itself is set by the other rules. */
+    val hoursException: com.bamnat.core.hours.HoursException = com.bamnat.core.hours.HoursException.NONE,
+    /**
+     * [PAYX-33] 단시간근로자의 초과근로 가산: hours past the 소정근로시간 but inside 8시간·40시간 earn 50% on top
+     * (기간제 및 단시간근로자 보호 등에 관한 법률 제6조 제3항, 상시 5명 이상). Off by default: whether the worker is
+     * 단시간 (소정이 통상근로자보다 짧은지) only the contract tells.
+     */
+    val partTimePremium: Boolean = false,
 ) {
     fun extraRule(kind: Long?): ExtraRule? = kind?.let { extra[it] }?.takeUnless { it.isLegal }
 

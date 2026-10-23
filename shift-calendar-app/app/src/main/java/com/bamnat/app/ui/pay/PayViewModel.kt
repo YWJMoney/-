@@ -362,6 +362,10 @@ class PayViewModel(
         (1..12).map { asShown(calculate(profile, snapshot, YearMonth.of(year, it))) }
     }
 
+    /** [PAYX-45] One month as shown (마감 kept), for a bundle. */
+    fun monthPay(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): MonthPay? =
+        runCatching { asShown(calculate(profile, snapshot, month)) }.getOrNull()
+
     /** [PROV-01] Which report was made, never what it said. */
     fun reportMade(what: String) = container.telemetry.event("pay_report", what)
 

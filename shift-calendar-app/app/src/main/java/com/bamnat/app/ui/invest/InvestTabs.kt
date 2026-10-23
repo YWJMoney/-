@@ -151,6 +151,9 @@ internal fun HoldingsTab(state: InvestState, open: (InvestSheet) -> Unit) {
     }
     Text("평균단가는 산 금액에 수수료까지 더해 이동평균으로 계산해요. 증권사 앱과 조금 다를 수 있어요.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // [INV-35] The tax preview matches sales oldest first.
+    if (held.any { it.market.foreign }) Text(com.bamnat.core.invest.InvestTaxes.AVERAGE_VS_FIFO,
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable

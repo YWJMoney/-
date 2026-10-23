@@ -77,6 +77,7 @@ import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.tier.Gate
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.UndoMessage
+import com.bamnat.app.ui.components.FilterChip
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.core.money.AccountType
 import com.bamnat.core.money.BudgetLine
@@ -101,6 +102,7 @@ import com.bamnat.core.money.Reports
 import com.bamnat.core.money.Upcoming
 import com.bamnat.core.money.UpcomingPayments
 import com.bamnat.core.pay.PayCalculator
+import com.bamnat.core.pay.PayIncome
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.Dispatchers
@@ -172,8 +174,14 @@ class MoneyViewModel(
     /** [WORK-04] Wages come from the existing pay engine; null when it is not set up. [MON-01] Free for everyone. */
     fun payEstimate(style: WorkStyle?, profile: PayProfile?, snapshot: ScheduleSnapshot?, month: YearMonth): Long? {
         if (style?.usesPayEngine == false || profile == null || snapshot == null) return null
-        return runCatching { payCalculator.calculate(profile, month, snapshot.resolver::resolve).total }.getOrNull()
+        val gross = { m: YearMonth -> runCatching { payCalculator.calculate(profile, m, snapshot.resolver::resolve, checks = false).total }.getOrNull() }
+        // [LEDG-29] As the bank account sees it: the 실수령 that arrives on the pay day in this month.
+        if (profile.ledgerTakeHome) return PayIncome.paidIn(profile, month, gross).takeIf { it.isNotEmpty() }?.sumOf { it.net }
+        return gross(month)
     }
+
+    /** [LEDG-29] The 가계부 counts pay as 지급일 실수령 or as the month's 세전. */
+    fun setLedgerTakeHome(on: Boolean) = viewModelScope.launch { scope.pay.update { it.copy(ledgerTakeHome = on) } }
 
     /** The month with its wage estimate, off the main thread. */
     suspend fun month(book: MoneyBook, style: WorkStyle?, profile: PayProfile?, snapshot: ScheduleSnapshot?, month: YearMonth): MonthMoney =
@@ -480,7 +488,7 @@ fun MoneyScreen(
                 waiting = autoRecord.confirmFirst, onConfirm = vm::confirm, onDelete = vm::delete)
         },
         MoneyPart.RECENT to { RecentCard(recent, month, onOpen = { editing = it }, onAll = { vm.setView(LedgerView()); vm.showPage(MoneyViewModel.Page.LIST) }) },
-        MoneyPart.INCOME to { IncomeCard(m, style, hasProfile = profile != null, onOpenPay = onOpenPay) },
+        MoneyPart.INCOME to { IncomeCard(m, style, profile, onOpenPay = onOpenPay, onTakeHome = vm::setLedgerTakeHome) },
         // [RECV-02] Money owed: receivables and unpaid jobs together, the whole list one tap away.
         MoneyPart.OWED to {
             OwedCard(owed, today, onOpenAll = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.OWED) }) { o ->
@@ -650,11 +658,14 @@ private fun RecentCard(recent: List<MoneyEntry>, month: YearMonth, onOpen: (Mone
 }
 
 @Composable
-private fun IncomeCard(m: MonthMoney, style: WorkStyle?, hasProfile: Boolean, onOpenPay: () -> Unit) {
+internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, onOpenPay: () -> Unit, onTakeHome: (Boolean) -> Unit) {
+    val hasProfile = profile != null
+    val net = profile?.ledgerTakeHome == true
     SectionCard(title = "수입 내역") {
         if (style?.usesPayEngine != false) {
             val label = when {
                 m.payRecorded > 0 -> "급여 (받은 금액)"
+                m.payEstimate != null && net -> "급여 (지급일 실수령 예상)"
                 m.payEstimate != null -> "급여 (세전 예상)"
                 else -> "급여"
             }
@@ -667,6 +678,11 @@ private fun IncomeCard(m: MonthMoney, style: WorkStyle?, hasProfile: Boolean, on
                         modifier = Modifier.weight(1f))
                     TextButton(onClick = onOpenPay) { Text(if (hasProfile) "열기" else "정하기") }
                 }
+            }
+            // [LEDG-29] 세전 of the month's work, or the 실수령 that lands on the pay day (통장에 찍히는 돈).
+            if (hasProfile && m.payRecorded == 0L) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = !net, onClick = { onTakeHome(false) }, label = { Text("그달 일한 세전") })
+                FilterChip(selected = net, onClick = { onTakeHome(true) }, label = { Text("지급일 실수령") })
             }
         }
         if (style?.usesJobs == true || m.jobCount > 0) {

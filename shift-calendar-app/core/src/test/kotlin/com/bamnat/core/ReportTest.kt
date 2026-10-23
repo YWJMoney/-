@@ -76,8 +76,11 @@ class ReportTest {
         assertEquals("%,d원".format(months.sumOf { it.total }), table.total!![5])
         assertEquals("마감", table.rows[8][6].substringBefore(","))
         val csv = PayReport.yearCsv(months).removePrefix("﻿").trimEnd().split("\r\n")
-        assertEquals(13, csv.size)
+        // [PAYX-40] The 12 months, then what they rest on.
+        assertEquals(14, csv.size)
         assertTrue(csv[10].startsWith("2026-10,"))
+        assertTrue(csv.last(), csv.last().startsWith("계산 기준,") && csv.last().contains("공휴일") && csv.last().contains("근로기준법"))
+        assertTrue(doc.footer.contains("요율 "))
     }
 
     @Test fun figuresSortTheMinutes() {

@@ -77,7 +77,9 @@ class BackupManager(
                     .put("break", t.breakMinutes).put("off", t.isOff)
                     .put("alarm", t.alarmEnabled).put("alarmOffset", t.alarmOffsetMinutes)
                     .putOpt("sound", t.alarmSoundUri).put("order", t.sortOrder).put("alarms", t.alarmOffsets).putOpt("icon", t.icon)
-                    .putOpt("breakStart", t.breakStartMinute).putOpt("premium", t.premiumPercent.takeIf { it > 0 }),
+                    .putOpt("breakStart", t.breakStartMinute).putOpt("premium", t.premiumPercent.takeIf { it > 0 })
+                    // [PAYX-32] Version 20; only when set.
+                    .putOpt("breakPaid", t.breakPaid),
             )
         }
         into.put("shiftTypes", types)
@@ -109,7 +111,9 @@ class BackupManager(
                     .put("break", x.breakMinutes).putOpt("breakStart", x.breakStartMinute).put("minutes", x.minutes)
                     .putOpt("covered", x.coveredShiftTypeId).put("review", x.needsReview).put("pos", x.position)
                     // [PAYX-18] Version 19; only when set.
-                    .apply { if (x.compLeave) put("comp", true) })
+                    .apply { if (x.compLeave) put("comp", true) }
+                    // [PAYX-30] Version 20; only when set.
+                    .putOpt("sub", x.substituteEpochDay))
             }
         })
         // [LEAVE-01] The 연차 원장's stored rows (version 19). Uses stay on the days above.
@@ -118,6 +122,12 @@ class BackupManager(
                 put(JSONObject().put("day", l.epochDay).put("kind", l.kind).put("days", l.days)
                     .putOpt("expires", l.expiresEpochDay).putOpt("year", l.yearStartEpochDay)
                     .put("note", l.note).put("pool", l.pool).put("created", l.createdAt))
+            }
+        })
+        // [LEAVE-11] 연차 사용 촉진 steps (version 20).
+        into.put("leaveNotices", JSONArray().apply {
+            source.leaveNoticeDao().all().forEach { n ->
+                put(JSONObject().put("lapse", n.lapseEpochDay).put("step", n.step).put("day", n.epochDay).put("note", n.note).put("created", n.createdAt))
             }
         })
     }
@@ -362,6 +372,8 @@ class BackupManager(
         val types: List<ShiftTypeEntity>, val patterns: List<PatternEntity>, val days: List<DayEntryEntity>, val extras: List<DayExtraEntity>?,
         /** [LEAVE-01] Null for a backup from before the ledger. */
         val leave: List<com.bamnat.app.data.db.LeaveLedgerEntity>? = null,
+        /** [LEAVE-11] Null for a backup from before version 20. */
+        val notices: List<com.bamnat.app.data.db.LeaveNoticeEntity>? = null,
     )
 
     /**
@@ -377,6 +389,7 @@ class BackupManager(
                 alarmOffsetMinutes = o.optInt("alarmOffset", 60), alarmSoundUri = o.optStringOrNull("sound"),
                 sortOrder = o.optInt("order"), alarmOffsets = o.optString("alarms", ""), icon = o.optStringOrNull("icon"),
                 breakStartMinute = o.optIntOrNull("breakStart"), premiumPercent = o.optInt("premium").coerceIn(0, 300),
+                breakPaid = if (o.has("breakPaid") && !o.isNull("breakPaid")) o.optBoolean("breakPaid") else null,
             )
         }
         val types = read.ifEmpty { if (orDefaults) DefaultShiftTypes.all().map { it.toEntity() } else emptyList() }
@@ -412,6 +425,7 @@ class BackupManager(
                 breakStartMinute = o.optIntOrNull("breakStart"), minutes = o.optInt("minutes").coerceIn(0, 24 * 60),
                 coveredShiftTypeId = if (o.has("covered") && !o.isNull("covered")) o.getLong("covered") else null,
                 needsReview = o.optBoolean("review"), position = o.optInt("pos"), compLeave = o.optBoolean("comp"),
+                substituteEpochDay = if (o.has("sub") && !o.isNull("sub")) o.getLong("sub") else null,
             )
         }
         val leave = from.optJSONArray("leave")?.objects()?.mapNotNull { o ->
@@ -427,7 +441,15 @@ class BackupManager(
                 createdAt = o.optLong("created"),
             )
         }
-        return ScheduleRows(types, patterns, days, extras, leave)
+        val notices = from.optJSONArray("leaveNotices")?.objects()?.mapNotNull { o ->
+            // A step from a newer version is left out.
+            val step = com.bamnat.core.leave.LeavePromotion.Step.of(o.optString("step")) ?: return@mapNotNull null
+            com.bamnat.app.data.db.LeaveNoticeEntity(
+                lapseEpochDay = o.getLong("lapse"), step = step.name, epochDay = o.getLong("day"),
+                note = o.optString("note").take(200), createdAt = o.optLong("created"),
+            )
+        }
+        return ScheduleRows(types, patterns, days, extras, leave, notices)
     }
 
     /** Replaces [target]'s schedule with [rows]; the change log described the days being replaced [MKT-08]. */
@@ -438,6 +460,9 @@ class BackupManager(
         // [LEAVE-01] An older backup has no ledger; its 연차 in the pay setup moves in again (LeaveRepository).
         target.leaveLedgerDao().clear()
         rows.leave?.let { target.leaveLedgerDao().insertAll(it) }
+        // [LEAVE-11] An older backup has none: the phone's are cleared with the rest of the schedule.
+        target.leaveNoticeDao().clear()
+        rows.notices?.let { target.leaveNoticeDao().insertAll(it) }
         target.patternDao().clear()
         target.shiftTypeDao().clear()
         target.shiftTypeDao().insertAll(rows.types)

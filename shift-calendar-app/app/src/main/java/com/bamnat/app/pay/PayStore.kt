@@ -1,5 +1,9 @@
 package com.bamnat.app.pay
 
+import com.bamnat.core.hours.HoursException
+import com.bamnat.core.pay.BonusBasis
+import com.bamnat.core.pay.ProrationBasis
+import com.bamnat.core.pay.WonRounding
 import android.content.Context
 import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.pay.FlexPeriod
@@ -212,6 +216,11 @@ object PayCodec {
         .putOpt("publicGrade", p.publicGrade?.let { g ->
             JSONObject().put("grade", g.gradeId).put("step", g.step).putOpt("start", g.serviceStart?.toString()).put("onSite", g.onSite)
         })
+        // [PAYX-24][PAYX-25] 1.23; left out when not set so older files stay the same.
+        .putOpt("leaveDate", p.leaveDate?.toString())
+        .apply { if (p.productionWorker) put("production", true) }
+        .putOpt("previousYearPay", p.previousYearPay)
+        .apply { if (p.ledgerTakeHome) put("ledgerNet", true) }
 
     fun decode(o: JSONObject): PayProfile = PayProfile(
         // [PAYS-03] A job or wage type from a newer version reads as 직접 설정 and 월급제 rather than failing the file.
@@ -254,6 +263,10 @@ object PayCodec {
                 )
             }
         },
+        leaveDate = o.optString("leaveDate").takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
+        productionWorker = o.optBoolean("production", false),
+        previousYearPay = if (o.has("previousYearPay") && !o.isNull("previousYearPay")) o.optLong("previousYearPay").coerceAtLeast(0) else null,
+        ledgerTakeHome = o.optBoolean("ledgerNet", false),
     )
 
     /** [PAYS-06] One of the user's own rules. */
@@ -374,6 +387,11 @@ object PayCodec {
         .putOpt("nightStart", r.nightStart?.toString()).putOpt("nightEnd", r.nightEnd?.toString())
         // [PAYS-03] 감시·단속 승인, 5인 미만 회사가 주는 공휴일, 휴게 처리.
         .put("supervisory", r.supervisoryApproved).put("holidaysU5", r.holidaysUnderFive).put("breakPay", r.breakPay.name)
+        // [PAYX-24][PAYX-27][PAYX-29][PAYX-33] 1.23; each left out at its default.
+        .apply { if (r.proration != ProrationBasis.CALENDAR_DAYS) put("proration", r.proration.name) }
+        .apply { if (r.wonRounding != WonRounding.HOURLY_FIRST) put("wonRounding", r.wonRounding.name) }
+        .apply { if (r.hoursException != HoursException.NONE) put("hoursException", r.hoursException.name) }
+        .apply { if (r.partTimePremium) put("partTime50", true) }
         // [EXTRA-03] Keyed by kind id; 1.8 and earlier used OVERTIME / SPECIAL / COVER.
         .put("extraByShift", JSONObject().apply {
             r.extraByShift.forEach { (kind, byType) ->
@@ -408,6 +426,11 @@ object PayCodec {
         supervisoryApproved = o.optBoolean("supervisory", false),
         holidaysUnderFive = o.optBoolean("holidaysU5", false),
         breakPay = o.optString("breakPay").let { n -> BreakPay.entries.firstOrNull { it.name == n } } ?: BreakPay.UNPAID,
+        // A value from a newer version reads as the default.
+        proration = o.optString("proration").let { n -> ProrationBasis.entries.firstOrNull { it.name == n } } ?: ProrationBasis.CALENDAR_DAYS,
+        wonRounding = o.optString("wonRounding").let { n -> WonRounding.entries.firstOrNull { it.name == n } } ?: WonRounding.HOURLY_FIRST,
+        hoursException = HoursException.of(o.optString("hoursException")),
+        partTimePremium = o.optBoolean("partTime50", false),
         extra = o.optJSONObject("extra")?.let { x ->
             x.keys().asSequence().mapNotNull { key ->
                 val kind = kindId(key) ?: return@mapNotNull null
@@ -577,6 +600,8 @@ object PayCodec {
         .put("festivals", JSONArray(i.festivals.map { it.name })).put("festivalBefore", i.festivalMonthBefore)
         // [PAYS-03] Only when chosen: without it the allowance keeps its default (연장 for a 고정 연장수당).
         .putOpt("covers", i.covers?.let { c -> JSONArray(PayItem.COVERABLE.filter { it in c }.map { it.name }) })
+        // [PAYX-31] Only when not 기본급.
+        .apply { if (i.bonusBasis != BonusBasis.BASE) put("bonusBasis", i.bonusBasis.name) }
 
     private fun item(o: JSONObject): PayItem = PayItem(
         id = o.getString("id"),
@@ -594,6 +619,7 @@ object PayCodec {
         covers = o.optJSONArray("covers")?.let { a ->
             (0 until a.length()).mapNotNull { n -> PayItem.COVERABLE.firstOrNull { it.name == a.optString(n) } }.toSet()
         },
+        bonusBasis = o.optString("bonusBasis").let { n -> BonusBasis.entries.firstOrNull { it.name == n } } ?: BonusBasis.BASE,
     )
 
     private fun JSONArray?.objects(): List<JSONObject> =

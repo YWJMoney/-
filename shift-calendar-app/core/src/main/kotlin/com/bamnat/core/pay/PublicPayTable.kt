@@ -28,7 +28,8 @@ object PublicPayTable {
         val id: String get() = "${series.name}:$name"
     }
 
-    // 경장·소방교 are 8급 상당 and 순경·소방사 9급 상당 (공무원 보수 등의 업무지침, 원문 확인 필요).
+    // [PAYX-28] 경장·소방교 are 8급 상당 and 순경·소방사 9급 상당: 공무원보수규정 별표 34 (일반임기제 연봉등급 기준표, 8호 = 8급 =
+    // 경장·소방교), checked against 공무원보수 등의 업무지침 (예규 제226호) 별표 2 단가 경장 12,584원 = 2,922,200 × 60% ÷ 209 × 1.5.
     private val generalNames = listOf("1급", "2급", "3급", "4급", "5급", "6급", "7급", "8급", "9급")
     private val policeNames = listOf("치안정감", "치안감", "경무관", "총경", "경정", "경감", "경위", "경사", "경장", "순경")
     private val fireNames = listOf("소방정감", "소방감", "소방준감", "소방정", "소방령", "소방경", "소방위", "소방장", "소방교", "소방사")
@@ -47,7 +48,8 @@ object PublicPayTable {
         fun column(g: Grade): LongArray = if (g.series == Series.GENERAL) general[g.column] else policeFire[g.column]
     }
 
-    val tables: List<Table> = listOf(
+    /** [REMOTE-05] The tables written here; `remote/v1/publicpay.json` ships the same ([BUILT_IN_VERSION]). */
+    private val builtIn: List<Table> = listOf(
         Table(
             LocalDate.of(2026, 1, 1),
             "「공무원보수규정」 별표 3·별표 10 <개정 2026. 1. 2.> (국가법령정보센터, 2026-10-22 확인)",
@@ -76,6 +78,45 @@ object PublicPayTable {
             ),
         ),
     )
+
+    const val BUILT_IN_VERSION = 2026102301L
+
+    @Volatile private var remote: List<Table>? = null
+
+    /** The built-in tables, with a newer signed file's laid over them (same `from` replaced) [REMOTE-05]. */
+    val tables: List<Table> get() = remote ?: builtIn
+
+    /** [REMOTE-05] A new year's 봉급표 from a signed file, without an app update; null goes back to the built-in one. */
+    fun use(file: com.bamnat.core.remote.RemoteFile?) {
+        remote = null
+        if (file == null || file.version <= BUILT_IN_VERSION) return
+        val add = read(file)
+        remote = (builtIn.filter { b -> add.none { it.from == b.from } } + add).sortedBy { it.from }
+    }
+
+    /** Reads a `publicpay` file strictly: 9 일반직 and 10 경찰·소방 columns, each 호봉 at least the one before. */
+    fun read(f: com.bamnat.core.remote.RemoteFile): List<Table> {
+        fun bad(why: String): Nothing = throw com.bamnat.core.remote.RemoteFileException(why)
+        if (f.kind != com.bamnat.core.remote.RemoteFiles.PUBLICPAY) bad("kind ${f.kind}")
+        fun columns(v: List<Any?>, n: Int): List<LongArray> {
+            if (v.size != n) bad("columns")
+            return v.map { c ->
+                val l = (c as? List<*>)?.map { it as? Long ?: bad("value") } ?: bad("column")
+                if (l.isEmpty() || l.size > 40 || l.any { it < 1_000_000 || it > 20_000_000 } || l.zipWithNext().any { (a, b) -> b < a }) bad("column")
+                l.toLongArray()
+            }
+        }
+        val out = f.data.objs("tables").map { o ->
+            Table(
+                from = try { LocalDate.parse(o.str("from")) } catch (e: java.time.format.DateTimeParseException) { bad("from") },
+                source = o.strOr("source", ""),
+                general = columns(o.list("general"), generalNames.size),
+                policeFire = columns(o.list("policeFire"), policeNames.size),
+            )
+        }
+        if (out.isEmpty()) bad("tables")
+        return out
+    }
 
     /** The table in force on [on]; before the first one, the first. */
     fun table(on: LocalDate): Table = tables.lastOrNull { !it.from.isAfter(on) } ?: tables.first()

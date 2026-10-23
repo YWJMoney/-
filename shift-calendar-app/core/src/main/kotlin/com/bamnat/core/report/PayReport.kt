@@ -18,6 +18,17 @@ object PayReport {
     /** What the person and the pay are, e.g. "간호사 · 월급 320만 원"; the app's own words. */
     data class Who(val job: String, val wage: String)
 
+    /**
+     * [PAYX-40] What the figures rest on, for the page foot and the CSV's last rows: the rate table, the holiday list
+     * and the 간이세액표 by version, and the articles the lines use.
+     */
+    fun basisLine(ratesVersion: String, on: LocalDate): String = listOfNotNull(
+        "요율 $ratesVersion",
+        "공휴일 ${KoreanHolidays.version}",
+        com.bamnat.core.pay.WithholdingTable.on(on)?.from?.let { "간이세액표 $it 시행분" },
+        "근로기준법 제55조·제56조·제60조",
+    ).joinToString(" · ")
+
     const val NOTE = "밤낮 앱이 근무표와 입력한 급여 값으로 계산한 참고용 금액이에요. 세금과 4대보험을 빼기 전이고, 회사 급여명세서와 다를 수 있어요."
 
     fun kindName(kind: LineKind): String = when (kind) {
@@ -39,7 +50,7 @@ object PayReport {
             "급여 기간" to period(pay),
             pay.payDate?.let { "지급일" to date(it) },
             "통상시급" to won(pay.ordinaryHourly),
-            "계산 기준" to "요율 ${pay.ratesVersion}, 공휴일 ${KoreanHolidays.VERSION}",
+            "계산 기준" to "요율 ${pay.ratesVersion}, 공휴일 ${KoreanHolidays.version}",
             "만든 날" to date(made) + if (closed) " (마감한 달)" else "",
         ))
         blocks += ReportDoc.Heading("세전 예상 합계 ${won(pay.total)}" + if (pay.estimated) " (추정 포함)" else "")
@@ -70,7 +81,8 @@ object PayReport {
             pay.warnings.forEach { blocks += ReportDoc.Paragraph("• $it") }
         }
         blocks += ReportDoc.Paragraph(NOTE, small = true)
-        return ReportDoc("${m.year}년 ${m.monthValue}월 급여 리포트", blocks, footer = "밤낮 · ${m.year}년 ${m.monthValue}월 급여 · 참고용")
+        return ReportDoc("${m.year}년 ${m.monthValue}월 급여 리포트", blocks,
+            footer = "밤낮 · ${m.year}년 ${m.monthValue}월 급여 · 참고용 · " + basisLine(pay.ratesVersion, m.atDay(1)))
     }
 
     /** [PROV-01] The year month by month; [months] are the calculated or closed months of [year]. */
@@ -81,7 +93,7 @@ object PayReport {
         blocks += ReportDoc.Facts(listOf(
             "직업·급여" to "${who.job} · ${who.wage}",
             "기간" to (if (sorted.isEmpty()) "${year}년" else "${sorted.first().month.monthValue}월~${sorted.last().month.monthValue}월"),
-            "계산 기준" to "요율 ${sorted.lastOrNull()?.ratesVersion ?: "-"}, 공휴일 ${KoreanHolidays.VERSION}",
+            "계산 기준" to "요율 ${sorted.lastOrNull()?.ratesVersion ?: "-"}, 공휴일 ${KoreanHolidays.version}",
             "만든 날" to date(made),
         ))
         blocks += ReportDoc.Heading("${year}년 세전 예상 합계 ${won(total)}")
@@ -105,7 +117,8 @@ object PayReport {
             blocks += ReportDoc.Table(listOf("종류", "금액"), byKind.map { (k, v) -> listOf(kindName(k), won(v)) }, listOf(2f, 1.5f), right = setOf(1))
         }
         blocks += ReportDoc.Paragraph(NOTE, small = true)
-        return ReportDoc("${year}년 급여·근무 리포트", blocks, footer = "밤낮 · ${year}년 급여·근무 · 참고용")
+        return ReportDoc("${year}년 급여·근무 리포트", blocks,
+            footer = "밤낮 · ${year}년 급여·근무 · 참고용 · " + basisLine(sorted.lastOrNull()?.ratesVersion ?: "-", LocalDate.of(year, 12, 1)))
     }
 
     // ---- CSV ----
@@ -119,13 +132,14 @@ object PayReport {
         pay.lines.forEach { l ->
             add(listOf("항목", "", kindName(l.kind), Csv.text(l.label), l.minutes.takeIf { it > 0 }?.toString().orEmpty(),
                 l.hourly.takeIf { it > 0 }?.toString().orEmpty(), l.multiplier.takeIf { it > 0 }?.let(PayCalculator::pct).orEmpty(),
-                l.amount.toString(), Csv.text(l.formula), Csv.text(l.basis)))
+                l.amount.toString(), Csv.text(l.formula), Csv.text(com.bamnat.core.pay.PayExplain.basisOf(l))))
         }
         add(listOf("합계", "", "", "", "", "", "", pay.total.toString(), "", ""))
         worked(pay).forEach { (d, minutes) ->
             add(listOf("날짜", d.date.toString(), "", Csv.text((listOf(d.label) + d.extras).joinToString(", ")), minutes.worked.toString(), "", "",
                 d.amount.toString(), Csv.text(d.parts.joinToString(", ") { "${it.label} ${it.formula}" }), d.holidayName.orEmpty()))
         }
+        add(listOf("계산 기준", "", "", Csv.text(basisLine(pay.ratesVersion, pay.month.atDay(1))), "", "", "", "", "", ""))
     })
 
     fun yearCsv(months: List<MonthPay>, closed: Set<YearMonth> = emptySet()): String = Csv.write(buildList {
@@ -134,6 +148,9 @@ object PayReport {
             val f = figures(p)
             add(listOf(p.month.toString(), f.worked.toString(), f.night.toString(), f.overtime.toString(), f.holiday.toString(),
                 p.total.toString(), if (p.estimated) "예" else "아니요", if (p.month in closed) "예" else "아니요"))
+        }
+        months.maxByOrNull { it.month }?.let { last ->
+            add(listOf("계산 기준", Csv.text(basisLine(last.ratesVersion, last.month.atDay(1))), "", "", "", "", "", ""))
         }
     })
 
