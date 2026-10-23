@@ -1033,6 +1033,9 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
     val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.readFile(context, uri)
     }
+    // [CAL-47] A file opened from a messenger after the setup: read here, as 파일 불러오기 does.
+    val incoming by com.bamnat.app.IncomingFiles.file.collectAsStateWithLifecycle()
+    LaunchedEffect(incoming) { com.bamnat.app.IncomingFiles.take()?.let { vm.readFile(context, it) } }
     var askingPassword by remember { mutableStateOf(false) }
     if (askingPassword) {
         ExportPasswordDialog(

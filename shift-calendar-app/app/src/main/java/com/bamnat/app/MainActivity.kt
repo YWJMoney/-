@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
             appContainer.telemetry.event(DiagEvents.APP_OPEN)
             openLink(intent)
             NoticeLinks.read(intent)
+            IncomingFiles.read(intent) // [CAL-47]
         }
         enableEdgeToEdge()
         val container = appContainer

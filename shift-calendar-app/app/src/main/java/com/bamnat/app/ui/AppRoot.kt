@@ -392,6 +392,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 
     // [UX-04] A help answer, a search result or a screen's own "설정" opens the setting or screen it names.
     // A group of settings opens over an inner screen, so back returns there; a screen opens on top.
+    // [CAL-47] A file opened from outside: 설정 > 데이터, whose screen reads it and asks before changing anything.
+    val incomingFile by com.bamnat.app.IncomingFiles.file.collectAsStateWithLifecycle()
+    LaunchedEffect(incomingFile) {
+        if (incomingFile != null) SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.DATA)
+    }
     val settingsLink by SettingsLinks.target.collectAsStateWithLifecycle()
     LaunchedEffect(settingsLink) {
         when (val link = settingsLink ?: return@LaunchedEffect) {

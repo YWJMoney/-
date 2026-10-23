@@ -110,6 +110,9 @@ fun SetupHost(vm: SetupViewModel) {
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.readFile(context, uri)
     }
+    // [CAL-47] A file opened from a messenger before the setup is done starts here, as 파일로 시작하기 would.
+    val incoming by com.bamnat.app.IncomingFiles.file.collectAsStateWithLifecycle()
+    LaunchedEffect(incoming) { com.bamnat.app.IncomingFiles.take()?.let { vm.readFile(context, it) } }
     val onOpenFile = { openFile.launch(arrayOf(BackupManager.MIME_TYPE, CompanyShare.MIME_TYPE, "text/plain", "application/octet-stream")) }
     var searching by remember { mutableStateOf(false) }
     var longShifts by remember { mutableStateOf<List<ShiftType>>(emptyList()) }

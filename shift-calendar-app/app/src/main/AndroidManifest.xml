@@ -69,6 +69,26 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- [CAL-47] A 회사 근무 파일 or a backup opened or shared from a messenger or a file app
+                 (table in docs/HANDOFF.md). The file is read and asked about before anything changes. -->
+            <intent-filter android:label="@string/open_file_label">
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="application/vnd.bamnat+json" />
+            </intent-filter>
+            <intent-filter android:label="@string/open_file_label">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.bamnat" />
+                <data android:pathPattern=".*\\..*\\.bamnat" />
+            </intent-filter>
         </activity>
 
         <provider
