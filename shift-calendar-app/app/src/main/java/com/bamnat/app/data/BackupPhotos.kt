@@ -36,7 +36,50 @@ class BackupPhotos(
         return Size(files.size, files.sumOf { it.length() })
     }
 
-    /** The photos as a backup holds them; null when there are none. */
+    /**
+     * [REL-15] The photo files a backup of format 3 carries, as [BackupArchive] entries, up to [MAX_BYTES] in all
+     * like [export].
+     */
+    fun files(receiptNames: Collection<String>, contractNames: Map<String, Collection<String>>): List<BackupArchive.Photo> {
+        var left = MAX_BYTES
+        fun fits(f: File) = (f.length() <= left).also { if (it) left -= f.length() }
+        return receiptFiles(receiptNames).filter(::fits).map { BackupArchive.Photo(BackupArchive.RECEIPTS + it.name, it) } +
+            contractFiles(contractNames).flatMap { (id, files) ->
+                files.filter(::fits).map { BackupArchive.Photo("${BackupArchive.CONTRACTS}$id/${it.name}", it) }
+            }
+    }
+
+    /**
+     * [REL-15] Moves the photos a file of format 3 brought (entry → waiting file) to their folders, each written
+     * whole or not at all; one already on the phone stays. How many moved.
+     */
+    fun restoreFiles(waiting: Map<String, File>): Int {
+        var n = 0
+        for ((entry, file) in waiting) {
+            val (dir, name) = when {
+                entry.startsWith(BackupArchive.RECEIPTS) -> receipts to entry.removePrefix(BackupArchive.RECEIPTS)
+                entry.startsWith(BackupArchive.CONTRACTS) -> entry.removePrefix(BackupArchive.CONTRACTS).split('/')
+                    .takeIf { it.size == 2 && safe(it[0]) }?.let { contracts(it[0]) to it[1] } ?: continue
+                else -> continue
+            }
+            if (!safe(name)) continue
+            if (place(dir, name) { target -> file.renameTo(target) || runCatching { file.copyTo(target); true }.getOrDefault(false) }) n++
+        }
+        return n
+    }
+
+    /** Writes a photo beside its place first, then gives it its name, so a cut never leaves half a photo. */
+    private fun place(dir: File, name: String, write: (File) -> Boolean): Boolean {
+        val target = File(dir, name)
+        if (target.exists()) return false
+        return runCatching {
+            dir.mkdirs()
+            val part = File(dir, "$name.part").apply { delete() }
+            write(part) && part.renameTo(target).also { if (!it) part.delete() }
+        }.getOrDefault(false)
+    }
+
+    /** The photos as a backup of format 2 holds them; null when there are none. */
     fun export(receiptNames: Collection<String>, contractNames: Map<String, Collection<String>>): JSONObject? {
         var left = MAX_BYTES
         fun put(into: JSONObject, f: File) {
@@ -66,14 +109,9 @@ class BackupPhotos(
         fun write(dir: File, names: JSONObject) {
             for (name in names.keys()) {
                 if (!safe(name)) continue
-                val target = File(dir, name)
-                if (target.exists()) continue
+                if (File(dir, name).exists()) continue
                 val bytes = runCatching { Base64.getDecoder().decode(names.optString(name)) }.getOrNull() ?: continue
-                runCatching {
-                    dir.mkdirs()
-                    target.writeBytes(bytes)
-                    n++
-                }
+                if (place(dir, name) { it.writeBytes(bytes); true }) n++
             }
         }
         o.optJSONObject("receipts")?.let { write(receipts, it) }

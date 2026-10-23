@@ -267,10 +267,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
         viewModelScope.launch {
             _message.value = SettingsMessage(runCatching {
-                val json = container.backupManager.export()
-                val text = if (password == null) json else withContext(Dispatchers.Default) { container.backupManager.seal(json, password) }
+                // [REL-15] A file of format 3: the photos stream from their files, sealed as they go when there is a password.
                 withContext(Dispatchers.IO) {
-                    context.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(text.toByteArray()) }
+                    context.contentResolver.openOutputStream(uri, "wt")!!.use { container.backupManager.exportFile(it, password) }
                 }
                 container.telemetry.event(DiagEvents.BACKUP_EXPORT)
                 if (password == null) "백업 파일을 저장했어요" else "암호 건 백업을 저장했어요. 암호를 잊으면 열 수 없어요"
@@ -358,6 +357,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun cancelUnlock() {
         _locked.value = null
+        container.backupManager.putAway()
     }
 
     /** [COMM-00] A company file read and checked, waiting for the user to apply it. */
@@ -460,7 +460,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             runCatching {
                 val json = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)!!.use { it.readBytes().decodeToString() }
+                    context.contentResolver.openInputStream(uri)!!.use { container.backupManager.read(it) }
                 }
                 if (com.bamnat.app.data.CompanyShare.isCompanyFile(json)) {
                     _pendingCompany.value = json to container.companyShare.summarize(json)
@@ -476,6 +476,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun cancelRestore() {
         _pendingRestore.value = null
+        _locked.value = null
+        container.backupManager.putAway()
     }
 
     fun confirmRestore() {

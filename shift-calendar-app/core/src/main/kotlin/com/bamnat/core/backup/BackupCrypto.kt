@@ -1,7 +1,10 @@
 package com.bamnat.core.backup
 
+import java.io.InputStream
+import java.io.OutputStream
 import java.security.SecureRandom
 import javax.crypto.Cipher
+import javax.crypto.CipherOutputStream
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.PBEKeySpec
@@ -61,6 +64,43 @@ object BackupCrypto {
         cipher.doFinal(sealed.data)
     } catch (e: javax.crypto.AEADBadTagException) {
         throw WrongPassword()
+    }
+
+    /** [REL-15] A fresh 12-byte IV for [encrypting]. */
+    fun newIv(random: SecureRandom = SecureRandom()): ByteArray = ByteArray(12).also(random::nextBytes)
+
+    /**
+     * [REL-15] 327: the backup file of format 3 sealed as it is written, without the whole file in memory.
+     * Closing the stream writes the GCM tag.
+     */
+    fun encrypting(out: OutputStream, key: ByteArray, iv: ByteArray): OutputStream {
+        require(key.size == KEY_BITS / 8) { "key" }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG_BITS, iv))
+        return CipherOutputStream(out, cipher)
+    }
+
+    /**
+     * [REL-15] Opens what [encrypting] wrote into [out]. Nothing reaches [out] unless the tag checks out: a wrong
+     * password or a changed file throws [WrongPassword] and [out] stays empty.
+     */
+    fun decrypt(input: InputStream, key: ByteArray, iv: ByteArray, out: OutputStream) {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG_BITS, iv))
+        // GCM gives the plain bytes only after the tag is checked, so they are collected first.
+        val plain = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(64 * 1024)
+        try {
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                cipher.update(buf, 0, n)?.let { plain.write(it) }
+            }
+            plain.write(cipher.doFinal())
+        } catch (e: javax.crypto.AEADBadTagException) {
+            throw WrongPassword()
+        }
+        plain.writeTo(out)
     }
 
     private fun key(password: CharArray, salt: ByteArray, iterations: Int): SecretKeySpec {

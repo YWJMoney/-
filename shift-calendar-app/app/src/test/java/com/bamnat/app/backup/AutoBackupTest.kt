@@ -80,7 +80,8 @@ class AutoBackupTest {
         val auto = backup()
         val r = auto.turnOn(Uri.fromFile(file), password.toCharArray())
         assertTrue("$r", r is AutoBackup.Result.Ok)
-        val text = file.readText()
+        // [REL-15] A sealed file of format 3, opened the way 파일 불러오기 opens it.
+        val text = file.inputStream().use { c.backupManager.read(it) }
         assertEquals((r as AutoBackup.Result.Ok).bytes.toLong(), file.length())
         assertTrue(c.backupManager.isSealed(text))
         val json = c.backupManager.unseal(text, password.toCharArray())
@@ -147,7 +148,7 @@ class AutoBackupTest {
         // Somewhere else, with the same password.
         val other = File(app.filesDir, "other.json")
         assertTrue(auto.moveTo(Uri.fromFile(other)) is AutoBackup.Result.Ok)
-        assertTrue(c.backupManager.unseal(other.readText(), password.toCharArray()).isNotEmpty())
+        assertTrue(c.backupManager.unseal(other.inputStream().use { c.backupManager.read(it) }, password.toCharArray()).isNotEmpty())
         assertEquals("other.json", auto.state.value.name)
     }
 

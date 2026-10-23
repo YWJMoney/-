@@ -202,7 +202,7 @@ class SetupViewModel(
         viewModelScope.launch {
             runCatching {
                 val text = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)!!.use { it.readBytes().decodeToString() }
+                    context.contentResolver.openInputStream(uri)!!.use { c.backupManager.read(it) }
                 }
                 when {
                     CompanyShare.isCompanyFile(text) -> importCompany(text)
@@ -236,6 +236,7 @@ class SetupViewModel(
     fun cancelFile() {
         _locked.value = null
         _pendingRestore.value = null
+        c.backupManager.putAway()
     }
 
     /** The user's own backup: everything comes back as it was and the first setup is not needed. */

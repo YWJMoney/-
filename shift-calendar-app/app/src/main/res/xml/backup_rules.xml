@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Android 11 and below: Google auto backup [REL-04].
      Keeps the schedule database and settings; leaves out what only makes sense on this phone (alarm_state.xml is simply not included). -->
+<!-- [REL-15] Receipt photos stay out, as in data_extraction_rules.xml. -->
 <full-backup-content>
     <include domain="database" path="." />
     <include domain="sharedpref" path="settings.xml" />
     <include domain="file" path="." />
     <exclude domain="file" path="diag/" />
+    <exclude domain="file" path="receipts/" />
 </full-backup-content>
