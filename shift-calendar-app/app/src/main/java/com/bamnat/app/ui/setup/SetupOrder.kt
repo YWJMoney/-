@@ -416,7 +416,8 @@ internal fun SetupMonth(
             }
             WeekdayHeader(weekStart, Modifier.padding(start = WEEK_BAR_SPACE))
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val cellHeight = (maxWidth / 7 * 1.25f).coerceIn(60.dp, 92.dp) + cellTextGrowth()
+                // Same cell as 내 달력, so a holiday name under the shift has its line (a 60dp cell cut it off on a folded phone).
+                val cellHeight = (maxWidth / 7 * 1.3f).coerceIn(66.dp, 100.dp) + cellTextGrowth()
                 MonthGrid(
                     month = month,
                     snapshot = snapshot,
