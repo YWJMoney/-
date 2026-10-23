@@ -158,7 +158,10 @@ async function update(request, env, url, id) {
   const expiresAt = parsed.ttlDays == null ? record.expiresAt : expiry(parsed.ttlDays);
   if (Date.parse(expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
   const same = JSON.stringify(parsed.schedule) === JSON.stringify(record.schedule);
-  const next = { ...record, schedule: parsed.schedule, expiresAt, updatedAt: same ? record.updatedAt : new Date().toISOString() };
+  // [SHR-12] The ETag is built from updatedAt, so a change in the same millisecond as the last write
+  // must still move it forward, or a subscriber keeps getting 304 for a schedule that changed.
+  const stamp = new Date(Math.max(Date.now(), (Date.parse(record.updatedAt) || 0) + 1)).toISOString();
+  const next = { ...record, schedule: parsed.schedule, expiresAt, updatedAt: same ? record.updatedAt : stamp };
   await put(env, id, next);
   return json({ id, url: `${url.origin}/s/${id}`, expiresAt: next.expiresAt, updatedAt: next.updatedAt });
 }
