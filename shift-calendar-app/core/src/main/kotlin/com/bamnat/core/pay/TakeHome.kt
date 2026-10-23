@@ -84,6 +84,25 @@ object TakeHome {
         return TakeHomeResult(g, deductions, g - deductions.sumOf { it.second })
     }
 
+    /**
+     * [PAYX-23] The pay before tax whose [estimate] leaves [net] (실수령액), found by halving the range: for a payslip
+     * where only the amount paid into the account was typed. The deductions only grow with the pay, so the result
+     * is the smallest pay that leaves at least [net]; within 10원 of it, as each deduction is cut to 10원.
+     * [TaxMode.NONE] takes nothing off, so it is [net] itself.
+     */
+    fun grossFromNet(
+        net: Long, mode: TaxMode, dependents: Int = 1, on: LocalDate? = null, children: Int = 0, nonTaxable: Long = 0,
+    ): Long {
+        if (net <= 0 || mode == TaxMode.NONE) return net.coerceAtLeast(0)
+        var lo = net
+        var hi = net * 2 + 1_000_000
+        while (lo < hi) {
+            val mid = (lo + hi) / 2
+            if (estimate(mid, mode, dependents, on, children, nonTaxable).net >= net) hi = mid else lo = mid + 1
+        }
+        return lo
+    }
+
     /** 소득세법 시행령 제17조의2: 식사대 월 20만 원 이하 (식사를 따로 받지 않을 때). Each 비과세 allowance counts up to this. */
     const val NON_TAXABLE_LIMIT = 200_000L
 
@@ -96,11 +115,64 @@ object TakeHome {
             .sumOf { it.amount.on(month).value.coerceIn(0, NON_TAXABLE_LIMIT) }
 
     /**
+     * [PAYX-25] With [pay], also the 생산직 연장·야간·휴일 수당 비과세 ([productionFree]); [usedThisYear] is what earlier
+     * months of the year already took of its 연 240만원.
+     */
+    fun nonTaxable(profile: PayProfile, month: java.time.YearMonth, pay: MonthPay?, usedThisYear: Long = 0): Long =
+        nonTaxable(profile, month) + (pay?.let { productionFree(profile, it, usedThisYear).amount } ?: 0)
+
+    /** [PAYX-25] 소득세법 시행령 제17조 (대통령령 제36129호, 2026 귀속부터): 월정액급여 260만원 이하. */
+    const val PRODUCTION_MONTHLY_LIMIT = 2_600_000L
+    /** 직전 과세기간 총급여액 3,700만원 이하. */
+    const val PRODUCTION_PREVIOUS_YEAR_LIMIT = 37_000_000L
+    /** 연 240만원 (광산·일용근로자는 한도 없음, 이 앱은 그 경우를 따로 다루지 않아요). */
+    const val PRODUCTION_YEAR_LIMIT = 2_400_000L
+
+    /** [PAYX-25] The month's 생산직 비과세 and why it is what it is. */
+    data class ProductionFree(val amount: Long, val premiums: Long, val monthly: Long, val note: String)
+
+    /**
+     * [PAYX-25] 생산직 등 근로자의 연장·야간·휴일근로 급여 비과세 (소득세법 제12조 제3호 더목, 시행령 제17조, research/1.23-K-원문.md
+     * 1장): for a [PayProfile.productionWorker] whose 월정액급여 (정기 급여 less bonuses, 비과세 and the extra-work pay) is
+     * at most [PRODUCTION_MONTHLY_LIMIT] and whose last year's 총급여 is at most [PRODUCTION_PREVIOUS_YEAR_LIMIT] (not entered:
+     * taken as within), the month's 연장·야간·휴일 pay is not taxed, up to what is left of [PRODUCTION_YEAR_LIMIT].
+     */
+    fun productionFree(profile: PayProfile, pay: MonthPay, usedThisYear: Long = 0): ProductionFree {
+        val extraKinds = setOf(LineKind.OVERTIME, LineKind.NIGHT, LineKind.HOLIDAY)
+        val premiums = pay.lines.filter { it.kind in extraKinds }.sumOf { it.amount }.coerceAtLeast(0)
+        val bonusNames = profile.items.filter { it.cadence == Cadence.BONUS }.map { it.name }.toSet()
+        val monthly = pay.lines.filter { it.kind !in extraKinds && it.kind != LineKind.EXTRA && it.kind != LineKind.EXTRA_HOURS && it.label !in bonusNames }
+            .sumOf { it.amount } - nonTaxable(profile, pay.month)
+        if (!profile.productionWorker) return ProductionFree(0, premiums, monthly, "")
+        val previous = profile.previousYearPay
+        return when {
+            premiums == 0L -> ProductionFree(0, 0, monthly, "이번 달 연장·야간·휴일 수당이 없어요")
+            monthly > PRODUCTION_MONTHLY_LIMIT -> ProductionFree(0, premiums, monthly,
+                "월정액급여 ${won(monthly)}이 ${won(PRODUCTION_MONTHLY_LIMIT)}을 넘어 연장·야간 수당에 세금이 붙어요")
+            previous != null && previous > PRODUCTION_PREVIOUS_YEAR_LIMIT -> ProductionFree(0, premiums, monthly,
+                "작년 총급여 ${won(previous)}이 ${won(PRODUCTION_PREVIOUS_YEAR_LIMIT)}을 넘어 연장·야간 수당에 세금이 붙어요")
+            else -> {
+                val left = (PRODUCTION_YEAR_LIMIT - usedThisYear).coerceAtLeast(0)
+                val free = minOf(premiums, left)
+                ProductionFree(free, premiums, monthly, "생산직 연장·야간·휴일 수당 ${won(free)} 비과세 (연 ${won(PRODUCTION_YEAR_LIMIT)}까지" +
+                    (if (usedThisYear > 0) ", 올해 ${won(usedThisYear)} 씀" else "") + (if (previous == null) ", 작년 총급여는 3,700만 원 이하로 가정" else "") +
+                    ", 소득세법 시행령 제17조)")
+            }
+        }
+    }
+
+    /**
      * Names of the usual 비과세 allowances (소득세법 제12조 제3호 · 시행령 제12조·제17조의2: 식사대, 자가운전보조금,
      * 6세 이하 보육수당). A new allowance named so starts as 비과세, and only these show the switch.
      */
     fun looksNonTaxable(name: String): Boolean =
         listOf("식대", "식비", "중식", "석식", "자가운전", "차량유지", "보육", "육아").any { it in name.replace(" ", "") }
+
+    /**
+     * [PAYX-23] 국민연금 is estimated on this month's pay, but the 공단 sets 기준소득월액 once a year from last year's
+     * income for July to June (the year [RateTable.pensionBases] runs on), so the bill can differ; said wherever the 4대보험 lines show.
+     */
+    const val PENSION_NOTE = "국민연금은 이번 달 급여로 어림했어요. 실제 고지액은 작년 소득으로 정한 금액(7월부터 1년)이라 다를 수 있어요."
 
     const val TAX_LABEL = "근로소득세 (간이세액표)"
     const val LOCAL_TAX_LABEL = "지방소득세"

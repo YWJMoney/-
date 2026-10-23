@@ -103,6 +103,44 @@ object AttendanceImport {
         return out.values.sortedBy { it.date }
     }
 
+    /** [IMPORT-05] A cell [read] could not use: the sheet's row (1 = the first), the column's field, what it held, and why. */
+    data class Problem(val row: Int, val field: AttendanceField, val cell: String, val reason: String)
+
+    /**
+     * [IMPORT-05] Why rows were left out or cells not read, row by row, so the user can fix the file or the columns
+     * instead of guessing from a count. Empty rows are not problems; a later row of the same date wins and says so.
+     */
+    fun problems(rows: List<List<String>>, map: ColumnMap, defaultYear: Int, near: LocalDate? = null): List<Problem> {
+        fun cell(row: List<String>, f: AttendanceField) = map.columns[f]?.let { row.getOrNull(it) }.orEmpty().trim()
+        val out = ArrayList<Problem>()
+        val seen = HashMap<LocalDate, Int>()
+        rows.withIndex().drop(map.headerRow + 1).forEach { (i, row) ->
+            if (row.all { it.isBlank() }) return@forEach
+            val n = i + 1
+            val rawDate = cell(row, AttendanceField.DATE)
+            val date = parseDate(rawDate, defaultYear, near)
+            if (date == null) {
+                out += Problem(n, AttendanceField.DATE, rawDate, if (rawDate.isEmpty()) "날짜가 비어 있어 이 줄을 건너뛰었어요" else "날짜로 읽지 못해 이 줄을 건너뛰었어요")
+                return@forEach
+            }
+            seen.put(date, n)?.let { first -> out += Problem(n, AttendanceField.DATE, rawDate, "${first}번째 줄과 같은 날이라 이 줄로 바꿨어요") }
+            for (f in listOf(AttendanceField.START, AttendanceField.END)) {
+                val v = cell(row, f)
+                if (v.isNotEmpty() && parseTime(v) == null && kindOf(v).leave == null) out += Problem(n, f, v, "시각으로 읽지 못했어요 (예: 09:00, 18:30)")
+            }
+            for (f in listOf(AttendanceField.HOURS, AttendanceField.OVERTIME)) {
+                val v = cell(row, f)
+                if (v.isNotEmpty() && parseMinutes(v) == null) out += Problem(n, f, v, "시간으로 읽지 못했어요 (예: 8:30, 8.5, 510분)")
+            }
+            val start = parseTime(cell(row, AttendanceField.START))
+            val end = parseTime(cell(row, AttendanceField.END))
+            if ((start == null) != (end == null) && kindOf(cell(row, AttendanceField.KIND)).leave == null) {
+                out += Problem(n, if (start == null) AttendanceField.START else AttendanceField.END, "", "출근·퇴근 중 하나만 있어 근무 시각은 적지 않아요")
+            }
+        }
+        return out
+    }
+
     /** [DAYW-06] What a 구분 cell says: leave (연차·반차·반반차·병가·경조·공가), 결근, or nothing to write. */
     data class Kind(val leave: Leave? = null, val absent: Boolean = false)
 

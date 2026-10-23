@@ -31,6 +31,8 @@ internal object Estimates {
     const val HOLIDAY = "휴일에 일하면 어떻게 받는지 답하면 확정돼요."
     const val EXTRA_TIMES = "시간 없이 넣은 추가 근무가 있어요. 달력에서 그 근무에 시작·끝 시간을 넣으면 확정돼요."
     const val GENERIC = "앱이 짐작한 값이 들어 있어요. 명세서로 맞춰 보면 확정돼요."
+    /** [PAYX-23] A break with no start time spread over a night or midnight shift. */
+    const val BREAK = "휴게 시작 시각을 모르는 근무는 야간·자정 넘는 시간을 비율로 나눴어요. 근무 유형에 휴게 시작 시각을 넣으면 정확해져요."
 
     /** 기본급 (or 시급·일당) when the app guessed it or worked it out from a raise rule; null when it is the user's. */
     private fun base(profile: PayProfile, month: YearMonth): EstimateHint? {
@@ -66,6 +68,11 @@ internal object Estimates {
         return EstimateHint(GENERIC)
     }
 
+    /** [PAYX-23] The note under the total when a break's start time was guessed; null when none was. */
+    fun breakNote(result: MonthPay): String? = result.breakGuessedDays.size.takeIf { it > 0 }?.let { n ->
+        "휴게 시작 시각을 모르는 근무 ${n}일은 야간 시간을 비율로 나눴어요. 근무 유형에 휴게 시작 시각을 넣으면 정확해져요."
+    }
+
     /** The month as a whole (추정 포함 on the total): the first thing that, put in, settles the most. */
     fun forMonth(result: MonthPay, profile: PayProfile): EstimateHint {
         base(profile, result.month)?.let { return it }
@@ -75,6 +82,7 @@ internal object Estimates {
             return EstimateHint(HOLIDAY, checks = true)
         }
         if (result.minutes.any { it.estimated }) return EstimateHint(EXTRA_TIMES)
+        if (result.breakGuessedDays.isNotEmpty()) return EstimateHint(BREAK)
         return EstimateHint(GENERIC)
     }
 }

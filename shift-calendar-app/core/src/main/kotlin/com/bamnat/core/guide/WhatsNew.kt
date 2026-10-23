@@ -12,10 +12,19 @@ object WhatsNew {
     val releases: List<Release> = listOf(
         // [SIMPLE-03] Grouped by what it gives, each line opening its feature; every bundle's own lines are in
         // 계획/1.22-*-개발계획.md.
+        // 1.23.0: one line per bundle's gift (J·K·L·I here; M adds its own), each opening its feature
+        // (계획/1.23-*-개발계획.md). 1.22's rule of 6~8 lines holds here too.
         Release(34, "1.23.0", listOf(
-            // [VIS-03][UX-08][A11Y-04][SETUP-14][SET-05] Bundle J's line (계획/1.23-J-디자인통일-개발계획.md).
+            // [VIS-03][UX-08][A11Y-04][SETUP-14][SET-05] Bundle J.
             Line("글씨를 크게 키워도 버튼·탭이 잘리지 않고, 시간은 시작·끝·휴게를 한 창에서 골라요. 근무 알람은 한 번에 앞당기거나 늦춰요", "alarm.moveAll"),
-            // [CAL-43][WIDG-05][SCHED-03][SCHED-07] Bundle I's lines (계획/1.23-I-달력-위젯-워치-개발계획.md).
+            // Bundle K.
+            Line("‘내 월급 맞나요’: 명세서를 줄마다 맞춰 회사가 적게 준 줄과 앱에 빠진 줄을 나눠 보여 주고, 연말정산도 미리 어림해요", "pay.slipAudit"),
+            Line("연차 화면에 회사의 촉진 기록과 ‘없어지기 전에 쓰는 법’이 생기고, 원장을 PDF·CSV로 내보내요", "leave.promotionLog"),
+            // Bundle L (계획/1.23-L-서버-광장-알람-개발계획.md L2).
+            Line("‘밤낮 소식’: 문의 답·광장 소식·공지를 하루 한 번 알림 하나로 받아요. 못 보낸 문의·링크 변경은 인터넷이 되면 저절로 보내요", "plaza.news"),
+            Line("‘우리 조 모아 보기’: 6자 코드로 동료 근무를 한 주 나란히 봐요(설정 › 데이터)", "share.receive"),
+            Line("알람 점검에 지난 7일 성적표와 서버 연결 점검이 생기고, 보내는 것과 권한을 한눈에 봐요(설정 › 개인정보)", "alarm.check"),
+            // [CAL-43][WIDG-05][SCHED-03][SCHED-07] Bundle I.
             Line("날짜 메모에 ‘내일 야간 대근 7시’처럼 적으면 근무로 넣어 드려요. 순서가 밀린 날은 길게 눌러 그날부터 다시 맞춰요", "calendar.quickText"),
             Line("‘다음 근무까지’ 위젯이 생기고, 달력 위젯은 지난달·다음 달로 넘겨 봐요. 모든 조에서 맞바꿀 날도 찾아요", "widget.countdown"),
         )),

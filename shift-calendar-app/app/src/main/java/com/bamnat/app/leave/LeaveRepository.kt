@@ -7,6 +7,7 @@ import com.bamnat.app.data.db.toModel
 import com.bamnat.app.pay.PayStore
 import com.bamnat.core.leave.EntryKind
 import com.bamnat.core.leave.LeaveBasis
+import com.bamnat.core.leave.LeavePromotion
 import com.bamnat.core.leave.LeaveSources
 import com.bamnat.core.leave.LeaveSummary
 import com.bamnat.core.leave.LedgerEntry
@@ -56,6 +57,15 @@ class LeaveRepository(
     suspend fun update(entry: LedgerEntry) = dao.update(entry.toEntity(clock()))
 
     suspend fun delete(id: Long) = dao.delete(id)
+
+    private val notices = db.leaveNoticeDao()
+
+    /** [LEAVE-11] What the worker kept of the company's 사용 촉진 (제61조): the notices and plans, by lapse date. */
+    val promotion: Flow<List<LeavePromotion.Record>> = notices.observeAll().map { rows -> rows.mapNotNull { it.toModel() } }
+
+    suspend fun addNotice(record: LeavePromotion.Record): Long = notices.insert(record.copy(id = 0).toEntity(clock()))
+
+    suspend fun deleteNotice(id: Long) = notices.delete(id)
 
     /**
      * [LEAVE-01] Up to 1.21 the 연차 of the year and the 이월 were two numbers in the pay setup, counted from 1월 1일

@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.stats
 
+import com.bamnat.core.hours.shortRests
 import com.bamnat.app.ui.guide.FeatureCard
 import com.bamnat.app.appContainer
 import kotlinx.coroutines.withContext
@@ -215,8 +216,14 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                     .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
             }
         }.value
+        // [PAYX-25] The month's 비과세 with the 생산직 연장·야간 part, which needs the month's lines.
+        val payFree = produceState<Long?>(null, payProfile, snap, month) {
+            value = payProfile?.takeIf { pays && it.productionWorker }?.let { p ->
+                withContext(Dispatchers.Default) { com.bamnat.core.pay.TakeHome.nonTaxable(p, month, vm.monthPay(p, snap, month)) }
+            }
+        }.value
         // [SHFT-02][DAYW-02] A shift or day worker's first card.
-        WorkTypeFirstCard(style, vm.calendarId, snap, month, summary, payTotal, payProfile, columns)
+        WorkTypeFirstCard(style, vm.calendarId, snap, month, summary, payTotal, payProfile, columns, payFree)
 
         // [EXTRA-01] The four tiles add up to the total: the roster, extra work on working days, work on days off.
         val tiles: List<@Composable (Modifier) -> Unit> = listOf(
@@ -257,18 +264,36 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
         // [HRLY-09][HRLY-10][HRLY-11] 두 알바 비교, 근로계약서, 그만두는 날 정리.
         if (style == WorkStyle.HOURLY) FeatureCard("hourly.tools", vm.calendarId) { com.bamnat.app.ui.work.HourlyToolsCard(vm.calendarId, payProfile, snap) }
         // [SHFT-03][SHFT-04][DAYW-04][DAYW-05] Swaps, pay that came in, the 시간외 상한 and 징검다리 연휴.
-        WorkTypeMoreCards(style, vm.calendarId, snap, month, summary, payTotal, payProfile, book)
+        WorkTypeMoreCards(style, vm.calendarId, snap, month, summary, payTotal, payProfile, book, payFree)
 
         // [EXTRA-02] 주 52시간 (제53조), 64 under 탄력적 근로시간제; it does not apply under 5 employees.
+        // [PAYX-29] The company's 52시간 exception sets the week's limit (none for 선택적·특례·감시단속), and 특례 업종 checks the
+        // 11-hour rest instead.
         val profile = payProfile
+        val exception = profile?.rules?.hoursException ?: com.bamnat.core.hours.HoursException.NONE
         if (profile?.fiveOrMoreEmployees != false) {
-            val legalHours = if (profile?.flexPeriod != null && profile.scheduleIsRegular) 64 else 52
-            val overLegal = summary.weeks.filter { it.totalMinutes > legalHours * 60 }
-            if (overLegal.isNotEmpty()) {
+            val legalHours = when {
+                exception != com.bamnat.core.hours.HoursException.NONE -> exception.weeklyHours
+                profile?.flexPeriod != null && profile.scheduleIsRegular -> 64
+                else -> 52
+            }
+            val overLegal = legalHours?.let { h -> summary.weeks.filter { it.totalMinutes > h * 60 } }.orEmpty()
+            if (legalHours != null && overLegal.isNotEmpty()) {
                 WarningBanner(
                     "주 ${legalHours}시간을 넘은 주가 ${overLegal.size}번 있어요",
                     overLegal.joinToString(", ") { "${Fmt.shortDate(it.start)}주 ${HoursFormat.korean(it.totalMinutes)}" } +
-                        ". 연장근로는 한 주 12시간까지예요 (근로기준법 제53조). 참고용이에요.",
+                        ". " + (if (exception == com.bamnat.core.hours.HoursException.NONE) "연장근로는 한 주 12시간까지예요 (근로기준법 제53조)" else exception.note) + ". 참고용이에요.",
+                )
+            }
+            if (exception == com.bamnat.core.hours.HoursException.SPECIAL_INDUSTRY) {
+                val short = remember(snap, month) {
+                    com.bamnat.core.hours.WorkHoursCalculator.shortRests(snap.resolver.resolveRange(month.atDay(1).minusDays(1), month.atEndOfMonth()))
+                        .filter { java.time.YearMonth.from(it.first) == month }
+                }
+                if (short.isNotEmpty()) WarningBanner(
+                    "다음 근무까지 11시간을 못 쉰 날이 ${short.size}번 있어요",
+                    short.joinToString(", ") { (d, m) -> "${Fmt.shortDate(d)} (${HoursFormat.korean(m)})" } +
+                        ". 근로시간 특례 업종은 근무가 끝나고 11시간 이상 연속으로 쉬어야 해요 (근로기준법 제59조 제2항). 참고용이에요.",
                 )
             }
         }

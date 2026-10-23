@@ -137,6 +137,10 @@ class RemoteFilesStore(
                 RemoteFiles.RATES -> RateTable.use(f)
                 RemoteFiles.WAGES -> TradeWages.use(f)
                 RemoteFiles.TAXTABLE -> WithholdingTable.use(f)
+                RemoteFiles.PUBLICPAY -> com.bamnat.core.pay.PublicPayTable.use(f)
+                RemoteFiles.HOLIDAYS -> com.bamnat.core.holiday.KoreanHolidays.use(f)
+                RemoteFiles.TAXES -> com.bamnat.core.invest.InvestTaxes.use(f)
+                RemoteFiles.ALARM_GUIDE -> com.bamnat.core.remote.AlarmGuides.use(f)
             }
         }
     }

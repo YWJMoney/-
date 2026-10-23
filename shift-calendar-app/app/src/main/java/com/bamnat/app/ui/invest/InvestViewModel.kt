@@ -319,6 +319,10 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
             CsvKind.CASH -> InvestCsv.cash(s.book) to InvestCsv.fileName("cash", null, null)
             CsvKind.HOLDINGS -> InvestCsv.holdings(s.result) to InvestCsv.fileName("holdings", null, null)
             CsvKind.JOURNAL -> InvestCsv.journal(s.full) to InvestCsv.fileName("journal", null, null)
+            // [INV-37] Until May the year to report is last year's; after it, this year's so far.
+            CsvKind.TAX -> (if (s.today.monthValue <= 5) s.today.year - 1 else s.today.year).let { y ->
+                InvestCsv.taxReport(s.full, s.fullResult, y) to "bamnat-invest-tax-$y.csv"
+            }
         }
     }
 
@@ -345,4 +349,4 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
         state.value.fullResult.holdings.firstOrNull { it.accountId == accountId && it.key == key }?.quantity ?: 0.0
 }
 
-enum class CsvKind(val label: String) { TRADES("매매 기록"), CASH("입출금·배당"), HOLDINGS("보유 종목"), JOURNAL("투자일지") }
+enum class CsvKind(val label: String) { TRADES("매매 기록"), CASH("입출금·배당"), HOLDINGS("보유 종목"), JOURNAL("투자일지"), TAX("해외 주식 세금 신고 자료") }

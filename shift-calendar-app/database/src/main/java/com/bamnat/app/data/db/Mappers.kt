@@ -35,6 +35,7 @@ fun ShiftTypeEntity.toModel() = ShiftType(
     icon = icon,
     breakStart = if (isOff) null else breakStartMinute?.toLocalTime(),
     premiumPercent = premiumPercent.coerceIn(0, 300),
+    breakPaid = breakPaid,
 )
 
 fun ShiftType.toEntity() = ShiftTypeEntity(
@@ -55,6 +56,7 @@ fun ShiftType.toEntity() = ShiftTypeEntity(
     icon = icon,
     breakStartMinute = breakStart?.toMinuteOfDay(),
     premiumPercent = premiumPercent.coerceIn(0, 300),
+    breakPaid = breakPaid,
 )
 
 fun encodeSteps(steps: List<Long?>): String = steps.joinToString(",") { it?.toString() ?: "" }
@@ -148,6 +150,7 @@ fun DayExtraEntity.toModel() = ExtraEntry(
     coveredShiftId = coveredShiftTypeId,
     needsReview = needsReview,
     compLeave = compLeave,
+    substitute = substituteEpochDay?.let(LocalDate::ofEpochDay),
 )
 
 fun ExtraEntry.toEntity(epochDay: Long, position: Int) = DayExtraEntity(
@@ -163,6 +166,7 @@ fun ExtraEntry.toEntity(epochDay: Long, position: Int) = DayExtraEntity(
     needsReview = needsReview,
     position = position,
     compLeave = compLeave,
+    substituteEpochDay = substitute?.toEpochDay(),
 )
 
 /** [EXTRA-01] Days as the calendar sees them: each stored day with its extra work, and days that have only extra work. */

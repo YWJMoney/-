@@ -36,6 +36,11 @@ data class ShiftType(
     val icon: String? = null,
     /** [SHFT-01] This kind of day's own extra pay on top of the company's rules, in percent (야간 근무 수당 30%); 0 for none. */
     val premiumPercent: Int = 0,
+    /**
+     * [PAYX-32] This kind of day's break: true paid (유급 휴게), false unpaid, null as the company's rule says
+     * ([com.bamnat.core.pay.CompanyRules.breakPay]). E.g. a 야간 whose 1시간 휴게 is paid while the 주간's is not.
+     */
+    val breakPaid: Boolean? = null,
 ) {
     val hasTimes: Boolean get() = !isOff && start != null && end != null
 

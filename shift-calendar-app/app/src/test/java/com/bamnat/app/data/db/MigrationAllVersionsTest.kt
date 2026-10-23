@@ -30,7 +30,7 @@ import java.time.LocalDate
  * had is kept, and what it did not have gets the newest version's defaults. Room's own check of every
  * table runs on open. Then the upgraded data goes through a backup and back unchanged.
  *
- * The newest version is [AppDatabase.MIGRATIONS]' last step, so a new version (19 from 연차 원장) is tested
+ * The newest version is [AppDatabase.MIGRATIONS]' last step, so a new version (20 from 휴일대체·촉진 기록) is tested
  * from every older one as soon as its migration and schema file are in.
  */
 @RunWith(ParameterizedRobolectricTestRunner::class)
@@ -165,10 +165,10 @@ class MigrationAllVersionsTest(private val from: Int) {
         val ROWS: List<Pair<String, Map<String, Any?>>> = listOf(
             "shift_types" to mapOf("id" to 1, "name" to "주간", "label" to "주", "colorArgb" to 4280391411L, "startMinute" to 540, "endMinute" to 1080,
                 "breakMinutes" to 60, "isOff" to 0, "alarmEnabled" to 1, "alarmOffsetMinutes" to 90, "alarmSoundUri" to null, "sortOrder" to 0,
-                "alarmOffsets" to "90:1", "icon" to "sun", "breakStartMinute" to 720, "premiumPercent" to 0),
+                "alarmOffsets" to "90:1", "icon" to "sun", "breakStartMinute" to 720, "premiumPercent" to 0, "breakPaid" to null),
             "shift_types" to mapOf("id" to 2, "name" to "야간", "label" to "야", "colorArgb" to 4282664004L, "startMinute" to 1320, "endMinute" to 420,
                 "breakMinutes" to 60, "isOff" to 0, "alarmEnabled" to 0, "alarmOffsetMinutes" to 60, "alarmSoundUri" to "content://media/alarm/7",
-                "sortOrder" to 1, "alarmOffsets" to "60:1", "icon" to null, "breakStartMinute" to 120, "premiumPercent" to 50),
+                "sortOrder" to 1, "alarmOffsets" to "60:1", "icon" to null, "breakStartMinute" to 120, "premiumPercent" to 50, "breakPaid" to 1),
             "shift_types" to mapOf("id" to 3, "name" to "휴무", "label" to "휴", "colorArgb" to 4288585374L, "startMinute" to null, "endMinute" to null,
                 "breakMinutes" to 0, "isOff" to 1, "alarmEnabled" to 0, "alarmOffsetMinutes" to 60, "alarmSoundUri" to null, "sortOrder" to 2,
                 "alarmOffsets" to "60:1", "icon" to null, "breakStartMinute" to null, "premiumPercent" to 0),
@@ -183,7 +183,8 @@ class MigrationAllVersionsTest(private val from: Int) {
                 "customEndMinute" to 1140, "customBreakMinutes" to 60, "overtimeMinutes" to 0, "holidayWorkMinutes" to 0, "alarmSkipped" to 0,
                 "customAlarms" to null, "extraWork" to 0, "leave" to 1, "secondShiftTypeId" to null, "attendance" to 0, "swapWith" to ""),
             "day_extras" to mapOf("epochDay" to 20001, "kindId" to 3, "startMinute" to 540, "endMinute" to 1080, "breakMinutes" to 60,
-                "breakStartMinute" to 720, "minutes" to 0, "coveredShiftTypeId" to 1, "needsReview" to 0, "position" to 0),
+                "breakStartMinute" to 720, "minutes" to 0, "coveredShiftTypeId" to 1, "needsReview" to 0, "position" to 0,
+                "substituteEpochDay" to 20004),
             "day_extras" to mapOf("epochDay" to OVERTIME_DAY, "kindId" to 1, "startMinute" to null, "endMinute" to null, "breakMinutes" to 0,
                 "breakStartMinute" to null, "minutes" to 120, "coveredShiftTypeId" to null, "needsReview" to 0, "position" to 1),
             "memos" to mapOf("id" to 1, "epochDay" to 20001, "title" to "인수인계", "body" to "본문", "checklist" to "", "isChecklist" to 0,
@@ -231,6 +232,8 @@ class MigrationAllVersionsTest(private val from: Int) {
             // [LEAVE-01] Version 19's 연차 원장: no older version had it, so it arrives empty and takes this row on a fresh install.
             "leave_ledger" to mapOf("id" to 1, "epochDay" to 20454, "kind" to "CARRY", "days" to 2.5, "expiresEpochDay" to 20818,
                 "yearStartEpochDay" to null, "note" to "이월", "pool" to "ANNUAL", "createdAt" to 1),
+            // [LEAVE-11] Version 20's 연차 사용 촉진 기록, likewise new.
+            "leave_notices" to mapOf("id" to 1, "lapseEpochDay" to 20818, "step" to "FIRST_NOTICE", "epochDay" to 20636, "note" to "메일", "createdAt" to 1),
         )
 
         /**

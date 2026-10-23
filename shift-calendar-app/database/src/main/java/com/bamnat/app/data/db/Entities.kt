@@ -28,6 +28,8 @@ data class ShiftTypeEntity(
     @ColumnInfo(defaultValue = "NULL") val breakStartMinute: Int? = null,
     /** Version 17 [SHFT-01]. */
     @ColumnInfo(defaultValue = "0") val premiumPercent: Int = 0,
+    /** Version 20 [PAYX-32]: 1 paid break, 0 unpaid, null as the company's rule. */
+    @ColumnInfo(defaultValue = "NULL") val breakPaid: Boolean? = null,
 )
 
 /**
@@ -108,6 +110,8 @@ data class DayExtraEntity(
     @ColumnInfo(defaultValue = "0") val position: Int = 0,
     /** [PAYX-18] Version 19: paid in time off (보상휴가) instead of money. */
     @ColumnInfo(defaultValue = "0") val compLeave: Boolean = false,
+    /** [PAYX-30] Version 20: 휴일대체, the epoch day that became the holiday instead; null for none. */
+    @ColumnInfo(defaultValue = "NULL") val substituteEpochDay: Long? = null,
 )
 
 @Entity(tableName = "memos", indices = [Index("epochDay"), Index("updatedAt"), Index("deletedAt")])

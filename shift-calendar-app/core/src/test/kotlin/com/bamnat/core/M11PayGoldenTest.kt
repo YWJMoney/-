@@ -1,5 +1,7 @@
 package com.bamnat.core
 
+import com.bamnat.core.pay.WeeklyHoliday
+import java.time.DayOfWeek
 import com.bamnat.core.model.DayEntry
 import com.bamnat.core.model.ExtraEntry
 import com.bamnat.core.model.ExtraKind
@@ -363,7 +365,8 @@ class M11PayGoldenTest {
         val range = PayRange.of(asked, oct, r::resolve)
         val calc = PayCalculator()
         assertEquals(calc.calculate(asked, oct, r::resolve, checks = false).total, range.total)
-        assertEquals(keys, range.effects.map { it.key })
+        // [PAYX-23] The 주휴일 is not set either, so it comes with 쉬는 날 근무.
+        assertEquals(keys.toMutableList().apply { add(indexOf(Unknowns.REST_DAY_WORK) + 1, Unknowns.WEEKLY_HOLIDAY) }, range.effects.map { it.key })
         assertTrue(range.low < range.total && range.total < range.high)
         // 월 소정근로시간: the usual values and the roster's (주 28시간 → 146시간).
         val hours = range.effects.single { it.key == Unknowns.MONTHLY_HOURS }.unknown.answers.map { it.label }
@@ -372,19 +375,20 @@ class M11PayGoldenTest {
         val totals = mutableListOf<Long>()
         for (five in listOf(true, false)) for (holidays in listOf(true, false)) for (supervisory in listOf(false, true))
             for (regular in listOf(false, true)) for (restDay in RestDayWork.entries) for (breaks in BreakPay.entries)
-                for (monthlyHours in listOf(209, 226, 243, 146)) {
-                    val rules = asked.rules.copy(
+                for (monthlyHours in listOf(209, 226, 243, 146)) for (weekly in listOf<WeeklyHoliday>(WeeklyHoliday.Unknown, WeeklyHoliday.Fixed(DayOfWeek.SUNDAY))) {
+                    // [PAYX-23] 주휴일 not set: the 쉬는 날 근무 question also runs 일요일.
+                    val rules = asked.rules.copy(weeklyHoliday = weekly,
                         supervisoryApproved = supervisory, restDayWork = restDay, breakPay = breaks,
                         // 공휴일: 휴일 대체 or not at 5인 이상, given by the company or not below that.
                         publicHolidaysPaid = !five || holidays, holidaysUnderFive = !five && !holidays,
                     )
                     val truth = asked.copy(fiveOrMoreEmployees = five, scheduleIsRegular = regular, monthlyHours = monthlyHours, rules = rules)
                     val total = calc.calculate(truth, oct, r::resolve, checks = false).total
-                    assertTrue("$five $holidays $supervisory $regular $restDay $breaks $monthlyHours: $total not in ${range.low}..${range.high}",
+                    assertTrue("$five $holidays $supervisory $regular $restDay $breaks $monthlyHours $weekly: $total not in ${range.low}..${range.high}",
                         total in range.low..range.high)
                     totals += total
                 }
-        assertEquals(2 * 2 * 2 * 2 * 3 * 3 * 4, totals.size)
+        assertEquals(2 * 2 * 2 * 2 * 3 * 3 * 4 * 2, totals.size)
         // And no wider than it has to be: the lowest and the highest answers are the bounds.
         assertEquals(totals.min(), range.low)
         assertEquals(totals.max(), range.high)

@@ -627,6 +627,50 @@ ALRM-02,"자가 진단: 서버 연결 점검 카드, 동의·권한 요약 한 �
 SRV-10,"밤낮 소식 다이제스트 한 번 묻기, 휴식 규칙 넛지, 점검 리포트 공유, 두 달 이상 확인됨 배지, 한도 90% 자동 쉬기 (순번 321)",2 (1.23.0),완료,,"서버 GET /api/digest·checkedLong·autoRest·meter, core BamnatNews·RestNudge, 다음 알람 줄·월 요약 휴식 점검 N건, 점검 보고 보내기(QR은 하지 않음: 라이브러리 없음·보고 길이); test/digest, LServerAlarmTest"
 SHR-14,"익명 우리 조 모아 보기: 6자 모임 코드로 공유 링크 묶기, 링크 id 목록만, 나란히 보기 (순번 322, D54)",2 (1.23.0),완료,,"공유 서버 /api/groups(test/worker), ShareGroup·ShareGroupStore·ShareGroupBoard, ShareGroupScreen(설정 › 데이터 › 우리 조 모아 보기); LShareInquiryTest; 화면 사진 630~635"
 PRIV-02,"개인정보 처리방침 2.9: 사용 통계 18가지, 링크 묶음, 내린 이유 보관, OCR 비내장형, 글쓴이 표시 키 (게시 2026-11-03, 시행 2026-11-21, 순번 322, D57)",2 (1.23.0),완료,,"privacy/index.html 2.9(1-11 새 항, OCR은 M 전환 전이라 그대로), legal/개인정보처리방침-2.9.html·2.9-바뀐-곳.md, docs/play-data-safety.md 1.23.0장; LegalPagesTest.thePrivacyPolicyCoversGroups…"
+PAYX-23,"순번 306 급여 S 묶음 → 최저임금 글귀를 쓴 요율 해로·두 해 겹침 한 줄, 상여 연간 횟수(설 두 번 해), 주휴일 모름 가정 일치, 국민연금 글귀, 월 소정시간 직접 입력, 휴게 시각 유도, 13분할 통상임금 질문, 실수령 명세서 역산",2 (1.23.0),완료,,"1.23 K b9907dc: PayCalculator 최저임금 글귀 요율 해·두 해 겹침, 상여 그 해 지급 달, 주휴일 모름 PayRange, 국민연금 글귀, 1/13 Unknowns, 실수령 역산 후보; K306Test"
+IMPORT-04,"순번 306 가져오기 경계 → 출퇴근 24:00은 다음 날 0시, 엑셀 1904 날짜 체계, ICS 종일 일정 끝 날",2 (1.23.0),완료,,"1.23 K b9907dc: 24:00 다음 날 0시, xlsx date1904, ICS 종일 끝 날 배타; K306Test"
+LEDG-28,"순번 306 가계부 → 나눠 내기 합이 원금과 같음, 상호 CU 단어 경계",2 (1.23.0),완료,,"1.23 K b9907dc: 나눠 내기 합=원금, CU 단어 경계; K306Test"
+INV-35,순번 306 투자 → 평단(이동평균)과 세금(먼저 산 것부터)이 다른 이유 설명,2 (1.23.0),완료,,1.23 K b9907dc: 보유 화면 평단(이동평균)·세금(먼저 산 것부터) 차이 한 줄
+REMOTE-04,"순번 306 원격 → 신뢰 공개키 2개(키 교체 대비), 모르는 종류 무시 시험",2 (1.23.0),완료,,"1.23 K b9907dc: RemoteKeys.TRUSTED 2번째 공개키 자리, 모르는 kind 무시; RemoteDataTest"
+PAYR-08,"순번 306 체험 → 급여 화면 첫 풀이(이렇게 계산해요)는 한 번 닫으면 다시 안 열기(M12), 무료 체험 결제 고지·동의(전자상거래법 제13조 제6항) 점검",2 (1.23.0),완료,,"1.23 K b9907dc: 체험 시작 결제 고지 1회 점검(전자상거래법 제13조 제6항), 첫 풀이 한 번 닫으면 안 열기"
+PAYX-24,"순번 307 입사·퇴사 달 일할 → 퇴사일, 회사 규정 일할 방식(법 기준 없음, 확인 필요)",2 (1.23.0),완료,,"1.23 K: PayProfile.leaveDate·ProrationBasis(달력·소정근로일·안 함, 법 기준 없음 확인 필요), PayCodecTest 왕복, 골든"
+PAYX-25,순번 307 생산직 연장·야간·휴일수당 비과세(소득세법 제12조 제3호 더목·시행령 제17조),2 (1.23.0),완료,,"1.23 K: 생산직 비과세(시행령 제17조 월정액 260만·직전 총급여 3,700만·연 240만), TakeHome; K307 시험"
+PAYX-26,"순번 307 포괄임금 → 고정 연장수당이 덮는 범위(휴일은 따로 묻기), 금액 미분리 포괄 월급 역산(추정)",2 (1.23.0),완료,,"1.23 K: 고정 연장수당이 연장·야간만 덮고 휴일은 질문, InclusiveGuess T÷(209+1.5N) 추정; 골든"
+PAYX-27,순번 307 원 단위 끝처리 회사 규정(시급 먼저 반올림 / 끝에서 반올림),2 (1.23.0),완료,,"1.23 K: WonRounding(HourlyFirst·AtEnd), 기본은 지금 방식; 골든"
+PAYX-28,"순번 307 공무원 → 토·일 기본 휴일, 비현업 하루 4시간 상한, 상당 계급 표기",2 (1.23.0),조건부,G-LAW-CHECK,"1.23 K: 공무원 토·일 기본 휴일, 경장·소방교=8급 상당 표기. 비현업 1일 4시간 상한은 규정에서 못 찾아 확인 필요(구현 안 함)"
+PAYX-29,"순번 307·311 주 52시간 예외 유형(탄력·선택·특별연장·특례·감시단속) 한도와 경고, 주 기준 시험",2 (1.23.0),완료,,"1.23 K: HoursException(탄력·선택·특별연장·특례·감시단속) 한도·경고, 11시간 휴식; WorkHoursCalculatorTest"
+PAYX-30,"순번 307 휴일근무 건마다 휴일대체(대체일, 6일 이내 검사), DB 20",2 (1.23.0),완료,,"1.23 K: DB 20 day_extras.substituteEpochDay, 6일 이내 검사; MigrationAllVersionsTest, 골든"
+PAYX-31,순번 307 상여 기준 금액 선택(기본급 / 기본급+고정수당 / 통상임금),2 (1.23.0),완료,,"1.23 K: 상여 기준(기본급·기본급+고정수당·통상임금), 코덱 왕복, 골든"
+PAYX-32,순번 307 근무 유형별 유급 휴게,2 (1.23.0),완료,,"1.23 K: 근무 종류별 유급 휴게(DB 20), 시험"
+PAYX-33,순번 307 단시간 근로자 초과근로 50% 가산(기간제법 제6조 제3항),2 (1.23.0),완료,,1.23 K: 단시간 소정 넘는 시간 50%(기간제법 제6조 제3항) 토글; 골든
+PAYX-34,순번 307 월 소정시간 180시간 칩,2 (1.23.0),완료,,1.23 K: 월 소정시간 180시간 칩
+LEAVE-07,순번 308 옛 연차 계산(LeaveBook) 숫자 퇴출 → 모든 화면이 연차 원장 요약,2 (1.23.0),완료,,1.23 K: 모든 화면이 연차 원장 요약(LeaveBook 숫자 퇴출); LeaveLedgerAppTest
+LEAVE-08,"순번 308 회계연도 기준 가산 연차 기산, 월 개근 메모",2 (1.23.0),완료,,"1.23 K: 회계연도 가산 연차 기산(근로기준과-5802), 월 개근 메모; LeaveAccrualTest"
+LEAVE-09,"순번 308 5인 미만 안내, 단시간 1일 통상임금",2 (1.23.0),완료,,"1.23 K: 5인 미만 안내(RulesCard), 단시간 1일 통상임금; K308Test"
+LEAVE-10,순번 308 연차 원장 CSV·PDF 내보내기,2 (1.23.0),완료,,"1.23 K: LeaveExport csv·doc(PDF), 연차 화면 PDF·CSV 버튼; K308Test"
+LEAVE-11,"순번 308 연차 사용 촉진 절차 체크리스트(제61조), DB 20",2 (1.23.0),완료,,"1.23 K: DB 20 leave_notices, PromotionCard 1차 통보·시기 지정·회사 지정, 백업 왕복; LeaveLedgerAppTest"
+LEAVE-12,"순번 308 시간 단위 연차(2027-06-10 시행) 자료 구조 준비, 조문 번호 이동 운영 달력",2 (1.23.0),조건부,G-LAW-CHECK,"1.23 K: HourlyLeave 자료 구조(2027-06-10, 시행령 단위 확인 필요, 화면 없음). 조문 번호 이동 운영 달력 줄은 통합에 넘김"
+LEAVE-13,"순번 308 연차 쓰기 최적화(소멸 전 연휴·비번 옆, 급여 영향)",2 (1.23.0),완료,,"1.23 K: LeavePlanner + PlanCard(쉬는 날 옆, 급여 영향 글귀); K308Test"
+LEDG-29,순번 309 가계부 급여를 지급월 실수령으로 보기,2 (1.23.0),완료,,"1.23 K: PayIncome.paidIn, 돈 탭 IncomeCard 그달 세전/지급일 실수령 칩, PayProfile.ledgerTakeHome; K309Test"
+INV-36,"순번 309 투자 세율을 서명한 원격 파일로(taxes.json), 코인 과세 확인 필요",2 (1.23.0),완료,,"1.23 K: remote/v1/taxes.json(서명 필요) + InvestTaxes.rules·use·read, 코인 2027 확인 필요; K309Test 내장==원격"
+INV-37,순번 309 세무 신고용 CSV(연도별 매도 손익·환율),2 (1.23.0),완료,,"1.23 K: InvestCsv.taxReport(해외 매도 먼저 산 것부터, ISA·연금 빼기), 내보내기 종류; K309Test"
+IMPORT-05,순번 309 가져오기 실패 사유 표(행·열·이유),2 (1.23.0),완료,,"1.23 K: AttendanceImport.problems(행·열·칸·이유), 읽지 못한 칸 카드; K309Test"
+IMPORT-06,"순번 309 경찰·소방 듀티 코드 사전(표본 없음, 확인 필요)",2 (1.23.0),조건부,G-LAW-CHECK,1.23 K: DutyRoster 경찰·소방 코드 사전(일근·당무·비번일 등). 실제 표본 없어 확인 필요; K309Test
+PAYX-35,순번 309 시급제 주휴 조건 주 단위 칩,2 (1.23.0),완료,,"1.23 K: MonthPay.holidayWeeks, 시급 카드 주마다 주휴 칩; K309Test"
+PAYX-36,순번 309 명세서 공제 5줄을 실수령 추정과 나란히,2 (1.23.0),완료,,1.23 K: SlipAudit.deductions 공제 5줄과 실수령 예상 나란히; K309Test
+REMOTE-05,"순번 310 공무원 봉급표·공휴일표 원격 종류, 내장표와 같음 시험",2 (1.23.0),완료,,"1.23 K: remote/v1/publicpay.json·holidays.json(서명 필요), PublicPayTable·KoreanHolidays use/read; K310Test 내장==원격"
+REMOTE-06,"순번 310 마감 스냅샷 요율 판, 2027 고시 다시 찾기",2 (1.23.0),조건부,G-LAW-CHECK,"1.23 K: PayCalculator가 원격 요율을 따르게 고침, 스냅샷 요율 판 반영; K310Test. 2027 장기요양 요율은 아직 미정(확인 필요)"
+REMOTE-07,순번 310 알람 안내(alarm-guide) 원격 종류 틀,2 (1.23.0),완료,,"1.23 K: remote/v1/alarm-guide.json 틀(서명 필요), AlarmGuides; K310Test. 내용은 L"
+PAYX-37,순번 311 급여 줄마다 법 근거·수식 설명,2 (1.23.0),완료,,"1.23 K: PayExplain.explain(줄마다 법 근거·수식), 풀이 모두 보기; K312Test"
+PAYX-38,순번 311 값 바꿔 보기 슬라이더(12개월 미리보기),2 (1.23.0),완료,,1.23 K: WhatIf + WhatIfCard(인상률·야간·월 소정시간); K312Test
+PAYX-39,순번 311 마감 이력 줄 단위 비교,2 (1.23.0),완료,,"1.23 K: SnapshotDiff 줄 단위 비교, 달 마감 카드; K312Test"
+PAYX-40,순번 311 급여 PDF·CSV 꼬리말(법 근거·요율 판),2 (1.23.0),완료,,1.23 K: PayReport.basisLine PDF 꼬리말·CSV 계산 기준 줄; ReportTest
+PAYX-41,"순번 312 내 월급 맞나요(공제 5줄 대조, 두 바구니, 법 아래 경고와 신고 안내, PDF)",2 (1.23.0),완료,,"1.23 K: SlipAudit.gaps 두 바구니, 법 아래 경고와 1350 안내, SlipAuditCard PDF; K309Test·K312Test"
+PAYX-42,순번 312 연말정산 미리보기(결정세액 근사),2 (1.23.0),완료,,"1.23 K: YearEndPreview(근로소득공제·기본세율·세액공제, 자녀세액공제 확인 필요, 빠진 공제 명시), YearEndCard; K312Test"
+PAYX-43,순번 312 근무 바꾸기 급여 영향,2 (1.23.0),완료,,"1.23 K: SwapImpact.of(급여 차이·가장 긴 주·한도 넘음), I가 쓸 수 있음; K312Test"
+PAYX-44,순번 312 최저임금·법 개정 알림 카드 한 번,2 (1.23.0),완료,,1.23 K: RateNews.of + RateNewsCard 한 번(HintStore); K312Test
+PAYX-45,순번 312 노무사에게 보낼 묶음(사람이 읽는 파일),2 (1.23.0),완료,,"1.23 K: CounselBundle(PDF·CSV·주별 CSV·연차 CSV·README) zip, 상담용 묶음 버튼; K312Test"
+PAYX-46,순번 312 명세서 사진으로 급여 설정 초안(2단계),2 (1.23.0),완료,,1.23 K: PayWizard.fillFrom 못 읽은 수당은 꺼진 채 더하고 안내; K312Test
 ADMIN-15,"관리자 서버 안정(순번 290, 2026-10-23): 로그인 전체 잠금 완화·health 최소 공개·미끄러지는 세션·audit 정리 분리와 인덱스·초대 토큰 POST·중복 답 막기·거절 되돌리기",확장 M12 (1.23.0),완료,,"company-worker src/index.js(health 나눔·/server, 로그인 잠금 네트워크별, 미끄러지는 세션, audit 정리 prune로, POST /join/info, 거절 reopen); test/admin-server.test.mjs"
 ADMIN-16,관리자 목록 효율(순번 291): 커서 페이지·ETag/304·문의 여러 개 처리·자주 쓰는 답 고치기·주제·치환·쓰인 횟수·답 쓰는 중 표시,확장 M12 (1.23.0),완료,,src/index.js(커서 페이지·ETag 304·inquiries/bulk·templates/:id·typing·q 검색); test/admin-server.test.mjs; test/ui 일괄 처리
 ADMIN-17,"관리자 활동 기록(순번 291): 필터·대상 이름 풀기·전/후, 홈 최근 활동을 overview에, 메일 노출 제거",확장 M12 (1.23.0),완료,,src/index.js(/audit 필터·이름 풀기·overview recent·queue·today); 활동 기록 화면 사람·종류·날짜·CSV
