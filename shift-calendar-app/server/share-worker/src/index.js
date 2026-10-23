@@ -166,7 +166,7 @@ async function update(request, env, url, id) {
 async function remove(request, env, id) {
   const record = await authorized(request, env, id);
   if (record instanceof Response) return record;
-  await env.SHARES.delete(id);
+  await kvDel(env, id);
   return new Response(null, { status: 204 });
 }
 
@@ -285,13 +285,13 @@ async function report(request, env, id, fromPage) {
   // The same caller reporting the same link again the same day is thanked and not counted twice.
   if (await env.SHARES.get(once)) return done(fromPage ? 200 : 204, thanks);
   if (!(await allow(env, request, "rr", LIMITS.reportsPerHour))) return done(429, fromPage ? "잠시 뒤에 다시 신고해 주세요." : "rate_limited");
-  await env.SHARES.put(once, "1", { expirationTtl: 86400 });
+  await kvPut(env, once, "1", { expirationTtl: 86400 });
   const key = `report:${id}`;
   const got = await env.SHARES.getWithMetadata?.(key);
   const was = got?.metadata ?? { count: 0, reasons: {} };
   const next = { count: was.count + 1, reasons: { ...was.reasons, [reason]: (was.reasons?.[reason] ?? 0) + 1 }, last: new Date().toISOString() };
   const ttl = Math.max(60, Math.ceil((Date.parse(record.expiresAt) - Date.now()) / 1000));
-  await env.SHARES.put(key, "1", { expirationTtl: ttl, metadata: next });
+  await kvPut(env, key, "1", { expirationTtl: ttl, metadata: next });
   count(env, "reports");
   return done(fromPage ? 200 : 204, thanks);
 }
@@ -310,8 +310,8 @@ async function admin(request, env, url) {
   if (path === "/flags" && request.method === "PUT") {
     let body = {};
     try { body = JSON.parse((await request.text()).slice(0, 256)); } catch { /* nothing */ }
-    if (body.createOff === true) await env.SHARES.put(CREATE_OFF, "1");
-    else await env.SHARES.delete(CREATE_OFF);
+    if (body.createOff === true) await kvPut(env, CREATE_OFF, "1");
+    else await kvDel(env, CREATE_OFF);
     return json({ createOff: body.createOff === true });
   }
   return json({ error: "not_found" }, 404);
@@ -338,11 +338,11 @@ async function takeDown(request, env, id) {
   reason = reason.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, LIMITS.removedReason);
   if (!record.removed) {
     // Only the mark stays: the schedule itself is gone at once. [SHR-13] With the operator's reason, as long as the mark.
-    await env.SHARES.put(id, JSON.stringify({ removed: true, at: new Date().toISOString(), ...(reason ? { reason } : {}) }),
+    await kvPut(env, id, JSON.stringify({ removed: true, at: new Date().toISOString(), ...(reason ? { reason } : {}) }),
       { expirationTtl: LIMITS.removedDays * 86400 });
     count(env, "removed");
   }
-  await env.SHARES.delete(`report:${id}`);
+  await kvDel(env, `report:${id}`);
   return new Response(null, { status: 204 });
 }
 
@@ -392,7 +392,7 @@ async function liveLinks(env, ids) {
 async function saveGroup(env, code, links) {
   const ends = links.reduce((a, l) => (l.expiresAt > a ? l.expiresAt : a), new Date().toISOString());
   const ttl = Math.max(60, Math.ceil((Date.parse(ends) - Date.now()) / 1000));
-  await env.SHARES.put(`group:${code}`, JSON.stringify({ ids: links.map((l) => l.id) }), { expirationTtl: ttl });
+  await kvPut(env, `group:${code}`, JSON.stringify({ ids: links.map((l) => l.id) }), { expirationTtl: ttl });
   return ends;
 }
 
@@ -440,7 +440,7 @@ async function groupLeave(request, env, code, id) {
     return json({ error: "forbidden" }, 403);
   }
   const links = (await liveLinks(env, group.ids)).filter((l) => l.id !== id);
-  if (links.length === 0) await env.SHARES.delete(`group:${code}`);
+  if (links.length === 0) await kvDel(env, `group:${code}`);
   else await saveGroup(env, code, links);
   return new Response(null, { status: 204 });
 }
@@ -452,6 +452,18 @@ function groupCode() {
 }
 
 // ---- [STAT-04] day counters ----
+
+// [SRV-10] Every KV write is counted too (KV's free day is 1,000 writes), so the company server can rest
+// 근무표 링크 새로 만들기 before the limit (N8). Like the rest, a rough number.
+async function kvPut(env, key, value, options) {
+  count(env, "writes");
+  return env.SHARES.put(key, value, options);
+}
+
+async function kvDel(env, key) {
+  count(env, "writes");
+  return env.SHARES.delete(key);
+}
 
 const pending = new WeakMap();
 
@@ -477,6 +489,7 @@ export async function flushStats(env, now = true) {
     const key = `stats:${day}`;
     const was = (await env.SHARES.get(key, "json")) ?? {};
     for (const [k, v] of Object.entries(add)) was[k] = (was[k] ?? 0) + v;
+    was.writes = (was.writes ?? 0) + 1;
     await env.SHARES.put(key, JSON.stringify(was), { expirationTtl: LIMITS.statsDays * 86400 });
   }
 }
@@ -489,7 +502,7 @@ async function stats(env, daysParam) {
   for (let i = n - 1; i >= 0; i--) {
     const day = new Date(today - i * 86400 * 1000).toISOString().slice(0, 10);
     const got = (await env.SHARES.get(`stats:${day}`, "json")) ?? {};
-    days.push({ day, created: got.created ?? 0, views: got.views ?? 0, reports: got.reports ?? 0, removed: got.removed ?? 0 });
+    days.push({ day, created: got.created ?? 0, views: got.views ?? 0, reports: got.reports ?? 0, removed: got.removed ?? 0, writes: got.writes ?? 0 });
   }
   const sum = (k) => days.reduce((a, d) => a + d[k], 0);
   // [SRV-08] Counted in each Worker and added up every few minutes: two at once can lose a few, so 대략.
@@ -632,7 +645,7 @@ const isTimeRange = (t) => typeof t === "string" && /^([01]\d|2[0-3]):[0-5]\d-([
 
 async function put(env, id, record) {
   const ttl = Math.max(60, Math.ceil((Date.parse(record.expiresAt) - Date.now()) / 1000));
-  await env.SHARES.put(id, JSON.stringify(record), { expirationTtl: ttl });
+  await kvPut(env, id, JSON.stringify(record), { expirationTtl: ttl });
 }
 
 function expiry(days) {
@@ -668,7 +681,7 @@ async function allow(env, request, prefix, max) {
   const stored = parseInt((await env.SHARES.get(key)) || "0", 10);
   const n = Math.max(mine === 1 ? stored + 1 : stored, mine);
   if (n > max) return false;
-  await env.SHARES.put(key, String(n), { expirationTtl: 3600 });
+  await kvPut(env, key, String(n), { expirationTtl: 3600 });
   return true;
 }
 

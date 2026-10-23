@@ -60,10 +60,9 @@ fun TrialConsentPrompt(c: AppContainer) {
     val text = trialConsentText(day, price)
     val answer: (String) -> Unit = { a ->
         val now = Instant.now()
-        c.proStore.answer(a, now)
-        c.appScope.launch {
-            runCatching { c.tierApi.takeIf { it.enabled }?.consent(c.companyStore.device, a, ProductIds.PRO, price, end, text) }
-        }
+        // [SRV-07] Queued first, then sent: without a connection it goes at the next sync instead of being lost.
+        c.proStore.answer(a, now, com.bamnat.app.tier.PendingConsent(a, now, ProductIds.PRO, price, end, text))
+        c.appScope.launch { c.sendConsent() }
         closed = true
     }
     AlertDialog(

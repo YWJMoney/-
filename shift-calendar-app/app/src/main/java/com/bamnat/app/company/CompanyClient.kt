@@ -261,7 +261,14 @@ data class ReportStatus(
 data class VoteResult(val points: Int, val persons: Int, val bad: Int, val threshold: Int, val adopted: Boolean, val trust: Int = 0, val agree: Int = 0)
 
 /** A refusal from the server: [code] is its error word (amount, phone, rate_limited, offline …), [field] what it was about. */
-class CompanyException(val code: String, val field: String? = null) : IOException(code)
+class CompanyException(val code: String, val field: String? = null) : IOException(code) {
+    /** [SRV-07] No connection, a busy or broken server, a sign-in page: worth sending again later. */
+    val retryable: Boolean get() = code in RETRY || code.startsWith("http_5")
+
+    companion object {
+        val RETRY = setOf("offline", "rate_limited", "server", "bad_response", "paused", "busy", "no_database")
+    }
+}
 
 /** [COMM-04] What the app asks of the company rules server; screenshots and tests answer with a fake. */
 interface CompanyApi {
@@ -631,7 +638,30 @@ class CompanyClient(
     }
 
     private fun request(method: String, path: String, body: JSONObject? = null, device: String? = null): JSONObject =
-        serverRequest(baseUrl, method, path, body, device)
+        if (method == "POST" && ONCE.any { it.matches(path) }) onceRequest(baseUrl, path, body, device)
+        else serverRequest(baseUrl, method, path, body, device)
+
+    private companion object {
+        /** [SRV-08] What the server takes once per X-Request-Id: posts, replies, 신고 and reports. */
+        val ONCE = listOf(Regex("/api/posts"), Regex("/api/posts/[^/]+/flag"), Regex("/api/reports"), Regex("/api/rates"))
+    }
+}
+
+/**
+ * [SRV-08] A POST the server keeps once per X-Request-Id: sent with a new id ([requestId] for a queued
+ * one), and when the answer is lost on the way, sent once more with the same id, which the server
+ * answers from what it kept instead of making a second post or question.
+ */
+internal fun onceRequest(
+    baseUrl: String, path: String, body: JSONObject?, device: String? = null, requestId: String = java.util.UUID.randomUUID().toString(),
+): JSONObject {
+    val headers = mapOf("X-Request-Id" to requestId)
+    return try {
+        serverRequest(baseUrl, "POST", path, body, device, headers)
+    } catch (e: CompanyException) {
+        if (e.code != "offline") throw e
+        serverRequest(baseUrl, "POST", path, body, device, headers)
+    }
 }
 
 /**

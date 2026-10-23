@@ -443,7 +443,11 @@ object ShareLinkId {
     fun find(text: String?): String? = text?.let { pattern.find(it)?.groupValues?.get(1) }
 }
 
-class ShareLinkException(message: String) : IOException(message)
+class ShareLinkException(
+    message: String,
+    /** [SHR-13] Why the developer took the link down, when the share server says (410 removed). */
+    val removedReason: String? = null,
+) : IOException(message)
 
 class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) : ShareApi {
     override val enabled: Boolean get() = baseUrl.isNotBlank()
@@ -510,9 +514,14 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
             val code = conn.responseCode
             if (code == HttpURLConnection.HTTP_NOT_MODIFIED) return Reply(code, JSONObject(), etag)
             val text = (if (code < 400) conn.inputStream else conn.errorStream)?.use { it.readCapped() }.orEmpty()
-            // [SRV-05] A link the developer took down (410 removed) is gone like one its sharer cut.
-            if (code >= 400) throw ShareLinkException(runCatching { JSONObject(text).getString("error") }.getOrDefault("http_$code")
-                .let { if (it == "removed") "not_found" else it })
+            // [SRV-05] A link the developer took down (410 removed) is gone like one its sharer cut;
+            // [SHR-13] the reason the developer gave comes with it.
+            if (code >= 400) {
+                val err = runCatching { JSONObject(text) }.getOrNull()
+                val word = err?.optString("error")?.takeIf { it.isNotEmpty() } ?: "http_$code"
+                throw ShareLinkException(if (word == "removed") "not_found" else word,
+                    err?.optString("reason")?.takeIf { word == "removed" && it.isNotBlank() }?.take(200))
+            }
             return Reply(code, if (text.isBlank()) JSONObject() else readable { JSONObject(text) }, conn.getHeaderField("ETag"))
         } finally {
             conn.disconnect()

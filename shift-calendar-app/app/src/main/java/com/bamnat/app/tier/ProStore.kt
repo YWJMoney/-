@@ -48,6 +48,22 @@ data class SubRecord(
 fun SubRecord.trialEnd(zone: ZoneId): Instant =
     expiry?.takeIf { verified } ?: com.bamnat.core.tier.TrialConsent.trialEnd(purchasedAt, zone)
 
+/**
+ * [SRV-07] An answer to the trial question that has not reached the server yet: it waits here and goes
+ * at the next sync, with the moment the user tapped, so a "계속 쓸게요" given offline still counts.
+ */
+data class PendingConsent(
+    val answer: String,
+    val answeredAt: Instant,
+    val product: String,
+    val price: String,
+    val trialEnd: Instant,
+    val shown: String,
+) {
+    /** Older than the server takes (40 days), it is no use sending. */
+    fun stale(now: Instant): Boolean = answeredAt.isBefore(now.minus(Duration.ofDays(35)))
+}
+
 /** Everything on this phone that can give it 프로, and what the user was told about it. */
 data class ProState(
     val sub: SubRecord? = null,
@@ -65,6 +81,8 @@ data class ProState(
     val thanksSeen: Boolean = false,
     /** [MON-06] The trial whose day-23 notice went out, by its start. */
     val trialNoticeFor: Instant? = null,
+    /** [SRV-07] The trial answer still to send. */
+    val pendingConsent: PendingConsent? = null,
 ) {
     fun sources(config: LaunchConfig, installedAt: Instant?, zone: ZoneId): ProSources = ProSources(
         billingLive = config.billingLive,
@@ -91,7 +109,10 @@ class ProStore(context: Context) {
     fun setSub(s: SubRecord?) = edit { it.copy(sub = s) }
     fun setPasses(p: Passes) = edit { it.copy(passes = p) }
     fun dayPass(day: LocalDate) = edit { it.copy(dayPass = day) }
-    fun answer(answer: String, at: Instant) = edit { it.copy(trialAnswer = answer, trialAnswerAt = at) }
+    fun answer(answer: String, at: Instant, toSend: PendingConsent? = null) =
+        edit { it.copy(trialAnswer = answer, trialAnswerAt = at, pendingConsent = toSend ?: it.pendingConsent) }
+    /** [SRV-07] The server kept [sent] (or will never take it): it leaves the queue unless a newer answer took its place. */
+    fun consentSent(sent: PendingConsent) = edit { s -> if (s.pendingConsent == sent) s.copy(pendingConsent = null) else s }
     fun setCode(code: String?) = edit { it.copy(code = code) }
     fun claimLater(code: String?) = edit { it.copy(pendingClaim = code) }
     fun thanksSeen() = edit { it.copy(thanksSeen = true) }
@@ -142,6 +163,10 @@ class ProStore(context: Context) {
             .put("trialAnswer", s.trialAnswer ?: JSONObject.NULL).put("trialAnswerAt", s.trialAnswerAt.json())
             .put("code", s.code ?: JSONObject.NULL).put("pendingClaim", s.pendingClaim ?: JSONObject.NULL)
             .put("thanksSeen", s.thanksSeen).put("trialNoticeFor", s.trialNoticeFor.json())
+            .put("pendingConsent", s.pendingConsent?.let { q ->
+                JSONObject().put("answer", q.answer).put("answeredAt", q.answeredAt.toString()).put("product", q.product)
+                    .put("price", q.price).put("trialEnd", q.trialEnd.toString()).put("shown", q.shown)
+            } ?: JSONObject.NULL)
 
         internal fun parse(o: JSONObject): ProState = ProState(
             sub = o.optJSONObject("sub")?.let { r ->
@@ -158,6 +183,12 @@ class ProStore(context: Context) {
             trialAnswer = o.text("trialAnswer"), trialAnswerAt = o.instant("trialAnswerAt"),
             code = o.text("code"), pendingClaim = o.text("pendingClaim"),
             thanksSeen = o.optBoolean("thanksSeen"), trialNoticeFor = o.instant("trialNoticeFor"),
+            pendingConsent = o.optJSONObject("pendingConsent")?.let { q ->
+                runCatching {
+                    PendingConsent(q.getString("answer"), Instant.parse(q.getString("answeredAt")), q.getString("product"),
+                        q.getString("price"), Instant.parse(q.getString("trialEnd")), q.optString("shown"))
+                }.getOrNull()
+            },
         )
     }
 }

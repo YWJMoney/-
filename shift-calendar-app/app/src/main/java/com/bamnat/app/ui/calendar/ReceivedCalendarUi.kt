@@ -177,7 +177,7 @@ internal fun SwitchRow(
 
 /** "10월 1일~12월 31일", or what happened to it. */
 internal fun ReceivedCalendar.summary(): String {
-    val s = schedule ?: return "공유가 끝났어요"
+    val s = schedule ?: return removedReason?.let { "운영자가 내렸어요 · $it" } ?: "공유가 끝났어요"
     return if (s.first != null && s.last != null) "${Fmt.monthDay(s.first)}~${Fmt.monthDay(s.last)}" else "근무 없음"
 }
 

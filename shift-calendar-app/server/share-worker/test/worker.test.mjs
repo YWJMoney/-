@@ -490,12 +490,17 @@ test("[STAT-04] links made, pages seen, reports and take-downs are counted per d
   assert.equal(env.SHARES.map.get("stats:2026-10-22"), undefined);
   t.mock.timers.tick(5 * 60 * 1000);
   await call(env, "GET", `/s/${made.id}`);
-  assert.deepEqual(JSON.parse(env.SHARES.map.get("stats:2026-10-22")), { created: 2, views: 4 });
+  // [SRV-10] Every KV write is counted as well: two links and their limits, and none for a page seen.
+  const { writes, ...first } = JSON.parse(env.SHARES.map.get("stats:2026-10-22"));
+  assert.deepEqual(first, { created: 2, views: 4 });
+  assert.equal(writes, 5);
   await call(env, "POST", `/api/share/${made.id}/report`, { reason: "spam" });
   await call(env, "DELETE", `/api/admin/share/${made.id}`, undefined, bearer);
   const s = await (await call(env, "GET", "/api/admin/stats?days=7", undefined, bearer)).json();
   assert.equal(s.days.length, 7);
-  assert.deepEqual(s.days.at(-1), { day: "2026-10-22", created: 2, views: 4, reports: 1, removed: 1 });
+  const { writes: later, ...today } = s.days.at(-1);
+  assert.deepEqual(today, { day: "2026-10-22", created: 2, views: 4, reports: 1, removed: 1 });
+  assert.ok(later > writes, String(later));
   assert.equal(s.created, 2);
   assert.equal(s.views, 4);
   await flushStats(env);

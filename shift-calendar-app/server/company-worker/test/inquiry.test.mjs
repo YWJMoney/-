@@ -173,7 +173,7 @@ test("the hourly clean-up deletes what is only kept for a while, with nobody sen
   await Promise.all(waits);
   const n = (sql) => DB.db.prepare(sql).get().n;
   assert.equal(n("SELECT COUNT(*) AS n FROM reports WHERE net IS NOT NULL"), 0);
-  assert.equal(n("SELECT COUNT(*) AS n FROM counters"), 0);
+  assert.equal(n("SELECT COUNT(*) AS n FROM counters WHERE key NOT LIKE 'meter|%'"), 0);
   assert.equal(n("SELECT COUNT(*) AS n FROM admin_sessions"), 0);
   assert.equal(n("SELECT COUNT(*) AS n FROM inquiries"), 0);
   assert.equal(n("SELECT COUNT(*) AS n FROM inquiry_messages"), 0);

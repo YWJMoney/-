@@ -144,13 +144,15 @@ const PRESETS = {
 const OWNER = { id: "owner", name: "최고 관리자", email: "", owner: true, perms: Object.fromEntries(Object.keys(AREAS).map((a) => [a, VIEW_ONLY.includes(a) ? "view" : "edit"])) };
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     try {
       return await route(request, env);
     } catch (e) {
       if (e instanceof Refuse) return json({ error: e.code, field: e.field }, e.status);
       console.error(e && e.stack ? e.stack : String(e));
       return json({ error: "server" }, 500);
+    } finally {
+      if (env.DB) ctx?.waitUntil?.(flushMeter(env, Date.now()).catch(() => {}));
     }
   },
   // Hourly (wrangler.toml [triggers], or the dashboard's Cron Triggers): what is promised to go, goes on
@@ -158,7 +160,7 @@ export default {
   async scheduled(event, env, ctx) {
     if (!env.DB) return;
     ctx.waitUntil(ready(env).then(() => prune(env, Date.now())).then(() => stopUnconsentedTrials(env, Date.now()))
-      .then(() => recheckLapsed(env, Date.now())).then(() => syncShareSwitch(env)));
+      .then(() => recheckLapsed(env, Date.now())).then(() => autoRest(env, Date.now())).then(() => syncShareSwitch(env)));
   },
 };
 
@@ -168,7 +170,7 @@ export default {
  * and the admin log after a year, usage totals after 400 days and a closed question's photos after 90.
  */
 export async function prune(env, now) {
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "UPDATE reports SET net = NULL WHERE net IS NOT NULL AND created_at < ?", now - 2 * HOUR),
     stmt(env, "UPDATE votes SET net = NULL WHERE net IS NOT NULL AND at < ?", now - 2 * HOUR),
     stmt(env, "UPDATE rates SET net = NULL WHERE net IS NOT NULL AND created_at < ?", now - 2 * HOUR),
@@ -319,6 +321,7 @@ async function routeOnce(request, env, url) {
   if (path === "/api/config" && method === "GET") return json(await config(env));
   if (path === "/api/events" && method === "POST") return usage(request, env);
   if (path === "/api/plaza/news" && method === "GET") return plazaNews(request, env, url);
+  if (path === "/api/digest" && method === "GET") return digest(request, env, url);
   if (path.startsWith("/api/passes") || path === "/api/admin-link" || path === "/api/purchases" || path === "/api/consents") {
     return money(request, env, path);
   }
@@ -522,7 +525,7 @@ function ready(env) {
   if (!done) {
     done = env.DB.prepare("SELECT value FROM settings WHERE key = 'schema'").first("value").catch(() => null).then(async (made) => {
       if (made === SCHEMA_VERSION) return;
-      await env.DB.batch(SCHEMA.map((sql) => env.DB.prepare(sql)));
+      await batch(env, SCHEMA.map((sql) => env.DB.prepare(sql)));
       for (const sql of COLUMNS) {
         try {
           await env.DB.prepare(sql).run();
@@ -543,7 +546,42 @@ function ready(env) {
 const stmt = (env, sql, ...params) => env.DB.prepare(sql).bind(...params);
 const one = (env, sql, ...params) => stmt(env, sql, ...params).first();
 const all = async (env, sql, ...params) => (await stmt(env, sql, ...params).all()).results;
-const run = (env, sql, ...params) => stmt(env, sql, ...params).run();
+const run = async (env, sql, ...params) => meterAdd(env, await stmt(env, sql, ...params).run());
+const batch = async (env, list) => {
+  const results = await env.DB.batch(list);
+  for (const r of results) meterAdd(env, r);
+  return results;
+};
+
+/**
+ * [SRV-10] The rows this Worker wrote, as D1 reports them, kept in memory and added to the day's
+ * `meter|YYYY-MM-DD` counter (D1's free day runs on UTC) at most every five minutes. The hourly
+ * job reads it to rest features before the free limit (N8). An isolate that ends early loses at
+ * most five minutes' count, so the meter reads a little low, never high.
+ */
+const meters = new WeakMap();
+const METER_FLUSH_MS = 5 * 60 * 1000;
+
+function meterAdd(env, r, n = Number(r?.meta?.rows_written ?? r?.meta?.changes ?? 0) || 0) {
+  if (!env?.DB || !n) return r;
+  const m = meters.get(env.DB) ?? { n: 0, at: Date.now() };
+  m.n += n;
+  meters.set(env.DB, m);
+  return r;
+}
+
+const meterDay = (now) => new Date(now).toISOString().slice(0, 10);
+
+/** Adds what was counted here to the day's meter; [force] does it now (the hourly job). */
+export async function flushMeter(env, now, force = false) {
+  const m = meters.get(env.DB);
+  if (!m || !m.n || (!force && now - m.at < METER_FLUSH_MS)) return;
+  const n = m.n;
+  m.n = 0;
+  m.at = now;
+  await env.DB.prepare(`INSERT INTO counters (key, count, expires) VALUES (?1, ?2, ?3)
+    ON CONFLICT (key) DO UPDATE SET count = count + ?2`).bind(`meter|${meterDay(now)}`, n + 1, now + 3 * DAY).run();
+}
 
 const SETTING_KEYS = "'adopt_points', 'reward_months', 'adopt_agree', 'adopt_persons', 'amend_persons', 'auto_reward', 'reward_cap_months', 'reward_cap_days'";
 
@@ -593,6 +631,7 @@ async function allow(env, key, limit, windowMs, now) {
       count = CASE WHEN expires <= ?3 THEN 1 ELSE count + 1 END,
       expires = CASE WHEN expires <= ?3 THEN ?2 ELSE expires END
     RETURNING count`, key, now + windowMs, now);
+  meterAdd(env, null, 1);
   return row.count <= limit;
 }
 
@@ -604,7 +643,7 @@ const deviceHash = async (id) => (await sha256(`device|${id}`)).slice(0, 40);
 /** [ADMIN-04] Who did it comes from the request: admin() puts the signed-in admin on env.actor. */
 async function audit(env, now, action, target, detail = "") {
   const who = env.actor ? (env.actor.owner ? OWNER.name : `${env.actor.name} <${env.actor.email}>`) : "";
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "INSERT INTO audit (at, action, target, detail, actor) VALUES (?, ?, ?, ?, ?)", now, action, target,
       String(detail).slice(0, 300), who),
     // [COMM-06] A hidden post nobody restored is gone after 90 days, and a 30-day 쓰기 막기 when it ends.
@@ -1271,8 +1310,13 @@ async function state(env, companyId, grp, threshold, adopted) {
         + (SELECT COUNT(*) FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1) AS checked`, companyId, grp);
   const names = (await all(env, `SELECT n.nick FROM reports r JOIN nicks n ON n.device = r.device
       WHERE r.company_id = ? AND r.grp = ? AND r.status IN ('pending', 'adopted') ORDER BY r.created_at LIMIT 5`, companyId, grp)).map((n) => n.nick);
+  // [COMM-11] N7 두 달 이상 확인됨: pay-slip checks from at least two networks in two different months.
+  const span = await one(env, `SELECT COUNT(DISTINCT cluster) AS nets, COUNT(DISTINCT strftime('%Y-%m', at / 1000, 'unixepoch')) AS months FROM (
+      SELECT cluster, created_at AS at FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1
+      UNION ALL SELECT cluster, at FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1)`, companyId, grp);
   return { id: grp, status: adopted ? "adopted" : "pending", points: s.points, persons: s.persons, bad: s.bad, threshold,
-    ...trust(s, threshold), posts: posts.n, uses: who.uses, senders: who.senders, checked: who.checked, by: names };
+    ...trust(s, threshold), posts: posts.n, uses: who.uses, senders: who.senders, checked: who.checked, by: names,
+    ...(span.nets >= 2 && span.months >= 2 ? { checkedLong: true } : {}) };
 }
 
 /**
@@ -1309,7 +1353,7 @@ async function report(request, env) {
   const active = await activeRule(env, c.id, r.deptNorm);
   const adopted = active?.grp === grp;
   const id = randomId(22);
-  await env.DB.batch([
+  await batch(env, [
     // A newer setup from the same sender for the same place takes the place of the older one.
     stmt(env, "UPDATE reports SET status = 'replaced', decided_at = ? WHERE company_id = ? AND dept_norm = ? AND device = ? AND status = 'pending'",
       now, c.id, r.deptNorm, dev),
@@ -1369,7 +1413,7 @@ async function follow(env, id) {
 
 /** Network hashes only ever link sends within the hour; two hours on they are gone. */
 function forgetNetworks(env, now) {
-  return env.DB.batch([
+  return batch(env, [
     stmt(env, "UPDATE reports SET net = NULL WHERE net IS NOT NULL AND created_at < ?", now - 2 * HOUR),
     stmt(env, "UPDATE votes SET net = NULL WHERE net IS NOT NULL AND at < ?", now - 2 * HOUR),
     stmt(env, "DELETE FROM counters WHERE expires < ?", now),
@@ -1480,7 +1524,7 @@ async function adopt(env, companyId, grp, source, now) {
       SELECT 'w' || id, id, rule_id, device, ?, 'owed', '', ?, NULL FROM reports WHERE company_id = ? AND grp = ? AND rule_id = ?`,
     rewardMonths, now, companyId, grp, ruleId));
   }
-  await env.DB.batch(stmts);
+  await batch(env, stmts);
   await payOut(env, ruleId, now);
   return ruleId;
 }
@@ -1566,13 +1610,13 @@ async function takeBack(request, env, id) {
   // tie to it (결정 D34). The rule, its versions and its score stay; a pass already given stays theirs.
   const full = await one(env, "SELECT status FROM reports WHERE id = ?", id);
   if (full.status === "adopted") {
-    await env.DB.batch([
+    await batch(env, [
       stmt(env, "DELETE FROM rewards WHERE report_id = ? AND status = 'owed'", id),
       stmt(env, "UPDATE reports SET device = ? WHERE id = ?", `gone${randomId(12)}`, id),
     ]);
     return json({ kept: true, text: "채택된 규칙은 모두가 쓰는 규칙이라 남아요. 보낸 분과의 연결만 지웠어요." });
   }
-  await env.DB.batch([stmt(env, "DELETE FROM rewards WHERE report_id = ?", id), stmt(env, "DELETE FROM reports WHERE id = ?", id)]);
+  await batch(env, [stmt(env, "DELETE FROM rewards WHERE report_id = ?", id), stmt(env, "DELETE FROM reports WHERE id = ?", id)]);
   return new Response(null, { status: 204 });
 }
 
@@ -1583,7 +1627,7 @@ async function forgetMine(request, env) {
   const dev = await deviceHash(device);
   // [PLZ-04] Adopted rules and the posts that proposed them stay, cut loose from this install (결정 D34).
   const gone = `gone${randomId(12)}`;
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, `UPDATE posts SET device = ?2 WHERE device = ?1 AND report_id IN (SELECT id FROM reports WHERE device = ?1 AND status = 'adopted')`, dev, gone),
     stmt(env, "UPDATE reports SET device = ? WHERE device = ? AND status = 'adopted'", gone, dev),
     // [PLZ-01] Their votes on posts come off the posts' counts.
@@ -1596,7 +1640,7 @@ async function forgetMine(request, env) {
     stmt(env, "UPDATE rates SET device = ? WHERE device = ? AND status = 'adopted'", gone, dev),
     stmt(env, "DELETE FROM rates WHERE device = ?", dev),
   ]);
-  const [, reports, votes, , posts, , , , , , , , asked] = await env.DB.batch([
+  const [, reports, votes, , posts, , , , , , , , asked] = await batch(env, [
     stmt(env, "DELETE FROM rewards WHERE device = ?", dev),
     stmt(env, "DELETE FROM reports WHERE device = ?", dev),
     stmt(env, "DELETE FROM votes WHERE device = ?", dev),
@@ -1959,7 +2003,7 @@ async function postVote(request, env, id) {
       ON CONFLICT (post_id, device) DO UPDATE SET ok = excluded.ok, at = excluded.at`, id, dev, body.ok ? 1 : 0, now));
     stmts.push(stmt(env, `UPDATE posts SET ${body.ok ? "agree = agree + 1" : "disagree = disagree + 1"} WHERE id = ?`, id));
   }
-  await env.DB.batch(stmts);
+  await batch(env, stmts);
   if (p.report_id) {
     const r = await one(env, "SELECT company_id, grp, status FROM reports WHERE id = ?", p.report_id);
     if (r) {
@@ -2196,7 +2240,7 @@ async function addRate(request, env) {
   let id = before?.id;
   if (id) {
     // What others agreed to was the old amount: their votes go with it.
-    await env.DB.batch([
+    await batch(env, [
       stmt(env, "UPDATE rates SET trade = ?, amount = ?, note = ?, agree = 0, disagree = 0, created_at = ? WHERE id = ?", r.trade, r.amount, r.note, now, id),
       stmt(env, "DELETE FROM rate_votes WHERE rate_id = ?", id),
     ]);
@@ -2233,7 +2277,7 @@ async function rateVote(request, env, id) {
     id, dev, body.ok ? 1 : 0, await rateCluster(env, net), net.now, now));
     stmts.push(stmt(env, `UPDATE rates SET ${body.ok ? "agree = agree + 1" : "disagree = disagree + 1"} WHERE id = ?`, id));
   }
-  await env.DB.batch(stmts);
+  await batch(env, stmts);
   if (body.ok && r.status === "pending") await settleRate(env, id, now);
   const after = await one(env, "SELECT agree, disagree, status FROM rates WHERE id = ?", id);
   return json({ agree: after.agree, disagree: after.disagree, ...postTrust(after), status: after.status, myVote: body.ok });
@@ -2278,13 +2322,13 @@ async function takeRateBack(request, env, id) {
   if (!r) return json({ error: "not_found" }, 404);
   if (!device || (await deviceHash(device)) !== r.device) return json({ error: "forbidden" }, 403);
   if (r.status === "adopted") {
-    await env.DB.batch([
+    await batch(env, [
       stmt(env, "DELETE FROM rewards WHERE report_id = ? AND status = 'owed'", id),
       stmt(env, "UPDATE rates SET device = ? WHERE id = ?", `gone${randomId(12)}`, id),
     ]);
     return json({ kept: true, text: "채택된 시세는 모두가 쓰는 정보라 남아요. 보낸 분과의 연결만 지웠어요." });
   }
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "DELETE FROM rate_votes WHERE rate_id = ?", id),
     stmt(env, "DELETE FROM rewards WHERE report_id = ?", id),
     stmt(env, "DELETE FROM rates WHERE id = ?", id),
@@ -2332,7 +2376,7 @@ async function takePostBack(request, env, id) {
   const p = await one(env, "SELECT device FROM posts WHERE id = ?", id);
   if (!p) return json({ error: "not_found" }, 404);
   if (!device || (await deviceHash(device)) !== p.device) return json({ error: "forbidden" }, 403);
-  await env.DB.batch([stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id), stmt(env, "DELETE FROM posts WHERE id = ?", id)]);
+  await batch(env, [stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id), stmt(env, "DELETE FROM posts WHERE id = ?", id)]);
   return new Response(null, { status: 204 });
 }
 
@@ -2361,7 +2405,7 @@ async function flag(request, env, id) {
       WHERE id = ?1`, id, LIMITS.flagsToHide, now);
     const after = await one(env, "SELECT status FROM posts WHERE id = ?", id);
     if (after.status === "hidden") {
-      await env.DB.batch(plazaResults(env, p, "hidden", "hidden", now));
+      await batch(env, plazaResults(env, p, "hidden", "hidden", now));
       await audit(env, now, "post_autohide", id, `${p.company_id}/${p.grp}`);
     }
   }
@@ -2482,7 +2526,7 @@ async function inquiries(request, env, path) {
   if (!row || row.device !== dev) return json({ error: "not_found" }, 404);
   if (!m[2] && method === "GET") return json(await inquiryView(env, row));
   if (!m[2] && method === "DELETE") {
-    await env.DB.batch(dropInquiries(env, "id = ?", row.id));
+    await batch(env, dropInquiries(env, "id = ?", row.id));
     return new Response(null, { status: 204 });
   }
   if (m[2] && method === "POST") {
@@ -2492,7 +2536,7 @@ async function inquiries(request, env, path) {
     if (!(await allow(env, `inquiry_msg|${dev}`, INQUIRY.messagesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
     const count = await one(env, "SELECT COUNT(*) AS n FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'user'", row.id);
     if (count.n >= INQUIRY.messages) return json({ error: "too_many", field: "text" }, 409);
-    await env.DB.batch([
+    await batch(env, [
       stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", row.id, text, now),
       stmt(env, "UPDATE inquiries SET status = 'open', updated_at = ? WHERE id = ?", now, row.id),
     ]);
@@ -2532,7 +2576,7 @@ async function ask(request, env) {
   }
   const photos = await readPhotos(env, body.photos);
   const id = randomId(22);
-  await env.DB.batch([
+  await batch(env, [
     // [SRV-06] Photos stay with the developer even on a public question.
     ...photos.list.map((data, i) => stmt(env, "INSERT INTO inquiry_photos (inquiry_id, n, data, bytes, at) VALUES (?, ?, ?, ?, ?)",
       id, i + 1, data.base64, data.bytes, now)),
@@ -2602,7 +2646,7 @@ async function inquiryView(env, row, admin = false) {
   const info = JSON.parse(row.info);
   const context = {};
   for (const [label, key] of INQUIRY_INFO) if (info[key]) context[label] = info[key];
-  const [reasons, notes, items] = (await env.DB.batch([
+  const [reasons, notes, items] = (await batch(env, [
     stmt(env, `SELECT reason, COUNT(*) AS n FROM inquiry_marks WHERE inquiry_id = ? AND kind = 'flag'
       GROUP BY reason ORDER BY n DESC, reason`, row.id),
     stmt(env, "SELECT by, text, at FROM inquiry_notes WHERE inquiry_id = ? ORDER BY id", row.id),
@@ -2754,7 +2798,7 @@ async function inquiryMark(request, env, id, kind) {
   if (!row) return json({ error: "not_found" }, 404);
   if (row.device === dev) return json({ error: "own" }, 400);
   if (kind === "same") {
-    await env.DB.batch([
+    await batch(env, [
       body.on === false
         ? stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id = ? AND device = ? AND kind = 'same'", id, dev)
         : stmt(env, "INSERT OR IGNORE INTO inquiry_marks (inquiry_id, device, kind, reason, at) VALUES (?, ?, 'same', NULL, ?)", id, dev, now),
@@ -2790,7 +2834,7 @@ async function adminInquiries(request, env, url, path, now) {
   if (m[2] === "/reply") {
     if (typeof body.text !== "string" || !body.text.trim() || [...body.text.trim()].length > INQUIRY.text) refuse("text", "text");
     const status = body.close === true ? "closed" : "answered";
-    await env.DB.batch([
+    await batch(env, [
       stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)",
         row.id, body.text.normalize("NFC").replace(/\r\n?/g, "\n").trim(), actorName(env), now),
       // [ADMIN-12] Whoever answers a question nobody took has taken it.
@@ -2818,7 +2862,7 @@ async function adminInquiries(request, env, url, path, now) {
       await run(env, "UPDATE inquiries SET hidden = ?, kept = 1 WHERE id = ?", reason, row.id);
       await audit(env, now, "inquiry_hide", row.id, reason);
     } else if (body.action === "show") {
-      await env.DB.batch([
+      await batch(env, [
         stmt(env, "UPDATE inquiries SET hidden = NULL, kept = 1, flags = 0 WHERE id = ?", row.id),
         stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id = ? AND kind = 'flag'", row.id),
       ]);
@@ -2845,7 +2889,7 @@ async function inquiryList(env, params, actorId = "") {
   // [INQ-04] 놓친 문의: still waiting on an admin (the user wrote last) for longer than a day.
   const late = params.get("late") === "1" ? Date.now() - INQUIRY.lateMs : 0;
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-  const [rows, statusRows] = (await env.DB.batch([stmt(env, `SELECT i.*,
+  const [rows, statusRows] = (await batch(env, [stmt(env, `SELECT i.*,
       (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id) AS count,
       (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
       (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last,
@@ -2961,7 +3005,7 @@ async function devRoute(request, env, url, path, now) {
     // Only the owner brings back what someone deleted, so a deletion cannot be undone behind their back.
     if (!env.actor.owner) return json({ error: "no_permission", area: "owner" }, 403);
     if (row.deleted_at === null) return json(await devView(env, row));
-    await env.DB.batch([
+    await batch(env, [
       stmt(env, "UPDATE dev_items SET deleted_at = NULL, updated_at = ? WHERE id = ?", now, row.id),
       devEvent(env, row.id, now, "restore"),
     ]);
@@ -2972,7 +3016,7 @@ async function devRoute(request, env, url, path, now) {
     const changed = await devUpdate(env, row, body, now);
     if (changed === "stale") return json({ error: "changed", item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) }, 409);
   } else if (m[2] === "/delete") {
-    await env.DB.batch([
+    await batch(env, [
       stmt(env, "UPDATE dev_items SET deleted_at = ?, updated_at = ? WHERE id = ?", now, now, row.id),
       devEvent(env, row.id, now, "delete", { title: row.title }),
     ]);
@@ -2985,19 +3029,19 @@ async function devRoute(request, env, url, path, now) {
       if (!(await one(env, "SELECT id FROM inquiries WHERE id = ?", inquiry))) return json({ error: "not_found" }, 404);
       const r = await run(env, "INSERT OR IGNORE INTO dev_links (item_id, inquiry_id, by, at) VALUES (?, ?, ?, ?)", row.id, inquiry, actorName(env), now);
       if (r.meta.changes) {
-        await env.DB.batch([stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "link", { inquiry })]);
+        await batch(env, [stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "link", { inquiry })]);
         await audit(env, now, "dev_link", row.title, inquiry);
       }
     } else {
       const r = await run(env, "DELETE FROM dev_links WHERE item_id = ? AND inquiry_id = ?", row.id, inquiry);
       if (r.meta.changes) {
-        await env.DB.batch([stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "unlink", { inquiry })]);
+        await batch(env, [stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "unlink", { inquiry })]);
         await audit(env, now, "dev_unlink", row.title, inquiry);
       }
     }
   } else if (m[2] === "/notes") {
     const text = plainText(body.text, DEV.note, "text", true);
-    await env.DB.batch([stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "note", { text })]);
+    await batch(env, [stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "note", { text })]);
   } else {
     return devReply(env, row, body, now);
   }
@@ -3017,7 +3061,7 @@ async function devCreate(request, env, now) {
   }
   const id = `d${randomId(15)}`;
   const a = env.actor;
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at)
       VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL)`, id, title, text, a.id, actorName(env), now, now),
     devEvent(env, id, now, "create", { title, body: cut(text) }),
@@ -3084,7 +3128,7 @@ async function devUpdate(env, row, body, now) {
   const updated = await run(env, `UPDATE dev_items SET ${[...cols.map((c) => `${c} = ?`), "updated_at = ?"].join(", ")} WHERE id = ? AND updated_at = ?`,
     ...cols.map((c) => set[c]), now, row.id, row.updated_at);
   if (!updated.meta.changes) return "stale";
-  await env.DB.batch(stmts);
+  await batch(env, stmts);
   // The activity screen shows the title; the id goes with what changed.
   for (const [action, detail] of notes) await audit(env, now, action, set.title ?? row.title, `${detail} ${row.id}`);
   return true;
@@ -3109,7 +3153,7 @@ async function devBulk(request, env, now) {
   const rows = await all(env, `SELECT id, status, reason FROM dev_items WHERE deleted_at IS NULL AND id IN (${ids.map(() => "?").join(", ")})`, ...ids);
   const change = rows.filter((r) => r.status !== next.status || r.reason !== next.reason).sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
   if (change.length) {
-    await env.DB.batch(change.flatMap((r) => [
+    await batch(env, change.flatMap((r) => [
       stmt(env, "UPDATE dev_items SET status = ?, reason = ?, updated_at = ? WHERE id = ?", next.status, next.reason, now, r.id),
       devEvent(env, r.id, now, "status", { status: [r.status, next.status], ...(next.reason ? { reason: next.reason } : {}), bulk: change.length }),
     ]));
@@ -3129,7 +3173,7 @@ async function devReply(env, row, body, now) {
   const pick = Array.isArray(body.ids) ? linked.filter((id) => body.ids.includes(id)) : linked;
   if (!pick.length) refuse("ids", "ids");
   const status = body.close === true ? "closed" : "answered";
-  await env.DB.batch([
+  await batch(env, [
     ...pick.flatMap((id) => [
       stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)", id, text, actorName(env), now),
       stmt(env, "UPDATE inquiries SET status = ?, updated_at = ? WHERE id = ?", status, now, id),
@@ -3147,7 +3191,7 @@ async function devList(env, params) {
   const q = String(params.get("q") ?? "").trim().slice(0, 40);
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const mine = params.get("who") === "mine" ? env.actor.id : "";
-  const [rows, countRows] = (await env.DB.batch([
+  const [rows, countRows] = (await batch(env, [
     // Only links to questions still kept count.
     stmt(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id) AS links,
         (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND i.status = 'open') AS waiting
@@ -3190,7 +3234,7 @@ const devItem = (r) => ({
 
 /** One item with its whole history and the questions behind it (their words only for who may read questions). */
 async function devView(env, row) {
-  const [links, history] = (await env.DB.batch([
+  const [links, history] = (await batch(env, [
     stmt(env, `SELECT l.inquiry_id, l.by, l.at, i.kind, i.status, i.updated_at,
         (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first
       FROM dev_links l LEFT JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = ? ORDER BY l.at`, row.id),
@@ -3225,7 +3269,7 @@ async function templates(env, now) {
   // first and only the call that put it there seeds, so two admins opening the list at once add them once.
   const first = await run(env, "INSERT OR IGNORE INTO settings (key, value) VALUES ('templates', '1')");
   if (first.meta.changes) {
-    await env.DB.batch(DEFAULT_TEMPLATES.map(([label, text]) => stmt(env, "INSERT INTO reply_templates (label, text, by, at) VALUES (?, ?, '', ?)", label, text, now)));
+    await batch(env, DEFAULT_TEMPLATES.map(([label, text]) => stmt(env, "INSERT INTO reply_templates (label, text, by, at) VALUES (?, ?, '', ?)", label, text, now)));
   }
   const rows = await all(env, "SELECT id, label, text, by FROM reply_templates ORDER BY id");
   return { templates: rows.map((r) => ({ id: r.id, label: r.label, text: r.text, by: r.by })) };
@@ -3444,7 +3488,7 @@ async function login(request, env, now) {
   if (account && account.status !== "active") return json({ error: account.status === "pending" ? "pending" : "suspended" }, 403);
   const token = randomId(40);
   const who = account ? account.id : OWNER.id;
-  await env.DB.batch([
+  await batch(env, [
     ...keys.map((key) => stmt(env, "DELETE FROM counters WHERE key = ?", key)),
     stmt(env, "DELETE FROM admin_sessions WHERE expires < ?", now),
     stmt(env, "INSERT INTO admin_sessions (token, admin, expires, created_at) VALUES (?, ?, ?, ?)",
@@ -3676,7 +3720,7 @@ async function join(request, env, now) {
   }
   if (await one(env, "SELECT id FROM admins WHERE email = ?", row.email)) return json({ error: "exists" }, 409);
   const id = `a${randomId(15)}`;
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, `INSERT INTO admins (id, email, name, pw, perms, status, created_at, approved_at, last_login)
       VALUES (?, ?, ?, ?, ?, 'pending', ?, NULL, NULL)`, id, row.email, name, await hashPassword(password), row.perms, now),
     stmt(env, "UPDATE invites SET used_at = ? WHERE email = ?", now, row.email),
@@ -3708,7 +3752,7 @@ async function updateAdmin(request, env, id, now) {
     notes.push(body.status === "active" ? (a.status === "pending" ? "approve" : "resume") : "suspend");
   }
   if (!stmts.length) refuse("status", "status");
-  await env.DB.batch(stmts);
+  await batch(env, stmts);
   await audit(env, now, "admin_update", a.email, notes.join(" / "));
   return json(await adminList(env));
 }
@@ -3716,7 +3760,7 @@ async function updateAdmin(request, env, id, now) {
 async function removeAdmin(env, id, now) {
   const a = await one(env, "SELECT email FROM admins WHERE id = ?", id);
   if (!a) return json({ error: "not_found" }, 404);
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "DELETE FROM admin_sessions WHERE admin = ?", id),
     stmt(env, "DELETE FROM admins WHERE id = ?", id),
     // What they had taken on is free again for the others; an item's history says so.
@@ -3742,7 +3786,7 @@ async function changePassword(request, env, actor, token, now) {
   const a = await one(env, "SELECT * FROM admins WHERE id = ?", actor.id);
   if (typeof body.current !== "string" || !(await checkPassword(body.current, a.pw))) return json({ error: "wrong" }, 400);
   const next = newPassword(body.next, a.email);
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "UPDATE admins SET pw = ? WHERE id = ?", await hashPassword(next), a.id),
     stmt(env, "DELETE FROM admin_sessions WHERE admin = ? AND token != ?", a.id, token),
   ]);
@@ -3809,7 +3853,7 @@ async function overview(env, actor) {
     counts.phones = "SELECT COUNT(*) AS n FROM admin_devices WHERE status = 'pending'";
   }
   const keys = Object.keys(counts);
-  const results = await env.DB.batch(keys.map((k) => (Array.isArray(counts[k]) ? stmt(env, ...counts[k]) : env.DB.prepare(counts[k]))));
+  const results = await batch(env, keys.map((k) => (Array.isArray(counts[k]) ? stmt(env, ...counts[k]) : env.DB.prepare(counts[k]))));
   const got = Object.fromEntries(keys.map((k, i) => [k, results[i].results]));
   const out = { me: me(actor), settings: readSettings(got.settings), reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS,
     flagReasons: FLAGS, salt: secretIssue(env, "RATE_SALT", 1) === null };
@@ -3863,7 +3907,7 @@ async function queue(env) {
     AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0) ORDER BY r.id LIMIT 30),
     fg AS (SELECT DISTINCT r.company_id, r.grp FROM rules r JOIN f ON f.id = r.id)`;
   const [settingRows, groups, companyRows, reports, votes, posts, ruleRows, rejected, flaggedRows, flaggedReports, flaggedVotes, askRows] =
-    (await env.DB.batch([
+    (await batch(env, [
       env.DB.prepare(`SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`),
       env.DB.prepare(`${waiting} SELECT * FROM g`),
       env.DB.prepare(`${waiting} SELECT id, name, hidden FROM companies WHERE id IN (SELECT company_id FROM g)`),
@@ -3966,7 +4010,7 @@ async function answer(request, env, id, now) {
     stmts.push(stmt(env, `INSERT OR IGNORE INTO rewards (id, report_id, rule_id, device, months, status, memo, created_at, paid_at)
       VALUES (?, ?, '', ?, ?, 'owed', '', ?, NULL)`, `w${id}`, id, r.device, rewardMonths, now));
   }
-  await env.DB.batch(stmts);
+  await batch(env, stmts);
   await audit(env, now, "answer", id, `${body.answer}${reward ? "+reward" : ""}`);
   return json({ ok: true, reward });
 }
@@ -4009,7 +4053,7 @@ async function companies(env, query) {
 
 async function companyInfo(env, id) {
   // One trip for the whole page, however many rules the company has.
-  const [[c], intoRows, aliasRows, ruleRows, reports, votes, [pending]] = (await env.DB.batch([
+  const [[c], intoRows, aliasRows, ruleRows, reports, votes, [pending]] = (await batch(env, [
     stmt(env, "SELECT * FROM companies WHERE id = ?", id),
     stmt(env, "SELECT m.id, m.name FROM companies c JOIN companies m ON m.id = c.merged_into WHERE c.id = ?", id),
     stmt(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", id),
@@ -4076,7 +4120,7 @@ async function updateCompany(request, env, id, now) {
     if (typeof body.hidden !== "boolean") refuse("hidden", "hidden");
     stmts.push(stmt(env, "UPDATE companies SET hidden = ? WHERE id = ?", body.hidden ? 1 : 0, id));
   }
-  if (stmts.length) await env.DB.batch(stmts);
+  if (stmts.length) await batch(env, stmts);
   await audit(env, now, "company_update", id, JSON.stringify(body));
   return companyInfo(env, id);
 }
@@ -4121,7 +4165,7 @@ async function merge(request, env, id, now) {
     stmt(env, "UPDATE rules SET company_id = ? WHERE company_id = ?", into.id, from.id),
     stmt(env, "UPDATE companies SET merged_into = ? WHERE id = ? OR merged_into = ?", into.id, from.id, from.id),
   );
-  await env.DB.batch(stmts);
+  await batch(env, stmts);
   // Reports that now stand together may be enough to adopt.
   for (const g of await all(env, "SELECT DISTINCT grp FROM reports WHERE company_id = ? AND status = 'pending'", into.id)) {
     await settle(env, into.id, g.grp, now);
@@ -4144,7 +4188,7 @@ async function setRule(request, env, id, now) {
     // A department uses one rule; one adopted since stays unless the developer withdraws it first.
     const active = r.superseded ? null : await activeRule(env, r.company_id, r.dept_norm);
     if (active && active.id !== id) return json({ error: "active" }, 409);
-    await env.DB.batch([
+    await batch(env, [
       stmt(env, "UPDATE rules SET withdrawn = 0 WHERE id = ?", id),
       // Coworkers who sent the same setup meanwhile join it.
       ...(r.superseded ? [] : [stmt(env, `UPDATE reports SET status = 'adopted', rule_id = ?, decided_at = ?
@@ -4220,7 +4264,7 @@ async function saveSettings(request, env, now) {
   };
   const extra = { adopt_persons: pick("adoptPersons", 2, 10), amend_persons: pick("amendPersons", 2, 10), auto_reward: pick("autoReward", 0, 1),
     reward_cap_months: pick("rewardCapMonths", 1, 24), reward_cap_days: pick("rewardCapDays", 30, 365) };
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('adopt_points', ?)", String(body.adoptPoints)),
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('reward_months', ?)", String(body.rewardMonths)),
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('adopt_agree', ?)", String(agree)),
@@ -4289,7 +4333,7 @@ async function postList(env, url) {
   const ids = JSON.stringify(rows.map((p) => p.id));
   const talks = JSON.stringify([...new Map(rows.map((p) => [`${p.company_id}/${p.grp}`, [p.company_id, p.grp]])).values()]);
   const pairs = "SELECT json_extract(value, '$[0]') AS company_id, json_extract(value, '$[1]') AS grp FROM json_each(?)";
-  const [ruleDepts, reportDepts, flagRows, mutedRows] = rows.length ? (await env.DB.batch([
+  const [ruleDepts, reportDepts, flagRows, mutedRows] = rows.length ? (await batch(env, [
     stmt(env, `SELECT r.company_id, r.grp, r.dept FROM rules r JOIN (${pairs}) t ON t.company_id = r.company_id AND t.grp = r.grp
       ORDER BY r.version DESC`, talks),
     stmt(env, `SELECT r.company_id, r.grp, r.dept FROM reports r JOIN (${pairs}) t ON t.company_id = r.company_id AND t.grp = r.grp`, talks),
@@ -4359,10 +4403,10 @@ async function moderate(request, env, id, now) {
       stmts.push(stmt(env, `INSERT INTO muted (device, until, reason) VALUES (?, ?, ?)
         ON CONFLICT (device) DO UPDATE SET until = excluded.until, reason = excluded.reason`, p.device, now + LIMITS.muteDays * DAY, reason));
     }
-    await env.DB.batch(stmts);
+    await batch(env, stmts);
     await audit(env, now, body.action === "mute" ? "post_mute" : "post_hide", target, reason);
   } else if (body.action === "show") {
-    await env.DB.batch([
+    await batch(env, [
       ...plazaResults(env, p, "kept", p.status === "hidden" ? "shown" : null, now),
       stmt(env, "UPDATE posts SET status = 'shown', hide_reason = NULL, hidden_at = NULL, kept = 1, flags = 0 WHERE id = ?", id),
       stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id),
@@ -4370,7 +4414,7 @@ async function moderate(request, env, id, now) {
     ]);
     await audit(env, now, "post_show", target);
   } else if (body.action === "delete") {
-    await env.DB.batch([...plazaResults(env, p, "deleted", "deleted", now),
+    await batch(env, [...plazaResults(env, p, "deleted", "deleted", now),
       stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id), stmt(env, "DELETE FROM posts WHERE id = ?", id)]);
     await audit(env, now, "post_delete", target);
     return json({ deleted: true });
@@ -4455,7 +4499,7 @@ async function setLaunch(request, env, now) {
     refuse("freeFeatures", "freeFeatures");
   }
   const launchedAt = before.launchedAt ?? (live ? now : null);
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('billing_live', ?)", live ? "1" : "0"),
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('thanks_months', ?)", String(thanks)),
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('free_features', ?)", JSON.stringify([...new Set(free)])),
@@ -4539,7 +4583,7 @@ async function money(request, env, path) {
     if (!(await allow(env, `passcode|${dev}`, MONEY.codesPerDay, DAY, now))) return json({ error: "rate_limited" }, 429);
     // A new code replaces the old one; it is shown once and kept only as a hash.
     const code = passCode();
-    await env.DB.batch([
+    await batch(env, [
       stmt(env, "DELETE FROM pass_codes WHERE device = ?", dev),
       stmt(env, "INSERT INTO pass_codes (hash, device, created_at) VALUES (?, ?, ?)", await passCodeHash(code), dev, now),
     ]);
@@ -4555,7 +4599,7 @@ async function money(request, env, path) {
     if (!row) return json({ error: "code", field: "code" }, 404);
     if (row.device !== dev) {
       // The passes move; the old phone keeps nothing and the code is spent.
-      await env.DB.batch([
+      await batch(env, [
         stmt(env, "UPDATE rewards SET device = ? WHERE device = ?", dev, row.device),
         stmt(env, "DELETE FROM pass_codes WHERE device IN (?, ?)", row.device, dev),
       ]);
@@ -4585,7 +4629,7 @@ async function linkCode(env, actor, now) {
     if (!(await one(env, "SELECT 1 FROM link_codes WHERE code = ? AND expires > ?", c, now))) code = c;
   }
   if (!code) return json({ error: "busy" }, 503);
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "DELETE FROM link_codes WHERE admin = ? OR expires < ?", actor.id, now),
     stmt(env, "INSERT INTO link_codes (code, admin, admin_name, expires) VALUES (?, ?, ?, ?)", code, actor.id, actor.name, now + MONEY.linkMs),
   ]);
@@ -4610,7 +4654,7 @@ async function linkPhone(request, env, dev, now) {
   const others = await one(env, "SELECT COUNT(*) AS n FROM admin_devices WHERE admin = ? AND device != ?", row.admin, dev);
   if (others.n >= MONEY.phonesPerAdmin) return json({ error: "too_many", field: "code" }, 409);
   const status = owner ? "approved" : "pending";
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "DELETE FROM link_codes WHERE code = ?", body.code),
     stmt(env, "DELETE FROM admin_devices WHERE device = ?", dev),
     stmt(env, `INSERT INTO admin_devices (id, device, admin, admin_name, status, created_at, approved_at, seen_at)
@@ -4779,7 +4823,7 @@ async function consent(request, env, dev, now) {
   if (!(await allow(env, `consent|${dev}`, 20, DAY, now))) return json({ error: "rate_limited" }, 429);
   const detail = JSON.stringify({ answer: body.answer, product: body.product, price, trialEnd: iso(ends), shown: String(body.shown ?? "").slice(0, 300),
     ...(at !== now ? { answeredAt: iso(at), receivedAt: iso(now) } : {}) });
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "INSERT INTO consents (device, kind, detail, at) VALUES (?, 'trial_paid', ?, ?)", dev, detail, at),
     ...(body.answer === "keep" ? [stmt(env, "UPDATE subs SET consent_at = ? WHERE device = ? AND trial = 1 AND product = ?", at, dev, body.product)] : []),
   ]);
@@ -5162,7 +5206,7 @@ async function usage(request, env) {
       ON CONFLICT (day, app, event) DO UPDATE SET phones = phones + excluded.phones, total = total + excluded.total, recent = recent + excluded.recent`,
     ...part.flatMap(([day, e, phones, total, recent]) => [day, app, e, phones, total, recent])));
   }
-  await env.DB.batch(stmts);
+  await batch(env, stmts);
   return skipped ? json({ ok: true, skipped }) : new Response(null, { status: 204 });
 }
 
@@ -5175,7 +5219,7 @@ async function metrics(env, url, now) {
   const days = Math.min(90, Math.max(7, Number.parseInt(url.searchParams.get("days") ?? "28", 10) || 28));
   const to = kstDay(now - DAY);
   const from = kstDay(now - days * DAY);
-  const [dayRows, eventRows, subs] = (await env.DB.batch([
+  const [dayRows, eventRows, subs] = (await batch(env, [
     stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day ORDER BY day", from, to),
     stmt(env, `SELECT event, SUM(phones) AS phones, SUM(total) AS total, SUM(recent) AS recent FROM usage_events
       WHERE day BETWEEN ? AND ? GROUP BY event`, from, to),
@@ -5283,9 +5327,40 @@ async function plazaNews(request, env, url) {
   const dev = await installOf(request);
   const now = Date.now();
   if (await paused(env, "PLAZA_NEWS")) return json({ items: [], now: iso(now), paused: true });
+  return json({ items: await newsItems(env, dev, newsSince(url, now), now), now: iso(now) });
+}
+
+const newsSince = (url, now) => {
   const asked = Date.parse(url.searchParams.get("since") ?? "");
-  const since = Math.max(Number.isFinite(asked) ? asked : now - DAY, now - 14 * DAY);
-  const [changed, adopted, rates, results] = (await env.DB.batch([
+  return Math.max(Number.isFinite(asked) ? asked : now - DAY, now - 14 * DAY);
+};
+
+/**
+ * [SRV-10] N3 밤낮 소식 in one ask a day: the plaza news, new answers to this phone's questions and the
+ * notices that began since, so the app shows one notification for all of it. The same one install id as
+ * the plaza news; links about to end are known on the phone and never asked here.
+ */
+async function digest(request, env, url) {
+  const dev = await installOf(request);
+  const now = Date.now();
+  const since = newsSince(url, now);
+  const [plaza, answers, ops] = await Promise.all([
+    paused(env, "PLAZA_NEWS").then((off) => (off ? null : newsItems(env, dev, since, now))),
+    all(env, `SELECT m.inquiry_id AS id, COUNT(*) AS n, MAX(m.at) AS at FROM inquiry_messages m JOIN inquiries i ON i.id = m.inquiry_id
+      WHERE i.device = ? AND m.sender = 'admin' AND m.at > ? AND m.at <= ? GROUP BY m.inquiry_id ORDER BY at DESC LIMIT 10`, dev, since, now),
+    opsState(env),
+  ]);
+  return json({
+    plaza: plaza ?? [],
+    ...(plaza ? {} : { plazaPaused: true }),
+    answers: answers.map((a) => ({ inquiry: a.id, count: a.n, at: iso(a.at) })),
+    notices: ops.notices.filter((n) => n.from > since && n.from <= now && now < n.until).map(noticeView),
+    now: iso(now),
+  });
+}
+
+async function newsItems(env, dev, since, now) {
+  const [changed, adopted, rates, results] = (await batch(env, [
     stmt(env, `SELECT n.company_id, c.name, n.dept, n.version, n.adopted_at AS at FROM uses u
         JOIN rules o ON o.company_id = u.company_id AND o.grp = u.grp AND o.superseded = 1
         JOIN rules n ON n.company_id = o.company_id AND n.dept_norm = o.dept_norm AND n.superseded = 0 AND n.withdrawn = 0 AND n.adopted_at > ?
@@ -5309,7 +5384,7 @@ async function plazaNews(request, env, url) {
     ...results.map((r) => ({ kind: r.kind, result: r.result, ...(r.post_id ? { post: r.post_id } : {}),
       ...(r.company_id ? { company: { id: r.company_id, name: r.name ?? "" } } : {}), at: iso(r.at) })),
   ].sort((a, b) => b.at.localeCompare(a.at));
-  return json({ items, now: iso(now) });
+  return items;
 }
 
 // [SRV-06] Photos with a question: what the phone made (JPEG, long side 1600px, no metadata) checked again.
@@ -5401,6 +5476,78 @@ export async function syncShareSwitch(env) {
   }
   await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('share_create_synced', ?)", String(off));
   return true;
+}
+
+/**
+ * [SRV-10] N8 쉬는 기능 자동: when today's D1 writes pass 90% of the free day (D1_WRITES_PER_DAY, 100,000
+ * unless set), the hourly job rests 사용 통계 받기, and an hour later still over, 문의 사진 받기; when the
+ * share server's KV writes pass 90% of KV_WRITES_PER_DAY (1,000), 근무표 링크 새로 만들기. Each comes with a
+ * notice for the day. Next day, below the line, it turns back on what it turned off itself, never a
+ * switch the developer turned off by hand.
+ */
+const AUTO_REST = { share: 0.9, d1: ["USAGE_STATS", "INQUIRY_PHOTOS"], kv: "SHARE_CREATE" };
+
+export async function autoRest(env, now) {
+  await flushMeter(env, now, true);
+  const day = meterDay(now);
+  const used = (await one(env, "SELECT count FROM counters WHERE key = ?", `meter|${day}`))?.count ?? 0;
+  const d1Budget = Number(env.D1_WRITES_PER_DAY) > 0 ? Number(env.D1_WRITES_PER_DAY) : 100000;
+  const kvBudget = Number(env.KV_WRITES_PER_DAY) > 0 ? Number(env.KV_WRITES_PER_DAY) : 1000;
+  let kv = 0;
+  if (shareAdmin(env)) {
+    try {
+      const st = await shareCall(env, "GET", "/api/admin/stats?days=1");
+      kv = Number(st?.days?.[0]?.writes ?? 0) || 0;
+    } catch {
+      kv = 0;
+    }
+  }
+  const s = await opsState(env);
+  const rested = JSON.parse((await one(env, "SELECT value FROM settings WHERE key = 'auto_rested'"))?.value ?? "[]");
+  let off = [...s.off];
+  let notices = [...s.notices];
+  let mine = rested.filter((r) => off.includes(r.key));
+  const turnOff = async (key, why) => {
+    off = [...new Set([...off, key])];
+    mine.push({ key, day, notice: `n${randomId(9)}` });
+    notices.push({ id: mine.at(-1).notice, title: "잠시 쉬는 기능이 있어요", body: `오늘 사용이 많아 '${SWITCHES[key]}'를 내일까지 쉬어요. 다른 기능은 그대로예요.`,
+      level: "info", from: now, until: now + DAY, minApp: null, maxApp: null, audience: null, action: null });
+    await audit(env, now, "auto_rest", key, why);
+  };
+  const back = [];
+  // A new day below the line: what the job rested goes back on.
+  for (const r of mine.filter((r) => r.day !== day)) {
+    if ((r.key === AUTO_REST.kv ? kv < kvBudget * AUTO_REST.share : used < d1Budget * AUTO_REST.share)) back.push(r);
+  }
+  if (back.length) {
+    off = off.filter((k) => !back.some((r) => r.key === k));
+    notices = notices.filter((n) => !back.some((r) => r.notice === n.id));
+    mine = mine.filter((r) => !back.includes(r));
+    for (const r of back) await audit(env, now, "auto_resume", r.key, SWITCHES[r.key]);
+  }
+  let changed = back.length > 0;
+  if (used >= d1Budget * AUTO_REST.share) {
+    const next = AUTO_REST.d1.find((k) => !off.includes(k));
+    // One more each hour while it stays over, so the gentlest goes first.
+    const lastToday = mine.filter((r) => r.day === day && AUTO_REST.d1.includes(r.key)).length;
+    if (next && (lastToday === 0 || !mine.some((r) => r.day === day && r.hour === Math.floor(now / HOUR)))) {
+      await turnOff(next, `D1 ${used}/${d1Budget}`);
+      mine.at(-1).hour = Math.floor(now / HOUR);
+      changed = true;
+    }
+  }
+  if (kv >= kvBudget * AUTO_REST.share && !off.includes(AUTO_REST.kv)) {
+    await turnOff(AUTO_REST.kv, `KV ${kv}/${kvBudget}`);
+    changed = true;
+  }
+  if (!changed) return { used, kv, rested: mine.map((r) => r.key) };
+  notices = notices.filter((n) => n.until > now - 30 * DAY).slice(-NOTICE.max);
+  await batch(env, [
+    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('switches_off', ?)", JSON.stringify(off)),
+    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('notices', ?)", JSON.stringify(notices)),
+    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_rested', ?)", JSON.stringify(mine)),
+  ]);
+  return { used, kv, rested: mine.map((r) => r.key) };
 }
 
 // [SRV-05][STAT-04] The share server, from here: its reported links, taking one down, its day totals.

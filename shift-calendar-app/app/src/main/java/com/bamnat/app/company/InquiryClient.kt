@@ -70,10 +70,21 @@ data class PublicInquiry(
     val topic: String,
     val topicName: String,
     val updatedAt: Instant,
+    /** [COMM-11] The writer sealed by the server, as in the plaza; kept to hide this writer. Null on one's own. */
+    val author: String? = null,
 )
 
-/** One page of 모두의 문의, how many there are in each topic, and where the next page starts. */
-data class PublicPage(val items: List<PublicInquiry>, val topics: List<Pair<String, String>>, val counts: Map<String, Int>, val next: Int?)
+/**
+ * One page of 모두의 문의, how many there are in each topic, and where the next page starts;
+ * [hiddenByYou] how many this phone's 이 사람 글 안 보기 left out [COMM-11].
+ */
+data class PublicPage(
+    val items: List<PublicInquiry>,
+    val topics: List<Pair<String, String>>,
+    val counts: Map<String, Int>,
+    val next: Int?,
+    val hiddenByYou: Int = 0,
+)
 
 /** A public question with every message; [hidden] only reaches its writer. */
 data class PublicThread(
@@ -88,6 +99,8 @@ data class PublicThread(
     val createdAt: Instant,
     val messages: List<InquiryMessage>,
     val hidden: String?,
+    /** [COMM-11] The writer's mark for 이 사람 글 안 보기; null on one's own. */
+    val author: String? = null,
 )
 
 /** Why someone 신고s a public question: the server's code and the words for it. */
@@ -131,12 +144,30 @@ interface InquiryApi {
     suspend fun flag(device: String, id: String, reason: InquiryFlag)
     /** [INQ-03] 도움이 됐어요 (true), 아쉬워요 (false) or taking it back (null), once there is an answer. */
     suspend fun rate(device: String, id: String, good: Boolean?): Inquiry
+
+    /**
+     * [SRV-08] The same question sent again with the same [requestId] (a retry after a lost answer, or
+     * the queue of [InquiryOutbox]) gets the first answer back rather than a second question.
+     */
+    suspend fun send(device: String, kind: InquiryKind, text: String, info: InquiryInfo, requestId: String): Inquiry =
+        send(device, kind, text, info)
+
+    suspend fun more(device: String, id: String, text: String, requestId: String): Inquiry = more(device, id, text)
 }
 
-class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : InquiryApi {
+class InquiryClient(
+    private val baseUrl: String = BuildConfig.COMPANY_BASE_URL,
+    /** [COMM-11] The X-Hide header, the same writers the plaza hides; null for none. */
+    private val hidden: () -> String? = { null },
+) : InquiryApi {
     override val enabled: Boolean get() = baseUrl.isNotBlank()
 
-    override suspend fun send(device: String, kind: InquiryKind, text: String, info: InquiryInfo): Inquiry = serverCall {
+    private fun hide(): Map<String, String> = hidden()?.let { mapOf("X-Hide" to it) }.orEmpty()
+
+    override suspend fun send(device: String, kind: InquiryKind, text: String, info: InquiryInfo): Inquiry =
+        send(device, kind, text, info, newRequestId())
+
+    override suspend fun send(device: String, kind: InquiryKind, text: String, info: InquiryInfo, requestId: String): Inquiry = serverCall {
         val i = JSONObject().put("app", info.app).put("model", info.model).put("android", info.android)
         info.diag?.takeIf { it.isNotBlank() }?.let { i.put("diag", it.take(DIAG_MAX)) }
         info.pay?.takeIf { it.isNotBlank() }?.let { i.put("pay", it.take(PAY_MAX)) }
@@ -147,15 +178,17 @@ class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
         if (info.photos.isNotEmpty()) {
             body.put("photos", org.json.JSONArray(info.photos.take(InquiryPhotos.MAX).map { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }))
         }
-        inquiry(serverRequest(baseUrl, "POST", "/api/inquiries", body))
+        inquiry(onceRequest(baseUrl, "/api/inquiries", body, requestId = requestId))
     }
 
     override suspend fun mine(device: String): List<Inquiry> = serverCall {
         serverRequest(baseUrl, "GET", "/api/inquiries", device = device).optJSONArray("inquiries").objects().map(::inquiry)
     }
 
-    override suspend fun more(device: String, id: String, text: String): Inquiry = serverCall {
-        inquiry(serverRequest(baseUrl, "POST", "/api/inquiries/$id/messages", JSONObject().put("text", text.trim()), device))
+    override suspend fun more(device: String, id: String, text: String): Inquiry = more(device, id, text, newRequestId())
+
+    override suspend fun more(device: String, id: String, text: String, requestId: String): Inquiry = serverCall {
+        inquiry(onceRequest(baseUrl, "/api/inquiries/$id/messages", JSONObject().put("text", text.trim()), device, requestId))
     }
 
     /** One already gone counts as deleted. */
@@ -171,7 +204,7 @@ class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
     override suspend fun board(device: String, topic: String?, bySame: Boolean, after: Int): PublicPage = serverCall {
         val query = listOfNotNull(topic?.let { "topic=$it" }, "sort=same".takeIf { bySame }, "after=$after".takeIf { after > 0 })
             .joinToString("&").let { if (it.isEmpty()) "" else "?$it" }
-        val o = serverRequest(baseUrl, "GET", "/api/inquiries/public$query", device = device)
+        val o = serverRequest(baseUrl, "GET", "/api/inquiries/public$query", device = device, headers = hide())
         val names = o.optJSONObject("topicNames")
         val counts = o.optJSONObject("topics")
         PublicPage(
@@ -188,16 +221,18 @@ class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
                     topic = it.optString("topic", "etc"),
                     topicName = it.optString("topicName", "기타"),
                     updatedAt = Instant.parse(it.getString("updatedAt")),
+                    author = it.optStringOrNull("author")?.takeIf { a -> com.bamnat.core.plaza.HideList.MARK.matches(a) },
                 )
             },
             topics = names?.keys()?.asSequence()?.map { it to names.optString(it) }?.toList().orEmpty(),
             counts = counts?.keys()?.asSequence()?.associateWith { counts.optInt(it) }.orEmpty(),
             next = if (o.isNull("next")) null else o.optInt("next"),
+            hiddenByYou = o.optInt("hiddenByYou"),
         )
     }
 
     override suspend fun boardThread(device: String, id: String): PublicThread = serverCall {
-        val o = serverRequest(baseUrl, "GET", "/api/inquiries/public/$id", device = device)
+        val o = serverRequest(baseUrl, "GET", "/api/inquiries/public/$id", device = device, headers = hide())
         PublicThread(
             id = o.getString("id"),
             kind = InquiryKind.of(o.optString("kind")),
@@ -210,6 +245,7 @@ class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
             createdAt = Instant.parse(o.getString("createdAt")),
             messages = messages(o),
             hidden = o.optJSONObject("hidden")?.optString("text"),
+            author = o.optStringOrNull("author")?.takeIf { com.bamnat.core.plaza.HideList.MARK.matches(it) },
         )
     }
 
@@ -218,7 +254,7 @@ class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
     }
 
     override suspend fun flag(device: String, id: String, reason: InquiryFlag) = serverCall {
-        serverRequest(baseUrl, "POST", "/api/inquiries/$id/flag", JSONObject().put("device", device).put("reason", reason.code))
+        onceRequest(baseUrl, "/api/inquiries/$id/flag", JSONObject().put("device", device).put("reason", reason.code))
         Unit
     }
 
@@ -248,6 +284,9 @@ class InquiryClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) 
     )
 
     companion object {
+        /** [SRV-08] A random id for one request, kept with it so a retry is the same request. */
+        fun newRequestId(): String = java.util.UUID.randomUUID().toString()
+
         /** The longest question the server takes, and the longest alarm check. */
         const val TEXT_MAX = 2000
         const val DIAG_MAX = 6000

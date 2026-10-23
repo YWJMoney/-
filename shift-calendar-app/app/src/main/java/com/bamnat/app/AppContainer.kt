@@ -275,12 +275,37 @@ class AppContainer(context: Context) {
             usageStats.sendIfDue(settingsRepository.current.shareUsageStats && !remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.USAGE_STATS))
         }
         runCatching { syncPasses(force) }
+        runCatching { sendConsent() }
         // Play is asked only once paying is possible, or for a subscription this phone already knew.
         if (remoteConfig.current.billingLive || proStore.current.sub != null) runCatching { billing.refresh() }
         featureGate.refresh()
         // [STAT-04] A day with a paid subscription counts toward the G2 gate (구독 사용자 비율).
         if (featureGate.state.value.access.reason == com.bamnat.core.tier.ProReason.SUBSCRIPTION) {
             telemetry.event(com.bamnat.core.stats.UsageEvent.PRO_SUB.key)
+        }
+    }
+
+    /**
+     * [SRV-07] Sends the trial answer waiting in [ProStore]; true once the server has it. A refusal for the
+     * answer itself (not the connection) is dropped, as sending it again would not change it.
+     */
+    suspend fun sendConsent(): Boolean {
+        val q = proStore.current.pendingConsent ?: return true
+        if (q.stale(java.time.Instant.now())) {
+            proStore.consentSent(q)
+            return true
+        }
+        if (!tierApi.enabled) return false
+        return try {
+            tierApi.consent(companyStore.device, q.answer, q.product, q.price, q.trialEnd, q.shown, q.answeredAt)
+            proStore.consentSent(q)
+            true
+        } catch (e: com.bamnat.app.company.CompanyException) {
+            if (!e.retryable) {
+                runCatching { telemetry.event("consent", "dropped ${e.code}") }
+                proStore.consentSent(q)
+            }
+            false
         }
     }
 
