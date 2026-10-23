@@ -113,22 +113,32 @@ android {
         val forks = (findProperty("bamnat.testForks") as String?)?.toIntOrNull()
             ?: (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 3)
         // [QA-05] CI runs the tests in shards side by side (-Pbamnat.testSet): unit = all but the screenshots,
-        // shots-a = the screenshot classes named below, shots-b = every other screenshot class (new ones too).
+        // shots-a = the screenshot classes named below, shots-b = every other screenshot class (new ones too),
+        // api = the classes that run on several Android versions.
         val testSet = findProperty("bamnat.testSet") as String?
         val shots = "com.bamnat.app.screenshots"
         val shotsA = listOf("Calendar", "Pay", "MemoStats", "I", "K").map { "$shots.${it}ScreenshotTest" }
+        // [REL-14] The classes that run on Android 8, 11, 13 and 15 (@Config(sdk = [26, 30, 33, 35])) go in a JVM of
+        // their own (api): sandboxes of several Android versions crash the native SQLite of the other tests in the
+        // same JVM. Without -Pbamnat.testSet they are left out; run them with -Pbamnat.testSet=api.
+        val apiLevels = listOf("ApiLevelSmokeTest", "AlarmMatrixTest").map { "com.bamnat.app.rules.$it" }
         unitTests.all {
             it.maxHeapSize = "2g"
             it.maxParallelForks = forks
             // [REL-14] Where Robolectric fetches the Android jars of older versions (default Maven Central).
             (findProperty("bamnat.robolectricRepo") as String?)?.let { url -> it.systemProperty("robolectric.dependency.repo.url", url) }
             when (testSet) {
-                "unit" -> it.filter.excludeTestsMatching("$shots.*")
+                "api" -> apiLevels.forEach { c -> it.filter.includeTestsMatching(c) }
+                "unit" -> {
+                    it.filter.excludeTestsMatching("$shots.*")
+                    apiLevels.forEach { c -> it.filter.excludeTestsMatching(c) }
+                }
                 "shots-a" -> shotsA.forEach { c -> it.filter.includeTestsMatching(c) }
                 "shots-b" -> {
                     it.filter.includeTestsMatching("$shots.*")
                     shotsA.forEach { c -> it.filter.excludeTestsMatching(c) }
                 }
+                else -> apiLevels.forEach { c -> it.filter.excludeTestsMatching(c) }
             }
         }
     }

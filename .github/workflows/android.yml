@@ -53,15 +53,16 @@ jobs:
           name: core-reports
           path: shift-calendar-app/core/build/reports
           retention-days: 7
-  # The app's tests in three shards: everything but the screenshots, and the screenshot classes in two halves
-  # (app/build.gradle.kts bamnat.testSet). Each shard runs its classes in parallel forks too.
+  # The app's tests in four shards: everything but the screenshots, the screenshot classes in two halves, and the
+  # classes that run on Android 8, 11, 13 and 15 (app/build.gradle.kts bamnat.testSet). Each shard runs its classes
+  # in parallel forks too.
   app:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        set: [unit, shots-a, shots-b]
+        set: [unit, shots-a, shots-b, api]
     defaults:
       run:
         working-directory: shift-calendar-app
