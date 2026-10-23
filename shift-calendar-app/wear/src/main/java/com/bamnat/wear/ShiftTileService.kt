@@ -14,6 +14,7 @@ import androidx.wear.tiles.TileBuilders
 import androidx.wear.tiles.TileService
 import com.bamnat.core.work.WatchDays
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -25,6 +26,13 @@ import java.time.ZoneId
 class ShiftTileService : TileService() {
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<TileBuilders.Tile> =
         CallbackToFutureAdapter.getFuture { done ->
+            // [WEAR-03] 오늘 알람 끄기 tapped on the tile: the phone turns it off and sends the days back.
+            if (requestParams.currentState.lastClickableId == ALARM_OFF) {
+                val today = java.time.LocalDate.now().toString()
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                    WatchStore.send(applicationContext, WatchDays.ALARM_OFF_PATH, today)
+                }
+            }
             val zone = ZoneId.systemDefault()
             val nowMs = System.currentTimeMillis()
             val now = LocalDateTime.ofInstant(Instant.ofEpochMilli(nowMs), zone)
@@ -69,6 +77,15 @@ class ShiftTileService : TileService() {
                 col.addContent(space(4f))
                 col.addContent(text(it, 12f, AMBER))
             }
+            WatchDays.weekText(p)?.let {
+                col.addContent(space(2f))
+                col.addContent(text(it, 11f, GREY))
+            }
+            // [WEAR-03] Turn today's alarm off from the wrist, before bed after a night (I 리뷰 N7 c).
+            if (p.alarmToday) {
+                col.addContent(space(6f))
+                col.addContent(button("오늘 알람 끄기", ALARM_OFF))
+            }
         }
         val open = ModifiersBuilders.Clickable.Builder()
             .setId("open")
@@ -97,6 +114,19 @@ class ShiftTileService : TileService() {
 
     private fun space(h: Float) = LayoutElementBuilders.Spacer.Builder().setHeight(dp(h)).build()
 
+    /** A pill the size of a finger that asks the tile again with [id] as the tapped clickable. */
+    private fun button(label: String, id: String) = LayoutElementBuilders.Box.Builder()
+        .setHeight(dp(40f))
+        .setWidth(androidx.wear.protolayout.DimensionBuilders.wrap())
+        .setModifiers(ModifiersBuilders.Modifiers.Builder()
+            .setClickable(ModifiersBuilders.Clickable.Builder().setId(id).setOnClick(ActionBuilders.LoadAction.Builder().build()).build())
+            .setBackground(ModifiersBuilders.Background.Builder().setColor(argb(BUTTON))
+                .setCorner(ModifiersBuilders.Corner.Builder().setRadius(dp(20f)).build()).build())
+            .setPadding(ModifiersBuilders.Padding.Builder().setStart(dp(14f)).setEnd(dp(14f)).build())
+            .build())
+        .addContent(text(label, 13f, WHITE, lines = 1))
+        .build()
+
     companion object {
         private const val RESOURCES = "1"
         const val WHITE = 0xFFFFFFFF.toInt()
@@ -104,16 +134,10 @@ class ShiftTileService : TileService() {
         const val GREY = 0xFF9AA3B5.toInt()
         const val AMBER = 0xFFFFC266.toInt()
 
-        /** The shift's colour lifted so it reads on the watch's black. */
-        fun readable(argbLong: Long): Int {
-            val c = argbLong.toInt()
-            val r = (c shr 16) and 0xFF
-            val g = (c shr 8) and 0xFF
-            val b = c and 0xFF
-            val lum = (0.299 * r + 0.587 * g + 0.114 * b)
-            if (lum >= 110) return c or (0xFF shl 24)
-            fun lift(v: Int) = (v + (255 - v) * 0.45).toInt().coerceIn(0, 255)
-            return (0xFF shl 24) or (lift(r) shl 16) or (lift(g) shl 8) or lift(b)
-        }
+        const val BUTTON = 0xFF2B3140.toInt()
+        private const val ALARM_OFF = "alarm_off"
+
+        /** [WEAR-02] The shift's colour lifted so it reads on the watch's black: the shared rule in core, tested there. */
+        fun readable(argbLong: Long): Int = com.bamnat.core.layout.Contrast.onBlack(argbLong).toInt()
     }
 }

@@ -61,6 +61,24 @@
                 android:value="0" />
         </service>
 
+        <!-- [WEAR-03] 이번 주 근무시간: a ring toward 주 52시간. -->
+        <service
+            android:name=".WeekHoursComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_launcher_monochrome"
+            android:label="@string/week_complication_label"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="RANGED_VALUE,SHORT_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
+        </service>
+
         <!-- The phone's days arriving; only Google Play services binds it. -->
         <service
             android:name=".DaysListenerService"

@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.layout
@@ -89,12 +90,9 @@ private val DarkInk = Color(0xFF151927)
  * [VIS-01] Readable text color on top of [background]: whichever of white and the app's dark ink
  * has the higher contrast (WCAG), so 오후 #F2994A or 대근 #0E9F6E get dark letters, not faint white.
  */
-fun contentColorOn(background: Color): Color {
-    val l = background.luminance()
-    val onWhite = 1.05f / (l + 0.05f)
-    val onDark = (l + 0.05f) / (DarkInk.luminance() + 0.05f)
-    return if (onDark > onWhite) DarkInk else Color.White
-}
+fun contentColorOn(background: Color): Color =
+    // [WEAR-02] The same rule as the widgets and the watch, in core.
+    if (com.bamnat.core.layout.Contrast.inkOn(background.toArgb().toLong() and 0xFFFFFFFFL, DarkInk.toArgb().toLong() and 0xFFFFFFFFL) == com.bamnat.core.layout.Contrast.WHITE) Color.White else DarkInk
 
 /** [DAY-02] Inside the day's groups sections drop their own card, so a group never holds a box in a box. */
 val LocalFlatSections = androidx.compose.runtime.staticCompositionLocalOf { false }

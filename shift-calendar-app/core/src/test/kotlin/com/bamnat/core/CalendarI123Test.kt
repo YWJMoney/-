@@ -8,7 +8,12 @@ import com.bamnat.core.model.ExtraEntry
 import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.ExtraKinds
 import com.bamnat.core.schedule.ExtraStamp
+import com.bamnat.core.layout.Contrast
 import com.bamnat.core.work.Heat
+import com.bamnat.core.work.WatchDay
+import com.bamnat.core.work.WatchDays
+import com.bamnat.core.work.WatchPayload
+import java.time.LocalDateTime
 import com.bamnat.core.work.ShiftHealth
 import org.junit.Assert.assertNull
 import com.bamnat.core.model.Leave
@@ -121,5 +126,61 @@ class CalendarI123Test {
         assertEquals(Heat.SHORT_REST, heat[monday.plusDays(3)])
         assertEquals(Heat.REST, heat[monday.plusDays(5)])
         assertTrue(monday.plusDays(3) in ShiftHealth.shortRestDays(2026, r::resolve))
+    }
+
+    /** [WEAR-02] One contrast rule: dark ink on light shifts, white on dark ones, and lifted colours read on black. */
+    @Test
+    fun `the shared contrast rule picks readable ink and lifts dark colours on black`() {
+        assertEquals(Contrast.DARK_INK, Contrast.inkOn(0xFFF2994AL)) // 오후
+        assertEquals(Contrast.WHITE, Contrast.inkOn(0xFF5E35B1L)) // 야간
+        for (c in listOf(0xFF5E35B1L, 0xFF1E88E5L, 0xFF0E9F6EL, 0xFFFFEB3BL, 0xFF000080L)) {
+            assertTrue(Contrast.ratio(Contrast.onBlack(c), Contrast.BLACK) >= 4.5)
+            val ink = Contrast.inkOn(c)
+            assertTrue(Contrast.ratio(c, ink) >= Contrast.ratio(c, if (ink == Contrast.WHITE) Contrast.DARK_INK else Contrast.WHITE))
+        }
+        // A colour that already reads is kept as it is.
+        assertEquals(0xFFFFEB3BL, Contrast.onBlack(0xFFFFEB3BL))
+    }
+
+    /** [WEAR-01][WEAR-03] The new watch fields travel and an older copy still reads with safe defaults. */
+    @Test
+    fun `watch payload carries week start, week hours, clock and today's alarm`() {
+        val day = WatchDay(wed, "야간", "야", 0xFF5E35B1L, LocalTime.of(22, 0), LocalTime.of(7, 0), icon = "moon")
+        val p = WatchPayload(listOf(day), LocalDateTime.of(2026, 10, 7, 9, 0), weekStart = 7, weekMinutes = 38 * 60 + 30,
+            weekLimitMinutes = 52 * 60, clock = WatchPayload.Clock.OUT, alarmToday = true)
+        val back = WatchDays.decode(WatchDays.encode(p))!!
+        assertEquals(p, back)
+        assertEquals("이번 주 38시간 30분 / 52시간", WatchDays.weekText(back))
+        // What a 1.22 phone sent: six header fields and seven per day.
+        val old = "v1\t2026-10-07T09:00\t\t\t내 달력\t0\n2026-10-07\t야간\t야\t4284364209\t22:00\t07:00\t0"
+        val read = WatchDays.decode(old)!!
+        assertEquals(1, read.weekStart)
+        assertEquals(-1, read.weekMinutes)
+        assertNull(WatchDays.weekText(read))
+        assertEquals(WatchPayload.Clock.NONE, read.clock)
+        assertNull(read.days.single().icon)
+    }
+
+    @Test
+    fun `the watch month starts on the phone's day and pages as far as the days reach`() {
+        // October 2026 starts on a Thursday: 3 blanks from Monday, 4 from Sunday.
+        assertEquals(3, WatchDays.monthGrid(2026, 10, 1).first().takeWhile { it == null }.size)
+        assertEquals(4, WatchDays.monthGrid(2026, 10, 7).first().takeWhile { it == null }.size)
+        assertEquals(listOf("일", "월", "화", "수", "목", "금", "토"), WatchDays.weekHead(7))
+        val days = listOf(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 12, 15)).map { WatchDay(it, "주간", "주", 0) }
+        assertEquals(-1..2, WatchDays.monthRange(days, LocalDate.of(2026, 10, 23)))
+    }
+
+    /** [DAYW-10] Two pieces of extra work on a day off both reach the watch. */
+    @Test
+    fun `a day off with two extras says both on the watch`() {
+        val sat = LocalDate.of(2026, 10, 10)
+        val kinds = ExtraKinds()
+        val r = resolver(DayEntry(sat, extras = listOf(
+            ExtraEntry(ExtraKind.SPECIAL_ID, LocalTime.of(9, 0), LocalTime.of(13, 0)),
+            ExtraEntry(ExtraKind.COVER_ID, LocalTime.of(22, 0), LocalTime.of(7, 0), 60, coveredShiftId = 3),
+        )))
+        val w = WatchDays.day(r.resolve(sat))
+        assertEquals("${kinds.name(ExtraKind.SPECIAL_ID)} 외 1건", w.name)
     }
 }
