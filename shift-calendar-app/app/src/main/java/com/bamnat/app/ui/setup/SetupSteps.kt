@@ -41,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
@@ -370,8 +371,8 @@ private fun ShiftTimeCard(t: ShiftType, onChange: (ShiftType) -> Unit, onMore: (
                 Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 TimeBox(if (overnight) "끝 · 다음 날" else "끝", end, Modifier.weight(1f)) { picking = TimeRangePart.END }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("쉬는 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            // [A11Y-04] On a big font the stepper goes under the words instead of squeezing them into two lines.
+            val breakStepper: @Composable () -> Unit = {
                 MinutesStepper(
                     minutes = t.breakMinutes,
                     onChange = { onChange(t.copy(breakMinutes = it)) },
@@ -379,6 +380,15 @@ private fun ShiftTimeCard(t: ShiftType, onChange: (ShiftType) -> Unit, onMore: (
                     max = 4 * 60,
                     dialogTitle = "${t.name} 쉬는 시간",
                 )
+            }
+            if (LocalDensity.current.fontScale >= 1.5f) {
+                Text("쉬는 시간", style = MaterialTheme.typography.bodyLarge)
+                breakStepper()
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("쉬는 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    breakStepper()
+                }
             }
             Text(
                 "실제 근무 ${HoursFormat.korean(t.workMinutes)}" + if (t.breakMinutes > 0) " (쉬는 시간 빼고)" else "",
