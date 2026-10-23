@@ -3767,8 +3767,10 @@ export async function notifyAdmins(env, kind, message, now = Date.now()) {
   try {
     const keys = pushReady(env);
     if (!keys || !env.DB || !Object.hasOwn(PUSH_KINDS, kind)) return { sent: 0, gone: 0 };
+    // An urgent question is a question too: it goes once to those who asked for either.
+    const also = kind === "urgent" ? "inquiry" : kind;
     const rows = await all(env, `SELECT s.*, a.perms, a.status FROM push_subscriptions s LEFT JOIN admins a ON a.id = s.admin
-      WHERE (',' || s.kinds || ',') LIKE ?`, `%,${kind},%`);
+      WHERE (',' || s.kinds || ',') LIKE ? OR (',' || s.kinds || ',') LIKE ?`, `%,${kind},%`, `%,${also},%`);
     const to = rows.filter((r) => {
       const actor = r.admin === OWNER.id ? OWNER : r.status === "active" ? { owner: false, perms: readPerms(r.perms) } : null;
       return actor && mayGet(actor, kind) && !quietNow(r.quiet_from, r.quiet_to, now);
@@ -5585,13 +5587,18 @@ async function metrics(env, url, now) {
   const days = Math.min(90, Math.max(7, Number.parseInt(url.searchParams.get("days") ?? "28", 10) || 28));
   const to = kstDay(now - DAY);
   const from = kstDay(now - days * DAY);
-  const [dayRows, eventRows, subs] = (await env.DB.batch([
+  // [ADMUX-07] The period just before, day by day, for the chart's dashed line.
+  const beforeFrom = kstDay(now - 2 * days * DAY);
+  const beforeTo = kstDay(now - (days + 1) * DAY);
+  const [dayRows, eventRows, subs, beforeRows] = (await env.DB.batch([
     stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day ORDER BY day", from, to),
     stmt(env, `SELECT event, SUM(phones) AS phones, SUM(total) AS total, SUM(recent) AS recent FROM usage_events
       WHERE day BETWEEN ? AND ? GROUP BY event`, from, to),
     stmt(env, `SELECT SUM(CASE WHEN trial = 1 THEN 1 ELSE 0 END) AS trials, SUM(CASE WHEN trial = 0 THEN 1 ELSE 0 END) AS paid,
       SUM(CASE WHEN auto_renew = 0 THEN 1 ELSE 0 END) AS ending FROM subs WHERE state IN ('ACTIVE', 'GRACE') AND expiry > ?`, now),
+    stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day", beforeFrom, beforeTo),
   ])).map((r) => r.results);
+  const was = new Map(beforeRows.map((r) => [r.day, r.phones]));
   const phoneDays = dayRows.reduce((n, r) => n + r.phones, 0);
   const daily = dayRows.length ? Math.round(phoneDays / dayRows.length) : 0;
   const ev = new Map(eventRows.map((r) => [r.event, r]));
@@ -5605,6 +5612,8 @@ async function metrics(env, url, now) {
   return {
     from, to, days, phoneDays, daily, enough,
     series: dayRows.map((r) => ({ day: r.day, phones: r.phones })),
+    // The same day [days] earlier for each day of the series, 0 when nothing came that day.
+    before: dayRows.map((r) => was.get(kstDay(Date.parse(`${r.day}T00:00:00+09:00`) - days * DAY)) ?? 0),
     events: Object.entries(EVENTS).map(([event, label]) => {
       const r = ev.get(event);
       return { event, label, phones: r?.phones ?? 0, total: r?.total ?? 0, share: share(event) === null ? null : Math.round(share(event) * 1000) / 10 };

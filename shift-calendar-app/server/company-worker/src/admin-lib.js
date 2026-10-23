@@ -38,6 +38,7 @@ export function adminLib() {
     day: "날짜를 다시 확인해 주세요",
     days: "기간을 다시 골라 주세요",
     deleted: "지운 항목이에요. 최고 관리자가 되살린 뒤 고칠 수 있어요",
+    dept: "부서 이름을 다시 확인해 주세요",
     detail: "내용을 다시 확인해 주세요",
     device: "기기 정보를 읽지 못했어요",
     done: "이미 처리했어요",
@@ -83,6 +84,7 @@ export function adminLib() {
     password: "비밀번호는 10자 이상이어야 해요",
     paused: "지금은 꺼 둔 기능이에요",
     perms: "권한을 다시 골라 주세요",
+    phone: "전화번호는 적을 수 없어요",
     photo: "사진을 읽지 못했어요",
     photos: "사진은 두 장까지예요",
     play: "Play 구매 정보를 다시 확인해 주세요",
@@ -377,9 +379,10 @@ export function adminLib() {
 
   // ---- [ADMUX-05] colour ----
 
-  /** WCAG contrast of two #RRGGBB colours, 1 to 21. */
+  /** WCAG contrast of two #RRGGBB (or #RGB) colours, 1 to 21. */
   function contrast(a, b) {
-    const lum = (hex) => {
+    const lum = (short) => {
+      const hex = short.length === 4 ? `#${[...short.slice(1)].map((c) => c + c).join("")}` : short;
       const [r, g, bl] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
       return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
     };
@@ -405,7 +408,7 @@ export function adminLib() {
     if (typing || ctrl || mods.alt) return null;
     if (pending === "g") return GO[key] ? { act: "go", to: GO[key] } : null;
     const plain = {
-      g: { act: "pending", key: "g" }, j: { act: "move", by: 1 }, k: { act: "move", by: -1 }, ArrowDown: null, Enter: { act: "open" },
+      g: { act: "pending", key: "g" }, j: { act: "move", by: 1 }, k: { act: "move", by: -1 }, Enter: { act: "open" },
       Backspace: { act: "back" }, "[": { act: "step", by: -1 }, "]": { act: "step", by: 1 }, "/": { act: "search" }, "?": { act: "keys" },
       a: { act: "assign" }, r: { act: "reply" }, e: { act: "close" }, x: { act: "reject" }, s: { act: "skip" }, q: { act: "queue" },
     };
@@ -416,9 +419,9 @@ export function adminLib() {
   /** The list of keys for the ? screen, as [keys, what]. */
   const KEYS = [
     ["Ctrl+K", "찾기·이동(명령 팔레트)"], ["/", "검색칸으로"], ["j / k", "다음·이전 줄"], ["Enter", "고른 줄 열기"],
-    ["Esc · Backspace", "뒤로"], ["[ / ]", "상세에서 이전·다음 항목"], ["a", "문의 맡기"], ["r", "답 칸으로"], ["e", "문의 닫기"],
+    ["Esc · Backspace", "뒤로"], ["[ / ]", "상세에서 이전·다음 항목"], ["a", "문의 맡기 · 검토에서 채택"], ["r", "답 칸으로"], ["e", "문의 닫기"],
     ["1~9", "자주 쓰는 답 넣기"], ["Ctrl+Enter", "답 보내기(큐 모드면 보내고 다음)"], ["q", "큐 모드 시작·끝"],
-    ["x · s", "큐 모드에서 거절·건너뛰기"], ["g h · g i · g d · g r", "홈·문의·개발사항·검토로"], ["g c · g t · g w · g o", "회사·토론·보상·운영으로"],
+    ["x · s", "검토에서 거절·다음 카드, 큐 모드에서 닫기·건너뛰기"], ["g h · g i · g d · g r", "홈·문의·개발사항·검토로"], ["g c · g t · g w · g o", "회사·토론·보상·운영으로"],
     ["g m · g a · g l · g s", "지표·관리자·활동 기록·설정으로"], ["?", "이 목록"],
   ];
 

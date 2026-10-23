@@ -86,7 +86,12 @@ async function seed() {
     v: 1, device: "seed-device-00000012", kind: "idea", text: "달력이 일요일부터 시작하면 좋겠어요",
     info: { app: "1.12.0 (18)" },
   }, "10.0.0.12");
-  console.log("seeded: 1 adopted rule, 1 new version, 2 waiting, 1 turned down, 1 way the app cannot set, a talk with 2 flagged posts, 2 questions");
+  // [ADMUX-07] 56 days of made-up phone counts, so 지표 draws its chart with the period before.
+  const kst = (ms) => new Date(ms + 9 * 3600e3).toISOString().slice(0, 10);
+  for (let i = 1; i <= 56; i++) {
+    await env.DB.prepare("INSERT INTO usage_days (day, app, phones) VALUES (?, '33', ?)").bind(kst(Date.now() - i * 864e5), 30 + ((i * 7) % 23) + (i < 29 ? 8 : 0)).run();
+  }
+  console.log("seeded: 1 adopted rule, 1 new version, 2 waiting, 1 turned down, 1 way the app cannot set, a talk with 2 flagged posts, 2 questions, 56 days of usage");
 }
 
 /** [ADMIN-04] One approved admin (minji@example.com, password minji-review-2026), one waiting, one invite out. */
