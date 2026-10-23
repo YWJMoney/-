@@ -38,7 +38,8 @@
 // from one network within the hour. The app's install id is kept only as a hash, so a sender counts
 // once and can take a report back.
 
-import { adminFile } from "./admin-app.js";
+import { adminFile, adminBuild } from "./admin-app.js";
+import { pushReady, sendPush } from "./push.js";
 
 const LIMITS = {
   reportBytes: 32 * 1024,
@@ -63,6 +64,10 @@ const LIMITS = {
   loginFailures: 5,
   lockMs: 60 * 60 * 1000,
   sessionMs: 7 * 24 * 60 * 60 * 1000,
+  // [ADMIN-15] A wrong password answers 150 ms later for each earlier miss; a sign-in in use runs on
+  // a week at a time, for at most 30 days from the password.
+  loginDelayMs: 150,
+  sessionMaxMs: 30 * 24 * 60 * 60 * 1000,
   // [ADMIN-04] An invite link works for a week; a mailed code for 15 minutes and five tries.
   inviteMs: 7 * 24 * 60 * 60 * 1000,
   codeMs: 15 * 60 * 1000,
@@ -470,6 +475,16 @@ const SCHEMA = [
   // back instead of a second post, question or flag. Only the hash of the id and the answer, for a day.
   `CREATE TABLE IF NOT EXISTS requests (key TEXT PRIMARY KEY, status INTEGER NOT NULL, body TEXT NOT NULL, expires INTEGER NOT NULL)`,
   // L 1.23 끝
+  // H 1.23 시작
+  // [ADMIN-15] The log is read by time and by what it is about (and, after COLUMNS, by who did it); rewards by status.
+  "CREATE INDEX IF NOT EXISTS audit_at ON audit (at)",
+  "CREATE INDEX IF NOT EXISTS audit_target ON audit (target)",
+  "CREATE INDEX IF NOT EXISTS rewards_status ON rewards (status, created_at)",
+  // [ADMIN-19] Browsers that asked for web push: one row per browser, by a hash of its push address.
+  `CREATE TABLE IF NOT EXISTS push_subscriptions (id TEXT PRIMARY KEY, admin TEXT NOT NULL, endpoint TEXT NOT NULL, p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL, kinds TEXT NOT NULL, quiet_from INTEGER, quiet_to INTEGER, created_at INTEGER NOT NULL, sent_at INTEGER)`,
+  "CREATE INDEX IF NOT EXISTS push_subscriptions_admin ON push_subscriptions (admin)",
+  // H 1.23 끝
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -504,14 +519,29 @@ const COLUMNS = [
   "ALTER TABLE posts ADD COLUMN report_id TEXT",
   "ALTER TABLE posts ADD COLUMN agree INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE posts ADD COLUMN disagree INTEGER NOT NULL DEFAULT 0",
+  // H 1.23 시작
+  // [ADMIN-17] Who did it by id, so 내가 한 일 and one admin's activity survive a change of name.
+  "ALTER TABLE audit ADD COLUMN actor_id TEXT NOT NULL DEFAULT ''",
+  // [ADMIN-16] A saved answer's topic (문의 주제, '' for any) and how often it was sent.
+  "ALTER TABLE reply_templates ADD COLUMN topic TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE reply_templates ADD COLUMN uses INTEGER NOT NULL DEFAULT 0",
+  // H 1.23 끝
+];
+
+/** Indexes on columns COLUMNS adds, so they are made after it. */
+const LATE_INDEXES = [
+  // H 1.23 시작
+  "CREATE INDEX IF NOT EXISTS inquiries_assignee ON inquiries (assignee, status)",
+  "CREATE INDEX IF NOT EXISTS audit_actor ON audit (actor_id, at)",
+  // H 1.23 끝
 ];
 
 const schemas = new WeakMap();
 
-/** Changes whenever SCHEMA or COLUMNS does, so a server made by this code skips making tables again. */
+/** Changes whenever SCHEMA, COLUMNS or LATE_INDEXES does, so a server made by this code skips making tables again. */
 const SCHEMA_VERSION = (() => {
   let h = 5381;
-  for (const c of [...SCHEMA, ...COLUMNS].join("\n")) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0;
+  for (const c of [...SCHEMA, ...COLUMNS, ...LATE_INDEXES].join("\n")) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0;
   return h.toString(36);
 })();
 
@@ -533,6 +563,7 @@ function ready(env) {
           if (!/duplicate column/i.test(String(e?.message ?? e))) throw e;
         }
       }
+      await env.DB.batch(LATE_INDEXES.map((sql) => env.DB.prepare(sql)));
       await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema', ?)").bind(SCHEMA_VERSION).run();
     }).catch((e) => {
       schemas.delete(env.DB);
@@ -640,18 +671,14 @@ const deviceId = (v) => (typeof v === "string" && /^[A-Za-z0-9-]{16,64}$/.test(v
 /** An install as the server keeps it: a hash of the app's random id, never the id itself. */
 const deviceHash = async (id) => (await sha256(`device|${id}`)).slice(0, 40);
 
-/** [ADMIN-04] Who did it comes from the request: admin() puts the signed-in admin on env.actor. */
+/**
+ * [ADMIN-04] Who did it comes from the request: admin() puts the signed-in admin on env.actor. [ADMIN-17]
+ * Only the name is written (the email stays on the admins screen), with the id for 내가 한 일. Old rows
+ * are cleaned by prune() each hour, not here, so a change costs one statement.
+ */
 async function audit(env, now, action, target, detail = "") {
-  const who = env.actor ? (env.actor.owner ? OWNER.name : `${env.actor.name} <${env.actor.email}>`) : "";
-  await batch(env, [
-    stmt(env, "INSERT INTO audit (at, action, target, detail, actor) VALUES (?, ?, ?, ?, ?)", now, action, target,
-      String(detail).slice(0, 300), who),
-    // [COMM-06] A hidden post nobody restored is gone after 90 days, and a 30-day 쓰기 막기 when it ends.
-    stmt(env, "DELETE FROM post_flags WHERE post_id IN (SELECT id FROM posts WHERE status = 'hidden' AND hidden_at < ?)", now - LIMITS.hiddenPostDays * DAY),
-    stmt(env, "DELETE FROM posts WHERE status = 'hidden' AND hidden_at < ?", now - LIMITS.hiddenPostDays * DAY),
-    stmt(env, "DELETE FROM muted WHERE until < ?", now),
-    stmt(env, "DELETE FROM audit WHERE at < ?", now - 365 * DAY),
-  ]);
+  await run(env, "INSERT INTO audit (at, action, target, detail, actor, actor_id) VALUES (?, ?, ?, ?, ?, ?)", now, action, target,
+    String(detail).slice(0, 300), env.actor ? actorName(env) : "", env.actor?.id ?? "");
 }
 
 // ---- names and what may not be shared ----
@@ -2822,34 +2849,32 @@ async function inquiryMark(request, env, id, kind) {
 async function adminInquiries(request, env, url, path, now) {
   const method = request.method;
   if (path === "/inquiries" && method === "GET") return json(await inquiryList(env, url.searchParams, env.actor?.id ?? ""));
+  if (path === "/inquiries/bulk" && method === "POST") return inquiryBulk(request, env, now);
   // [SRV-06] A photo sent with a question, for an admin who may read questions.
   const photo = path.match(/^\/inquiries\/([A-Za-z0-9]{22})\/photos\/([12])$/);
   if (photo && method === "GET") return photoFile(env, photo[1], Number(photo[2]));
-  const m = path.match(/^\/inquiries\/([A-Za-z0-9]{22})(\/reply|\/status|\/visibility|\/assign|\/notes)?$/);
+  const m = path.match(/^\/inquiries\/([A-Za-z0-9]{22})(\/reply|\/status|\/visibility|\/assign|\/notes|\/typing)?$/);
   if (!m) return json({ error: "not_found" }, 404);
   const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", m[1]);
   if (!row) return json({ error: "not_found" }, 404);
-  if (!m[2] && method === "GET") return json(await inquiryView(env, row, true));
+  if (!m[2] && method === "GET") return json(await adminInquiryView(env, row));
   if (method !== "POST" || !m[2]) return json({ error: "not_found" }, 404);
   const body = await readJson(request, INQUIRY.bytes);
+  if (m[2] === "/typing") {
+    // [ADMIN-16] 답 쓰는 중: lasts 30 seconds unless sent again, so a closed tab stops showing by itself.
+    const key = `typing|${row.id}|${env.actor.id}|${actorName(env).replace(/\|/g, "")}`;
+    if (body.on === false) await run(env, "DELETE FROM counters WHERE key = ?", key);
+    else await run(env, "INSERT OR REPLACE INTO counters (key, count, expires) VALUES (?, 1, ?)", key, now + 30 * 1000);
+    return json({ ok: true });
+  }
   if (m[2] === "/reply") {
-    if (typeof body.text !== "string" || !body.text.trim() || [...body.text.trim()].length > INQUIRY.text) refuse("text", "text");
-    const status = body.close === true ? "closed" : "answered";
-    await batch(env, [
-      stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)",
-        row.id, body.text.normalize("NFC").replace(/\r\n?/g, "\n").trim(), actorName(env), now),
-      // [ADMIN-12] Whoever answers a question nobody took has taken it.
-      stmt(env, `UPDATE inquiries SET status = ?, updated_at = ?, assignee = COALESCE(assignee, ?),
-        assignee_name = CASE WHEN assignee IS NULL THEN ? ELSE assignee_name END WHERE id = ?`, status, now, env.actor?.id ?? null, actorName(env), row.id),
-    ]);
-    await audit(env, now, "inquiry_reply", row.id, status);
+    await replyTo(env, row, body, now);
   } else if (m[2] === "/assign") {
     // [ADMIN-12] 내가 맡기, or let it go (to: null); one tap, so two admins do not answer the same question.
     if (body.to !== "me" && body.to !== null) refuse("to", "to");
-    const a = env.actor;
     // Letting go is for whoever holds it, or the owner; nobody releases someone else's question.
-    if (body.to === null && row.assignee && row.assignee !== a.id && !a.owner) throw new Refuse("no_permission", "assignee", 403);
-    await run(env, "UPDATE inquiries SET assignee = ?, assignee_name = ? WHERE id = ?", body.to ? a.id : null, body.to ? actorName(env) : null, row.id);
+    if (!mayAssign(env.actor, row, body.to)) throw new Refuse("no_permission", "assignee", 403);
+    await run(env, "UPDATE inquiries SET assignee = ?, assignee_name = ? WHERE id = ?", body.to ? env.actor.id : null, body.to ? actorName(env) : null, row.id);
     await audit(env, now, "inquiry_assign", row.id, body.to ? actorName(env) : "");
   } else if (m[2] === "/notes") {
     // [ADMIN-12] A note for the other admins: never in the app's view of the question.
@@ -2877,20 +2902,172 @@ async function adminInquiries(request, env, url, path, now) {
     await run(env, "UPDATE inquiries SET status = ? WHERE id = ?", body.status, row.id);
     await audit(env, now, "inquiry_status", row.id, body.status);
   }
-  return json(await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", row.id), true));
+  return json(await adminInquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", row.id)));
 }
 
-/** Questions waiting first, then the newest; [q] finds words in what was asked or answered. */
+const mayAssign = (actor, row, to) => to !== null || !row.assignee || row.assignee === actor.id || actor.owner;
+
+/**
+ * An admin's answer to one question. [ADMIN-15] The same words from the same admin within a minute are
+ * one answer, so a double tap or a resend after a slow network does not reach the asker twice.
+ * [ADMIN-16] An answer sent from a saved one counts as a use of it.
+ */
+async function replyTo(env, row, body, now, audited = true) {
+  if (typeof body.text !== "string" || !body.text.trim() || [...body.text.trim()].length > INQUIRY.text) refuse("text", "text");
+  const text = body.text.normalize("NFC").replace(/\r\n?/g, "\n").trim();
+  const status = body.close === true ? "closed" : "answered";
+  const again = await one(env, `SELECT id FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'admin' AND text = ? AND by = ? AND at > ?
+    ORDER BY id DESC LIMIT 1`, row.id, text, actorName(env), now - 60 * 1000);
+  if (again) return false;
+  await batch(env, [
+    stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)", row.id, text, actorName(env), now),
+    // [ADMIN-12] Whoever answers a question nobody took has taken it.
+    stmt(env, `UPDATE inquiries SET status = ?, updated_at = ?, assignee = COALESCE(assignee, ?),
+      assignee_name = CASE WHEN assignee IS NULL THEN ? ELSE assignee_name END WHERE id = ?`, status, now, env.actor?.id ?? null, actorName(env), row.id),
+    ...(Number.isInteger(body.template) ? [stmt(env, "UPDATE reply_templates SET uses = uses + 1 WHERE id = ?", body.template)] : []),
+    // Sent, so no longer 답 쓰는 중.
+    stmt(env, "DELETE FROM counters WHERE key LIKE ?", `typing|${row.id}|${env.actor?.id ?? ""}|%`),
+  ]);
+  if (audited) await audit(env, now, "inquiry_reply", row.id, status);
+  return true;
+}
+
+/** [ADMIN-16] What can be done to many questions at once, and what it needs besides 문의 고치기. */
+const BULK = { assign: null, unassign: null, close: null, open: null, reply: null, link: "dev" };
+
+/**
+ * [ADMIN-16] Up to 100 questions at once: take them, let them go, close, open again, send each the same
+ * answer, or link them to a 개발사항. What one admin may not do to one of them (let go of someone else's)
+ * is skipped and counted, the rest goes through, and the activity log gets one line for the lot.
+ */
+async function inquiryBulk(request, env, now) {
+  const body = await readJson(request, INQUIRY.bytes + 4096);
+  if (!Object.hasOwn(BULK, body.action)) refuse("action", "action");
+  const ids = Array.isArray(body.ids) ? [...new Set(body.ids)] : [];
+  if (!ids.length || ids.length > DEV.bulk || ids.some((id) => typeof id !== "string" || !/^[A-Za-z0-9]{22}$/.test(id))) refuse("ids", "ids");
+  if (BULK[body.action] && !can(env.actor, BULK[body.action], "edit")) return json({ error: "no_permission", area: BULK[body.action] }, 403);
+  let item = null;
+  if (body.action === "link") {
+    item = typeof body.item === "string" ? await one(env, "SELECT * FROM dev_items WHERE id = ? AND deleted_at IS NULL", body.item) : null;
+    if (!item) return json({ error: "not_found" }, 404);
+  }
+  const rows = await all(env, `SELECT * FROM inquiries WHERE id IN (${ids.map(() => "?").join(", ")})`, ...ids);
+  let done = 0;
+  let skipped = ids.length - rows.length;
+  const a = env.actor;
+  for (const row of rows) {
+    if (body.action === "assign" || body.action === "unassign") {
+      const to = body.action === "assign" ? "me" : null;
+      if (!mayAssign(a, row, to)) {
+        skipped++;
+        continue;
+      }
+      await run(env, "UPDATE inquiries SET assignee = ?, assignee_name = ? WHERE id = ?", to ? a.id : null, to ? actorName(env) : null, row.id);
+    } else if (body.action === "close" || body.action === "open") {
+      await run(env, "UPDATE inquiries SET status = ? WHERE id = ?", body.action === "close" ? "closed" : "open", row.id);
+    } else if (body.action === "reply") {
+      if (!(await replyTo(env, row, { text: body.text, close: body.close === true, template: body.template }, now, false))) {
+        skipped++;
+        continue;
+      }
+    } else {
+      const r = await run(env, "INSERT OR IGNORE INTO dev_links (item_id, inquiry_id, by, at) VALUES (?, ?, ?, ?)", item.id, row.id, actorName(env), now);
+      if (r.meta.changes) await devEvent(env, item.id, now, "link", { inquiry: row.id }).run();
+    }
+    done++;
+  }
+  if (item) await run(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, item.id);
+  await audit(env, now, "inquiry_bulk", item ? item.title : "", `${body.action} ${done}${skipped ? ` (${skipped} 건너뜀)` : ""}`);
+  return json({ done, skipped });
+}
+
+/**
+ * [ADMIN-16][ADMIN-17] One question for an admin: what inquiryView gives, with the saved answers (its
+ * topic's first, then the most used) when this admin may answer, who else is writing to it, and what
+ * admins did to it, for the timeline.
+ */
+async function adminInquiryView(env, row) {
+  const view = await inquiryView(env, row, true);
+  const now = Date.now();
+  const [events, links, typing] = (await batch(env, [
+    stmt(env, `SELECT at, action, detail, actor FROM audit WHERE target = ? AND action IN ('inquiry_assign', 'inquiry_status', 'inquiry_reply',
+      'inquiry_hide', 'inquiry_show') ORDER BY id LIMIT 200`, row.id),
+    stmt(env, "SELECT l.at, l.by, d.id, d.title FROM dev_links l JOIN dev_items d ON d.id = l.item_id WHERE l.inquiry_id = ? ORDER BY l.at", row.id),
+    stmt(env, "SELECT key FROM counters WHERE key LIKE ? AND expires > ?", `typing|${row.id}|%`, now),
+  ])).map((r) => r.results);
+  const out = {
+    ...view,
+    events: [
+      ...events.map((e) => ({ at: iso(e.at), action: e.action, detail: e.detail, by: plainActor(e.actor) })),
+      ...links.map((l) => ({ at: iso(l.at), action: "dev_link", detail: l.title, item: l.id, by: l.by })),
+    ].sort((x, y) => x.at.localeCompare(y.at)),
+    typing: typingByInquiry(typing, env.actor?.id ?? "")[row.id] ?? [],
+  };
+  if (view.waitingHours !== null) {
+    const last = view.messages[view.messages.length - 1];
+    out.slaLeft = last?.from === "user" ? slaLeft(row.kind, row.updated_at, await slaTargets(env), now) : null;
+  }
+  if (env.actor && can(env.actor, "inquiries", "edit")) {
+    const list = (await templates(env, now)).templates;
+    out.templates = list.sort((x, y) => (y.topic === view.topic) - (x.topic === view.topic) || y.uses - x.uses || x.id - y.id);
+  }
+  return out;
+}
+
+/** [ADMIN-17] Who did it, as a name: rows written before 1.23 carried "이름 <메일>", shown without the mail. */
+const plainActor = (actor) => String(actor ?? "").replace(/\s*<[^<>]*@[^<>]*>\s*$/, "");
+
+/**
+ * [ADMIN-16] How a list is paged: [after] rows are skipped (the last answer's next), [limit] come, 50
+ * unless asked for fewer or up to 100.
+ */
+function page(params, fallback = 50) {
+  const after = Number(params.get("after"));
+  const limit = Number(params.get("limit"));
+  return { after: Number.isInteger(after) && after > 0 ? after : 0, limit: Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : fallback };
+}
+
+/** One page of [list] and where the next starts, or null at the end. */
+const paged = (list, { after, limit }) => ({ items: list.slice(after, after + limit), next: after + limit < list.length ? after + limit : null });
+
+/** [ADMUX-06] How long a question of each kind may wait for an answer, in hours (설정 › 답 목표). */
+const SLA = { keys: { slaBug: 8, slaQuestion: 24, slaIdea: 72, slaOther: 72 }, least: 1, most: 168 };
+const slaKey = (kind) => (kind === "bug" || kind === "problem" ? "slaBug" : kind === "question" ? "slaQuestion" : kind === "idea" ? "slaIdea" : "slaOther");
+const slaSetting = (key) => key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+
+const slaTargets = async (env) => readSla(await all(env, SLA_SQL));
+
+function readSla(rows) {
+  const out = {};
+  for (const [k, fallback] of Object.entries(SLA.keys)) {
+    const n = Number(rows.find((r) => r.key === slaSetting(k))?.value);
+    out[k] = Number.isInteger(n) && n >= SLA.least && n <= SLA.most ? n : fallback;
+  }
+  return out;
+}
+
+/** [ADMUX-06] Minutes until a waiting question passes its kind's target (below 0: past it), or null. */
+const slaLeft = (kind, waitingSince, targets, now) => (waitingSince === null ? null : Math.round((waitingSince + targets[slaKey(kind)] * HOUR - now) / 60000));
+
+/** The sorts the questions list offers; the default is the one it always had. */
+const INQUIRY_SORTS = ["default", "sla", "oldest", "newest", "same"];
+
+/**
+ * Questions waiting first, then the newest; [q] finds words in what was asked or answered. [ADMIN-16]
+ * Up to 1000 are read in one go, counted by topic before the topic filter and paged after sorting.
+ */
 async function inquiryList(env, params, actorId = "") {
-  const status = ["open", "answered", "closed"].includes(params.get("status")) ? params.get("status") : null;
+  // [ADMUX-02] 놓친 것 is only ever a waiting question, so the status filter follows it.
+  const late = params.get("late") === "1" ? Date.now() - INQUIRY.lateMs : 0;
+  const status = late ? "open" : ["open", "answered", "closed"].includes(params.get("status")) ? params.get("status") : null;
   const q = String(params.get("q") ?? "").trim().slice(0, 40);
   const topic = Object.hasOwn(TOPIC_NAMES, params.get("topic") ?? "") ? params.get("topic") : null;
   // [ADMIN-12] mine: the ones I took; free: the ones nobody took yet.
   const who = ["mine", "free"].includes(params.get("who")) ? params.get("who") : "";
-  // [INQ-04] 놓친 문의: still waiting on an admin (the user wrote last) for longer than a day.
-  const late = params.get("late") === "1" ? Date.now() - INQUIRY.lateMs : 0;
+  const sort = INQUIRY_SORTS.includes(params.get("sort")) ? params.get("sort") : "default";
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-  const [rows, statusRows] = (await batch(env, [stmt(env, `SELECT i.*,
+  const now = Date.now();
+  const [rows, statusRows, slaRows, typing] = (await batch(env, [stmt(env, `SELECT i.*,
       (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id) AS count,
       (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
       (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last,
@@ -2901,14 +3078,19 @@ async function inquiryList(env, params, actorId = "") {
       AND (?2 = '' OR EXISTS (SELECT 1 FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.text LIKE ?3 ESCAPE '\\'))
       AND (?4 = '' OR (?4 = 'mine' AND i.assignee = ?5) OR (?4 = 'free' AND i.assignee IS NULL))
       AND (?6 = 0 OR (i.status = 'open' AND i.updated_at < ?6))
-    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 200`, status, q, like, who, actorId, late),
-  stmt(env, "SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status")])).map((r) => r.results);
+    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 1000`, status, q, like, who, actorId, late),
+  stmt(env, "SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status"),
+  slaQuery(env),
+  stmt(env, "SELECT key FROM counters WHERE key LIKE 'typing|%' AND expires > ?", now)])).map((r) => r.results);
   const counts = { open: 0, answered: 0, closed: 0 };
   for (const r of statusRows) {
     if (Object.hasOwn(counts, r.status)) counts[r.status] = r.n;
   }
+  const targets = readSla(slaRows);
+  const writing = typingByInquiry(typing, actorId);
   const listed = rows.map((r) => {
     const info = JSON.parse(r.info);
+    const waitingSince = r.status === "open" && r.last === "user" ? r.updated_at : null;
     return {
       id: r.id,
       kind: r.kind,
@@ -2928,8 +3110,12 @@ async function inquiryList(env, params, actorId = "") {
       dev: r.dev,
       notes: r.notes,
       // [INQ-04] How long the user has waited on an answer, in hours; null when it is not their turn to wait.
-      waitingHours: r.status === "open" && r.last === "user" ? Math.floor((Date.now() - r.updated_at) / HOUR) : null,
+      waitingHours: waitingSince === null ? null : Math.floor((now - waitingSince) / HOUR),
+      // [ADMUX-06] Minutes left before this kind's answer target; below 0 once past it.
+      slaLeft: slaLeft(r.kind, waitingSince, targets, now),
       rating: r.rating ?? 0,
+      // [ADMIN-16] Another admin writing an answer to it right now.
+      typing: writing[r.id] ?? [],
     };
   });
   // How many of this view are in each topic, so the filter shows where the questions pile up.
@@ -2939,9 +3125,33 @@ async function inquiryList(env, params, actorId = "") {
   // Among those waiting for an answer: urgent first, then the ones most people said 나도 그래요 to; the rest
   // stay newest first.
   const waits = (i) => (i.status === "open" ? 0 : 1);
-  const shown = listed.filter((i) => !topic || i.topic === topic)
-    .sort((a, b) => waits(a) - waits(b) || (waits(a) === 0 ? rank[a.urgency] - rank[b.urgency] || b.same - a.same : 0));
-  return { counts, topics, topicNames: TOPIC_NAMES, inquiries: shown };
+  const left = (i) => i.slaLeft ?? Infinity;
+  const order = {
+    default: (a, b) => waits(a) - waits(b) || (waits(a) === 0 ? rank[a.urgency] - rank[b.urgency] || b.same - a.same : 0),
+    sla: (a, b) => left(a) - left(b) || waits(a) - waits(b),
+    oldest: (a, b) => a.updatedAt.localeCompare(b.updatedAt),
+    newest: (a, b) => b.updatedAt.localeCompare(a.updatedAt),
+    same: (a, b) => b.same - a.same || waits(a) - waits(b),
+  }[sort];
+  const shown = listed.filter((i) => !topic || i.topic === topic).sort(order);
+  const { items, next } = paged(shown, page(params));
+  return { counts, topics, topicNames: TOPIC_NAMES, inquiries: items, total: shown.length, next, sort, sla: targets,
+    // [ADMUX-02] What the server took the filter to be, so the app shows the status 놓친 것 fixed.
+    status: status ?? "", late: Boolean(late) };
+}
+
+const SLA_SQL = `SELECT key, value FROM settings WHERE key IN (${Object.keys(SLA.keys).map((k) => `'${slaSetting(k)}'`).join(", ")})`;
+const slaQuery = (env) => env.DB.prepare(SLA_SQL);
+
+/** [ADMIN-16] typing|<question>|<admin id>|<name> rows as names per question, leaving out [me]. */
+function typingByInquiry(rows, me) {
+  const out = {};
+  for (const { key } of rows) {
+    const [, id, admin, ...name] = key.split("|");
+    if (admin === me) continue;
+    (out[id] ??= []).push(name.join("|"));
+  }
+  return out;
 }
 
 // ---- 개발사항: what admins gather from questions for the developer [ADMIN-10][ADMIN-11] ----
@@ -2961,7 +3171,7 @@ const DEV = {
   // Before and after of a long text in the history; enough to see what changed.
   kept: 1000,
   bulk: 100,
-  list: 300,
+  list: 2000,
 };
 
 /** [ADMIN-12] What a new server's admins start with in 자주 쓰는 답; they add their own and delete these. */
@@ -3212,7 +3422,9 @@ async function devList(env, params) {
   const rank = { doing: 0, todo: 1, done: 2, rejected: 3 };
   const open = (r) => r.status === "todo" || r.status === "doing";
   rows.sort((a, b) => (["all", "open"].includes(status) ? rank[a.status] - rank[b.status] : 0) || (open(a) && open(b) ? b.links - a.links : 0) || b.updated_at - a.updated_at);
-  return { counts, statuses: DEV.statuses, items: rows.map(devItem) };
+  // [ADMIN-16] A page at a time, after sorting all of the view.
+  const { items, next } = paged(rows, page(params));
+  return { counts, statuses: DEV.statuses, items: items.map(devItem), next, total: rows.length };
 }
 
 const devItem = (r) => ({
@@ -3272,8 +3484,15 @@ async function templates(env, now) {
   if (first.meta.changes) {
     await batch(env, DEFAULT_TEMPLATES.map(([label, text]) => stmt(env, "INSERT INTO reply_templates (label, text, by, at) VALUES (?, ?, '', ?)", label, text, now)));
   }
-  const rows = await all(env, "SELECT id, label, text, by FROM reply_templates ORDER BY id");
-  return { templates: rows.map((r) => ({ id: r.id, label: r.label, text: r.text, by: r.by })) };
+  const rows = await all(env, "SELECT id, label, text, by, topic, uses FROM reply_templates ORDER BY id");
+  return { templates: rows.map((r) => ({ id: r.id, label: r.label, text: r.text, by: r.by, topic: r.topic ?? "", uses: r.uses ?? 0 })), topicNames: TOPIC_NAMES };
+}
+
+/** [ADMIN-16] A saved answer's topic: one of the question topics, or '' for any question. */
+function templateTopic(v) {
+  if (v === undefined || v === null || v === "") return "";
+  if (typeof v !== "string" || !Object.hasOwn(TOPIC_NAMES, v)) refuse("topic", "topic");
+  return v;
 }
 
 async function templateRoute(request, env, path, now) {
@@ -3284,10 +3503,24 @@ async function templateRoute(request, env, path, now) {
     const body = await readJson(request, 8 * 1024);
     const label = plainText(body.label, 20, "label", true);
     const text = plainText(body.text, INQUIRY.text, "text", true);
+    const topic = templateTopic(body.topic);
     if ((await one(env, "SELECT COUNT(*) AS n FROM reply_templates")).n >= 40) return json({ error: "too_many" }, 409);
-    await run(env, "INSERT INTO reply_templates (label, text, by, at) VALUES (?, ?, ?, ?)", label, text, actorName(env), now);
+    await run(env, "INSERT INTO reply_templates (label, text, by, at, topic) VALUES (?, ?, ?, ?, ?)", label, text, actorName(env), now, topic);
     await audit(env, now, "template_add", label);
     return json(await templates(env, now), 201);
+  }
+  // [ADMIN-16] A saved answer changed in place, keeping how often it was used.
+  const edit = path.match(/^\/templates\/(\d{1,9})$/);
+  if (edit && method === "POST") {
+    const row = await one(env, "SELECT label FROM reply_templates WHERE id = ?", Number(edit[1]));
+    if (!row) return json({ error: "not_found" }, 404);
+    const body = await readJson(request, 8 * 1024);
+    const label = plainText(body.label, 20, "label", true);
+    const text = plainText(body.text, INQUIRY.text, "text", true);
+    await run(env, "UPDATE reply_templates SET label = ?, text = ?, topic = ?, by = ?, at = ? WHERE id = ?", label, text, templateTopic(body.topic),
+      actorName(env), now, Number(edit[1]));
+    await audit(env, now, "template_edit", label, row.label === label ? "" : `${row.label} → ${label}`);
+    return json(await templates(env, now));
   }
   const m = path.match(/^\/templates\/(\d{1,9})\/remove$/);
   if (m && method === "POST") {
@@ -3305,13 +3538,22 @@ async function templateRoute(request, env, path, now) {
 const COOKIE = "__Host-bamnat_admin";
 const cookie = (value, maxAge) => `${COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
 
-/** What is still missing on a new server, shown on the login screen, with why; never a name or value that was set. */
+/**
+ * What is still missing on a new server, shown on the login screen, with why; never a name or value that
+ * was set. [ADMIN-15] Only what the login screen needs: which optional services are connected is the
+ * owner's to see, after signing in (serverState).
+ */
 function health(env) {
   const why = { password: secretIssue(env, "ADMIN_PASSWORD", 10), salt: secretIssue(env, "RATE_SALT", 1) };
+  return { database: Boolean(env.DB), password: why.password === null, salt: why.salt === null, why };
+}
+
+/** [ADMIN-15] The setup screen's full state, for the owner: health plus the optional services. */
+function serverState(env) {
   // [MON-03] PLAY_SERVICE_ACCOUNT is optional: without it purchases are not checked with Play.
   // [SRV-05] SHARE_BASE_URL and SHARE_ADMIN_TOKEN are optional: without them 공유 링크 신고 says how to connect.
-  return { database: Boolean(env.DB), password: why.password === null, salt: why.salt === null, mail: mailReady(env), play: playReady(env) !== null,
-    share: shareAdmin(env) !== null, why };
+  // [ADMIN-19] VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are optional: without them there is no web push.
+  return { ...health(env), mail: mailReady(env), play: playReady(env) !== null, share: shareAdmin(env) !== null, push: pushReady(env) !== null };
 }
 
 /**
@@ -3336,7 +3578,7 @@ function areaFor(path) {
   if (path === "/dev" || path.startsWith("/dev/")) return "dev";
   if (path.startsWith("/companies") || path.startsWith("/rules/")) return "companies";
   if (path.startsWith("/rewards")) return "rewards";
-  if (path === "/settings") return "settings";
+  if (path === "/settings" || path === "/settings/sla") return "settings";
   if (path.startsWith("/posts") || path.startsWith("/rates")) return "community";
   if (path.startsWith("/notices") || path === "/switches" || path === "/ops") return "ops";
   if (path === "/metrics") return "metrics";
@@ -3357,11 +3599,33 @@ async function admin(request, env, url) {
     if (request.headers.get("x-admin") !== "1" || (origin && origin !== url.origin)) return json({ error: "forbidden" }, 403);
   }
   if (path === "/login" && method === "POST") return login(request, env, now);
+  // [ADMIN-15] The invite token goes in the body, out of logs and history; the GET stays for 1.23 only,
+  // for a developer app still cached from before.
+  if (path === "/join/info" && method === "POST") return inviteInfo(request, env, url, now);
   if (path === "/join" && method === "GET") return inviteInfo(request, env, url, now);
   if (path === "/join/code" && method === "POST") return joinCode(request, env, now);
   if (path === "/join" && method === "POST") return join(request, env, now);
   const session = await signedIn(request, env, now);
   if (!session) return json({ error: "login" }, 401);
+  let res = await signedRoute(request, env, url, path, method, now, session);
+  // [ADMIN-16] A list or screen that did not change since the app last had it is a 304 with no body.
+  if (method === "GET" && res.status === 200 && (res.headers.get("content-type") ?? "").startsWith("application/json")) {
+    const body = await res.text();
+    const tag = `"${(await sha256(`etag|${body}`)).slice(0, 27)}"`;
+    const headers = new Headers(res.headers);
+    headers.set("etag", tag);
+    res = (request.headers.get("if-none-match") ?? "").split(/\s*,\s*/).includes(tag)
+      ? new Response(null, { status: 304, headers })
+      : new Response(body, { status: 200, headers });
+  }
+  if (session.renewed && !res.headers.has("set-cookie")) {
+    res = new Response(res.body, res);
+    res.headers.set("set-cookie", session.renewed);
+  }
+  return res;
+}
+
+async function signedRoute(request, env, url, path, method, now, session) {
   const actor = session.actor;
   const area = areaFor(path);
   if (area === "owner" ? !actor.owner : area && !can(actor, area, method === "GET" ? "view" : "edit")) {
@@ -3377,12 +3641,19 @@ async function admin(request, env, url) {
   // [MON-09] A code for this admin's own phone.
   if (path === "/me/link-code" && method === "POST") return linkCode(env, actor, now);
   if (path === "/me/password" && method === "POST") return changePassword(request, env, actor, session.token, now);
+  // [ADMIN-19] This browser's web push.
+  if (path === "/me/push" && method === "GET") return json(await pushView(env, actor));
+  if (path === "/me/push" && method === "POST") return pushSubscribe(request, env, actor, now);
+  if (path === "/me/push/remove" && method === "POST") return pushUnsubscribe(request, env, actor);
+  if (path === "/me/push/test" && method === "POST") return json(await pushTest(env, actor, now));
   if (path === "/me/logout-all" && method === "POST") {
     await run(env, "DELETE FROM admin_sessions WHERE admin = ?", actor.id);
     await audit(env, now, "logout_all", actor.id);
     return json({ ok: true }, 200, { "set-cookie": cookie("", 0) });
   }
   if (path === "/overview" && method === "GET") return json(await overview(env, actor));
+  // [ADMIN-15] Which optional services are connected: the owner's (areaFor gives "owner").
+  if (path === "/server" && method === "GET") return json(serverState(env));
   if (path === "/audit" && method === "GET") return json(await auditLog(env, url));
   if (path === "/admins" && method === "GET") return json(await adminList(env));
   if (path === "/invites" && method === "POST") return invite(request, env, url, now);
@@ -3390,11 +3661,11 @@ async function admin(request, env, url) {
   let m = path.match(/^\/admins\/(a[A-Za-z0-9]{15})(\/remove)?$/);
   if (m && method === "POST") return m[2] ? removeAdmin(env, m[1], now) : updateAdmin(request, env, m[1], now);
   if (path === "/queue" && method === "GET") return json(await queue(env));
-  m = path.match(/^\/groups\/([A-Za-z0-9]{12})\/([0-9a-f]{16})\/(adopt|reject)$/);
-  if (m && method === "POST") return decide(request, env, m[1], m[2], m[3], now);
+  m = path.match(/^\/groups\/([A-Za-z0-9]{12})\/([0-9a-f]{16})\/(adopt|reject|reopen)$/);
+  if (m && method === "POST") return m[3] === "reopen" ? reopen(env, m[1], m[2], now) : decide(request, env, m[1], m[2], m[3], now);
   m = path.match(/^\/asks\/([A-Za-z0-9]{22})$/);
   if (m && method === "POST") return answer(request, env, m[1], now);
-  if (path === "/companies" && method === "GET") return json(await companies(env, url.searchParams.get("q")));
+  if (path === "/companies" && method === "GET") return json(await companies(env, url.searchParams.get("q"), url.searchParams));
   if (path === "/companies" && method === "POST") return createCompany(request, env, now);
   m = path.match(/^\/companies\/([A-Za-z0-9]{12})(\/aliases|\/aliases\/remove|\/merge)?$/);
   if (m && method === "GET" && !m[2]) return companyInfo(env, m[1]);
@@ -3409,10 +3680,12 @@ async function admin(request, env, url) {
   if (path === "/inquiries" || path.startsWith("/inquiries/")) return adminInquiries(request, env, url, path, now);
   if (path === "/templates" || path.startsWith("/templates/")) return templateRoute(request, env, path, now);
   if (path === "/dev" || path.startsWith("/dev/")) return devRoute(request, env, url, path, now);
-  if (path === "/rewards" && method === "GET") return json(await rewards(env, url.searchParams.get("status")));
+  if (path === "/rewards" && method === "GET") return json(await rewards(env, url.searchParams.get("status"), url.searchParams));
   m = path.match(/^\/rewards\/(w[A-Za-z0-9]{22})$/);
   if (m && method === "POST") return setReward(request, env, m[1], now);
   if (path === "/settings" && method === "POST") return saveSettings(request, env, now);
+  // [ADMUX-06] 답 목표 (SLA) per kind of question.
+  if (path === "/settings/sla" && method === "POST") return saveSla(request, env, now);
   // [MON-10] The 정식 출시 switch and [MON-09] admins' phones are the owner's (areaFor gives "owner").
   if (path === "/launch" && method === "GET") return json(await launchView(env));
   if (path === "/launch" && method === "POST") return setLaunch(request, env, now);
@@ -3461,7 +3734,9 @@ async function login(request, env, now) {
     if (row && (!worst || row.count > worst.count)) worst = row;
   }
   const everyone = await one(env, "SELECT count FROM counters WHERE key = 'login|all' AND expires > ?", now);
-  if ((worst?.count ?? 0) >= LIMITS.loginFailures || (everyone?.count ?? 0) >= 10 * LIMITS.loginFailures) {
+  // [ADMIN-15] Under a wide guessing run (50 wrong in the hour) only a network or account that was wrong
+  // this hour is shut out: the owner on a clean network still gets in, so the run cannot lock everyone.
+  if ((worst?.count ?? 0) >= LIMITS.loginFailures || ((everyone?.count ?? 0) >= 10 * LIMITS.loginFailures && (worst?.count ?? 0) > 0)) {
     return json({ error: "locked", until: iso(worst?.expires ?? now + LIMITS.lockMs) }, 429);
   }
   let account = null;
@@ -3482,7 +3757,12 @@ async function login(request, env, now) {
       count = Math.max(count, row.count);
     }
     await allow(env, "login|all", Infinity, LIMITS.lockMs, now);
-    await audit(env, now, "login_failed", email ?? "");
+    // [ADMIN-15] The email tried is kept only as a short hash, and only for 30 days: enough to see that one
+    // account is being guessed at, without a list of addresses someone typed.
+    await batch(env, [stmt(env, "DELETE FROM audit WHERE action = 'login_failed' AND at < ?", now - 30 * DAY)]);
+    await audit(env, now, "login_failed", email ? `mail:${(await sha256(`audit|${email}`)).slice(0, 10)}` : "");
+    // Each wrong try from the same place answers a little later, so guessing is slow even before the lock.
+    await new Promise((done) => setTimeout(done, Math.min(count - 1, 4) * LIMITS.loginDelayMs));
     return json({ error: count >= LIMITS.loginFailures ? "locked" : "wrong", left: Math.max(0, LIMITS.loginFailures - count) }, 401);
   }
   // A right password on an account the owner has not approved, or has paused, still does not get in.
@@ -3506,16 +3786,159 @@ async function signedIn(request, env, now) {
   if (!token || !/^[A-Za-z0-9]{40}$/.test(token)) return null;
   const hash = await sha256(`session|${token}`);
   // The account is read with the session on every call, so a pause or a change of permissions applies at once.
-  const row = await one(env, `SELECT s.admin AS session_admin, s.expires AS session_expires, a.* FROM admin_sessions s
+  const row = await one(env, `SELECT s.admin AS session_admin, s.expires AS session_expires, s.created_at AS session_made, a.* FROM admin_sessions s
     LEFT JOIN admins a ON a.id = s.admin AND a.status = 'active' WHERE s.token = ?`, hash);
   if (!row || row.session_expires <= now) return null;
-  if (row.session_admin === OWNER.id) return { token: hash, actor: OWNER };
-  return row.id ? { token: hash, actor: actorOf(row) } : null;
+  const actor = row.session_admin === OWNER.id ? OWNER : row.id ? actorOf(row) : null;
+  if (!actor) return null;
+  // [ADMIN-15] Used with less than half the week left, it runs on for another week, never past 30 days.
+  let renewed = null;
+  const end = Math.min(now + LIMITS.sessionMs, row.session_made + LIMITS.sessionMaxMs);
+  if (row.session_expires - now < LIMITS.sessionMs / 2 && end > row.session_expires) {
+    await run(env, "UPDATE admin_sessions SET expires = ? WHERE token = ?", end, hash);
+    renewed = cookie(token, Math.floor((end - now) / 1000));
+  }
+  return { token: hash, actor, renewed };
 }
 
 const actorOf = (a) => ({ id: a.id, name: a.name, email: a.email, owner: false, perms: readPerms(a.perms) });
 
-const me = (actor) => ({ id: actor.id, name: actor.name, email: actor.email, owner: actor.owner, perms: actor.perms, areas: AREAS });
+// [ADMIN-15] With the yes-or-no areas and the look-only ones, so the app draws each as the server reads it.
+const me = (actor) => ({ id: actor.id, name: actor.name, email: actor.email, owner: actor.owner, perms: actor.perms, areas: AREAS,
+  toggles: TOGGLES, viewOnly: VIEW_ONLY });
+
+// ---- web push to admins [ADMIN-19] ----
+//
+// Only with VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY set (src/push.js). Each admin turns it on per browser,
+// picks which kinds of news and a quiet time (KST hours, nothing sent then). What is sent says only what
+// happened and where to look: never a question's words, an email or a device.
+
+/** What can be sent, and the area an admin needs to get it ("owner" for the owner only). */
+const PUSH_KINDS = {
+  inquiry: { label: "새 문의", area: "inquiries" },
+  urgent: { label: "급한 문의(문제 신고·결제)", area: "inquiries" },
+  flagged: { label: "신고로 가려진 글", area: "community" },
+  join: { label: "승인을 기다리는 관리자", area: "owner" },
+};
+const PUSH = { perAdmin: 5, hosts: /^(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com|[a-z0-9-]+\.push\.apple\.com)$/ };
+
+const mayGet = (actor, kind) => (PUSH_KINDS[kind].area === "owner" ? actor.owner : can(actor, PUSH_KINDS[kind].area));
+
+/** A KST hour of [now] inside quiet hours [from]..[to] (to may be past midnight: 22..7). */
+function quietNow(from, to, now) {
+  if (from === null || to === null || from === to) return false;
+  const h = new Date(now + 9 * HOUR).getUTCHours();
+  return from < to ? h >= from && h < to : h >= from || h < to;
+}
+
+async function pushView(env, actor) {
+  const keys = pushReady(env);
+  const rows = await all(env, "SELECT id, kinds, quiet_from, quiet_to, created_at, sent_at FROM push_subscriptions WHERE admin = ? ORDER BY created_at", actor.id);
+  return {
+    ready: Boolean(keys), publicKey: keys?.publicKey ?? null,
+    kinds: Object.entries(PUSH_KINDS).filter(([k]) => mayGet(actor, k)).map(([key, k]) => ({ key, label: k.label })),
+    subscriptions: rows.map((r) => ({ id: r.id, kinds: r.kinds.split(",").filter(Boolean), quiet: r.quiet_from === null ? null : { from: r.quiet_from, to: r.quiet_to },
+      createdAt: iso(r.created_at), sentAt: r.sent_at ? iso(r.sent_at) : null })),
+  };
+}
+
+/** The browser's PushSubscription as JSON, checked: an https address at a known push service and its two keys. */
+function readSubscription(v) {
+  const sub = v && typeof v === "object" ? v : {};
+  let url = null;
+  try {
+    url = new URL(String(sub.endpoint ?? ""));
+  } catch {
+    refuse("subscription", "endpoint");
+  }
+  if (url.protocol !== "https:" || !PUSH.hosts.test(url.hostname) || url.port || String(sub.endpoint).length > 1000) refuse("subscription", "endpoint");
+  const p256dh = sub.keys?.p256dh;
+  const auth = sub.keys?.auth;
+  if (typeof p256dh !== "string" || !/^[A-Za-z0-9_-]{80,100}$/.test(p256dh) || typeof auth !== "string" || !/^[A-Za-z0-9_-]{16,32}$/.test(auth)) {
+    refuse("subscription", "keys");
+  }
+  return { endpoint: String(sub.endpoint), p256dh, auth };
+}
+
+async function pushSubscribe(request, env, actor, now) {
+  if (!pushReady(env)) return json({ error: "push" }, 409);
+  const body = await readJson(request, 4096);
+  const sub = readSubscription(body.subscription);
+  const kinds = Array.isArray(body.kinds) ? [...new Set(body.kinds)] : Object.keys(PUSH_KINDS);
+  if (kinds.some((k) => !Object.hasOwn(PUSH_KINDS, k))) refuse("kind", "kinds");
+  let quiet = [null, null];
+  if (body.quiet) {
+    const { from, to } = body.quiet;
+    if (![from, to].every((h) => Number.isInteger(h) && h >= 0 && h <= 23)) refuse("quiet", "quiet");
+    quiet = [from, to];
+  }
+  const id = (await sha256(`push|${sub.endpoint}`)).slice(0, 32);
+  const mine = await all(env, "SELECT id FROM push_subscriptions WHERE admin = ?", actor.id);
+  if (!mine.some((r) => r.id === id) && mine.length >= PUSH.perAdmin) refuse("too_many", "subscription");
+  await run(env, `INSERT INTO push_subscriptions (id, admin, endpoint, p256dh, auth, kinds, quiet_from, quiet_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (id) DO UPDATE SET admin = excluded.admin, p256dh = excluded.p256dh, auth = excluded.auth, kinds = excluded.kinds,
+      quiet_from = excluded.quiet_from, quiet_to = excluded.quiet_to`,
+  id, actor.id, sub.endpoint, sub.p256dh, sub.auth, kinds.filter((k) => mayGet(actor, k)).join(","), quiet[0], quiet[1], now);
+  return json(await pushView(env, actor));
+}
+
+async function pushUnsubscribe(request, env, actor) {
+  const body = await readJson(request, 2048);
+  const id = typeof body.id === "string" && /^[0-9a-f]{32}$/.test(body.id) ? body.id
+    : typeof body.endpoint === "string" ? (await sha256(`push|${body.endpoint}`)).slice(0, 32) : refuse("subscription", "id");
+  await run(env, "DELETE FROM push_subscriptions WHERE id = ? AND admin = ?", id, actor.id);
+  return json(await pushView(env, actor));
+}
+
+/** A test to every browser of this admin, quiet time or not; how many got it and how many were gone. */
+async function pushTest(env, actor, now) {
+  const keys = pushReady(env);
+  if (!keys) return { sent: 0, gone: 0, ready: false };
+  const rows = await all(env, "SELECT * FROM push_subscriptions WHERE admin = ?", actor.id);
+  return { ...(await deliver(env, keys, rows, { title: "밤낮 관리자", body: "알림이 잘 와요", url: "/admin/", tag: "test" }, now)), ready: true };
+}
+
+/** Sends [message] to [rows]; a browser the push service says is gone (404, 410) is forgotten. */
+async function deliver(env, keys, rows, message, now) {
+  let sent = 0;
+  let gone = 0;
+  for (const r of rows) {
+    const status = await sendPush(keys, r, message, now, message.urgent ? "high" : "normal");
+    if (status === 404 || status === 410) {
+      gone++;
+      await run(env, "DELETE FROM push_subscriptions WHERE id = ?", r.id);
+    } else if (status >= 200 && status < 300) {
+      sent++;
+      await run(env, "UPDATE push_subscriptions SET sent_at = ? WHERE id = ?", now, r.id);
+    }
+  }
+  return { sent, gone };
+}
+
+/**
+ * [ADMIN-19] News of [kind] to every admin's browser that asked for it, outside its quiet time and only
+ * for admins who may see it. Without VAPID secrets (or with nobody asking) it returns at once; it never
+ * throws, so whatever called it goes on as if nothing was sent.
+ */
+export async function notifyAdmins(env, kind, message, now = Date.now()) {
+  try {
+    const keys = pushReady(env);
+    if (!keys || !env.DB || !Object.hasOwn(PUSH_KINDS, kind)) return { sent: 0, gone: 0 };
+    // An urgent question is a question too: it goes once to those who asked for either.
+    const also = kind === "urgent" ? "inquiry" : kind;
+    const rows = await all(env, `SELECT s.*, a.perms, a.status FROM push_subscriptions s LEFT JOIN admins a ON a.id = s.admin
+      WHERE (',' || s.kinds || ',') LIKE ? OR (',' || s.kinds || ',') LIKE ?`, `%,${kind},%`, `%,${also},%`);
+    const to = rows.filter((r) => {
+      const actor = r.admin === OWNER.id ? OWNER : r.status === "active" ? { owner: false, perms: readPerms(r.perms) } : null;
+      return actor && mayGet(actor, kind) && !quietNow(r.quiet_from, r.quiet_to, now);
+    });
+    if (!to.length) return { sent: 0, gone: 0 };
+    return await deliver(env, keys, to, { tag: kind, ...message }, now);
+  } catch (e) {
+    console.error(e && e.stack ? e.stack : String(e));
+    return { sent: 0, gone: 0 };
+  }
+}
 
 // ---- admin accounts [ADMIN-04] ----
 
@@ -3678,7 +4101,8 @@ async function joinLimited(request, env, now) {
 /** What the person who opened an invite link sees before making an account. */
 async function inviteInfo(request, env, url, now) {
   if (await joinLimited(request, env, now)) return json({ error: "rate_limited" }, 429);
-  const row = await inviteFor(env, url.searchParams.get("t"), now);
+  const token = request.method === "POST" ? (await readJson(request, 1024)).token : url.searchParams.get("t");
+  const row = await inviteFor(env, token, now);
   if (!row) return json({ error: "invite" }, 404);
   return json({ email: row.email, perms: readPerms(row.perms), areas: AREAS, expiresAt: iso(row.expires), mail: mailReady(env) });
 }
@@ -3730,6 +4154,8 @@ async function join(request, env, now) {
   await audit(Object.assign(Object.create(env), { actor: { name, email: row.email } }), now, "join", row.email);
   const owner = cleanEmail(env.OWNER_EMAIL);
   if (owner) await sendMail(env, owner, "[밤낮 관리자] 승인을 기다리는 관리자", `${name} (${row.email}) 님이 관리자 계정을 만들었어요. 개발자 앱의 관리자 화면에서 승인해 주세요.`);
+  // [ADMIN-19] The owner's browsers hear of it too, without the email.
+  await notifyAdmins(env, "join", { title: "승인을 기다리는 관리자", body: `${name} 님이 관리자 계정을 만들었어요`, url: "/admin/#/admins" }, now);
   return json({ ok: true, status: "pending" }, 201);
 }
 
@@ -3775,6 +4201,8 @@ async function removeAdmin(env, id, now) {
     // [MON-09] Their phones stop getting 프로 with them.
     stmt(env, "DELETE FROM admin_devices WHERE admin = ?", id),
     stmt(env, "DELETE FROM link_codes WHERE admin = ?", id),
+    // [ADMIN-19] Their browsers stop getting web push.
+    stmt(env, "DELETE FROM push_subscriptions WHERE admin = ?", id),
   ]);
   await audit(env, now, "admin_remove", a.email);
   return json(await adminList(env));
@@ -3795,29 +4223,138 @@ async function changePassword(request, env, actor, token, now) {
   return json({ ok: true });
 }
 
-/** Activity, newest first, 50 at a time; [before] continues from an entry's id. */
+/** [ADMIN-17] The activity log's 종류 filter: which actions each one holds (a trailing * is a prefix). */
+const AUDIT_KINDS = {
+  login: ["login", "login_failed", "logout_all", "password"],
+  admins: ["invite*", "join", "admin_*", "device_*"],
+  review: ["adopt", "reject", "reject_undo", "answer"],
+  companies: ["company_*", "alias_*", "merge", "rule_*"],
+  rewards: ["reward_*", "pass_move", "trial_stop"],
+  community: ["post_*", "rate_*"],
+  inquiries: ["inquiry_*", "template_*"],
+  dev: ["dev_*"],
+  ops: ["notice_*", "switch_*", "ops_*", "share_remove", "launch_*"],
+  settings: ["settings", "sla"],
+};
+
+/** A KST day (YYYY-MM-DD) as the time it starts, or null. */
+const kstStart = (d) => (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && Number.isFinite(Date.parse(`${d}T00:00:00+09:00`)) ? Date.parse(`${d}T00:00:00+09:00`) : null);
+
+/** [ADMIN-17] someone@example.com as s•••@example.com, for whoever is not the owner. */
+const maskEmail = (e) => e.replace(/^([^@])[^@]*@/, "$1•••@");
+
+/**
+ * Activity, newest first, 50 at a time; [before] continues from an entry's id. [ADMIN-17] Filtered by
+ * who (an admin's id, "owner" or "me"), 종류 and KST days [from]..[to]; each entry says in words what it
+ * was about (a company's name, a question's first words, a 개발사항) and where to open it.
+ */
 async function auditLog(env, url) {
-  const before = Number(url.searchParams.get("before"));
-  const rows = await all(env, `SELECT id, at, action, target, detail, actor FROM audit WHERE id < ? ORDER BY id DESC LIMIT 51`,
-    Number.isInteger(before) && before > 0 ? before : Number.MAX_SAFE_INTEGER);
+  const p = url.searchParams;
+  const before = Number(p.get("before"));
+  const actor = p.get("actor") === "me" ? env.actor?.id ?? "" : /^(owner|a[A-Za-z0-9]{15})$/.test(p.get("actor") ?? "") ? p.get("actor") : "";
+  const kind = Object.hasOwn(AUDIT_KINDS, p.get("kind") ?? "") ? p.get("kind") : "";
+  const from = kstStart(p.get("from"));
+  const to = kstStart(p.get("to"));
+  const where = ["a.id < ?"];
+  const args = [Number.isInteger(before) && before > 0 ? before : Number.MAX_SAFE_INTEGER];
+  if (actor) {
+    where.push("a.actor_id = ?");
+    args.push(actor);
+  }
+  if (kind) {
+    where.push(`(${AUDIT_KINDS[kind].map((k) => (k.endsWith("*") ? "a.action LIKE ? ESCAPE '\\'" : "a.action = ?")).join(" OR ")})`);
+    args.push(...AUDIT_KINDS[kind].map((k) => (k.endsWith("*") ? `${k.slice(0, -1).replace(/_/g, "\\_")}%` : k)));
+  }
+  if (from !== null) {
+    where.push("a.at >= ?");
+    args.push(from);
+  }
+  if (to !== null) {
+    where.push("a.at < ?");
+    args.push(to + DAY);
+  }
+  const [rows, admins] = (await batch(env, [
+    stmt(env, `${AUDIT_SELECT} WHERE ${where.join(" AND ")} ORDER BY a.id DESC LIMIT 51`, ...args),
+    stmt(env, "SELECT id, name, email FROM admins ORDER BY name"),
+  ])).map((r) => r.results);
+  const list = rows.slice(0, 50);
+  const owner = Boolean(env.actor?.owner);
+  const byEmail = new Map(admins.map((x) => [x.email, x.name]));
   return {
-    entries: rows.slice(0, 50).map((r) => ({ id: r.id, at: iso(r.at), action: r.action, target: r.target, detail: r.detail, actor: r.actor })),
+    entries: list.map((r) => {
+      const email = /^[^\s@]+@[^\s@]+$/.test(r.target) ? r.target : null;
+      const about = email ? { label: byEmail.get(email) ?? maskEmail(email), link: "#/admins" } : auditAbout(r);
+      return { id: r.id, at: iso(r.at), action: r.action, target: email && !owner ? maskEmail(email) : r.target, detail: auditDetail(r), actor: plainActor(r.actor),
+        actorId: r.actor_id || null, ...about };
+    }),
     more: rows.length > 50,
+    kinds: Object.keys(AUDIT_KINDS),
+    actors: [{ id: "owner", name: OWNER.name }, ...admins.map((x) => ({ id: x.id, name: x.name }))],
   };
+}
+
+/** [ADMIN-17] What an entry's detail says, in words where it was stored as data. */
+function auditDetail(r) {
+  if (r.action !== "company_update") return r.detail;
+  try {
+    const b = JSON.parse(r.detail);
+    const out = [];
+    if (typeof b.name === "string") out.push(`이름 → ${b.name}`);
+    if (typeof b.hidden === "boolean") out.push(b.hidden ? "검색에서 숨김" : "검색에 보임");
+    for (const k of ["kind", "job", "region"]) if (typeof b[k] === "string") out.push(`${{ kind: "종류", job: "직군", region: "지역" }[k]} → ${b[k]}`);
+    return out.join(" · ") || r.detail;
+  } catch {
+    return r.detail;
+  }
+}
+
+/**
+ * [ADMIN-17] Activity rows with the names behind their ids read in the same statement: the company of a
+ * setup, post or company change, the first words of a question, whether a 개발사항 is still there.
+ */
+const AUDIT_SELECT = `SELECT a.id, a.at, a.action, a.target, a.detail, a.actor, a.actor_id,
+    (SELECT c.name FROM companies c WHERE c.id = substr(CASE WHEN a.action = 'post_autohide' THEN a.detail ELSE a.target END, 1, 12)) AS company_name,
+    (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = CASE WHEN a.action IN ('dev_link', 'dev_unlink') THEN a.detail
+      WHEN substr(a.action, 1, 8) = 'inquiry_' THEN a.target END ORDER BY m.id LIMIT 1) AS inquiry_first,
+    (SELECT 1 FROM dev_items d WHERE d.id = a.detail) AS dev_kept
+  FROM audit a`;
+
+/** [ADMIN-17] What an entry was about, in words, and where it opens (or null). */
+function auditAbout(r) {
+  const words = (t) => [...(t ?? "")].slice(0, 40).join("");
+  if (r.action.startsWith("inquiry_") && /^[A-Za-z0-9]{22}$/.test(r.target)) {
+    return r.inquiry_first !== null ? { label: `문의 "${words(r.inquiry_first)}"`, link: `#/inquiries/${r.target}` } : { label: "지워진 문의", link: null };
+  }
+  if (r.action.startsWith("dev_")) return { label: r.target, link: r.dev_kept ? `#/dev/${r.detail}` : null };
+  if (r.company_name !== null && r.company_name !== undefined) {
+    const review = ["adopt", "reject", "reject_undo", "answer"].includes(r.action);
+    const post = r.action.startsWith("post_");
+    return { label: r.company_name, link: post ? "#/community" : review ? "#/review" : `#/companies/${r.target.slice(0, 12)}` };
+  }
+  return { label: "", link: null };
 }
 
 /** The home screen's numbers, only for the areas this admin can see. */
 async function overview(env, actor) {
   // One trip to the database for every number: the home screen waits on this call.
+  const now = Date.now();
+  const today = Date.parse(`${kstDay(now)}T00:00:00+09:00`);
   const counts = { settings: `SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`,
     // [MON-10] Every screen shows whether 정식 출시 is on.
-    live: "SELECT value FROM settings WHERE key = 'billing_live'" };
+    live: "SELECT value FROM settings WHERE key = 'billing_live'",
+    // [ADMUX-06] 오늘 내가 처리한 것 (sign-ins left out), and the answer targets.
+    doneToday: ["SELECT COUNT(*) AS n FROM audit WHERE actor_id = ? AND at >= ? AND action NOT IN ('login', 'login_failed')", actor.id, today],
+    sla: SLA_SQL };
+  // [ADMIN-17] The home screen's 최근 활동, so it does not read 50 lines of /audit for ten.
+  if (can(actor, "audit")) counts.recent = `${AUDIT_SELECT} WHERE a.action NOT IN ('login', 'login_failed') ORDER BY a.id DESC LIMIT 10`;
   if (can(actor, "review")) {
     counts.pending = "SELECT COUNT(*) AS n FROM (SELECT DISTINCT company_id, grp FROM reports WHERE status = 'pending')";
     counts.asks = "SELECT COUNT(*) AS n FROM reports WHERE status = 'ask'";
     counts.flagged = `SELECT COUNT(*) AS n FROM rules r WHERE r.withdrawn = 0 AND r.superseded = 0
       AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0)`;
     counts.reports = "SELECT COUNT(*) AS n FROM reports";
+    counts.queueGroups = `SELECT p.company_id, p.grp, c.name, MIN(p.dept) AS dept, COUNT(*) AS n, MIN(p.created_at) AS since
+      FROM reports p JOIN companies c ON c.id = p.company_id WHERE p.status = 'pending' GROUP BY p.company_id, p.grp ORDER BY since LIMIT 5`;
   }
   if (can(actor, "inquiries")) {
     counts.inquiries = "SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open'";
@@ -3827,6 +4364,14 @@ async function overview(env, actor) {
     // [INQ-04] 놓친 문의 on the home screen, so nothing waits past a day unseen.
     counts.inquiriesLate = ["SELECT COUNT(*) AS n FROM inquiries WHERE status = 'open' AND updated_at < ?", Date.now() - INQUIRY.lateMs];
     counts.inquiriesBad = "SELECT COUNT(*) AS n FROM inquiries WHERE rating = -1 AND status != 'closed'";
+    // [ADMUX-06] New questions today and yesterday, the waiting ones for the 할 일 queue, and who holds how many.
+    counts.inquiriesToday = ["SELECT COUNT(*) AS n FROM inquiries WHERE created_at >= ?", today];
+    counts.inquiriesYesterday = ["SELECT COUNT(*) AS n FROM inquiries WHERE created_at >= ? AND created_at < ?", today - DAY, today];
+    counts.queueInquiries = `SELECT i.id, i.kind, i.updated_at, i.assignee, i.assignee_name, i.same,
+        (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
+        (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last
+      FROM inquiries i WHERE i.status = 'open' ORDER BY i.updated_at LIMIT 300`;
+    counts.assigned = "SELECT assignee AS id, assignee_name AS name, COUNT(*) AS n FROM inquiries WHERE status = 'open' AND assignee IS NOT NULL GROUP BY assignee ORDER BY n DESC";
   }
   if (can(actor, "dev")) {
     // [ADMIN-10] 개발사항 still to look at (접수), being made (개발중), and the ones I hold.
@@ -3841,6 +4386,8 @@ async function overview(env, actor) {
     counts.flaggedPostsLate = ["SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND status = 'hidden' AND hide_reason = 'flags' AND hidden_at < ?",
       Date.now() - (LIMITS.hiddenReviewDays - 7) * DAY];
     counts.posts = "SELECT COUNT(*) AS n FROM posts WHERE status = 'shown'";
+    counts.queuePosts = `SELECT p.id, p.body, p.flags, p.status, p.created_at, c.name FROM posts p JOIN companies c ON c.id = p.company_id
+      WHERE p.kept = 0 AND (p.flags > 0 OR p.hide_reason = 'flags') ORDER BY p.flags DESC, p.created_at LIMIT 5`;
   }
   if (can(actor, "companies")) {
     counts.companies = "SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL";
@@ -3858,10 +4405,43 @@ async function overview(env, actor) {
   const got = Object.fromEntries(keys.map((k, i) => [k, results[i].results]));
   const out = { me: me(actor), settings: readSettings(got.settings), reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS,
     flagReasons: FLAGS, salt: secretIssue(env, "RATE_SALT", 1) === null };
+  const rows = new Set(["settings", "waiting", "phones", "live", "opsDone", "sla", "recent", "queueInquiries", "queueGroups", "queuePosts", "assigned"]);
   for (const k of keys) {
-    if (k === "settings" || k === "waiting" || k === "phones" || k === "live" || k === "opsDone") continue;
+    if (rows.has(k)) continue;
     out[k] = got[k][0].n;
   }
+  // [ADMUX-08] The developer app's build, so an open app can say a new one is out.
+  out.build = adminBuild();
+  out.sla = readSla(got.sla);
+  if (got.recent) {
+    out.recent = got.recent.map((r) => ({ id: r.id, at: iso(r.at), action: r.action, target: /@/.test(r.target) && !actor.owner ? maskEmail(r.target) : r.target,
+      detail: auditDetail(r), actor: plainActor(r.actor), ...auditAbout(r) }));
+  }
+  // [ADMUX-06] 할 일: the waiting questions closest to their target, the oldest setups to review and the
+  // most flagged posts, each with what the home screen needs to act on it there.
+  const queue = [];
+  let lateToday = 0;
+  if (got.queueInquiries) {
+    const end = today + DAY;
+    for (const r of got.queueInquiries) {
+      if (r.last !== "user") continue;
+      const left = slaLeft(r.kind, r.updated_at, out.sla, now);
+      if (r.updated_at + out.sla[slaKey(r.kind)] * HOUR < end) lateToday++;
+      queue.push({ type: "inquiry", id: r.id, kind: r.kind, text: [...(r.first ?? "")].slice(0, 80).join(""), slaLeft: left, same: r.same ?? 0,
+        assignee: r.assignee ? { id: r.assignee, name: r.assignee_name ?? "" } : null, at: iso(r.updated_at) });
+    }
+    queue.sort((a, b) => a.slaLeft - b.slaLeft);
+    queue.splice(8);
+    out.assigned = got.assigned.map((a) => ({ id: a.id, name: a.name ?? "", n: a.n }));
+    out.slaLateToday = lateToday;
+  }
+  for (const g of got.queueGroups ?? []) {
+    queue.push({ type: "group", id: `${g.company_id}/${g.grp}`, company: g.name, dept: g.dept, n: g.n, at: iso(g.since) });
+  }
+  for (const p of got.queuePosts ?? []) {
+    queue.push({ type: "post", id: p.id, company: p.name, text: [...p.body].slice(0, 80).join(""), flags: p.flags, hidden: p.status === "hidden", at: iso(p.created_at) });
+  }
+  out.queue = queue;
   if (actor.owner) out.admins = { waiting: got.waiting[0].n, phones: got.phones[0].n };
   out.billingLive = got.live[0]?.value === "1";
   if (got.opsDone) out.opsLeft = opsItems(kstDay(Date.now()).slice(0, 7), got.opsDone[0]?.value).filter((i) => !i.done).length;
@@ -4032,7 +4612,34 @@ async function decide(request, env, companyId, grp, action, now) {
   return json({ ok: true });
 }
 
-async function companies(env, query) {
+/**
+ * [ADMIN-15] 되돌리기 for a 거절: within 10 minutes the reports that 거절 turned down wait for review
+ * again, as if it never happened. Later, or for an older 거절, it is too late (a sender's app may have
+ * shown it already).
+ */
+async function reopen(env, companyId, grp, now) {
+  const last = await one(env, "SELECT MAX(decided_at) AS at FROM reports WHERE company_id = ? AND grp = ? AND status = 'rejected'", companyId, grp);
+  if (!last?.at) return json({ error: "not_found" }, 404);
+  if (now - last.at > REOPEN_MS) return json({ error: "too_late" }, 409);
+  const r = await run(env, `UPDATE reports SET status = 'pending', reason = NULL, decided_at = NULL
+    WHERE company_id = ? AND grp = ? AND status = 'rejected' AND decided_at = ?`, companyId, grp, last.at);
+  await audit(env, now, "reject_undo", `${companyId}/${grp}`, String(r.meta.changes));
+  return json({ ok: true, reopened: r.meta.changes });
+}
+
+const REOPEN_MS = 10 * 60 * 1000;
+
+/** [ADMIN-16] Rows read with one more than a page: the page, and where the next one starts. */
+const sqlPage = (rows, { after, limit }) => ({ items: rows.slice(0, limit), next: rows.length > limit ? after + limit : null });
+
+/** [ADMIN-16] A company name typed into a list's search, as LIKE on companies.norm ('' for none). */
+function companyLike(q) {
+  const n = normName(q).slice(0, 40);
+  return n ? `%${n.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : "";
+}
+
+async function companies(env, query, params = new URLSearchParams()) {
+  const pg = page(params);
   const q = normName(query).slice(0, 40);
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const rows = await all(env, `
@@ -4043,9 +4650,11 @@ async function companies(env, query) {
       (SELECT COUNT(*) FROM reports p WHERE p.company_id = c.id) AS reports
     FROM companies c
     WHERE ?1 = '' OR c.norm LIKE ?2 ESCAPE '\\' OR EXISTS (SELECT 1 FROM aliases a WHERE a.company_id = c.id AND a.norm LIKE ?2 ESCAPE '\\')
-    ORDER BY c.merged_into IS NOT NULL, c.created_at DESC LIMIT 100`, q, like);
+    ORDER BY c.merged_into IS NOT NULL, c.created_at DESC LIMIT ?3 OFFSET ?4`, q, like, pg.limit + 1, pg.after);
+  const { items, next } = sqlPage(rows, pg);
   return {
-    companies: rows.map((c) => ({
+    next,
+    companies: items.map((c) => ({
       id: c.id, name: c.name, hidden: c.hidden === 1, mergedInto: c.merged_into, aliases: c.aliases, rules: c.rules,
       pending: c.pending, reports: c.reports, createdAt: iso(c.created_at),
     })),
@@ -4200,19 +4809,24 @@ async function setRule(request, env, id, now) {
   return companyInfo(env, r.company_id);
 }
 
-async function rewards(env, status) {
+async function rewards(env, status, params = new URLSearchParams()) {
   const wanted = ["owed", "paid", "void"].includes(status) ? status : "owed";
+  const pg = page(params);
+  // [ADMIN-16] A company's name finds its rewards; a rate's reward has no company and is left out then.
+  const like = companyLike(params.get("q"));
   const rows = await all(env, `
     SELECT w.id, w.months, w.status, w.memo, w.created_at, w.paid_at, w.rule_id, w.deferred, p.dept, c.id AS company_id, c.name AS company, u.version
       , t.trade, t.unit, t.region, t.job
     FROM rewards w LEFT JOIN reports p ON p.id = w.report_id LEFT JOIN companies c ON c.id = p.company_id LEFT JOIN rules u ON u.id = w.rule_id
       LEFT JOIN rates t ON t.id = w.report_id
-    WHERE w.status = ? ORDER BY w.created_at DESC LIMIT 200`, wanted);
+    WHERE w.status = ?1 AND (?2 = '' OR c.norm LIKE ?2 ESCAPE '\\') ORDER BY w.created_at DESC LIMIT ?3 OFFSET ?4`, wanted, like, pg.limit + 1, pg.after);
   const counts = await all(env, "SELECT status, COUNT(*) AS n FROM rewards GROUP BY status");
+  const { items, next } = sqlPage(rows, pg);
   return {
     status: wanted,
+    next,
     counts: Object.fromEntries(counts.map((x) => [x.status, x.n])),
-    rewards: rows.map((w) => ({
+    rewards: items.map((w) => ({
       id: w.id, months: w.months, status: w.status, memo: w.memo,
       // [PLZ-14] A rate's reward names the rate instead of a company.
       company: w.trade ? { id: "", name: `임금표 · ${JOBS[w.job] ?? ""} ${REGIONS[w.region] ?? "전국"}` } : { id: w.company_id, name: w.company ?? "" },
@@ -4280,15 +4894,37 @@ async function saveSettings(request, env, now) {
   return json(await settings(env));
 }
 
+/** [ADMUX-06] 답 목표: hours a question of each kind may wait, 1 to 168; a key left out stays as it was. */
+async function saveSla(request, env, now) {
+  const body = await readJson(request, 1024);
+  const was = await slaTargets(env);
+  const next = {};
+  for (const k of Object.keys(SLA.keys)) {
+    const v = body[k] ?? was[k];
+    if (!Number.isInteger(v) || v < SLA.least || v > SLA.most) refuse("sla", k);
+    next[k] = v;
+  }
+  await batch(env, Object.entries(next).map(([k, v]) => stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", slaSetting(k), String(v))));
+  await audit(env, now, "sla", "", `문제 ${next.slaBug} · 질문 ${next.slaQuestion} · 제안 ${next.slaIdea} · 그 밖 ${next.slaOther}시간`);
+  return json({ sla: next });
+}
+
 /** [PLZ-14] Rates for admins: "review" (far from the rest, waiting), "pending", "adopted", "hidden". */
 async function rateList(env, url) {
   const status = ["review", "pending", "adopted", "hidden"].includes(url.searchParams.get("status")) ? url.searchParams.get("status") : "review";
-  const rows = await all(env, "SELECT * FROM rates WHERE status = ? ORDER BY created_at DESC LIMIT 200", status);
+  const pg = page(url.searchParams);
+  // [ADMIN-16] A rate has no company: q finds the trade (직종) typed in it.
+  const q = String(url.searchParams.get("q") ?? "").trim().slice(0, 40);
+  const like = q ? `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : "";
+  const rows = await all(env, `SELECT * FROM rates WHERE status = ?1 AND (?2 = '' OR trade LIKE ?2 ESCAPE '\\')
+    ORDER BY created_at DESC LIMIT ?3 OFFSET ?4`, status, like, pg.limit + 1, pg.after);
   const counts = await all(env, "SELECT status, COUNT(*) AS n FROM rates GROUP BY status");
+  const { items, next } = sqlPage(rows, pg);
   return {
     status,
+    next,
     counts: Object.fromEntries(counts.map((x) => [x.status, x.n])),
-    rates: rows.map((r) => ({ id: r.id, job: r.job, jobName: JOBS[r.job] ?? r.job, region: r.region, regionName: REGIONS[r.region] ?? "전국",
+    rates: items.map((r) => ({ id: r.id, job: r.job, jobName: JOBS[r.job] ?? r.job, region: r.region, regionName: REGIONS[r.region] ?? "전국",
       trade: r.trade, unit: r.unit, unitName: RATE_UNITS[r.unit]?.name ?? r.unit, year: r.year, amount: r.amount, note: r.note,
       agree: r.agree, disagree: r.disagree, writer: r.device.slice(0, 6), at: iso(r.created_at), decidedAt: r.decided_at ? iso(r.decided_at) : null })),
   };
@@ -4322,14 +4958,21 @@ async function postList(env, url) {
   const company = url.searchParams.get("company");
   const grp = url.searchParams.get("setup");
   const one_talk = company && /^[A-Za-z0-9]{12}$/.test(company) && grp && /^[0-9a-f]{16}$/.test(grp);
+  const pg = page(url.searchParams);
+  const like = companyLike(url.searchParams.get("q"));
   const rows = one_talk
     ? await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
         WHERE p.company_id = ? AND p.grp = ? ORDER BY p.created_at, p.rowid LIMIT 500`, company, grp)
     : status === "flagged"
       ? await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
-          WHERE p.kept = 0 AND (p.flags > 0 OR p.hide_reason = 'flags') ORDER BY p.flags DESC, p.created_at DESC LIMIT 100`)
+          WHERE p.kept = 0 AND (p.flags > 0 OR p.hide_reason = 'flags') AND (?1 = '' OR c.norm LIKE ?1 ESCAPE '\\')
+          ORDER BY p.flags DESC, p.created_at DESC LIMIT ?2 OFFSET ?3`, like, pg.limit + 1, pg.after)
       : await all(env, `SELECT p.*, c.name FROM posts p JOIN companies c ON c.id = p.company_id
-          ${status === "hidden" ? "WHERE p.status = 'hidden'" : ""} ORDER BY p.created_at DESC LIMIT 100`);
+          WHERE (?1 = '' OR c.norm LIKE ?1 ESCAPE '\\') ${status === "hidden" ? "AND p.status = 'hidden'" : ""}
+          ORDER BY p.created_at DESC LIMIT ?2 OFFSET ?3`, like, pg.limit + 1, pg.after);
+  // [ADMIN-16] One talk comes whole; the lists come a page at a time.
+  const next = one_talk ? null : sqlPage(rows, pg).next;
+  if (!one_talk && rows.length > pg.limit) rows.length = pg.limit;
   // What each post needs besides itself, for all of them in one trip.
   const ids = JSON.stringify(rows.map((p) => p.id));
   const talks = JSON.stringify([...new Map(rows.map((p) => [`${p.company_id}/${p.grp}`, [p.company_id, p.grp]])).values()]);
@@ -4371,7 +5014,7 @@ async function postList(env, url) {
       mutedUntil: muted ? iso(muted.until) : null,
     });
   }
-  return { status: one_talk ? "talk" : status, posts: out };
+  return { status: one_talk ? "talk" : status, posts: out, next };
 }
 
 /**
@@ -5021,9 +5664,23 @@ function readNotice(body, now) {
 async function noticeList(env, now) {
   const s = await opsState(env);
   return {
+    // [ADMUX-07] The newest app this server has heard from, for the notice form's 앱 버전 칸.
+    latestApp: await latestApp(env, now),
     notices: s.notices.sort((a, b) => b.from - a.from).map((n) => ({ ...noticeView(n), state: now < n.from ? "later" : now < n.until ? "on" : "ended" })),
     switches: Object.entries(SWITCHES).map(([key, label]) => ({ key, label, off: s.off.includes(key) })),
   };
+}
+
+/** [ADMUX-07] The highest app version (name and versionCode) in questions of the last 60 days, or null. */
+async function latestApp(env, now) {
+  const rows = await all(env, `SELECT DISTINCT json_extract(info, '$.app') AS app FROM inquiries WHERE created_at > ? AND json_valid(info)
+    ORDER BY created_at DESC LIMIT 300`, now - 60 * DAY);
+  let best = null;
+  for (const { app } of rows) {
+    const m = String(app ?? "").match(/^\s*([\d.]+)\s*\((\d+)\)/);
+    if (m && (!best || Number(m[2]) > best.code)) best = { name: m[1], code: Number(m[2]) };
+  }
+  return best;
 }
 
 /** Adds a notice, or changes one with the same id. Ended ones are dropped when the list is full. */
@@ -5220,13 +5877,18 @@ async function metrics(env, url, now) {
   const days = Math.min(90, Math.max(7, Number.parseInt(url.searchParams.get("days") ?? "28", 10) || 28));
   const to = kstDay(now - DAY);
   const from = kstDay(now - days * DAY);
-  const [dayRows, eventRows, subs] = (await batch(env, [
+  // [ADMUX-07] The period just before, day by day, for the chart's dashed line.
+  const beforeFrom = kstDay(now - 2 * days * DAY);
+  const beforeTo = kstDay(now - (days + 1) * DAY);
+  const [dayRows, eventRows, subs, beforeRows] = (await batch(env, [
     stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day ORDER BY day", from, to),
     stmt(env, `SELECT event, SUM(phones) AS phones, SUM(total) AS total, SUM(recent) AS recent FROM usage_events
       WHERE day BETWEEN ? AND ? GROUP BY event`, from, to),
     stmt(env, `SELECT SUM(CASE WHEN trial = 1 THEN 1 ELSE 0 END) AS trials, SUM(CASE WHEN trial = 0 THEN 1 ELSE 0 END) AS paid,
       SUM(CASE WHEN auto_renew = 0 THEN 1 ELSE 0 END) AS ending FROM subs WHERE state IN ('ACTIVE', 'GRACE') AND expiry > ?`, now),
+    stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day", beforeFrom, beforeTo),
   ])).map((r) => r.results);
+  const was = new Map(beforeRows.map((r) => [r.day, r.phones]));
   const phoneDays = dayRows.reduce((n, r) => n + r.phones, 0);
   const daily = dayRows.length ? Math.round(phoneDays / dayRows.length) : 0;
   const ev = new Map(eventRows.map((r) => [r.event, r]));
@@ -5240,6 +5902,8 @@ async function metrics(env, url, now) {
   return {
     from, to, days, phoneDays, daily, enough,
     series: dayRows.map((r) => ({ day: r.day, phones: r.phones })),
+    // The same day [days] earlier for each day of the series, 0 when nothing came that day.
+    before: dayRows.map((r) => was.get(kstDay(Date.parse(`${r.day}T00:00:00+09:00`) - days * DAY)) ?? 0),
     events: Object.entries(EVENTS).map(([event, label]) => {
       const r = ev.get(event);
       return { event, label, phones: r?.phones ?? 0, total: r?.total ?? 0, share: share(event) === null ? null : Math.round(share(event) * 1000) / 10 };
