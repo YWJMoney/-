@@ -2434,6 +2434,7 @@ async function flag(request, env, id) {
     if (after.status === "hidden") {
       await batch(env, plazaResults(env, p, "hidden", "hidden", now));
       await audit(env, now, "post_autohide", id, `${p.company_id}/${p.grp}`);
+      await notifyAdmins(env, "flagged", { title: "신고로 가려진 글", body: "신고가 쌓여 글 하나가 가려졌어요", url: "/admin/#/community" }, now);
     }
   }
   return json({ ok: true });
@@ -2616,6 +2617,13 @@ async function ask(request, env) {
     ...dropInquiries(env, "updated_at < ?", now - INQUIRY.keepMs),
     stmt(env, "DELETE FROM counters WHERE expires < ?", now),
   ]);
+  // [ADMIN-19] Admins who asked for it hear of a new question (a bug or a problem counts as urgent); nothing
+  // happens without VAPID keys, and a push that fails never fails the question.
+  await notifyAdmins(env, ["bug", "problem"].includes(body.kind) ? "urgent" : "inquiry", {
+    title: "새 문의",
+    body: `${({ bug: "문제 신고", problem: "문제 신고", question: "질문", idea: "건의·제안", company: "회사 방식" })[body.kind] ?? "문의"} 1건`,
+    url: "/admin/#/inquiries",
+  }, now);
   const view = await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id));
   // Photos the server could not take this time (switched off or full): the question went without them.
   return json({ ...view, ...(photos.skipped ? { photosSkipped: photos.skipped } : {}) }, 201);
@@ -2841,7 +2849,10 @@ async function inquiryMark(request, env, id, kind) {
     await run(env, `UPDATE inquiries SET flags = flags + 1,
         hidden = CASE WHEN kept = 0 AND flags + 1 >= ?2 THEN 'flags' ELSE hidden END WHERE id = ?1`, id, LIMITS.flagsToHide);
     const after = await one(env, "SELECT hidden FROM inquiries WHERE id = ?", id);
-    if (after.hidden) await audit(env, now, "inquiry_autohide", id);
+    if (after.hidden) {
+      await audit(env, now, "inquiry_autohide", id);
+      await notifyAdmins(env, "flagged", { title: "신고로 가려진 문의", body: "신고가 쌓여 모두의 문의 하나가 가려졌어요", url: "/admin/#/inquiries" }, now);
+    }
   }
   return json({ ok: true });
 }
@@ -5755,6 +5766,7 @@ const OPS_CALENDAR = [
   [4, "android-preview", "새 Android 미리보기에서 알람·알림 점검", "Play 대상 API 수준 요건(매년 8월 31일)"],
   [5, "store-listing", "스토어 등록정보·화면 사진이 지금 앱과 맞는지 확인", "Google Play 메타데이터 정책"],
   [6, "pension-prepare", "7월부터 쓰는 국민연금 기준소득월액 상하한 준비", "국민연금법 시행령 제5조"],
+  [6, "labor-law-2027", "2027-06-10 시행 근로기준법 개정(조문 번호 이동, 시간 단위 연차)에 맞춰 앱의 법 조문 글귀와 연차 계산을 확인", "근로기준법 개정(2027-06-10 시행), docs/tracker.csv LEAVE-12"],
   [7, "pension-apply", "국민연금 기준소득월액 상하한을 remote/v1/rates.json에 넣어 7월 급여부터 맞추기(판 올리고 서명)", "국민연금법 시행령 제5조"],
   [8, "minwage-next", "다음 해 최저임금 결정(8월 5일까지)을 앱에 넣을 준비", "최저임금법 제8조 제1항"],
   [8, "target-api", "대상 API 수준 마감(8월 31일) 전에 업데이트 출시", "Google Play 대상 API 수준 요건"],
