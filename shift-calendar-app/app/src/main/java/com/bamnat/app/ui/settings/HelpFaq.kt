@@ -242,7 +242,7 @@ internal object HelpFaq {
                 "가린 사람은 광장 › 내 활동 › ‘가린 사람’에서 다시 볼 수 있어요. 글을 처음 쓸 때 보는 운영 규칙은 언제든 웹에서도 볼 수 있어요.",
             listOf("광장", "차단", "가리기", "안 보기", "신고", "욕설", "운영 규칙"),
             listOf("광장", "회사 규칙 광장"),
-            "광장 소식 알림 설정" to HelpAction.Page(SettingsPage.NOTICES, "광장 소식"),
+            "밤낮 소식 알림 설정" to HelpAction.Page(SettingsPage.NOTICES, "밤낮 소식"),
         ),
         // [STAT-01] 1.22.0: what 사용 통계 sends, and that it stays off without a yes.
         HelpTopic(
