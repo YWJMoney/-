@@ -121,7 +121,9 @@ class DailyWidgetsTest {
     /** [DAILY-17] The first moment, then a pay month closed, a month or more later, once. */
     @Test fun theSecondReviewMomentComesOnceAndNotTooSoon() {
         val day = today.toEpochDay()
-        assertEquals(InAppReview.Moment.FIRST, InAppReview.due(AppSettings(reviewDue = true), today))
+        // [SETUP-14] G P23: not the minute setup ends, but once the first month-end card was closed.
+        assertNull(InAppReview.due(AppSettings(reviewDue = true), today))
+        assertEquals(InAppReview.Moment.FIRST, InAppReview.due(AppSettings(reviewDue = true, monthRecapSeen = 202610), today))
         assertNull(InAppReview.due(AppSettings(reviewAsked = true), today))
         val asked = AppSettings(reviewAsked = true, reviewAskedDay = day - 10, payReviewDue = true)
         assertNull(InAppReview.due(asked, today))
