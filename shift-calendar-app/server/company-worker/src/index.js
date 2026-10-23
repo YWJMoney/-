@@ -2986,6 +2986,26 @@ async function inquiryBulk(request, env, now) {
  * topic's first, then the most used) when this admin may answer, who else is writing to it, and what
  * admins did to it, for the timeline.
  */
+/**
+ * [ADMUX-07] The question's audit lines (in the order written) with its 개발사항 links put in by time. Two
+ * from the same millisecond cannot be told apart by time, so a link goes after an assign or a reply of
+ * that moment and before a status change or a hide (a question is linked, then closed).
+ */
+function timeline(events, links) {
+  const late = new Set(["inquiry_status", "inquiry_hide", "inquiry_show"]);
+  const out = [];
+  const queue = [...links].sort((x, y) => x.at - y.at);
+  for (const e of events) {
+    while (queue.length && (queue[0].at < e.at || (queue[0].at === e.at && late.has(e.action)))) {
+      const l = queue.shift();
+      out.push({ at: iso(l.at), action: "dev_link", detail: l.title, item: l.id, by: l.by });
+    }
+    out.push({ at: iso(e.at), action: e.action, detail: e.detail, by: plainActor(e.actor) });
+  }
+  for (const l of queue) out.push({ at: iso(l.at), action: "dev_link", detail: l.title, item: l.id, by: l.by });
+  return out;
+}
+
 async function adminInquiryView(env, row) {
   const view = await inquiryView(env, row, true);
   const now = Date.now();
@@ -2997,10 +3017,7 @@ async function adminInquiryView(env, row) {
   ])).map((r) => r.results);
   const out = {
     ...view,
-    events: [
-      ...events.map((e) => ({ at: iso(e.at), action: e.action, detail: e.detail, by: plainActor(e.actor) })),
-      ...links.map((l) => ({ at: iso(l.at), action: "dev_link", detail: l.title, item: l.id, by: l.by })),
-    ].sort((x, y) => x.at.localeCompare(y.at)),
+    events: timeline(events, links),
     typing: typingByInquiry(typing, env.actor?.id ?? "")[row.id] ?? [],
   };
   if (view.waitingHours !== null) {
@@ -3337,7 +3354,9 @@ async function devUpdate(env, row, body, now) {
   // Written only over the item as this admin read it: a change that landed meanwhile makes it "stale",
   // and then nothing (not even a history line) is written.
   const updated = await run(env, `UPDATE dev_items SET ${[...cols.map((c) => `${c} = ?`), "updated_at = ?"].join(", ")} WHERE id = ? AND updated_at = ?`,
-    ...cols.map((c) => set[c]), now, row.id, row.updated_at);
+    // Always a new updated_at, even in the same millisecond as the last change, so a second writer of that
+    // moment no longer matches it.
+    ...cols.map((c) => set[c]), Math.max(now, row.updated_at + 1), row.id, row.updated_at);
   if (!updated.meta.changes) return "stale";
   await batch(env, stmts);
   // The activity screen shows the title; the id goes with what changed.

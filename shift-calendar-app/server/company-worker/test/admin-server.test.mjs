@@ -397,7 +397,9 @@ test("[ADMIN-16] 답 쓰는 중 shows to the other admins for 30 seconds, and st
   assert.deepEqual((await call("GET", `/api/admin/inquiries/${q.data.id}`, undefined, owner)).data.typing, []);
 });
 
-test("[ADMUX-07] a question's timeline: who took it, answered, closed and linked it, in order", async () => {
+test("[ADMUX-07] a question's timeline: who took it, answered, closed and linked it, in order", async (t) => {
+  // All in one millisecond, the way a fast machine runs it: the order still holds.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-23T09:00:00Z") });
   const { call } = server();
   const owner = await signIn(call);
   const q = await call("POST", "/api/inquiries", question(1));

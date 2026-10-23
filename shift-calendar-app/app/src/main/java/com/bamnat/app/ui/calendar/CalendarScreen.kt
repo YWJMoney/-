@@ -226,7 +226,13 @@ fun CalendarScreen(
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     // [PERF-01] The month is there: Android's "Fully drawn" for this start, and the startup budget's last step.
     androidx.activity.compose.ReportDrawnWhen { snapshot != null }
-    LaunchedEffect(snapshot != null) { if (snapshot != null) com.bamnat.app.StartupTrace.mark(com.bamnat.app.StartupTrace.Step.CALENDAR) }
+    LaunchedEffect(snapshot != null) {
+        if (snapshot != null) {
+            com.bamnat.app.StartupTrace.mark(com.bamnat.app.StartupTrace.Step.CALENDAR)
+            // [PERF-03] The month is there: the jobs that waited for it start now.
+            context.appContainer.afterFirstFrame()
+        }
+    }
     val settings by vm.settings.collectAsStateWithLifecycle()
     // [CUST-01] The page's parts in the user's order (화면 꾸미기).
     val calendarParts = remember(settings) { settings.calendarParts() }

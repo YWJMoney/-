@@ -244,7 +244,9 @@ test("starting answers are added once even when two admins open the list at once
   assert.ok(a.data.templates.length <= after.length && b.data.templates.length <= after.length);
 });
 
-test("two changes from the same screen: only the first is written, the other is told it changed", async () => {
+test("two changes from the same screen: only the first is written, the other is told it changed", async (t) => {
+  // Made and changed twice in one millisecond: the second still sees that the item moved on.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-23T09:00:00Z") });
   const { call } = server();
   const owner = await signIn(call);
   const item = (await call("POST", "/api/admin/dev", { title: "위젯" }, owner)).data;

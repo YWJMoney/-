@@ -348,6 +348,8 @@ class AppContainer(context: Context) {
         const val RETRY_MAX_MILLIS = 60_000L
         /** [PROV-03] After the app has opened and settled, not while the first screen draws. */
         const val AUTO_BACKUP_DELAY_MILLIS = 20_000L
+        /** [PERF-03] When no calendar month showed by then, the waiting jobs start anyway. */
+        const val LATER_FALLBACK_MILLIS = 3_000L
         /** [MON-09] Often enough for the admin link's weekly check, rare enough to stay quiet. */
         val PASSES_EVERY: java.time.Duration = java.time.Duration.ofHours(6)
     }
@@ -415,28 +417,6 @@ class AppContainer(context: Context) {
                     WidgetRefresher.refresh(appContext)
                 }
         }
-        // [WORK-02] Any change to the booked jobs re-plans the next job reminder.
-        // [SLP-15] So does the 나갈 돈·받을 돈 switch.
-        keep("money") {
-            val on = settingsRepository.settings.map { it.moneyNotices }.distinctUntilChanged()
-            // [MCAL-06] A job booked on any calendar is told about.
-            combine(calendars.everyMoney, on) { book, _ -> book }.debounce(500)
-                .collect { JobReminderScheduler.reschedule(appContext, it, settingsRepository.current) }
-        }
-        // [SCHED-01] A memo saved, moved to the trash, restored or brought back from a backup re-plans the next schedule.
-        appScope.launch {
-            memoRepository.memos.map { list -> list.filter { it.reminder != null } }
-                .distinctUntilChanged { a, b -> a.map { it.id to it.reminder } == b.map { it.id to it.reminder } }
-                .debounce(300)
-                .collect { com.bamnat.app.memo.MemoScheduleAlarm.reschedule(appContext, it) }
-        }
-        // [INV-08] An investor alarm or date saved, changed or restored re-plans the next investor notice.
-        com.bamnat.app.invest.InvestNotices.follow(this)
-        // [INV-34] 월말 요약's next notice while there is an investor calendar; it reads them when it comes.
-        appScope.launch {
-            com.bamnat.app.invest.InvestNotices.plans(this@AppContainer).map { it.isNotEmpty() }.distinctUntilChanged()
-                .collect { com.bamnat.app.invest.InvestMonthNotice.schedule(appContext, it) }
-        }
         // [SLP-15] 하루 브리핑, 퇴근길 and 잘 준비 follow the schedule, the alarms and their settings.
         keep("notices") {
             val reads = settingsRepository.settings.map {
@@ -446,58 +426,12 @@ class AppContainer(context: Context) {
                 .debounce(500)
                 .collect { DayNoticeScheduler.reschedule(appContext, it, settingsRepository.current) }
         }
-        // [FEAT-18] Turning 잠금 화면 오늘 근무 on or off shows or removes it now, not at midnight.
-        keep("today notice") {
-            settingsRepository.settings.map { it.todayShiftNotice }.distinctUntilChanged().drop(1)
-                .collect { WidgetRefresher.refresh(appContext) }
-        }
-        // [LEAVE-03] 연차 사용 촉진 notices follow the ledger's lots (제61조 dates) and their switch.
-        keep("leave") {
-            val lots = leaveRepository.summary.map { s -> s.lots.map { it.lot } }.distinctUntilChanged()
-            val on = settingsRepository.settings.map { it.leaveNotice }.distinctUntilChanged()
-            combine(lots, on) { l, o -> l to o }
-                .collect { (l, o) -> LeaveReminder.reschedule(appContext, l, o) }
-        }
-        // [COMM-10] 광장 소식, [SRV-10] since 1.23 밤낮 소식: the one daily job runs while it has something to do here.
-        keep("plaza news") {
-            combine(
-                settingsRepository.settings.map { listOf(it.plazaNews, it.plazaRulesAgreed, it.phoneCalendars, it.alarmsEnabled) },
-                companyStore.sent, companyStore.applied, received.calendars.map { it.isEmpty() },
-            ) { a, _, _, _ -> a }
-                .distinctUntilChanged()
-                .collect {
-                    if (com.bamnat.app.company.PlazaNewsJob.wanted(this@AppContainer)) com.bamnat.app.company.PlazaNewsJob.schedule(appContext)
-                    else com.bamnat.app.company.PlazaNewsJob.cancel(appContext)
-                }
-        }
-        // [MON-06] The trial's notice follows the subscription and the user's answer.
-        keep("trialnotice") {
-            proStore.state.map { Triple(it.sub, it.consentAt, it.trialNoticeFor) }.distinctUntilChanged()
-                .collect { com.bamnat.app.tier.TrialNotice.reschedule(appContext, proStore.current) }
-        }
-        // [SHR-12] The link this phone made follows the calendar, and its expiry notice follows the link.
-        keep("share") { if (shareApi.enabled) shareSync.follow() }
-        // [FEAT-07] The phone's 밤낮 calendars follow the calendars written there.
-        keep("phonecal") { phoneCalendarSync.follow() }
         // [PROV-03] A day's backup owed when the app opens goes now; the job keeps it going while closed.
         keep("autobackup") {
             if (autoBackup.on) {
                 com.bamnat.app.backup.AutoBackupJob.schedule(appContext)
                 delay(AUTO_BACKUP_DELAY_MILLIS)
                 autoBackup.runIfDue()
-            }
-        }
-        // [MCAL-03] Each of the user's calendars has its own link and so its own notice; [PROV-04] each of its links.
-        keep("shareexpiry") {
-            calendars.calendars.map { list -> list.map { it.id } }.distinctUntilChanged().collectLatest { ids ->
-                coroutineScope {
-                    ids.flatMap { com.bamnat.app.share.ShareLinkKey.all(it) }.forEach { key ->
-                        launch {
-                            val store = shareLinksOf(key)
-                            store.link.collect { com.bamnat.app.share.ShareExpiryReminder.reschedule(appContext, key, it, store.noticedFor) }
-                        }
-                    }
-                }
             }
         }
         // [SLP-15] 자는 중 follows the sleep log, and a sleep that just ended says how long it was.
@@ -535,6 +469,102 @@ class AppContainer(context: Context) {
                 com.bamnat.app.alarm.BootAlarms.RingSettings.of(s, sure)
             }.distinctUntilChanged().drop(1).collect { alarmScheduler.saveBootCopy() }
         }
+        // [PERF-03] The rest waits for the calendar's first month on screen ([afterFirstFrame]), or a few seconds
+        // when the app was started without it (an alarm, a widget, the first setup): the boot receiver plans
+        // every notice by itself, so these follow later changes.
+        appScope.launch {
+            delay(LATER_FALLBACK_MILLIS)
+            afterFirstFrame()
+        }
+    }
+
+    private val laterStarted = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * [PERF-03] Starts the jobs that can wait until the calendar has drawn its first month: widgets, the watch,
+     * links, the phone calendar, the plaza and the notices planned days ahead. Called by the calendar once its
+     * month is there and by [start]'s fallback; only the first call does anything.
+     */
+    fun afterFirstFrame() {
+        if (!laterStarted.compareAndSet(false, true)) return
+        keptBeforeLater = kept.toList()
+        startLater()
+    }
+
+    /** [PERF-03] What [start] had running when the waiting jobs started, for the startup budget test. */
+    @Volatile internal var keptBeforeLater: List<String>? = null
+        private set
+
+    @OptIn(FlowPreview::class)
+    private fun startLater() {
+        // [WORK-02] Any change to the booked jobs re-plans the next job reminder.
+        // [SLP-15] So does the 나갈 돈·받을 돈 switch.
+        keep("money") {
+            val on = settingsRepository.settings.map { it.moneyNotices }.distinctUntilChanged()
+            // [MCAL-06] A job booked on any calendar is told about.
+            combine(calendars.everyMoney, on) { book, _ -> book }.debounce(500)
+                .collect { JobReminderScheduler.reschedule(appContext, it, settingsRepository.current) }
+        }
+        // [SCHED-01] A memo saved, moved to the trash, restored or brought back from a backup re-plans the next schedule.
+        keep("memoschedule") {
+            memoRepository.memos.map { list -> list.filter { it.reminder != null } }
+                .distinctUntilChanged { a, b -> a.map { it.id to it.reminder } == b.map { it.id to it.reminder } }
+                .debounce(300)
+                .collect { com.bamnat.app.memo.MemoScheduleAlarm.reschedule(appContext, it) }
+        }
+        // [INV-08] An investor alarm or date saved, changed or restored re-plans the next investor notice.
+        keep("invest") { com.bamnat.app.invest.InvestNotices.follow(this@AppContainer) }
+        // [INV-34] 월말 요약's next notice while there is an investor calendar; it reads them when it comes.
+        keep("investmonth") {
+            com.bamnat.app.invest.InvestNotices.plans(this@AppContainer).map { it.isNotEmpty() }.distinctUntilChanged()
+                .collect { com.bamnat.app.invest.InvestMonthNotice.schedule(appContext, it) }
+        }
+        // [FEAT-18] Turning 잠금 화면 오늘 근무 on or off shows or removes it now, not at midnight.
+        keep("today notice") {
+            settingsRepository.settings.map { it.todayShiftNotice }.distinctUntilChanged().drop(1)
+                .collect { WidgetRefresher.refresh(appContext) }
+        }
+        // [LEAVE-03] 연차 사용 촉진 notices follow the ledger's lots (제61조 dates) and their switch.
+        keep("leave") {
+            val lots = leaveRepository.summary.map { s -> s.lots.map { it.lot } }.distinctUntilChanged()
+            val on = settingsRepository.settings.map { it.leaveNotice }.distinctUntilChanged()
+            combine(lots, on) { l, o -> l to o }
+                .collect { (l, o) -> LeaveReminder.reschedule(appContext, l, o) }
+        }
+        // [COMM-10] 광장 소식, [SRV-10] since 1.23 밤낮 소식: the one daily job runs while it has something to do here.
+        keep("plaza news") {
+            combine(
+                settingsRepository.settings.map { listOf(it.plazaNews, it.plazaRulesAgreed, it.phoneCalendars, it.alarmsEnabled) },
+                companyStore.sent, companyStore.applied, received.calendars.map { it.isEmpty() },
+            ) { a, _, _, _ -> a }
+                .distinctUntilChanged()
+                .collect {
+                    if (com.bamnat.app.company.PlazaNewsJob.wanted(this@AppContainer)) com.bamnat.app.company.PlazaNewsJob.schedule(appContext)
+                    else com.bamnat.app.company.PlazaNewsJob.cancel(appContext)
+                }
+        }
+        // [MON-06] The trial's notice follows the subscription and the user's answer.
+        keep("trialnotice") {
+            proStore.state.map { Triple(it.sub, it.consentAt, it.trialNoticeFor) }.distinctUntilChanged()
+                .collect { com.bamnat.app.tier.TrialNotice.reschedule(appContext, proStore.current) }
+        }
+        // [SHR-12] The link this phone made follows the calendar, and its expiry notice follows the link.
+        keep("share") { if (shareApi.enabled) shareSync.follow() }
+        // [FEAT-07] The phone's 밤낮 calendars follow the calendars written there.
+        keep("phonecal") { phoneCalendarSync.follow() }
+        // [MCAL-03] Each of the user's calendars has its own link and so its own notice; [PROV-04] each of its links.
+        keep("shareexpiry") {
+            calendars.calendars.map { list -> list.map { it.id } }.distinctUntilChanged().collectLatest { ids ->
+                coroutineScope {
+                    ids.flatMap { com.bamnat.app.share.ShareLinkKey.all(it) }.forEach { key ->
+                        launch {
+                            val store = shareLinksOf(key)
+                            store.link.collect { com.bamnat.app.share.ShareExpiryReminder.reschedule(appContext, key, it, store.noticedFor) }
+                        }
+                    }
+                }
+            }
+        }
         // Widgets lay out weeks from the user's first day of the week.
         keep("widgetweek") {
             settingsRepository.settings.map { it.weekStart }.distinctUntilChanged().drop(1)
@@ -569,7 +599,7 @@ class AppContainer(context: Context) {
         // [DAYW-07] The workplace geofence goes in if it is not there yet (the same circle is left alone),
         // location coming back on is listened for while the feature is on, and the periodic check is set.
         if (com.bamnat.app.data.CommutePrefs.get(appContext).current.enabled) {
-            appScope.launch { runCatching { com.bamnat.app.commute.CommuteRecorder.catchUp(appContext) } }
+            keep("commute") { runCatching { com.bamnat.app.commute.CommuteRecorder.catchUp(appContext) } }
         }
     }
 }
