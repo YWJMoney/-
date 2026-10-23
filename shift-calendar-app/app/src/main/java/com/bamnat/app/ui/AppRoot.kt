@@ -898,6 +898,11 @@ private fun AppNavHost(
                 onOpenCalendars = { nav.navigate(Routes.CALENDARS) { launchSingleTop = true } },
             )
         }
+        composable(Routes.SHARE_GROUP) {
+            val vm = appViewModel { com.bamnat.app.ui.calendar.ShareGroupViewModel(it) }
+            com.bamnat.app.ui.calendar.ShareGroupScreen(vm, onBack = { nav.popFrom(Routes.SHARE_GROUP) },
+                onShare = { nav.popFrom(Routes.SHARE_GROUP); NoticeLinks.open(NoticeLinks.Target.SHARE) })
+        }
         composable(Routes.INQUIRY) {
             val vm = appViewModel { InquiryViewModel(it) }
             InquiryScreen(vm = vm, onBack = { nav.popFrom(Routes.INQUIRY) })

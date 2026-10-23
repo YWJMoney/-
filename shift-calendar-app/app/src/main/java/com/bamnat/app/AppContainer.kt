@@ -225,6 +225,8 @@ class AppContainer(context: Context) {
     val phoneCalendarSync by lazy { com.bamnat.app.calendar.PhoneCalendarSync(this) }
     /** [SHR-02] Schedules others shared, kept beside the user's own and never backed up. */
     val received by lazy { com.bamnat.app.share.ReceivedCalendarStore(java.io.File(appContext.noBackupFilesDir, "received_calendars.json")) }
+    /** [SHR-14] 우리 조 모아 보기: the code this phone is in. */
+    val shareGroup by lazy { com.bamnat.app.share.ShareGroupStore(appContext) }
     /** [MON-07][MON-10] When this app was first installed: the testers' thank-you and the first days without ads. */
     val installedAt: java.time.Instant? by lazy {
         runCatching { java.time.Instant.ofEpochMilli(appContext.packageManager.getPackageInfo(appContext.packageName, 0).firstInstallTime) }.getOrNull()

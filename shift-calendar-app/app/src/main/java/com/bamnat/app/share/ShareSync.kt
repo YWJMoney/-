@@ -90,6 +90,30 @@ class ShareSync(
         send(store, link, null)
     }
 
+    /** [SHR-13] Every link this phone made, on every calendar. */
+    fun allLinks(): List<String> =
+        c.calendars.calendars.value.flatMap { ShareLinkKey.all(it.id) }.filter { c.shareLinksOf(it).link.value != null }
+
+    /**
+     * [SHR-13] 모든 링크 끊기: every link this phone made is cut on the server and forgotten here. A link the
+     * server could not be reached for stays, so it can be tried again; the number of those comes back.
+     */
+    suspend fun cutAll(): Int = lock.withLock {
+        var left = 0
+        for (key in allLinks()) {
+            val store = c.shareLinksOf(key)
+            val link = store.link.value ?: continue
+            try {
+                c.shareApi.delete(link)
+                store.clear()
+            } catch (e: IOException) {
+                left++
+            }
+        }
+        c.telemetry.event("share_link_cut_all", if (left == 0) "done" else "left")
+        left
+    }
+
     /** [SHR-13] Every link with a change the server has not got, sent now; true when none is left. */
     suspend fun sendUnsent(): Boolean {
         var left = false

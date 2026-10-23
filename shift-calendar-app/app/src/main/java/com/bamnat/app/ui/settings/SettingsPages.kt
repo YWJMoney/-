@@ -541,7 +541,49 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
         // [FEAT-07] The same, kept up to date by itself (프로).
         PhoneCalendarRows(vm)
     }
+    if (vm.shareOn) ShareLinkRows()
 }
+
+/** [SHR-13][SHR-14] 근무표 링크: 우리 조 모아 보기, and every link cut at once. */
+@Composable
+private fun ShareLinkRows() {
+    val c = LocalContext.current.appContainer
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var keys by remember { mutableStateOf(c.shareSync.allLinks()) }
+    var asking by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var said by remember { mutableStateOf<String?>(null) }
+    SectionCard(title = "근무표 링크") {
+        NavRow(GROUP_ROW, "동료들이 각자 만든 링크를 6자 코드 하나로 묶어 나란히 봐요. 서버에는 링크 목록만 남아요") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.GROUP)
+        }
+        HorizontalDivider()
+        NavRow(CUT_ALL_ROW, said ?: if (keys.isEmpty()) "지금 열려 있는 링크가 없어요"
+            else "이 휴대폰이 만든 링크 ${keys.size}개를 한 번에 끊어요. 받은 사람은 더 볼 수 없어요") {
+            if (keys.isNotEmpty() && !busy) asking = true
+        }
+    }
+    if (asking) ConfirmDialog(
+        title = "모든 링크를 끊을까요?",
+        message = "링크 ${keys.size}개가 서버에서 지워지고, 받은 사람의 달력에는 ‘끊긴 링크’로 남아요. 다시 보내려면 새 링크를 만들어야 해요.",
+        confirmLabel = "모두 끊기",
+        destructive = true,
+        onDismiss = { asking = false },
+        onConfirm = {
+            asking = false; busy = true
+            scope.launch {
+                val left = c.shareSync.cutAll()
+                keys = c.shareSync.allLinks()
+                said = if (left == 0) "모두 끊었어요" else "인터넷이 안 돼 ${left}개는 못 끊었어요. 연결된 뒤 다시 눌러 주세요"
+                busy = false
+            }
+        },
+    )
+}
+
+/** [SHR-14] 설정 › 데이터 rows, also found by search. */
+internal const val GROUP_ROW = "우리 조 모아 보기"
+internal const val CUT_ALL_ROW = "모든 링크 끊기"
 
 /**
  * [STAT-01] 사용 통계 보내기 with what exactly goes: event names and daily counts, the app version, never

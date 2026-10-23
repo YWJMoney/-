@@ -46,7 +46,7 @@ object ReceivedChanges {
         }
     }
 
-    private fun label(s: SharedSchedule, date: java.time.LocalDate): String {
+    internal fun label(s: SharedSchedule, date: java.time.LocalDate): String {
         val d = s.days[date] ?: return "쉬는 날"
         d.leave?.let { return it }
         val names = listOfNotNull(s.type(d.type)?.name, s.type(d.second)?.name)

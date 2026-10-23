@@ -443,6 +443,18 @@ interface ShareApi {
 
     /** [SRV-05] Reports a received link to the developer ([ShareReport] reasons); nobody learns who sent it. */
     suspend fun report(id: String, reason: String) {}
+
+    /** [SHR-14] Starts a 모임 코드 holding the user's own link [own]. */
+    suspend fun groupStart(own: ShareLinkState): ShareGroup = throw ShareLinkException("unsupported")
+
+    /** [SHR-14] Adds [own] to the group [code]. */
+    suspend fun groupJoin(code: String, own: ShareLinkState): ShareGroup = throw ShareLinkException("unsupported")
+
+    /** [SHR-14] The links still open in [code]; "not_found" once none is. */
+    suspend fun groupRead(code: String): ShareGroup = throw ShareLinkException("unsupported")
+
+    /** [SHR-14] Takes [own] out of [code]. */
+    suspend fun groupLeave(code: String, own: ShareLinkState) {}
 }
 
 /** [SRV-05] Why a link is reported: the share server's codes and the words for them. */
@@ -513,6 +525,29 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
         request("POST", "/api/share/$id/report", JSONObject().put("reason", reason), null)
         Unit
     }
+
+    override suspend fun groupStart(own: ShareLinkState): ShareGroup = withContext(Dispatchers.IO) {
+        group(request("POST", "/api/groups", JSONObject().put("link", own.id).put("token", own.deleteToken), null).body)
+    }
+
+    override suspend fun groupJoin(code: String, own: ShareLinkState): ShareGroup = withContext(Dispatchers.IO) {
+        group(request("POST", "/api/groups/$code", JSONObject().put("link", own.id).put("token", own.deleteToken), null).body)
+    }
+
+    override suspend fun groupRead(code: String): ShareGroup = withContext(Dispatchers.IO) {
+        group(request("GET", "/api/groups/$code", null, null).body)
+    }
+
+    override suspend fun groupLeave(code: String, own: ShareLinkState) = withContext(Dispatchers.IO) {
+        try {
+            request("DELETE", "/api/groups/$code/${own.id}", null, own.deleteToken)
+        } catch (e: ShareLinkException) {
+            if (e.message != "not_found") throw e
+        }
+        Unit
+    }
+
+    private fun group(o: JSONObject): ShareGroup = readable { ShareGroup.parse(o) }
 
     private class Reply(val code: Int, val body: JSONObject, val etag: String?)
 
