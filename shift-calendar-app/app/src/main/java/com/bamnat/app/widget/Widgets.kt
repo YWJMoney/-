@@ -495,7 +495,7 @@ private fun WeekMark(data: WidgetData, day: ResolvedDay, sizeDp: Int) {
 private fun MarkChip(text: String, sizeDp: Int, on: Boolean) {
     Box(
         GlanceModifier.height(sizeDp.dp).padding(horizontal = 4.dp)
-            .background(if (on) GlanceTheme.colors.secondaryContainer else ColorProvider(Color(0x22888888)))
+            .background(if (on) GlanceTheme.colors.secondaryContainer else GlanceTheme.colors.surfaceVariant)
             .cornerRadius((sizeDp / 3).dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -598,7 +598,7 @@ internal fun ShiftSquare(type: ShiftType?, sizeDp: Int) {
     Box(
         GlanceModifier
             .size(sizeDp.dp)
-            .background(if (color == null || type.isOff) Color(0x22888888) else color)
+            .background(if (color == null || type.isOff) GlanceTheme.colors.surfaceVariant else ColorProvider(color))
             .cornerRadius((sizeDp / 3).dp),
         contentAlignment = Alignment.Center,
     ) {

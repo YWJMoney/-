@@ -70,7 +70,7 @@ internal fun HourlyTimeMark(day: ResolvedDay, range: String) {
 internal fun AttendanceMark(a: Attendance) {
     val bg = if (a == Attendance.ABSENT) MaterialTheme.colorScheme.error else LocalCalendarColors.current.warning
     Box(Modifier.size(13.dp).clip(CircleShape).background(bg), contentAlignment = Alignment.Center) {
-        Text(a.label.take(1), fontSize = 8.sp, lineHeight = 8.sp, color = Color.White, fontWeight = FontWeight.Bold)
+        Text(a.label.take(1), fontSize = 8.sp, lineHeight = 8.sp, color = com.bamnat.app.ui.components.contentColorOn(bg), fontWeight = FontWeight.Bold)
     }
 }
 

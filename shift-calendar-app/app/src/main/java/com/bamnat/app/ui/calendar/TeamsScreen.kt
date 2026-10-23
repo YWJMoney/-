@@ -409,7 +409,7 @@ private fun TeamTable(
                             .clip(RoundedCornerShape(10.dp))
                             .background(
                                 when (day) {
-                                    picked -> MaterialTheme.colorScheme.secondaryContainer
+                                    picked -> com.bamnat.app.ui.components.Selection.container
                                     today -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                                     else -> if (day.dayOfWeek == DayOfWeek.SATURDAY || red) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent
                                 },
@@ -503,7 +503,7 @@ internal fun CoverPanel(
                 Surface(
                     onClick = { picked = if (on) null else i },
                     shape = MaterialTheme.shapes.medium,
-                    color = if (on) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+                    color = if (on) com.bamnat.app.ui.components.Selection.container else MaterialTheme.colorScheme.surfaceContainerLow,
                     modifier = Modifier.fillMaxWidth().semantics { selected = on },
                 ) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
