@@ -113,6 +113,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -1383,6 +1384,7 @@ private fun CalendarHeader(
     // people who learned it there look, with the coworker's calendar, the calendar's look and help.
     BoxWithConstraints(Modifier.fillMaxWidth()) {
     val narrow = maxWidth < 392.dp
+    val small = maxWidth < 340.dp
     var menu by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp),
@@ -1414,13 +1416,21 @@ private fun CalendarHeader(
             IconButton(onClick = onAddCalendar) { Icon(Icons.Outlined.LibraryAdd, "새 달력 만들기") }
         }
         // [CAL-23] A button with its name instead of ⋮: people did not know three dots held the tools.
-        androidx.compose.material3.FilledTonalButton(
-            onClick = { menu = true },
-            contentPadding = PaddingValues(horizontal = 12.dp),
-            modifier = Modifier.heightIn(min = 40.dp).padding(end = 4.dp),
-        ) {
-            Icon(Icons.Outlined.Apps, null, Modifier.size(18.dp))
-            Text(" 도구", maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelLarge)
+        // [A11Y-03] On a small phone (320dp) or at the largest text sizes the word squeezed the month to a few
+        // pixels; there a round icon button takes its place, and TalkBack still reads its name.
+        if (small || narrow && LocalDensity.current.fontScale >= 1.5f) {
+            androidx.compose.material3.FilledTonalIconButton(onClick = { menu = true }) {
+                Icon(Icons.Outlined.Apps, "도구", Modifier.size(20.dp))
+            }
+        } else {
+            androidx.compose.material3.FilledTonalButton(
+                onClick = { menu = true },
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                modifier = Modifier.heightIn(min = 40.dp).padding(end = 4.dp),
+            ) {
+                Icon(Icons.Outlined.Apps, null, Modifier.size(18.dp))
+                Text(" 도구", maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelLarge)
+            }
         }
     }
     if (menu) {

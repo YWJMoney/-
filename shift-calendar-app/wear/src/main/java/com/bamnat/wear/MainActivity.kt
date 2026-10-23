@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -111,6 +112,14 @@ private fun RefreshChip(refreshing: Boolean, onRefresh: () -> Unit) {
     )
 }
 
+/** [A11Y-03] White or dark ink, whichever stands out more on the shift's colour (WCAG contrast), as on the phone. */
+private fun inkOn(bg: Color): Color {
+    val l = bg.luminance()
+    return if ((l + 0.05f) / (WatchInk.luminance() + 0.05f) > 1.05f / (l + 0.05f)) WatchInk else Color.White
+}
+
+private val WatchInk = Color(0xFF151927)
+
 private fun color(d: WatchDay) = Color(ShiftTileService.readable(d.colorArgb))
 
 @Composable
@@ -186,15 +195,16 @@ private fun MonthPage(p: WatchPayload) {
                     Column(Modifier.weight(1f).padding(1.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         if (date != null) {
                             val d = WatchDays.on(p.days, date)
+                            val badge = when {
+                                d == null -> Color(0xFF222222)
+                                d.off -> Color(0xFF333A46)
+                                else -> Color(d.colorArgb.toInt())
+                            }
                             Text("${date.dayOfMonth}", fontSize = 8.sp, color = if (date == today) Color.White else Color(0xFF9AA3B5),
                                 fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal)
                             Box(Modifier.fillMaxWidth().height(13.dp).clip(RoundedCornerShape(3.dp))
-                                .background(when {
-                                    d == null -> Color(0xFF222222)
-                                    d.off -> Color(0xFF333A46)
-                                    else -> Color(d.colorArgb.toInt())
-                                }), contentAlignment = Alignment.Center) {
-                                Text(d?.label?.take(1) ?: "", fontSize = 8.sp, color = Color.White, maxLines = 1)
+                                .background(badge), contentAlignment = Alignment.Center) {
+                                Text(d?.label?.take(1) ?: "", fontSize = 8.sp, color = inkOn(badge), maxLines = 1)
                             }
                         }
                     }

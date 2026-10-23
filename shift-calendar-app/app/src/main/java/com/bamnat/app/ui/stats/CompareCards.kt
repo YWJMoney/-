@@ -14,7 +14,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -23,6 +22,7 @@ import com.bamnat.app.tier.Feature
 import com.bamnat.app.tier.Gate
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.pro.ProLock
+import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.hours.WorkHoursCalculator
@@ -74,6 +74,7 @@ private fun CompareTable(now: MonthCompare.Side, before: MonthCompare.Side, befo
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("차이", Modifier.weight(1.45f), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.End)
         }
+        val cal = LocalCalendarColors.current
         MonthCompare.rows(now, before).forEach { r ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(r.label, Modifier.weight(1.3f), style = MaterialTheme.typography.bodyMedium)
@@ -82,7 +83,8 @@ private fun CompareTable(now: MonthCompare.Side, before: MonthCompare.Side, befo
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(r.change, Modifier.weight(1.45f), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), textAlign = TextAlign.End,
                     fontWeight = FontWeight.SemiBold,
-                    color = when (r.more) { true -> Color(0xFFE8590C); false -> Color(0xFF1C7ED6); null -> MaterialTheme.colorScheme.onSurfaceVariant })
+                    // [A11Y-03] The theme's orange and blue words, which keep 4.5:1 in light and dark (the old fixed ones did not).
+                    color = when (r.more) { true -> cal.holidayWork; false -> cal.saturday; null -> MaterialTheme.colorScheme.onSurfaceVariant })
             }
         }
     }

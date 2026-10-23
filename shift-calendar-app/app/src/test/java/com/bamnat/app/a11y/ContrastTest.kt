@@ -3,11 +3,17 @@ package com.bamnat.app.a11y
 import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
+import com.bamnat.app.ui.components.contentColorOn
+import com.bamnat.app.ui.components.leaveColor
 import com.bamnat.app.ui.theme.CalendarColors
 import com.bamnat.app.ui.theme.DarkCalendarColors
 import com.bamnat.app.ui.theme.DarkColors
+import com.bamnat.app.ui.theme.ExtraPalette
 import com.bamnat.app.ui.theme.LightCalendarColors
 import com.bamnat.app.ui.theme.LightColors
+import com.bamnat.app.ui.theme.ShiftPalette
+import com.bamnat.core.model.LeaveKind
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -66,6 +72,30 @@ class ContrastTest {
 
     @Test fun darkThemeTextIsReadable() = assertEquals(emptyList<String>(), check("dark", DarkColors, DarkCalendarColors))
 
+    /**
+     * [A11Y-03] Letters on a shift's or an extra kind's colour, wherever they are drawn: the app's badges, the
+     * widgets, the shared month image and the watch all pick the ink the same way. #E5484D is the closest, 4.47:1.
+     */
+    @Test fun lettersOnEveryPaletteColourAreReadable() {
+        val low = ((ShiftPalette + ExtraPalette).map { Color(it) } + LeaveKind.entries.map(::leaveColor)).map { it to ratio(contentColorOn(it), it) }
+            .filter { it.second < BADGE }.map { "#%08X %.2f".format(it.first.toArgb(), it.second) }
+        assertEquals(emptyList<String>(), low)
+    }
+
+    /** [A11Y-03] The widgets' and the shared image's red, blue and green words, on white and on a dark widget. */
+    @Test fun widgetAndSharedImageWordsAreReadable() {
+        val out = mutableListOf<String>()
+        for ((name, light, dark) in listOf(
+            Triple("sunday", LightCalendarColors.sunday, DarkCalendarColors.sunday),
+            Triple("saturday", LightCalendarColors.saturday, DarkCalendarColors.saturday),
+            Triple("income", LightCalendarColors.income, DarkCalendarColors.income),
+        )) {
+            if (ratio(light, Color.White) < TEXT) out += "$name on white"
+            if (ratio(dark, WIDGET_DARK) < TEXT) out += "$name on dark widget"
+        }
+        assertEquals(emptyList<String>(), out)
+    }
+
     @Test fun theRatioIsWcags() {
         assertEquals(21.0, ratio(Color.Black, Color.White), 0.01)
         assertEquals(1.0, ratio(Color.White, Color.White), 0.001)
@@ -76,5 +106,8 @@ class ContrastTest {
     private companion object {
         const val TEXT = 4.5
         const val NON_TEXT = 3.0
+        const val BADGE = 4.45
+        /** Material 3's dark surface, which the widgets use when the phone is dark. */
+        val WIDGET_DARK = Color(0xFF1C1B1F)
     }
 }

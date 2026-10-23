@@ -4,7 +4,6 @@ import android.content.Context
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
@@ -40,6 +39,7 @@ import com.bamnat.app.NoticeLinks
 import com.bamnat.app.appContainer
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.calendar.clockOutDay
+import com.bamnat.app.ui.components.contentColorOn
 import com.bamnat.core.model.Attendance
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.schedule.ResolvedDay
@@ -115,7 +115,7 @@ private fun TeamChip(type: ShiftType?, sizeDp: Int) {
         contentAlignment = Alignment.Center,
     ) {
         Text(type?.label ?: "휴", style = TextStyle(
-            color = if (color == null) GlanceTheme.colors.onSurfaceVariant else ColorProvider(if (color.luminance() > 0.5f) Color(0xFF1B1B1F) else Color.White),
+            color = if (color == null) GlanceTheme.colors.onSurfaceVariant else ColorProvider(contentColorOn(color)),
             fontSize = (sizeDp * 0.45f).sp, fontWeight = FontWeight.Bold), maxLines = 1)
     }
 }

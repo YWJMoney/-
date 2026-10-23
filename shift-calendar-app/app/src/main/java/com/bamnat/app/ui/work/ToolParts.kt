@@ -5,11 +5,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -189,6 +191,8 @@ internal fun SwitchLine(title: String, checked: Boolean, onChange: (Boolean) -> 
 internal fun ValueLine(label: String, value: String, strong: Boolean = false, color: Color? = null) {
     Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = if (strong) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        // [A11Y-03] With large text the label fills its share, so the value keeps a gap instead of touching it.
+        Spacer(Modifier.width(8.dp))
         Text(value, style = (if (strong) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium).merge(NumberStyle),
             color = color ?: Color.Unspecified)
     }

@@ -3,7 +3,6 @@ package com.bamnat.app.widget
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
@@ -34,9 +33,13 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
+import androidx.glance.color.ColorProvider as DayNight
 import com.bamnat.app.MainActivity
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.calendar.clockOutDay
+import com.bamnat.app.ui.components.contentColorOn
+import com.bamnat.app.ui.theme.DarkCalendarColors
+import com.bamnat.app.ui.theme.LightCalendarColors
 import com.bamnat.core.holiday.KoreanHolidays
 import com.bamnat.core.schedule.CalendarGrid
 import com.bamnat.core.schedule.ResolvedDay
@@ -184,7 +187,7 @@ private fun DateLabel(title: String, date: LocalDate) {
     val holiday = KoreanHolidays.nameOf(date)
     Text(
         "$title ${date.monthValue}/${date.dayOfMonth}(${Fmt.dayOfWeekShort(date.dayOfWeek)})" + (holiday?.let { " · $it" } ?: ""),
-        style = small(if (holiday != null) ColorProvider(HOLIDAY_RED) else GlanceTheme.colors.onSurfaceVariant),
+        style = small(if (holiday != null) WidgetRed else GlanceTheme.colors.onSurfaceVariant),
         maxLines = 1,
     )
 }
@@ -243,7 +246,7 @@ private fun SalesToday(data: WidgetData) {
     DateLabel("오늘", data.today)
     Text(
         today?.let { "매출 " + Fmt.won(it.sales) } ?: "아직 안 적었어요",
-        style = TextStyle(color = if (today != null) ColorProvider(INCOME_GREEN) else GlanceTheme.colors.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Bold),
+        style = TextStyle(color = if (today != null) WidgetGreen else GlanceTheme.colors.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Bold),
         maxLines = 1,
     )
     Spacer(GlanceModifier.height(8.dp))
@@ -266,8 +269,8 @@ private fun InvestToday(data: WidgetData) {
         },
         style = TextStyle(color = when {
             line.hide || v == 0L -> GlanceTheme.colors.onSurface
-            v > 0 -> ColorProvider(HOLIDAY_RED)
-            else -> ColorProvider(Color(0xFF3E7BFA))
+            v > 0 -> WidgetRed
+            else -> WidgetBlue
         }, fontSize = 18.sp, fontWeight = FontWeight.Bold),
         maxLines = 1,
     )
@@ -278,8 +281,8 @@ private fun InvestToday(data: WidgetData) {
         r?.let { (if (it > 0) "+" else if (it < 0) "−" else "") + "%.2f%%".format(kotlin.math.abs(it * 100)) } ?: "원금을 적어 주세요",
         style = TextStyle(color = when {
             r == null || r == 0.0 -> GlanceTheme.colors.onSurface
-            r > 0 -> ColorProvider(HOLIDAY_RED)
-            else -> ColorProvider(Color(0xFF3E7BFA))
+            r > 0 -> WidgetRed
+            else -> WidgetBlue
         }, fontSize = 14.sp, fontWeight = FontWeight.Bold),
         maxLines = 1,
     )
@@ -354,7 +357,7 @@ private fun WeekContent(data: WidgetData) {
                         "${date.dayOfMonth}",
                         style = TextStyle(
                             // [CAL-11] A public holiday is red as on the calendar.
-                            color = if (KoreanHolidays.isHoliday(date) && date != data.today) ColorProvider(HOLIDAY_RED) else GlanceTheme.colors.onSurface,
+                            color = if (KoreanHolidays.isHoliday(date) && date != data.today) WidgetRed else GlanceTheme.colors.onSurface,
                             fontSize = 15.sp,
                             fontWeight = if (date == data.today) FontWeight.Bold else FontWeight.Normal,
                             textAlign = TextAlign.Center,
@@ -416,7 +419,7 @@ private fun WeekMark(data: WidgetData, day: ResolvedDay, sizeDp: Int) {
             val s = data.sales[day.date]
             Text(
                 s?.let { Fmt.wonShort(it.sales) } ?: "–",
-                style = TextStyle(color = if (s != null) ColorProvider(INCOME_GREEN) else GlanceTheme.colors.onSurfaceVariant,
+                style = TextStyle(color = if (s != null) WidgetGreen else GlanceTheme.colors.onSurfaceVariant,
                     fontSize = 11.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
                 maxLines = 1,
             )
@@ -433,8 +436,8 @@ private fun WeekMark(data: WidgetData, day: ResolvedDay, sizeDp: Int) {
                 },
                 style = TextStyle(color = when {
                     v == null || v == 0L -> GlanceTheme.colors.onSurfaceVariant
-                    v > 0 -> ColorProvider(HOLIDAY_RED)
-                    else -> ColorProvider(Color(0xFF3E7BFA))
+                    v > 0 -> WidgetRed
+                    else -> WidgetBlue
                 }, fontSize = 11.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
                 maxLines = 1,
             )
@@ -471,7 +474,7 @@ private fun MonthCell(data: WidgetData, date: LocalDate, inMonth: Boolean, modif
                 color = when {
                     isToday -> GlanceTheme.colors.primary
                     !inMonth -> GlanceTheme.colors.outline
-                    red -> ColorProvider(HOLIDAY_RED)
+                    red -> WidgetRed
                     else -> GlanceTheme.colors.onSurface
                 },
                 fontSize = 11.sp,
@@ -490,7 +493,7 @@ private fun MonthCell(data: WidgetData, date: LocalDate, inMonth: Boolean, modif
                 fontWeight = FontWeight.Bold, textAlign = TextAlign.Center), maxLines = 1,
                 modifier = GlanceModifier.fillMaxWidth().background(GlanceTheme.colors.secondaryContainer).cornerRadius(4.dp))
         } else if (sold && type == null) {
-            Text("●", style = TextStyle(color = ColorProvider(INCOME_GREEN), fontSize = 9.sp, textAlign = TextAlign.Center), maxLines = 1)
+            Text("●", style = TextStyle(color = WidgetGreen, fontSize = 9.sp, textAlign = TextAlign.Center), maxLines = 1)
         } else if (type != null && inMonth) {
             val color = Color(type.colorArgb.toInt())
             Text(
@@ -549,17 +552,19 @@ private fun ShiftChip(day: ResolvedDay, sizeDp: Int) {
     }
 }
 
-private val HOLIDAY_RED = Color(0xFFE5484D)
-private val INCOME_GREEN = Color(0xFF12805C)
+// [A11Y-03] The app's own day and night shades, so red, blue and green words keep 4.5:1 on the widget in both themes.
+private val WidgetRed = DayNight(day = LightCalendarColors.sunday, night = DarkCalendarColors.sunday)
+private val WidgetBlue = DayNight(day = LightCalendarColors.saturday, night = DarkCalendarColors.saturday)
+private val WidgetGreen = DayNight(day = LightCalendarColors.income, night = DarkCalendarColors.income)
 
 @Composable
 private fun weekdayColor(dow: DayOfWeek, today: Boolean, holiday: Boolean = false): ColorProvider = when {
     today -> GlanceTheme.colors.primary
-    dow == DayOfWeek.SUNDAY || holiday -> ColorProvider(HOLIDAY_RED)
-    dow == DayOfWeek.SATURDAY -> ColorProvider(Color(0xFF3E7BFA))
+    dow == DayOfWeek.SUNDAY || holiday -> WidgetRed
+    dow == DayOfWeek.SATURDAY -> WidgetBlue
     else -> GlanceTheme.colors.onSurfaceVariant
 }
 
 private fun small(color: ColorProvider) = TextStyle(color = color, fontSize = 12.sp)
 
-private fun onColor(background: Color): Color = if (background.luminance() > 0.5f) Color(0xFF1B1B1F) else Color.White
+private fun onColor(background: Color): Color = contentColorOn(background)

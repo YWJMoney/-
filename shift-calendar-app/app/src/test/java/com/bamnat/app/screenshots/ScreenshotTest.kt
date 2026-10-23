@@ -390,8 +390,8 @@ class ScreenshotTest {
             tapText(title, prefix = true, scrolls = 6)
         }
 
-        /** Selects a day without opening it. */
-        fun selectDay(date: LocalDate) = tapText(Fmt.dayTitle(date), prefix = true, scrolls = 0)
+        /** Selects a day without opening it; like [openDay] it scrolls when the day sits under the cards on a short screen. */
+        fun selectDay(date: LocalDate) = tapText(Fmt.dayTitle(date), prefix = true, scrolls = 6)
 
         /** [CAL-01] Drags a finger from one day to another, slowly, as quick input's painting stroke. */
         fun dragDays(from: LocalDate, to: LocalDate) {
