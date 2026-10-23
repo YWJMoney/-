@@ -56,6 +56,9 @@ class ContrastTest {
             "tertiary" to s.tertiary, "error" to s.error, "sunday" to cal.sunday, "saturday" to cal.saturday, "warning" to cal.warning,
             "holidayWork" to cal.holidayWork, "income" to cal.income, "expense" to cal.expense, "alarmOff" to cal.alarmOff,
             "changed" to cal.changed, "sleep" to cal.sleep,
+            // [VIS-03] Pay lines' colours are also an amount's text.
+            "payOvertime" to cal.payOvertime, "payNight" to cal.payNight, "payHoliday" to cal.payHoliday, "payExtra" to cal.payExtra,
+            "payExtraHours" to cal.payExtraHours, "payAllowance" to cal.payAllowance, "payLeave" to cal.payLeave,
         )
         for ((bgName, bg) in backgrounds) for ((name, fg) in text) need("$name on $bgName", fg, bg, TEXT)
         // A warning written inside its own box.
@@ -64,6 +67,8 @@ class ContrastTest {
         for ((bgName, bg) in backgrounds) {
             need("outline on $bgName", s.outline, bg, NON_TEXT)
             need("memoDot on $bgName", cal.memoDot, bg, NON_TEXT)
+            // [VIS-03] A leave square stands out from the page.
+            for (k in LeaveKind.entries) need("leave $k on $bgName", leaveColor(k, cal), bg, NON_TEXT)
         }
         return out
     }
@@ -77,7 +82,8 @@ class ContrastTest {
      * widgets, the shared month image and the watch all pick the ink the same way. #E5484D is the closest, 4.47:1.
      */
     @Test fun lettersOnEveryPaletteColourAreReadable() {
-        val low = ((ShiftPalette + ExtraPalette).map { Color(it) } + LeaveKind.entries.map(::leaveColor)).map { it to ratio(contentColorOn(it), it) }
+        val leaves = LeaveKind.entries.flatMap { listOf(leaveColor(it, LightCalendarColors), leaveColor(it, DarkCalendarColors)) }
+        val low = ((ShiftPalette + ExtraPalette).map { Color(it) } + leaves).map { it to ratio(contentColorOn(it), it) }
             .filter { it.second < BADGE }.map { "#%08X %.2f".format(it.first.toArgb(), it.second) }
         assertEquals(emptyList<String>(), low)
     }

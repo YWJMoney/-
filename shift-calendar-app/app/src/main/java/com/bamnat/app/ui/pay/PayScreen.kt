@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.app.ui.theme.CalendarColors
+import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.components.labelWidth
 import com.bamnat.app.pay.named
 
@@ -99,17 +101,20 @@ import java.time.YearMonth
 
 internal fun won(v: Long): String = "%,d원".format(v)
 
-/** Colours for line kinds, matching the walkthrough's time bar. */
+/** Colours for line kinds, matching the walkthrough's time bar. [VIS-03] The theme's tokens, light and dark. */
 @Composable
-internal fun kindColor(kind: LineKind): Color = when (kind) {
-    LineKind.BASE -> MaterialTheme.colorScheme.primary
-    LineKind.OVERTIME -> Color(0xFFF08C00)
-    LineKind.NIGHT -> Color(0xFF6741D9)
-    LineKind.HOLIDAY -> Color(0xFFE03131)
-    LineKind.EXTRA -> Color(0xFFD6336C)
-    LineKind.EXTRA_HOURS -> Color(0xFF1C7ED6)
-    LineKind.ALLOWANCE -> Color(0xFF2F9E44)
-    LineKind.LEAVE -> Color(0xFF7048E8)
+internal fun kindColor(kind: LineKind): Color = payKindColor(kind, LocalCalendarColors.current, MaterialTheme.colorScheme.primary)
+
+/** [VIS-03] The same without a composition, for tests and drawings. */
+internal fun payKindColor(kind: LineKind, c: CalendarColors, primary: Color): Color = when (kind) {
+    LineKind.BASE -> primary
+    LineKind.OVERTIME -> c.payOvertime
+    LineKind.NIGHT -> c.payNight
+    LineKind.HOLIDAY -> c.payHoliday
+    LineKind.EXTRA -> c.payExtra
+    LineKind.EXTRA_HOURS -> c.payExtraHours
+    LineKind.ALLOWANCE -> c.payAllowance
+    LineKind.LEAVE -> c.payLeave
 }
 
 /**
