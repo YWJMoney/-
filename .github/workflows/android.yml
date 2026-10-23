@@ -20,6 +20,9 @@ jobs:
         working-directory: shift-calendar-app/server/share-worker
       - run: npm test
         working-directory: shift-calendar-app/server/company-worker
+      # [ADMUX-08] The admin app's happy-dom screen tests need the devDependency from the lock file.
+      - run: npm ci && npm run test:ui
+        working-directory: shift-calendar-app/server/company-worker
   app:
     runs-on: ubuntu-latest
     timeout-minutes: 60
