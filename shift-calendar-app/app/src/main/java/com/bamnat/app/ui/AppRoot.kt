@@ -536,6 +536,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             onClick = { navigateTop(dest) },
                             icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
                             label = { TabLabel(dest.labelFor(activeStyle)) },
+                            // [VIS-03] The chosen tab in the same blue as every other chosen thing.
+                            colors = com.bamnat.app.ui.components.Selection.navRailItemColors(),
                         )
                     }
                 }
@@ -557,6 +559,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                         onClick = { navigateTop(dest) },
                                         icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
                                         label = { TabLabel(dest.labelFor(activeStyle)) },
+                                        colors = com.bamnat.app.ui.components.Selection.navBarItemColors(),
                                     )
                                 }
                             }
