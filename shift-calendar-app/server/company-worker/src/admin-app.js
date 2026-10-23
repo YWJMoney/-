@@ -2,7 +2,10 @@
 // unfolded Fold and computers. Admins sign in with an account the owner invited and approved, and see
 // only the areas the owner gave them; the owner signs in with ADMIN_PASSWORD and manages admins.
 //
-// This module has no imports, so `npm run bundle` can inline it into one worker.js for the dashboard.
+// It imports only its pure helpers (src/admin-lib.js), so `npm run bundle` can inline both into one
+// worker.js for the dashboard.
+
+import { adminLib } from "./admin-lib.js";
 
 const ADMIN_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
   "manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -43,12 +46,20 @@ const hashText = (text) => {
 };
 
 let builtFiles = null;
+let builtVersion = null;
+
+/** [ADMUX-08] A name for this build of the app's files; /api/admin/overview sends it as build. */
+export function adminBuild() {
+  builtVersion ??= hashText(String(adminApp) + String(adminLib) + String(adminWorker) + ADMIN_CSS + ADMIN_HTML + JSON.stringify(MANIFEST));
+  return builtVersion;
+}
 
 /** The app's files with their tags, made once per worker copy. The phone keeps the app's own files under a name that changes with them. */
 function adminFiles() {
   if (builtFiles) return builtFiles;
-  const app = `(${adminApp})();\n`;
-  const version = hashText(app + ADMIN_CSS + ADMIN_HTML + JSON.stringify(MANIFEST));
+  const version = adminBuild();
+  // [ADMUX-08] The app knows its own build, so it can say when the server has a newer one.
+  const app = `(${adminApp})((${adminLib})(), ${JSON.stringify(version)});\n`;
   const list = {
     "/admin/app.js": [app, "text/javascript; charset=utf-8"],
     "/admin/sw.js": [`(${adminWorker})(${JSON.stringify(version)});\n`, "text/javascript; charset=utf-8"],
