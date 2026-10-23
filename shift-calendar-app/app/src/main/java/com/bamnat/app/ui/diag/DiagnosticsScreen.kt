@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.diag
 
+import com.bamnat.app.diag.CrashLog
 import androidx.compose.runtime.produceState
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.SharingStarted
@@ -185,10 +186,19 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     // [STAB-01] The log waits for queued writes and reads the whole file, so never on the main thread.
-    suspend fun events(): List<DiagEvent> = withContext(Dispatchers.IO) { container.telemetry.log.read() }
+    suspend fun events(): List<DiagEvent> = withContext(Dispatchers.IO) {
+        crashLines = CrashLog.reportLines(container.appContext)
+        container.telemetry.log.read()
+    }
+
+    /** [QA-06] Read with the log, off the main thread; [report] shows them. */
+    @Volatile private var crashLines: List<String>? = null
     fun clearLog(then: () -> Unit) {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { container.telemetry.log.clear() }
+            withContext(Dispatchers.IO) {
+                container.telemetry.log.clear()
+                CrashLog.clear(container.appContext)
+            }
             then()
         }
     }
@@ -241,12 +251,15 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
             .ifEmpty { listOf("기록 없음") }
         val recent = events.takeLast(RECENT).asReversed().map { "${stamp(it.atMillis)}  ${it.name}  ${readable(it.detail)}" }
             .ifEmpty { listOf("기록 없음") }
+        val crashes = crashLines ?: listOf("기록 없음")
         return DiagReport(
             listOf(
                 "알람 상태" to alarm,
                 "권한" to permissions,
                 "기기" to device,
                 "최근 30일 사용량" to usage,
+                // [QA-06] 328: the person sees what stopped before "점검 내용과 함께 문의하기" sends it.
+                "앱 멈춤" to crashes,
                 "최근 이벤트 ${minOf(events.size, RECENT)}개" to recent,
             ),
         )

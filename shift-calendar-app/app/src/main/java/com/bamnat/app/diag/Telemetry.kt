@@ -18,6 +18,7 @@ class Telemetry(
     private val sinks: List<TelemetrySink> = emptyList(),
 ) {
     fun event(name: String, detail: String = "") {
+        @Suppress("NAME_SHADOWING") val detail = cleanDetail(detail)
         log.append(name, detail)
         if (sinks.isNotEmpty() && settings.current.shareUsageStats) {
             for (sink in sinks) runCatching { sink.send(name, detail) }
@@ -26,4 +27,16 @@ class Telemetry(
 
     /** True when there is somewhere to send usage statistics to. */
     val hasRemote: Boolean get() = sinks.isNotEmpty()
+
+    companion object {
+        /** Codes, numbers, versions and times: what an event's detail is meant to hold. */
+        private val CODE = Regex("[A-Za-z0-9_=,.:;/+#\\- ]{0,160}")
+
+        /**
+         * [QA-06] 검토 F3: an event's detail keeps only codes and numbers. Anything else (a name of a shift set,
+         * a template's title, an error text) becomes its length, so the log, the diagnostics copy and the
+         * statistics never carry words a person wrote or a company's name.
+         */
+        fun cleanDetail(detail: String): String = if (CODE.matches(detail)) detail else "text${detail.length}"
+    }
 }

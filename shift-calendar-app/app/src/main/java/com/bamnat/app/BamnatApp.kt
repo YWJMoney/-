@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import com.bamnat.app.alarm.BootAlarms
 import com.bamnat.app.alarm.Notifications
+import com.bamnat.app.diag.CrashLog
 
 class BamnatApp : Application() {
     /** Built on first use: after a reboot the app may start before the phone is unlocked [REL-10]. */
@@ -12,6 +13,7 @@ class BamnatApp : Application() {
     override fun onCreate() {
         StartupTrace.begin()
         super.onCreate()
+        CrashLog.install(this)
         Notifications.createChannels(this)
         // While locked the database and settings cannot be opened; alarms ring from BootAlarms then,
         // and the container starts with the first use after unlocking (BOOT_COMPLETED at the latest).
