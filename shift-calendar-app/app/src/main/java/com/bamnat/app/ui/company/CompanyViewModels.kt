@@ -824,9 +824,13 @@ class CompanyReportViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     /** Everything this phone sent goes from the server; the setup in use stays on the phone. */
-    fun forgetAll(done: (Boolean) -> Unit) {
+    fun forgetAll(done: (Boolean) -> Unit) = forgetAllSaying { ok, _ -> done(ok) }
+
+    /** [INQ-05] I28: as [forgetAll], with what was deleted in words. */
+    fun forgetAllSaying(done: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
-            val ok = runCatching { c.companyApi.forgetMine(c.companyStore.device) }.isSuccess
+            val counts = runCatching { c.companyApi.forgetMineCounts(c.companyStore.device) }.getOrNull()
+            val ok = counts != null
             if (ok) {
                 c.companyStore.forgetSent()
                 _statuses.value = emptyMap()
@@ -834,7 +838,7 @@ class CompanyReportViewModel(private val c: AppContainer) : ViewModel() {
                 c.inquiryStore.update(emptyList())
                 c.inquiryStore.asked = false
             }
-            done(ok)
+            done(ok, counts?.words())
         }
     }
 }

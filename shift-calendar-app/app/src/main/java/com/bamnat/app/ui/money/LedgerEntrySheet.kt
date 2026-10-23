@@ -37,7 +37,7 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,7 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
+import com.bamnat.app.ui.components.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SuggestionChip
@@ -498,10 +498,10 @@ private fun SplitEditor(main: String, categories: List<String>, amount: Long, pa
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("나눠 적기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            TextButton(onClick = {
-                val next = categories.firstOrNull { c -> c != main && parts.none { it.category == c } } ?: return@TextButton
-                onChange(parts + EntryPart(next, 0))
-            }) { Icon(Icons.Filled.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("분류 더하기") }
+            com.bamnat.app.ui.components.AddButton("분류 더하기", onClick = {
+                val next = categories.firstOrNull { c -> c != main && parts.none { it.category == c } }
+                if (next != null) onChange(parts + EntryPart(next, 0))
+            })
         }
         if (parts.isEmpty()) {
             Hint("장보며 생활용품도 샀다면 한 결제를 여러 분류로 나눠 적을 수 있어요.")

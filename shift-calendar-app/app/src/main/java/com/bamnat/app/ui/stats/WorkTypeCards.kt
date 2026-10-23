@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.CountStepper
+import com.bamnat.app.ui.components.StepperRow
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -238,26 +240,17 @@ private fun TaxFamilyRow(calendarId: String, profile: PayProfile) {
     val scope = rememberCoroutineScope()
     fun set(change: (PayProfile) -> PayProfile) = scope.launch { store.update(change) }
     Column(Modifier.padding(top = 4.dp)) {
-        // Wraps under big text instead of squeezing the second label into a column.
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Stepper("가족 ${profile.taxFamily}명", profile.taxFamily > 1, profile.taxFamily < 20,
-                onMinus = { set { it.copy(taxFamily = it.taxFamily - 1, taxChildren = it.taxChildren.coerceAtMost(it.taxFamily - 2)) } },
-                onPlus = { set { it.copy(taxFamily = it.taxFamily + 1) } })
-            Stepper("8~20세 자녀 ${profile.taxChildren}명", profile.taxChildren > 0, profile.taxChildren < profile.taxFamily - 1,
-                onMinus = { set { it.copy(taxChildren = it.taxChildren - 1) } },
-                onPlus = { set { it.copy(taxChildren = it.taxChildren + 1) } })
+        // [UX-08] The app's one stepper; the row puts it under the words on a narrow screen or a big font.
+        StepperRow("가족 수", hint = "본인·배우자 포함") {
+            CountStepper(profile.taxFamily, { n -> set { it.copy(taxFamily = n, taxChildren = it.taxChildren.coerceAtMost((n - 1).coerceAtLeast(0))) } },
+                name = "가족 수", range = 1..20, format = { "${it}명" })
+        }
+        StepperRow("8~20세 자녀") {
+            CountStepper(profile.taxChildren, { n -> set { it.copy(taxChildren = n) } }, name = "8~20세 자녀",
+                range = 0..(profile.taxFamily - 1).coerceAtLeast(0), format = { "${it}명" })
         }
         Text("근로소득세는 국세청 간이세액표 값이에요. 가족 수는 본인·배우자를 포함해 세어 주세요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun Stepper(label: String, canMinus: Boolean, canPlus: Boolean, onMinus: () -> Unit, onPlus: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = onMinus, enabled = canMinus) { Text("−", style = MaterialTheme.typography.titleMedium) }
-        Text(label, style = MaterialTheme.typography.bodyMedium)
-        TextButton(onClick = onPlus, enabled = canPlus) { Text("+", style = MaterialTheme.typography.titleMedium) }
     }
 }
 

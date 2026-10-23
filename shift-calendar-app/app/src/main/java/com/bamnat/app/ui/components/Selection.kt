@@ -8,6 +8,7 @@ import androidx.compose.material3.NavigationBarItemColors
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRailItemColors
 import androidx.compose.material3.NavigationRailItemDefaults
+import androidx.compose.material3.SegmentedButton as MaterialSegmentedButton
 import androidx.compose.material3.SegmentedButtonColors
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SelectableChipColors
@@ -91,4 +92,33 @@ fun FilterChip(
     elevation = elevation,
     border = border,
     interactionSource = interactionSource,
+)
+
+/**
+ * [VIS-03] Material's single-choice SegmentedButton with the app's [Selection] colours; same name and
+ * parameters, so a screen moves over by changing its import.
+ */
+@Composable
+fun androidx.compose.material3.SingleChoiceSegmentedButtonRowScope.SegmentedButton(
+    selected: Boolean,
+    onClick: () -> Unit,
+    shape: Shape,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    colors: SegmentedButtonColors = Selection.segmentedColors(),
+    border: BorderStroke = SegmentedButtonDefaults.borderStroke(colors.activeBorderColor),
+    interactionSource: MutableInteractionSource? = null,
+    icon: @Composable () -> Unit = { SegmentedButtonDefaults.Icon(selected) },
+    label: @Composable () -> Unit,
+) = MaterialSegmentedButton(
+    selected = selected,
+    onClick = onClick,
+    shape = shape,
+    modifier = modifier,
+    enabled = enabled,
+    colors = colors,
+    border = border,
+    interactionSource = interactionSource,
+    icon = icon,
+    label = label,
 )

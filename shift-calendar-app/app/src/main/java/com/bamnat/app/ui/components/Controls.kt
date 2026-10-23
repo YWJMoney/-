@@ -72,6 +72,8 @@ fun CountStepper(
     valueWidth: Dp = COUNT_VALUE_WIDTH,
     enabled: Boolean = true,
     onValueClick: (() -> Unit)? = null,
+    /** Runs past the end back to the start, like a day of the month (말일 → 1일). */
+    wrap: Boolean = false,
 ) {
     // The shown value runs ahead of the caller's state, so quick taps and a hold all count before it answers.
     var shown by remember { mutableIntStateOf(value) }
@@ -79,9 +81,14 @@ fun CountStepper(
     val save by rememberUpdatedState(onChange)
     val haptics = LocalHapticFeedback.current
     val stepTo: (Int) -> Unit = { raw ->
-        val v = raw.coerceIn(range.first, range.last)
+        val v = when {
+            !wrap -> raw.coerceIn(range.first, range.last)
+            raw > range.last -> range.first
+            raw < range.first -> range.last
+            else -> raw
+        }
         haptics.performHapticFeedback(
-            if (v == range.first || v == range.last) HapticFeedbackType.Reject else HapticFeedbackType.SegmentFrequentTick,
+            if (!wrap && (v == range.first || v == range.last)) HapticFeedbackType.Reject else HapticFeedbackType.SegmentFrequentTick,
         )
         if (v != shown) {
             shown = v
@@ -89,7 +96,7 @@ fun CountStepper(
         }
     }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        RepeatIconButton(onStep = { stepTo(shown - step) }, enabled = enabled && shown > range.first) {
+        RepeatIconButton(onStep = { stepTo(shown - step) }, enabled = enabled && (wrap || shown > range.first)) {
             Icon(Icons.Filled.Remove, contentDescription = "$name 줄이기")
         }
         val style = MaterialTheme.typography.titleMedium.merge(NumberStyle)
@@ -115,7 +122,7 @@ fun CountStepper(
                 autoSize = TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = style.fontSize),
             )
         }
-        RepeatIconButton(onStep = { stepTo(shown + step) }, enabled = enabled && shown < range.last) {
+        RepeatIconButton(onStep = { stepTo(shown + step) }, enabled = enabled && (wrap || shown < range.last)) {
             Icon(Icons.Filled.Add, contentDescription = "$name 늘리기")
         }
     }

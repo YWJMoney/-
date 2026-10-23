@@ -12,8 +12,10 @@ object WhatsNew {
     val releases: List<Release> = listOf(
         // [SIMPLE-03] Grouped by what it gives, each line opening its feature; every bundle's own lines are in
         // 계획/1.22-*-개발계획.md.
-        // 1.23.0: each bundle adds its own 1~2 lines; the rest are in 계획/1.23-*-개발계획.md.
         Release(34, "1.23.0", listOf(
+            // [VIS-03][UX-08][A11Y-04][SETUP-14][SET-05] Bundle J's line (계획/1.23-J-디자인통일-개발계획.md).
+            Line("글씨를 크게 키워도 버튼·탭이 잘리지 않고, 시간은 시작·끝·휴게를 한 창에서 골라요. 근무 알람은 한 번에 앞당기거나 늦춰요", "alarm.moveAll"),
+            // [CAL-43][WIDG-05][SCHED-03][SCHED-07] Bundle I's lines (계획/1.23-I-달력-위젯-워치-개발계획.md).
             Line("날짜 메모에 ‘내일 야간 대근 7시’처럼 적으면 근무로 넣어 드려요. 순서가 밀린 날은 길게 눌러 그날부터 다시 맞춰요", "calendar.quickText"),
             Line("‘다음 근무까지’ 위젯이 생기고, 달력 위젯은 지난달·다음 달로 넘겨 봐요. 모든 조에서 맞바꿀 날도 찾아요", "widget.countdown"),
         )),

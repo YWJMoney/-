@@ -27,6 +27,13 @@ object AdRules {
     /** A day opened by a rewarded ad lasts until the next midnight on the phone's clock. */
     fun dayPassUntil(today: LocalDate, zone: ZoneId): Instant = today.plusDays(1).atStartOfDay(zone).toInstant()
 
+    /**
+     * [SRV-07] Whether Google's consent form and the ads SDK may start at all: not in the first days after
+     * install either, so a new user is never asked about ads before any ad could show.
+     */
+    fun sdkMayStart(live: Boolean, pro: Boolean, installedAt: Instant?, now: Instant, quietDays: Int = QUIET_DAYS): Boolean =
+        live && !pro && quietOver(installedAt, now, quietDays)
+
     private fun quietOver(installedAt: Instant?, now: Instant, quietDays: Int): Boolean =
         installedAt == null || !now.isBefore(installedAt.plus(Duration.ofDays(quietDays.coerceAtLeast(0).toLong())))
 }

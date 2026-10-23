@@ -152,6 +152,15 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
+    /** [COMM-11] 이 사람 글 안 보기 in 모두의 문의: the same list as the plaza's, then 모두의 문의 again without them. */
+    fun hideWriter(mark: String) {
+        c.settingsRepository.update { s ->
+            s.copy(plazaHidden = com.bamnat.core.plaza.HideList.decode(s.plazaHidden).hide(mark, "문의 쓴 분", System.currentTimeMillis()).encode())
+        }
+        _thread.value = null
+        loadBoard()
+    }
+
     fun flag(reason: InquiryFlag, done: (String?) -> Unit) {
         val t = _thread.value ?: return
         viewModelScope.launch {
@@ -201,13 +210,49 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         else -> CompanyText.personal(text)?.let(::personalProblem)
     }
 
-    fun send(kind: InquiryKind, text: String, diag: String?, pay: String?, photos: List<ByteArray> = emptyList(), done: (Inquiry?, String?) -> Unit) = act(done) {
-        c.inquiryApi.send(device, kind, text, info.copy(diag = diag, pay = pay, photos = photos)).also {
-            c.telemetry.event(com.bamnat.core.stats.UsageEvent.INQUIRY.key)
-            c.inquiryStore.asked = true
-            c.inquiryStore.clearDraft()
-            _list.value = listOf(it) + _list.value.orEmpty().filter { o -> o.id != it.id }
+    /** [INQ-05] Questions waiting to be sent, shown at the top of 내 문의. */
+    val outbox: StateFlow<List<com.bamnat.app.company.QueuedInquiry>> = c.inquiryStore.outbox
+
+    /**
+     * Sends the question. [INQ-05] I9: when the internet or the server is not there, it waits on the phone
+     * (without photos) and goes by itself once the phone is online; [done] then gets [QUEUED].
+     */
+    fun send(kind: InquiryKind, text: String, diag: String?, pay: String?, photos: List<ByteArray> = emptyList(), done: (Inquiry?, String?) -> Unit) {
+        val requestId = InquiryClient.newRequestId()
+        val full = info.copy(diag = diag, pay = pay, photos = photos)
+        act({ sent, why -> done(sent, why) }, queueOn = { e ->
+            if (!e.retryable) return@act false
+            val queued = c.inquiryStore.queue(com.bamnat.app.company.QueuedInquiry(requestId, kind, text.trim(), full.copy(photos = emptyList()),
+                java.time.Instant.now()))
+            if (queued) {
+                c.inquiryStore.clearDraft()
+                com.bamnat.app.company.OutboxJob.schedule(c.appContext)
+            }
+            queued
+        }) {
+            c.inquiryApi.send(device, kind, text, full, requestId).also {
+                c.telemetry.event(com.bamnat.core.stats.UsageEvent.INQUIRY.key)
+                c.inquiryStore.asked = true
+                c.inquiryStore.clearDraft()
+                _list.value = listOf(it) + _list.value.orEmpty().filter { o -> o.id != it.id }
+            }
         }
+    }
+
+    /** [INQ-05] 지금 보내기 on the waiting questions. */
+    fun sendQueued(done: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val ok = com.bamnat.app.company.InquiryOutbox.flush(c)
+            if (ok) refresh()
+            done(ok)
+        }
+    }
+
+    /** [INQ-05] A waiting question taken back: it goes back to the form to change, or is dropped. */
+    fun dropQueued(requestId: String, edit: Boolean) {
+        val q = c.inquiryStore.outbox.value.firstOrNull { it.requestId == requestId } ?: return
+        c.inquiryStore.unqueue(requestId)
+        if (edit) c.inquiryStore.saveDraft(q.kind, q.text)
     }
 
     fun more(id: String, text: String, done: (Inquiry?, String?) -> Unit) = act(done) {
@@ -236,14 +281,25 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    private fun act(done: (Inquiry?, String?) -> Unit, call: suspend () -> Inquiry) {
+    private fun act(
+        done: (Inquiry?, String?) -> Unit,
+        queueOn: (CompanyException) -> Boolean = { false },
+        call: suspend () -> Inquiry,
+    ) {
         if (_busy.value) return
         _busy.value = true
         viewModelScope.launch {
             val result = runCatching { call() }
             _busy.value = false
-            result.onSuccess { done(it, null) }.onFailure { done(null, failure(it)) }
+            result.onSuccess { done(it, null) }.onFailure { e ->
+                if (e is CompanyException && queueOn(e)) done(null, QUEUED) else done(null, failure(e))
+            }
         }
+    }
+
+    companion object {
+        /** [INQ-05] What [send] says when the question waits to be sent. */
+        const val QUEUED = "인터넷이 연결되면 저절로 보내요. 내 문의 맨 위 ‘보내기 대기’에서 볼 수 있어요"
     }
 
     private fun failure(e: Throwable): String = when ((e as? CompanyException)?.code) {

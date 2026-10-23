@@ -17,6 +17,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -198,6 +201,16 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
                 .joinToString(" · ") { Fmt.time(t.start!!.minusMinutes(it.offsetMinutes.toLong())) }
             NavRow(t.name, "${Fmt.time(t.start)} 시작 · " + if (times.isEmpty()) "켜진 알람 없음" else "알람 $times", onOpenShiftTypes)
         }
+        // [SET-05] Every shift's alarms earlier or later at once, instead of opening each shift (G.md P21).
+        var moving by rememberSaveable { mutableStateOf(false) }
+        if (ringing.isNotEmpty()) HorizontalDivider()
+        NavRow(MOVE_ALL_ALARMS_ROW, if (ringing.isEmpty()) "알람이 켜진 근무가 생기면 쓸 수 있어요" else "예: 모든 근무 알람을 10분 일찍") {
+            if (ringing.isNotEmpty()) moving = true
+        }
+        if (moving) MoveAllAlarmsDialog(ringing, onDismiss = { moving = false }) { minutes ->
+            moving = false
+            vm.moveAllAlarms(minutes)
+        }
     }
     SectionCard(title = "소리") {
         SoundPickerRow(
@@ -350,9 +363,10 @@ private fun NoticesPage(
         }
         Note("일감 시작 전 알림은 일감마다 정해요.")
     }
-    // [COMM-10] The plaza's news once a day, only for someone who uses a company's rules or sent something.
-    SectionCard(title = "회사 광장") {
-        SwitchRow("광장 소식", "쓰는 회사 규칙이 바뀌거나, 보낸 규칙·제안·임금표가 채택되면 하루 한 번 묶어서 소리 없이 알려 줘요", settings.plazaNews,
+    // [COMM-10] The plaza's news once a day; [SRV-10] since 1.23 밤낮 소식 with answers, notices and received schedules.
+    SectionCard(title = "소식") {
+        SwitchRow("밤낮 소식", "문의에 답이 오거나, 받은 동료 근무표의 다음 7일이 바뀌거나, 광장에서 쓰는 규칙·보낸 글·신고에 소식이 있으면 " +
+            "하루 한 번 묶어서 소리 없이 알려 줘요", settings.plazaNews,
             warning = warning(settings.plazaNews, Notifications.PLAZA_CHANNEL_ID), onFix = fix(Notifications.PLAZA_CHANNEL_ID)) { on ->
             set(on) { it.copy(plazaNews = on) }
         }
@@ -546,7 +560,51 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
         // [FEAT-07] The same, kept up to date by itself (프로).
         PhoneCalendarRows(vm)
     }
+    if (vm.shareOn) ShareLinkRows()
 }
+
+/** [SHR-13][SHR-14] 근무표 링크: 우리 조 모아 보기, and every link cut at once. */
+@Composable
+private fun ShareLinkRows() {
+    val c = LocalContext.current.appContainer
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var keys by remember { mutableStateOf(c.shareSync.allLinks()) }
+    var asking by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var said by remember { mutableStateOf<String?>(null) }
+    SectionCard(title = "근무표 링크") {
+        NavRow(GROUP_ROW, "동료들이 각자 만든 링크를 6자 코드 하나로 묶어 나란히 봐요. 서버에는 링크 목록만 남아요") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.GROUP)
+        }
+        HorizontalDivider()
+        NavRow(CUT_ALL_ROW, said ?: if (keys.isEmpty()) "지금 열려 있는 링크가 없어요"
+            else "이 휴대폰이 만든 링크 ${keys.size}개를 한 번에 끊어요. 받은 사람은 더 볼 수 없어요") {
+            if (keys.isNotEmpty() && !busy) asking = true
+        }
+    }
+    if (asking) ConfirmDialog(
+        title = "모든 링크를 끊을까요?",
+        message = "링크 ${keys.size}개가 서버에서 지워지고, 받은 사람의 달력에는 ‘끊긴 링크’로 남아요. 다시 보내려면 새 링크를 만들어야 해요.",
+        confirmLabel = "모두 끊기",
+        destructive = true,
+        onDismiss = { asking = false },
+        onConfirm = {
+            asking = false; busy = true
+            scope.launch {
+                val left = c.shareSync.cutAll()
+                keys = c.shareSync.allLinks()
+                said = if (left == 0) "모두 끊었어요" else "인터넷이 안 돼 ${left}개는 못 끊었어요. 연결된 뒤 다시 눌러 주세요"
+                busy = false
+            }
+        },
+    )
+}
+
+/** [SHR-14] 설정 › 데이터 rows, also found by search. */
+internal const val GROUP_ROW = "우리 조 모아 보기"
+internal const val CUT_ALL_ROW = "모든 링크 끊기"
+/** [ALRM-02] 설정 › 개인정보: 동의·권한 요약. */
+internal const val SUMMARY_ROW = "보내는 것과 권한 한눈에"
 
 /**
  * [STAT-01] 사용 통계 보내기 with what exactly goes: event names and daily counts, the app version, never
@@ -582,8 +640,13 @@ private fun PrivacyPage(
 ) {
     val context = LocalContext.current
     val pkg = Uri.parse("package:${context.packageName}")
+    var summary by remember { mutableStateOf(false) }
     SectionCard(title = "개인정보") {
         NavRow("개인정보 처리방침", "무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
+        HorizontalDivider()
+        // [ALRM-02] I27: every yes and no, and every permission, on one sheet.
+        NavRow(SUMMARY_ROW, "사용 통계·소식·권한을 한 장에서 보고 바꿔요") { summary = true }
+        if (summary) com.bamnat.app.ui.diag.ConsentSummarySheet { summary = false }
         HorizontalDivider()
         // [STAT-01] Back with a real place to send to (UsageStats, 처리방침 2.8). Its own yes, so it starts off;
         // the app works the same either way.
@@ -607,7 +670,7 @@ private fun PrivacyPage(
         val lockable = remember(refresh) { com.bamnat.app.AppLock.available(context) }
         SwitchRow(
             "앱 잠금",
-            if (lockable) "열 때와 1분 넘게 다른 앱을 쓰다 돌아올 때 지문·얼굴·PIN을 물어요. 알람은 그대로 울려요"
+            if (lockable) "열 때와 1분 넘게 다른 앱을 쓰다 돌아올 때 지문·얼굴·PIN을 물어요. 최근 앱 화면과 화면 캡처에도 내용이 안 보여요. 알람은 그대로 울려요"
             else "휴대폰에 잠금(PIN·패턴·지문)을 먼저 설정하면 켤 수 있어요",
             settings.appLock && lockable,
             enabled = lockable,
@@ -781,4 +844,33 @@ private fun RateRegionRow() {
             dismissButton = if (own.picked.isNotBlank()) ({ TextButton(onClick = { store.pick(""); picking = false }) { Text("고르지 않기") } }) else null,
         )
     }
+}
+
+/**
+ * [SET-05] How far to move every shift's alarms: earlier or later in 5-minute steps, with the first shift's
+ * alarms before and after, so the user sees what changes before saving.
+ */
+@Composable
+private fun MoveAllAlarmsDialog(ringing: List<com.bamnat.core.model.ShiftType>, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
+    var minutes by rememberSaveable { mutableIntStateOf(10) }
+    val say: (Int) -> String = { m -> when { m > 0 -> "${m}분 일찍"; m < 0 -> "${-m}분 늦게"; else -> "그대로" } }
+    val sample = ringing.first()
+    fun times(t: com.bamnat.core.model.ShiftType) = t.alarms.filter { it.enabled }.sortedByDescending { it.offsetMinutes }
+        .joinToString(" · ") { Fmt.time(t.start!!.minusMinutes(it.offsetMinutes.toLong())) }.ifEmpty { "켜진 알람 없음" }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("모든 근무 알람 옮기기") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("알람이 켜진 근무 ${ringing.size}개의 알람을 모두 같은 만큼 옮겨요. 근무 시작보다 늦게 울리지는 않아요.",
+                    style = MaterialTheme.typography.bodyMedium)
+                com.bamnat.app.ui.components.CountStepper(minutes, { minutes = it }, name = "옮길 시간", range = -60..60, step = 5,
+                    format = say, valueWidth = 104.dp, modifier = Modifier.align(Alignment.CenterHorizontally))
+                Text("${sample.name}: ${times(sample)} → ${times(com.bamnat.core.model.AlarmShift.move(sample, minutes))}",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(minutes) }, enabled = minutes != 0) { Text("옮기기") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
 }

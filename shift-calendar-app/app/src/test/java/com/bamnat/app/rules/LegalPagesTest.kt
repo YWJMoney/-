@@ -123,6 +123,40 @@ class LegalPagesTest {
         assertTrue(File(site, "terms/index.html").readText().contains("이 약관의 일부인 <a href=\"../community/\">광장 운영 규칙</a>"))
     }
 
+    /**
+     * [PRIV-02][SHR-13][SHR-14][SRV-09][SRV-10][STAT-06][INQ-05][ALRM-01] 2.9 for 1.23.0: 우리 조 모아 보기, the takedown reason,
+     * 밤낮 소식, hiding writers in 모두의 문의, the outbox and request ids, 18 usage events, notice audiences and the battery
+     * request, in the app's and the share server's own numbers.
+     */
+    @Test fun thePrivacyPolicyCoversGroupsTakedownReasonsAndBamnatNews() {
+        val policy = File(site, "privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        assertTrue(text.contains("처리방침 2.9 · 앱 버전 1.23.0 기준 · 게시일 2026년 11월 3일 · 시행일 2026년 11월 21일"))
+        assertTrue(text.contains("2.9에서 바뀐 점: 앱 1.23.0부터"))
+        assertTrue(text.contains("1-11. 우리 조 모아 보기 (선택, 앱 1.23.0부터)"))
+        // The group: 6 letters, the share server's limit of links, gone with the longest link.
+        assertTrue(text.contains("영문·숫자 6자") && com.bamnat.app.share.ShareGroup.code("abc 234") == "ABC234")
+        val share = File(site, "shift-calendar-app/server/share-worker/src/index.js").readText()
+        val links = Regex("groupLinks: (\\d+)").find(share)!!.groupValues[1]
+        assertTrue("링크 ${links}개", text.contains("최대 ${links}개"))
+        assertTrue(text.contains("가장 늦게 끝나는 링크가 끝나면 함께 삭제"))
+        // The takedown reason: as long as the share server keeps it, 90 days with the removed mark.
+        val reason = Regex("removedReason: (\\d+)").find(share)!!.groupValues[1]
+        assertTrue("내린 이유 ${reason}자", text.contains("내린 이유(${reason}자 이내, 앱 1.23.0부터)만 90일"))
+        // 밤낮 소식 and what it asks, nothing new kept.
+        assertTrue(text.contains("<b>밤낮 소식(") && text.contains("내 문의에 새 답이 왔는지") && text.contains("다음 7일"))
+        // The outbox: as many questions as the store keeps; request ids 24 hours.
+        assertTrue(text.contains("최대 ${com.bamnat.app.company.InquiryStore.OUTBOX_MAX}개까지"))
+        assertTrue(text.contains("요청 번호의 해시와 서버의 첫 답을 24시간만"))
+        // Usage events, as many as the app has.
+        assertTrue("이벤트 ${com.bamnat.core.stats.UsageEvent.entries.size}가지", text.contains("${com.bamnat.core.stats.UsageEvent.entries.size}가지 이름만"))
+        assertTrue(text.contains("공지 열기"))
+        assertTrue(text.contains("휴대폰 안에서만 맞춰 보며"))
+        assertTrue(text.contains("<td>배터리 최적화 제외 요청 (앱 1.23.0부터, 이용자가 고를 때)</td>"))
+        assertTrue(text.contains("‘모든 링크 끊기’") && text.contains("‘보내는 것과 권한 한눈에’"))
+    }
+
     @Test fun theTermsCoverSubscriptionTrialAndRefunds() {
         val terms = File(site, "terms/index.html")
         assumeTrue(File(site, "privacy/index.html").exists())

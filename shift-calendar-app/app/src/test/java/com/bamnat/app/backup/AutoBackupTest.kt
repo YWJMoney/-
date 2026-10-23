@@ -98,8 +98,8 @@ class AutoBackupTest {
         // The password itself is kept nowhere.
         val prefs = File(app.applicationInfo.dataDir, "shared_prefs/auto_backup.xml").readText()
         assertFalse(prefs.contains(password))
-        assertEquals("a job keeps it going while the app is closed", 1,
-            app.getSystemService(JobScheduler::class.java).allPendingJobs.size)
+        // [SRV-10] 밤낮 소식's daily job may be there too; this counts the backup's own.
+        assertEquals("a job keeps it going while the app is closed", 1, backupJobs())
     }
 
     @Test fun itRunsOnceADay() = runBlocking {
@@ -171,6 +171,9 @@ class AutoBackupTest {
         assertTrue(box.forgotten > before)
         assertEquals(AutoBackup.Result.Off, auto.runNow())
         assertTrue("the file stays", file.exists())
-        assertTrue(app.getSystemService(JobScheduler::class.java).allPendingJobs.isEmpty())
+        assertEquals(0, backupJobs())
     }
+
+    private fun backupJobs() = app.getSystemService(JobScheduler::class.java).allPendingJobs
+        .count { it.service.className == AutoBackupJob::class.java.name }
 }

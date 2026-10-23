@@ -278,14 +278,14 @@ internal fun AlarmsTab(vm: InvestViewModel, state: InvestState, open: (InvestShe
     val now = LocalDateTime.now()
     Text("알림을 누르면 내용이 채워진 매매 기록 창이 열려요. 소리로 울릴지는 알람마다 고를 수 있어요.", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth()) {
         listOf(AlarmKind.MARKET_OPEN, AlarmKind.MARKET_CLOSE, AlarmKind.PLAN).forEach { k ->
-            AssistChip(onClick = { open(InvestSheet.AlarmEdit(k)) }, label = { Text("+ ${k.label}") })
+            com.bamnat.app.ui.components.AddButton(k.label, onClick = { open(InvestSheet.AlarmEdit(k)) })
         }
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth()) {
         listOf(AlarmKind.TARGET, AlarmKind.CUSTOM).forEach { k ->
-            AssistChip(onClick = { open(InvestSheet.AlarmEdit(k)) }, label = { Text("+ ${k.label}") })
+            com.bamnat.app.ui.components.AddButton(k.label, onClick = { open(InvestSheet.AlarmEdit(k)) })
         }
     }
     val alarms = state.full.alarms.sortedWith(compareBy({ !it.enabled }, { it.minute }))
@@ -326,7 +326,7 @@ internal fun AlarmsTab(vm: InvestViewModel, state: InvestState, open: (InvestShe
     Spacer(Modifier.height(8.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("투자 일정", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-        TextButton(onClick = { open(InvestSheet.EventEdit()) }) { Icon(Icons.Filled.Add, null); Text("일정 적기") }
+        com.bamnat.app.ui.components.AddButton("일정 적기", onClick = { open(InvestSheet.EventEdit()) })
     }
     val events = state.full.events.filter { !it.date.isBefore(state.today.minusDays(7)) }.sortedBy { it.date }
     if (events.isEmpty()) Text("배당락일, 실적 발표, 청약 날짜를 적어 두면 달력에 점이 찍히고 그날 아침에 알려 드려요.",

@@ -17,7 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -96,7 +97,8 @@ internal fun TodayStep(vm: SetupViewModel, d: SetupDraft) {
     if (early) EarlyHoursNote(todayBased, today, onToday = { vm.answerForToday(!todayBased) })
 
     val source = d.source
-    var otherTeam by remember(source) { mutableStateOf(false) }
+    // [SETUP-14] These answers survive folding and unfolding.
+    var otherTeam by rememberSaveable(source?.anchor) { mutableStateOf(false) }
     val teamAnchor = source?.anchor?.takeIf { source.kind == SetupSource.Kind.FILE }
     if (teamAnchor != null && !otherTeam) {
         TeamQuestion(d, source, teamAnchor, date, today, same = d.anchor == teamAnchor,
@@ -106,6 +108,13 @@ internal fun TodayStep(vm: SetupViewModel, d: SetupDraft) {
             })
     } else {
         TodayPicker(d, date, today, onAnswer = { step -> vm.answerToday(date, step) }, onClear = vm::clearToday)
+    }
+    // [SETUP-14] A way out for someone who cannot tell (a roster that does not repeat, or a new job): paint the
+    // month on the calendar instead, keeping the shifts already set up (I 리뷰 I14).
+    if (d.anchor == null) {
+        androidx.compose.material3.TextButton(onClick = vm::paintInstead, modifier = Modifier.padding(top = 4.dp)) {
+            Text("잘 모르겠어요 · 달력에 직접 칠할게요")
+        }
     }
 
     if (d.anchor != null) {
@@ -122,7 +131,8 @@ internal fun TodayStep(vm: SetupViewModel, d: SetupDraft) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        var month by remember { mutableStateOf(YearMonth.from(date)) }
+        var monthIndex by rememberSaveable { mutableStateOf(YearMonth.from(date).let { it.year * 12 + it.monthValue - 1 }) }
+        val month = YearMonth.of(monthIndex / 12, monthIndex % 12 + 1)
         val start = month.atDay(1).minusDays(7)
         SetupMonth(
             month = month,
@@ -130,7 +140,7 @@ internal fun TodayStep(vm: SetupViewModel, d: SetupDraft) {
             weekStart = vm.weekStart,
             today = today,
             selected = date,
-            onMonth = { month = it },
+            onMonth = { monthIndex = it.year * 12 + it.monthValue - 1 },
             first = YearMonth.from(date),
             last = YearMonth.from(date).plusMonths(2),
         )
@@ -201,14 +211,18 @@ private fun TodayPicker(d: SetupDraft, date: LocalDate, today: LocalDate, onAnsw
     val steps = d.rotation
     val types = remember(d.types) { d.types.associateBy { it.id } }
     val answered = stepOn(d, date)
-    var picked by remember(steps) { mutableStateOf(answered?.let { Pick(steps[it]) }) }
+    // A day off picked is a null id, so the saved form is a flag and the id.
+    var pickedOn by rememberSaveable(steps) { mutableStateOf(answered != null) }
+    var pickedId by rememberSaveable(steps) { mutableStateOf(answered?.let { steps[it] }) }
+    val picked = if (pickedOn) Pick(pickedId) else null
     // Work first, then days off, as people say them: 주간, 야간, 휴무.
     val choices = remember(steps) { TodayQuestion.choices(steps).sortedBy { if (d.isOff(it)) 1 else 0 } }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         choices.forEach { id ->
             val t = id?.let(types::get)
             ShiftAnswer(t, selected = picked == Pick(id)) {
-                picked = Pick(id)
+                pickedOn = true
+                pickedId = id
                 if (TodayQuestion.followUp(steps, id, d::isOff) == null) onAnswer(TodayQuestion.candidates(steps, id).first())
                 else onClear()
             }

@@ -150,7 +150,7 @@ private fun MathMission(onSolved: () -> Unit) {
                         enabled = !action || typed.isNotEmpty(),
                         modifier = Modifier.weight(1f).height(60.dp),
                         // Readable before anything is typed too, so the key is found in the dark.
-                        colors = if (action) ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B5E), contentColor = Color.White,
+                        colors = if (action) ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B5E), contentColor = com.bamnat.app.ui.components.contentColorOn(Color(0xFFFF6B5E)),
                             disabledContainerColor = Color(0xFFFF6B5E).copy(alpha = 0.35f), disabledContentColor = Color.White.copy(alpha = 0.7f))
                         else ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.14f), contentColor = Color.White),
                     ) { Text(k, style = if (k.length == 1) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium) }

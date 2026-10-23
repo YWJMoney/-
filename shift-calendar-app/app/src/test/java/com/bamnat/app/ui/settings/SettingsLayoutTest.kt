@@ -53,7 +53,7 @@ class SettingsLayoutTest {
     @Test fun everyNewSettingIsFound() {
         fun found(query: String) = SettingsIndex.search(query).map { it.title }
         listOf(
-            "사용 통계 보내기" to "사용 통계", "광장 소식" to "광장 알림", "가린 사람" to "차단", "근무표 점검 기준" to "나오데",
+            "사용 통계 보내기" to "사용 통계", "밤낮 소식" to "광장 알림", "밤낮 소식" to "답장 알림", "가린 사람" to "차단", "근무표 점검 기준" to "나오데",
             "연차 사용 촉진 알림" to "연차 소멸 안내", "위젯에 메모 보이기" to "위젯 메모", "사진도 백업" to "영수증 사진",
             "광장 시세와 내 단가 견주기" to "시세", "급여 계산" to "호봉", "급여 계산" to "부양가족", "추천 기능 한 번에 켜기" to "끄는 법",
         ).forEach { (title, query) -> assertTrue("$query → $title: ${found(query)}", title in found(query)) }

@@ -114,6 +114,7 @@ fun ShareDialog(
     var slot by remember { mutableIntStateOf(startSlot.coerceIn(1, ShareLinkKey.MAX)) }
     val store = remember(slot) { container.shareLinksOf(ShareLinkKey.of(calendarId, slot)) }
     val stored by store.link.collectAsState()
+    val unsent by store.unsent.collectAsState()
     val link = preview ?: stored
     // A second link starts with the name the first one went out with.
     var title by remember(store) { mutableStateOf((link ?: links.firstNotNullOfOrNull { it })?.title.orEmpty()) }
@@ -156,6 +157,7 @@ fun ShareDialog(
     fun keep(made: ShareLinkState, sent: org.json.JSONObject) {
         store.saveOptions(chosen()); saved = chosen()
         store.save(made.copy(from = month), ShareLinkPayload.fingerprint(sent))
+        store.sendResult(java.time.Instant.now())
     }
     // [SHR-11] A calendar with no shifts in these months (a shop, field work, hours not yet written) has
     // nothing to show until something is ticked; say so instead of letting the server refuse it.
@@ -326,6 +328,8 @@ fun ShareDialog(
                     if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("링크 만들어 보내기")
                 }
             } else {
+                // [SHR-13] When the link last got the calendar, and a change still waiting for the internet.
+                SentLine(store.sentAt, unsent, busy) { run { container.shareSync.resend(store.key) } }
                 if (chosen() != saved || title.trim() != current.title.trim()) {
                     Text("고른 항목이나 이름이 바뀌었어요. ‘지금 근무표로 고치기’를 누르면 링크에 들어가요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
@@ -385,6 +389,24 @@ fun ShareDialog(
                 }
             }
         }
+    }
+}
+
+/** [SHR-13] 마지막으로 보낸 때, and 보내지 못한 변경 with a button that sends it now. */
+@Composable
+internal fun SentLine(sentAt: java.time.Instant?, unsent: Boolean, busy: Boolean, onSend: () -> Unit) {
+    if (unsent) {
+        Surface(color = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("보내지 못한 변경이 있어요. 인터넷이 되면 저절로 보내요.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                TextButton(enabled = !busy, onClick = onSend, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 보내기") }
+            }
+        }
+    }
+    sentAt?.let {
+        Text("마지막으로 보낸 때 " + it.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("M월 d일 HH:mm")),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

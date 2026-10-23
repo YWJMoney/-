@@ -367,12 +367,15 @@ private fun FlowInfoSheet(target: Int, commute: Int, onNumbers: (Int, Int) -> Un
             Text("근무표와 실제로 울릴 알람으로 앞으로 24시간을 계산한 참고 정보예요. 진단이나 치료가 아니니 몸 상태와 회사 사정에 맞게 조절하세요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
             Spacer(Modifier.height(16.dp))
-            NumberRow("목표 수면", HoursFormat.korean(target), onMinus = { onNumbers((target - 30).coerceAtLeast(MIN_TARGET), commute) },
-                onPlus = { onNumbers((target + 30).coerceAtMost(MAX_TARGET), commute) }, minusOk = target > MIN_TARGET, plusOk = target < MAX_TARGET)
-            NumberRow("퇴근 후 잠들기까지", if (commute == 0) "바로" else HoursFormat.korean(commute),
-                hint = "집에 가고 씻는 시간",
-                onMinus = { onNumbers(target, (commute - 10).coerceAtLeast(0)) },
-                onPlus = { onNumbers(target, (commute + 10).coerceAtMost(MAX_COMMUTE)) }, minusOk = commute > 0, plusOk = commute < MAX_COMMUTE)
+            // [UX-08] The app's one stepper.
+            com.bamnat.app.ui.components.StepperRow("목표 수면") {
+                com.bamnat.app.ui.components.CountStepper(target, { onNumbers(it, commute) }, name = "목표 수면", range = MIN_TARGET..MAX_TARGET,
+                    step = 30, format = HoursFormat::korean, valueWidth = 104.dp)
+            }
+            com.bamnat.app.ui.components.StepperRow("퇴근 후 잠들기까지", hint = "집에 가고 씻는 시간") {
+                com.bamnat.app.ui.components.CountStepper(commute, { onNumbers(target, it) }, name = "퇴근 후 잠들기까지", range = 0..MAX_COMMUTE,
+                    step = 10, format = { if (it == 0) "바로" else HoursFormat.korean(it) }, valueWidth = 104.dp)
+            }
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
             Rule("밤새 일한 뒤", "집에 오자마자 목표만큼, 적어도 6시간 이어서 자요. 다음 근무 알람이 먼저 울리면 거기까지예요.", "안전보건 지침")
             Rule("이른 근무 전날", "알람에서 목표 수면만큼 거꾸로 잠자리 시각을 정해요. 알람이 없으면 근무 1시간 30분 전에 일어나는 걸로 봐요.", "일반 권고")
@@ -386,19 +389,6 @@ private fun FlowInfoSheet(target: Int, commute: Int, onNumbers: (Int, Int) -> Un
                 OutlinedButton(onClick = onHide) { Text("달력에서 숨기기") }
             }
         }
-    }
-}
-
-@Composable
-private fun NumberRow(title: String, value: String, hint: String? = null, onMinus: () -> Unit, onPlus: () -> Unit, minusOk: Boolean, plusOk: Boolean) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            hint?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        }
-        OutlinedIconButton(onClick = onMinus, enabled = minusOk) { Text("−", style = MaterialTheme.typography.titleMedium) }
-        Text(value, style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center, modifier = Modifier.widthIn(min = 84.dp))
-        OutlinedIconButton(onClick = onPlus, enabled = plusOk) { Text("+", style = MaterialTheme.typography.titleMedium) }
     }
 }
 

@@ -745,7 +745,7 @@ fun ShiftTypeEditorDialog(
                                                     .border(if (selected) 3.dp else 0.dp, MaterialTheme.colorScheme.onSurface, CircleShape),
                                                 contentAlignment = Alignment.Center,
                                             ) {
-                                                if (selected) Icon(Icons.Filled.Check, null, tint = androidx.compose.ui.graphics.Color.White)
+                                                if (selected) Icon(Icons.Filled.Check, null, tint = com.bamnat.app.ui.components.contentColorOn(c.asColor())) // [VIS-03] a tick on 노랑 too
                                             }
                                         }
                                     }
@@ -849,7 +849,7 @@ private fun IconChoice(selected: Boolean, label: String, onClick: () -> Unit, co
         Modifier
             .size(44.dp)
             .clip(shape)
-            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer)
+            .background(if (selected) com.bamnat.app.ui.components.Selection.container else MaterialTheme.colorScheme.surfaceContainer) // [VIS-03]
             .border(if (selected) 2.dp else 0.dp, MaterialTheme.colorScheme.primary, shape)
             .clickable(onClickLabel = label, onClick = onClick)
             .semantics { contentDescription = label; this.selected = selected },

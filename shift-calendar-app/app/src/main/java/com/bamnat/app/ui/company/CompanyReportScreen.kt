@@ -361,7 +361,7 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
             onDismiss = { forgetting = false },
             onConfirm = {
                 forgetting = false
-                vm.forgetAll { ok -> message = if (ok) "모두 지웠어요" else "인터넷에 연결한 뒤 다시 해 주세요" }
+                vm.forgetAllSaying { ok, said -> message = if (ok) said ?: "모두 지웠어요" else "인터넷에 연결한 뒤 다시 해 주세요" }
             },
         )
     }
@@ -413,13 +413,13 @@ private fun PlazaPicker(job: String, region: String, topic: Boolean, onJob: (Str
         Text("어떤 일인가요? (선택)", style = MaterialTheme.typography.titleSmall)
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             com.bamnat.app.company.Plaza.JOBS.forEach { (key, name) ->
-                androidx.compose.material3.FilterChip(selected = job == key, onClick = { onJob(if (job == key) "" else key) }, label = { Text(name) })
+                com.bamnat.app.ui.components.FilterChip(selected = job == key, onClick = { onJob(if (job == key) "" else key) }, label = { Text(name) })
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             var open by remember { mutableStateOf(false) }
             Box {
-                androidx.compose.material3.FilterChip(selected = region.isNotEmpty(), onClick = { open = true },
+                com.bamnat.app.ui.components.FilterChip(selected = region.isNotEmpty(), onClick = { open = true },
                     label = { Text(if (region.isEmpty()) "지역 고르기 (전국)" else com.bamnat.app.company.Plaza.region(region)) })
                 androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                     androidx.compose.material3.DropdownMenuItem(text = { Text("전국") }, onClick = { open = false; onRegion("") })

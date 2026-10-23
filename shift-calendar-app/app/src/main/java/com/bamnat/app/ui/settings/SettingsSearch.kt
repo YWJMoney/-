@@ -93,6 +93,9 @@ data class SettingEntry(
 )
 
 /** [UX-04] Every setting and the screens settings opens, in the words of their rows. */
+/** [SET-05] The alarm page's row that moves every shift's alarms at once. */
+internal const val MOVE_ALL_ALARMS_ROW = "모든 근무 알람 한 번에 옮기기"
+
 internal object SettingsIndex {
     private fun row(page: SettingsPage, title: String, vararg keywords: String, row: String = title) =
         SettingEntry(title, page.title, SettingPlace.Row(page, row), keywords.toList())
@@ -125,6 +128,8 @@ internal object SettingsIndex {
         row(A, "알람 사용", "알람 끄기", "알람 켜기", "모두 끄기", "알람 전체"),
         row(A, "알람음", "알람 소리", "벨소리", "무음", row = "알람음"),
         row(A, "근무마다 다른 소리", "근무별 알람음", "야간 소리"),
+        // [SET-05]
+        row(A, MOVE_ALL_ALARMS_ROW, "알람 한 번에", "알람 앞당기기", "알람 미루기", "10분 일찍", "모든 알람", "알람 옮기기"),
         row(A, "진동", "바이브"),
         row(A, "점점 크게", "볼륨", "소리 크기"),
         row(A, MISSION_ROW, "미션", "계산 문제", "수학 문제", "흔들기", "못 일어나요", "확실한 알람"), // [PROV-06]
@@ -151,7 +156,8 @@ internal object SettingsIndex {
         // [LEAVE-06]
         screen(P.title, "연차", SettingsGo.PAY, "연차 원장", "남은 연차", "연차 계산", "입사일", "이월", "보상휴가", "연차수당"),
         row(N, "잠금 화면 오늘 근무", "잠금 화면", "상시 알림", "오늘 근무 알림"), // [GUIDE-01]
-        row(N, "광장 소식", "광장 알림", "규칙 바뀜", "채택", "회사 소식", "규칙 제안"), // [COMM-10]
+        row(N, "밤낮 소식", "광장 소식", "광장 알림", "규칙 바뀜", "채택", "회사 소식", "규칙 제안", "답장 알림", "문의 답", "신고 결과",
+            "받은 근무표 바뀜", "동료 근무 바뀜"), // [COMM-10][SRV-10]
         row(N, "자는 동안 미루기", "방해 금지", "조용히"),
         screen(P.title, "급여 계산", SettingsGo.PAY, "월급", "기본급", "수당", "연차", "급여일", "시급", "명세서", "통상임금",
             // [SET-03] 1.22 묶음 A·C·D: what is set in the pay settings.
@@ -184,7 +190,11 @@ internal object SettingsIndex {
         row(D, AUTO_BACKUP_ROW, "자동 백업", "매일 백업", "구글 드라이브", "드라이브", "클라우드", "백업 자동"), // [PROV-03]
         row(D, "캘린더 앱으로 내보내기", "ics", "구글 캘린더", "내보내기"),
         row(D, "휴대폰 캘린더에 근무 쓰기", "구글 캘린더", "삼성 캘린더", "캘린더 연동", "캘린더에 쓰기", "동기화"), // [FEAT-07]
+        row(D, GROUP_ROW, "모임 코드", "조 근무표", "동료 근무표 모아", "나란히 보기", "팀 근무표").takeIf { share }, // [SHR-14]
+        row(D, CUT_ALL_ROW, "링크 지우기", "공유 끊기", "링크 모두 끊기", "공유 그만", "링크 삭제").takeIf { share }, // [SHR-13]
         row(V, "개인정보 처리방침", "개인정보", "처리방침"),
+        row(V, SUMMARY_ROW, "동의", "권한 요약", "내가 허용한 것", "보내는 것", "권한 한눈에", "동의 내역"), // [ALRM-02]
+        screen(A.title, "서버 연결 점검", SettingsGo.DIAGNOSTICS, "서버 연결", "인터넷", "보내지 못함", "연결 확인", "서버 상태"), // [ALRM-02]
         row(V, "앱 잠금", "잠금", "지문", "얼굴", "비밀번호", "PIN", "생체 인증", "숨기기"),
         row(V, "알림 허용", "알림 권한", "권한", row = "알림"),
         row(V, "잠금 화면에 알람 띄우기", "전체 화면", "권한", "잠금 화면"),

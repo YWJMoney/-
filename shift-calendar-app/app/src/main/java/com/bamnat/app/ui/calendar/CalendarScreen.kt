@@ -988,12 +988,16 @@ fun CalendarScreen(
                 // [INV-06] The month in the investor's own figures.
                 com.bamnat.app.ui.invest.InvestMonthBar(investVm, visibleMonth, onOpen = onOpenStats, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
             } else if (!(focus == com.bamnat.core.work.CalendarFocus.SHIFTS && overview.isEmpty && payEstimate == null)) {
+                // [SRV-10] N5: the month's rest signs, counted where the month is summed up.
+                val restSigns = if (focus != com.bamnat.core.work.CalendarFocus.SHIFTS || !settings.restCheck) 0
+                    else remember(snap, visibleMonth, settings.rules) { vm.restIssues(snap, visibleMonth, settings.rules).size }
                 MonthSummaryBar(
                     overview = overview,
                     payEstimate = payEstimate,
                     versus = versus,
                     onOpen = if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) onOpenPay else onOpenMoney,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    restSigns = restSigns,
                 )
             }
             // [CAL-31] I 리뷰 N10: past the checked table the red days are worked out, without 임시공휴일 or 선거일.

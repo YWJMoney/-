@@ -3,6 +3,7 @@ package com.bamnat.app.ui.company
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -380,7 +381,7 @@ fun TalkSheet(holder: TalkHolder) {
                 if (replyTo == null) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 8.dp)) {
                         listOf("talk" to "의견", "question" to "질문", "proposal" to "고치자는 제안").forEach { (k, label) ->
-                            androidx.compose.material3.FilterChip(selected = kind == k, onClick = { kind = k; error = null }, label = { Text(label) })
+                            com.bamnat.app.ui.components.FilterChip(selected = kind == k, onClick = { kind = k; error = null }, label = { Text(label) })
                         }
                     }
                 } else {
@@ -391,6 +392,13 @@ fun TalkSheet(holder: TalkHolder) {
                 }
                 if (kind == "proposal" && replyTo == null) {
                     ProposalEditor(change, onChange = { change = it; error = null }, withSetup = withSetup, onWithSetup = { withSetup = it })
+                }
+                // [COMM-11] I4: how many more posts today, so the limit is no surprise.
+                o.talk?.leftPosts?.let { n ->
+                    Text(if (n > 0) "오늘 ${n}번 더 쓸 수 있어요" else "오늘은 더 쓸 수 없어요. 내일 다시 써 주세요",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (n > 0) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 6.dp))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                     OutlinedTextField(
@@ -490,10 +498,19 @@ private fun PostRow(p: TalkPost, onDelete: () -> Unit, onFlag: () -> Unit, onHid
                 }
             }
         }
-        Text(p.body, style = MaterialTheme.typography.bodyMedium, color = if (p.hidden != null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
+        // [COMM-11] I2: one 개인 정보 신고 marks the post 확인 중, dimmed, until an admin looks.
+        if (p.review && p.hidden == null) {
+            Text("확인 중 · 개인 정보가 있다는 신고가 있어 운영자가 보고 있어요", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 2.dp))
+        }
+        Text(p.body, style = MaterialTheme.typography.bodyMedium,
+            color = if (p.hidden != null || p.review) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
         p.hidden?.let {
             Text("다른 분께는 가려졌어요: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(top = 2.dp))
+            // [COMM-11] G2: the writer can ask for another look; the question names the post.
+            if (p.mine) TextButton(onClick = { com.bamnat.app.ui.settings.InquiryLinks.ask(appealStart(p.id)) },
+                contentPadding = PaddingValues(horizontal = 0.dp)) { Text("이의 제기") }
         }
         // [PLZ-09] A proposal's lines: what, now → as it should be, why.
         if (p.change.isNotEmpty()) {
@@ -526,6 +543,12 @@ private fun PostRow(p: TalkPost, onDelete: () -> Unit, onFlag: () -> Unit, onHid
 }
 
 private fun blankChange() = com.bamnat.app.company.ChangeLine("shift", "", "", "")
+
+/** [COMM-11] G2 이의 제기: 문의하기 started with the post's id at the front, so the admins find it at once. */
+internal fun appealStart(postId: String) = com.bamnat.app.ui.settings.InquiryStart(
+    about = "이의 $postId", kind = com.bamnat.app.company.InquiryKind.OTHER,
+    text = "가려진 제 글을 다시 봐 주세요. 규칙에 맞는 이유: ",
+)
 
 /**
  * [PLZ-09] A proposal written so anyone can read it at a glance: up to six lines of what, how it is now,

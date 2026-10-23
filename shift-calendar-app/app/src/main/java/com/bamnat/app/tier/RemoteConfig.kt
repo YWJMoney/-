@@ -41,6 +41,13 @@ data class LaunchConfig(
             JSONObject().put("id", n.id).put("title", n.title).put("body", n.body).put("level", if (n.important) "important" else "info")
                 .put("from", Instant.ofEpochMilli(n.from).toString()).put("until", Instant.ofEpochMilli(n.until).toString())
                 .put("minApp", n.minApp ?: JSONObject.NULL).put("maxApp", n.maxApp ?: JSONObject.NULL)
+                .put("audience", n.audience?.let { a ->
+                    JSONObject().put("makers", JSONArray(a.makers.toList())).put("minSdk", a.minSdk ?: JSONObject.NULL)
+                        .put("maxSdk", a.maxSdk ?: JSONObject.NULL).put("workTypes", JSONArray(a.workTypes.toList()))
+                        .put("features", JSONArray(a.features.toList()))
+                } ?: JSONObject.NULL)
+                .put("action", n.action?.let { x -> JSONObject().put("kind", x.kind).put("label", x.label ?: JSONObject.NULL).put("url", x.url ?: JSONObject.NULL) }
+                    ?: JSONObject.NULL)
         }))
         .put("off", JSONArray(off.map { it.key }))
 
@@ -77,7 +84,25 @@ data class LaunchConfig(
                 important = n.getString("level") == "important",
                 from = Instant.parse(n.getString("from")).toEpochMilli(), until = Instant.parse(n.getString("until")).toEpochMilli(),
                 minApp = version("minApp"), maxApp = version("maxApp"),
+                audience = n.optJSONObject("audience")?.let(::audience),
+                action = n.optJSONObject("action")?.let(::action),
             )
+        }
+
+        /** [SRV-09] Parts this app does not know are left out, so a newer server's notice is not lost. */
+        private fun audience(a: JSONObject): com.bamnat.core.ops.NoticeAudience {
+            fun set(k: String) = a.optJSONArray(k)?.let { arr -> (0 until arr.length()).map { arr.getString(it) }.toSet() }.orEmpty()
+            fun int(k: String) = if (!a.has(k) || a.isNull(k)) null else a.getInt(k)
+            return com.bamnat.core.ops.NoticeAudience(set("makers").map { it.lowercase() }.toSet(), int("minSdk"), int("maxSdk"), set("workTypes"), set("features"))
+        }
+
+        /** [SRV-09] A button this app cannot open is dropped; an address must be https. */
+        private fun action(x: JSONObject): com.bamnat.core.ops.NoticeAction? {
+            val kind = x.optString("kind").takeIf { it in com.bamnat.core.ops.NoticeAction.KINDS } ?: return null
+            val url = if (x.isNull("url")) null else x.optString("url").takeIf { it.startsWith("https://") }
+            if (kind == "URL" && url == null) return null
+            val label = if (x.isNull("label")) null else x.optString("label").takeIf { it.isNotBlank() }?.take(12)
+            return com.bamnat.core.ops.NoticeAction(kind, label, url)
         }
 
         fun fromSaved(text: String?): LaunchConfig? = runCatching {

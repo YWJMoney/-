@@ -54,6 +54,11 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK -> true
             }
+            // [SRV-08] P9: with 앱 잠금 on, the recents screen and screenshots show no calendar or money.
+            DisposableEffect(settings.appLock) {
+                AppLock.secure(window, settings.appLock)
+                onDispose { }
+            }
             // Status bar icons follow the app theme, not only the system one.
             DisposableEffect(dark) {
                 enableEdgeToEdge(
@@ -114,9 +119,11 @@ class MainActivity : ComponentActivity() {
         val c = appContainer
         c.appScope.launch { runCatching { com.bamnat.app.ui.work.ShopKeeper.catchUp(c) } }
         // [MON-02] The 정식 출시 switch, passes and Play's purchases. [MON-07] Google's consent form and
-        // the ads SDK start only when an ad may show: after the switch, without 프로, with ad ids.
+        // the ads SDK start only when an ad may show: after the switch, without 프로, with ad ids, and
+        // [SRV-07] not in the first three days after install.
         c.syncPro()
-        if (c.remoteConfig.current.billingLive && !c.featureGate.state.value.allows(com.bamnat.app.tier.Feature.NO_ADS)) c.ads.start(this)
+        if (com.bamnat.core.tier.AdRules.sdkMayStart(c.remoteConfig.current.billingLive, c.featureGate.state.value.allows(com.bamnat.app.tier.Feature.NO_ADS),
+                c.installedAt, java.time.Instant.now(), c.remoteConfig.current.adQuietDays)) c.ads.start(this)
     }
 
     override fun onStop() {

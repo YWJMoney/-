@@ -83,9 +83,16 @@ private fun PlazaRulesDialog(gate: PlazaRulesGate) {
         title = { Text("광장 운영 규칙") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("처음 글을 쓰기 전에 한 번만 봐 주세요. 모두가 편하게 쓰는 광장을 위한 약속이에요.",
+                // [COMM-11] I6: after a change, what changed is marked, and the rest is the same as agreed.
+                val changed = PlazaRules.changedSince(context.appContainer.settingsRepository.current.plazaRulesAgreed)
+                Text(if (changed.isEmpty()) "처음 글을 쓰기 전에 한 번만 봐 주세요. 모두가 편하게 쓰는 광장을 위한 약속이에요."
+                    else "운영 규칙이 바뀌었어요. 바뀐 줄(${changed.size}개)을 보고 다시 동의해 주세요.",
                     style = MaterialTheme.typography.bodyMedium)
-                PlazaRules.LINES.forEachIndexed { i, line -> Text("${i + 1}. $line", style = MaterialTheme.typography.bodySmall) }
+                PlazaRules.LINES.forEachIndexed { i, line ->
+                    if (i in changed) Text("${i + 1}. $line (바뀜)", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    else Text("${i + 1}. $line", style = MaterialTheme.typography.bodySmall)
+                }
                 TextButton(onClick = {
                     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PlazaRules.URL))) }
                 }) { Text("운영 규칙 전체 보기") }
@@ -128,8 +135,9 @@ fun PlazaPhoneSettings() {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text("광장 소식 알림", style = MaterialTheme.typography.titleSmall)
-                Text("쓰는 규칙이 바뀌거나 보낸 규칙·제안·시세가 채택되면 하루에 한 번 모아서 알려 줘요. 켜 두어도 광고나 다른 알림은 오지 않아요.",
+                Text("밤낮 소식 알림", style = MaterialTheme.typography.titleSmall)
+                Text("쓰는 규칙이 바뀌거나 보낸 규칙·제안·시세가 채택되거나 신고한 글에 결과가 나오면, 문의 답과 함께 하루에 한 번 모아서 알려 줘요. " +
+                    "켜 두어도 광고는 오지 않아요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.width(12.dp))

@@ -121,8 +121,9 @@ class AlarmScheduler(
      * permissions as a shift alarm, so the user hears whether alarms work on this phone. It has its
      * own slot and never moves the shift alarm.
      */
-    fun scheduleTest(now: LocalDateTime = LocalDateTime.now()): Long {
-        val at = now.plusMinutes(1).withSecond(0).withNano(0).let { if (it.isAfter(now.plusSeconds(30))) it else it.plusMinutes(1) }
+    /** [ALRM-01] [minutes] on (3 for 화면 끄고 기다리기), on the minute and at least half a minute away. */
+    fun scheduleTest(now: LocalDateTime = LocalDateTime.now(), minutes: Int = 1): Long {
+        val at = now.plusMinutes(minutes.toLong()).withSecond(0).withNano(0).let { if (it.isAfter(now.plusSeconds(30))) it else it.plusMinutes(1) }
         val triggerAt = at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val ring = RingRequest(TEST_NAME, at.toLocalDate(), at.toLocalTime(), 0, null, triggerAt, label = TEST_NAME)
         setAlarm(triggerAt, testIntent(context, ring))

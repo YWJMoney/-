@@ -92,7 +92,7 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
                 Refresh.Idle
             } catch (e: ShareLinkException) {
                 // Cut or run out: what the sharer took back goes from this phone too.
-                if (e.message == "not_found") c.received.markGone(id)
+                if (e.message == "not_found") c.received.markGone(id, e.removedReason)
                 if (e.message == "not_found") Refresh.Idle else Refresh.Offline(id)
             } catch (e: IOException) {
                 Refresh.Offline(id)
@@ -135,9 +135,10 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
                 Preview.Ready(id, share, SharedSchedule.parse(share.schedule), existing = c.received.get(id) != null)
             } catch (e: ShareLinkException) {
                 // A kept calendar whose link is gone loses its schedule here too.
-                if (e.message == "not_found" && c.received.get(id) != null) c.received.markGone(id)
+                if (e.message == "not_found" && c.received.get(id) != null) c.received.markGone(id, e.removedReason)
                 Preview.Failed(
-                    if (e.message == "not_found") "이 링크는 끊겼거나 기간이 지났어요. 보낸 분께 새 링크를 부탁해 보세요."
+                    if (e.removedReason != null) "운영자가 이 링크를 내렸어요. 이유: ${e.removedReason}"
+                    else if (e.message == "not_found") "이 링크는 끊겼거나 기간이 지났어요. 보낸 분께 새 링크를 부탁해 보세요."
                     else "근무표를 받지 못했어요 (${e.message}). 잠시 뒤 다시 해 주세요.",
                 )
             } catch (e: IOException) {

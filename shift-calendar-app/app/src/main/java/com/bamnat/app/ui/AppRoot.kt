@@ -17,6 +17,8 @@ import android.os.Build
 import androidx.compose.foundation.layout.Column
 import com.bamnat.app.alarm.AlarmService
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Button
@@ -220,6 +222,8 @@ private object Routes {
     const val PLAZA_RATES = "plaza_rates"
     /** [ADMIN-02] 설정 > 문의하기. */
     const val INQUIRY = "inquiry"
+    /** [SHR-14] 우리 조 모아 보기: links put together under a 6-letter code. */
+    const val SHARE_GROUP = "share_group"
 
     // [SLP-16][RECV-02][IMPORT-01] The sleep log, money owed, and bringing in the phone's calendar.
     const val SLEEP = "sleep"
@@ -374,6 +378,15 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PRO -> { nav.navigate(Routes.PRO) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PLAZA -> { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            // [INQ-05] 밤낮 소식's answer line opens 내 문의 (문의하기 opens there when an answer is new).
+            NoticeLinks.Target.INQUIRY -> { nav.navigate(Routes.INQUIRY) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.GROUP -> { nav.navigate(Routes.SHARE_GROUP) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.PHONE_CALENDAR -> {
+                com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.DATA, com.bamnat.app.ui.settings.PHONE_CALENDAR_ROW)
+                NoticeLinks.consume(target)
+            }
+            // [SRV-09] Shown by the update's own dialog below, which takes the target.
+            NoticeLinks.Target.WHATS_NEW -> Unit
             NoticeLinks.Target.BACKUP -> {
                 com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.DATA, com.bamnat.app.ui.settings.AUTO_BACKUP_ROW)
                 NoticeLinks.consume(target)
@@ -452,6 +465,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         val on = com.bamnat.app.data.RecommendedSettings.on(container.settingsRepository.current)
         if (com.bamnat.core.consent.RecommendedPlan.offerOnce(fresh, container.consentStore.recommendOffered, on))
             com.bamnat.core.consent.RecommendedPlan.offNow(on).size else 0
+    }
+    // [SRV-09] A notice's 새 기능 보기 button: this version's lines again, from wherever.
+    LaunchedEffect(noticeTarget) {
+        if (noticeTarget != NoticeLinks.Target.WHATS_NEW) return@LaunchedEffect
+        NoticeLinks.consume(NoticeLinks.Target.WHATS_NEW)
+        whatsNew.value = com.bamnat.core.guide.WhatsNew.releases.filter { it.versionCode <= com.bamnat.app.BuildConfig.VERSION_CODE }.take(1)
     }
     if (whatsNew.value.isNotEmpty()) {
         val closeNew = {
@@ -886,6 +905,11 @@ private fun AppNavHost(
                 onOpenCalendars = { nav.navigate(Routes.CALENDARS) { launchSingleTop = true } },
             )
         }
+        composable(Routes.SHARE_GROUP) {
+            val vm = appViewModel { com.bamnat.app.ui.calendar.ShareGroupViewModel(it) }
+            com.bamnat.app.ui.calendar.ShareGroupScreen(vm, onBack = { nav.popFrom(Routes.SHARE_GROUP) },
+                onShare = { nav.popFrom(Routes.SHARE_GROUP); NoticeLinks.open(NoticeLinks.Target.SHARE) })
+        }
         composable(Routes.INQUIRY) {
             val vm = appViewModel { InquiryViewModel(it) }
             InquiryScreen(vm = vm, onBack = { nav.popFrom(Routes.INQUIRY) })
@@ -1165,7 +1189,23 @@ private fun AppNavHost(
 
 /** [UX-06] A tab's name, whole at every text size: at the largest sizes "근무·급여" was cut to "근무·". */
 @Composable
-private fun TabLabel(text: String) = FitText(text, MaterialTheme.typography.labelMedium)
+private fun TabLabel(text: String) {
+    // [A11Y-04] From 150% a two-word name ("근무·급여") takes two lines, so each word stays big enough to read
+    // instead of the whole name shrinking to fit one (notes/1.22-285/F.md 4장 3번).
+    val parts = text.split('·')
+    if (parts.size == 2 && androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
+        androidx.compose.foundation.layout.Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.clearAndSetSemantics { contentDescription = text },
+        ) {
+            val style = MaterialTheme.typography.labelMedium.copy(lineHeight = MaterialTheme.typography.labelMedium.fontSize)
+            FitText(parts[0], style)
+            FitText(parts[1], style)
+        }
+    } else {
+        FitText(text, MaterialTheme.typography.labelMedium)
+    }
+}
 
 /** [UX-05] A tab's icon; 설정 carries how many answers to the user's questions are new. */
 @Composable

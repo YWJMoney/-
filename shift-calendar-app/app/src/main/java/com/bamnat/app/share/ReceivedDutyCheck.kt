@@ -29,3 +29,27 @@ object ReceivedDutyCheck {
         return s.type(day.type)?.asShiftType()
     }
 }
+
+/**
+ * [SHR-13] What changed in someone's shared schedule over the next [days] days, as short lines such as
+ * "10/25 주간 → 야간"; empty when nothing did, or when the old copy did not cover those days.
+ */
+object ReceivedChanges {
+    fun nextDays(old: SharedSchedule?, new: SharedSchedule, today: java.time.LocalDate, days: Int = 7): List<String> {
+        if (old == null) return emptyList()
+        return (0 until days).mapNotNull { i ->
+            val date = today.plusDays(i.toLong())
+            if (!old.covers(date) || !new.covers(date)) return@mapNotNull null
+            val was = label(old, date)
+            val now = label(new, date)
+            if (was == now) null else "${date.monthValue}/${date.dayOfMonth} $was → $now"
+        }
+    }
+
+    internal fun label(s: SharedSchedule, date: java.time.LocalDate): String {
+        val d = s.days[date] ?: return "쉬는 날"
+        d.leave?.let { return it }
+        val names = listOfNotNull(s.type(d.type)?.name, s.type(d.second)?.name)
+        return names.joinToString("+").ifEmpty { "쉬는 날" }
+    }
+}
