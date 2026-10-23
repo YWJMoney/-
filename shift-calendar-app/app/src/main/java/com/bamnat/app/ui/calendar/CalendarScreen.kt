@@ -338,7 +338,7 @@ fun CalendarScreen(
             val result = messageHost.showSnackbar(
                 message = msg.message,
                 actionLabel = if (msg.undo != null) msg.actionLabel else null,
-                duration = if (msg.undo != null && msg.actionLabel != "되돌리기") SnackbarDuration.Long else SnackbarDuration.Short,
+                duration = if (msg.long || msg.undo != null && msg.actionLabel != "되돌리기") SnackbarDuration.Long else SnackbarDuration.Short,
             )
             if (result == SnackbarResult.ActionPerformed) vm.runUndo(msg)
         }
@@ -897,6 +897,18 @@ fun CalendarScreen(
                     recap,
                     onShare = { scope.launch { MonthImage.share(context, snap, m, settings.weekStart) }; vm.logShare() },
                     onClose = { vm.closeMonthRecap(m) },
+                )
+            }
+        }
+        // [ALRM-03] 스마트 알람 제안: one suggestion at a time, changed only on a tap.
+        if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS && paint == null && viewingReceived == null) {
+            val suggestion by vm.alarmSuggestion.collectAsStateWithLifecycle()
+            suggestion?.let { s ->
+                AlarmSuggestCard(
+                    s,
+                    onApply = { vm.applyAlarmSuggestion(s) },
+                    onNo = { vm.declineAlarmSuggestion(s, forGood = false) },
+                    onNever = { vm.declineAlarmSuggestion(s, forGood = true) },
                 )
             }
         }
@@ -1648,6 +1660,31 @@ internal fun MonthRecapCard(recap: com.bamnat.core.work.MonthRecap, onShare: () 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onClose) { Text("닫기") }
                 TextButton(onClick = onShare) { Text("달력 사진 보내기") }
+            }
+        }
+    }
+}
+
+/**
+ * [ALRM-03] "알람 제안": what was seen and what one tap would change, with 아니요 (a month's rest) and 다시 보지
+ * 않기. The buttons wrap at large text.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun AlarmSuggestCard(s: com.bamnat.core.alarm.AlarmSuggest.Suggestion, onApply: () -> Unit, onNo: () -> Unit, onNever: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+    ) {
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
+            Text("알람 제안", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            Text(s.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.padding(end = 8.dp))
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalArrangement = Arrangement.Center) {
+                TextButton(onClick = onNever) { Text("다시 보지 않기") }
+                TextButton(onClick = onNo) { Text("아니요") }
+                TextButton(onClick = onApply) { Text(if (s.bedtime) "알려 주세요" else "바꾸기") }
             }
         }
     }

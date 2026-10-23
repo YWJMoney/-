@@ -441,6 +441,8 @@ class BackupManager(
                 // [DAILY-01][BACK-01][DAILY-15][DAILY-16] Added in 1.22.
                 .put("widgetMemo", s.widgetMemo).put("backupPhotos", s.backupPhotos)
                 .put("moneyLayout", s.moneyLayout).put("memoLayout", s.memoLayout).put("rateHint", s.rateHint)
+                // [ALRM-03] Added in 1.23; what was answered stays on the phone.
+                .put("alarmSuggest", s.alarmSuggest)
                 .put("restCheck", s.restCheck)
                 .put("strictRest", s.strictRest).put("restRules", s.restRules).put("sleepTips", s.sleepTips)
                 // 1.10 and before read one switch for all sleep notices.
@@ -883,6 +885,7 @@ class BackupManager(
                     moneyLayout = o.optString("moneyLayout", s.moneyLayout),
                     memoLayout = o.optString("memoLayout", s.memoLayout),
                     rateHint = o.optBoolean("rateHint", s.rateHint),
+                    alarmSuggest = o.optBoolean("alarmSuggest", s.alarmSuggest),
                     calendarMemos = o.optBoolean("calendarMemos", s.calendarMemos),
                     restCheck = o.optBoolean("restCheck", s.restCheck),
                     strictRest = o.optBoolean("strictRest", s.strictRest),

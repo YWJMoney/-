@@ -457,7 +457,10 @@ object FeatureRegistry {
             setOf(SHIFT), "달력 › 모든 조 › 날짜 누르기 › 맞바꾸기", at(Place.TEAMS), "맞바꾸기", "근무 교환", "바꿔 줄 사람", "교대 바꾸기",
             under = "shift.teams"),
         f("widget.countdown", "WIDG-05", "다음 근무까지 위젯", "다음 근무가 몇 시간 남았는지, 지금 근무가 언제 끝나는지 홈·잠금 화면 위젯으로 보여요",
-            ALL, "홈 화면 › 위젯 › 밤낮 다음 근무", at(Place.FEATURES), "위젯", "카운트다운", "남은 시간", "다음 근무", "잠금 화면"),
+            ALL, "홈 화면 › 위젯 › 밤낮 다음 근무", at(Place.FEATURES), "위젯", "카운트다운", "남은 시간", "다음 근무", "잠금 화면"),        // O 1.23 (I): 스마트 알람 제안.
+        f("alarm.suggest", "ALRM-03", "알람 제안", "알람을 늦게 끄거나 먼저 깨는 일이 잦으면 그 근무 알람을 옮기자고, 잠이 모자라면 잘 시간 알림을 켜자고 카드로 물어요. 한 번 눌러 바꾸고 되돌릴 수 있어요",
+            setOf(SHIFT, DAY, HOURLY, FIELD), "설정 › 알람 › 알람 제안", at(Place.SETTINGS_ALARM, "알람 제안"), "알람 제안", "늦게 끔", "알람 시간 추천", "스마트 알람", "기상",
+            off = Off.ELSEWHERE),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }

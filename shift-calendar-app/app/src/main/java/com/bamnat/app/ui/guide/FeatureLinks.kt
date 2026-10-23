@@ -96,7 +96,8 @@ val TOOL_KEYS = setOf(
  */
 object FeatureSwitches {
     /** The features of [Off.ELSEWHERE], each with its own branch below. */
-    val LINKED = setOf("today.flow", "lock.today", "day.commute", "shop.autoClose", "money.auto", "shift.restRules", "privacy.usageStats", "plaza.news", "leave.promotion")
+    val LINKED = setOf("today.flow", "lock.today", "day.commute", "shop.autoClose", "money.auto", "shift.restRules", "privacy.usageStats", "plaza.news", "leave.promotion",
+        "alarm.suggest") // O 1.23 (I)
 
     fun isOn(c: AppContainer, feature: AppFeature, calendar: String): Boolean = when (feature.off) {
         null -> true
@@ -112,6 +113,7 @@ object FeatureSwitches {
             "plaza.news" -> c.settingsRepository.current.plazaNews
             // [LEAVE-03] The notice switch in settings and on the 연차 screen.
             "leave.promotion" -> c.settingsRepository.current.leaveNotice
+            "alarm.suggest" -> c.settingsRepository.current.alarmSuggest // O 1.23 (I)
             else -> true
         }
     }
@@ -142,6 +144,7 @@ object FeatureSwitches {
                 "privacy.usageStats" -> if (on) { FeatureLinks.open(feature); return false } else c.setUsageStats(false)
                 "plaza.news" -> c.settingsRepository.update { it.copy(plazaNews = on) }
                 "leave.promotion" -> c.settingsRepository.update { it.copy(leaveNotice = on) }
+                "alarm.suggest" -> c.settingsRepository.update { it.copy(alarmSuggest = on) } // O 1.23 (I)
                 else -> { FeatureLinks.open(feature); return false }
             }
         }

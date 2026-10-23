@@ -37,6 +37,11 @@ object DiagEvents {
      * Never sent anywhere.
      */
     const val ALIVE = "alive"
+    /**
+     * [ALRM-03] An alarm suggestion was answered: the detail is only its kind and the answer
+     * ("late applied", "short declined", "early never", "late undone"), never times or names.
+     */
+    const val ALARM_SUGGEST = "alarm_suggest"
 }
 
 /**

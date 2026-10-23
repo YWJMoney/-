@@ -66,6 +66,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -852,6 +853,75 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun closeMonthRecap(month: java.time.YearMonth) {
         val key = com.bamnat.core.work.MonthRecap.key(month)
         container.settingsRepository.update { s -> if (s.monthRecapSeen >= key) s else s.copy(monthRecapSeen = key) }
+    }
+
+    /**
+     * [ALRM-03] The one alarm suggestion for now, from when alarms were turned off and the sleep log, on the main
+     * calendar only (its alarms are the ones that ring). Worked out on the phone; nothing changes until a tap.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val alarmSuggestion: StateFlow<com.bamnat.core.alarm.AlarmSuggest.Suggestion?> =
+        combine(snapshot, container.settingsRepository.settings, sleepLog, activeCalendar) { snap, s, sleeps, cal ->
+            if (snap == null || !s.alarmSuggest || !cal.isMain) null else SuggestInput(snap, s, sleeps)
+        }.mapLatest { input ->
+            input ?: return@mapLatest null
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { findAlarmSuggestion(input.snap, input.settings, input.sleeps) }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private data class SuggestInput(val snap: ScheduleSnapshot, val settings: AppSettings, val sleeps: List<com.bamnat.core.sleep.SleepEntry>)
+
+    /** Reads the event log: off the main thread. */
+    internal fun findAlarmSuggestion(
+        snap: ScheduleSnapshot, settings: AppSettings, sleeps: List<com.bamnat.core.sleep.SleepEntry>, today: LocalDate = LocalDate.now(),
+    ): com.bamnat.core.alarm.AlarmSuggest.Suggestion? {
+        val suggest = com.bamnat.core.alarm.AlarmSuggest
+        val days = snap.resolver.resolveRange(today.minusDays(suggest.LOOK_BACK_DAYS), today.minusDays(1))
+            .filter { !it.hasCustomTimes && !it.alarmSkipped && it.shiftType?.activeAlarms?.isNotEmpty() == true }
+            .map { it.date to it.shiftType!! }
+        if (days.isEmpty()) return null
+        val offs = suggest.offsOf(container.telemetry.log.read(), java.time.ZoneId.systemDefault())
+        return suggest.find(today, snap.shiftTypes, days, offs, sleeps, settings.sleepTargetMinutes,
+            settings.bedtimeNotice, com.bamnat.core.alarm.AlarmSuggest.Memory.decode(settings.alarmSuggestMemory))
+    }
+
+    /**
+     * [ALRM-03] 적용: the suggested change on that one kind of shift (or 잘 시간 알림 on), said back with ten seconds
+     * to take it back. Either way the card rests; it is the user's answer.
+     */
+    fun applyAlarmSuggestion(s: com.bamnat.core.alarm.AlarmSuggest.Suggestion) {
+        container.appScope.launch {
+            val repo = container.scheduleRepository
+            val text: String
+            val undo: suspend () -> Unit
+            val moved = s.moved
+            if (moved != null) {
+                val before = repo.shiftTypes.first().firstOrNull { it.id == s.type.id } ?: return@launch
+                repo.saveShiftType(before.copy(alarms = moved.alarms))
+                text = "${s.type.name} 알람을 옮겼어요"
+                undo = { repo.saveShiftType(before); suggestAnswered(s, "undone") }
+            } else {
+                val was = container.settingsRepository.current.bedtimeNotice
+                container.settingsRepository.update { it.copy(bedtimeNotice = true) }
+                text = "잘 시간 30분 전에 알려 드릴게요"
+                undo = { container.settingsRepository.update { it.copy(bedtimeNotice = was) }; suggestAnswered(s, "undone") }
+            }
+            suggestAnswered(s, "applied")
+            _messages.emit(UndoMessage(text, undo = undo, long = true))
+        }
+    }
+
+    /** [ALRM-03] 아니요 (rests [com.bamnat.core.alarm.AlarmSuggest.QUIET_DAYS] days) or 다시 보지 않기. */
+    fun declineAlarmSuggestion(s: com.bamnat.core.alarm.AlarmSuggest.Suggestion, forGood: Boolean) {
+        suggestAnswered(s, if (forGood) "never" else "no", forGood)
+    }
+
+    private fun suggestAnswered(s: com.bamnat.core.alarm.AlarmSuggest.Suggestion, answer: String, forGood: Boolean = false) {
+        container.settingsRepository.update { st ->
+            st.copy(alarmSuggestMemory = com.bamnat.core.alarm.AlarmSuggest.Memory.decode(st.alarmSuggestMemory)
+                .answered(s.key, LocalDate.now(), forGood).encode())
+        }
+        // Only the kind and the answer: no shift name, no times.
+        container.telemetry.event(com.bamnat.core.diag.DiagEvents.ALARM_SUGGEST, "${s.kind.key} $answer")
     }
 
     /**
