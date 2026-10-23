@@ -584,6 +584,8 @@ private fun ShareLinkRows() {
 /** [SHR-14] 설정 › 데이터 rows, also found by search. */
 internal const val GROUP_ROW = "우리 조 모아 보기"
 internal const val CUT_ALL_ROW = "모든 링크 끊기"
+/** [ALRM-02] 설정 › 개인정보: 동의·권한 요약. */
+internal const val SUMMARY_ROW = "보내는 것과 권한 한눈에"
 
 /**
  * [STAT-01] 사용 통계 보내기 with what exactly goes: event names and daily counts, the app version, never
@@ -619,8 +621,13 @@ private fun PrivacyPage(
 ) {
     val context = LocalContext.current
     val pkg = Uri.parse("package:${context.packageName}")
+    var summary by remember { mutableStateOf(false) }
     SectionCard(title = "개인정보") {
         NavRow("개인정보 처리방침", "무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
+        HorizontalDivider()
+        // [ALRM-02] I27: every yes and no, and every permission, on one sheet.
+        NavRow(SUMMARY_ROW, "사용 통계·소식·권한을 한 장에서 보고 바꿔요") { summary = true }
+        if (summary) com.bamnat.app.ui.diag.ConsentSummarySheet { summary = false }
         HorizontalDivider()
         // [STAT-01] Back with a real place to send to (UsageStats, 처리방침 2.8). Its own yes, so it starts off;
         // the app works the same either way.

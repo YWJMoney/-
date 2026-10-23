@@ -102,6 +102,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
 import com.bamnat.app.BuildConfig
+import com.bamnat.app.data.rules
+import com.bamnat.app.appContainer
 import com.bamnat.app.NoticeLinks
 import com.bamnat.app.alarm.AlarmScheduler
 import com.bamnat.app.alarm.Notifications
@@ -950,6 +952,19 @@ private fun AlarmReadyCard(
                         }
                     }
                     Text(line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // [SRV-10] N5: the work the next alarm wakes for, against the rest rules.
+                    val nudge by androidx.compose.runtime.produceState<String?>(null, next?.plan?.shiftDate, settings.rules, settings.restCheck) {
+                        val date = next?.plan?.shiftDate?.takeIf { next.plan.shiftTypeId != 0L && settings.restCheck } ?: return@produceState
+                        value = runCatching {
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                val snap = context.appContainer.scheduleRepository.snapshot.first()
+                                val days = generateSequence(com.bamnat.core.schedule.RestCheck.lookbackFrom(date, settings.rules)) { it.plusDays(1) }
+                                    .takeWhile { !it.isAfter(date) }.map(snap.resolver::resolve).toList()
+                                com.bamnat.core.schedule.RestNudge.alarmLine(com.bamnat.core.schedule.RestNudge.on(days, date, settings.rules))
+                            }
+                        }.getOrNull()
+                    }
+                    nudge?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = cal.warning) }
                 }
                 when {
                     !settings.alarmsEnabled -> TextButton(onClick = { vm.setAlarmsEnabled(true) }) { Text("켜기") }

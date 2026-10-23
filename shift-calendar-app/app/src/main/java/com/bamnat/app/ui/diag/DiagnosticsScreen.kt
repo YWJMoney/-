@@ -44,6 +44,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -315,6 +316,13 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                         // Android 13+ shows its own confirmation.
                         if (Build.VERSION.SDK_INT < 33) Toast.makeText(context, "복사했어요", Toast.LENGTH_SHORT).show()
                     }) { Icon(Icons.Filled.ContentCopy, "보고서 복사") }
+                    // [SRV-10] N6: the same report to any app (메신저, 메일) as text.
+                    IconButton(onClick = {
+                        val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+                            .putExtra(android.content.Intent.EXTRA_SUBJECT, "밤낮 알람 점검")
+                            .putExtra(android.content.Intent.EXTRA_TEXT, report.asText())
+                        runCatching { context.startActivity(android.content.Intent.createChooser(send, "알람 점검 보내기")) }
+                    }) { Icon(Icons.Filled.Share, "보고서 보내기") }
                     TextButton(onClick = { confirmClear = true }) { Text("기록 지우기") }
                 },
             )
@@ -337,6 +345,8 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
             week?.takeIf { it.planned > 0 }?.let { w ->
                 item { AlarmWeekCard(w, events.orEmpty()) }
             }
+            // [ALRM-02] I26: whether the servers answer, and what waits to be sent.
+            item { ServerCheckCard() }
             item {
                 SectionCard(title = "점검") {
                     val bad = checks.count { it.ok == false }

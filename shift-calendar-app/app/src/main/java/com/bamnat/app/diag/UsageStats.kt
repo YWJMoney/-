@@ -40,6 +40,9 @@ class UsageStats(
     }
 
     /** What is waiting, for the settings page's "보낼 내용 보기". */
+    /** [ALRM-02] The last day a bundle went, for 서버 연결 점검; null before any did. */
+    val sentDay: LocalDate? get() = prefs.getLong(K_SENT_DAY, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }?.let(LocalDate::ofEpochDay)
+
     fun preview(): String? = synchronized(lock) { book().bundle(today(), BuildConfig.VERSION_NAME) { LocalDate.ofEpochDay(it).toString() } }
 
     /** Turning it off forgets everything not sent yet. */
