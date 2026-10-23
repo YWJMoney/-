@@ -71,6 +71,16 @@ data class WeekSummary(
     fun contains(date: LocalDate): Boolean = !date.isBefore(start) && !date.isAfter(end)
 }
 
+/** [CAL-34][CAL-40] See [WorkHoursCalculator.glance]. */
+data class WeekGlance(val start: LocalDate, val minutes: Int, val nights: Int, val leftToLegal: Int, val legalHours: Int = 52) {
+    /** "38시간 · 야간 2번 · 52시간까지 14시간", or "… · 52시간 3시간 넘음". */
+    val text: String get() = buildString {
+        append(HoursFormat.korean(minutes))
+        if (nights > 0) append(" · 야간 ${nights}번")
+        if (minutes > 0) append(if (leftToLegal >= 0) " · ${legalHours}시간까지 ${HoursFormat.korean(leftToLegal)}" else " · ${legalHours}시간보다 ${HoursFormat.korean(-leftToLegal)} 넘음")
+    }
+}
+
 data class MonthSummary(
     val month: YearMonth,
     val totalMinutes: Int,
@@ -137,6 +147,38 @@ class WorkHoursCalculator(
             overLimit = total > limits.weeklyLimitHours * 60,
             overLegalMinutes = limits.legalWeeklyMinutes?.let { (total - it).coerceAtLeast(0) } ?: 0,
         )
+    }
+
+    /**
+     * [CAL-34][CAL-40] I 리뷰 I6·I19: a week in one line's worth: its hours, how many nights, and what is left before
+     * 주 52시간 (negative when over). For the week view's total line and 통계's "다음 주 예상", which reads the
+     * coming week from the roster before it is worked.
+     */
+    fun glance(containing: LocalDate): WeekGlance {
+        val w = week(containing)
+        val nights = resolver.resolveRange(w.start, w.end).count(com.bamnat.core.work.ShiftHealth::night)
+        return WeekGlance(w.start, w.totalMinutes, nights, limits.legalWeeklyHours * 60 - w.totalMinutes, limits.legalWeeklyHours)
+    }
+
+    /**
+     * [CAL-32] I 리뷰 P9: the week's hours with each night shift split at midnight, the way some payrolls count
+     * it. [week] puts a 22:00~07:00 shift wholly on the day it starts, so a Sunday night lands in this week; here
+     * the part after midnight goes to the next day (the break shared in proportion). Equal to [week]'s total
+     * when no shift crosses the week's edges.
+     */
+    fun weekSplitAtMidnight(containing: LocalDate): Int {
+        val w = week(containing)
+        return w.totalMinutes - afterMidnight(resolver.resolve(w.end)) + afterMidnight(resolver.resolve(w.start.minusDays(1)))
+    }
+
+    /** The rostered minutes of [day] that fall after midnight, 0 when the shift ends the same day. */
+    private fun afterMidnight(day: com.bamnat.core.schedule.ResolvedDay): Int {
+        val s = day.start ?: return 0
+        val e = day.end ?: return 0
+        if (day.scheduledMinutes <= 0 || e.isAfter(s)) return 0
+        val span = com.bamnat.core.model.WorkTime.spanMinutes(s, e)
+        val after = e.toSecondOfDay() / 60
+        return Math.round(day.scheduledMinutes.toDouble() * after / span).toInt()
     }
 
     fun month(month: YearMonth): MonthSummary {

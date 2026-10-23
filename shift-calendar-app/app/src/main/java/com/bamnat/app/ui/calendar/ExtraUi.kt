@@ -115,6 +115,23 @@ object ExtraText {
         return if (hasShift) near + covers + bands else covers + bands + near
     }
 
+    /**
+     * [CAL-38] The stamps quick input offers: each kind once with its usual piece (잔업 2시간, 특근 09–18), and a
+     * 대근 for each shift it covers. Where each goes is [com.bamnat.core.schedule.ExtraStamp]'s rule.
+     */
+    fun stampChoices(kinds: ExtraKinds, types: List<ShiftType>): List<ExtraChoice> {
+        val timed = types.filter { !it.isOff && it.hasTimes }
+        return kinds.visible().flatMap { k ->
+            when (val t = k.timing) {
+                is ExtraTiming.AfterShift -> listOf(ExtraChoice(k, "${k.name} +${HoursFormat.korean(t.minutes)}", "${k.name} ${HoursFormat.korean(t.minutes)}", ExtraEntry(k.id, minutes = t.minutes)))
+                is ExtraTiming.BeforeShift -> listOf(ExtraChoice(k, "${k.name} ${HoursFormat.korean(t.minutes)}", "${k.name} ${HoursFormat.korean(t.minutes)}", ExtraEntry(k.id, minutes = t.minutes)))
+                is ExtraTiming.Band -> listOf(ExtraChoice(k, "${k.name} ${span(t.start, t.end)}", k.name, default(k)!!))
+                is ExtraTiming.AsShift -> (t.shiftTypeId?.let { id -> timed.filter { it.id == id } } ?: t.shifts(timed))
+                    .map { s -> ExtraChoice(k, coverName(k, s), coverName(k, s), cover(k, s)) }
+            }
+        }
+    }
+
     private val NINE: LocalTime = LocalTime.of(9, 0)
     private val NOON: LocalTime = LocalTime.of(12, 0)
     private val SIX_PM: LocalTime = LocalTime.of(18, 0)

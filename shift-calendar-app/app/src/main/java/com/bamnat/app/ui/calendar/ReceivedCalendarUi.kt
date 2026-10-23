@@ -119,7 +119,7 @@ private val TogetherColor = Color(0xFFE5487A)
 /** [SHR-02] A round avatar with one letter, the face of a calendar in the switcher. */
 @Composable
 fun CalendarAvatar(
-    initial: String, color: Color, modifier: Modifier = Modifier, size: Dp = 28.dp, contentColor: Color = Color.White,
+    initial: String, color: Color, modifier: Modifier = Modifier, size: Dp = 28.dp, contentColor: Color = com.bamnat.app.ui.components.contentColorOn(color),
     shape: androidx.compose.ui.graphics.Shape = CircleShape,
 ) {
     Box(modifier.size(size).clip(shape).background(color), contentAlignment = Alignment.Center) {

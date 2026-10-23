@@ -440,6 +440,24 @@ object FeatureRegistry {
             ALL, "돈 › ⋮ › 화면 꾸미기, 메모 › 화면 꾸미기", at(Place.MONEY), "화면 꾸미기", "순서", "카드 숨기기", "필터 접기", under = "calendar.customize"),
         f("pay.rateHint", "DAILY-16", "광장 시세와 견주기", "광장 임금표에서 본 내 직군·내 지역 시세와 내 일당·시급·월급이 10% 넘게 다르면 급여 화면에 카드로 보여요. 휴대폰 안에서만 견줘요",
             setOf(SHIFT, DAY, HOURLY, FIELD), "설정 › 급여와 연차 › 광장 시세와 내 단가 견주기", at(Place.SETTINGS_PAY, "광장 시세와 내 단가 견주기"), "시세", "일당", "시급", "비교"),
+        // 1.23 묶음 I: the calendar, day sheet, patterns, widgets and watch.
+        f("calendar.quickText", "CAL-43", "메모 한 줄로 넣기", "날짜 시트 메모에 ‘내일 야간 대근 7시’, ‘다음주 월화 연차’처럼 적으면 근무·추가 근무·연차로 넣을지 물어요",
+            ALL, "$DAY_SHEET › 빠른 메모", at(Place.CALENDAR), "빠른 입력", "말로 입력", "메모로 넣기", "자연어", "한 줄 입력"),
+        f("calendar.monthRecap", "CAL-46", "한 달 마감 카드", "달이 끝나면 그달 일한 날·시간·야간과 지난달과의 차이를 한 장으로 보여 주고 달력 사진으로 보내요",
+            ALL, "달력 맨 위 카드 (달이 바뀐 뒤)", at(Place.CALENDAR), "월말", "한 달 정리", "마감", "달력 사진", "지난달 비교"),
+        f("data.openFile", "CAL-47", "받은 파일 바로 열기", "카톡·파일 앱에서 받은 백업이나 회사 근무표 파일을 누르면 밤낮이 열려 읽어요",
+            ALL, "파일 앱·메신저 › 파일 누르기 › 밤낮으로 열기", at(Place.SETTINGS_DATA, "파일 불러오기"), "파일 열기", "카톡 파일", "백업 열기", "공유 받기",
+            under = "data.backup"),
+        f("pattern.realign", "SCHED-03", "이 날부터 순서 다시 맞추기", "순서가 어긋난 날을 길게 눌러 그날이 몇 번째인지 고르면 그날부터 다시 돌고, 지난 날은 그대로 남아요",
+            setOf(SHIFT, HOURLY), "달력 › 날짜 길게 누르기 › 이 날부터 순서 다시 맞추기", at(Place.CALENDAR), "순서 어긋남", "다시 맞추기", "밀림", "근무 주기",
+            under = "shift.pattern"),
+        f("pattern.weeklyOptions", "SCHED-04", "공휴일 쉬기·격주 토요일", "요일마다 정한 근무에서 공휴일은 쉬고, 토요일은 격주로만 일하게 정해요",
+            setOf(DAY, HOURLY, FIELD), "설정 › 내 근무 › 근무 주기 › 요일마다", at(Place.PATTERN), "공휴일", "격주 토요일", "격주 근무", "빨간 날"),
+        f("shift.swapFind", "SCHED-07", "맞바꿀 날 찾기", "모든 조에서 내 근무와 맞바꿔도 양쪽 다 쉬는 시간이 모자라지 않는 날을 찾아 부탁 글까지 써 줘요",
+            setOf(SHIFT), "달력 › 모든 조 › 날짜 누르기 › 맞바꾸기", at(Place.TEAMS), "맞바꾸기", "근무 교환", "바꿔 줄 사람", "교대 바꾸기",
+            under = "shift.teams"),
+        f("widget.countdown", "WIDG-05", "다음 근무까지 위젯", "다음 근무가 몇 시간 남았는지, 지금 근무가 언제 끝나는지 홈·잠금 화면 위젯으로 보여요",
+            ALL, "홈 화면 › 위젯 › 밤낮 다음 근무", at(Place.FEATURES), "위젯", "카운트다운", "남은 시간", "다음 근무", "잠금 화면"),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }

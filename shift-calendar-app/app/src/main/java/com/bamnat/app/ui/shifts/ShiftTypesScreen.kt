@@ -1,5 +1,12 @@
 package com.bamnat.app.ui.shifts
 
+import com.bamnat.app.ui.components.TimeRangeDialog
+import com.bamnat.app.ui.components.TimeRange
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.Checkbox
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -170,7 +177,7 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
                         val missing = ShiftTypeSets.missing(set, list)
                         AssistChip(
                             onClick = { addingSet = set },
-                            enabled = missing.isNotEmpty(),
+                            enabled = missing.isNotEmpty() || ShiftTypeSets.differing(set, list).isNotEmpty(),
                             label = { Text(set.name) },
                             leadingIcon = { Icon(Icons.Filled.Add, null, Modifier.size(18.dp)) },
                         )
@@ -212,17 +219,47 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
     }
     addingSet?.let { set ->
         val missing = ShiftTypeSets.missing(set, types.orEmpty())
-        ConfirmDialog(
-            title = "‘${set.name}’ 근무를 추가할까요?",
-            message = set.description + "\n\n추가: " + missing.joinToString { it.name } +
-                (if (missing.size < set.types.size) "\n이미 있는 이름은 건너뛰어요." else "") +
-                "\n추가한 뒤 시간과 알람은 근무마다 바꿀 수 있어요.",
-            confirmLabel = "추가",
-            onDismiss = { addingSet = null },
-            onConfirm = {
-                vm.addSet(set)
-                addingSet = null
+        val differing = ShiftTypeSets.differing(set, types.orEmpty())
+        // [SCHED-05] Same name, other times: say both and let the user take the set's times (G P6).
+        var retime by rememberSaveable(set.id) { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { addingSet = null },
+            title = { Text("‘${set.name}’ 근무를 추가할까요?") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(set.description)
+                    if (missing.isNotEmpty()) Text("추가: " + missing.joinToString { it.name })
+                    if (differing.isNotEmpty()) {
+                        Text(
+                            "이름은 같은데 시간이 달라요\n" + differing.joinToString("\n") { (mine, preset) ->
+                                "${mine.name} ${shiftSpan(mine)} → ${shiftSpan(preset)}"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Row(
+                            Modifier.fillMaxWidth().toggleable(value = retime, role = Role.Checkbox, onValueChange = { retime = it }),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(checked = retime, onCheckedChange = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("이 시간으로 바꾸기 (색·알람은 그대로)")
+                        }
+                    } else if (missing.size < set.types.size) {
+                        Text("이미 있는 이름은 건너뛰어요.", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text("추가한 뒤 시간과 알람은 근무마다 바꿀 수 있어요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             },
+            confirmButton = {
+                TextButton(
+                    enabled = missing.isNotEmpty() || retime,
+                    onClick = {
+                        vm.addSet(set, retime)
+                        addingSet = null
+                    },
+                ) { Text(if (missing.isEmpty()) "바꾸기" else "추가") }
+            },
+            dismissButton = { TextButton(onClick = { addingSet = null }) { Text("취소") } },
         )
     }
     deleting?.let { type ->
@@ -425,10 +462,11 @@ fun ShiftTypeEditorDialog(
     /** [SHFT-01] A shift calendar sets each kind's own premium here. */
     showPremium: Boolean = false,
 ) {
-    var draft by remember(initial) { mutableStateOf(initial) }
-    var pickStart by remember { mutableStateOf(false) }
-    var pickEnd by remember { mutableStateOf(false) }
-    var pickBreak by remember { mutableStateOf(false) }
+    // [CAL-30] I 리뷰 P14: what is being typed survives a fold or a turn of the phone.
+    var draft by rememberSaveable(initial, stateSaver = ShiftTypeSaver) { mutableStateOf(initial) }
+    // [DAYW-11] Start, end and break in one window (J's shared dialog).
+    var pickTimes by rememberSaveable { mutableStateOf(false) }
+    var pickBreak by rememberSaveable { mutableStateOf(false) }
     var addingAlarm by remember { mutableStateOf(false) }
     var editingAlarm by remember { mutableStateOf<AlarmSpec?>(null) }
     var styling by remember(initial) { mutableStateOf(false) }
@@ -522,12 +560,12 @@ fun ShiftTypeEditorDialog(
                         val timed = draft.copy(start = start, end = end)
                         SectionCard(title = "근무 시간") {
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                TimeButton("시작", start, Modifier.weight(1f)) { pickStart = true }
+                                TimeButton("시작", start, Modifier.weight(1f)) { pickTimes = true }
                                 TimeButton(
                                     if (timed.durationMinutes >= 24 * 60 || !end.isAfter(start)) "종료 (다음날)" else "종료",
                                     end,
                                     Modifier.weight(1f),
-                                ) { pickEnd = true }
+                                ) { pickTimes = true }
                             }
                             Spacer(Modifier.height(12.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -745,17 +783,17 @@ fun ShiftTypeEditorDialog(
         }
     }
 
-    if (pickStart) {
-        TimePickerDialog("시작 시각", draft.start ?: LocalTime.of(9, 0), onDismiss = { pickStart = false }) {
-            draft = draft.copy(start = it)
-            pickStart = false
-        }
-    }
-    if (pickEnd) {
-        TimePickerDialog("종료 시각", draft.end ?: LocalTime.of(18, 0), onDismiss = { pickEnd = false }) {
-            draft = draft.copy(end = it)
-            pickEnd = false
-        }
+    if (pickTimes) {
+        TimeRangeDialog(
+            title = "${draft.name.ifBlank { "근무" }} 시간",
+            initial = TimeRange(draft.start ?: LocalTime.of(9, 0), draft.end ?: LocalTime.of(18, 0), draft.breakMinutes),
+            maxBreakMinutes = 12 * 60,
+            onDismiss = { pickTimes = false },
+            onConfirm = {
+                draft = draft.copy(start = it.start, end = it.end, breakMinutes = it.breakMinutes)
+                pickTimes = false
+            },
+        )
     }
     if (pickBreak) {
         val suggested = (draft.start ?: LocalTime.of(9, 0)).plusMinutes((draft.durationMinutes / 2).toLong()).withMinute(0)
@@ -829,3 +867,31 @@ internal fun CalendarTitle(title: String, vm: ShiftsViewModel) {
         name?.let { Text("$it 달력", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
+
+/** "09:00~18:00 · 휴게 60분", for the same-name note when a set is added. */
+private fun shiftSpan(t: ShiftType): String {
+    val start = t.start
+    val end = t.end
+    return if (start == null || end == null) "쉬는 날" else "${Fmt.timeRange(start, end)} · 휴게 ${t.breakMinutes}분"
+}
+
+/** [CAL-30] Keeps an unsaved [ShiftType] across a fold: the fields as text, the alarms in [AlarmCodec]'s form. */
+private val ShiftTypeSaver: Saver<ShiftType, Any> = listSaver(
+    save = { t ->
+        listOf(
+            t.id.toString(), t.name, t.label, t.colorArgb.toString(), t.start?.toString().orEmpty(), t.end?.toString().orEmpty(),
+            t.breakMinutes.toString(), t.breakStart?.toString().orEmpty(), t.isOff.toString(), t.alarmEnabled.toString(),
+            com.bamnat.core.alarm.AlarmCodec.encodeSpecs(t.alarms), t.alarmSoundUri.orEmpty(), t.sortOrder.toString(),
+            t.icon.orEmpty(), t.premiumPercent.toString(),
+        )
+    },
+    restore = { v ->
+        fun time(i: Int) = v[i].takeIf { it.isNotEmpty() }?.let(LocalTime::parse)
+        ShiftType(
+            id = v[0].toLong(), name = v[1], label = v[2], colorArgb = v[3].toLong(), start = time(4), end = time(5),
+            breakMinutes = v[6].toInt(), breakStart = time(7), isOff = v[8].toBoolean(), alarmEnabled = v[9].toBoolean(),
+            alarms = com.bamnat.core.alarm.AlarmCodec.decodeSpecs(v[10]) ?: emptyList(), alarmSoundUri = v[11].ifEmpty { null },
+            sortOrder = v[12].toInt(), icon = v[13].ifEmpty { null }, premiumPercent = v[14].toInt(),
+        )
+    },
+)

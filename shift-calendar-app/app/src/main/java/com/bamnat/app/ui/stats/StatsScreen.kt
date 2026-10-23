@@ -131,9 +131,22 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
     val calc = remember(snap, settings.limits) {
         WorkHoursCalculator(snap.resolver, DayOfWeek.MONDAY, settings.limits)
     }
-    val summary = remember(calc, month) { calc.month(month) }
-    val three = remember(calc, month) { calc.threeMonths(month) }
-    val trend = remember(calc, month) { (5 downTo 0).map { calc.month(month.minusMonths(it.toLong())) } }
+    val today = com.bamnat.app.ui.calendar.rememberToday() // [CAL-25]
+    // [CAL-41] I 리뷰 P18: the month, three months and the six-month trend are worked out off the main thread, so
+    // the first open of 통계 draws at once instead of waiting on nine months of days.
+    val figures by androidx.compose.runtime.produceState<StatsFigures?>(null, calc, month) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            StatsFigures(calc.month(month), calc.threeMonths(month), (5 downTo 0).map { calc.month(month.minusMonths(it.toLong())) })
+        }
+    }
+    val shownFigures = figures
+    if (shownFigures == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        return
+    }
+    val summary = shownFigures.summary
+    val three = shownFigures.three
+    val trend = shownFigures.trend
     // [LEDG-15] Field and shop work show their jobs or sales; hours only once some are on the calendar.
     val hasHours = pays || summary.totalMinutes > 0 || three.totalMinutes > 0
     val columns = if (wide) 4 else 2
@@ -352,6 +365,16 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.DAY, vm.calendarId, week.start.toString())
                         }
                         if (i != summary.weeks.lastIndex) Spacer(Modifier.height(10.dp))
+                    }
+                    // [CAL-40] I 리뷰 I19: the coming week read from the roster, so 52시간 is seen before it is passed.
+                    val next = remember(calc, today) { calc.glance(today.plusWeeks(1)) }
+                    if (next.minutes > 0) {
+                        Text(
+                            "다음 주(${Fmt.shortDate(next.start)}~) 예상 ${next.text}",
+                            style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
+                            color = if (next.leftToLegal < 0) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
                     }
                     Text(
                         "주 근무시간은 월요일부터 일요일까지 세요(달력이 일요일부터 보여도 같아요). 달에 걸친 주도 7일 전체를 셉니다.",
@@ -717,3 +740,10 @@ private fun StatsEditSheet(settings: AppSettings, update: ((AppSettings) -> AppS
         onDismiss = onDismiss,
     )
 }
+
+/** [CAL-41] What 통계 shows for a month, worked out together off the main thread. */
+private data class StatsFigures(
+    val summary: com.bamnat.core.hours.MonthSummary,
+    val three: com.bamnat.core.hours.ThreeMonthSummary,
+    val trend: List<com.bamnat.core.hours.MonthSummary>,
+)

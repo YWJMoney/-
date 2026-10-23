@@ -41,6 +41,9 @@ data class HealthYear(val year: Int, val months: List<HealthMonth>) {
     val isEmpty: Boolean get() = workDays == 0
 }
 
+/** [CAL-44] One day on the year's heat map, lightest to strongest. */
+enum class Heat(val label: String) { REST("쉼"), WORK("근무"), NIGHT("야간"), NIGHT_RUN("연속 야간 3일째부터"), SHORT_REST("11시간 못 쉼") }
+
 object ShiftHealth {
     /**
      * [SHFT-07] [year] read off the calendar [resolve], up to and including [until] (the whole year when it
@@ -82,6 +85,49 @@ object ShiftHealth {
         }
         return HealthYear(year, months)
     }
+
+    /**
+     * [CAL-44] Each day of [from]..[to] as a heat step for the year map (I 리뷰 N4): rest, work, a night, the
+     * third night or more in a row, and a start less than 11 hours after the last shift ended. [CAL-39] The
+     * short rests are also the days 통계's "짧은 휴식 N번" jumps to (I18).
+     */
+    fun heat(from: LocalDate, to: LocalDate, resolve: (LocalDate) -> ResolvedDay): Map<LocalDate, Heat> {
+        if (to.isBefore(from)) return emptyMap()
+        val days = generateSequence(from.minusDays(7)) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.map(resolve).toList()
+        val nights = days.filter(::night).map { it.date }.toSet()
+        val run = HashMap<LocalDate, Int>()
+        for (d in nights.sorted()) run[d] = (run[d.minusDays(1)] ?: 0) + 1
+        val quick = quickReturns(days)
+        return days.filter { !it.date.isBefore(from) }.associate { d ->
+            d.date to when {
+                d.date in quick -> Heat.SHORT_REST
+                (run[d.date] ?: 0) >= LONG_RUN -> Heat.NIGHT_RUN
+                d.date in nights -> Heat.NIGHT
+                worked(d) -> Heat.WORK
+                else -> Heat.REST
+            }
+        }
+    }
+
+    /** [CAL-39] Days whose work starts less than 11 hours after the last block ended, in [year] up to [until]. */
+    fun shortRestDays(year: Int, resolve: (LocalDate) -> ResolvedDay, until: LocalDate = LocalDate.of(year, 12, 31)): List<LocalDate> {
+        val first = LocalDate.of(year, 1, 1)
+        val last = minOf(until, LocalDate.of(year, 12, 31))
+        if (last.isBefore(first)) return emptyList()
+        val days = generateSequence(first.minusDays(7)) { it.plusDays(1) }.takeWhile { !it.isAfter(last) }.map(resolve).toList()
+        return quickReturns(days).filter { it.year == year }.sorted()
+    }
+
+    private fun quickReturns(days: List<ResolvedDay>): Set<LocalDate> {
+        val blocks = days.flatMap { RestCheck.blocks(it) }.sortedBy { it.from }
+        return blocks.zipWithNext().mapNotNull { (a, b) ->
+            val gap = Duration.between(a.to, b.from).toMinutes()
+            b.from.toLocalDate().takeIf { gap in 0 until RestCheck.MIN_REST_MINUTES }
+        }.toSet()
+    }
+
+    /** From the third night in a row a run shows darker on the year map. */
+    const val LONG_RUN = 3
 
     /** A day with work on it: the day's own shift (not taken as a whole day of leave) or extra work. */
     fun worked(day: ResolvedDay): Boolean =

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [WEAR-03] Material Icons "wb_twilight" (Apache License 2.0, google/material-design-icons), the phone's ShiftIcon "sunrise". -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M5,16h14c0-3.87-3.13-7-7-7S5,12.13,5,16z" />
+</vector>

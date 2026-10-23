@@ -114,7 +114,8 @@ internal object SettingsIndex {
     /** [board]: the build has 회사 규칙 광장; [share]: it can make and take links. */
     fun entries(board: Boolean = true, share: Boolean = true): List<SettingEntry> = listOfNotNull(
         screen(W.title, "일하는 방식", SettingsGo.WORK_STYLE, "근무 형태", "교대", "일근", "시급", "현장", "프리랜서", "자영업", "가게"),
-        screen(W.title, "근무 주기", SettingsGo.PATTERN, "순서", "패턴", "로테이션", "주주야야", "시작일", "요일", "교대 순서"),
+        screen(W.title, "근무 주기", SettingsGo.PATTERN, "순서", "패턴", "로테이션", "주주야야", "시작일", "요일", "교대 순서",
+            "공휴일 쉬기", "격주 토요일", "격주"), // [SCHED-04]
         screen(W.title, "근무 종류와 시간", SettingsGo.SHIFT_TYPES, "주간", "야간", "근무 시간", "출근 시간", "색", "아이콘", "근무 전 알람", "휴게"),
         screen(W.title, "연장 휴무일 근무 지정", SettingsGo.EXTRA_KINDS, "잔업", "특근", "대근", "연장", "휴일 근무", "가산"),
         // [SHFT-06][SHFT-07][DAYW-06][DAYW-07]

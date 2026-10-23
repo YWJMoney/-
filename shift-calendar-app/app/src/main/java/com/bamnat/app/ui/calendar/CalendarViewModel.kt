@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.core.model.WorkPattern
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
@@ -22,6 +23,7 @@ import com.bamnat.core.model.ExtraTiming
 import com.bamnat.core.model.Leave
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.ShiftType
+import com.bamnat.core.schedule.ExtraStamp
 import com.bamnat.core.money.DailySales
 import com.bamnat.core.money.Job
 import com.bamnat.core.money.MoneyBook
@@ -278,6 +280,20 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * off the main thread.
      */
     fun dayInsight(profile: PayProfile?, snapshot: ScheduleSnapshot, date: LocalDate, withAmounts: Boolean): DayInsight {
+        // [CAL-41] I 리뷰 P20: the same day of the same calendar asked again (the sheet reopened, a fold, the
+        // settings flow ticking) is answered from the last result, not by re-working the month per extra.
+        val key = InsightKey(profile, snapshot, date, withAmounts, settings.value.weekStart)
+        insightCache?.let { (k, v) -> if (k.sameAs(key)) return v }
+        return dayInsightNow(profile, snapshot, date, withAmounts).also { insightCache = key to it }
+    }
+
+    private class InsightKey(val profile: PayProfile?, val snapshot: ScheduleSnapshot, val date: LocalDate, val amounts: Boolean, val weekStart: java.time.DayOfWeek) {
+        fun sameAs(o: InsightKey) = profile == o.profile && snapshot === o.snapshot && date == o.date && amounts == o.amounts && weekStart == o.weekStart
+    }
+
+    @Volatile private var insightCache: Pair<InsightKey, DayInsight>? = null
+
+    private fun dayInsightNow(profile: PayProfile?, snapshot: ScheduleSnapshot, date: LocalDate, withAmounts: Boolean): DayInsight {
         val p = (profile ?: lawOnly(settings.value)).named(snapshot.kinds)
         val month = p.period.monthOf(date)
         val pay = monthPay(p, snapshot, month)
@@ -438,8 +454,63 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         if (tool == null || tool != _paint.value) coverAnswer = null // [CAL-19] asked again with another shift
         _paint.value = tool
         _mark.value = null
+        _stamp.value = null
         _rangeFrom.value = null
         _lastPaint.value = null
+    }
+
+    /** [CAL-38] An extra-work stamp chosen in quick input (잔업 2시간, 특근 09–18, 야간 대근); null goes back to shifts. */
+    private val _stamp = MutableStateFlow<ExtraChoice?>(null)
+    val stamp: StateFlow<ExtraChoice?> = _stamp.asStateFlow()
+
+    fun setStamp(choice: ExtraChoice?) {
+        if (_paint.value == null) return
+        _paint.value = PaintTool.Pick
+        _mark.value = null
+        _stamp.value = choice
+        _rangeFrom.value = null
+        _lastPaint.value = null
+    }
+
+    /**
+     * [CAL-38] [choice] on each of [dates] it fits ([ExtraStamp]), in one write with one undo. A single tap on a
+     * day that already has the same piece takes it off, like stamping a shift twice.
+     */
+    private fun paintExtra(dates: List<LocalDate>, choice: ExtraChoice, tapped: Boolean) {
+        viewModelScope.launch {
+            val resolver = currentSnapshot().resolver
+            val max = com.bamnat.app.data.ScheduleRepository.MAX_EXTRAS
+            val days = dates.distinct().map(resolver::resolve)
+            val skips = days.associate { it.date to ExtraStamp.skip(choice.kind, choice.entry, it, max) }
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
+            if (tapped && skips.values.single() == ExtraStamp.Skip.SAME) {
+                val day = days.single()
+                val i = ExtraText.indexOf(day, choice)
+                if (i >= 0) {
+                    val before = schedule.removeExtra(day.date, i)
+                    _lastPaint.value = PaintUndo("${Fmt.monthDay(day.date)} ${choice.name}${Fmt.obj(choice.name)} 뺐어요") { schedule.restoreDay(day.date, before) }
+                }
+                return@launch
+            }
+            val fits = skips.filterValues { it == null }.keys.toList()
+            val left = ExtraStamp.skippedText(skips.values.filterNotNull().groupingBy { it }.eachCount())
+            if (fits.isEmpty()) {
+                _lastPaint.value = PaintUndo("${choice.name}${Fmt.obj(choice.name)} 넣을 날이 없어요" + if (left.isNotEmpty()) " · $left" else "", null)
+                return@launch
+            }
+            val before = schedule.updateDays(fits) { e -> e.copy(extras = e.extras + choice.entry) }
+            val what = if (before.size == 1) Fmt.monthDay(before.keys.first()) + "에" else "${before.size}일에"
+            _lastPaint.value = PaintUndo(
+                "$what ${choice.name}${Fmt.obj(choice.name)} 넣었어요" + if (left.isNotEmpty()) " · $left 빼고" else "",
+                // Only the pieces this stamp added go back: other changes to those days since stay.
+                undo = {
+                    schedule.updateDays(before.keys.toList()) { now ->
+                        val i = now.extras.lastIndexOf(choice.entry)
+                        if (i < 0) now else now.copy(extras = now.extras.filterIndexed { j, _ -> j != i })
+                    }
+                },
+            )
+        }
     }
 
     /** [CAL-09] Leave or 알람 끄기 chosen in quick input; null goes back to the shift stamps. */
@@ -449,6 +520,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun setMark(mark: DayMark?) {
         if (_paint.value == null) return
         _paint.value = PaintTool.Pick
+        _stamp.value = null
         _mark.value = mark
         _rangeFrom.value = null
         _lastPaint.value = null
@@ -459,7 +531,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     val rangeFrom: StateFlow<LocalDate?> = _rangeFrom.asStateFlow()
 
     /** True while quick input has something to stamp: a shift, a day off, the pattern, leave or 알람 끄기. */
-    val canStamp: Boolean get() = _mark.value != null || _paint.value?.let(::stampOf) != null
+    val canStamp: Boolean get() = _mark.value != null || _stamp.value != null || _paint.value?.let(::stampOf) != null
 
     /** [CAL-09] A long press in quick input starts a range from [date]. */
     fun startRange(date: LocalDate) {
@@ -481,6 +553,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         _mark.value?.let { mark ->
             _lastPaint.value = null
             toggleMark(date, mark)
+            return
+        }
+        _stamp.value?.let { choice ->
+            _lastPaint.value = null
+            paintExtra(listOf(date), choice, tapped = true)
             return
         }
         val target = _paint.value?.let(::stampOf) ?: return
@@ -595,6 +672,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      */
     fun paintDays(dates: List<LocalDate>) {
         _mark.value?.let { paintMark(dates.distinct(), it); return }
+        _stamp.value?.let { paintExtra(dates, it, tapped = false); return }
         val tool = _paint.value ?: return
         val target = stampOf(tool) ?: return
         val name = when (tool) {
@@ -697,6 +775,28 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /**
+     * [SCHED-03] Restarts the rotation on [date] at [step] (0-based) from that day on, keeping every day before,
+     * and sets the days in [clear] back to the pattern. Said back with one undo for both.
+     */
+    fun realignFrom(date: LocalDate, step: Int, clear: List<LocalDate>) {
+        val snap = snapshot.value ?: return
+        val rotation = snap.resolver.patternOn(date) as? WorkPattern.Rotation ?: return
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
+            val beforePatterns = snap.patterns
+            schedule.changePatternFrom(PatternTimeline.realign(rotation, date, step), date)
+            val beforeDays = if (clear.isEmpty()) emptyMap() else schedule.updateDays(clear) { it.copy(override = ShiftOverride.None) }
+            val cleared = if (clear.isEmpty()) "" else " · 직접 바꾼 ${clear.size}일은 패턴대로"
+            _messages.emit(
+                UndoMessage("${Fmt.monthDay(date)}부터 ${step + 1}번째 날로 다시 맞췄어요$cleared") {
+                    schedule.restorePatterns(beforePatterns)
+                    beforeDays.forEach { (d, e) -> schedule.restoreDay(d, e) }
+                },
+            )
+        }
+    }
+
+    /**
      * Sets the shift for a day. Choosing what the pattern already gives stores nothing. [CAL-10] Said
      * back with undo, as every change on a day is.
      */
@@ -748,6 +848,51 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** The kind for a 대근 of [type] [EXTRA-07]. */
     fun coverKind(snapshot: ScheduleSnapshot, type: ShiftType): ExtraKind = ExtraText.coverKind(snapshot.kinds, snapshot.shiftTypes, type)
 
+    /** [CAL-46] The month's "내 기록" card is not shown again. */
+    fun closeMonthRecap(month: java.time.YearMonth) {
+        val key = com.bamnat.core.work.MonthRecap.key(month)
+        container.settingsRepository.update { s -> if (s.monthRecapSeen >= key) s else s.copy(monthRecapSeen = key) }
+    }
+
+    /**
+     * [CAL-43] What a typed line proposed ([com.bamnat.core.schedule.QuickText]), written on its days with one
+     * undo for all of them. A 대근 copies the covered shift's hours; extra work with a start and a length is
+     * that span; otherwise the kind's usual piece.
+     */
+    fun applyQuickText(p: com.bamnat.core.schedule.QuickText.Proposal, snapshot: ScheduleSnapshot) {
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
+            val before = p.dates.associateWith { snapshot.resolver.entryOn(it) }
+            when (val a = p.act) {
+                is com.bamnat.core.schedule.QuickText.Act.Shift -> p.dates.forEach { d -> changeShift(d) { ShiftOverride.Shift(a.shiftTypeId) } }
+                com.bamnat.core.schedule.QuickText.Act.Off -> p.dates.forEach { d -> changeShift(d) { ShiftOverride.Off } }
+                is com.bamnat.core.schedule.QuickText.Act.Leave -> p.dates.forEach { d -> schedule.setLeave(d, Leave(LeaveKind.ANNUAL, a.quarters)) }
+                is com.bamnat.core.schedule.QuickText.Act.Extra -> {
+                    val entry = quickExtra(a, snapshot) ?: return@launch
+                    p.dates.forEach { d -> schedule.addExtra(d, entry) }
+                }
+            }
+            _messages.emit(UndoMessage("${p.text} 넣었어요") { before.forEach { (d, e) -> schedule.restoreDay(d, e) } })
+        }
+    }
+
+    private fun quickExtra(a: com.bamnat.core.schedule.QuickText.Act.Extra, snapshot: ScheduleSnapshot): ExtraEntry? {
+        val covered = a.coveredShiftId?.let { snapshot.typesById[it] }?.takeIf { it.hasTimes }
+        if (covered != null) {
+            val e = ExtraText.cover(snapshot.kinds.of(a.kindId), covered)
+            return a.start?.let { s -> e.copy(start = s, end = s.plusMinutes(covered.durationMinutes.toLong())) } ?: e
+        }
+        val kind = snapshot.kinds.of(a.kindId)
+        val start = a.start
+        val minutes = a.minutes
+        return when {
+            start != null && minutes != null -> ExtraEntry(kind.id, start, start.plusMinutes(minutes.toLong()))
+            minutes != null -> ExtraEntry(kind.id, minutes = minutes)
+            else -> ExtraText.default(kind)?.let { d -> if (start != null && d.start != null && d.end != null)
+                d.copy(start = start, end = start.plusMinutes(com.bamnat.core.model.WorkTime.spanMinutes(d.start!!, d.end!!).toLong())) else d }
+        }
+    }
+
     /** [EXTRA-01] The roster stays a day off and the shift goes in as a 대근 of its hours, said back with undo. */
     fun coverInstead(date: LocalDate, type: ShiftType, snapshot: ScheduleSnapshot) {
         val kind = coverKind(snapshot, type)
@@ -781,7 +926,33 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     fun setBreak(date: LocalDate, minutes: Int?) {
-        viewModelScope.launch { schedule.updateDay(date) { it.copy(customBreakMinutes = minutes) } }
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
+            val before = schedule.updateDay(date) { it.copy(customBreakMinutes = minutes) }
+            if (before?.customBreakMinutes == minutes) return@launch
+            // [DAYW-10] Like the times, a break changed by mistake is one tap from how it was.
+            val said = minutes?.let { "휴게 시간을 ${HoursFormat.korean(it)}으로 바꿨어요" } ?: "휴게 시간을 기본으로 되돌렸어요"
+            _messages.emit(UndoMessage("${Fmt.monthDay(date)} $said") { schedule.restoreDay(date, before) })
+        }
+    }
+
+    /**
+     * [DAYW-11] Start, end and break of one day from the one time window. [DAYW-08] Always the planned shift,
+     * before leave took its part: the resolver takes the leave off again from what is saved here.
+     */
+    fun setDayTimes(date: LocalDate, start: LocalTime, end: LocalTime, breakMinutes: Int, type: ShiftType?) {
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
+            // The shift's own times are not "this day only": the day keeps following the shift type.
+            val own = type?.takeIf { it.hasTimes && it.start == start && it.end == end }
+            val before = schedule.setCustomTimes(
+                date,
+                start.takeIf { own == null },
+                end.takeIf { own == null },
+                breakMinutes.takeIf { own == null || it != own.breakMinutes },
+            )
+            _messages.emit(UndoMessage("${Fmt.monthDay(date)} 근무 시간을 바꿨어요 (${Fmt.timeRange(start, end)})") { schedule.restoreDay(date, before) })
+        }
     }
 
     fun clearCustomTimes(date: LocalDate) {

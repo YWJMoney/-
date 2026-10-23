@@ -108,6 +108,12 @@ object KoreanHolidays {
     fun isHoliday(date: LocalDate): Boolean = nameOf(date) != null
 
     /**
+     * [CAL-31] I 리뷰 P7·N10: true for a year past the checked table, whose holidays come from the rules and miss
+     * 임시공휴일 and most 선거일. The month summary says so in a small line for such a year.
+     */
+    fun isComputed(year: Int): Boolean = year > years.last || year < years.first
+
+    /**
      * [CAL-04] Ways to write [name] under a date, longest first: the name as it is, then shortened
      * (대체공휴일 → 대체휴일, 부처님오신날 → 부처님날), then only the first of two holidays on one day.
      * A day cell shows the first that fits its width.

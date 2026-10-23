@@ -67,7 +67,15 @@ fun PatternEntity.toModel(): WorkPattern? {
     val start = LocalDate.ofEpochDay(startEpochDay)
     val end = endEpochDay?.let(LocalDate::ofEpochDay)
     return when (kind) {
-        PatternEntity.KIND_WEEKLY -> if (parsed.size == 7) WorkPattern.Weekly.fromSteps(start, parsed, end) else null
+        // [SCHED-04] Seven days, then the options as words ("h" = 공휴일 휴무); 격주 토요일 keeps its Saturday in the anchor.
+        PatternEntity.KIND_WEEKLY -> {
+            val items = steps.split(',').map { it.trim() }
+            val days = items.take(7).map { it.toLongOrNull() }
+            val options = items.drop(7).toSet()
+            if (days.size == 7) {
+                WorkPattern.Weekly.fromSteps(start, days, end, WorkPattern.Weekly.HOLIDAYS_OFF in options, anchorEpochDay?.let(LocalDate::ofEpochDay))
+            } else null
+        }
         else -> if (parsed.isNotEmpty()) {
             WorkPattern.Rotation(start, parsed, end, anchorEpochDay?.let(LocalDate::ofEpochDay) ?: start)
         } else {
@@ -90,7 +98,8 @@ fun WorkPattern.toEntity(id: Int = PatternEntity.SINGLE_ID): PatternEntity = whe
         kind = PatternEntity.KIND_WEEKLY,
         startEpochDay = startDate.toEpochDay(),
         endEpochDay = endDate?.toEpochDay(),
-        steps = encodeSteps(steps),
+        steps = encodeSteps(steps) + if (holidaysOff) ",${WorkPattern.Weekly.HOLIDAYS_OFF}" else "",
+        anchorEpochDay = altSaturday?.toEpochDay(),
     )
 }
 

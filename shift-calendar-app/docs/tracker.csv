@@ -573,6 +573,47 @@ PAYX-20,호봉표(순번 103-4) → 호봉별 금액과 승급 달로 기본급 
 PAYX-21,구간 가산 시작점(순번 103-5) → 그 건부터 / 그날 첫 근무부터,2 (1.22.0),완료,,"CompanyRules ExtraRule.tiersFromDayStart, PayGolden2Test G2-8, ExtraRuleEditor 토글, PayCodecTest·LeaveLedgerAppTest 왕복"
 PAYX-22,명세서와 맞춰 본 달 금액이 바뀌면 알림(순번 103-6) → 그대로·이번 급여기간부터·되돌리기,2 (1.22.0),완료,,"core pay/VerifiedChange, PayGolden2Test G2-9, PayViewModel.checkVerified·PayScreen 대화상자; 화면 사진 476"
 SET-04,"순번 285 전체 리뷰 G 몫 → 설정 첫 목록 '더 보기' 머리, 같은 순환 저장은 바로·시작일 고르면 몇째 날 자동, 쉬는 날만 순환 막기, 시각 빠른 고르기 더하기, 근무 시간 겹침 알리기, 자잘한 문구",2 (1.22.0),완료,,"notes/1.22-285/G.md 표, RestRulesTest.overlappingTimesAreSaid, SettingsHub '더 보기', PatternScreen ChangeFromDialog; 화면 사진 528"
+DAYW-08,연차·반차 날 근무 시간 편집이 원래 시간 기준으로 저장되고 '원래/연차로 줄어든' 두 줄로 보임 (순번 295 P1·I2),2 (1.23.0),완료,,"44c9184 DayDetail·ScheduleResolver 계획 시간, core CalendarI123Test"
+CAL-25,"자정·오늘 통일: rememberToday 하나, 자정에 달력 페이저·모든 조·리뷰 기준일이 따라감 (순번 295 P2~P4·I1)",2 (1.23.0),완료,,"44c9184 RememberToday.kt(rememberToday), CalendarScreen·TeamsScreen 자정 이동"
+CAL-26,1년 달력 휴가 일수를 반차 0.5·반반차 0.25로 셈 (순번 295 P5),2 (1.23.0),완료,,"44c9184 YearScreen 반차 0.5·반반차 0.25, CalendarI123Test"
+CAL-27,한 달 쳐 넣기 시트가 주 시작 요일 설정을 따름 (순번 295 P6),2 (1.23.0),완료,,44c9184 DutyTypingSheet 주 시작 요일
+CAL-28,날짜 칸 아래 '근무시간+음력 둘 다' 한 줄 (순번 295 P10·I15),2 (1.23.0),완료,,"44c9184 MonthGrid 근무시간+음력 한 줄, SettingsPages"
+DAYW-09,하루 알람 편집이 전날 울리는 알람을 지키고 회전에도 남음 (순번 295 P13·I3),2 (1.23.0),완료,,"44c9184 AlarmPlanner·AlarmCodec 전날 알람, DayDetail rememberSaveable, CalendarI123Test"
+CAL-29,주 보기에서 이웃 달 날짜를 흐리게 하지 않음 (순번 295 P28),2 (1.23.0),완료,,44c9184 MonthGrid 주 보기 이웃 달
+DAYW-10,"자잘한 일관성 5가지: 휴게 되돌리기, 빠진 유형 비교, 프리셋 칩 맞춤, 쉬는 조 글자 통일, 워치 특근 둘 (순번 295 1-5)",2 (1.23.0),완료,,4cd213a·bcbf689 휴게 되돌리기·빠진 유형 비교·프리셋 맞춤·쉬는 조 글자(ShiftSquare)
+CAL-30,폴더블 접고 펴기·회전에 열린 시트·쳐 넣기 내용·편집 중 값이 남음 (순번 295 P11~P15),2 (1.23.0),완료,,44c9184·bcbf689 rememberSaveable(Saver) 시트·쳐 넣기·근무 유형 편집. 회전 재생성 계기 시험은 통합에 넘김
+DAYW-11,근무 시간 바꾸기 한 창(시작·끝·휴게) 하루 화면·근무 유형 공용 (순번 296 I2·I12),2 (1.23.0),완료,,"bcbf689 J TimeRangeDialog 공용(하루 화면·근무 유형), 원래 시간 note"
+SCHED-02,"패턴 저장 '언제부터'를 기본 경로로, 지난 기록이 있으면 반드시 묻기 (순번 296 I10·P20)",2 (1.23.0),완료,,"cbf1179 PatternTimeline.recordedDaysMoved, ChangeFromDialog 경고, CalendarI123Test"
+SCHED-03,이 날부터 패턴 다시 맞추기(손으로 바꾼 날 보여 주고 고르기) (순번 296 I5·P26),2 (1.23.0),완료,,"cbf1179 RealignDialog·PatternTimeline.realign/handChangedFrom, CalendarI123Test, 사진 540~543"
+SCHED-04,"평일 근무자 공휴일 휴무·격주 토요일(패턴 값, 알람 따라감) (순번 296 P18)",2 (1.23.0),완료,,"cbf1179 WorkPattern.Weekly holidaysOff·altSaturday, Mappers(DB 19 그대로), MappersTest, CalendarI123Test, 사진 555~557"
+SCHED-05,같은 이름 프리셋 '이 시간으로 바꾸기' (순번 296 P6),2 (1.23.0),완료,,"bcbf689 ShiftTypeSets.differing/retimed, ShiftTypesScreen 이 시간으로 바꾸기, CalendarI123Test"
+SCHED-06,패턴 미리보기를 그 달 전체 달력으로(첫 설정과 같은 컴포저블) (순번 296 I11),2 (1.23.0),완료,,"9c21d09 PatternPreview가 SetupMonth 사용(12달), 사진 555~557"
+CAL-31,"공휴일 표 점검: 2028 설·추석 대조 시험, 표 끝나는 해 안내, 표 연장 가드 시험 (순번 296 P7·P8·N10)",2 (1.23.0),완료,,"9c21d09 KoreanHolidays.isComputed, 2028 설(1/26~28)·추석 대조와 표 가드 시험 CalendarI123Test"
+CAL-32,근무시간 경고 카드 안 '자정에 나눠 세기' 한 줄 (순번 296 P9),2 (1.23.0),완료,,"9c21d09 WorkHoursCalculator.weekSplitAtMidnight, HoursLine 한 줄, CalendarI123Test"
+CAL-33,끌어 칠하기 중 진동과 칸 수 표시 (순번 297 I4),2 (1.23.0),완료,,44c9184 MonthGrid 끌어 칠하기 진동·칸 수
+CAL-34,주 보기 그 주 합계 줄(근무시간·야간·한도까지) (순번 297 I6),2 (1.23.0),완료,,"0700bad WorkHoursCalculator.glance·WeekGlance, 주 보기 합계 줄, CalendarI123Test"
+CAL-35,월 요약 지난달 대비 (순번 297 I7),2 (1.23.0),완료,,"0700bad·9b2eadd MonthOverview.versus, 요약 아래 한 줄, CalendarI123Test, 사진 544~547"
+CAL-36,한 달 쳐 넣기 지난달 복사·되돌리기 (순번 297 I8),2 (1.23.0),완료,,44c9184 DutyTypingSheet 지난달 복사·되돌리기
+CAL-37,첫 사용자 빠른 입력 기본 순서(일하는 방식별) (순번 297 I9),2 (1.23.0),완료,,"0700bad QuickOrder.extraRank/extras(일하는 방식별), CalendarI123Test"
+CAL-38,빠른 입력 추가 근무 도장(종류마다 시간대 규칙) (순번 297 E 후보),2 (1.23.0),완료,,"44c9184 ExtraStamp·ExtraUi 도장, CalendarI123Test"
+CAL-39,짧은 휴식 N번을 누르면 그 날들로 (순번 297 I18),2 (1.23.0),완료,,0700bad HealthYearCard 짧은 휴식 날 목록→달력
+CAL-40,통계 주 줄에 다음 주 예상 (순번 297 I19),2 (1.23.0),완료,,0700bad StatsScreen 다음 주 예상 줄
+CAL-41,"달력·1년·통계 계산을 메인 밖으로, resolver 공유, 칠하기 중 다시 그리기 줄이기 (순번 297 P17~P21)",2 (1.23.0),완료,,"0700bad 통계 produceState(Default), dayInsight 캐시, resolver 공유"
+CAL-42,"쳐 넣기·1년 달력 글자 대비, 달 고르기 큰 글씨 (순번 297 P22·P23·P27)",2 (1.23.0),완료,,"44c9184·0700bad 대비(Contrast), MonthPickerDialog 큰 글씨 줄바꿈, 사진 548~550"
+WIDG-01,오늘 위젯이 교대 시작·끝 시각에도 갱신 (순번 298 I20),2 (1.23.0),완료,,"d602e3d WidgetRefresher 교대 시작·끝 깨우기, ShiftEvents.nextChange, CalendarI123Test"
+WIDG-02,월 위젯에 특근·연차·메모 점 (순번 298 I21),2 (1.23.0),완료,,d602e3d Widgets.monthMark(+·반차·메모 점)
+WIDG-03,월 위젯 좌우 넘기기 (순번 298 I22),2 (1.23.0),완료,,d602e3d MonthPageAction 좌우·이번 달(최대 12달)
+WIDG-04,"위젯 버튼 높이 40dp 이상, 쉬는 조 글자 통일 (순번 298 P25)",2 (1.23.0),완료,,"bcbf689·d602e3d ShiftSquare 공용, WIDGET_BUTTON_HEIGHT 40dp"
+WIDG-05,"위젯 2세대: 다음 교대 카운트다운, 대근 가능 조, 잠금화면 위젯 (순번 298 N6)",2 (1.23.0),완료,,"d602e3d CountdownWidget(홈·잠금), 대근 가능 조 줄, ShiftEvents.countdown 시험"
+WEAR-01,워치 주 시작·보낸 범위만큼 넘기기·분 갱신·버튼 크기·특근 둘 (순번 298 I23~I25·P26),2 (1.23.0),완료,,4cd213a 워치 주 시작·넘기기·분 갱신·버튼 크기·특근 둘
+WEAR-02,공용 대비 함수 하나를 폰·위젯·워치가 같이 씀 (순번 298 P24),2 (1.23.0),완료,,4cd213a core Contrast 하나를 폰·위젯·워치가 씀
+WEAR-03,"워치 이번 주 52시간 컴플리케이션, 교대 아이콘, 타일 오늘 알람 끄기, 알바 출근·퇴근 (순번 298 N7)",2 (1.23.0),완료,,"4cd213a 주 52시간 컴플리케이션, 교대 아이콘, 타일 알람 끄기, 알바 출근·퇴근"
+CAL-43,자연어 빠른 입력('내일 야간 대근 7시') 확인 칩 (순번 299 N2),2 (1.23.0),완료,,"83ce0bc core QuickText(파서)·QuickTextOffer 확인 줄, CalendarI123Test, 사진 544"
+CAL-44,연간 히트맵(야간 비율·연속·짧은 휴식) (순번 299 N4),2 (1.23.0),완료,,"44c9184 ShiftHealth Heat, YearScreen 히트맵, CalendarI123Test"
+CAL-45,"폴더블 듀얼 패널(달력+쳐 넣기, 달력+모든 조), 테이블탑 큰 입력판 (순번 299 N5)",2 (1.23.0),완료,,"44c9184 CalendarScreen·DutyTypingSheet·TeamsScreen 펼침 두 판, 테이블탑 입력판"
+CAL-46,월말 '이번 달 내 기록' 카드 (순번 299 N9),2 (1.23.0),완료,,"90c0d2f MonthRecap·MonthRecapCard(달력 사진 보내기), CalendarI123Test, 사진 544~547"
+SCHED-07,근무 바꾸기 도우미 양방향 + 교환 제안서 복사 (순번 299 N1 2단계),2 (1.23.0),완료,,"90c0d2f SwapFinder(양쪽 휴식), 모든 조 맞바꾸기·부탁 글 복사, CalendarI123Test, 사진 551~554"
+CAL-47,받은 .bamnat 파일로 앱 열기(백업·회사 설정·근무표 종류별로) (순번 300 P24),2 (1.23.0),완료,,"de5c7a6 IncomingFiles·Manifest 받기(VIEW/SEND json·.bamnat), HANDOFF 6-1"
 SRV-07,"무료 체험 동의 대기열(못 보낸 답을 다시 보냄, 서버는 끝나기 1시간 전까지 기다림), 구매 토큰 다른 설치 재묶기 거부, 만료 지난 구독 재확인, 광고 3일 조용 시험, 출시 스위치=데이터 보안 같은 날 (순번 313)",2 (1.23.0),완료,,"ProStore.pendingConsent·AppContainer.sendConsent·OutboxJob, 서버 stopUnconsentedTrials 1시간·purchase_rebind·recheckLapsed; test/operations·money, AdAndLicenseRulesTest"
 COMM-11,"광장·문의 UGC 마무리: 모두의 문의 이 사람 글 안 보기, 가려진 글 이의 제기, 신고 결과·글 운명·제한 끝남 소식, 개인 정보 신고 확인 중 띠, 남은 횟수, 임금표 대기 이유, 규칙 판 바뀐 줄 (순번 314)",2 (1.23.0),완료,,"서버 X-Hide·hiddenByYou·plaza_results·review 띠·left.posts·waitingWhy, PlazaRules.changedSince; InquiryScreen 이 사람 글 안 보기, CompanyBoard 이의 제기; LServerAlarmTest, test/inquiry·plaza"
 SRV-08,"서버 보안·안정: 공유 서버 횟수 제한·SHARE_CREATE 강제·타임아웃, 공개 GET 횟수 제한·캐시, AUTHOR_KEY 분리, 앱 잠금 FLAG_SECURE, 멱등 요청 ID, talk JOIN, .ics ETag (순번 315)",2 (1.23.0),완료,,"공유 서버 kvPut·SHARE_CREATE 503·AbortSignal 5초, 공개 GET 상한·publicList 캐시, AUTHOR_KEY(+_OLD), once()·requests 24시간, AppLock.secure; LShareInquiryTest.theAppLockHides…, test/worker·operations"

@@ -63,6 +63,16 @@ object PatternPresets {
         }
     }
 
+    /** [DAYW-10] True when every work day of [preset] lands on one of [types] (none turns into a day off). */
+    fun fits(preset: PatternPreset, types: List<ShiftType>): Boolean =
+        toSteps(preset, types).zip(preset.codes.toList()).none { (id, code) -> id == null && code != 'O' && code != 'B' }
+
+    /**
+     * [DAYW-10] I 리뷰 1-5③: the pattern screen lists the presets the user's shifts can fill first, the way
+     * the first setup does; within each group the presets file's order stays.
+     */
+    fun ordered(types: List<ShiftType>): List<PatternPreset> = all.sortedBy { if (fits(it, types)) 0 else 1 }
+
     /**
      * [SETUP-02] Preset codes to the ids of a bundle's shifts by the part each plays; 'B' falls back to
      * the day off. A code no shift plays becomes null.
@@ -89,4 +99,20 @@ object ShiftTypeSets {
     /** The set's types the user does not already have (by name), ready to save. */
     fun missing(set: ShiftTypeSet, existing: List<ShiftType>): List<ShiftType> =
         set.types.filter { t -> existing.none { it.name == t.name } }
+
+    /**
+     * [DAYW-10][SCHED-05] The user's shifts that share a name with one of the set but keep other times or
+     * another break (I 리뷰 1-5②, G P6): "주간" at 08:00~17:00 against the set's 09:00~18:00. Paired as
+     * (the user's, the set's), so the add dialog can offer "이 시간으로 바꾸기" instead of silently skipping.
+     */
+    fun differing(set: ShiftTypeSet, existing: List<ShiftType>): List<Pair<ShiftType, ShiftType>> =
+        set.types.mapNotNull { t ->
+            existing.firstOrNull { it.name == t.name }
+                ?.takeIf { it.isOff == t.isOff && !t.isOff && (it.start != t.start || it.end != t.end || it.breakMinutes != t.breakMinutes) }
+                ?.let { it to t }
+        }
+
+    /** [SCHED-05] [mine] with the set's times and break; its id, colour, alarms and premiums stay. */
+    fun retimed(mine: ShiftType, preset: ShiftType): ShiftType =
+        mine.copy(start = preset.start, end = preset.end, breakMinutes = preset.breakMinutes)
 }

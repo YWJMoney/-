@@ -400,7 +400,7 @@ private fun PayPage(vm: SettingsViewModel, settings: AppSettings, files: Setting
     }
 }
 
-private enum class CellLine { NONE, HOURS, LUNAR }
+private enum class CellLine { NONE, HOURS, LUNAR, BOTH }
 private enum class MemoView { PLAIN, BELOW, CELLS }
 
 @Composable
@@ -438,10 +438,16 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             vm.update { it.copy(weekStart = d) }
         }
         // One choice: before, two switches quietly took each other's place.
-        val line = when { settings.showLunar -> CellLine.LUNAR; settings.showHoursInCells -> CellLine.HOURS; else -> CellLine.NONE }
+        // [CAL-28] Both together is a choice of its own (I 리뷰 P10·I15), and what older settings with both on show.
+        val line = when {
+            settings.showLunar && settings.showHoursInCells -> CellLine.BOTH
+            settings.showLunar -> CellLine.LUNAR
+            settings.showHoursInCells -> CellLine.HOURS
+            else -> CellLine.NONE
+        }
         ChoiceRow("날짜 칸 아래", "날짜 밑에 작게 보여 줄 것을 골라요",
-            listOf(CellLine.NONE to "비움", CellLine.HOURS to "근무시간 (8h)", CellLine.LUNAR to "음력 (8.24)"), line) { l ->
-            vm.update { it.copy(showHoursInCells = l == CellLine.HOURS, showLunar = l == CellLine.LUNAR) }
+            listOf(CellLine.NONE to "비움", CellLine.HOURS to "근무시간 (8h)", CellLine.LUNAR to "음력 (8.24)", CellLine.BOTH to "둘 다 (8h·8.24)"), line) { l ->
+            vm.update { it.copy(showHoursInCells = l == CellLine.HOURS || l == CellLine.BOTH, showLunar = l == CellLine.LUNAR || l == CellLine.BOTH) }
         }
         // [FEAT-17][DAY-04] For people who keep their days in notes. Where 메모 sits in the day is the order below.
         val memo = when { settings.memoInCells -> MemoView.CELLS; settings.calendarMemos -> MemoView.BELOW; else -> MemoView.PLAIN }

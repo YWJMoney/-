@@ -51,6 +51,10 @@ class ShiftsViewModel(
 
     val settings: StateFlow<AppSettings> = container.settingsRepository.settings
 
+    /** [SCHED-02][SCHED-03] The calendar's own days, to see which past records a pattern edit would move. */
+    val entries: StateFlow<List<com.bamnat.core.model.DayEntry>> =
+        active.flatMapLatest { it.entries }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     /** [SHFT-01] A shift calendar (or the main one from before work styles), where each kind can carry its own premium. */
     val isShiftCalendar: Boolean
         get() = container.scopeOf(calendarId).currentSettings().workStyle.let { it == null || it == com.bamnat.core.work.WorkStyle.SHIFT }
@@ -62,12 +66,16 @@ class ShiftsViewModel(
         viewModelScope.launch { repo.saveShiftType(type) }
     }
 
-    /** Adds the set's shift types the user does not have yet [MKT-03]. */
-    fun addSet(set: ShiftTypeSet) {
+    /**
+     * Adds the set's shift types the user does not have yet [MKT-03]; with [retime], the user's shifts of the
+     * same name take the set's times and break too [SCHED-05].
+     */
+    fun addSet(set: ShiftTypeSet, retime: Boolean = false) {
         viewModelScope.launch {
             val existing = shiftTypes.value ?: return@launch
             // Sets come with a fitting icon [FEAT-01]; the user can change or remove it.
             ShiftTypeSets.missing(set, existing).forEach { repo.saveShiftType(it.copy(icon = it.icon ?: ShiftIcon.suggest(it)?.key)) }
+            if (retime) ShiftTypeSets.differing(set, existing).forEach { (mine, preset) -> repo.saveShiftType(ShiftTypeSets.retimed(mine, preset)) }
             container.telemetry.event("shift_set_added", set.name)
         }
     }
@@ -149,6 +157,10 @@ class PatternDraft {
     val weekly = mutableStateListOf<Long?>().apply { repeat(7) { add(null) } }
     var startDate: LocalDate by mutableStateOf(LocalDate.now())
     var endDate: LocalDate? by mutableStateOf(null)
+    /** [SCHED-04] 요일 고정: 공휴일엔 쉬어요. */
+    var holidaysOff by mutableStateOf(false)
+    /** [SCHED-04] 요일 고정: a Saturday that is worked when Saturdays alternate; null when every Saturday is the same. */
+    var altSaturday: LocalDate? by mutableStateOf(null)
 
     /** Loads the saved pattern once; later calls keep the user's unsaved edits. */
     fun initFrom(existing: WorkPattern?, today: LocalDate, weekdayShiftId: Long? = null) {
@@ -161,6 +173,8 @@ class PatternDraft {
             is WorkPattern.Weekly -> {
                 kind = PatternKind.WEEKLY
                 existing.steps.forEachIndexed { i, id -> weekly[i] = id }
+                holidaysOff = existing.holidaysOff
+                altSaturday = existing.altSaturday
             }
             // [WORK-01] Day workers start from Monday to Friday on their day shift.
             null -> if (weekdayShiftId != null) {

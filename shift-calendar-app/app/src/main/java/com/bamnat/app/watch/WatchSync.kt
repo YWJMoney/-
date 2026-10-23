@@ -46,10 +46,23 @@ object WatchSync {
         val alarmAt = next?.let { LocalDateTime.ofInstant(Instant.ofEpochMilli(it.triggerAtMillis), ZoneId.systemDefault()) }
         val label = next?.plan?.let { p -> if (p.shiftName.isNotBlank()) "${p.shiftName} 근무" else "알람" }.orEmpty()
         val name = c.calendars.get(PersonalCalendar.MAIN)?.name ?: PersonalCalendar.MAIN_NAME
-        val sameDays = WatchDays.encode(WatchPayload(days, LocalDateTime.of(2000, 1, 1, 0, 0), alarmAt, label, name))
+        val settings = c.settingsRepository.settings.value
+        // [WEAR-03] This week's hours against 주 52시간, what an 알바 can write now, and whether today has an alarm to turn off.
+        val week = com.bamnat.core.hours.WorkHoursCalculator(snap.resolver, java.time.DayOfWeek.MONDAY, settings.limits).week(today)
+        val nowTime = LocalDateTime.now()
+        val clock = when (com.bamnat.app.widget.HourlyClockAction.offered(settings.workStyle, snap.resolver.resolve(today), nowTime) { snap.resolver.resolve(today.minusDays(1)) }) {
+            true -> WatchPayload.Clock.OUT
+            false -> WatchPayload.Clock.IN
+            null -> WatchPayload.Clock.NONE
+        }
+        val alarmToday = com.bamnat.core.alarm.AlarmPlanner.alarmsOn(snap.resolver, today).any { it.triggerAt.isAfter(nowTime) }
+        fun payload(at: LocalDateTime, sent: Long) = WatchPayload(days, at, alarmAt, label, name, sentAtMillis = sent,
+            weekStart = settings.weekStart.value, weekMinutes = week.totalMinutes, weekLimitMinutes = settings.limits.legalWeeklyHours * 60,
+            clock = clock, alarmToday = alarmToday)
+        val sameDays = WatchDays.encode(payload(LocalDateTime.of(2000, 1, 1, 0, 0), 0))
         val now = System.currentTimeMillis()
         if (!force && sameDays == lastBody && now - lastAt < RESEND_MILLIS) return@withLock
-        val body = WatchDays.encode(WatchPayload(days, LocalDateTime.now(), alarmAt, label, name, sentAtMillis = now))
+        val body = WatchDays.encode(payload(LocalDateTime.now(), now))
         val request = PutDataMapRequest.create(WatchDays.PATH).apply { dataMap.putString(WatchDays.KEY, body) }.asPutDataRequest().setUrgent()
         val ok = runCatching { await(Wearable.getDataClient(context).putDataItem(request)) != null }.getOrDefault(false)
         if (ok) {
@@ -67,9 +80,30 @@ object WatchSync {
 /** [SHFT-08] The watch app asks for fresh days when it opens ("/bamnat/sync"); the phone sends them. */
 class WatchRequestService : WearableListenerService() {
     override fun onMessageReceived(event: MessageEvent) {
-        if (event.path != SYNC_PATH) return
         val c = applicationContext.appContainer
-        c.appScope.launch { WatchSync.push(applicationContext, force = true) }
+        when (event.path) {
+            SYNC_PATH -> c.appScope.launch { WatchSync.push(applicationContext, force = true) }
+            // [WEAR-03] 오늘 알람 끄기 from the tile: the same as 알람 끄기 on the phone, today only (I 리뷰 N7 c).
+            WatchDays.ALARM_OFF_PATH -> c.appScope.launch {
+                val date = runCatching { LocalDate.parse(String(event.data)) }.getOrNull() ?: LocalDate.now()
+                // The alarms follow the calendar's change as they do for the phone's own 알람 끄기.
+                if (date == LocalDate.now()) c.scheduleRepository.updateDay(date) { it.copy(alarmSkipped = true) }
+                WatchSync.push(applicationContext, force = true)
+            }
+            // [WEAR-03] An 알바's 출근·퇴근 from the watch, written as the home widget's button writes it (I 리뷰 N7 d).
+            WatchDays.CLOCK_PATH -> c.appScope.launch {
+                val snap = c.scheduleRepository.snapshot.first()
+                val now = LocalDateTime.now()
+                val out = String(event.data) == "out"
+                runCatching {
+                    com.bamnat.app.widget.HourlyClockAction.write(c.scheduleRepository, out, snap.resolver.resolve(now.toLocalDate()), now) {
+                        snap.resolver.resolve(now.toLocalDate().minusDays(1))
+                    }
+                }
+                com.bamnat.app.widget.WidgetRefresher.refresh(applicationContext)
+                WatchSync.push(applicationContext, force = true)
+            }
+        }
     }
 
     companion object {

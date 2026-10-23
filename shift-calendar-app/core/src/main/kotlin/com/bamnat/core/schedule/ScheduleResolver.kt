@@ -64,7 +64,17 @@ data class ResolvedDay(
     val leaveMinutes: Int = 0,
     /** [EXTRA-01] Extra work this day, in the order the user added it. */
     val extras: List<ResolvedExtra> = emptyList(),
+    /**
+     * [DAYW-08] The shift before leave took its part: what an edit of the day's times starts from. Saving the
+     * shrunk [start]/[end]/[breakMinutes] back would let the leave come off a second time.
+     */
+    val plannedStart: LocalTime? = start,
+    val plannedEnd: LocalTime? = end,
+    val plannedBreakMinutes: Int = breakMinutes,
 ) {
+    /** [DAYW-08] True when partial leave moved the clock times, so the day has a planned and a worked span. */
+    val leaveShrunk: Boolean get() = leave != null && !leave.isFullDay && (plannedStart != start || plannedEnd != end)
+
     val isWorkDay: Boolean get() = scheduledMinutes > 0 || (start != null && end != null)
     val isOff: Boolean get() = !isWorkDay
     /**
@@ -211,6 +221,9 @@ class ScheduleResolver(
             leave = leave,
             leaveMinutes = leaveMinutes,
             extras = entry?.extras?.takeIf { it.isNotEmpty() }?.let { placeExtras(date, it, shiftFrom, shiftTo) }.orEmpty(),
+            plannedStart = start,
+            plannedEnd = end,
+            plannedBreakMinutes = breakMinutes,
         )
     }
 

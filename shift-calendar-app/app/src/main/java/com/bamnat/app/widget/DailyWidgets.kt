@@ -97,26 +97,22 @@ internal fun TeamsContent(data: WidgetData) {
                     maxLines = 1,
                     modifier = GlanceModifier.defaultWeight(),
                 )
-                TeamChip(t.today, 24)
+                ShiftSquare(t.today, 24)
                 Spacer(GlanceModifier.width(6.dp))
                 Text("내일", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 10.sp), maxLines = 1)
                 Spacer(GlanceModifier.width(3.dp))
-                TeamChip(t.tomorrow, 18)
+                ShiftSquare(t.tomorrow, 18)
             }
         }
-    }
-}
-
-@Composable
-private fun TeamChip(type: ShiftType?, sizeDp: Int) {
-    val color = type?.let { Color(it.colorArgb.toInt()) }
-    Box(
-        GlanceModifier.size(sizeDp.dp).background(color ?: Color(0x22888888)).cornerRadius((sizeDp / 3).dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(type?.label ?: "휴", style = TextStyle(
-            color = if (color == null) GlanceTheme.colors.onSurfaceVariant else ColorProvider(contentColorOn(color)),
-            fontSize = (sizeDp * 0.45f).sp, fontWeight = FontWeight.Bold), maxLines = 1)
+        // [WIDG-05] I 리뷰 N6(b): on a working day, who could take my shift, as 대근 찾기 says.
+        data.coverTeams?.let { names ->
+            Spacer(GlanceModifier.height(4.dp))
+            Text(
+                if (names.isEmpty()) "오늘 내 근무에 들어올 수 있는 조가 없어요" else "들어올 수 있는 조: ${names.joinToString(", ")}",
+                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp),
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -182,11 +178,56 @@ class HourlyClockAction : ActionCallback {
 /** [DAILY-11] The widget's 출근 or 퇴근 button. */
 @Composable
 internal fun HourlyClockButton(out: Boolean, yesterday: Boolean) {
-    Text(
-        if (out) (if (yesterday) "어제 퇴근" else "퇴근") else "출근",
-        style = TextStyle(color = GlanceTheme.colors.onPrimaryContainer, fontSize = 13.sp, fontWeight = FontWeight.Medium),
-        modifier = GlanceModifier.background(GlanceTheme.colors.primaryContainer).cornerRadius(12.dp)
-            .padding(horizontal = 10.dp, vertical = 4.dp)
+    // [WIDG-04] I 리뷰 P25: 40dp tall, where the 13sp word with 4dp padding was about 28dp to the finger.
+    Box(
+        GlanceModifier.height(WIDGET_BUTTON_HEIGHT).background(GlanceTheme.colors.primaryContainer).cornerRadius(20.dp)
+            .padding(horizontal = 14.dp)
             .clickable(actionRunCallback<HourlyClockAction>(actionParametersOf(HourlyClockAction.OUT to out))),
-    )
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            if (out) (if (yesterday) "어제 퇴근" else "퇴근") else "출근",
+            style = TextStyle(color = GlanceTheme.colors.onPrimaryContainer, fontSize = 14.sp, fontWeight = FontWeight.Medium),
+            maxLines = 1,
+        )
+    }
+}
+
+/** [WIDG-04] The least height of a widget's own button. */
+internal val WIDGET_BUTTON_HEIGHT = 40.dp
+
+/**
+ * [WIDG-05] I 리뷰 N6(a): "다음 근무까지" on its own small widget. Glance has no ticking clock, so [WidgetRefresher]
+ * redraws it every 15 minutes while one is placed, and at each start and end. Also offered on the lock screen
+ * where the phone allows widgets there.
+ */
+class CountdownWidget : GlanceAppWidget() {
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val data = WidgetData.load(context)
+        provideContent {
+            GlanceTheme {
+                Box(
+                    GlanceModifier.fillMaxSize().background(GlanceTheme.colors.widgetBackground).cornerRadius(20.dp).padding(12.dp)
+                        .clickable(openDay(context, data.today)),
+                    contentAlignment = Alignment.CenterStart,
+                ) { CountdownContent(data) }
+            }
+        }
+    }
+}
+
+class CountdownWidgetReceiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget: GlanceAppWidget = CountdownWidget()
+}
+
+@Composable
+internal fun CountdownContent(data: WidgetData) {
+    Column(GlanceModifier.fillMaxWidth()) {
+        Text("다음 근무", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp), maxLines = 1)
+        Text(
+            data.countdown ?: "다음 7일 동안 잡힌 근무가 없어요",
+            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold),
+            maxLines = 2,
+        )
+    }
 }

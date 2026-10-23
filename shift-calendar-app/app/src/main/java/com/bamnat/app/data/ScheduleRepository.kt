@@ -260,6 +260,9 @@ class ScheduleRepository(
         }
     }
 
+    /** [SCHED-03] Puts the pattern periods back as they were, for the undo of "이 날부터 다시 맞추기". */
+    suspend fun restorePatterns(patterns: List<WorkPattern>) = replacePatterns(patterns)
+
     /** Rewrites the period being edited in place (fixing a typo, not a team change). */
     suspend fun replaceCurrentPattern(pattern: WorkPattern, today: LocalDate = LocalDate.now()) {
         db.withTransaction {
