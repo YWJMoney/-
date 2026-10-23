@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.core.schedule.QuickOrder
 import com.bamnat.app.data.rules
 import com.bamnat.app.appContainer
 import androidx.compose.animation.AnimatedContent
@@ -453,7 +454,10 @@ private fun QuickChips(
     val leaveDay = leaveNowDay(settings.workStyle, day, today, now, yesterday)
     val choices = remember(snapshot, day) {
         if (moneyFirst) emptyList() else {
-            val (on, off) = ExtraText.choices(snapshot.kinds, snapshot.shiftTypes, day).partition { ExtraText.indexOf(day, it) >= 0 }
+            val (on, off0) = ExtraText.choices(snapshot.kinds, snapshot.shiftTypes, day).partition { ExtraText.indexOf(day, it) >= 0 }
+            // [CAL-37] The kinds used in the last 60 days first; a new user gets their kind of work's usual order.
+            val used = snapshot.entries.filter { !it.date.isBefore(today.minusDays(QuickOrder.DAYS.toLong())) }.flatMap { e -> e.extras.map { it.kindId } }
+            val off = QuickOrder.extras(off0, { it.kind.id }, used, settings.workStyle.takeIf { !day.isWorkDay })
             on + off.take((QUICK_EXTRAS - on.size).coerceAtLeast(0))
         }
     }

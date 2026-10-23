@@ -52,6 +52,20 @@ data class MonthOverview(
         CalendarFocus.INVEST -> true
     }
 
+    /**
+     * [CAL-35] I 리뷰 I7: this month against [previous] in a few words, "지난달보다 +2일 · −8시간"; null when neither
+     * changed, on a calendar that is not about shifts, or when last month had nothing to compare with.
+     */
+    fun versus(previous: MonthOverview): String? {
+        if (focus != CalendarFocus.SHIFTS || previous.isEmpty) return null
+        val days = workDays - previous.workDays
+        val hours = Math.round((workMinutes - previous.workMinutes) / 60.0).toInt()
+        if (days == 0 && hours == 0) return null
+        fun signed(n: Int) = if (n > 0) "+$n" else "\u2212${-n}"
+        val parts = listOfNotNull(days.takeIf { it != 0 }?.let { "${signed(it)}일" }, hours.takeIf { it != 0 }?.let { "${signed(it)}시간" })
+        return "지난달보다 " + parts.joinToString(" · ")
+    }
+
     companion object {
         fun of(
             month: YearMonth,

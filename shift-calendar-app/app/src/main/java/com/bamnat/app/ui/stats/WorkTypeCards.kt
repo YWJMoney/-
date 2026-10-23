@@ -101,7 +101,7 @@ internal fun WorkTypeMoreCards(
     if (style?.usesPayEngine != false) FeatureCard("pay.gap", calendarId) { PayGapCard(calendarId, month, payTotal, profile, book, style) }
     if (style.isShift()) FeatureCard("shift.swapCard", calendarId) { SwapCard(snapshot, month) }
     // [SHFT-07] The year's night share, runs of nights and short rests.
-    if (style.isShift()) FeatureCard("shift.health", calendarId) { HealthYearCard(snapshot) }
+    if (style.isShift()) FeatureCard("shift.health", calendarId) { HealthYearCard(snapshot, calendarId) }
     if (style == WorkStyle.DAY) FeatureCard("day.overtimeCap", calendarId) { OvertimeCapCard(calendarId, summary) }
     // [LEAVE-04] 징검다리 for every kind of work that takes leave.
     if (style == null || style == WorkStyle.DAY || style == WorkStyle.SHIFT || style == WorkStyle.HOURLY) {

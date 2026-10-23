@@ -11,6 +11,11 @@ import com.bamnat.core.schedule.ExtraStamp
 import com.bamnat.core.schedule.PatternPreset
 import com.bamnat.core.schedule.PatternPresets
 import com.bamnat.core.schedule.PatternTimeline
+import com.bamnat.core.schedule.QuickOrder
+import com.bamnat.core.work.CalendarFocus
+import com.bamnat.core.work.MonthOverview
+import com.bamnat.core.work.WorkStyle
+import java.time.YearMonth
 import com.bamnat.core.holiday.KoreanHolidays
 import com.bamnat.core.hours.WorkHoursCalculator
 import com.bamnat.core.model.ShiftOverride
@@ -313,5 +318,37 @@ class CalendarI123Test {
         assertEquals(8 * 60 - moved, calc.weekSplitAtMidnight(sunday))
         assertEquals(moved, calc.weekSplitAtMidnight(sunday.plusDays(1)))
         assertEquals(0, calc.week(sunday.plusDays(1)).totalMinutes)
+    }
+
+    /** [CAL-35] The month against the last in a few words. */
+    @Test
+    fun `this month against last month`() {
+        val m = YearMonth.of(2026, 10)
+        val now = MonthOverview(m, CalendarFocus.SHIFTS, workDays = 22, workMinutes = 176 * 60)
+        val last = MonthOverview(m.minusMonths(1), CalendarFocus.SHIFTS, workDays = 20, workMinutes = 184 * 60)
+        assertEquals("지난달보다 +2일 · \u22128시간", now.versus(last))
+        assertNull(now.versus(now.copy(month = m.minusMonths(1))))
+        assertNull(now.versus(MonthOverview(m.minusMonths(1), CalendarFocus.SHIFTS)))
+    }
+
+    /** [CAL-34][CAL-40] A week at a glance: hours, nights and what is left before 52. */
+    @Test
+    fun `a week at a glance counts nights and the hours left before 52`() {
+        val r = ScheduleResolver(Fixtures.all, WorkPattern.Rotation(monday, listOf(3L, 3L, 3L, 1L, 1L, null, null)), emptyList())
+        val g = WorkHoursCalculator(r).glance(monday)
+        assertEquals(5 * 8 * 60, g.minutes)
+        assertEquals(3, g.nights)
+        assertEquals(12 * 60, g.leftToLegal)
+        assertEquals("40시간 · 야간 3번 · 52시간까지 12시간", g.text)
+    }
+
+    /** [CAL-37] A new user's extra kinds in their kind of work's order; use in the last 60 days wins. */
+    @Test
+    fun `quick extras follow the kind of work until use says otherwise`() {
+        val ids = listOf(ExtraKind.OVERTIME_ID, ExtraKind.SPECIAL_ID, ExtraKind.COVER_ID, 101L)
+        assertEquals(listOf(ExtraKind.COVER_ID, ExtraKind.SPECIAL_ID, ExtraKind.OVERTIME_ID, 101L), QuickOrder.extras(ids, { it }, emptyList(), WorkStyle.SHIFT))
+        assertEquals(listOf(ExtraKind.SPECIAL_ID, ExtraKind.OVERTIME_ID, ExtraKind.COVER_ID, 101L), QuickOrder.extras(ids, { it }, emptyList(), WorkStyle.DAY))
+        assertEquals(101L, QuickOrder.extras(ids, { it }, listOf(101L, 101L, ExtraKind.COVER_ID), WorkStyle.SHIFT).first())
+        assertEquals(ids, QuickOrder.extras(ids, { it }, emptyList(), null))
     }
 }

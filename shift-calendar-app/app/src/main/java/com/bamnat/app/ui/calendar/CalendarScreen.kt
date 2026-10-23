@@ -376,6 +376,11 @@ fun CalendarScreen(
     val overview = remember(snap, visibleMonth, focus, moneyBook) {
         com.bamnat.core.work.MonthOverview.of(visibleMonth, focus, snap.resolver, moneyBook.jobs, moneyBook.sales)
     }
+    // [CAL-35] Last month's figures, for the few words of change under the hours.
+    val versus = remember(snap, visibleMonth, focus, overview) {
+        if (focus != com.bamnat.core.work.CalendarFocus.SHIFTS) null
+        else overview.versus(com.bamnat.core.work.MonthOverview.of(visibleMonth.minusMonths(1), focus, snap.resolver))
+    }
     val payEstimate by produceState<Long?>(null, payProfile, snap, visibleMonth, focus) {
         value = null
         if (focus != com.bamnat.core.work.CalendarFocus.SHIFTS || payProfile == null) return@produceState
@@ -754,6 +759,18 @@ fun CalendarScreen(
                 },
             )
         }
+        // [CAL-34] I 리뷰 I6: the week's own total under the week (Monday to Sunday, the strip's and the law's week).
+        if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) {
+            val glance = remember(calculator, monday) { calculator.glance(monday) }
+            if (glance.minutes > 0) {
+                Text(
+                    "이 주 ${glance.text}",
+                    style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
+                    color = if (glance.leftToLegal < 0) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                )
+            }
+        }
         Spacer(Modifier.height(8.dp))
         DayPanel(
             date = selected,
@@ -952,6 +969,7 @@ fun CalendarScreen(
                 MonthSummaryBar(
                     overview = overview,
                     payEstimate = payEstimate,
+                    versus = versus,
                     onOpen = if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) onOpenPay else onOpenMoney,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
@@ -1871,24 +1889,28 @@ private fun MonthPickerDialog(
             }
         },
         text = {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(4),
-                modifier = Modifier.widthIn(max = 360.dp).height(180.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            // [CAL-42] I 리뷰 P27: three to a row at a big font, and the rows as tall as their words, so 200% shows
+            // every month whole instead of a fixed 180dp box that scrolled and cut "10월".
+            val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+            val perRow = if (big) 3 else 4
+            Column(
+                Modifier.widthIn(max = 360.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                items((1..12).toList()) { m ->
-                    val ym = YearMonth.of(year, m)
-                    val isCurrent = ym == initial
-                    Surface(
-                        onClick = { onPick(ym) },
-                        shape = MaterialTheme.shapes.medium,
-                        color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = if (isCurrent) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.heightIn(min = 40.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text("${m}월", fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal)
+                for (row in (1..12).chunked(perRow)) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (m in row) {
+                        val ym = YearMonth.of(year, m)
+                        val isCurrent = ym == initial
+                        Surface(
+                            onClick = { onPick(ym) },
+                            shape = MaterialTheme.shapes.medium,
+                            color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = if (isCurrent) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
+                                Text("${m}월", fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal, maxLines = 1, softWrap = false)
+                            }
                         }
                     }
                 }

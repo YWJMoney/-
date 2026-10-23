@@ -102,6 +102,8 @@ internal fun MonthSummaryBar(
     payEstimate: Long?,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
+    /** [CAL-35] "지난달보다 +2일 · −8시간", under the hours. */
+    versus: String? = null,
 ) {
     val cal = LocalCalendarColors.current
     val month = overview.month.monthValue
@@ -110,7 +112,8 @@ internal fun MonthSummaryBar(
             Figure("${month}월 근무", "${overview.workDays}일",
                 overview.leaveDays.takeIf { it > 0 }?.let { "휴가 ${HoursFormat.hours(it * 60).removeSuffix(".0")}일" }),
             Figure("근무 시간", HoursFormat.korean(overview.workMinutes),
-                overview.extraMinutes.takeIf { it > 0 }?.let { "추가 근무 ${HoursFormat.korean(it)}" }, null),
+                listOfNotNull(overview.extraMinutes.takeIf { it > 0 }?.let { "추가 근무 ${HoursFormat.korean(it)}" }, versus)
+                    .joinToString(" · ").ifEmpty { null }, null),
             if (payEstimate != null) Figure("예상 급여", Fmt.wonShort(payEstimate), "세전", MaterialTheme.colorScheme.primary)
             else Figure("공휴일 근무", "${overview.holidayWorkDays}일", null, if (overview.holidayWorkDays > 0) cal.holidayWork else null),
         )

@@ -280,6 +280,20 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * off the main thread.
      */
     fun dayInsight(profile: PayProfile?, snapshot: ScheduleSnapshot, date: LocalDate, withAmounts: Boolean): DayInsight {
+        // [CAL-41] I 리뷰 P20: the same day of the same calendar asked again (the sheet reopened, a fold, the
+        // settings flow ticking) is answered from the last result, not by re-working the month per extra.
+        val key = InsightKey(profile, snapshot, date, withAmounts, settings.value.weekStart)
+        insightCache?.let { (k, v) -> if (k.sameAs(key)) return v }
+        return dayInsightNow(profile, snapshot, date, withAmounts).also { insightCache = key to it }
+    }
+
+    private class InsightKey(val profile: PayProfile?, val snapshot: ScheduleSnapshot, val date: LocalDate, val amounts: Boolean, val weekStart: java.time.DayOfWeek) {
+        fun sameAs(o: InsightKey) = profile == o.profile && snapshot === o.snapshot && date == o.date && amounts == o.amounts && weekStart == o.weekStart
+    }
+
+    @Volatile private var insightCache: Pair<InsightKey, DayInsight>? = null
+
+    private fun dayInsightNow(profile: PayProfile?, snapshot: ScheduleSnapshot, date: LocalDate, withAmounts: Boolean): DayInsight {
         val p = (profile ?: lawOnly(settings.value)).named(snapshot.kinds)
         val month = p.period.monthOf(date)
         val pay = monthPay(p, snapshot, month)
