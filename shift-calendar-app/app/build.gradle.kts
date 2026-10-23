@@ -5,7 +5,6 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("com.google.devtools.ksp")
 }
 
 // [MKT-09] Link sharing server (server/share-worker). Blank hides '링크로 공유'.
@@ -120,9 +119,6 @@ kotlin {
     }
 }
 
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
-}
 
 dependencies {
     implementation("com.bamnat:core")
@@ -168,9 +164,8 @@ dependencies {
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.glance:glance-material3:1.1.1")
 
-    implementation("androidx.room:room-runtime:2.7.1")
-    implementation("androidx.room:room-ktx:2.7.1")
-    ksp("androidx.room:room-compiler:2.7.1")
+    // [PERF-02] Room and its generated code live in :database.
+    implementation(project(":database"))
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
