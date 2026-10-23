@@ -100,6 +100,8 @@ abstract class ScreenshotBase {
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.USE_FULL_SCREEN_INTENT)
         ShadowAlarmManager.setCanScheduleExactAlarms(true)
         val c = app.container
+        // [QA-05] No shot asks the live server: its 정식 출시 answer could land after a shot set its own (launched()).
+        c.tierApi = com.bamnat.app.tier.TierClient(baseUrl = "")
         // [ONBOARD-01] Through the consent pages already; the shots of them start over.
         c.consentStore.markSeen(ConsentItem.entries)
         // [CAL-17] The one-time tip on the first date tap has its own shot (295); the others tap dates past it.
@@ -300,6 +302,13 @@ abstract class ScreenshotBase {
             repeat(scrolls + 1) { i ->
                 find(text, exact, prefix)?.let { return it }
                 if (i < scrolls) scrollUp(350, across)
+            }
+            // [QA-05] settle() ends once the screen is still, so what is still on its way (Play's plans, a slow
+            // query on a busy machine) gets up to a few more seconds before the shot gives up.
+            val end = System.nanoTime() + REACH_WAIT_NANOS
+            while (System.nanoTime() < end) {
+                settle()
+                find(text, exact, prefix)?.let { return it }
             }
             error("화면에서 ‘$text’를 찾지 못했어요. 보이는 글자: " + shownWords().joinToString(" | ").take(1500))
         }
@@ -778,6 +787,7 @@ abstract class ScreenshotBase {
         const val QUIET_ROUNDS = 5
         const val SETTLE_MIN_ROUNDS = 5
         const val SETTLE_MAX_NANOS = 1_000_000_000L
+        const val REACH_WAIT_NANOS = 5_000_000_000L
 
         // Galaxy Z Fold6: cover screen 968x2376 px and main screen 1856x2160 px at 420 dpi.
         const val FOLDED = "w369dp-h905dp-port-420dpi"
