@@ -12,6 +12,7 @@ import com.bamnat.core.schedule.PatternPreset
 import com.bamnat.core.schedule.PatternPresets
 import com.bamnat.core.schedule.PatternTimeline
 import com.bamnat.core.schedule.QuickOrder
+import com.bamnat.core.schedule.ShiftEvents
 import com.bamnat.core.work.CalendarFocus
 import com.bamnat.core.work.MonthOverview
 import com.bamnat.core.work.WorkStyle
@@ -350,5 +351,21 @@ class CalendarI123Test {
         assertEquals(listOf(ExtraKind.SPECIAL_ID, ExtraKind.OVERTIME_ID, ExtraKind.COVER_ID, 101L), QuickOrder.extras(ids, { it }, emptyList(), WorkStyle.DAY))
         assertEquals(101L, QuickOrder.extras(ids, { it }, listOf(101L, 101L, ExtraKind.COVER_ID), WorkStyle.SHIFT).first())
         assertEquals(ids, QuickOrder.extras(ids, { it }, emptyList(), null))
+    }
+
+    /** [WIDG-01][WIDG-05] The widgets redraw when a shift starts or ends, and count down to the next one. */
+    @Test
+    fun `widgets know the next start or end and count down to it`() {
+        // 주간 09:00~18:00 on weekdays.
+        val r = resolver()
+        val days = r.resolveRange(wed.minusDays(1), wed.plusDays(7))
+        val morning = wed.atTime(7, 30)
+        assertEquals(wed.atTime(9, 0), ShiftEvents.nextChange(days, morning))
+        assertEquals("주간까지 1시간 30분 · 09:00", ShiftEvents.countdown(days, morning))
+        val working = wed.atTime(15, 50)
+        assertEquals(wed.atTime(18, 0), ShiftEvents.nextChange(days, working))
+        assertEquals("주간 중 · 18:00에 끝나요 (2시간 10분 남음)", ShiftEvents.countdown(days, working))
+        assertEquals("주간까지 15시간 · 내일 09:00", ShiftEvents.countdown(days, wed.atTime(18, 0)))
+        assertNull(ShiftEvents.countdown(resolver().resolveRange(LocalDate.of(2026, 10, 10), LocalDate.of(2026, 10, 11)), LocalDate.of(2026, 10, 10).atTime(9, 0)))
     }
 }

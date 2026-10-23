@@ -274,6 +274,19 @@
                 android:resource="@xml/widget_month_info" />
         </receiver>
 
+        <!-- [WIDG-05] 다음 근무까지. -->
+        <receiver
+            android:name=".widget.CountdownWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_countdown_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_countdown_info" />
+        </receiver>
+
         <!-- [DAILY-03] 오늘 모든 조. -->
         <receiver
             android:name=".widget.TeamsWidgetReceiver"

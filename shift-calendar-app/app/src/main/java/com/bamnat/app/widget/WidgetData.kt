@@ -52,6 +52,14 @@ class WidgetData(
     val memos: Map<LocalDate, String> = emptyMap(),
     /** [DAILY-03] Every team's work today, for the 모든 조 widget; null without a rotation to follow. */
     val teams: List<TeamToday>? = null,
+    /** [WIDG-01] The next shift start or end after now, when the today and countdown widgets redraw. */
+    val nextChange: LocalDateTime? = null,
+    /** [WIDG-05] The countdown widget's line; null with nothing booked in the coming week. */
+    val countdown: String? = null,
+    /** [WIDG-05] I 리뷰 N6(b): the teams that could take my shift today, as 대근 찾기 says; null on a day off. */
+    val coverTeams: List<String>? = null,
+    /** [WIDG-02] Days with a memo on 내 달력 around this month, while 위젯에 메모 보이기 is on. */
+    val memoDays: Set<LocalDate> = emptySet(),
 ) {
     /** [DAILY-03] One team on the 모든 조 widget: its name, today's and tomorrow's shift (null for a day off). */
     class TeamToday(val name: String, val mine: Boolean, val today: com.bamnat.core.model.ShiftType?, val tomorrow: com.bamnat.core.model.ShiftType?)
@@ -109,6 +117,8 @@ class WidgetData(
             val leaveLeft = if (settings.workStyle == WorkStyle.DAY && container.payStore.profile.value != null) {
                 container.leaveRepository.now().takeIf { it.lots.isNotEmpty() }?.available
             } else null
+            // [WIDG-01][WIDG-05] Yesterday's night to a week ahead: what is going on now and what comes next.
+            val soon = snapshot.resolver.resolveRange(today.minusDays(1), today.plusDays(7))
             return WidgetData(
                 today = now.toLocalDate(),
                 weekStart = settings.weekStart,
@@ -126,7 +136,26 @@ class WidgetData(
                 invest = if (focus == CalendarFocus.INVEST) investLine(container, now.toLocalDate()) else null,
                 memos = if (settings.widgetMemo) memoLines(container, today) else emptyMap(),
                 teams = teamsToday(container, snapshot, today),
+                nextChange = com.bamnat.core.schedule.ShiftEvents.nextChange(soon, now),
+                countdown = com.bamnat.core.schedule.ShiftEvents.countdown(soon, now),
+                coverTeams = coverToday(container, snapshot, today, settings),
+                memoDays = if (settings.widgetMemo) memoDays(container, today) else emptySet(),
             )
+        }
+
+        /** [WIDG-02] Which days around this month (a year either way, as the month widget turns) have a memo. */
+        private suspend fun memoDays(container: com.bamnat.app.AppContainer, today: LocalDate): Set<LocalDate> =
+            runCatching { container.memoRepository.datesWithMemos(PersonalCalendar.MAIN).first() }.getOrDefault(emptySet())
+                .filterTo(HashSet()) { !it.isBefore(today.minusYears(1)) && !it.isAfter(today.plusYears(1)) }
+
+        /** [WIDG-05] Who could take today's shift of mine, the first names 대근 찾기 lists. */
+        private fun coverToday(container: com.bamnat.app.AppContainer, snapshot: com.bamnat.app.data.ScheduleSnapshot, today: LocalDate,
+            settings: com.bamnat.app.data.AppSettings): List<String>? {
+            val mine = snapshot.resolver.resolve(today).shiftType?.takeIf { !it.isOff } ?: return null
+            val rotation = com.bamnat.app.ui.calendar.rotationOf(snapshot, today) ?: return null
+            val roster = com.bamnat.app.ui.calendar.rosterFor(container.teams.get(PersonalCalendar.MAIN), rotation)
+            return com.bamnat.core.schedule.CoverFinder.find(roster, rotation, snapshot.typesById, today, mine.id)
+                .candidates.map { it.team.name }
         }
 
         /** [DAILY-01] Today's and tomorrow's first memo line on 내 달력, read on the phone only. */
