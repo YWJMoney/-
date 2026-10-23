@@ -334,7 +334,7 @@ fun MonthGrid(
                         invest = invest,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         weekNote = if (date.dayOfWeek == DayOfWeek.MONDAY && week.overLimit) {
-                            "이 주 ${HoursFormat.hours(week.totalMinutes.toDouble())}시간, ${weeklyLimitHours}시간 넘음"
+                            "이 주 ${HoursFormat.korean(week.totalMinutes)}, ${weeklyLimitHours}시간 넘음"
                         } else {
                             null
                         },

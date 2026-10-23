@@ -109,7 +109,7 @@ internal fun MonthSummaryBar(
         CalendarFocus.SHIFTS -> listOf(
             Figure("${month}월 근무", "${overview.workDays}일",
                 overview.leaveDays.takeIf { it > 0 }?.let { "휴가 ${HoursFormat.hours(it * 60).removeSuffix(".0")}일" }),
-            Figure("근무 시간", HoursFormat.hours(overview.workMinutes.toDouble()) + "시간",
+            Figure("근무 시간", HoursFormat.korean(overview.workMinutes),
                 overview.extraMinutes.takeIf { it > 0 }?.let { "추가 근무 ${HoursFormat.korean(it)}" }, null),
             if (payEstimate != null) Figure("예상 급여", Fmt.wonShort(payEstimate), "세전", MaterialTheme.colorScheme.primary)
             else Figure("공휴일 근무", "${overview.holidayWorkDays}일", null, if (overview.holidayWorkDays > 0) cal.holidayWork else null),

@@ -675,7 +675,7 @@ fun DayPreview(
     }
 }
 
-/** [CAL-01] "이 주 73.5시간 · 64시간 넘음": the line that goes with the bar beside an over-limit week. */
+/** [CAL-01] "이 주 73시간 30분 · 64시간 넘음": the line that goes with the bar beside an over-limit week. */
 @Composable
 internal fun WeekNoteLine(text: String, modifier: Modifier = Modifier) {
     val warning = LocalCalendarColors.current.warning

@@ -254,7 +254,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
             if (overLegal.isNotEmpty()) {
                 WarningBanner(
                     "주 ${legalHours}시간을 넘은 주가 ${overLegal.size}번 있어요",
-                    overLegal.joinToString(", ") { "${Fmt.shortDate(it.start)}주 ${HoursFormat.hours(it.totalMinutes.toDouble())}시간" } +
+                    overLegal.joinToString(", ") { "${Fmt.shortDate(it.start)}주 ${HoursFormat.korean(it.totalMinutes)}" } +
                         ". 연장근로는 한 주 12시간까지예요 (근로기준법 제53조). 참고용이에요.",
                 )
             }
@@ -287,16 +287,16 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         StatTile(
                             "주 평균",
-                            HoursFormat.hours(three.averageWeeklyMinutes) + "시간",
+                            HoursFormat.korean(Math.round(three.averageWeeklyMinutes).toInt()),
                             Modifier.weight(1f),
                             caption = "기준 ${settings.averageLimitHours}시간",
                             warning = three.overLimit,
                         )
                         StatTile(
                             "월 평균",
-                            HoursFormat.hours(three.averageMonthlyMinutes) + "시간",
+                            HoursFormat.korean(Math.round(three.averageMonthlyMinutes).toInt()),
                             Modifier.weight(1f),
-                            caption = "합계 ${HoursFormat.hours(three.totalMinutes.toDouble())}시간",
+                            caption = "합계 ${HoursFormat.korean(three.totalMinutes)}",
                         )
                     }
                     Spacer(Modifier.height(12.dp))
@@ -309,7 +309,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                         Spacer(Modifier.height(10.dp))
                         WarningBanner(
                             "3개월 평균 주 ${settings.averageLimitHours}시간 초과",
-                            "평균 주 ${HoursFormat.hours(three.averageWeeklyMinutes)}시간이에요. 앞으로의 근무를 줄여야 평균이 내려가요.",
+                            "평균 주 ${HoursFormat.korean(Math.round(three.averageWeeklyMinutes).toInt())}이에요. 앞으로의 근무를 줄여야 평균이 내려가요.",
                         )
                     }
                 }
