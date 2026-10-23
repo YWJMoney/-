@@ -57,6 +57,11 @@
         <meta-data
             android:name="com.google.android.gms.ads.DELAY_APP_MEASUREMENT_INIT"
             android:value="true" />
+        <!-- [PERF-04] 결정 D52: Play services downloads ML Kit's Korean text model when the app is installed
+             (OcrModel asks again if it is still missing); photos are read on the phone only. -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="ocr_korean" />
 
         <!-- resizeableActivity + configChanges keep state smooth when a Fold opens or closes.
              singleTop: a shared calendar link tapped while the app is open comes to onNewIntent [SHR-02]. -->

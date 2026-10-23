@@ -31,6 +31,12 @@ jobs:
           echo "16 KB aligned"
           # apksigner travels with the files so the APK can be signed where the key is, without an Android SDK.
           cp "$(dirname "$za")/lib/apksigner.jar" app/build/outputs/apk/release/
+      # [PERF-04] Sizes and their largest parts in the job summary; a file over its budget fails the build.
+      - name: Size
+        run: |
+          python3 tools/app_size.py app/build/outputs/apk/release/app-release-unsigned.apk \
+            app/build/outputs/bundle/release/app-release.aab wear/build/outputs/bundle/release/wear-release.aab \
+            --json app/build/outputs/size.json >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: release-unsigned
@@ -41,5 +47,6 @@ jobs:
             shift-calendar-app/app/build/outputs/mapping/release/mapping.txt
             shift-calendar-app/wear/build/outputs/bundle/release/wear-release.aab
             shift-calendar-app/wear/build/outputs/mapping/release/mapping.txt
+            shift-calendar-app/app/build/outputs/size.json
           if-no-files-found: error
           retention-days: 14

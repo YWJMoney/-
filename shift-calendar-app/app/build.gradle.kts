@@ -102,14 +102,41 @@ android {
         // own Robolectric sandbox. -Pbamnat.testForks=1 runs them one after another as before.
         val forks = (findProperty("bamnat.testForks") as String?)?.toIntOrNull()
             ?: (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 3)
+        // [QA-05] CI runs the tests in shards side by side (-Pbamnat.testSet): unit = all but the screenshots,
+        // shots-a = the screenshot classes named below, shots-b = every other screenshot class (new ones too).
+        val testSet = findProperty("bamnat.testSet") as String?
+        val shots = "com.bamnat.app.screenshots"
+        val shotsA = listOf("Calendar", "Pay", "MemoStats", "I", "K").map { "$shots.${it}ScreenshotTest" }
         unitTests.all {
             it.maxHeapSize = "2g"
             it.maxParallelForks = forks
+            when (testSet) {
+                "unit" -> it.filter.excludeTestsMatching("$shots.*")
+                "shots-a" -> shotsA.forEach { c -> it.filter.includeTestsMatching(c) }
+                "shots-b" -> {
+                    it.filter.includeTestsMatching("$shots.*")
+                    shotsA.forEach { c -> it.filter.excludeTestsMatching(c) }
+                }
+            }
         }
     }
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        // [PERF-04] Library version stamps and the coroutines debug probe, which nothing reads at run time.
+        resources.excludes += listOf("/META-INF/*.version", "/DebugProbesKt.bin")
+    }
+
+    // [PERF-04] 결정 D53: the app is Korean only (its words are in the code), so the libraries' other
+    // languages are left out.
+    androidResources {
+        localeFilters += listOf("ko")
+    }
+
+    // [PERF-04] The dependency list Play reads is kept in the bundle; an APK handed out by hand leaves it out.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = true
     }
 }
 
@@ -132,8 +159,9 @@ dependencies {
     implementation("com.bamnat:core")
     // [OPS-20] Google Play in-app review, asked once at a happy moment.
     implementation("com.google.android.play:review-ktx:2.0.2")
-    // [PAYS-05][PAYX-04] Payslip and rule photos read on the phone; the Korean model is bundled, nothing is downloaded or sent.
-    implementation("com.google.mlkit:text-recognition-korean:16.0.1")
+    // [PAYS-05][PAYX-04] Payslip, receipt, rule and roster photos read on the phone. [PERF-04] 결정 D52: the Korean
+    // model is not bundled (15~25 MB less); Google Play services downloads it to the phone (pay/OcrModel), nothing is sent.
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition-korean:16.0.1")
     // [DAYW-07] On-device geofencing for 출퇴근 자동 기록 (off by default); no location leaves the phone.
     implementation("com.google.android.gms:play-services-location:21.3.0")
     // [SHFT-08] The Wear OS watch gets the days through the Wearable Data Layer, phone to watch.

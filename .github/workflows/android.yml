@@ -8,6 +8,10 @@ on:
 concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
+# [QA-05] The checks run as shards side by side instead of one job after another: the longest shard sets the
+# wall clock. Gradle's cache is written only from main, so a pull request cannot fill it with its own builds.
+env:
+  GRADLE_FLAGS: --no-daemon -Pkotlin.compiler.execution.strategy=in-process --console=plain
 jobs:
   servers:
     runs-on: ubuntu-latest
@@ -23,9 +27,9 @@ jobs:
       # [ADMUX-08] The admin app's happy-dom screen tests need the devDependency from the lock file.
       - run: npm ci && npm run test:ui
         working-directory: shift-calendar-app/server/company-worker
-  app:
+  core:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: shift-calendar-app
@@ -36,29 +40,97 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - run: python3 tools/check_tracker.py
       - run: python3 tools/test_check_checklist.py
-      - run: sh ./gradlew -p core test
-      - run: sh ./gradlew :app:testDebugUnitTest :app:lintDebug --continue
-      # [REL-09] The watch app builds and passes lint too.
-      - run: sh ./gradlew :wear:assembleDebug :wear:lintDebug --continue
+      - run: sh ./gradlew $GRADLE_FLAGS -p core test
+      - if: always()
+        run: python3 tools/slow_tests.py core/build/test-results >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-reports
+          path: shift-calendar-app/core/build/reports
+          retention-days: 7
+  # The app's tests in three shards: everything but the screenshots, and the screenshot classes in two halves
+  # (app/build.gradle.kts bamnat.testSet). Each shard runs its classes in parallel forks too.
+  app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        set: [unit, shots-a, shots-b]
+    defaults:
+      run:
+        working-directory: shift-calendar-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      # Robolectric's Android jars (100 MB and more) come from Maven Central once, then from this cache.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('shift-calendar-app/app/build.gradle.kts') }}
+          restore-keys: robolectric-
+      - run: sh ./gradlew $GRADLE_FLAGS :app:testDebugUnitTest -Pbamnat.testSet=${{ matrix.set }} --continue
       # Room writes the schema of each database version it builds. A new version has to be committed with its migration.
       - name: Room schema committed
+        if: matrix.set == 'unit'
         run: |
           changed=$(git ls-files --others --modified --exclude-standard database/schemas)
           for f in $changed; do echo "::group::$f"; cat "$f"; echo "::endgroup::"; done
           test -z "$changed" || { echo "Commit these schema files: $changed"; exit 1; }
       # The share server checks the payloads the app tests just wrote (app/build/share-payload*.json).
-      - run: npm test
+      - if: matrix.set == 'unit'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - if: matrix.set == 'unit'
+        run: npm test
         working-directory: shift-calendar-app/server/share-worker
+      - if: always()
+        run: python3 tools/slow_tests.py app/build/test-results/testDebugUnitTest --json app/build/tests-${{ matrix.set }}.json >> "$GITHUB_STEP_SUMMARY"
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: app-reports
+          name: app-reports-${{ matrix.set }}
           path: |
             shift-calendar-app/app/build/test-results/testDebugUnitTest
             shift-calendar-app/app/build/reports
             shift-calendar-app/app/build/screenshots
-            shift-calendar-app/core/build/reports
+            shift-calendar-app/app/build/tests-${{ matrix.set }}.json
+          retention-days: 7
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: shift-calendar-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - run: sh ./gradlew $GRADLE_FLAGS :app:lintDebug --continue
+      # [REL-09] The watch app builds and passes lint too.
+      - run: sh ./gradlew $GRADLE_FLAGS :wear:assembleDebug :wear:lintDebug --continue
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports
+          path: |
+            shift-calendar-app/app/build/reports
             shift-calendar-app/wear/build/reports
           retention-days: 7

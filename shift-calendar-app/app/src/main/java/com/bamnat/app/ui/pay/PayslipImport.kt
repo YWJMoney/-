@@ -82,6 +82,8 @@ internal fun ScanButtons(onText: (String) -> Unit, modifier: Modifier = Modifier
                 else onText(text)
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: com.bamnat.app.pay.OcrModel.NotReady) {
+                error = e.message
             } catch (e: Exception) {
                 error = "사진을 읽지 못했어요. 다른 사진으로 해 보거나 글로 붙여 넣어 주세요."
             } finally {
