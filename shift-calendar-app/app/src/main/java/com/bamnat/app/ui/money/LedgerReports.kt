@@ -229,7 +229,7 @@ private fun InOutCard(m: MonthMoney, style: WorkStyle?) {
     val cal = LocalCalendarColors.current
     val top = maxOf(m.income, m.spent).coerceAtLeast(1)
     val sources = buildList {
-        if (m.payCounted > 0) add((if (m.payRecorded > 0) "급여 (받은 금액)" else "급여 (예상)") to m.payCounted)
+        if (m.payCounted > 0) add((if (m.payRecorded > 0) "급여 (받은 금액)" else "급여 (세전 예상)") to m.payCounted)
         if (m.jobReceived > 0 || style?.usesJobs == true) add("일감 받은 돈" to m.jobReceived)
         if (m.salesNet != 0L || style?.usesSales == true) add("가게 순수익" to m.salesNet)
         if (m.otherIncome > 0) add("그 밖의 수입" to m.otherIncome)

@@ -3274,6 +3274,20 @@ class ScreenshotTest {
         }.invoke(this)
         typeInto("호봉표", "1호봉 2,400,000\n2호봉 2,480,000")
     }
+    /** [LEAVE-06] 오전 반차 (1.22 전체 리뷰): the part off comes from the start, so 남은 근무 is the afternoon. */
+    @Test fun foldedDayMorningHalf() = shoot("480_folded_day_morning_half", FOLDED) {
+        val repo = app.container.scheduleRepository
+        val day = runBlocking {
+            val r = repo.snapshot.first().resolver
+            (0..10).map { today.plusDays(it.toLong()) }.first { r.resolve(it).shiftType?.name == "주간" && r.resolve(it).leave == null && !r.resolve(it).hasExtraWork }
+        }
+        runBlocking { repo.setLeave(day, Leave(LeaveKind.ANNUAL, 2, fromStart = true)) }
+        app.container.settingsRepository.update { it.copy(dayGroupOrder = listOf("alarm", "memo", "leave")) }
+        settle()
+        openDay(day)
+        openGroup("휴가")
+        reveal("남은 근무")
+    }
 }
 
 /** [SHR-02] The share server for screenshots: links people sent, answered at once. */

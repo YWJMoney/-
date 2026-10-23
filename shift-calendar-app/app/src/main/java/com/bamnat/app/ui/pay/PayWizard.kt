@@ -736,7 +736,10 @@ private fun ItemsStep(s: PaySetupState) {
                 label = { Text(preset.occupation.label) })
         }
     }
-    PayPresets.of(s.occupation ?: Occupation.CUSTOM).note.takeIf { it.isNotEmpty() && s.occupation != Occupation.PART_TIME }?.let { Hint(it) }
+    // The presets file's notes for 알바 (주휴수당 is calculated now) and 경비 (감시·단속 is asked as its own question)
+    // are out of date and the file is signed, so they are left out here.
+    PayPresets.of(s.occupation ?: Occupation.CUSTOM).note
+        .takeIf { it.isNotEmpty() && s.occupation != Occupation.PART_TIME && s.occupation != Occupation.SECURITY }?.let { Hint(it) }
     s.rows.forEach { row -> ItemRowEditor(row) }
     OutlinedButton(onClick = { adding = true }) { Icon(Icons.Filled.Add, null); Text(" 다른 수당 넣기") }
     // [SETUP-03][PAYS-07] Nothing here has to be complete: the rest of the company's way has its own place later.

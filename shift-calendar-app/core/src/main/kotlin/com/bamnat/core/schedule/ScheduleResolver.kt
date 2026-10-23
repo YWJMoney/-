@@ -171,20 +171,26 @@ class ScheduleResolver(
         val fullScheduled = if (start != null && end != null) WorkTime.workMinutes(start, end, breakMinutes) else 0
         // Leave only counts on a day with work to take off. Partial leave comes off the end of
         // the shift and the break shrinks in proportion, so 반차 of 09~18 (1h break) is 09~13:30.
+        // 오전 반차 comes off the start instead (13:30~18), unless that would start after midnight:
+        // the day's work stays on its own date, so such a shift keeps its leave at the end.
         val leave = entry?.leave?.takeIf { fullScheduled > 0 }
         val leaveMinutes = leave?.let { Math.round(fullScheduled * it.quarters / 4.0).toInt() } ?: 0
+        var workStart = start
         var workEnd = end
         var workBreak = breakMinutes
         if (leave != null && start != null) {
             if (leave.isFullDay) {
+                workStart = null
                 workEnd = null
                 workBreak = 0
             } else {
                 workBreak = Math.round(breakMinutes * (4 - leave.quarters) / 4.0).toInt()
-                workEnd = start.plusMinutes((fullScheduled - leaveMinutes + workBreak).toLong())
+                val off = leaveMinutes + breakMinutes - workBreak
+                val later = date.atTime(start).plusMinutes(off.toLong())
+                if (leave.offStart && later.toLocalDate() == date) workStart = later.toLocalTime()
+                else workEnd = start.plusMinutes((fullScheduled - leaveMinutes + workBreak).toLong())
             }
         }
-        val workStart = if (workEnd == null) null else start
         val scheduled = fullScheduled - leaveMinutes
         val shiftFrom = if (workStart != null && workEnd != null) date.atTime(workStart) else null
         val shiftTo = shiftFrom?.let { ResolvedDay.endAfter(it, workEnd!!) }

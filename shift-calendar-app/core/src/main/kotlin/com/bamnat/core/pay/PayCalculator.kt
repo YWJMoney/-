@@ -674,7 +674,8 @@ class PayCalculator(
             lines += PayLine(
                 LineKind.ALLOWANCE, item.name, amount.value * count,
                 formula = if (count == 1) "${item.cadence.label} ${won(amount.value)}" else "${won(amount.value)} × ${count}회",
-                basis = if (item.ordinary) "통상임금에 포함" else "",
+                // Only a monthly allowance goes into 통상임금 (ordinaryWage); a per-shift one never says it does.
+                basis = if (item.ordinary && item.cadence == Cadence.MONTHLY) "통상임금에 포함" else "",
                 estimated = amount.source == ValueSource.RAISED || item.id in profile.estimatedFields || unknownAmount(item),
             )
         }
