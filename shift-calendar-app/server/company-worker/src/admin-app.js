@@ -996,7 +996,11 @@ function adminApp() {
       add(o.asks, "앱에 없는 방식", href("review"), "warn");
       add(o.flagged, "달라요가 달린 규칙", href("review"), "warn");
     }
-    if (can("community")) add(o.flaggedPosts, "신고된 토론 글", href("community"), "warn");
+    if (can("community")) {
+      // [COMM-08] The rules promise a look within 30 days of a post the flags hid.
+      add(o.flaggedPostsLate, "신고로 가려진 지 3주 넘은 글(30일 안에 확인)", href("community"), "bad");
+      add(o.flaggedPosts, "신고된 토론 글", href("community"), "warn");
+    }
     if (can("rewards")) add(o.owed, "드릴 보상", href("rewards"), "");
     if (can("ops")) add(o.opsLeft, "이달 운영 할 일", href("ops"), "");
     // Sign-ins would crowd out the work; they stay on the activity screen.

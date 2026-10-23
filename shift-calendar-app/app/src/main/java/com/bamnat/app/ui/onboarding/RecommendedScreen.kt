@@ -258,7 +258,8 @@ private fun SwitchLine(title: String, what: String, okay: String, on: Boolean, o
 
 /**
  * [ONBOARD-05] 사용 통계 보내기 on the first start: a box the user ticks, said plainly as going to the
- * developer, and that the app is the same without it (D42, 개인정보 보호법 제22조).
+ * developer, and that the app is the same without it (D42, 개인정보 보호법 제22조). What goes, why and how long
+ * it is kept are said before the yes (제15조 제2항); it is not called 익명, as the policy treats it as personal data.
  */
 @Composable
 private fun StatsLine(on: Boolean, onChange: (Boolean) -> Unit) {
@@ -269,9 +270,9 @@ private fun StatsLine(on: Boolean, onChange: (Boolean) -> Unit) {
     ) {
         Checkbox(checked = on, onCheckedChange = null)
         Column(Modifier.weight(1f)) {
-            Text("개발자에게 익명 사용 통계 보내기 (선택)", style = MaterialTheme.typography.bodyLarge)
+            Text("개발자에게 사용 통계 보내기 (선택)", style = MaterialTheme.typography.bodyLarge)
             Text("어떤 기능을 하루에 몇 번 썼는지만 보내 앱을 고치는 데 써요. 근무·금액·메모·휴대폰 정보는 보내지 않고, " +
-                "체크하지 않아도 앱은 똑같이 돼요. 설정 › 개인정보·앱 정보에서 바꿔요.",
+                "서버에는 날짜별 합계만 400일 남아요. 체크하지 않아도 앱은 똑같이 돼요. 설정 › 개인정보·앱 정보에서 바꿔요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

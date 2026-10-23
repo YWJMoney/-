@@ -119,6 +119,8 @@ class LegalPagesTest {
         assertTrue(com.bamnat.core.plaza.PlazaRules.URL.endsWith("/community/"))
         assertTrue(r.contains("제44조의2 제5항") && r.contains("30일 안에") && r.contains("‘이 사람 글 안 보기’"))
         assertTrue(r.contains("최대 ${com.bamnat.core.plaza.HideList.MAX}명"))
+        // [COMM-08] The terms point to the rules ahead of time (정보통신망법 제44조의2 제5항).
+        assertTrue(File(site, "terms/index.html").readText().contains("이 약관의 일부인 <a href=\"../community/\">광장 운영 규칙</a>"))
     }
 
     @Test fun theTermsCoverSubscriptionTrialAndRefunds() {

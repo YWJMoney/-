@@ -57,6 +57,9 @@ const LIMITS = {
   flagsToHide: 3,
   muteDays: 30,
   hiddenPostDays: 90,
+  // [COMM-08] 운영 규칙 3항: a post the flags hid is looked at within 30 days (정보통신망법 제44조의2 제4항);
+  // the home screen warns a week before.
+  hiddenReviewDays: 30,
   loginFailures: 5,
   lockMs: 60 * 60 * 1000,
   sessionMs: 7 * 24 * 60 * 60 * 1000,
@@ -3678,6 +3681,8 @@ async function overview(env, actor) {
   if (can(actor, "community")) {
     // [COMM-06] Flagged posts still shown, and ones the flags hid that nobody has looked at yet.
     counts.flaggedPosts = "SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')";
+    counts.flaggedPostsLate = ["SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND status = 'hidden' AND hide_reason = 'flags' AND hidden_at < ?",
+      Date.now() - (LIMITS.hiddenReviewDays - 7) * DAY];
     counts.posts = "SELECT COUNT(*) AS n FROM posts WHERE status = 'shown'";
   }
   if (can(actor, "companies")) {
