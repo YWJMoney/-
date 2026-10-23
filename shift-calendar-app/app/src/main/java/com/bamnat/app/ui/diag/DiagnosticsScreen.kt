@@ -244,8 +244,11 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
             if (lates.isNotEmpty()) add("최근 30일 울린 때: 1분 안 ${lates.count { it < 60 }} · 1~5분 늦음 ${lates.count { it in 60..299 }} · " +
                 "5분 넘게 늦음 ${lates.count { it >= 300 }}")
             if (settings.alarmsEnabled && next != null) add("휴대폰에 걸린 다음 알람: " + if (container.alarmScheduler.systemHolds()) "맞음" else "없거나 다름")
-            context.getSystemService(android.app.usage.UsageStatsManager::class.java)?.takeIf { Build.VERSION.SDK_INT >= 28 }?.let {
-                add("앱 대기 상태: " + bucketName(it.appStandbyBucket))
+            // A plain check, which lint reads (Android 9+).
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                context.getSystemService(android.app.usage.UsageStatsManager::class.java)?.let {
+                    add("앱 대기 상태: " + bucketName(it.appStandbyBucket))
+                }
             }
         }
         val permissions = buildList {

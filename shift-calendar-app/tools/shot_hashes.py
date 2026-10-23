@@ -39,7 +39,7 @@ SHOTS = [
 
 def fingerprint(path):
     im = Image.open(path).convert("L").resize(SIZE, Image.BILINEAR)
-    return bytes(im.getdata()).hex()
+    return im.tobytes().hex()
 
 
 def distance(a, b):

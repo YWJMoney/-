@@ -472,7 +472,9 @@ abstract class ScreenshotBase {
         /** Drags the content up by [dp] (slowly, so it does not fling). */
         fun scrollUp(dp: Int, across: Float = 0.15f) = gesture { w, h, d ->
             val x = w * across
-            val from = h * 0.8f
+            // Starts at 60% of the height, above a button pinned to the bottom (at 200% text on a phone it reaches
+            // up to the 80% line the drag used to start on), lower only when a long drag needs the room.
+            val from = maxOf(h * 0.6f, minOf(h * 0.8f, h * 0.05f + dp * d))
             (0..40).map { x to from - dp * d * it / 40 } + listOf(x to from - dp * d)
         }
     }
