@@ -484,6 +484,14 @@ fun CalendarScreen(
         memoFocus++
         if (!showsDay) sheetOpen = true
     }
+    // [SCHED-03] The day "이 날부터 순서 다시 맞추기" was asked on; survives a fold.
+    var realigning by rememberSaveable(stateSaver = DateSaver) { mutableStateOf<LocalDate?>(null) }
+    realigning?.let { date ->
+        RealignDialog(date, snap, onDismiss = { realigning = null }) { step, clear ->
+            realigning = null
+            vm.realignFrom(date, step, clear)
+        }
+    }
     val onQuickActionNow: (LocalDate, QuickAction) -> Unit = { date, action ->
         // [CAL-17] Found the long press already: the tip is not needed.
         longPressSeen()
@@ -505,6 +513,7 @@ fun CalendarScreen(
                 vm.select(date)
                 if (!showsDay) sheetOpen = true
             }
+            QuickAction.Realign -> realigning = date
         }
     }
     // [CAL-14] The same two lambdas for the whole life of the screen: a tap that changes the selection

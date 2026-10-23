@@ -69,6 +69,7 @@ import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.schedule.PatternPresets
+import com.bamnat.core.schedule.PatternTimeline
 import com.bamnat.core.schedule.ScheduleResolver
 import java.time.DayOfWeek
 import java.time.Instant
@@ -122,19 +123,24 @@ fun PatternScreen(
     val draft: WorkPattern? = when (kind) {
         PatternKind.ROTATION ->
             if (rotation.isEmpty()) null else WorkPattern.Rotation(startDate, clean(rotation.toList()), endDate)
-        PatternKind.WEEKLY -> WorkPattern.Weekly.fromSteps(startDate, clean(weekly.toList()), endDate)
+        PatternKind.WEEKLY -> WorkPattern.Weekly.fromSteps(startDate, clean(weekly.toList()), endDate, draft0.holidaysOff, draft0.altSaturday)
     }
     // [SET-04] An order with no working day would fill the calendar with days off only (ux-review 1 P28).
     val works = when (kind) {
         PatternKind.ROTATION -> rotation.any { id -> id?.let { typesById[it] }?.isOff == false }
         PatternKind.WEEKLY -> weekly.any { id -> id?.let { typesById[it] }?.isOff == false }
     }
+    // [SCHED-02] Past days with a 연차, 잔업·특근 or own times that "지금 순서를 고쳐요" would put under another shift.
+    val entries by vm.entries.collectAsStateWithLifecycle()
+    val moved = remember(existing, draft, entries, today) {
+        if (existing != null && draft != null) PatternTimeline.recordedDaysMoved(existing, draft, entries, today) else emptyList()
+    }
     val valid = draft != null && works && (endDate == null || !endDate!!.isBefore(today))
     val save: () -> Unit = {
         if (draft != null) {
             // With a pattern already in place, ask whether this is a team change and from when.
             if (existing == null) vm.saveFirstPattern(draft, onSaved ?: onBack)
-            else if (savesWithoutAsking(existing, draft, today)) vm.fixCurrentPattern(draft, onBack)
+            else if (moved.isEmpty() && savesWithoutAsking(existing, draft, today)) vm.fixCurrentPattern(draft, onBack)
             else askWhen = true
         }
     }
@@ -346,6 +352,38 @@ fun PatternScreen(
                             }
                         }
                     }
+                    // [SCHED-04] G P18·BC5: a weekday worker's 공휴일 off and 격주 토요일, read by the calendar and alarms.
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("공휴일엔 쉬어요", style = MaterialTheme.typography.bodyLarge)
+                            Text("빨간 날과 대체공휴일은 쉬는 날이 되고 알람도 울리지 않아요", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = draft0.holidaysOff, onCheckedChange = { draft0.holidaysOff = it })
+                    }
+                    if (weekly[DayOfWeek.SATURDAY.ordinal] != null) {
+                        val thisSaturday = today.with(java.time.temporal.TemporalAdjusters.nextOrSame(DayOfWeek.SATURDAY))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("토요일은 격주로 일해요", style = MaterialTheme.typography.bodyLarge)
+                                Text("한 주 걸러 토요일이 쉬는 날이 돼요", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(checked = draft0.altSaturday != null, onCheckedChange = { on ->
+                                draft0.altSaturday = if (on) thisSaturday else null
+                            })
+                        }
+                        draft0.altSaturday?.let { alt ->
+                            val worksThis = Math.floorMod(ChronoUnit.WEEKS.between(alt, thisSaturday), 2L) == 0L
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(selected = worksThis, onClick = { draft0.altSaturday = thisSaturday },
+                                    label = { Text("이번 토요일(${Fmt.monthDay(thisSaturday)}) 일해요") })
+                                FilterChip(selected = !worksThis, onClick = { draft0.altSaturday = thisSaturday.plusWeeks(1) },
+                                    label = { Text("다음 토요일 일해요") })
+                            }
+                        }
+                    }
                 }
                 if (draft != null) {
                     SectionCard(title = "미리보기 (오늘부터 3주)") {
@@ -431,6 +469,7 @@ fun PatternScreen(
             draft = draft,
             typesById = typesById,
             today = today,
+            moved = moved,
             onDismiss = { askWhen = false },
             onChangeFrom = { pattern, from ->
                 askWhen = false
@@ -499,6 +538,7 @@ private fun ChangeFromDialog(
     draft: WorkPattern,
     typesById: Map<Long, ShiftType>,
     today: LocalDate,
+    moved: List<LocalDate>,
     onDismiss: () -> Unit,
     onChangeFrom: (WorkPattern, LocalDate) -> Unit,
     onFix: () -> Unit,
@@ -550,8 +590,18 @@ private fun ChangeFromDialog(
                     }
                 }
                 HorizontalDivider()
+                // [SCHED-02] The fix rewrites the past of this period; say which recorded days it would move.
+                if (moved.isNotEmpty()) {
+                    Text(
+                        "지금 순서를 고치면 기록이 있는 지난 ${moved.size}일의 근무도 바뀌어요: " +
+                            moved.take(4).joinToString { Fmt.monthDay(it) } + (if (moved.size > 4) " 외" else "") +
+                            ". 연차·잔업·특근 기록은 남지만 그날 근무 시간이 달라져 급여가 바뀔 수 있어요.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 TextButton(onClick = onFix, modifier = Modifier.fillMaxWidth()) {
-                    Text("조 변경이 아니에요. 지금 순서를 고쳐요")
+                    Text(if (moved.isEmpty()) "조 변경이 아니에요. 지금 순서를 고쳐요" else "그래도 지난 날까지 고쳐요")
                 }
             }
         },

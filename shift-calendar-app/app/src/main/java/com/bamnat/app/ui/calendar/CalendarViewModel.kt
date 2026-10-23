@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.core.model.WorkPattern
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
@@ -757,6 +758,28 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         is PaintTool.Shift -> ShiftOverride.Shift(tool.shiftTypeId)
         PaintTool.Off -> ShiftOverride.Off
         PaintTool.Clear -> ShiftOverride.None
+    }
+
+    /**
+     * [SCHED-03] Restarts the rotation on [date] at [step] (0-based) from that day on, keeping every day before,
+     * and sets the days in [clear] back to the pattern. Said back with one undo for both.
+     */
+    fun realignFrom(date: LocalDate, step: Int, clear: List<LocalDate>) {
+        val snap = snapshot.value ?: return
+        val rotation = snap.resolver.patternOn(date) as? WorkPattern.Rotation ?: return
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
+            val beforePatterns = snap.patterns
+            schedule.changePatternFrom(PatternTimeline.realign(rotation, date, step), date)
+            val beforeDays = if (clear.isEmpty()) emptyMap() else schedule.updateDays(clear) { it.copy(override = ShiftOverride.None) }
+            val cleared = if (clear.isEmpty()) "" else " · 직접 바꾼 ${clear.size}일은 패턴대로"
+            _messages.emit(
+                UndoMessage("${Fmt.monthDay(date)}부터 ${step + 1}번째 날로 다시 맞췄어요$cleared") {
+                    schedule.restorePatterns(beforePatterns)
+                    beforeDays.forEach { (d, e) -> schedule.restoreDay(d, e) }
+                },
+            )
+        }
     }
 
     /**

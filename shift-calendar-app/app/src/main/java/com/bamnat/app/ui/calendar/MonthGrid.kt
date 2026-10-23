@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import com.bamnat.app.ui.components.asColor
 import com.bamnat.app.ui.components.isDarkSurface
 import com.bamnat.core.model.ShiftOverride
+import com.bamnat.core.model.WorkPattern
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -144,6 +145,8 @@ sealed interface QuickAction {
     /** [CAL-05] A memo on this day. */
     data object Memo : QuickAction
     data object Open : QuickAction
+    /** [SCHED-03] "이 날부터 다시 맞추기": restart the order on this day without opening the pattern screen. */
+    data object Realign : QuickAction
 }
 
 /** [CAL-06] A job over several days, drawn as one bar across them: its ends and whether money is still owed. */
@@ -748,6 +751,14 @@ private fun DayCell(
                     text = { Text("패턴대로") },
                     leadingIcon = { Icon(Icons.Filled.Autorenew, null) },
                     onClick = { menu = false; onQuickAction(QuickAction.Shift(ShiftOverride.None)) },
+                )
+            }
+            // [SCHED-03] I 리뷰 I5: the order drifted (a team moved a day) — restart it from here.
+            if (usesShifts && snapshot.resolver.patternOn(date) is WorkPattern.Rotation) {
+                DropdownMenuItem(
+                    text = { Text("이 날부터 순서 다시 맞추기") },
+                    leadingIcon = { Icon(Icons.Filled.Autorenew, null) },
+                    onClick = { menu = false; onQuickAction(QuickAction.Realign) },
                 )
             }
             val choices = remember(snapshot, day, usesShifts) { if (usesShifts) ExtraText.choices(snapshot.kinds, snapshot.shiftTypes, day) else emptyList() }

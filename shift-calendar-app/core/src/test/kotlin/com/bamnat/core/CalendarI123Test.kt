@@ -10,6 +10,8 @@ import com.bamnat.core.model.ExtraKinds
 import com.bamnat.core.schedule.ExtraStamp
 import com.bamnat.core.schedule.PatternPreset
 import com.bamnat.core.schedule.PatternPresets
+import com.bamnat.core.schedule.PatternTimeline
+import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.schedule.ShiftTypeSet
 import com.bamnat.core.schedule.ShiftTypeSets
 import com.bamnat.core.layout.Contrast
@@ -212,5 +214,58 @@ class CalendarI123Test {
         val ordered = PatternPresets.ordered(Fixtures.all)
         val firstMiss = ordered.indexOfFirst { !PatternPresets.fits(it, Fixtures.all) }
         if (firstMiss >= 0) assertTrue(ordered.drop(firstMiss).none { PatternPresets.fits(it, Fixtures.all) })
+    }
+
+    /** [SCHED-04] A weekday worker: 공휴일 off with no alarm, and every other Saturday worked. */
+    @Test
+    fun `a weekly order can rest on public holidays and work every other Saturday`() {
+        val oct3 = LocalDate.of(2026, 10, 3) // 개천절, a Saturday
+        val p = WorkPattern.Weekly.fromSteps(monday, listOf(1L, 1L, 1L, 1L, 1L, 1L, null), holidaysOff = true, altSaturday = LocalDate.of(2026, 10, 10))
+        val r = ScheduleResolver(Fixtures.all, p, emptyList())
+        assertFalse(r.resolve(LocalDate.of(2026, 10, 9)).isWorkDay) // 한글날, a Friday
+        assertTrue(r.resolve(LocalDate.of(2026, 10, 8)).isWorkDay)
+        assertTrue(r.resolve(LocalDate.of(2026, 10, 10)).isWorkDay)
+        assertFalse(r.resolve(LocalDate.of(2026, 10, 17)).isWorkDay)
+        assertTrue(r.resolve(LocalDate.of(2026, 10, 24)).isWorkDay)
+        assertFalse(r.resolve(oct3).isWorkDay)
+        assertTrue(AlarmPlanner.alarmsOn(r, LocalDate.of(2026, 10, 9)).isEmpty())
+        // Without the options the same days are worked as before.
+        val plain = ScheduleResolver(Fixtures.all, p.copy(holidaysOff = false, altSaturday = null), emptyList())
+        assertTrue(plain.resolve(LocalDate.of(2026, 10, 9)).isWorkDay)
+        assertTrue(plain.resolve(LocalDate.of(2026, 10, 17)).isWorkDay)
+    }
+
+    /** [SCHED-02] Fixing the order in place says which past days with records it would move. */
+    @Test
+    fun `fixing the order in place lists the recorded past days it moves`() {
+        val today = LocalDate.of(2026, 10, 20)
+        val current = WorkPattern.Rotation(monday, listOf(1L, 1L, 3L, 3L, null, null))
+        val draft = WorkPattern.Rotation(monday, listOf(1L, 3L, 3L, null, null, 1L))
+        val leaveDay = monday.plusDays(1) // 주 → 야
+        val sameDay = monday // 주 → 주
+        val handSet = monday.plusDays(2)
+        val entries = listOf(
+            DayEntry(leaveDay, leave = Leave(LeaveKind.ANNUAL, 4)),
+            DayEntry(sameDay, extras = listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 60))),
+            DayEntry(handSet, override = ShiftOverride.Off, leave = Leave(LeaveKind.ANNUAL, 4)),
+            DayEntry(today.plusDays(1), leave = Leave(LeaveKind.ANNUAL, 4)),
+        )
+        assertEquals(listOf(leaveDay), PatternTimeline.recordedDaysMoved(current, draft, entries, today))
+        assertTrue(PatternTimeline.recordedDaysMoved(current, current, entries, today).isEmpty())
+    }
+
+    /** [SCHED-03] Restarting the order on a day keeps the days before and offers the hand-set days after. */
+    @Test
+    fun `realigning restarts the order on the day and keeps the past`() {
+        val rotation = WorkPattern.Rotation(monday.minusYears(1), listOf(1L, 1L, 3L, 3L, null, null), anchorDate = monday)
+        val day = LocalDate.of(2026, 10, 14)
+        val moved = PatternTimeline.realign(rotation, day, 2)
+        assertEquals(3L, moved.shiftTypeIdOn(day))
+        val timeline = PatternTimeline.changeFrom(listOf(rotation), moved, day)
+        assertEquals(rotation.shiftTypeIdOn(day.minusDays(1)), PatternTimeline.on(timeline, day.minusDays(1))!!.shiftTypeIdOn(day.minusDays(1)))
+        assertEquals(3L, PatternTimeline.on(timeline, day)!!.shiftTypeIdOn(day))
+        val entries = listOf(DayEntry(day.minusDays(1), override = ShiftOverride.Off), DayEntry(day.plusDays(3), override = ShiftOverride.Off),
+            DayEntry(day.plusDays(4), leave = Leave()))
+        assertEquals(listOf(day.plusDays(3)), PatternTimeline.handChangedFrom(entries, day))
     }
 }
