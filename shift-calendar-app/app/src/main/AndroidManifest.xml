@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- [ALRM-01] 알람 점검's 배터리 최적화 제외 asks straight away; allowed for alarm clocks (Play's 배터리 최적화 정책). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- [SLP-08] Read only: sleep sessions a watch or the phone wrote to Health Connect. -->
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
     <!-- [IMPORT-01] Read only, asked when the user opens 캘린더에서 가져오기; nothing read leaves the phone. -->
@@ -210,6 +212,12 @@
         <!-- [COMM-10] 광장 소식 once a day: only the system's job scheduler binds it. -->
         <service
             android:name=".company.PlazaNewsJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- [SRV-07][INQ-05][SHR-13] What could not reach a server, sent once the phone is online. -->
+        <service
+            android:name=".company.OutboxJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 

@@ -263,6 +263,28 @@ internal object HelpFaq {
         ),
     )
 
+    /** [INQ-05] I11: the answers each of the server's topics ([com.bamnat.core.ops.InquiryTopics]) starts with. */
+    private val BY_TOPIC = mapOf(
+        "alarm" to listOf("alarm", "sound", "wake"),
+        "pay" to listOf("pay", "takeHome", "extra", "leave", "publicPay"),
+        "schedule" to listOf("pattern", "oneday", "calendars", "restRules", "import"),
+        "share" to listOf("share", "receive"),
+        "company" to listOf("plaza"),
+        "backup" to listOf("backup", "phoneCalendar"),
+        "app" to listOf("widget", "alarm", "turnOff"),
+    )
+
+    /**
+     * [INQ-05] I11: while a question is written, the answers on its topic (sorted the way the server will
+     * sort the question) come first, then the best of the rest.
+     */
+    fun forQuestion(text: String, topics: List<HelpTopic> = topics(), limit: Int = 2): List<HelpTopic> {
+        val key = com.bamnat.core.ops.InquiryTopics.of(text)
+        val ids = BY_TOPIC[key].orEmpty()
+        val first = search(text, topics.filter { it.id in ids }, limit).ifEmpty { topics.filter { it.id in ids }.take(1) }
+        return (first + search(text, topics, limit)).distinctBy { it.id }.take(limit)
+    }
+
     /** The answers that fit [query], best first. */
     fun search(query: String, topics: List<HelpTopic> = topics(), limit: Int = 6): List<HelpTopic> =
         SearchText.best(topics, limit) { SearchText.score(query, it.question, it.keywords + it.tag, it.answer) }

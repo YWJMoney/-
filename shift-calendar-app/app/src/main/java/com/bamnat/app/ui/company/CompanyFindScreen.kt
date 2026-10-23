@@ -428,7 +428,7 @@ private fun SetupCard(
             TrustLine(s.trust, s.agree, s.persons, s.bad, s.adopted)
             if (!s.adopted) PointsBar(s.points, s.threshold)
             // [PLZ-08] Who stands behind it, in the names they chose.
-            WhoLine(s.senders, s.checked, s.uses, s.by)
+            WhoLine(s.senders, s.checked, s.uses, s.by, s.checkedLong)
             main.forEach { (label, text) -> SetupLine(label, text) }
             if (pay.isNotEmpty()) {
                 Row(

@@ -2299,7 +2299,7 @@ class ScreenshotTest {
         settingsPage("개인정보·앱 정보"); reveal("보낼 내용 보기", exact = true); tapText("보낼 내용 보기", exact = true, scrolls = 0)
     }
     @Test fun phonePlazaNewsSwitch() = shoot("418_phone_plaza_news_switch", PHONE) {
-        settingsPage("알림과 잠"); reveal("광장 소식", exact = true)
+        settingsPage("알림과 잠"); reveal("밤낮 소식", exact = true)
     }
     @Test fun foldedReceivedReport() = shoot("419_folded_received_report", FOLDED) {
         receivedOn()

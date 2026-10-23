@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import worker, { cleanJpeg, EVENTS } from "../src/index.js";
+import worker, { cleanJpeg, EVENTS, INQUIRY_TOPICS } from "../src/index.js";
 import { server, report, setup, device, from, signIn, ORIGIN } from "./helpers.mjs";
 
 const plaza = () => server({ plaza: true });
@@ -143,6 +143,12 @@ test("[STAT-01] the app and the server know the same event names", () => {
   const kotlin = readFileSync(new URL("../../../core/src/main/kotlin/com/bamnat/core/stats/UsageEvents.kt", import.meta.url), "utf8");
   const app = [...kotlin.matchAll(/^\s+[A-Z_]+\("([a-z_]+)"\)/gm)].map((m) => m[1]).sort();
   assert.deepEqual(app, Object.keys(EVENTS).sort());
+});
+
+test("[INQ-05] the app sorts a question by the same topics as the server", () => {
+  const kotlin = readFileSync(new URL("../../../core/src/main/kotlin/com/bamnat/core/ops/InquiryTopics.kt", import.meta.url), "utf8");
+  const app = [...kotlin.matchAll(/Topic\("(\w+)", "([^"]+)", """(.*?)"""\)/g)].map((m) => [m[1], m[2], m[3]]);
+  assert.deepEqual(app, INQUIRY_TOPICS.map(([k, l, re]) => [k, l, re.source]));
 });
 
 test("[ADMIN-13][STAT-03][STAT-04] the gate numbers: shares of phones, the funnel, and 데이터 부족 under 30 a day", async (t) => {

@@ -87,14 +87,16 @@ private val dateFormat = DateTimeFormatter.ofPattern("yyyy년 M월 d일")
 
 /** [PLZ-08] Who stands behind a rule set: how many sent it, checked it on a pay slip and use it, and the names they chose. */
 @Composable
-fun WhoLine(senders: Int, checked: Int, uses: Int, by: List<String>) {
+fun WhoLine(senders: Int, checked: Int, uses: Int, by: List<String>, checkedLong: Boolean = false) {
     val parts = listOfNotNull(
         senders.takeIf { it > 0 }?.let { "보낸 분 ${it}명" },
         checked.takeIf { it > 0 }?.let { "명세서 확인 ${it}명" },
         uses.takeIf { it > 0 }?.let { "쓰는 사람 ${it}명" },
     )
-    if (parts.isEmpty() && by.isEmpty()) return
+    if (parts.isEmpty() && by.isEmpty() && !checkedLong) return
     Column {
+        // [COMM-11] N7: checked on pay slips from different networks in two different months.
+        if (checkedLong) StatusChip("두 달 이상 확인됨", Tone.GOOD)
         if (parts.isNotEmpty()) Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (by.isNotEmpty()) Text("올린 분: ${by.joinToString(", ")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -463,6 +465,9 @@ private fun RateCard(r: Rate, onVote: (Boolean) -> Unit, onTakeBack: () -> Unit)
                 }
             }
             if (r.note.isNotEmpty()) Text(r.note, style = MaterialTheme.typography.bodyMedium)
+            // [COMM-11] I5: why the sender's own entry waits.
+            if (r.mine && r.waitingWhy == "far") Text("다른 분들이 알려 준 시세와 차이가 커서 운영자가 한 번 보고 있어요. 맞으면 곧 투표에 올라가요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (r.mine) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("내가 알려 준 시세 · 맞아요 ${r.agree} · 달라요 ${r.disagree}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))

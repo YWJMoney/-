@@ -179,7 +179,8 @@ class AppContainer(context: Context) {
     /** [DAILY-16] The last region's 광장 시세, for the pay screen's comparison on the phone. */
     val rateHints by lazy { com.bamnat.app.company.RateHintStore(appContext) }
     /** [ADMIN-02] 설정 > 문의하기 through the company server; screenshots and tests put a fake in its place. */
-    var inquiryApi: com.bamnat.app.company.InquiryApi = com.bamnat.app.company.InquiryClient()
+    var inquiryApi: com.bamnat.app.company.InquiryApi = com.bamnat.app.company.InquiryClient(
+        hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() })
     /** [ADMIN-02] The pay check 계산이 이상해요 hands to 문의하기; the next 문의하기 screen takes it once. */
     var pendingPayCheck: String? = null
     val inquiryStore by lazy { com.bamnat.app.company.InquiryStore(appContext) }
@@ -304,7 +305,7 @@ class AppContainer(context: Context) {
             if (!e.retryable) {
                 runCatching { telemetry.event("consent", "dropped ${e.code}") }
                 proStore.consentSent(q)
-            }
+            } else com.bamnat.app.company.OutboxJob.schedule(appContext)
             false
         }
     }
@@ -455,14 +456,16 @@ class AppContainer(context: Context) {
             combine(lots, on) { l, o -> l to o }
                 .collect { (l, o) -> LeaveReminder.reschedule(appContext, l, o) }
         }
-        // [COMM-10] 광장 소식 runs while it is on and this phone took part in the plaza.
+        // [COMM-10] 광장 소식, [SRV-10] since 1.23 밤낮 소식: the one daily job runs while it has something to do here.
         keep("plaza news") {
-            combine(settingsRepository.settings.map { it.plazaNews to it.plazaRulesAgreed }, companyStore.sent, companyStore.applied) { a, _, _ -> a }
+            combine(
+                settingsRepository.settings.map { listOf(it.plazaNews, it.plazaRulesAgreed, it.phoneCalendars, it.alarmsEnabled) },
+                companyStore.sent, companyStore.applied, received.calendars.map { it.isEmpty() },
+            ) { a, _, _, _ -> a }
                 .distinctUntilChanged()
                 .collect {
-                    if (settingsRepository.current.plazaNews && com.bamnat.app.company.PlazaNewsJob.takesPart(this@AppContainer)) {
-                        com.bamnat.app.company.PlazaNewsJob.schedule(appContext)
-                    } else com.bamnat.app.company.PlazaNewsJob.cancel(appContext)
+                    if (com.bamnat.app.company.PlazaNewsJob.wanted(this@AppContainer)) com.bamnat.app.company.PlazaNewsJob.schedule(appContext)
+                    else com.bamnat.app.company.PlazaNewsJob.cancel(appContext)
                 }
         }
         // [MON-06] The trial's notice follows the subscription and the user's answer.

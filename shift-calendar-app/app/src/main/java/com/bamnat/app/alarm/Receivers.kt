@@ -52,6 +52,7 @@ class AlarmReceiver : BroadcastReceiver() {
                         DiagEvents.ALARM_LATE_SKIPPED,
                         EventBook.triggerDetail(ring.triggerAtMillis, "late_s=${(now - ring.triggerAtMillis) / 1000}"),
                     )
+                    Notifications.postAlarmTrouble(context, (now - ring.triggerAtMillis) / 60_000)
                 }
                 container.appScope.launch {
                     try {
@@ -99,6 +100,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 EventBook.triggerDetail(ring.triggerAtMillis, e.javaClass.simpleName),
             )
             Notifications.postFallbackAlarm(context, ring)
+            Notifications.postAlarmTrouble(context, null)
         }
     }
 

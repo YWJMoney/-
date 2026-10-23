@@ -354,8 +354,9 @@ class ShareLinkStore(
     /** Forgets the link; what the sharer ticked stays for the next one. */
     fun clear() {
         prefs.edit().remove("id").remove("url").remove("token").remove("expires").remove("title").remove("ttl").remove("from")
-            .remove("sent").remove("noticed").apply()
+            .remove("sent").remove("noticed").remove("unsent").remove("sent_at").apply()
         _link.value = null
+        _unsent.value = false
     }
 
     /** [MCAL-03][QA-03] The calendar went: the link is forgotten, and nothing written with this store from now on is kept. */
@@ -371,6 +372,23 @@ class ShareLinkStore(
 
     /** [SHR-12] The fingerprint of what the server last got, null when unknown (a link from before 1.14). */
     val sent: String? get() = prefs.getString("sent", null)
+
+    private val _unsent = MutableStateFlow(prefs.getBoolean("unsent", false))
+    /**
+     * [SHR-13] A change the link has not got yet: the server could not be reached. [OutboxJob] sends it when
+     * the phone is online again; the share card says so meanwhile.
+     */
+    val unsent: StateFlow<Boolean> = _unsent.asStateFlow()
+
+    /** [SHR-13] When the link last got the calendar, or null before 1.23 or for a link not sent since. */
+    val sentAt: Instant? get() = prefs.getString("sent_at", null)?.let { runCatching { Instant.parse(it) }.getOrNull() }
+
+    /** [SHR-13] The server has what the calendar shows now ([at]), or it could not be reached ([at] null). */
+    fun sendResult(at: Instant?) {
+        if (retired) return
+        prefs.edit().putBoolean("unsent", at == null).apply { if (at != null) putString("sent_at", at.toString()) }.apply()
+        _unsent.value = at == null
+    }
 
     /** [SHR-12] Whether a change on the calendar goes to the link by itself; on unless the sharer turned it off. */
     var auto: Boolean

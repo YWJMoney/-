@@ -21,6 +21,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,6 +57,39 @@ class ClosedNotices(context: Context) {
     }
 }
 
+/**
+ * [SRV-09] This phone for a notice's audience, read here and never sent: the maker, Android's version,
+ * the main calendar's way of working and the features in use.
+ */
+internal fun noticePhone(c: com.bamnat.app.AppContainer): com.bamnat.core.ops.NoticeAudience.Phone {
+    val s = c.settingsRepository.current
+    val features = buildSet {
+        if (s.alarmsEnabled) add("ALARM")
+        if (com.bamnat.app.share.ShareLinkKey.all(com.bamnat.app.data.PersonalCalendar.MAIN).any { c.shareLinksOf(it).link.value != null } ||
+            c.received.calendars.value.isNotEmpty()) add("SHARE")
+        if (c.payStore.profile.value != null) add("PAY")
+        if (com.bamnat.app.company.PlazaNewsJob.takesPart(c)) add("PLAZA")
+        if (c.autoBackup.on) add("BACKUP")
+    }
+    return com.bamnat.core.ops.NoticeAudience.Phone(android.os.Build.MANUFACTURER.orEmpty(), android.os.Build.VERSION.SDK_INT, s.workStyle?.name, features)
+}
+
+/** [SRV-09] Where a notice's button goes. */
+internal fun followNotice(context: Context, a: com.bamnat.core.ops.NoticeAction) {
+    val target = when (a.kind) {
+        "ALARM_CHECK" -> com.bamnat.app.NoticeLinks.Target.ALARM_CHECK
+        "BACKUP" -> com.bamnat.app.NoticeLinks.Target.BACKUP
+        "PRO" -> com.bamnat.app.NoticeLinks.Target.PRO
+        "INQUIRY" -> com.bamnat.app.NoticeLinks.Target.INQUIRY
+        "SHARE" -> com.bamnat.app.NoticeLinks.Target.SHARE
+        "PLAZA" -> com.bamnat.app.NoticeLinks.Target.PLAZA
+        "WHATS_NEW" -> com.bamnat.app.NoticeLinks.Target.WHATS_NEW
+        else -> null
+    }
+    if (target != null) com.bamnat.app.NoticeLinks.open(target)
+    else a.url?.let { runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(it))) } }
+}
+
 /** [SRV-04] The developer's notice as one line over the calendar; a tap opens it, ✕ closes it for good. */
 @Composable
 fun AppNoticeLine(modifier: Modifier = Modifier) {
@@ -63,7 +97,7 @@ fun AppNoticeLine(modifier: Modifier = Modifier) {
     val config by c.remoteConfig.config.collectAsStateWithLifecycle()
     val closed by c.closedNotices.closed.collectAsStateWithLifecycle()
     val notice = remember(config.notices, closed) {
-        AppNotices.showing(config.notices, System.currentTimeMillis(), BuildConfig.VERSION_CODE, closed)
+        AppNotices.showing(config.notices, System.currentTimeMillis(), BuildConfig.VERSION_CODE, closed, noticePhone(c))
     } ?: return
     var open by remember(notice.id) { mutableStateOf(false) }
     val tone = if (notice.important) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer
@@ -76,12 +110,20 @@ fun AppNoticeLine(modifier: Modifier = Modifier) {
             IconButton(onClick = { c.closedNotices.close(notice.id, config.notices) }) { Icon(Icons.Filled.Close, "공지 닫기", Modifier.size(18.dp)) }
         }
     }
+    // [STAT-06] I14: how many open a notice, counted like the other usage events (only with 사용 통계 on).
+    LaunchedEffect(open) { if (open) c.telemetry.event(com.bamnat.core.stats.UsageEvent.NOTICE_OPEN.key) }
+    val context = LocalContext.current
     if (open) {
         AlertDialog(
             onDismissRequest = { open = false },
             title = { Text(notice.title) },
             text = { Text(notice.body) },
-            confirmButton = { TextButton(onClick = { open = false }) { Text("확인") } },
+            confirmButton = {
+                val action = notice.action
+                // [SRV-09] I13: the notice's button opens where it is about.
+                if (action != null) TextButton(onClick = { open = false; followNotice(context, action) }) { Text(action.words) }
+                else TextButton(onClick = { open = false }) { Text("확인") }
+            },
             dismissButton = { TextButton(onClick = { open = false; c.closedNotices.close(notice.id, config.notices) }) { Text("다시 보지 않기") } },
         )
     }

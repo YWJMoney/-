@@ -53,6 +53,11 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK -> true
             }
+            // [SRV-08] P9: with 앱 잠금 on, the recents screen and screenshots show no calendar or money.
+            DisposableEffect(settings.appLock) {
+                AppLock.secure(window, settings.appLock)
+                onDispose { }
+            }
             // Status bar icons follow the app theme, not only the system one.
             DisposableEffect(dark) {
                 enableEdgeToEdge(

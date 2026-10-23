@@ -41,6 +41,15 @@ object AppLock {
         if (!changingConfigurations) stoppedAt = SystemClock.elapsedRealtime()
     }
 
+    /**
+     * [SRV-08] P9: while 앱 잠금 is on the window is FLAG_SECURE, so the recents screen, screenshots and
+     * screen sharing show nothing of the calendar, pay or memos.
+     */
+    fun secure(window: android.view.Window, on: Boolean) {
+        if (on) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
     /** Turned off in settings: no cover from now on. */
     fun release() {
         _locked.value = false

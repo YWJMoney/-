@@ -350,9 +350,10 @@ private fun NoticesPage(
         }
         Note("일감 시작 전 알림은 일감마다 정해요.")
     }
-    // [COMM-10] The plaza's news once a day, only for someone who uses a company's rules or sent something.
-    SectionCard(title = "회사 광장") {
-        SwitchRow("광장 소식", "쓰는 회사 규칙이 바뀌거나, 보낸 규칙·제안·임금표가 채택되면 하루 한 번 묶어서 소리 없이 알려 줘요", settings.plazaNews,
+    // [COMM-10] The plaza's news once a day; [SRV-10] since 1.23 밤낮 소식 with answers, notices and received schedules.
+    SectionCard(title = "소식") {
+        SwitchRow("밤낮 소식", "문의에 답이 오거나, 받은 동료 근무표의 다음 7일이 바뀌거나, 광장에서 쓰는 규칙·보낸 글·신고에 소식이 있으면 " +
+            "하루 한 번 묶어서 소리 없이 알려 줘요", settings.plazaNews,
             warning = warning(settings.plazaNews, Notifications.PLAZA_CHANNEL_ID), onFix = fix(Notifications.PLAZA_CHANNEL_ID)) { on ->
             set(on) { it.copy(plazaNews = on) }
         }
@@ -601,7 +602,7 @@ private fun PrivacyPage(
         val lockable = remember(refresh) { com.bamnat.app.AppLock.available(context) }
         SwitchRow(
             "앱 잠금",
-            if (lockable) "열 때와 1분 넘게 다른 앱을 쓰다 돌아올 때 지문·얼굴·PIN을 물어요. 알람은 그대로 울려요"
+            if (lockable) "열 때와 1분 넘게 다른 앱을 쓰다 돌아올 때 지문·얼굴·PIN을 물어요. 최근 앱 화면과 화면 캡처에도 내용이 안 보여요. 알람은 그대로 울려요"
             else "휴대폰에 잠금(PIN·패턴·지문)을 먼저 설정하면 켤 수 있어요",
             settings.appLock && lockable,
             enabled = lockable,

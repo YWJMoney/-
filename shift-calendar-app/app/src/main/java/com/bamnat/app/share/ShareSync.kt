@@ -70,7 +70,13 @@ class ShareSync(
             // [PROV-04] Each of a calendar's links, the first first.
             for (key in c.calendars.calendars.value.flatMap { ShareLinkKey.all(it.id) }) {
                 var tries = 0
-                while (sync(key) == Result.Offline && ++tries < RETRIES) delay(RETRY_MILLIS)
+                var result = sync(key)
+                while (result == Result.Offline && ++tries < RETRIES) {
+                    delay(RETRY_MILLIS)
+                    result = sync(key)
+                }
+                // [SHR-13] Still not through: the job sends it once the phone is online, even with the app closed.
+                if (result == Result.Offline) com.bamnat.app.company.OutboxJob.schedule(c.appContext)
             }
         }
     }
@@ -82,6 +88,16 @@ class ShareSync(
         val link = store.link.value ?: return@withLock Result.Same
         if (!store.auto) return@withLock Result.Same
         send(store, link, null)
+    }
+
+    /** [SHR-13] Every link with a change the server has not got, sent now; true when none is left. */
+    suspend fun sendUnsent(): Boolean {
+        var left = false
+        for (key in c.calendars.calendars.value.flatMap { ShareLinkKey.all(it.id) }) {
+            if (!c.shareLinksOf(key).unsent.value) continue
+            if (sync(key) == Result.Offline) left = true
+        }
+        return !left
     }
 
     /**
@@ -120,19 +136,24 @@ class ShareSync(
         // A calendar emptied for these months stays as it was on the link rather than being refused.
         if (!ShareLinkPayload.hasContent(payload)) return Result.Same
         val sent = ShareLinkPayload.fingerprint(payload)
-        if (ttlDays == null && sent == store.sent && link.from == from) return Result.Same
+        if (ttlDays == null && sent == store.sent && link.from == from) {
+            if (store.unsent.value) store.sendResult(clock())
+            return Result.Same
+        }
         return try {
             val updated = c.shareApi.update(link, payload)
             store.save(updated.copy(from = from), sent)
+            store.sendResult(clock())
             if (ttlDays != null) store.noticedFor = null
             c.telemetry.event(if (ttlDays == null) "share_link_auto" else "share_link_extend")
             Result.Sent
         } catch (e: ShareLinkException) {
             when (e.message) {
                 "not_found", "forbidden" -> { store.clear(); Result.Gone }
-                else -> Result.Offline
+                else -> { store.sendResult(null); Result.Offline }
             }
         } catch (e: IOException) {
+            store.sendResult(null)
             Result.Offline
         }
     }

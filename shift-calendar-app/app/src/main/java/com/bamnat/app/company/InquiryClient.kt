@@ -366,7 +366,69 @@ class InquiryStore(context: Context) {
     fun saveReply(id: String, text: String) {
         prefs.edit { if (text.isBlank()) remove("reply_$id") else putString("reply_$id", text) }
     }
+
+    private val _outbox = MutableStateFlow(loadOutbox())
+    /** [INQ-05] Questions waiting to be sent, oldest first; at most [OUTBOX_MAX]. */
+    val outbox: StateFlow<List<QueuedInquiry>> = _outbox.asStateFlow()
+
+    private fun loadOutbox(): List<QueuedInquiry> = runCatching {
+        val a = org.json.JSONArray(prefs.getString("outbox", "[]"))
+        (0 until a.length()).mapNotNull { a.optJSONObject(it)?.let(QueuedInquiry::of) }
+    }.getOrDefault(emptyList())
+
+    private fun saveOutbox(list: List<QueuedInquiry>) {
+        _outbox.value = list
+        prefs.edit { putString("outbox", org.json.JSONArray(list.map { it.toJson() }).toString()) }
+    }
+
+    /** False when [OUTBOX_MAX] already wait. */
+    fun queue(q: QueuedInquiry): Boolean {
+        if (_outbox.value.size >= OUTBOX_MAX) return false
+        saveOutbox(_outbox.value.filter { it.requestId != q.requestId } + q)
+        return true
+    }
+
+    fun unqueue(requestId: String) = saveOutbox(_outbox.value.filter { it.requestId != requestId })
+
+    fun refused(requestId: String, code: String) = saveOutbox(_outbox.value.map { if (it.requestId == requestId) it.copy(refused = code) else it })
+
+    companion object {
+        const val OUTBOX_MAX = 5
+    }
 }
 
 /** [UX-05] A question not sent yet: what it is about (if chosen) and what is written so far. */
 data class InquiryDraft(val kind: InquiryKind?, val text: String)
+
+/**
+ * [INQ-05] A question waiting to be sent ([InquiryOutbox]); [refused] is the server's word when it would
+ * not take it, so the user can change it.
+ */
+data class QueuedInquiry(
+    val requestId: String,
+    val kind: InquiryKind,
+    val text: String,
+    val info: InquiryInfo,
+    val at: Instant,
+    val refused: String? = null,
+) {
+    fun toJson(): JSONObject = JSONObject().put("id", requestId).put("kind", kind.code).put("text", text).put("at", at.toString())
+        .put("app", info.app).put("model", info.model).put("android", info.android)
+        .apply {
+            info.diag?.let { put("diag", it) }
+            info.pay?.let { put("pay", it) }
+            info.setup?.let { put("setup", it) }
+            refused?.let { put("refused", it) }
+        }
+
+    companion object {
+        fun of(o: JSONObject): QueuedInquiry? = runCatching {
+            QueuedInquiry(
+                requestId = o.getString("id"), kind = InquiryKind.of(o.optString("kind")), text = o.getString("text"),
+                info = InquiryInfo(o.optString("app"), o.optString("model"), o.optString("android"),
+                    diag = o.optStringOrNull("diag"), pay = o.optStringOrNull("pay"), setup = o.optStringOrNull("setup")),
+                at = Instant.parse(o.getString("at")), refused = o.optStringOrNull("refused"),
+            )
+        }.getOrNull()
+    }
+}

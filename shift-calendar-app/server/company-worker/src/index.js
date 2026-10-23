@@ -2461,7 +2461,8 @@ const PRIVATE_KINDS = ["company"];
 // developer filters by topic and sees the urgent ones first instead of opening each to sort it.
 
 /** Topic, label and the words that point to it; the most matched topic wins, the first on a tie. */
-const INQUIRY_TOPICS = [
+// [INQ-05] The app sorts with the same table: core/ops/InquiryTopics.kt (a test keeps them alike).
+export const INQUIRY_TOPICS = [
   ["alarm", "알람", /알람|울리|울려|울림|소리|진동|깨워|스누즈|다시\s*울/g],
   ["pay", "급여 계산", /급여|월급|시급|일당|연봉|수당|가산|명세서|통상임금|주휴|연차|퇴직|세금|4대\s*보험|계산/g],
   ["schedule", "근무표·달력", /근무표|달력|캘린더|교대|패턴|근무\s*유형|대근|휴무|비번|야간|주간|오프|일정|메모/g],
