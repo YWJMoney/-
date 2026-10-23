@@ -272,7 +272,10 @@ private fun PayResult(
     var amountFor by remember { mutableStateOf<com.bamnat.core.pay.MissingItem?>(null) }
     var addingItem by remember { mutableStateOf(false) }
     var addingBonus by remember { mutableStateOf(false) }
-    var walkthrough by rememberSaveable { mutableStateOf(true) }
+    // [PAYR-08] Once closed, never opened again by itself on this phone (notes/1.22-285/D.md M12).
+    val hintContext = androidx.compose.ui.platform.LocalContext.current
+    val hints = remember { com.bamnat.app.ui.calendar.HintStore(hintContext) }
+    var walkthrough by rememberSaveable { mutableStateOf(!hints.done(com.bamnat.app.ui.calendar.HintStore.PAY_WALKTHROUGH)) }
     // [PAYS-07] 우리 회사 항목 만들기, a rule made before being changed, and the item just made.
     var building by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<com.bamnat.core.pay.CustomRule?>(null) }
@@ -299,6 +302,10 @@ private fun PayResult(
 
         TotalCard(shown, range, unlocked, closed = closedSnap != null, onChecks = { checking = true },
             onEstimate = { estimate = Estimates.forMonth(shown, profile) })
+        // [PAYX-23] Night minutes split by a break with no start time: say how to make them exact.
+        if (closedSnap == null) Estimates.breakNote(result)?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
 
         underTotal()
 
@@ -327,7 +334,7 @@ private fun PayResult(
         }
 
         if (walkthrough && unlocked) {
-            Walkthrough(shown, onClose = { walkthrough = false })
+            Walkthrough(shown, onClose = { walkthrough = false; hints.markDone(com.bamnat.app.ui.calendar.HintStore.PAY_WALKTHROUGH) })
         }
 
         SectionCard(title = "항목별 내역", trailing = { Text("누르면 계산 풀이", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }) {
@@ -867,7 +874,7 @@ private fun BonusRow(item: PayItem, base: Long, month: YearMonth, enabled: Boole
         Text("${item.name} · ${item.paidWhen()}", style = MaterialTheme.typography.bodyLarge)
         Text(
             won(item.bonusPayment(base, month)) + (item.percentOfBase?.let { " (기본급 ${PayCalculator.pct(it)})" } ?: "") +
-                " × 연 ${item.timesInYear(month.year)}회",
+                " × 연 ${item.yearlyTimes}회",
             style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
         )
         Text(

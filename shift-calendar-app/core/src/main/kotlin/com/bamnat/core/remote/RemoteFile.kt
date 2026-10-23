@@ -88,5 +88,9 @@ object RemoteKeys {
     val TRUSTED: List<String> = listOf(
         // 2026-10-22 key, private half in the project's release-key/bamnat-remote-ed25519.pem.
         "6e6J4SWfNWAY8142S4+UDOjBJz+4/njmfjxATwAl55I=",
+        // [REMOTE-04] 2026-10-23 spare key (키 교체 대비), private half in release-key/bamnat-remote-ed25519-2.pem.
+        // Files are still signed with the first key; this one lets a later release switch keys, or recover from a
+        // lost one, without stranding phones that never updated.
+        "fzoA27EsvTUDa4EA/xtL/z4039vz1TSwmTr48lksmXQ=",
     )
 }

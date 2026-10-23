@@ -187,7 +187,8 @@ fun CompanyRulesEditor(
                 if (draft.wageType == WageType.MONTHLY) {
                     Label("월 소정근로시간 (통상시급을 나누는 시간)")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(209, 226, 243).forEach { h ->
+                        // [PAYX-34] 180시간 too: the payslip match already tries it (PayslipMatcher.SNAP_HOURS).
+                        Unknowns.MONTHLY_HOURS_CHIPS.forEach { h ->
                             FilterChip(selected = draft.monthlyHours == h, onClick = { draft = draft.copy(monthlyHours = h).settled(Unknowns.MONTHLY_HOURS) },
                                 label = { Text("${h}시간") })
                         }
@@ -195,7 +196,9 @@ fun CompanyRulesEditor(
                         Text("${draft.monthlyHours}시간", style = MaterialTheme.typography.titleSmall, modifier = Modifier.align(Alignment.CenterVertically))
                         OutlinedButton(onClick = { draft = draft.copy(monthlyHours = (draft.monthlyHours + 1).coerceAtMost(320)).settled(Unknowns.MONTHLY_HOURS) }) { Text("+") }
                     }
-                    Hint("주 40시간이면 209시간이 보통이에요. 토요일 4시간 유급이면 226시간, 8시간 유급이면 243시간이에요.")
+                    // [PAYX-23] The company's own number, e.g. 182 (주 35시간), typed in.
+                    MonthlyHoursField(draft.monthlyHours, { h -> draft = draft.copy(monthlyHours = h).settled(Unknowns.MONTHLY_HOURS) })
+                    Hint("주 40시간이면 209시간이 보통이에요. 토요일 4시간 유급이면 226시간, 8시간 유급이면 243시간이에요. 명세서나 계약서에 다른 숫자가 있으면 그대로 넣어요.")
                     // [PAY-04] The same formula on the user's own roster (시행령 제6조 제2항).
                     val weekly = remember(snapshot, month) { StandardHours.averageWeekly(month.atDay(1), resolve = snapshot.resolver::resolve) }
                     val fromRoster = StandardHours.monthly(weekly)

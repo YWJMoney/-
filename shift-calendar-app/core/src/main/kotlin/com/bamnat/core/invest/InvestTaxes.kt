@@ -83,6 +83,13 @@ object InvestTaxes {
     /** US dividends are taxed 15% there, and nothing more here below the 2,000만 원 line. */
     const val US_DIVIDEND_RATE = 0.15
 
+    /**
+     * [INV-35] Why the 보유 tab's 손익 and the tax preview can differ: 평균단가 is a moving average, the 해외 주식 tax
+     * preview matches each sale with the oldest shares first. Shown under both.
+     */
+    const val AVERAGE_VS_FIFO = "보유 화면의 평균단가 손익은 이동평균이고, 해외 주식 세금 미리 보기는 먼저 산 주식부터 판 것으로(선입선출) 계산해요. " +
+        "그래서 두 손익이 다를 수 있어요. 신고는 증권사 양도소득세 자료로 확인해 주세요."
+
     /** [INV-09] The tax usually withheld from a dividend of [gross] won from a holding on [market]. */
     fun dividendTax(gross: Long, market: Market): Long =
         floor(gross * (if (market.foreign) US_DIVIDEND_RATE else DIVIDEND_RATE)).toLong()

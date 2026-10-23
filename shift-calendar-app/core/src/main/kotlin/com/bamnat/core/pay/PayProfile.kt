@@ -92,7 +92,11 @@ data class PayItem(
     /** Payments in [year]; the 명절 months change every year. */
     fun timesInYear(year: Int): Int = (1..12).sumOf { timesIn(java.time.YearMonth.of(year, it)) }
 
-    /** Payments in a usual year, for labels: fixed months plus one per 명절. */
+    /**
+     * Payments in a usual year: fixed months plus one per 명절. [PAYX-23] This, not [timesInYear], is the 연간
+     * 지급 횟수 for 통상임금: a 명절상여 paid the month before can land twice in one calendar year (설 2027-02 paid
+     * in January, 설 2028-01-26 paid in December 2027) and none in the next, but it is still one 설 상여 a year.
+     */
     val yearlyTimes: Int get() = months.size + festivals.size
 
     val isFixedOvertime: Boolean get() = fixedOvertimeMinutes > 0 && cadence == Cadence.MONTHLY
@@ -118,7 +122,7 @@ data class PayItem(
      * requires being employed on the pay date.
      */
     fun bonusMonthlyShare(base: Long, on: java.time.YearMonth): Long =
-        Math.round(bonusPayment(base, on) * timesInYear(on.year) / 12.0)
+        Math.round(bonusPayment(base, on) * yearlyTimes / 12.0)
 
     companion object {
         /** [PAYS-03] The premium lines an allowance can stand in for; company rules for extra work never are. */

@@ -41,16 +41,29 @@ object Unknowns {
     const val PUBLIC_HOLIDAYS = "publicHolidays"
     /** Work on a day off; assumed 법대로. */
     const val REST_DAY_WORK = "restDayWork"
+    /**
+     * [PAYX-23] Which day is the 주휴일, when the 회사 규칙 leave it unset; never stored, listed with [REST_DAY_WORK]
+     * whenever that is 확인 필요, since the two together decide how work on a day off is paid.
+     */
+    const val WEEKLY_HOLIDAY = "weeklyHoliday"
     /** Breaks; assumed unpaid. */
     const val BREAK_PAY = "breakPay"
     /** 월 소정근로시간; assumed 209 or the roster's. */
     const val MONTHLY_HOURS = "monthlyHours"
     /** The base amount was entered as 대략. */
     const val BASE = "base"
+    /**
+     * [PAYX-23] 연봉 13분할: whether the 13th share is a 퇴직금 reserve (not wage, assumed) or a 정기 상여 paid once a
+     * year, which is 통상임금 (대법원 2024.12.19. 2020다247190). Written when 13분할 is picked.
+     */
+    const val ANNUAL_13 = "annual13"
     /** 휴일 급여 방식, written by the setup of 1.11 and earlier when skipped; no longer asked, a payslip settles it. */
     const val HOLIDAY_PAY_MODE = "holidayPayMode"
     private const val ITEM = "item:"
     private const val COVERS = "covers:"
+
+    /** [PAYX-23] The bonus item the [ANNUAL_13] answer 정기 상여 adds. */
+    const val ANNUAL_13_ITEM = "annual13Bonus"
 
     /** An allowance's amount is unknown (금액 모름): with no amount it is left out and listed in [MonthPay.missing]. */
     fun item(id: String): String = ITEM + id
@@ -61,6 +74,9 @@ object Unknowns {
     /** The 월 소정근로시간 companies use: 209 (주 40시간 + 주휴), 226 and 243 (토요일 4·8시간 유급). */
     val MONTHLY_HOURS_CHOICES: List<Int> = listOf(209, 226, 243)
 
+    /** [PAYX-34] The chips the setup and the company rules show: [MONTHLY_HOURS_CHOICES] and 180 (명세서에 흔한 값). */
+    val MONTHLY_HOURS_CHIPS: List<Int> = listOf(180) + MONTHLY_HOURS_CHOICES
+
     /**
      * Every key in [profile]'s 확인 필요 set this version understands, in question order; [rosterHours] is the
      * roster's 월 소정근로시간 (see [StandardHours]) when known. Allowance amounts the 1.11 setup marked 추정
@@ -68,9 +84,10 @@ object Unknowns {
      */
     fun of(profile: PayProfile, rosterHours: Int? = null): List<Unknown> {
         val ids = profile.items.map { it.id }
-        val order = listOf(FIVE_OR_MORE, SUPERVISORY, SCHEDULE_IS_REGULAR, PUBLIC_HOLIDAYS, REST_DAY_WORK, BREAK_PAY) +
-            ids.map(::covers) + listOf(MONTHLY_HOURS, BASE) + ids.map(::item) + HOLIDAY_PAY_MODE + ids
-        return order.distinct().filter { it in profile.estimatedFields }.mapNotNull { describe(it, profile, rosterHours) }
+        val order = listOf(FIVE_OR_MORE, SUPERVISORY, SCHEDULE_IS_REGULAR, PUBLIC_HOLIDAYS, REST_DAY_WORK, WEEKLY_HOLIDAY, BREAK_PAY) +
+            ids.map(::covers) + listOf(MONTHLY_HOURS, ANNUAL_13, BASE) + ids.map(::item) + HOLIDAY_PAY_MODE + ids
+        val open = profile.estimatedFields + listOfNotNull(WEEKLY_HOLIDAY.takeIf { REST_DAY_WORK in profile.estimatedFields })
+        return order.distinct().filter { it in open }.mapNotNull { describe(it, profile, rosterHours) }
     }
 
     /** What [key] means for [profile]; null for a key this version does not know or an allowance since deleted. */
@@ -111,6 +128,14 @@ object Unknowns {
             key == REST_DAY_WORK -> Unknown(key, "쉬는 날 근무", "쉬는 날 근무는 ${rules.restDayWork.label} 계산해요",
                 RestDayWork.entries.filter { it != rules.restDayWork }.map { m -> answer(m.label) { it.withRules { r -> r.copy(restDayWork = m) } } },
                 SetupQuestion.REST_DAY_WORK)
+            // [PAYX-23] With no 주휴일 set every day off is a 휴무일 (the classifier and the paid holidays agree); the range
+            // also runs the usual 주휴일s. Set in 회사 규칙, so no setup question.
+            key == WEEKLY_HOLIDAY -> if (rules.weeklyHoliday != WeeklyHoliday.Unknown) null else
+                Unknown(key, "주휴일", "주휴일을 몰라 쉬는 날은 모두 휴무일로 계산해요",
+                    listOf(
+                        answer("일요일") { it.withRules { r -> r.copy(weeklyHoliday = WeeklyHoliday.Fixed(DayOfWeek.SUNDAY)) } },
+                        answer("주마다 첫 쉬는 날") { it.withRules { r -> r.copy(weeklyHoliday = WeeklyHoliday.FirstRestDay) } },
+                    ), null)
             key == BREAK_PAY -> Unknown(key, "휴게 시간", when (rules.breakPay) {
                 BreakPay.UNPAID -> "휴게는 무급으로 계산해요"
                 BreakPay.PAID -> "휴게는 유급으로 계산해요"
@@ -122,6 +147,15 @@ object Unknowns {
                 else (MONTHLY_HOURS_CHOICES + listOfNotNull(rosterHours)).distinct().filter { it != profile.monthlyHours }
                     .map { h -> answer("${h}시간") { it.copy(monthlyHours = h) } },
                 SetupQuestion.MONTHLY_HOURS)
+            key == ANNUAL_13 -> profile.annual?.takeIf { it.divisor == 13 }?.let { a ->
+                val share = a.breakdown().monthlyShare
+                Unknown(key, "연봉 13번째 몫", "퇴직금 몫으로 보고 통상임금에서 뺐어요",
+                    listOf(answer("연말 정기 상여 (통상임금)") { p ->
+                        if (p.items.any { it.id == ANNUAL_13_ITEM }) p
+                        else p.copy(items = p.items + PayItem(ANNUAL_13_ITEM, "13번째 몫 상여", ValueTimeline(listOf(DatedValue(java.time.LocalDate.of(2000, 1, 1), share))), Cadence.BONUS,
+                            ordinary = true, months = setOf(12)))
+                    }), null)
+            }
             key == BASE -> Unknown(key, "${baseName(profile.wageType)} (대략)", "넣은 금액으로 계산해요", emptyList(), null)
             key == HOLIDAY_PAY_MODE -> Unknown(key, "휴일 근무 급여 방식", "${particle(profile.holidayPayMode.label, "으로", "로")} 계산해요",
                 if (profile.wageType != WageType.MONTHLY) emptyList()

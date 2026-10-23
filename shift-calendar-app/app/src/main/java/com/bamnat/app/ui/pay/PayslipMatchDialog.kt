@@ -393,6 +393,15 @@ private fun ColumnScope.AmountsStage(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.tertiary,
         )
+        // [PAYX-23] A 실수령액 typed in: the pay before tax that leaves it, by the same 4대보험·간이세액표 the app uses.
+        val mode = profile.taxMode.takeIf { it != com.bamnat.core.pay.TaxMode.NONE } ?: com.bamnat.core.pay.TaxMode.INSURANCE_4
+        val before = remember(gross, profile, month) {
+            com.bamnat.core.pay.TakeHome.grossFromNet(gross, mode, profile.taxFamily, month.atDay(1), profile.taxChildren,
+                com.bamnat.core.pay.TakeHome.nonTaxable(profile, month))
+        }
+        if (before > gross) TextButton(onClick = { form.gross = before }) {
+            Text("실수령액이었다면: 공제 전 약 ${won(before)}으로 바꾸기")
+        }
     }
     if (failed) Text("맞춰 보지 못했어요. 한 번 더 눌러 주세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
 

@@ -83,6 +83,8 @@ data class MonthPay(
 ) {
     val total: Long get() = lines.sumOf { it.amount }
     val estimated: Boolean get() = lines.any { it.estimated } || minutes.any { it.estimated }
+    /** [PAYX-23] Days whose night or midnight split was made by spreading a break with no start time. */
+    val breakGuessedDays: List<LocalDate> get() = minutes.filter { it.breakGuessed }.map { it.date }
     fun day(date: LocalDate): DayPay? = days.firstOrNull { it.date == date }
 }
 
@@ -258,8 +260,10 @@ class PayCalculator(
         // [PAY-13] A paid holiday on a scheduled working day: hourly and daily-paid workers get one
         // day's ordinary wage for it, worked or not, and holiday pay on top when they work it
         // (고용노동부 임금근로시간과-653, 2021.3.22.). A 비번 day that falls on a holiday earns nothing.
-        // Monthly pay already includes it. The 주휴일 (Sundays when it is not set) is left out: 주휴수당 covers it.
-        val weeklyHolidayDay = (rules.weeklyHoliday as? WeeklyHoliday.Fixed)?.day ?: DayOfWeek.SUNDAY.takeIf { rules.weeklyHoliday == WeeklyHoliday.Unknown }
+        // Monthly pay already includes it. The 주휴일 is left out: 주휴수당 covers it. [PAYX-23] When the 주휴일 is not
+        // set, no day is assumed to be it, as the classifier assumes (every day off is a 휴무일); the 쉬는 날 근무
+        // question's range runs the 일요일 answer ([Unknowns.REST_DAY_WORK]).
+        val weeklyHolidayDay = (rules.weeklyHoliday as? WeeklyHoliday.Fixed)?.day
         fun paidHolidayMinutes(day: ResolvedDay): Int =
             if (!byHour || !publicHoliday(day.date) || day.date.dayOfWeek == weeklyHolidayDay || day.date in weeklyHolidays) 0
             else (day.scheduledMinutes + day.leaveMinutes).coerceAtMost(rates.dailyLimitMinutes)
@@ -659,7 +663,7 @@ class PayCalculator(
                     LineKind.ALLOWANCE, item.name, once * times,
                     formula = (item.percentOfBase?.let { "기본급 ${won(base.value)} × ${pct(it)}" } ?: "정액 ${won(once)}") +
                         if (times > 1) " × ${times}회" else "",
-                    basis = (if (item.ordinary) "통상임금에 포함 (연 ${item.timesInYear(month.year)}회 ÷ 12)" else "통상임금 제외") +
+                    basis = (if (item.ordinary) "통상임금에 포함 (연 ${item.yearlyTimes}회 ÷ 12)" else "통상임금 제외") +
                         " · $paidIn 지급",
                 )
                 continue
@@ -684,8 +688,16 @@ class PayCalculator(
 
         weeklyHoliday?.let { lines += it.first }
 
+        // [PAYX-23] The year of the rates actually used (the period's first day), not the pay month's: 12/21~1/20
+        // is checked against the year it starts in. When a new year's 최저임금 starts inside the period, that is
+        // said on its own line (최저임금법 제5조 제2항 compares the hourly rate, so each day has one 최저임금).
         if (hourly in 1 until rates.minimumHourlyWage) {
-            warnings += "통상시급 ${won(hourly)}이 ${month.year}년 최저임금 ${won(rates.minimumHourlyWage)}보다 낮아요. 입력값을 확인해 주세요"
+            warnings += "통상시급 ${won(hourly)}이 ${rates.effectiveFrom.year}년 최저임금 ${won(rates.minimumHourlyWage)}보다 낮아요. 입력값을 확인해 주세요"
+        }
+        val endRates = RateTable.on(periodEnd, rateTable)
+        if (endRates.effectiveFrom != rates.effectiveFrom && hourly in rates.minimumHourlyWage until endRates.minimumHourlyWage) {
+            warnings += "급여기간 중 ${endRates.effectiveFrom.monthValue}/${endRates.effectiveFrom.dayOfMonth}부터 ${endRates.effectiveFrom.year}년 " +
+                "최저임금 ${won(endRates.minimumHourlyWage)}이 적용돼요. 통상시급 ${won(hourly)}은 그보다 낮아요"
         }
         if (premiums) {
             // Compared with what the law gives here: no 연장·휴일 premium for an approved 감시·단속 worker [PAYS-03].

@@ -123,7 +123,7 @@ internal fun HourlyPayCard(vm: PayViewModel, profile: PayProfile, gross: Long, u
                 TaxMode.WITHHOLDING_3_3 -> "3.3%(소득세 3% + 지방소득세 0.3%)로 떼였다면 다음 해 5월 종합소득세 신고로 돌려받을 수 있어요."
                 TaxMode.INSURANCE_4 -> "4대보험은 그해 근로자 몫이에요. 소득세는 국세청 간이세액표(가족 ${profile.taxFamily}명" +
                     (if (profile.taxChildren > 0) ", 8~20세 자녀 ${profile.taxChildren}명" else "") +
-                    ") 값이고, 실제는 회사 선택(80·100·120%)과 연말정산으로 정해져요. 가족 수는 통계 ‘○월 한눈에’에서 바꿔요."
+                    ") 값이고, 실제는 회사 선택(80·100·120%)과 연말정산으로 정해져요. 가족 수는 통계 ‘○월 한눈에’에서 바꿔요. " + TakeHome.PENSION_NOTE
             },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp),
         )

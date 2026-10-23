@@ -84,6 +84,25 @@ object TakeHome {
         return TakeHomeResult(g, deductions, g - deductions.sumOf { it.second })
     }
 
+    /**
+     * [PAYX-23] The pay before tax whose [estimate] leaves [net] (실수령액), found by halving the range: for a payslip
+     * where only the amount paid into the account was typed. The deductions only grow with the pay, so the result
+     * is the smallest pay that leaves at least [net]; within 10원 of it, as each deduction is cut to 10원.
+     * [TaxMode.NONE] takes nothing off, so it is [net] itself.
+     */
+    fun grossFromNet(
+        net: Long, mode: TaxMode, dependents: Int = 1, on: LocalDate? = null, children: Int = 0, nonTaxable: Long = 0,
+    ): Long {
+        if (net <= 0 || mode == TaxMode.NONE) return net.coerceAtLeast(0)
+        var lo = net
+        var hi = net * 2 + 1_000_000
+        while (lo < hi) {
+            val mid = (lo + hi) / 2
+            if (estimate(mid, mode, dependents, on, children, nonTaxable).net >= net) hi = mid else lo = mid + 1
+        }
+        return lo
+    }
+
     /** 소득세법 시행령 제17조의2: 식사대 월 20만 원 이하 (식사를 따로 받지 않을 때). Each 비과세 allowance counts up to this. */
     const val NON_TAXABLE_LIMIT = 200_000L
 
@@ -101,6 +120,12 @@ object TakeHome {
      */
     fun looksNonTaxable(name: String): Boolean =
         listOf("식대", "식비", "중식", "석식", "자가운전", "차량유지", "보육", "육아").any { it in name.replace(" ", "") }
+
+    /**
+     * [PAYX-23] 국민연금 is estimated on this month's pay, but the 공단 sets 기준소득월액 once a year from last year's
+     * income for July to June (the year [RateTable.pensionBases] runs on), so the bill can differ; said wherever the 4대보험 lines show.
+     */
+    const val PENSION_NOTE = "국민연금은 이번 달 급여로 어림했어요. 실제 고지액은 작년 소득으로 정한 금액(7월부터 1년)이라 다를 수 있어요."
 
     const val TAX_LABEL = "근로소득세 (간이세액표)"
     const val LOCAL_TAX_LABEL = "지방소득세"

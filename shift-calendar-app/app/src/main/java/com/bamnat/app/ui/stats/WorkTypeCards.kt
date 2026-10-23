@@ -223,6 +223,9 @@ private fun DayFirstCard(
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
             )
+            // [PAYX-23] The pension line is this month's pay, the bill last year's.
+            if (mode == TaxMode.INSURANCE_4) Text(TakeHome.PENSION_NOTE, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

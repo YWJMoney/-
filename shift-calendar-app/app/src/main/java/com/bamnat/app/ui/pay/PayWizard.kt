@@ -338,7 +338,10 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
             if (rough && wage != Wage.ANNUAL) add(Unknowns.BASE)
             rows.filter { it.checked && it.amount == null }.forEach { add(Unknowns.item(it.id)) }
             rows.filter { it.checked && it.amount != null && it.guessed && it.original?.amount?.on(thisMonth)?.value == it.amount }.forEach { add(it.id) }
-        }.filter { k -> !k.startsWith(Unknowns.item("")) || k.removePrefix(Unknowns.item("")) in ids }.toSet()
+            // [PAYX-23] 13분할: whether the 13th share is 퇴직금 or a 정기 상여 stays 확인 필요 until answered.
+            if (annual?.divisor == 13 && items.none { it.id == Unknowns.ANNUAL_13_ITEM }) add(Unknowns.ANNUAL_13)
+        }.filter { k -> !k.startsWith(Unknowns.item("")) || k.removePrefix(Unknowns.item("")) in ids }
+            .filter { k -> k != Unknowns.ANNUAL_13 || annual?.divisor == 13 }.toSet()
         val occupationNow = occupation ?: initial?.occupation ?: Occupation.CUSTOM
         return (initial ?: PayProfile(occupationNow, type, base)).copy(
             occupation = occupationNow,
@@ -694,7 +697,7 @@ private fun AmountStep(s: PaySetupState, today: LocalDate, slipNote: String?) {
 @Composable
 private fun AnnualFields(s: PaySetupState) {
     MoneyField("연봉 (1년 총액)", s.yearly, { s.yearly = it }, Modifier.fillMaxWidth())
-    RuleToggle("13으로 나눠 받아요", "13번째 몫을 퇴직금으로 떼어 두는 계약이에요. 모르면 끈 채로 두세요", s.split13) { s.split13 = it }
+    RuleToggle("13으로 나눠 받아요", "13번째 몫을 퇴직금으로 떼어 두는 계약이에요. 연말에 상여로 주는 몫이면 통상임금이라 결과 화면 ‘확인 필요’에서 골라요. 모르면 끈 채로 두세요", s.split13) { s.split13 = it }
     Label("연봉 안에 따로 나오는 돈이 있나요? (있으면)")
     MoneyField("매달 고정 연장수당", s.annualOt, { s.annualOt = it }, Modifier.fillMaxWidth(), placeholder = "없으면 비워 두세요")
     if ((s.annualOt ?: 0) > 0) {
@@ -915,7 +918,7 @@ private fun QuestionStep(
     if (q.question == SetupQuestion.MONTHLY_HOURS) {
         val chosen = known
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            (listOf(180, 209, 226, 243) + listOfNotNull(rosterHours)).distinct().sorted().forEach { h ->
+            (com.bamnat.core.pay.Unknowns.MONTHLY_HOURS_CHIPS + listOfNotNull(rosterHours)).distinct().sorted().forEach { h ->
                 FilterChip(selected = chosen && s.monthlyHours == h, onClick = { onAnswer { s.answer(key) { s.monthlyHours = h } } },
                     label = { Text("${h}시간" + if (h == rosterHours) " (근무표)" else "") })
             }
