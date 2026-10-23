@@ -788,7 +788,7 @@ private fun AppNavHost(
                     if (entry != null) styleExtras.value = StyleExtras(entry.id, calendar, added, opened)
                 }
             }
-            WorkStyleScreen(current = current, title = if (isMain) "근무 형태 바꾸기" else "‘${cal?.name}’ 근무 형태", onPick = { style ->
+            WorkStyleScreen(current = current, title = if (isMain) "근무 형태 바꾸기" else "‘${cal?.name}’ 근무 형태", onBack = { nav.popFrom(Routes.WORK_STYLE) }, onPick = { style ->
                 if (current == null || style == current) apply(style, null)
                 else scope.launch {
                     val records = container.recordsTrash.records(calendar)

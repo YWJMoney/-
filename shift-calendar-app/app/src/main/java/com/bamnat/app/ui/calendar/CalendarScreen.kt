@@ -307,8 +307,9 @@ fun CalendarScreen(
         }
     }
 
-    // On phones the day opens in a sheet over the calendar.
-    var sheetOpen by remember { mutableStateOf(false) }
+    // On phones the day opens in a sheet over the calendar. [285] Saved, so it is still open after a trip to the
+    // memo editor, pay or shift types and back.
+    var sheetOpen by rememberSaveable { mutableStateOf(false) }
     // [CAL-03] On phones set to 그 주만 보기, a tapped date folds the month to its week with the day under it.
     var weekOnly by rememberSaveable { mutableStateOf(false) }
     val selectedNow: () -> LocalDate = { vm.selected.value }
@@ -769,6 +770,8 @@ fun CalendarScreen(
                 vm.select(LocalDate.now())
                 slideToMonth(YearMonth.now())
             },
+            // [285] Already on today: the button stays where it is, greyed, so the bar does not jump.
+            atToday = selected == LocalDate.now() && (if (weekOnly && !wide) YearMonth.from(selected) else visibleMonth) == YearMonth.now(),
             onPickMonth = { showMonthPicker = true },
             byWeek = weekOnly,
             onShare = shareCalendar,
@@ -1358,6 +1361,7 @@ private fun CalendarHeader(
     onToday: () -> Unit,
     onPickMonth: () -> Unit,
     onOpenPattern: () -> Unit,
+    atToday: Boolean = false,
     onShare: () -> Unit = {},
     /** [CAL-03] ‹ › step a week while one week is on screen. */
     byWeek: Boolean = false,
@@ -1404,7 +1408,7 @@ private fun CalendarHeader(
             }
             IconButton(onClick = onNext) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, if (byWeek) "다음 주" else "다음 달") }
         }
-        TextButton(onClick = onToday) { Text("오늘", maxLines = 1, softWrap = false) }
+        TextButton(onClick = onToday, enabled = !atToday) { Text("오늘", maxLines = 1, softWrap = false) }
         if (!narrow) {
             IconButton(onClick = onOpenPattern) { Icon(Icons.Filled.EventRepeat, "근무 주기 설정") }
             IconButton(onClick = onAddCalendar) { Icon(Icons.Outlined.LibraryAdd, "새 달력 만들기") }

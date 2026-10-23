@@ -55,6 +55,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AssistChip
+import com.bamnat.core.schedule.LegalBreak
 import com.bamnat.core.schedule.ShiftTypeSet
 import com.bamnat.core.schedule.ShiftTypeSets
 import androidx.compose.material3.FilterChip
@@ -561,6 +562,16 @@ fun ShiftTypeEditorDialog(
                                     step = 10,
                                     max = 12 * 60,
                                     dialogTitle = "휴게 시간",
+                                )
+                            }
+                            // 순번 285: 근로기준법 제54조 asks for 30 minutes from 4 hours and an hour from 8; say so, never block.
+                            val legalBreak = LegalBreak.minutesFor(timed.durationMinutes)
+                            if (draft.breakMinutes < legalBreak) {
+                                Text(
+                                    "${HoursFormat.korean(timed.durationMinutes)} 근무는 휴게가 ${legalBreak}분 이상이어야 해요(근로기준법 제54조). " +
+                                        "휴게 없이 모두 일한 시간으로 쳐 주는 회사라면 그대로 두세요.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             if (draft.breakMinutes > 0) {

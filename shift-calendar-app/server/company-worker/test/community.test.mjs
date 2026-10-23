@@ -153,6 +153,10 @@ test("three 신고 hide a post until the developer looks; the developer keeps, h
   assert.equal(own.hidden.text, "신고가 모여 개발자가 확인하고 있어요");
   let o = (await call("GET", "/api/admin/overview", undefined, h)).data;
   assert.equal(o.flaggedPosts, 1);
+  // [COMM-08] Hidden by flags for three weeks and still unseen: the home screen warns before the rules' 30 days.
+  assert.equal(o.flaggedPostsLate, 0);
+  DB.db.prepare("UPDATE posts SET hidden_at = ? WHERE id = ?").run(Date.now() - 24 * 24 * 3600e3, bad);
+  assert.equal((await call("GET", "/api/admin/overview", undefined, h)).data.flaggedPostsLate, 1);
   assert.equal(o.hideReasons.offtopic, "이 규칙과 상관없는 글이에요");
 
   // The developer looks and keeps it: shown again, and flags no longer hide it.

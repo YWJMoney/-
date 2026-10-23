@@ -79,6 +79,7 @@ import com.bamnat.core.pay.EditScope
 import com.bamnat.core.pay.FlexPeriod
 import com.bamnat.core.pay.LineKind
 import com.bamnat.core.pay.Occupation
+import com.bamnat.core.pay.OrdinaryGuess
 import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayItem
 import com.bamnat.core.pay.PayPresets
@@ -261,7 +262,7 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
                 val fixedOt = Regex("고정.*(연장|시간외|OT)", RegexOption.IGNORE_CASE).containsMatchIn(line.name)
                 val welfare = Regex("식대|식비|교통|차량|복지|통신|자녀|가족|학자").containsMatchIn(line.name)
                 val id = "custom-" + System.nanoTime()
-                rows += ItemRow(id, line.name.take(20), Cadence.MONTHLY, ordinary = !welfare && !fixedOt, hint = "명세서에서", suggested = 0,
+                rows += ItemRow(id, line.name.take(20), Cadence.MONTHLY, ordinary = !fixedOt && (OrdinaryGuess.of(line.name, Cadence.MONTHLY) ?: !welfare), hint = "명세서에서", suggested = 0,
                     checked = true, amount = line.amount)
                 if (fixedOt) covers[id] = setOf(LineKind.OVERTIME)
             }

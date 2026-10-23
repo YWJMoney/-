@@ -549,6 +549,7 @@ DAILY-14,무료 추가 달력 1개 유지(결정 D7-4) (순번 187),2 (1.22.0),�
 DAILY-15,돈·메모 화면 꾸미기(카드 순서·끄기) (순번 224),2 (1.22.0),완료,,"1.22 묶음 E: MoneyScreen.MoneyEditSheet, MemoListScreen.MemoEditSheet, AppSettings.moneyLayout·memoLayout(백업 포함)"
 DAILY-16,"광장 시세와 내 일당·시급·월급 견주기, 같은 직군·지역·단위끼리만, 휴대폰 안에서만(결정 D36), 설정 › 급여에서 끄기·내 지역 고르기 (순번 276)",2 (1.22.0),완료,,"1.22 묶음 E: RateHint, RateHintStore, RateHintLine(급여 화면 합계 아래 카드), DailyBundleCoreTest, FoldAndPanesTest, 화면 사진 496"
 DAILY-17,"두 번째 리뷰 요청: 첫 급여 달 마감 뒤 한 번, 첫 요청과 30일 이상 (순번 54)",2 (1.22.0),완료,,"1.22 묶음 E: InAppReview.due, PayViewModel.closeMonth, CalendarViewModel.markReviewAsked, DailyWidgetsTest"
+DAILY-18,"순번 285 전체 리뷰(UX 검토 2-calendar-day-visual) 남은 작은 것: 하루 시트 열림 유지, 자정 넘기면 달력으로, 근무 형태 바꾸기 뒤로, 시간 형식 3곳, 이미 오늘이면 '오늘' 흐리게, 급여 풀이 움직임",2 (1.22.0),완료,,"1.22 묶음 E 285: CalendarScreen sheetOpen rememberSaveable·atToday, HomeRequests 날짜, WorkStyleScreen onBack, ShopTools·PartTimeTools HoursFormat, PayScreen AnimatedContent, M10NavigationTest; 표 notes/1.22-285/E.md"
 LEDG-25,영수증 사진 읽기(휴대폰 안 ML Kit): 금액·날짜·시간·가게를 채워 확인 (순번 114),2 (1.22.0),완료,,"1.22 묶음 E: ReceiptReader, ReceiptProof.ReceiptScanChip, LedgerEntrySheet, DailyMoneyBundleTest"
 LEDG-26,"종합소득세 참고 카드: 한 해 수입·경비·떼인 3.3%, 5월 신고 기간(세무 조언 아님) (순번 115)",2 (1.22.0),완료,,"1.22 묶음 E: IncomeTaxNote, WorkStatsCards.IncomeTaxCard, DailyMoneyBundleTest"
 LEDG-27,받을 돈 CSV 내보내기 (순번 116),2 (1.22.0),완료,,"1.22 묶음 E: WorkCsv.receivables, OwedScreen·WorkCsvExport, DailyMoneyBundleTest"
