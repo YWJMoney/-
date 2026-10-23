@@ -1,11 +1,26 @@
 # 밤낮 인수인계 (다른 계정에서 이어 가기)
 
-마지막 정리 2026-10-23, 앱 1.22.0(versionCode 33, 워치 100033) 기준이에요. 맨 위 0항이 지금 판(1.22.0), 0-0항이 1.21.0, 0-1항이 1.20.0, 0-2항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
+마지막 정리 2026-10-23 저녁, 앱 1.23.0(versionCode 34, 워치 100034) 기준이에요. 맨 위 0항이 지금 판(1.23.0), 0-0항이 1.22.0, 0-1항이 1.21.0, 0-2항이 1.20.0, 0-3항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
 
 이 저장소는 공개예요(GitHub Pages로 처리방침을 올려요). 그래서 이 문서에는 비밀값, 서명 키, 사용자 개인 정보를 적지 않아요.
 그런 것은 사용자가 새 프로젝트에 파일로 따로 올려요(7항). 새 계정의 Claude는 이 문서와 그 비공개 메모를 먼저 읽고 시작해요.
 
-## 0. 지금 판: 1.22.0 Phase 2 완료판 (2026-10-23)
+## 0. 지금 판: 1.23.0 고도화판 (2026-10-23 저녁)
+
+Phase 2에서 만든 기능을 실사용 수준 넘어 완성한 판이에요. 통합 스레드가 먼저 전체 리뷰(문제점·개선점·혁신점 50개, 비공개 `research/1.23-리뷰/`)를 하고 순번 290~340을 여덟 묶음(H~O)으로 나눠 개발 스레드 PR #75~#93을 통합 브랜치 `claude/project-thread-cc2q9i`에 합쳤어요(비공개 `계획/1.23-고도화-통합계획.md`, 결정 D51~D60). DB는 20(급여 정확도, `database/schemas/`), 앱 크기 51MB→8MB, 처리방침 2.9(게시 2026-11-03·시행 11-21). 혁신점 50개 가운데 44개를 넣고 4개는 결정으로 뺐고 1개는 줄였어요.
+
+- **관리자 앱 대개편(묶음 H, ADMUX)**: `server/company-worker/src/admin-app.js`·`admin-lib.js`(할 일 큐 홈, 문의 답 목표 시간 SLA, 저장한 보기, 커맨드 팔레트, 부분 렌더, 라이트·다크), `push.js`(웹 푸시, `VAPID_*` 비밀값이 있을 때만, `tools/vapid-keys.mjs`). 화면 시험은 happy-dom `npm run test:ui`.
+- **달력·매일 화면·위젯·워치(묶음 I, CAL·WIDG·WEAR·DAYW)**: core `schedule/QuickText.kt`(날짜 메모의 '내일 야간 대근 7시'를 근무로), '다음 근무까지' 위젯과 달 넘기기, 연간 히트맵, 폴더블 듀얼 패널, 밖에서 여는 파일(6-1항), 워치 주 시작·범위.
+- **디자인 통일·접근성·첫 설정(묶음 J, UX·A11Y·SETUP·SET)**: 선택 색 primary 하나, 공용 컴포넌트('+ 추가', 스테퍼, 시간 범위 창), 200% 글씨에서 버튼·탭이 잘리지 않는 규칙과 지킴 시험, 근무 알람 한 번에 옮기기, 도움말·첫 설정 힌트.
+- **급여·연차·돈·원격(묶음 K, PAYX·LEAVE·LEDG·REMOTE·INV·IMPORT)**: core `pay/SlipAudit.kt`('내 월급 맞나요', 명세서 줄마다), `pay/YearEndPreview.kt`(연말정산 미리보기), `pay/PayNews.kt`(법 개정 알림), 입퇴사 일할·생산직 비과세·포괄 범위(DB 20), 연차 통일(LeaveBook 퇴출, 원장 PDF·CSV), 세율·봉급표·공휴일표 원격화(`remote/v1/`).
+- **서버·광장·문의·알람(묶음 L, SRV·COMM·INQ·ALRM·SHR·PRIV)**: core `plaza/PlazaNews.kt`·앱 `company/PlazaNewsJob.kt`(밤낮 소식 하루 한 번 알림 하나), 익명 '우리 조 모아 보기'(공유 서버 6자 코드 링크 묶음, SHR-12 ETag는 같은 밀리초에도 앞으로), 문의 답장 알림·타임라인·보내기 대기열, 알람 점검 7일 성적표와 서버 연결 카드(`ui/diag/DiagnosticsScreen.kt`), 회사 서버 `AUTHOR_KEY`(가림 목록을 `RATE_SALT`에서 분리), 쓰기 한도 자동 쉬기(`D1_WRITES_PER_DAY`·`KV_WRITES_PER_DAY`).
+- **품질·성능·크기(묶음 M, QA·PERF·REL·OPS)**: 5항 '품질 규칙'(CI 네 조각, 화면 사진 지문 40장 `app/src/test/golden/shots.json`, 시작 작업 21/7, 크기 예산 `tools/app_size.py`, 백업 zip 형식 3, 린트 기준선, Dependabot), OCR 모델은 Play 서비스가 내려받음(D52), `benchmark/` Macrobenchmark(실기기에서 사용자가 돌림), 비정상 종료·ANR 기기 안 기록.
+- **쉬운 사용·관측성(묶음 N, EASY·OBS)**: 6-2항. core `profile/`(Profile·Needs·FeatureNeeds·AskScheduler·StatusBoard), `example/Browse.kt`·`ExamplePlan.kt`, `journal/Journal.kt`; 앱 `data/ProfileStore.kt`·`BrowseStore.kt`·`ExampleCalendar.kt`·`JournalStore.kt`, `ui/guide/ProfileScreen.kt`·`JournalScreen.kt`·`WriteGate.kt`. 사실은 프로필 한 곳에 한 번만, 질문 카드는 하루 2개, 예시 달력은 기기 밖으로 나가지 않아요.
+- **스마트 알람 제안·증명 사진 미션(묶음 O, ALRM-03·04, D60)**: core `alarm/AlarmSuggest.kt`(잠·끄기 기록으로 LATE·EARLY·SHORT 제안, 한 주 한 장, 거절 뒤 30일 조용), `alarm/ImageHash.kt`(32×32 dHash 64비트, 임계값 18)·앱 `alarm/PhotoMission.kt`·`ui/settings/PhotoMissionRows.kt`(기준 사진은 지문만 보관, 3번 틀리거나 5분 지나면 계산 문제로). 지문은 백업에 넣지 않아요.
+- **법 문서**: `privacy/index.html` 처리방침 2.9(우리 조 모아 보기·증명 사진·OCR 내려받기 문구), `docs/play-data-safety.md` 1.23.0장(바뀌는 답 없음).
+- **시험 결과(2026-10-23)**: 비공개 `release/1.23.0/사용자가-해야-할-일.md` '시험 결과'에 적어요. 다음 판은 1.24.0(비공개 `인계/다음-스레드-시작-1.24.md`).
+
+## 0-0. 앞 판: 1.22.0 Phase 2 완료판 (2026-10-23 새벽)
 
 남은 Phase 2의 Claude 몫을 개발 스레드 일곱 묶음(A~G)으로 나눠 통합 브랜치 `claude/project-thread-kz90cm`에 합친 한 판이에요(PR #51~#73). DB는 19(연차 원장)이고 Room은 `:database` 모듈로 옮겼어요. 남은 체크리스트 줄은 모두 사용자·바깥 몫이에요(비공개 `계획/Phase2-완료-체크리스트.md`, `인계/다음-스레드-시작-1.23.md`).
 
@@ -19,7 +34,7 @@
 - **법 문서**: `privacy/index.html` 처리방침 2.8(시행 2026-11-21), `docs/play-data-safety.md` 1.22.0장.
 - **시험 결과(2026-10-23)**: 아래 할 일 문서 `release/1.22.0/사용자가-해야-할-일.md`(비공개)에 적어요.
 
-## 0-0. 앞 판: 1.21.0 사용자 제안 (2026-10-22)
+## 0-1. 앞 판: 1.21.0 사용자 제안 (2026-10-22)
 
 사용자 제안(모든 조·달력 버튼·간호사와 직군·투자 알림·광장 고도화·직군별 광장)을 모두 만들었어요. DB는 18 그대로예요(결정 D40). 다음 판은 1.22.0이에요(비공개 `인계/다음-스레드-시작-1.22.md`).
 
@@ -33,7 +48,7 @@
 - **법 문서**: `privacy/index.html` 처리방침 2.7(게시 2026-10-22, 시행 2026-11-21, 2.5·2.6과 같은 날). `docs/play-data-safety.md` 1.21.0장.
 - **시험**: core `DutyCheckTest`, `DutyRosterNurseTest`, `TakeHomeYearTest`, `PublicServantPayTest`, `Holidays2028Test`, `TradeAlertParserTest`(+`TradeAlertsTest`), `HourlyWorkTest`, 앱 `InvestAppTest`, `PersonalCalendarsTest`, `rules/LegalPagesTest`, 화면 사진 361~365, 서버 `test/plaza.test.mjs`.
 
-## 0-1. 앞 판: 1.20.0 프로 가치 (2026-10-22)
+## 0-2. 앞 판: 1.20.0 프로 가치 (2026-10-22)
 
 프로 화면 네 기둥의 남은 줄을 모두 만들었어요. 모두 프로 기능이고, 정식 출시 스위치 전에는 1.19.0처럼 모두 열려 있어요. 다음 판은 1.21.0 출시 품질·원격 갱신·원문 대조예요(`계획/Phase2-완료-체크리스트.md` 1장).
 
@@ -51,7 +66,7 @@
 - **법 문서**: `privacy/index.html` 처리방침 2.6(1.19.0과 1.20.0을 PR #49 하나로 합쳐 2.5와 같은 날 게시, 게시 2026-10-22·시행 2026-11-21 예정, 2.5 몫 때문에 30일 고지). `docs/play-data-safety.md` 1.20.0장.
 - **시험**: core `ReportTest`·`AlarmMissionTest`·`GuideTest.whatsNewOpensRealFeatures`, 앱 `report/ReportPdfTest`, `calendar/PhoneCalendarTest`, `share/ShareLinksProTest`, `backup/AutoBackupTest`, `alarm/SureAlarmTest`, `tier/TierAppTest`, 화면 사진 385~398, 공유 서버 `worker.test.mjs`.
 
-## 0-2. 그 앞 판: 1.19.0 수익화 기반 (2026-10-22)
+## 0-3. 그 앞 판: 1.19.0 수익화 기반 (2026-10-22)
 
 일하는 규칙은 `CLAUDE.md`(문서 먼저, 판마다 체크리스트, Phase 3 진입 금지). 남은 일의 정본과 판 계획은 비공개 프로젝트 파일 `계획/Phase2-완료-체크리스트.md`에 있어요. 다음 판은 1.20.0 프로 가치(자동 암호 백업, 공유 링크 여러 개, 통계 확장, 급여 리포트 PDF·CSV, 등급 최종 시험, ICS 구독, 기기 캘린더 쓰기, 확실한 알람, 근무표 PDF)예요.
 
@@ -152,12 +167,12 @@
 모두 `shift-calendar-app/`에서 실행해요. JDK 17 이상, Android SDK가 필요해요.
 
 ```bash
-sh ./gradlew -p core test                                  # 급여·근무 계산 (1.12.0: 289개)
-sh ./gradlew :app:testDebugUnitTest :app:lintDebug --continue   # 앱 테스트·스크린샷·린트 (280개, 서버 연결 1개 건너뜀)
+sh ./gradlew -p core test                                  # 급여·근무 계산 (1.23.0: 839개, LC_ALL=C.UTF-8)
+sh ./gradlew :app:testDebugUnitTest :app:lintDebug --continue   # 앱 테스트·스크린샷·린트 (1.23.0: 네 조각 합쳐 약 1,070개 — unit 483, api 24, 화면 사진 두 조각; 아래 -Pbamnat.testSet)
 python3 tools/check_tracker.py                             # 추적표 검사
-(cd server/company-worker && npm test)                     # 회사 서버 (1.23 H: 178개)
+(cd server/company-worker && npm test)                     # 회사 서버 (1.23.0: 193개)
 (cd server/company-worker && npm ci && npm run test:ui)    # 관리자 앱 화면 시험, happy-dom (1.23 H: 10개)
-(cd server/share-worker && npm test)                       # 공유 서버 (16개)
+(cd server/share-worker && npm test)                       # 공유 서버 (1.23.0: 34개)
 ```
 
 - 앱 테스트 결과는 `app/build/test-results/testDebugUnitTest`, 화면 사진은 `app/build/screenshots`, 린트는 `app/build/intermediates/lint_intermediate_text_report/`에 나와요.
