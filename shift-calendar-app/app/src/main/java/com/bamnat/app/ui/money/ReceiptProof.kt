@@ -152,10 +152,14 @@ fun ReceiptScanChip(onRead: (com.bamnat.core.money.ReceiptReader.Draft, String) 
                 val name = ReceiptFiles.import(context, uri)
                 val file = name?.let { ReceiptFiles.file(context, it) }
                 if (name == null || file == null) { onMessage("사진을 읽지 못했어요"); return@launch }
-                val text = runCatching { com.bamnat.app.pay.PayslipScanner.read(context, Uri.fromFile(file)) }.getOrNull().orEmpty()
+                val result = runCatching { com.bamnat.app.pay.PayslipScanner.read(context, Uri.fromFile(file)) }
+                val text = result.getOrNull().orEmpty()
+                val notReady = result.exceptionOrNull() as? com.bamnat.app.pay.OcrModel.NotReady
                 val draft = com.bamnat.core.money.ReceiptReader.read(text, java.time.LocalDate.now())
                 onRead(draft, name)
                 onMessage(when {
+                    // [PERF-04] The model is still on its way: the photo is attached, the reading can come later.
+                    notReady != null -> "사진만 붙였어요. ${notReady.message}"
                     draft.isEmpty -> "글자를 찾지 못했어요. 사진만 붙였어요"
                     draft.sure -> "영수증에서 읽었어요. 맞는지 보고 저장해 주세요"
                     else -> "합계를 못 찾아 가장 큰 금액을 넣었어요. 꼭 확인해 주세요"

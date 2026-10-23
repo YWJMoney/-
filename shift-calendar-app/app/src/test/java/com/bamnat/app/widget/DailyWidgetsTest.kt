@@ -84,20 +84,23 @@ class DailyWidgetsTest {
         MoneyRepository(db).save(MoneyEntry(date = today, kind = MoneyKind.EXPENSE, amount = 5_000, category = "식비", receipt = "r1.jpg"))
         val settings = SettingsRepository(context)
         val photos = BackupPhotos(receipts) { File(contracts, it) }
-        val backups = BackupManager(db, settings, photos = photos)
+        val backups = BackupManager(db, settings, photos = photos, staging = File(root, "staging"))
         assertEquals(1, backups.photoSize().count)
-        val json = backups.export()
+        // [REL-15] The file of format 3 carries the photo as a file beside the backup's text.
+        fun file() = java.io.ByteArrayOutputStream().also { runBlocking { backups.exportFile(it) } }.toByteArray()
+        val bytes = file()
+        val json = backups.read(bytes.inputStream())
         val summary = backups.summarize(json)
         assertEquals(1, summary.photos)
         // Only the photo a record uses goes in.
-        assertFalse(json.contains("loose.jpg"))
+        assertFalse(String(bytes, Charsets.ISO_8859_1).contains("loose.jpg"))
 
         File(receipts, "r1.jpg").delete()
         backups.restore(json)
         assertTrue(File(receipts, "r1.jpg").readBytes().contentEquals(byteArrayOf(1, 2, 3, 4)))
 
         settings.update { it.copy(backupPhotos = false) }
-        assertEquals(0, backups.summarize(backups.export()).photos)
+        assertEquals(0, backups.summarize(backups.read(file().inputStream())).photos)
         root.deleteRecursively()
     }
 

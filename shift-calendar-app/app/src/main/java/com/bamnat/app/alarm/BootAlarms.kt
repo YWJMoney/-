@@ -4,7 +4,6 @@ import android.app.AlarmManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.UserManager
 import com.bamnat.app.appContainer
 import com.bamnat.app.data.AppSettings
@@ -48,14 +47,13 @@ object BootAlarms {
     /** How many alarms ahead are kept: enough for a long weekend locked after a reboot. */
     const val AHEAD = 6
 
+    // [REL-14] minSdk 26: device-protected storage is always there (the Android 7 guard went with 1.23).
     private fun prefs(context: Context) =
-        (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) context.createDeviceProtectedStorageContext() else context)
-            .getSharedPreferences("boot_alarms", Context.MODE_PRIVATE)
+        context.createDeviceProtectedStorageContext().getSharedPreferences("boot_alarms", Context.MODE_PRIVATE)
 
     /** True between a reboot and the first unlock: only device-protected storage can be read. */
     fun isLocked(context: Context): Boolean =
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
-            !context.getSystemService(UserManager::class.java).isUserUnlocked
+        !context.getSystemService(UserManager::class.java).isUserUnlocked
 
     fun save(context: Context, upcoming: List<RingRequest>, settings: RingSettings) {
         prefs(context).edit()

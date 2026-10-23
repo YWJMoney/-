@@ -117,7 +117,13 @@ class MainActivity : ComponentActivity() {
         appContainer.verifyAlarms()
         // [TYPE-04] Shop days that passed with no sales become 임시휴무 when the app is opened.
         val c = appContainer
-        c.appScope.launch { runCatching { com.bamnat.app.ui.work.ShopKeeper.catchUp(c) } }
+        // [PERF-03] 324-2 (검토 A6): at most once in [CATCH_UP_EVERY]; a day turns over far less often than the app
+        // comes back. 알람 점검 and the 정식 출시 switch below keep running every time (they keep their own pace).
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (lastCatchUp == 0L || now - lastCatchUp >= CATCH_UP_EVERY) {
+            lastCatchUp = now
+            c.appScope.launch { runCatching { com.bamnat.app.ui.work.ShopKeeper.catchUp(c) } }
+        }
         // [MON-02] The 정식 출시 switch, passes and Play's purchases. [MON-07] Google's consent form and
         // the ads SDK start only when an ad may show: after the switch, without 프로, with ad ids, and
         // [SRV-07] not in the first three days after install.
@@ -133,6 +139,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
+        const val CATCH_UP_EVERY = 30 * 60 * 1000L
+        @Volatile var lastCatchUp = 0L
         const val KEY_AWAITING = "awaiting_result"
         const val KEY_LEFT_AT = "left_at"
         val LIGHT_SCRIM = Color.argb(0xe6, 0xFF, 0xFF, 0xFF)

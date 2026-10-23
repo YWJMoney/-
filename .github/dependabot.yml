@@ -1,0 +1,29 @@
+# [OPS-24] Dependency updates, opened as pull requests to read and test, never merged on their own.
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /shift-calendar-app
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      androidx:
+        patterns: ["androidx.*"]
+    ignore:
+      # 25.3.0 and later are built with Kotlin 2.3, which this project's Kotlin 2.1 cannot read (결정 D19):
+      # the ads SDK and Kotlin are raised together, by hand.
+      - dependency-name: com.google.android.gms:play-services-ads
+      - dependency-name: org.jetbrains.kotlin*
+      - dependency-name: com.google.devtools.ksp*
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: npm
+    directory: /shift-calendar-app/server/company-worker
+    schedule:
+      interval: monthly
+  - package-ecosystem: npm
+    directory: /shift-calendar-app/server/share-worker
+    schedule:
+      interval: monthly

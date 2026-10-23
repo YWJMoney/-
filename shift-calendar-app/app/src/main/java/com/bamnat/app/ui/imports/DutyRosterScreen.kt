@@ -175,7 +175,8 @@ class DutyRosterViewModel(private val container: AppContainer, val calendarId: S
         _ui.update { it.copy(reading = true, error = null, applied = null) }
         viewModelScope.launch {
             val result = runCatching { DutyRoster.read(RosterScanner.read(container.appContext, uri), codes()) }
-            show(result.getOrNull(), if (result.isFailure) "사진을 읽지 못했어요. 다른 사진으로 해 보세요." else null)
+            show(result.getOrNull(), (result.exceptionOrNull() as? com.bamnat.app.pay.OcrModel.NotReady)?.message
+                ?: if (result.isFailure) "사진을 읽지 못했어요. 다른 사진으로 해 보세요." else null)
         }
     }
 

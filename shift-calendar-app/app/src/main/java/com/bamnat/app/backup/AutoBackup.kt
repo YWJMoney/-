@@ -176,13 +176,13 @@ class AutoBackup(
         val iterations = prefs.getInt(K_ITER, ITERATIONS)
         val key = keys().unwrap(B64.decode(prefs.getString(K_KEY, null) ?: throw KeyBox.KeyGone()))
         try {
-            val json = c.backupManager.export()
-            val bytes = c.backupManager.sealWithKey(json, key, salt, iterations).toByteArray(Charsets.UTF_8)
+            // [REL-15] A sealed file of format 3, its photos as files inside.
+            val bytes = java.io.ByteArrayOutputStream().also { c.backupManager.exportFileWithKey(it, key, salt, iterations) }.toByteArray()
             overwrite(uri, bytes)
             val back = c.appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: throw FileNotFoundException()
             if (!back.contentEquals(bytes)) throw Verify()
-            // The file opens: the same backup comes out of it.
-            if (c.backupManager.unsealWithKey(String(back, Charsets.UTF_8), key) != json) throw Verify()
+            // The file opens and every part of it checks out.
+            runCatching { c.backupManager.verifyWithKey(back, key) }.getOrElse { throw Verify() }
             return bytes.size
         } finally {
             key.fill(0)

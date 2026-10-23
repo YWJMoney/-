@@ -157,6 +157,14 @@ python3 tools/check_tracker.py                             # 추적표 검사
 
 - 앱 테스트 결과는 `app/build/test-results/testDebugUnitTest`, 화면 사진은 `app/build/screenshots`, 린트는 `app/build/intermediates/lint_intermediate_text_report/`에 나와요.
 - 저장소 맨 위의 `npm test`(GitHub Actions CI)는 같은 저장소에 있는 다른 웹앱(살림왕) 테스트예요.
+- **품질 규칙 (1.23 M)**
+  - 시작 작업: `AppContainer.start()`의 이름 붙은 작업은 **21개까지(새 작업 0)**, 달력이 첫 달을 그리기 전에는 **7개 이하**예요. 나머지는 `afterFirstFrame()`에서 돌아요(`perf/StartupBudgetTest`).
+  - 화면 사진 시험: 묶음마다 `screenshots/<묶음>ScreenshotTest.kt`에 `class XScreenshotTest : ScreenshotBase()`를 만들고, `@RunWith(AndroidJUnit4::class) @GraphicsMode(NATIVE) @Config(sdk = [35])`를 붙여요. 번호대는 묶음끼리 겹치지 않게 정해요. 기다림은 `settle()`(조건 대기, 1초 상한)과 `reach()`(글자를 찾을 때까지 5초)에 맡기고 `Thread.sleep`을 새로 쓰지 않아요.
+  - 나눠 돌리기: `-Pbamnat.testSet=unit|shots-a|shots-b|api`(CI 네 조각). 안드로이드 8·11·13·15에서 도는 `rules/ApiLevelSmokeTest`·`AlarmMatrixTest`는 `api`에서만 돌아요(여러 판 샌드박스가 한 JVM에 섞이면 다른 시험의 SQLite가 죽어요). 아무 값 없이 돌리면 빠져요, `-Pbamnat.testForks=N`(기본은 코어 절반, 1~3). 느린 시험 표는 `python3 tools/slow_tests.py app/build/test-results/testDebugUnitTest`로 봐요.
+  - 크기: `python3 tools/app_size.py <apk|aab>`로 봐요. 예산은 APK 9.5MB, AAB 23.5MB이고, 넘으면 출시 빌드가 멈춰요. 글자 인식(ML Kit 한국어)은 앱에 넣지 않고 Google Play 서비스가 처음 쓸 때 내려받아요. 언어는 한국어만 넣어요(`localeFilters`).
+  - 린트: 새 오류가 생기면 멈춰요. 예전 것은 `app/lint-baseline.xml`, `wear/lint-baseline.xml`에 있고, 고친 뒤 `:app:updateLintBaseline :wear:updateLintBaseline`으로 줄여요.
+  - 백업 파일은 형식 3(zip: `backup.json`, `photos/…`, `sha256.txt`)이에요. 옛 `.json` 백업도 그대로 열려요(`data/BackupArchive.kt`).
+- **Maven Central이 429(요청이 많다)로 막힐 때**: `~/.gradle/init.d/central-mirror.gradle.kts`에 `https://maven-central.storage-download.googleapis.com/maven2/` 저장소를 `pluginManagement`와 `dependencyResolutionManagement` 맨 앞에 넣으면 받아져요. 내려받기는 한 번에 하나씩 하고, 빌드는 `gradle --no-daemon -Pkotlin.compiler.execution.strategy=in-process`로 돌려요. Robolectric의 안드로이드 jar(API 26 등)도 막히면 `-Pbamnat.robolectricRepo=<같은 주소>`를 붙여요.
 - 서명한 출시 파일
 
 ```bash

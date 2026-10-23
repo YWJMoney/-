@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.diag
 
+import com.bamnat.app.diag.CrashLog
 import androidx.compose.runtime.produceState
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.SharingStarted
@@ -104,6 +105,22 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
     val snoozeAt = container.alarmScheduler.snoozeAt
     val testAt = container.alarmScheduler.testAt
     fun scheduleTest() = container.alarmScheduler.scheduleTest()
+
+    /** [QA-07] 330: 데이터 점검's lines, null before the first run. */
+    private val _dataCheck = kotlinx.coroutines.flow.MutableStateFlow<List<com.bamnat.app.diag.DataCheck.Line>?>(null)
+    val dataCheck: kotlinx.coroutines.flow.StateFlow<List<com.bamnat.app.diag.DataCheck.Line>?> = _dataCheck
+    private val _checking = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val checking: kotlinx.coroutines.flow.StateFlow<Boolean> = _checking
+
+    fun runDataCheck() {
+        if (_checking.value) return
+        _checking.value = true
+        viewModelScope.launch {
+            _dataCheck.value = runCatching { com.bamnat.app.diag.DataCheck.run(container) }
+                .getOrElse { listOf(com.bamnat.app.diag.DataCheck.Line(false, "점검하지 못했어요 (${it.javaClass.simpleName})")) }
+            _checking.value = false
+        }
+    }
     fun cancelTest() = container.alarmScheduler.cancelTest()
     /** [REL-13] Registers the next alarm again when the system lost it. */
     fun repair() = container.verifyAlarms()
@@ -185,10 +202,19 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     // [STAB-01] The log waits for queued writes and reads the whole file, so never on the main thread.
-    suspend fun events(): List<DiagEvent> = withContext(Dispatchers.IO) { container.telemetry.log.read() }
+    suspend fun events(): List<DiagEvent> = withContext(Dispatchers.IO) {
+        crashLines = CrashLog.reportLines(container.appContext)
+        container.telemetry.log.read()
+    }
+
+    /** [MEAS-08] Read with the log, off the main thread; [report] shows them. */
+    @Volatile private var crashLines: List<String>? = null
     fun clearLog(then: () -> Unit) {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { container.telemetry.log.clear() }
+            withContext(Dispatchers.IO) {
+                container.telemetry.log.clear()
+                CrashLog.clear(container.appContext)
+            }
             then()
         }
     }
@@ -218,8 +244,11 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
             if (lates.isNotEmpty()) add("최근 30일 울린 때: 1분 안 ${lates.count { it < 60 }} · 1~5분 늦음 ${lates.count { it in 60..299 }} · " +
                 "5분 넘게 늦음 ${lates.count { it >= 300 }}")
             if (settings.alarmsEnabled && next != null) add("휴대폰에 걸린 다음 알람: " + if (container.alarmScheduler.systemHolds()) "맞음" else "없거나 다름")
-            context.getSystemService(android.app.usage.UsageStatsManager::class.java)?.takeIf { Build.VERSION.SDK_INT >= 28 }?.let {
-                add("앱 대기 상태: " + bucketName(it.appStandbyBucket))
+            // A plain check, which lint reads (Android 9+).
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                context.getSystemService(android.app.usage.UsageStatsManager::class.java)?.let {
+                    add("앱 대기 상태: " + bucketName(it.appStandbyBucket))
+                }
             }
         }
         val permissions = buildList {
@@ -241,12 +270,15 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
             .ifEmpty { listOf("기록 없음") }
         val recent = events.takeLast(RECENT).asReversed().map { "${stamp(it.atMillis)}  ${it.name}  ${readable(it.detail)}" }
             .ifEmpty { listOf("기록 없음") }
+        val crashes = crashLines ?: listOf("기록 없음")
         return DiagReport(
             listOf(
                 "알람 상태" to alarm,
                 "권한" to permissions,
                 "기기" to device,
                 "최근 30일 사용량" to usage,
+                // [MEAS-08] 328: the person sees what stopped before "점검 내용과 함께 문의하기" sends it.
+                "앱 멈춤" to crashes,
                 "최근 이벤트 ${minOf(events.size, RECENT)}개" to recent,
             ),
         )
@@ -415,6 +447,22 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                                 fontFamily = if (title.startsWith("최근 이벤트")) FontFamily.Monospace else null,
                             )
                         }
+                    }
+                }
+            }
+            // [QA-07] 330: the person checks their own data, as the release list does before a phone move.
+            item {
+                val lines by vm.dataCheck.collectAsStateWithLifecycle()
+                val checking by vm.checking.collectAsStateWithLifecycle()
+                SectionCard(title = "데이터 점검") {
+                    Text("근무·기록 데이터가 온전한지, 백업이 제대로 만들어지는지 휴대폰 안에서 살펴봐요. 아무것도 바꾸거나 보내지 않아요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    lines?.forEach { line ->
+                        Text((if (line.ok) "✓ " else "! ") + line.text, style = MaterialTheme.typography.bodySmall,
+                            color = if (line.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
+                    }
+                    OutlinedButton(onClick = { vm.runDataCheck() }, enabled = !checking) {
+                        Text(if (checking) "점검하는 중…" else if (lines == null) "데이터 점검" else "다시 점검")
                     }
                 }
             }

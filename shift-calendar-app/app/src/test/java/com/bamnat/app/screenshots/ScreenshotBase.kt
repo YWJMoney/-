@@ -310,6 +310,11 @@ abstract class ScreenshotBase {
                 settle()
                 find(text, exact, prefix)?.let { return it }
             }
+            // [QA-05] On a busy machine a fling can carry the list past the text, so look back down step by step.
+            repeat(scrolls) {
+                scrollDown(350, across)
+                find(text, exact, prefix)?.let { return it }
+            }
             error("화면에서 ‘$text’를 찾지 못했어요. 보이는 글자: " + shownWords().joinToString(" | ").take(1500))
         }
 
@@ -472,7 +477,9 @@ abstract class ScreenshotBase {
         /** Drags the content up by [dp] (slowly, so it does not fling). */
         fun scrollUp(dp: Int, across: Float = 0.15f) = gesture { w, h, d ->
             val x = w * across
-            val from = h * 0.8f
+            // Starts at 60% of the height, above a button pinned to the bottom (at 200% text on a phone it reaches
+            // up to the 80% line the drag used to start on), lower only when a long drag needs the room.
+            val from = maxOf(h * 0.6f, minOf(h * 0.8f, h * 0.05f + dp * d))
             (0..40).map { x to from - dp * d * it / 40 } + listOf(x to from - dp * d)
         }
     }

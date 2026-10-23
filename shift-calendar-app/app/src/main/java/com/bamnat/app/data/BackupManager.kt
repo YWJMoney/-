@@ -65,6 +65,8 @@ class BackupManager(
     private val shareLinks: com.bamnat.app.share.ShareLinkBackup? = null,
     /** [BACK-01] Receipt and contract photos, while 사진도 백업 is on. */
     private val photos: BackupPhotos? = null,
+    /** [REL-15] Where a file being opened waits (its photos, a sealed file) until it is restored or put away. */
+    private val staging: java.io.File? = null,
 ) {
     /** The schedule tables of [source] (shifts, order, changed days, extra work) as a backup holds them. */
     private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
@@ -220,9 +222,158 @@ class BackupManager(
         into.put("payClosed", JSONArray(store.closed.value.values.map(com.bamnat.app.pay.SnapshotCodec::encode)))
     }
 
-    suspend fun export(): String = db.withTransaction { exportNow() }
+    /** The backup as one JSON text, without the photos (those go in the file of [exportFile]). */
+    suspend fun export(): String = db.withTransaction { exportNow().toString(1) }
 
-    private suspend fun exportNow(): String {
+    /** [REL-15] The backup and the photo files that go with it, read in one transaction. */
+    private suspend fun exportWithPhotos(): Pair<String, List<BackupArchive.Photo>> = db.withTransaction {
+        val root = exportNow()
+        // [BACK-01] The photos the records point at, unless the user keeps them on the phone only.
+        val files = if (settings.current.backupPhotos) photos?.let { p -> photoNames(root).let { (r, c) -> p.files(r, c) } }.orEmpty() else emptyList()
+        root.toString(1) to files
+    }
+
+    /**
+     * [REL-15] 327: the backup file of format 3 (a zip: [BackupArchive]) written to [out], sealed with [password]
+     * when there is one. Photos stream from their files; [out] stays open.
+     */
+    suspend fun exportFile(out: java.io.OutputStream, password: CharArray? = null) {
+        val (json, files) = exportWithPhotos()
+        if (password == null) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackupArchive.write(out, json, files) }
+            return
+        }
+        val salt = BackupCrypto.newSalt()
+        val key = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { BackupCrypto.deriveKey(password, salt) }
+        try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { writeSealed(out, json, files, key, salt, BackupCrypto.ITERATIONS) }
+        } finally {
+            key.fill(0)
+        }
+    }
+
+    /** [PROV-03][REL-15] [exportFile] with a key kept by 자동 백업; the file opens with the password the key came from. */
+    suspend fun exportFileWithKey(out: java.io.OutputStream, key: ByteArray, salt: ByteArray, iterations: Int) {
+        val (json, files) = exportWithPhotos()
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { writeSealed(out, json, files, key, salt, iterations) }
+    }
+
+    /** One line saying how the file is sealed, then the sealed zip. */
+    private fun writeSealed(out: java.io.OutputStream, json: String, files: List<BackupArchive.Photo>, key: ByteArray, salt: ByteArray, iterations: Int) {
+        val iv = BackupCrypto.newIv()
+        val b64 = Base64.getEncoder()
+        val head = JSONObject().put("app", APP_ID).put("format", SEALED_FORMAT).put("v", SEALED_ZIP)
+            .put("salt", b64.encodeToString(salt)).put("iv", b64.encodeToString(iv)).put("iter", iterations)
+        out.write((head.toString() + "\n").toByteArray())
+        BackupCrypto.encrypting(BackupArchive.NotClosing(out), key, iv).use { sealed -> BackupArchive.write(sealed, json, files) }
+        out.flush()
+    }
+
+    /**
+     * [REL-15] Reads a file the user picked: a backup of format 3 (its photos wait in [staging] for [restore]),
+     * a sealed one (waits for its password: [isSealed] is true for the text this returns), or any older text
+     * file (a backup of format 2, a company file), returned as it is.
+     */
+    fun read(input: java.io.InputStream): String {
+        val buffered = java.io.BufferedInputStream(input, 64 * 1024)
+        buffered.mark(HEAD_BYTES)
+        val head = ByteArray(HEAD_BYTES).let { b -> b.copyOf(buffered.readNBytesCompat(b)) }
+        buffered.reset()
+        if (BackupArchive.isZip(head)) {
+            val dir = stagingDir()
+            val opened = BackupArchive.read(buffered, java.io.File(dir, "photos"))
+            staged = Staged(sha(opened.json), opened.photos)
+            return opened.json
+        }
+        sealedHead(head)?.let { line ->
+            val dir = stagingDir()
+            val file = java.io.File(dir, LOCKED)
+            file.outputStream().use { buffered.copyTo(it) }
+            return line
+        }
+        return buffered.readBytes().decodeToString()
+    }
+
+    /** [REL-15] Lets go of a file read but not restored. */
+    fun putAway() {
+        staged = null
+        staging?.deleteRecursively()
+    }
+
+    private class Staged(val jsonSha: String, val photos: Map<String, java.io.File>)
+
+    @Volatile private var staged: Staged? = null
+
+    private fun stagingDir(): java.io.File {
+        val dir = staging ?: throw BackupException("백업 파일을 읽을 수 없어요")
+        putAway()
+        return dir.apply { mkdirs() }
+    }
+
+    /** The first line of a sealed file of format 3, or null. */
+    private fun sealedHead(head: ByteArray): String? {
+        val end = head.indexOf('\n'.code.toByte()).takeIf { it > 0 } ?: return null
+        val line = head.copyOf(end).decodeToString()
+        val o = runCatching { JSONObject(line) }.getOrNull() ?: return null
+        return line.takeIf { o.optString("format") == SEALED_FORMAT && o.optInt("v") == SEALED_ZIP }
+    }
+
+    private fun java.io.InputStream.readNBytesCompat(into: ByteArray): Int {
+        var n = 0
+        while (n < into.size) {
+            val r = read(into, n, into.size - n)
+            if (r < 0) break
+            n += r
+        }
+        return n
+    }
+
+    private fun sha(text: String) = BackupArchive.hex(java.security.MessageDigest.getInstance("SHA-256").digest(text.toByteArray()))
+
+    /** [REL-15] Opens the sealed file waiting in [staging] with [key]; its photos wait for [restore]. */
+    private fun openStaged(line: String, key: ByteArray): String {
+        val o = JSONObject(line)
+        val iv = Base64.getDecoder().decode(o.getString("iv"))
+        val dir = staging ?: throw BackupException("백업 파일을 읽을 수 없어요")
+        val locked = java.io.File(dir, LOCKED).takeIf { it.isFile } ?: throw BackupException("백업 파일을 다시 골라 주세요")
+        val zip = java.io.File(dir, "opened.zip")
+        locked.inputStream().use { input ->
+            // Past the first line.
+            while (true) { val b = input.read(); if (b < 0 || b == '\n'.code) break }
+            zip.outputStream().use { out -> BackupCrypto.decrypt(input, key, iv, out) }
+        }
+        val opened = try {
+            zip.inputStream().use { BackupArchive.read(it, java.io.File(dir, "photos")) }
+        } finally {
+            zip.delete()
+        }
+        staged = Staged(sha(opened.json), opened.photos)
+        return opened.json
+    }
+
+    /**
+     * [PROV-03][REL-15] 자동 백업's check that the file it wrote opens: the bytes read back, opened with [key],
+     * every sum checked. Its own folder, so a file waiting for a restore is left alone.
+     */
+    fun verifyWithKey(bytes: ByteArray, key: ByteArray): String {
+        val end = bytes.indexOf('\n'.code.toByte()).takeIf { it > 0 } ?: throw BackupException("백업 파일이 손상됐어요")
+        val o = runCatching { JSONObject(bytes.copyOf(end).decodeToString()) }.getOrNull() ?: throw BackupException("백업 파일이 손상됐어요")
+        val iv = Base64.getDecoder().decode(o.getString("iv"))
+        val plain = java.io.ByteArrayOutputStream()
+        try {
+            BackupCrypto.decrypt(java.io.ByteArrayInputStream(bytes, end + 1, bytes.size - end - 1), key, iv, plain)
+        } catch (e: BackupCrypto.WrongPassword) {
+            throw BackupException("백업 파일이 손상됐어요")
+        }
+        val dir = java.io.File(staging ?: throw BackupException("백업 파일을 읽을 수 없어요"), "../backup-verify").canonicalFile
+        return try {
+            BackupArchive.read(java.io.ByteArrayInputStream(plain.toByteArray()), dir).json
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    private suspend fun exportNow(): JSONObject {
         val root = JSONObject()
             .put("app", APP_ID)
             .put("format", FORMAT_VERSION)
@@ -271,11 +422,6 @@ class BackupManager(
         teams?.let { t -> root.put("teams", JSONObject(t.export() as Map<*, *>)) }
         pro()?.let { root.put("pro", it.toBackup()) }
         shareLinks?.let { root.put("shareLinks", it.export()) }
-        // [BACK-01] The photos the records point at, unless the user keeps them on the phone only.
-        if (settings.current.backupPhotos) photos?.let { p ->
-            val (receipts, contracts) = photoNames(root)
-            p.export(receipts, contracts)?.let { root.put("photos", it) }
-        }
         val s = settings.current
         root.put(
             "settings",
@@ -308,7 +454,7 @@ class BackupManager(
                 .put("usageStats", s.shareUsageStats).put("plazaNews", s.plazaNews).put("plazaHidden", s.plazaHidden)
                 .put("plazaRules", s.plazaRulesAgreed),
         )
-        return root.toString(1)
+        return root
     }
 
     /**
@@ -362,8 +508,8 @@ class BackupManager(
             sleeps = root.optJSONArray("sleep")?.length() ?: 0,
             hasPay = root.has("pay"),
             calendars = root.optJSONArray("calendars")?.length() ?: 0,
-            photos = BackupPhotos.count(root.optJSONObject("photos")).count,
-            photoBytes = BackupPhotos.count(root.optJSONObject("photos")).bytes,
+            photos = stagedFor(json)?.photos?.size ?: BackupPhotos.count(root.optJSONObject("photos")).count,
+            photoBytes = stagedFor(json)?.photos?.values?.sumOf { it.length() } ?: BackupPhotos.count(root.optJSONObject("photos")).bytes,
         )
     }
 
@@ -582,8 +728,29 @@ class BackupManager(
         rows.invest?.let { InvestBackup.write(target, it) }
     }
 
+    /** [REL-15] The photos [read] left waiting, when they came with this very backup. */
+    private fun stagedFor(json: String): Staged? = staged?.takeIf { it.jsonSha == sha(json) }
+
+    /**
+     * Replaces the phone's data with the backup's. [REL-15] 327 (검토 F1): all of it or none of it. Everything is
+     * read before anything changes; if writing fails halfway, the phone's data as it was a moment before goes back.
+     */
     suspend fun restore(json: String) {
         val root = parse(json)
+        val waiting = stagedFor(json)
+        val before = runCatching { export() }.getOrNull()
+        val writing = java.util.concurrent.atomic.AtomicBoolean(false)
+        try {
+            restore(root, waiting, writing)
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException || !writing.get()) throw e
+            if (before != null) runCatching { restore(parse(before), null, java.util.concurrent.atomic.AtomicBoolean()) }
+            throw BackupException("백업을 불러오지 못했어요. 지금 데이터는 그대로예요")
+        }
+        if (waiting != null) putAway()
+    }
+
+    private suspend fun restore(root: JSONObject, waiting: Staged?, writing: java.util.concurrent.atomic.AtomicBoolean) {
         val schedule = readSchedule(root)
         // [MCAL-05] Added calendars come back only from a backup that has them; read before anything changes.
         val added = if (calendars != null && root.has("calendars")) root.optJSONArray("calendars").objects().mapNotNull { o ->
@@ -619,6 +786,7 @@ class BackupManager(
             val back = added.map { it.cal.id }.toSet()
             calendars.calendars.value.filter { !it.isMain && it.id !in back }.forEach { cal -> runCatching { recordsTrash()?.beforeDelete(cal.id) } }
         }
+        writing.set(true)
         db.withTransaction {
             writeMoney(db, money)
             // Backups from before version 11 carry no sleep log; the one on the phone then stays.
@@ -661,6 +829,8 @@ class BackupManager(
         root.optJSONArray("shareLinks")?.let { a -> shareLinks?.restore(a) }
         // [BACK-01] Photos first, so the records and contracts that point at them find them here.
         photos?.restore(root.optJSONObject("photos"))
+        // [REL-15] A file of format 3 brought them as files: each moves in, never over one already here.
+        if (waiting != null) photos?.restoreFiles(waiting.photos)
         // Backups from before 1.17 carry no work tools; the phone's own then stay.
         workTools?.let { tools ->
             tools.restore(PersonalCalendar.MAIN, root.optJSONObject("workTools"))
@@ -767,10 +937,14 @@ class BackupManager(
 
     /** [PROV-03] The backup inside a file [sealWithKey] made, to check it was written whole. */
     fun unsealWithKey(text: String, key: ByteArray): String = try {
-        BackupCrypto.openWithKey(read(text), key).decodeToString()
+        if (sealedZip(text) != null) openStaged(text, key) else BackupCrypto.openWithKey(read(text), key).decodeToString()
     } catch (e: BackupCrypto.WrongPassword) {
         throw BackupException("백업 파일이 손상됐어요")
     }
+
+    /** The first line of a sealed file of format 3 ([read] keeps the rest), or null for one of format 2. */
+    private fun sealedZip(text: String): JSONObject? =
+        runCatching { JSONObject(text) }.getOrNull()?.takeIf { it.optString("format") == SEALED_FORMAT && it.optInt("v") == SEALED_ZIP }
 
     private fun read(text: String): BackupCrypto.Sealed {
         val o = runCatching { JSONObject(text) }.getOrNull() ?: throw BackupException("백업 파일을 읽을 수 없어요")
@@ -785,6 +959,18 @@ class BackupManager(
 
     /** The backup inside a sealed file; throws [BackupException] for a wrong password or a broken file. */
     fun unseal(text: String, password: CharArray): String {
+        sealedZip(text)?.let { o ->
+            val key = BackupCrypto.deriveKey(password, Base64.getDecoder().decode(o.getString("salt")), o.getInt("iter").also {
+                if (it !in 1..MAX_ITERATIONS) throw BackupException("백업 파일이 손상됐어요")
+            })
+            return try {
+                openStaged(text, key)
+            } catch (e: BackupCrypto.WrongPassword) {
+                throw BackupException("암호가 맞지 않아요")
+            } finally {
+                key.fill(0)
+            }
+        }
         val sealed = read(text)
         return try {
             BackupCrypto.open(sealed, password).decodeToString()
@@ -821,5 +1007,9 @@ class BackupManager(
         const val MAX_COMMUTE_MINUTES = 180
         /** A file asking for more work than this is not ours (and would freeze the phone). */
         private const val MAX_ITERATIONS = 5_000_000
+        /** [REL-15] A sealed file of format 3: one line, then the sealed zip. Format 2 sealed files are "v": 1. */
+        const val SEALED_ZIP = 3
+        private const val HEAD_BYTES = 4096
+        private const val LOCKED = "locked.bin"
     }
 }

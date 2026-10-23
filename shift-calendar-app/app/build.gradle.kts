@@ -19,6 +19,16 @@ fun adProp(name: String) = (project.findProperty(name) as String?).orEmpty().tri
 val admobAppId = adProp("bamnat.admobAppId").ifBlank { "ca-app-pub-3940256099942544~3347511713" }
 val adUnitsGiven = adProp("bamnat.admobBanner").isNotBlank() || adProp("bamnat.admobRewarded").isNotBlank()
 
+// [PERF-03] 324-3 (검토 B5): `-Pbamnat.composeReports` writes which screens Compose can skip and why not, to
+// build/compose-reports (classes.txt, composables.txt). Strong skipping is on (Kotlin 2.1), so no stability file:
+// one that called core's models stable without checking each would make a screen miss a change.
+if (providers.gradleProperty("bamnat.composeReports").isPresent) {
+    composeCompiler {
+        reportsDestination = layout.buildDirectory.dir("compose-reports")
+        metricsDestination = layout.buildDirectory.dir("compose-reports")
+    }
+}
+
 android {
     namespace = "com.bamnat.app"
     compileSdk = 36
@@ -81,6 +91,23 @@ android {
             signingConfigs.findByName("upload")?.let { signingConfig = it }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+        // [PERF-03] 324-5: release code, shrunk the same way, signed with the debug key and profileable, for the
+        // :benchmark module on a real phone. Never uploaded.
+        create("benchmark") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
+    }
+
+    // [OPS-24] Lint fails the build on what would crash an older phone or a missing permission; what was there
+    // when this was turned on (1.23) is in lint-baseline.xml, so only new problems fail.
+    // checkDependencies: the :database module's code is checked with the app's.
+    lint {
+        baseline = file("lint-baseline.xml")
+        abortOnError = true
+        error += listOf("NewApi", "InlinedApi", "MissingPermission", "WrongConstant")
+        checkDependencies = true
     }
 
     compileOptions {
@@ -102,14 +129,53 @@ android {
         // own Robolectric sandbox. -Pbamnat.testForks=1 runs them one after another as before.
         val forks = (findProperty("bamnat.testForks") as String?)?.toIntOrNull()
             ?: (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 3)
+        // [QA-05] CI runs the tests in shards side by side (-Pbamnat.testSet): unit = all but the screenshots,
+        // shots-a = the screenshot classes named below, shots-b = every other screenshot class (new ones too),
+        // api = the classes that run on several Android versions.
+        val testSet = findProperty("bamnat.testSet") as String?
+        val shots = "com.bamnat.app.screenshots"
+        val shotsA = listOf("Calendar", "Pay", "MemoStats", "I", "K").map { "$shots.${it}ScreenshotTest" }
+        // [REL-14] The classes that run on Android 8, 11, 13 and 15 (@Config(sdk = [26, 30, 33, 35])) go in a JVM of
+        // their own (api): sandboxes of several Android versions crash the native SQLite of the other tests in the
+        // same JVM. Without -Pbamnat.testSet they are left out; run them with -Pbamnat.testSet=api.
+        val apiLevels = listOf("ApiLevelSmokeTest", "AlarmMatrixTest").map { "com.bamnat.app.rules.$it" }
         unitTests.all {
             it.maxHeapSize = "2g"
             it.maxParallelForks = forks
+            // [REL-14] Where Robolectric fetches the Android jars of older versions (default Maven Central).
+            (findProperty("bamnat.robolectricRepo") as String?)?.let { url -> it.systemProperty("robolectric.dependency.repo.url", url) }
+            when (testSet) {
+                "api" -> apiLevels.forEach { c -> it.filter.includeTestsMatching(c) }
+                "unit" -> {
+                    it.filter.excludeTestsMatching("$shots.*")
+                    apiLevels.forEach { c -> it.filter.excludeTestsMatching(c) }
+                }
+                "shots-a" -> shotsA.forEach { c -> it.filter.includeTestsMatching(c) }
+                "shots-b" -> {
+                    it.filter.includeTestsMatching("$shots.*")
+                    shotsA.forEach { c -> it.filter.excludeTestsMatching(c) }
+                }
+                else -> apiLevels.forEach { c -> it.filter.excludeTestsMatching(c) }
+            }
         }
     }
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        // [PERF-04] Library version stamps and the coroutines debug probe, which nothing reads at run time.
+        resources.excludes += listOf("/META-INF/*.version", "/DebugProbesKt.bin")
+    }
+
+    // [PERF-04] 결정 D53: the app is Korean only (its words are in the code), so the libraries' other
+    // languages are left out.
+    androidResources {
+        localeFilters += listOf("ko")
+    }
+
+    // [PERF-04] The dependency list Play reads is kept in the bundle; an APK handed out by hand leaves it out.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = true
     }
 }
 
@@ -132,8 +198,9 @@ dependencies {
     implementation("com.bamnat:core")
     // [OPS-20] Google Play in-app review, asked once at a happy moment.
     implementation("com.google.android.play:review-ktx:2.0.2")
-    // [PAYS-05][PAYX-04] Payslip and rule photos read on the phone; the Korean model is bundled, nothing is downloaded or sent.
-    implementation("com.google.mlkit:text-recognition-korean:16.0.1")
+    // [PAYS-05][PAYX-04] Payslip, receipt, rule and roster photos read on the phone. [PERF-04] 결정 D52: the Korean
+    // model is not bundled (15~25 MB less); Google Play services downloads it to the phone (pay/OcrModel), nothing is sent.
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition-korean:16.0.1")
     // [DAYW-07] On-device geofencing for 출퇴근 자동 기록 (off by default); no location leaves the phone.
     implementation("com.google.android.gms:play-services-location:21.3.0")
     // [SHFT-08] The Wear OS watch gets the days through the Wearable Data Layer, phone to watch.
