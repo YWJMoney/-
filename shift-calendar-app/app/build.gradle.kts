@@ -19,6 +19,16 @@ fun adProp(name: String) = (project.findProperty(name) as String?).orEmpty().tri
 val admobAppId = adProp("bamnat.admobAppId").ifBlank { "ca-app-pub-3940256099942544~3347511713" }
 val adUnitsGiven = adProp("bamnat.admobBanner").isNotBlank() || adProp("bamnat.admobRewarded").isNotBlank()
 
+// [PERF-03] 324-3 (검토 B5): `-Pbamnat.composeReports` writes which screens Compose can skip and why not, to
+// build/compose-reports (classes.txt, composables.txt). Strong skipping is on (Kotlin 2.1), so no stability file:
+// one that called core's models stable without checking each would make a screen miss a change.
+if (providers.gradleProperty("bamnat.composeReports").isPresent) {
+    composeCompiler {
+        reportsDestination = layout.buildDirectory.dir("compose-reports")
+        metricsDestination = layout.buildDirectory.dir("compose-reports")
+    }
+}
+
 android {
     namespace = "com.bamnat.app"
     compileSdk = 36
@@ -80,6 +90,13 @@ android {
             isShrinkResources = true
             signingConfigs.findByName("upload")?.let { signingConfig = it }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        // [PERF-03] 324-5: release code, shrunk the same way, signed with the debug key and profileable, for the
+        // :benchmark module on a real phone. Never uploaded.
+        create("benchmark") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
         }
     }
 

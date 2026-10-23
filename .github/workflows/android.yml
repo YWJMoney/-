@@ -97,6 +97,17 @@ jobs:
       - if: matrix.set == 'unit'
         run: npm test
         working-directory: shift-calendar-app/server/share-worker
+      # [QA-06] 40 key screenshots against their fingerprints (tools/shot_hashes.py); a change that was meant
+      # comes with `python3 tools/shot_hashes.py update app/build/screenshots` in the same pull request.
+      - if: matrix.set != 'unit'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Key screenshots unchanged
+        if: matrix.set != 'unit'
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 tools/shot_hashes.py check app/build/screenshots >> "$GITHUB_STEP_SUMMARY"
       - if: always()
         run: python3 tools/slow_tests.py app/build/test-results/testDebugUnitTest --json app/build/tests-${{ matrix.set }}.json >> "$GITHUB_STEP_SUMMARY"
       - if: always()

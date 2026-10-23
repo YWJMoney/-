@@ -12,7 +12,7 @@ import com.bamnat.app.alarm.Notifications
 import java.io.File
 
 /**
- * [QA-06] 328: when the app stops by itself, a short note of where, kept on the phone.
+ * [MEAS-08] 328: when the app stops by itself, a short note of where, kept on the phone.
  *
  * The note holds the app's version, the Android version, the phone's maker and model, the thread and the
  * exception classes with their code lines, never an exception's message (it can quote what a person typed) and

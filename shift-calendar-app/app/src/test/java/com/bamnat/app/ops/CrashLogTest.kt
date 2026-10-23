@@ -12,7 +12,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** [QA-06] 328 and review F3: what a stop leaves on the phone, and that no typed words go along. */
+/** [MEAS-08] 328 and review F3: what a stop leaves on the phone, and that no typed words go along. */
 @RunWith(AndroidJUnit4::class)
 class CrashLogTest {
     private val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()

@@ -33,7 +33,7 @@ class Telemetry(
         private val CODE = Regex("[A-Za-z0-9_=,.:;/+#\\- ]{0,160}")
 
         /**
-         * [QA-06] 검토 F3: an event's detail keeps only codes and numbers. Anything else (a name of a shift set,
+         * [MEAS-08] 검토 F3: an event's detail keeps only codes and numbers. Anything else (a name of a shift set,
          * a template's title, an error text) becomes its length, so the log, the diagnostics copy and the
          * statistics never carry words a person wrote or a company's name.
          */
