@@ -3057,6 +3057,15 @@ class ScreenshotTest {
         content { com.bamnat.app.ui.company.RatesScreen(vm, onBack = {}) }
         reveal("정부 공표 전국 평균")
     }
+    // [PAYR-07] 식대 as 비과세 on the pay screen's allowance row.
+    @Test fun foldedPayMealTaxFree() = shoot("406_folded_pay_meal_tax_free", FOLDED) {
+        payScreen(Tier.PRO, withProfile = true, adjust = { p ->
+            p.copy(items = p.items + com.bamnat.core.pay.PayItem("meal", "식대",
+                com.bamnat.core.pay.ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(LocalDate.of(2026, 1, 1), 200_000))),
+                com.bamnat.core.pay.Cadence.MONTHLY, taxable = false))
+        }).invoke(this)
+        reveal("세금 없는 돈")
+    }
     @Test fun unfoldedPlazaRatesGov() = shoot("404_unfolded_plaza_rates_gov", UNFOLDED) {
         val vm = com.bamnat.app.ui.company.RatesViewModel(companyOn())
         content { com.bamnat.app.ui.company.RatesScreen(vm, onBack = {}) }

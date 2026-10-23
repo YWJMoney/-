@@ -1,10 +1,17 @@
 package com.bamnat.core.remote
 
 import com.bamnat.core.money.TradeWages
+import com.bamnat.core.pay.Cadence
+import com.bamnat.core.pay.DatedValue
+import com.bamnat.core.pay.Occupation
+import com.bamnat.core.pay.PayItem
+import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.RateFile
 import com.bamnat.core.pay.RateTable
 import com.bamnat.core.pay.TakeHome
 import com.bamnat.core.pay.TaxMode
+import com.bamnat.core.pay.ValueTimeline
+import com.bamnat.core.pay.WageType
 import com.bamnat.core.pay.WithholdingTable
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -12,6 +19,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
+import java.time.YearMonth
 
 /** [REMOTE-02][PAYR-04][PAYR-05] The rates, 간이세액표 and 노임단가 files, built in and laid over by a newer one. */
 class RemoteDataTest {
@@ -90,8 +98,23 @@ class RemoteDataTest {
         val d = TakeHome.estimate(2_200_000, TaxMode.INSURANCE_4, on = LocalDate.of(2026, 10, 1), nonTaxable = 200_000).deductions.toMap()
         assertEquals(19_520L, d[TakeHome.TAX_LABEL])
         assertEquals(1_950L, d[TakeHome.LOCAL_TAX_LABEL])
+        // [PAYR-07] 4대보험 on the taxed 200만 원 too: 국민연금 4.75%, 건강보험 3.595% (2026).
+        assertEquals(95_000L, d["국민연금"])
+        assertEquals(71_900L, d["건강보험"])
         val kids = TakeHome.estimate(5_000_000, TaxMode.INSURANCE_4, dependents = 4, children = 2, on = LocalDate.of(2026, 10, 1))
         assertEquals(173_270L, kids.deductions.toMap()[TakeHome.TAX_LABEL])
+    }
+
+    @Test fun mealAllowancesAreNonTaxableUpTo200k() {
+        fun item(id: String, name: String, amount: Long, taxable: Boolean, cadence: Cadence = Cadence.MONTHLY) =
+            PayItem(id, name, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), amount))), cadence, taxable = taxable)
+        val p = PayProfile(occupation = Occupation.CUSTOM, wageType = WageType.MONTHLY,
+            base = ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_500_000))),
+            items = listOf(item("a", "식대", 250_000, false), item("b", "자가운전보조금", 150_000, false),
+                item("c", "직책수당", 100_000, true), item("d", "상여", 500_000, false, Cadence.BONUS)))
+        assertEquals(350_000L, TakeHome.nonTaxable(p, YearMonth.of(2026, 10)))
+        assertTrue(TakeHome.looksNonTaxable("중식 대"))
+        assertTrue(!TakeHome.looksNonTaxable("직책수당"))
     }
 
     @Test fun aNewTableFileReplacesTheYear() {

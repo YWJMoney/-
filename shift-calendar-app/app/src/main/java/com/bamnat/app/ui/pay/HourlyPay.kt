@@ -101,7 +101,10 @@ internal fun HourlyPayCard(vm: PayViewModel, profile: PayProfile, gross: Long, u
                 FilterChip(selected = profile.taxMode == m, onClick = { vm.update { it.copy(taxMode = m) } }, label = { Text(m.label) })
             }
         }
-        val r = remember(gross, profile.taxMode) { TakeHome.estimate(gross, profile.taxMode, on = month.atDay(1)) }
+        // [PAYR-04] The same 가족·자녀 the stats card sets, so both screens show one take-home.
+        val r = remember(gross, profile, month) {
+            TakeHome.estimate(gross, profile.taxMode, profile.taxFamily, month.atDay(1), profile.taxChildren, TakeHome.nonTaxable(profile, month))
+        }
         r.deductions.forEach { (name, amount) ->
             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                 Text(name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
@@ -118,7 +121,9 @@ internal fun HourlyPayCard(vm: PayViewModel, profile: PayProfile, gross: Long, u
             when (profile.taxMode) {
                 TaxMode.NONE -> "가게에서 세금을 떼지 않으면 세전 금액이 그대로 들어와요."
                 TaxMode.WITHHOLDING_3_3 -> "3.3%(소득세 3% + 지방소득세 0.3%)로 떼였다면 다음 해 5월 종합소득세 신고로 돌려받을 수 있어요."
-                TaxMode.INSURANCE_4 -> "4대보험은 그해 근로자 몫이에요. 소득세는 국세청 간이세액표(본인 1명) 값이고, 실제는 회사 선택(80·100·120%)과 연말정산으로 정해져요."
+                TaxMode.INSURANCE_4 -> "4대보험은 그해 근로자 몫이에요. 소득세는 국세청 간이세액표(가족 ${profile.taxFamily}명" +
+                    (if (profile.taxChildren > 0) ", 8~20세 자녀 ${profile.taxChildren}명" else "") +
+                    ") 값이고, 실제는 회사 선택(80·100·120%)과 연말정산으로 정해져요. 가족 수는 통계 ‘○월 한눈에’에서 바꿔요."
             },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp),
         )
@@ -128,7 +133,7 @@ internal fun HourlyPayCard(vm: PayViewModel, profile: PayProfile, gross: Long, u
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("법정 휴게 자동 빼기", style = MaterialTheme.typography.bodyLarge)
-                Text("휴게를 안 적은 날, 4시간 넘게 일하면 30분·8시간이면 1시간을 빼요", style = MaterialTheme.typography.bodySmall,
+                Text("휴게를 안 적은 날, 4시간 넘게 일하면 30분·8시간이면 1시간을 빼요. 4시간 근무에 휴게를 안 쓰기로 했다면 그날 휴게를 0분으로 적어요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.width(12.dp))

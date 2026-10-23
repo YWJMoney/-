@@ -224,7 +224,8 @@ class PayViewModel(
         val id = "item-" + System.currentTimeMillis()
         val value = if (amount == null) ValueTimeline() else ValueTimeline(listOf(DatedValue(p.period.start(from), amount)))
         p.copy(items = p.items + PayItem(id, name.trim().ifEmpty { "수당" }, value, cadence,
-            ordinary = ordinary, fixedOvertimeMinutes = fixedOvertimeMinutes),
+            ordinary = ordinary, fixedOvertimeMinutes = fixedOvertimeMinutes,
+            taxable = !(cadence == Cadence.MONTHLY && fixedOvertimeMinutes == 0 && com.bamnat.core.pay.TakeHome.looksNonTaxable(name))),
             estimatedFields = if (amount == null) p.estimatedFields + Unknowns.item(id) else p.estimatedFields)
     }
 

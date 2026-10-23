@@ -4,6 +4,9 @@ package com.bamnat.core.schedule
  * [HRLY-05] 법정 휴게 자동 빼기 (근로기준법 제54조): a working day with no break set loses 30 minutes from
  * 4 hours on the clock and an hour from 8½. A break the user set, even 0 on purpose, is left alone, and so
  * is a day with leave, whose break is already worked out.
+ *
+ * From 2026-12-10 제54조 ① 단서 (법률 제21784호) lets a worker on a 4시간 day ask for no break; that day's
+ * break set to 0 keeps the whole span as work, so the rule itself does not change.
  */
 object LegalBreak {
     /**
