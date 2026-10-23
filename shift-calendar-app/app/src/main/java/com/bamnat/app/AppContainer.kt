@@ -342,6 +342,14 @@ class AppContainer(context: Context) {
     /** [NOTE-02] The memo tab's notebook, kept while the app runs so coming back finds the same list. */
     val memoNotebook = kotlinx.coroutines.flow.MutableStateFlow(com.bamnat.core.memo.MemoNotebook.CALENDAR)
 
+    // [EASY-01..05][OBS-01] 1.23 묶음 N: the example of 우선 둘러볼게요, the profile over the existing stores, the
+    // question card's memory and '밤낮이 한 일'. All built on first use; none starts a job of its own.
+    val browse by lazy { com.bamnat.app.data.BrowseStore(appContext) }
+    val example by lazy { com.bamnat.app.data.ExampleCalendar(this) }
+    val profiles by lazy { com.bamnat.app.data.ProfileStore(this) }
+    val asks by lazy { com.bamnat.app.data.AskStore(appContext) }
+    val journal by lazy { com.bamnat.app.data.JournalStore(java.io.File(appContext.noBackupFilesDir, "journal.jsonl"), appScope) }
+
     private companion object {
         /** A shorter sleep (a tap and an undo, a doze) gets no "잤어요" line. */
         const val WOKE_SUMMARY_MINUTES = 20L

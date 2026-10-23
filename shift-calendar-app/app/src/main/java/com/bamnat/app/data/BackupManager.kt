@@ -394,7 +394,13 @@ class BackupManager(
             book.get(PersonalCalendar.MAIN)?.let { root.put("mainCalendar", CalendarBook.run { it.toJson() }) }
         }
         val memos = JSONArray()
-        db.memoDao().getAll().forEach { m ->
+        // [EASY-01] The example calendar's memos never go in a backup (결정 N-D4); one shared with another calendar
+        // goes without the example's mark.
+        val codec = com.bamnat.core.memo.MemoCalendars
+        db.memoDao().getAll().mapNotNull { m ->
+            val on = codec.decode(m.calendars)
+            if (PersonalCalendar.EXAMPLE !in on) m else (on - PersonalCalendar.EXAMPLE).takeIf { it.isNotEmpty() }?.let { m.copy(calendars = codec.encode(it)) }
+        }.forEach { m ->
             memos.put(
                 JSONObject()
                     .put("id", m.id).putOpt("day", m.epochDay).put("title", m.title).put("body", m.body)
