@@ -67,6 +67,42 @@ object InvestCsv {
         return sb.toString()
     }
 
+    val TAX_HEADER = listOf("매도일", "계좌", "종목코드", "종목명", "시장", "수량", "양도가액(원)", "취득가액·경비(원)", "손익(원)", "매도 환율", "처음 산 날")
+
+    /**
+     * [INV-37] 해외 주식 양도소득세 신고(다음 해 5월)에 쓰는 표: [year]에 판 해외 주식, 먼저 산 것부터 판 것으로
+     * (선입선출, [Portfolio.fifo]) — ISA·연금 계좌는 빼고 — 한 줄씩, 끝에 합계·기본공제·예상 세금
+     * ([InvestTaxes.estimate]과 같은 수). 코인은 시행 전이면 참고로만 따로 적어요.
+     */
+    fun taxReport(book: InvestBook, result: PortfolioResult, year: Int): String {
+        val skip = book.accounts.filter { it.type.taxDeferred || it.type == AccountType.ISA }.map { it.id }.toSet()
+        val trades = book.trades.associateBy { it.id }
+        val sales = Portfolio.fifo(book.trades).filter { it.date.year == year && it.market.foreign && it.accountId !in skip }.sortedBy { it.date }
+        val sb = StringBuilder("\uFEFF")
+        line(sb, listOf("${year}년 해외 주식 양도소득 (선입선출, 참고용)"))
+        line(sb, TAX_HEADER)
+        for (r in sales) {
+            val t = trades[r.tradeId]
+            line(sb, listOf(r.date.toString(), text(book.account(r.accountId)?.name.orEmpty()), text(t?.symbol.orEmpty()), text(r.name), r.market.label,
+                Portfolio.quantityText(r.quantity), r.proceedsWon.roundToLong().toString(), r.costWon.roundToLong().toString(),
+                r.pnlWon.roundToLong().toString(), t?.fxRate?.let(::number).orEmpty(), r.openedOn?.toString().orEmpty()))
+        }
+        val est = InvestTaxes.estimate(book, result, year)
+        line(sb, emptyList())
+        line(sb, listOf("손익 합계", "", "", "", "", "", "", "", est.foreignGain.toString()))
+        line(sb, listOf("기본공제", "", "", "", "", "", "", "", InvestTaxes.FOREIGN_DEDUCTION.toString()))
+        line(sb, listOf("과세표준", "", "", "", "", "", "", "", est.foreignTaxable.toString()))
+        line(sb, listOf("예상 세금 (지방소득세 포함 ${Math.round(InvestTaxes.CAPITAL_GAINS_RATE * 100)}%)", "", "", "", "", "", "", "", est.foreignTax.toString()))
+        if (est.cryptoGain != 0L) {
+            line(sb, listOf(if (est.cryptoTaxed) "가상자산 손익" else "가상자산 손익 (${InvestTaxes.CRYPTO_FROM_YEAR}년부터 과세, 참고)", "", "", "", "", "", "", "",
+                est.cryptoGain.toString()))
+        }
+        line(sb, emptyList())
+        line(sb, listOf("환율은 거래에 적은 값이에요. 신고는 양도일·취득일의 기준환율로 해요(소득세법 시행령 제178조의5, 확인 필요). " +
+            "증권사가 주는 양도소득 자료와 맞춰 보고 신고해 주세요."))
+        return sb.toString()
+    }
+
     fun fileName(kind: String, from: LocalDate?, to: LocalDate?): String =
         "bamnat-invest-$kind" + (if (from != null && to != null) "-$from-$to" else "") + ".csv"
 

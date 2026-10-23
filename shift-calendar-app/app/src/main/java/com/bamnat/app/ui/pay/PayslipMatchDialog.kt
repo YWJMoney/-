@@ -110,6 +110,8 @@ private class SlipForm {
     /** Amounts by the id of the profile's allowance. */
     val items = mutableStateMapOf<String, Long?>()
     val others = mutableStateListOf<OtherLine>()
+    /** [PAYX-36] The payslip as read from a photo or text, for its 공제 lines; null when typed by hand. */
+    var read by mutableStateOf<PayslipRead?>(null)
 
     val premiums: List<Premium> get() = listOf(overtime, night, holiday)
 
@@ -119,6 +121,7 @@ private class SlipForm {
 
     /** [PAYS-05] Fills the form from a payslip read from a photo or text; the user can still correct every field. */
     fun fill(read: PayslipRead, profile: PayProfile) {
+        this.read = read
         read.gross?.let { gross = it }
         read.amount(SlipRole.BASE)?.let { base = it }
         listOf(overtime to SlipRole.OVERTIME, night to SlipRole.NIGHT, holiday to SlipRole.HOLIDAY).forEach { (p, role) ->
@@ -290,7 +293,8 @@ fun PayslipMatchDialog(
                                 MatchStage.AMOUNTS -> AmountsStage(profile, chosen, form, appTotal, more, { more = it }, failed, filled) { scanning = true }
                                 MatchStage.WORKING -> Working()
                                 MatchStage.RESULT -> match?.let { m ->
-                                    ResultStage(m, added, addedRules, onMakeGap = { makingFor = m }) { names ->
+                                    ResultStage(m, added, addedRules, onMakeGap = { makingFor = m },
+                                        audit = { SlipAuditCard(m, form.payslip(profile), form.read, snapshot) }) { names ->
                                         val from = profile.period.start(chosen)
                                         names.forEachIndexed { i, (name, amount) ->
                                             added += PayItem(
@@ -493,6 +497,7 @@ private fun ResultStage(
     added: List<PayItem>,
     addedRules: List<CustomRule>,
     onMakeGap: () -> Unit,
+    audit: @Composable () -> Unit = {},
     onAdd: (List<Pair<String, Long>>) -> Unit,
 ) {
     val pct = "%.1f".format(abs(m.gapPercent))
@@ -536,6 +541,9 @@ private fun ResultStage(
             addedRules.forEach { r -> ChangeRow(r.name, (if (r.deduct) "새 차감 · " else "새 항목 · ") + r.describe()) }
         }
     }
+
+    // [PAYX-41] Line by line: what to ask the company and what to fix in the app, and the 공제 next to the estimate.
+    audit()
 
     // [PAYS-08] What is left of the gap points at the line the app does not have, and makes it in one go.
     if (!m.matched) GapCard(m.gap, onMakeGap)
@@ -590,6 +598,47 @@ private fun ResultStage(
     m.payslipHourly?.let {
         Text("명세서의 수당과 시간으로 거꾸로 계산한 통상시급은 ${won(it)}이에요.", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * [PAYX-36][PAYX-41] 내 월급 맞나요?: the pay lines that differ in two baskets, then the payslip's 공제 next to the
+ * app's estimate for the same 지급 총액.
+ */
+@Composable
+private fun SlipAuditCard(m: PayslipMatch, slip: Payslip, read: PayslipRead?, snapshot: ScheduleSnapshot) {
+    val pay = remember(m) { com.bamnat.core.pay.PayCalculator().calculate(m.profile, m.month, snapshot.resolver::resolve, checks = false) }
+    val gaps = remember(m, slip) { com.bamnat.core.pay.SlipAudit.gaps(slip, pay) }
+    val deductions = remember(m, read) { read?.let { com.bamnat.core.pay.SlipAudit.deductions(it, m.profile, m.month) }.orEmpty() }
+    if (gaps.isEmpty() && deductions.isEmpty()) return
+    SectionCard(title = "줄마다 맞춰 보기") {
+        com.bamnat.core.pay.SlipAudit.Basket.entries.forEach { b ->
+            val mine = gaps.filter { it.basket == b }
+            if (mine.isEmpty()) return@forEach
+            Text(b.label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp),
+                color = if (b == com.bamnat.core.pay.SlipAudit.Basket.COMPANY_LESS) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+            mine.forEach { g ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                    Text(g.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    Text("명세서 ${won(g.slip)} · 앱 ${won(g.app)}", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Text(b.hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (gaps.any { it.basket == com.bamnat.core.pay.SlipAudit.Basket.COMPANY_LESS } || m.belowLaw != null) {
+            Text(com.bamnat.core.pay.SlipAudit.ASK_NOTE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+        if (deductions.isNotEmpty()) {
+            Text("공제 (명세서 · 앱 예상)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+            deductions.forEach { d ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                    Text(d.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    Text("${d.slip?.let(::won) ?: "없음"} · ${d.estimate?.let(::won) ?: "-"}", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Text("국민연금은 작년 소득으로 정한 금액이라 다를 수 있어요. 소득세는 회사가 고른 비율(80·100·120%)과 가족 수에 따라 달라요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

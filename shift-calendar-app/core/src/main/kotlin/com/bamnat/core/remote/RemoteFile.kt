@@ -33,8 +33,16 @@ object RemoteFiles {
     const val RATES = "rates"
     const val WAGES = "wages"
     const val TAXTABLE = "taxtable"
+    /** [REMOTE-05] 공무원 봉급표 ([com.bamnat.core.pay.PublicPayTable]), 1.23. */
+    const val PUBLICPAY = "publicpay"
+    /** [REMOTE-05] 공휴일표 ([com.bamnat.core.holiday.KoreanHolidays]), 1.23. */
+    const val HOLIDAYS = "holidays"
+    /** [INV-36] 투자 세금 기준 ([com.bamnat.core.invest.InvestTaxes]), 1.23. */
+    const val TAXES = "taxes"
+    /** [REMOTE-07] 제조사별 알람 설정 안내 ([AlarmGuides]); the frame is K's, the words L's. 1.23. */
+    const val ALARM_GUIDE = "alarm-guide"
     /** The files the app reads; each ships inside the app and is published at [path]. */
-    val KINDS = listOf(PRESETS, RATES, WAGES, TAXTABLE)
+    val KINDS = listOf(PRESETS, RATES, WAGES, TAXTABLE, PUBLICPAY, HOLIDAYS, TAXES, ALARM_GUIDE)
 
     /** Where the files live on the site, below the app's `bamnat.remoteBaseUrl`. */
     fun path(kind: String) = "remote/v1/$kind.json"

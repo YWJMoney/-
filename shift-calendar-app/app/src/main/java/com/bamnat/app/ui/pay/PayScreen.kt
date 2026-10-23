@@ -315,7 +315,7 @@ private fun PayResult(
         underTotal()
 
         // [HRLY-04..HRLY-08] 예상 실수령 and the settings only a part-timer needs.
-        if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) HourlyPayCard(vm, profile, shown.total, unlocked, snapshot, month)
+        if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) HourlyPayCard(vm, profile, shown.total, unlocked, snapshot, month, result.holidayWeeks)
 
         // [PAYS-01] Allowances whose amount is not known are in no figure; each says how often it came up.
         if (closedSnap == null && result.missing.isNotEmpty()) {
@@ -515,7 +515,7 @@ private fun PayResult(
         }) { Text("계산이 이상해요 (오류 제보)") }
         Text(
             "회사 급여명세서와 다를 수 있어요. 세금과 4대보험을 빼기 전 금액이에요. 계산 기준: 요율 ${shown.ratesVersion}, " +
-                "공휴일 ${KoreanHolidays.VERSION}.",
+                "공휴일 ${KoreanHolidays.version}.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 24.dp),
@@ -1142,7 +1142,7 @@ private fun CloseMonthCard(vm: PayViewModel, result: MonthPay, closed: CalcSnaps
 private fun reportProblem(context: android.content.Context, profile: PayProfile, result: MonthPay) {
     val text = buildString {
         appendLine("[밤낮 급여 계산 오류 제보]")
-        appendLine("월: ${result.month} · 요율 ${result.ratesVersion} · 공휴일 ${KoreanHolidays.VERSION} · 앱 ${com.bamnat.app.BuildConfig.VERSION_NAME}")
+        appendLine("월: ${result.month} · 요율 ${result.ratesVersion} · 공휴일 ${KoreanHolidays.version} · 앱 ${com.bamnat.app.BuildConfig.VERSION_NAME}")
         appendLine("직군: ${profile.occupation.label} · ${profile.wageLabel()} · " +
             "${if (profile.fiveOrMoreEmployees) "5인 이상" else "5인 미만"} · 소정 ${profile.monthlyHours}시간")
         profile.rules.summary(profile).forEach { appendLine("규칙: $it") }
@@ -1166,7 +1166,7 @@ private fun reportProblem(context: android.content.Context, profile: PayProfile,
  * rate, but no amount. The server refuses amounts in a question, so a line that still holds one is left out.
  */
 internal fun payCheck(profile: PayProfile, result: MonthPay): String = buildList {
-    add("월: ${result.month} · 요율 ${result.ratesVersion} · 공휴일 ${KoreanHolidays.VERSION} · 앱 ${com.bamnat.app.BuildConfig.VERSION_NAME}")
+    add("월: ${result.month} · 요율 ${result.ratesVersion} · 공휴일 ${KoreanHolidays.version} · 앱 ${com.bamnat.app.BuildConfig.VERSION_NAME}")
     add("직군: ${profile.occupation.label} · ${profile.wageLabel()} · " +
         "${if (profile.fiveOrMoreEmployees) "5인 이상" else "5인 미만"} · 소정 ${profile.monthlyHours}시간")
     profile.rules.summary(profile).forEach { add("규칙: $it") }

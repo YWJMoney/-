@@ -220,6 +220,7 @@ object PayCodec {
         .putOpt("leaveDate", p.leaveDate?.toString())
         .apply { if (p.productionWorker) put("production", true) }
         .putOpt("previousYearPay", p.previousYearPay)
+        .apply { if (p.ledgerTakeHome) put("ledgerNet", true) }
 
     fun decode(o: JSONObject): PayProfile = PayProfile(
         // [PAYS-03] A job or wage type from a newer version reads as 직접 설정 and 월급제 rather than failing the file.
@@ -265,6 +266,7 @@ object PayCodec {
         leaveDate = o.optString("leaveDate").takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
         productionWorker = o.optBoolean("production", false),
         previousYearPay = if (o.has("previousYearPay") && !o.isNull("previousYearPay")) o.optLong("previousYearPay").coerceAtLeast(0) else null,
+        ledgerTakeHome = o.optBoolean("ledgerNet", false),
     )
 
     /** [PAYS-06] One of the user's own rules. */

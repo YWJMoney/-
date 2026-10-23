@@ -36,7 +36,7 @@ object InvestFees {
     }
 }
 
-/** [INV-12] What tax this year's trading may come to, from the rules in force on 2026-10-20 (참고용). */
+/** [INV-12] What tax this year's trading may come to, from the rules in force on 2026-10-20 or a newer `taxes` file (참고용). */
 data class TaxEstimate(
     val year: Int,
     /** 해외 주식: gains less losses this year, matched oldest first. */
@@ -70,18 +70,61 @@ data class TaxEstimate(
 }
 
 object InvestTaxes {
-    const val FOREIGN_DEDUCTION = 2_500_000L
-    const val CAPITAL_GAINS_RATE = 0.22
-    const val CRYPTO_DEDUCTION = 2_500_000L
-    const val CRYPTO_FROM_YEAR = 2027
-    const val ISA_LIMIT = 2_000_000L
-    const val ISA_LIMIT_LOW_INCOME = 4_000_000L
-    const val ISA_OVER_RATE = 0.099
-    const val FINANCIAL_INCOME_LIMIT = 20_000_000L
-    /** 배당소득세: 14% and 지방소득세 1.4%. */
-    const val DIVIDEND_RATE = 0.154
-    /** US dividends are taxed 15% there, and nothing more here below the 2,000만 원 line. */
-    const val US_DIVIDEND_RATE = 0.15
+    /**
+     * [INV-36] The numbers of the tax law that change with it, from `remote/v1/taxes.json` when a newer signed file
+     * came (세법은 해마다 바뀌어요), else these. 코인 과세 2027 has been put off twice already (확인 필요).
+     */
+    data class Rules(
+        val foreignDeduction: Long = 2_500_000L,
+        val capitalGainsRate: Double = 0.22,
+        val cryptoDeduction: Long = 2_500_000L,
+        val cryptoFromYear: Int = 2027,
+        val isaLimit: Long = 2_000_000L,
+        val isaLimitLowIncome: Long = 4_000_000L,
+        val isaOverRate: Double = 0.099,
+        val financialIncomeLimit: Long = 20_000_000L,
+        /** 배당소득세: 14% and 지방소득세 1.4%. */
+        val dividendRate: Double = 0.154,
+        /** US dividends are taxed 15% there, and nothing more here below the 2,000만 원 line. */
+        val usDividendRate: Double = 0.15,
+    )
+
+    val BUILT_IN = Rules()
+    const val BUILT_IN_VERSION = 2026102301L
+
+    @Volatile var rules: Rules = BUILT_IN
+        private set
+
+    /** [INV-36] A newer signed `taxes` file's numbers; null goes back to the built-in ones. */
+    fun use(file: com.bamnat.core.remote.RemoteFile?) {
+        rules = file?.takeIf { it.version > BUILT_IN_VERSION }?.let(::read) ?: BUILT_IN
+    }
+
+    /** Reads a `taxes` file strictly: rates between 0 and 1, amounts in whole won, a year from 2025. */
+    fun read(f: com.bamnat.core.remote.RemoteFile): Rules {
+        fun bad(why: String): Nothing = throw com.bamnat.core.remote.RemoteFileException(why)
+        if (f.kind != com.bamnat.core.remote.RemoteFiles.TAXES) bad("kind ${f.kind}")
+        val d = f.data
+        fun rate(k: String) = d.double(k).also { if (it < 0 || it >= 1) bad(k) }
+        fun won(k: String) = d.long(k).also { if (it < 0 || it > 1_000_000_000) bad(k) }
+        return Rules(
+            foreignDeduction = won("foreignDeduction"), capitalGainsRate = rate("capitalGainsRate"),
+            cryptoDeduction = won("cryptoDeduction"), cryptoFromYear = d.int("cryptoFromYear").also { if (it !in 2025..2100) bad("cryptoFromYear") },
+            isaLimit = won("isaLimit"), isaLimitLowIncome = won("isaLimitLowIncome"), isaOverRate = rate("isaOverRate"),
+            financialIncomeLimit = won("financialIncomeLimit"), dividendRate = rate("dividendRate"), usDividendRate = rate("usDividendRate"),
+        )
+    }
+
+    val FOREIGN_DEDUCTION: Long get() = rules.foreignDeduction
+    val CAPITAL_GAINS_RATE: Double get() = rules.capitalGainsRate
+    val CRYPTO_DEDUCTION: Long get() = rules.cryptoDeduction
+    val CRYPTO_FROM_YEAR: Int get() = rules.cryptoFromYear
+    val ISA_LIMIT: Long get() = rules.isaLimit
+    val ISA_LIMIT_LOW_INCOME: Long get() = rules.isaLimitLowIncome
+    val ISA_OVER_RATE: Double get() = rules.isaOverRate
+    val FINANCIAL_INCOME_LIMIT: Long get() = rules.financialIncomeLimit
+    val DIVIDEND_RATE: Double get() = rules.dividendRate
+    val US_DIVIDEND_RATE: Double get() = rules.usDividendRate
 
     /**
      * [INV-35] Why the 보유 tab's 손익 and the tax preview can differ: 평균단가 is a moving average, the 해외 주식 tax

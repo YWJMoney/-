@@ -48,7 +48,8 @@ object PublicPayTable {
         fun column(g: Grade): LongArray = if (g.series == Series.GENERAL) general[g.column] else policeFire[g.column]
     }
 
-    val tables: List<Table> = listOf(
+    /** [REMOTE-05] The tables written here; `remote/v1/publicpay.json` ships the same ([BUILT_IN_VERSION]). */
+    private val builtIn: List<Table> = listOf(
         Table(
             LocalDate.of(2026, 1, 1),
             "「공무원보수규정」 별표 3·별표 10 <개정 2026. 1. 2.> (국가법령정보센터, 2026-10-22 확인)",
@@ -77,6 +78,45 @@ object PublicPayTable {
             ),
         ),
     )
+
+    const val BUILT_IN_VERSION = 2026102301L
+
+    @Volatile private var remote: List<Table>? = null
+
+    /** The built-in tables, with a newer signed file's laid over them (same `from` replaced) [REMOTE-05]. */
+    val tables: List<Table> get() = remote ?: builtIn
+
+    /** [REMOTE-05] A new year's 봉급표 from a signed file, without an app update; null goes back to the built-in one. */
+    fun use(file: com.bamnat.core.remote.RemoteFile?) {
+        remote = null
+        if (file == null || file.version <= BUILT_IN_VERSION) return
+        val add = read(file)
+        remote = (builtIn.filter { b -> add.none { it.from == b.from } } + add).sortedBy { it.from }
+    }
+
+    /** Reads a `publicpay` file strictly: 9 일반직 and 10 경찰·소방 columns, each 호봉 at least the one before. */
+    fun read(f: com.bamnat.core.remote.RemoteFile): List<Table> {
+        fun bad(why: String): Nothing = throw com.bamnat.core.remote.RemoteFileException(why)
+        if (f.kind != com.bamnat.core.remote.RemoteFiles.PUBLICPAY) bad("kind ${f.kind}")
+        fun columns(v: List<Any?>, n: Int): List<LongArray> {
+            if (v.size != n) bad("columns")
+            return v.map { c ->
+                val l = (c as? List<*>)?.map { it as? Long ?: bad("value") } ?: bad("column")
+                if (l.isEmpty() || l.size > 40 || l.any { it < 1_000_000 || it > 20_000_000 } || l.zipWithNext().any { (a, b) -> b < a }) bad("column")
+                l.toLongArray()
+            }
+        }
+        val out = f.data.objs("tables").map { o ->
+            Table(
+                from = try { LocalDate.parse(o.str("from")) } catch (e: java.time.format.DateTimeParseException) { bad("from") },
+                source = o.strOr("source", ""),
+                general = columns(o.list("general"), generalNames.size),
+                policeFire = columns(o.list("policeFire"), policeNames.size),
+            )
+        }
+        if (out.isEmpty()) bad("tables")
+        return out
+    }
 
     /** The table in force on [on]; before the first one, the first. */
     fun table(on: LocalDate): Table = tables.lastOrNull { !it.from.isAfter(on) } ?: tables.first()

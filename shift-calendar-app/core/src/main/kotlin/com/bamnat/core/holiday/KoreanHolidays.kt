@@ -58,9 +58,52 @@ object KoreanHolidays {
         add(2027, 12, 25, "성탄절"); add(2027, 12, 27, "대체공휴일")
     }
 
+    /** [REMOTE-05] A signed `holidays` file: whole years of days, which replace the built-in ones for those years. */
+    class HolidayFile(val version: String, val years: IntRange, val days: Map<LocalDate, String>)
+
+    /** The `remote/v1/holidays.json` that ships with this table; a downloaded file must be newer to count. */
+    const val BUILT_IN_FILE_VERSION = 2026102301L
+
+    @Volatile private var remote: HolidayFile? = null
+
+    /** The table's version as shown on 급여 reports: a newer file's, else [VERSION]. */
+    val version: String get() = remote?.version ?: VERSION
+
+    /** The built-in days, for the test that the shipped file says the same. */
+    internal val builtInDays: Map<LocalDate, String> get() = table
+
+    /**
+     * [REMOTE-05] 임시공휴일 or a new year's table from a signed file, without an app update (the 2025~2027 rules
+     * stay for the years it does not cover); null goes back to the built-in table.
+     */
+    fun use(file: com.bamnat.core.remote.RemoteFile?) {
+        remote = null
+        if (file == null || file.version <= BUILT_IN_FILE_VERSION) return
+        remote = read(file)
+    }
+
+    fun read(f: com.bamnat.core.remote.RemoteFile): HolidayFile {
+        fun bad(why: String): Nothing = throw com.bamnat.core.remote.RemoteFileException(why)
+        if (f.kind != com.bamnat.core.remote.RemoteFiles.HOLIDAYS) bad("kind ${f.kind}")
+        val from = f.data.int("fromYear")
+        val to = f.data.int("toYear")
+        if (from < 2020 || to > 2100 || to < from || to - from > 10) bad("years")
+        val days = f.data.objs("days").associate { o ->
+            val d = try { LocalDate.parse(o.str("date")) } catch (e: java.time.format.DateTimeParseException) { bad("date") }
+            val name = o.str("name").trim()
+            if (d.year !in from..to || name.isEmpty() || name.length > 30) bad("day")
+            d to name
+        }
+        // Every year has 신정 and 성탄절; a file without them lost its days.
+        if ((from..to).any { y -> LocalDate.of(y, 1, 1) !in days || LocalDate.of(y, 12, 25) !in days }) bad("days")
+        return HolidayFile(f.data.str("version").take(20).ifBlank { bad("version") }, from..to, days)
+    }
+
     /** The holiday's name, or null on an ordinary day. */
-    fun nameOf(date: LocalDate): String? =
-        if (date.year in years) table[date] else computed.getOrPut(date.year) { rules(date.year) }[date]
+    fun nameOf(date: LocalDate): String? {
+        remote?.let { r -> if (date.year in r.years) return r.days[date] }
+        return if (date.year in builtInYears) table[date] else computed.getOrPut(date.year) { rules(date.year) }[date]
+    }
 
     fun isHoliday(date: LocalDate): Boolean = nameOf(date) != null
 
@@ -93,8 +136,10 @@ object KoreanHolidays {
      */
     fun isLaborDay(date: LocalDate): Boolean = date.monthValue == 5 && date.dayOfMonth == 1
 
-    /** Years the table covers (checked against the 월력요항, with 임시공휴일 and 선거일). */
-    val years: IntRange = 2025..2027
+    /** Years the table covers (checked against the 월력요항, with 임시공휴일 and 선거일), a newer file's included. */
+    val years: IntRange get() = remote?.let { minOf(it.years.first, builtInYears.first)..maxOf(it.years.last, builtInYears.last) } ?: builtInYears
+
+    private val builtInYears: IntRange = 2025..2027
 
     /**
      * [OPS-18] Days outside [years] the rules cannot work out: 2024's 선거일 and 임시공휴일 (국군의 날), and the

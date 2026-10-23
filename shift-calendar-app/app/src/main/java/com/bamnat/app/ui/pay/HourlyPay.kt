@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -91,7 +93,10 @@ fun TakeHomeLine(gross: Long, mode: TaxMode, modifier: Modifier = Modifier, on: 
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun HourlyPayCard(vm: PayViewModel, profile: PayProfile, gross: Long, unlocked: Boolean, snapshot: ScheduleSnapshot, month: YearMonth) {
+internal fun HourlyPayCard(
+    vm: PayViewModel, profile: PayProfile, gross: Long, unlocked: Boolean, snapshot: ScheduleSnapshot, month: YearMonth,
+    holidayWeeks: List<com.bamnat.core.pay.HolidayWeek> = emptyList(),
+) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     var pickingDate by remember { mutableStateOf(false) }
     SectionCard(title = "예상 실수령") {
@@ -158,6 +163,24 @@ internal fun HourlyPayCard(vm: PayViewModel, profile: PayProfile, gross: Long, u
             DayOfWeek.entries.forEach { d ->
                 FilterChip(selected = weekFrom == d, onClick = { vm.update { it.copy(holidayWeekStart = d) } }, label = { Text(WEEKDAYS[d.ordinal]) })
             }
+        }
+        // [PAYX-35] Week by week: did it earn 주휴, and if not why (근로기준법 제55조, 시행령 제30조: 주 15시간 이상, 개근).
+        if (holidayWeeks.isNotEmpty()) {
+            Text("이번 달 주마다 주휴", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                holidayWeeks.forEach { w ->
+                    androidx.compose.material3.AssistChip(
+                        onClick = {},
+                        label = { Text("${w.from.monthValue}/${w.from.dayOfMonth}~${w.to.monthValue}/${w.to.dayOfMonth} · ${w.text}") },
+                        leadingIcon = {
+                            Icon(if (w.earned) Icons.Filled.Check else Icons.Filled.Close, contentDescription = if (w.earned) "받아요" else "못 받아요",
+                                modifier = Modifier.size(16.dp))
+                        },
+                    )
+                }
+            }
+            Text("주 15시간 이상 일하고 결근이 없는 주에 받아요. 쉬는 날을 바꿔 넣으면 바로 다시 세요.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))

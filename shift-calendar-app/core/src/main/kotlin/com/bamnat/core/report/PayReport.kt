@@ -39,7 +39,7 @@ object PayReport {
             "급여 기간" to period(pay),
             pay.payDate?.let { "지급일" to date(it) },
             "통상시급" to won(pay.ordinaryHourly),
-            "계산 기준" to "요율 ${pay.ratesVersion}, 공휴일 ${KoreanHolidays.VERSION}",
+            "계산 기준" to "요율 ${pay.ratesVersion}, 공휴일 ${KoreanHolidays.version}",
             "만든 날" to date(made) + if (closed) " (마감한 달)" else "",
         ))
         blocks += ReportDoc.Heading("세전 예상 합계 ${won(pay.total)}" + if (pay.estimated) " (추정 포함)" else "")
@@ -81,7 +81,7 @@ object PayReport {
         blocks += ReportDoc.Facts(listOf(
             "직업·급여" to "${who.job} · ${who.wage}",
             "기간" to (if (sorted.isEmpty()) "${year}년" else "${sorted.first().month.monthValue}월~${sorted.last().month.monthValue}월"),
-            "계산 기준" to "요율 ${sorted.lastOrNull()?.ratesVersion ?: "-"}, 공휴일 ${KoreanHolidays.VERSION}",
+            "계산 기준" to "요율 ${sorted.lastOrNull()?.ratesVersion ?: "-"}, 공휴일 ${KoreanHolidays.version}",
             "만든 날" to date(made),
         ))
         blocks += ReportDoc.Heading("${year}년 세전 예상 합계 ${won(total)}")

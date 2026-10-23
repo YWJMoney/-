@@ -62,6 +62,17 @@ data class MissingItem(
     val times: Int?,
 )
 
+/** [PAYX-35] One week's 주휴 check: the hours that count, the 주휴 it earned, or why not. */
+data class HolidayWeek(val from: LocalDate, val to: LocalDate, val workedMinutes: Int, val paidMinutes: Int, val absent: Boolean) {
+    val earned: Boolean get() = paidMinutes > 0
+    /** "주휴 6.4시간", "결근 있음", "주 12시간 (15시간 미만)". */
+    val text: String get() = when {
+        earned -> "주휴 ${Math.round(paidMinutes / 6.0) / 10.0}시간"
+        absent -> "결근 있음"
+        else -> "주 ${Math.round(workedMinutes / 6.0) / 10.0}시간 (15시간 미만)"
+    }
+}
+
 data class MonthPay(
     val month: YearMonth,
     val lines: List<PayLine>,
@@ -80,6 +91,8 @@ data class MonthPay(
     val itemTimes: Map<String, Int> = emptyMap(),
     /** [PAYX-18] Minutes of 보상휴가 earned each day instead of pay (근로기준법 제57조), premiums included. */
     val compLeave: Map<LocalDate, Int> = emptyMap(),
+    /** [PAYX-35] Each whole week of the period and whether it earned 주휴 (주 15시간 이상·개근, 제55조·시행령 제30조). */
+    val holidayWeeks: List<HolidayWeek> = emptyList(),
 ) {
     val total: Long get() = lines.sumOf { it.amount }
     val estimated: Boolean get() = lines.any { it.estimated } || minutes.any { it.estimated }
@@ -95,8 +108,11 @@ data class MonthPay(
  * becomes minutes, then money by the law and the company's [CompanyRules].
  */
 class PayCalculator(
-    private val rateTable: List<Rates> = RateTable.builtIn,
+    /** [REMOTE-06] null: the rates in use now, a newer signed rates file's included ([RateTable.current]). */
+    private val fixedRates: List<Rates>? = null,
 ) {
+    private val rateTable: List<Rates> get() = fixedRates ?: RateTable.current
+
     private class ExtraTotal(val rule: ExtraRule, val label: String, val kind: Long, var amount: Long = 0, var minutes: Int = 0, var times: Int = 0, var legal: Long = 0)
 
     /** The premiums in force: the company's when it set one, else the law's (none under 5 employees). */
@@ -526,8 +542,10 @@ class PayCalculator(
             )
         }
         // [PAYS-03] An approved 감시·단속 worker has no 주휴 (제55조 is in chapter 4).
+        val holidayWeeks = mutableListOf<HolidayWeek>()
         val weeklyHoliday = if (byHour && rules.weeklyHolidayPay && !supervisory) {
-            weeklyHolidayLine(allMinutes, attendedByDate, paidHolidayByDate, holidayWeekFrom, periodStart, periodEnd, hourly, baseEstimated, absentDates, profile::onProbation, holiday)
+            weeklyHolidayLine(allMinutes, attendedByDate, paidHolidayByDate, holidayWeekFrom, periodStart, periodEnd, hourly, baseEstimated, absentDates,
+                profile::onProbation, holiday, holidayWeeks)
         } else null
         // [HRLY-06] 주휴 earned by days on probation, at the 수습 rate too.
         weeklyHoliday?.second?.takeIf { it > 0 }?.let { mins ->
@@ -840,7 +858,7 @@ class PayCalculator(
         }
         return MonthPay(month, lines, hourly, rates.version, minutes, warnings, dayPays,
             periodStart.takeUnless { profile.period.isCalendarMonth }, periodEnd.takeUnless { profile.period.isCalendarMonth },
-            profile.period.payDate(month), missing, itemCounts.toMap(), compLeave.toMap()).withHourlyNote(hourlyFormula)
+            profile.period.payDate(month), missing, itemCounts.toMap(), compLeave.toMap(), holidayWeeks.toList()).withHourlyNote(hourlyFormula)
     }
 
     /**
@@ -1121,6 +1139,7 @@ class PayCalculator(
         all: List<DayMinutes>, attended: Map<LocalDate, Int>, paidHolidays: Map<LocalDate, Int>, from: LocalDate, periodStart: LocalDate, periodEnd: LocalDate,
         hourly: Long, estimated: Boolean, absent: Set<LocalDate> = emptySet(), onProbation: (LocalDate) -> Boolean = { false },
         holiday: (LocalDate) -> Boolean = { false },
+        checked: MutableList<HolidayWeek>? = null,
     ): Pair<PayLine, Int>? {
         var weekStart = from
         var minutes = 0
@@ -1128,7 +1147,9 @@ class PayCalculator(
         val weeks = mutableListOf<Int>()
         while (!weekStart.plusDays(6).isAfter(periodEnd)) {
             val end = weekStart.plusDays(6)
-            if (!end.isBefore(periodStart) && absent.none { !it.isBefore(weekStart) && !it.isAfter(end) }) {
+            val missed = absent.any { !it.isBefore(weekStart) && !it.isAfter(end) }
+            if (!end.isBefore(periodStart) && missed) checked?.add(HolidayWeek(weekStart, end, 0, 0, absent = true))
+            if (!end.isBefore(periodStart) && !missed) {
                 // Paid leave and paid holidays count as attended hours of the week.
                 val week = all.filter { !it.date.isBefore(weekStart) && !it.date.isAfter(end) }
                 // [PAY-13] A paid holiday is its scheduled day, never that plus the minutes worked on it.
@@ -1140,6 +1161,7 @@ class PayCalculator(
                     if (holiday(d.date)) d.regular else minOf(d.regular + d.shift.holidayWithin8h, 8 * 60).coerceAtLeast(d.regular)
                 fun credit(d: DayMinutes) = maxOf(shiftCredit(d) + (attended[d.date] ?: 0), paidHolidays[d.date] ?: 0)
                 val worked = week.sumOf { credit(it) }
+                checked?.add(HolidayWeek(weekStart, end, worked, if (worked >= 15 * 60) minOf(worked, 40 * 60) / 5 else 0, absent = false))
                 if (worked >= 15 * 60) {
                     val credit = minOf(worked, 40 * 60) / 5
                     minutes += credit

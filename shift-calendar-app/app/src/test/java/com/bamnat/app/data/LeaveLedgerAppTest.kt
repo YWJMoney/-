@@ -11,6 +11,7 @@ import com.bamnat.app.pay.PayStore
 import com.bamnat.core.leave.EntryKind
 import com.bamnat.core.leave.LeaveBasis
 import com.bamnat.core.leave.LeavePolicy
+import com.bamnat.core.leave.LeavePromotion
 import com.bamnat.core.leave.LedgerEntry
 import com.bamnat.core.model.ExtraEntry
 import com.bamnat.core.model.ExtraKind
@@ -112,6 +113,32 @@ class LeaveLedgerAppTest {
         extra.getJSONArray("extras").getJSONObject(0).remove("comp")
         backups.restore(extra.toString())
         assertFalse(db.dayExtraDao().getAll().single().compLeave)
+    }
+
+    /** [LEAVE-11][PAYX-28] The 촉진 records and a 휴일대체 day come back from a backup; a 1.22 backup has neither. */
+    @Test fun noticesAndSubstituteDaysRoundTripThroughTheBackup() = runBlocking {
+        schedule.ensureDefaults()
+        val lapse = LocalDate.of(2026, 12, 31)
+        repo.addNotice(LeavePromotion.Record(lapse = lapse, step = LeavePromotion.Step.FIRST_NOTICE, date = LocalDate.of(2026, 7, 3), note = "메일"))
+        repo.addNotice(LeavePromotion.Record(lapse = lapse, step = LeavePromotion.Step.WORKER_PLAN, date = LocalDate.of(2026, 7, 9)))
+        schedule.addExtra(LocalDate.of(2026, 10, 3), ExtraEntry(ExtraKind.OVERTIME_ID, LocalTime.of(9, 0), LocalTime.of(17, 0),
+            substitute = LocalDate.of(2026, 10, 7)))
+        val before = repo.promotion.first()
+        val backups = BackupManager(db, SettingsRepository(context))
+        val json = backups.export()
+        assertEquals(2, JSONObject(json).getJSONArray("leaveNotices").length())
+
+        repo.deleteNotice(before[0].id)
+        backups.restore(json)
+        assertEquals(before.map { it.copy(id = 0) }, repo.promotion.first().map { it.copy(id = 0) })
+        assertEquals(LocalDate.of(2026, 10, 7).toEpochDay(), db.dayExtraDao().getAll().single().substituteEpochDay)
+
+        val old = JSONObject(json)
+        old.remove("leaveNotices")
+        old.getJSONArray("extras").getJSONObject(0).remove("sub")
+        backups.restore(old.toString())
+        assertTrue(repo.promotion.first().isEmpty())
+        assertNull(db.dayExtraDao().getAll().single().substituteEpochDay)
     }
 
     /** The new pay setup fields round trip, and a setup without them writes no keys. */

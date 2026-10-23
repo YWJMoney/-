@@ -17,7 +17,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -54,7 +54,10 @@ import com.bamnat.app.tier.Feature
 import com.bamnat.app.tier.Gate
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.UndoMessage
+import com.bamnat.app.ui.components.AddButton
+import com.bamnat.app.ui.components.FilterChip
 import com.bamnat.app.ui.components.SectionCard
+import com.bamnat.app.ui.money.LedgerExport
 import com.bamnat.app.ui.pro.ProLock
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
@@ -67,6 +70,9 @@ import com.bamnat.app.ui.work.toNumber
 import com.bamnat.core.leave.EntryKind
 import com.bamnat.core.leave.LeaveAccrual
 import com.bamnat.core.leave.LeaveBasis
+import com.bamnat.core.leave.LeaveExport
+import com.bamnat.core.leave.LeavePlanner
+import com.bamnat.core.leave.LotKind
 import com.bamnat.core.leave.LeavePayout
 import com.bamnat.core.leave.LeavePool
 import com.bamnat.core.leave.LeavePromotion
@@ -128,6 +134,18 @@ class LeaveViewModel(private val container: AppContainer, val calendarId: String
         _messages.emit(UndoMessage("${entry.kind.label}을 뺐어요") { repo.add(entry) })
     }
 
+    val promotion: StateFlow<List<LeavePromotion.Record>> = repo.promotion.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun addNotice(r: LeavePromotion.Record) = viewModelScope.launch {
+        val id = repo.addNotice(r)
+        _messages.emit(UndoMessage("${Fmt.shortDate(r.date)} 기록을 넣었어요") { repo.deleteNotice(id) })
+    }
+
+    fun deleteNotice(r: LeavePromotion.Record) = viewModelScope.launch {
+        repo.deleteNotice(r.id)
+        _messages.emit(UndoMessage("기록을 뺐어요") { repo.addNotice(r) })
+    }
+
     suspend fun entry(id: Long): LedgerEntry? = repo.all().firstOrNull { it.id == id }
 
     fun runUndo(m: UndoMessage) { m.undo?.let { u -> container.appScope.launch { u() } } }
@@ -142,6 +160,8 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
     val notice by vm.notice.collectAsStateWithLifecycle()
     val style by vm.style.collectAsStateWithLifecycle()
     val gate by vm.gate.collectAsStateWithLifecycle()
+    val promotion by vm.promotion.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val ui = rememberCoroutineScope()
     var adding by remember { mutableStateOf<EntryKind?>(null) }
@@ -179,22 +199,26 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
                     Hint("회사도 같은 때 서면으로 알려야 해요(근로기준법 제61조). 알림은 연차를 쓰도록 돕는 것뿐이라 켜 두어도 손해가 없어요. 필요 없으면 여기서 끄면 돼요.")
                 }
             }
+            if (s != null) item { PromotionCard(s, promotion, vm) }
             if (s != null) item { LotsCard(s) }
             item {
                 SectionCard(title = "직접 넣기") {
                     Hint("연차·반차는 달력에서 날을 길게 눌러 넣어요. 여기에는 달력에 없는 것만 넣어요.")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(EntryKind.GRANT, EntryKind.CARRY, EntryKind.ADJUST).forEach { k ->
-                            OutlinedButton(onClick = { adding = k }) { Text(k.label) }
+                            AddButton(k.label, onClick = { adding = k })
                         }
                     }
                     Hint("받은 연차: 회사가 실제로 준 날이 앱이 센 날과 다를 때, 그해 몫을 바꿔요. 이월: 작년에서 넘어온 날. 조정: 더하거나 빼요(빼려면 −).")
                 }
             }
             if (s != null && s.lines.isNotEmpty()) item {
-                LinesCard(s, allLines, onAll = { allLines = true }) { id -> ui.launch { opened = vm.entry(id) } }
+                LinesCard(s, allLines, onAll = { allLines = true },
+                    onExport = { ui.launch { LedgerExport.share(context, LeaveExport.csv(s), LeaveExport.fileName(s.today)) } },
+                ) { id -> ui.launch { opened = vm.entry(id) } }
             }
-            item { PayoutCard(s, profile, gate, vm) }
+            item { PayoutCard(s, profile, gate, vm, promotion, snapshot) }
+            if (s != null) snapshot?.let { snap -> item { PlanCard(s, snap, style, profile) } }
             snapshot?.let { snap -> item { BridgesCard(snap, style, left = s?.afterPlanned) } }
             item { Spacer(Modifier.height(24.dp)) }
         }
@@ -241,6 +265,10 @@ private fun RulesCard(profile: PayProfile?, onEditRules: () -> Unit, vm: LeaveVi
             },
             style = MaterialTheme.typography.bodyLarge,
         )
+        if (!profile.fiveOrMoreEmployees) {
+            Text("5인 미만 사업장은 법으로 정한 연차가 없어요(근로기준법 시행령 제7조 별표 1). 회사가 주는 날이 있으면 ‘받은 연차’로 넣어 주세요.",
+                style = MaterialTheme.typography.bodyMedium, color = LocalCalendarColors.current.warning)
+        }
         Hint("1년을 다 채운 다음 날 15일이 생기고 2년마다 1일씩 늘어 25일까지예요. 1년이 안 되면 한 달 개근마다 1일(최대 11일)이에요. " +
             "쓰지 않은 연차는 1년이 지나면 없어져요(근로기준법 제60조).")
         if (policy.auto && hire != null) {
@@ -280,16 +308,17 @@ private fun LotsCard(s: LeaveSummary) {
 }
 
 @Composable
-private fun LinesCard(s: LeaveSummary, all: Boolean, onAll: () -> Unit, onOpen: (Long) -> Unit) {
+private fun LinesCard(s: LeaveSummary, all: Boolean, onAll: () -> Unit, onExport: () -> Unit, onOpen: (Long) -> Unit) {
     // Newest first; lines far ahead (lapses a year out) after the planned ones.
     val lines = s.lines.asReversed()
     val shown = if (all) lines else lines.filter { !it.date.isBefore(s.today.minusMonths(6)) && !it.date.isAfter(s.today.plusMonths(6)) }.take(20)
-    SectionCard(title = "연차 원장") {
+    SectionCard(title = "연차 원장", trailing = { TextButton(onClick = onExport) { Text("내보내기") } }) {
         shown.forEachIndexed { i, l ->
             if (i > 0) HorizontalDivider(Modifier.padding(vertical = 2.dp))
             LineRow(l, onOpen)
         }
         if (!all && shown.size < lines.size) TextButton(onClick = onAll) { Text("모두 보기 (${lines.size}줄)") }
+        Hint("내보내기는 모든 줄을 표 파일(CSV)로 만들어 회사나 노무사에게 보낼 수 있게 해요. 파일은 휴대폰 밖으로 저절로 나가지 않아요.")
     }
 }
 
@@ -321,18 +350,40 @@ private fun LineRow(l: LedgerLine, onOpen: (Long) -> Unit) {
 
 /** [LEAVE-05] 미사용 연차수당 (프로): what the days that would lapse are worth, and a 정산 row once paid. */
 @Composable
-private fun PayoutCard(s: LeaveSummary?, profile: PayProfile?, gate: Gate, vm: LeaveViewModel) {
+private fun PayoutCard(
+    s: LeaveSummary?, profile: PayProfile?, gate: Gate, vm: LeaveViewModel,
+    records: List<LeavePromotion.Record>, snap: ScheduleSnapshot?,
+) {
     if (s == null || profile == null) return
     val lapse = s.nextLapse
     val days = lapse?.second ?: s.afterPlanned.coerceAtLeast(0.0)
     val month = YearMonth.from(lapse?.first ?: s.today)
-    val estimate = remember(days, profile, month) { LeavePayout.estimate(days, profile, month) }
+    // [LEAVE-09] A 단시간 근로자's day is the roster's usual day, not 8시간.
+    val dayMinutes = remember(snap, month) { snap?.let { LeavePayout.scheduledDay(it.resolver::resolve, month) } }
+    val estimate = remember(days, profile, month, dayMinutes) { LeavePayout.estimate(days, profile, month, dayMinutes) }
+    val check = lapse?.let { (date, _) -> LeavePromotion.check(date, firstYear = isFirstYear(s, date), records = records) }
+    // [LEAVE-08] 회계연도 기준 on leaving: the days the hire date would have given more are paid too.
+    val shortfall = remember(profile) {
+        val hire = profile.hireDate
+        val leaving = profile.leaveDate
+        if (hire != null && leaving != null) LeaveAccrual.fiscalShortfall(hire, profile.rules.leave, leaving) else 0.0
+    }
     ProLock(Feature.LEAVE_PAYOUT, gate) {
         SectionCard(title = "못 쓴 연차, 돈으로는") {
             ValueLine(lapse?.let { "${Fmt.shortDate(it.first)}에 없어질 ${LeaveAccrual.days(days)}" } ?: "남은 ${LeaveAccrual.days(days)}",
                 "약 ${Fmt.won(estimate.amount)}", strong = true)
             Hint("${estimate.formula}로 셌어요. 회사가 쓰라고 제대로 알렸는데도(근로기준법 제61조) 안 쓴 날은 돈으로 받지 못할 수 있어요. " +
                 "받는 때는 연차를 쓸 수 있는 기간이 끝난 뒤 첫 월급날이에요(시행령 제33조).")
+            if (dayMinutes != null && dayMinutes < 8 * 60) Hint("근무표의 하루가 ${dayMinutes / 60.0}시간이라 1일 통상임금도 그만큼으로 셌어요(단시간 근로자).")
+            check?.let {
+                Text(it.text, style = MaterialTheme.typography.bodySmall,
+                    color = if (it.done) MaterialTheme.colorScheme.onSurfaceVariant else LocalCalendarColors.current.warning)
+            }
+            if (shortfall > 1e-9) {
+                val more = LeavePayout.estimate(shortfall, profile, YearMonth.from(profile.leaveDate ?: s.today), dayMinutes)
+                ValueLine("회계연도 기준이라 덜 받은 ${LeaveAccrual.days(shortfall)}", "약 ${Fmt.won(more.amount)}")
+                Hint("그만둘 때 입사일 기준으로 다시 세어 더 많으면 그 차이를 연차수당으로 받아요(근로기준과-5802, 2009.12.31).")
+            }
             if (days > 0) OutlinedButton(onClick = {
                 vm.add(LedgerEntry(kind = EntryKind.PAYOUT, date = lapse?.first ?: s.today, days = days,
                     note = "미사용 연차수당 약 ${Fmt.won(estimate.amount)}"))
@@ -404,4 +455,77 @@ private fun AddDialog(kind: EntryKind, onDismiss: () -> Unit, onAdd: (LedgerEntr
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
+}
+
+/** Whether the lapse on [date] is the 1년 미만 월 연차 (제61조 제2항, 3개월·1개월 전). */
+private fun isFirstYear(s: LeaveSummary, date: LocalDate): Boolean =
+    s.lots.any { it.lot.kind == LotKind.MONTHLY && it.lot.expires == date }
+
+/**
+ * [LEAVE-11] 사용 촉진 기록: what the company did (and the worker answered) before the next lapse, step by step with the
+ * date, so the 미사용 수당 card can say whether the 촉진 counts (제61조).
+ */
+@Composable
+private fun PromotionCard(s: LeaveSummary, records: List<LeavePromotion.Record>, vm: LeaveViewModel) {
+    val (lapse, _) = s.nextLapse ?: return
+    var step by remember { mutableStateOf<LeavePromotion.Step?>(null) }
+    val mine = records.filter { it.lapse == lapse }
+    val check = LeavePromotion.check(lapse, isFirstYear(s, lapse), records)
+    SectionCard(title = "회사의 사용 촉진 기록") {
+        Text("${Fmt.fullDate(lapse)}에 없어지는 연차", style = MaterialTheme.typography.bodyLarge)
+        mine.forEach { r ->
+            Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "빼기") { vm.deleteNotice(r) }.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(r.step.label, style = MaterialTheme.typography.bodyMedium)
+                    if (r.note.isNotBlank()) Text(r.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(Fmt.shortDate(r.date), style = MaterialTheme.typography.titleSmall.merge(NumberStyle))
+            }
+        }
+        LeavePromotion.Step.entries.filter { st -> mine.none { it.step == st } }.forEach { st ->
+            AddButton(st.label.substringBefore(" ("), onClick = { step = st })
+        }
+        Text(check.text, style = MaterialTheme.typography.bodySmall,
+            color = if (check.done) MaterialTheme.colorScheme.onSurfaceVariant else LocalCalendarColors.current.warning)
+        Hint("회사가 보낸 문서·메일의 날짜를 적어 두면, 나중에 연차수당을 받을 수 있는지 따질 때 도움이 돼요. 기록은 이 휴대폰에만 있어요.")
+    }
+    step?.let { st ->
+        var date by remember { mutableStateOf(s.today) }
+        var note by rememberSaveable { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { step = null },
+            title = { Text(st.label.substringBefore(" (")) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Hint(st.label)
+                    DateField("날짜", date, { if (it != null) date = it }, clearable = false)
+                    OutlinedTextField(note, { note = it.take(60) }, label = { Text("메모 (선택)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.addNotice(LeavePromotion.Record(lapse = lapse, step = st, date = date, note = note.trim())); step = null }) { Text("넣기") }
+            },
+            dismissButton = { TextButton(onClick = { step = null }) { Text("취소") } },
+        )
+    }
+}
+
+/** [LEAVE-13] 없어질 연차를 어디에 쓰면 가장 길게 쉬는지: the planner's picks before the lapse. */
+@Composable
+private fun PlanCard(s: LeaveSummary, snap: ScheduleSnapshot, style: WorkStyle?, profile: PayProfile?) {
+    val plan = remember(s, snap, style) { LeavePlanner.plan(s, LeaveBridges.of(snap, style, s.today)) } ?: return
+    SectionCard(title = "없어지기 전에 쓰는 법") {
+        Text("${Fmt.fullDate(plan.lapse)}까지 ${LeaveAccrual.days(plan.lapsing)}가 남아요", style = MaterialTheme.typography.bodyLarge)
+        if (plan.picks.isEmpty()) {
+            Hint("그 전에 공휴일·쉬는 날과 이어지는 날이 없어요. 원하는 날에 나눠 쓰면 돼요.")
+        } else {
+            plan.picks.forEach { b ->
+                ValueLine("${Fmt.shortDate(b.from)}~${Fmt.shortDate(b.to)} · 연차 ${b.leave.size}일", b.text)
+            }
+            ValueLine("연차 ${plan.days}일로 쉬는 날", "${plan.restDays}일", strong = true)
+            if (plan.leftOver > 1e-9) Hint("남는 ${LeaveAccrual.days(plan.leftOver)}는 원하는 날에 쓰면 돼요.")
+        }
+        Hint(LeavePlanner.payNote(profile != null && profile.wageType != com.bamnat.core.pay.WageType.MONTHLY))
+    }
 }

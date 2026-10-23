@@ -270,6 +270,8 @@ data class PayProfile(
     val productionWorker: Boolean = false,
     /** [PAYX-25] 직전 과세기간 총급여액 (작년 연봉, 비과세 뺀 것); null when not entered, which is read as within the limit. */
     val previousYearPay: Long? = null,
+    /** [LEDG-29] The 가계부 counts pay as the take-home that arrives on the pay day ([PayIncome]) instead of the month's 세전. */
+    val ledgerTakeHome: Boolean = false,
 ) {
     /** [HRLY-07] The weekday 주휴 weeks start on. */
     val holidayWeekFrom: DayOfWeek get() = holidayWeekStart ?: weekStart
