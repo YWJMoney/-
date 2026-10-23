@@ -360,7 +360,9 @@ test("[ADMUX-07] the notices screen knows the newest app version questions came 
 
 // ---- 293: the home screen, typing, the timeline ----
 
-test("[ADMUX-06] the home screen's 할 일: closest to its target first, setups and flagged posts, who holds what", async () => {
+test("[ADMUX-06] the home screen's 할 일: closest to its target first, setups and flagged posts, who holds what", async (t) => {
+  // Noon in Korea: the bug question's target (seven hours ago plus eight) falls today whatever the clock says.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-17T03:00:00Z") });
   const { call, DB } = server();
   const owner = await signIn(call);
   const { headers } = await member(call, owner);

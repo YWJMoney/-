@@ -79,6 +79,8 @@ class AlarmActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enableEdgeToEdge()
         val snoozeMinutes = BootAlarms.ringSettings(this).snoozeMinutes
+        // [ALRM-04] 증명 사진's fingerprints; none before the first unlock after a restart, and then it is sums.
+        val photos = runCatching { PhotoReferences(this).all.value }.getOrDefault(emptyList())
 
         setContent {
             BamnatTheme(themeMode = ThemeMode.DARK) {
@@ -102,6 +104,8 @@ class AlarmActivity : ComponentActivity() {
                         snoozeMinutes = snoozeMinutes,
                         onSnooze = { AlarmService.snooze(this@AlarmActivity) },
                         onDone = { how -> AlarmService.dismiss(this@AlarmActivity, how) },
+                        references = photos.map { it.hash },
+                        place = photos.lastOrNull()?.place.orEmpty(),
                     )
                 } else if (current != null) {
                     RingingScreen(

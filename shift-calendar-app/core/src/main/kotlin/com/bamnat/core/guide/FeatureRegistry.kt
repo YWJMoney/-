@@ -458,6 +458,10 @@ object FeatureRegistry {
             under = "shift.teams"),
         f("widget.countdown", "WIDG-05", "다음 근무까지 위젯", "다음 근무가 몇 시간 남았는지, 지금 근무가 언제 끝나는지 홈·잠금 화면 위젯으로 보여요",
             ALL, "홈 화면 › 위젯 › 밤낮 다음 근무", at(Place.FEATURES), "위젯", "카운트다운", "남은 시간", "다음 근무", "잠금 화면"),
+        // O 1.23 (L): [ALRM-04] 증명 사진, one of 끄기 미션's choices (고르는 것이라 기본 꺼짐, D42 예외).
+        f("alarm.missionPhoto", "ALRM-04", "증명 사진 미션", "욕실 거울·현관처럼 일어나면 가는 곳을 찍어 두면, 알람 때 같은 곳을 찍어야 꺼져요. 사진은 흑백 지문만 남기고 바로 지워요",
+            PAID, "설정 › 알람 › 증명 사진 기준", at(Place.SETTINGS_ALARM, "증명 사진 기준"), "증명 사진", "사진 미션", "사진 찍어 끄기", "욕실", "못 일어나요",
+            under = "alarm.mission"),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }

@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.alarm.WakeCheck
+import com.bamnat.app.appContainer
 import com.bamnat.app.alarm.hasMotionSensor
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.tier.Feature
@@ -35,13 +36,33 @@ internal fun SureAlarmCard(vm: SettingsViewModel, settings: AppSettings, ringing
     val shake = remember { hasMotionSensor(context) }
     val missions = AlarmMission.entries.filter { it != AlarmMission.SHAKE || shake }
     var perShift by rememberSaveable { mutableStateOf(settings.shiftMissions.isNotEmpty()) }
+    // [ALRM-04] 증명 사진 needs a reference photo first; picking it without one asks for the photo.
+    val photos = remember { context.appContainer.photoReferences }
+    val references by photos.all.collectAsStateWithLifecycle()
+    var photoWanted by rememberSaveable { mutableStateOf(false) }
+    fun pick(m: AlarmMission?, set: (AlarmMission?) -> Unit) {
+        if (m == AlarmMission.PHOTO && references.isEmpty()) photoWanted = true else set(m)
+    }
     SectionCard(title = "확실하게 깨우기" + if (open) "" else " (프로)") {
         val chosen = if (open) AlarmMission.of(settings.alarmMission) else AlarmMission.NONE
         ChoiceRow(
             MISSION_ROW,
             "알람을 끄려면 풀어야 해요. ${chosen.hint}. ${Missions.GIVE_UP_AFTER.toMinutes()}분이 지나면 미션 없이도 끌 수 있어요",
             missions.map { it to it.label }, chosen,
-        ) { m -> if (!open) openPro() else vm.update { it.copy(alarmMission = m.key) } }
+        ) { m -> if (!open) openPro() else pick(m) { vm.update { s -> s.copy(alarmMission = m.key) } } }
+        val photoChosen = settings.alarmMission == AlarmMission.PHOTO.key || settings.shiftMissions.values.any { it == AlarmMission.PHOTO.key }
+        if (open && (photoWanted || photoChosen || references.isNotEmpty())) {
+            PhotoMissionRows(references, photoWanted, photoChosen,
+                onTaken = { hash, place, replace ->
+                    photos.add(hash, place, replace = replace)
+                    if (photoWanted) {
+                        photoWanted = false
+                        vm.update { it.copy(alarmMission = AlarmMission.PHOTO.key) }
+                    }
+                },
+                onRemove = photos::remove,
+            )
+        }
         if (ringing.isNotEmpty()) {
             HorizontalDivider()
             SwitchRow("근무마다 다르게", "예: 야간 뒤 아침 근무만 계산 문제", perShift || settings.shiftMissions.isNotEmpty()) { on ->
@@ -54,7 +75,7 @@ internal fun SureAlarmCard(vm: SettingsViewModel, settings: AppSettings, ringing
                     val own = settings.shiftMissions[t.id]?.let(AlarmMission::of)
                     ChoiceRow<AlarmMission?>(t.name, null,
                         listOf<Pair<AlarmMission?, String>>(null to "위와 같게") + missions.map { it to it.label }, own) { m ->
-                        vm.update { s -> s.copy(shiftMissions = if (m == null) s.shiftMissions - t.id else s.shiftMissions + (t.id to m.key)) }
+                        pick(m) { vm.update { s -> s.copy(shiftMissions = if (m == null) s.shiftMissions - t.id else s.shiftMissions + (t.id to m.key)) } }
                     }
                 }
             }

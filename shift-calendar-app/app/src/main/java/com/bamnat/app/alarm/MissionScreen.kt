@@ -1,10 +1,18 @@
 package com.bamnat.app.alarm
 
+import android.app.Activity
+import android.app.KeyguardManager
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.ContextWrapper
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +40,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,12 +59,15 @@ import com.bamnat.core.alarm.AlarmMission
 import com.bamnat.core.alarm.Missions
 import com.bamnat.core.alarm.ShakeCounter
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.Instant
 
 /**
  * [PROV-06] The mission before the alarm goes off: [Missions.PROBLEMS] sums on a number pad, or
  * [Missions.SHAKES] shakes. 다시 울림 is always there, and after [Missions.GIVE_UP_AFTER] of ringing
  * 미션 없이 끄기 too, so no alarm is ever impossible to stop. A phone without a motion sensor gets sums.
+ * [ALRM-04] 증명 사진 compares a photo of the place with [references]; without them, after
+ * [Missions.PHOTO_TRIES] wrong photos or when the camera app fails, it becomes sums ([Missions.shown]).
  */
 @Composable
 internal fun MissionScreen(
@@ -64,10 +76,16 @@ internal fun MissionScreen(
     snoozeMinutes: Int,
     onSnooze: () -> Unit,
     onDone: (String) -> Unit,
+    references: List<Long> = emptyList(),
+    place: String = "",
+    wrongBefore: Int = 0,
 ) {
     val context = LocalContext.current
     val shakeOk = remember { hasMotionSensor(context) }
-    val kind = if (mission == AlarmMission.SHAKE && !shakeOk) AlarmMission.MATH else mission
+    // Kept across the camera app taking the screen (the activity may be made again behind it).
+    var wrongPhotos by rememberSaveable { mutableIntStateOf(wrongBefore) }
+    var cameraFailed by rememberSaveable { mutableStateOf(false) }
+    val kind = Missions.shown(mission, references.isNotEmpty(), wrongPhotos, cameraFailed, shakeOk)
     val now by produceState(System.currentTimeMillis()) {
         while (true) {
             value = System.currentTimeMillis()
@@ -86,8 +104,19 @@ internal fun MissionScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (mission == AlarmMission.PHOTO && kind != AlarmMission.PHOTO) {
+                val why = when {
+                    references.isEmpty() -> "기준 사진이 없어서"
+                    cameraFailed -> "카메라를 열지 못해서"
+                    else -> "사진이 ${Missions.PHOTO_TRIES}번 맞지 않아서"
+                }
+                Text("$why 계산 문제로 바꿨어요", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center)
+            }
             when (kind) {
                 AlarmMission.SHAKE -> ShakeMission { onDone("mission") }
+                AlarmMission.PHOTO -> PhotoMission(references, place, wrongPhotos,
+                    onWrong = { wrongPhotos++ }, onFailed = { cameraFailed = true }) { onDone("mission") }
                 else -> MathMission { onDone("mission") }
             }
         }
@@ -192,6 +221,78 @@ private fun ShakeMission(onSolved: () -> Unit) {
         modifier = Modifier.fillMaxWidth().height(10.dp))
     Spacer(Modifier.height(8.dp))
     Text("휴대폰을 손에 꼭 쥐고 크게 흔들어 주세요", color = Color.White, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
+}
+
+/**
+ * [ALRM-04] 증명 사진: the camera app (no camera permission, as 명세서 사진) writes a photo, its fingerprint is
+ * compared and the photo deleted. Over the lock screen the phone is unlocked first, so the camera app can open.
+ */
+@Composable
+private fun PhotoMission(references: List<Long>, place: String, wrong: Int, onWrong: () -> Unit, onFailed: () -> Unit, onSolved: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var reading by remember { mutableStateOf(false) }
+    val take = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        // Some camera apps say no and still write the photo; an empty file is no photo.
+        if (!ok && PhotoPrint.file(context).length() == 0L) {
+            PhotoPrint.clear(context)
+            onFailed()
+            return@rememberLauncherForActivityResult
+        }
+        reading = true
+        scope.launch {
+            val hash = PhotoPrint.take(context, Uri.fromFile(PhotoPrint.file(context)))
+            reading = false
+            when (val r = PhotoAttempts(references, wrong).taken(hash)) {
+                PhotoAttempts.Outcome.Done -> onSolved()
+                is PhotoAttempts.Outcome.Again -> onWrong()
+                PhotoAttempts.Outcome.Sums -> if (hash == null) onFailed() else onWrong()
+            }
+        }
+    }
+    fun open() {
+        val go = {
+            try {
+                take.launch(FileProvider.getUriForFile(context, "${context.packageName}.share", PhotoPrint.file(context)))
+            } catch (e: ActivityNotFoundException) {
+                onFailed()
+            } catch (e: RuntimeException) {
+                // No FileProvider path or no right to the camera app: sums, never stuck.
+                onFailed()
+            }
+        }
+        val activity = context.activity()
+        val keyguard = context.getSystemService(KeyguardManager::class.java)
+        if (activity != null && keyguard?.isKeyguardLocked == true) {
+            keyguard.requestDismissKeyguard(activity, object : KeyguardManager.KeyguardDismissCallback() {
+                override fun onDismissSucceeded() { go() }
+                override fun onDismissError() = onFailed()
+                // Not unlocked this time: the button stays, and 다시 울림 too.
+            })
+        } else go()
+    }
+    Text("증명 사진", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.titleMedium)
+    Text(place.ifBlank { "정해 둔 곳" }, color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
+    Text("기준 사진을 찍은 자리에서 같은 곳을 찍으면 꺼져요", color = Color.White, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
+    if (wrong > 0) {
+        Text("조금 다르게 보여요. 같은 자리에서 다시 찍어 주세요 · ${Missions.PHOTO_TRIES - wrong}번 남음",
+            color = Color(0xFFFF8A80), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+    }
+    Spacer(Modifier.height(8.dp))
+    Button(
+        onClick = ::open,
+        enabled = !reading,
+        modifier = Modifier.fillMaxWidth().height(64.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B5E), contentColor = com.bamnat.app.ui.components.contentColorOn(Color(0xFFFF6B5E))),
+    ) { Text(if (reading) "사진을 맞춰 보는 중…" else "같은 곳 찍기", style = MaterialTheme.typography.titleMedium) }
+    Text("사진은 휴대폰 안에서 흑백 지문만 만들어 견주고 바로 지워요", color = Color.White.copy(alpha = 0.6f),
+        style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+}
+
+private tailrec fun Context.activity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.activity()
+    else -> null
 }
 
 /** [PROV-06] Whether 흔들기 can be offered: a phone without a motion sensor is given sums instead. */

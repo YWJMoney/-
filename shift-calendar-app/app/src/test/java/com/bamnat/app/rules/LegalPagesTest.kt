@@ -4,6 +4,7 @@ import com.bamnat.app.ui.pro.PRIVACY_URL
 import com.bamnat.app.ui.pro.TERMS_URL
 import com.bamnat.core.tier.AdRules
 import com.bamnat.core.tier.TrialConsent
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -124,7 +125,7 @@ class LegalPagesTest {
     }
 
     /**
-     * [PRIV-02][SHR-13][SHR-14][SRV-09][SRV-10][STAT-06][INQ-05][ALRM-01] 2.9 for 1.23.0: 우리 조 모아 보기, the takedown reason,
+     * [PRIV-02][SHR-13][SHR-14][SRV-09][SRV-10][STAT-06][INQ-05][ALRM-01][ALRM-04] 2.9 for 1.23.0: 우리 조 모아 보기, the takedown reason,
      * 밤낮 소식, hiding writers in 모두의 문의, the outbox and request ids, 18 usage events, notice audiences and the battery
      * request, in the app's and the share server's own numbers.
      */
@@ -154,6 +155,11 @@ class LegalPagesTest {
         assertTrue(text.contains("공지 열기"))
         assertTrue(text.contains("휴대폰 안에서만 맞춰 보며"))
         assertTrue(text.contains("<td>배터리 최적화 제외 요청 (앱 1.23.0부터, 이용자가 고를 때)</td>"))
+        // [ALRM-04] 증명 사진: the fingerprint's size is the one the app makes, the photo goes, no camera permission.
+        assertTrue(text.contains("알람 미션 ‘증명 사진’(앱 1.23.0부터, 이용자가 고를 때)") && text.contains("흑백 지문(64비트)만"))
+        assertTrue(text.contains("사진은 카메라 권한 없이 휴대폰의 카메라 앱으로") && text.contains("알람 끄기 미션에 <b>증명 사진</b>"))
+        val manifest = File(site, "shift-calendar-app/app/src/main/AndroidManifest.xml").readText()
+        assertFalse("no camera permission", manifest.contains("android.permission.CAMERA"))
         assertTrue(text.contains("‘모든 링크 끊기’") && text.contains("‘보내는 것과 권한 한눈에’"))
     }
 
