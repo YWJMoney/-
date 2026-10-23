@@ -22,10 +22,11 @@ GOLDEN = os.path.join(os.path.dirname(__file__), "..", "app", "src", "test", "go
 SIZE = (32, 48)
 THRESHOLD = 6.0
 
-# 40 screens across the app, none with the time of day or random numbers in them.
+# 40 screens across the app, none with the time of day or random numbers in them
+# (23_widget_today and store_1_calendar carry 오늘의 흐름, which changes with the hour, so they are not here).
 SHOTS = [
     "2_folded_day_sheet", "3_folded_stats", "4_folded_settings", "8_unfolded_settings", "9_folded_memos_calendar",
-    "13_folded_shift_types", "14_folded_pattern", "23_widget_today", "24_widget_week", "27_folded_pay_result",
+    "13_folded_shift_types", "14_folded_pattern", "24_widget_week", "27_folded_pay_result",
     "28_unfolded_pay_result", "51_folded_money", "53_unfolded_money", "61_folded_setup_style",
     "76_folded_extra_kinds", "82_folded_backup_password", "117_folded_company_detail",
     "134_folded_received_calendar", "140_folded_settings_alarm", "164_phone_calendar_huge_text",
@@ -33,7 +34,8 @@ SHOTS = [
     "297_folded_business_calendar", "327_folded_settings_hub", "334_folded_help_home", "352_folded_teams",
     "369_phone_year", "376_phone_pro_launched", "385_phone_pay_report", "430_folded_rest_rules",
     "460_folded_leave", "468_folded_leave_dark", "482_folded_money_customize", "494_folded_settings_backup_photos",
-    "520_folded_recommended", "528_phone_settings_seven_groups", "store_1_calendar", "store_tablet_year",
+    "520_folded_recommended", "528_phone_settings_seven_groups", "530_folded_settings_privacy_about",
+    "695_n_profile_folded", "store_tablet_year",
 ]
 
 
