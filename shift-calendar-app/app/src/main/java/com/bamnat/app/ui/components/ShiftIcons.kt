@@ -60,9 +60,9 @@ val ShiftIcon.vector: ImageVector
 /** Colour of leave marks [FEAT-10]: violet for paid, grey for unpaid, teal for 보상휴가 [PAYX-18]. */
 fun leaveColor(kind: LeaveKind): Color = when (kind) {
     LeaveKind.ANNUAL -> Color(0xFF7048E8)
-    LeaveKind.PAID -> Color(0xFF1C7ED6)
+    LeaveKind.PAID -> Color(0xFF1A75CC)
     LeaveKind.UNPAID -> Color(0xFF868E96)
-    LeaveKind.COMP -> Color(0xFF0C8599)
+    LeaveKind.COMP -> Color(0xFF0B7F92)
 }
 
 /** Small square with 연/반/¼, like the 잔·특·대 marks. */

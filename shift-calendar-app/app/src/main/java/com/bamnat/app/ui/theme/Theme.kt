@@ -209,16 +209,16 @@ fun BamnatTheme(
     }
 }
 
-/** Palette offered for shift types. */
+/** Palette offered for shift types. [A11Y-03] Every colour carries its letters at 4.45:1 or more (ContrastTest). */
 val ShiftPalette: List<Long> = listOf(
     0xFF2F80ED, 0xFF2F5BEA, 0xFF6C5CE7, 0xFF9B51E0, 0xFFE84393, 0xFFE5484D,
-    0xFFF2994A, 0xFFF2C94C, 0xFF27AE60, 0xFF00897B, 0xFF00A3C4, 0xFF8E9AAF,
+    0xFFF2994A, 0xFFF2C94C, 0xFF27AE60, 0xFF00857A, 0xFF00A3C4, 0xFF8E9AAF,
 )
 
 /** [EXTRA-01] Palette offered for kinds of extra work; the first three are the built-in 잔업·특근·대근. */
 val ExtraPalette: List<Long> = listOf(
-    0xFFE8900C, 0xFFE03131, 0xFF0E9F6E, 0xFF7048E8, 0xFF1C7ED6, 0xFFD6336C,
-    0xFF0B7285, 0xFF5C940D, 0xFF862E9C, 0xFFB35C00, 0xFF495057, 0xFF2B8A3E,
+    0xFFE8900C, 0xFFE03131, 0xFF0E9F6E, 0xFF7048E8, 0xFF1A75CC, 0xFFD6336C,
+    0xFF0B7285, 0xFF5C940D, 0xFF862E9C, 0xFFB35C00, 0xFF495057, 0xFF268038,
 )
 
 /** Soft backgrounds for memo cards: index 0 is the plain surface. */

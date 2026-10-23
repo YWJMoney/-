@@ -113,6 +113,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -1419,8 +1420,14 @@ private fun CalendarHeader(
             contentPadding = PaddingValues(horizontal = 12.dp),
             modifier = Modifier.heightIn(min = 40.dp).padding(end = 4.dp),
         ) {
-            Icon(Icons.Outlined.Apps, null, Modifier.size(18.dp))
-            Text(" 도구", maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelLarge)
+            // [A11Y-03] At the largest text sizes on a narrow screen the word gave way to the month, which shrank
+            // below its normal size; the icon keeps the name for TalkBack.
+            if (narrow && LocalDensity.current.fontScale >= 1.5f) {
+                Icon(Icons.Outlined.Apps, "도구", Modifier.size(18.dp))
+            } else {
+                Icon(Icons.Outlined.Apps, null, Modifier.size(18.dp))
+                Text(" 도구", maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelLarge)
+            }
         }
     }
     if (menu) {
