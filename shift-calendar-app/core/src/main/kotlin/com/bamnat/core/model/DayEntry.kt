@@ -84,42 +84,50 @@ enum class LeaveKind(val label: String, val paid: Boolean, val annual: Boolean) 
 
 /**
  * Leave on one day in quarters of a day [FEAT-10]: 4 = 종일, 2 = 반차, 1 = 반반차.
- * Partial leave is taken from the end of the shift.
+ * Partial leave is taken from the end of the shift, or from its start when [fromStart] (오전 반차:
+ * coming in later, so the morning alarm moves too).
  */
-data class Leave(val kind: LeaveKind = LeaveKind.ANNUAL, val quarters: Int = 4) {
+data class Leave(val kind: LeaveKind = LeaveKind.ANNUAL, val quarters: Int = 4, val fromStart: Boolean = false) {
     init {
         require(quarters in 1..4) { "quarters must be 1..4" }
     }
 
     val days: Double get() = quarters / 4.0
     val isFullDay: Boolean get() = quarters == 4
+    /** Taken off the start of the shift; a whole day has no start or end to take it from. */
+    val offStart: Boolean get() = fromStart && !isFullDay
 
     /** 연차, 반차, 반반차, or "0.75일 연차". */
     val label: String
         get() {
             val base = if (kind == LeaveKind.ANNUAL) "" else kind.label + " "
-            return when (quarters) {
-                4 -> if (kind == LeaveKind.ANNUAL) "연차" else kind.label
+            val part = when (quarters) {
+                4 -> return if (kind == LeaveKind.ANNUAL) "연차" else kind.label
                 2 -> base + "반차"
                 1 -> base + "반반차"
                 else -> "0.75일 " + kind.label
             }
+            return if (offStart) "오전 $part" else part
         }
 
     /** Short mark for calendar cells. */
     val short: String get() = when (quarters) { 4 -> when (kind) { LeaveKind.UNPAID -> "무"; LeaveKind.COMP -> "보"; else -> "연" }; 3 -> "¾"; 2 -> "반"; else -> "¼" }
 
-    /** One stored integer: kind code × 10 + quarters; 0 means no leave. */
-    val code: Int get() = kind.code * 10 + quarters
+    /** One stored integer: kind code × 10 + quarters, plus 100 when taken off the start; 0 means no leave. */
+    val code: Int get() = kind.code * 10 + quarters + if (offStart) FROM_START else 0
 
     companion object {
         val QUARTER_OPTIONS = listOf(4, 2, 1, 3)
 
+        /** Added to [code] for leave off the start; an app before 1.22 reads such a code as no leave. */
+        private const val FROM_START = 100
+
         fun fromCode(code: Int): Leave? {
             if (code <= 0) return null
-            val kind = LeaveKind.fromCode(code / 10) ?: return null
-            val q = code % 10
-            return if (q in 1..4) Leave(kind, q) else null
+            val rest = code % FROM_START
+            val kind = LeaveKind.fromCode(rest / 10) ?: return null
+            val q = rest % 10
+            return if (q in 1..4) Leave(kind, q, fromStart = code >= FROM_START && q < 4) else null
         }
     }
 }

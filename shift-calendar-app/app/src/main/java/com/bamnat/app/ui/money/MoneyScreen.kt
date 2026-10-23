@@ -655,7 +655,7 @@ private fun IncomeCard(m: MonthMoney, style: WorkStyle?, hasProfile: Boolean, on
         if (style?.usesPayEngine != false) {
             val label = when {
                 m.payRecorded > 0 -> "급여 (받은 금액)"
-                m.payEstimate != null -> "급여 (예상)"
+                m.payEstimate != null -> "급여 (세전 예상)"
                 else -> "급여"
             }
             if (m.payRecorded > 0 || m.payEstimate != null) {

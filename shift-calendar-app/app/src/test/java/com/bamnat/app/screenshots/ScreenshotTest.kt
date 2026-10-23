@@ -373,11 +373,14 @@ class ScreenshotTest {
         /** Holds a finger on what shows [text], for its quick menu. */
         fun longPressText(text: String, prefix: Boolean = false) = touch(reach(text, false, prefix, 0, 0.5f).boundsInWindow.center, hold = 40)
 
-        /** [DAY-01] Opens a day: a tap selects it and shows its preview, a tap on the chosen day opens it whole. */
+        /**
+         * [DAY-01] Opens a day: a tap selects it and shows its preview, a tap on the chosen day opens it whole. A day in
+         * the month's last rows sits under the cards above the grid on a short screen on some dates, so it scrolls to it.
+         */
         fun openDay(date: LocalDate) {
             val title = Fmt.dayTitle(date)
-            if (find(title, exact = false, prefix = true)?.config?.getOrNull(SemanticsProperties.Selected) != true) tapText(title, prefix = true, scrolls = 0)
-            tapText(title, prefix = true, scrolls = 0)
+            if (find(title, exact = false, prefix = true)?.config?.getOrNull(SemanticsProperties.Selected) != true) tapText(title, prefix = true, scrolls = 6)
+            tapText(title, prefix = true, scrolls = 6)
         }
 
         /** [SCALE-01] [openDay] on a screen too short to show the whole month: scrolls down to the day first. */
@@ -3057,6 +3060,15 @@ class ScreenshotTest {
         content { com.bamnat.app.ui.company.RatesScreen(vm, onBack = {}) }
         reveal("정부 공표 전국 평균")
     }
+    // [PAYR-07] 식대 as 비과세 on the pay screen's allowance row.
+    @Test fun foldedPayMealTaxFree() = shoot("406_folded_pay_meal_tax_free", FOLDED) {
+        payScreen(Tier.PRO, withProfile = true, adjust = { p ->
+            p.copy(items = p.items + com.bamnat.core.pay.PayItem("meal", "식대",
+                com.bamnat.core.pay.ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(LocalDate.of(2026, 1, 1), 200_000))),
+                com.bamnat.core.pay.Cadence.MONTHLY, taxable = false))
+        }).invoke(this)
+        reveal("세금 없는 돈")
+    }
     @Test fun unfoldedPlazaRatesGov() = shoot("404_unfolded_plaza_rates_gov", UNFOLDED) {
         val vm = com.bamnat.app.ui.company.RatesViewModel(companyOn())
         content { com.bamnat.app.ui.company.RatesScreen(vm, onBack = {}) }
@@ -3261,6 +3273,21 @@ class ScreenshotTest {
             vm.profile.collectAsState().value?.let { p -> com.bamnat.app.ui.pay.PayScaleDialog(vm, p, onDismiss = {}) }
         }.invoke(this)
         typeInto("호봉표", "1호봉 2,400,000\n2호봉 2,480,000")
+    }
+    /** [LEAVE-06] 오전 반차 (1.22 전체 리뷰): the part off comes from the start, so 남은 근무 is the afternoon. */
+    @Test fun foldedDayMorningHalf() = shoot("509_folded_day_morning_half", FOLDED) {
+        val repo = app.container.scheduleRepository
+        val day = runBlocking {
+            val r = repo.snapshot.first().resolver
+            // An earlier day, so it sits in the month's upper rows whatever the date.
+            (1..12).map { today.minusDays(it.toLong()) }.first { r.resolve(it).shiftType?.name == "주간" && r.resolve(it).leave == null && !r.resolve(it).hasExtraWork && it.month == today.month }
+        }
+        runBlocking { repo.setLeave(day, Leave(LeaveKind.ANNUAL, 2, fromStart = true)) }
+        app.container.settingsRepository.update { it.copy(dayGroupOrder = listOf("alarm", "memo", "leave")) }
+        settle()
+        openDay(day)
+        openGroup("휴가")
+        reveal("남은 근무")
     }
 }
 

@@ -411,7 +411,8 @@ fun AddBonusDialog(
                 Row(Modifier.fillMaxWidth().clickable { ordinary = !ordinary }, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("통상임금에 포함", style = MaterialTheme.typography.bodyLarge)
-                        Text("정해진 조건으로 정기적으로 받는 상여는 재직 조건이 있어도 통상임금이에요(대법원 2024.12.19. 판결). 성과에 따라 달라지면 꺼 주세요.",
+                        Text("정해진 조건으로 정기적으로 받는 상여는 재직 조건이 있어도 통상임금이에요(대법원 2024.12.19. 판결). 성과에 따라 달라지면 꺼 주세요. " +
+                            "성과급에 꼭 주는 최소 금액이 있으면 그 금액만 따로 상여로 넣고 켜요(고용노동부 통상임금 지침 2025.2.6.).",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(checked = ordinary, onCheckedChange = { ordinary = it })
@@ -461,17 +462,17 @@ fun AddItemDialog(onDismiss: () -> Unit, allowUnknownAmount: Boolean = false, on
                         FilterChip(selected = cadence == c, onClick = { cadence = c; guess() }, label = { Text(c.label) })
                     }
                 }
-                Row(Modifier.fillMaxWidth().clickable(enabled = fixedOtHours == 0) { ordinary = !ordinary; ordinaryTouched = true },
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("통상임금에 포함", style = MaterialTheme.typography.bodyLarge)
-                        Text("매달 고정으로 받는 수당이면 켜 주세요. 연장·야간 수당이 함께 올라가요." +
-                            if (!ordinaryTouched && OrdinaryGuess.of(name, cadence) != null) " 이름을 보고 미리 골라 두었어요." else "",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(checked = ordinary, onCheckedChange = { ordinary = it; ordinaryTouched = true }, enabled = fixedOtHours == 0)
-                }
                 if (cadence == Cadence.MONTHLY) {
+                    Row(Modifier.fillMaxWidth().clickable(enabled = fixedOtHours == 0) { ordinary = !ordinary; ordinaryTouched = true },
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("통상임금에 포함", style = MaterialTheme.typography.bodyLarge)
+                            Text("매달 고정으로 받는 수당이면 켜 주세요. 연장·야간 수당이 함께 올라가요." +
+                                if (!ordinaryTouched && OrdinaryGuess.of(name, cadence) != null) " 이름을 보고 미리 골라 두었어요." else "",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = ordinary, onCheckedChange = { ordinary = it; ordinaryTouched = true }, enabled = fixedOtHours == 0)
+                    }
                     // [PAY-05] 고정 연장수당: prepaid overtime, never 통상임금.
                     Text("연장수당을 미리 주는 고정 수당인가요?", style = MaterialTheme.typography.labelLarge)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -489,7 +490,7 @@ fun AddItemDialog(onDismiss: () -> Unit, allowUnknownAmount: Boolean = false, on
         },
         confirmButton = {
             Button(
-                onClick = { onAdd(name, amount?.takeIf { it > 0 }, cadence, ordinary && fixedOtHours == 0, if (cadence == Cadence.MONTHLY) fixedOtHours * 60 else 0) },
+                onClick = { onAdd(name, amount?.takeIf { it > 0 }, cadence, ordinary && fixedOtHours == 0 && cadence == Cadence.MONTHLY, if (cadence == Cadence.MONTHLY) fixedOtHours * 60 else 0) },
                 enabled = name.isNotBlank() && (allowUnknownAmount || (amount ?: 0) > 0),
             ) { Text("추가") }
         },

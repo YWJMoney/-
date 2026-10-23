@@ -74,9 +74,11 @@ object SleepPlan {
         }
         for (s in schedule.sleeps) {
             val w = s.before?.takeIf { s.after == null && it.date == date.plusDays(1) } ?: continue
+            // [SET-04] Read on the evening before: a bed time past midnight says so (ux-review 3 (5) 24).
+            val bed = (if (s.from.toLocalDate() != date) "자정 넘어 " else "") + t(s.from)
             tips += Tip(Kind.BEDTIME, s.from, s.to,
-                if (s.short) "내일 ${t(w.from)} 근무라 쉴 틈이 짧아요. ${t(s.from)}엔 잠자리에 들기"
-                else "내일 ${t(w.from)} 근무라 ${t(s.from)}쯤 잠자리에 들기", Basis.GENERAL)
+                if (s.short) "내일 ${t(w.from)} 근무라 쉴 틈이 짧아요. ${bed}엔 잠자리에 들기"
+                else "내일 ${t(w.from)} 근무라 ${bed}쯤 잠자리에 들기", Basis.GENERAL)
             tips += caffeine(s.from)
         }
         return tips.sortedBy { it.at }

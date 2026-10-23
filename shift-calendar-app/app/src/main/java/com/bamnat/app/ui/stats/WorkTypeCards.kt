@@ -191,7 +191,8 @@ private fun DayFirstCard(
         (1..month.lengthOfMonth()).mapNotNull { snapshot.resolver.resolve(month.atDay(it)).leave }.filter { it.kind.annual }.sumOf { it.days }
     }
     val left = ledger?.takeIf { it.lots.isNotEmpty() }?.available
-    val takeHome = payTotal?.let { TakeHome.estimate(it, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0) }
+    val takeHome = payTotal?.let { TakeHome.estimate(it, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
+        profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0) }
     val overtimeDays = remember(snapshot, month) {
         (1..month.lengthOfMonth()).count { snapshot.resolver.resolve(month.atDay(it)).hasExtraWork }
     }
@@ -281,7 +282,8 @@ private fun PayGapCard(calendarId: String, month: YearMonth, payTotal: Long?, pr
     val choices by prefs.all.collectAsStateWithLifecycle()
     // [HRLY-04] A part-timer chose how tax comes off on the pay screen; others choose it on the first card.
     val mode = if (style == WorkStyle.HOURLY) profile?.taxMode ?: TaxMode.NONE else choices[calendarId]?.taxMode ?: TaxMode.INSURANCE_4
-    val expected = payTotal?.let { TakeHome.estimate(it, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0).net }
+    val expected = payTotal?.let { TakeHome.estimate(it, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
+        profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0).net }
     val gap = remember(book, month, expected, profile) {
         book?.let { PayGaps.of(month, expected, profile?.period?.payDate(month), it.entries) }
     } ?: return
