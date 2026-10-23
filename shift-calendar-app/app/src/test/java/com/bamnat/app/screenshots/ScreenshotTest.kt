@@ -710,7 +710,8 @@ class ScreenshotTest {
         tapText("종류 추가", exact = true, scrolls = 0)
     }
     @Test fun foldedDayPreview() = shoot("97_folded_day_preview", FOLDED) { selectDay(dayCell) }
-    @Test fun foldedCoverDay() = shoot("98_folded_cover_day", FOLDED) { openDay(coverDay) }
+    // The seeded 대근 day is up to 10 days ahead, so it can sit low in the month: scroll to it (date-proof).
+    @Test fun foldedCoverDay() = shoot("98_folded_cover_day", FOLDED) { openDayBelow(coverDay) }
     @Test fun foldedRulesKinds() = shoot("99_folded_rules_kinds", FOLDED) {
         rulesEditor { companyRules }.invoke(this)
         reveal("종류·시간·가산 정하기", exact = true)
