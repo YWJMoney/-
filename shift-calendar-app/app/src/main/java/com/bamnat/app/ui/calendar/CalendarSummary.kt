@@ -112,8 +112,7 @@ internal fun MonthSummaryBar(
             Figure("${month}월 근무", "${overview.workDays}일",
                 overview.leaveDays.takeIf { it > 0 }?.let { "휴가 ${HoursFormat.hours(it * 60).removeSuffix(".0")}일" }),
             Figure("근무 시간", HoursFormat.korean(overview.workMinutes),
-                listOfNotNull(overview.extraMinutes.takeIf { it > 0 }?.let { "추가 근무 ${HoursFormat.korean(it)}" }, versus)
-                    .joinToString(" · ").ifEmpty { null }, null),
+                overview.extraMinutes.takeIf { it > 0 }?.let { "추가 근무 ${HoursFormat.korean(it)}" }, null),
             if (payEstimate != null) Figure("예상 급여", Fmt.wonShort(payEstimate), "세전", MaterialTheme.colorScheme.primary)
             else Figure("공휴일 근무", "${overview.holidayWorkDays}일", null, if (overview.holidayWorkDays > 0) cal.holidayWork else null),
         )
@@ -132,7 +131,7 @@ internal fun MonthSummaryBar(
         // [INV-06] The investor's month has its own bar (InvestMonthBar); this one only names the tab.
         CalendarFocus.INVEST -> listOf(Figure("${month}월", "투자·수익 탭에서", null))
     }
-    val spoken = figures.joinToString(", ") { f -> "${f.label} ${f.value}" + (f.note?.let { " $it" } ?: "") }
+    val spoken = figures.joinToString(", ") { f -> "${f.label} ${f.value}" + (f.note?.let { " $it" } ?: "") } + (versus?.let { ", $it" } ?: "")
     val target = when (overview.focus) {
         CalendarFocus.SHIFTS -> "근무·급여 열기"
         else -> "돈 탭 열기"
@@ -173,15 +172,19 @@ internal fun MonthSummaryBar(
                                 }
                             }
                         }
+                        versus?.let { VersusLine(it, Modifier.align(Alignment.End)) }
                     }
                 } else {
-                    Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        shown.forEachIndexed { i, f ->
-                            if (i > 0) Box(Modifier.width(1.dp).height(36.dp).background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)))
-                            FigureColumn(f, Modifier.weight(1f).padding(horizontal = 6.dp))
+                    Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            shown.forEachIndexed { i, f ->
+                                if (i > 0) Box(Modifier.width(1.dp).height(36.dp).background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)))
+                                FigureColumn(f, Modifier.weight(1f).padding(horizontal = 6.dp))
+                            }
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // [CAL-35] On its own line: in a third of a folded screen it was cut to "지난달보다 +2일 · …".
+                        versus?.let { VersusLine(it, Modifier.padding(start = 6.dp, top = 4.dp)) }
                     }
                 }
             }
@@ -511,4 +514,9 @@ internal fun CalendarAlarmsOffLine(name: String, onTurnOn: () -> Unit, modifier:
             Text("켜기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
         }
     }
+}
+
+@Composable
+private fun VersusLine(text: String, modifier: Modifier = Modifier) {
+    Text(text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = modifier)
 }

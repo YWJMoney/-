@@ -676,7 +676,7 @@ private fun DateRow(label: String, date: LocalDate, onClick: () -> Unit) {
  * seen where it falls rather than in a strip of three weeks.
  */
 @Composable
-private fun PatternPreview(types: List<ShiftType>, pattern: WorkPattern, today: LocalDate, weekStart: DayOfWeek) {
+internal fun PatternPreview(types: List<ShiftType>, pattern: WorkPattern, today: LocalDate, weekStart: DayOfWeek) {
     val thisMonth = java.time.YearMonth.from(today)
     var month by rememberSaveable { mutableStateOf(thisMonth.toString()) }
     val shown = java.time.YearMonth.parse(month)

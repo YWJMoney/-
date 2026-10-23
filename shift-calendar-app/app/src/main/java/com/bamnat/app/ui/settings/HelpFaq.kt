@@ -85,6 +85,24 @@ internal object HelpFaq {
             listOf("달력", "내 근무"),
             "근무 주기 열기" to HelpAction.Go(SettingsGo.PATTERN),
         ),
+        // [SCHED-03] 1.23 I: the most common write-in about patterns, a day off by one after a swap or a sick day.
+        HelpTopic(
+            "realign", "근무 주기", "근무 순서가 하루 밀렸어요",
+            "순서가 어긋난 날을 길게 누르고 ‘이 날부터 순서 다시 맞추기’에서 그날이 몇 번째 날인지 골라요. 그날부터 다시 돌고, " +
+                "그 전 날은 그대로 남아요. 직접 바꿔 둔 날은 목록으로 보여 패턴대로 돌릴지 골라요.",
+            listOf("밀렸", "밀림", "어긋", "하루 밀", "순서 틀", "다시 맞추", "꼬였"),
+            listOf("달력", "내 근무"),
+            "달력 열기" to HelpAction.Tab(NoticeLinks.Target.TODAY),
+        ),
+        // [CAL-43] 1.23 I
+        HelpTopic(
+            "quicktext", "달력", "메모처럼 적어서 근무를 넣을 수 있나요",
+            "날짜를 누르고 빠른 메모에 ‘내일 야간 대근 7시’, ‘다음주 월화 연차’, ‘11/3 휴무’처럼 적어요. 넣을 수 있는 말이면 " +
+                "‘이렇게 넣을까요?’가 떠서 ‘넣기’를 누를 때만 달력에 들어가요. 그냥 보내면 메모로 남아요.",
+            listOf("메모로 넣기", "글로 입력", "말로 입력", "적어서", "한 줄", "빠른 메모"),
+            listOf("달력"),
+            "달력 열기" to HelpAction.Tab(NoticeLinks.Target.TODAY),
+        ),
         HelpTopic(
             "oneday", "달력", "하루만 근무를 바꾸고 싶어요",
             "날짜를 누르고 하루 화면의 ‘근무’에서 다른 근무를 고르면 그날만 바뀌어요. 날짜를 길게 누르면 빠른 설정이 열리고, " +

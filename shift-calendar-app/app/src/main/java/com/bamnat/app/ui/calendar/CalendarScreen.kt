@@ -1624,7 +1624,7 @@ private fun SetupResumeCard(d: com.bamnat.core.setup.SetupDraft, onResume: () ->
 
 /** [CAL-46] "이번 달 내 기록": the finished month in one line, shared as the month's picture, closed for good. */
 @Composable
-private fun MonthRecapCard(recap: com.bamnat.core.work.MonthRecap, onShare: () -> Unit, onClose: () -> Unit) {
+internal fun MonthRecapCard(recap: com.bamnat.core.work.MonthRecap, onShare: () -> Unit, onClose: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         shape = MaterialTheme.shapes.large,
@@ -1876,7 +1876,7 @@ private fun PaintBar(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MonthPickerDialog(
+internal fun MonthPickerDialog(
     initial: YearMonth,
     onDismiss: () -> Unit,
     onPick: (YearMonth) -> Unit,

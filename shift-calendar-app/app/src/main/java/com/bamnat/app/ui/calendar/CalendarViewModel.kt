@@ -883,11 +883,13 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             return a.start?.let { s -> e.copy(start = s, end = s.plusMinutes(covered.durationMinutes.toLong())) } ?: e
         }
         val kind = snapshot.kinds.of(a.kindId)
+        val start = a.start
+        val minutes = a.minutes
         return when {
-            a.start != null && a.minutes != null -> ExtraEntry(kind.id, a.start, a.start.plusMinutes(a.minutes.toLong()))
-            a.minutes != null -> ExtraEntry(kind.id, minutes = a.minutes)
-            else -> ExtraText.default(kind)?.let { d -> if (a.start != null && d.start != null && d.end != null)
-                d.copy(start = a.start, end = a.start.plusMinutes(com.bamnat.core.model.WorkTime.spanMinutes(d.start!!, d.end!!).toLong())) else d }
+            start != null && minutes != null -> ExtraEntry(kind.id, start, start.plusMinutes(minutes.toLong()))
+            minutes != null -> ExtraEntry(kind.id, minutes = minutes)
+            else -> ExtraText.default(kind)?.let { d -> if (start != null && d.start != null && d.end != null)
+                d.copy(start = start, end = start.plusMinutes(com.bamnat.core.model.WorkTime.spanMinutes(d.start!!, d.end!!).toLong())) else d }
         }
     }
 

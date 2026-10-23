@@ -12,6 +12,11 @@ object WhatsNew {
     val releases: List<Release> = listOf(
         // [SIMPLE-03] Grouped by what it gives, each line opening its feature; every bundle's own lines are in
         // 계획/1.22-*-개발계획.md.
+        // 1.23.0: each bundle adds its own 1~2 lines; the rest are in 계획/1.23-*-개발계획.md.
+        Release(34, "1.23.0", listOf(
+            Line("날짜 메모에 ‘내일 야간 대근 7시’처럼 적으면 근무로 넣어 드려요. 순서가 밀린 날은 길게 눌러 그날부터 다시 맞춰요", "calendar.quickText"),
+            Line("‘다음 근무까지’ 위젯이 생기고, 달력 위젯은 지난달·다음 달로 넘겨 봐요. 모든 조에서 맞바꿀 날도 찾아요", "widget.countdown"),
+        )),
         Release(33, "1.22.0", listOf(
             Line("처음 화면은 한 장, 설정은 7묶음으로 줄었어요. 켜 둬도 괜찮은 알림을 한 번에 켜고, 설정 › 알림과 잠에서 언제든 꺼요", "settings.recommended"),
             Line("‘연차 원장’이 생겼어요. 입사일만 넣으면 연차를 법대로 세고, 없어지기 전에 알려 주고, 보상휴가도 쌓아요", "leave.ledger"),

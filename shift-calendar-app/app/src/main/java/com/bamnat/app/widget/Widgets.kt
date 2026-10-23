@@ -40,6 +40,7 @@ import com.bamnat.app.ui.calendar.clockOutDay
 import com.bamnat.app.ui.components.contentColorOn
 import com.bamnat.app.ui.theme.DarkCalendarColors
 import com.bamnat.app.ui.theme.LightCalendarColors
+import com.bamnat.core.model.ShiftType
 import com.bamnat.core.holiday.KoreanHolidays
 import com.bamnat.core.schedule.CalendarGrid
 import com.bamnat.core.schedule.ResolvedDay

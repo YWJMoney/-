@@ -451,7 +451,7 @@ private fun TeamTable(
  * a 대근 request naming them, to copy or send.
  */
 @Composable
-private fun CoverPanel(
+internal fun CoverPanel(
     day: LocalDate, roster: TeamRoster, rotation: WorkPattern.Rotation, snap: ScheduleSnapshot,
     restMinutes: Int, onRest: (Int) -> Unit, onClose: () -> Unit,
 ) {

@@ -1011,15 +1011,9 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
         },
     )
     proposal?.let { p ->
-        Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("이렇게 넣을까요? ${p.text}", style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.weight(1f))
-                TextButton(onClick = {
-                    snapshot?.let { vm.applyQuickText(p, it) }
-                    text = ""
-                }) { Text("넣기") }
-            }
+        QuickTextOffer(p.text) {
+            snapshot?.let { vm.applyQuickText(p, it) }
+            text = ""
         }
     }
     for (memo in memos) {
@@ -1326,3 +1320,15 @@ private val DayAlarmsSaver = Saver<androidx.compose.runtime.snapshots.SnapshotSt
     save = { com.bamnat.core.alarm.AlarmCodec.encodeDayAlarms(it.toList()) ?: com.bamnat.core.alarm.AlarmCodec.NONE },
     restore = { mutableStateListOf<DayAlarm>().apply { addAll(com.bamnat.core.alarm.AlarmCodec.decodeDayAlarms(it).orEmpty()) } },
 )
+
+/** [CAL-43] What a typed line would put on the calendar, written only on 넣기. */
+@Composable
+internal fun QuickTextOffer(text: String, onPut: () -> Unit) {
+    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("이렇게 넣을까요? $text", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.weight(1f))
+            TextButton(onClick = onPut) { Text("넣기") }
+        }
+    }
+}
