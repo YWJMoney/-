@@ -205,10 +205,12 @@ fun PayScreen(
                 profile == null || editingSetup -> {
                     val month by vm.month.collectAsStateWithLifecycle()
                     val settings by vm.settings.collectAsStateWithLifecycle()
+                    var fromSlip by remember { mutableStateOf(false) }
                     PayWizard(
                         initial = profile,
                         onCancel = if (profile != null) ({ editingSetup = false }) else null,
-                        onDone = { p -> vm.saveSetup(p); editingSetup = false },
+                        onDone = { p -> vm.saveSetup(p, fromSlip); editingSetup = false },
+                        filledFromSlip = { fromSlip = it },
                         snapshot = snap,
                         preview = { draft -> vm.preview(draft, snap, month) },
                         suggestedWage = if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) WageType.HOURLY else null,
@@ -379,7 +381,7 @@ private fun PayResult(
         }
 
         // [PROV-01] The month or its year as a PDF or CSV (프로).
-        PayReportCard(vm, profile, snapshot, shown, closed = closedSnap != null, gate = gate)
+        PayReportCard(vm, profile, snapshot, shown, closed = closedSnap != null, gate = gate, onEditSetup = onEditSetup)
 
         if (result.warnings.isNotEmpty()) {
             SectionCard(title = "확인해 주세요") {
@@ -516,6 +518,8 @@ private fun PayResult(
             } else {
                 summary.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
             }
+            // [EASY-06] What is still a guess, with where each came from.
+            com.bamnat.app.ui.guide.EstimatedFacts(vm.calendarId, onFix = onEditSetup, Modifier.padding(top = 8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                 OutlinedButton(onClick = { if (gate.allows(Feature.PAYSLIP_MATCH)) matching = true else openPro() }) {
                     Icon(Icons.Filled.ReceiptLong, null); Text(" 명세서로 맞춰 보기")

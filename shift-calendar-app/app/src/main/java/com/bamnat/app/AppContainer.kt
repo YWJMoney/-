@@ -174,7 +174,8 @@ class AppContainer(context: Context) {
     /** [SET-01] The data as it was before the last import, to take the import back. */
     val importUndo by lazy { com.bamnat.app.data.ImportUndo(java.io.File(appContext.noBackupFilesDir, "before_import.json"), backupManager, recordsTrash = { recordsTrash }) }
     /** [COMM-00] Company settings as a file for coworkers. */
-    val companyShare by lazy { com.bamnat.app.data.CompanyShare(scheduleRepository, payStore, settingsRepository) }
+    val companyShare by lazy { com.bamnat.app.data.CompanyShare(scheduleRepository, payStore, settingsRepository,
+        shared = { keys -> keys.forEach { runCatching { profiles.mark(com.bamnat.app.data.PersonalCalendar.MAIN, it, com.bamnat.core.profile.Source.SHARED, why = "회사 공유 설정") } } }) }
     /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
     var companyApi: com.bamnat.app.company.CompanyApi = com.bamnat.app.company.CompanyClient(
         hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() })
@@ -349,6 +350,7 @@ class AppContainer(context: Context) {
     val browse by lazy { com.bamnat.app.data.BrowseStore(appContext) }
     val example by lazy { com.bamnat.app.data.ExampleCalendar(this) }
     val profiles by lazy { com.bamnat.app.data.ProfileStore(this) }
+    val answers by lazy { com.bamnat.app.data.ProfileAnswers(this) }
     val asks by lazy { com.bamnat.app.data.AskStore(appContext) }
     val journal by lazy { com.bamnat.app.data.JournalStore(java.io.File(appContext.noBackupFilesDir, "journal.jsonl"), appScope) }
 

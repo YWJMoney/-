@@ -407,6 +407,8 @@ fun PayWizard(
     onCancel: (() -> Unit)?,
     onDone: (PayProfile) -> Unit,
     startStep: Int = 0,
+    /** [EASY-06] Told when the setup is done whether a payslip filled it, so the profile marks what it read as 추정. */
+    filledFromSlip: (Boolean) -> Unit = {},
     /** Screenshots only: open the step scrolled to the bottom. */
     scrollToEnd: Boolean = false,
     /** [PAYS-01] The user's shifts and order, for the questions that apply; null asks the usual ones. */
@@ -553,7 +555,7 @@ fun PayWizard(
                     question != null -> question.key in s.answered || question.key in s.unknown
                     else -> true
                 }
-                Button(onClick = { if (last) onDone(draft) else next() }, enabled = ready) {
+                Button(onClick = { if (last) { filledFromSlip(slipNote != null); onDone(draft) } else next() }, enabled = ready) {
                     Text(if (last) "계산 시작" else "다음")
                 }
             }

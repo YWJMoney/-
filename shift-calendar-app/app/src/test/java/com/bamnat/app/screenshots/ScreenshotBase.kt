@@ -110,6 +110,8 @@ abstract class ScreenshotBase {
         com.bamnat.app.data.GuideStore.get(app).let { g ->
             listOf("guide.checklist", "guide.tips").forEach { id -> g.setOn(com.bamnat.core.guide.FeatureRegistry.get(id)!!, "main", false) }
         }
+        // [EASY-05] Today's questions already asked, so the shots show the screens; 묶음 N's shots clear it.
+        c.asks.set(com.bamnat.app.data.PersonalCalendar.MAIN, com.bamnat.core.profile.AskState(day = today, shownToday = com.bamnat.core.profile.AskScheduler.PER_DAY))
         val repo = c.scheduleRepository
         repo.ensureDefaults()
         val types = repo.shiftTypes.first().associateBy { it.name }

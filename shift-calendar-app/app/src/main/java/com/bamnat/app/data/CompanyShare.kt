@@ -48,6 +48,8 @@ class CompanyShare(
     private val payStore: PayStore,
     private val settings: SettingsRepository,
     private val today: () -> LocalDate = LocalDate::now,
+    /** [EASY-06] The facts a coworker's setup gave, for the profile to mark as 공유 (main calendar). */
+    private val shared: suspend (Set<com.bamnat.core.profile.FactKey>) -> Unit = {},
 ) {
     suspend fun export(company: String, withAmounts: Boolean, team: String = ""): String {
         val snapshot = schedule.snapshot.first()
@@ -220,10 +222,12 @@ class CompanyShare(
                 root.optJSONObject("extraKindShiftSets"), ids)
             kindIds = map
             settings.update { it.copy(extraKinds = merged) }
+            shared(setOf(com.bamnat.core.profile.FactKey.EXTRA_KINDS))
         }
         val pay = root.optJSONObject("pay") ?: return false to false
         val profile = payStore.profile.value ?: return false to true
         payStore.save(merge(profile, pay, ids, kindIds))
+        shared(setOf(com.bamnat.core.profile.FactKey.NIGHT_OT, com.bamnat.core.profile.FactKey.PUBLIC_HOLIDAYS, com.bamnat.core.profile.FactKey.FIVE_OR_MORE))
         return true to false
     }
 

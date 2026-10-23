@@ -871,8 +871,17 @@ fun CalendarScreen(
         }
         // [GUIDE-02][GUIDE-03] What this calendar can do on its first days, then one tip at the right moment.
         if (waiting == null && paint == null && viewingReceived == null && visibleMonth == YearMonth.from(today)) {
+            // [EASY-05] The question card first; on a day it was shown the one-line tip waits (질문 우선).
+            val askOn = partShown(CalendarPart.ASK)
+            if (askOn) com.bamnat.app.ui.guide.AskArea(context.appContainer, activeCalendar.id, settings.workStyle,
+                com.bamnat.core.profile.AskPlace.Home, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), today = today,
+                moments = remember(snap, moneyBook, payProfile, settings.workStyle, today) {
+                    com.bamnat.core.guide.GuideMoments.of(com.bamnat.app.ui.guide.factsOf(settings.workStyle, java.time.LocalDateTime.now(), snap, moneyBook, payProfile, settings.weekStart))
+                })
+            val askStates by context.appContainer.asks.states.collectAsStateWithLifecycle()
+            val tipAllowed = !askOn || com.bamnat.core.profile.AskScheduler.tipAllowed(askStates[activeCalendar.id] ?: com.bamnat.core.profile.AskState(), today)
             com.bamnat.app.ui.guide.GuideArea(activeCalendar.id, settings.workStyle, snap, moneyBook, payProfile, settings.weekStart,
-                Modifier.padding(horizontal = 16.dp, vertical = 6.dp), trades = investState?.full?.trades?.size ?: 0)
+                Modifier.padding(horizontal = 16.dp, vertical = 6.dp), trades = investState?.full?.trades?.size ?: 0, tipAllowed = tipAllowed)
         }
         // [CAL-07] Weekday work set by the week, on this month's public holidays: asked once.
         val holidayDays = remember(snap, visibleMonth, holidaysKept, settings.workStyle, activeCalendar.id) { vm.holidayWork(snap, visibleMonth) }

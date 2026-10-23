@@ -71,6 +71,13 @@ object AskScheduler {
     fun answered(state: AskState, key: FactKey): AskState =
         state.copy(current = state.current.takeUnless { it == key.id }, snoozedUntil = state.snoozedUntil - key.id, snoozes = state.snoozes - key.id)
 
+    /** "모르겠어요": the app keeps its 법대로 가정 and stops asking; the fact stays on the profile summary. */
+    fun unknown(state: AskState, key: FactKey): AskState = state.copy(
+        current = state.current.takeUnless { it == key.id },
+        snoozedUntil = state.snoozedUntil - key.id,
+        snoozes = state.snoozes + (key.id to MAX_SNOOZES),
+    )
+
     /** "나중에": a week off, and counted toward being parked. */
     fun later(state: AskState, key: FactKey, today: LocalDate): AskState = state.copy(
         current = state.current.takeUnless { it == key.id },
