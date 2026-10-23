@@ -487,6 +487,6 @@ class MigrationTest {
     }
 
     private companion object {
-        val SCHEMA_DIR = File("schemas/com.bamnat.app.data.db.AppDatabase")
+        val SCHEMA_DIR = File("../database/schemas/com.bamnat.app.data.db.AppDatabase")
     }
 }

@@ -16,8 +16,8 @@ import java.time.LocalDate
 import java.time.LocalTime
 
 // A bad value from an old or hand-edited backup wraps onto the clock instead of crashing every launch.
-internal fun Int.toLocalTime(): LocalTime = Math.floorMod(this, 24 * 60).let { LocalTime.of(it / 60, it % 60) }
-internal fun LocalTime.toMinuteOfDay(): Int = hour * 60 + minute
+fun Int.toLocalTime(): LocalTime = Math.floorMod(this, 24 * 60).let { LocalTime.of(it / 60, it % 60) }
+fun LocalTime.toMinuteOfDay(): Int = hour * 60 + minute
 
 fun ShiftTypeEntity.toModel() = ShiftType(
     id = id,
@@ -57,8 +57,8 @@ fun ShiftType.toEntity() = ShiftTypeEntity(
     premiumPercent = premiumPercent.coerceIn(0, 300),
 )
 
-internal fun encodeSteps(steps: List<Long?>): String = steps.joinToString(",") { it?.toString() ?: "" }
-internal fun decodeSteps(raw: String): List<Long?> = raw.split(',').map { it.trim().toLongOrNull() }
+fun encodeSteps(steps: List<Long?>): String = steps.joinToString(",") { it?.toString() ?: "" }
+fun decodeSteps(raw: String): List<Long?> = raw.split(',').map { it.trim().toLongOrNull() }
 
 fun PatternEntity.toModel(): WorkPattern? {
     val parsed = decodeSteps(steps)

@@ -122,7 +122,7 @@ class MigrationAllVersionsTest(private val from: Int) {
 
     private fun strip(json: String) = JSONObject(json).apply { remove("exportedAt") }.toString(2)
 
-    /** The tables of one schema version, as Room wrote them in app/schemas. */
+    /** The tables of one schema version, as Room wrote them in database/schemas. */
     private class Schema(val version: Int, private val json: JSONObject) {
         /** Table name → its columns in that version. */
         val tables: Map<String, Set<String>> = buildMap {
@@ -273,7 +273,7 @@ class MigrationAllVersionsTest(private val from: Int) {
     }
 
     companion object {
-        val SCHEMA_DIR = File("schemas/com.bamnat.app.data.db.AppDatabase")
+        val SCHEMA_DIR = File("../database/schemas/com.bamnat.app.data.db.AppDatabase")
         val LATEST: Int get() = AppDatabase.MIGRATIONS.last().endVersion
 
         @JvmStatic

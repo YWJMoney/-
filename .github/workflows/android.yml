@@ -42,7 +42,7 @@ jobs:
       # Room writes the schema of each database version it builds. A new version has to be committed with its migration.
       - name: Room schema committed
         run: |
-          changed=$(git ls-files --others --modified --exclude-standard app/schemas)
+          changed=$(git ls-files --others --modified --exclude-standard database/schemas)
           for f in $changed; do echo "::group::$f"; cat "$f"; echo "::endgroup::"; done
           test -z "$changed" || { echo "Commit these schema files: $changed"; exit 1; }
       # The share server checks the payloads the app tests just wrote (app/build/share-payload*.json).
