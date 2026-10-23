@@ -100,10 +100,36 @@ class StartupBudgetTest {
         val c = app.container
         // The jobs that follow the data for as long as the app runs (alarms, notices, widgets, the watch …), counted
         // by name: one-off jobs of the start (a Pro check, the alarm check) end at their own pace and are not counted.
+        c.afterFirstFrame()
+        c.afterFirstFrame()
+        val first = c.keptBeforeLater!!
+        assertTrue("[PERF-03] ${first.size} jobs before the first month (budget $FIRST_JOBS_BUDGET): $first", first.size <= FIRST_JOBS_BUDGET)
+        assertTrue("the alarms are planned from the start", "schedule" in first && "bootcopy" in first)
         val jobs = c.kept.toList()
         assertEquals("each job is kept once", jobs.size, jobs.toSet().size)
         assertTrue("${jobs.size} jobs at start (budget $JOBS_BUDGET): a new one belongs in this budget on purpose: $jobs", jobs.size <= JOBS_BUDGET)
         assertTrue("the start does follow the data", jobs.size >= 10)
+    }
+
+    /** [PERF-03] The calendar's month comes first: what can wait starts once it is on screen. */
+    @Test fun whatCanWaitStartsOnceTheMonthIsThere() {
+        val c = app.container
+        settledUser(c)
+        ActivityScenario.launch(MainActivity::class.java).use {
+            untilCalendar(limitMillis = 30_000)
+            assertNotNull("the calendar showed its month", StartupTrace.millis(StartupTrace.Step.CALENDAR))
+            val before = c.keptBeforeLater!!
+            assertTrue("${before.size} jobs before the month (budget $FIRST_JOBS_BUDGET): $before", before.size <= FIRST_JOBS_BUDGET)
+            assertTrue("widgets and the watch follow the data after the month", "watch" in c.kept && "widgetweek" in c.kept)
+        }
+    }
+
+    /** [PERF-03] Started for an alarm or a widget, with no calendar to wait for, the jobs still start. */
+    @Test fun withoutACalendarTheWaitingJobsStartAnyway() {
+        val c = app.container
+        val end = System.currentTimeMillis() + 15_000
+        while ("watch" !in c.kept && System.currentTimeMillis() < end) Thread.sleep(50)
+        assertTrue("the waiting jobs started without a calendar: ${c.kept}", "watch" in c.kept)
     }
 
     @Test fun eachStepIsNotedOnce() {
@@ -124,9 +150,12 @@ class StartupBudgetTest {
         const val CONTAINER_BUDGET_MS = 4_000L
         const val FIRST_MONTH_BUDGET_MS = 8_000L
         /**
-         * The jobs [AppContainer.start] keeps running today (17 after 1.22 묶음 B); raising it is a decision,
-         * not an accident.
+         * The jobs [AppContainer.start] keeps running today: 17 after 1.22 묶음 B, and since 1.23 [PERF-03] the four
+         * that were started without a name (메모 일정, 투자 알림·월말, 출퇴근) are counted too, so 21 with no new job.
+         * Raising it is a decision, not an accident.
          */
-        const val JOBS_BUDGET = 17
+        const val JOBS_BUDGET = 21
+        /** [PERF-03] Of those, the ones that start before the calendar's first month: alarms, notices, sleep, backup. */
+        const val FIRST_JOBS_BUDGET = 7
     }
 }
