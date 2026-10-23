@@ -98,6 +98,25 @@ internal fun MonthlyHoursField(hours: Int, onChange: (Int) -> Unit, modifier: Mo
     )
 }
 
+/** [PAYX-25] An amount in won typed in, e.g. 작년 총급여; empty is null. */
+@Composable
+internal fun WonField(label: String, value: Long?, onChange: (Long?) -> Unit, modifier: Modifier = Modifier, hint: String? = null) {
+    var text by remember(value) { mutableStateOf(value?.toString().orEmpty()) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { s ->
+            text = s.filter(Char::isDigit).take(11)
+            onChange(text.toLongOrNull())
+        },
+        label = { Text(label) },
+        suffix = { Text("원") },
+        supportingText = { Text(text.toLongOrNull()?.let { won(it) } ?: hint.orEmpty()) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = modifier.fillMaxWidth(),
+    )
+}
+
 @Composable
 private fun Fact(label: String, value: String) {
     Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {

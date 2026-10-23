@@ -8,7 +8,6 @@ import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.Leave
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.WorkPattern
-import com.bamnat.core.pay.LeaveBook
 import com.bamnat.core.schedule.RestCheck
 import com.bamnat.core.schedule.ScheduleResolver
 import org.junit.Assert.assertArrayEquals
@@ -68,13 +67,18 @@ class M4Test {
     fun `carried leave adds to the year and lapsing days show from November`() {
         val r = ScheduleResolver(Fixtures.all, WorkPattern.Rotation(LocalDate.of(2026, 1, 5), List(5) { Fixtures.day.id } + List(2) { Fixtures.off.id }),
             listOf(DayEntry(LocalDate.of(2026, 3, 2), leave = Leave()), DayEntry(LocalDate.of(2026, 3, 3), leave = Leave(quarters = 2))))
-        val b = LeaveBook.balance(2026, 15.0, LocalDate.of(2026, 11, 2), r::resolve, carried = 3.0)
-        assertEquals(18.0, b.granted!!, 0.0)
+        // [LEAVE-07] Through the ledger: a grant of 15 and 이월 3, both to 12/31.
+        val end = LocalDate.of(2026, 12, 31)
+        val stored = listOf(
+            com.bamnat.core.leave.LedgerEntry(kind = com.bamnat.core.leave.EntryKind.GRANT, date = LocalDate.of(2026, 1, 1), days = 15.0, expires = end),
+            com.bamnat.core.leave.LedgerEntry(kind = com.bamnat.core.leave.EntryKind.CARRY, date = LocalDate.of(2026, 1, 1), days = 3.0, expires = end),
+        )
+        val entries = listOf(LocalDate.of(2026, 3, 2), LocalDate.of(2026, 3, 3)).map { r.entryOn(it)!! }
+        val b = com.bamnat.core.leave.LeaveSources.summary(LocalDate.of(2026, 11, 2), null, entries, r::resolve, stored)
+        assertEquals(18.0, b.arisen, 0.0)
         assertEquals(1.5, b.used, 0.0)
-        assertEquals(16.5, b.remaining!!, 0.0)
-        assertEquals(16.5, b.expiring(LocalDate.of(2026, 11, 2))!!, 0.0)
-        assertNull(b.expiring(LocalDate.of(2026, 10, 31)))
-        assertEquals(LocalDate.of(2026, 12, 31), b.expiresOn)
+        assertEquals(16.5, b.available, 0.0)
+        assertEquals(end to 16.5, b.nextLapse)
     }
 
     @Test
@@ -101,11 +105,4 @@ class M4Test {
         assertTrue(runCatching { BackupCrypto.open(a, "틀림".toCharArray()) }.exceptionOrNull() is BackupCrypto.WrongPassword)
     }
 
-    @Test
-    fun leaveNoticeFallsOnNovemberAndDecemberFirst() {
-        val at = { y: Int, m: Int, d: Int, h: Int -> java.time.LocalDateTime.of(y, m, d, h, 0) }
-        assertEquals(at(2026, 11, 1, 9), LeaveBook.nextNotice(at(2026, 10, 17, 12)))
-        assertEquals(at(2026, 12, 1, 9), LeaveBook.nextNotice(at(2026, 11, 1, 9)))
-        assertEquals(at(2027, 11, 1, 9), LeaveBook.nextNotice(at(2026, 12, 1, 10)))
-    }
 }

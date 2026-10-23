@@ -603,7 +603,8 @@ fun ShiftTypeEditorDialog(
                         }
 
                         // [SHFT-01] This kind of day's own premium, a line of its own in 급여 계산.
-                        if (showPremium) ShiftPremiumSection(timed, onChange = { draft = draft.copy(premiumPercent = it) })
+                        if (showPremium) ShiftPremiumSection(timed, onChange = { draft = draft.copy(premiumPercent = it) },
+                            onBreakPaid = { draft = draft.copy(breakPaid = it) })
 
                         if (showAlarms) SectionCard(title = "알람") {
                             Row(verticalAlignment = Alignment.CenterVertically) {

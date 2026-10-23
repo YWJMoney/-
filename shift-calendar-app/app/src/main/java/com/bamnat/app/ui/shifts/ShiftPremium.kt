@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -33,7 +33,7 @@ private const val PREMIUM_MAX = 300
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun ShiftPremiumSection(type: ShiftType, onChange: (Int) -> Unit) {
+internal fun ShiftPremiumSection(type: ShiftType, onChange: (Int) -> Unit, onBreakPaid: ((Boolean?) -> Unit)? = null) {
     val p = type.premiumPercent
     SectionCard(title = "근무 수당") {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -55,6 +55,23 @@ internal fun ShiftPremiumSection(type: ShiftType, onChange: (Int) -> Unit) {
         if (type.isNight) {
             Text(
                 "야간(22~06시)에 걸친 근무예요. 법정 야간 가산 50%는 따로 계산하니, 회사가 그 위에 더 주는 몫만 넣어 주세요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        // [PAYX-32] This kind's break may be paid while the company's others are not (or the other way).
+        if (onBreakPaid != null && type.breakMinutes > 0) {
+            Text("이 근무의 휴게 ${type.breakMinutes}분", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(null to "회사 규칙대로", true to "유급", false to "무급").forEach { (v, label) ->
+                    FilterChip(selected = type.breakPaid == v, onClick = { onBreakPaid(v) }, label = { Text(label) })
+                }
+            }
+            Text(
+                when (type.breakPaid) {
+                    null -> "급여 › 회사 규칙의 휴게 처리를 따라요."
+                    true -> "시급·일당이면 이 근무의 휴게에도 시급을 줘요. 일한 시간으로는 치지 않아요."
+                    false -> "회사가 휴게를 일한 시간으로 쳐도 이 근무의 휴게는 쉬는 시간으로 봐요."
+                },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

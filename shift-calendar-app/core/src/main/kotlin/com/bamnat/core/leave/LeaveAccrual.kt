@@ -158,6 +158,32 @@ object LeaveAccrual {
         return out
     }
 
+    /**
+     * [LEAVE-07] The days of the leave year running on [on] by the hire date (입사일 기준), full attendance assumed: a day a
+     * month fully attended in the first year (at most 11, 제60조 제2항), then 15 plus a day for every 2 years past the
+     * first (at most 25, 제1항·제4항). The ledger's own lots say the same; this is the one number for a hint.
+     */
+    fun entitlement(hire: LocalDate, on: LocalDate): Int {
+        if (on.isBefore(hire)) return 0
+        val years = ChronoUnit.YEARS.between(hire, on).toInt()
+        if (years < 1) return ChronoUnit.MONTHS.between(hire, on).toInt().coerceAtMost(FIRST_YEAR_MONTHS)
+        return yearDays(years)
+    }
+
+    /**
+     * [LEAVE-08] 회계연도 기준 against 입사일 기준 on leaving (근로기준과-5802, 2009.12.31; research/1.23-K-원문.md 2장): the
+     * company may count by its leave year only if that is never worse for the worker, so on the last day employed
+     * [leaving] the days the hire date would have given are compared with those the leave year gave, and a shortfall
+     * is paid as 연차수당. Both count every lot that arose up to [leaving]; 0 when the leave year gave as much or more.
+     */
+    fun fiscalShortfall(hire: LocalDate, policy: LeavePolicy, leaving: LocalDate): Double {
+        if (policy.basis != LeaveBasis.FISCAL) return 0.0
+        // A lot that arises the day after the last day employed is not had (대법원 2021다227100: the day after the year).
+        val byHire = lots(hire, policy.copy(basis = LeaveBasis.HIRE), leaving).sumOf { it.days }
+        val byFiscal = lots(hire, policy, leaving).sumOf { it.days }
+        return (Math.round((byHire - byFiscal) * 100) / 100.0).coerceAtLeast(0.0)
+    }
+
     /** "3.75일", "2일". */
     fun days(value: Double): String {
         val r = (value * 100).roundToLong() / 100.0

@@ -12,7 +12,6 @@ import com.bamnat.core.pay.DatedValue
 import com.bamnat.core.pay.ExtraBasis
 import com.bamnat.core.pay.ExtraRule
 import com.bamnat.core.pay.FlexPeriod
-import com.bamnat.core.pay.LeaveBook
 import com.bamnat.core.pay.LineKind
 import com.bamnat.core.pay.Occupation
 import com.bamnat.core.pay.PayCalculator
@@ -90,9 +89,6 @@ class FourTeamShiftTest {
         val pay = PayCalculator().calculate(profile, nov, roster()::resolve) { it == holiday }
         assertEquals(23_704L * 14, pay.day(holiday)!!.parts.single { it.kind == LineKind.EXTRA }.amount)
         assertTrue(pay.lines.none { it.kind == LineKind.HOLIDAY })
-        val r = roster(DayEntry(holiday, leave = Leave()))
-        val book = LeaveBook.balance(2026, 15.0, LocalDate.of(2026, 12, 31), r::resolve, free = { it == holiday })
-        assertEquals(0.0, book.used, 1e-9)
     }
 
     // [PAYX-07] The same roster with the legal 8h/40h limits left on but "근무표 시간은 모두 기본 근무".

@@ -10,7 +10,6 @@ import com.bamnat.core.pay.CompanyRules
 import com.bamnat.core.pay.DatedValue
 import com.bamnat.core.pay.PayItem
 import com.bamnat.core.pay.StandardHours
-import com.bamnat.core.pay.LeaveBook
 import com.bamnat.core.pay.LineKind
 import com.bamnat.core.pay.MonthPay
 import com.bamnat.core.pay.Occupation
@@ -266,7 +265,7 @@ class PayGoldenTest {
     @Test
     fun `legal annual leave by years of service`() {
         val hire = LocalDate.of(2010, 3, 2)
-        fun on(years: Long, months: Long = 0) = LeaveBook.legalDays(hire, hire.plusYears(years).plusMonths(months))
+        fun on(years: Long, months: Long = 0) = com.bamnat.core.leave.LeaveAccrual.entitlement(hire, hire.plusYears(years).plusMonths(months))
         assertEquals(11, on(0, 11))
         assertEquals(15, on(1))
         assertEquals(15, on(2))

@@ -10,6 +10,7 @@ import androidx.room.Query
 import androidx.room.Update
 import com.bamnat.core.leave.EntryKind
 import com.bamnat.core.leave.LeavePool
+import com.bamnat.core.leave.LeavePromotion
 import com.bamnat.core.leave.LedgerEntry
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
@@ -68,5 +69,47 @@ interface LeaveLedgerDao {
     suspend fun delete(id: Long)
 
     @Query("DELETE FROM leave_ledger")
+    suspend fun clear()
+}
+
+/**
+ * [LEAVE-11] Version 20: the steps of 연차 사용 촉진 (근로기준법 제61조) the worker wrote down, for the leave lapsing on
+ * [lapseEpochDay]: [step] is [LeavePromotion.Step.name], [epochDay] when it happened.
+ */
+@Entity(tableName = "leave_notices", indices = [Index("lapseEpochDay")])
+data class LeaveNoticeEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val lapseEpochDay: Long,
+    val step: String,
+    val epochDay: Long,
+    @ColumnInfo(defaultValue = "''") val note: String = "",
+    @ColumnInfo(defaultValue = "0") val createdAt: Long = 0,
+)
+
+fun LeaveNoticeEntity.toModel(): LeavePromotion.Record? = LeavePromotion.Step.of(step)?.let {
+    LeavePromotion.Record(id, LocalDate.ofEpochDay(lapseEpochDay), it, LocalDate.ofEpochDay(epochDay), note)
+}
+
+fun LeavePromotion.Record.toEntity(createdAt: Long = 0) =
+    LeaveNoticeEntity(id, lapse.toEpochDay(), step.name, date.toEpochDay(), note.take(200), createdAt)
+
+@Dao
+interface LeaveNoticeDao {
+    @Query("SELECT * FROM leave_notices ORDER BY lapseEpochDay, epochDay, id")
+    fun observeAll(): Flow<List<LeaveNoticeEntity>>
+
+    @Query("SELECT * FROM leave_notices ORDER BY lapseEpochDay, epochDay, id")
+    suspend fun all(): List<LeaveNoticeEntity>
+
+    @Insert
+    suspend fun insert(row: LeaveNoticeEntity): Long
+
+    @Insert
+    suspend fun insertAll(rows: List<LeaveNoticeEntity>)
+
+    @Query("DELETE FROM leave_notices WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("DELETE FROM leave_notices")
     suspend fun clear()
 }

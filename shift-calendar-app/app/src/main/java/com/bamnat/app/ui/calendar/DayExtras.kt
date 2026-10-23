@@ -317,6 +317,17 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        // [PAYX-30] 휴일대체: work on a holiday swapped in advance for another day is a working day's; that day is the holiday.
+        if (day.isRestDay || com.bamnat.core.holiday.KoreanHolidays.isHoliday(day.date)) {
+            com.bamnat.app.ui.work.DateField("휴일대체: 대신 쉬는 날", e.substitute, { update(e.copy(substitute = it?.takeIf { d -> d != day.date })) })
+            val sub = e.substitute
+            Text(
+                if (sub == null) "회사가 미리(보통 24시간 전) 이 휴일과 다른 날을 바꿨다면 그 날을 골라요. 그러면 이 근무는 휴일근로가 아니라 평일 근무로 계산해요."
+                else "이 근무는 평일 근무로, ${sub.monthValue}/${sub.dayOfMonth}이 휴일로 계산돼요. 공휴일을 바꾸려면 근로자대표와 서면 합의가 있어야 하고, 노동절은 바꿀 수 없어요(근로기준법 제55조).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Row {
             Spacer(Modifier.weight(1f))
             TextButton(onClick = onDone) { Text("완료") }

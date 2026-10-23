@@ -417,6 +417,7 @@ private fun PayResult(
                 if (item.cadence == Cadence.BONUS) {
                     BonusRow(item, profile.bonusBase(item, month), month, unlocked,
                         onOrdinary = { on -> vm.updateItem(item.id) { it.copy(ordinary = on) } },
+                        onBasis = { b -> vm.updateItem(item.id) { it.copy(bonusBasis = b) } },
                         onRemove = { vm.removeItem(item.id) })
                     return@forEach
                 }
@@ -873,8 +874,12 @@ private fun ValueRow(
 }
 
 /** A bonus line [PAY-05]: when it is paid, how much, and whether it raises the 통상시급. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun BonusRow(item: PayItem, base: Long, month: YearMonth, enabled: Boolean, onOrdinary: (Boolean) -> Unit, onRemove: () -> Unit) {
+private fun BonusRow(
+    item: PayItem, base: Long, month: YearMonth, enabled: Boolean, onOrdinary: (Boolean) -> Unit,
+    onBasis: (com.bamnat.core.pay.BonusBasis) -> Unit, onRemove: () -> Unit,
+) {
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text("${item.name} · ${item.paidWhen()}", style = MaterialTheme.typography.bodyLarge)
         Text(
@@ -887,6 +892,15 @@ private fun BonusRow(item: PayItem, base: Long, month: YearMonth, enabled: Boole
             else "통상임금에서 뺐어요 (성과에 따라 달라지는 상여 등)",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // [PAYX-31] A percent bonus: of what, as the 취업규칙 says.
+        if (item.percentOfBase != null) {
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                com.bamnat.core.pay.BonusBasis.entries.forEach { b ->
+                    com.bamnat.app.ui.components.FilterChip(selected = item.bonusBasis == b, onClick = { onBasis(b) }, enabled = enabled,
+                        label = { Text("${b.label}의 %") })
+                }
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("통상임금에 포함", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
             Switch(checked = item.ordinary, onCheckedChange = onOrdinary, enabled = enabled)

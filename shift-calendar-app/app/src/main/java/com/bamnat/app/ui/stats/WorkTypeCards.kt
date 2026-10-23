@@ -77,11 +77,13 @@ internal fun WorkTypeFirstCard(
     payTotal: Long?,
     profile: PayProfile?,
     columns: Int,
+    /** [PAYX-25] The month's 비과세 when it needs the month's pay (생산직); null works it out from the setup. */
+    nonTaxable: Long? = null,
 ) {
     when {
         // [GUIDE-05] Each card can be turned off for its calendar.
         style.isShift() -> FeatureCard("shift.firstCard", calendarId) { ShiftFirstCard(snapshot, month, payTotal) }
-        style == WorkStyle.DAY -> FeatureCard("day.firstCard", calendarId) { DayFirstCard(calendarId, snapshot, month, summary, payTotal, profile, columns) }
+        style == WorkStyle.DAY -> FeatureCard("day.firstCard", calendarId) { DayFirstCard(calendarId, snapshot, month, summary, payTotal, profile, columns, nonTaxable) }
     }
 }
 
@@ -96,9 +98,10 @@ internal fun WorkTypeMoreCards(
     payTotal: Long?,
     profile: PayProfile?,
     book: MoneyBook?,
+    nonTaxable: Long? = null,
 ) {
     // [GUIDE-05] Each card can be turned off for its calendar.
-    if (style?.usesPayEngine != false) FeatureCard("pay.gap", calendarId) { PayGapCard(calendarId, month, payTotal, profile, book, style) }
+    if (style?.usesPayEngine != false) FeatureCard("pay.gap", calendarId) { PayGapCard(calendarId, month, payTotal, profile, book, style, nonTaxable) }
     if (style.isShift()) FeatureCard("shift.swapCard", calendarId) { SwapCard(snapshot, month) }
     // [SHFT-07] The year's night share, runs of nights and short rests.
     if (style.isShift()) FeatureCard("shift.health", calendarId) { HealthYearCard(snapshot) }
@@ -178,6 +181,7 @@ private fun DayFirstCard(
     payTotal: Long?,
     profile: PayProfile?,
     columns: Int,
+    nonTaxable: Long? = null,
 ) {
     val context = LocalContext.current
     val prefs = WorkTypePrefs.get(context)
@@ -192,7 +196,7 @@ private fun DayFirstCard(
     }
     val left = ledger?.takeIf { it.lots.isNotEmpty() }?.available
     val takeHome = payTotal?.let { TakeHome.estimate(it, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
-        profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0) }
+        nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0) }
     val overtimeDays = remember(snapshot, month) {
         (1..month.lengthOfMonth()).count { snapshot.resolver.resolve(month.atDay(it)).hasExtraWork }
     }
@@ -280,13 +284,13 @@ private fun TaxModeChips(mode: TaxMode, onChange: (TaxMode) -> Unit) {
  * was from the estimate after tax.
  */
 @Composable
-private fun PayGapCard(calendarId: String, month: YearMonth, payTotal: Long?, profile: PayProfile?, book: MoneyBook?, style: WorkStyle?) {
+private fun PayGapCard(calendarId: String, month: YearMonth, payTotal: Long?, profile: PayProfile?, book: MoneyBook?, style: WorkStyle?, nonTaxable: Long? = null) {
     val prefs = WorkTypePrefs.get(LocalContext.current)
     val choices by prefs.all.collectAsStateWithLifecycle()
     // [HRLY-04] A part-timer chose how tax comes off on the pay screen; others choose it on the first card.
     val mode = if (style == WorkStyle.HOURLY) profile?.taxMode ?: TaxMode.NONE else choices[calendarId]?.taxMode ?: TaxMode.INSURANCE_4
     val expected = payTotal?.let { TakeHome.estimate(it, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
-        profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0).net }
+        nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0).net }
     val gap = remember(book, month, expected, profile) {
         book?.let { PayGaps.of(month, expected, profile?.period?.payDate(month), it.entries) }
     } ?: return
