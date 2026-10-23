@@ -700,3 +700,5 @@ OPS-24,"순번 329 린트 블록·기준선·checkDependencies, dependabot, 의�
 OPS-25,"순번 329 한국어 전용 결정(D53): 번역 안 함, localeFilters ko",2 (1.23.0),대기,,
 QA-06,"순번 330 화면 사진 골든 디핑(핵심 40장), CI 추세 JSON",2 (1.23.0),대기,,
 QA-07,"순번 330 설정 › 데이터 '데이터 점검'(integrity_check·참조·달력 파일·백업 왕복)",2 (1.23.0),대기,,
+CAL-48,"CAL-30 남은 것: 접고 펴기·회전에서 시트·편집 값이 남는지 ActivityScenario.recreate 계기 시험 (1.23에서 못 넣음, 상태 보존 코드는 들어감)",2 (1.24.0),대기,,
+CAL-49,"CAL-41 남은 것(P19): 알람을 끈 날에만 plannedAlarms가 resolver를 따로 만듦 → 공유 resolver로 (영향 작아 1.23에서 둠)",2 (1.24.0),대기,,
