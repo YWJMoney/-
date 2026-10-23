@@ -422,6 +422,11 @@ private fun PayResult(
                     onOrdinary = { on -> vm.updateItem(item.id) { it.copy(ordinary = on) } },
                     onRemove = { vm.removeItem(item.id) },
                     onEstimate = { estimate = Estimates.forValue(profile, month, item) },
+                    // Only on allowances that may be 비과세, so the list does not grow a switch per line.
+                    taxFree = (!item.taxable).takeIf {
+                        item.cadence == Cadence.MONTHLY && !item.isFixedOvertime && (!item.taxable || com.bamnat.core.pay.TakeHome.looksNonTaxable(item.name))
+                    },
+                    onTaxFree = { on -> vm.updateItem(item.id) { it.copy(taxable = !on) } },
                 )
             }
             // [PAYS-07] Rules of the company's own, each with its switch; the ones the builder can show open in it.
@@ -807,6 +812,9 @@ private fun ValueRow(
     ordinary: Boolean? = null,
     onOrdinary: ((Boolean) -> Unit)? = null,
     onRemove: (() -> Unit)? = null,
+    /** [PAYR-07] 비과세 (식대 등), for the take-home estimate; null hides the switch. */
+    taxFree: Boolean? = null,
+    onTaxFree: ((Boolean) -> Unit)? = null,
     /** [PAYS-01] 금액 모름: left out of the total. */
     unknownAmount: Boolean = false,
     /** [PAYS-11] The badge tapped. */
@@ -838,6 +846,12 @@ private fun ValueRow(
                 Text("통상임금에 포함", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                 Switch(checked = ordinary, onCheckedChange = onOrdinary, enabled = enabled)
                 if (onRemove != null) TextButton(onClick = onRemove, enabled = enabled) { Text("삭제") }
+            }
+        }
+        if (taxFree != null && onTaxFree != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("세금 없는 돈 (식대 등, 월 20만 원까지)", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                Switch(checked = taxFree, onCheckedChange = onTaxFree, enabled = enabled)
             }
         }
     }

@@ -50,22 +50,25 @@ object TakeHome {
     /**
      * [PAYR-01] With [on], the year's rates and 기준소득월액 limits for that day; without it, the 2026 first-half ones.
      * [PAYR-04] [dependents] is the 간이세액표's 공제대상가족 수 (본인 포함), [children] the 8~20세 자녀 among them, and
-     * [nonTaxable] the part of [gross] that is not taxed (식대 등), which the table leaves out.
+     * [nonTaxable] the part of [gross] that is not taxed (식대 등), which the table leaves out. The 4대보험 bases leave
+     * it out too: 보수·기준소득월액 are pay less 소득세법 비과세 근로소득 (국민건강보험법 시행령 제33조, 국민연금법
+     * 제3조 제1항 제3호, 고용산재보험료징수법 제2조 제3호).
      */
     fun estimate(
         gross: Long, mode: TaxMode, dependents: Int = 1, on: LocalDate? = null, children: Int = 0, nonTaxable: Long = 0,
     ): TakeHomeResult {
         val sh = on?.let(::sharesOn) ?: DEFAULT_SHARES
         val g = gross.coerceAtLeast(0)
+        val free = nonTaxable.coerceIn(0, g)
         val deductions: List<Pair<String, Long>> = when (mode) {
             TaxMode.NONE -> emptyList()
             TaxMode.WITHHOLDING_3_3 -> listOf("원천징수 3.3%" to Withholding.of(g))
             TaxMode.INSURANCE_4 -> {
-                val pension = if (g == 0L) 0L else cut10((g / 1_000 * 1_000).coerceIn(sh.baseMin, sh.baseMax) * sh.pension)
-                val health = cut10(g * sh.health)
+                val taxable = g - free
+                val pension = if (taxable == 0L) 0L else cut10((taxable / 1_000 * 1_000).coerceIn(sh.baseMin, sh.baseMax) * sh.pension)
+                val health = cut10(taxable * sh.health)
                 val care = cut10(health * sh.careOfHealth)
-                val employment = cut10(g * sh.employment)
-                val taxable = (g - nonTaxable.coerceIn(0, g))
+                val employment = cut10(taxable * sh.employment)
                 val table = WithholdingTable.on(on ?: TABLE_DAY) ?: WithholdingTable.on(TABLE_DAY)
                 val tax = table?.tax(taxable, dependents, children) ?: incomeTax(taxable, dependents, pension)
                 listOf(
@@ -80,6 +83,24 @@ object TakeHome {
         }
         return TakeHomeResult(g, deductions, g - deductions.sumOf { it.second })
     }
+
+    /** 소득세법 시행령 제17조의2: 식사대 월 20만 원 이하 (식사를 따로 받지 않을 때). Each 비과세 allowance counts up to this. */
+    const val NON_TAXABLE_LIMIT = 200_000L
+
+    /**
+     * [PAYR-07] The month's 비과세: monthly allowances marked not [PayItem.taxable] (식대 등), each up to
+     * [NON_TAXABLE_LIMIT]. Bonuses and per-day pay are always taxed here.
+     */
+    fun nonTaxable(profile: PayProfile, month: java.time.YearMonth): Long =
+        profile.items.filter { !it.taxable && it.cadence == Cadence.MONTHLY && !it.isFixedOvertime }
+            .sumOf { it.amount.on(month).value.coerceIn(0, NON_TAXABLE_LIMIT) }
+
+    /**
+     * Names of the usual 비과세 allowances (소득세법 제12조 제3호 · 시행령 제12조·제17조의2: 식사대, 자가운전보조금,
+     * 6세 이하 보육수당). A new allowance named so starts as 비과세, and only these show the switch.
+     */
+    fun looksNonTaxable(name: String): Boolean =
+        listOf("식대", "식비", "중식", "석식", "자가운전", "차량유지", "보육", "육아").any { it in name.replace(" ", "") }
 
     const val TAX_LABEL = "근로소득세 (간이세액표)"
     const val LOCAL_TAX_LABEL = "지방소득세"
