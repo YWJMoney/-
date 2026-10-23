@@ -101,13 +101,16 @@ class ExampleCalendarGuardTest {
         val today = LocalDate.of(2026, 10, 23)
         c.example.make(WorkStyle.DAY)
         // Still looking around: it stays.
-        c.example.sweep(Browse.start(WorkStyle.DAY, today), kept = false)
+        c.browse.set(Browse.start(WorkStyle.DAY, today)); c.browse.kept = false
+        c.example.sweep()
         assertNotNull(c.calendars.get(PersonalCalendar.EXAMPLE))
         // Kept beside the user's own calendar: it stays.
-        c.example.sweep(BrowseState(), kept = true)
+        c.browse.set(BrowseState()); c.browse.kept = true
+        c.example.sweep()
         assertNotNull(c.calendars.get(PersonalCalendar.EXAMPLE))
         // Neither: it goes.
-        c.example.sweep(BrowseState(), kept = false)
+        c.browse.kept = false
+        c.example.sweep()
         assertNull(c.calendars.get(PersonalCalendar.EXAMPLE))
         assertTrue(c.memoRepository.memos.first().none { it.title.contains("예시") })
     }

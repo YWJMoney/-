@@ -25,6 +25,7 @@ import com.bamnat.core.pay.ValueTimeline
 import com.bamnat.core.pay.WageType
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -38,9 +39,13 @@ import java.time.LocalTime
  */
 class ExampleCalendar(private val c: AppContainer, private val today: () -> LocalDate = LocalDate::now) {
     private val book get() = c.calendars
+    /** [sweep] on start and [browse] tapped meanwhile take turns, so a new example is never taken for a stale one. */
+    private val lock = kotlinx.coroutines.sync.Mutex()
 
     /** Makes the example of [style] afresh and shows it. */
-    suspend fun make(style: WorkStyle): PersonalCalendar {
+    suspend fun make(style: WorkStyle): PersonalCalendar = lock.withLock { lay(style) }
+
+    private suspend fun lay(style: WorkStyle): PersonalCalendar {
         removeMemos()
         val cal = book.addExample(style, ExamplePlan.NAME)
         lay(ExamplePlan.of(style, today()))
@@ -92,9 +97,9 @@ class ExampleCalendar(private val c: AppContainer, private val today: () -> Loca
     }
 
     /** [EASY-01] 우선 둘러볼게요 with [style]: the example is made and the app opens on it. */
-    suspend fun browse(style: WorkStyle) {
+    suspend fun browse(style: WorkStyle) = lock.withLock {
         c.browse.set(com.bamnat.core.example.Browse.start(style, today()))
-        make(style)
+        lay(style)
     }
 
     /**
@@ -128,11 +133,10 @@ class ExampleCalendar(private val c: AppContainer, private val today: () -> Loca
      * On start: an example the app is not showing any more (a backup of the calendar list restored on another
      * phone carries its entry but never its database) goes, with any memos of it.
      */
-    suspend fun sweep(browse: BrowseState, kept: Boolean) {
+    suspend fun sweep() = lock.withLock {
         val there = book.get(PersonalCalendar.EXAMPLE) != null
         val hasFile = File(CalendarStorage.pathOf(c.appContext, PersonalCalendar.EXAMPLE)).exists()
-        val wanted = there && hasFile && (browse.browsing || kept)
-        if (!wanted) remove()
+        if (!(there && hasFile && (c.browse.current.browsing || c.browse.kept))) remove()
     }
 
     private suspend fun removeMemos() {

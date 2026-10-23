@@ -83,7 +83,7 @@ import kotlinx.coroutines.launch
  * own values, saved as they are.
  */
 @Composable
-fun RecommendedScreen(container: AppContainer, firstStart: Boolean, onDone: () -> Unit) {
+fun RecommendedScreen(container: AppContainer, firstStart: Boolean, onDone: () -> Unit, onBrowse: (() -> Unit)? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val available = remember { ConsentChecks.available(context, container.healthSleep, container.consentStore) }
@@ -175,6 +175,12 @@ fun RecommendedScreen(container: AppContainer, firstStart: Boolean, onDone: () -
             if (firstStart) {
                 TextButton(onClick = { save(false) }, enabled = queue == null, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Text("허용은 나중에 할게요")
+                }
+                // [EASY-01] 우선 둘러볼게요: the recommended features on, nothing asked yet, and an example calendar next.
+                if (onBrowse != null) {
+                    TextButton(onClick = { onBrowse(); save(false) }, enabled = queue == null, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Text("우선 둘러볼게요")
+                    }
                 }
             }
         }

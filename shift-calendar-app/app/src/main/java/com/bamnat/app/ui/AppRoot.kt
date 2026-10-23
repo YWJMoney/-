@@ -285,15 +285,21 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
     // [ONBOARD-01] A new phone sees what the app may ask for, and why, before the first setup.
     val consentSeen by container.consentStore.seen.collectAsStateWithLifecycle()
+    // [EASY-01] 우선 둘러볼게요: the app opens on its example calendar; the first write asks for the setup.
+    val browse by container.browse.state.collectAsStateWithLifecycle()
+    val rootScope = rememberCoroutineScope()
+    var browseFirst by rememberSaveable { mutableStateOf(false) }
+    val startMine: (Boolean) -> Unit = { keep -> rootScope.launch { container.example.startMine(keep) } }
     when (needsSetup) {
         null -> return
         // "나중에" opens the calendar with a card to go on from where the user stopped.
-        true -> if (setupDraft?.later != true) {
+        true -> if (setupDraft?.later != true && !browse.browsing) {
             if (consentSeen == null && setupDraft == null) {
-                ConsentPages(container, onDone = {})
+                ConsentPages(container, onDone = {}, onBrowse = { browseFirst = true })
                 return
             }
-            SetupHost(appViewModel { SetupViewModel(it) })
+            SetupHost(appViewModel { SetupViewModel(it) },
+                onBrowse = { style -> browseFirst = false; rootScope.launch { container.example.browse(style) } }, browseFirst = browseFirst)
             return
         }
         false -> Unit
@@ -592,6 +598,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 },
             ) { padding ->
                 Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+                    if (activeCalendarId == com.bamnat.app.data.PersonalCalendar.EXAMPLE) {
+                        com.bamnat.app.ui.guide.ExampleBand(onStart = { startMine(false) })
+                    }
                     RingingBanner()
                     AppNavHost(
                         nav = nav,
@@ -609,6 +618,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 
     // [ONBOARD-01] A phone set up before the consent pages is asked only about what is new since.
     NewConsentPrompt(container)
+
+    // [EASY-02] A write on the example calendar asks here, over whichever screen began it.
+    com.bamnat.app.ui.guide.WriteGateCard(container, start = startMine)
+    LaunchedEffect(route, activeCalendarId) {
+        val kind = route?.let(com.bamnat.app.ui.guide.WriteGate::kindOf) ?: return@LaunchedEffect
+        com.bamnat.app.ui.guide.WriteGate.request(container, kind) {}
+    }
 
     // [SETUP-01] Right after the first setup, once: the pay comes next for work paid by the hour or month.
     val justSaved by container.firstSetup.saved.collectAsStateWithLifecycle()

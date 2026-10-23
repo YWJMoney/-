@@ -39,7 +39,7 @@ object ShopNotices {
     fun route(c: AppContainer, pkg: String, app: String): String? {
         if (ShopCapture.source(pkg, app) == null) return null
         if (pkg in c.autoRecordPrefs.current.appCalendars) return null
-        return c.calendars.calendars.value.filter { styleOf(c, it.id) == WorkStyle.BUSINESS }.singleOrNull()?.id
+        return c.calendars.calendars.value.filterNot { it.isExample }.filter { styleOf(c, it.id) == WorkStyle.BUSINESS }.singleOrNull()?.id
     }
 
     /** Takes [text] into calendar [id]'s sales when it is a shop's; null when it is not, for the usual reading. */

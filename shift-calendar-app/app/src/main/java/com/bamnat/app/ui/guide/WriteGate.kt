@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -37,8 +38,29 @@ object WriteGate {
     val pending: StateFlow<Pending?> = _pending.asStateFlow()
 
     fun request(c: AppContainer, kind: WriteKind, today: LocalDate = LocalDate.now(), proceed: () -> Unit) {
-        val onExample = c.calendars.active.value == PersonalCalendar.EXAMPLE
-        if (!Browse.asks(c.browse.current, onExample, kind, today)) proceed() else _pending.value = Pending(kind, proceed)
+        val state = c.browse.current
+        // A kept example (예시는 두고) is a calendar like any other, except for what leaves the phone.
+        val onExample = c.calendars.active.value == PersonalCalendar.EXAMPLE && (state.browsing || kind.goesOut)
+        if (!Browse.asks(state, onExample, kind, today)) proceed() else _pending.value = Pending(kind, proceed)
+    }
+
+    /**
+     * [EASY-02] The editors opened as screens of their own, by their route: opening one on the example asks
+     * as its first write would (3장의 화면 단위 잡기). Null for a screen that only shows.
+     */
+    fun kindOf(route: String): WriteKind? {
+        val head = route.substringBefore('?').substringBefore('/')
+        return when (head) {
+            "shift_types", "pattern", "extra_kinds", "teams" -> WriteKind.PATTERN
+            "work_style", "calendar_edit", "shop_days" -> WriteKind.CALENDAR
+            "memo" -> WriteKind.MEMO
+            "pay" -> WriteKind.PAY
+            "leave" -> WriteKind.LEAVE
+            "sleep" -> WriteKind.SLEEP
+            "calendar_import", "attendance_import", "duty_roster", "company_find", "company", "commute" -> WriteKind.IMPORT
+            "share_group" -> WriteKind.SHARE
+            else -> null
+        }
     }
 
     /** The card's answer; [start] opens the first setup (with the example's kind of work) for the first two. */
@@ -80,4 +102,22 @@ fun WriteGateCard(c: AppContainer, start: (keepExample: Boolean) -> Unit) {
             TextButton(onClick = { WriteGate.answer(c, BrowseChoice.KEEP_BROWSING, start) }) { Text(BrowseChoice.KEEP_BROWSING.label) }
         },
     )
+}
+
+/**
+ * [EASY-01] The band over every screen while the example calendar is shown: it says so, and starts the
+ * user's own in one tap.
+ */
+@Composable
+fun ExampleBand(onStart: () -> Unit) {
+    androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
+        androidx.compose.foundation.layout.Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp).heightIn(min = 48.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            Text("예시 달력을 보고 있어요", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer)
+            TextButton(onClick = onStart, modifier = Modifier.heightIn(min = 48.dp)) { Text(BrowseChoice.START_MINE.label) }
+        }
+    }
 }

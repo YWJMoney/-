@@ -253,7 +253,7 @@ class CalendarBook(
      * [MCAL-01] Every calendar whose alarms ring, with the name an alarm from it is told by; the main
      * calendar has none, so its alarms read as before.
      */
-    val ringing: Flow<List<Pair<String?, ScheduleSnapshot>>> = _calendars.map { list -> list.filter { it.isMain || it.alarms } }
+    val ringing: Flow<List<Pair<String?, ScheduleSnapshot>>> = _calendars.map { list -> list.filter { it.isMain || (it.alarms && !it.isExample) } }
         .flatMapLatest { list ->
             if (list.isEmpty()) flowOf(emptyList())
             else combine(list.map { cal -> repository(cal.id).snapshot.map { s -> (if (cal.isMain) null else cal.name) to s } }) { it.toList() }

@@ -89,7 +89,7 @@ private data class Primary(val label: String, val enabled: Boolean = true, val h
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SetupHost(vm: SetupViewModel) {
+fun SetupHost(vm: SetupViewModel, onBrowse: ((com.bamnat.core.work.WorkStyle) -> Unit)? = null, browseFirst: Boolean = false) {
     val d by vm.draft.collectAsStateWithLifecycle()
     val fixing by vm.fixing.collectAsStateWithLifecycle()
     val saving by vm.saving.collectAsStateWithLifecycle()
@@ -188,7 +188,8 @@ fun SetupHost(vm: SetupViewModel) {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     when (step) {
-                        SetupStep.STYLE -> StyleStep(d, onPick = vm::pickStyle, onOpenFile = onOpenFile, forCalendar = vm.calendarName)
+                        SetupStep.STYLE -> StyleStep(d, onPick = vm::pickStyle, onOpenFile = onOpenFile, forCalendar = vm.calendarName,
+                            onBrowse = onBrowse.takeIf { vm.calendarId == null }, browseFirst = browseFirst)
                         SetupStep.COMPANY -> CompanyStep(vm, d, onSearch = if (vm.companySearch) ({ searching = true }) else null, onOpenFile = onOpenFile)
                         SetupStep.BUNDLE -> BundleStep(d, onPick = vm::pickBundle)
                         SetupStep.TIMES -> TimesStep(vm, d)

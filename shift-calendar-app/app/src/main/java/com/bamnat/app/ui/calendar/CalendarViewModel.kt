@@ -13,6 +13,7 @@ import com.bamnat.app.pay.named
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.UndoMessage
 import com.bamnat.app.ui.money.MoneyActions
+import com.bamnat.core.example.WriteKind
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.memo.Memo
 import com.bamnat.core.model.DayAlarm
@@ -112,6 +113,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private val schedule: com.bamnat.app.data.ScheduleRepository get() = container.calendars.activeRepository()
     private val memoRepo = container.memoRepository
 
+    /** [EASY-02] A write on the example calendar asks first (WriteGate); anywhere else it runs at once. */
+    private fun gate(kind: WriteKind, block: () -> Unit) = com.bamnat.app.ui.guide.WriteGate.request(container, kind, proceed = block)
+
     /** [MCAL-01] The user's calendars and the one on screen. */
     val calendars: StateFlow<List<com.bamnat.app.data.PersonalCalendar>> = container.calendars.calendars
     val activeCalendar: StateFlow<com.bamnat.app.data.PersonalCalendar> =
@@ -149,9 +153,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         .stateIn(viewModelScope, SharingStarted.Eagerly, activeCalendar.value.let { it.isMain || it.alarms })
 
     /** [CAL-13] Turns the alarms of the added calendar on screen on or off, said back with undo. */
-    fun setCalendarAlarms(on: Boolean) {
+    fun setCalendarAlarms(on: Boolean) = gate(WriteKind.ALARM) {
         val cal = activeCalendar.value
-        if (cal.isMain) return
+        if (cal.isMain) return@gate
         container.calendars.setAlarms(cal.id, on)
         _messages.tryEmit(UndoMessage("‘${cal.name}’ 알람을 ${if (on) "켰어요" else "껐어요"}") { container.calendars.setAlarms(cal.id, !on) })
     }
@@ -405,7 +409,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** [SLP-08] Reads Health Connect again while the day view is on screen. */
     fun refreshHealthSleep(enabled: Boolean) { viewModelScope.launch { container.healthSleep.refresh(enabled) } }
     /** [SLP-06][SLP-14] "잠들었어요", said back with a way to take it back. */
-    fun fellAsleep() {
+    fun fellAsleep() = gate(WriteKind.SLEEP) {
         container.appScope.launch {
             val asleep = container.sleepRepository.fellAsleep()
             val at = Fmt.time(asleep.entry.start.toLocalTime())
@@ -417,7 +421,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [SLP-06][SLP-14] "깼어요" now, or at [at] when the user says later when they woke. */
-    fun wokeUp(at: LocalDateTime? = null) {
+    fun wokeUp(at: LocalDateTime? = null) = gate(WriteKind.SLEEP) {
         container.appScope.launch {
             val millis = at?.atZone(java.time.ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
             val sleep = container.sleepRepository.wokeUp(millis) ?: return@launch
@@ -534,8 +538,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     val canStamp: Boolean get() = _mark.value != null || _stamp.value != null || _paint.value?.let(::stampOf) != null
 
     /** [CAL-09] A long press in quick input starts a range from [date]. */
-    fun startRange(date: LocalDate) {
-        if (!canStamp) return
+    fun startRange(date: LocalDate) = gate(WriteKind.DAYS) {
+        if (!canStamp) return@gate
         _selected.value = date
         _rangeFrom.value = date
         _lastPaint.value = PaintUndo("${Fmt.monthDay(date)}부터 · 끝 날짜를 누르세요", null)
@@ -670,17 +674,17 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * [CAL-01] Quick input dragged over [dates]: every one gets the chosen stamp (a drag never takes
      * one off), in one write, said back with undo.
      */
-    fun paintDays(dates: List<LocalDate>) {
-        _mark.value?.let { paintMark(dates.distinct(), it); return }
-        _stamp.value?.let { paintExtra(dates, it, tapped = false); return }
-        val tool = _paint.value ?: return
-        val target = stampOf(tool) ?: return
+    fun paintDays(dates: List<LocalDate>) = gate(WriteKind.DAYS) {
+        _mark.value?.let { paintMark(dates.distinct(), it); return@gate }
+        _stamp.value?.let { paintExtra(dates, it, tapped = false); return@gate }
+        val tool = _paint.value ?: return@gate
+        val target = stampOf(tool) ?: return@gate
         val name = when (tool) {
-            is PaintTool.Shift -> snapshot.value?.typesById?.get(tool.shiftTypeId)?.name ?: return
+            is PaintTool.Shift -> snapshot.value?.typesById?.get(tool.shiftTypeId)?.name ?: return@gate
             PaintTool.Off -> "쉬는 날"
             else -> null
         }
-        if (askCover(dates)) return // [CAL-19]
+        if (askCover(dates)) return@gate // [CAL-19]
         stampShift(dates, target, name)
     }
 
@@ -704,8 +708,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [NURS-01] A month typed at once: each day its own shift, in one write, said back with one undo. */
-    fun applyDuty(changes: Map<LocalDate, ShiftOverride>) {
-        if (changes.isEmpty()) return
+    fun applyDuty(changes: Map<LocalDate, ShiftOverride>) = gate(WriteKind.SHIFT) {
+        if (changes.isEmpty()) return@gate
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule
             val before = schedule.updateDays(changes.keys.toList()) { entry -> changes[entry.date]?.let { nextShift(entry, it) } ?: entry }
@@ -800,7 +804,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * Sets the shift for a day. Choosing what the pattern already gives stores nothing. [CAL-10] Said
      * back with undo, as every change on a day is.
      */
-    fun assign(date: LocalDate, override: ShiftOverride, announce: Boolean = true) {
+    fun assign(date: LocalDate, override: ShiftOverride, announce: Boolean = true) = gate(WriteKind.SHIFT) {
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = changeShift(date) { override }
@@ -819,7 +823,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * [DAY-03] The shift chosen from a day's long-press menu, said back with undo. A working shift on
      * a day the roster gives off is most often a 대근, so then the snackbar offers that instead [EXTRA-01].
      */
-    fun assignQuick(day: ResolvedDay, override: ShiftOverride, snapshot: ScheduleSnapshot) {
+    fun assignQuick(day: ResolvedDay, override: ShiftOverride, snapshot: ScheduleSnapshot) = gate(WriteKind.SHIFT) {
         val date = day.date
         val type = (override as? ShiftOverride.Shift)?.let { snapshot.typesById[it.shiftTypeId] }
         viewModelScope.launch {
@@ -894,7 +898,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [EXTRA-01] The roster stays a day off and the shift goes in as a 대근 of its hours, said back with undo. */
-    fun coverInstead(date: LocalDate, type: ShiftType, snapshot: ScheduleSnapshot) {
+    fun coverInstead(date: LocalDate, type: ShiftType, snapshot: ScheduleSnapshot) = gate(WriteKind.SHIFT) {
         val kind = coverKind(snapshot, type)
         addExtra(date, ExtraText.cover(kind, type), ExtraText.coverName(kind, type))
     }
@@ -916,7 +920,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         return if (next == entry.override) entry else entry.copy(override = next, customStart = null, customEnd = null, customBreakMinutes = null)
     }
 
-    fun setCustomTimes(date: LocalDate, start: LocalTime, end: LocalTime) {
+    fun setCustomTimes(date: LocalDate, start: LocalTime, end: LocalTime) = gate(WriteKind.DAY_TIME) {
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.updateDay(date) { it.copy(customStart = start, customEnd = end) }
@@ -925,7 +929,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
-    fun setBreak(date: LocalDate, minutes: Int?) {
+    fun setBreak(date: LocalDate, minutes: Int?) = gate(WriteKind.DAY_TIME) {
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.updateDay(date) { it.copy(customBreakMinutes = minutes) }
@@ -955,7 +959,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
-    fun clearCustomTimes(date: LocalDate) {
+    fun clearCustomTimes(date: LocalDate) = gate(WriteKind.DAY_TIME) {
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.setCustomTimes(date, null, null, null)
@@ -967,7 +971,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private fun guideUsed(id: String) = com.bamnat.app.data.GuideStore.get(container.appContext).used(id)
 
     /** [SHFT-03] Who the day was swapped with (or covered for, on a 대근 day); blank clears it. Said back with undo. */
-    fun setSwapWith(date: LocalDate, name: String) {
+    fun setSwapWith(date: LocalDate, name: String) = gate(WriteKind.SHIFT) {
         if (name.isNotBlank()) guideUsed("shift.swap")
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
@@ -983,7 +987,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * [DAYW-03] 지금 퇴근 on [day]: past the end it puts 잔업 from the end to now (replacing a 잔업 already
      * there), before the end the day ends now. Said back with undo.
      */
-    fun leaveNow(day: ResolvedDay, now: LocalDateTime = LocalDateTime.now()) {
+    fun leaveNow(day: ResolvedDay, now: LocalDateTime = LocalDateTime.now()) = gate(WriteKind.DAY_TIME) {
         guideUsed("day.leaveNow")
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
@@ -995,7 +999,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     /** [EXTRA-01] Adds a piece of extra work, said back with undo: "10월 17일에 야간 대근을 넣었어요". */
     /** [HRLY-01][HRLY-08] Changes one day of the calendar on screen (출결, 출근·퇴근), said back with undo. */
-    fun changeDay(date: LocalDate, said: String, feature: String? = null, transform: (com.bamnat.core.model.DayEntry) -> com.bamnat.core.model.DayEntry) {
+    fun changeDay(date: LocalDate, said: String, feature: String? = null, transform: (com.bamnat.core.model.DayEntry) -> com.bamnat.core.model.DayEntry) = gate(WriteKind.DAY_TIME) {
         feature?.let(::guideUsed)
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
@@ -1004,7 +1008,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
-    fun addExtra(date: LocalDate, entry: ExtraEntry, name: String) {
+    fun addExtra(date: LocalDate, entry: ExtraEntry, name: String) = gate(WriteKind.DAY_TIME) {
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.addExtra(date, entry)
@@ -1017,11 +1021,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [EXTRA-01] Changes the piece at [index] in place, as the user edits it. */
-    fun updateExtra(date: LocalDate, index: Int, entry: ExtraEntry) {
+    fun updateExtra(date: LocalDate, index: Int, entry: ExtraEntry) = gate(WriteKind.DAY_TIME) {
         viewModelScope.launch { schedule.updateExtra(date, index, entry) }
     }
 
-    fun removeExtra(date: LocalDate, index: Int, name: String) {
+    fun removeExtra(date: LocalDate, index: Int, name: String) = gate(WriteKind.DAY_TIME) {
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.removeExtra(date, index)
@@ -1030,7 +1034,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [EXTRA-01] A one-tap choice from the long-press menu or the day's chips: added, or taken off when the day has it. */
-    fun toggleExtra(day: ResolvedDay, choice: ExtraChoice) {
+    fun toggleExtra(day: ResolvedDay, choice: ExtraChoice) = gate(WriteKind.DAY_TIME) {
         val i = ExtraText.indexOf(day, choice)
         if (i >= 0) removeExtra(day.date, i, ExtraText.name(day.extras[i])) else addExtra(day.date, choice.entry, choice.name)
     }
@@ -1062,7 +1066,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     /** 연차·반차 for a day; [announce] says it back with undo when it was set without the day open [DAY-03]. */
     /** [CAL-10] Every change says itself back with undo; [announceInBar] says it in quick input's bar instead. */
-    fun setLeave(date: LocalDate, leave: Leave?, announce: Boolean = true, announceInBar: Boolean = false) {
+    fun setLeave(date: LocalDate, leave: Leave?, announce: Boolean = true, announceInBar: Boolean = false) = gate(WriteKind.LEAVE) {
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.setLeave(date, leave)
@@ -1090,7 +1094,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         container.telemetry.event("review_asked")
     }
 
-    fun setAlarmSkipped(date: LocalDate, skipped: Boolean, announce: Boolean = false, announceInBar: Boolean = false) {
+    fun setAlarmSkipped(date: LocalDate, skipped: Boolean, announce: Boolean = false, announceInBar: Boolean = false) = gate(WriteKind.ALARM) {
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.setAlarmSkipped(date, skipped)
@@ -1101,7 +1105,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
-    fun resetDay(date: LocalDate) {
+    fun resetDay(date: LocalDate) = gate(WriteKind.SHIFT) {
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.resetDay(date)
@@ -1113,7 +1117,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
-    fun setDayAlarms(date: LocalDate, alarms: List<DayAlarm>?) {
+    fun setDayAlarms(date: LocalDate, alarms: List<DayAlarm>?) = gate(WriteKind.ALARM) {
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.setDayAlarms(date, alarms)
@@ -1146,7 +1150,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** [SCHED-01] A memo to open in the editor, from the snackbar's 일정으로 넣기. */
     val openMemo: SharedFlow<Long> = _openMemo.asSharedFlow()
 
-    fun addQuickMemo(date: LocalDate, text: String) {
+    fun addQuickMemo(date: LocalDate, text: String) = gate(WriteKind.MEMO) {
         viewModelScope.launch {
             // [NOTE-01] A quick memo belongs to the calendar it was written on.
             val memo = memoRepo.addQuick(date, text, setOf(container.calendars.active.value)) ?: return@launch

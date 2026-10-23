@@ -67,6 +67,8 @@ class BackupManager(
     private val photos: BackupPhotos? = null,
     /** [REL-15] Where a file being opened waits (its photos, a sealed file) until it is restored or put away. */
     private val staging: java.io.File? = null,
+    /** [EASY-03] Where each fact came from (결정 N-D4), per calendar; the example's never goes. */
+    private val profiles: () -> ProfileStore? = { null },
 ) {
     /** The schedule tables of [source] (shifts, order, changed days, extra work) as a backup holds them. */
     private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
@@ -428,6 +430,7 @@ class BackupManager(
         teams?.let { t -> root.put("teams", JSONObject(t.export() as Map<*, *>)) }
         pro()?.let { root.put("pro", it.toBackup()) }
         shareLinks?.let { root.put("shareLinks", it.export()) }
+        profiles()?.let { p -> root.put("profile", JSONObject(p.export() as Map<*, *>)) }
         val s = settings.current
         root.put(
             "settings",
@@ -833,6 +836,7 @@ class BackupManager(
         }
         // [PROV-04] Read once the calendars are back; a backup from before 1.20 has none, and the phone's own links always stay.
         root.optJSONArray("shareLinks")?.let { a -> shareLinks?.restore(a) }
+        root.optJSONObject("profile")?.let { o -> profiles()?.import(o.keys().asSequence().associateWith { o.get(it).toString() }) }
         // [BACK-01] Photos first, so the records and contracts that point at them find them here.
         photos?.restore(root.optJSONObject("photos"))
         // [REL-15] A file of format 3 brought them as files: each moves in, never over one already here.

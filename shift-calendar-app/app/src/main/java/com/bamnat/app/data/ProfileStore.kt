@@ -57,11 +57,12 @@ class ProfileStore(private val c: AppContainer, private val dir: File = File(c.a
 
     /** [EASY-03] For the backup (결정 N-D4): each calendar's meta as it is kept. */
     fun export(): Map<String, String> =
-        dir.listFiles { f -> f.name.endsWith(".json") }.orEmpty().associate { it.name.removeSuffix(".json") to it.readText() }
+        dir.listFiles { f -> f.name.endsWith(".json") }.orEmpty().filter { it.name != "${PersonalCalendar.EXAMPLE}.json" }
+            .associate { it.name.removeSuffix(".json") to it.readText() }
 
     fun import(all: Map<String, String>) {
         dir.mkdirs()
-        all.forEach { (id, text) -> if (runCatching { JSONObject(text) }.isSuccess && SAFE_ID.matches(id)) File(dir, "$id.json").writeText(text) }
+        all.forEach { (id, text) -> if (id != PersonalCalendar.EXAMPLE && runCatching { JSONObject(text) }.isSuccess && SAFE_ID.matches(id)) File(dir, "$id.json").writeText(text) }
     }
 
     /** The keys that have an adapter, for `ProfileStoreTest`. */

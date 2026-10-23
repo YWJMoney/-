@@ -48,7 +48,7 @@ fun AppContainer.invest(calendarId: String): InvestRepository =
 
 /** [INV-01] The user's calendars that are investor calendars, main first. */
 fun AppContainer.investCalendars(): List<PersonalCalendar> =
-    calendars.calendars.value.filter { calendars.styleOf(it.id, settingsRepository.current.workStyle) == WorkStyle.INVEST }
+    calendars.calendars.value.filterNot { it.isExample }.filter { calendars.styleOf(it.id, settingsRepository.current.workStyle) == WorkStyle.INVEST }
 
 /**
  * [INV-08][INV-14] The investor's alarms and date notices, on the app's own notice channels: one
