@@ -8,8 +8,9 @@ import com.google.android.play.core.ktx.launchReview
 import com.google.android.play.core.ktx.requestReview
 
 /**
- * Google Play in-app review [OPS-20]. Asked after the first pattern is saved and the calendar fills
- * in, and once more after the first pay month is closed [DAILY-17]. Play limits how often the sheet
+ * Google Play in-app review [OPS-20]. Asked after the first pattern is saved and the first month-end
+ * card ("이번 달 내 기록", CAL-46) has been seen and closed, and once more after the first pay month is
+ * closed [DAILY-17]. Play limits how often the sheet
  * really shows and never says whether it did, so each moment asks once and never again; any failure
  * is silent (e.g. not installed from Play). Nothing is asked before or around the sheet.
  */
@@ -29,12 +30,13 @@ object InAppReview {
     const val GAP_DAYS = 30
 
     /**
-     * [DAILY-17] The moment to ask at on 내 달력, or null. The second comes only after the user closed a pay
+     * [DAILY-17] The moment to ask at on 내 달력, or null. [SETUP-14] The first waits for a month of use: the
+     * pattern saved and the first month-end card closed (G P23 ↔ I N9), not the minute setup ends. The second comes only after the user closed a pay
      * month (a finished job, not a button that asks), at most once, and [GAP_DAYS] after the first; a first
      * asked before 1.22 kept no day, so it counts as long ago.
      */
     fun due(s: com.bamnat.app.data.AppSettings, today: java.time.LocalDate): Moment? = when {
-        s.reviewDue && !s.reviewAsked -> Moment.FIRST
+        s.reviewDue && !s.reviewAsked && s.monthRecapSeen != 0 -> Moment.FIRST
         s.payReviewDue && !s.payReviewAsked &&
             (s.reviewAskedDay == 0L || today.toEpochDay() - s.reviewAskedDay >= GAP_DAYS) -> Moment.PAY
         else -> null
