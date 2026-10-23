@@ -11,6 +11,8 @@ import com.bamnat.core.schedule.ExtraStamp
 import com.bamnat.core.schedule.PatternPreset
 import com.bamnat.core.schedule.PatternPresets
 import com.bamnat.core.schedule.PatternTimeline
+import com.bamnat.core.holiday.KoreanHolidays
+import com.bamnat.core.hours.WorkHoursCalculator
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.schedule.ShiftTypeSet
 import com.bamnat.core.schedule.ShiftTypeSets
@@ -267,5 +269,49 @@ class CalendarI123Test {
         val entries = listOf(DayEntry(day.minusDays(1), override = ShiftOverride.Off), DayEntry(day.plusDays(3), override = ShiftOverride.Off),
             DayEntry(day.plusDays(4), leave = Leave()))
         assertEquals(listOf(day.plusDays(3)), PatternTimeline.handChangedFrom(entries, day))
+    }
+
+    /**
+     * [CAL-31] I 리뷰 P7·P8: 2028 is past the checked table, so its 설·추석 come from the lunar rules. The 2028
+     * 설 is the case P8 warned of: the new moon falls minutes after midnight in Korea (UTC+9) and just before it in
+     * China, so 음력 1월 1일 is 1월 27일 here (한국천문연구원 생활달력 2028, astro.kasi.re.kr/life/post/calendarData)
+     * against 1월 26일 in Chinese tables. 추석 (음력 8월 15일) is 10월 3일 and overlaps 개천절, so one 대체공휴일
+     * follows on 10월 5일, not two.
+     */
+    @Test
+    fun `2028 설 and 추석 from the rules match the almanac and overlap once`() {
+        assertTrue(KoreanHolidays.isComputed(2028))
+        assertFalse(KoreanHolidays.isComputed(2027))
+        assertEquals("설날", KoreanHolidays.nameOf(LocalDate.of(2028, 1, 27)))
+        for (d in listOf(26, 28)) assertEquals("설날 연휴", KoreanHolidays.nameOf(LocalDate.of(2028, 1, d)))
+        assertFalse(KoreanHolidays.isHoliday(LocalDate.of(2028, 1, 25)))
+        for (d in listOf(2, 3, 4, 5)) assertTrue("10/$d", KoreanHolidays.isHoliday(LocalDate.of(2028, 10, d)))
+        assertEquals("대체공휴일", KoreanHolidays.nameOf(LocalDate.of(2028, 10, 5)))
+        assertFalse(KoreanHolidays.isHoliday(LocalDate.of(2028, 10, 6)))
+    }
+
+    /**
+     * [CAL-31] I 리뷰 P7: the checked table has to reach next year. This fails on the first of January of a year
+     * whose next year is missing, which is the reminder to add the coming year from the 월력요항 (release checklist).
+     */
+    @Test
+    fun `the checked holiday table reaches next year`() {
+        val next = LocalDate.now().year + 1
+        assertTrue("공휴일 표를 ${next}년까지 늘려 주세요 (KoreanHolidays.years)", KoreanHolidays.years.last >= next)
+    }
+
+    /** [CAL-32] A Sunday night shift counted on Sunday, or split at midnight into the next week. */
+    @Test
+    fun `a night over the week's edge can be split at midnight`() {
+        val sunday = LocalDate.of(2026, 10, 4)
+        val r = ScheduleResolver(Fixtures.all, WorkPattern.Rotation(sunday, listOf(3L), endDate = sunday), emptyList())
+        val calc = WorkHoursCalculator(r)
+        // 22:00~07:00 with an hour off is 8 hours; 7 of the 9 hours fall after midnight, so 6h13m goes to Monday.
+        val lastWeek = calc.week(sunday)
+        assertEquals(8 * 60, lastWeek.totalMinutes)
+        val moved = Math.round(8 * 60 * 7 / 9.0).toInt()
+        assertEquals(8 * 60 - moved, calc.weekSplitAtMidnight(sunday))
+        assertEquals(moved, calc.weekSplitAtMidnight(sunday.plusDays(1)))
+        assertEquals(0, calc.week(sunday.plusDays(1)).totalMinutes)
     }
 }

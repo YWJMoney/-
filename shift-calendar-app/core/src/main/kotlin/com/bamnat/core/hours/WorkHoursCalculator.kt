@@ -101,6 +101,27 @@ class WorkHoursCalculator(
         )
     }
 
+    /**
+     * [CAL-32] I 리뷰 P9: the week's hours with each night shift split at midnight, the way some payrolls count
+     * it. [week] puts a 22:00~07:00 shift wholly on the day it starts, so a Sunday night lands in this week; here
+     * the part after midnight goes to the next day (the break shared in proportion). Equal to [week]'s total
+     * when no shift crosses the week's edges.
+     */
+    fun weekSplitAtMidnight(containing: LocalDate): Int {
+        val w = week(containing)
+        return w.totalMinutes - afterMidnight(resolver.resolve(w.end)) + afterMidnight(resolver.resolve(w.start.minusDays(1)))
+    }
+
+    /** The rostered minutes of [day] that fall after midnight, 0 when the shift ends the same day. */
+    private fun afterMidnight(day: com.bamnat.core.schedule.ResolvedDay): Int {
+        val s = day.start ?: return 0
+        val e = day.end ?: return 0
+        if (day.scheduledMinutes <= 0 || e.isAfter(s)) return 0
+        val span = com.bamnat.core.model.WorkTime.spanMinutes(s, e)
+        val after = e.toSecondOfDay() / 60
+        return Math.round(day.scheduledMinutes.toDouble() * after / span).toInt()
+    }
+
     fun month(month: YearMonth): MonthSummary {
         val days = resolver.resolveRange(month.atDay(1), month.atEndOfMonth())
         val weeks = generateSequence(weekStartOf(month.atDay(1))) { it.plusWeeks(1) }

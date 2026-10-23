@@ -54,6 +54,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -273,8 +274,8 @@ fun PatternScreen(
 
                 // Right under the input so each tap shows its effect on the calendar at once.
                 if (draft != null) {
-                    SectionCard(title = "미리보기 (오늘부터 3주)") {
-                        PatternPreview(types = types, pattern = draft, from = today)
+                    SectionCard(title = "미리보기") {
+                        PatternPreview(types = types, pattern = draft, today = today, weekStart = vm.settings.value.weekStart)
                         // [REST-02][REST-03] The new order read with the 근무표 점검 before it is saved.
                         val (speed, issues) = remember(types, draft) { vm.previewIssues(types, draft, today) }
                         PatternCheck(speed, issues)
@@ -386,8 +387,8 @@ fun PatternScreen(
                     }
                 }
                 if (draft != null) {
-                    SectionCard(title = "미리보기 (오늘부터 3주)") {
-                        PatternPreview(types = types, pattern = draft, from = today)
+                    SectionCard(title = "미리보기") {
+                        PatternPreview(types = types, pattern = draft, today = today, weekStart = vm.settings.value.weekStart)
                         // [REST-02][REST-03] The new order read with the 근무표 점검 before it is saved.
                         val (speed, issues) = remember(types, draft) { vm.previewIssues(types, draft, today) }
                         PatternCheck(speed, issues)
@@ -669,36 +670,26 @@ private fun DateRow(label: String, date: LocalDate, onClick: () -> Unit) {
     }
 }
 
+/**
+ * [SCHED-06] I 리뷰 I11: the order shown over a whole month, the same month view the first setup uses
+ * ([com.bamnat.app.ui.setup.SetupMonth]), from this month up to a year ahead, so a 격주 토요일 or a 공휴일 off is
+ * seen where it falls rather than in a strip of three weeks.
+ */
 @Composable
-private fun PatternPreview(types: List<ShiftType>, pattern: WorkPattern, from: LocalDate) {
-    val resolver = remember(types, pattern) { ScheduleResolver(types, pattern, emptyList()) }
-    val cal = LocalCalendarColors.current
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (i in 0 until 21) {
-            val date = from.plusDays(i.toLong())
-            val day = resolver.resolve(date)
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(36.dp)) {
-                Text(
-                    Fmt.dayOfWeekShort(date.dayOfWeek),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = when (date.dayOfWeek) {
-                        DayOfWeek.SUNDAY -> cal.sunday
-                        DayOfWeek.SATURDAY -> cal.saturday
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-                Text("${date.dayOfMonth}", style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center)
-                Spacer(Modifier.height(2.dp))
-                val t = day.shiftType
-                if (t != null) ShiftBadge(t, size = 22.dp, outlined = t.isOff) else Spacer(Modifier.height(22.dp))
-                Text(
-                    if (day.scheduledMinutes > 0) HoursFormat.short(day.scheduledMinutes) else "",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
+private fun PatternPreview(types: List<ShiftType>, pattern: WorkPattern, today: LocalDate, weekStart: DayOfWeek) {
+    val thisMonth = java.time.YearMonth.from(today)
+    var month by rememberSaveable { mutableStateOf(thisMonth.toString()) }
+    val shown = java.time.YearMonth.parse(month)
+    com.bamnat.app.ui.setup.SetupMonth(
+        month = shown,
+        snapshot = remember(types, pattern) { com.bamnat.app.data.ScheduleSnapshot(types, pattern, emptyList()) },
+        weekStart = weekStart,
+        today = today,
+        selected = null,
+        onMonth = { month = it.toString() },
+        first = thisMonth,
+        last = thisMonth.plusMonths(12),
+    )
 }
 
 /**

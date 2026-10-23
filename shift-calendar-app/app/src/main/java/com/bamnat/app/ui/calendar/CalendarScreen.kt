@@ -956,6 +956,17 @@ fun CalendarScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
             }
+            // [CAL-31] I 리뷰 N10: past the checked table the red days are worked out, without 임시공휴일 or 선거일.
+            if (com.bamnat.core.holiday.KoreanHolidays.isComputed(visibleMonth.year) &&
+                (1..visibleMonth.lengthOfMonth()).any { com.bamnat.core.holiday.KoreanHolidays.isHoliday(visibleMonth.atDay(it)) }
+            ) {
+                Text(
+                    "${visibleMonth.year}년 공휴일은 계산값이에요. 임시공휴일·선거일은 빠질 수 있어요.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
+                )
+            }
             // [CAL-06][CAL-08] The month's shifts at a glance, what the marks mean, and grid or list.
             val showList = listView && paint == null
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1613,6 +1624,8 @@ private fun HoursLine(
     modifier: Modifier = Modifier,
 ) {
     val week = remember(calculator, selected) { calculator.week(selected) }
+    // [CAL-32] I 리뷰 P9: a night shift over the week's edge is counted on the day it starts; say the other way once.
+    val split = remember(calculator, selected) { calculator.weekSplitAtMidnight(selected) }
     val three = remember(calculator, month) { calculator.threeMonths(month) }
     val cal = LocalCalendarColors.current
     Surface(
@@ -1625,6 +1638,10 @@ private fun HoursLine(
             FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 HoursPart("이 주", HoursFormat.korean(week.totalMinutes),
                     limits.weeklyLimitHours.takeIf { week.overLimit }, cal.warning)
+                if (split != week.totalMinutes) {
+                    Text("자정에 나눠 세면 ${HoursFormat.korean(split)}", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 // Its own limit (52), not the week's (64), so the number it is over is said.
                 HoursPart("3개월 주평균", HoursFormat.korean(Math.round(three.averageWeeklyMinutes).toInt()),
                     limits.threeMonthAverageLimitHours.takeIf { three.overLimit }, cal.warning)
