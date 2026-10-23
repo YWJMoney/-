@@ -134,10 +134,7 @@ fun PatternScreen(
         if (draft != null) {
             // With a pattern already in place, ask whether this is a team change and from when.
             if (existing == null) vm.saveFirstPattern(draft, onSaved ?: onBack)
-            // [SET-04] The same order with only "오늘은 몇 번째 날" moved is a fix, not a team change: no question
-            // whose first button would undo it (ux-review 1 P9).
-            else if (existing is WorkPattern.Rotation && draft is WorkPattern.Rotation && existing.steps == draft.steps &&
-                existing.endDate == draft.endDate) vm.fixCurrentPattern(draft, onBack)
+            else if (savesWithoutAsking(existing, draft, today)) vm.fixCurrentPattern(draft, onBack)
             else askWhen = true
         }
     }
@@ -462,6 +459,15 @@ fun PatternScreen(
 private const val MAX_STEPS = 62
 
 /** One period in the history, e.g. "2024.10.14 – 2026.11.30 · 주주휴휴야야". */
+/**
+ * [SET-04] The same order with only "오늘은 몇 번째 날" moved, on a pattern that has no past days yet, is a fix:
+ * no "언제부터" question whose first button would undo it (ux-review 1 P9). With past days the same change is a
+ * team change (4조 2교대 moving teams), so it is asked and the past keeps the old team.
+ */
+internal fun savesWithoutAsking(existing: WorkPattern, draft: WorkPattern, today: LocalDate): Boolean =
+    existing is WorkPattern.Rotation && draft is WorkPattern.Rotation && existing.steps == draft.steps &&
+        existing.endDate == draft.endDate && !existing.startDate.isBefore(today)
+
 @Composable
 private fun PatternHistoryRow(pattern: WorkPattern, typesById: Map<Long, ShiftType>, today: LocalDate) {
     val current = pattern.covers(today)
