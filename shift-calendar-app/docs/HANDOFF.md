@@ -1,11 +1,25 @@
 # 밤낮 인수인계 (다른 계정에서 이어 가기)
 
-마지막 정리 2026-10-22, 앱 1.21.0(versionCode 32, 워치 100032) 기준이에요. 맨 위 0항이 지금 판(1.21.0), 0-1항이 1.20.0, 0-2항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
+마지막 정리 2026-10-23, 앱 1.22.0(versionCode 33, 워치 100033) 기준이에요. 맨 위 0항이 지금 판(1.22.0), 0-0항이 1.21.0, 0-1항이 1.20.0, 0-2항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
 
 이 저장소는 공개예요(GitHub Pages로 처리방침을 올려요). 그래서 이 문서에는 비밀값, 서명 키, 사용자 개인 정보를 적지 않아요.
 그런 것은 사용자가 새 프로젝트에 파일로 따로 올려요(7항). 새 계정의 Claude는 이 문서와 그 비공개 메모를 먼저 읽고 시작해요.
 
-## 0. 지금 판: 1.21.0 사용자 제안 (2026-10-22)
+## 0. 지금 판: 1.22.0 Phase 2 완료판 (2026-10-23)
+
+남은 Phase 2의 Claude 몫을 개발 스레드 일곱 묶음(A~G)으로 나눠 통합 브랜치 `claude/project-thread-kz90cm`에 합친 한 판이에요(PR #51~#73). DB는 19(연차 원장)이고 Room은 `:database` 모듈로 옮겼어요. 남은 체크리스트 줄은 모두 사용자·바깥 몫이에요(비공개 `계획/Phase2-완료-체크리스트.md`, `인계/다음-스레드-시작-1.23.md`).
+
+- **처음 화면과 설정(묶음 G)**: `ui/onboarding/RecommendedScreen.kt`('추천대로 켜고 시작하기' 한 번에 권한과 알림, 사용 통계는 미리 체크 안 함), `data/RecommendedSettings.kt`, 설정 7묶음 `SettingsPage`(내 근무·알람·알림과 잠·급여와 연차·달력 화면·데이터·개인정보·앱 정보) + '더 보기'. `SettingsLayoutTest`는 '설정 › X'가 있는 묶음 이름인지 봐요. 기존 사용자 설정은 바꾸지 않아요(D50).
+- **원격 계산 자료(묶음 A)**: 저장소 맨 위 `remote/v1/*.json`과 `.sig`를 GitHub Pages에서 하루 한 번 받아요(`gradle.properties` `bamnat.remoteBaseUrl`). core `remote/Ed25519.kt`(순수 Kotlin 검증), `RemoteFile.kt`, `PresetFile.kt`, 앱 `remote/`. 서명은 `tools/remote_sign.py sign --key <비공개 경로>` 뒤 `check`. 실수령 `pay/TakeHome.kt`는 간이세액표와 비과세(식대 등 항목마다 월 20만 원)를 써요.
+- **서버·광장·통계(묶음 B)**: 회사 서버 광장 소식 하루 한 번, 사용자 차단(글마다 암호화한 글쓴이 표시), 문의 사진(D1 BLOB), 동의한 사용 통계(날짜별 합계, 400일), 가려진 글 30일 확인 경고. 공유 서버 신고·삭제. `community/` 광장 운영 규칙, `terms/` 제16조 ②.
+- **직군·근무표(묶음 C)**: core `schedule/RestRules.kt`(점검 기준 하나, 기본에서 흔한 정상 근무표는 경고 0건 `NormalRostersTest`), `pay/PublicPayTable.kt`(공무원 봉급표, 현업은 57시간 상한 없음), `pay/OrdinaryGuess.kt`(이름으로 통상임금 미리 고르기), 경찰·소방 프리셋, 법정 휴게 `schedule/LegalBreak.kt`.
+- **연차·급여 2단계(묶음 D)**: core `leave/`(원장, 자동 발생, 사용 촉진, 정산), 보상휴가 `LeaveKind.COMP`, 오전 반차(`Leave.fromStart`, 저장 숫자 +100), 엑셀·CSV 듀티표 `imports/`, 포괄·탄력·호봉 규칙. 달력이 연차 사용의 정본이에요(D47).
+- **매일 화면·돈(묶음 E)**: 위젯 메모 줄·오늘 모든 조, 돈 화면 카드 순서, 영수증 글자 인식(기기 안), 백업에 사진(30MB), 반쯤 접힘 `androidx.window`, 시세 견주기, 월말 요약. 시간 표시는 `HoursFormat.korean`.
+- **품질(묶음 F)**: `perf/StartupBudgetTest`(이름 붙은 시작 작업 17), `data/db/MigrationAllVersionsTest`(1~18→19), `a11y/ContrastTest`·`AccessibilityCheckTest`(화면 사진 510~519), Baseline Profile, 시험 격리(`TestIsolationTest`, `BamnatApp.onTerminate`), `tools/check_checklist.py`.
+- **법 문서**: `privacy/index.html` 처리방침 2.8(시행 2026-11-21), `docs/play-data-safety.md` 1.22.0장.
+- **시험 결과(2026-10-23)**: 아래 할 일 문서 `release/1.22.0/사용자가-해야-할-일.md`(비공개)에 적어요.
+
+## 0-0. 앞 판: 1.21.0 사용자 제안 (2026-10-22)
 
 사용자 제안(모든 조·달력 버튼·간호사와 직군·투자 알림·광장 고도화·직군별 광장)을 모두 만들었어요. DB는 18 그대로예요(결정 D40). 다음 판은 1.22.0이에요(비공개 `인계/다음-스레드-시작-1.22.md`).
 
