@@ -133,6 +133,7 @@ fun PatternScreen(
     }
     // [SCHED-02] Past days with a 연차, 잔업·특근 or own times that "지금 순서를 고쳐요" would put under another shift.
     val entries by vm.entries.collectAsStateWithLifecycle()
+    val weekStart = vm.settings.collectAsStateWithLifecycle().value.weekStart
     val moved = remember(existing, draft, entries, today) {
         if (existing != null && draft != null) PatternTimeline.recordedDaysMoved(existing, draft, entries, today) else emptyList()
     }
@@ -275,7 +276,7 @@ fun PatternScreen(
                 // Right under the input so each tap shows its effect on the calendar at once.
                 if (draft != null) {
                     SectionCard(title = "미리보기") {
-                        PatternPreview(types = types, pattern = draft, today = today, weekStart = vm.settings.value.weekStart)
+                        PatternPreview(types = types, pattern = draft, today = today, weekStart = weekStart)
                         // [REST-02][REST-03] The new order read with the 근무표 점검 before it is saved.
                         val (speed, issues) = remember(types, draft) { vm.previewIssues(types, draft, today) }
                         PatternCheck(speed, issues)
@@ -388,7 +389,7 @@ fun PatternScreen(
                 }
                 if (draft != null) {
                     SectionCard(title = "미리보기") {
-                        PatternPreview(types = types, pattern = draft, today = today, weekStart = vm.settings.value.weekStart)
+                        PatternPreview(types = types, pattern = draft, today = today, weekStart = weekStart)
                         // [REST-02][REST-03] The new order read with the 근무표 점검 before it is saved.
                         val (speed, issues) = remember(types, draft) { vm.previewIssues(types, draft, today) }
                         PatternCheck(speed, issues)
