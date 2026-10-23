@@ -77,6 +77,29 @@ class LScreenshotTest : ScreenshotBase() {
     @Test fun checksUnfolded() = shoot("640_l_server_week_share_unfolded", UNFOLDED) { content { Checks() } }
     @Test fun checksFoldedBigFont() = shoot("641_l_server_week_share_folded_200", FOLDED, 2f) { content { Checks() } }
 
+    // [ALRM-04] 증명 사진 (순번 340): 715~719.
+    @Test fun photoReferencesFolded() = shoot("715_l_photo_reference_settings_folded", FOLDED) { photoSettings() }
+    @Test fun photoMissionFolded() = shoot("716_l_photo_mission_folded", FOLDED) { photoMission(wrong = 0) }
+    @Test fun photoMissionWrongFolded() = shoot("717_l_photo_mission_wrong_folded", FOLDED) { photoMission(wrong = 1) }
+    @Test fun photoMissionFoldedBigFont() = shoot("718_l_photo_mission_folded_200", FOLDED, 2f) { photoMission(wrong = 2) }
+    @Test fun photoReferencesDark() = shoot("719_l_photo_reference_settings_dark", "w369dp-h905dp-port-night-420dpi") { photoSettings() }
+
+    private fun Screen.photoSettings() {
+        val refs = app.container.photoReferences
+        refs.clear()
+        refs.add(0x5A5A0F0F33CC66AAL, "욕실 거울", at = java.time.Instant.parse("2026-10-21T22:10:00Z").toEpochMilli())
+        app.container.settingsRepository.update { it.copy(alarmMission = com.bamnat.core.alarm.AlarmMission.PHOTO.key) }
+        settingsPage("알람"); reveal(com.bamnat.app.ui.settings.PHOTO_ROW, exact = true); reveal("지금 한 장 더", exact = true)
+    }
+
+    private fun Screen.photoMission(wrong: Int) {
+        val since = System.currentTimeMillis() - 50_000
+        content {
+            com.bamnat.app.alarm.MissionScreen(com.bamnat.core.alarm.AlarmMission.PHOTO, since, 5, onSnooze = {}, onDone = {},
+                references = listOf(1L), place = "욕실 거울", wrongBefore = wrong)
+        }
+    }
+
     private fun board(name: String, qualifiers: String, fontScale: Float = 1f) {
         val vm = ShareGroupViewModel(app.container, today = { day })
         fun week(vararg t: Long?) = SharedSchedule.parse(JSONObject().put("title", "x")
