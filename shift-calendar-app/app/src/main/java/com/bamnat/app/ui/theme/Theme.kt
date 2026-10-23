@@ -112,6 +112,26 @@ data class CalendarColors(
     val nap: Color = Color(0xFFA5ADF0),
     val sleepContainer: Color = Color(0xFFCDD1FB),
     val onSleepContainer: Color = Color(0xFF1F287A),
+    /**
+     * [VIS-03] Leave marks (연·반·¼ squares and the leave lines): violet for 연차, blue for other paid leave,
+     * grey for unpaid, teal for 보상휴가 [FEAT-10, PAYX-18]. Letters on them come from contentColorOn (4.45:1),
+     * and the square itself stands out from the page at 3:1 (ContrastTest).
+     */
+    val leaveAnnual: Color = Color(0xFF7048E8),
+    val leavePaid: Color = Color(0xFF1A75CC),
+    val leaveUnpaid: Color = Color(0xFF666E77),
+    val leaveComp: Color = Color(0xFF0B7F92),
+    /**
+     * [VIS-03] The pay lines' colours, matching the walkthrough's time bar; the base pay line is the theme's
+     * primary. They are also written as text (an amount's colour), so 4.5:1 on cards and sheets (ContrastTest).
+     */
+    val payOvertime: Color = Color(0xFFA35200),
+    val payNight: Color = Color(0xFF6741D9),
+    val payHoliday: Color = Color(0xFFC92A2A),
+    val payExtra: Color = Color(0xFFC2255C),
+    val payExtraHours: Color = Color(0xFF1864AB),
+    val payAllowance: Color = Color(0xFF237032),
+    val payLeave: Color = Color(0xFF7048E8),
 )
 
 // [VIS-01] Weekend numbers and the extra-hours text reach 4.5:1 on white and on a shift's tint.
@@ -140,6 +160,17 @@ internal val DarkCalendarColors = CalendarColors(
     nap = Color(0xFF5A64B8),
     sleepContainer = Color(0xFF323A7A),
     onSleepContainer = Color(0xFFDFE1FF),
+    leaveAnnual = Color(0xFFB197FC),
+    leavePaid = Color(0xFF74C0FC),
+    leaveUnpaid = Color(0xFFADB5BD),
+    leaveComp = Color(0xFF66D9E8),
+    payOvertime = Color(0xFFFFA94D),
+    payNight = Color(0xFFB197FC),
+    payHoliday = Color(0xFFFF8787),
+    payExtra = Color(0xFFF783AC),
+    payExtraHours = Color(0xFF74C0FC),
+    payAllowance = Color(0xFF69DB7C),
+    payLeave = Color(0xFFB197FC),
 )
 
 val LocalCalendarColors = staticCompositionLocalOf { LightCalendarColors }

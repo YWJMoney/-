@@ -111,7 +111,7 @@ private fun <T> OptionChips(label: String, options: List<Pair<T, String>>, value
         androidx.compose.material3.Text(label, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
             options.forEach { (v, name) ->
-                androidx.compose.material3.FilterChip(selected = v == value, onClick = { onPick(v) }, label = { androidx.compose.material3.Text(name) })
+                com.bamnat.app.ui.components.FilterChip(selected = v == value, onClick = { onPick(v) }, label = { androidx.compose.material3.Text(name) })
             }
         }
     }

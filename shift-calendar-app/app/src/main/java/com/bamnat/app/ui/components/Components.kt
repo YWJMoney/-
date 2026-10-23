@@ -326,6 +326,8 @@ fun MinutesStepper(
     step: Int = 30,
     max: Int = 24 * 60,
     dialogTitle: String = "시간 입력",
+    /** [UX-08] How the value reads ("1시간 30분" by default; a limit in hours can say "52시간"). */
+    format: (Int) -> String = HoursFormat::korean,
 ) {
     var editing by remember { mutableStateOf(false) }
     // Shown value runs ahead of the database so quick repeated taps all count.
@@ -367,7 +369,7 @@ fun MinutesStepper(
             contentAlignment = Alignment.Center,
         ) {
             BasicText(
-                HoursFormat.korean(shown),
+                format(shown),
                 style = style.copy(color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center),
                 maxLines = 1,
                 autoSize = TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = style.fontSize),
@@ -398,9 +400,9 @@ private val STEPPER_VALUE_WIDTH = 104.dp
 
 private const val STEPPER_SAVE_DELAY_MILLIS = 350L
 
-/** A − or + button that steps once on a tap and keeps stepping while held. */
+/** A − or + button that steps once on a tap and keeps stepping while held. [UX-08] Shared with CountStepper. */
 @Composable
-private fun RepeatIconButton(onStep: () -> Unit, enabled: Boolean, content: @Composable () -> Unit) {
+internal fun RepeatIconButton(onStep: () -> Unit, enabled: Boolean, content: @Composable () -> Unit) {
     val step by androidx.compose.runtime.rememberUpdatedState(onStep)
     val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()

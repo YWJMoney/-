@@ -54,7 +54,7 @@ import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Work
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -649,19 +649,23 @@ private fun WorkTimeContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Ca
         )
         if (hasCustom) TextButton(onClick = { vm.clearCustomTimes(day.date) }) { Text("기본 시간으로") }
     }
-    editing?.let { which ->
-        // [DAYW-11] One window for start, end and break, opened on the time that was tapped.
+    editing?.let {
+        // [DAYW-11] One window for start, end and break (J's shared [TimeRangeDialog]).
         TimeRangeDialog(
             title = "${Fmt.monthDay(day.date)} 근무 시간",
             initial = TimeRange(plannedStart, plannedEnd, day.plannedBreakMinutes),
             presets = timePresets(snapshot),
-            startOnEnd = which == "end",
-            note = day.leave?.takeIf { day.leaveShrunk }?.let { "연차 ${HoursFormat.korean(day.leaveMinutes)}은 저장한 뒤 다시 빼요" },
+            note = listOfNotNull(
+                day.shiftType?.let { t -> if (t.start != null && t.end != null) "원래 ${Fmt.timeRange(t.start!!, t.end!!)}" else null },
+                if (day.leaveShrunk) "연차 ${HoursFormat.korean(day.leaveMinutes)}은 저장한 뒤 다시 빼요" else null,
+            ).joinToString(" · ").ifEmpty { null },
+            confirmLabel = "저장",
             onDismiss = { editing = null },
-        ) {
-            editing = null
-            vm.setDayTimes(day.date, it.start, it.end, it.breakMinutes, day.shiftType)
-        }
+            onConfirm = {
+                editing = null
+                vm.setDayTimes(day.date, it.start, it.end, it.breakMinutes, day.shiftType)
+            },
+        )
     }
 }
 
