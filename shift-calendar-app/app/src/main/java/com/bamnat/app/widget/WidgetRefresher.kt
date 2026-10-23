@@ -33,6 +33,8 @@ object WidgetRefresher {
             if (notice) scheduleNext(app, null)
             return
         }
+        // [OBS-01] 기록 지점 6: one line a day, counted.
+        runCatching { app.appContainer.journal.note(com.bamnat.core.journal.JournalKind.WIDGETS) }
         runCatching {
             TodayWidget().updateAll(app)
             WeekWidget().updateAll(app)

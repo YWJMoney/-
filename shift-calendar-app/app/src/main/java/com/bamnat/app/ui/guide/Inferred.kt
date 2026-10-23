@@ -34,6 +34,7 @@ fun Fact<*>.origin(): String = when (source) {
     Source.TYPED -> "직접 넣었어요"
     Source.SHARED -> "${why ?: "같은 회사 분들의 설정"}에서 받았어요"
     Source.INFERRED -> if (why == null) "급여 설정에서 ‘대략·모르겠어요’로 넣었어요"
+        else if (why == com.bamnat.core.profile.Profile.RECHECK) "‘모두 처음부터’로 다시 확인하는 값이에요"
         else "${why}에서 읽었어요 · ${(confidence * 100).roundToInt()}% 확신"
     Source.DEFAULT -> "몰라서 법대로 가정했어요"
 }

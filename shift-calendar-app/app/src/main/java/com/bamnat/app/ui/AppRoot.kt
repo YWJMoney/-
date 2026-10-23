@@ -244,6 +244,9 @@ private object Routes {
     const val PRO = "pro"
     /** [ONBOARD-04] 추천 기능 한 번에 켜기, from settings and the 1.22 update notice. */
     const val RECOMMENDED = "recommended"
+    // [EASY-08][OBS-02] 1.23 묶음 N.
+    const val PROFILE = "profile"
+    const val JOURNAL = "journal"
 
     fun companyFind(setup: Boolean = false, weekdays: Boolean = false) = "company_find?setup=$setup&weekdays=$weekdays"
     fun company(id: String, setup: Boolean, weekdays: Boolean) = "company/$id?setup=$setup&weekdays=$weekdays"
@@ -1133,6 +1136,8 @@ private fun AppNavHost(
         }
         composable(Routes.FEATURES) { com.bamnat.app.ui.guide.FeatureSwitchesScreen(onBack = { nav.popFrom(Routes.FEATURES) }) }
         composable(Routes.PRO) { com.bamnat.app.ui.pro.ProScreen(onBack = { nav.popFrom(Routes.PRO) }) }
+        composable(Routes.PROFILE) { com.bamnat.app.ui.guide.ProfileScreen(onBack = { nav.popFrom(Routes.PROFILE) }) }
+        composable(Routes.JOURNAL) { com.bamnat.app.ui.guide.JournalScreen(onBack = { nav.popFrom(Routes.JOURNAL) }) }
         composable(Routes.RECOMMENDED) {
             com.bamnat.app.ui.onboarding.RecommendedScreen(container, firstStart = false, onDone = { nav.popFrom(Routes.RECOMMENDED) })
         }
@@ -1293,6 +1298,8 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.PRO -> screen(Routes.PRO)
         Place.RECOMMENDED -> screen(Routes.RECOMMENDED)
         Place.LEAVE -> screen(Routes.leave(cal))
+        Place.PROFILE -> screen(Routes.PROFILE)
+        Place.JOURNAL -> screen(Routes.JOURNAL)
         Place.SETTINGS_WORK, Place.SETTINGS_ALARM, Place.SETTINGS_NOTICES, Place.SETTINGS_PAY,
         Place.SETTINGS_CALENDAR, Place.SETTINGS_DATA, Place.SETTINGS_PRIVACY ->
             link.place.settingsPage()?.let { SettingsLinks.open(it, link.focus) }

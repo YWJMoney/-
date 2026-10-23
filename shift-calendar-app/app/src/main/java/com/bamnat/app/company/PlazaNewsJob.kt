@@ -118,6 +118,8 @@ class PlazaNewsJob : JobService() {
                 .setAutoCancel(true)
                 .build()
             Notifications.post(c.appContext, Notifications.PLAZA_ID, n)
+            // [OBS-01] 기록 지점 10.
+            c.journal.note(com.bamnat.core.journal.JournalKind.NEWS)
         }
 
         /** What came from the server: the plaza part (empty when it is not asked), answers and notice titles. */

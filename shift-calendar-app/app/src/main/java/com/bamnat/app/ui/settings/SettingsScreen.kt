@@ -700,6 +700,9 @@ private fun SettingsHub(
         if (unread > 0) NewAnswerLine(unread, onOpenInquiry)
         AlarmReadyCard(vm, settings, refresh, askNotifications, onOpenDiagnostics, onOpenShiftTypes)
         Spacer(Modifier.size(4.dp))
+        // [EASY-08][OBS-03] 내 정보 (알고 있는 것·추정·모르는 것) and 밤낮이 한 일, before the groups.
+        com.bamnat.app.ui.guide.EasyStatusCard()
+        Spacer(Modifier.size(4.dp))
         Shortcuts(onFound)
         Spacer(Modifier.size(4.dp))
         val work by vm.workSettings.collectAsStateWithLifecycle()

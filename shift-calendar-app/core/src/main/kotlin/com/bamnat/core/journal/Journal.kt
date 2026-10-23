@@ -96,10 +96,23 @@ object Journal {
         return if (n > 1) "$what · ${n}번" else what
     }
 
-    /** [OBS-02] "오늘 한 일 3개": the home line, by kinds rather than repeats. */
+    /**
+     * What happens every day the app is opened (the next alarm planned again, widgets redrawn): listed, but not
+     * worth the home line on its own.
+     */
+    val ROUTINE = setOf(JournalKind.ALARMS_PLANNED, JournalKind.WIDGETS)
+
+    /**
+     * [OBS-02] "오늘 밤낮이 한 일 3개": the home line, by kinds rather than repeats; none on a day of nothing
+     * but [ROUTINE].
+     */
     fun todayLine(entries: List<JournalEntry>, zone: ZoneId, today: LocalDate): String? {
         val kinds = entries.filter { it.day(zone) == today }.map { it.kind }.distinct()
-        if (kinds.isEmpty()) return null
+        if (kinds.none { it !in ROUTINE }) return null
         return "오늘 밤낮이 한 일 ${kinds.size}개"
     }
+
+    /** [OBS-02] 설정 › 밤낮이 한 일: the days newest first, each day's lines newest first. */
+    fun byDay(entries: List<JournalEntry>, zone: ZoneId): List<Pair<LocalDate, List<JournalEntry>>> =
+        entries.groupBy { it.day(zone) }.toSortedMap(compareByDescending { it }).map { (d, list) -> d to list.sortedByDescending { it.at } }
 }

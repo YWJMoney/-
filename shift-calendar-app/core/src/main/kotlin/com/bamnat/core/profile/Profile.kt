@@ -51,6 +51,12 @@ object Profile {
     const val MIN_CONFIDENCE = 0.5
 
     /**
+     * [EASY-09] The [FactMeta.why] of a value 모두 처음부터 asks again: kept as it is meanwhile, read as a
+     * guess, and asked one at a time until the user says it again (or changes it anywhere).
+     */
+    const val RECHECK = "모두 처음부터"
+
+    /**
      * A short stable digest of a value as its store writes it, for [FactMeta.fingerprint]. Not a secret and
      * not reversible on purpose: the meta file never holds an amount or a name.
      */

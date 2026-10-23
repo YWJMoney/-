@@ -79,6 +79,9 @@ object LeaveReminder {
             .setAutoCancel(true)
             .build()
         Notifications.post(context, Notifications.LEAVE_ID, notification)
+        // [OBS-01] 기록 지점 8: the days left, not the pay they are worth.
+        val left = if (days % 1.0 == 0.0) "${days.toInt()}일" else "${days}일"
+        runCatching { context.appContainer.journal.note(com.bamnat.core.journal.JournalKind.LEAVE_NOTICE, left) }
     }
 }
 

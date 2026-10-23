@@ -118,6 +118,12 @@ class AppContainer(context: Context) {
      * calendar fails, it goes to the main one rather than being lost.
      */
     suspend fun capture(text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean): MoneyRepository.Outcome =
+        captureInto(text, pkg, app, postedAt, fromMessenger).also {
+            // [OBS-01] 기록 지점 9: how many, never what or how much.
+            if (it == MoneyRepository.Outcome.SAVED) journal.note(com.bamnat.core.journal.JournalKind.MONEY_CAPTURED)
+        }
+
+    private suspend fun captureInto(text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean): MoneyRepository.Outcome =
         captureLock.withLock {
             // [INV-30] A broker's 체결 notification goes to the investor calendar, not the ledger.
             runCatching { com.bamnat.app.invest.TradeCapture.take(this, text, pkg, app, postedAt, fromMessenger) }
@@ -276,7 +282,7 @@ class AppContainer(context: Context) {
      */
     fun syncPro(force: Boolean = false) = appScope.launch {
         runCatching { remoteConfig.refresh(tierApi, force = force) }
-        runCatching { remoteFiles.refresh() }
+        runCatching { remoteFiles.refresh() }.getOrNull()?.let(::noteRemote)
         // [STAT-01] Yesterday's counts, once a day, only with the user's yes and the developer's switch on.
         runCatching {
             usageStats.sendIfDue(settingsRepository.current.shareUsageStats && !remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.USAGE_STATS))
@@ -290,6 +296,15 @@ class AppContainer(context: Context) {
         if (featureGate.state.value.access.reason == com.bamnat.core.tier.ProReason.SUBSCRIPTION) {
             telemetry.event(com.bamnat.core.stats.UsageEvent.PRO_SUB.key)
         }
+    }
+
+    /** [OBS-01] 기록 지점 2·3·4: new files, and what they changed (the holidays, the pay worked out again). */
+    private fun noteRemote(kinds: List<String>) {
+        if (kinds.isEmpty()) return
+        val f = com.bamnat.core.remote.RemoteFiles
+        journal.note(com.bamnat.core.journal.JournalKind.REMOTE_FILE, "${kinds.size}개")
+        if (f.HOLIDAYS in kinds) journal.note(com.bamnat.core.journal.JournalKind.HOLIDAYS)
+        if (kinds.any { it in setOf(f.RATES, f.WAGES, f.TAXTABLE, f.PUBLICPAY, f.TAXES) }) journal.note(com.bamnat.core.journal.JournalKind.PAY_RECALC)
     }
 
     /**
@@ -365,6 +380,8 @@ class AppContainer(context: Context) {
         const val LATER_FALLBACK_MILLIS = 3_000L
         /** [MON-09] Often enough for the admin link's weekly check, rare enough to stay quiet. */
         val PASSES_EVERY: java.time.Duration = java.time.Duration.ofHours(6)
+        /** [OBS-01] The next alarm in '밤낮이 한 일': "10/24 06:30". */
+        val JOURNAL_ALARM: java.time.format.DateTimeFormatter = java.time.format.DateTimeFormatter.ofPattern("MM/dd HH:mm")
     }
 
     suspend fun rescheduleAlarms(after: LocalDateTime = LocalDateTime.now()) {
@@ -429,6 +446,8 @@ class AppContainer(context: Context) {
                 .debounce(300)
                 .collect { (ringing, on) ->
                     alarmScheduler.reschedule(ringing, on)
+                    // [OBS-01] 기록 지점 1: a line only when the next alarm moved.
+                    alarmScheduler.upcoming.value?.let { journal.noteIfChanged(com.bamnat.core.journal.JournalKind.ALARMS_PLANNED, it.plan.triggerAt.format(JOURNAL_ALARM)) }
                     WidgetRefresher.refresh(appContext)
                 }
         }

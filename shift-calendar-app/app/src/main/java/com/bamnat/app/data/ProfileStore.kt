@@ -55,6 +55,49 @@ class ProfileStore(private val c: AppContainer, private val dir: File = File(c.a
     /** [EASY-09] 모두 처음부터: where every fact came from is forgotten; the values stay where they are. */
     suspend fun forget(calendarId: String) = lock.withLock { withContext(Dispatchers.IO) { file(calendarId).delete() } }
 
+    /**
+     * [EASY-09] 모두 처음부터 for [calendarId]: every value it knows is asked again, one at a time, as if the
+     * app had only guessed it ([Profile.RECHECK]), and the questions put off are asked again too. The values
+     * themselves, the shifts, the pay and every record stay as they are meanwhile. What it was before is kept
+     * [UNDO_DAYS] days for [undoStartOver].
+     */
+    suspend fun startOver(calendarId: String, asks: AskStore, now: Instant = Instant.now()) {
+        val values = values(c.scopeOf(calendarId))
+        val known = facts(calendarId).values.filter { it.known }.map { it.key }
+        lock.withLock { withContext(Dispatchers.IO) {
+            val meta = file(calendarId).takeIf { it.exists() }?.readText()
+            val o = JSONObject().put("at", now.toEpochMilli()).putOpt("meta", meta).put("asks", AskStore.encode(asks.of(calendarId)))
+            dir.mkdirs()
+            reset(calendarId).writeText(o.toString())
+        } }
+        lock.withLock {
+            writeMeta(calendarId, known.associate { k -> k.id to Profile.written(values[k]?.value, Source.INFERRED, Profile.MIN_CONFIDENCE, now, Profile.RECHECK) })
+        }
+        // Today's count stays, so starting over does not ask more today than any other day.
+        asks.set(calendarId, asks.of(calendarId).copy(current = null, snoozedUntil = emptyMap(), snoozes = emptyMap()))
+    }
+
+    /** [EASY-09] When 모두 처음부터 can still be taken back, or null. */
+    suspend fun startedOver(calendarId: String, now: Instant = Instant.now()): Instant? = withContext(Dispatchers.IO) {
+        runCatching {
+            val f = reset(calendarId)
+            if (!f.exists()) return@runCatching null
+            val at = Instant.ofEpochMilli(JSONObject(f.readText()).getLong("at"))
+            if (java.time.Duration.between(at, now).toDays() >= UNDO_DAYS) { f.delete(); null } else at
+        }.getOrNull()
+    }
+
+    /** [EASY-09] 되돌리기: the sources and the put-off questions as they were before 모두 처음부터. */
+    suspend fun undoStartOver(calendarId: String, asks: AskStore): Boolean = lock.withLock {
+        val o = withContext(Dispatchers.IO) { runCatching { JSONObject(reset(calendarId).readText()) }.getOrNull() } ?: return@withLock false
+        withContext(Dispatchers.IO) {
+            o.optString("meta").takeIf { it.isNotEmpty() }?.let { dir.mkdirs(); file(calendarId).writeText(it) }
+            reset(calendarId).delete()
+        }
+        asks.set(calendarId, AskStore.decode(o.optJSONObject("asks")?.toString()))
+        true
+    }
+
     /** [EASY-03] For the backup (결정 N-D4): each calendar's meta as it is kept. */
     fun export(): Map<String, String> =
         dir.listFiles { f -> f.name.endsWith(".json") }.orEmpty().filter { it.name != "${PersonalCalendar.EXAMPLE}.json" }
@@ -69,6 +112,8 @@ class ProfileStore(private val c: AppContainer, private val dir: File = File(c.a
     internal suspend fun adapted(calendarId: String): Set<FactKey> = values(c.scopeOf(calendarId)).keys
 
     private fun file(calendarId: String) = File(dir, "$calendarId.json")
+    /** Not ".json": the backup takes those, and what was forgotten is not carried to another phone. */
+    private fun reset(calendarId: String) = File(dir, "$calendarId.reset")
 
     private suspend fun meta(calendarId: String): Map<String, FactMeta> = withContext(Dispatchers.IO) {
         runCatching {
@@ -144,6 +189,8 @@ class ProfileStore(private val c: AppContainer, private val dir: File = File(c.a
 
     companion object {
         private val SAFE_ID = Regex("[A-Za-z0-9_-]{1,64}")
+        /** [EASY-09] As long as 최근 지운 기록 keeps what was cleared. */
+        const val UNDO_DAYS = 7L
 
         fun encode(m: FactMeta): JSONObject = JSONObject()
             .put("s", m.source.name).put("c", m.confidence)

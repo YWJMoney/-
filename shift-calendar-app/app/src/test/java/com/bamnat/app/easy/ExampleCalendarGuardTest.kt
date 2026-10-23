@@ -99,9 +99,9 @@ class ExampleCalendarGuardTest {
 
     @Test fun `on start an example not wanted any more goes`() = runBlocking {
         val today = LocalDate.of(2026, 10, 23)
-        c.example.make(WorkStyle.DAY)
-        // Still looking around: it stays.
+        // Still looking around: it stays. (Browsing before it is made, so the app's own sweep at start keeps it too.)
         c.browse.set(Browse.start(WorkStyle.DAY, today)); c.browse.kept = false
+        c.example.make(WorkStyle.DAY)
         c.example.sweep()
         assertNotNull(c.calendars.get(PersonalCalendar.EXAMPLE))
         // Kept beside the user's own calendar: it stays.

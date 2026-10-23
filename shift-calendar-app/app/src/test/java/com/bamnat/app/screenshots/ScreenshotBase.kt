@@ -449,7 +449,8 @@ abstract class ScreenshotBase {
         /** [SET-01] Opens a group from the settings list. */
         fun settingsPage(title: String, wide: Boolean = false) {
             tab(4, wide)
-            tapText(title, exact = true)
+            // Wide, the list is the left part of the screen: it scrolls there.
+            tapText(title, exact = true, across = if (wide) 0.2f else 0.5f)
         }
 
         /** Replaces the activity's content, for screens that are slow to reach by touch. */
