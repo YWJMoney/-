@@ -86,6 +86,9 @@ class ShareGroupViewModel(private val c: AppContainer, private val today: () -> 
 
     init { if (_ui.value.code != null) refresh() }
 
+    /** For screenshots: the screen as it would be with [ui]. */
+    internal fun show(ui: Ui) { _ui.value = ui }
+
     fun start(ownKey: String) = act {
         val own = c.shareLinksOf(ownKey).link.value ?: throw ShareLinkException("no_link")
         val group = c.shareApi.groupStart(own)
@@ -248,39 +251,42 @@ private fun Board(vm: ShareGroupViewModel, ui: ShareGroupViewModel.Ui, code: Str
     val context = LocalContext.current
     var leaving by remember { mutableStateOf(false) }
     SectionCard(title = "모임 코드") {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(code.chunked(3).joinToString(" "), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f))
-            TextButton(onClick = {
-                val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, ShareGroup.invite(code))
-                runCatching { context.startActivity(Intent.createChooser(send, "모임 코드 보내기")) }
-            }, modifier = Modifier.heightIn(min = 48.dp)) { Text("코드 보내기") }
-        }
+        // The code on one line at any font size, the button under it.
+        Text(code.chunked(3).joinToString(" "), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
+            maxLines = 1, softWrap = false)
+        OutlinedButton(onClick = {
+            val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, ShareGroup.invite(code))
+            runCatching { context.startActivity(Intent.createChooser(send, "모임 코드 보내기")) }
+        }, modifier = Modifier.heightIn(min = 48.dp)) { Text("코드 보내기") }
         Text("${ui.members.size}명 · 링크가 끊기거나 끝나면 저절로 빠져요", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     val from = vm.week
     val rows = ShareGroupBoard.rows(ui.members, from)
+    // Columns grow with the font, and the table scrolls sideways instead of cutting a day.
+    val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceIn(1f, 1.4f)
+    val nameWidth = NAME_WIDTH * scale
+    val cellWidth = CELL_WIDTH * scale
     SectionCard(title = "이번 주 나란히") {
         Row(Modifier.horizontalScroll(rememberScrollState())) {
             Column {
                 Row {
-                    Spacer(Modifier.width(NAME_WIDTH))
+                    Spacer(Modifier.width(nameWidth))
                     (0 until 7).forEach { i ->
                         val d = from.plusDays(i.toLong())
                         Text("${d.monthValue}/${d.dayOfMonth}\n${com.bamnat.app.ui.Fmt.dayOfWeekShort(d.dayOfWeek)}",
-                            style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(CELL_WIDTH).padding(4.dp))
+                            style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(cellWidth).padding(4.dp))
                     }
                 }
                 HorizontalDivider()
                 rows.forEach { r ->
                     Row(Modifier.heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(r.name, style = MaterialTheme.typography.bodyMedium, fontWeight = if (r.mine) FontWeight.Bold else null,
-                            maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(NAME_WIDTH).padding(end = 4.dp))
+                            maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(nameWidth).padding(end = 4.dp))
                         r.cells.forEach { cell ->
                             Text(cell ?: "—", style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
                                 color = if (cell == null || cell == "쉬는 날") MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.width(CELL_WIDTH).padding(4.dp))
+                                modifier = Modifier.width(cellWidth).padding(4.dp))
                         }
                     }
                 }

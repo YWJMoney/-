@@ -127,10 +127,10 @@ object ServerCheck {
 }
 
 @Composable
-internal fun ServerCheckCard() {
+internal fun ServerCheckCard(initial: ServerCheck.Facts? = null) {
     val c = LocalContext.current.appContainer
     val scope = rememberCoroutineScope()
-    var facts by remember { mutableStateOf<ServerCheck.Facts?>(null) }
+    var facts by remember { mutableStateOf(initial) }
     var busy by remember { mutableStateOf(false) }
     SectionCard(title = "서버 연결") {
         val f = facts
@@ -243,7 +243,13 @@ fun ConsentSummarySheet(onDismiss: () -> Unit) {
     val c = context.appContainer
     val lines = remember { ConsentSummary.lines(ConsentSummary.facts(context, c)) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding()) {
+        ConsentSummaryList(lines, Modifier.navigationBarsPadding()) { onDismiss(); ConsentSummary.change(context, it) }
+    }
+}
+
+@Composable
+internal fun ConsentSummaryList(lines: List<ConsentSummary.Line>, modifier: Modifier = Modifier, onChange: (ConsentSummary.Change) -> Unit) {
+        Column(modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             Text("보내는 것과 권한 한눈에", style = MaterialTheme.typography.titleLarge)
             Text("내가 고른 것과 휴대폰이 허용한 것을 한 장에 모았어요. ‘바꾸기’를 누르면 바꾸는 곳이 열려요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -257,11 +263,10 @@ fun ConsentSummarySheet(onDismiss: () -> Unit) {
                             color = if (line.on) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error)
                     }
                     Spacer(Modifier.width(8.dp))
-                    TextButton(onClick = { onDismiss(); ConsentSummary.change(context, line.change) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    TextButton(onClick = { onChange(line.change) }, modifier = Modifier.heightIn(min = 48.dp)) {
                         Text("바꾸기")
                     }
                 }
             }
         }
-    }
 }
