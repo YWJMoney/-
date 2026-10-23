@@ -417,7 +417,8 @@ private fun PayResult(
                     enabled = unlocked,
                     onEdit = { editTarget = ValueTarget.Item(item.id) },
                     onRaise = { if (bulkOpen) raiseTarget = ValueTarget.Item(item.id) else openPro() },
-                    ordinary = item.ordinary,
+                    // Only a monthly allowance can raise the 통상시급, so only it has the switch.
+                    ordinary = item.ordinary.takeIf { item.cadence == Cadence.MONTHLY && !item.isFixedOvertime },
                     onOrdinary = { on -> vm.updateItem(item.id) { it.copy(ordinary = on) } },
                     onRemove = { vm.removeItem(item.id) },
                     onEstimate = { estimate = Estimates.forValue(profile, month, item) },
@@ -841,10 +842,12 @@ private fun ValueRow(
             IconButton(onClick = onEdit, enabled = enabled) { Icon(Icons.Filled.Edit, "값 바꾸기") }
             IconButton(onClick = onRaise, enabled = enabled) { Icon(Icons.Filled.TrendingUp, "인상 규칙") }
         }
-        if (ordinary != null && onOrdinary != null) {
+        if ((ordinary != null && onOrdinary != null) || onRemove != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("통상임금에 포함", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                Switch(checked = ordinary, onCheckedChange = onOrdinary, enabled = enabled)
+                if (ordinary != null && onOrdinary != null) {
+                    Text("통상임금에 포함", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    Switch(checked = ordinary, onCheckedChange = onOrdinary, enabled = enabled)
+                } else Spacer(Modifier.weight(1f))
                 if (onRemove != null) TextButton(onClick = onRemove, enabled = enabled) { Text("삭제") }
             }
         }

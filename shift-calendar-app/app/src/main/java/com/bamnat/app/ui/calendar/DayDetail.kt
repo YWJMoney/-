@@ -685,8 +685,8 @@ private fun RestDayShiftDialog(date: LocalDate, type: ShiftType, onCover: () -> 
 }
 
 /**
- * 연차·반차·반반차 [FEAT-10]. Partial leave comes off the end of the shift; the pay screen and the
- * day's pay follow at once.
+ * 연차·반차·반반차 [FEAT-10]. Partial leave comes off the end of the shift, or off its start for 오전 반차;
+ * the pay screen and the day's pay follow at once.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -694,13 +694,27 @@ private fun LeaveContent(day: ResolvedDay, vm: CalendarViewModel) {
     val leave = day.leave
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         for (q in Leave.QUARTER_OPTIONS) {
-            val option = Leave(leave?.kind ?: LeaveKind.ANNUAL, q)
+            val option = Leave(leave?.kind ?: LeaveKind.ANNUAL, q, fromStart = leave?.fromStart == true)
             FilterChip(
                 selected = leave?.quarters == q,
                 onClick = { vm.setLeave(day.date, if (leave?.quarters == q) null else option) },
                 label = { Text(when (q) { 4 -> "종일"; 2 -> "반차"; 1 -> "반반차"; else -> "0.75일" }) },
                 leadingIcon = { LeaveMark(option, size = 18.dp) },
             )
+        }
+    }
+    // [LEAVE-06] 오전 반차: the part off comes from the start, so the shift (and its alarm) starts later.
+    // Only for a shift within one day; a night shift keeps its leave at the end.
+    val sameDay = day.shiftType?.let { t -> t.start != null && t.end != null && t.end!!.isAfter(t.start) } == true
+    if (leave != null && !leave.isFullDay && sameDay) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            listOf(true to "오전 · 늦게 출근", false to "오후 · 일찍 퇴근").forEach { (start, label) ->
+                FilterChip(
+                    selected = leave.fromStart == start,
+                    onClick = { vm.setLeave(day.date, leave.copy(fromStart = start)) },
+                    label = { Text(label) },
+                )
+            }
         }
     }
     if (leave != null) {

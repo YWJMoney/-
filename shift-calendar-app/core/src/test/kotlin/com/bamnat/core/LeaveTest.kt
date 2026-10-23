@@ -42,6 +42,35 @@ class LeaveTest {
     }
 
     @Test
+    fun `a morning half day comes off the start, so the shift starts later`() {
+        // [LEAVE-06] 오전 반차 of 09~18 (1h break): the same 4 hours and half the break, from 13:30.
+        val d = resolver(DayEntry(wed, leave = Leave(LeaveKind.ANNUAL, 2, fromStart = true))).resolve(wed)
+        assertEquals(LocalTime.of(13, 30), d.start)
+        assertEquals(LocalTime.of(18, 0), d.end)
+        assertEquals(240, d.leaveMinutes)
+        assertEquals(240, d.scheduledMinutes)
+        assertEquals(30, d.breakMinutes)
+        assertEquals("오전 반차", d.leave!!.label)
+        assertEquals("오전 반반차", Leave(quarters = 1, fromStart = true).label)
+        // A night shift keeps it at the end: its work stays on the day it starts.
+        val tue = LocalDate.of(2026, 10, 6)
+        val nights = ScheduleResolver(Fixtures.all, WorkPattern.Rotation(monday, listOf(3L)), listOf(DayEntry(tue, leave = Leave(quarters = 2, fromStart = true))))
+        val n = nights.resolve(tue)
+        assertEquals(LocalTime.of(22, 0), n.start)
+        assertEquals(240, n.scheduledMinutes)
+    }
+
+    @Test
+    fun `a morning half day keeps its side in the stored code and an old code reads as before`() {
+        for (k in LeaveKind.entries) for (q in 1..3) assertEquals(Leave(k, q, fromStart = true), Leave.fromCode(Leave(k, q, fromStart = true).code))
+        assertEquals(Leave(LeaveKind.ANNUAL, 2).code + 100, Leave(LeaveKind.ANNUAL, 2, fromStart = true).code)
+        // A whole day has no side: stored as 연차, read back as 연차.
+        assertEquals(Leave().code, Leave(fromStart = true).code)
+        assertEquals(Leave(), Leave.fromCode(Leave(fromStart = true).code))
+        assertEquals(Leave(LeaveKind.COMP, 2), Leave.fromCode(42))
+    }
+
+    @Test
     fun `full day leave clears the work but keeps the shift`() {
         val d = resolver(DayEntry(wed, leave = Leave())).resolve(wed)
         assertTrue(d.isOff)

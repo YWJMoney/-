@@ -132,8 +132,9 @@ class PayViewModel(
         )
     }
 
+    // [PAYS-01] A second setup over an existing one can be undone like any other change ('방금 바꾼 것 되돌리기').
     fun saveSetup(profile: PayProfile) = viewModelScope.launch {
-        payStore.save(profile, keepUndo = false)
+        payStore.save(profile)
         container.telemetry.event("pay_setup_done", profile.occupation.name)
     }
 
