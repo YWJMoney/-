@@ -57,6 +57,11 @@ object Unknowns {
      * year, which is 통상임금 (대법원 2024.12.19. 2020다247190). Written when 13분할 is picked.
      */
     const val ANNUAL_13 = "annual13"
+    /**
+     * [PAYX-24] How the month of joining or leaving is paid (일할): no law sets it, so the company's 취업규칙 decides;
+     * assumed 달력 일수 until the user picks the company's way.
+     */
+    const val PRORATION = "proration"
     /** 휴일 급여 방식, written by the setup of 1.11 and earlier when skipped; no longer asked, a payslip settles it. */
     const val HOLIDAY_PAY_MODE = "holidayPayMode"
     private const val ITEM = "item:"
@@ -85,7 +90,7 @@ object Unknowns {
     fun of(profile: PayProfile, rosterHours: Int? = null): List<Unknown> {
         val ids = profile.items.map { it.id }
         val order = listOf(FIVE_OR_MORE, SUPERVISORY, SCHEDULE_IS_REGULAR, PUBLIC_HOLIDAYS, REST_DAY_WORK, WEEKLY_HOLIDAY, BREAK_PAY) +
-            ids.map(::covers) + listOf(MONTHLY_HOURS, ANNUAL_13, BASE) + ids.map(::item) + HOLIDAY_PAY_MODE + ids
+            ids.map(::covers) + listOf(MONTHLY_HOURS, PRORATION, ANNUAL_13, BASE) + ids.map(::item) + HOLIDAY_PAY_MODE + ids
         val open = profile.estimatedFields + listOfNotNull(WEEKLY_HOLIDAY.takeIf { REST_DAY_WORK in profile.estimatedFields })
         return order.distinct().filter { it in open }.mapNotNull { describe(it, profile, rosterHours) }
     }
@@ -156,6 +161,9 @@ object Unknowns {
                             ordinary = true, months = setOf(12)))
                     }), null)
             }
+            key == PRORATION -> Unknown(key, "입사·퇴사 달 일할", "${particle(rules.proration.label, "으로", "로")} 계산해요",
+                ProrationBasis.entries.filter { it != rules.proration }.map { b -> answer(b.label) { it.withRules { r -> r.copy(proration = b) } } },
+                null)
             key == BASE -> Unknown(key, "${baseName(profile.wageType)} (대략)", "넣은 금액으로 계산해요", emptyList(), null)
             key == HOLIDAY_PAY_MODE -> Unknown(key, "휴일 근무 급여 방식", "${particle(profile.holidayPayMode.label, "으로", "로")} 계산해요",
                 if (profile.wageType != WageType.MONTHLY) emptyList()

@@ -8,7 +8,7 @@ import java.time.LocalDate
  * 특일 정보 data. Dates follow the 월력요항; 임시공휴일 are added when announced.
  */
 object KoreanHolidays {
-    const val VERSION = "2026.10b"
+    const val VERSION = "2026.10c"
 
     private val table: Map<LocalDate, String> = buildMap {
         fun add(y: Int, m: Int, d: Int, name: String) = put(LocalDate.of(y, m, d), name)
@@ -45,7 +45,8 @@ object KoreanHolidays {
         add(2027, 1, 1, "신정")
         add(2027, 2, 6, "설날 연휴"); add(2027, 2, 7, "설날"); add(2027, 2, 8, "설날 연휴"); add(2027, 2, 9, "대체공휴일")
         add(2027, 3, 1, "삼일절")
-        add(2027, 5, 1, "노동절")
+        // [REMOTE-05] 노동절 on a Saturday: 대체공휴일 the Monday (관공서의 공휴일에 관한 규정 제3조 제1항 제1호, 대통령령 제36290호).
+        add(2027, 5, 1, "노동절"); add(2027, 5, 3, "대체공휴일")
         add(2027, 5, 5, "어린이날")
         add(2027, 5, 13, "부처님오신날")
         add(2027, 6, 6, "현충일")
@@ -142,9 +143,9 @@ object KoreanHolidays {
 
         val base = days.toMap()
         fun weekend(d: LocalDate) = d.dayOfWeek == java.time.DayOfWeek.SATURDAY || d.dayOfWeek == java.time.DayOfWeek.SUNDAY
-        // 근로자의 날 is not a 관공서 공휴일, so it neither causes nor blocks a substitute.
-        // Whether 노동절 itself gets a 대체공휴일 was reported both ways in 2026, so it is left out.
-        val laborDay = setOf("근로자의 날", "노동절")
+        // 근로자의 날 (to 2025) is not a 관공서 공휴일, so it neither causes nor blocks a substitute. [REMOTE-05] 노동절 is one
+        // from 2026-05-01 (규정 제2조 제6호) and gets a 대체공휴일 on a weekend like 삼일절 (제3조 제1항 제1호, 제5호~제7호).
+        val laborDay = setOf("근로자의 날")
         fun overlaps(d: LocalDate) = (base[d] ?: "").split('·').count { it !in laborDay } > 1
         fun substitute(after: LocalDate) {
             var d = after.plusDays(1)
@@ -157,7 +158,8 @@ object KoreanHolidays {
         }
         val children = LocalDate.of(year, 5, 5)
         if (weekend(children) || overlaps(children)) substitute(children)
-        for (d in listOfNotNull(LocalDate.of(year, 3, 1), buddha, constitution, LocalDate.of(year, 8, 15), LocalDate.of(year, 10, 3),
+        val labor = LocalDate.of(year, 5, 1).takeIf { year >= 2026 }
+        for (d in listOfNotNull(LocalDate.of(year, 3, 1), labor, buddha, constitution, LocalDate.of(year, 8, 15), LocalDate.of(year, 10, 3),
             LocalDate.of(year, 10, 9), LocalDate.of(year, 12, 25))) {
             if (weekend(d) && !(d == buddha && children == buddha)) substitute(d)
         }

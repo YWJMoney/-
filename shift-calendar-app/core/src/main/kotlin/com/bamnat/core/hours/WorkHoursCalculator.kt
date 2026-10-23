@@ -7,6 +7,36 @@ import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 import java.time.temporal.TemporalAdjusters
 
+/**
+ * [PAYX-29] 주 52시간의 예외 (근로기준법 법률 제21533호 현행본, research/1.23-K-원문.md 11장). The limit a single week is
+ * held to, counting 연장 12시간 (제53조 제1항): [weeklyHours] null when the law sets none for one week. [averageHours] is
+ * the average over the settlement period for 선택적 근로시간제. The app never decides whether the company's 합의 or 인가
+ * is in place; it only shows the limit of the type the user picked.
+ */
+enum class HoursException(val label: String, val weeklyHours: Int?, val averageHours: Int?, val note: String) {
+    NONE("없음 (주 52시간)", 52, null, "1주 40시간 + 연장 12시간까지예요 (근로기준법 제50조·제53조 제1항)"),
+    FLEX_2W("탄력적 근로시간제 2주", 60, null,
+        "한 주 소정근로 48시간 + 연장 12시간까지예요 (제51조 제1항, 제53조 제2항)"),
+    FLEX_3M("탄력적 근로시간제 3개월·6개월", 64, null,
+        "한 주 52시간·하루 12시간 + 연장 12시간까지예요. 근로자대표와 서면 합의가 있어야 해요 (제51조 제2항, 제51조의2)"),
+    SELECTIVE("선택적 근로시간제", null, 52,
+        "정산기간을 평균해 주 40시간 + 연장 12시간까지예요. 한 주씩은 한도가 없어요 (제52조, 제53조 제2항)"),
+    SPECIAL_EXTENSION("특별연장근로 (인가)", 64, null,
+        "고용노동부 인가를 받은 기간에만 주 12시간을 넘겨 연장할 수 있어요. 늘릴 수 있는 시간은 인가마다 달라요 (제53조 제4항, 확인 필요)"),
+    SPECIAL_INDUSTRY("근로시간 특례 업종", null, null,
+        "육상·수상·항공 운송, 기타 운송서비스, 보건업은 서면 합의로 주 52시간을 넘을 수 있어요. 대신 근무가 끝나면 다음 근무까지 11시간 이상 쉬어야 해요 (제59조)"),
+    SUPERVISORY("감시·단속 (승인)", null, null,
+        "고용노동부 승인을 받은 감시·단속 근로자는 근로시간 한도가 적용되지 않아요 (제63조 제3호)"),
+    ;
+
+    companion object {
+        /** [SPECIAL_INDUSTRY]: 근로일 종료 후 다음 근로일 개시 전까지 연속 11시간 이상의 휴식 (제59조 제2항). */
+        const val REST_MINUTES = 11 * 60
+
+        fun of(name: String?): HoursException = entries.firstOrNull { it.name == name } ?: NONE
+    }
+}
+
 /** Legal-limit thresholds, in hours. Defaults follow the Korean 52h / 64h rules. */
 data class HourLimits(
     /** A single week above this is flagged (주 64시간). */
@@ -15,7 +45,13 @@ data class HourLimits(
     val threeMonthAverageLimitHours: Int = 52,
     /** [EXTRA-02] 주 52시간 (제53조: 40시간 + 연장 12시간); a week above it is pointed out, softer than [weeklyLimitHours]. */
     val legalWeeklyHours: Int = 52,
-)
+    /** [PAYX-29] The 52시간 exception the company uses; its own limit replaces [legalWeeklyHours]. */
+    val exception: HoursException = HoursException.NONE,
+) {
+    /** [PAYX-29] The week's legal limit in minutes, or null when the exception sets none. */
+    val legalWeeklyMinutes: Int?
+        get() = if (exception == HoursException.NONE) legalWeeklyHours * 60 else exception.weeklyHours?.let { it * 60 }
+}
 
 data class WeekSummary(
     val start: LocalDate,
@@ -80,6 +116,8 @@ class WorkHoursCalculator(
     private val weekStart: DayOfWeek = DayOfWeek.MONDAY,
     private val limits: HourLimits = HourLimits(),
 ) {
+    companion object
+
     fun weekStartOf(date: LocalDate): LocalDate =
         date.with(TemporalAdjusters.previousOrSame(weekStart))
 
@@ -97,7 +135,7 @@ class WorkHoursCalculator(
             restDayExtraMinutes = days.filter { it.isRestDay }.sumOf { it.extraMinutes },
             workDays = days.count { it.totalMinutes > 0 },
             overLimit = total > limits.weeklyLimitHours * 60,
-            overLegalMinutes = (total - limits.legalWeeklyHours * 60).coerceAtLeast(0),
+            overLegalMinutes = limits.legalWeeklyMinutes?.let { (total - it).coerceAtLeast(0) } ?: 0,
         )
     }
 
@@ -140,6 +178,22 @@ class WorkHoursCalculator(
             averageMonthlyMinutes = total / 3.0,
             overLimit = avgWeekly > limits.threeMonthAverageLimitHours * 60.0,
         )
+    }
+}
+
+/**
+ * [PAYX-29] For [HoursException.SPECIAL_INDUSTRY]: the days whose work ends less than 11 hours before the next day's work
+ * starts, with the rest in minutes. Shifts and extra work with clock times only; a day with hours only is left out.
+ */
+fun WorkHoursCalculator.Companion.shortRests(days: List<com.bamnat.core.schedule.ResolvedDay>): List<Pair<LocalDate, Int>> {
+    val spans = days.mapNotNull { d ->
+        val starts = listOfNotNull(d.shiftFrom) + d.extras.mapNotNull { it.from }
+        val ends = listOfNotNull(d.shiftTo) + d.extras.mapNotNull { it.to }
+        if (starts.isEmpty() || ends.isEmpty()) null else Triple(d.date, starts.min(), ends.max())
+    }.sortedBy { it.second }
+    return spans.zipWithNext().mapNotNull { (a, b) ->
+        val rest = java.time.Duration.between(a.third, b.second).toMinutes().toInt()
+        if (rest in 0 until HoursException.REST_MINUTES) a.first to rest else null
     }
 }
 

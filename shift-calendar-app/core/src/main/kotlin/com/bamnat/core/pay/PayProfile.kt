@@ -82,6 +82,8 @@ data class PayItem(
      * takes [defaultCovers], so allowances saved before this field keep their totals.
      */
     val covers: Set<LineKind>? = null,
+    /** [PAYX-31] For a bonus paid as [percentOfBase]: the amount the percent is of. */
+    val bonusBasis: BonusBasis = BonusBasis.BASE,
 ) {
     /** How many payments of this bonus fall in [month]: its fixed months plus any 명절 [PAYX-10]. */
     fun timesIn(month: java.time.YearMonth): Int =
@@ -128,6 +130,16 @@ data class PayItem(
         /** [PAYS-03] The premium lines an allowance can stand in for; company rules for extra work never are. */
         val COVERABLE: List<LineKind> = listOf(LineKind.OVERTIME, LineKind.NIGHT, LineKind.HOLIDAY)
     }
+}
+
+/**
+ * [PAYX-31] What a 상여 paid as a percent is a percent of. 취업규칙 say 기본급, 기본급+고정수당 (월정액) or 통상임금; which one
+ * is the company's. The percent is of the month's amounts, bonuses left out, so a bonus never feeds itself.
+ */
+enum class BonusBasis(val label: String) {
+    BASE("기본급"),
+    BASE_FIXED("기본급+고정수당"),
+    ORDINARY("통상임금"),
 }
 
 /** 명절 that a 명절상여 follows [PAYX-10]: lunar 1/1 and 8/15, converted for each year. */
@@ -246,9 +258,40 @@ data class PayProfile(
     val holidayWeekStart: DayOfWeek? = null,
     /** [JOB-02] A public servant's 봉급표 계급·호봉, from which the 봉급 and 수당 are set; null when not picked. */
     val publicGrade: PublicGrade? = null,
+    /**
+     * [PAYX-24] 퇴사: the last day employed (재직 마지막 날), null while employed. With [hireDate] it sets the days the month's
+     * 기본급 is cut to ([CompanyRules.proration]); days after it are not paid.
+     */
+    val leaveDate: LocalDate? = null,
+    /**
+     * [PAYX-25] 생산직 등 근로자 (소득세법 시행령 제17조 제1항: 공장·광산 생산직, 운전원, 경비·청소·돌봄·미용 등 단순노무): its
+     * 연장·야간·휴일 수당 may be 비과세 under the limits of [TakeHome.productionFree].
+     */
+    val productionWorker: Boolean = false,
+    /** [PAYX-25] 직전 과세기간 총급여액 (작년 연봉, 비과세 뺀 것); null when not entered, which is read as within the limit. */
+    val previousYearPay: Long? = null,
 ) {
     /** [HRLY-07] The weekday 주휴 weeks start on. */
     val holidayWeekFrom: DayOfWeek get() = holidayWeekStart ?: weekStart
+
+    /** [PAYX-24] Employed on [date]: on or after [hireDate] and on or before [leaveDate]. */
+    fun employed(date: LocalDate): Boolean = hireDate?.let { !date.isBefore(it) } != false && leaveDate?.let { !date.isAfter(it) } != false
+
+    /**
+     * [PAYX-31] The amount [item]'s percent is of in [month]: 기본급, plus the fixed monthly allowances (not standing in
+     * for premiums) for [BonusBasis.BASE_FIXED], or plus those in 통상임금 for [BonusBasis.ORDINARY].
+     */
+    fun bonusBase(item: PayItem, month: YearMonth): Long {
+        val base = base.on(month).value
+        fun fixed(ordinaryOnly: Boolean) = items.filter {
+            it.cadence == Cadence.MONTHLY && !it.isFixedOvertime && it.coveredKinds.isEmpty() && (!ordinaryOnly || it.ordinary)
+        }.sumOf { it.amount.on(month).value }
+        return when (item.bonusBasis) {
+            BonusBasis.BASE -> base
+            BonusBasis.BASE_FIXED -> base + fixed(false)
+            BonusBasis.ORDINARY -> base + fixed(true)
+        }
+    }
 
     /** [HRLY-06] True when [date] is paid at the 수습 rate. */
     fun onProbation(date: LocalDate): Boolean = probationEnd?.let { date.isBefore(it) } == true && probationPercent in 1..99

@@ -28,7 +28,8 @@ object PublicPayTable {
         val id: String get() = "${series.name}:$name"
     }
 
-    // 경장·소방교 are 8급 상당 and 순경·소방사 9급 상당 (공무원 보수 등의 업무지침, 원문 확인 필요).
+    // [PAYX-28] 경장·소방교 are 8급 상당 and 순경·소방사 9급 상당: 공무원보수규정 별표 34 (일반임기제 연봉등급 기준표, 8호 = 8급 =
+    // 경장·소방교), checked against 공무원보수 등의 업무지침 (예규 제226호) 별표 2 단가 경장 12,584원 = 2,922,200 × 60% ÷ 209 × 1.5.
     private val generalNames = listOf("1급", "2급", "3급", "4급", "5급", "6급", "7급", "8급", "9급")
     private val policeNames = listOf("치안정감", "치안감", "경무관", "총경", "경정", "경감", "경위", "경사", "경장", "순경")
     private val fireNames = listOf("소방정감", "소방감", "소방준감", "소방정", "소방령", "소방경", "소방위", "소방장", "소방교", "소방사")

@@ -410,7 +410,7 @@ private fun PayResult(
             profile.items.forEach { item ->
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 if (item.cadence == Cadence.BONUS) {
-                    BonusRow(item, profile.base.on(month).value, month, unlocked,
+                    BonusRow(item, profile.bonusBase(item, month), month, unlocked,
                         onOrdinary = { on -> vm.updateItem(item.id) { it.copy(ordinary = on) } },
                         onRemove = { vm.removeItem(item.id) })
                     return@forEach
@@ -873,7 +873,7 @@ private fun BonusRow(item: PayItem, base: Long, month: YearMonth, enabled: Boole
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text("${item.name} · ${item.paidWhen()}", style = MaterialTheme.typography.bodyLarge)
         Text(
-            won(item.bonusPayment(base, month)) + (item.percentOfBase?.let { " (기본급 ${PayCalculator.pct(it)})" } ?: "") +
+            won(item.bonusPayment(base, month)) + (item.percentOfBase?.let { " (${item.bonusBasis.label} ${PayCalculator.pct(it)})" } ?: "") +
                 " × 연 ${item.yearlyTimes}회",
             style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
         )

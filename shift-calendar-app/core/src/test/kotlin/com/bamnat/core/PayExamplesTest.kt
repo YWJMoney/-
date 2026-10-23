@@ -37,7 +37,7 @@ class PayExamplesTest {
 
     @Test
     fun `every example says where the law is and never decides`() {
-        assertEquals(4, PayExamples.all.size)
+        assertEquals(5, PayExamples.all.size)
         assertTrue(PayExamples.all.all { "근로기준법" in it.guide })
         assertTrue("판단하지 않아요" in PayExamples.of(PayExamples.Kind.FIXED_OVERTIME).guide)
     }
