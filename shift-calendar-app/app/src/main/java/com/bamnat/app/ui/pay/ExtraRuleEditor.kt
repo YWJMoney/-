@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
@@ -25,6 +24,8 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import com.bamnat.app.ui.components.CountStepper
+import com.bamnat.app.ui.components.StepperRow
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -42,12 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.calendar.TimeBox
@@ -88,8 +84,6 @@ private fun premiumText(p: Premium, nightLabel: String): String = when (p.key) {
 /** Rates people are told in: 0.5 가산 = 50%. */
 private val RATES = listOf(0.25, 0.5, 0.75, 1.0, 1.5, 2.0)
 
-/** In steps of 5%, kept on the step so 50% stays exactly 50%. */
-private fun stepRate(v: Double, by: Int): Double = ((Math.round(v * 20) + by).coerceIn(1L, Math.round(Premium.MAX_RATE * 20))) / 20.0
 
 /** [rule] with [p] in place of the premium of its key, or added: the four always listed first, in order. */
 private fun ExtraRule.with(p: Premium): ExtraRule {
@@ -285,14 +279,13 @@ private fun UnitNumbers(r: ExtraRule, money: UnitMoney?, set: (ExtraRule) -> Uni
                 }
             }
             // In steps of 0.5%, kept on the step so 10% stays exactly 10%.
-            Stepper(ExtraRule.percent(r.percentOfBase), name = "기본급 비율",
-                onMinus = { set(r.copy(percentOfBase = ((Math.round(r.percentOfBase * 200) - 1).coerceIn(1L, 200L)) / 200.0)) },
-                onPlus = { set(r.copy(percentOfBase = ((Math.round(r.percentOfBase * 200) + 1).coerceIn(1L, 200L)) / 200.0)) })
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                Text("기준 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                Stepper(PayCalculator.hours(r.unitMinutes), label = null, name = "기준 시간",
-                    onMinus = { set(r.copy(unitMinutes = (r.unitMinutes - 60).coerceAtLeast(60))) },
-                    onPlus = { set(r.copy(unitMinutes = (r.unitMinutes + 60).coerceAtMost(24 * 60))) })
+            StepperRow("직접") {
+                CountStepper(Math.round(r.percentOfBase * 200).toInt(), { set(r.copy(percentOfBase = it / 200.0)) }, name = "기본급 비율",
+                    range = 1..200, format = { ExtraRule.percent(it / 200.0) })
+            }
+            StepperRow("기준 시간", Modifier.padding(top = 4.dp)) {
+                CountStepper((r.unitMinutes / 60).coerceIn(1, 24), { set(r.copy(unitMinutes = it * 60)) }, name = "기준 시간",
+                    range = 1..24, format = { PayCalculator.hours(it * 60) })
             }
             val perHour = money?.let { Math.round(it.monthlyBase * r.percentOfBase * 60.0 / r.unitMinutes.coerceAtLeast(1)) }
             Hint("${PayCalculator.hours(r.unitMinutes)} 일하면 기본급의 ${ExtraRule.percent(r.percentOfBase)}예요" +
@@ -368,7 +361,11 @@ private fun RateChips(rate: Double, onRate: (Double) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         RATES.forEach { p -> FilterChip(selected = abs(rate - p) < 1e-9, onClick = { onRate(p) }, label = { Text(ExtraRule.percent(p)) }) }
     }
-    Stepper(ExtraRule.percent(rate), name = "가산율", onMinus = { onRate(stepRate(rate, -1)) }, onPlus = { onRate(stepRate(rate, 1)) })
+    // In steps of 5%, kept on the step.
+    StepperRow("직접") {
+        CountStepper(Math.round(rate * 20).toInt(), { onRate(it / 20.0) }, name = "가산율",
+            range = 1..Math.round(Premium.MAX_RATE * 20).toInt(), format = { ExtraRule.percent(it / 20.0) })
+    }
 }
 
 @Composable
@@ -460,11 +457,9 @@ private fun CustomPremiumDialog(
                     choices.forEach { (k, label) -> FilterChip(selected = kind == k, onClick = { kind = k }, label = { Text(label) }) }
                 }
                 when (kind) {
-                    "over" -> Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("이 일", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                        Stepper(PayCalculator.hours(over), label = null, name = "넘는 시간",
-                            onMinus = { over = (over - 60).coerceAtLeast(60) }, onPlus = { over = (over + 60).coerceAtMost(23 * 60) })
-                        Text(" 넘는 시간", style = MaterialTheme.typography.bodyLarge)
+                    "over" -> StepperRow("이 일을 넘는 시간") {
+                        CountStepper((over / 60).coerceIn(1, 23), { over = it * 60 }, name = "넘는 시간",
+                            range = 1..23, format = { PayCalculator.hours(it * 60) })
                     }
                     "window" -> {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -512,24 +507,6 @@ private fun CustomPremiumDialog(
             val m = t.hour * 60 + t.minute
             if (which == "from") from = m else to = m
         }
-    }
-}
-
-/** [VIS-02] − value +: each step ticks, and TalkBack hears what [name] goes up or down. */
-@Composable
-private fun Stepper(value: String, onMinus: () -> Unit, onPlus: () -> Unit, name: String, label: String? = "직접") {
-    val haptics = LocalHapticFeedback.current
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (label != null) Text(label, style = MaterialTheme.typography.labelLarge)
-        OutlinedButton(
-            onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick); onMinus() },
-            modifier = Modifier.semantics { contentDescription = "$name 줄이기" },
-        ) { Text("−") }
-        Text(value, style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center, modifier = Modifier.widthIn(min = 56.dp))
-        OutlinedButton(
-            onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick); onPlus() },
-            modifier = Modifier.semantics { contentDescription = "$name 늘리기" },
-        ) { Text("+") }
     }
 }
 

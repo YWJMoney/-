@@ -262,7 +262,7 @@ object InvestNotices {
     }
 
     /** [INV-08] Re-plans the next investor notice whenever an alarm or date changes, for as long as the app runs. */
-    fun follow(c: AppContainer) = c.appScope.launch {
+    suspend fun follow(c: AppContainer) {
         plans(c).collect { reschedule(c.appContext, it) }
     }
 }

@@ -137,9 +137,11 @@ test("activity names who did it", async () => {
   await call("POST", `/api/admin/groups/${a.data.company.id}/${a.data.setup}/reject`, { reason: "wrong" }, h);
   const log = (await call("GET", "/api/admin/audit", undefined, owner)).data.entries;
   const reject = log.find((e) => e.action === "reject");
-  assert.equal(reject.actor, "민지 <minji@example.com>");
+  // [ADMIN-17] By name only: the email stays on the admins screen.
+  assert.equal(reject.actor, "민지");
   assert.equal(log.find((e) => e.action === "invite").actor, "최고 관리자");
-  assert.equal(log.find((e) => e.action === "join").actor, "민지 <minji@example.com>");
+  assert.equal(log.find((e) => e.action === "join").actor, "민지");
+  assert.ok(!JSON.stringify(log).includes("minji@example.com <"), "no 이름 <메일> left");
 });
 
 test("five wrong passwords lock the account from any network", async (t) => {
@@ -199,8 +201,8 @@ test("with mail set up, the account needs the code sent to the invited email", a
     return new Response("{}", { status: 200 });
   });
   const { call, DB } = server({ MAIL_API_KEY: "re_test", MAIL_FROM: "밤낮 <no-reply@bamnat.example>", OWNER_EMAIL: "owner@example.com" });
-  assert.equal((await call("GET", "/api/admin/health")).data.mail, true);
   const owner = await signIn(call);
+  assert.equal((await call("GET", "/api/admin/server", undefined, owner)).data.mail, true);
   const inv = await call("POST", "/api/admin/invites", { email: "minji@example.com", perms: REVIEWER }, owner);
   const t1 = token(inv.data.link);
   assert.equal((await call("GET", `/api/admin/join?t=${t1}`)).data.mail, true);

@@ -519,7 +519,7 @@ private fun PromotionCard(s: LeaveSummary, records: List<LeavePromotion.Record>,
 private fun PlanCard(s: LeaveSummary, snap: ScheduleSnapshot, style: WorkStyle?, profile: PayProfile?) {
     val plan = remember(s, snap, style) { LeavePlanner.plan(s, LeaveBridges.of(snap, style, s.today)) } ?: return
     SectionCard(title = "없어지기 전에 쓰는 법") {
-        Text("${Fmt.fullDate(plan.lapse)}까지 ${LeaveAccrual.days(plan.lapsing)}가 남아요", style = MaterialTheme.typography.bodyLarge)
+        Text("${Fmt.fullDate(plan.lapse)}에 없어질 연차 ${LeaveAccrual.days(plan.lapsing)}", style = MaterialTheme.typography.bodyLarge)
         if (plan.picks.isEmpty()) {
             Hint("그 전에 공휴일·쉬는 날과 이어지는 날이 없어요. 원하는 날에 나눠 쓰면 돼요.")
         } else {
@@ -527,7 +527,7 @@ private fun PlanCard(s: LeaveSummary, snap: ScheduleSnapshot, style: WorkStyle?,
                 ValueLine("${Fmt.shortDate(b.from)}~${Fmt.shortDate(b.to)} · 연차 ${b.leave.size}일", b.text)
             }
             ValueLine("연차 ${plan.days}일로 쉬는 날", "${plan.restDays}일", strong = true)
-            if (plan.leftOver > 1e-9) Hint("남는 ${LeaveAccrual.days(plan.leftOver)}는 원하는 날에 쓰면 돼요.")
+            if (plan.leftOver > 1e-9) Hint("나머지 ${LeaveAccrual.days(plan.leftOver)}: 원하는 날에 쓰면 돼요.")
         }
         Hint(LeavePlanner.payNote(profile != null && profile.wageType != com.bamnat.core.pay.WageType.MONTHLY))
     }

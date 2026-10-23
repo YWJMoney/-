@@ -56,28 +56,57 @@ test("five wrong passwords lock that network out for an hour", async (t) => {
   assert.ok(!DB.dump().includes(PASSWORD), "no password kept");
 });
 
-test("a session lasts a week", async (t) => {
+test("a session left alone ends after a week", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-17T09:00:00Z") });
   const { call } = server();
   const h = await signIn(call);
-  t.mock.timers.tick(7 * 24 * 60 * 60 * 1000 - 60 * 1000);
-  assert.equal((await call("GET", "/api/admin/overview", undefined, h)).status, 200);
-  t.mock.timers.tick(2 * 60 * 1000);
+  t.mock.timers.tick(7 * 24 * 60 * 60 * 1000 + 60 * 1000);
   assert.equal((await call("GET", "/api/admin/overview", undefined, h)).status, 401);
+});
+
+test("[ADMIN-15] a session in use runs on a week at a time, for at most 30 days", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-17T09:00:00Z") });
+  const { call } = server();
+  const h = await signIn(call);
+  const DAY = 24 * 60 * 60 * 1000;
+  // More than half the week left: nothing to renew.
+  t.mock.timers.tick(2 * DAY);
+  const early = await call("GET", "/api/admin/overview", undefined, h);
+  assert.equal(early.status, 200);
+  assert.equal(early.headers.get("set-cookie"), null);
+  // Less than half left: another week from now, on the same token.
+  t.mock.timers.tick(2 * DAY);
+  const renewed = await call("GET", "/api/admin/overview", undefined, h);
+  assert.equal(renewed.status, 200);
+  assert.match(renewed.headers.get("set-cookie"), new RegExp(`^${h.cookie}; .*Max-Age=${7 * 24 * 60 * 60}$`));
+  // Six days later (ten in all) it still works, since it was used.
+  t.mock.timers.tick(6 * DAY);
+  assert.equal((await call("GET", "/api/admin/overview", undefined, h)).status, 200);
+  // Used every few days it ends 30 days after the password, and the last renewal says so.
+  let last = null;
+  for (let day = 10; day < 30; day += 3) {
+    const res = await call("GET", "/api/admin/overview", undefined, h);
+    assert.equal(res.status, 200, `day ${day}`);
+    last = res.headers.get("set-cookie") ?? last;
+    t.mock.timers.tick(3 * DAY);
+  }
+  assert.match(last, /Max-Age=\d+$/);
+  assert.ok(Number(last.match(/Max-Age=(\d+)/)[1]) < 7 * 24 * 60 * 60, "the last renewal stops at day 30");
+  assert.equal((await call("GET", "/api/admin/overview", undefined, h)).status, 401, "day 31");
 });
 
 test("without a password set, sign-in says what is missing", async () => {
   const { call } = server({ ADMIN_PASSWORD: "short", RATE_SALT: undefined });
   assert.deepEqual((await call("POST", "/api/admin/login", { password: "short" }, APP)).data, { error: "not_set" });
   assert.deepEqual((await call("GET", "/api/admin/health")).data,
-    { database: true, password: false, salt: false, mail: false, play: false, share: false, why: { password: "short", salt: "missing" } });
+    { database: true, password: false, salt: false, why: { password: "short", salt: "missing" } });
 });
 
 test("the setup screen says why a secret is not read, never what it is", async () => {
   // Typed under a slightly different name, and bound from the Secrets Store instead of set on the Worker.
   const { call } = server({ ADMIN_PASSWORD: undefined, " admin_password": "a-long-password", RATE_SALT: { get: async () => "x" } });
   const h = (await call("GET", "/api/admin/health")).data;
-  assert.deepEqual(h, { database: true, password: false, salt: false, mail: false, play: false, share: false, why: { password: "name", salt: "store" } });
+  assert.deepEqual(h, { database: true, password: false, salt: false, why: { password: "name", salt: "store" } });
   assert.equal(JSON.stringify(h).includes("a-long-password"), false);
 });
 
