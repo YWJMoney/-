@@ -19,7 +19,7 @@ object Needs {
 
     fun isMissing(fact: Fact<*>?): Boolean = fact == null || !fact.known || (fact.source == Source.DEFAULT && fact.key.money) ||
         // A store's own 모르겠어요 ("대략") reads as a half-sure guess: worth one question.
-        (fact.source == Source.INFERRED && fact.confidence <= Profile.MIN_CONFIDENCE && fact.why == null)
+        (fact.source == Source.INFERRED && fact.confidence <= Profile.MIN_CONFIDENCE && (fact.why == null || fact.why == Profile.RECHECK))
 
     /**
      * [facts] the profile as it stands, [featuresOn] the registry ids that fit this calendar and are not

@@ -229,9 +229,13 @@ class AutoBackup(
             is Result.Ok -> {
                 Notifications.cancel(c.appContext, Notifications.BACKUP_ID)
                 c.telemetry.event("auto_backup", "ok")
+                // [OBS-01] 기록 지점 5.
+                c.journal.note(com.bamnat.core.journal.JournalKind.BACKUP)
             }
             is Result.Failed -> {
                 c.telemetry.event("auto_backup", "fail")
+                val days = _state.value.failingSince?.let { Duration.between(it, now).toDays() + 1 } ?: 1
+                c.journal.note(com.bamnat.core.journal.JournalKind.BACKUP_FAILED, "${days}일째")
                 noticeIfLong(now)
             }
             else -> Unit

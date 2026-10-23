@@ -95,5 +95,55 @@ class NScreenshotTest : ScreenshotBase() {
     @Test fun estimatedOnPayUnfolded() = shoot("693_n_estimated_pay_unfolded", UNFOLDED,
         payScreen(com.bamnat.app.tier.Tier.PRO, withProfile = true).then { reveal("추정으로 계산한 값") })
 
+    // ---- N-3: 내 정보, 밤낮이 한 일 and the board (694~706) ----
+    private fun open(place: com.bamnat.core.guide.Place): Screen.() -> Unit = clean {
+        com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(place))
+        settle()
+    }
+
+    /** A day of what the app did, at fixed times: today a backup, new files and the pay again; yesterday the news. */
+    private fun journal(then: Screen.() -> Unit): Screen.() -> Unit = clean {
+        val zone = java.time.ZoneId.systemDefault()
+        fun at(d: java.time.LocalDate, h: Int, m: Int = 0) = d.atTime(h, m).atZone(zone).toInstant()
+        kotlinx.coroutines.runBlocking {
+            c.journal.clear()
+            listOf(
+                com.bamnat.core.journal.JournalEntry(at(today.minusDays(1), 9), com.bamnat.core.journal.JournalKind.NEWS),
+                com.bamnat.core.journal.JournalEntry(at(today.minusDays(1), 21, 30), com.bamnat.core.journal.JournalKind.MONEY_CAPTURED, count = 2),
+                com.bamnat.core.journal.JournalEntry(at(today, 4, 10), com.bamnat.core.journal.JournalKind.BACKUP),
+                com.bamnat.core.journal.JournalEntry(at(today, 4, 12), com.bamnat.core.journal.JournalKind.REMOTE_FILE, detail = "2개"),
+                com.bamnat.core.journal.JournalEntry(at(today, 4, 12), com.bamnat.core.journal.JournalKind.PAY_RECALC),
+                com.bamnat.core.journal.JournalEntry(at(today, 4, 13), com.bamnat.core.journal.JournalKind.ALARMS_PLANNED, detail = "06/30 05:30"),
+            ).forEach { c.journal.add(it) }
+        }
+        then()
+    }
+
+    @Test fun settingsBoard() = shoot("694_n_settings_board", FOLDED, clean { tab(4, wide = false); reveal("밤낮이 한 일", exact = true) })
+    @Test fun profileFolded() = shoot("695_n_profile_folded", FOLDED, open(com.bamnat.core.guide.Place.PROFILE).then { reveal("알고 있는 것", exact = false) })
+    @Test fun profileUnfolded() = shoot("696_n_profile_unfolded", UNFOLDED, open(com.bamnat.core.guide.Place.PROFILE).then { reveal("알고 있는 것", exact = false) })
+    @Test fun profileBig() = shoot("697_n_profile_200", FOLDED, 2f, open(com.bamnat.core.guide.Place.PROFILE).then { reveal("알고 있는 것", exact = false) })
+    @Test fun profileDark() = shoot("698_n_profile_dark", FOLDED_NIGHT, open(com.bamnat.core.guide.Place.PROFILE).then { reveal("알고 있는 것", exact = false) })
+    @Test fun profileEdit() = shoot("699_n_profile_edit", FOLDED, open(com.bamnat.core.guide.Place.PROFILE).then {
+        tapText("잠", exact = true)
+        tapText("목표 수면", exact = true)
+        // No reveal: a scroll would swipe the sheet away.
+        assertEquals(1, shownDialogs().size)
+    })
+    @Test fun profileStartOver() = shoot("700_n_profile_start_over", FOLDED, open(com.bamnat.core.guide.Place.PROFILE).then {
+        tapText("모두 처음부터", exact = true)
+        assertEquals(1, shownDialogs().size)
+    })
+    @Test fun journalList() = shoot("701_n_journal", FOLDED, journal { com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.JOURNAL)); settle(); reveal("백업 저장", exact = true) })
+    @Test fun journalBig() = shoot("702_n_journal_200", FOLDED, 2f, journal { com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.JOURNAL)); settle(); reveal("백업 저장", exact = true) })
+    @Test fun journalDark() = shoot("703_n_journal_dark", FOLDED_NIGHT, journal { com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.JOURNAL)); settle(); reveal("백업 저장", exact = true) })
+    @Test fun journalHome() = shoot("704_n_journal_home", FOLDED, journal { settle(); reveal("오늘 밤낮이 한 일", exact = false) })
+    @Test fun featureWaits() = shoot("705_n_feature_waits", FOLDED, clean {
+        tab(4, wide = false)
+        tapText("기능 켜고 끄기", exact = true)
+        reveal("이걸 알려 주면 시작해요", exact = false)
+    })
+    @Test fun settingsBoardUnfolded() = shoot("706_n_settings_board_unfolded", UNFOLDED, clean { tab(4, wide = true); reveal("밤낮이 한 일", exact = true) })
+
     @Test fun setupStyleOffersBrowse() = shoot("684_n_setup_style_browse", FOLDED, fresh(null) { reveal("우선 둘러볼게요") })
 }

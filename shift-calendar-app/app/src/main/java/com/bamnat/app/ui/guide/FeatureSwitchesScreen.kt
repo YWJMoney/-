@@ -97,6 +97,13 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
             when (show) { SHOW_ON -> isOn(f); SHOW_OFF -> !isOn(f); else -> true }
     }
     var message by remember { mutableStateOf<String?>(null) }
+    // [EASY-09] A feature that is on but waits for a fact says which, and a tap asks it here.
+    val profileOf = profileCalendar(active)
+    var asked by remember { mutableIntStateOf(0) }
+    val profile = rememberProfile(c, profileOf, asked)
+    var asking by remember { mutableStateOf<com.bamnat.core.profile.FactKey?>(null) }
+    val waits: (AppFeature) -> String? = { f -> if (!isOn(f)) null else profile?.facts?.let { com.bamnat.core.profile.FactText.startsWith(it, f.id) } }
+    val ask: (AppFeature) -> Unit = { f -> asking = profile?.facts?.let { com.bamnat.core.profile.FactText.waiting(it, f.id).firstOrNull() } }
     val toggle: (AppFeature, Boolean) -> Unit = { f, on ->
         message = if (FeatureSwitches.set(c, f, active, on)) null else "‘${f.name}’은 켜는 곳에서 켜요. 그 화면을 열었어요"
     }
@@ -146,7 +153,7 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
 
                 val guideRows = features.filter { it.id.startsWith("guide.") }
                 if (guideRows.isNotEmpty()) SectionCard(title = "안내") {
-                    guideRows.forEach { f -> SwitchLine(f, isOn(f)) { toggle(f, it) } }
+                    guideRows.forEach { f -> SwitchLine(f, isOn(f), waits(f), { ask(f) }) { toggle(f, it) } }
                     TextButton(onClick = { store.restartChecklist(active, style, LocalDate.now()); message = "달력 맨 위에 ‘이 달력으로 할 수 있는 것’을 다시 보여 드려요" }) {
                         Text("‘$name’ 안내 카드 다시 보기")
                     }
@@ -158,7 +165,7 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         cards.forEachIndexed { i, f ->
                             if (i > 0) HorizontalDivider()
-                            SwitchLine(f, isOn(f)) { toggle(f, it) }
+                            SwitchLine(f, isOn(f), waits(f), { ask(f) }) { toggle(f, it) }
                         }
                     }
                 }
@@ -169,13 +176,13 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         linked.forEachIndexed { i, f ->
                             if (i > 0) HorizontalDivider()
-                            SwitchLine(f, isOn(f)) { toggle(f, it) }
+                            SwitchLine(f, isOn(f), waits(f), { ask(f) }) { toggle(f, it) }
                         }
                     }
                 }
                 val app = features.filter { it.off == Off.APP && !it.id.startsWith("guide.") }
                 if (app.isNotEmpty()) {
-                    SectionCard(title = "위젯") { app.forEach { f -> SwitchLine(f, isOn(f)) { toggle(f, it) } } }
+                    SectionCard(title = "위젯") { app.forEach { f -> SwitchLine(f, isOn(f), waits(f), { ask(f) }) { toggle(f, it) } } }
                 }
                 Text("다른 일하는 방식의 달력을 고르면 그 달력의 기능이 보여요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -189,6 +196,11 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
             }
         }
     }
+    val key = asking
+    val fact = key?.let { profile?.facts?.get(it) }
+    if (key != null && fact != null && profile != null) {
+        FactEditSheet(c, profileOf, fact, profile.hasPay, onSaved = { asked++ }, onDismiss = { asking = null })
+    }
 }
 
 private const val SHOW_ALL = 0
@@ -197,7 +209,8 @@ private const val SHOW_OFF = 2
 
 /** One feature: name, what it does, where it is, and its switch. */
 @Composable
-private fun SwitchLine(feature: AppFeature, on: Boolean, onChange: (Boolean) -> Unit) {
+private fun SwitchLine(feature: AppFeature, on: Boolean, waits: String?, onAsk: () -> Unit, onChange: (Boolean) -> Unit) {
+    Column {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 64.dp)
             .toggleable(value = on, role = Role.Switch, onValueChange = onChange)
@@ -211,5 +224,7 @@ private fun SwitchLine(feature: AppFeature, on: Boolean, onChange: (Boolean) -> 
         }
         Spacer(Modifier.width(12.dp))
         Switch(checked = on, onCheckedChange = null)
+    }
+    if (waits != null) TextButton(onClick = onAsk, modifier = Modifier.heightIn(min = 48.dp)) { Text(waits) }
     }
 }

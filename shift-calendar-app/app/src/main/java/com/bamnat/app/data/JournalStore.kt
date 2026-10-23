@@ -40,6 +40,25 @@ class JournalStore(
         scope.launch(Dispatchers.IO) { runCatching { add(JournalEntry(clock(), kind, count, detail)) } }
     }
 
+    /**
+     * [kind] with [detail] only when its last line says something else (the next alarm moved): the alarm is
+     * planned again on every edit and every start, and only a different alarm is worth a line.
+     */
+    fun noteIfChanged(kind: JournalKind, detail: String?) {
+        scope.launch(Dispatchers.IO) { runCatching { addIfChanged(kind, detail) } }
+    }
+
+    /** [noteIfChanged], waited for: true when it wrote a line. */
+    suspend fun addIfChanged(kind: JournalKind, detail: String?): Boolean = lock.withLock {
+        val now = loaded()
+        val last = now.lastOrNull { it.kind == kind }
+        if (last != null && last.detail == detail?.let(Journal::safeDetail)) return@withLock false
+        val next = Journal.add(now, JournalEntry(clock(), kind, 1, detail), zone(), today())
+        write(next)
+        _entries.value = next
+        true
+    }
+
     suspend fun add(entry: JournalEntry) = lock.withLock {
         val now = loaded()
         val next = Journal.add(now, entry, zone(), today())

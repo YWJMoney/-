@@ -882,6 +882,7 @@ fun CalendarScreen(
             val tipAllowed = !askOn || com.bamnat.core.profile.AskScheduler.tipAllowed(askStates[activeCalendar.id] ?: com.bamnat.core.profile.AskState(), today)
             com.bamnat.app.ui.guide.GuideArea(activeCalendar.id, settings.workStyle, snap, moneyBook, payProfile, settings.weekStart,
                 Modifier.padding(horizontal = 16.dp, vertical = 6.dp), trades = investState?.full?.trades?.size ?: 0, tipAllowed = tipAllowed)
+            if (partShown(CalendarPart.JOURNAL)) com.bamnat.app.ui.guide.JournalHomeLine(Modifier.padding(horizontal = 16.dp), today = today)
         }
         // [CAL-07] Weekday work set by the week, on this month's public holidays: asked once.
         val holidayDays = remember(snap, visibleMonth, holidaysKept, settings.workStyle, activeCalendar.id) { vm.holidayWork(snap, visibleMonth) }

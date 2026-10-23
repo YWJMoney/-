@@ -85,8 +85,9 @@ fun AskArea(
     val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
     val pay by remember(calendar) { c.scopeOf(calendar).pay.profile }.collectAsStateWithLifecycle()
     var answered by remember { mutableIntStateOf(0) }
+    var facts by remember(calendar) { mutableStateOf<Map<FactKey, com.bamnat.core.profile.Fact<*>>>(emptyMap()) }
     val ask by produceState<Ask?>(null, calendar, style, guide, askStates, settings, pay, answered, today, moments, place, inCardOnly) {
-        val facts = c.profiles.facts(calendar)
+        facts = c.profiles.facts(calendar)
         val on = FeatureRegistry.of(style).filter { !guide.isOff(it, calendar) }.map { it.id }
         val missing = Needs.of(facts, on) { key -> daysUntil(key, pay?.period?.payDay, today) }
             .filter { !inCardOnly || Questions.of(it.key, hasPay = pay != null).answer !is Answer.Open }
@@ -104,6 +105,8 @@ fun AskArea(
         onOpen = { feature -> FeatureRegistry.get(feature)?.let(FeatureLinks::open) },
         onLater = { c.asks.set(calendar, AskScheduler.later(c.asks.of(calendar), current.missing.key, today)) },
         modifier = modifier,
+        // [EASY-09] A value 모두 처음부터 asks again starts from what it is.
+        current = facts[current.missing.key]?.let(com.bamnat.core.profile.FactText::answerOf),
     )
 }
 
@@ -128,6 +131,7 @@ internal fun AskCard(
     onOpen: (String) -> Unit,
     onLater: () -> Unit,
     modifier: Modifier = Modifier,
+    current: String? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     Surface(shape = MaterialTheme.shapes.large, color = scheme.primaryContainer, contentColor = scheme.onPrimaryContainer,
@@ -141,42 +145,49 @@ internal fun AskCard(
                     Text(reward, style = MaterialTheme.typography.bodySmall)
                 }
             }
-            when (val a = question.answer) {
-                is Answer.Chips -> FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    a.options.forEach { (label, value) ->
-                        FilterChip(selected = false, onClick = { onAnswer(value) }, label = { Text(label) }, modifier = Modifier.heightIn(min = 48.dp))
-                    }
-                }
-                is Answer.Number -> {
-                    var n by rememberSaveable(question.key) { mutableIntStateOf(a.start) }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CountStepper(n, { n = it }, question.key.label, range = a.min..a.max, step = a.step, format = { "$it${a.unit}" })
-                        Spacer(Modifier.weight(1f))
-                        Button(onClick = { onAnswer("$n") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("이대로") }
-                    }
-                }
-                Answer.Date -> {
-                    var picking by remember { mutableStateOf(false) }
-                    OutlinedButton(onClick = { picking = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("날짜 고르기") }
-                    if (picking) {
-                        val state = rememberDatePickerState()
-                        DatePickerDialog(
-                            onDismissRequest = { picking = false },
-                            confirmButton = {
-                                TextButton(onClick = {
-                                    state.selectedDateMillis?.let { onAnswer(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().toString()) }
-                                    picking = false
-                                }) { Text("확인") }
-                            },
-                            dismissButton = { TextButton(onClick = { picking = false }) { Text("취소") } },
-                        ) { DatePicker(state, showModeToggle = false) }
-                    }
-                }
-                is Answer.Open -> Button(onClick = { onOpen(a.feature) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(a.label) }
-            }
+            AnswerInput(question, onAnswer, onOpen, current)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onLater, modifier = Modifier.heightIn(min = 48.dp)) { Text("나중에") }
             }
         }
+    }
+}
+
+/** [EASY-05][EASY-08] The answer of [question]: chips, a number, a date or the screen that asks it. Also the profile's edit sheet. */
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@Composable
+internal fun AnswerInput(question: Question, onAnswer: (String) -> Unit, onOpen: (String) -> Unit, current: String? = null) {
+    when (val a = question.answer) {
+        is Answer.Chips -> FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            a.options.forEach { (label, value) ->
+                FilterChip(selected = value == current, onClick = { onAnswer(value) }, label = { Text(label) }, modifier = Modifier.heightIn(min = 48.dp))
+            }
+        }
+        is Answer.Number -> {
+            var n by rememberSaveable(question.key) { mutableIntStateOf(current?.toIntOrNull()?.coerceIn(a.min, a.max) ?: a.start) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CountStepper(n, { n = it }, question.key.label, range = a.min..a.max, step = a.step, format = { "$it${a.unit}" })
+                Spacer(Modifier.weight(1f))
+                Button(onClick = { onAnswer("$n") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("이대로") }
+            }
+        }
+        Answer.Date -> {
+            var picking by remember { mutableStateOf(false) }
+            OutlinedButton(onClick = { picking = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("날짜 고르기") }
+            if (picking) {
+                val state = rememberDatePickerState()
+                DatePickerDialog(
+                    onDismissRequest = { picking = false },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            state.selectedDateMillis?.let { onAnswer(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().toString()) }
+                            picking = false
+                        }) { Text("확인") }
+                    },
+                    dismissButton = { TextButton(onClick = { picking = false }) { Text("취소") } },
+                ) { DatePicker(state, showModeToggle = false) }
+            }
+        }
+        is Answer.Open -> Button(onClick = { onOpen(a.feature) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(a.label) }
     }
 }

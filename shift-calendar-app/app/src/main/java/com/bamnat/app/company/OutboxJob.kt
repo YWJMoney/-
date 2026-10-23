@@ -76,11 +76,22 @@ object InquiryOutbox {
     /** Sends what waits, oldest first; true when nothing is left. */
     suspend fun flush(c: AppContainer): Boolean {
         if (!c.inquiryApi.enabled) return c.inquiryStore.outbox.value.isEmpty()
+        var sent = 0
+        // [OBS-01] 기록 지점 7: how many went, also when the rest still waits.
+        try {
+            return flushEach(c) { sent++ }
+        } finally {
+            if (sent > 0) c.journal.note(com.bamnat.core.journal.JournalKind.OUTBOX, count = sent)
+        }
+    }
+
+    private suspend fun flushEach(c: AppContainer, onSent: () -> Unit): Boolean {
         for (q in c.inquiryStore.outbox.value) {
             try {
                 c.inquiryApi.send(c.companyStore.device, q.kind, q.text, q.info, q.requestId)
                 c.inquiryStore.asked = true
                 c.inquiryStore.unqueue(q.requestId)
+                onSent()
                 c.telemetry.event(com.bamnat.core.stats.UsageEvent.INQUIRY.key)
             } catch (e: CompanyException) {
                 if (e.retryable) return false

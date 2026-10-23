@@ -17,6 +17,8 @@ enum class Place {
     RECOMMENDED,
     // [LEAVE-06] 1.22 묶음 D: the 연차 원장 of the calendar on screen.
     LEAVE,
+    // [EASY-08][OBS-02] 1.23 묶음 N: 내 정보 and 밤낮이 한 일.
+    PROFILE, JOURNAL,
     SETTINGS_WORK, SETTINGS_ALARM, SETTINGS_NOTICES, SETTINGS_PAY, SETTINGS_CALENDAR,
     SETTINGS_DATA, SETTINGS_PRIVACY,
     ;
@@ -466,6 +468,11 @@ object FeatureRegistry {
         f("alarm.suggest", "ALRM-03", "알람 제안", "알람을 늦게 끄거나 먼저 깨는 일이 잦으면 그 근무 알람을 옮기자고, 잠이 모자라면 잘 시간 알림을 켜자고 카드로 물어요. 한 번 눌러 바꾸고 되돌릴 수 있어요",
             setOf(SHIFT, DAY, HOURLY, FIELD), "설정 › 알람 › 알람 제안", at(Place.SETTINGS_ALARM, "알람 제안"), "알람 제안", "늦게 끔", "알람 시간 추천", "스마트 알람", "기상",
             off = Off.ELSEWHERE),
+        // 1.23 묶음 N: 내 정보 한곳에서, and what the app did by itself.
+        f("profile.summary", "EASY-08", "내 정보 한곳에서 바꾸기", "근무·알람·급여·연차·세금·잠 정보를 한 화면에서 보고, 누른 자리에서 바로 고쳐요. 고치면 쓰는 기능에 바로 적용돼요",
+            ALL, "설정 맨 위 카드 › 내 정보", at(Place.PROFILE), "내 정보", "프로필", "정보 바꾸기", "처음부터", "추정", "모르는 것"),
+        f("journal.list", "OBS-02", "밤낮이 한 일", "알람 다시 잡기·백업·계산 자료 갱신처럼 앱이 알아서 한 일을 날짜별로 이유와 함께 보여 줘요",
+            ALL, "설정 맨 위 카드 › 밤낮이 한 일", at(Place.JOURNAL), "한 일", "기록", "자동으로", "왜 바뀌었", "알아서"),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }
