@@ -150,7 +150,8 @@
 sh ./gradlew -p core test                                  # 급여·근무 계산 (1.12.0: 289개)
 sh ./gradlew :app:testDebugUnitTest :app:lintDebug --continue   # 앱 테스트·스크린샷·린트 (280개, 서버 연결 1개 건너뜀)
 python3 tools/check_tracker.py                             # 추적표 검사
-(cd server/company-worker && npm test)                     # 회사 서버 (45개)
+(cd server/company-worker && npm test)                     # 회사 서버 (1.23 H: 178개)
+(cd server/company-worker && npm ci && npm run test:ui)    # 관리자 앱 화면 시험, happy-dom (1.23 H: 10개)
 (cd server/share-worker && npm test)                       # 공유 서버 (16개)
 ```
 
