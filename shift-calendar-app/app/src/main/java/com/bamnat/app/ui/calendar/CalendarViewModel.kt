@@ -848,6 +848,12 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** The kind for a 대근 of [type] [EXTRA-07]. */
     fun coverKind(snapshot: ScheduleSnapshot, type: ShiftType): ExtraKind = ExtraText.coverKind(snapshot.kinds, snapshot.shiftTypes, type)
 
+    /** [CAL-46] The month's "내 기록" card is not shown again. */
+    fun closeMonthRecap(month: java.time.YearMonth) {
+        val key = com.bamnat.core.work.MonthRecap.key(month)
+        container.settingsRepository.update { s -> if (s.monthRecapSeen >= key) s else s.copy(monthRecapSeen = key) }
+    }
+
     /**
      * [CAL-43] What a typed line proposed ([com.bamnat.core.schedule.QuickText]), written on its days with one
      * undo for all of them. A 대근 copies the covered shift's hours; extra work with a start and a length is

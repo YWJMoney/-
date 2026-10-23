@@ -878,6 +878,22 @@ fun CalendarScreen(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
+        // [CAL-46] I 리뷰 N9: once the month's last shift is done, the month in one line and its picture to share.
+        if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS && paint == null && viewingReceived == null) {
+            val recapMonth = remember(snap, today, settings.monthRecapSeen) {
+                com.bamnat.core.work.MonthRecap.due(today, settings.monthRecapSeen) { m ->
+                    snap.resolver.resolveRange(m.atDay(1), m.atEndOfMonth()).lastOrNull { it.totalMinutes > 0 }?.date
+                }
+            }
+            recapMonth?.let { m ->
+                val recap = remember(snap, m) { com.bamnat.core.work.MonthRecap.of(m, snap.resolver.resolveRange(m.atDay(1), m.atEndOfMonth())) }
+                MonthRecapCard(
+                    recap,
+                    onShare = { scope.launch { MonthImage.share(context, snap, m, settings.weekStart) }; vm.logShare() },
+                    onClose = { vm.closeMonthRecap(m) },
+                )
+            }
+        }
         // [SETUP-02] A roster that comes every month: this month's or next month's, until a day of it is painted.
         if (settings.rosterMonthly && paint == null && waiting == null) {
             val thisMonth = YearMonth.from(today)
@@ -1602,6 +1618,27 @@ private fun SetupResumeCard(d: com.bamnat.core.setup.SetupDraft, onResume: () ->
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
             )
             Button(onClick = onResume) { Text("이어서 하기") }
+        }
+    }
+}
+
+/** [CAL-46] "이번 달 내 기록": the finished month in one line, shared as the month's picture, closed for good. */
+@Composable
+private fun MonthRecapCard(recap: com.bamnat.core.work.MonthRecap, onShare: () -> Unit, onClose: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+    ) {
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
+            Text("${recap.month.monthValue}월 내 기록", style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onTertiaryContainer)
+            Text(recap.line.substringAfter(": ") + " · ${HoursFormat.korean(recap.workMinutes)}", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onClose) { Text("닫기") }
+                TextButton(onClick = onShare) { Text("달력 사진 보내기") }
+            }
         }
     }
 }

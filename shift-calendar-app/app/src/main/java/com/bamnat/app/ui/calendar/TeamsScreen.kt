@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import androidx.compose.ui.semantics.selected
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -486,6 +487,48 @@ private fun CoverPanel(
             )
         }
         result.options.forEach { o -> OptionRow(o, mine != null) }
+        // [SCHED-07] I 리뷰 N1: or swap, both ways: a team takes my day, I take one of theirs back.
+        if (mine != null) {
+            val swaps = remember(roster, rotation, snap, day, restMinutes) {
+                com.bamnat.core.schedule.SwapFinder.find(roster, rotation, snap.typesById, day, myDay.shiftType?.id, restMinutes)
+            }
+            var picked by rememberSaveable(day) { mutableStateOf<Int?>(null) }
+            Text("맞바꾸기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+            if (swaps.isEmpty()) {
+                Text("2주 안에 쉴 시간까지 맞게 맞바꿀 날이 없어요.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            swaps.forEachIndexed { i, sw ->
+                val on = picked == i
+                Surface(
+                    onClick = { picked = if (on) null else i },
+                    shape = MaterialTheme.shapes.medium,
+                    color = if (on) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.fillMaxWidth().semantics { selected = on },
+                ) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        ShiftBadge(sw.theirShift, size = 28.dp)
+                        Column(Modifier.weight(1f)) {
+                            Text("${sw.team.name} · ${Fmt.monthDay(sw.takeDate)}(${Fmt.dayOfWeekShort(sw.takeDate.dayOfWeek)}) ${sw.theirShift.name}을 내가",
+                                style = MaterialTheme.typography.bodyMedium)
+                            Text(sw.reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+            picked?.let { swaps.getOrNull(it) }?.let { sw ->
+                val swapText = sw.request { d -> "${Fmt.monthDay(d)}(${Fmt.dayOfWeekShort(d.dayOfWeek)})" }
+                Text(swapText, style = MaterialTheme.typography.bodyMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(onClick = { copy(context, swapText) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Icon(Icons.Filled.ContentCopy, null, Modifier.padding(end = 6.dp)); Text("맞바꾸기 글 복사")
+                    }
+                    OutlinedButton(onClick = { send(context, swapText) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Icon(Icons.Filled.Share, null, Modifier.padding(end = 6.dp)); Text("보내기")
+                    }
+                }
+            }
+        }
         if (mine != null) {
             RestRule(restMinutes, onRest)
             val text = result.request(label)

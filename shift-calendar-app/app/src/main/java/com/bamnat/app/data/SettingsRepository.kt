@@ -161,6 +161,8 @@ data class AppSettings(
     val payReviewDue: Boolean = false,
     val payReviewAsked: Boolean = false,
     val reviewAskedDay: Long = 0,
+    /** [CAL-46] The last month (yyyymm) whose "이번 달 내 기록" card was shown and closed; kept on this phone only. */
+    val monthRecapSeen: Int = 0,
 ) {
     val limits: HourLimits get() = HourLimits(weeklyLimitHours, averageLimitHours)
 
@@ -281,6 +283,7 @@ class SettingsRepository(context: Context) {
             payReviewDue = prefs.getBoolean(K_PAY_REVIEW_DUE, false),
             payReviewAsked = prefs.getBoolean(K_PAY_REVIEW_ASKED, false),
             reviewAskedDay = prefs.getLong(K_REVIEW_DAY, 0),
+            monthRecapSeen = prefs.getInt(K_MONTH_RECAP, 0),
         )
     }
 
@@ -348,6 +351,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_PAY_REVIEW_DUE, s.payReviewDue)
             .putBoolean(K_PAY_REVIEW_ASKED, s.payReviewAsked)
             .putLong(K_REVIEW_DAY, s.reviewAskedDay)
+            .putInt(K_MONTH_RECAP, s.monthRecapSeen)
             .apply()
     }
 
@@ -372,6 +376,7 @@ class SettingsRepository(context: Context) {
         const val K_PAY_REVIEW_DUE = "pay_review_due"
         const val K_PAY_REVIEW_ASKED = "pay_review_asked"
         const val K_REVIEW_DAY = "review_asked_day"
+        const val K_MONTH_RECAP = "month_recap_seen"
         const val K_WEEKLY_LIMIT = "weekly_limit"
         const val K_AVG_LIMIT = "average_limit"
         const val K_THEME = "theme"

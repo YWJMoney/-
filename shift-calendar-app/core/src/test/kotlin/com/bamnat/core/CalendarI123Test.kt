@@ -13,6 +13,9 @@ import com.bamnat.core.schedule.PatternPresets
 import com.bamnat.core.schedule.PatternTimeline
 import com.bamnat.core.schedule.QuickOrder
 import com.bamnat.core.schedule.QuickText
+import com.bamnat.core.schedule.SwapFinder
+import com.bamnat.core.schedule.TeamRoster
+import com.bamnat.core.work.MonthRecap
 import com.bamnat.core.schedule.ShiftEvents
 import com.bamnat.core.work.CalendarFocus
 import com.bamnat.core.work.MonthOverview
@@ -394,5 +397,45 @@ class CalendarI123Test {
         assertEquals((12..16).map { LocalDate.of(2026, 10, it) }, p("다음 주 월~금 주간")!!.dates)
         assertNull(p("병원 가기"))
         assertNull(p(""))
+    }
+
+    /** [SCHED-07] A swap both ways: the team that takes my night, and a day of theirs I can work back. */
+    @Test
+    fun `a swap pairs my day with one of theirs, rest checked both ways`() {
+        // 4조 2교대 주주야야휴휴휴휴 with teams two days apart.
+        val rotation = WorkPattern.Rotation(monday, listOf(1L, 1L, 3L, 3L, null, null, null, null))
+        val roster = TeamRoster(listOf(TeamRoster.Team("A조", 0, mine = true), TeamRoster.Team("B조", 2),
+            TeamRoster.Team("C조", 4), TeamRoster.Team("D조", 6)))
+        val types = Fixtures.all.associateBy { it.id }
+        val night = monday.plusDays(2) // my first 야간
+        val swaps = SwapFinder.find(roster, rotation, types, night, 3L)
+        assertTrue(swaps.isNotEmpty())
+        for (sw in swaps) {
+            assertEquals(3L, sw.myShift.id)
+            // I am off the day I pay back, and the team works it.
+            assertNull(roster.shiftOn(rotation, roster.mine, sw.takeDate)?.let { types[it] }?.takeIf { !it.isOff })
+            assertEquals(sw.theirShift.id, roster.shiftOn(rotation, sw.team, sw.takeDate))
+        }
+        val first = swaps.first()
+        assertTrue(first.request { "${it.monthValue}/${it.dayOfMonth}" }.startsWith("9/30 제 야간을 ${first.team.name}에서 해 주시고"))
+        assertTrue(SwapFinder.find(roster, rotation, types, monday.plusDays(5), null).isEmpty())
+    }
+
+    /** [CAL-46] The month in one line once its last shift is done, shown once. */
+    @Test
+    fun `the month recap is due after the last shift and only once`() {
+        val r = ScheduleResolver(Fixtures.all, WorkPattern.Rotation(monday, listOf(3L, 3L, null, null)),
+            listOf(DayEntry(LocalDate.of(2026, 10, 2), extras = listOf(ExtraEntry(ExtraKind.SPECIAL_ID, LocalTime.of(9, 0), LocalTime.of(13, 0))))))
+        val oct = YearMonth.of(2026, 10)
+        val recap = MonthRecap.of(oct, r.resolveRange(oct.atDay(1), oct.atEndOfMonth()))
+        assertTrue(recap.nights > 0)
+        assertTrue(recap.line.startsWith("10월: 근무 "))
+        assertTrue(" · 특근 1번" in recap.line)
+        val last = { m: YearMonth -> r.resolveRange(m.atDay(1), m.atEndOfMonth()).lastOrNull { it.totalMinutes > 0 }?.date }
+        val lastWork = last(oct)!!
+        assertNull(MonthRecap.due(lastWork, 0, last))
+        if (lastWork.dayOfMonth < 31) assertEquals(oct, MonthRecap.due(LocalDate.of(2026, 10, 31), 0, last))
+        assertEquals(oct, MonthRecap.due(LocalDate.of(2026, 11, 2), 0, last))
+        assertNull(MonthRecap.due(LocalDate.of(2026, 11, 2), MonthRecap.key(oct), last))
     }
 }
