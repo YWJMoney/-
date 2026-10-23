@@ -115,7 +115,7 @@ class JobReminderReceiver : BroadcastReceiver() {
                 // [MCAL-06] Every calendar's jobs, bills and money owed.
                 val settings = container.settingsRepository.current
                 // [LEDG-09] Repeating lines that write themselves are written before their notice says so.
-                for (cal in container.calendars.calendars.value) {
+                for (cal in container.calendars.calendars.value.filterNot { it.isExample }) {
                     runCatching { container.calendars.money(cal.id).catchUpRecurring(java.time.LocalDate.now()) }
                 }
                 if (atMillis != 0L) {

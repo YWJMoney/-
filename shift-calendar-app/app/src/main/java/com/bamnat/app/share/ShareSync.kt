@@ -68,7 +68,7 @@ class ShareSync(
         ) + ShareLinkKey.all(PersonalCalendar.MAIN).map { c.shareLinksOf(it).link }
         combine(reads) { Unit }.debounce(DEBOUNCE_MILLIS).collect {
             // [PROV-04] Each of a calendar's links, the first first.
-            for (key in c.calendars.calendars.value.flatMap { ShareLinkKey.all(it.id) }) {
+            for (key in c.calendars.calendars.value.filterNot { it.isExample }.flatMap { ShareLinkKey.all(it.id) }) {
                 var tries = 0
                 var result = sync(key)
                 while (result == Result.Offline && ++tries < RETRIES) {
@@ -92,7 +92,7 @@ class ShareSync(
 
     /** [SHR-13] Every link this phone made, on every calendar. */
     fun allLinks(): List<String> =
-        c.calendars.calendars.value.flatMap { ShareLinkKey.all(it.id) }.filter { c.shareLinksOf(it).link.value != null }
+        c.calendars.calendars.value.filterNot { it.isExample }.flatMap { ShareLinkKey.all(it.id) }.filter { c.shareLinksOf(it).link.value != null }
 
     /**
      * [SHR-13] 모든 링크 끊기: every link this phone made is cut on the server and forgotten here. A link the
@@ -117,7 +117,7 @@ class ShareSync(
     /** [SHR-13] Every link with a change the server has not got, sent now; true when none is left. */
     suspend fun sendUnsent(): Boolean {
         var left = false
-        for (key in c.calendars.calendars.value.flatMap { ShareLinkKey.all(it.id) }) {
+        for (key in c.calendars.calendars.value.filterNot { it.isExample }.flatMap { ShareLinkKey.all(it.id) }) {
             if (!c.shareLinksOf(key).unsent.value) continue
             if (sync(key) == Result.Offline) left = true
         }

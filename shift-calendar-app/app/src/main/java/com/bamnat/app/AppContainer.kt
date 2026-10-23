@@ -160,9 +160,9 @@ class AppContainer(context: Context) {
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars, memoSharing = memoSharing,
         workTools = com.bamnat.app.data.WorkToolsStore.get(appContext), guide = com.bamnat.app.data.GuideStore.get(appContext), recordsTrash = { recordsTrash },
         teams = teams, pro = { proStore },
-        shareLinks = com.bamnat.app.share.ShareLinkBackup({ calendars.calendars.value.map { it.id } }, { shareLinksOf(it) }),
+        shareLinks = com.bamnat.app.share.ShareLinkBackup({ calendars.calendars.value.filterNot { it.isExample }.map { it.id } }, { shareLinksOf(it) }),
         photos = com.bamnat.app.data.BackupPhotos(com.bamnat.app.ui.money.ReceiptFiles.dir(appContext)) { id -> com.bamnat.app.data.WorkToolsStore.get(appContext).photoDir(id) },
-        staging = java.io.File(appContext.cacheDir, "backup-in"))
+        staging = java.io.File(appContext.cacheDir, "backup-in"), profiles = { profiles })
     /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록: a calendar's records as they were before a change, for 7 days. */
     val recordsTrash by lazy {
         com.bamnat.app.data.RecordsTrash(java.io.File(appContext.noBackupFilesDir, "records_trash"), calendars, database, settingsRepository,
@@ -342,6 +342,14 @@ class AppContainer(context: Context) {
     /** [NOTE-02] The memo tab's notebook, kept while the app runs so coming back finds the same list. */
     val memoNotebook = kotlinx.coroutines.flow.MutableStateFlow(com.bamnat.core.memo.MemoNotebook.CALENDAR)
 
+    // [EASY-01..05][OBS-01] 1.23 묶음 N: the example of 우선 둘러볼게요, the profile over the existing stores, the
+    // question card's memory and '밤낮이 한 일'. All built on first use; none starts a job of its own.
+    val browse by lazy { com.bamnat.app.data.BrowseStore(appContext) }
+    val example by lazy { com.bamnat.app.data.ExampleCalendar(this) }
+    val profiles by lazy { com.bamnat.app.data.ProfileStore(this) }
+    val asks by lazy { com.bamnat.app.data.AskStore(appContext) }
+    val journal by lazy { com.bamnat.app.data.JournalStore(java.io.File(appContext.noBackupFilesDir, "journal.jsonl"), appScope) }
+
     private companion object {
         /** A shorter sleep (a tap and an undo, a doze) gets no "잤어요" line. */
         const val WOKE_SUMMARY_MINUTES = 20L
@@ -408,6 +416,8 @@ class AppContainer(context: Context) {
             moneyRepository.purgeCaptures()
             // [MCAL-02] A calendar whose setup was left before saving is not kept.
             if (calendarSetupDrafts.draft.value == null) calendars.dropUnfinished(before = startedAt)
+            // [EASY-01] An example the app no longer shows (a restored list without its database) goes, with its memos.
+            runCatching { example.sweep() }
             // Any edit to shift types, the pattern, a day or the master switch re-plans the next alarm.
             // [MCAL-01] So does one in an added calendar whose alarms ring.
             val enabled = settingsRepository.settings.map { it.alarmsEnabled }.distinctUntilChanged()

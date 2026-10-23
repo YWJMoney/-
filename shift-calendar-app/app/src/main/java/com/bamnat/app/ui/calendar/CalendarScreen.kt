@@ -924,7 +924,8 @@ fun CalendarScreen(
         val linePlace = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
         if (alarmSoon && !calendarAlarmsOn) {
             // [CAL-13] An added calendar kept from ringing: the master switch and permissions do not matter here.
-            CalendarAlarmsOffLine(activeCalendar.name, onTurnOn = { vm.setCalendarAlarms(true) }, modifier = linePlace)
+            // [EASY-01] The example never rings, so it has nothing to turn on.
+            if (!activeCalendar.isExample) CalendarAlarmsOffLine(activeCalendar.name, onTurnOn = { vm.setCalendarAlarms(true) }, modifier = linePlace)
         } else if (alarmSoon) when {
             // [SET-01] With the master switch off nothing rings: said where the user looks first.
             !settings.alarmsEnabled -> AlarmWarningLine("알람이 모두 꺼져 있어요", "켜기", { vm.setAlarmsEnabled(true) }, linePlace)

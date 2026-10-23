@@ -86,7 +86,8 @@ import kotlinx.coroutines.launch
  * need in turn ([RecommendedScreen]). Every item stays optional and the app works without any of them.
  */
 @Composable
-fun ConsentPages(container: AppContainer, onDone: () -> Unit) = RecommendedScreen(container, firstStart = true, onDone = onDone)
+fun ConsentPages(container: AppContainer, onDone: () -> Unit, onBrowse: (() -> Unit)? = null) =
+    RecommendedScreen(container, firstStart = true, onDone = onDone, onBrowse = onBrowse)
 
 /** What each item is called and gives, on the first page and in the short prompt. */
 internal fun ConsentItem.icon(): ImageVector = when (this) {
