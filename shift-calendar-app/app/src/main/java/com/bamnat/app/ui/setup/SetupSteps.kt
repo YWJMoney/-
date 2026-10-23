@@ -93,7 +93,21 @@ internal fun StyleStep(
     d: SetupDraft, onPick: (WorkStyle, Boolean) -> Unit, onOpenFile: () -> Unit,
     /** [MCAL-02] The name of a calendar being added; null on the first launch. */
     forCalendar: String? = null,
+    /** [EASY-01] 우선 둘러볼게요 on the first launch: the kind of work picked opens its example calendar. */
+    onBrowse: ((WorkStyle) -> Unit)? = null,
+    /** Came from the first page's 우선 둘러볼게요: the cards pick the example straight away. */
+    browseFirst: Boolean = false,
 ) {
+    var browsing by rememberSaveable { mutableStateOf(browseFirst && onBrowse != null) }
+    if (browsing && onBrowse != null) {
+        StepHeader("어떤 일로 둘러볼까요?", "고른 일의 예시 달력이 열려요. 둘러보는 동안 적은 건 이 휴대폰 밖으로 나가지 않아요.")
+        STYLE_CHOICES.filter { it.style != WorkStyle.SHIFT || !it.roster }.forEach { c ->
+            ChoiceCard(title = c.title.substringBefore(" · ").let { if (c.style == WorkStyle.SHIFT) "교대 근무" else it },
+                subtitle = c.subtitle.substringBefore(" · "), icon = c.icon, selected = false, onClick = { onBrowse(c.style) })
+        }
+        TextButton(onClick = { browsing = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("내 정보로 바로 시작할게요") }
+        return
+    }
     if (forCalendar != null) {
         StepHeader("$forCalendar 달력은 어떻게 일하세요?", "처음 시작할 때처럼 하나씩 물어볼게요. 이 달력에만 들어가고 다른 달력은 그대로예요.")
     } else {
@@ -111,6 +125,9 @@ internal fun StyleStep(
     FileCard("파일로 시작하기",
         if (forCalendar != null) "동료가 보낸 회사 설정 파일이 있으면 골라 주세요" else "동료가 보낸 회사 설정 파일이나, 쓰던 백업 파일이 있으면 골라 주세요",
         onOpenFile)
+    if (onBrowse != null) {
+        TextButton(onClick = { browsing = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("우선 둘러볼게요") }
+    }
 }
 
 /** The answer to "어떻게 일하세요?" as it was given. */

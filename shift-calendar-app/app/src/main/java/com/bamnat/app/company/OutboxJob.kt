@@ -55,7 +55,7 @@ class OutboxJob : JobService() {
         /** How many things wait to be sent, for 서버 연결 점검. */
         fun waiting(c: AppContainer): Int =
             (if (c.proStore.current.pendingConsent != null) 1 else 0) + c.inquiryStore.outbox.value.size +
-                c.calendars.calendars.value.flatMap { com.bamnat.app.share.ShareLinkKey.all(it.id) }.count { c.shareLinksOf(it).unsent.value }
+                c.calendars.calendars.value.filterNot { it.isExample }.flatMap { com.bamnat.app.share.ShareLinkKey.all(it.id) }.count { c.shareLinksOf(it).unsent.value }
 
         /** Sends everything waiting; true when nothing is left. */
         suspend fun send(c: AppContainer): Boolean {
