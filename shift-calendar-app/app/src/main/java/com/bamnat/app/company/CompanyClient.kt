@@ -44,6 +44,8 @@ data class SharedSetup(
     val senders: Int = 0,
     val checked: Int = 0,
     val by: List<String> = emptyList(),
+    /** [COMM-11] N7 두 달 이상 확인됨: pay-slip checks from two networks in two different months. */
+    val checkedLong: Boolean = false,
 ) {
     val hasPay: Boolean get() = runCatching { JSONObject(text).has("pay") }.getOrDefault(false)
 }
@@ -128,13 +130,17 @@ data class TalkPost(
     val proposal: ProposalState? = null,
     /** [COMM-09] The writer sealed by the server, different on every post; kept to hide this writer. Null on one's own. */
     val author: String? = null,
+    /** [COMM-11] I2: flagged for 개인 정보 once and being checked; shown dimmed with 확인 중. */
+    val review: Boolean = false,
 )
 
 /**
  * [PLZ-04] [past]: an older version's talk, read only since a newer version took its place.
  * [COMM-09] [hiddenByYou]: posts left out because the user chose not to see their writers.
  */
-data class Talk(val posts: List<TalkPost>, val mutedUntil: Instant? = null, val past: Boolean = false, val hiddenByYou: Int = 0)
+/** [COMM-11] [leftPosts]: how many more posts this phone may write today; null when the server did not say. */
+data class Talk(val posts: List<TalkPost>, val mutedUntil: Instant? = null, val past: Boolean = false, val hiddenByYou: Int = 0,
+    val leftPosts: Int? = null)
 
 data class PostVote(val agree: Int, val disagree: Int, val trust: Int, val myVote: Boolean?)
 
@@ -172,6 +178,8 @@ data class Rate(
     val myVote: Boolean?,
     val nick: String?,
     val at: Instant,
+    /** [COMM-11] I5: why the sender's own entry waits; "far" when it is far from the adopted ones and an admin looks. */
+    val waitingWhy: String? = null,
 )
 
 /** [PLZ-15] The adopted rates of one kind: low, middle and high of [n]. */
@@ -261,7 +269,14 @@ data class ReportStatus(
 data class VoteResult(val points: Int, val persons: Int, val bad: Int, val threshold: Int, val adopted: Boolean, val trust: Int = 0, val agree: Int = 0)
 
 /** A refusal from the server: [code] is its error word (amount, phone, rate_limited, offline …), [field] what it was about. */
-class CompanyException(val code: String, val field: String? = null) : IOException(code)
+class CompanyException(val code: String, val field: String? = null) : IOException(code) {
+    /** [SRV-07] No connection, a busy or broken server, a sign-in page: worth sending again later. */
+    val retryable: Boolean get() = code in RETRY || code.startsWith("http_5")
+
+    companion object {
+        val RETRY = setOf("offline", "rate_limited", "server", "bad_response", "paused", "busy", "no_database")
+    }
+}
 
 /** [COMM-04] What the app asks of the company rules server; screenshots and tests answer with a fake. */
 interface CompanyApi {
@@ -277,6 +292,9 @@ interface CompanyApi {
     suspend fun status(id: String): ReportStatus?
     suspend fun takeBack(device: String, id: String)
     suspend fun forgetMine(device: String): Int
+
+    /** [INQ-05] I28: what [forgetMine] deleted, kind by kind, for "글 3·문의 1을 지웠어요". */
+    suspend fun forgetMineCounts(device: String): ForgetCounts = ForgetCounts(reports = forgetMine(device))
     suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean = false, why: String? = null): VoteResult
 
     /**
@@ -373,6 +391,7 @@ class CompanyClient(
                     senders = s.optInt("senders"),
                     checked = s.optInt("checked"),
                     by = s.optJSONArray("by").strings(),
+                    checkedLong = s.optBoolean("checkedLong"),
                 )
             },
         )
@@ -422,11 +441,13 @@ class CompanyClient(
                         ProposalState(r.optString("setup"), r.optString("status") == "adopted", r.optInt("persons"), r.optInt("threshold", 3))
                     },
                     author = p.optStringOrNull("author")?.takeIf { com.bamnat.core.plaza.HideList.MARK.matches(it) },
+                    review = p.optBoolean("review"),
                 )
             },
             mutedUntil = o.optStringOrNull("mutedUntil")?.let(Instant::parse),
             past = o.optBoolean("past"),
             hiddenByYou = o.optInt("hiddenByYou"),
+            leftPosts = o.optJSONObject("left")?.takeIf { it.has("posts") }?.optInt("posts"),
         )
     }
 
@@ -528,7 +549,7 @@ class CompanyClient(
         year = r.optInt("year"), amount = r.optLong("amount"), note = r.optString("note"), status = r.optString("status"), agree = r.optInt("agree"),
         disagree = r.optInt("disagree"), trust = r.optInt("trust"), mine = r.optBoolean("mine"),
         myVote = if (r.has("myVote") && !r.isNull("myVote")) r.getBoolean("myVote") else null, nick = r.optStringOrNull("nick"),
-        at = Instant.parse(r.getString("at")),
+        at = Instant.parse(r.getString("at")), waitingWhy = r.optStringOrNull("waitingWhy"),
     )
 
     override suspend fun post(device: String, company: String, setup: String, body: String): String = serverCall {
@@ -590,8 +611,11 @@ class CompanyClient(
     }
 
     /** Deletes everything this install sent: reports, rewards not yet given, 맞았어요·달라요, posts and 신고. */
-    override suspend fun forgetMine(device: String): Int = serverCall {
-        request("DELETE", "/api/mine", device = device).optInt("reports")
+    override suspend fun forgetMine(device: String): Int = forgetMineCounts(device).reports
+
+    override suspend fun forgetMineCounts(device: String): ForgetCounts = serverCall {
+        val o = request("DELETE", "/api/mine", device = device)
+        ForgetCounts(o.optInt("reports"), o.optInt("votes"), o.optInt("posts"), o.optInt("inquiries"))
     }
 
     /** 맞았어요 ([ok]) or 달라요 with what was wrong: wrong, old or name. */
@@ -631,13 +655,48 @@ class CompanyClient(
     }
 
     private fun request(method: String, path: String, body: JSONObject? = null, device: String? = null): JSONObject =
-        serverRequest(baseUrl, method, path, body, device)
+        if (method == "POST" && ONCE.any { it.matches(path) }) onceRequest(baseUrl, path, body, device)
+        else serverRequest(baseUrl, method, path, body, device)
+
+    private companion object {
+        /** [SRV-08] What the server takes once per X-Request-Id: posts, replies, 신고 and reports. */
+        val ONCE = listOf(Regex("/api/posts"), Regex("/api/posts/[^/]+/flag"), Regex("/api/reports"), Regex("/api/rates"))
+    }
+}
+
+/**
+ * [SRV-08] A POST the server keeps once per X-Request-Id: sent with a new id ([requestId] for a queued
+ * one), and when the answer is lost on the way, sent once more with the same id, which the server
+ * answers from what it kept instead of making a second post or question.
+ */
+internal fun onceRequest(
+    baseUrl: String, path: String, body: JSONObject?, device: String? = null, requestId: String = java.util.UUID.randomUUID().toString(),
+): JSONObject {
+    val headers = mapOf("X-Request-Id" to requestId)
+    return try {
+        serverRequest(baseUrl, "POST", path, body, device, headers)
+    } catch (e: CompanyException) {
+        if (e.code != "offline") throw e
+        serverRequest(baseUrl, "POST", path, body, device, headers)
+    }
 }
 
 /**
  * Runs a server call off the main thread. An answer that is not what the app expects (a Wi-Fi sign-in
  * page in place of JSON, a missing field) is [CompanyException] "bad_response", never a crash.
  */
+/** [INQ-05] What `DELETE /api/mine` took away, kind by kind. */
+data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int = 0, val inquiries: Int = 0) {
+    /** "보낸 규칙 2·토론 글 3·문의 1을 지웠어요", or that there was nothing to delete. */
+    fun words(): String {
+        val parts = listOfNotNull(
+            "보낸 규칙 $reports".takeIf { reports > 0 }, "맞았어요·달라요 $votes".takeIf { votes > 0 },
+            "토론 글 $posts".takeIf { posts > 0 }, "문의 $inquiries".takeIf { inquiries > 0 },
+        )
+        return if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요"
+    }
+}
+
 internal suspend fun <T> serverCall(block: suspend CoroutineScope.() -> T): T = withContext(Dispatchers.IO) {
     try {
         block()

@@ -179,7 +179,8 @@ class AppContainer(context: Context) {
     /** [DAILY-16] The last region's 광장 시세, for the pay screen's comparison on the phone. */
     val rateHints by lazy { com.bamnat.app.company.RateHintStore(appContext) }
     /** [ADMIN-02] 설정 > 문의하기 through the company server; screenshots and tests put a fake in its place. */
-    var inquiryApi: com.bamnat.app.company.InquiryApi = com.bamnat.app.company.InquiryClient()
+    var inquiryApi: com.bamnat.app.company.InquiryApi = com.bamnat.app.company.InquiryClient(
+        hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() })
     /** [ADMIN-02] The pay check 계산이 이상해요 hands to 문의하기; the next 문의하기 screen takes it once. */
     var pendingPayCheck: String? = null
     val inquiryStore by lazy { com.bamnat.app.company.InquiryStore(appContext) }
@@ -224,6 +225,8 @@ class AppContainer(context: Context) {
     val phoneCalendarSync by lazy { com.bamnat.app.calendar.PhoneCalendarSync(this) }
     /** [SHR-02] Schedules others shared, kept beside the user's own and never backed up. */
     val received by lazy { com.bamnat.app.share.ReceivedCalendarStore(java.io.File(appContext.noBackupFilesDir, "received_calendars.json")) }
+    /** [SHR-14] 우리 조 모아 보기: the code this phone is in. */
+    val shareGroup by lazy { com.bamnat.app.share.ShareGroupStore(appContext) }
     /** [MON-07][MON-10] When this app was first installed: the testers' thank-you and the first days without ads. */
     val installedAt: java.time.Instant? by lazy {
         runCatching { java.time.Instant.ofEpochMilli(appContext.packageManager.getPackageInfo(appContext.packageName, 0).firstInstallTime) }.getOrNull()
@@ -275,12 +278,37 @@ class AppContainer(context: Context) {
             usageStats.sendIfDue(settingsRepository.current.shareUsageStats && !remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.USAGE_STATS))
         }
         runCatching { syncPasses(force) }
+        runCatching { sendConsent() }
         // Play is asked only once paying is possible, or for a subscription this phone already knew.
         if (remoteConfig.current.billingLive || proStore.current.sub != null) runCatching { billing.refresh() }
         featureGate.refresh()
         // [STAT-04] A day with a paid subscription counts toward the G2 gate (구독 사용자 비율).
         if (featureGate.state.value.access.reason == com.bamnat.core.tier.ProReason.SUBSCRIPTION) {
             telemetry.event(com.bamnat.core.stats.UsageEvent.PRO_SUB.key)
+        }
+    }
+
+    /**
+     * [SRV-07] Sends the trial answer waiting in [ProStore]; true once the server has it. A refusal for the
+     * answer itself (not the connection) is dropped, as sending it again would not change it.
+     */
+    suspend fun sendConsent(): Boolean {
+        val q = proStore.current.pendingConsent ?: return true
+        if (q.stale(java.time.Instant.now())) {
+            proStore.consentSent(q)
+            return true
+        }
+        if (!tierApi.enabled) return false
+        return try {
+            tierApi.consent(companyStore.device, q.answer, q.product, q.price, q.trialEnd, q.shown, q.answeredAt)
+            proStore.consentSent(q)
+            true
+        } catch (e: com.bamnat.app.company.CompanyException) {
+            if (!e.retryable) {
+                runCatching { telemetry.event("consent", "dropped ${e.code}") }
+                proStore.consentSent(q)
+            } else com.bamnat.app.company.OutboxJob.schedule(appContext)
+            false
         }
     }
 
@@ -503,14 +531,16 @@ class AppContainer(context: Context) {
             combine(lots, on) { l, o -> l to o }
                 .collect { (l, o) -> LeaveReminder.reschedule(appContext, l, o) }
         }
-        // [COMM-10] 광장 소식 runs while it is on and this phone took part in the plaza.
+        // [COMM-10] 광장 소식, [SRV-10] since 1.23 밤낮 소식: the one daily job runs while it has something to do here.
         keep("plaza news") {
-            combine(settingsRepository.settings.map { it.plazaNews to it.plazaRulesAgreed }, companyStore.sent, companyStore.applied) { a, _, _ -> a }
+            combine(
+                settingsRepository.settings.map { listOf(it.plazaNews, it.plazaRulesAgreed, it.phoneCalendars, it.alarmsEnabled) },
+                companyStore.sent, companyStore.applied, received.calendars.map { it.isEmpty() },
+            ) { a, _, _, _ -> a }
                 .distinctUntilChanged()
                 .collect {
-                    if (settingsRepository.current.plazaNews && com.bamnat.app.company.PlazaNewsJob.takesPart(this@AppContainer)) {
-                        com.bamnat.app.company.PlazaNewsJob.schedule(appContext)
-                    } else com.bamnat.app.company.PlazaNewsJob.cancel(appContext)
+                    if (com.bamnat.app.company.PlazaNewsJob.wanted(this@AppContainer)) com.bamnat.app.company.PlazaNewsJob.schedule(appContext)
+                    else com.bamnat.app.company.PlazaNewsJob.cancel(appContext)
                 }
         }
         // [MON-06] The trial's notice follows the subscription and the user's answer.

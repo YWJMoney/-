@@ -242,7 +242,7 @@ internal object HelpFaq {
                 "가린 사람은 광장 › 내 활동 › ‘가린 사람’에서 다시 볼 수 있어요. 글을 처음 쓸 때 보는 운영 규칙은 언제든 웹에서도 볼 수 있어요.",
             listOf("광장", "차단", "가리기", "안 보기", "신고", "욕설", "운영 규칙"),
             listOf("광장", "회사 규칙 광장"),
-            "광장 소식 알림 설정" to HelpAction.Page(SettingsPage.NOTICES, "광장 소식"),
+            "밤낮 소식 알림 설정" to HelpAction.Page(SettingsPage.NOTICES, "밤낮 소식"),
         ),
         // [STAT-01] 1.22.0: what 사용 통계 sends, and that it stays off without a yes.
         HelpTopic(
@@ -262,6 +262,28 @@ internal object HelpFaq {
             "개인정보 처리방침" to HelpAction.Page(SettingsPage.PRIVACY, "개인정보 처리방침"),
         ),
     )
+
+    /** [INQ-05] I11: the answers each of the server's topics ([com.bamnat.core.ops.InquiryTopics]) starts with. */
+    private val BY_TOPIC = mapOf(
+        "alarm" to listOf("alarm", "sound", "wake"),
+        "pay" to listOf("pay", "takeHome", "extra", "leave", "publicPay"),
+        "schedule" to listOf("pattern", "oneday", "calendars", "restRules", "import"),
+        "share" to listOf("share", "receive"),
+        "company" to listOf("plaza"),
+        "backup" to listOf("backup", "phoneCalendar"),
+        "app" to listOf("widget", "alarm", "turnOff"),
+    )
+
+    /**
+     * [INQ-05] I11: while a question is written, the answers on its topic (sorted the way the server will
+     * sort the question) come first, then the best of the rest.
+     */
+    fun forQuestion(text: String, topics: List<HelpTopic> = topics(), limit: Int = 2): List<HelpTopic> {
+        val key = com.bamnat.core.ops.InquiryTopics.of(text)
+        val ids = BY_TOPIC[key].orEmpty()
+        val first = search(text, topics.filter { it.id in ids }, limit).ifEmpty { topics.filter { it.id in ids }.take(1) }
+        return (first + search(text, topics, limit)).distinctBy { it.id }.take(limit)
+    }
 
     /** The answers that fit [query], best first. */
     fun search(query: String, topics: List<HelpTopic> = topics(), limit: Int = 6): List<HelpTopic> =

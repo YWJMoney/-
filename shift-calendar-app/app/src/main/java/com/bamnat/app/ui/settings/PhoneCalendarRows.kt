@@ -22,6 +22,9 @@ import com.bamnat.app.tier.Feature
 import com.bamnat.app.ui.pro.openPro
 import kotlinx.coroutines.launch
 
+/** [ALRM-01] The row the permission notice opens. */
+const val PHONE_CALENDAR_ROW = "휴대폰 캘린더에 근무 쓰기"
+
 /**
  * [FEAT-07] 휴대폰 캘린더에 근무 쓰기 (프로): a switch for each of the user's calendars. The calendar
  * permission is asked when one is turned on, not before; turning it off deletes the phone's copy.
@@ -53,7 +56,7 @@ internal fun PhoneCalendarRows(vm: SettingsViewModel) {
         if (i > 0) HorizontalDivider()
         val on = cal.id in settings.phoneCalendars
         SwitchRow(
-            title = (if (list.size == 1) "휴대폰 캘린더에 근무 쓰기" else "${cal.name} → 휴대폰 캘린더") + if (open) "" else " (프로)",
+            title = (if (list.size == 1) PHONE_CALENDAR_ROW else "${cal.name} → 휴대폰 캘린더") + if (open) "" else " (프로)",
             subtitle = "'${if (cal.isMain) "밤낮 근무" else "밤낮 · ${cal.name}"}' 캘린더를 휴대폰에 만들어 구글·삼성 캘린더에 근무가 보여요. " +
                 "근무를 바꾸면 따라 바뀌고, 끄면 그 캘린더를 지워요. 휴대폰 밖으로 보내지 않아요",
             checked = on && open,
@@ -70,11 +73,14 @@ internal fun PhoneCalendarRows(vm: SettingsViewModel) {
     }
     val line = if (refused) "캘린더 권한을 허용해야 쓸 수 있어요. 휴대폰 설정 › 애플리케이션 › 밤낮 › 권한에서 바꿀 수 있어요." else when (val s = status) {
         is PhoneCalendarSync.Status.Written -> "일정 ${s.events}개를 썼어요. 캘린더 앱에 안 보이면 그 앱의 캘린더 목록에서 '${PhoneCalendar.ACCOUNT}'을 켜 주세요."
-        PhoneCalendarSync.Status.NeedsPermission -> "캘린더 권한이 없어 멈췄어요. 스위치를 껐다 켜면 다시 물어요."
+        // [ALRM-01] R9: the phone's calendar may still show old shifts, which this app cannot remove without the permission.
+        PhoneCalendarSync.Status.NeedsPermission -> "캘린더 권한이 꺼져 멈췄어요. 휴대폰 캘린더의 근무가 옛것일 수 있어요. 스위치를 껐다 켜면 다시 물어요."
         is PhoneCalendarSync.Status.Failed -> "휴대폰 캘린더에 쓰지 못했어요. 잠시 뒤 다시 해 볼게요."
         PhoneCalendarSync.Status.Off -> null
     }
     if (line != null && (refused || settings.phoneCalendars.isNotEmpty())) {
-        Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val warn = refused || status == PhoneCalendarSync.Status.NeedsPermission
+        Text(line, style = MaterialTheme.typography.bodySmall,
+            color = if (warn) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

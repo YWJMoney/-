@@ -31,6 +31,20 @@ object DiagEvents {
     const val SCREEN = "screen"
     /** [STAB-01] A background job failed and was tried again; the detail is the job and the error's class. */
     const val JOB_FAILED = "job_failed"
+    /**
+     * [ALRM-01] The daily 밤낮 소식 job ran: a line a day that the phone and the app were alive, so a
+     * missed alarm can be told apart as "the phone was off" (no line around it) or "the app was stopped".
+     * Never sent anywhere.
+     */
+    const val ALIVE = "alive"
+}
+
+/**
+ * [ALRM-01] The last seven days of alarms for the top of 알람 점검: how many were planned, how many rang,
+ * how many rang a minute or more late (and by how long on average), and those that may have been missed.
+ */
+data class AlarmWeek(val planned: Int, val rang: Int, val late: Int, val averageLateSeconds: Long, val missed: List<Long>) {
+    val allRang: Boolean get() = planned > 0 && missed.isEmpty()
 }
 
 /** Text codec, trimming and summaries for the event log. No Android code, so it is unit tested. */
@@ -85,6 +99,34 @@ object EventBook {
             }
             !superseded
         }
+    }
+
+    /** [ALRM-01] The week up to [nowMillis] of alarms, from the log. */
+    fun week(events: List<DiagEvent>, nowMillis: Long): AlarmWeek {
+        val from = nowMillis - 7 * 24 * 60 * 60_000L
+        val missed = possiblyMissed(events, nowMillis).filter { it >= from }
+        val fired = events.filter { it.name == DiagEvents.ALARM_FIRED }
+            .mapNotNull { e -> triggerOf(e.detail)?.takeIf { it in from..nowMillis }?.let { it to lateSeconds(e.detail) } }
+            .distinctBy { it.first }
+        val other = events.filter { it.name == DiagEvents.ALARM_FALLBACK || it.name == DiagEvents.ALARM_LATE_SKIPPED }
+            .mapNotNull { triggerOf(it.detail)?.takeIf { t -> t in from..nowMillis } }.toSet() - fired.map { it.first }.toSet()
+        val late = fired.filter { (it.second ?: 0) >= 60 }
+        return AlarmWeek(
+            planned = fired.size + other.size + missed.size,
+            rang = fired.size + other.size,
+            late = late.size + events.count { it.name == DiagEvents.ALARM_LATE_SKIPPED && (triggerOf(it.detail) ?: 0) in from..nowMillis },
+            averageLateSeconds = late.mapNotNull { it.second }.takeIf { it.isNotEmpty() }?.average()?.toLong() ?: 0L,
+            missed = missed,
+        )
+    }
+
+    /** The "late_s=" a delivered alarm carries, in seconds. */
+    fun lateSeconds(detail: String): Long? =
+        detail.split(' ').firstOrNull { it.startsWith("late_s=") }?.removePrefix("late_s=")?.toLongOrNull()
+
+    /** [ALRM-01] Whether the phone logged [DiagEvents.ALIVE] or opened the app within a day before [atMillis]. */
+    fun aliveBefore(events: List<DiagEvent>, atMillis: Long): Boolean = events.any {
+        (it.name == DiagEvents.ALIVE || it.name == DiagEvents.APP_OPEN) && it.atMillis in (atMillis - 24 * 60 * 60_000L)..atMillis
     }
 
     /** Alarm events carry "at=<epoch millis>" so plans and deliveries can be matched. */

@@ -149,20 +149,23 @@ const PRESETS = {
 const OWNER = { id: "owner", name: "최고 관리자", email: "", owner: true, perms: Object.fromEntries(Object.keys(AREAS).map((a) => [a, VIEW_ONLY.includes(a) ? "view" : "edit"])) };
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     try {
       return await route(request, env);
     } catch (e) {
       if (e instanceof Refuse) return json({ error: e.code, field: e.field }, e.status);
       console.error(e && e.stack ? e.stack : String(e));
       return json({ error: "server" }, 500);
+    } finally {
+      if (env.DB) ctx?.waitUntil?.(flushMeter(env, Date.now()).catch(() => {}));
     }
   },
   // Hourly (wrangler.toml [triggers], or the dashboard's Cron Triggers): what is promised to go, goes on
   // time even when nobody sends anything.
   async scheduled(event, env, ctx) {
     if (!env.DB) return;
-    ctx.waitUntil(ready(env).then(() => prune(env, Date.now())).then(() => stopUnconsentedTrials(env, Date.now())));
+    ctx.waitUntil(ready(env).then(() => prune(env, Date.now())).then(() => stopUnconsentedTrials(env, Date.now()))
+      .then(() => recheckLapsed(env, Date.now())).then(() => autoRest(env, Date.now())).then(() => syncShareSwitch(env)));
   },
 };
 
@@ -172,7 +175,7 @@ export default {
  * and the admin log after a year, usage totals after 400 days and a closed question's photos after 90.
  */
 export async function prune(env, now) {
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "UPDATE reports SET net = NULL WHERE net IS NOT NULL AND created_at < ?", now - 2 * HOUR),
     stmt(env, "UPDATE votes SET net = NULL WHERE net IS NOT NULL AND at < ?", now - 2 * HOUR),
     stmt(env, "UPDATE rates SET net = NULL WHERE net IS NOT NULL AND created_at < ?", now - 2 * HOUR),
@@ -185,7 +188,10 @@ export async function prune(env, now) {
     // [COMM-06] A hidden post nobody restored is gone after 90 days, and a 30-day 쓰기 막기 when it ends.
     stmt(env, "DELETE FROM post_flags WHERE post_id IN (SELECT id FROM posts WHERE status = 'hidden' AND hidden_at < ?)", now - LIMITS.hiddenPostDays * DAY),
     stmt(env, "DELETE FROM posts WHERE status = 'hidden' AND hidden_at < ?", now - LIMITS.hiddenPostDays * DAY),
+    stmt(env, "INSERT INTO plaza_results (device, kind, post_id, result, company_id, at) SELECT device, 'unmuted', NULL, 'ended', NULL, until FROM muted WHERE until < ?", now),
     stmt(env, "DELETE FROM muted WHERE until < ?", now),
+    stmt(env, "DELETE FROM plaza_results WHERE at < ?", now - 30 * DAY),
+    stmt(env, "DELETE FROM requests WHERE expires < ?", now),
     stmt(env, "DELETE FROM audit WHERE at < ?", now - 365 * DAY),
     // [MON-03][MON-09] Spent link codes, and purchases 30 days after they ended.
     stmt(env, "DELETE FROM link_codes WHERE expires < ?", now),
@@ -213,10 +219,70 @@ function dropInquiries(env, where, ...params) {
   ];
 }
 
+/**
+ * [SRV-08] The writes an app may send twice (a timeout, then again from its queue) answer the second time
+ * with the first answer when they carry the same X-Request-Id, so a post, question, report or flag goes in once.
+ */
+const ONCE = [/^\/api\/posts$/, /^\/api\/posts\/p[A-Za-z0-9]{15}\/flag$/, /^\/api\/inquiries$/, /^\/api\/inquiries\/[A-Za-z0-9]{22}\/(messages|flag)$/,
+  /^\/api\/reports$/, /^\/api\/rates$/];
+const REQUEST_ID = /^[A-Za-z0-9-]{16,64}$/;
+
+async function once(request, env, path, handle) {
+  const id = request.headers.get("x-request-id");
+  if (request.method !== "POST" || !id || !REQUEST_ID.test(id) || !ONCE.some((r) => r.test(path))) return handle();
+  const now = Date.now();
+  const key = (await sha256(`request|${path}|${id}`)).slice(0, 40);
+  const seen = await one(env, "SELECT status, body FROM requests WHERE key = ? AND expires > ?", key, now);
+  if (seen) return new Response(seen.body, { status: seen.status, headers: { "content-type": "application/json; charset=utf-8", "x-replayed": "1" } });
+  const res = await handle();
+  // Kept only when it went in (or was refused for good): a busy server or a limit is worth another try.
+  if (res.status < 500 && res.status !== 429) {
+    const body = await res.clone().text();
+    if (body.length <= 8192) {
+      await run(env, "INSERT OR IGNORE INTO requests (key, status, body, expires) VALUES (?, ?, ?, ?)", key, res.status, body, now + DAY);
+    }
+  }
+  return res;
+}
+
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
+  // [SRV-08] Any write through this Worker may change 모두의 문의, so its kept rows are read afresh.
+  if (method !== "GET") publicRows.delete(env.DB ?? env);
+  if (path.startsWith("/api/") && !path.startsWith("/api/admin") && method === "POST" && env.DB && request.headers.get("x-request-id")) {
+    await ready(env);
+    return once(request, env, path, () => routeOnce(request, env, url));
+  }
+  return routeOnce(request, env, url);
+}
+
+/**
+ * [SRV-08] Reading the public lists is held to [PUBLIC_PER_HOUR] an hour per network, counted in this
+ * Worker's memory: a write per read would spend D1's daily writes (100,000) faster than a bot spends its
+ * reads. Approximate across Workers, enough to stop one caller from emptying the day's reads.
+ */
+const PUBLIC_PER_HOUR = 600;
+const PUBLIC_READS = [/^\/api\/companies$/, /^\/api\/board$/, /^\/api\/rates$/, /^\/api\/companies\/[A-Za-z0-9]{12}\/history$/,
+  /^\/api\/inquiries\/public(\/[A-Za-z0-9]{22})?$/, /^\/api\/plazas$/];
+const publicReads = new Map();
+
+async function publicAllowed(request, env, path) {
+  if (request.method !== "GET" || !PUBLIC_READS.some((r) => r.test(path))) return true;
+  const now = Date.now();
+  const hour = Math.floor(now / HOUR);
+  const key = `${(await network(request, env, now)).now}|${hour}`;
+  const n = (publicReads.get(key) ?? 0) + 1;
+  publicReads.set(key, n);
+  if (publicReads.size > 20000) for (const k of publicReads.keys()) if (!k.endsWith(`|${hour}`)) publicReads.delete(k);
+  return n <= PUBLIC_PER_HOUR;
+}
+
+async function routeOnce(request, env, url) {
+  const path = url.pathname;
+  const method = request.method;
+  if (!(await publicAllowed(request, env, path))) return json({ error: "rate_limited" }, 429);
   if (path === "/" || path === "/robots.txt") {
     return new Response("User-agent: *\nDisallow: /\n", { headers: { "content-type": "text/plain; charset=utf-8" } });
   }
@@ -260,6 +326,7 @@ async function route(request, env) {
   if (path === "/api/config" && method === "GET") return json(await config(env));
   if (path === "/api/events" && method === "POST") return usage(request, env);
   if (path === "/api/plaza/news" && method === "GET") return plazaNews(request, env, url);
+  if (path === "/api/digest" && method === "GET") return digest(request, env, url);
   if (path.startsWith("/api/passes") || path === "/api/admin-link" || path === "/api/purchases" || path === "/api/consents") {
     return money(request, env, path);
   }
@@ -398,6 +465,16 @@ const SCHEMA = [
   // [SRV-06] Photos sent with a question (JPEG as base64, the metadata taken out), at most two.
   `CREATE TABLE IF NOT EXISTS inquiry_photos (inquiry_id TEXT NOT NULL, n INTEGER NOT NULL, data TEXT NOT NULL, bytes INTEGER NOT NULL,
     at INTEGER NOT NULL, PRIMARY KEY (inquiry_id, n))`,
+  // L 1.23 시작
+  // [COMM-11] What became of a flagged post, for the phones that flagged it and the one that wrote it, and
+  // the end of a 쓰기 막기: read once by 광장 소식, deleted after 30 days.
+  `CREATE TABLE IF NOT EXISTS plaza_results (device TEXT NOT NULL, kind TEXT NOT NULL, post_id TEXT, result TEXT NOT NULL,
+    company_id TEXT, at INTEGER NOT NULL)`,
+  "CREATE INDEX IF NOT EXISTS plaza_results_device ON plaza_results (device, at)",
+  // [SRV-08] A request the app may send again after a timeout (X-Request-Id): the first answer is given
+  // back instead of a second post, question or flag. Only the hash of the id and the answer, for a day.
+  `CREATE TABLE IF NOT EXISTS requests (key TEXT PRIMARY KEY, status INTEGER NOT NULL, body TEXT NOT NULL, expires INTEGER NOT NULL)`,
+  // L 1.23 끝
   // H 1.23 시작
   // [ADMIN-15] The log is read by time and by what it is about (and, after COLUMNS, by who did it); rewards by status.
   "CREATE INDEX IF NOT EXISTS audit_at ON audit (at)",
@@ -478,7 +555,7 @@ function ready(env) {
   if (!done) {
     done = env.DB.prepare("SELECT value FROM settings WHERE key = 'schema'").first("value").catch(() => null).then(async (made) => {
       if (made === SCHEMA_VERSION) return;
-      await env.DB.batch(SCHEMA.map((sql) => env.DB.prepare(sql)));
+      await batch(env, SCHEMA.map((sql) => env.DB.prepare(sql)));
       for (const sql of COLUMNS) {
         try {
           await env.DB.prepare(sql).run();
@@ -500,7 +577,42 @@ function ready(env) {
 const stmt = (env, sql, ...params) => env.DB.prepare(sql).bind(...params);
 const one = (env, sql, ...params) => stmt(env, sql, ...params).first();
 const all = async (env, sql, ...params) => (await stmt(env, sql, ...params).all()).results;
-const run = (env, sql, ...params) => stmt(env, sql, ...params).run();
+const run = async (env, sql, ...params) => meterAdd(env, await stmt(env, sql, ...params).run());
+const batch = async (env, list) => {
+  const results = await env.DB.batch(list);
+  for (const r of results) meterAdd(env, r);
+  return results;
+};
+
+/**
+ * [SRV-10] The rows this Worker wrote, as D1 reports them, kept in memory and added to the day's
+ * `meter|YYYY-MM-DD` counter (D1's free day runs on UTC) at most every five minutes. The hourly
+ * job reads it to rest features before the free limit (N8). An isolate that ends early loses at
+ * most five minutes' count, so the meter reads a little low, never high.
+ */
+const meters = new WeakMap();
+const METER_FLUSH_MS = 5 * 60 * 1000;
+
+function meterAdd(env, r, n = Number(r?.meta?.rows_written ?? r?.meta?.changes ?? 0) || 0) {
+  if (!env?.DB || !n) return r;
+  const m = meters.get(env.DB) ?? { n: 0, at: Date.now() };
+  m.n += n;
+  meters.set(env.DB, m);
+  return r;
+}
+
+const meterDay = (now) => new Date(now).toISOString().slice(0, 10);
+
+/** Adds what was counted here to the day's meter; [force] does it now (the hourly job). */
+export async function flushMeter(env, now, force = false) {
+  const m = meters.get(env.DB);
+  if (!m || !m.n || (!force && now - m.at < METER_FLUSH_MS)) return;
+  const n = m.n;
+  m.n = 0;
+  m.at = now;
+  await env.DB.prepare(`INSERT INTO counters (key, count, expires) VALUES (?1, ?2, ?3)
+    ON CONFLICT (key) DO UPDATE SET count = count + ?2`).bind(`meter|${meterDay(now)}`, n + 1, now + 3 * DAY).run();
+}
 
 const SETTING_KEYS = "'adopt_points', 'reward_months', 'adopt_agree', 'adopt_persons', 'amend_persons', 'auto_reward', 'reward_cap_months', 'reward_cap_days'";
 
@@ -550,6 +662,7 @@ async function allow(env, key, limit, windowMs, now) {
       count = CASE WHEN expires <= ?3 THEN 1 ELSE count + 1 END,
       expires = CASE WHEN expires <= ?3 THEN ?2 ELSE expires END
     RETURNING count`, key, now + windowMs, now);
+  meterAdd(env, null, 1);
   return row.count <= limit;
 }
 
@@ -1224,8 +1337,13 @@ async function state(env, companyId, grp, threshold, adopted) {
         + (SELECT COUNT(*) FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1) AS checked`, companyId, grp);
   const names = (await all(env, `SELECT n.nick FROM reports r JOIN nicks n ON n.device = r.device
       WHERE r.company_id = ? AND r.grp = ? AND r.status IN ('pending', 'adopted') ORDER BY r.created_at LIMIT 5`, companyId, grp)).map((n) => n.nick);
+  // [COMM-11] N7 두 달 이상 확인됨: pay-slip checks from at least two networks in two different months.
+  const span = await one(env, `SELECT COUNT(DISTINCT cluster) AS nets, COUNT(DISTINCT strftime('%Y-%m', at / 1000, 'unixepoch')) AS months FROM (
+      SELECT cluster, created_at AS at FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1
+      UNION ALL SELECT cluster, at FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1)`, companyId, grp);
   return { id: grp, status: adopted ? "adopted" : "pending", points: s.points, persons: s.persons, bad: s.bad, threshold,
-    ...trust(s, threshold), posts: posts.n, uses: who.uses, senders: who.senders, checked: who.checked, by: names };
+    ...trust(s, threshold), posts: posts.n, uses: who.uses, senders: who.senders, checked: who.checked, by: names,
+    ...(span.nets >= 2 && span.months >= 2 ? { checkedLong: true } : {}) };
 }
 
 /**
@@ -1262,7 +1380,7 @@ async function report(request, env) {
   const active = await activeRule(env, c.id, r.deptNorm);
   const adopted = active?.grp === grp;
   const id = randomId(22);
-  await env.DB.batch([
+  await batch(env, [
     // A newer setup from the same sender for the same place takes the place of the older one.
     stmt(env, "UPDATE reports SET status = 'replaced', decided_at = ? WHERE company_id = ? AND dept_norm = ? AND device = ? AND status = 'pending'",
       now, c.id, r.deptNorm, dev),
@@ -1322,7 +1440,7 @@ async function follow(env, id) {
 
 /** Network hashes only ever link sends within the hour; two hours on they are gone. */
 function forgetNetworks(env, now) {
-  return env.DB.batch([
+  return batch(env, [
     stmt(env, "UPDATE reports SET net = NULL WHERE net IS NOT NULL AND created_at < ?", now - 2 * HOUR),
     stmt(env, "UPDATE votes SET net = NULL WHERE net IS NOT NULL AND at < ?", now - 2 * HOUR),
     stmt(env, "DELETE FROM counters WHERE expires < ?", now),
@@ -1433,7 +1551,7 @@ async function adopt(env, companyId, grp, source, now) {
       SELECT 'w' || id, id, rule_id, device, ?, 'owed', '', ?, NULL FROM reports WHERE company_id = ? AND grp = ? AND rule_id = ?`,
     rewardMonths, now, companyId, grp, ruleId));
   }
-  await env.DB.batch(stmts);
+  await batch(env, stmts);
   await payOut(env, ruleId, now);
   return ruleId;
 }
@@ -1519,13 +1637,13 @@ async function takeBack(request, env, id) {
   // tie to it (결정 D34). The rule, its versions and its score stay; a pass already given stays theirs.
   const full = await one(env, "SELECT status FROM reports WHERE id = ?", id);
   if (full.status === "adopted") {
-    await env.DB.batch([
+    await batch(env, [
       stmt(env, "DELETE FROM rewards WHERE report_id = ? AND status = 'owed'", id),
       stmt(env, "UPDATE reports SET device = ? WHERE id = ?", `gone${randomId(12)}`, id),
     ]);
     return json({ kept: true, text: "채택된 규칙은 모두가 쓰는 규칙이라 남아요. 보낸 분과의 연결만 지웠어요." });
   }
-  await env.DB.batch([stmt(env, "DELETE FROM rewards WHERE report_id = ?", id), stmt(env, "DELETE FROM reports WHERE id = ?", id)]);
+  await batch(env, [stmt(env, "DELETE FROM rewards WHERE report_id = ?", id), stmt(env, "DELETE FROM reports WHERE id = ?", id)]);
   return new Response(null, { status: 204 });
 }
 
@@ -1536,7 +1654,7 @@ async function forgetMine(request, env) {
   const dev = await deviceHash(device);
   // [PLZ-04] Adopted rules and the posts that proposed them stay, cut loose from this install (결정 D34).
   const gone = `gone${randomId(12)}`;
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, `UPDATE posts SET device = ?2 WHERE device = ?1 AND report_id IN (SELECT id FROM reports WHERE device = ?1 AND status = 'adopted')`, dev, gone),
     stmt(env, "UPDATE reports SET device = ? WHERE device = ? AND status = 'adopted'", gone, dev),
     // [PLZ-01] Their votes on posts come off the posts' counts.
@@ -1549,7 +1667,7 @@ async function forgetMine(request, env) {
     stmt(env, "UPDATE rates SET device = ? WHERE device = ? AND status = 'adopted'", gone, dev),
     stmt(env, "DELETE FROM rates WHERE device = ?", dev),
   ]);
-  const [, reports, votes, , posts, , , , , , , , asked] = await env.DB.batch([
+  const [, reports, votes, , posts, , , , , , , , asked] = await batch(env, [
     stmt(env, "DELETE FROM rewards WHERE device = ?", dev),
     stmt(env, "DELETE FROM reports WHERE device = ?", dev),
     stmt(env, "DELETE FROM votes WHERE device = ?", dev),
@@ -1722,6 +1840,13 @@ async function talk(request, env, companyId, grp) {
   const nicks = new Map((await all(env, `SELECT n.device, n.nick FROM nicks n WHERE n.device IN
     (SELECT device FROM posts WHERE company_id = ? AND grp = ?)`, c.id, grp)).map((n) => [n.device, n.nick]));
   const { adoptPoints } = await settings(env);
+  // [COMM-11] A post someone flagged as 개인 정보 shows dimmed with 확인 중 until the developer looks.
+  const review = new Set((await all(env, `SELECT DISTINCT f.post_id FROM post_flags f JOIN posts p ON p.id = f.post_id
+    WHERE p.company_id = ? AND p.grp = ? AND p.kept = 0 AND f.reason = 'personal'`, c.id, grp)).map((r) => r.post_id));
+  // [SRV-08] The proposals' setups in one read, not one per post.
+  const proposals = new Map((await all(env, `SELECT r.id, r.grp, r.status FROM reports r WHERE r.id IN
+    (SELECT report_id FROM posts WHERE company_id = ? AND grp = ? AND report_id IS NOT NULL)`, c.id, grp)).map((r) => [r.id, r]));
+  const states = new Map();
   for (const p of rows) {
     if (!numbers.has(p.device)) numbers.set(p.device, numbers.size + 1);
     const mine = p.device === me;
@@ -1736,8 +1861,12 @@ async function talk(request, env, companyId, grp) {
     // [PLZ-02] A proposal shows where its setup stands: points, people, adopted.
     let proposal = null;
     if (p.report_id) {
-      const r = await one(env, "SELECT grp, status FROM reports WHERE id = ?", p.report_id);
-      if (r) proposal = { setup: r.grp, ...(await state(env, c.id, r.grp, adoptPoints, r.status === "adopted")), lines: [] };
+      const r = proposals.get(p.report_id);
+      if (r) {
+        const key = `${r.grp}|${r.status === "adopted"}`;
+        if (!states.has(key)) states.set(key, await state(env, c.id, r.grp, adoptPoints, r.status === "adopted"));
+        proposal = { setup: r.grp, ...states.get(key), lines: [] };
+      }
     }
     posts.push({
       id: p.id,
@@ -1760,13 +1889,16 @@ async function talk(request, env, companyId, grp) {
       ...(myVotes.has(p.id) ? { myVote: myVotes.get(p.id) } : {}),
       ...(proposal ? { proposal } : {}),
       ...(p.status === "shown" ? {} : { hidden: { code: p.hide_reason ?? "flags", text: HIDE_REASONS[p.hide_reason ?? "flags"] ?? "" } }),
+      ...(p.status === "shown" && review.has(p.id) ? { review: true } : {}),
     });
   }
   const muted = me ? await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", me, Date.now()) : null;
+  // [COMM-11] How many more posts today, so the app can say so before a refusal.
+  const used = me ? await one(env, "SELECT count FROM counters WHERE key = ? AND expires > ?", `post|${me}`, Date.now()) : null;
   // [PLZ-04] An older version's talk is read only; the app points to the version in use.
   const past = !(await talkable(env, c.id, grp));
   return json({ company: { id: c.id, name: c.name }, setup: grp, posts, ...(past ? { past: true } : {}), ...(muted ? { mutedUntil: iso(muted.until) } : {}),
-    ...(hiddenByYou ? { hiddenByYou } : {}) });
+    ...(hiddenByYou ? { hiddenByYou } : {}), ...(me ? { left: { posts: Math.max(0, LIMITS.postsPerDay - (used?.count ?? 0)) } } : {}) });
 }
 
 /** [COMM-06] A post in the talk on a rule set: no email, phone number or amount, like everything else sent here. */
@@ -1898,7 +2030,7 @@ async function postVote(request, env, id) {
       ON CONFLICT (post_id, device) DO UPDATE SET ok = excluded.ok, at = excluded.at`, id, dev, body.ok ? 1 : 0, now));
     stmts.push(stmt(env, `UPDATE posts SET ${body.ok ? "agree = agree + 1" : "disagree = disagree + 1"} WHERE id = ?`, id));
   }
-  await env.DB.batch(stmts);
+  await batch(env, stmts);
   if (p.report_id) {
     const r = await one(env, "SELECT company_id, grp, status FROM reports WHERE id = ?", p.report_id);
     if (r) {
@@ -2047,6 +2179,8 @@ function rateView(r, me, myVotes, nicks) {
     status: r.status, agree: r.agree, disagree: r.disagree, ...postTrust(r), at: iso(r.created_at),
     mine: r.device === me, nick: nicks.get(r.device) ?? null,
     ...(myVotes.has(r.id) ? { myVote: myVotes.get(r.id) } : {}),
+    // [COMM-11] Why the sender's own entry waits: far from the others, so a person looks first.
+    ...(r.device === me && r.status === "review" ? { waitingWhy: "far" } : {}),
   };
 }
 
@@ -2133,7 +2267,7 @@ async function addRate(request, env) {
   let id = before?.id;
   if (id) {
     // What others agreed to was the old amount: their votes go with it.
-    await env.DB.batch([
+    await batch(env, [
       stmt(env, "UPDATE rates SET trade = ?, amount = ?, note = ?, agree = 0, disagree = 0, created_at = ? WHERE id = ?", r.trade, r.amount, r.note, now, id),
       stmt(env, "DELETE FROM rate_votes WHERE rate_id = ?", id),
     ]);
@@ -2170,7 +2304,7 @@ async function rateVote(request, env, id) {
     id, dev, body.ok ? 1 : 0, await rateCluster(env, net), net.now, now));
     stmts.push(stmt(env, `UPDATE rates SET ${body.ok ? "agree = agree + 1" : "disagree = disagree + 1"} WHERE id = ?`, id));
   }
-  await env.DB.batch(stmts);
+  await batch(env, stmts);
   if (body.ok && r.status === "pending") await settleRate(env, id, now);
   const after = await one(env, "SELECT agree, disagree, status FROM rates WHERE id = ?", id);
   return json({ agree: after.agree, disagree: after.disagree, ...postTrust(after), status: after.status, myVote: body.ok });
@@ -2215,13 +2349,13 @@ async function takeRateBack(request, env, id) {
   if (!r) return json({ error: "not_found" }, 404);
   if (!device || (await deviceHash(device)) !== r.device) return json({ error: "forbidden" }, 403);
   if (r.status === "adopted") {
-    await env.DB.batch([
+    await batch(env, [
       stmt(env, "DELETE FROM rewards WHERE report_id = ? AND status = 'owed'", id),
       stmt(env, "UPDATE rates SET device = ? WHERE id = ?", `gone${randomId(12)}`, id),
     ]);
     return json({ kept: true, text: "채택된 시세는 모두가 쓰는 정보라 남아요. 보낸 분과의 연결만 지웠어요." });
   }
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "DELETE FROM rate_votes WHERE rate_id = ?", id),
     stmt(env, "DELETE FROM rewards WHERE report_id = ?", id),
     stmt(env, "DELETE FROM rates WHERE id = ?", id),
@@ -2269,7 +2403,7 @@ async function takePostBack(request, env, id) {
   const p = await one(env, "SELECT device FROM posts WHERE id = ?", id);
   if (!p) return json({ error: "not_found" }, 404);
   if (!device || (await deviceHash(device)) !== p.device) return json({ error: "forbidden" }, 403);
-  await env.DB.batch([stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id), stmt(env, "DELETE FROM posts WHERE id = ?", id)]);
+  await batch(env, [stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id), stmt(env, "DELETE FROM posts WHERE id = ?", id)]);
   return new Response(null, { status: 204 });
 }
 
@@ -2297,7 +2431,10 @@ async function flag(request, env, id) {
         hidden_at = CASE WHEN kept = 0 AND flags + 1 >= ?2 THEN ?3 ELSE hidden_at END
       WHERE id = ?1`, id, LIMITS.flagsToHide, now);
     const after = await one(env, "SELECT status FROM posts WHERE id = ?", id);
-    if (after.status === "hidden") await audit(env, now, "post_autohide", id, `${p.company_id}/${p.grp}`);
+    if (after.status === "hidden") {
+      await batch(env, plazaResults(env, p, "hidden", "hidden", now));
+      await audit(env, now, "post_autohide", id, `${p.company_id}/${p.grp}`);
+    }
   }
   return json({ ok: true });
 }
@@ -2351,7 +2488,8 @@ const PRIVATE_KINDS = ["company"];
 // developer filters by topic and sees the urgent ones first instead of opening each to sort it.
 
 /** Topic, label and the words that point to it; the most matched topic wins, the first on a tie. */
-const INQUIRY_TOPICS = [
+// [INQ-05] The app sorts with the same table: core/ops/InquiryTopics.kt (a test keeps them alike).
+export const INQUIRY_TOPICS = [
   ["alarm", "알람", /알람|울리|울려|울림|소리|진동|깨워|스누즈|다시\s*울/g],
   ["pay", "급여 계산", /급여|월급|시급|일당|연봉|수당|가산|명세서|통상임금|주휴|연차|퇴직|세금|4대\s*보험|계산/g],
   ["schedule", "근무표·달력", /근무표|달력|캘린더|교대|패턴|근무\s*유형|대근|휴무|비번|야간|주간|오프|일정|메모/g],
@@ -2387,9 +2525,9 @@ async function inquiries(request, env, path) {
   const method = request.method;
   const device = deviceId(request.headers.get("x-device"));
   if (path === "/api/inquiries" && method === "POST") return ask(request, env);
-  if (path === "/api/inquiries/public" && method === "GET") return publicList(env, new URL(request.url).searchParams, device);
+  if (path === "/api/inquiries/public" && method === "GET") return publicList(env, new URL(request.url).searchParams, device, request.headers.get("x-hide"));
   const pub = path.match(/^\/api\/inquiries\/public\/([A-Za-z0-9]{22})$/);
-  if (pub && method === "GET") return publicThread(env, pub[1], device);
+  if (pub && method === "GET") return publicThread(env, pub[1], device, request.headers.get("x-hide"));
   const mark = path.match(/^\/api\/inquiries\/([A-Za-z0-9]{22})\/(same|flag)$/);
   if (mark && method === "POST") return inquiryMark(request, env, mark[1], mark[2]);
   if (!device) return json({ error: "device", field: "device" }, 400);
@@ -2416,7 +2554,7 @@ async function inquiries(request, env, path) {
   if (!row || row.device !== dev) return json({ error: "not_found" }, 404);
   if (!m[2] && method === "GET") return json(await inquiryView(env, row));
   if (!m[2] && method === "DELETE") {
-    await env.DB.batch(dropInquiries(env, "id = ?", row.id));
+    await batch(env, dropInquiries(env, "id = ?", row.id));
     return new Response(null, { status: 204 });
   }
   if (m[2] && method === "POST") {
@@ -2426,7 +2564,7 @@ async function inquiries(request, env, path) {
     if (!(await allow(env, `inquiry_msg|${dev}`, INQUIRY.messagesPerHour, HOUR, now))) return json({ error: "rate_limited" }, 429);
     const count = await one(env, "SELECT COUNT(*) AS n FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'user'", row.id);
     if (count.n >= INQUIRY.messages) return json({ error: "too_many", field: "text" }, 409);
-    await env.DB.batch([
+    await batch(env, [
       stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", row.id, text, now),
       stmt(env, "UPDATE inquiries SET status = 'open', updated_at = ? WHERE id = ?", now, row.id),
     ]);
@@ -2466,7 +2604,7 @@ async function ask(request, env) {
   }
   const photos = await readPhotos(env, body.photos);
   const id = randomId(22);
-  await env.DB.batch([
+  await batch(env, [
     // [SRV-06] Photos stay with the developer even on a public question.
     ...photos.list.map((data, i) => stmt(env, "INSERT INTO inquiry_photos (inquiry_id, n, data, bytes, at) VALUES (?, ?, ?, ?, ?)",
       id, i + 1, data.base64, data.bytes, now)),
@@ -2536,7 +2674,7 @@ async function inquiryView(env, row, admin = false) {
   const info = JSON.parse(row.info);
   const context = {};
   for (const [label, key] of INQUIRY_INFO) if (info[key]) context[label] = info[key];
-  const [reasons, notes, items] = (await env.DB.batch([
+  const [reasons, notes, items] = (await batch(env, [
     stmt(env, `SELECT reason, COUNT(*) AS n FROM inquiry_marks WHERE inquiry_id = ? AND kind = 'flag'
       GROUP BY reason ORDER BY n DESC, reason`, row.id),
     stmt(env, "SELECT by, text, at FROM inquiry_notes WHERE inquiry_id = ? ORDER BY id", row.id),
@@ -2595,9 +2733,11 @@ const INQUIRY_HIDE = {
 };
 
 const PUBLIC_PAGE = 30;
+const PUBLIC_CACHE_MS = 60 * 1000;
+const publicRows = new WeakMap();
 
-/** What anyone sees of a public question in the list. */
-function publicItem(r, me, sameByMe) {
+/** What anyone sees of a public question in the list; [author] the writer sealed for 이 사람 글 안 보기 (COMM-11). */
+function publicItem(r, me, sameByMe, author) {
   return {
     id: r.id,
     kind: r.kind,
@@ -2607,6 +2747,7 @@ function publicItem(r, me, sameByMe) {
     same: r.same,
     sameByMe: sameByMe.has(r.id),
     mine: r.device === me,
+    ...(author ? { author } : {}),
     createdAt: iso(r.created_at),
     updatedAt: iso(r.updated_at),
     ...triage(r.kind, r.first, JSON.parse(r.info)),
@@ -2614,30 +2755,45 @@ function publicItem(r, me, sameByMe) {
 }
 
 /** 모두의 문의, newest activity first or most 나도 그래요 first, one topic or all, a page at a time. */
-async function publicList(env, params, device) {
+async function publicList(env, params, device, hide) {
   const me = device ? await deviceHash(device) : null;
   const topic = Object.hasOwn(TOPIC_NAMES, params.get("topic") ?? "") ? params.get("topic") : null;
   const order = params.get("sort") === "same" ? "i.same DESC, i.updated_at DESC" : "i.updated_at DESC";
   const offset = Math.max(0, Math.min(Number.parseInt(params.get("after") ?? "0", 10) || 0, 1000));
-  const rows = await all(env, `SELECT i.id, i.kind, i.status, i.info, i.same, i.device, i.created_at, i.updated_at,
+  // [SRV-08] The 500 rows behind 모두의 문의 are read once a minute per Worker and order, not on every look.
+  const cacheKey = `${order}`;
+  const cached = publicRows.get(env.DB ?? env)?.get(cacheKey);
+  const rows = cached && cached.until > Date.now() ? cached.rows : await all(env, `SELECT i.id, i.kind, i.status, i.info, i.same, i.device, i.created_at, i.updated_at,
       (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
       (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin') AS answers
     FROM inquiries i WHERE i.public = 1 AND i.hidden IS NULL ORDER BY ${order} LIMIT 500`);
+  if (!cached || cached.rows !== rows) {
+    if (!publicRows.has(env.DB ?? env)) publicRows.set(env.DB ?? env, new Map());
+    publicRows.get(env.DB ?? env).set(cacheKey, { rows, until: Date.now() + PUBLIC_CACHE_MS });
+  }
   const sameByMe = new Set(me ? (await all(env, "SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'same'", me))
     .map((r) => r.inquiry_id) : []);
-  const items = rows.map((r) => publicItem(r, me, sameByMe));
+  // [COMM-11] 이 사람 글 안 보기 in 모두의 문의 too, the same way as the plaza: the server keeps no list.
+  const key = await authorKey(env);
+  const hidden = await hiddenAuthors(key, hide);
+  const kept = rows.filter((r) => r.device === me || !hidden.has(r.device));
+  const hiddenByYou = rows.length - kept.length;
+  const items = await Promise.all(kept.map(async (r) => publicItem(r, me, sameByMe, r.device === me ? null : await authorToken(key, r.device))));
   const topics = {};
   for (const i of items) topics[i.topic] = (topics[i.topic] ?? 0) + 1;
   const shown = items.filter((i) => !topic || i.topic === topic);
   const page = shown.slice(offset, offset + PUBLIC_PAGE);
-  return json({ topics, topicNames: TOPIC_NAMES, inquiries: page, next: offset + PUBLIC_PAGE < shown.length ? offset + PUBLIC_PAGE : null });
+  return json({ topics, topicNames: TOPIC_NAMES, inquiries: page, next: offset + PUBLIC_PAGE < shown.length ? offset + PUBLIC_PAGE : null,
+    ...(hiddenByYou ? { hiddenByYou } : {}) });
 }
 
 /** One public question with every message; its writer also sees it while hidden, with why. */
-async function publicThread(env, id, device) {
+async function publicThread(env, id, device, hide) {
   const me = device ? await deviceHash(device) : null;
   const row = await one(env, "SELECT * FROM inquiries WHERE id = ? AND public = 1", id);
   if (!row || (row.hidden && row.device !== me)) return json({ error: "not_found" }, 404);
+  const key = await authorKey(env);
+  if (row.device !== me && (await hiddenAuthors(key, hide)).has(row.device)) return json({ error: "hidden_by_you" }, 404);
   const messages = await messagesOf(env, row.id);
   const marks = me ? await all(env, "SELECT kind FROM inquiry_marks WHERE inquiry_id = ? AND device = ?", row.id, me) : [];
   return json({
@@ -2648,6 +2804,7 @@ async function publicThread(env, id, device) {
     sameByMe: marks.some((m) => m.kind === "same"),
     flaggedByMe: marks.some((m) => m.kind === "flag"),
     mine: row.device === me,
+    ...(row.device === me ? {} : { author: await authorToken(key, row.device) }),
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
     messages: messages.map((m) => ({ from: m.sender === "user" ? "user" : "admin", text: m.text, at: iso(m.at) })),
@@ -2669,7 +2826,7 @@ async function inquiryMark(request, env, id, kind) {
   if (!row) return json({ error: "not_found" }, 404);
   if (row.device === dev) return json({ error: "own" }, 400);
   if (kind === "same") {
-    await env.DB.batch([
+    await batch(env, [
       body.on === false
         ? stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id = ? AND device = ? AND kind = 'same'", id, dev)
         : stmt(env, "INSERT OR IGNORE INTO inquiry_marks (inquiry_id, device, kind, reason, at) VALUES (?, ?, 'same', NULL, ?)", id, dev, now),
@@ -2731,7 +2888,7 @@ async function adminInquiries(request, env, url, path, now) {
       await run(env, "UPDATE inquiries SET hidden = ?, kept = 1 WHERE id = ?", reason, row.id);
       await audit(env, now, "inquiry_hide", row.id, reason);
     } else if (body.action === "show") {
-      await env.DB.batch([
+      await batch(env, [
         stmt(env, "UPDATE inquiries SET hidden = NULL, kept = 1, flags = 0 WHERE id = ?", row.id),
         stmt(env, "DELETE FROM inquiry_marks WHERE inquiry_id = ? AND kind = 'flag'", row.id),
       ]);
@@ -2762,7 +2919,7 @@ async function replyTo(env, row, body, now, audited = true) {
   const again = await one(env, `SELECT id FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'admin' AND text = ? AND by = ? AND at > ?
     ORDER BY id DESC LIMIT 1`, row.id, text, actorName(env), now - 60 * 1000);
   if (again) return false;
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)", row.id, text, actorName(env), now),
     // [ADMIN-12] Whoever answers a question nobody took has taken it.
     stmt(env, `UPDATE inquiries SET status = ?, updated_at = ?, assignee = COALESCE(assignee, ?),
@@ -2852,7 +3009,7 @@ function timeline(events, links) {
 async function adminInquiryView(env, row) {
   const view = await inquiryView(env, row, true);
   const now = Date.now();
-  const [events, links, typing] = (await env.DB.batch([
+  const [events, links, typing] = (await batch(env, [
     stmt(env, `SELECT at, action, detail, actor FROM audit WHERE target = ? AND action IN ('inquiry_assign', 'inquiry_status', 'inquiry_reply',
       'inquiry_hide', 'inquiry_show') ORDER BY id LIMIT 200`, row.id),
     stmt(env, "SELECT l.at, l.by, d.id, d.title FROM dev_links l JOIN dev_items d ON d.id = l.item_id WHERE l.inquiry_id = ? ORDER BY l.at", row.id),
@@ -2927,7 +3084,7 @@ async function inquiryList(env, params, actorId = "") {
   const sort = INQUIRY_SORTS.includes(params.get("sort")) ? params.get("sort") : "default";
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const now = Date.now();
-  const [rows, statusRows, slaRows, typing] = (await env.DB.batch([stmt(env, `SELECT i.*,
+  const [rows, statusRows, slaRows, typing] = (await batch(env, [stmt(env, `SELECT i.*,
       (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id) AS count,
       (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
       (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last,
@@ -3076,7 +3233,7 @@ async function devRoute(request, env, url, path, now) {
     // Only the owner brings back what someone deleted, so a deletion cannot be undone behind their back.
     if (!env.actor.owner) return json({ error: "no_permission", area: "owner" }, 403);
     if (row.deleted_at === null) return json(await devView(env, row));
-    await env.DB.batch([
+    await batch(env, [
       stmt(env, "UPDATE dev_items SET deleted_at = NULL, updated_at = ? WHERE id = ?", now, row.id),
       devEvent(env, row.id, now, "restore"),
     ]);
@@ -3087,7 +3244,7 @@ async function devRoute(request, env, url, path, now) {
     const changed = await devUpdate(env, row, body, now);
     if (changed === "stale") return json({ error: "changed", item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) }, 409);
   } else if (m[2] === "/delete") {
-    await env.DB.batch([
+    await batch(env, [
       stmt(env, "UPDATE dev_items SET deleted_at = ?, updated_at = ? WHERE id = ?", now, now, row.id),
       devEvent(env, row.id, now, "delete", { title: row.title }),
     ]);
@@ -3100,19 +3257,19 @@ async function devRoute(request, env, url, path, now) {
       if (!(await one(env, "SELECT id FROM inquiries WHERE id = ?", inquiry))) return json({ error: "not_found" }, 404);
       const r = await run(env, "INSERT OR IGNORE INTO dev_links (item_id, inquiry_id, by, at) VALUES (?, ?, ?, ?)", row.id, inquiry, actorName(env), now);
       if (r.meta.changes) {
-        await env.DB.batch([stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "link", { inquiry })]);
+        await batch(env, [stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "link", { inquiry })]);
         await audit(env, now, "dev_link", row.title, inquiry);
       }
     } else {
       const r = await run(env, "DELETE FROM dev_links WHERE item_id = ? AND inquiry_id = ?", row.id, inquiry);
       if (r.meta.changes) {
-        await env.DB.batch([stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "unlink", { inquiry })]);
+        await batch(env, [stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "unlink", { inquiry })]);
         await audit(env, now, "dev_unlink", row.title, inquiry);
       }
     }
   } else if (m[2] === "/notes") {
     const text = plainText(body.text, DEV.note, "text", true);
-    await env.DB.batch([stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "note", { text })]);
+    await batch(env, [stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id), devEvent(env, row.id, now, "note", { text })]);
   } else {
     return devReply(env, row, body, now);
   }
@@ -3132,7 +3289,7 @@ async function devCreate(request, env, now) {
   }
   const id = `d${randomId(15)}`;
   const a = env.actor;
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at)
       VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL)`, id, title, text, a.id, actorName(env), now, now),
     devEvent(env, id, now, "create", { title, body: cut(text) }),
@@ -3201,7 +3358,7 @@ async function devUpdate(env, row, body, now) {
     // moment no longer matches it.
     ...cols.map((c) => set[c]), Math.max(now, row.updated_at + 1), row.id, row.updated_at);
   if (!updated.meta.changes) return "stale";
-  await env.DB.batch(stmts);
+  await batch(env, stmts);
   // The activity screen shows the title; the id goes with what changed.
   for (const [action, detail] of notes) await audit(env, now, action, set.title ?? row.title, `${detail} ${row.id}`);
   return true;
@@ -3226,7 +3383,7 @@ async function devBulk(request, env, now) {
   const rows = await all(env, `SELECT id, status, reason FROM dev_items WHERE deleted_at IS NULL AND id IN (${ids.map(() => "?").join(", ")})`, ...ids);
   const change = rows.filter((r) => r.status !== next.status || r.reason !== next.reason).sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
   if (change.length) {
-    await env.DB.batch(change.flatMap((r) => [
+    await batch(env, change.flatMap((r) => [
       stmt(env, "UPDATE dev_items SET status = ?, reason = ?, updated_at = ? WHERE id = ?", next.status, next.reason, now, r.id),
       devEvent(env, r.id, now, "status", { status: [r.status, next.status], ...(next.reason ? { reason: next.reason } : {}), bulk: change.length }),
     ]));
@@ -3246,7 +3403,7 @@ async function devReply(env, row, body, now) {
   const pick = Array.isArray(body.ids) ? linked.filter((id) => body.ids.includes(id)) : linked;
   if (!pick.length) refuse("ids", "ids");
   const status = body.close === true ? "closed" : "answered";
-  await env.DB.batch([
+  await batch(env, [
     ...pick.flatMap((id) => [
       stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)", id, text, actorName(env), now),
       stmt(env, "UPDATE inquiries SET status = ?, updated_at = ? WHERE id = ?", status, now, id),
@@ -3264,7 +3421,7 @@ async function devList(env, params) {
   const q = String(params.get("q") ?? "").trim().slice(0, 40);
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const mine = params.get("who") === "mine" ? env.actor.id : "";
-  const [rows, countRows] = (await env.DB.batch([
+  const [rows, countRows] = (await batch(env, [
     // Only links to questions still kept count.
     stmt(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id) AS links,
         (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND i.status = 'open') AS waiting
@@ -3309,7 +3466,7 @@ const devItem = (r) => ({
 
 /** One item with its whole history and the questions behind it (their words only for who may read questions). */
 async function devView(env, row) {
-  const [links, history] = (await env.DB.batch([
+  const [links, history] = (await batch(env, [
     stmt(env, `SELECT l.inquiry_id, l.by, l.at, i.kind, i.status, i.updated_at,
         (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first
       FROM dev_links l LEFT JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = ? ORDER BY l.at`, row.id),
@@ -3344,7 +3501,7 @@ async function templates(env, now) {
   // first and only the call that put it there seeds, so two admins opening the list at once add them once.
   const first = await run(env, "INSERT OR IGNORE INTO settings (key, value) VALUES ('templates', '1')");
   if (first.meta.changes) {
-    await env.DB.batch(DEFAULT_TEMPLATES.map(([label, text]) => stmt(env, "INSERT INTO reply_templates (label, text, by, at) VALUES (?, ?, '', ?)", label, text, now)));
+    await batch(env, DEFAULT_TEMPLATES.map(([label, text]) => stmt(env, "INSERT INTO reply_templates (label, text, by, at) VALUES (?, ?, '', ?)", label, text, now)));
   }
   const rows = await all(env, "SELECT id, label, text, by, topic, uses FROM reply_templates ORDER BY id");
   return { templates: rows.map((r) => ({ id: r.id, label: r.label, text: r.text, by: r.by, topic: r.topic ?? "", uses: r.uses ?? 0 })), topicNames: TOPIC_NAMES };
@@ -3621,7 +3778,7 @@ async function login(request, env, now) {
     await allow(env, "login|all", Infinity, LIMITS.lockMs, now);
     // [ADMIN-15] The email tried is kept only as a short hash, and only for 30 days: enough to see that one
     // account is being guessed at, without a list of addresses someone typed.
-    await env.DB.batch([stmt(env, "DELETE FROM audit WHERE action = 'login_failed' AND at < ?", now - 30 * DAY)]);
+    await batch(env, [stmt(env, "DELETE FROM audit WHERE action = 'login_failed' AND at < ?", now - 30 * DAY)]);
     await audit(env, now, "login_failed", email ? `mail:${(await sha256(`audit|${email}`)).slice(0, 10)}` : "");
     // Each wrong try from the same place answers a little later, so guessing is slow even before the lock.
     await new Promise((done) => setTimeout(done, Math.min(count - 1, 4) * LIMITS.loginDelayMs));
@@ -3631,7 +3788,7 @@ async function login(request, env, now) {
   if (account && account.status !== "active") return json({ error: account.status === "pending" ? "pending" : "suspended" }, 403);
   const token = randomId(40);
   const who = account ? account.id : OWNER.id;
-  await env.DB.batch([
+  await batch(env, [
     ...keys.map((key) => stmt(env, "DELETE FROM counters WHERE key = ?", key)),
     stmt(env, "DELETE FROM admin_sessions WHERE expires < ?", now),
     stmt(env, "INSERT INTO admin_sessions (token, admin, expires, created_at) VALUES (?, ?, ?, ?)",
@@ -4007,7 +4164,7 @@ async function join(request, env, now) {
   }
   if (await one(env, "SELECT id FROM admins WHERE email = ?", row.email)) return json({ error: "exists" }, 409);
   const id = `a${randomId(15)}`;
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, `INSERT INTO admins (id, email, name, pw, perms, status, created_at, approved_at, last_login)
       VALUES (?, ?, ?, ?, ?, 'pending', ?, NULL, NULL)`, id, row.email, name, await hashPassword(password), row.perms, now),
     stmt(env, "UPDATE invites SET used_at = ? WHERE email = ?", now, row.email),
@@ -4041,7 +4198,7 @@ async function updateAdmin(request, env, id, now) {
     notes.push(body.status === "active" ? (a.status === "pending" ? "approve" : "resume") : "suspend");
   }
   if (!stmts.length) refuse("status", "status");
-  await env.DB.batch(stmts);
+  await batch(env, stmts);
   await audit(env, now, "admin_update", a.email, notes.join(" / "));
   return json(await adminList(env));
 }
@@ -4049,7 +4206,7 @@ async function updateAdmin(request, env, id, now) {
 async function removeAdmin(env, id, now) {
   const a = await one(env, "SELECT email FROM admins WHERE id = ?", id);
   if (!a) return json({ error: "not_found" }, 404);
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "DELETE FROM admin_sessions WHERE admin = ?", id),
     stmt(env, "DELETE FROM admins WHERE id = ?", id),
     // What they had taken on is free again for the others; an item's history says so.
@@ -4077,7 +4234,7 @@ async function changePassword(request, env, actor, token, now) {
   const a = await one(env, "SELECT * FROM admins WHERE id = ?", actor.id);
   if (typeof body.current !== "string" || !(await checkPassword(body.current, a.pw))) return json({ error: "wrong" }, 400);
   const next = newPassword(body.next, a.email);
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "UPDATE admins SET pw = ? WHERE id = ?", await hashPassword(next), a.id),
     stmt(env, "DELETE FROM admin_sessions WHERE admin = ? AND token != ?", a.id, token),
   ]);
@@ -4135,7 +4292,7 @@ async function auditLog(env, url) {
     where.push("a.at < ?");
     args.push(to + DAY);
   }
-  const [rows, admins] = (await env.DB.batch([
+  const [rows, admins] = (await batch(env, [
     stmt(env, `${AUDIT_SELECT} WHERE ${where.join(" AND ")} ORDER BY a.id DESC LIMIT 51`, ...args),
     stmt(env, "SELECT id, name, email FROM admins ORDER BY name"),
   ])).map((r) => r.results);
@@ -4263,7 +4420,7 @@ async function overview(env, actor) {
     counts.phones = "SELECT COUNT(*) AS n FROM admin_devices WHERE status = 'pending'";
   }
   const keys = Object.keys(counts);
-  const results = await env.DB.batch(keys.map((k) => (Array.isArray(counts[k]) ? stmt(env, ...counts[k]) : env.DB.prepare(counts[k]))));
+  const results = await batch(env, keys.map((k) => (Array.isArray(counts[k]) ? stmt(env, ...counts[k]) : env.DB.prepare(counts[k]))));
   const got = Object.fromEntries(keys.map((k, i) => [k, results[i].results]));
   const out = { me: me(actor), settings: readSettings(got.settings), reasons: REASONS, answers: ANSWERS, hideReasons: HIDE_REASONS,
     flagReasons: FLAGS, salt: secretIssue(env, "RATE_SALT", 1) === null };
@@ -4350,7 +4507,7 @@ async function queue(env) {
     AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0) ORDER BY r.id LIMIT 30),
     fg AS (SELECT DISTINCT r.company_id, r.grp FROM rules r JOIN f ON f.id = r.id)`;
   const [settingRows, groups, companyRows, reports, votes, posts, ruleRows, rejected, flaggedRows, flaggedReports, flaggedVotes, askRows] =
-    (await env.DB.batch([
+    (await batch(env, [
       env.DB.prepare(`SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`),
       env.DB.prepare(`${waiting} SELECT * FROM g`),
       env.DB.prepare(`${waiting} SELECT id, name, hidden FROM companies WHERE id IN (SELECT company_id FROM g)`),
@@ -4453,7 +4610,7 @@ async function answer(request, env, id, now) {
     stmts.push(stmt(env, `INSERT OR IGNORE INTO rewards (id, report_id, rule_id, device, months, status, memo, created_at, paid_at)
       VALUES (?, ?, '', ?, ?, 'owed', '', ?, NULL)`, `w${id}`, id, r.device, rewardMonths, now));
   }
-  await env.DB.batch(stmts);
+  await batch(env, stmts);
   await audit(env, now, "answer", id, `${body.answer}${reward ? "+reward" : ""}`);
   return json({ ok: true, reward });
 }
@@ -4525,7 +4682,7 @@ async function companies(env, query, params = new URLSearchParams()) {
 
 async function companyInfo(env, id) {
   // One trip for the whole page, however many rules the company has.
-  const [[c], intoRows, aliasRows, ruleRows, reports, votes, [pending]] = (await env.DB.batch([
+  const [[c], intoRows, aliasRows, ruleRows, reports, votes, [pending]] = (await batch(env, [
     stmt(env, "SELECT * FROM companies WHERE id = ?", id),
     stmt(env, "SELECT m.id, m.name FROM companies c JOIN companies m ON m.id = c.merged_into WHERE c.id = ?", id),
     stmt(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", id),
@@ -4592,7 +4749,7 @@ async function updateCompany(request, env, id, now) {
     if (typeof body.hidden !== "boolean") refuse("hidden", "hidden");
     stmts.push(stmt(env, "UPDATE companies SET hidden = ? WHERE id = ?", body.hidden ? 1 : 0, id));
   }
-  if (stmts.length) await env.DB.batch(stmts);
+  if (stmts.length) await batch(env, stmts);
   await audit(env, now, "company_update", id, JSON.stringify(body));
   return companyInfo(env, id);
 }
@@ -4637,7 +4794,7 @@ async function merge(request, env, id, now) {
     stmt(env, "UPDATE rules SET company_id = ? WHERE company_id = ?", into.id, from.id),
     stmt(env, "UPDATE companies SET merged_into = ? WHERE id = ? OR merged_into = ?", into.id, from.id, from.id),
   );
-  await env.DB.batch(stmts);
+  await batch(env, stmts);
   // Reports that now stand together may be enough to adopt.
   for (const g of await all(env, "SELECT DISTINCT grp FROM reports WHERE company_id = ? AND status = 'pending'", into.id)) {
     await settle(env, into.id, g.grp, now);
@@ -4660,7 +4817,7 @@ async function setRule(request, env, id, now) {
     // A department uses one rule; one adopted since stays unless the developer withdraws it first.
     const active = r.superseded ? null : await activeRule(env, r.company_id, r.dept_norm);
     if (active && active.id !== id) return json({ error: "active" }, 409);
-    await env.DB.batch([
+    await batch(env, [
       stmt(env, "UPDATE rules SET withdrawn = 0 WHERE id = ?", id),
       // Coworkers who sent the same setup meanwhile join it.
       ...(r.superseded ? [] : [stmt(env, `UPDATE reports SET status = 'adopted', rule_id = ?, decided_at = ?
@@ -4741,7 +4898,7 @@ async function saveSettings(request, env, now) {
   };
   const extra = { adopt_persons: pick("adoptPersons", 2, 10), amend_persons: pick("amendPersons", 2, 10), auto_reward: pick("autoReward", 0, 1),
     reward_cap_months: pick("rewardCapMonths", 1, 24), reward_cap_days: pick("rewardCapDays", 30, 365) };
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('adopt_points', ?)", String(body.adoptPoints)),
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('reward_months', ?)", String(body.rewardMonths)),
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('adopt_agree', ?)", String(agree)),
@@ -4766,7 +4923,7 @@ async function saveSla(request, env, now) {
     if (!Number.isInteger(v) || v < SLA.least || v > SLA.most) refuse("sla", k);
     next[k] = v;
   }
-  await env.DB.batch(Object.entries(next).map(([k, v]) => stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", slaSetting(k), String(v))));
+  await batch(env, Object.entries(next).map(([k, v]) => stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", slaSetting(k), String(v))));
   await audit(env, now, "sla", "", `문제 ${next.slaBug} · 질문 ${next.slaQuestion} · 제안 ${next.slaIdea} · 그 밖 ${next.slaOther}시간`);
   return json({ sla: next });
 }
@@ -4839,7 +4996,7 @@ async function postList(env, url) {
   const ids = JSON.stringify(rows.map((p) => p.id));
   const talks = JSON.stringify([...new Map(rows.map((p) => [`${p.company_id}/${p.grp}`, [p.company_id, p.grp]])).values()]);
   const pairs = "SELECT json_extract(value, '$[0]') AS company_id, json_extract(value, '$[1]') AS grp FROM json_each(?)";
-  const [ruleDepts, reportDepts, flagRows, mutedRows] = rows.length ? (await env.DB.batch([
+  const [ruleDepts, reportDepts, flagRows, mutedRows] = rows.length ? (await batch(env, [
     stmt(env, `SELECT r.company_id, r.grp, r.dept FROM rules r JOIN (${pairs}) t ON t.company_id = r.company_id AND t.grp = r.grp
       ORDER BY r.version DESC`, talks),
     stmt(env, `SELECT r.company_id, r.grp, r.dept FROM reports r JOIN (${pairs}) t ON t.company_id = r.company_id AND t.grp = r.grp`, talks),
@@ -4880,6 +5037,19 @@ async function postList(env, url) {
 }
 
 /**
+ * [COMM-11] What became of a post, for 광장 소식: each phone that flagged it hears hidden, kept or deleted;
+ * its writer hears shown or deleted (a hidden post they can already see, with why, in the talk).
+ */
+function plazaResults(env, p, flagged, writer, now) {
+  return [
+    ...(flagged ? [stmt(env, `INSERT INTO plaza_results (device, kind, post_id, result, company_id, at)
+      SELECT device, 'flag_result', ?1, ?2, ?3, ?4 FROM post_flags WHERE post_id = ?1`, p.id, flagged, p.company_id, now)] : []),
+    ...(writer ? [stmt(env, "INSERT INTO plaza_results (device, kind, post_id, result, company_id, at) VALUES (?, 'post_result', ?, ?, ?, ?)",
+      p.device, p.id, writer, p.company_id, now)] : []),
+  ];
+}
+
+/**
  * hide (with a reason the writer's app shows), show (kept: flags no longer hide it), delete, or mute:
  * the writer cannot post for 30 days, and their post is hidden.
  */
@@ -4890,22 +5060,25 @@ async function moderate(request, env, id, now) {
   const target = `${p.company_id}/${p.grp}/${id}`;
   if (body.action === "hide" || body.action === "mute") {
     const reason = Object.hasOwn(HIDE_REASONS, body.reason) && body.reason !== "flags" ? body.reason : "abuse";
-    const stmts = [stmt(env, "UPDATE posts SET status = 'hidden', hide_reason = ?, hidden_at = ?, kept = 1 WHERE id = ?", reason, now, id)];
+    const stmts = [...plazaResults(env, p, "hidden", p.status === "hidden" ? null : "hidden", now),
+      stmt(env, "UPDATE posts SET status = 'hidden', hide_reason = ?, hidden_at = ?, kept = 1 WHERE id = ?", reason, now, id)];
     if (body.action === "mute") {
       stmts.push(stmt(env, `INSERT INTO muted (device, until, reason) VALUES (?, ?, ?)
         ON CONFLICT (device) DO UPDATE SET until = excluded.until, reason = excluded.reason`, p.device, now + LIMITS.muteDays * DAY, reason));
     }
-    await env.DB.batch(stmts);
+    await batch(env, stmts);
     await audit(env, now, body.action === "mute" ? "post_mute" : "post_hide", target, reason);
   } else if (body.action === "show") {
-    await env.DB.batch([
+    await batch(env, [
+      ...plazaResults(env, p, "kept", p.status === "hidden" ? "shown" : null, now),
       stmt(env, "UPDATE posts SET status = 'shown', hide_reason = NULL, hidden_at = NULL, kept = 1, flags = 0 WHERE id = ?", id),
       stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id),
       stmt(env, "DELETE FROM muted WHERE device = ?", p.device),
     ]);
     await audit(env, now, "post_show", target);
   } else if (body.action === "delete") {
-    await env.DB.batch([stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id), stmt(env, "DELETE FROM posts WHERE id = ?", id)]);
+    await batch(env, [...plazaResults(env, p, "deleted", "deleted", now),
+      stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id), stmt(env, "DELETE FROM posts WHERE id = ?", id)]);
     await audit(env, now, "post_delete", target);
     return json({ deleted: true });
   } else {
@@ -4989,7 +5162,7 @@ async function setLaunch(request, env, now) {
     refuse("freeFeatures", "freeFeatures");
   }
   const launchedAt = before.launchedAt ?? (live ? now : null);
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('billing_live', ?)", live ? "1" : "0"),
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('thanks_months', ?)", String(thanks)),
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('free_features', ?)", JSON.stringify([...new Set(free)])),
@@ -5073,7 +5246,7 @@ async function money(request, env, path) {
     if (!(await allow(env, `passcode|${dev}`, MONEY.codesPerDay, DAY, now))) return json({ error: "rate_limited" }, 429);
     // A new code replaces the old one; it is shown once and kept only as a hash.
     const code = passCode();
-    await env.DB.batch([
+    await batch(env, [
       stmt(env, "DELETE FROM pass_codes WHERE device = ?", dev),
       stmt(env, "INSERT INTO pass_codes (hash, device, created_at) VALUES (?, ?, ?)", await passCodeHash(code), dev, now),
     ]);
@@ -5089,7 +5262,7 @@ async function money(request, env, path) {
     if (!row) return json({ error: "code", field: "code" }, 404);
     if (row.device !== dev) {
       // The passes move; the old phone keeps nothing and the code is spent.
-      await env.DB.batch([
+      await batch(env, [
         stmt(env, "UPDATE rewards SET device = ? WHERE device = ?", dev, row.device),
         stmt(env, "DELETE FROM pass_codes WHERE device IN (?, ?)", row.device, dev),
       ]);
@@ -5119,7 +5292,7 @@ async function linkCode(env, actor, now) {
     if (!(await one(env, "SELECT 1 FROM link_codes WHERE code = ? AND expires > ?", c, now))) code = c;
   }
   if (!code) return json({ error: "busy" }, 503);
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "DELETE FROM link_codes WHERE admin = ? OR expires < ?", actor.id, now),
     stmt(env, "INSERT INTO link_codes (code, admin, admin_name, expires) VALUES (?, ?, ?, ?)", code, actor.id, actor.name, now + MONEY.linkMs),
   ]);
@@ -5144,7 +5317,7 @@ async function linkPhone(request, env, dev, now) {
   const others = await one(env, "SELECT COUNT(*) AS n FROM admin_devices WHERE admin = ? AND device != ?", row.admin, dev);
   if (others.n >= MONEY.phonesPerAdmin) return json({ error: "too_many", field: "code" }, 409);
   const status = owner ? "approved" : "pending";
-  await env.DB.batch([
+  await batch(env, [
     stmt(env, "DELETE FROM link_codes WHERE code = ?", body.code),
     stmt(env, "DELETE FROM admin_devices WHERE device = ?", dev),
     stmt(env, `INSERT INTO admin_devices (id, device, admin, admin_name, status, created_at, approved_at, seen_at)
@@ -5187,6 +5360,10 @@ const PLAY = {
   },
 };
 const PRODUCT = /^[a-z0-9_.]{1,40}$/;
+/** [SRV-07] How long before a trial turns paid an unanswered one is stopped, how long a first phone keeps its token, rechecks an hour. */
+const TRIAL_STOP_BEFORE = 2 * HOUR;
+const REBIND_AFTER = 7 * DAY;
+const RECHECK_BATCH = 20;
 const playTokens = new WeakMap();
 
 /** The service account the owner pasted as the secret PLAY_SERVICE_ACCOUNT, or null; its key is never shown. */
@@ -5268,6 +5445,17 @@ async function purchase(request, env, dev, now) {
   if (!playReady(env)) return json({ verified: false });
   const s = readSub(await playCall(env, "GET", `/purchases/subscriptionsv2/tokens/${encodeURIComponent(body.token)}`), body.product);
   const hash = (await sha256(`sub|${body.token}`)).slice(0, 40);
+  // [SRV-07] A token already tied to another install stays with it while that install still checks in: a
+  // leaked token cannot move the consent record or reward deferrals to someone else's phone. After a week
+  // without the first phone (a new phone with the same Google account) it moves, and the log says so.
+  const bound = await one(env, "SELECT device, checked_at FROM subs WHERE hash = ?", hash);
+  if (bound && bound.device !== dev) {
+    if (now - bound.checked_at < REBIND_AFTER) {
+      await audit(env, now, "purchase_rebind_refused", body.product, hash.slice(0, 8));
+      return json({ verified: false });
+    }
+    await audit(env, now, "purchase_rebind", body.product, hash.slice(0, 8));
+  }
   await run(env, `INSERT INTO subs (hash, device, token, product, base_plan, state, expiry, trial, auto_renew, created_at, checked_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (hash) DO UPDATE SET device = excluded.device, state = excluded.state, expiry = excluded.expiry, trial = excluded.trial,
@@ -5286,29 +5474,36 @@ async function purchase(request, env, dev, now) {
  */
 async function consent(request, env, dev, now) {
   const body = await readJson(request, 2048);
+  // [SRV-07] A phone that could not send the answer at once sends it later from its queue, with the moment
+  // the user tapped: that moment is the consent, as long as it is not in the future or before the trial.
+  const tapped = Date.parse(body.answeredAt ?? "");
+  const at = Number.isFinite(tapped) && tapped <= now + 5 * 60 * 1000 && tapped >= now - 40 * DAY ? Math.min(tapped, now) : now;
   if (!["keep", "cancel"].includes(body.answer)) refuse("answer", "answer");
   if (typeof body.product !== "string" || !PRODUCT.test(body.product)) refuse("product", "product");
   const price = typeof body.price === "string" ? body.price.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 40) : "";
   const ends = Date.parse(body.trialEnd ?? "");
   if (!price || !Number.isFinite(ends)) refuse("detail", "price");
   if (!(await allow(env, `consent|${dev}`, 20, DAY, now))) return json({ error: "rate_limited" }, 429);
-  const detail = JSON.stringify({ answer: body.answer, product: body.product, price, trialEnd: iso(ends), shown: String(body.shown ?? "").slice(0, 300) });
-  await env.DB.batch([
-    stmt(env, "INSERT INTO consents (device, kind, detail, at) VALUES (?, 'trial_paid', ?, ?)", dev, detail, now),
-    ...(body.answer === "keep" ? [stmt(env, "UPDATE subs SET consent_at = ? WHERE device = ? AND trial = 1 AND product = ?", now, dev, body.product)] : []),
+  const detail = JSON.stringify({ answer: body.answer, product: body.product, price, trialEnd: iso(ends), shown: String(body.shown ?? "").slice(0, 300),
+    ...(at !== now ? { answeredAt: iso(at), receivedAt: iso(now) } : {}) });
+  await batch(env, [
+    stmt(env, "INSERT INTO consents (device, kind, detail, at) VALUES (?, 'trial_paid', ?, ?)", dev, detail, at),
+    ...(body.answer === "keep" ? [stmt(env, "UPDATE subs SET consent_at = ? WHERE device = ? AND trial = 1 AND product = ?", at, dev, body.product)] : []),
   ]);
-  return json({ ok: true, at: iso(now) }, 201);
+  return json({ ok: true, at: iso(at) }, 201);
 }
 
 /**
- * [MON-06] Hourly: a trial ending within a day whose user has not said "keep" does not turn paid. The
- * next renewal is stopped as if the user had cancelled (they can resubscribe in Play); without the
- * service account nothing can be stopped from here and the app keeps asking instead.
+ * [MON-06] Hourly: a trial ending within [TRIAL_STOP_BEFORE] whose user has not said "keep" does not turn
+ * paid. The next renewal is stopped as if the user had cancelled (they can resubscribe in Play); without
+ * the service account nothing can be stopped from here and the app keeps asking instead.
+ * [SRV-07] Two hours, not a day: a "keep" tapped on the subway waits in the phone's queue and reaches the
+ * server on the next connection, and the hourly run still has two tries before Play charges.
  */
 export async function stopUnconsentedTrials(env, now) {
   if (!playReady(env)) return 0;
   const due = await all(env, `SELECT hash, token, product, expiry FROM subs WHERE trial = 1 AND auto_renew = 1 AND consent_at IS NULL
-    AND stopped_at IS NULL AND state IN ('ACTIVE', 'GRACE') AND expiry > ? AND expiry <= ?`, now, now + DAY);
+    AND stopped_at IS NULL AND state IN ('ACTIVE', 'GRACE') AND expiry > ? AND expiry <= ?`, now, now + TRIAL_STOP_BEFORE);
   let stopped = 0;
   for (const s of due) {
     try {
@@ -5322,6 +5517,32 @@ export async function stopUnconsentedTrials(env, now) {
     }
   }
   return stopped;
+}
+
+/**
+ * [SRV-07] Daily per subscription: one Play says is still running past its end is asked again, so a
+ * renewal, a grace period or a hold is known here even when the phone has not opened the app. At most
+ * [RECHECK_BATCH] an hour, each no more than once a day.
+ */
+export async function recheckLapsed(env, now) {
+  if (!playReady(env)) return 0;
+  const due = await all(env, `SELECT hash, token, product FROM subs WHERE state IN ('ACTIVE', 'GRACE') AND expiry IS NOT NULL
+    AND expiry < ? AND checked_at < ? ORDER BY checked_at LIMIT ?`, now, now - DAY, RECHECK_BATCH);
+  let checked = 0;
+  for (const r of due) {
+    try {
+      const s = readSub(await playCall(env, "GET", `/purchases/subscriptionsv2/tokens/${encodeURIComponent(r.token)}`), r.product);
+      await run(env, "UPDATE subs SET state = ?, expiry = ?, auto_renew = ?, checked_at = ? WHERE hash = ?",
+        s.state, s.expiry, s.autoRenew ? 1 : 0, now, r.hash);
+      checked++;
+    } catch (e) {
+      // A token Play no longer knows has ended; anything else is tried again tomorrow.
+      if (e instanceof Refuse && e.code === "purchase") await run(env, "UPDATE subs SET state = 'EXPIRED', checked_at = ? WHERE hash = ?", now, r.hash);
+      else await run(env, "UPDATE subs SET checked_at = ? WHERE hash = ?", now, r.hash);
+      console.error(`recheck ${r.hash.slice(0, 8)}: ${e?.code ?? e}`);
+    }
+  }
+  return checked;
 }
 
 /**
@@ -5364,6 +5585,60 @@ const SWITCHES = {
 /** [SRV-04] A notice the app shows as one line over the calendar; tapping it opens the rest. */
 const NOTICE = { max: 10, title: 40, body: 500, levels: ["info", "important"], longestDays: 90 };
 
+/**
+ * [SRV-09] Who a notice is for, chosen on the phone: the server only checks the shape and sends every
+ * notice to every app, which keeps those that fit (maker, Android version, way of working, alarms on).
+ * Nothing about the phone comes here. And what its button opens in the app, or an https page.
+ */
+const AUDIENCE = {
+  makers: 10, maker: /^[a-z0-9][a-z0-9 _-]{0,19}$/,
+  workTypes: ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"],
+  features: ["ALARM", "SHARE", "PAY", "PLAZA", "BACKUP"],
+  sdk: [21, 99],
+};
+const NOTICE_ACTIONS = ["ALARM_CHECK", "BACKUP", "PRO", "INQUIRY", "SHARE", "PLAZA", "WHATS_NEW", "URL"];
+
+/** [SRV-09] A notice's audience as the developer app sends it; null for everyone. */
+export function readAudience(a) {
+  if (a === undefined || a === null) return null;
+  if (typeof a !== "object" || Array.isArray(a)) refuse("audience", "audience");
+  const out = {};
+  if (a.makers !== undefined) {
+    if (!Array.isArray(a.makers) || a.makers.length > AUDIENCE.makers) refuse("audience", "makers");
+    const makers = a.makers.map((m) => String(m).trim().toLowerCase());
+    if (!makers.every((m) => AUDIENCE.maker.test(m))) refuse("audience", "makers");
+    if (makers.length) out.makers = [...new Set(makers)];
+  }
+  for (const k of ["minSdk", "maxSdk"]) {
+    if (a[k] === undefined || a[k] === null) continue;
+    if (!Number.isInteger(a[k]) || a[k] < AUDIENCE.sdk[0] || a[k] > AUDIENCE.sdk[1]) refuse("audience", k);
+    out[k] = a[k];
+  }
+  if (out.minSdk && out.maxSdk && out.maxSdk < out.minSdk) refuse("audience", "maxSdk");
+  for (const [k, allowed] of [["workTypes", AUDIENCE.workTypes], ["features", AUDIENCE.features]]) {
+    if (a[k] === undefined) continue;
+    if (!Array.isArray(a[k]) || !a[k].every((v) => allowed.includes(v))) refuse("audience", k);
+    if (a[k].length) out[k] = [...new Set(a[k])];
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/** [SRV-09] A notice's button: a place in the app, or an https page with a short label. */
+export function readAction(a) {
+  if (a === undefined || a === null) return null;
+  if (typeof a !== "object" || !NOTICE_ACTIONS.includes(a.kind)) refuse("action", "action");
+  const label = a.label === undefined || a.label === null || a.label === "" ? null : plainText(a.label, 12, "action", true);
+  if (a.kind !== "URL") return { kind: a.kind, ...(label ? { label } : {}) };
+  let url;
+  try {
+    url = new URL(String(a.url ?? ""));
+  } catch {
+    refuse("action", "url");
+  }
+  if (url.protocol !== "https:" || String(a.url).length > 300) refuse("action", "url");
+  return { kind: "URL", url: url.toString(), ...(label ? { label } : {}) };
+}
+
 async function opsState(env) {
   const rows = await all(env, "SELECT key, value FROM settings WHERE key IN ('notices', 'switches_off')");
   const read = (k) => {
@@ -5384,7 +5659,7 @@ async function opsState(env) {
 const paused = async (env, name) => (await opsState(env)).off.includes(name);
 
 const noticeView = (n) => ({ id: n.id, title: n.title, body: n.body, level: n.level, from: iso(n.from), until: iso(n.until),
-  minApp: n.minApp ?? null, maxApp: n.maxApp ?? null });
+  minApp: n.minApp ?? null, maxApp: n.maxApp ?? null, audience: n.audience ?? null, action: n.action ?? null });
 
 /** A notice as the developer app sends it; the app version range is the app's versionCode, either end open. */
 function readNotice(body, now) {
@@ -5402,7 +5677,7 @@ function readNotice(body, now) {
   const minApp = version(body.minApp, "minApp");
   const maxApp = version(body.maxApp, "maxApp");
   if (minApp !== null && maxApp !== null && maxApp < minApp) refuse("app", "maxApp");
-  return { title, body: text, level, from, until, minApp, maxApp };
+  return { title, body: text, level, from, until, minApp, maxApp, audience: readAudience(body.audience), action: readAction(body.action) };
 }
 
 async function noticeList(env, now) {
@@ -5529,7 +5804,11 @@ async function checkOps(request, env, now) {
 // before today as event names and counts. The app keeps the same list (core UsageEvents.kt); a name the
 // server does not know is skipped, so a newer app still sends the rest.
 
-const USAGE = { days: 7, keepDays: 400, count: 1000, bundlesPerNetworkDay: 6, bytes: 8 * 1024 };
+/**
+ * [STAT-05] Up to 120 bundles a day from one network: a mobile carrier puts thousands of phones behind
+ * one address, so the old 6 dropped most of them. The same bundle sent twice (a retry) counts once a day.
+ */
+const USAGE = { days: 7, keepDays: 400, count: 1000, bundlesPerNetworkDay: 120, bytes: 8 * 1024 };
 
 /** Event names and what the dashboard calls them. */
 export const EVENTS = {
@@ -5550,6 +5829,8 @@ export const EVENTS = {
   backup: "백업 만들기",
   alarm_rang: "근무 알람 울림",
   ics_export: "캘린더로 내보내기",
+  // [STAT-06] 1.23: a notice opened (how often, never which or by whom).
+  notice_open: "공지 열기",
 };
 
 async function usage(request, env) {
@@ -5562,14 +5843,22 @@ async function usage(request, env) {
   const now = Date.now();
   const net = await network(request, env, now);
   if (!(await allow(env, `events|${net.day}`, USAGE.bundlesPerNetworkDay, DAY, now))) return json({ error: "rate_limited" }, 429);
+  // [STAT-05] A bundle already counted today (the phone sent it again after a timeout) is not counted twice.
+  const bundle = (await sha256(`events|${kstDay(now)}|${JSON.stringify(body)}`)).slice(0, 32);
+  if (!(await allow(env, `bundle|${bundle}`, 1, DAY, now))) return json({ ok: true, again: true });
   // A phone's day can be a day off Korea's; one ahead of tomorrow or older than the week is not a day it kept.
+  // [STAT-05] Such a day is left out and the rest counted, instead of refusing the whole bundle.
   const latest = kstDay(now + DAY);
   const oldest = kstDay(now - (USAGE.days + 1) * DAY);
   const days = new Set();
   const rows = [];
+  let skipped = 0;
   for (const d of body.days) {
-    if (!d || typeof d !== "object" || typeof d.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(d.day) ||
-        d.day > latest || d.day < oldest || days.has(d.day)) refuse("day", "day");
+    if (!d || typeof d !== "object" || typeof d.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(d.day)) refuse("day", "day");
+    if (d.day > latest || d.day < oldest || days.has(d.day)) {
+      skipped++;
+      continue;
+    }
     days.add(d.day);
     if (!d.events || typeof d.events !== "object" || Array.isArray(d.events)) refuse("events", "events");
     const recent = d.recent ?? [];
@@ -5584,6 +5873,7 @@ async function usage(request, env) {
     for (const e of lately) rows.push([d.day, e, counts.has(e) ? 1 : 0, counts.get(e) ?? 0, 1]);
   }
   const app = body.app;
+  if (days.size === 0) return json({ ok: true, skipped });
   const stmts = [...days].map((day) => stmt(env, `INSERT INTO usage_days (day, app, phones) VALUES (?, ?, 1)
     ON CONFLICT (day, app) DO UPDATE SET phones = phones + 1`, day, app));
   // D1 binds at most 100 values a query: 16 rows of six.
@@ -5593,8 +5883,8 @@ async function usage(request, env) {
       ON CONFLICT (day, app, event) DO UPDATE SET phones = phones + excluded.phones, total = total + excluded.total, recent = recent + excluded.recent`,
     ...part.flatMap(([day, e, phones, total, recent]) => [day, app, e, phones, total, recent])));
   }
-  await env.DB.batch(stmts);
-  return new Response(null, { status: 204 });
+  await batch(env, stmts);
+  return skipped ? json({ ok: true, skipped }) : new Response(null, { status: 204 });
 }
 
 /**
@@ -5609,7 +5899,7 @@ async function metrics(env, url, now) {
   // [ADMUX-07] The period just before, day by day, for the chart's dashed line.
   const beforeFrom = kstDay(now - 2 * days * DAY);
   const beforeTo = kstDay(now - (days + 1) * DAY);
-  const [dayRows, eventRows, subs, beforeRows] = (await env.DB.batch([
+  const [dayRows, eventRows, subs, beforeRows] = (await batch(env, [
     stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day ORDER BY day", from, to),
     stmt(env, `SELECT event, SUM(phones) AS phones, SUM(total) AS total, SUM(recent) AS recent FROM usage_events
       WHERE day BETWEEN ? AND ? GROUP BY event`, from, to),
@@ -5662,15 +5952,27 @@ async function metrics(env, url, now) {
 const HIDE = { max: 50, token: /^[A-Za-z0-9_-]{64}$/ };
 const authorKeys = new Map();
 
-async function authorKey(env) {
-  const s = await salt(env);
-  let key = authorKeys.get(s);
+async function sealKey(secret) {
+  let key = authorKeys.get(secret);
   if (!key) {
-    const raw = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`author|${s}`));
+    const raw = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`author|${secret}`));
     key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
-    authorKeys.set(s, key);
+    authorKeys.set(secret, key);
   }
   return key;
+}
+
+/**
+ * [SRV-08] The keys for 이 사람 글 안 보기: the first seals, all of them open. With its own secret
+ * AUTHOR_KEY, changing RATE_SALT after a leak no longer empties every phone's list; the key it replaced
+ * (AUTHOR_KEY_OLD, or the salt before AUTHOR_KEY was set) still opens the marks phones already keep.
+ */
+async function authorKey(env) {
+  const own = typeof env.AUTHOR_KEY === "string" && env.AUTHOR_KEY.length >= 16 ? env.AUTHOR_KEY : null;
+  const old = typeof env.AUTHOR_KEY_OLD === "string" && env.AUTHOR_KEY_OLD.length >= 16 ? env.AUTHOR_KEY_OLD : null;
+  const secrets = own ? [own, old ?? await salt(env)] : [await salt(env)];
+  const keys = await Promise.all(secrets.map(sealKey));
+  return { seal: keys[0], open: keys };
 }
 
 const unb64url = (text) => Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
@@ -5678,7 +5980,7 @@ const unb64url = (text) => Uint8Array.from(atob(text.replace(/-/g, "+").replace(
 async function authorToken(key, device) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const plain = Uint8Array.from(device.match(/../g), (h) => Number.parseInt(h, 16));
-  const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain));
+  const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key.seal, plain));
   return b64url(new Uint8Array([...iv, ...sealed]));
 }
 
@@ -5687,12 +5989,15 @@ async function hiddenAuthors(key, header) {
   const out = new Set();
   const marks = String(header ?? "").split(",").map((m) => m.trim()).filter((m) => HIDE.token.test(m)).slice(0, HIDE.max);
   for (const m of marks) {
-    try {
-      const bytes = unb64url(m);
-      const plain = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, key, bytes.slice(12)));
-      out.add([...plain].map((b) => b.toString(16).padStart(2, "0")).join(""));
-    } catch {
-      // Sealed with another salt, or not a mark at all.
+    const bytes = unb64url(m);
+    for (const k of key.open) {
+      try {
+        const plain = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, k, bytes.slice(12)));
+        out.add([...plain].map((b) => b.toString(16).padStart(2, "0")).join(""));
+        break;
+      } catch {
+        // Sealed with another key, or not a mark at all.
+      }
     }
   }
   return out;
@@ -5706,9 +6011,40 @@ async function plazaNews(request, env, url) {
   const dev = await installOf(request);
   const now = Date.now();
   if (await paused(env, "PLAZA_NEWS")) return json({ items: [], now: iso(now), paused: true });
+  return json({ items: await newsItems(env, dev, newsSince(url, now), now), now: iso(now) });
+}
+
+const newsSince = (url, now) => {
   const asked = Date.parse(url.searchParams.get("since") ?? "");
-  const since = Math.max(Number.isFinite(asked) ? asked : now - DAY, now - 14 * DAY);
-  const [changed, adopted, rates] = (await env.DB.batch([
+  return Math.max(Number.isFinite(asked) ? asked : now - DAY, now - 14 * DAY);
+};
+
+/**
+ * [SRV-10] N3 밤낮 소식 in one ask a day: the plaza news, new answers to this phone's questions and the
+ * notices that began since, so the app shows one notification for all of it. The same one install id as
+ * the plaza news; links about to end are known on the phone and never asked here.
+ */
+async function digest(request, env, url) {
+  const dev = await installOf(request);
+  const now = Date.now();
+  const since = newsSince(url, now);
+  const [plaza, answers, ops] = await Promise.all([
+    paused(env, "PLAZA_NEWS").then((off) => (off ? null : newsItems(env, dev, since, now))),
+    all(env, `SELECT m.inquiry_id AS id, COUNT(*) AS n, MAX(m.at) AS at FROM inquiry_messages m JOIN inquiries i ON i.id = m.inquiry_id
+      WHERE i.device = ? AND m.sender = 'admin' AND m.at > ? AND m.at <= ? GROUP BY m.inquiry_id ORDER BY at DESC LIMIT 10`, dev, since, now),
+    opsState(env),
+  ]);
+  return json({
+    plaza: plaza ?? [],
+    ...(plaza ? {} : { plazaPaused: true }),
+    answers: answers.map((a) => ({ inquiry: a.id, count: a.n, at: iso(a.at) })),
+    notices: ops.notices.filter((n) => n.from > since && n.from <= now && now < n.until).map(noticeView),
+    now: iso(now),
+  });
+}
+
+async function newsItems(env, dev, since, now) {
+  const [changed, adopted, rates, results] = (await batch(env, [
     stmt(env, `SELECT n.company_id, c.name, n.dept, n.version, n.adopted_at AS at FROM uses u
         JOIN rules o ON o.company_id = u.company_id AND o.grp = u.grp AND o.superseded = 1
         JOIN rules n ON n.company_id = o.company_id AND n.dept_norm = o.dept_norm AND n.superseded = 0 AND n.withdrawn = 0 AND n.adopted_at > ?
@@ -5720,14 +6056,19 @@ async function plazaNews(request, env, url) {
       WHERE r.device = ? AND r.status = 'adopted' AND r.decided_at > ? ORDER BY r.decided_at DESC LIMIT 10`, dev, since),
     stmt(env, "SELECT trade, region, decided_at AS at FROM rates WHERE device = ? AND status = 'adopted' AND decided_at > ? ORDER BY decided_at DESC LIMIT 10",
       dev, since),
+    // [COMM-11] What became of posts this phone flagged or wrote, and the end of its 쓰기 막기.
+    stmt(env, `SELECT x.kind, x.result, x.post_id, x.company_id, c.name, x.at FROM plaza_results x LEFT JOIN companies c ON c.id = x.company_id
+      WHERE x.device = ? AND x.at > ? AND x.at <= ? ORDER BY x.at DESC LIMIT 20`, dev, since, now),
   ])).map((r) => r.results);
   const items = [
     ...changed.map((r) => ({ kind: "changed", company: { id: r.company_id, name: r.name }, dept: r.dept, version: r.version, at: iso(r.at) })),
     ...adopted.map((r) => ({ kind: r.post_id ? "proposal" : "adopted", company: { id: r.company_id, name: r.name }, dept: r.dept,
       version: r.version ?? null, at: iso(r.at) })),
     ...rates.map((r) => ({ kind: "rate", trade: r.trade, region: r.region, at: iso(r.at) })),
+    ...results.map((r) => ({ kind: r.kind, result: r.result, ...(r.post_id ? { post: r.post_id } : {}),
+      ...(r.company_id ? { company: { id: r.company_id, name: r.name ?? "" } } : {}), at: iso(r.at) })),
   ].sort((a, b) => b.at.localeCompare(a.at));
-  return json({ items, now: iso(now) });
+  return items;
 }
 
 // [SRV-06] Photos with a question: what the phone made (JPEG, long side 1600px, no metadata) checked again.
@@ -5802,6 +6143,97 @@ async function photoFile(env, id, n) {
   });
 }
 
+/**
+ * [SRV-08] 근무표 링크 새로 만들기 switched off in the developer app reaches the share server too, so an
+ * older app or a direct call cannot make links while it rests. Hourly, only when it changed.
+ */
+export async function syncShareSwitch(env) {
+  if (!shareAdmin(env)) return false;
+  const off = (await opsState(env)).off.includes("SHARE_CREATE");
+  const was = (await one(env, "SELECT value FROM settings WHERE key = 'share_create_synced'"))?.value;
+  if (was === String(off)) return false;
+  try {
+    await shareCall(env, "PUT", "/api/admin/flags", { createOff: off });
+  } catch (e) {
+    console.error(`share switch: ${e?.code ?? e}`);
+    return false;
+  }
+  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('share_create_synced', ?)", String(off));
+  return true;
+}
+
+/**
+ * [SRV-10] N8 쉬는 기능 자동: when today's D1 writes pass 90% of the free day (D1_WRITES_PER_DAY, 100,000
+ * unless set), the hourly job rests 사용 통계 받기, and an hour later still over, 문의 사진 받기; when the
+ * share server's KV writes pass 90% of KV_WRITES_PER_DAY (1,000), 근무표 링크 새로 만들기. Each comes with a
+ * notice for the day. Next day, below the line, it turns back on what it turned off itself, never a
+ * switch the developer turned off by hand.
+ */
+const AUTO_REST = { share: 0.9, d1: ["USAGE_STATS", "INQUIRY_PHOTOS"], kv: "SHARE_CREATE" };
+
+export async function autoRest(env, now) {
+  await flushMeter(env, now, true);
+  const day = meterDay(now);
+  const used = (await one(env, "SELECT count FROM counters WHERE key = ?", `meter|${day}`))?.count ?? 0;
+  const d1Budget = Number(env.D1_WRITES_PER_DAY) > 0 ? Number(env.D1_WRITES_PER_DAY) : 100000;
+  const kvBudget = Number(env.KV_WRITES_PER_DAY) > 0 ? Number(env.KV_WRITES_PER_DAY) : 1000;
+  let kv = 0;
+  if (shareAdmin(env)) {
+    try {
+      const st = await shareCall(env, "GET", "/api/admin/stats?days=1");
+      kv = Number(st?.days?.[0]?.writes ?? 0) || 0;
+    } catch {
+      kv = 0;
+    }
+  }
+  const s = await opsState(env);
+  const rested = JSON.parse((await one(env, "SELECT value FROM settings WHERE key = 'auto_rested'"))?.value ?? "[]");
+  let off = [...s.off];
+  let notices = [...s.notices];
+  let mine = rested.filter((r) => off.includes(r.key));
+  const turnOff = async (key, why) => {
+    off = [...new Set([...off, key])];
+    mine.push({ key, day, notice: `n${randomId(9)}` });
+    notices.push({ id: mine.at(-1).notice, title: "잠시 쉬는 기능이 있어요", body: `오늘 사용이 많아 '${SWITCHES[key]}'를 내일까지 쉬어요. 다른 기능은 그대로예요.`,
+      level: "info", from: now, until: now + DAY, minApp: null, maxApp: null, audience: null, action: null });
+    await audit(env, now, "auto_rest", key, why);
+  };
+  const back = [];
+  // A new day below the line: what the job rested goes back on.
+  for (const r of mine.filter((r) => r.day !== day)) {
+    if ((r.key === AUTO_REST.kv ? kv < kvBudget * AUTO_REST.share : used < d1Budget * AUTO_REST.share)) back.push(r);
+  }
+  if (back.length) {
+    off = off.filter((k) => !back.some((r) => r.key === k));
+    notices = notices.filter((n) => !back.some((r) => r.notice === n.id));
+    mine = mine.filter((r) => !back.includes(r));
+    for (const r of back) await audit(env, now, "auto_resume", r.key, SWITCHES[r.key]);
+  }
+  let changed = back.length > 0;
+  if (used >= d1Budget * AUTO_REST.share) {
+    const next = AUTO_REST.d1.find((k) => !off.includes(k));
+    // One more each hour while it stays over, so the gentlest goes first.
+    const lastToday = mine.filter((r) => r.day === day && AUTO_REST.d1.includes(r.key)).length;
+    if (next && (lastToday === 0 || !mine.some((r) => r.day === day && r.hour === Math.floor(now / HOUR)))) {
+      await turnOff(next, `D1 ${used}/${d1Budget}`);
+      mine.at(-1).hour = Math.floor(now / HOUR);
+      changed = true;
+    }
+  }
+  if (kv >= kvBudget * AUTO_REST.share && !off.includes(AUTO_REST.kv)) {
+    await turnOff(AUTO_REST.kv, `KV ${kv}/${kvBudget}`);
+    changed = true;
+  }
+  if (!changed) return { used, kv, rested: mine.map((r) => r.key) };
+  notices = notices.filter((n) => n.until > now - 30 * DAY).slice(-NOTICE.max);
+  await batch(env, [
+    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('switches_off', ?)", JSON.stringify(off)),
+    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('notices', ?)", JSON.stringify(notices)),
+    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_rested', ?)", JSON.stringify(mine)),
+  ]);
+  return { used, kv, rested: mine.map((r) => r.key) };
+}
+
 // [SRV-05][STAT-04] The share server, from here: its reported links, taking one down, its day totals.
 // Both workers hold the same secret SHARE_ADMIN_TOKEN; this one also SHARE_BASE_URL. Without them the
 // developer app says how to connect, and nothing is called.
@@ -5812,10 +6244,23 @@ function shareAdmin(env) {
   return /^https:\/\/[A-Za-z0-9.-]+$/.test(base) && token.length >= 20 ? { base, token } : null;
 }
 
-async function shareCall(env, method, path) {
+/** [SRV-08] Five seconds at most: a share server that hangs does not hold the developer app's request. */
+const SHARE_TIMEOUT_MS = 5000;
+
+async function shareCall(env, method, path, body) {
   const s = shareAdmin(env);
   if (!s) return null;
-  const res = await fetch(`${s.base}${path}`, { method, headers: { authorization: `Bearer ${s.token}` } });
+  let res;
+  try {
+    res = await fetch(`${s.base}${path}`, {
+      method,
+      headers: { authorization: `Bearer ${s.token}`, ...(body ? { "content-type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(SHARE_TIMEOUT_MS),
+    });
+  } catch {
+    throw new Refuse("share_server", "share", 504);
+  }
   if (res.status === 204) return {};
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Refuse(data.error === "not_found" ? "not_found" : "share_server", "share", res.status === 404 ? 404 : 502);
@@ -5833,7 +6278,8 @@ async function removeShare(request, env, id, now) {
   const body = await readJson(request, 1024);
   const reason = plainText(body.reason ?? "운영 규칙 위반", 60, "reason", true);
   if (!shareAdmin(env)) return json({ error: "share_server" }, 409);
-  await shareCall(env, "DELETE", `/api/admin/share/${id}`);
+  // [SHR-13] The reason goes with it, so the sharer's app can say why (kept with the removed mark, 90 days).
+  await shareCall(env, "DELETE", `/api/admin/share/${id}`, { reason });
   await audit(env, now, "share_remove", id, reason);
   return shareReports(env);
 }

@@ -11,6 +11,9 @@ export function adminLib() {
    */
   const ERRORS = {
     action: "이 항목에는 할 수 없는 일이에요",
+    // L 1.23: the notice form's audience, and a question the asker hid the writer of (public side).
+    audience: "보일 휴대폰 조건이 맞지 않아요. 제조사·안드로이드 판·일하는 방식·기능을 다시 골라 주세요",
+    hidden_by_you: "이 휴대폰에서 가린 사람의 글이에요",
     active: "이 부서에는 지금 쓰는 규칙이 있어요. 그 규칙을 먼저 내려 주세요",
     adoptAgree: "맞았어요 비율은 50~100% 사이로 정해 주세요",
     adoptPersons: "채택에 필요한 사람은 2~10명 사이로 정해 주세요",

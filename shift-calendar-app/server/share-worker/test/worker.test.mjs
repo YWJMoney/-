@@ -490,13 +490,95 @@ test("[STAT-04] links made, pages seen, reports and take-downs are counted per d
   assert.equal(env.SHARES.map.get("stats:2026-10-22"), undefined);
   t.mock.timers.tick(5 * 60 * 1000);
   await call(env, "GET", `/s/${made.id}`);
-  assert.deepEqual(JSON.parse(env.SHARES.map.get("stats:2026-10-22")), { created: 2, views: 4 });
+  // [SRV-10] Every KV write is counted as well: two links and their limits, and none for a page seen.
+  const { writes, ...first } = JSON.parse(env.SHARES.map.get("stats:2026-10-22"));
+  assert.deepEqual(first, { created: 2, views: 4 });
+  assert.equal(writes, 5);
   await call(env, "POST", `/api/share/${made.id}/report`, { reason: "spam" });
   await call(env, "DELETE", `/api/admin/share/${made.id}`, undefined, bearer);
   const s = await (await call(env, "GET", "/api/admin/stats?days=7", undefined, bearer)).json();
   assert.equal(s.days.length, 7);
-  assert.deepEqual(s.days.at(-1), { day: "2026-10-22", created: 2, views: 4, reports: 1, removed: 1 });
+  const { writes: later, ...today } = s.days.at(-1);
+  assert.deepEqual(today, { day: "2026-10-22", created: 2, views: 4, reports: 1, removed: 1 });
+  assert.ok(later > writes, String(later));
   assert.equal(s.created, 2);
   assert.equal(s.views, 4);
   await flushStats(env);
+});
+
+// ---- 1.23 [SRV-08][SHR-13][SHR-14] ----
+
+const ADMIN_123 = "an-admin-token-of-twenty-plus";
+const asAdmin = { authorization: `Bearer ${ADMIN_123}` };
+
+test("[SRV-08] twenty at once from one caller still make at most twenty links", async () => {
+  const env = { SHARES: memoryKv() };
+  const all = await Promise.all(Array.from({ length: 30 }, () => call(env, "POST", "/api/share", sample)));
+  assert.equal(all.filter((r) => r.status === 201).length, 20);
+  assert.equal(all.filter((r) => r.status === 429).length, 10);
+});
+
+test("[SRV-08] the company server's switch stops new links here too, whatever app asks", async () => {
+  const env = { SHARES: memoryKv(), SHARE_ADMIN_TOKEN: ADMIN_123 };
+  assert.equal((await call(env, "PUT", "/api/admin/flags", { createOff: true }, asAdmin)).status, 200);
+  const res = await call(env, "POST", "/api/share", sample);
+  assert.equal(res.status, 503);
+  assert.equal((await res.json()).error, "paused");
+  assert.equal((await call(env, "PUT", "/api/admin/flags", { createOff: true })).status, 403);
+  await call(env, "PUT", "/api/admin/flags", { createOff: false }, asAdmin);
+  assert.equal((await call(env, "POST", "/api/share", sample)).status, 201);
+});
+
+test("[SRV-08] a subscribed calendar gets 304 while nothing changed and keeps it five minutes", async () => {
+  const env = { SHARES: memoryKv() };
+  const made = await (await call(env, "POST", "/api/share", { ...sample, ics: true })).json();
+  const first = await call(env, "GET", `/s/${made.id}.ics`);
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get("cache-control"), "public, max-age=300");
+  const tag = first.headers.get("etag");
+  assert.ok(tag);
+  assert.equal((await call(env, "GET", `/s/${made.id}.ics`, undefined, { "if-none-match": tag })).status, 304);
+  await call(env, "PUT", `/api/share/${made.id}`, { ...sample, ics: true, title: "민지2" }, { "x-delete-token": made.deleteToken });
+  assert.equal((await call(env, "GET", `/s/${made.id}.ics`, undefined, { "if-none-match": tag })).status, 200);
+});
+
+test("[SHR-13] a link taken down says why to the app, and the day totals say they are rough", async () => {
+  const env = { SHARES: memoryKv(), SHARE_ADMIN_TOKEN: ADMIN_123 };
+  const made = await (await call(env, "POST", "/api/share", sample)).json();
+  const down = await call(env, "DELETE", `/api/admin/share/${made.id}`, { reason: "다른 사람의 이름이 들어 있어요" }, asAdmin);
+  assert.equal(down.status, 204);
+  const res = await call(env, "GET", `/api/share/${made.id}`);
+  assert.equal(res.status, 410);
+  const body = await res.json();
+  assert.equal(body.reason, "다른 사람의 이름이 들어 있어요");
+  assert.ok(body.at);
+  assert.equal((await (await call(env, "GET", "/api/admin/stats?days=1", undefined, asAdmin)).json()).approximate, true);
+});
+
+test("[SHR-14] 모임 코드: each adds only their own link, the group is ids only, and a cut link drops out", async () => {
+  const env = { SHARES: memoryKv() };
+  const mk = async (title) => (await (await call(env, "POST", "/api/share", { ...sample, title })).json());
+  const a = await mk("민지");
+  const b = await mk("지훈");
+  const start = await call(env, "POST", "/api/groups", { link: a.id, token: a.deleteToken });
+  assert.equal(start.status, 201);
+  const { code } = await start.json();
+  assert.match(code, /^[A-HJ-NP-Z2-9]{6}$/);
+  // Someone else's link cannot be added without its token.
+  assert.equal((await call(env, "POST", `/api/groups/${code}`, { link: b.id, token: a.deleteToken })).status, 403);
+  const joined = await (await call(env, "POST", `/api/groups/${code.toLowerCase()}`, { link: b.id, token: b.deleteToken })).json();
+  assert.deepEqual(joined.links, [a.id, b.id]);
+  const read = await (await call(env, "GET", `/api/groups/${code}`)).json();
+  assert.deepEqual(read.links, [a.id, b.id]);
+  // What the server keeps for the group: the ids, nothing else.
+  assert.deepEqual(Object.keys(JSON.parse(env.SHARES.map.get(`group:${code}`))), ["ids"]);
+  assert.ok(!env.SHARES.map.get(`group:${code}`).includes("민지"));
+  // 지훈 cuts the link: out of the group at once.
+  await call(env, "DELETE", `/api/share/${b.id}`, undefined, { "x-delete-token": b.deleteToken });
+  assert.deepEqual((await (await call(env, "GET", `/api/groups/${code}`)).json()).links, [a.id]);
+  // 민지 leaves with her own token only; then nothing is left and the code is gone.
+  assert.equal((await call(env, "DELETE", `/api/groups/${code}/${a.id}`, undefined, { "x-delete-token": "wrong" })).status, 403);
+  assert.equal((await call(env, "DELETE", `/api/groups/${code}/${a.id}`, undefined, { "x-delete-token": a.deleteToken })).status, 204);
+  assert.equal((await call(env, "GET", `/api/groups/${code}`)).status, 404);
+  assert.equal((await call(env, "GET", "/api/groups/ABCDE1")).status, 404);
 });

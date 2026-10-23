@@ -363,9 +363,10 @@ private fun NoticesPage(
         }
         Note("일감 시작 전 알림은 일감마다 정해요.")
     }
-    // [COMM-10] The plaza's news once a day, only for someone who uses a company's rules or sent something.
-    SectionCard(title = "회사 광장") {
-        SwitchRow("광장 소식", "쓰는 회사 규칙이 바뀌거나, 보낸 규칙·제안·임금표가 채택되면 하루 한 번 묶어서 소리 없이 알려 줘요", settings.plazaNews,
+    // [COMM-10] The plaza's news once a day; [SRV-10] since 1.23 밤낮 소식 with answers, notices and received schedules.
+    SectionCard(title = "소식") {
+        SwitchRow("밤낮 소식", "문의에 답이 오거나, 받은 동료 근무표의 다음 7일이 바뀌거나, 광장에서 쓰는 규칙·보낸 글·신고에 소식이 있으면 " +
+            "하루 한 번 묶어서 소리 없이 알려 줘요", settings.plazaNews,
             warning = warning(settings.plazaNews, Notifications.PLAZA_CHANNEL_ID), onFix = fix(Notifications.PLAZA_CHANNEL_ID)) { on ->
             set(on) { it.copy(plazaNews = on) }
         }
@@ -553,7 +554,51 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
         // [FEAT-07] The same, kept up to date by itself (프로).
         PhoneCalendarRows(vm)
     }
+    if (vm.shareOn) ShareLinkRows()
 }
+
+/** [SHR-13][SHR-14] 근무표 링크: 우리 조 모아 보기, and every link cut at once. */
+@Composable
+private fun ShareLinkRows() {
+    val c = LocalContext.current.appContainer
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var keys by remember { mutableStateOf(c.shareSync.allLinks()) }
+    var asking by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var said by remember { mutableStateOf<String?>(null) }
+    SectionCard(title = "근무표 링크") {
+        NavRow(GROUP_ROW, "동료들이 각자 만든 링크를 6자 코드 하나로 묶어 나란히 봐요. 서버에는 링크 목록만 남아요") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.GROUP)
+        }
+        HorizontalDivider()
+        NavRow(CUT_ALL_ROW, said ?: if (keys.isEmpty()) "지금 열려 있는 링크가 없어요"
+            else "이 휴대폰이 만든 링크 ${keys.size}개를 한 번에 끊어요. 받은 사람은 더 볼 수 없어요") {
+            if (keys.isNotEmpty() && !busy) asking = true
+        }
+    }
+    if (asking) ConfirmDialog(
+        title = "모든 링크를 끊을까요?",
+        message = "링크 ${keys.size}개가 서버에서 지워지고, 받은 사람의 달력에는 ‘끊긴 링크’로 남아요. 다시 보내려면 새 링크를 만들어야 해요.",
+        confirmLabel = "모두 끊기",
+        destructive = true,
+        onDismiss = { asking = false },
+        onConfirm = {
+            asking = false; busy = true
+            scope.launch {
+                val left = c.shareSync.cutAll()
+                keys = c.shareSync.allLinks()
+                said = if (left == 0) "모두 끊었어요" else "인터넷이 안 돼 ${left}개는 못 끊었어요. 연결된 뒤 다시 눌러 주세요"
+                busy = false
+            }
+        },
+    )
+}
+
+/** [SHR-14] 설정 › 데이터 rows, also found by search. */
+internal const val GROUP_ROW = "우리 조 모아 보기"
+internal const val CUT_ALL_ROW = "모든 링크 끊기"
+/** [ALRM-02] 설정 › 개인정보: 동의·권한 요약. */
+internal const val SUMMARY_ROW = "보내는 것과 권한 한눈에"
 
 /**
  * [STAT-01] 사용 통계 보내기 with what exactly goes: event names and daily counts, the app version, never
@@ -589,8 +634,13 @@ private fun PrivacyPage(
 ) {
     val context = LocalContext.current
     val pkg = Uri.parse("package:${context.packageName}")
+    var summary by remember { mutableStateOf(false) }
     SectionCard(title = "개인정보") {
         NavRow("개인정보 처리방침", "무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
+        HorizontalDivider()
+        // [ALRM-02] I27: every yes and no, and every permission, on one sheet.
+        NavRow(SUMMARY_ROW, "사용 통계·소식·권한을 한 장에서 보고 바꿔요") { summary = true }
+        if (summary) com.bamnat.app.ui.diag.ConsentSummarySheet { summary = false }
         HorizontalDivider()
         // [STAT-01] Back with a real place to send to (UsageStats, 처리방침 2.8). Its own yes, so it starts off;
         // the app works the same either way.
@@ -614,7 +664,7 @@ private fun PrivacyPage(
         val lockable = remember(refresh) { com.bamnat.app.AppLock.available(context) }
         SwitchRow(
             "앱 잠금",
-            if (lockable) "열 때와 1분 넘게 다른 앱을 쓰다 돌아올 때 지문·얼굴·PIN을 물어요. 알람은 그대로 울려요"
+            if (lockable) "열 때와 1분 넘게 다른 앱을 쓰다 돌아올 때 지문·얼굴·PIN을 물어요. 최근 앱 화면과 화면 캡처에도 내용이 안 보여요. 알람은 그대로 울려요"
             else "휴대폰에 잠금(PIN·패턴·지문)을 먼저 설정하면 켤 수 있어요",
             settings.appLock && lockable,
             enabled = lockable,

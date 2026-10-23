@@ -59,8 +59,11 @@ interface TierApi {
     suspend fun link(device: String, code: String): AdminState
     suspend fun unlink(device: String)
     suspend fun purchase(device: String, product: String, token: String): ServerSub
-    /** [MON-06] The user's own answer before a trial turns paid: "keep" or "cancel", with what they were shown. */
-    suspend fun consent(device: String, answer: String, product: String, price: String, trialEnd: Instant, shown: String)
+    /**
+     * [MON-06] The user's own answer before a trial turns paid: "keep" or "cancel", with what they were shown.
+     * [SRV-07] [answeredAt] is when they tapped, which may be before a queued answer is sent.
+     */
+    suspend fun consent(device: String, answer: String, product: String, price: String, trialEnd: Instant, shown: String, answeredAt: Instant)
 }
 
 /** [MON-02] The company server (server/company-worker); a build without its address asks nothing. */
@@ -105,9 +108,10 @@ class TierClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : T
         )
     }
 
-    override suspend fun consent(device: String, answer: String, product: String, price: String, trialEnd: Instant, shown: String) = serverCall {
+    override suspend fun consent(device: String, answer: String, product: String, price: String, trialEnd: Instant, shown: String,
+        answeredAt: Instant) = serverCall {
         request("POST", "/api/consents", JSONObject().put("answer", answer).put("product", product).put("price", price)
-            .put("trialEnd", trialEnd.toString()).put("shown", shown.take(300)), device)
+            .put("trialEnd", trialEnd.toString()).put("shown", shown.take(300)).put("answeredAt", answeredAt.toString()), device)
         Unit
     }
 

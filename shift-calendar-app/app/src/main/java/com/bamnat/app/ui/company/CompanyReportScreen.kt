@@ -361,7 +361,7 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
             onDismiss = { forgetting = false },
             onConfirm = {
                 forgetting = false
-                vm.forgetAll { ok -> message = if (ok) "모두 지웠어요" else "인터넷에 연결한 뒤 다시 해 주세요" }
+                vm.forgetAllSaying { ok, said -> message = if (ok) said ?: "모두 지웠어요" else "인터넷에 연결한 뒤 다시 해 주세요" }
             },
         )
     }

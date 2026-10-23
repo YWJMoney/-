@@ -102,13 +102,16 @@ internal fun MonthSummaryBar(
     payEstimate: Long?,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
+    /** [SRV-10] N5: the month's 휴식 점검 signs, said under the days. */
+    restSigns: Int = 0,
 ) {
     val cal = LocalCalendarColors.current
     val month = overview.month.monthValue
     val figures = when (overview.focus) {
         CalendarFocus.SHIFTS -> listOf(
             Figure("${month}월 근무", "${overview.workDays}일",
-                overview.leaveDays.takeIf { it > 0 }?.let { "휴가 ${HoursFormat.hours(it * 60).removeSuffix(".0")}일" }),
+                listOfNotNull(overview.leaveDays.takeIf { it > 0 }?.let { "휴가 ${HoursFormat.hours(it * 60).removeSuffix(".0")}일" },
+                    com.bamnat.core.schedule.RestNudge.monthNote(restSigns)).joinToString(" · ").ifEmpty { null }),
             Figure("근무 시간", HoursFormat.korean(overview.workMinutes),
                 overview.extraMinutes.takeIf { it > 0 }?.let { "추가 근무 ${HoursFormat.korean(it)}" }, null),
             if (payEstimate != null) Figure("예상 급여", Fmt.wonShort(payEstimate), "세전", MaterialTheme.colorScheme.primary)

@@ -225,6 +225,39 @@ class TierAppTest {
         assertEquals("6시간 안에는 다시 묻지 않아요", emptyList<String>(), api.calls)
     }
 
+    // ---- The trial's answer waits until it reaches the server [SRV-07] ----
+
+    @Test fun aTrialAnswerGivenOfflineWaitsAndGoesAtTheNextSync() = runBlocking {
+        val c = ApplicationProvider.getApplicationContext<com.bamnat.app.BamnatApp>().container
+        val api = FakeTierApi()
+        c.tierApi = api
+        val tapped = Instant.now().minusSeconds(3_600)
+        val q = PendingConsent("keep", tapped, ProductIds.PRO, "4,990원", tapped.plusSeconds(86_400 * 3), "계속 쓸까요?")
+        c.proStore.answer("keep", tapped, q)
+        assertEquals("다시 열어도 남아 있어요", q, ProStore(context).current.pendingConsent)
+
+        api.consentFails = "offline"
+        assertFalse(c.sendConsent())
+        assertEquals("연결이 없으면 그대로 기다려요", q, c.proStore.current.pendingConsent)
+        assertTrue(com.bamnat.app.ui.pro.consentWaitingText(q).contains("저절로 다시 보내요"))
+
+        api.consentFails = null
+        assertTrue(c.sendConsent())
+        assertNull(c.proStore.current.pendingConsent)
+        assertEquals(listOf("keep" to "계속 쓸까요?"), api.consents)
+        assertEquals("누른 때를 같이 보내요", listOf(tapped), api.consentTimes)
+        assertEquals("답은 그대로 휴대폰에 있어요", tapped, c.proStore.current.consentAt)
+
+        // A refusal of the answer itself is not sent again and again; an old one is let go.
+        c.proStore.answer("cancel", Instant.now(), q.copy(answer = "cancel", answeredAt = Instant.now()))
+        api.consentFails = "answer"
+        assertFalse(c.sendConsent())
+        assertNull(c.proStore.current.pendingConsent)
+        c.proStore.answer("keep", tapped, q.copy(answeredAt = Instant.now().minusSeconds(86_400L * 36)))
+        assertTrue(c.sendConsent())
+        assertNull(c.proStore.current.pendingConsent)
+    }
+
     // ---- The trial's question [MON-06] ----
 
     @Test fun theTrialAsksSevenDaysBeforeAndTheNoticeIsSet() {

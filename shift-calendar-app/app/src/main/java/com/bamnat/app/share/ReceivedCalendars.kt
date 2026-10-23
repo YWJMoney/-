@@ -125,6 +125,8 @@ data class ReceivedCalendar(
     val raw: JSONObject?,
     /** [SHR-12] The server's tag for [raw], so the next look downloads it only when the sharer changed it. */
     val etag: String? = null,
+    /** [SHR-13] Why the developer took the link down, when it was taken down rather than cut by the sharer. */
+    val removedReason: String? = null,
 ) {
     val schedule: SharedSchedule? by lazy { raw?.let { runCatching { SharedSchedule.parse(it) }.getOrNull() } }
     val gone: Boolean get() = raw == null
@@ -195,10 +197,10 @@ class ReceivedCalendarStore(
         if (get(id)?.gone == false) write(_calendars.value.map { if (it.id == id) it.copy(fetchedAt = now) else it })
     }
 
-    /** The sharer cut the link or it ran out: the schedule goes, the entry stays to say so. */
-    fun markGone(id: String) {
+    /** The sharer cut the link or it ran out: the schedule goes, the entry stays to say so; [reason] the developer's, if they took it down. */
+    fun markGone(id: String, reason: String? = null) {
         val now = clock()
-        write(_calendars.value.map { if (it.id == id) it.copy(raw = null, fetchedAt = now, etag = null) else it })
+        write(_calendars.value.map { if (it.id == id) it.copy(raw = null, fetchedAt = now, etag = null, removedReason = reason) else it })
     }
 
     /** Clears what ran out by the phone's own clock, even with no internet to ask. */
@@ -256,6 +258,7 @@ class ReceivedCalendarStore(
         expiresAt?.let { put("expiresAt", it.toString()) }
         raw?.let { put("schedule", it) }
         etag?.let { put("etag", it) }
+        removedReason?.let { put("removedReason", it) }
     }
 
     private fun fromJson(o: JSONObject): ReceivedCalendar? {
@@ -263,7 +266,7 @@ class ReceivedCalendarStore(
         fun time(key: String) = o.optString(key).takeIf { it.isNotEmpty() }?.let { runCatching { Instant.parse(it) }.getOrNull() }
         return ReceivedCalendar(id, o.optString("title"), o.optLong("color", ReceivedCalendar.COLORS[0]),
             time("addedAt") ?: Instant.EPOCH, time("fetchedAt"), time("updatedAt"), time("expiresAt"), o.optJSONObject("schedule"),
-            o.optString("etag").takeIf { it.isNotEmpty() })
+            o.optString("etag").takeIf { it.isNotEmpty() }, o.optString("removedReason").takeIf { it.isNotEmpty() })
     }
 
     companion object {

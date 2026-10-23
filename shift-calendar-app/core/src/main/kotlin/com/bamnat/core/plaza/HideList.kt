@@ -51,5 +51,14 @@ object PlazaRules {
         "규칙을 어기면 30일 동안 글쓰기가 막힐 수 있어요. 마음에 들지 않는 사람의 글은 ‘이 사람 글 안 보기’로 가릴 수 있어요.",
     )
 
+    /**
+     * [COMM-11] I6: the version each line of [LINES] last changed in, so a new version's 다시 동의 shows what
+     * changed. Every line is from version 1 so far; a change raises [VERSION] and the line's number here.
+     */
+    val SINCE: List<Int> = List(LINES.size) { 1 }
+
+    /** [COMM-11] The lines (0-based) changed after the version [agreed] was given to; all of them for someone who never agreed. */
+    fun changedSince(agreed: Int): List<Int> = if (agreed <= 0) emptyList() else SINCE.indices.filter { SINCE[it] > agreed }
+
     fun agreed(version: Int): Boolean = version >= VERSION
 }

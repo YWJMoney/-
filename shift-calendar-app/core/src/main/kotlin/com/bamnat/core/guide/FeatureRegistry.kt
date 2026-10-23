@@ -402,8 +402,8 @@ object FeatureRegistry {
         // [STAT-01][COMM-10] 1.22.0: usage stats only with a yes, the plaza's daily news on for those who take part.
         f("privacy.usageStats", "STAT-01", "사용 통계 보내기", "어떤 기능을 하루에 몇 번 썼는지만 보내요. 보낼 내용을 미리 볼 수 있고, 꺼도 앱은 똑같이 돼요",
             ALL, "설정 › 개인정보·앱 정보 › 사용 통계 보내기", at(Place.SETTINGS_PRIVACY, "사용 통계 보내기"), "통계", "사용 기록", "보내기", "익명", off = Off.ELSEWHERE),
-        f("plaza.news", "COMM-10", "광장 소식", "쓰는 회사 규칙이 바뀌거나, 보낸 규칙·제안·임금표가 채택되면 하루 한 번 묶어서 알려 줘요",
-            ALL, "설정 › 알림과 잠 › 광장 소식", at(Place.SETTINGS_NOTICES, "광장 소식"), "광장", "규칙 바뀜", "채택", "회사 소식", "알림 끄기", off = Off.ELSEWHERE),
+        f("plaza.news", "COMM-10", "밤낮 소식", "문의 답, 받은 근무표의 바뀜, 공지, 광장의 규칙 바뀜·채택·신고 결과를 하루 한 번 묶어서 알려 줘요",
+            ALL, "설정 › 알림과 잠 › 밤낮 소식", at(Place.SETTINGS_NOTICES, "밤낮 소식"), "광장 소식", "문의 답", "광장", "규칙 바뀜", "채택", "회사 소식", "알림 끄기", off = Off.ELSEWHERE),
         f("lock.today", "FEAT-18", "잠금 화면 오늘 근무", "오늘·내일 근무를 소리 없는 알림으로 잠금 화면에 늘 보여 줘요",
             PAID, "설정 › 알림과 잠 › 잠금 화면 오늘 근무", at(Place.SETTINGS_NOTICES, "잠금 화면 오늘 근무"), "잠금 화면", "상시 알림", off = Off.ELSEWHERE),
         f("widget.lines", "COMN-05", "위젯 일하는 방식 줄", "오늘 위젯에 알바 주 시간·주휴, 일근 남은 연차·야근, 현장 이번 주 공수를 한 줄 더 보여 줘요",

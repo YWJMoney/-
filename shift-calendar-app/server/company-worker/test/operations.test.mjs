@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import worker, { cleanJpeg, EVENTS } from "../src/index.js";
+import worker, { cleanJpeg, EVENTS, INQUIRY_TOPICS } from "../src/index.js";
 import { server, report, setup, device, from, signIn, ORIGIN } from "./helpers.mjs";
 
 const plaza = () => server({ plaza: true });
@@ -98,10 +98,10 @@ test("[STAT-01] usage counts come in as names and numbers per day, never with a 
   const day = { day: "2026-10-21", events: { open: 3, pay_view: 1, someday_feature: 2 }, recent: ["share_made", "made_up"] };
   assert.equal((await call("POST", "/api/events", bundle([day]))).status, 204);
   assert.equal((await call("POST", "/api/events", bundle([{ ...day, events: { open: 3 } }]), from(2))).status, 204);
-  // What cannot be a day the phone kept, or a count it made, is refused.
-  assert.equal((await call("POST", "/api/events", bundle([{ ...day, day: "2026-10-24" }]), from(3))).data.error, "day");
-  assert.equal((await call("POST", "/api/events", bundle([{ ...day, day: "2026-09-01" }]), from(3))).data.error, "day");
-  assert.equal((await call("POST", "/api/events", bundle([day, day]), from(3))).data.error, "day");
+  // [STAT-05] What cannot be a day the phone kept is left out (the rest would count); a count it never made is refused.
+  assert.equal((await call("POST", "/api/events", bundle([{ ...day, day: "2026-10-24" }]), from(3))).data.skipped, 1);
+  assert.equal((await call("POST", "/api/events", bundle([{ ...day, day: "2026-09-01" }]), from(3))).data.skipped, 1);
+  assert.equal((await call("POST", "/api/events", bundle([{ ...day, day: "nope" }]), from(3))).data.error, "day");
   assert.equal((await call("POST", "/api/events", bundle([{ ...day, events: { open: 5000 } }]), from(3))).data.error, "count");
   assert.equal((await call("POST", "/api/events", bundle([day], { app: "latest" }), from(3))).data.error, "app");
   const days = DB.db.prepare("SELECT * FROM usage_days").all().map((r) => ({ ...r }));
@@ -115,10 +115,15 @@ test("[STAT-01] usage counts come in as names and numbers per day, never with a 
   // Nothing that points back to a phone: no install id, no address, no time of day.
   assert.ok(!DB.dump().includes("203.0.113"));
   assert.ok(!/test-device/.test(DB.dump()));
-  // A few bundles a day from one network; more is not one phone.
-  for (let i = 0; i < 5; i++) await call("POST", "/api/events", bundle([day]), from(9));
-  assert.equal((await call("POST", "/api/events", bundle([day]), from(9))).status, 204);
-  assert.equal((await call("POST", "/api/events", bundle([day]), from(9))).status, 429);
+  // [STAT-05] The same bundle sent again (a retry) counts once; a day twice in one bundle counts once.
+  assert.deepEqual((await call("POST", "/api/events", bundle([{ ...day, events: { open: 3 } }]), from(2))).data, { ok: true, again: true });
+  const twice = await call("POST", "/api/events", bundle([{ ...day, events: { open: 1 } }, { ...day, events: { open: 1 } }]), from(3));
+  assert.equal(twice.data.skipped, 1);
+  assert.equal(DB.db.prepare("SELECT phones FROM usage_days").get().phones, 3);
+  // [STAT-05] Many phones behind one carrier address: 120 bundles a day, then no more.
+  for (let i = 0; i < 119; i++) await call("POST", "/api/events", bundle([{ ...day, events: { open: i + 10 } }]), from(9));
+  assert.equal((await call("POST", "/api/events", bundle([{ ...day, events: { open: 500 } }]), from(9))).status, 204);
+  assert.equal((await call("POST", "/api/events", bundle([{ ...day, events: { open: 501 } }]), from(9))).status, 429);
 });
 
 test("[STAT-01] switched off, the server takes nothing; day totals go after 400 days", async (t) => {
@@ -138,6 +143,12 @@ test("[STAT-01] the app and the server know the same event names", () => {
   const kotlin = readFileSync(new URL("../../../core/src/main/kotlin/com/bamnat/core/stats/UsageEvents.kt", import.meta.url), "utf8");
   const app = [...kotlin.matchAll(/^\s+[A-Z_]+\("([a-z_]+)"\)/gm)].map((m) => m[1]).sort();
   assert.deepEqual(app, Object.keys(EVENTS).sort());
+});
+
+test("[INQ-05] the app sorts a question by the same topics as the server", () => {
+  const kotlin = readFileSync(new URL("../../../core/src/main/kotlin/com/bamnat/core/ops/InquiryTopics.kt", import.meta.url), "utf8");
+  const app = [...kotlin.matchAll(/Topic\("(\w+)", "([^"]+)", """(.*?)"""\)/g)].map((m) => [m[1], m[2], m[3]]);
+  assert.deepEqual(app, INQUIRY_TOPICS.map(([k, l, re]) => [k, l, re.source]));
 });
 
 test("[ADMIN-13][STAT-03][STAT-04] the gate numbers: shares of phones, the funnel, and 데이터 부족 under 30 a day", async (t) => {

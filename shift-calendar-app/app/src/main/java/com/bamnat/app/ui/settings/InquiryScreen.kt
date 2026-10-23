@@ -3,6 +3,8 @@ package com.bamnat.app.ui.settings
 import com.bamnat.app.ui.guide.guideCalendar
 import com.bamnat.app.appContainer
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.outlined.VisibilityOff
+import com.bamnat.app.company.CompanyText
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -249,6 +251,8 @@ fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
                     view == NEW -> key(formKey) {
                         InquiryForm(vm, pay = vm.payCheck.takeIf { fromPay }, start = start,
                             onSent = { sent -> message = null; fromPay = false; fromElsewhere = false; start = null; view = sent.id },
+                            // [INQ-05] Waiting to be sent: 내 문의 shows it at the top.
+                            onQueued = { fromPay = false; fromElsewhere = false; start = null; message = InquiryViewModel.QUEUED; view = LIST },
                             onMailed = {
                                 fromPay = false; start = null
                                 if (fromElsewhere) onBack() else { message = "메일 앱에서 보내 주세요. 답은 메일로 와요"; view = HELP }
@@ -337,8 +341,44 @@ private fun InquiryItems(vm: InquiryViewModel, list: List<Inquiry>, onNew: () ->
             modifier = Modifier.padding(top = 8.dp))
     }
     Button(onClick = onNew, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("새 문의 쓰기") }
+    // [INQ-05] I9: questions waiting for the internet, above the ones sent.
+    val outbox by vm.outbox.collectAsStateWithLifecycle()
+    if (outbox.isNotEmpty()) OutboxCard(vm, outbox, onEdit = onNew)
     // [UX-05] New answers first, then the questions still waiting.
     vm.ordered(list).forEach { i -> InquiryCard(i, unread = vm.unreadIn(i), onClick = { onOpen(i) }) }
+}
+
+/** [INQ-05] 보내기 대기: what waits, why one was refused, and 지금 보내기 · 고치기 · 지우기. */
+@Composable
+private fun OutboxCard(vm: InquiryViewModel, outbox: List<com.bamnat.app.company.QueuedInquiry>, onEdit: () -> Unit) {
+    var sending by remember { mutableStateOf(false) }
+    var said by remember { mutableStateOf<String?>(null) }
+    SoftCard {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.CloudOff, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("보내기 대기 ${outbox.size}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                TextButton(enabled = !sending, onClick = {
+                    sending = true
+                    vm.sendQueued { ok -> sending = false; said = if (ok) "보냈어요" else "아직 인터넷에 연결되지 않았어요. 연결되면 저절로 보내요" }
+                }) { Text("지금 보내기") }
+            }
+            Text("인터넷이 연결되면 앱을 닫아 두어도 저절로 보내요. 사진은 함께 가지 않아요.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            outbox.forEach { q ->
+                HorizontalDivider()
+                Text("${q.kind.label} · " + q.text.take(80), style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                q.refused?.let { Text("서버가 받지 않았어요: " + CompanyText.problem(it), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error) }
+                Row {
+                    TextButton(onClick = { vm.dropQueued(q.requestId, edit = true); onEdit() }) { Text("고치기") }
+                    TextButton(onClick = { vm.dropQueued(q.requestId, edit = false) }) { Text("지우기") }
+                }
+            }
+            said?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+        }
+    }
 }
 
 /** [UX-05] "새 답 1개 · 답을 기다리는 문의 2개": where the user's questions stand, in one line. */
@@ -389,7 +429,9 @@ private val TAG = Regex("^\\[[^\\]]{1,30}]\\s*")
 private fun bodyOf(text: String): String = text.replace(TAG, "").trim()
 
 @Composable
-private fun InquiryForm(vm: InquiryViewModel, pay: String?, start: InquiryStart?, onSent: (Inquiry) -> Unit, onMailed: () -> Unit) {
+private fun InquiryForm(
+    vm: InquiryViewModel, pay: String?, start: InquiryStart?, onSent: (Inquiry) -> Unit, onMailed: () -> Unit, onQueued: () -> Unit = {},
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val busy by vm.busy.collectAsStateWithLifecycle()
@@ -486,7 +528,7 @@ private fun InquiryForm(vm: InquiryViewModel, pay: String?, start: InquiryStart?
         val body = bodyOf(text)
         val topics = remember { HelpFaq.topics(vm.shareOn) }
         val tips = remember(body, kind) {
-            if (kind == InquiryKind.COMPANY || body.length < 4) emptyList() else HelpFaq.search(body, topics, limit = 2)
+            if (kind == InquiryKind.COMPANY || body.length < 4) emptyList() else HelpFaq.forQuestion(body, topics, limit = 2)
         }
         if (tips.isNotEmpty()) {
             Text("혹시 이런 내용인가요?", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -568,7 +610,7 @@ private fun InquiryForm(vm: InquiryViewModel, pay: String?, start: InquiryStart?
                                 android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
                             }
                             onSent(sent)
-                        } else { error = why }
+                        } else if (why == InquiryViewModel.QUEUED) onQueued() else { error = why }
                     }
                 }
             },
@@ -723,12 +765,19 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             ProgressSteps(i)
+            // [INQ-05] I8: what came of it is in the update; its lines open from here.
+            if (i.stage == "released") TextButton(onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.WHATS_NEW) }) {
+                Text("새 기능 안내 보기")
+            }
             i.messages.forEach { m -> Bubble(m.text, m.fromDeveloper, stampOf(m.at)) }
             if (i.waiting) {
                 Text("개발자가 읽고 답하면 여기에 보여요. 보통 하루 안에 답해요. 설정 탭과 설정 첫 화면에도 표시해 드려요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (i.answers > 0) RateAnswer(i, busy) { good -> error = null; vm.rate(i.id, good) { why -> error = why } }
+            if (i.answers > 0) RateAnswer(i, busy, onMore = { more ->
+                error = null
+                vm.more(i.id, more) { sent, why -> if (sent == null) error = why }
+            }) { good -> error = null; vm.rate(i.id, good) { why -> error = why } }
             Spacer(Modifier.height(8.dp))
         }
         Surface(tonalElevation = 2.dp) {
@@ -767,12 +816,7 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
  */
 @Composable
 private fun ProgressSteps(i: Inquiry) {
-    val dev = i.stage in setOf("planned", "building", "released")
-    val steps = if (dev) {
-        listOf("received" to "접수", "planned" to "개발 목록", "building" to "만드는 중", "released" to (i.version?.let { "$it 반영" } ?: "반영"))
-    } else {
-        listOf("received" to "접수", "checking" to "확인 중", "answered" to "답변")
-    }
+    val steps = inquirySteps(i)
     val at = steps.indexOfFirst { it.first == i.stage }.coerceAtLeast(0)
     val scheme = MaterialTheme.colorScheme
     Row(
@@ -792,9 +836,19 @@ private fun ProgressSteps(i: Inquiry) {
     }
 }
 
-/** [INQ-03] After an answer: was it helpful? 아쉬워요 shows the admins it needs another look. */
+/**
+ * [INQ-02][INQ-05] I8: the steps of a question. A bug or an idea can become work, so it shows all six,
+ * 접수 → 확인 중 → 답변 → 개발 목록 → 만드는 중 → 반영 (with the version); other questions end at the answer.
+ */
+internal fun inquirySteps(i: Inquiry): List<Pair<String, String>> {
+    val answer = listOf("received" to "접수", "checking" to "확인 중", "answered" to "답변")
+    val dev = listOf("planned" to "개발 목록", "building" to "만드는 중", "released" to (i.version?.let { "$it 반영" } ?: "반영"))
+    return if (i.kind == InquiryKind.BUG || i.kind == InquiryKind.IDEA || i.stage in setOf("planned", "building", "released")) answer + dev else answer
+}
+
+/** [INQ-03] After an answer: was it helpful? 아쉬워요 shows the admins it needs another look; [INQ-05] I10 asks one line more. */
 @Composable
-private fun RateAnswer(i: Inquiry, busy: Boolean, onRate: (Boolean?) -> Unit) {
+private fun RateAnswer(i: Inquiry, busy: Boolean, onMore: (String) -> Unit = {}, onRate: (Boolean?) -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(when (i.rating) {
             true -> "도움이 됐다고 알려 주셨어요. 고마워요"
@@ -807,8 +861,21 @@ private fun RateAnswer(i: Inquiry, busy: Boolean, onRate: (Boolean?) -> Unit) {
             FilterChip(selected = i.rating == false, enabled = !busy, onClick = { onRate(if (i.rating == false) null else false) },
                 label = { Text("아쉬워요") })
         }
+        // [INQ-05] I10: what was missing, in a line, right after 아쉬워요; it goes as a message on the question.
+        val asked = i.messages.lastOrNull()?.let { !it.fromDeveloper && it.text.startsWith(MISSED) } == true
+        if (i.rating == false && !asked) {
+            var line by rememberSaveable(i.id) { mutableStateOf("") }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(line, { line = it.take(200) }, Modifier.weight(1f), singleLine = true,
+                    placeholder = { Text("무엇이 아쉬웠나요? (한 줄)") })
+                TextButton(enabled = line.isNotBlank() && !busy, onClick = { onMore("$MISSED ${line.trim()}"); line = "" }) { Text("보내기") }
+            }
+        }
     }
 }
+
+/** [INQ-05] How the one line after 아쉬워요 starts, so the admins see what it is. */
+internal const val MISSED = "[아쉬운 점]"
 
 /** [ADMIN-02] Only the address, for those who want mail; questions themselves go through the app. */
 @Composable
@@ -862,6 +929,9 @@ private fun PublicBoard(vm: InquiryViewModel, onNew: () -> Unit, onOpen: (Public
                         color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                 }
             }
+            // [COMM-11] What this phone's 이 사람 글 안 보기 left out, and where to undo it.
+            if (p.hiddenByYou > 0) Text("가린 사람의 문의 ${p.hiddenByYou}개는 빼고 보여요. 회사 광장 › 내 활동에서 되돌릴 수 있어요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             p.items.forEach { i -> PublicCard(i) { onOpen(i) } }
             if (p.next != null) {
                 OutlinedButton(onClick = { vm.loadBoard(more = true) }, modifier = Modifier.fillMaxWidth()) { Text("더 보기") }
@@ -915,6 +985,18 @@ private fun PublicThreadView(vm: InquiryViewModel, id: String, onGone: () -> Uni
         }
         t.messages.forEach { m -> Bubble(m.text, m.fromDeveloper, stampOf(m.at)) }
         note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+        // [COMM-11] G1 이 사람 글 안 보기, as in the plaza: the mark stays on this phone.
+        var hiding by remember { mutableStateOf(false) }
+        if (!t.mine && t.author != null) TextButton(onClick = { hiding = true }) {
+            Icon(Icons.Outlined.VisibilityOff, null, modifier = Modifier.size(18.dp)); Text(" 이 사람 글 안 보기")
+        }
+        if (hiding) ConfirmDialog(
+            title = "이 사람의 문의를 가릴까요?",
+            message = "모두의 문의와 회사 광장에서 이 사람의 글이 이 휴대폰에서만 안 보여요. 회사 광장 › 내 활동의 ‘가린 사람’에서 되돌릴 수 있어요.",
+            confirmLabel = "가리기",
+            onDismiss = { hiding = false },
+            onConfirm = { hiding = false; t.author?.let(vm::hideWriter); onGone() },
+        )
         if (t.mine) {
             Text("내가 보낸 문의예요. 더 쓰거나 지우기는 ‘내 문의’에서 할 수 있어요. 나도 그래요 ${t.same}",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
