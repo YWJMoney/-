@@ -380,7 +380,7 @@ fun TalkSheet(holder: TalkHolder) {
                 if (replyTo == null) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 8.dp)) {
                         listOf("talk" to "의견", "question" to "질문", "proposal" to "고치자는 제안").forEach { (k, label) ->
-                            androidx.compose.material3.FilterChip(selected = kind == k, onClick = { kind = k; error = null }, label = { Text(label) })
+                            com.bamnat.app.ui.components.FilterChip(selected = kind == k, onClick = { kind = k; error = null }, label = { Text(label) })
                         }
                     }
                 } else {

@@ -55,7 +55,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -522,7 +522,7 @@ private fun LedgerRow(
         ).joinToString(" · ")
         val said = listOf(e.title, signedWon(e).replace("-", "마이너스 "), caption).joinToString(", ")
         Surface(
-            color = if (selected) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f) else MaterialTheme.colorScheme.surface,
+            color = if (selected) com.bamnat.app.ui.components.Selection.container else MaterialTheme.colorScheme.surface,
             modifier = Modifier.fillMaxWidth()
                 .combinedClickable(
                     onClick = { if (selecting) onToggle() else actions.open(e) },

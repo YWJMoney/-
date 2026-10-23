@@ -37,7 +37,7 @@ import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -741,7 +741,7 @@ private fun ItemsStep(s: PaySetupState) {
     PayPresets.of(s.occupation ?: Occupation.CUSTOM).note
         .takeIf { it.isNotEmpty() && s.occupation != Occupation.PART_TIME && s.occupation != Occupation.SECURITY }?.let { Hint(it) }
     s.rows.forEach { row -> ItemRowEditor(row) }
-    OutlinedButton(onClick = { adding = true }) { Icon(Icons.Filled.Add, null); Text(" 다른 수당 넣기") }
+    com.bamnat.app.ui.components.AddButton("다른 수당 넣기", onClick = { adding = true })
     // [SETUP-03][PAYS-07] Nothing here has to be complete: the rest of the company's way has its own place later.
     Hint("빠진 수당이 있어도 괜찮아요. 기숙사비 같은 차감이나 회사만의 수당은 설정을 마친 뒤 ‘우리 회사 항목 만들기’로 언제든 넣어요.")
     if (s.wage == Wage.ANNUAL) {

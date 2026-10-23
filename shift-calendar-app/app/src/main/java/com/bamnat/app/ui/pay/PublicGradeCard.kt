@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -94,12 +94,9 @@ internal fun PublicGradeCard(profile: PayProfile, month: LocalDate, enabled: Boo
 
 @Composable
 private fun Stepper(label: String, value: String, current: Int, range: IntRange, enabled: Boolean, onChange: (Int) -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        IconButton(onClick = { onChange((current - 1).coerceIn(range)) }, enabled = enabled && current > range.first,
-            modifier = Modifier.semantics { contentDescription = "$label 줄이기" }) { Text("−", style = MaterialTheme.typography.titleLarge) }
-        Text(value, style = MaterialTheme.typography.titleSmall, modifier = Modifier.widthIn(min = 64.dp), textAlign = TextAlign.Center)
-        IconButton(onClick = { onChange((current + 1).coerceIn(range)) }, enabled = enabled && current < range.last,
-            modifier = Modifier.semantics { contentDescription = "$label 늘리기" }) { Text("+", style = MaterialTheme.typography.titleLarge) }
+    // [UX-08] The app's one stepper; [value] is how the current number reads.
+    com.bamnat.app.ui.components.StepperRow(label) {
+        com.bamnat.app.ui.components.CountStepper(current, onChange, name = label, range = range, enabled = enabled,
+            format = { if (it == current) value else it.toString() })
     }
 }

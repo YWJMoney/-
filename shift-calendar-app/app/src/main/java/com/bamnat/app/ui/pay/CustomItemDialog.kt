@@ -43,7 +43,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -542,13 +542,8 @@ private fun WhenSection(draft: ItemDraft, kind: ItemKind, snapshot: ScheduleSnap
 
 @Composable
 private fun HourStepper(label: String, value: Int, onChange: (Int) -> Unit) {
-    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { onChange((value + 23) % 24) }) { Icon(Icons.Filled.Remove, "$label 1시간 앞으로") }
-            Text("${value}시", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { contentDescription = "$label ${value}시" })
-            IconButton(onClick = { onChange((value + 1) % 24) }) { Icon(Icons.Filled.Add, "$label 1시간 뒤로") }
-        }
-    }
+    // [UX-08] The app's one stepper, running round the clock.
+    com.bamnat.app.ui.components.CountStepper(value, onChange, name = label, range = 0..23, wrap = true, format = { "${it}시" }, valueWidth = 56.dp)
 }
 
 private fun <T> Set<T>.toggle(v: T): Set<T> = if (v in this) this - v else this + v

@@ -461,7 +461,7 @@ private fun MoreFields(profile: PayProfile, month: YearMonth, form: SlipForm) {
         }
     }
     if (form.others.size < MAX_OTHERS) {
-        TextButton(onClick = { form.others += OtherLine() }) { Icon(Icons.Filled.Add, null); Text(" 수당 넣기") }
+        com.bamnat.app.ui.components.AddButton("수당 넣기", onClick = { form.others += OtherLine() })
     }
 }
 

@@ -17,7 +17,7 @@ import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SegmentedButton
+import com.bamnat.app.ui.components.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.rememberDatePickerState
@@ -53,7 +53,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -236,7 +236,7 @@ private fun CaptureCalendarControls() {
         Text("결제 알림을 쌓을 달력", style = MaterialTheme.typography.titleSmall)
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             calendars.forEach { cal ->
-                androidx.compose.material3.FilterChip(
+                com.bamnat.app.ui.components.FilterChip(
                     selected = prefs.calendar == cal.id || (calendars.none { it.id == prefs.calendar } && cal.isMain),
                     onClick = { c.autoRecordPrefs.setCalendar(cal.id) },
                     label = { Text(cal.name, maxLines = 1) },
@@ -262,13 +262,13 @@ private fun CaptureCalendarControls() {
                     prefs.seenApps.entries.sortedBy { it.value }.forEach { (pkg, label) ->
                         Text(label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
                         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            androidx.compose.material3.FilterChip(
+                            com.bamnat.app.ui.components.FilterChip(
                                 selected = prefs.appCalendars[pkg] == null,
                                 onClick = { c.autoRecordPrefs.setAppCalendar(pkg, null) },
                                 label = { Text("기본") },
                             )
                             calendars.forEach { cal ->
-                                androidx.compose.material3.FilterChip(
+                                com.bamnat.app.ui.components.FilterChip(
                                     selected = prefs.appCalendars[pkg] == cal.id,
                                     onClick = { c.autoRecordPrefs.setAppCalendar(pkg, cal.id) },
                                     label = { Text(cal.name, maxLines = 1) },
@@ -459,7 +459,7 @@ fun UpcomingCard(
     val incoming = upcoming.any { it.cost.kind == MoneyKind.INCOME } || all.any { it.kind == MoneyKind.INCOME }
     SectionCard(
         title = if (incoming) "곧 나갈 돈·들어올 돈" else "곧 나갈 돈",
-        trailing = { TextButton(onClick = { onEdit(null) }) { Icon(Icons.Filled.Add, null); Spacer(Modifier.width(4.dp)); Text("반복") } },
+        trailing = { com.bamnat.app.ui.components.AddButton("반복", onClick = { onEdit(null) }) },
     ) {
         if (all.isEmpty() && upcoming.isEmpty()) {
             Text("월세·보험·통신비처럼 매달 나가는 돈, 월급처럼 들어오는 돈을 적어 두면 3일 전과 당일 아침에 알려 드려요. 그날 저절로 가계부에 적게 할 수도 있어요.",
@@ -605,10 +605,10 @@ fun FixedCostDialog(
                             ) { Text(w, maxLines = 1, softWrap = false) }
                         }
                     }
-                    Repeat.MONTH -> Stepper("날짜", if (day >= 31) "말일" else "${day}일", { day = if (day <= 1) 31 else day - 1 }, { day = if (day >= 31) 1 else day + 1 })
+                    Repeat.MONTH -> Stepper("날짜", day, 1..31, { if (it >= 31) "말일" else "${it}일" }) { day = it }
                     Repeat.YEAR -> {
-                        Stepper("달", "${month}월", { month = if (month <= 1) 12 else month - 1 }, { month = if (month >= 12) 1 else month + 1 })
-                        Stepper("날짜", if (day >= 31) "말일" else "${day}일", { day = if (day <= 1) 31 else day - 1 }, { day = if (day >= 31) 1 else day + 1 })
+                        Stepper("달", month, 1..12, { "${it}월" }) { month = it }
+                        Stepper("날짜", day, 1..31, { if (it >= 31) "말일" else "${it}일" }) { day = it }
                     }
                 }
                 Text("분류", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -675,12 +675,10 @@ fun FixedCostDialog(
 }
 
 @Composable
-private fun Stepper(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        IconButton(onClick = onMinus) { Text("−", style = MaterialTheme.typography.titleLarge) }
-        Text(value, style = MaterialTheme.typography.titleMedium, modifier = Modifier.widthIn(min = 48.dp), textAlign = TextAlign.Center)
-        IconButton(onClick = onPlus) { Text("+", style = MaterialTheme.typography.titleLarge) }
+private fun Stepper(label: String, value: Int, range: IntRange, format: (Int) -> String, onChange: (Int) -> Unit) {
+    // [UX-08] The app's one stepper, running round the month or the year.
+    com.bamnat.app.ui.components.StepperRow(label) {
+        com.bamnat.app.ui.components.CountStepper(value, onChange, name = label, range = range, wrap = true, format = format)
     }
 }
 
