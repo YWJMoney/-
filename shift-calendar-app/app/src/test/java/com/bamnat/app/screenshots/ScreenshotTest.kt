@@ -3007,12 +3007,12 @@ class ScreenshotTest {
     // [ONBOARD-05] 사용 통계 at the end of the first-start screen: unticked; only a tick turns it on (D42).
     @Test fun foldedRecommendedUsageStats() = shoot("526_folded_recommended_usage_stats", FOLDED,
         recommended(setOf(ConsentItem.CALENDAR)) {
-            reveal("개발자에게 익명 사용 통계 보내기 (선택)", exact = true)
+            reveal("개발자에게 사용 통계 보내기 (선택)", exact = true)
             assertFalse(app.container.settingsRepository.current.shareUsageStats)
         })
     @Test fun recommendedUsageStatsOnlyWithATick() = shoot("527_folded_recommended_stats_then_setup", FOLDED,
         recommended(setOf(ConsentItem.CALENDAR)) {
-            tapText("개발자에게 익명 사용 통계 보내기 (선택)", exact = true)
+            tapText("개발자에게 사용 통계 보내기 (선택)", exact = true)
             tapText("허용은 나중에 할게요")
             assertTrue("ticked, it is on", app.container.settingsRepository.current.shareUsageStats)
         })

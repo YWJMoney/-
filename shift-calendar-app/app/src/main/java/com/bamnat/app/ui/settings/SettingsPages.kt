@@ -552,7 +552,7 @@ internal fun UsageStatsRow(on: Boolean, onChange: (Boolean) -> Unit) {
     var show by remember { mutableStateOf(false) }
     SwitchRow(
         "사용 통계 보내기",
-        "어떤 기능을 하루에 몇 번 썼는지만 보내 앱을 고치는 데 써요. 휴대폰·근무·금액·글은 보내지 않고, 꺼도 앱은 똑같이 돼요",
+        "어떤 기능을 하루에 몇 번 썼는지만 보내 앱을 고치는 데 써요. 휴대폰·근무·금액·글은 보내지 않고, 서버에는 날짜별 합계만 400일 남아요. 꺼도 앱은 똑같이 돼요",
         on,
         onChange = onChange,
     )
