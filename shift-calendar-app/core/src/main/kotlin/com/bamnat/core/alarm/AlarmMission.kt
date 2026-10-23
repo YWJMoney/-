@@ -6,13 +6,16 @@ import kotlin.math.sqrt
 import kotlin.random.Random
 
 /**
- * [PROV-06] What turning an alarm off asks for (프로): nothing, a few sums, or shaking the phone. A
+ * [PROV-06] What turning an alarm off asks for (프로): nothing, a few sums, shaking the phone or, [ALRM-04], a photo of a
+ * place set beforehand. A
  * mission never makes an alarm impossible to stop: after [GIVE_UP_AFTER] of ringing, 끄기 needs none.
  */
 enum class AlarmMission(val key: String, val label: String, val hint: String) {
     NONE("none", "미션 없음", "누르면 바로 꺼져요"),
     MATH("math", "계산 문제", "두 자리 덧셈·뺄셈 ${Missions.PROBLEMS}개를 풀어야 꺼져요"),
-    SHAKE("shake", "흔들기", "휴대폰을 ${Missions.SHAKES}번 흔들어야 꺼져요");
+    SHAKE("shake", "흔들기", "휴대폰을 ${Missions.SHAKES}번 흔들어야 꺼져요"),
+    /** [ALRM-04] The place photographed in settings, photographed again; see [ImageHash]. */
+    PHOTO("photo", "증명 사진", "정해 둔 곳을 찍어야 꺼져요");
 
     companion object {
         fun of(key: String?): AlarmMission = entries.firstOrNull { it.key == key } ?: NONE
@@ -47,6 +50,20 @@ object Missions {
 
     /** Whether 끄기 may skip the mission: it has rung [GIVE_UP_AFTER] since [since]. */
     fun canSkip(since: Instant, now: Instant): Boolean = !now.isBefore(since.plus(GIVE_UP_AFTER))
+
+    /** [ALRM-04] Photos of the wrong place before 증명 사진 gives way to sums. */
+    const val PHOTO_TRIES = 3
+
+    /**
+     * [ALRM-04] The mission actually asked: 증명 사진 without a reference photo, after [PHOTO_TRIES] wrong photos
+     * or when the camera app cannot be opened, and 흔들기 without a motion sensor, become sums, so nobody is
+     * ever stuck with an alarm they cannot stop.
+     */
+    fun shown(mission: AlarmMission, hasReference: Boolean, wrongPhotos: Int, cameraFailed: Boolean, motionSensor: Boolean): AlarmMission = when {
+        mission == AlarmMission.PHOTO && (!hasReference || cameraFailed || wrongPhotos >= PHOTO_TRIES) -> AlarmMission.MATH
+        mission == AlarmMission.SHAKE && !motionSensor -> AlarmMission.MATH
+        else -> mission
+    }
 }
 
 /**

@@ -92,6 +92,8 @@ class AppContainer(context: Context) {
     val sleepRepository = com.bamnat.app.data.SleepRepository(database)
     /** [ONBOARD-01] What this phone was told about on the first-start consent pages. */
     val consentStore by lazy { com.bamnat.app.data.ConsentStore(appContext) }
+    /** [ALRM-04] 증명 사진's reference fingerprints. */
+    val photoReferences by lazy { com.bamnat.app.alarm.PhotoReferences(appContext) }
     /** [SLP-08] Sleep measured by a watch or the phone, read from Health Connect. */
     val healthSleep = com.bamnat.app.sleep.HealthSleep(context)
     /** [LEDG-22][LEDG-24] How 결제 알림으로 적기 was tuned, and repeats the user turned down. */

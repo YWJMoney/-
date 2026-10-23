@@ -46,6 +46,8 @@
 - **스마트 알람 제안(ALRM-03)**: core `alarm/AlarmSuggest.kt`가 근무 종류별 최근 5번, 첫 알람만 보고 제안 하나를 골라요(늦게 끔 3/5 → 20분 앞, 30분 넘게 먼저 깸 3/5 → 15분 뒤, 잠이 목표보다 90분 넘게 짧음 3/5 → 잘 시간 알림). 끈 시각은 `AlarmService`가 `alarm_dismissed` 줄에 `type= due= off=`로 남기고(기기 안 이벤트 기록, 사용 통계로 안 감), 잠은 수동 기록과 이미 켠 Health Connect를 합쳐 써요.
   카드는 `CalendarScreen`의 `AlarmSuggestCard`(달력 맨 위, 내 달력만), 적용은 `CalendarViewModel.applyAlarmSuggestion`이 `AlarmShift.move`로 그 근무만 바꾸고 10초 되돌리기. 주 1장, 답한 제안은 30일 쉼, '다시 보지 않기'는 설정 › 알람 › '숨긴 제안 다시 보기'로 풀려요(`alarmSuggestMemory`, 기기에만, 백업 안 함).
   끄는 곳은 설정 › 알람 › '알람 제안'(기본 켜짐, 백업에 들어감, `alarm.suggest`). 이벤트 기록이 1,000줄로 잘려서 화면 이동이 아주 많으면 오래된 끈 기록이 빠질 수 있어요(그러면 제안이 늦게 나올 뿐 틀리지 않음).
+- **증명 사진 미션 [ALRM-04] (1.23)**: core `alarm/ImageHash.kt`(32×32 흑백 → dHash 64비트, 해밍 ≤ `SAME_PLACE` 18이면 같은 곳, 기준 2장 중 가까운 쪽), `Missions.shown`이 기준 없음·3번 틀림·카메라 실패를 계산 문제로 바꿔요. 앱 `alarm/PhotoMission.kt`(`PhotoReferences` = 자기 prefs `photo_mission`, 백업 규칙과 밤낮 백업 파일 모두 밖, `PhotoPrint` = 카메라 앱 사진을 EXIF 방향 맞춰 줄이고 `finally`에서 지움, `PhotoAttempts`).
+- 사진은 명세서 사진과 같은 길(카메라 권한 없이 `TakePicture` + FileProvider `scan/`), 잠금 화면에서는 `requestDismissKeyguard` 뒤에 카메라를 열어요. 설정은 `ui/settings/PhotoMissionRows.kt`(끄기 미션 아래, 기준이 없으면 증명 사진을 고를 수 없음). 시험 `ImageHashTest`·`PhotoMissionTest`, 사진 715~719.
 - **법 문서**: `privacy/index.html` 처리방침 2.6(1.19.0과 1.20.0을 PR #49 하나로 합쳐 2.5와 같은 날 게시, 게시 2026-10-22·시행 2026-11-21 예정, 2.5 몫 때문에 30일 고지). `docs/play-data-safety.md` 1.20.0장.
 - **시험**: core `ReportTest`·`AlarmMissionTest`·`GuideTest.whatsNewOpensRealFeatures`, 앱 `report/ReportPdfTest`, `calendar/PhoneCalendarTest`, `share/ShareLinksProTest`, `backup/AutoBackupTest`, `alarm/SureAlarmTest`, `tier/TierAppTest`, 화면 사진 385~398, 공유 서버 `worker.test.mjs`.
 

@@ -80,6 +80,22 @@ class BackupFormat3Test {
         assertFalse("nothing waits after the restore", File(root, "staging").exists())
     }
 
+    /** [ALRM-04] 증명 사진's fingerprints belong to this phone and this home: neither backup carries them. */
+    @Test fun thePhotoMissionFingerprintsStayOnThePhone() = runBlocking {
+        val refs = com.bamnat.app.alarm.PhotoReferences(context).apply { clear(); add(0x0123456789ABCDEFL, "욕실 거울") }
+        settings.update { it.copy(alarmMission = "photo") }
+        val json = manager().export()
+        assertTrue("the choice goes", json.contains("\"alarmMission\": \"photo\""))
+        assertFalse(json.contains("욕실 거울") || json.contains("123456789abcdef"))
+        // Android's own backup and phone-to-phone copy take settings.xml alone, not photo_mission.xml.
+        for (rules in listOf("backup_rules.xml", "data_extraction_rules.xml")) {
+            val xml = File("src/main/res/xml/$rules").readText()
+            assertFalse(rules, xml.contains(com.bamnat.app.alarm.PhotoReferences.FILE))
+            assertFalse(rules, Regex("""domain="sharedpref" path="\."""").containsMatchIn(xml))
+        }
+        refs.clear()
+    }
+
     @Test fun aChangedFileIsTurnedAway() {
         val bytes = file(manager())
         // One byte of the photo (stored as it is) changed: its sum no longer matches.
