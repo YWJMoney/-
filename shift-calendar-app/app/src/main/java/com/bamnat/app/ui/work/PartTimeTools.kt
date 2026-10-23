@@ -476,7 +476,7 @@ private fun QuitScreen(calendarId: String, profile: PayProfile?, snapshot: Sched
             Hint("최근 4주 평균 한 주 ${weekly}시간 · 시급 ${Fmt.won(wage)}로 셌어요.")
         }
         SectionCard(title = "마지막 주 주휴수당") {
-            Text("${Fmt.shortDate(last.weekStart)}~${Fmt.shortDate(last.weekEnd)} · ${"%.1f".format(last.minutes / 60.0)}시간" +
+            Text("${Fmt.shortDate(last.weekStart)}~${Fmt.shortDate(last.weekEnd)} · ${com.bamnat.core.hours.HoursFormat.korean(last.minutes.toInt())}" +
                 if (last.absent > 0) " · 결근 ${last.absent}일" else "", style = MaterialTheme.typography.bodyMedium)
             ValueLine("받을 돈", if (last.owed) Fmt.won(last.pay) else "없어요", strong = true)
             Hint(when {

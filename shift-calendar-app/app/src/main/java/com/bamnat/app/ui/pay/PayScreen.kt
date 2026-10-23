@@ -5,7 +5,6 @@ import com.bamnat.app.pay.named
 
 import com.bamnat.core.pay.LeaveBook
 import android.os.Build
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -721,8 +720,9 @@ private fun Walkthrough(result: MonthPay, onClose: () -> Unit) {
             "4. 항목을 모두 더해요. 금액을 누르면 어떤 식으로 나왔는지 그대로 보여 드려요.",
         )
         TimeBar(step)
-        AnimatedVisibility(true) {
-            Text(texts[step], style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 8.dp))
+        // [285] Each step's text fades in over the last instead of jumping.
+        androidx.compose.animation.AnimatedContent(step, label = "walkthrough") { s ->
+            Text(texts[s], style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 8.dp))
         }
         if (example != null && step >= 1) {
             Text(

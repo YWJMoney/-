@@ -25,6 +25,10 @@ object HomeRequests {
 
     private var processStarted = false
     private var stoppedAt = 0L
+    private var stoppedOn: java.time.LocalDate? = null
+
+    /** Today's date; a test moves it. */
+    internal var today: () -> java.time.LocalDate = { java.time.LocalDate.now() }
 
     /**
      * True while a screen the app opened itself (file picker, permission page) is in front: coming
@@ -55,11 +59,15 @@ object HomeRequests {
 
     fun onStop(changingConfigurations: Boolean) {
         stoppedAt = if (changingConfigurations) 0L else SystemClock.elapsedRealtime()
+        stoppedOn = if (changingConfigurations) null else today()
     }
 
     fun onStart() {
-        if (stoppedAt > 0 && !awaitingResult && SystemClock.elapsedRealtime() - stoppedAt >= AWAY_MILLIS) request()
+        // [285] A new day is opening the app again too, however short the time away (23:55 → 00:05).
+        val newDay = stoppedOn != null && stoppedOn != today()
+        if (stoppedAt > 0 && !awaitingResult && (SystemClock.elapsedRealtime() - stoppedAt >= AWAY_MILLIS || newDay)) request()
         stoppedAt = 0L
+        stoppedOn = null
         awaitingResult = false
     }
 
