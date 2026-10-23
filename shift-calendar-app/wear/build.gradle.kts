@@ -51,6 +51,14 @@ android {
         }
     }
 
+    // [OPS-24] Lint fails the build on what would crash an older phone or a missing permission; what was there
+    // when this was turned on (1.23) is in lint-baseline.xml, so only new problems fail.
+    lint {
+        baseline = file("lint-baseline.xml")
+        abortOnError = true
+        error += listOf("NewApi", "InlinedApi", "MissingPermission", "WrongConstant")
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

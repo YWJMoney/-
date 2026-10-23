@@ -83,6 +83,16 @@ android {
         }
     }
 
+    // [OPS-24] Lint fails the build on what would crash an older phone or a missing permission; what was there
+    // when this was turned on (1.23) is in lint-baseline.xml, so only new problems fail.
+    // checkDependencies: the :database module's code is checked with the app's.
+    lint {
+        baseline = file("lint-baseline.xml")
+        abortOnError = true
+        error += listOf("NewApi", "InlinedApi", "MissingPermission", "WrongConstant")
+        checkDependencies = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -110,6 +120,8 @@ android {
         unitTests.all {
             it.maxHeapSize = "2g"
             it.maxParallelForks = forks
+            // [REL-14] Where Robolectric fetches the Android jars of older versions (default Maven Central).
+            (findProperty("bamnat.robolectricRepo") as String?)?.let { url -> it.systemProperty("robolectric.dependency.repo.url", url) }
             when (testSet) {
                 "unit" -> it.filter.excludeTestsMatching("$shots.*")
                 "shots-a" -> shotsA.forEach { c -> it.filter.includeTestsMatching(c) }
