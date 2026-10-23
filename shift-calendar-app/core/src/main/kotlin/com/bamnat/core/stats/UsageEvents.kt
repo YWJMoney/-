@@ -25,6 +25,7 @@ enum class UsageEvent(val key: String) {
     BACKUP("backup"),
     ALARM_RANG("alarm_rang"),
     ICS_EXPORT("ics_export"),
+    NOTICE_OPEN("notice_open"),
     ;
 
     companion object {

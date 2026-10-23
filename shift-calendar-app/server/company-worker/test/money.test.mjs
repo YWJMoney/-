@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { server, report, device, from, signIn, ORIGIN } from "./helpers.mjs";
-import worker, { addMonths, stack, readSub, stopUnconsentedTrials } from "../src/index.js";
+import worker, { addMonths, stack, readSub, stopUnconsentedTrials, recheckLapsed } from "../src/index.js";
 
 const APP = { "x-admin": "1", origin: ORIGIN };
 const phone = (n) => ({ "x-device": device(n) });
@@ -263,7 +263,7 @@ test("without the service account a purchase is not checked and nothing is kept"
   assert.equal(await stopUnconsentedTrials({ DB }, Date.now()), 0);
 });
 
-test("a trial nobody said 'keep' to is stopped a day before it turns paid", async (t) => {
+test("a trial nobody said 'keep' to is stopped in the last two hours before it turns paid", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-12-30T16:00:00Z") });
   const { account, publicKey } = await serviceAccount();
   const subs = { "token-trial-a": playSub("2026-12-31T15:30:00Z", { trial: true }), "token-trial-b": playSub("2026-12-31T15:30:00Z", { trial: true }) };
@@ -280,6 +280,9 @@ test("a trial nobody said 'keep' to is stopped a day before it turns paid", asyn
     shown: "체험이 2027-01-01에 끝나고 그날부터 월 ₩6,900이 결제돼요" }, phone(2));
   assert.equal(kept.status, 201);
 
+  // [SRV-07] A day before, a "keep" may still be waiting in a phone's queue: nothing is stopped yet.
+  assert.equal(await stopUnconsentedTrials(env, Date.now()), 0);
+  t.mock.timers.setTime(Date.parse("2026-12-31T14:00:00Z"));
   assert.equal(await stopUnconsentedTrials(env, Date.now()), 1);
   const cancels = calls.filter((c) => c.url.endsWith(":cancel"));
   assert.equal(cancels.length, 1);
@@ -329,4 +332,73 @@ test("consent answers are kept five years, then the hourly clean-up deletes them
   await worker.scheduled({ cron: "17 * * * *", scheduledTime: now }, env, { waitUntil: (p) => waits.push(p) });
   await Promise.all(waits);
   assert.deepEqual(DB.db.prepare("SELECT device FROM consents").all().map((r) => r.device), ["kept"]);
+});
+
+test("[SRV-07] an answer sent late from the phone's queue counts from when it was tapped", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-12-31T13:00:00Z") });
+  const { account, publicKey } = await serviceAccount();
+  const subs = { "token-late": playSub("2026-12-31T15:30:00Z", { trial: true }) };
+  fakePlay(t, publicKey, subs);
+  const { call, env, DB } = server({ PLAY_SERVICE_ACCOUNT: account });
+  await call("POST", "/api/purchases", { product: "bamnat_pro", token: "token-late" }, phone(1));
+  const body = { answer: "keep", product: "bamnat_pro", price: "₩6,900/월", trialEnd: "2026-12-31T15:30:00Z", shown: "계속 쓸까요?" };
+  const res = await call("POST", "/api/consents", { ...body, answeredAt: "2026-12-29T08:10:00Z" }, phone(1));
+  assert.equal(res.status, 201);
+  assert.equal(res.data.at, "2026-12-29T08:10:00.000Z");
+  const row = DB.db.prepare("SELECT detail, at FROM consents").get();
+  assert.equal(row.at, Date.parse("2026-12-29T08:10:00Z"));
+  assert.equal(JSON.parse(row.detail).receivedAt, "2026-12-31T13:00:00.000Z");
+  assert.equal(await stopUnconsentedTrials(env, Date.parse("2026-12-31T14:00:00Z")), 0);
+  // A moment in the future or long before is not believed: the server's clock is the record then.
+  const future = await call("POST", "/api/consents", { ...body, answeredAt: "2027-01-05T00:00:00Z" }, phone(2));
+  assert.equal(future.data.at, "2026-12-31T13:00:00.000Z");
+  const old = await call("POST", "/api/consents", { ...body, answeredAt: "2026-10-01T00:00:00Z" }, phone(2));
+  assert.equal(old.data.at, "2026-12-31T13:00:00.000Z");
+});
+
+test("[SRV-07] a purchase token stays with the first install while it still checks in", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-12-01T00:00:00Z") });
+  const { account, publicKey } = await serviceAccount();
+  fakePlay(t, publicKey, { "token-shared": playSub("2027-01-01T00:00:00Z") });
+  const { call, DB } = server({ PLAY_SERVICE_ACCOUNT: account });
+  assert.equal((await call("POST", "/api/purchases", { product: "bamnat_pro", token: "token-shared" }, phone(1))).data.verified, true);
+  const other = await call("POST", "/api/purchases", { product: "bamnat_pro", token: "token-shared" }, phone(2));
+  assert.deepEqual(other.data, { verified: false });
+  const device = () => DB.db.prepare("SELECT device FROM subs").get().device;
+  const first = device();
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM audit WHERE action = 'purchase_rebind_refused'").get().n, 1);
+  // The first phone again: still its own.
+  assert.equal((await call("POST", "/api/purchases", { product: "bamnat_pro", token: "token-shared" }, phone(1))).data.verified, true);
+  // A week without the first phone: the new one (same Google account) takes it over, and the log says so.
+  t.mock.timers.setTime(Date.parse("2026-12-09T00:00:00Z"));
+  assert.equal((await call("POST", "/api/purchases", { product: "bamnat_pro", token: "token-shared" }, phone(2))).data.verified, true);
+  assert.notEqual(device(), first);
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM audit WHERE action = 'purchase_rebind'").get().n, 1);
+});
+
+test("[SRV-07] a subscription past its end is asked again once a day without the phone", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-12-01T00:00:00Z") });
+  const { account, publicKey } = await serviceAccount();
+  const subs = { "token-renews": playSub("2026-12-05T00:00:00Z"), "token-gone-later": playSub("2026-12-05T00:00:00Z") };
+  const calls = fakePlay(t, publicKey, subs);
+  const { call, env, DB } = server({ PLAY_SERVICE_ACCOUNT: account });
+  await call("POST", "/api/purchases", { product: "bamnat_pro", token: "token-renews" }, phone(1));
+  await call("POST", "/api/purchases", { product: "bamnat_pro", token: "token-gone-later" }, phone(2));
+  assert.equal(await recheckLapsed(env, Date.now()), 0);
+  // Play renewed one and forgot the other; the phones stay closed.
+  subs["token-renews"] = playSub("2027-01-05T00:00:00Z");
+  subs["token-renews"].subscriptionState = "SUBSCRIPTION_STATE_IN_GRACE_PERIOD";
+  delete subs["token-gone-later"];
+  const later = Date.parse("2026-12-06T00:00:00Z");
+  const before = calls.length;
+  assert.equal(await recheckLapsed(env, later), 1);
+  const row = (token) => DB.db.prepare("SELECT state, expiry FROM subs WHERE token = ?").get(token);
+  const rows = { a: row("token-renews"), b: row("token-gone-later") };
+  assert.equal(rows.a.state, "GRACE");
+  assert.equal(rows.a.expiry, Date.parse("2027-01-05T00:00:00Z"));
+  assert.equal(rows.b.state, "EXPIRED");
+  // Not again the same day.
+  const asked = calls.length - before;
+  assert.equal(await recheckLapsed(env, later + 60 * 60 * 1000), 0);
+  assert.equal(calls.length - before, asked);
 });
