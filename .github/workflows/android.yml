@@ -99,12 +99,12 @@ jobs:
         working-directory: shift-calendar-app/server/share-worker
       # [QA-06] 40 key screenshots against their fingerprints (tools/shot_hashes.py); a change that was meant
       # comes with `python3 tools/shot_hashes.py update app/build/screenshots` in the same pull request.
-      - if: matrix.set != 'unit'
+      - if: startsWith(matrix.set, 'shots-')
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Key screenshots unchanged
-        if: matrix.set != 'unit'
+        if: startsWith(matrix.set, 'shots-')
         run: |
           python3 -m pip install --quiet pillow
           python3 tools/shot_hashes.py check app/build/screenshots >> "$GITHUB_STEP_SUMMARY"
