@@ -59,7 +59,7 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon

@@ -17,6 +17,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -197,6 +200,16 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
             val times = t.alarms.filter { it.enabled }.sortedByDescending { it.offsetMinutes }
                 .joinToString(" · ") { Fmt.time(t.start!!.minusMinutes(it.offsetMinutes.toLong())) }
             NavRow(t.name, "${Fmt.time(t.start)} 시작 · " + if (times.isEmpty()) "켜진 알람 없음" else "알람 $times", onOpenShiftTypes)
+        }
+        // [SET-05] Every shift's alarms earlier or later at once, instead of opening each shift (G.md P21).
+        var moving by rememberSaveable { mutableStateOf(false) }
+        if (ringing.isNotEmpty()) HorizontalDivider()
+        NavRow(MOVE_ALL_ALARMS_ROW, if (ringing.isEmpty()) "알람이 켜진 근무가 생기면 쓸 수 있어요" else "예: 모든 근무 알람을 10분 일찍") {
+            if (ringing.isNotEmpty()) moving = true
+        }
+        if (moving) MoveAllAlarmsDialog(ringing, onDismiss = { moving = false }) { minutes ->
+            moving = false
+            vm.moveAllAlarms(minutes)
         }
     }
     SectionCard(title = "소리") {
@@ -775,4 +788,33 @@ private fun RateRegionRow() {
             dismissButton = if (own.picked.isNotBlank()) ({ TextButton(onClick = { store.pick(""); picking = false }) { Text("고르지 않기") } }) else null,
         )
     }
+}
+
+/**
+ * [SET-05] How far to move every shift's alarms: earlier or later in 5-minute steps, with the first shift's
+ * alarms before and after, so the user sees what changes before saving.
+ */
+@Composable
+private fun MoveAllAlarmsDialog(ringing: List<com.bamnat.core.model.ShiftType>, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
+    var minutes by rememberSaveable { mutableIntStateOf(10) }
+    val say: (Int) -> String = { m -> when { m > 0 -> "${m}분 일찍"; m < 0 -> "${-m}분 늦게"; else -> "그대로" } }
+    val sample = ringing.first()
+    fun times(t: com.bamnat.core.model.ShiftType) = t.alarms.filter { it.enabled }.sortedByDescending { it.offsetMinutes }
+        .joinToString(" · ") { Fmt.time(t.start!!.minusMinutes(it.offsetMinutes.toLong())) }.ifEmpty { "켜진 알람 없음" }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("모든 근무 알람 옮기기") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("알람이 켜진 근무 ${ringing.size}개의 알람을 모두 같은 만큼 옮겨요. 근무 시작보다 늦게 울리지는 않아요.",
+                    style = MaterialTheme.typography.bodyMedium)
+                com.bamnat.app.ui.components.CountStepper(minutes, { minutes = it }, name = "옮길 시간", range = -60..60, step = 5,
+                    format = say, valueWidth = 104.dp, modifier = Modifier.align(Alignment.CenterHorizontally))
+                Text("${sample.name}: ${times(sample)} → ${times(com.bamnat.core.model.AlarmShift.move(sample, minutes))}",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(minutes) }, enabled = minutes != 0) { Text("옮기기") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
 }

@@ -55,7 +55,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
@@ -1169,7 +1169,7 @@ private fun AskCard(vm: InquiryViewModel, query: String, list: List<Inquiry>?, o
             // [GUIDE-07] Not found: the words go to the developer as 건의·제안, with the kind of work.
             if (query.isNotBlank()) {
                 Text("못 찾았나요?", style = MaterialTheme.typography.titleMedium)
-                Text("찾던 말과 지금 달력의 근무 유형을 담아 의견으로 보내요. 있는 기능이면 어디 있는지 답해 드리고, 없으면 만들 때 참고해요.",
+                Text("찾던 말과 지금 달력의 일하는 방식을 담아 의견으로 보내요. 있는 기능이면 어디 있는지 답해 드리고, 없으면 만들 때 참고해요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Button(onClick = onIdea, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     Icon(Icons.Outlined.QuestionAnswer, null, modifier = Modifier.size(18.dp))

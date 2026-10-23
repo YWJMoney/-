@@ -25,7 +25,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -317,7 +317,7 @@ private fun GoalCard(state: InvestState, open: (InvestSheet) -> Unit) {
     val g = state.goal
     val hide = state.hide
     if (!g.hasGoal) {
-        TextButton(onClick = { open(InvestSheet.Goal) }) { Icon(Icons.Filled.Add, null); Spacer(Modifier.width(4.dp)); Text("목표 정하기 (금액·수익률)") }
+        com.bamnat.app.ui.components.AddButton("목표 정하기 (금액·수익률)", onClick = { open(InvestSheet.Goal) })
         return
     }
     SectionCard(title = "목표", trailing = { TextButton(onClick = { open(InvestSheet.Goal) }) { Text("고치기") } }) {

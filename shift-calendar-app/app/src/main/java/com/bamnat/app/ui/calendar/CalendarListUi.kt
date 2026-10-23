@@ -416,7 +416,7 @@ internal fun ColorRow(selected: Long, onPick: (Long) -> Unit) {
                     .clickable(role = Role.RadioButton) { onPick(c) }
                     .semantics { this.selected = on; contentDescription = "색 ${i + 1}" },
                 contentAlignment = Alignment.Center,
-            ) { if (on) Icon(Icons.Filled.Check, null, tint = Color.White) }
+            ) { if (on) Icon(Icons.Filled.Check, null, tint = com.bamnat.app.ui.components.contentColorOn(c.asColor())) } // [VIS-03]
         }
     }
 }
@@ -775,10 +775,10 @@ fun CalendarScopeChips(
     if (list.size < 2) return
     FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (onAll != null) {
-            androidx.compose.material3.FilterChip(selected = all, onClick = { onAll(true) }, label = { Text("전체") })
+            com.bamnat.app.ui.components.FilterChip(selected = all, onClick = { onAll(true) }, label = { Text("전체") })
         }
         list.forEach { cal ->
-            androidx.compose.material3.FilterChip(
+            com.bamnat.app.ui.components.FilterChip(
                 selected = cal.id == active && !all,
                 onClick = {
                     onAll?.invoke(false)

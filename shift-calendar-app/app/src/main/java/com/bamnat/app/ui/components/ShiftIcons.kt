@@ -33,7 +33,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bamnat.app.ui.theme.CalendarColors
-import com.bamnat.app.ui.theme.LightCalendarColors
+
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.model.Leave
 import com.bamnat.core.model.LeaveKind
@@ -63,9 +63,10 @@ val ShiftIcon.vector: ImageVector
 /**
  * Colour of leave marks [FEAT-10]: violet for 연차, blue for other paid leave, grey for unpaid, teal for 보상휴가
  * [PAYX-18]. [VIS-03] Read from the theme's tokens, so the dark theme gets its lighter set; places without a
- * theme (widgets, images) pass [LightCalendarColors] or [DarkCalendarColors] themselves.
+ * theme (widgets, images) pass LightCalendarColors or DarkCalendarColors themselves; there is no default, so no
+ * caller inside the app gets the light set in the dark theme by leaving it out.
  */
-fun leaveColor(kind: LeaveKind, colors: CalendarColors = LightCalendarColors): Color = when (kind) {
+fun leaveColor(kind: LeaveKind, colors: CalendarColors): Color = when (kind) {
     LeaveKind.ANNUAL -> colors.leaveAnnual
     LeaveKind.PAID -> colors.leavePaid
     LeaveKind.UNPAID -> colors.leaveUnpaid

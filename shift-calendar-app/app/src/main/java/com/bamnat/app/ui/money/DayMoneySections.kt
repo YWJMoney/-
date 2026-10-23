@@ -72,7 +72,7 @@ fun JobsSection(date: LocalDate, jobs: List<Job>, actions: MoneyActions) {
     var adding by remember { mutableStateOf(false) }
     SectionCard(
         title = "일감",
-        trailing = { TextButton(onClick = { adding = true }) { Icon(Icons.Filled.Add, null); Spacer(Modifier.width(4.dp)); Text("일감 추가") } },
+        trailing = { com.bamnat.app.ui.components.AddButton("일감 추가", onClick = { adding = true }) },
     ) {
         if (jobs.isEmpty()) {
             Text("잡힌 일이 없어요. 일감을 적으면 금액이 이번 달 수입에 들어가고, 시작 전에 알려 드려요.",
@@ -186,13 +186,12 @@ fun DayLedgerSection(date: LocalDate, style: WorkStyle?, entries: List<MoneyEntr
             )
         }
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AssistChip(onClick = { adding = MoneyKind.EXPENSE }, label = { Text("지출 적기") },
-                leadingIcon = { Icon(Icons.Filled.Add, null) })
-            AssistChip(onClick = { adding = MoneyKind.INCOME }, label = { Text("수입 적기") },
-                leadingIcon = { Icon(Icons.Filled.Add, null) })
+            // [UX-08] The app's one '+ 추가' button.
+            com.bamnat.app.ui.components.AddButton("지출 적기", onClick = { adding = MoneyKind.EXPENSE })
+            com.bamnat.app.ui.components.AddButton("수입 적기", onClick = { adding = MoneyKind.INCOME })
             // [WORK-02] A shift worker's weekend 부업 is a job too.
             if (style?.usesJobs != true) {
-                AssistChip(onClick = { addingJob = true }, label = { Text("부업 일감") }, leadingIcon = { Icon(Icons.Filled.Add, null) })
+                com.bamnat.app.ui.components.AddButton("부업 일감", onClick = { addingJob = true })
             }
         }
         if (entries.isEmpty() && style?.usesPayEngine == true) {

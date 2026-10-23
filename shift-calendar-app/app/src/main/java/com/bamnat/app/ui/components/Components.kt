@@ -267,20 +267,23 @@ fun StatTile(
                     autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 12.sp),
                 )
             }
+            // [UX-08] At a big font the value and the caption take two lines at a size that can be read, instead of
+            // shrinking to 9sp on one (notes/1.22-285/E.md 4장, F.md 4장 3번).
+            val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
             BasicText(
                 value,
                 style = MaterialTheme.typography.titleLarge.merge(NumberStyle).copy(
                     color = if (warning) cal.warning else MaterialTheme.colorScheme.onSurface,
                 ),
-                maxLines = 1,
-                autoSize = TextAutoSize.StepBased(minFontSize = 12.sp, maxFontSize = 22.sp),
+                maxLines = if (big) 2 else 1,
+                autoSize = TextAutoSize.StepBased(minFontSize = if (big) 16.sp else 12.sp, maxFontSize = 22.sp),
             )
             if (caption != null) {
                 BasicText(
                     caption,
                     style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                    maxLines = 1,
-                    autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = 11.sp),
+                    maxLines = if (big) 2 else 1,
+                    autoSize = TextAutoSize.StepBased(minFontSize = if (big) 11.sp else 9.sp, maxFontSize = 11.sp),
                 )
             }
         }

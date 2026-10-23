@@ -57,8 +57,8 @@ data class TimeRange(val start: LocalTime, val end: LocalTime, val breakMinutes:
     }
 }
 
-/** Which part of the range the wheels below are changing. */
-private enum class RangePart { START, END, BREAK }
+/** Which part of the range the wheels below are changing; a caller can open the window on any of them. */
+enum class TimeRangePart { START, END, BREAK }
 
 /**
  * [UX-08] Start, end and break in one window, instead of three pickers one after another (I 리뷰 I2·I12,
@@ -81,22 +81,22 @@ fun TimeRangeDialog(
     confirmLabel: String = "완료",
     presets: List<LocalTime> = DEFAULT_PRESETS,
     maxBreakMinutes: Int = 4 * 60,
-    /** Opens on the break, for a caller whose user tapped the break ("휴게 1시간") rather than the times. */
-    startOnBreak: Boolean = false,
+    /** The part to open on: the one the user tapped (the end time, or the break "휴게 1시간"). */
+    startOn: TimeRangePart = TimeRangePart.START,
 ) {
     var startMin by rememberSaveable { mutableIntStateOf(initial.start.toSecondOfDay() / 60) }
     var endMin by rememberSaveable { mutableIntStateOf(initial.end.toSecondOfDay() / 60) }
     var breakMin by rememberSaveable { mutableIntStateOf(initial.breakMinutes.coerceIn(0, maxBreakMinutes)) }
-    var partIndex by rememberSaveable { mutableIntStateOf(if (startOnBreak && showBreak) RangePart.BREAK.ordinal else RangePart.START.ordinal) }
+    var partIndex by rememberSaveable { mutableIntStateOf(if (startOn == TimeRangePart.BREAK && !showBreak) TimeRangePart.START.ordinal else startOn.ordinal) }
     // Bumped by a shortcut, so the wheels jump to the time it set.
     var jump by rememberSaveable { mutableIntStateOf(0) }
-    val part = RangePart.entries[partIndex]
+    val part = TimeRangePart.entries[partIndex]
     val range = TimeRange(LocalTime.ofSecondOfDay(startMin * 60L), LocalTime.ofSecondOfDay(endMin * 60L), breakMin)
     val breakTooLong = showBreak && breakMin >= range.spanMinutes
 
     fun setTime(t: LocalTime) {
         val m = t.toSecondOfDay() / 60
-        if (part == RangePart.END) endMin = m else startMin = m
+        if (part == TimeRangePart.END) endMin = m else startMin = m
         jump++
     }
 
@@ -110,12 +110,12 @@ fun TimeRangeDialog(
                         modifier = Modifier.padding(bottom = 8.dp))
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    PartTab("시작", clock(range.start), part == RangePart.START, Modifier.weight(1f)) { partIndex = RangePart.START.ordinal }
-                    PartTab(if (range.overnight) "끝 (다음날)" else "끝", clock(range.end), part == RangePart.END, Modifier.weight(1f)) {
-                        partIndex = RangePart.END.ordinal
+                    PartTab("시작", clock(range.start), part == TimeRangePart.START, Modifier.weight(1f)) { partIndex = TimeRangePart.START.ordinal }
+                    PartTab(if (range.overnight) "끝 (다음날)" else "끝", clock(range.end), part == TimeRangePart.END, Modifier.weight(1f)) {
+                        partIndex = TimeRangePart.END.ordinal
                     }
                     if (showBreak) {
-                        PartTab("휴게", HoursFormat.korean(breakMin), part == RangePart.BREAK, Modifier.weight(1f)) { partIndex = RangePart.BREAK.ordinal }
+                        PartTab("휴게", HoursFormat.korean(breakMin), part == TimeRangePart.BREAK, Modifier.weight(1f)) { partIndex = TimeRangePart.BREAK.ordinal }
                     }
                 }
                 Text(
@@ -129,7 +129,7 @@ fun TimeRangeDialog(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 )
-                if (part == RangePart.BREAK) {
+                if (part == TimeRangePart.BREAK) {
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         MinutesStepper(minutes = breakMin, onChange = { breakMin = it }, step = 10, max = maxBreakMinutes, dialogTitle = "휴게 시간")
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 8.dp)) {
@@ -139,7 +139,7 @@ fun TimeRangeDialog(
                         }
                     }
                 } else {
-                    val shown = if (part == RangePart.END) endMin else startMin
+                    val shown = if (part == TimeRangePart.END) endMin else startMin
                     // A new pair of wheels for each tab, starting at that tab's time.
                     key(part) {
                         Box(Modifier.fillMaxWidth().height(WHEEL_ROW_HEIGHT * 5), contentAlignment = Alignment.Center) {
@@ -149,12 +149,12 @@ fun TimeRangeDialog(
                             )
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 WheelHalf(count = 24, value = shown / 60, jump = jump, label = "시", onValue = { h ->
-                                    val m = h * 60 + (if (part == RangePart.END) endMin else startMin) % 60
-                                    if (part == RangePart.END) endMin = m else startMin = m
+                                    val m = h * 60 + (if (part == TimeRangePart.END) endMin else startMin) % 60
+                                    if (part == TimeRangePart.END) endMin = m else startMin = m
                                 })
                                 WheelHalf(count = 60, value = shown % 60, jump = jump, label = "분", onValue = { mm ->
-                                    val m = (if (part == RangePart.END) endMin else startMin) / 60 * 60 + mm
-                                    if (part == RangePart.END) endMin = m else startMin = m
+                                    val m = (if (part == TimeRangePart.END) endMin else startMin) / 60 * 60 + mm
+                                    if (part == TimeRangePart.END) endMin = m else startMin = m
                                 })
                             }
                         }

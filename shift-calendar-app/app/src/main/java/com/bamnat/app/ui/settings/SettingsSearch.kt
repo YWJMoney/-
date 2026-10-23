@@ -93,6 +93,9 @@ data class SettingEntry(
 )
 
 /** [UX-04] Every setting and the screens settings opens, in the words of their rows. */
+/** [SET-05] The alarm page's row that moves every shift's alarms at once. */
+internal const val MOVE_ALL_ALARMS_ROW = "모든 근무 알람 한 번에 옮기기"
+
 internal object SettingsIndex {
     private fun row(page: SettingsPage, title: String, vararg keywords: String, row: String = title) =
         SettingEntry(title, page.title, SettingPlace.Row(page, row), keywords.toList())
@@ -124,6 +127,8 @@ internal object SettingsIndex {
         row(A, "알람 사용", "알람 끄기", "알람 켜기", "모두 끄기", "알람 전체"),
         row(A, "알람음", "알람 소리", "벨소리", "무음", row = "알람음"),
         row(A, "근무마다 다른 소리", "근무별 알람음", "야간 소리"),
+        // [SET-05]
+        row(A, MOVE_ALL_ALARMS_ROW, "알람 한 번에", "알람 앞당기기", "알람 미루기", "10분 일찍", "모든 알람", "알람 옮기기"),
         row(A, "진동", "바이브"),
         row(A, "점점 크게", "볼륨", "소리 크기"),
         row(A, MISSION_ROW, "미션", "계산 문제", "수학 문제", "흔들기", "못 일어나요", "확실한 알람"), // [PROV-06]

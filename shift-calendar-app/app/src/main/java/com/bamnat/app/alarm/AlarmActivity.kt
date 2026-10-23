@@ -179,7 +179,8 @@ internal fun RingingScreen(
             Button(
                 onClick = onDismiss,
                 modifier = Modifier.fillMaxWidth().height(68.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B5E), contentColor = Color.White),
+                // [VIS-03] Dark letters on the coral button: white was 2.8:1.
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B5E), contentColor = com.bamnat.app.ui.components.contentColorOn(Color(0xFFFF6B5E))),
             ) {
                 Text(dismissLabel, style = MaterialTheme.typography.titleLarge)
             }

@@ -65,7 +65,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.outlined.FileDownload
@@ -76,7 +76,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
+import com.bamnat.app.ui.components.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarDuration
@@ -713,7 +713,8 @@ private fun SwipeRow(o: Owed, today: LocalDate, actions: RowActions, modifier: M
                 }, label = "swipe")
             Row(Modifier.fillMaxSize().background(bg).padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = if (toRight) Arrangement.Start else Arrangement.End) {
-                val fg = if (armed) Color.White else MaterialTheme.colorScheme.onSurface
+                // [VIS-03] Ink that reads on the swipe colour in both themes (white failed on the dark theme's light blue).
+                val fg = if (armed) com.bamnat.app.ui.components.contentColorOn(if (toRight) cal.income else MaterialTheme.colorScheme.primary) else MaterialTheme.colorScheme.onSurface
                 if (toRight) {
                     Icon(Icons.Filled.Check, null, tint = fg)
                     Spacer(Modifier.width(8.dp))

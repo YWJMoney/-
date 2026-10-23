@@ -209,6 +209,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.healthSleep.refresh(on, force = true) }
     }
 
+    /** [SET-05] Moves every shift's alarms [minutes] earlier (later when negative); the alarms are set again from the saved shifts. */
+    fun moveAllAlarms(minutes: Int) {
+        viewModelScope.launch {
+            val types = container.scheduleRepository.shiftTypes.first()
+            com.bamnat.core.model.AlarmShift.moveAll(types, minutes).forEach { container.scheduleRepository.saveShiftType(it) }
+        }
+    }
+
     fun setAlarmsEnabled(on: Boolean) {
         update { it.copy(alarmsEnabled = on) }
         if (!on) container.alarmScheduler.cancelSnooze()

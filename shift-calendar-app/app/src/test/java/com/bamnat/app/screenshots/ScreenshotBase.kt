@@ -1250,7 +1250,7 @@ abstract class ScreenshotBase {
         c.settingsRepository.update { it.copy(workStyle = WorkStyle.DAY) }
         settle()
         tab(3, wide = wide)
-        reveal("가족 3명", exact = true)
+        reveal("8~20세 자녀", exact = true)
     }
     // ==== 1.22 묶음 C ====
     // [REST-01][REST-03] 근무표 점검 기준: one sheet, a preset away from a hospital's rules, and the switch to turn it off.
