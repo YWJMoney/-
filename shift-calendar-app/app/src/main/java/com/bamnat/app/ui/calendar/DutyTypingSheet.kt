@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +22,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -37,6 +40,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,11 +52,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.data.ScheduleSnapshot
+import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.ShiftBadge
+import com.bamnat.app.ui.components.contentColorOn
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.schedule.DutyCheck
 import com.bamnat.core.schedule.RestRules
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -81,14 +89,48 @@ fun DutyTypingSheet(
     onRules: (() -> Unit)? = null,
     /** [NURS-04] Told on save which of [doubtful] were never typed over. */
     onDoubtLeft: (Set<LocalDate>) -> Unit = {},
+    /** [CAL-27] The calendar's first day of the week, so a cell sits where it sits on the calendar (I 리뷰 P6). */
+    weekStart: DayOfWeek = DayOfWeek.SUNDAY,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        DutyTypingPanel(snap, month, onDismiss, onSave, rules, initial, doubtful, onRules, onDoubtLeft, weekStart,
+            Modifier.navigationBarsPadding())
+    }
+}
+
+/**
+ * [CAL-45] The keypad itself, in the sheet on a phone and as the right-hand panel beside the calendar on an
+ * unfolded screen (I 리뷰 N5), where the month being typed is in view while the roster is read.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun DutyTypingPanel(
+    snap: ScheduleSnapshot,
+    month: YearMonth,
+    onDismiss: () -> Unit,
+    onSave: (Map<LocalDate, ShiftOverride>) -> Unit,
+    rules: RestRules = RestRules(),
+    initial: Map<LocalDate, ShiftOverride> = emptyMap(),
+    doubtful: Set<LocalDate> = emptySet(),
+    onRules: (() -> Unit)? = null,
+    onDoubtLeft: (Set<LocalDate>) -> Unit = {},
+    weekStart: DayOfWeek = DayOfWeek.SUNDAY,
+    modifier: Modifier = Modifier,
 ) {
     val types = snap.shiftTypes
     val offType = types.firstOrNull { it.isOff }
-    // What each day holds now; typed days are kept apart so only they are saved.
-    val typed = remember(month) { mutableStateMapOf<LocalDate, ShiftOverride>().apply { putAll(initial) } }
-    val toCheck = remember(month) { mutableStateListOf<LocalDate>().apply { addAll(doubtful.filter { YearMonth.from(it) == month }.sorted()) } }
-    var cursor by remember(month) {
+    // What each day holds now; typed days are kept apart so only they are saved. [CAL-30] Kept through a
+    // fold or a turn of the phone (I 리뷰 P12): a whole month typed must never vanish with the configuration.
+    val typed = rememberSaveable(month, saver = TypedSaver) { mutableStateMapOf<LocalDate, ShiftOverride>().apply { putAll(initial) } }
+    val toCheck = rememberSaveable(month, saver = DatesSaver) { mutableStateListOf<LocalDate>().apply { addAll(doubtful.filter { YearMonth.from(it) == month }.sorted()) } }
+    var cursor by rememberSaveable(month) {
         mutableIntStateOf(toCheck.firstOrNull()?.dayOfMonth ?: (initial.keys.maxOfOrNull { it.dayOfMonth } ?: 0).plus(1).coerceAtMost(month.lengthOfMonth()))
+    }
+    // [CAL-36] Each key and each copy can be taken back, a step at a time (I 리뷰 I8).
+    val history = remember(month) { mutableStateListOf<Map<LocalDate, ShiftOverride>>() }
+    fun checkpoint() {
+        history.add(typed.toMap())
+        if (history.size > MAX_UNDO) history.removeAt(0)
     }
     val days = month.lengthOfMonth()
     fun shiftOf(date: LocalDate): ShiftType? = when (val o = typed[date]) {
@@ -98,6 +140,7 @@ fun DutyTypingSheet(
         null -> snap.resolver.resolve(date).shiftType
     }
     fun put(o: ShiftOverride) {
+        checkpoint()
         val date = month.atDay(cursor)
         typed[date] = o
         val wasDoubt = toCheck.remove(date)
@@ -109,8 +152,15 @@ fun DutyTypingSheet(
     val checked = (-2..days + 2).map { i -> month.atDay(1).plusDays(i - 1L) }.map { it to shiftOf(it) }
     val warnings = DutyCheck.check(checked, rules).filter { YearMonth.from(it.date) == month }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).navigationBarsPadding(),
+    // [CAL-36] Last month as it ended up on the calendar, day for day (1일 to 1일), for rosters that repeat by date.
+    val previous = month.minusMonths(1)
+    val lastMonth = remember(snap, month) {
+        (1..minOf(days, previous.lengthOfMonth())).mapNotNull { d ->
+            val t = snap.resolver.resolve(previous.atDay(d)).shiftType ?: return@mapNotNull null
+            month.atDay(d) to (if (t.isOff && offType == null) ShiftOverride.Off else ShiftOverride.Shift(t.id))
+        }.toMap()
+    }
+    Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("${month.monthValue}월 근무 연달아 넣기", style = MaterialTheme.typography.titleLarge)
             Text("근무표를 보며 누르면 ${month.monthValue}월 ${cursor}일에 들어가고 다음 날로 넘어가요. 날짜를 누르면 그 날부터 넣어요.",
@@ -119,7 +169,26 @@ fun DutyTypingSheet(
                 Text("사진에서 확실하지 않은 칸 ${toCheck.size}개가 남았어요. 노란 칸을 근무표와 맞춰 눌러 주세요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
             }
-            MonthCells(month, cursor, typed.keys, ::shiftOf, warnings.map { it.date }.toSet(), toCheck.toSet()) { cursor = it }
+            MonthCells(month, cursor, typed.keys, ::shiftOf, warnings.map { it.date }.toSet(), toCheck.toSet(), weekStart) { cursor = it }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (lastMonth.isNotEmpty()) OutlinedButton(onClick = {
+                    checkpoint()
+                    typed.putAll(lastMonth)
+                    cursor = days
+                }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Icon(Icons.Filled.ContentCopy, null)
+                    Text(" ${previous.monthValue}월 그대로")
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = {
+                    val back = history.removeAt(history.lastIndex)
+                    typed.clear()
+                    typed.putAll(back)
+                }, enabled = history.isNotEmpty(), modifier = Modifier.heightIn(min = 48.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.Undo, null)
+                    Text(" 되돌리기")
+                }
+            }
             // The keypad: every kind of day, then back-to-pattern and moving the mark.
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 types.forEach { t ->
@@ -143,7 +212,7 @@ fun DutyTypingSheet(
                     Text("다음 날"); Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
                 }
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = { typed.remove(month.atDay(cursor)) }, enabled = typed.containsKey(month.atDay(cursor))) { Text("이 날 넣은 것 빼기") }
+                TextButton(onClick = { checkpoint(); typed.remove(month.atDay(cursor)) }, enabled = typed.containsKey(month.atDay(cursor))) { Text("이 날 넣은 것 빼기") }
             }
             if (warnings.isNotEmpty()) {
                 Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(12.dp)).padding(12.dp),
@@ -159,9 +228,33 @@ fun DutyTypingSheet(
                 TextButton(onClick = onDismiss) { Text("닫기") }
                 Button(onClick = { onDoubtLeft(toCheck.toSet()); onSave(typed.toMap()) }, enabled = typed.isNotEmpty()) { Text(if (typed.isEmpty()) "저장" else "${typed.size}일 저장") }
             }
-        }
     }
 }
+
+private const val MAX_UNDO = 60
+
+/** [CAL-30] A typed day as one number: a shift's id, −1 for a day off, −2 for back to the pattern. */
+internal fun overrideCode(o: ShiftOverride): Long = when (o) {
+    is ShiftOverride.Shift -> o.shiftTypeId
+    ShiftOverride.Off -> -1L
+    ShiftOverride.None -> -2L
+}
+
+internal fun overrideOf(code: Long): ShiftOverride = when (code) {
+    -1L -> ShiftOverride.Off
+    -2L -> ShiftOverride.None
+    else -> ShiftOverride.Shift(code)
+}
+
+internal val TypedSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStateMap<LocalDate, ShiftOverride>, Long>(
+    save = { m -> m.flatMap { (d, o) -> listOf(d.toEpochDay(), overrideCode(o)) } },
+    restore = { l -> mutableStateMapOf<LocalDate, ShiftOverride>().apply { l.chunked(2).forEach { (d, c) -> put(LocalDate.ofEpochDay(d), overrideOf(c)) } } },
+)
+
+internal val DatesSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStateList<LocalDate>, Long>(
+    save = { l -> l.map { it.toEpochDay() } },
+    restore = { l -> mutableStateListOf<LocalDate>().apply { addAll(l.map(LocalDate::ofEpochDay)) } },
+)
 
 @Composable
 private fun MonthCells(
@@ -171,12 +264,14 @@ private fun MonthCells(
     shiftOf: (LocalDate) -> ShiftType?,
     warned: Set<LocalDate>,
     doubtful: Set<LocalDate>,
+    weekStart: DayOfWeek,
     onPick: (Int) -> Unit,
 ) {
-    val lead = month.atDay(1).dayOfWeek.value % 7 // Sunday first
+    // [CAL-27] Counted from the calendar's own first day of the week.
+    val lead = Math.floorMod(month.atDay(1).dayOfWeek.value - weekStart.value, 7)
     val cells = lead + month.lengthOfMonth()
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row { listOf("일", "월", "화", "수", "목", "금", "토").forEach { Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall) } }
+        Row { (0 until 7).map { weekStart.plus(it.toLong()) }.forEach { Text(Fmt.dayOfWeekShort(it), Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall) } }
         for (week in 0 until (cells + 6) / 7) {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 for (col in 0 until 7) {
@@ -205,8 +300,13 @@ private fun MonthCells(
                                 verticalArrangement = Arrangement.Center,
                             ) {
                                 Text("$day", style = MaterialTheme.typography.labelSmall, fontWeight = if (here) FontWeight.Bold else null)
-                                Text(t?.label ?: "·", style = MaterialTheme.typography.titleSmall, color = color ?: MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontWeight = FontWeight.Bold, maxLines = 1)
+                                // [CAL-42] The code on a chip of its own colour with readable ink, not a light yellow
+                                // letter on a light cell (I 리뷰 P22).
+                                if (t != null && color != null) Text(
+                                    t.label, style = MaterialTheme.typography.titleSmall, color = contentColorOn(color),
+                                    fontWeight = FontWeight.Bold, maxLines = 1,
+                                    modifier = Modifier.background(color, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp),
+                                ) else Text("·", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }

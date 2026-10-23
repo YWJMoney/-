@@ -166,6 +166,14 @@ private val WEEK_SWIPE = 48.dp
 /** [CAL-01] The unfolded day panel: room for "10월 18일 (일) 오늘" and its arrows, never most of the screen. */
 private val DAY_PANEL_MIN_WIDTH = 280.dp
 private val DAY_PANEL_MAX_WIDTH = 420.dp
+/** [CAL-45] The month keypad needs seven 44dp cells and their gaps. */
+private val DUTY_PANEL_MIN_WIDTH = 340.dp
+
+/** [CAL-30] A month kept as its "2026-11" text through a fold or a turn. */
+internal val YearMonthSaver = androidx.compose.runtime.saveable.Saver<YearMonth?, String>(
+    save = { it?.toString() ?: "" },
+    restore = { it.takeIf(String::isNotEmpty)?.let(YearMonth::parse) },
+)
 /** [CAL-15] The floating button's height and the room it keeps from the screen's edge. */
 private val FAB_HEIGHT = 56.dp
 private val FAB_MARGIN = 16.dp
@@ -233,13 +241,14 @@ fun CalendarScreen(
     fun partShown(p: CalendarPart) = calendarParts.firstOrNull { it.part == p }?.shown != false
     val selected by vm.selected.collectAsStateWithLifecycle()
     val paint by vm.paint.collectAsStateWithLifecycle()
-    var typingMonth by remember { mutableStateOf<YearMonth?>(null) }
+    // [CAL-30] Saved, so the month being typed is still open after folding or unfolding (I 리뷰 P11).
+    var typingMonth by rememberSaveable(stateSaver = YearMonthSaver) { mutableStateOf<YearMonth?>(null) }
     // [REST-01] 근무표 점검 기준, opened from the check's card.
-    var rulesOpen by remember { mutableStateOf(false) }
+    var rulesOpen by rememberSaveable { mutableStateOf(false) }
     val lastPaint by vm.lastPaint.collectAsStateWithLifecycle()
     val coverAsk by vm.coverAsk.collectAsStateWithLifecycle()
     // [CUST-01] 화면 꾸미기: the page's parts in the user's order, and the sheet that changes them.
-    var editingLayout by remember { mutableStateOf(false) }
+    var editingLayout by rememberSaveable { mutableStateOf(false) }
     // [CUST-01] 화면 꾸미기 opened from the help search or the update notice.
     val featureFocus by com.bamnat.app.ui.guide.FeatureLinks.focus.collectAsStateWithLifecycle()
     LaunchedEffect(featureFocus) {
@@ -253,23 +262,27 @@ fun CalendarScreen(
     val listView by vm.listView.collectAsStateWithLifecycle()
     val calendarAlarmsOn by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
     val mark by vm.mark.collectAsStateWithLifecycle()
+    // [CAL-38] Quick input's extra-work stamps.
+    val stamp by vm.stamp.collectAsStateWithLifecycle()
+    // [CAL-45] Unfolded, 모든 조 can sit beside the month in place of the day.
+    var teamsBeside by rememberSaveable { mutableStateOf(false) }
     val rangeFrom by vm.rangeFrom.collectAsStateWithLifecycle()
     val holidaysKept by vm.holidaysKept.collectAsStateWithLifecycle()
     val payProfile by vm.payProfile.collectAsStateWithLifecycle()
-    var legendOpen by remember { mutableStateOf(false) }
+    var legendOpen by rememberSaveable { mutableStateOf(false) }
     // [SHR-02] Calendars others shared, switched to like accounts.
     val received = appViewModel { ReceivedViewModel(it) }
     val receivedList by received.calendars.collectAsStateWithLifecycle()
     val viewingReceived by received.viewing.collectAsStateWithLifecycle()
     val openingLink by received.opening.collectAsStateWithLifecycle()
-    var switching by remember { mutableStateOf(false) }
+    var switching by rememberSaveable { mutableStateOf(false) }
     // [MCAL-01] The user's own calendars, the one on screen, and the list's order with the received ones.
     val myCalendars by vm.calendars.collectAsStateWithLifecycle()
     val activeCalendar by vm.activeCalendar.collectAsStateWithLifecycle()
     val calendarOrder by vm.calendarOrder.collectAsStateWithLifecycle()
     val onAddCalendar = rememberAddCalendar(context.appContainer, onSetupCalendar)
     // A link id to open, "" to paste one, null when closed.
-    var adding by remember { mutableStateOf<String?>(null) }
+    var adding by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(openingLink) {
         openingLink?.let { id ->
             adding = id
@@ -282,24 +295,19 @@ fun CalendarScreen(
         else datedMemos.groupBy { it.date!! }.mapValues { (_, l) -> l.first().let { m -> m.title.ifBlank { m.preview } }.trim().take(4) }
             .filterValues { it.isNotEmpty() }
     }
-    var quickMoney by remember { mutableStateOf(false) }
+    var quickMoney by rememberSaveable { mutableStateOf(false) }
     // [INV-01] An investor calendar's trades, cells and sheets.
     val investVm = if (focus == com.bamnat.core.work.CalendarFocus.INVEST) com.bamnat.app.ui.invest.investViewModel(activeCalendar.id) else null
     val investState = investVm?.state?.collectAsStateWithLifecycle()?.value
     val investCells = remember(investState) { investState?.takeIf { it.loaded }?.let { com.bamnat.app.ui.invest.InvestCells.of(it) } }
     var investSheet by remember { mutableStateOf<com.bamnat.app.ui.invest.InvestSheet?>(null) }
 
-    // Re-read the date every minute so "today" moves at midnight while the app is open.
-    val today by produceState(LocalDate.now()) {
-        while (true) {
-            delay(60_000)
-            value = LocalDate.now()
-        }
-    }
+    // [CAL-25] Today moves at midnight while the app is open.
+    val today = rememberToday()
 
     // [OPS-20] Ask for a store review once, shortly after the first pattern was saved.
     // [DAILY-17] And once more after the first pay month is closed, a month or more after the first.
-    val reviewMoment = InAppReview.due(settings, LocalDate.now())
+    val reviewMoment = InAppReview.due(settings, today)
     LaunchedEffect(reviewMoment) {
         if (reviewMoment != null) {
             delay(1500)
@@ -343,12 +351,14 @@ fun CalendarScreen(
         WorkHoursCalculator(snap.resolver, java.time.DayOfWeek.MONDAY, settings.limits)
     }
     // [CAL-24] A calendar of 교대 근무 whose order repeats can be split into teams: 모든 조 is on the month itself.
-    val openTeams: (() -> Unit)? = remember(snap, settings.workStyle, viewingReceived) {
-        val rotation = rotationOf(snap, LocalDate.now())
+    val openTeams: (() -> Unit)? = remember(snap, settings.workStyle, viewingReceived, today) {
+        val rotation = rotationOf(snap, today)
         if (rotation != null && viewingReceived == null && settings.workStyle == com.bamnat.core.work.WorkStyle.SHIFT) {
             { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.TEAMS) }
         } else null
     }
+    // [CAL-38] The extra-work stamps quick input offers, from the calendar's own kinds and shifts.
+    val stamps = remember(snap.kinds, snap.shiftTypes) { ExtraText.stampChoices(snap.kinds, snap.shiftTypes) }
     // [HRLY-02][HRLY-03] An 알바 calendar's cells show times and pay, and each week its 주휴.
     val hourlyCells = remember(settings.workStyle, payProfile) {
         if (settings.workStyle != com.bamnat.core.work.WorkStyle.HOURLY) null
@@ -419,7 +429,15 @@ fun CalendarScreen(
     var lastToday by remember { mutableStateOf(today) }
     LaunchedEffect(today) {
         if (today != lastToday) {
-            if (selected == lastToday) vm.select(today)
+            if (selected == lastToday) {
+                vm.select(today)
+                // [CAL-25] Past midnight on the last of the month the month on screen follows the day (I 리뷰 P2),
+                // or the sheet's title and the calendar under it would be a month apart.
+                val m = YearMonth.from(today)
+                if (pageToMonth(baseMonth, pagerState.settledPage) == YearMonth.from(lastToday) && m != YearMonth.from(lastToday)) {
+                    pagerState.scrollToPage(monthToPage(baseMonth, m))
+                }
+            }
             lastToday = today
         }
     }
@@ -936,7 +954,8 @@ fun CalendarScreen(
                 // [CAL-24] 모든 조 보기 one tap from the month, before the counts, on every screen width.
                 openTeams?.let { open ->
                     androidx.compose.material3.AssistChip(
-                        onClick = open,
+                        // [CAL-45] Unfolded, the teams open beside the month; on the cover screen, their own page.
+                        onClick = { if (wide && tabletop == null) teamsBeside = !teamsBeside else open() },
                         label = { Text("모든 조", maxLines = 1, softWrap = false) },
                         leadingIcon = { Icon(Icons.Outlined.Groups, null, Modifier.size(18.dp)) },
                         modifier = Modifier.padding(end = 8.dp).semantics { contentDescription = "모든 조 보기와 대근 찾기" },
@@ -1149,7 +1168,14 @@ fun CalendarScreen(
                     }
                     Spacer(Modifier.height(with(density) { tabletop.hinge.toDp() }))
                     HorizontalDivider()
-                    detailPart(Modifier.fillMaxWidth().weight(1f).padding(top = 4.dp), 16.dp)
+                    // [CAL-45] With quick input on, the half under the thumbs is a pad of big keys (I 리뷰 N5 c):
+                    // the month above, every stamp in reach below, nothing floating over the days.
+                    if (paint != null) {
+                        PaintBar(snapshot = snap, tool = paint, last = lastPaint, onTool = vm::setPaint, onUndo = vm::undoLastPaint,
+                            mark = mark, onMark = vm::setMark, focus = focus, onTypeMonth = { typingMonth = visibleMonth },
+                            stamp = stamp, stamps = stamps, onStamp = vm::setStamp, large = true,
+                            modifier = Modifier.fillMaxWidth().weight(1f).padding(8.dp))
+                    } else detailPart(Modifier.fillMaxWidth().weight(1f).padding(top = 4.dp), 16.dp)
                 }
             }
         } else if (wide) {
@@ -1169,8 +1195,22 @@ fun CalendarScreen(
                         fab()
                     }
                     VerticalDivider()
-                    // [DAY-01] The same day panel as the sheet: the header stays, the groups scroll.
-                    detailPart(Modifier.width(panelWidth).fillMaxHeight().padding(top = 4.dp), bottomSpace)
+                    val typing = typingMonth
+                    when {
+                        // [CAL-45] Unfolded, the month being typed sits beside the calendar instead of in a sheet over it
+                        // (I 리뷰 N5 a): the roster on paper, the keypad on the right, the month filling in on the left.
+                        typing != null -> DutyTypingPanel(snap, typing, onDismiss = { typingMonth = null },
+                            onSave = { changes -> vm.applyDuty(changes); typingMonth = null },
+                            rules = vm.rulesFor(snap, typing.atDay(1), settings.rules), onRules = { rulesOpen = true },
+                            weekStart = settings.weekStart,
+                            modifier = Modifier.width(panelWidth.coerceAtLeast(DUTY_PANEL_MIN_WIDTH)).fillMaxHeight().padding(top = 8.dp))
+                        // [CAL-45] 모든 조 beside the month (I 리뷰 N5 b).
+                        teamsBeside && openTeams != null -> TeamsPanel(activeCalendar.id, snap, visibleMonth, selected,
+                            onClose = { teamsBeside = false },
+                            modifier = Modifier.width(panelWidth).fillMaxHeight().padding(top = 8.dp))
+                        // [DAY-01] The same day panel as the sheet: the header stays, the groups scroll.
+                        else -> detailPart(Modifier.width(panelWidth).fillMaxHeight().padding(top = 4.dp), bottomSpace)
+                    }
                 }
             }
         } else {
@@ -1186,17 +1226,18 @@ fun CalendarScreen(
         }
 
         if (!wide) fab()
-        if (paint != null) {
+        if (paint != null && tabletop == null) {
             Box(Modifier.align(Alignment.BottomCenter)) {
                 PaintBar(snapshot = snap, tool = paint, last = lastPaint, onTool = vm::setPaint, onUndo = vm::undoLastPaint,
-                    mark = mark, onMark = vm::setMark, focus = focus, onTypeMonth = { typingMonth = visibleMonth })
+                    mark = mark, onMark = vm::setMark, focus = focus, onTypeMonth = { typingMonth = visibleMonth },
+                    stamp = stamp, stamps = stamps, onStamp = vm::setStamp)
             }
         }
     }
 
-    typingMonth?.let { m ->
+    typingMonth?.takeIf { !wide || tabletop != null }?.let { m ->
         DutyTypingSheet(snap, m, onDismiss = { typingMonth = null }, onSave = { changes -> vm.applyDuty(changes); typingMonth = null },
-            rules = vm.rulesFor(snap, m.atDay(1), settings.rules), onRules = { rulesOpen = true })
+            rules = vm.rulesFor(snap, m.atDay(1), settings.rules), onRules = { rulesOpen = true }, weekStart = settings.weekStart)
     }
     if (rulesOpen) {
         RestRulesSheet(settings.rules, vm.rotation(snap, visibleMonth.atDay(1)), onDismiss = { rulesOpen = false }) { r ->
@@ -1629,10 +1670,17 @@ private fun PaintBar(
     onMark: (DayMark?) -> Unit = {},
     focus: com.bamnat.core.work.CalendarFocus = com.bamnat.core.work.CalendarFocus.SHIFTS,
     onTypeMonth: (() -> Unit)? = null,
+    /** [CAL-38] The extra-work stamp chosen, and the stamps to offer. */
+    stamp: ExtraChoice? = null,
+    stamps: List<ExtraChoice> = emptyList(),
+    onStamp: (ExtraChoice?) -> Unit = {},
+    /** [CAL-45] Below the hinge of a half-open fold: the chips wrap into a pad of big keys, not one scrolling row. */
+    large: Boolean = false,
+    modifier: Modifier = Modifier.fillMaxWidth().padding(12.dp),
 ) {
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(12.dp),
+        modifier = modifier,
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         shadowElevation = 6.dp,
@@ -1648,6 +1696,7 @@ private fun PaintBar(
                             tool == PaintTool.Pick && mark == null -> "고르고 날짜를 누르거나 끌어서 칠하세요"
                             mark == DayMark.LEAVE -> "근무일을 누르거나 끌면 연차가 들어가요 · 길게 누르면 기간"
                             mark == DayMark.ALARM_OFF -> "누르거나 끌면 그날 알람이 꺼져요 · 길게 누르면 기간"
+                            stamp != null -> "누르거나 끌면 ${stamp.name}${Fmt.obj(stamp.name)} 넣어요 · 다시 누르면 빼요"
                             else -> "누르거나 끌어서 칠해요 · 다시 누르면 취소 · 길게 누르면 기간"
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -1660,19 +1709,16 @@ private fun PaintBar(
                 if (last?.undo != null) TextButton(onClick = onUndo) { Text("되돌리기") }
                 IconButton(onClick = { onTool(null) }) { Icon(Icons.Filled.Close, "빠른 입력 끝내기") }
             }
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            val keys: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
                 // The chips say what a tap on the calendar will do, for TalkBack.
                 for (type in snapshot.shiftTypes) {
                     val t = PaintTool.Shift(type.id)
                     FilterChip(
-                        selected = tool == t && mark == null,
+                        selected = tool == t && mark == null && stamp == null,
                         onClick = { onTool(if (tool == t) PaintTool.Pick else t) },
                         label = { Text(type.name) },
                         leadingIcon = { ShiftBadge(type, size = 18.dp, outlined = type.isOff) },
-                        modifier = Modifier.semantics { contentDescription = "${type.name} 칠하기" },
+                        modifier = Modifier.then(if (large) Modifier.heightIn(min = 56.dp) else Modifier).semantics { contentDescription = "${type.name} 칠하기" },
                     )
                 }
                 if (snapshot.shiftTypes.none { it.isOff }) {
@@ -1709,12 +1755,39 @@ private fun PaintBar(
                         )
                     }
                 }
+                // [CAL-38] Extra work stamped like shifts: 잔업 after the shift, 특근 at its hours, a 대근 on days off.
+                if (stamps.isNotEmpty() && (focus == com.bamnat.core.work.CalendarFocus.SHIFTS || snapshot.hasPattern)) {
+                    VerticalDivider(Modifier.height(32.dp).align(Alignment.CenterVertically))
+                    for (c in stamps) {
+                        FilterChip(
+                            selected = stamp == c,
+                            onClick = {
+                                haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
+                                onStamp(if (stamp == c) null else c)
+                            },
+                            label = { Text(c.label) },
+                            leadingIcon = { ExtraKindMark(c.kind, size = 18.dp) },
+                            modifier = Modifier.then(if (large) Modifier.heightIn(min = 56.dp) else Modifier).semantics { contentDescription = "${c.name} 넣기" },
+                        )
+                    }
+                }
                 // [NURS-01] Day after day from a keypad, instead of picking and tapping each one; last, after
                 // the paint chips, since it opens a sheet rather than painting.
                 onTypeMonth?.let { open ->
                     AssistChip(onClick = open, label = { Text("한 달 연달아") },
                         leadingIcon = { Icon(Icons.Outlined.Keyboard, contentDescription = null, Modifier.size(18.dp)) })
                 }
+            }
+            if (large) {
+                androidx.compose.foundation.layout.FlowRow(
+                    Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) { keys() }
+            } else {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) { keys() }
             }
         }
     }

@@ -67,8 +67,7 @@ import kotlin.math.roundToInt
 private fun pct(share: Double) = "${(share * 100).roundToInt()}%"
 
 /** The year so far, or the whole year when it has passed. */
-private fun yearOf(year: Int, snapshot: ScheduleSnapshot): HealthYear {
-    val today = LocalDate.now()
+private fun yearOf(year: Int, snapshot: ScheduleSnapshot, today: LocalDate): HealthYear {
     val until = if (year >= today.year) today else LocalDate.of(year, 12, 31)
     return ShiftHealth.year(year, snapshot.resolver::resolve, KoreanHolidays::nameOf, until)
 }
@@ -76,8 +75,10 @@ private fun yearOf(year: Int, snapshot: ScheduleSnapshot): HealthYear {
 /** [SHFT-07] The card in 통계 of a shift calendar: the year so far in four numbers, and the way to the report. */
 @Composable
 internal fun HealthYearCard(snapshot: ScheduleSnapshot) {
-    val year = LocalDate.now().year
-    val data by produceState<HealthYear?>(null, snapshot) { value = withContext(Dispatchers.Default) { yearOf(year, snapshot) } }
+    // [CAL-25] "올해까지" moves on at midnight with the screen open.
+    val today = com.bamnat.app.ui.calendar.rememberToday()
+    val year = today.year
+    val data by produceState<HealthYear?>(null, snapshot, today) { value = withContext(Dispatchers.Default) { yearOf(year, snapshot, today) } }
     val y = data ?: return
     if (y.isEmpty) return
     SectionCard(title = "${year}년 건강 지표", trailing = {
@@ -114,8 +115,9 @@ fun HealthReportScreen(vm: HealthReportViewModel, onBack: () -> Unit) {
         )
     }) { padding ->
         val snap = snapshot
-        val pair by produceState<Pair<HealthYear, HealthYear>?>(null, snap, year) {
-            value = snap?.let { s -> withContext(Dispatchers.Default) { yearOf(year, s) to yearOf(year - 1, s) } }
+        val today = com.bamnat.app.ui.calendar.rememberToday() // [CAL-25]
+        val pair by produceState<Pair<HealthYear, HealthYear>?>(null, snap, year, today) {
+            value = snap?.let { s -> withContext(Dispatchers.Default) { yearOf(year, s, today) to yearOf(year - 1, s, today) } }
         }
         val (y, last) = pair ?: run {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -123,9 +125,9 @@ fun HealthReportScreen(vm: HealthReportViewModel, onBack: () -> Unit) {
         }
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(if (year == LocalDate.now().year) "${year}년 (오늘까지)" else "${year}년", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text(if (year == today.year) "${year}년 (오늘까지)" else "${year}년", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 IconButton(onClick = { year-- }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 해") }
-                IconButton(onClick = { year++ }, enabled = year < LocalDate.now().year) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 해") }
+                IconButton(onClick = { year++ }, enabled = year < today.year) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 해") }
             }
             if (y.isEmpty) {
                 Text("이 해에는 달력에 근무가 없어요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

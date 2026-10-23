@@ -2,6 +2,8 @@ package com.bamnat.app.ui.calendar
 
 import com.bamnat.app.data.rules
 import com.bamnat.app.ui.components.labelWidth
+import com.bamnat.app.ui.components.TimeRange
+import com.bamnat.app.ui.components.TimeRangeDialog
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
@@ -610,16 +612,28 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
 private fun WorkTimeContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel) {
     val start = day.start ?: return
     val end = day.end ?: return
-    var editing by remember { mutableStateOf<String?>(null) }
+    // [DAYW-08] Edits start from the planned shift, never from what leave left of it: saving the shrunk
+    // times back would let the resolver take the leave off a second time (I 리뷰 P1).
+    val plannedStart = day.plannedStart ?: start
+    val plannedEnd = day.plannedEnd ?: end
+    var editing by rememberSaveable { mutableStateOf<String?>(null) }
     val hasCustom = day.hasCustomTimes || day.entry?.customBreakMinutes != null
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        TimeBox(label = "시작", time = start, onClick = { editing = "start" }, modifier = Modifier.weight(1f))
-        TimeBox(label = "끝", time = end, onClick = { editing = "end" }, modifier = Modifier.weight(1f))
+        TimeBox(label = "시작", time = plannedStart, onClick = { editing = "start" }, modifier = Modifier.weight(1f))
+        TimeBox(label = "끝", time = plannedEnd, onClick = { editing = "end" }, modifier = Modifier.weight(1f))
+    }
+    // [DAYW-08] On a 반차 day the two spans side by side: what the shift was, what is left to work.
+    if (day.leaveShrunk) {
+        Text(
+            "연차로 줄어든 근무 ${Fmt.timeRange(start, end)} · ${HoursFormat.korean(day.scheduledMinutes)}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.tertiary,
+        )
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("휴게 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         MinutesStepper(
-            minutes = day.breakMinutes,
+            minutes = day.plannedBreakMinutes,
             onChange = { vm.setBreak(day.date, it) },
             step = 10,
             max = 12 * 60,
@@ -636,14 +650,17 @@ private fun WorkTimeContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Ca
         if (hasCustom) TextButton(onClick = { vm.clearCustomTimes(day.date) }) { Text("기본 시간으로") }
     }
     editing?.let { which ->
-        TimePickerDialog(
-            title = if (which == "start") "시작 시각" else "끝 시각",
-            initial = if (which == "start") start else end,
+        // [DAYW-11] One window for start, end and break, opened on the time that was tapped.
+        TimeRangeDialog(
+            title = "${Fmt.monthDay(day.date)} 근무 시간",
+            initial = TimeRange(plannedStart, plannedEnd, day.plannedBreakMinutes),
             presets = timePresets(snapshot),
+            startOnEnd = which == "end",
+            note = day.leave?.takeIf { day.leaveShrunk }?.let { "연차 ${HoursFormat.korean(day.leaveMinutes)}은 저장한 뒤 다시 빼요" },
             onDismiss = { editing = null },
         ) {
             editing = null
-            if (which == "start") vm.setCustomTimes(day.date, it, end) else vm.setCustomTimes(day.date, start, it)
+            vm.setDayTimes(day.date, it.start, it.end, it.breakMinutes, day.shiftType)
         }
     }
 }
@@ -818,11 +835,9 @@ private fun AlarmContent(
         val start = day.start
         DayAlarmEditorDialog(
             date = day.date,
-            initial = custom ?: planned.filter { it.triggerAt.toLocalDate() == day.date }.map { DayAlarm(it.triggerAt.toLocalTime()) },
+            // [DAYW-09] The evening before's alarms come along as 전날 ones, so saving keeps them (I 리뷰 P13).
+            initial = custom ?: planned.map { DayAlarm(it.triggerAt.toLocalTime(), dayBefore = it.triggerAt.toLocalDate().isBefore(day.date)) },
             suggested = start?.minusHours(1) ?: LocalTime.of(8, 0),
-            // An alarm the evening before cannot be set here; say that saving drops it [QA-01].
-            eveningBefore = if (custom != null) emptyList() else planned.filter { it.triggerAt.toLocalDate().isBefore(day.date) }
-                .map { Fmt.time(it.triggerAt.toLocalTime()) },
             onDismiss = { editing = false },
             onSave = { list ->
                 editing = false
@@ -837,12 +852,14 @@ private fun DayAlarmEditorDialog(
     date: LocalDate,
     initial: List<DayAlarm>,
     suggested: LocalTime,
-    eveningBefore: List<String> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (List<DayAlarm>) -> Unit,
 ) {
-    val alarms = remember { mutableStateListOf<DayAlarm>().apply { addAll(initial.sortedBy { it.time }) } }
-    var picking by remember { mutableStateOf<Int?>(null) } // index to change, or -1 for a new alarm
+    // [CAL-30] Kept through a fold or a turn, in the alarms' own stored form.
+    val alarms = rememberSaveable(saver = DayAlarmsSaver) { mutableStateListOf<DayAlarm>().apply { addAll(initial.sortedBy { it.at(date) }) } }
+    var picking by rememberSaveable { mutableStateOf<Int?>(null) } // index to change, or -1 for a new alarm
+    // [DAYW-09] A new alarm can be for the evening before, for a night shift's nap or bedtime.
+    var newDayBefore by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         // A stray tap outside must not throw away alarms just added; 취소 or 완료 decides.
@@ -855,13 +872,6 @@ private fun DayAlarmEditorDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (eveningBefore.isNotEmpty()) {
-                    Text(
-                        "저장하면 전날 ${eveningBefore.joinToString(", ")} 알람은 울리지 않아요.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
                 if (alarms.isEmpty()) {
                     Text("알람이 없어요. 저장하면 이 날은 울리지 않아요.", style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(vertical = 8.dp))
@@ -869,7 +879,7 @@ private fun DayAlarmEditorDialog(
                 alarms.forEachIndexed { i, alarm ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            Fmt.time(alarm.time),
+                            (if (alarm.dayBefore) "전날 " else "") + Fmt.time(alarm.time),
                             style = MaterialTheme.typography.headlineSmall.merge(NumberStyle),
                             color = if (alarm.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline,
                             modifier = Modifier
@@ -883,14 +893,21 @@ private fun DayAlarmEditorDialog(
                         IconButton(onClick = { alarms.removeAt(i) }) { Icon(Icons.Filled.Close, "${Fmt.time(alarm.time)} 알람 지우기") }
                     }
                 }
-                OutlinedButton(
-                    onClick = { picking = -1 },
-                    enabled = alarms.size < ScheduleRepository.MAX_ALARMS,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Filled.AlarmAdd, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("알람 추가")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(
+                        onClick = { newDayBefore = false; picking = -1 },
+                        enabled = alarms.size < ScheduleRepository.MAX_ALARMS,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.Filled.AlarmAdd, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("알람 추가")
+                    }
+                    OutlinedButton(
+                        onClick = { newDayBefore = true; picking = -1 },
+                        enabled = alarms.size < ScheduleRepository.MAX_ALARMS,
+                        modifier = Modifier.weight(1f),
+                    ) { Text("전날 알람") }
                 }
             }
         },
@@ -898,11 +915,19 @@ private fun DayAlarmEditorDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
     picking?.let { index ->
-        val initialTime = if (index >= 0) alarms[index].time else alarms.maxOfOrNull { it.time }?.plusMinutes(10) ?: suggested
-        TimePickerDialog(if (index >= 0) "알람 시각 바꾸기" else "알람 추가", initialTime, onDismiss = { picking = null }) { t ->
-            if (alarms.none { it.time == t }) {
-                if (index >= 0) alarms[index] = alarms[index].copy(time = t) else alarms.add(DayAlarm(t))
-                alarms.sortBy { it.time }
+        val before = if (index >= 0) alarms[index].dayBefore else newDayBefore
+        val initialTime = when {
+            index >= 0 -> alarms[index].time
+            before -> LocalTime.of(22, 0)
+            else -> alarms.filter { !it.dayBefore }.maxOfOrNull { it.time }?.plusMinutes(10) ?: suggested
+        }
+        TimePickerDialog(
+            when { index >= 0 -> "알람 시각 바꾸기"; before -> "전날 알람 추가"; else -> "알람 추가" },
+            initialTime, onDismiss = { picking = null },
+        ) { t ->
+            if (alarms.none { it.time == t && it.dayBefore == before }) {
+                if (index >= 0) alarms[index] = alarms[index].copy(time = t) else alarms.add(DayAlarm(t, dayBefore = before))
+                alarms.sortBy { it.at(date) }
             }
             picking = null
         }
@@ -1273,3 +1298,9 @@ private fun sleepTime(tip: com.bamnat.core.sleep.SleepPlan.Tip, date: LocalDate)
     }
     return day + hm(tip.at) + (tip.until?.let { "–" + hm(it) } ?: "")
 }
+
+/** [CAL-30] A day's alarms being edited, kept in [com.bamnat.core.alarm.AlarmCodec]'s text through a configuration change. */
+private val DayAlarmsSaver = Saver<androidx.compose.runtime.snapshots.SnapshotStateList<DayAlarm>, String>(
+    save = { com.bamnat.core.alarm.AlarmCodec.encodeDayAlarms(it.toList()) ?: com.bamnat.core.alarm.AlarmCodec.NONE },
+    restore = { mutableStateListOf<DayAlarm>().apply { addAll(com.bamnat.core.alarm.AlarmCodec.decodeDayAlarms(it).orEmpty()) } },
+)

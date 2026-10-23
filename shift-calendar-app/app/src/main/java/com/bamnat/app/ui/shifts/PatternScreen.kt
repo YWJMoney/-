@@ -97,7 +97,7 @@ fun PatternScreen(
         return
     }
 
-    val today = remember { LocalDate.now() }
+    val today = com.bamnat.app.ui.calendar.rememberToday() // [CAL-25]
     val existing = loadedPattern.pattern
     // The draft lives in the ViewModel so a trip to the shift type screen does not lose it.
     val draft0 = vm.draft

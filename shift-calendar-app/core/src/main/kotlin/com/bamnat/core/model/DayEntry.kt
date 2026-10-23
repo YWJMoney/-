@@ -64,7 +64,14 @@ enum class Attendance(val label: String, val code: Int) {
 }
 
 /** An alarm at a clock time on one date, set from the calendar. */
-data class DayAlarm(val time: LocalTime, val enabled: Boolean = true)
+/**
+ * One alarm set by hand for a day. [DAYW-09] [dayBefore] rings on the evening before (a night shift's 23:00 nap
+ * alarm), which the day sheet used to drop on saving (I 리뷰 P13).
+ */
+data class DayAlarm(val time: LocalTime, val enabled: Boolean = true, val dayBefore: Boolean = false) {
+    /** When it rings for the shift day [date]. */
+    fun at(date: java.time.LocalDate): java.time.LocalDateTime = (if (dayBefore) date.minusDays(1) else date).atTime(time)
+}
 
 /** Kinds of leave; [paid] keeps the day's pay, [annual] counts against 연차 [FEAT-10]. */
 enum class LeaveKind(val label: String, val paid: Boolean, val annual: Boolean) {

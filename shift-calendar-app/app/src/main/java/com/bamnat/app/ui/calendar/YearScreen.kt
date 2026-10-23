@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,12 +33,15 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -52,8 +57,13 @@ import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.components.ShiftBadge
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.components.asColor
+import com.bamnat.app.ui.components.contentColorOn
 import com.bamnat.core.holiday.KoreanHolidays
 import com.bamnat.core.schedule.ResolvedDay
+import com.bamnat.core.work.Heat
+import com.bamnat.core.work.ShiftHealth
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -78,8 +88,10 @@ class YearViewModel(private val container: AppContainer, val calendarId: String)
 @Composable
 fun YearScreen(vm: YearViewModel, onBack: () -> Unit) {
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
-    val today = remember { LocalDate.now() }
+    val today = com.bamnat.app.ui.calendar.rememberToday() // [CAL-25]
     var year by rememberSaveable { mutableIntStateOf(today.year) }
+    // [CAL-44] 근무 shows the shifts' colours; 건강 the same days as a heat map of nights and short rests.
+    var heatMap by rememberSaveable { mutableStateOf(false) }
     Scaffold(topBar = {
         TopAppBar(
             title = { Text("1년 달력") },
@@ -87,7 +99,16 @@ fun YearScreen(vm: YearViewModel, onBack: () -> Unit) {
         )
     }) { padding ->
         val snap = snapshot ?: return@Scaffold
-        val days = remember(snap, year) { snap.resolver.resolveRange(LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 31)).associateBy { it.date } }
+        // [CAL-41] A year of days is worked out off the main thread (I 리뷰 P17): with much leave and extra
+        // work it took more than a frame on opening.
+        val loaded by produceState<Pair<Map<LocalDate, ResolvedDay>, Map<LocalDate, Heat>>?>(null, snap, year) {
+            value = withContext(Dispatchers.Default) {
+                val from = LocalDate.of(year, 1, 1)
+                val to = LocalDate.of(year, 12, 31)
+                snap.resolver.resolveRange(from, to).associateBy { it.date } to ShiftHealth.heat(from, to, snap.resolver::resolve)
+            }
+        }
+        val (days, heat) = loaded ?: (emptyMap<LocalDate, ResolvedDay>() to emptyMap())
         Column(Modifier.padding(padding).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                 IconButton(onClick = { year-- }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 해") }
@@ -95,6 +116,11 @@ fun YearScreen(vm: YearViewModel, onBack: () -> Unit) {
                 IconButton(onClick = { year++ }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 해") }
             }
             YearCounts(snap, days.values)
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = !heatMap, onClick = { heatMap = false }, label = { Text("근무") })
+                FilterChip(selected = heatMap, onClick = { heatMap = true }, label = { Text("야간·휴식") })
+            }
+            if (heatMap) HeatLegend(heat)
             BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 24.dp)) {
                 val columns = when {
                     maxWidth >= 840.dp -> 4
@@ -107,7 +133,7 @@ fun YearScreen(vm: YearViewModel, onBack: () -> Unit) {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             row.forEach { m ->
                                 val month = YearMonth.of(year, m)
-                                MiniMonth(month, days, vm.weekStart, today, Modifier.weight(1f).align(Alignment.Top)) {
+                                MiniMonth(month, days, heat.takeIf { heatMap }, vm.weekStart, today, Modifier.weight(1f).align(Alignment.Top)) {
                                     vm.openMonth(month)
                                     onBack()
                                 }
@@ -125,7 +151,8 @@ fun YearScreen(vm: YearViewModel, onBack: () -> Unit) {
 @Composable
 private fun YearCounts(snap: ScheduleSnapshot, days: Collection<ResolvedDay>) {
     val counts = days.mapNotNull { it.shiftType }.groupingBy { it.id }.eachCount()
-    val leave = days.count { it.leave != null }
+    // [CAL-26] 반차 is half a day and 반반차 a quarter, as the leave ledger counts them (I 리뷰 P5).
+    val leave = days.sumOf { it.leave?.days ?: 0.0 }
     if (counts.isEmpty()) {
         Text("이 해에는 넣은 근무가 없어요", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth().padding(8.dp), textAlign = TextAlign.Center)
@@ -139,13 +166,13 @@ private fun YearCounts(snap: ScheduleSnapshot, days: Collection<ResolvedDay>) {
                     Text(" ${counts[type.id]}일", style = MaterialTheme.typography.bodyMedium)
                 }
             }
-            if (leave > 0) Text("휴가 ${leave}일", style = MaterialTheme.typography.bodyMedium)
+            if (leave > 0) Text("휴가 ${leaveDays(leave)}일", style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
 
 @Composable
-private fun MiniMonth(month: YearMonth, days: Map<LocalDate, ResolvedDay>, weekStart: DayOfWeek, today: LocalDate, modifier: Modifier, onOpen: () -> Unit) {
+private fun MiniMonth(month: YearMonth, days: Map<LocalDate, ResolvedDay>, heat: Map<LocalDate, Heat>?, weekStart: DayOfWeek, today: LocalDate, modifier: Modifier, onOpen: () -> Unit) {
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
     val first = month.atDay(1).with(TemporalAdjusters.previousOrSame(weekStart))
@@ -172,6 +199,7 @@ private fun MiniMonth(month: YearMonth, days: Map<LocalDate, ResolvedDay>, weekS
                         val type = day?.shiftType
                         val fill = when {
                             !inMonth -> Color.Transparent
+                            heat != null -> heatColor(heat[date] ?: Heat.REST)
                             day?.leave != null -> scheme.tertiaryContainer
                             type != null && day.isWorkDay -> type.colorArgb.asColor().copy(alpha = 0.85f)
                             else -> Color.Transparent
@@ -186,7 +214,8 @@ private fun MiniMonth(month: YearMonth, days: Map<LocalDate, ResolvedDay>, weekS
                             if (inMonth) Text(
                                 "${date.dayOfMonth}", fontSize = 9.sp, lineHeight = 9.sp, maxLines = 1,
                                 color = when {
-                                    fill != Color.Transparent -> Color.White
+                                    // [CAL-42] Dark letters on 오후's orange or a light shift colour (I 리뷰 P23).
+                                    fill != Color.Transparent -> contentColorOn(fill.compositeOver(scheme.surface))
                                     sunday -> cal.sunday
                                     else -> scheme.onSurfaceVariant
                                 },
@@ -194,6 +223,39 @@ private fun MiniMonth(month: YearMonth, days: Map<LocalDate, ResolvedDay>, weekS
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** [CAL-26] 3, 2.5 or 0.75: whole days without ".0". */
+internal fun leaveDays(days: Double): String =
+    if (days % 1.0 == 0.0) days.toLong().toString() else java.math.BigDecimal(days).stripTrailingZeros().toPlainString()
+
+/** [CAL-44] Rest is left blank; work, nights, long runs and short rests darken step by step. */
+@Composable
+private fun heatColor(h: Heat): Color {
+    val cal = LocalCalendarColors.current
+    val scheme = MaterialTheme.colorScheme
+    return when (h) {
+        Heat.REST -> Color.Transparent
+        Heat.WORK -> scheme.surfaceContainerHighest
+        Heat.NIGHT -> scheme.primary.copy(alpha = 0.55f)
+        Heat.NIGHT_RUN -> scheme.primary
+        Heat.SHORT_REST -> cal.warning
+    }
+}
+
+/** [CAL-44] What the heat map's colours mean, with the year's count of each. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun HeatLegend(heat: Map<LocalDate, Heat>) {
+    val counts = heat.values.groupingBy { it }.eachCount()
+    FlowRow(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        for (h in listOf(Heat.WORK, Heat.NIGHT, Heat.NIGHT_RUN, Heat.SHORT_REST)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.padding(end = 4.dp).size(14.dp).background(heatColor(h), RoundedCornerShape(3.dp)).border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(3.dp)))
+                Text("${h.label} ${counts[h] ?: 0}일", style = MaterialTheme.typography.bodySmall)
             }
         }
     }

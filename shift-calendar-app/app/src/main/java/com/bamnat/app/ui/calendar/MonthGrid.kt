@@ -8,6 +8,10 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.material3.Surface
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -275,7 +279,9 @@ fun MonthGrid(
             dragged = emptyList()
         }
     }
-    Column(modifier.fillMaxWidth().then(painting)) {
+    // [CAL-33] How many days the finger holds, said while it paints, not only after it lifts (I 리뷰 I4).
+    Box(modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth().then(painting)) {
         for (row in 0 until GRID_ROWS) {
             val rowStart = firstCell.plusWeeks(row.toLong())
             // [WEEK-01] The Monday-to-Sunday week that holds most of the row: on a grid from Sunday, the row's Monday on.
@@ -309,7 +315,9 @@ fun MonthGrid(
                         snapshot = snapshot,
                         inMonth = inMonth,
                         isToday = date == today,
-                        isSelected = date == selected || date in dragged,
+                        // [CAL-41] Each cell reads the drag through its own derived state, so a finger moving over
+                        // the month redraws the cells it lights, not all 42 (I 리뷰 P21).
+                        isSelected = date == selected || remember(date) { derivedStateOf { date in dragged } }.value,
                         hasMemo = date in memoDates,
                         money = if (inMonth) cells.days[date] else null,
                         memoText = memoTexts[date],
@@ -342,6 +350,18 @@ fun MonthGrid(
                 }
             }
         }
+    }
+    val count by remember { derivedStateOf { dragged.size } }
+    if (count > 1) {
+        Surface(
+            shape = MaterialTheme.shapes.small,
+            color = MaterialTheme.colorScheme.inverseSurface,
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 2.dp).semantics { liveRegion = LiveRegionMode.Polite },
+        ) {
+            Text("${count}일 칠하는 중", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.inverseOnSurface,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+        }
+    }
     }
 }
 
@@ -383,8 +403,9 @@ fun WeekStrip(
             DayCell(
                 day = day,
                 snapshot = snapshot,
-                // Days of the next or last month in this week are dimmed as in the month.
-                inMonth = YearMonth.from(date) == month,
+                // [CAL-29] Never dimmed: in the week view every day is this week's, and a faint Sunday of the
+                // next month read as "no work that day" (I 리뷰 P28).
+                inMonth = true,
                 isToday = date == today,
                 isSelected = date == selected,
                 hasMemo = date in memoDates,
@@ -653,6 +674,8 @@ private fun DayCell(
                     unitsText != null -> unitsText
                     moneyText != null -> moneyText
                     extraMinutes > 0 -> "+" + HoursFormat.short(extraMinutes)
+                    // [CAL-28] Both on: the hours first and the lunar date after them, in one line (I 리뷰 P10).
+                    showLunar && showHours && day.scheduledMinutes > 0 -> HoursFormat.short(day.scheduledMinutes) + "·" + remember(date) { KoreanLunar.fromSolar(date).short }
                     // [FEAT-05] Lunar date takes the place of the hours when turned on.
                     showLunar -> remember(date) { KoreanLunar.fromSolar(date).short }
                     showHours && day.scheduledMinutes > 0 -> HoursFormat.short(day.scheduledMinutes)

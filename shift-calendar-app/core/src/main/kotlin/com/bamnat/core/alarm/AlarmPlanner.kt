@@ -74,7 +74,7 @@ object AlarmPlanner {
         val custom = day.entry?.customAlarms
         val list = if (custom != null) {
             custom.filter { it.enabled }.map { alarm ->
-                val at = date.atTime(alarm.time)
+                val at = alarm.at(date) // [DAYW-09] the evening before, for one set so
                 PlannedAlarm(
                     triggerAt = at,
                     shiftDate = date,

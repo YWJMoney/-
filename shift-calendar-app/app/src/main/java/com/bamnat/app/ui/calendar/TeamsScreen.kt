@@ -159,11 +159,12 @@ fun TeamsScreen(vm: TeamsViewModel, onBack: () -> Unit, onOpenPattern: () -> Uni
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val rosters by vm.rosters.collectAsStateWithLifecycle()
     val rests by vm.rest.collectAsStateWithLifecycle()
-    val today = remember { LocalDate.now() }
+    val today = com.bamnat.app.ui.calendar.rememberToday() // [CAL-25]
     var month by rememberSaveable { mutableStateOf(YearMonth.from(startDay ?: today)) }
     var view by rememberSaveable { mutableStateOf(TeamsView.WEEK) }
-    var editing by remember { mutableStateOf(false) }
-    var picked by remember { mutableStateOf(startDay) }
+    // [CAL-30] Kept through a fold: a cover being looked for stays open when the phone is unfolded (I 리뷰 P15).
+    var editing by rememberSaveable { mutableStateOf(false) }
+    var picked by rememberSaveable(stateSaver = DateSaver) { mutableStateOf(startDay) }
     Scaffold(topBar = {
         TopAppBar(
             title = { Text("모든 조") },
@@ -226,6 +227,42 @@ fun TeamsScreen(vm: TeamsViewModel, onBack: () -> Unit, onOpenPattern: () -> Uni
         if (editing) {
             TeamEditor(roster, rotation, snap, today, onSave = { vm.save(it); editing = false }, onReset = { vm.reset(); editing = false },
                 onDismiss = { editing = false })
+        }
+    }
+}
+
+/** [CAL-30] A date kept as its day number through a configuration change; null stays null. */
+internal val DateSaver = androidx.compose.runtime.saveable.Saver<LocalDate?, Long>(
+    save = { it?.toEpochDay() ?: Long.MIN_VALUE },
+    restore = { if (it == Long.MIN_VALUE) null else LocalDate.ofEpochDay(it) },
+)
+
+/**
+ * [CAL-45] 모든 조 beside the month on an unfolded screen (I 리뷰 N5 b): the month's table on the calendar's own
+ * month, the picked day marked, and 대근 찾기 under it for that day. The full screen stays one tap away.
+ */
+@Composable
+fun TeamsPanel(calendarId: String, snap: ScheduleSnapshot, month: YearMonth, selected: LocalDate, onClose: () -> Unit, modifier: Modifier = Modifier) {
+    val vm = com.bamnat.app.ui.appViewModel(key = "teams_$calendarId") { TeamsViewModel(it, calendarId) }
+    val rosters by vm.rosters.collectAsStateWithLifecycle()
+    val rests by vm.rest.collectAsStateWithLifecycle()
+    val today = rememberToday()
+    val rotation = rotationOf(snap, today) ?: return
+    val roster = remember(rosters[calendarId], rotation) { rosterFor(rosters[calendarId], rotation) }
+    var shown by rememberSaveable(month) { mutableStateOf(month) }
+    var picked by rememberSaveable(selected, stateSaver = DateSaver) { mutableStateOf<LocalDate?>(null) }
+    Column(modifier) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("모든 조", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).semantics { heading() })
+            TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) { Text("하루 보기") }
+        }
+        TableArea(TeamsView.MONTH, {}, shown, { shown = it }, roster, rotation, snap, selected, picked, modifier = Modifier.weight(1f)) {
+            picked = if (picked == it) null else it
+        }
+        picked?.let { day ->
+            Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                CoverPanel(day, roster, rotation, snap, rests[calendarId] ?: CoverFinder.DEFAULT_REST_MINUTES, vm::setRest, onClose = { picked = null })
+            }
         }
     }
 }
