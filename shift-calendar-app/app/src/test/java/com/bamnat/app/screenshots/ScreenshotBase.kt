@@ -311,16 +311,18 @@ abstract class ScreenshotBase {
             }
             // [QA-05] settle() ends once the screen is still, so what is still on its way (Play's plans, a slow
             // query on a busy machine) gets up to a few more seconds before the shot gives up.
-            var end = System.nanoTime() + REACH_WAIT_NANOS
-            var waitedLonger = false
+            val end = System.nanoTime() + REACH_WAIT_NANOS
             while (System.nanoTime() < end) {
                 settle()
                 find(text, exact, prefix)?.let { return it }
-                // [QA-08] 363: the first shot of a cold worker on a busy CI runner can still show an empty window
-                // after the usual wait (phoneShareFeed, CI on d6b7228): a screen with nothing drawn waits longer, once.
-                if (!waitedLonger && System.nanoTime() >= end && shownWords().isEmpty()) {
-                    waitedLonger = true
-                    end = System.nanoTime() + EMPTY_WAIT_NANOS
+            }
+            // [QA-08] 363: the first shot of a cold worker on a busy CI runner can still show an empty window
+            // after the usual wait (phoneShareFeed, CI on d6b7228 and 330916a): nothing drawn yet waits longer.
+            if (shownWords().isEmpty()) {
+                val more = System.nanoTime() + EMPTY_WAIT_NANOS
+                while (System.nanoTime() < more) {
+                    settle()
+                    find(text, exact, prefix)?.let { return it }
                 }
             }
             // [QA-05] On a busy machine a fling can carry the list past the text, so look back down step by step.
@@ -328,7 +330,7 @@ abstract class ScreenshotBase {
                 scrollDown(350, across)
                 find(text, exact, prefix)?.let { return it }
             }
-            error("화면에서 ‘$text’를 찾지 못했어요. 보이는 글자: " + shownWords().joinToString(" | ").take(1500))
+            error("화면에서 ‘$text’를 찾지 못했어요(열린 창 ${shownDialogs().size}개). 보이는 글자: " + shownWords().joinToString(" | ").take(1500))
         }
 
         /** Every word on screen, for a failure message that says what was there instead. */
