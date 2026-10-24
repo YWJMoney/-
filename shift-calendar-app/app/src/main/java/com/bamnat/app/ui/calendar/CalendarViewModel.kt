@@ -92,8 +92,11 @@ sealed interface PaintTool {
  * [CAL-09] Besides a shift, quick input can stamp a whole day's leave or turn the day's alarm off,
  * over many days at once. Kept apart from [PaintTool], whose shift stamps the first setup shares.
  */
-enum class DayMark(val label: String) {
-    LEAVE("연차"),
+enum class DayMark(val label: String, val leave: Leave? = null) {
+    LEAVE("연차", Leave(LeaveKind.ANNUAL, 4)),
+    /** [ROST-07] 반차 stamped like 연차 (리뷰 개선 나): off the start of the shift, or off its end. */
+    HALF_AM("오전 반차", Leave(LeaveKind.ANNUAL, 2, fromStart = true)),
+    HALF_PM("오후 반차", Leave(LeaveKind.ANNUAL, 2)),
     ALARM_OFF("알람 끄기"),
 }
 
@@ -642,10 +645,10 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private fun toggleMark(date: LocalDate, mark: DayMark) = viewModelScope.launch {
         val day = currentSnapshot().resolver.resolve(date)
         when (mark) {
-            DayMark.LEAVE -> when {
-                day.leave != null -> setLeave(date, null, announceInBar = true)
-                takesLeave(day) -> setLeave(date, FULL_LEAVE, announceInBar = true)
-                else -> _lastPaint.value = PaintUndo("${Fmt.monthDay(date)}은 근무가 없어 연차를 넣지 않았어요", null)
+            DayMark.LEAVE, DayMark.HALF_AM, DayMark.HALF_PM -> when {
+                day.leave == mark.leave -> setLeave(date, null, announceInBar = true)
+                day.leave != null || takesLeave(day) -> setLeave(date, mark.leave, announceInBar = true)
+                else -> _lastPaint.value = PaintUndo("${Fmt.monthDay(date)}은 근무가 없어 ${mark.label}${Fmt.obj(mark.label)} 넣지 않았어요", null)
             }
             DayMark.ALARM_OFF -> when {
                 day.alarmSkipped -> setAlarmSkipped(date, false, announceInBar = true)
@@ -746,29 +749,31 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private fun paintMark(dates: List<LocalDate>, mark: DayMark) {
         viewModelScope.launch {
             val resolver = currentSnapshot().resolver
-            val fits = dates.map(resolver::resolve).filter { if (mark == DayMark.LEAVE) takesLeave(it) else ringsOn(it) }.map { it.date }
+            val leave = mark.leave
+            val fits = dates.map(resolver::resolve).filter { if (leave != null) takesLeave(it) else ringsOn(it) }.map { it.date }
             if (fits.isEmpty()) {
-                _lastPaint.value = PaintUndo(if (mark == DayMark.LEAVE) "연차를 넣을 근무일이 없어요" else "알람이 울릴 날이 없어요", null)
+                _lastPaint.value = PaintUndo(if (leave != null) "${mark.label}${Fmt.obj(mark.label)} 넣을 근무일이 없어요" else "알람이 울릴 날이 없어요", null)
                 return@launch
             }
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.updateDays(fits) { e ->
-                if (mark == DayMark.LEAVE) e.copy(leave = FULL_LEAVE) else e.copy(alarmSkipped = true)
+                if (leave != null) e.copy(leave = leave) else e.copy(alarmSkipped = true)
             }
             val one = before.size == 1
             val skipped = dates.size - fits.size
             // "근무일 4일에 연차를 넣었어요 · 근무 없는 1일은 빼고": the count never reads as a date.
             val done = when (mark) {
-                DayMark.LEAVE -> if (one) "${Fmt.monthDay(before.keys.first())}에 연차를 넣었어요" else "근무일 ${before.size}일에 연차를 넣었어요"
+                DayMark.LEAVE, DayMark.HALF_AM, DayMark.HALF_PM -> if (one) "${Fmt.monthDay(before.keys.first())}에 ${mark.label}${Fmt.obj(mark.label)} 넣었어요"
+                    else "근무일 ${before.size}일에 ${mark.label}${Fmt.obj(mark.label)} 넣었어요"
                 DayMark.ALARM_OFF -> if (one) "${Fmt.monthDay(before.keys.first())} 알람을 껐어요" else "${before.size}일 알람을 껐어요"
             }
-            val left = if (mark == DayMark.LEAVE) "근무 없는" else "알람 없는"
+            val left = if (leave != null) "근무 없는" else "알람 없는"
             _lastPaint.value = PaintUndo(
                 done + if (skipped > 0) " · $left ${skipped}일은 빼고" else "",
                 undo = {
                     schedule.updateDays(before.keys.toList()) { now ->
                         val was = before[now.date] ?: DayEntry(now.date)
-                        if (mark == DayMark.LEAVE) now.copy(leave = was.leave) else now.copy(alarmSkipped = was.alarmSkipped)
+                        if (leave != null) now.copy(leave = was.leave) else now.copy(alarmSkipped = was.alarmSkipped)
                     }
                 },
             )

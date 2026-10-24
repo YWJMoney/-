@@ -443,6 +443,59 @@ class SetupViewModel(
         update { it.copy(painted = before) }
     }
 
+    // [SETUP-15] 듀티표가 있어요 (중-8, 리뷰 P9): a roster photo or file read the same way as 한 달 근무 넣기, its line
+    // painted onto the month it names. Leave and codes not known stay unpainted (they go in after the setup).
+    private val _roster = MutableStateFlow<com.bamnat.app.ui.imports.RosterResult?>(null)
+    val roster: StateFlow<com.bamnat.app.ui.imports.RosterResult?> = _roster.asStateFlow()
+    private val _rosterReading = MutableStateFlow(false)
+    val rosterReading: StateFlow<Boolean> = _rosterReading.asStateFlow()
+
+    private fun rosterCodes(): com.bamnat.core.imports.DutyCodes = com.bamnat.core.imports.DutyCodes(
+        current.types.map { com.bamnat.core.imports.DutyType(it.id, it.name, it.label, it.isOff, it.start, com.bamnat.core.model.NightShift.of(it)) },
+    )
+
+    fun readRoster(how: suspend (com.bamnat.core.imports.DutyCodes) -> com.bamnat.app.ui.imports.RosterResult) {
+        _rosterReading.value = true
+        viewModelScope.launch {
+            val r = how(rosterCodes())
+            _rosterReading.value = false
+            _roster.value = r
+            if (r.rows.size == 1) useRosterRow(0) else if (r.error != null) _message.value = r.error
+        }
+    }
+
+    fun readRosterPhoto(context: Context, uri: Uri) = readRoster { com.bamnat.app.ui.imports.RosterReader.photo(context, uri, it, today) }
+
+    fun readRosterFile(context: Context, uri: Uri) = readRoster { com.bamnat.app.ui.imports.RosterReader.file(context, uri, it, today) }
+
+    fun readRosterText(text: String) = readRoster { com.bamnat.app.ui.imports.RosterReader.text(text, it, today) }
+
+    fun clearRoster() { _roster.value = null }
+
+    /** [SETUP-15] The picked line onto the painted days of the roster's month; one undo takes it back. */
+    fun useRosterRow(i: Int) {
+        val r = _roster.value ?: return
+        val row = r.rows.getOrNull(i) ?: return
+        val month = r.month ?: _paintMonth.value
+        val days = row.cells.filterKeys { it <= month.lengthOfMonth() }.mapNotNull { (d, cell) ->
+            when (cell) {
+                is com.bamnat.core.imports.DutyCell.Shift -> month.atDay(d) to cell.shiftTypeId
+                com.bamnat.core.imports.DutyCell.Off -> month.atDay(d) to null
+                else -> null
+            }
+        }.toMap()
+        if (days.isEmpty()) {
+            _message.value = "근무 칸을 찾지 못했어요. 직접 칠해 주세요."
+            return
+        }
+        _paintUndo.value = current.painted
+        update { it.copy(painted = it.painted + days) }
+        _paintMonth.value = month
+        _roster.value = r.copy(rows = listOf(row))
+        val left = row.cells.size - days.size
+        _message.value = "${month.monthValue}월 ${days.size}일을 칠했어요" + if (left > 0) " · 휴가·모르는 칸 ${left}개는 설정이 끝난 뒤 넣어요" else ""
+    }
+
     // ---- 6. today ----
 
     /** Today's answer: [step] of the order on [date]. */

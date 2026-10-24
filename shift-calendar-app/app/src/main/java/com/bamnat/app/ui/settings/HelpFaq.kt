@@ -331,6 +331,15 @@ internal object HelpFaq {
             listOf("광장", "같은 회사", "회사 규칙", "동료 설정", "제보"),
             listOf("급여", "회사 규칙 광장"),
         ),
+        // ---- 1.24 묶음 P: [ROST-01][ROST-05][ROST-09][ROST-10] ----
+        HelpTopic(
+            "roster", "한 달 근무", "한 달 근무표를 한 번에 넣고 싶어요",
+            "설정 › 내 근무 › ‘한 달 근무 넣기’에서 근무표를 보며 키를 누르면 하루씩 들어가요. D D E E N N O O를 넣고 ‘이 순서 반복’을 누르면 " +
+                "달 끝까지 채워요. 듀티표 사진·엑셀·CSV나 카톡 ‘공유’도 같은 달력에 채워지니 노란 칸만 보면 돼요. 반차는 0.5일, 병가처럼 회사마다 다른 휴가는 한 번만 물어요.",
+            listOf("듀티표", "한 달 근무", "근무표 넣기", "키패드", "직접 입력", "이 순서 반복", "반차", "병가", "공유", "붙여 넣기", "사진으로"),
+            listOf("한 달 근무 넣기", "달력"),
+            "한 달 근무 넣기 열기" to HelpAction.Go(SettingsGo.DUTY_ROSTER),
+        ),
     )
 
     /** [INQ-05] I11: the answers each of the server's topics ([com.bamnat.core.ops.InquiryTopics]) starts with. */

@@ -70,6 +70,8 @@ class BackupManager(
     private val staging: java.io.File? = null,
     /** [EASY-03] Where each fact came from (결정 N-D4), per calendar; the example's never goes. */
     private val profiles: () -> ProfileStore? = { null },
+    /** [ROST-06] Each calendar's roster code book (what 병가 or M means there). */
+    private val dutyCodes: () -> DutyCodeBook? = { null },
 ) {
     /** The schedule tables of [source] (shifts, order, changed days, extra work) as a backup holds them. */
     private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
@@ -429,6 +431,7 @@ class BackupManager(
         root.putOpt("workTools", workTools?.export(PersonalCalendar.MAIN))
         guide?.let { root.put("featuresOff", it.exportOff()) }
         teams?.let { t -> root.put("teams", JSONObject(t.export() as Map<*, *>)) }
+        dutyCodes()?.let { d -> root.put("dutyCodes", JSONObject(d.export() as Map<*, *>)) }
         pro()?.let { root.put("pro", it.toBackup()) }
         shareLinks?.let { root.put("shareLinks", it.export()) }
         profiles()?.let { p -> root.put("profile", JSONObject(p.export() as Map<*, *>)) }
@@ -813,6 +816,8 @@ class BackupManager(
         root.optJSONArray("featuresOff")?.let { a -> guide?.restoreOff(a) }
         // [CREW-01] An older backup has no teams: the phone's own stay.
         root.optJSONObject("teams")?.let { o -> teams?.import(o.keys().asSequence().associateWith { o.optString(it) }) }
+        // [ROST-06] An older backup has no code book: the phone's own stays.
+        root.optJSONObject("dutyCodes")?.let { o -> dutyCodes()?.import(o.keys().asSequence().associateWith { o.optString(it) }) }
         // [MON-08] A backup's recovery code moves its passes here at the next sync; an older backup has none.
         root.optJSONObject("pro")?.let { o -> pro()?.fromBackup(o) }
         // [MCAL-05] The added calendars as the backup had them, each in its own database.

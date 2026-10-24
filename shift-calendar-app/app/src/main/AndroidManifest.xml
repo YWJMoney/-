@@ -85,6 +85,14 @@
                 <data android:mimeType="application/json" />
                 <data android:mimeType="application/vnd.bamnat+json" />
             </intent-filter>
+            <!-- [ROST-09] A roster photo or text shared from the gallery or a messenger: 한 달 근무 넣기 reads it on the
+                 phone (결정 D65); nothing is saved until the user puts the days in. -->
+            <intent-filter android:label="@string/roster_share_label">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
             <intent-filter android:label="@string/open_file_label">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

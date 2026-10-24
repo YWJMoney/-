@@ -53,7 +53,7 @@ fun RestRulesSheet(rules: RestRules, speed: RotationSpeed, onDismiss: () -> Unit
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text("근무표 점검 기준", style = MaterialTheme.typography.titleLarge)
-            Text("병원·회사마다 기준이 달라요. 우리 기준으로 맞추면 달력, 한 달 연달아 넣기, 받은 근무표가 모두 이 기준으로 알려 줘요. " +
+            Text("병원·회사마다 기준이 달라요. 우리 기준으로 맞추면 달력, 이번 달 전부 넣기, 받은 근무표가 모두 이 기준으로 알려 줘요. " +
                 "알려만 주고 저장은 막지 않아요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { draft = draft.copy(on = !draft.on) }, verticalAlignment = Alignment.CenterVertically) {

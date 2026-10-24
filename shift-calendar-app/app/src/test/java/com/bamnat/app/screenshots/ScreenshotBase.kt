@@ -518,6 +518,18 @@ abstract class ScreenshotBase {
             val from = maxOf(h * 0.6f, minOf(h * 0.8f, h * 0.05f + dp * d))
             (0..40).map { x to from - dp * d * it / 40 } + listOf(x to from - dp * d)
         }
+
+        /** Drags the row that shows [text] to the left by [dp] (slowly) until [until] shows, to reach a sideways key. */
+        fun swipeRowLeft(text: String, until: String, dp: Int = 200, times: Int = 5) {
+            val y = reach(text, exact = false, prefix = false, scrolls = 0, across = 0.5f).boundsInWindow.center.y
+            repeat(times) {
+                if (find(until, exact = true, prefix = false) != null) return
+                gesture { w, _, d ->
+                    val from = w * 0.85f
+                    (0..40).map { from - dp * d * it / 40 to y } + listOf(from - dp * d to y)
+                }
+            }
+        }
     }
 
     /** [EXTRA-03] 대근 1회 기본급의 10% for 8 hours with the 연장·야간 가산 on top, 특근 a fixed amount. */

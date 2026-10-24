@@ -25,7 +25,9 @@ import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.LayersClear
 import androidx.compose.material3.FilledTonalButton
@@ -323,12 +325,13 @@ private fun HourlyDays(vm: SetupViewModel, d: SetupDraft) {
 @Composable
 private fun RosterPaint(vm: SetupViewModel, d: SetupDraft) {
     StepHeader(
-        "이번 달 근무표를 칠해 볼까요?",
-        "근무를 고르고 날짜를 누르거나 손가락으로 쓸어 칠해요. 다음 달 근무표는 나온 뒤 달력에서 이어 칠하면 돼요.",
+        "이번 달 근무표를 넣어 볼까요?",
+        "듀티표 사진이나 파일이 있으면 읽어서 칠해 드려요. 없으면 근무를 고르고 날짜를 누르거나 손가락으로 쓸어 칠해요.",
     )
     val tool by vm.paintTool.collectAsStateWithLifecycle()
     val month by vm.paintMonth.collectAsStateWithLifecycle()
     val canUndo by vm.canUndoPaint.collectAsStateWithLifecycle()
+    RosterSource(vm)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         d.types.forEach { t ->
             val stamp = PaintTool.Shift(t.id)
@@ -376,6 +379,52 @@ private fun RosterPaint(vm: SetupViewModel, d: SetupDraft) {
                 Icon(Icons.AutoMirrored.Filled.Undo, null)
                 Spacer(Modifier.width(6.dp))
                 Text("되돌리기")
+            }
+        }
+    }
+}
+
+/**
+ * [SETUP-15] 듀티표가 있어요 → 사진 · 파일 · 직접 칠하기 (중-8): a nurse gets the month's roster every month, so reading
+ * it is offered first; what is read is painted below, where any day is fixed by painting over it.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RosterSource(vm: SetupViewModel) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val roster by vm.roster.collectAsStateWithLifecycle()
+    val reading by vm.rosterReading.collectAsStateWithLifecycle()
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let { vm.readRosterPhoto(context, it) }
+    }
+    val files = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { vm.readRosterFile(context, it) }
+    }
+    // [ROST-09] A roster shared to the app while the setup is open is read here.
+    val shared by com.bamnat.app.IncomingRoster.shared.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(shared) {
+        when (val s = if (shared != null) com.bamnat.app.IncomingRoster.take() else null) {
+            is com.bamnat.app.IncomingRoster.Shared.Photo -> vm.readRosterPhoto(context, s.uri)
+            is com.bamnat.app.IncomingRoster.Shared.Text -> vm.readRosterText(s.text)
+            null -> Unit
+        }
+    }
+    Text("듀티표가 있어요", style = MaterialTheme.typography.titleSmall)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        FilterChip(selected = false, enabled = !reading,
+            onClick = { picker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            label = { Text("사진으로") }, leadingIcon = { Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp)) })
+        FilterChip(selected = false, enabled = !reading, onClick = { files.launch(com.bamnat.app.ui.imports.SheetFiles.TYPES) },
+            label = { Text("엑셀·CSV") }, leadingIcon = { Icon(Icons.Filled.Description, null, Modifier.size(18.dp)) })
+        FilterChip(selected = roster == null, onClick = vm::clearRoster, label = { Text("직접 칠하기") }, leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(18.dp)) })
+    }
+    if (reading) Text("듀티표를 읽고 있어요…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val rows = roster?.rows.orEmpty()
+    if (rows.size > 1) {
+        Text("내 줄을 골라 주세요", style = MaterialTheme.typography.bodyMedium)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            rows.forEachIndexed { i, r ->
+                FilterChip(selected = false, onClick = { vm.useRosterRow(i) }, label = { Text(r.label.ifBlank { "${i + 1}번째 줄" } + " · ${r.cells.size}일") })
             }
         }
     }

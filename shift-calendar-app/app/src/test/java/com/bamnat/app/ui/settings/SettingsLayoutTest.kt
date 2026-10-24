@@ -34,7 +34,7 @@ class SettingsLayoutTest {
         assertEquals(rows.groupBy { it }.filterValues { it.size > 1 }.keys.toString(), rows.size, rows.toSet().size)
         // What moved out of a group is found where it lives now.
         val where = SettingsIndex.entries().associate { it.title to it.where }
-        assertEquals("내 근무", where["듀티표 넣기"])
+        assertEquals("내 근무", where["한 달 근무 넣기"])
         assertEquals("내 근무", where["근태 엑셀 가져오기"])
         assertEquals("달력 › 도구", where["근무표 공유"])
         assertEquals("알람", where["알람 점검"])

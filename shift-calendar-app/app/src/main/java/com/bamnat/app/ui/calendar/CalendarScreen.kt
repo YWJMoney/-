@@ -1569,7 +1569,7 @@ private fun CalendarHeader(
                 onEditCalendar?.let { add(CalendarTool("‘$calendarName’ 고치기", Icons.Outlined.Edit, it)) }
                 // [CAL-24] 모든 조 is also on the calendar itself; here it stays where people learned it.
                 onOpenTeams?.let { add(CalendarTool("모든 조 보기", Icons.Outlined.Groups, it)) }
-                onTypeMonth?.let { add(CalendarTool("한 달 근무 연달아 넣기", Icons.Outlined.Keyboard, it)) }
+                onTypeMonth?.let { add(CalendarTool("이번 달 전부 넣기", Icons.Outlined.Keyboard, it)) }
                 add(CalendarTool("근무표 공유", Icons.Filled.Share, onShare))
                 add(CalendarTool("1년 달력", Icons.Outlined.CalendarViewMonth) { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.YEAR) })
                 onReceive?.let { add(CalendarTool("동료 근무표 받기", Icons.Outlined.GroupAdd, it)) }
@@ -1834,7 +1834,7 @@ private fun PaintBar(
                     Text(
                         last?.text ?: when {
                             tool == PaintTool.Pick && mark == null -> "고르고 날짜를 누르거나 끌어서 칠하세요"
-                            mark == DayMark.LEAVE -> "근무일을 누르거나 끌면 연차가 들어가요 · 길게 누르면 기간"
+                            mark?.leave != null -> "근무일을 누르거나 끌면 ${mark.label}${Fmt.iga(mark.label)} 들어가요 · 길게 누르면 기간"
                             mark == DayMark.ALARM_OFF -> "누르거나 끌면 그날 알람이 꺼져요 · 길게 누르면 기간"
                             stamp != null -> "누르거나 끌면 ${stamp.name}${Fmt.obj(stamp.name)} 넣어요 · 다시 누르면 빼요"
                             else -> "누르거나 끌어서 칠해요 · 다시 누르면 취소 · 길게 누르면 기간"
@@ -1848,6 +1848,18 @@ private fun PaintBar(
                 }
                 if (last?.undo != null) TextButton(onClick = onUndo) { Text("되돌리기") }
                 IconButton(onClick = { onTool(null) }) { Icon(Icons.Filled.Close, "빠른 입력 끝내기") }
+            }
+            // [ROST-07] The whole month from a keypad, on its own line above the stamps and filled, so it is seen first
+            // (리뷰 개선 가) without pushing the kinds of work along the row.
+            onTypeMonth?.let { open ->
+                androidx.compose.material3.FilledTonalButton(
+                    onClick = open,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp).heightIn(min = if (large) 56.dp else 40.dp),
+                ) {
+                    Icon(Icons.Outlined.Keyboard, contentDescription = null, Modifier.size(18.dp))
+                    Text(" 이번 달 전부 넣기", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
             val keys: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
                 // The chips say what a tap on the calendar will do, for TalkBack.
@@ -1888,7 +1900,8 @@ private fun PaintBar(
                             },
                             label = { Text(m.label) },
                             leadingIcon = {
-                                if (m == DayMark.LEAVE) com.bamnat.app.ui.components.LeaveMark(com.bamnat.core.model.Leave(com.bamnat.core.model.LeaveKind.ANNUAL, 4), size = 18.dp)
+                                val leave = m.leave
+                                if (leave != null) com.bamnat.app.ui.components.LeaveMark(leave, size = 18.dp)
                                 else Icon(Icons.Filled.AlarmOff, contentDescription = null, Modifier.size(18.dp))
                             },
                             modifier = Modifier.semantics { contentDescription = "${m.label} 칠하기" },
@@ -1910,12 +1923,6 @@ private fun PaintBar(
                             modifier = Modifier.then(if (large) Modifier.heightIn(min = 56.dp) else Modifier).semantics { contentDescription = "${c.name} 넣기" },
                         )
                     }
-                }
-                // [NURS-01] Day after day from a keypad, instead of picking and tapping each one; last, after
-                // the paint chips, since it opens a sheet rather than painting.
-                onTypeMonth?.let { open ->
-                    AssistChip(onClick = open, label = { Text("한 달 연달아") },
-                        leadingIcon = { Icon(Icons.Outlined.Keyboard, contentDescription = null, Modifier.size(18.dp)) })
                 }
             }
             if (large) {

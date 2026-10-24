@@ -233,6 +233,8 @@ fun MonthGrid(
     quietWorkDays: Boolean = false,
     /** [INV-01] An investor calendar: days tinted by what they earned, trades and dates marked. */
     invest: com.bamnat.app.ui.invest.InvestCells? = null,
+    /** [ROST-01] Days to look at (한 달 근무 넣기: cells a roster was read with doubt), tinted behind the cell. */
+    marked: Set<LocalDate> = emptySet(),
 ) {
     val cal = LocalCalendarColors.current
     val haptics = LocalHapticFeedback.current
@@ -344,7 +346,9 @@ fun MonthGrid(
                         holidayWeekDone = col == 6 && holidayWeek?.holidayPay == true,
                         quietWorkDays = quietWorkDays,
                         invest = invest,
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        modifier = Modifier.weight(1f).fillMaxHeight().then(
+                            if (date in marked) Modifier.background(MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.shapes.small) else Modifier,
+                        ),
                         weekNote = if (date.dayOfWeek == DayOfWeek.MONDAY && week.overLimit) {
                             "이 주 ${HoursFormat.korean(week.totalMinutes)}, ${weeklyLimitHours}시간 넘음"
                         } else {
@@ -473,6 +477,8 @@ private fun DayCell(
     quietWorkDays: Boolean = false,
     /** [INV-01][INV-14] An investor calendar's day: tinted red or blue by its result, its trades and dates marked. */
     invest: com.bamnat.app.ui.invest.InvestCells? = null,
+    /** [ROST-01] Days to look at (한 달 근무 넣기: cells a roster was read with doubt), tinted behind the cell. */
+    marked: Set<LocalDate> = emptySet(),
 ) {
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme

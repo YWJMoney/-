@@ -192,6 +192,27 @@ class SetupFlowTest {
         assertNull(snap.resolver.resolve(today.plusDays(1)).shiftType)
     }
 
+    /** [SETUP-15] 듀티표가 있어요: a pasted roster is painted onto the month it names; its leave waits for after the setup. */
+    @Test fun aRosterReadInTheSetupIsPaintedOntoItsMonth() {
+        val vm = vm()
+        vm.pickStyle(WorkStyle.SHIFT, roster = true)
+        vm.next()
+        vm.pickBundle(ShiftBundles.HOSPITAL)
+        vm.confirmTimes()
+        assertEquals(SetupStep.ORDER, draft.step)
+        vm.readRosterText("2026년 11월 근무표\n1 2 3 4 5 6 7 8\n김간호 D D E E N 연차 O O")
+        waitFor("the roster read") { vm.roster.value != null && draft.painted.isNotEmpty() }
+        val nov = java.time.YearMonth.of(2026, 11)
+        assertEquals(nov, vm.paintMonth.value)
+        assertEquals((1..8).filter { it != 6 }.map { nov.atDay(it) }.toSet(), draft.painted.keys)
+        assertEquals(draft.types.first { it.name == "데이" }.id, draft.painted[nov.atDay(1)])
+        // O is the bundle's own 오프, as painting it by hand would be.
+        assertEquals(draft.types.first { it.isOff }.id, draft.painted[nov.atDay(7)])
+        // One undo takes the whole line back.
+        vm.undoPaint()
+        assertTrue(draft.painted.isEmpty())
+    }
+
     @Test fun aTemplateStartsTheShiftsAndTheUsersOwnOrderIsStillAsked() = runBlocking {
         val vm = vm()
         vm.pickStyle(WorkStyle.SHIFT)

@@ -42,7 +42,8 @@ class MainActivity : ComponentActivity() {
             appContainer.telemetry.event(DiagEvents.APP_OPEN)
             openLink(intent)
             NoticeLinks.read(intent)
-            IncomingFiles.read(intent) // [CAL-47]
+            // [ROST-09] A shared roster photo or text first, so it never reads as a 회사 파일 or backup.
+            if (!IncomingRoster.read(intent)) IncomingFiles.read(intent) // [CAL-47]
         }
         enableEdgeToEdge()
         val container = appContainer
@@ -91,6 +92,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         openLink(intent)
+        IncomingRoster.read(intent) // [ROST-09] shared while the app was open
         // [SLP-15] A tapped notice opens its own screen, so coming back is not sent to the calendar.
         if (NoticeLinks.read(intent)) HomeRequests.followingLink()
     }
