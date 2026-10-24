@@ -254,6 +254,21 @@ shift-calendar-app/
 - 새 기능이 사실을 필요로 하면 `FeatureNeeds`에 기능 id → 사실을 적으면 질문 카드와 '이걸 알려 주면 시작해요'가 따라와요.
 - 예시 달력의 값은 휴대폰 밖으로 나가지 않아요(`ExampleCalendarGuardTest`가 지켜요).
 
+### 6-3. 직접 입력 (1.24.0 묶음 Q, INPUT-01~04·PAYX-47)
+
+사용자 지시(2026-10-24): 글자로 치게 하는 입력은 불합리하니 직접 입력으로. 개발계획은 프로젝트 파일 `계획/1.24-Q-개발계획.md`(0장에 글자로 치는 칸 전수 조사 표, 결정 Q-D1~D3).
+
+| 부품 | 어디 | 쓰는 곳 |
+|---|---|---|
+| `DayOfMonthPicker` | `ui/components/DirectInputs.kt` | 1~31 격자, 31은 말일. 투자 정기 알람 |
+| `TimeField` | 같은 파일 | 칸처럼 보이는 버튼 → J의 `TimePickerDialog`. 매매 시각(비울 수 있음), 투자 알람 시각 |
+| `QuickDecimalChips` | 같은 파일 | 값 칩 + −/+(`RepeatIconButton`). 공수, 인상률, 수당 비율, 카드 수수료율, 연차 일수 |
+| `RuleBuilder` + core `pay/RuleDraft` | `ui/components/RuleBuilder.kt` | 무엇·어떻게·얼마·가산 → `RuleDraft.sentence()`. 그 문장은 `RuleText.read`가 그대로 읽어요(`RuleDraftTest` 왕복). 개발자에게 알려 주기·회사 방식 제보·회사만의 규칙 세 곳 |
+| `ClipboardHint` | `ui/components/ClipboardHint.kt` | 클립보드 **설명만** 보고 한 줄, 누를 때 읽고 모양 확인, 거절은 복사 시각으로 기억(`clip_hint` 설정 파일, 백업·클라우드 밖). 명세서·결제 문자·받은 링크·모임 코드·복구 코드 |
+
+- 새 숫자·시각 칸을 만들 때는 이 부품이나 J의 `CountStepper`·`MinutesStepper`를 먼저 써요. 글자 칸은 이름·메모·검색·코드와 금액(자릿수가 자유)만(결정 Q-D2).
+- 화면 사진 740~759는 `QScreenshotTest`.
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.

@@ -10,6 +10,11 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.24.0 (계획/1.24-직접입력-전면개선-통합계획.md 1장 5번: P 2·Q 1·R 1·S 1, 8 lines at most; 통합 folds them).
+        Release(35, "1.24.0", listOf(
+            // [INPUT-01..04][PAYX-47] Bundle Q.
+            Line("숫자·시각·회사 규칙을 글자로 치지 않아도 돼요. 칩과 −·+로 고르고, 호봉표는 줄마다 넣고, 복사해 둔 명세서·문자는 한 번 눌러 붙여요", "pay.ruleBuilder"),
+        )),
         // [SIMPLE-03] Grouped by what it gives, each line opening its feature; every bundle's own lines are in
         // 계획/1.22-*-개발계획.md.
         // 1.23.0: one line per bundle's gift (J·K·L·I here; M adds its own), each opening its feature
