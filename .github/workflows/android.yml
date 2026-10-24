@@ -48,7 +48,7 @@ jobs:
       - if: always()
         run: python3 tools/slow_tests.py core/build/test-results >> "$GITHUB_STEP_SUMMARY"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: core-reports
           path: shift-calendar-app/core/build/reports
@@ -111,7 +111,7 @@ jobs:
       - if: always()
         run: python3 tools/slow_tests.py app/build/test-results/testDebugUnitTest --json app/build/tests-${{ matrix.set }}.json >> "$GITHUB_STEP_SUMMARY"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-reports-${{ matrix.set }}
           path: |
@@ -139,7 +139,7 @@ jobs:
       # [REL-09] The watch app builds and passes lint too.
       - run: sh ./gradlew $GRADLE_FLAGS :wear:assembleDebug :wear:lintDebug --continue
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lint-reports
           path: |

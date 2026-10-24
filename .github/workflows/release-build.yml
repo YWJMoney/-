@@ -37,7 +37,7 @@ jobs:
           python3 tools/app_size.py app/build/outputs/apk/release/app-release-unsigned.apk \
             app/build/outputs/bundle/release/app-release.aab wear/build/outputs/bundle/release/wear-release.aab \
             --json app/build/outputs/size.json >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-unsigned
           path: |
