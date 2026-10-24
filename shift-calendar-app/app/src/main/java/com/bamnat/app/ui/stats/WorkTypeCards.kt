@@ -130,7 +130,8 @@ private fun ShiftFirstCard(snapshot: ScheduleSnapshot, month: YearMonth, payTota
         }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatTile("야간 근무", "${tally.nights}번", Modifier.weight(1f), caption = "22~06시에 걸친 근무")
+            // [STAT-07] Not the 야 badge's count (1.23 점검 중-5): work into 22~06시, 대근 included, under its own name.
+            StatTile("밤 시간 근무", "${tally.nights}번", Modifier.weight(1f), caption = "22~06시에 걸친 근무 · 대근 포함")
             StatTile("예상 급여", payTotal?.let { Fmt.won(it) } ?: "-", Modifier.weight(1f), caption = "세전")
         }
     }

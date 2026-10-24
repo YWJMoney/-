@@ -341,7 +341,8 @@ private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
             val time = job.start?.let { s -> Fmt.time(s) + (job.end?.let { "–" + Fmt.time(it) } ?: "") + " " }.orEmpty()
-            Text(time + job.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // [CAL-52] Two lines before the title is cut ("욕실…" lost "타일 시공" beside 받을 돈 in a day panel).
+            Text(time + job.title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             val sub = listOfNotNull(
                 job.place.ifBlank { null },
                 job.client.ifBlank { null },
@@ -349,7 +350,7 @@ private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
             )
             if (sub.isNotEmpty()) {
                 Text(sub.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
         Spacer(Modifier.width(8.dp))
@@ -596,30 +597,30 @@ internal fun Modifier.fadingEdges(back: () -> Boolean, forward: () -> Boolean, w
 internal fun ChipRow(modifier: Modifier = Modifier, start: Dp, end: Dp, content: LazyListScope.() -> Unit) {
     val state = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val reserve = with(LocalDensity.current) { MORE_RESERVE.toPx() }
     // A chip that ends under the button or past the edge counts as out of sight; none once at the end.
-    val more by remember(state, reserve) {
+    val more by remember(state) {
         derivedStateOf {
             if (!state.canScrollForward) 0 else {
                 val info = state.layoutInfo
-                val edge = info.viewportEndOffset - reserve
+                val edge = info.viewportEndOffset
                 val lastShown = info.visibleItemsInfo.lastOrNull { it.offset + it.size <= edge }?.index
                     ?: ((info.visibleItemsInfo.firstOrNull()?.index ?: 0) - 1)
                 info.totalItemsCount - 1 - lastShown
             }
         }
     }
-    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+    // [CAL-51] 상-4: the button sits beside the row instead of over its last chip ("오후 대근" under "+7 ›").
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         LazyRow(
             state = state,
-            modifier = Modifier.fillMaxWidth().fadingEdges(back = { state.canScrollBackward }, forward = { state.canScrollForward }),
-            contentPadding = PaddingValues(start = start, end = end),
+            modifier = Modifier.weight(1f).fadingEdges(back = { state.canScrollBackward }, forward = { state.canScrollForward }),
+            contentPadding = PaddingValues(start = start, end = if (more > 0) 8.dp else end),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
             content = content,
         )
         if (more > 0) {
-            MoreButton(more, Modifier.padding(end = 4.dp)) {
+            MoreButton(more, Modifier.padding(start = 4.dp, end = maxOf(end, 4.dp))) {
                 scope.launch { state.animateScrollBy(state.layoutInfo.viewportSize.width * 0.6f) }
             }
         }
@@ -644,8 +645,6 @@ private fun MoreButton(count: Int, modifier: Modifier = Modifier, onClick: () ->
         }
     }
 }
-
-private val MORE_RESERVE = 48.dp
 
 /**
  * [DAY-01] The selected day under the calendar on phones: the same header as the sheet, so most

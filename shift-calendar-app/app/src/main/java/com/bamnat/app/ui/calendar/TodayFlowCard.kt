@@ -109,7 +109,9 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
     val log by vm.sleepLog.collectAsStateWithLifecycle()
     val chosen by vm.flowFolded.collectAsStateWithLifecycle()
     // [CAL-21] On a common phone (under about 860dp tall) the open card pushes the month below the screen.
-    val short = androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenHeightDp < SHORT_SCREEN_DP && it.screenWidthDp < 600 }
+    // [VIS-04] At 150% text and more the card is as tall as on a small phone.
+    val short = androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenHeightDp < SHORT_SCREEN_DP && it.screenWidthDp < 600 } ||
+        androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
     val folded = chosen ?: short
     val now = rememberMinute()
     val card = remember(snapshot, settings, log, now) { vm.todayFlow(snapshot, settings, log, now) }

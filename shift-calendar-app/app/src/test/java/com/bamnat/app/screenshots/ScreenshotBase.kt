@@ -510,6 +510,15 @@ abstract class ScreenshotBase {
             (0..40).map { x to from + dp * d * it / 40 } + listOf(x to from + dp * d)
         }
 
+        /** [CAL-51] Every node in the topmost window, for checks of what shows where (묶음 R's layout checks). */
+        fun nodes(merged: Boolean = true): List<SemanticsNode> {
+            var all: List<SemanticsNode> = emptyList()
+            scenario.onActivity { activity ->
+                all = rootOf(topWindow(activity))?.semanticsOwner?.getAllSemanticsNodes(mergingEnabled = merged).orEmpty()
+            }
+            return all
+        }
+
         /** Drags the content up by [dp] (slowly, so it does not fling). */
         fun scrollUp(dp: Int, across: Float = 0.15f) = gesture { w, h, d ->
             val x = w * across

@@ -88,7 +88,14 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 /** [CAL-06] One figure of the month summary: its name, its value, an optional line under it. */
-private data class Figure(val label: String, val value: String, val note: String? = null, val color: Color? = null)
+/**
+ * One of the three figures. [CAL-52] Its notes each take a line of their own ("휴가 1.5일", "휴식 점검 9건"), so none is cut to
+ * "휴가 1.5일 · …" in a third of a phone; [short] is how the one-line summary of a low screen says it.
+ */
+private data class Figure(val label: String, val value: String, val notes: List<String> = emptyList(), val color: Color? = null, val short: String = "$label $value") {
+    constructor(label: String, value: String, note: String?, color: Color? = null, short: String = "$label $value") :
+        this(label, value, listOfNotNull(note), color, short)
+}
 
 /**
  * [CAL-06] The month in three figures over the calendar, in the words of the kind of work: days,
@@ -96,6 +103,7 @@ private data class Figure(val label: String, val value: String, val note: String
  * is left and the best day for a shop. A tap opens where the numbers come from. Side by side when
  * they fit, one under another on a narrow screen or a big font.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun MonthSummaryBar(
     overview: MonthOverview,
@@ -106,6 +114,8 @@ internal fun MonthSummaryBar(
     versus: String? = null,
     /** [SRV-10] N5: the month's 휴식 점검 signs, said under the days. */
     restSigns: Int = 0,
+    /** [CAL-51] 상-4: on a low screen the three figures in one line, so the month shows under it. */
+    compact: Boolean = false,
 ) {
     val cal = LocalCalendarColors.current
     val month = overview.month.monthValue
@@ -113,11 +123,11 @@ internal fun MonthSummaryBar(
         CalendarFocus.SHIFTS -> listOf(
             Figure("${month}월 근무", "${overview.workDays}일",
                 listOfNotNull(overview.leaveDays.takeIf { it > 0 }?.let { "휴가 ${HoursFormat.hours(it * 60).removeSuffix(".0")}일" },
-                    com.bamnat.core.schedule.RestNudge.monthNote(restSigns)).joinToString(" · ").ifEmpty { null }),
+                    com.bamnat.core.schedule.RestNudge.monthNote(restSigns)), short = "근무 ${overview.workDays}일"),
             Figure("근무 시간", HoursFormat.korean(overview.workMinutes),
-                overview.extraMinutes.takeIf { it > 0 }?.let { "추가 근무 ${HoursFormat.korean(it)}" }, null),
-            if (payEstimate != null) Figure("예상 급여", Fmt.wonShort(payEstimate), "세전", MaterialTheme.colorScheme.primary)
-            else Figure("공휴일 근무", "${overview.holidayWorkDays}일", null, if (overview.holidayWorkDays > 0) cal.holidayWork else null),
+                overview.extraMinutes.takeIf { it > 0 }?.let { "추가 ${HoursFormat.korean(it)}" }, null, short = HoursFormat.korean(overview.workMinutes)),
+            if (payEstimate != null) Figure("예상 급여", Fmt.wonShort(payEstimate), "세전", MaterialTheme.colorScheme.primary, short = "급여 ${Fmt.wonShort(payEstimate)}")
+            else Figure("공휴일 근무", "${overview.holidayWorkDays}일", null, if (overview.holidayWorkDays > 0) cal.holidayWork else null, short = "공휴일 ${overview.holidayWorkDays}일"),
         )
         CalendarFocus.JOBS -> listOf(
             Figure("${month}월 일감", "${overview.jobs}건", "${overview.jobDays}일 일해요"),
@@ -128,13 +138,13 @@ internal fun MonthSummaryBar(
             Figure("${month}월 매출", Fmt.wonShort(overview.sales), "${overview.openDays}일 적음", cal.income),
             Figure("남은 돈", Fmt.wonShort(overview.salesNet), overview.salesCosts.takeIf { it > 0 }?.let { "경비 ${Fmt.wonShort(it)}" },
                 if (overview.salesNet < 0) cal.expense else null),
-            Figure("하루 평균", Fmt.wonShort(overview.salesPerDay),
-                overview.bestDay?.let { "최고 ${it.monthValue}/${it.dayOfMonth} ${Fmt.wonShort(overview.bestSales)}" }),
+            Figure("하루 평균", Fmt.wonShort(overview.salesPerDay), short = "평균 ${Fmt.wonShort(overview.salesPerDay)}", notes = listOfNotNull(
+                overview.bestDay?.let { "최고 ${it.monthValue}/${it.dayOfMonth} ${Fmt.wonShort(overview.bestSales)}" })),
         )
         // [INV-06] The investor's month has its own bar (InvestMonthBar); this one only names the tab.
         CalendarFocus.INVEST -> listOf(Figure("${month}월", "투자·수익 탭에서", null))
     }
-    val spoken = figures.joinToString(", ") { f -> "${f.label} ${f.value}" + (f.note?.let { " $it" } ?: "") } + (versus?.let { ", $it" } ?: "")
+    val spoken = figures.joinToString(", ") { f -> "${f.label} ${f.value}" + f.notes.joinToString("") { " $it" } } + (versus?.let { ", $it" } ?: "")
     val target = when (overview.focus) {
         CalendarFocus.SHIFTS -> "근무·급여 열기"
         else -> "돈 탭 열기"
@@ -146,11 +156,11 @@ internal fun MonthSummaryBar(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp)
+            .heightIn(min = if (compact) 44.dp else 56.dp)
             // [CAL-06] One stop for TalkBack: the three figures and where the tap goes.
             .clearAndSetSemantics { contentDescription = "$spoken. $target" },
     ) {
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
+        BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
             val big = LocalDensity.current.fontScale > 1.3f
             // [CAL-06] Three figures fit side by side from about 250dp; a big font stacks them.
             val stacked = big || maxWidth < 250.dp
@@ -160,19 +170,47 @@ internal fun MonthSummaryBar(
                 transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
                 label = "month-summary",
             ) { shown ->
-                if (stacked) {
+                if (compact && !stacked) {
+                    // [CAL-51] One line: "근무 26일 · 289시간 · 공휴일 2일 ›".
+                    Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        shown.forEachIndexed { i, f ->
+                            if (i > 0) Text("·", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.padding(horizontal = 6.dp))
+                            BasicText(
+                                f.short,
+                                style = MaterialTheme.typography.titleSmall.merge(NumberStyle).merge(TextStyle(color = f.color ?: MaterialTheme.colorScheme.onSurface)),
+                                maxLines = 1,
+                                autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 14.sp, stepSize = 0.5.sp),
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                        }
+                        Spacer(Modifier.weight(0.01f))
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else if (compact) {
+                    // [VIS-04] Large text: the same short figures, as many to a line as fit.
+                    Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.foundation.layout.FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            shown.forEach { f ->
+                                Text(f.short, style = MaterialTheme.typography.titleSmall.merge(NumberStyle),
+                                    color = f.color ?: MaterialTheme.colorScheme.onSurface, maxLines = 1, softWrap = false)
+                            }
+                        }
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else if (stacked) {
                     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)) {
                         shown.forEach { f ->
-                            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                            // [VIS-04] 중-3: the label keeps its line ("10월 근무", not "10 / 월 / 근 / 무"); the notes go under both.
+                            Row(Modifier.fillMaxWidth().padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(f.label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.weight(1f))
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(f.value, style = MaterialTheme.typography.titleMedium.merge(NumberStyle),
-                                        color = f.color ?: MaterialTheme.colorScheme.onSurface, maxLines = 1)
-                                    f.note?.let {
-                                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp))
+                                Text(f.value, style = MaterialTheme.typography.titleMedium.merge(NumberStyle),
+                                    color = f.color ?: MaterialTheme.colorScheme.onSurface, maxLines = 1, softWrap = false)
+                            }
+                            if (f.notes.isNotEmpty()) {
+                                Text(f.notes.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.End, modifier = Modifier.fillMaxWidth().padding(bottom = 3.dp))
                             }
                         }
                         versus?.let { VersusLine(it, Modifier.align(Alignment.End)) }
@@ -209,9 +247,10 @@ private fun FigureColumn(f: Figure, modifier: Modifier) {
             maxLines = 1,
             autoSize = TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = 17.sp, stepSize = 0.5.sp),
         )
-        f.note?.let {
-            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // [CAL-52] Each note on its own line, shrinking a little before it would be cut.
+        f.notes.forEach {
+            BasicText(it, style = MaterialTheme.typography.labelSmall.merge(TextStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)),
+                maxLines = 1, autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = 11.sp, stepSize = 0.5.sp))
         }
     }
 }
@@ -512,7 +551,7 @@ internal fun CalendarAlarmsOffLine(name: String, onTurnOn: () -> Unit, modifier:
         Row(Modifier.padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.AlarmOff, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
-            Text("‘$name’ 달력은 알람이 꺼져 있어요", style = MaterialTheme.typography.bodyMedium, maxLines = 2,
+            Text("‘$name’ 달력은 알람이 꺼져 있어요", style = MaterialTheme.typography.bodyMedium, maxLines = 3,
                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Text("켜기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
         }

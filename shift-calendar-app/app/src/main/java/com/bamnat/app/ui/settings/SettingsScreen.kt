@@ -765,7 +765,7 @@ private fun SettingsSearchField(query: String, onQuery: (String) -> Unit) {
         onValueChange = { onQuery(it.take(40)) },
         // TalkBack names the field once the example has gone.
         modifier = Modifier.fillMaxWidth().semantics { contentDescription = "설정 찾기" },
-        placeholder = { Text("설정 찾기 (예: 알람 소리, 백업)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        placeholder = { com.bamnat.app.ui.HintText("설정 찾기 (예: 알람 소리, 백업)", "설정 찾기") },
         leadingIcon = { Icon(Icons.Filled.Search, null) },
         trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { onQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") } }) else null,
         singleLine = true,

@@ -95,8 +95,10 @@ fun AskArea(
         value = AskScheduler.pick(c.asks.of(calendar), missing, place, today, moments)
     }
     val current = ask ?: return
-    LaunchedEffect(current.missing.key, today) {
-        if (current.isNew) c.asks.set(calendar, AskScheduler.shown(c.asks.of(calendar), current, today))
+    // [CAL-50] Folded under the calendar's 알림 line it is not seen yet, so it does not use up the day's two.
+    val folded = com.bamnat.app.ui.calendar.LocalNoticeFolded.current
+    LaunchedEffect(current.missing.key, today, folded) {
+        if (current.isNew && !folded) c.asks.set(calendar, AskScheduler.shown(c.asks.of(calendar), current, today))
     }
     val scope = rememberCoroutineScope()
     AskCard(

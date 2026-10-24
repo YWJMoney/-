@@ -70,6 +70,7 @@ import kotlinx.coroutines.flow.stateIn
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.work.ShiftMonth
 import java.time.temporal.TemporalAdjusters
 
 /**
@@ -150,9 +151,10 @@ fun YearScreen(vm: YearViewModel, onBack: () -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun YearCounts(snap: ScheduleSnapshot, days: Collection<ResolvedDay>) {
-    val counts = days.mapNotNull { it.shiftType }.groupingBy { it.id }.eachCount()
+    // [STAT-07] The month's count, a year long: a day taken off whole with leave is 휴가, not its code.
+    val counts = ShiftMonth.counts(days, snap.shiftTypes).associate { it.type.id to it.days }
     // [CAL-26] 반차 is half a day and 반반차 a quarter, as the leave ledger counts them (I 리뷰 P5).
-    val leave = days.sumOf { it.leave?.days ?: 0.0 }
+    val leave = ShiftMonth.leaveDays(days)
     if (counts.isEmpty()) {
         Text("이 해에는 넣은 근무가 없어요", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth().padding(8.dp), textAlign = TextAlign.Center)

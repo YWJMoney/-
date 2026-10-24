@@ -42,6 +42,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -110,6 +111,18 @@ internal fun cellTextGrowth(): Dp = with(LocalDensity.current) {
 }
 
 private const val FOOTER_LINE = 1.15f
+private const val HOLIDAY_SCALE = 0.9f
+/** [CAL-52] A corner mark as a dot, and the cells narrower than this (or with text at 150%+) that use it. */
+private val CORNER_DOT = 7.dp
+private val DOT_CELL_WIDTH = 50.dp
+
+/** [CAL-52] The line under a day's badge is exactly its line height tall: no font padding above or below to be cut. */
+internal val FooterTrim = androidx.compose.ui.text.TextStyle(
+    platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+    lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+        androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center, androidx.compose.ui.text.style.LineHeightStyle.Trim.Both,
+    ),
+)
 
 @Composable
 fun WeekdayHeader(weekStart: DayOfWeek, modifier: Modifier = Modifier) {
@@ -588,12 +601,14 @@ private fun DayCell(
             }
             .alpha(if (inMonth) 1f else 0.35f),
     ) {
+        // [CAL-52] 하: 1.5dp above and below (was 3), so the line under the badge ("11h", "개천절") is whole in a 66dp cell.
         Column(
-            Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 3.dp),
+            Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 1.5.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            Box(Modifier.fillMaxWidth().height(20.dp)) {
+            BoxWithConstraints(Modifier.fillMaxWidth().height(20.dp)) {
+                val dots = maxWidth < DOT_CELL_WIDTH || density.fontScale >= 1.5f
                 Box(
                     Modifier
                         .align(Alignment.Center)
@@ -619,13 +634,13 @@ private fun DayCell(
                 val alarmOff = day.alarmSkipped
                 val topEnd = marks.firstOrNull()
                 val topStart = if (alarmOff) null else marks.getOrNull(1)
-                topEnd?.let { Box(Modifier.align(Alignment.TopEnd)) { CornerMark(it) } }
+                topEnd?.let { Box(Modifier.align(Alignment.TopEnd)) { CornerMark(it, dots) } }
                 if (alarmOff) {
                     // [DAY-03] A day whose alarm was turned off says so, so a missed alarm is never a surprise.
                     Icon(Icons.Filled.AlarmOff, contentDescription = null, tint = cal.alarmOff,
-                        modifier = Modifier.align(Alignment.TopStart).size(13.dp))
+                        modifier = Modifier.align(Alignment.TopStart).size(if (dots) 10.dp else 13.dp))
                 }
-                topStart?.let { Box(Modifier.align(Alignment.TopStart)) { CornerMark(it) } }
+                topStart?.let { Box(Modifier.align(Alignment.TopStart)) { CornerMark(it, dots) } }
                 if (invest?.hasEvent(date) == true && topStart == null && !alarmOff) com.bamnat.app.ui.invest.InvestEventDot(Modifier.align(Alignment.TopStart))
                 else if (cardDue && topStart == null && !alarmOff) CardDueMark(Modifier.align(Alignment.TopStart))
                 else if (holidayWeekDone && topStart == null && !alarmOff) HolidayWeekCheck(Modifier.align(Alignment.TopStart).padding(start = 2.dp))
@@ -693,13 +708,15 @@ private fun DayCell(
                 }
                 // [CAL-04] A red day says which day it is, unless the user wrote a memo there.
                 if (holidayName != null && memoText == null) {
-                    HolidayLabel(holidayName, footerSize, cal.sunday, footerSize * FOOTER_LINE, Modifier.weight(1f, fill = false))
+                    // [CAL-52] Hangul stands taller than the digits beside it: a little smaller, it fits the same line.
+                    HolidayLabel(holidayName, footerSize * HOLIDAY_SCALE, cal.sunday, footerSize * HOLIDAY_SCALE * FOOTER_LINE, Modifier.weight(1f, fill = false))
                 } else Text(
                     footer,
                     fontSize = footerSize,
                     lineHeight = footerSize * FOOTER_LINE,
                     maxLines = 1,
                     overflow = TextOverflow.Clip,
+                    style = NumberStyle.merge(FooterTrim),
                     color = when {
                         memoText != null -> cal.memoDot
                         investText != null && invest != null -> com.bamnat.app.ui.invest.investFooterColor(invest, date)
@@ -709,7 +726,6 @@ private fun DayCell(
                         else -> scheme.onSurfaceVariant
                     },
                     fontWeight = if (extraMinutes > 0 || moneyText != null || investText != null) FontWeight.Bold else FontWeight.Normal,
-                    style = NumberStyle,
                 )
                 if (hasMemo && memoText == null) {
                     if (footer.isNotEmpty() || holidayName != null) Spacer(Modifier.width(2.dp))
@@ -853,7 +869,7 @@ internal fun JobBadge(count: Int, owed: Boolean) {
         Modifier.height(22.dp).clip(RoundedCornerShape(6.dp)).background(bg).padding(horizontal = 5.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(if (count > 1) "일$count" else "일", fontSize = 11.sp, fontWeight = FontWeight.Bold,
+        Text(if (count > 1) "일$count" else "일", fontSize = 11.sp, lineHeight = 11.sp, fontWeight = FontWeight.Bold,
             color = if (owed) LocalCalendarColors.current.warning else scheme.onSecondaryContainer, maxLines = 1)
     }
 }
@@ -882,7 +898,21 @@ private fun cornerMarks(day: ResolvedDay, job: Boolean? = null): List<Corner> = 
 }
 
 @Composable
-internal fun CornerMark(mark: Corner) {
+internal fun CornerMark(mark: Corner, dot: Boolean = false) {
+    // [CAL-52][VIS-04] A narrow cell (320dp phone, a fold's cover) or large text: the date takes the whole top row, so
+    // a mark is a small dot of its colour in the corner instead of a square over the "24". TalkBack still says it.
+    if (dot && mark != Corner.Changed) {
+        val cal = LocalCalendarColors.current
+        val color = when (mark) {
+            is Corner.Kind -> mark.kind.colorArgb.asColor()
+            is Corner.PartLeave -> com.bamnat.app.ui.components.leaveColor(mark.leave.kind, cal)
+            is Corner.Job -> if (mark.owed) cal.warning else MaterialTheme.colorScheme.secondary
+            is Corner.Attend -> if (mark.attendance == com.bamnat.core.model.Attendance.ABSENT) MaterialTheme.colorScheme.error else cal.warning
+            Corner.Changed -> cal.changed
+        }
+        Box(Modifier.padding(1.dp).size(CORNER_DOT).clip(CircleShape).background(color))
+        return
+    }
     when (mark) {
         is Corner.Kind -> ExtraKindMark(mark.kind, size = 13.dp)
         is Corner.PartLeave -> LeaveMark(mark.leave, size = 13.dp)

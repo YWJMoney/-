@@ -107,6 +107,22 @@ class ShiftWorkTest {
     }
 
     @Test
+    fun `a day taken off whole with leave is leave in the counts, not its code (STAT-07)`() {
+        // 1.23 점검 중-5: the calendar's badges said 주 12 where 근무·급여 said 주 11, the 29th being 연차.
+        val cycle = listOf(Fixtures.day.id, Fixtures.night.id, Fixtures.off.id)
+        val leave = listOf(DayEntry(LocalDate.of(2026, 10, 1), leave = com.bamnat.core.model.Leave()))
+        val r = ScheduleResolver(Fixtures.all, WorkPattern.Rotation(oct1, cycle), leave)
+        val days = (1..31).map { r.resolve(oct1.withDayOfMonth(it)) }
+        val counts = ShiftMonth.counts(days, Fixtures.all)
+        assertEquals(listOf("주간" to 10, "야간" to 10, "휴무" to 10), counts.map { it.type.name to it.days })
+        assertEquals(1.0, ShiftMonth.leaveDays(days), 0.0)
+        // The month's tally and the shared count are the same numbers.
+        assertEquals(counts, ShiftMonth.of(YearMonth.of(2026, 10), Fixtures.all, r::resolve).counts)
+        // Night-time work is its own count, not the 야간 code's: with no 대근 the two meet.
+        assertEquals(10, ShiftMonth.nightTimes(days))
+    }
+
+    @Test
     fun `pay that came in is compared with the month's estimate`() {
         val month = YearMonth.of(2026, 10)
         val payDay = LocalDate.of(2026, 11, 10)
