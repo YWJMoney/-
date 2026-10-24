@@ -55,6 +55,10 @@ def main(argv):
         print(__doc__)
         return 2
     mode, folder = argv
+    if not os.path.isdir(folder):
+        print(f"no screenshots folder at {folder}: the screenshot tests did not run (or Gradle took them from the "
+              "build cache without their output folder — app/build.gradle.kts declares it as an output)")
+        return 1
     present = {n[:-4]: os.path.join(folder, n) for n in os.listdir(folder) if n.endswith(".png")}
     if mode == "update":
         golden = {}
