@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.setup
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -74,10 +75,10 @@ import java.time.LocalTime
 
 // ---- 1. how the user works ----
 
-private data class StyleChoice(val style: WorkStyle, val roster: Boolean, val title: String, val subtitle: String, val icon: ImageVector)
+internal data class StyleChoice(val style: WorkStyle, val roster: Boolean, val title: String, val subtitle: String, val icon: ImageVector)
 
 /** Shift work is asked as two answers, since a roster painted every month is set up differently. */
-private val STYLE_CHOICES = listOf(
+internal val STYLE_CHOICES = listOf(
     StyleChoice(WorkStyle.SHIFT, false, "교대 근무 · 순서가 돌아가요", "예: 4조 2교대, 3조 3교대, 24시간 격일제", WorkStyle.SHIFT.icon()),
     StyleChoice(WorkStyle.SHIFT, true, "교대 근무 · 근무표가 매달 나와요", "예: 병원 간호, 매달 짜는 근무표", Icons.Filled.EditCalendar),
     StyleChoice(WorkStyle.DAY, false, "평일 근무", "매주 같은 요일, 같은 시간에 일해요", WorkStyle.DAY.icon()),
@@ -178,7 +179,9 @@ internal fun CompanyStep(vm: SetupViewModel, d: SetupDraft, onSearch: (() -> Uni
         OutlinedButton(onClick = onSearch, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
             Icon(Icons.Filled.Search, null)
             Spacer(Modifier.width(8.dp))
-            Text("같은 회사 설정 찾아보기")
+            // [COMM-12] The name just typed, in the button: the plaza is for this company.
+            Text(name.trim().takeIf { it.length >= 2 }?.let { "‘$it’ 분들이 올린 규칙 찾기" } ?: "같은 회사 설정 찾아보기",
+                maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
     val source = d.source

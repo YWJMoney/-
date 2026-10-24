@@ -89,7 +89,12 @@ private data class Primary(val label: String, val enabled: Boolean = true, val h
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SetupHost(vm: SetupViewModel, onBrowse: ((com.bamnat.core.work.WorkStyle) -> Unit)? = null, browseFirst: Boolean = false) {
+fun SetupHost(
+    vm: SetupViewModel, onBrowse: ((com.bamnat.core.work.WorkStyle) -> Unit)? = null, browseFirst: Boolean = false,
+    /** [SETUP-15] The work answered on the first screen: the first question is answered with it, once. */
+    firstStyle: Pair<com.bamnat.core.work.WorkStyle, Boolean>? = null,
+    onFirstStyleUsed: () -> Unit = {},
+) {
     val d by vm.draft.collectAsStateWithLifecycle()
     val fixing by vm.fixing.collectAsStateWithLifecycle()
     val saving by vm.saving.collectAsStateWithLifecycle()
@@ -99,6 +104,11 @@ fun SetupHost(vm: SetupViewModel, onBrowse: ((com.bamnat.core.work.WorkStyle) ->
         val m = message ?: return@LaunchedEffect
         vm.consumeMessage()
         snackbar.showSnackbar(m)
+    }
+    LaunchedEffect(firstStyle) {
+        val (style, roster) = firstStyle ?: return@LaunchedEffect
+        if (d.style == null && vm.calendarId == null) vm.pickStyle(style, roster)
+        onFirstStyleUsed()
     }
     BackHandler(enabled = fixing || d.previous() != null) { vm.back() }
     // [MCAL-02] A calendar being added: back on the first question gives it up, after asking.

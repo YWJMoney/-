@@ -294,16 +294,31 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val rootScope = rememberCoroutineScope()
     var browseFirst by rememberSaveable { mutableStateOf(false) }
     val startMine: (Boolean) -> Unit = { keep -> rootScope.launch { container.example.startMine(keep) } }
+    // [SETUP-15] "무슨 일 하세요?" before the consent screen: its answer ("" when skipped) shapes that screen and starts the setup.
+    var firstStyleKey by rememberSaveable { mutableStateOf<String?>(null) }
     when (needsSetup) {
         null -> return
         // "나중에" opens the calendar with a card to go on from where the user stopped.
         true -> if (setupDraft?.later != true && !browse.browsing) {
             if (consentSeen == null && setupDraft == null) {
-                ConsentPages(container, onDone = {}, onBrowse = { browseFirst = true })
+                val key = firstStyleKey
+                if (key == null) {
+                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { firstStyleKey = it.key }, onSkip = { firstStyleKey = "" })
+                    return
+                }
+                val first = com.bamnat.app.ui.onboarding.FirstStyle.of(key)
+                androidx.activity.compose.BackHandler { firstStyleKey = null }
+                ConsentPages(container, onDone = {}, style = first?.style, onBrowse = {
+                    // With the work known, 우선 둘러볼게요 opens its example at once; skipped, the setup asks which.
+                    if (first == null) browseFirst = true
+                    else { firstStyleKey = ""; rootScope.launch { container.example.browse(first.style) } }
+                })
                 return
             }
             SetupHost(appViewModel { SetupViewModel(it) },
-                onBrowse = { style -> browseFirst = false; rootScope.launch { container.example.browse(style) } }, browseFirst = browseFirst)
+                onBrowse = { style -> browseFirst = false; rootScope.launch { container.example.browse(style) } }, browseFirst = browseFirst,
+                firstStyle = com.bamnat.app.ui.onboarding.FirstStyle.of(firstStyleKey)?.let { it.style to it.roster },
+                onFirstStyleUsed = { firstStyleKey = "" })
             return
         }
         false -> Unit
@@ -970,9 +985,16 @@ private fun AppNavHost(
                         com.bamnat.core.profile.AskPlace.Screen(PAY_ASKS), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), inCardOnly = true)
                     CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                         onFix = { nav.fixCompanySetup(it) })
+                    // [COMM-12] The company is known and no coworker's rules are in use: the plaza, with its name typed.
+                    com.bamnat.app.ui.company.PlazaEntryCard(container, calendar, onOpen = { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } },
+                        Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
                 },
                 // [DAILY-16] 광장 시세 of the user's own job and region next to their pay, compared on the phone.
-                underTotal = { com.bamnat.app.ui.company.RateHintLine(profile) { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } } },
+                underTotal = {
+                    com.bamnat.app.ui.company.RateHintLine(profile) { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } }
+                    // [COMM-12] One line into the plaza from the pay; hidden without the company server.
+                    if (calendar == PersonalCalendar.MAIN) com.bamnat.app.ui.company.PlazaEntryLine(container, onOpen = { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } })
+                },
                 // [ADMIN-02] 계산이 이상해요 is a question in the app; a build without the company server shares it.
                 onReport = if (container.inquiryApi.enabled) { check ->
                     container.pendingPayCheck = check
