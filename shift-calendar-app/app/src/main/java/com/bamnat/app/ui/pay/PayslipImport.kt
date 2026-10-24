@@ -188,6 +188,7 @@ internal fun SlipPreview(read: PayslipRead) {
 @Composable
 fun PayslipFillDialog(title: String, onDismiss: () -> Unit, onRead: (PayslipRead) -> Unit) {
     var text by remember { mutableStateOf("") }
+    var typing by remember { mutableStateOf(false) }
     var read by remember { mutableStateOf<PayslipRead?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -199,9 +200,13 @@ fun PayslipFillDialog(title: String, onDismiss: () -> Unit, onRead: (PayslipRead
                     Text("명세서 사진이나 캡처 한 장이면 돼요. 앱이 휴대폰 안에서 읽고, 사진과 금액은 어디에도 보내지 않아요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     ScanButtons(onText = { t -> text = t; read = PayslipReader.read(t) })
-                    OutlinedTextField(
+                    // [INPUT-04] A payslip copied from the company's app or a message: one tap. Typing it is folded away.
+                    com.bamnat.app.ui.components.ClipboardHint("명세서", fits = { PayslipReader.read(it).lines.isNotEmpty() },
+                        onPaste = { t -> text = t; read = PayslipReader.read(t) })
+                    TextButton(onClick = { typing = !typing }) { Text(if (typing) "글로 붙여 넣기 접기" else "글로 붙여 넣기") }
+                    if (typing) OutlinedTextField(
                         value = text, onValueChange = { text = it },
-                        label = { Text("또는 명세서 글 붙여 넣기") },
+                        label = { Text("명세서 글") },
                         placeholder = { Text("기본급 2,508,000\n연장근로수당 288,000\n식대 200,000\n지급합계 2,996,000") },
                         minLines = 4, modifier = Modifier.fillMaxWidth(),
                     )
@@ -216,7 +221,7 @@ fun PayslipFillDialog(title: String, onDismiss: () -> Unit, onRead: (PayslipRead
         confirmButton = {
             val r = read
             when {
-                r == null -> Button(onClick = { read = PayslipReader.read(text) }, enabled = text.isNotBlank()) { Text("읽기") }
+                r == null -> if (typing) Button(onClick = { read = PayslipReader.read(text) }, enabled = text.isNotBlank()) { Text("읽기") }
                 r.lines.isEmpty() -> Button(onClick = { read = null }) { Text("다시 하기") }
                 else -> Button(onClick = { onRead(r) }) { Text("이대로 채우기") }
             }
@@ -240,27 +245,38 @@ internal fun RuleSentenceBox(
     onApply: (List<RuleChange>) -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
+    // [INPUT-03] Rules put together by taps come first; writing or a photo of the 취업규칙 is folded under them.
+    var built by remember { mutableStateOf(emptyList<String>()) }
+    var words by remember { mutableStateOf(false) }
+    var building by remember { mutableStateOf(false) }
     val found = remember { mutableStateListOf<Pair<RuleFinding, Boolean>>() }
     var read by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (!read) {
-            OutlinedTextField(
-                value = text, onValueChange = { text = it },
-                label = { Text("회사 규칙을 적어 주세요") },
-                placeholder = { Text("예)\n대근은 8시간에 기본급의 10%, 8시간 넘으면 50% 가산, 야간 50% 가산\n토요일 근무는 50% 더\n상여금 연 800% 짝수달") },
-                minLines = 4, modifier = Modifier.fillMaxWidth(),
-            )
-            ScanButtons(onText = { t -> text = if (text.isBlank()) t else text + "\n" + t })
+            // In the long rules editor the builder opens on a tap, so the sections under it stay close.
+            if (building || built.isNotEmpty()) com.bamnat.app.ui.components.RuleBuilder(built, { built = it })
+            else com.bamnat.app.ui.components.AddButton("회사 규칙 골라 담기", onClick = { building = true })
+            TextButton(onClick = { words = !words }) { Text(if (words || text.isNotBlank()) "글로 적기 접기" else "글로 적거나 사진으로 읽기") }
+            if (words || text.isNotBlank()) {
+                OutlinedTextField(
+                    value = text, onValueChange = { text = it },
+                    label = { Text("회사 규칙을 적어 주세요") },
+                    placeholder = { Text("예)\n토요일 근무는 50% 더\n상여금 연 800% 짝수달") },
+                    minLines = 3, modifier = Modifier.fillMaxWidth(),
+                )
+                ScanButtons(onText = { t -> text = if (text.isBlank()) t else text + "\n" + t })
+                Hint("한 줄에 규칙 하나씩 적으면 가장 잘 읽어요. 명세서 금액(연장근로수당 523,000원 같은 줄)은 ‘명세서로 맞춰 보기’에 넣어 주세요.")
+            }
+            val all = com.bamnat.app.ui.components.ruleWords(built, text)
             Button(
                 onClick = {
                     found.clear()
-                    found += RuleText.read(text, kinds, shiftTypes, fiveOrMore).map { it to (it.confidence >= 0.6) }
+                    found += RuleText.read(all, kinds, shiftTypes, fiveOrMore).map { it to (it.confidence >= 0.6) }
                     read = true
                 },
-                enabled = text.isNotBlank(),
+                enabled = all.isNotBlank(),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             ) { Text("읽기") }
-            Hint("한 줄에 규칙 하나씩 적으면 가장 잘 읽어요. 명세서 금액(연장근로수당 523,000원 같은 줄)은 ‘명세서로 맞춰 보기’에 넣어 주세요.")
         } else {
             if (found.isEmpty()) Text("읽을 수 있는 규칙을 못 찾았어요. ‘야간 50% 가산’, ‘토요일 근무 1회 2만원’처럼 무엇에 얼마인지 함께 적어 주세요.",
                 style = MaterialTheme.typography.bodyMedium)
@@ -282,7 +298,7 @@ internal fun RuleSentenceBox(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { read = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다시 쓰기") }
                 Button(
-                    onClick = { onApply(chosen); text = ""; found.clear(); read = false },
+                    onClick = { onApply(chosen); text = ""; built = emptyList(); building = false; found.clear(); read = false },
                     enabled = chosen.isNotEmpty(),
                     modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                 ) { Text("${chosen.size}개 넣기") }

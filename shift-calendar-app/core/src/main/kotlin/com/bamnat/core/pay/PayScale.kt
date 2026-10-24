@@ -54,6 +54,13 @@ data class PayScale(
     fun describe(): String = "호봉표 ${steps.size}단계, 매년 ${stepMonth}월 승급, ${since.year}년 ${step}호봉부터"
 
     companion object {
+        /** [PAYX-47] What a row added under [amounts] starts at: the last step plus the last step's raise (never less). */
+        fun nextAmount(amounts: List<Long>): Long = when (amounts.size) {
+            0 -> 2_400_000
+            1 -> amounts[0]
+            else -> amounts.last() + (amounts.last() - amounts[amounts.size - 2]).coerceAtLeast(0)
+        }
+
         /**
          * Reads a table pasted as text: one step per line, "1호봉 2,400,000" or "1 2400000" (the 호봉 and the
          * amount, tabs or spaces between).

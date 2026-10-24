@@ -306,6 +306,16 @@ internal object HelpFaq {
             listOf("개인정보"),
             "개인정보 처리방침" to HelpAction.Page(SettingsPage.PRIVACY, "개인정보 처리방침"),
         ),
+        // [INPUT-01..04] 1.24 Q: values are tapped, not typed; the company's way is put together; copied words in one tap.
+        HelpTopic(
+            "directInput", "직접 입력", "숫자나 회사 규칙을 글자로 쳐야 하나요?",
+            "아니요. 공수·시각·매달 며칠·시간·비율은 칩을 누르거나 −·+로 고르고, 호봉표는 호봉마다 금액을 넣어요. 회사 계산 방식은 " +
+                "‘무엇을·어떻게·얼마’를 골라 담으면 한 문장으로 보여 드리고, 담기지 않는 것만 말로 적어요. 명세서·결제 문자·링크·코드를 복사해 두면 " +
+                "그 화면에 ‘복사한 글이 있어요’ 한 줄이 떠요. 누를 때만 읽고, 복사한 글은 저장하지 않아요.",
+            listOf("직접 입력", "글자", "타자", "붙여 넣기", "복사한 글", "클립보드", "호봉표", "공수", "규칙 조립", "골라 담기", "회사 방식"),
+            listOf("급여"),
+            "급여 계산 열기" to HelpAction.Go(SettingsGo.PAY),
+        ),
     )
 
     /** [INQ-05] I11: the answers each of the server's topics ([com.bamnat.core.ops.InquiryTopics]) starts with. */

@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
@@ -16,7 +15,6 @@ import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,7 +23,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.appContainer
 import com.bamnat.app.ui.Fmt
@@ -83,23 +80,25 @@ internal fun LazyListScope.dayRateChips(
     }
 }
 
-/** [FLD-02] Any 공수 (2, 0.25 …), the 일당 and the 업체 for one day; the 일당 and 업체 are remembered. */
+/**
+ * [FLD-02] Any 공수 (2, 0.25 …), the 일당 and the 업체 for one day; the 일당 and 업체 are remembered. [INPUT-02] The 공수
+ * is tapped (0.5·1·1.5·2) or stepped by 0.25, not typed.
+ */
 @Composable
-private fun DayRateDialog(date: LocalDate, units: Double, rules: FieldRules, existing: Job?, onDismiss: () -> Unit, onSave: (Job, FieldRules) -> Unit) {
-    var unitsText by rememberSaveable { mutableStateOf(DayRate.trim(units)) }
+internal fun DayRateDialog(date: LocalDate, units: Double, rules: FieldRules, existing: Job?, onDismiss: () -> Unit, onSave: (Job, FieldRules) -> Unit) {
+    var picked by rememberSaveable { mutableStateOf(units) }
     val existingRate = existing?.let(DayRate::rateOf)
     var rate by rememberSaveable { mutableStateOf(amountDigits(existingRate ?: rules.dayRate)) }
     var client by rememberSaveable { mutableStateOf(existing?.client ?: rules.lastClient) }
-    val u = unitsText.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0 && it <= 5 }
+    val u = picked.takeIf { it > 0 && it <= 5 }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("${Fmt.dayTitle(date)} 공수") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = unitsText, onValueChange = { v -> unitsText = v.filter { it.isDigit() || it == '.' || it == ',' }.take(5) },
-                    label = { Text("공수 (예: 1, 0.5, 1.5)") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(),
+                com.bamnat.app.ui.components.QuickDecimalChips(
+                    value = picked, onChange = { picked = it }, name = "공수", quick = listOf(0.5, 1.0, 1.5, 2.0),
+                    step = 0.25, range = 0.25..5.0, unit = "공",
                 )
                 AmountField("일당 (1공)", rate, { rate = it })
                 // [FLD-12] 공종별 평균 일당, [FLD-13] 그 일당의 일용직 세금.

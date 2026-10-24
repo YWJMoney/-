@@ -174,12 +174,12 @@ private fun DateRow(date: LocalDate, minuteText: String?, onDate: (LocalDate) ->
             Spacer(Modifier.width(6.dp))
             Text(if (date == Today.date()) "오늘 · ${Fmt.dayTitle(date)}" else Fmt.dayTitle(date))
         }
+        // [INPUT-02] The time is picked on the wheels, not typed; it stays "HH:mm" text for the trade's minute.
         if (onMinute != null && minuteText != null) {
-            OutlinedTextField(
-                value = minuteText, onValueChange = { v -> onMinute(v.filter { it.isDigit() || it == ':' }.take(5)) },
-                label = { Text("시각") }, placeholder = { Text("09:05") }, singleLine = true,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                modifier = Modifier.weight(1f),
+            com.bamnat.app.ui.components.TimeField(
+                label = "시각", time = parseMinute(minuteText)?.let { LocalTime.of(it / 60, it % 60) },
+                onChange = { t -> onMinute(t?.let { minuteText(it.hour * 60 + it.minute) }.orEmpty()) },
+                clearable = true, start = LocalTime.of(9, 0), modifier = Modifier.weight(1f),
             )
         }
     }

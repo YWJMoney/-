@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -69,7 +68,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -458,23 +456,17 @@ private fun ColumnScope.FormStep(draft: ItemDraft, kind: ItemKind, snapshot: Sch
     if (draft.asksWhen) WhenSection(draft, kind, snapshot)
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/** [INPUT-02] The share or premium in %: the usual values as chips, or stepped (1% of 기본급, 5% of the hourly), not typed. */
 @Composable
 private fun PercentField(draft: ItemDraft, kind: ItemKind) {
-    OutlinedTextField(
-        value = draft.percent,
-        onValueChange = { v -> draft.percent = v.filter { it.isDigit() || it == '.' || it == ',' }.take(6) },
-        label = { Text(if (kind == ItemKind.SHARE) "기본급의" else "시급에 더하는 몫") },
-        suffix = { Text("%") },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-        modifier = Modifier.fillMaxWidth(),
+    val share = kind == ItemKind.SHARE
+    Text(if (share) "기본급의" else "시급에 더하는 몫", style = MaterialTheme.typography.labelLarge)
+    com.bamnat.app.ui.components.QuickDecimalChips(
+        value = draft.percent.replace(',', '.').toDoubleOrNull(), onChange = { draft.percent = com.bamnat.app.ui.components.decimalText(it) },
+        name = if (share) "기본급의 비율" else "시급에 더하는 몫",
+        quick = if (share) listOf(1.0, 3.0, 5.0, 10.0) else listOf(25.0, 50.0, 100.0),
+        step = if (share) 0.5 else 5.0, range = 0.5..1000.0, unit = "%",
     )
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        (if (kind == ItemKind.SHARE) listOf("1", "3", "5", "10") else listOf("25", "50", "100")).forEach { p ->
-            FilterChip(selected = draft.percent == p, onClick = { draft.percent = p }, label = { Text("$p%") }, modifier = Modifier.heightIn(min = 48.dp))
-        }
-    }
 }
 
 /** When the item is paid: the shifts and days first, the rest folded away until asked for. */

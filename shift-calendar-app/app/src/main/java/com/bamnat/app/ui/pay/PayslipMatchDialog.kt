@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -62,7 +61,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -82,17 +80,20 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.time.YearMonth
 import kotlin.math.abs
-import kotlin.math.roundToInt
 import com.bamnat.core.time.Today
+
+/** A month of hours, 31일 × 24시간: more than this cannot be one month's premium. */
+private const val MAX_MONTH_MINUTES = 744 * 60
 
 private enum class MatchStage { MONTH, ROSTER, AMOUNTS, WORKING, RESULT, DONE }
 
 /** 연장·야간·휴일 pay as the payslip states it, with the hours behind it when it lists them (근로기준법 제48조 제2항). */
 private class Premium(val title: String) {
     var amount by mutableStateOf<Long?>(null)
-    var hours by mutableStateOf("")
-    /** "12.5" or "12,5" hours, in minutes; null when blank or not a month's worth. */
-    val minutes: Int? get() = hours.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0 && it <= 744 }?.let { (it * 60).roundToInt() }
+    /** [INPUT-02] The hours the payslip lists, stepped in minutes; 0 is "not given". */
+    var stepped by mutableStateOf(0)
+    /** In minutes; null when not given or more than a month's worth. */
+    val minutes: Int? get() = stepped.takeIf { it in 1..MAX_MONTH_MINUTES }
 }
 
 /** An allowance on the payslip with no allowance of the same name in the app. */
@@ -127,7 +128,7 @@ private class SlipForm {
         read.amount(SlipRole.BASE)?.let { base = it }
         listOf(overtime to SlipRole.OVERTIME, night to SlipRole.NIGHT, holiday to SlipRole.HOLIDAY).forEach { (p, role) ->
             read.amount(role)?.let { p.amount = it }
-            read.minutes(role)?.let { m -> p.hours = if (m % 60 == 0) "${m / 60}" else "%.2f".format(m / 60.0).trimEnd('0').trimEnd('.') }
+            read.minutes(role)?.let { m -> p.stepped = m }
         }
         others.clear()
         fun norm(n: String) = n.filterNot { it.isWhitespace() }.lowercase()
@@ -438,17 +439,10 @@ private fun MoreFields(profile: PayProfile, month: YearMonth, form: SlipForm) {
     Spacer(Modifier.height(4.dp))
     MoneyField("기본급", form.base, { form.base = it })
     form.premiums.forEach { p ->
-        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MoneyField(p.title, p.amount, { p.amount = it }, Modifier.weight(1.6f))
-            OutlinedTextField(
-                value = p.hours,
-                onValueChange = { v -> p.hours = v.filter { it.isDigit() || it == '.' || it == ',' }.take(6) },
-                label = { Text("시간") },
-                suffix = { Text("시간") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.weight(1f),
-            )
+        MoneyField(p.title, p.amount, { p.amount = it })
+        // [INPUT-02] The hours behind it, stepped by 30분 (the value opens an exact entry), not typed as 12.5.
+        com.bamnat.app.ui.components.StepperRow("${p.title.removeSuffix("수당").trim()} 시간", hint = "명세서에 있으면") {
+            com.bamnat.app.ui.components.MinutesStepper(p.stepped, { p.stepped = it }, max = MAX_MONTH_MINUTES, dialogTitle = "${p.title} 시간")
         }
     }
     Text("명세서 아래쪽 ‘계산 방법’에 적힌 시간을 넣으면 통상시급까지 맞춰 봐요.", style = MaterialTheme.typography.bodySmall,
