@@ -63,7 +63,6 @@ import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.app.ui.work.DateField
 import com.bamnat.app.ui.work.Hint
-import com.bamnat.app.ui.work.NumberField
 import com.bamnat.app.ui.work.SwitchLine
 import com.bamnat.app.ui.work.ValueLine
 import com.bamnat.app.ui.work.toNumber
@@ -438,7 +437,13 @@ private fun AddDialog(kind: EntryKind, onDismiss: () -> Unit, onAdd: (LedgerEntr
         title = { Text(kind.label) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                NumberField("일수", days, { days = it }, suffix = "일", decimal = true, maxLength = 5)
+                // [INPUT-02] Days tapped (the usual counts: 11 in the first year, 15 after, more with the years —
+                // 근로기준법 제60조 제1·2·4항) or stepped by half a day, not typed.
+                com.bamnat.app.ui.components.QuickDecimalChips(
+                    value = days.toDoubleOrNull(), onChange = { days = com.bamnat.app.ui.components.decimalText(it) }, name = "일수",
+                    quick = if (kind == EntryKind.GRANT) listOf(11.0, 15.0, 20.0) else listOf(0.5, 1.0, 2.0, 5.0),
+                    step = 0.5, range = 0.5..60.0, unit = "일",
+                )
                 if (kind == EntryKind.ADJUST) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = !minus, onClick = { minus = false }, label = { Text("더하기") })

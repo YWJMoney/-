@@ -11,14 +11,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import com.bamnat.app.ui.components.CountStepper
 import com.bamnat.app.ui.components.StepperRow
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,7 +28,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.appContainer
@@ -318,6 +315,7 @@ private fun PayGapCard(calendarId: String, month: YearMonth, payTotal: Long?, pr
 }
 
 /** [DAYW-05] This month's extra hours against the monthly 시간외 상한, set here. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun OvertimeCapCard(calendarId: String, summary: MonthSummary) {
     val prefs = WorkTypePrefs.get(LocalContext.current)
@@ -351,26 +349,27 @@ private fun OvertimeCapCard(calendarId: String, summary: MonthSummary) {
         }
     }
     if (editing) {
-        var text by remember { mutableStateOf((capHours ?: DayWork.DEFAULT_CAP_HOURS).toString()) }
+        // [INPUT-02] Tapped from the usual caps or stepped by an hour, not typed.
+        var hours by remember { mutableStateOf(capHours ?: DayWork.DEFAULT_CAP_HOURS) }
         AlertDialog(
             onDismissRequest = { editing = false },
             title = { Text("한 달 시간외 상한") },
             text = {
                 Column {
-                    OutlinedTextField(
-                        value = text,
-                        onValueChange = { v -> text = v.filter(Char::isDigit).take(3) },
-                        label = { Text("시간") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    )
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CAP_CHOICES.forEach { h ->
+                            com.bamnat.app.ui.components.FilterChip(selected = hours == h, onClick = { hours = h }, label = { Text("${h}시간") })
+                        }
+                    }
+                    com.bamnat.app.ui.components.CountStepper(hours, { hours = it }, name = "한 달 시간외 상한", range = 1..300,
+                        format = { "${it}시간" }, valueWidth = 96.dp)
                     Text("잔업·특근처럼 달력에 넣은 추가 근무를 모두 더해요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    prefs.setOvertimeCap(calendarId, text.toIntOrNull()?.takeIf { it > 0 })
+                    prefs.setOvertimeCap(calendarId, hours.takeIf { it > 0 })
                     editing = false
                 }) { Text("저장") }
             },
@@ -406,3 +405,6 @@ private fun BridgeCard(snapshot: ScheduleSnapshot, style: WorkStyle?) {
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
     }
 }
+
+/** [INPUT-02] The caps people set most: 주 12시간 × 4주 ≈ 52시간, the app's own 57 and rounder company limits. */
+private val CAP_CHOICES = listOf(40, 52, DayWork.DEFAULT_CAP_HOURS, 60)
