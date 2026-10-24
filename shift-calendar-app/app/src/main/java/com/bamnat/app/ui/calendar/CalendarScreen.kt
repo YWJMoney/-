@@ -1849,19 +1849,19 @@ private fun PaintBar(
                 if (last?.undo != null) TextButton(onClick = onUndo) { Text("되돌리기") }
                 IconButton(onClick = { onTool(null) }) { Icon(Icons.Filled.Close, "빠른 입력 끝내기") }
             }
-            val keys: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
-                // [ROST-07] The whole month from a keypad, first and filled, so it is seen before the stamps (리뷰 개선 가).
-                onTypeMonth?.let { open ->
-                    androidx.compose.material3.FilledTonalButton(
-                        onClick = open,
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
-                        modifier = Modifier.heightIn(min = if (large) 56.dp else 32.dp),
-                    ) {
-                        Icon(Icons.Outlined.Keyboard, contentDescription = null, Modifier.size(18.dp))
-                        Text(" 이번 달 전부 넣기", maxLines = 1)
-                    }
-                    VerticalDivider(Modifier.height(32.dp).align(Alignment.CenterVertically))
+            // [ROST-07] The whole month from a keypad, on its own line above the stamps and filled, so it is seen first
+            // (리뷰 개선 가) without pushing the kinds of work along the row.
+            onTypeMonth?.let { open ->
+                androidx.compose.material3.FilledTonalButton(
+                    onClick = open,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp).heightIn(min = if (large) 56.dp else 40.dp),
+                ) {
+                    Icon(Icons.Outlined.Keyboard, contentDescription = null, Modifier.size(18.dp))
+                    Text(" 이번 달 전부 넣기", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+            }
+            val keys: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
                 // The chips say what a tap on the calendar will do, for TalkBack.
                 for (type in snapshot.shiftTypes) {
                     val t = PaintTool.Shift(type.id)

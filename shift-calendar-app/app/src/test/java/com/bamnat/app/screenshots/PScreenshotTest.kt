@@ -96,7 +96,7 @@ class PScreenshotTest : ScreenshotBase() {
     @Test fun quickInputHalfDay() = shoot("729_p_quick_input_half_day", PHONE, style(WorkStyle.SHIFT) {
         tapText("빠른 입력", exact = true)
         // The stamps follow the kinds of work on the bar's sideways row.
-        swipeRowLeft("이번 달 전부 넣기", until = "오전 반차")
+        swipeRowLeft("야간 칠하기", until = "오전 반차")
         tapText("오전 반차", exact = true)
     })
     @Test fun keypadRepeat() = shoot("730_p_keypad_sheet_repeat", FOLDED, style(WorkStyle.SHIFT) {
