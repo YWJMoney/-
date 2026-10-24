@@ -3,6 +3,7 @@ package com.bamnat.app.ui.calendar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -170,16 +173,27 @@ fun DutyTypingPanel(
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
             }
             MonthCells(month, cursor, typed.keys, ::shiftOf, warnings.map { it.date }.toSet(), toCheck.toSet(), weekStart) { cursor = it }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            // [ROST-08] Sideways, so three buttons never squeeze under a big font.
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (lastMonth.isNotEmpty()) OutlinedButton(onClick = {
                     checkpoint()
                     typed.putAll(lastMonth)
                     cursor = days
                 }, modifier = Modifier.heightIn(min = 48.dp)) {
                     Icon(Icons.Filled.ContentCopy, null)
-                    Text(" ${previous.monthValue}월 그대로")
+                    Text(" ${previous.monthValue}월 그대로", maxLines = 1)
                 }
-                Spacer(Modifier.weight(1f))
+                // [ROST-08] 이 순서 반복: D D E E N N O O typed, the same order to the month's end (리뷰 개선 다).
+                val rest = com.bamnat.core.imports.MonthFill.repeat(typed.filterKeys { YearMonth.from(it) == month }.mapKeys { it.key.dayOfMonth }, cursor, days)
+                if (rest != null) OutlinedButton(onClick = {
+                    checkpoint()
+                    rest.forEach { (d, o) -> typed[month.atDay(d)] = o }
+                    cursor = days
+                }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Icon(Icons.Filled.Repeat, null)
+                    Text(" 이 순서 반복", maxLines = 1)
+                }
+                Spacer(Modifier.width(4.dp))
                 TextButton(onClick = {
                     val back = history.removeAt(history.lastIndex)
                     typed.clear()

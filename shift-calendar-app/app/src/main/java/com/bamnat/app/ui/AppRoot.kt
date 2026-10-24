@@ -420,6 +420,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     LaunchedEffect(incomingFile) {
         if (incomingFile != null) SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.DATA)
     }
+    // [ROST-09] A roster shared from the gallery or a messenger: 한 달 근무 넣기, which reads it.
+    val sharedRoster by com.bamnat.app.IncomingRoster.shared.collectAsStateWithLifecycle()
+    LaunchedEffect(sharedRoster) {
+        if (sharedRoster != null && nav.currentBackStackEntry?.destination?.route != Routes.DUTY_ROSTER) {
+            nav.navigate(Routes.DUTY_ROSTER) { launchSingleTop = true }
+        }
+    }
     val settingsLink by SettingsLinks.target.collectAsStateWithLifecycle()
     LaunchedEffect(settingsLink) {
         when (val link = settingsLink ?: return@LaunchedEffect) {

@@ -24,7 +24,21 @@ enum class JournalKind(val feature: String, val why: String, val route: FeatureR
     LEAVE_NOTICE("leave.promotion", "근로기준법 제61조의 연차 사용 촉진 날이에요", FeatureRoute(Place.LEAVE)),
     MONEY_CAPTURED("money.auto", "결제 알림 읽기가 켜져 있어요", FeatureRoute(Place.MONEY)),
     NEWS("plaza.news", "밤낮 소식은 하루 한 번 묶어서 와요", FeatureRoute(Place.SETTINGS_NOTICES, "밤낮 소식")),
+    /** [ROST-11] A month's roster read and put on the calendar; detail "month days source" ([rosterDetail]). */
+    ROSTER("shift.roster", "한 달 근무 넣기로 넣은 날은 되돌릴 수 있어요", FeatureRoute(Place.DUTY_ROSTER)),
 }
+
+/** [ROST-11] Where a month's roster came from, as the journal's detail keeps it (a digit, never the roster). */
+enum class RosterFrom(val code: Int, val word: String) {
+    PHOTO(1, "사진"), FILE(2, "파일"), TEXT(3, "붙여 넣은 글"), TYPED(4, "직접");
+
+    companion object {
+        fun of(code: Int?): RosterFrom? = entries.firstOrNull { it.code == code }
+    }
+}
+
+/** [ROST-11] "10 31 1": October, 31 days, from a photo. */
+fun rosterDetail(month: Int, days: Int, from: RosterFrom): String = "$month $days ${from.code}"
 
 /**
  * [OBS-01] One line: when, what kind, and a few small numbers ([count], [detail]) — never an amount, a name or
@@ -92,6 +106,9 @@ object Journal {
             JournalKind.LEAVE_NOTICE -> "연차 사용 촉진 알림"
             JournalKind.MONEY_CAPTURED -> "결제 알림을 돈 기록으로 적음"
             JournalKind.NEWS -> "밤낮 소식 받음"
+            JournalKind.ROSTER -> d?.split(' ')?.mapNotNull { it.toIntOrNull() }?.takeIf { it.size == 3 }
+                ?.let { (m, days, src) -> "${m}월 근무 ${days}일 넣음" + (RosterFrom.of(src)?.let { " (${it.word})" } ?: "") }
+                ?: "한 달 근무 넣음"
         }
         return if (n > 1) "$what · ${n}번" else what
     }
