@@ -70,8 +70,8 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
     var base by rememberSaveable { mutableStateOf<Long?>(null) }
     var rough by rememberSaveable { mutableStateOf(false) }
     var dailyHours by rememberSaveable { mutableStateOf(8) }
-    // A year back, so the months already worked come to an amount too [PAYS-01].
-    var since by remember { mutableStateOf(Today.month().minusMonths(12)) }
+    // A year back, so the months already worked come to an amount too [PAYS-01]; a known 입사일 in that year starts there [COMM-13].
+    var since by remember { mutableStateOf(com.bamnat.core.pay.PaySince.start(Today.month(), vm.hireDate)) }
     val amounts = remember { mutableStateMapOf<String, Long>() }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -145,6 +145,8 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
                     Text("이 금액을 받기 시작한 달", style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     MonthStepper(since, { since = it })
+                    Text(com.bamnat.core.pay.PaySince.why(vm.hireDate, Today.month()), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
 
                 if (vm.needs.isNotEmpty()) {

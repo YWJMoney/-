@@ -69,6 +69,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -104,6 +105,7 @@ fun CompanyBoardScreen(
     val terms by vm.terms.collectAsStateWithLifecycle()
     val filter by vm.filter.collectAsStateWithLifecycle()
     val plazas by vm.plazas.collectAsStateWithLifecycle()
+    val diffs by vm.diffs.collectAsStateWithLifecycle()
     // [STAB-01] Read on the key's own frame, or half-built Korean letters double or drop.
     val query by vm.query.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
     val keyboard = LocalSoftwareKeyboardController.current
@@ -173,8 +175,13 @@ fun CompanyBoardScreen(
                         modifier = Modifier.padding(top = 4.dp),
                     )
                 }
+                // [COMM-14] Two cards of one company and department get a name each (제보 1·2, 채택 v2) and what only that one has.
+                val labels = tab.items.groupBy { it.companyId }.values.fold(emptyMap<String, String>()) { m, same ->
+                    m + com.bamnat.core.plaza.SetupDiff.labels(same.map { com.bamnat.core.plaza.SetupDiff.Item(it.setup, it.dept, it.adopted, it.version, it.at.toEpochMilli()) })
+                }
                 items(tab.items, key = { "${it.companyId}/${it.setup}" }) { item ->
-                    BoardCard(item, onOpen = { onOpen(item.companyId) }, onTalk = { vm.talk.show(item.companyId, item.setup, item.title()) })
+                    BoardCard(item, onOpen = { onOpen(item.companyId) }, onTalk = { vm.talk.show(item.companyId, item.setup, item.title()) },
+                        label = labels[item.setup], diff = diffs[item.setup], agreeNeeded = terms?.agree ?: 75)
                 }
                 item {
                     when {
@@ -205,13 +212,13 @@ fun CompanyBoardScreen(
 private fun BoardItem.title() = "$company · ${dept.ifEmpty { "회사 전체" }}"
 
 @Composable
-private fun BoardCard(item: BoardItem, onOpen: () -> Unit, onTalk: () -> Unit) {
+private fun BoardCard(item: BoardItem, onOpen: () -> Unit, onTalk: () -> Unit, label: String? = null, diff: String? = null, agreeNeeded: Int = 75) {
     SoftCard(Modifier.clip(MaterialTheme.shapes.large).clickable(onClick = onOpen)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(item.company, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(listOf(item.dept.ifEmpty { "회사 전체" }, item.cycle, if (item.pay) "급여 계산 포함" else "근무표만").filter { it.isNotEmpty() }.joinToString(" · "),
+                    Text(listOfNotNull(label, item.dept.ifEmpty { "회사 전체" }, item.cycle, if (item.pay) "급여 계산 포함" else "근무표만").filter { it.isNotEmpty() }.joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (item.adopted) StatusChip("채택${item.version?.let { " v$it" } ?: ""}", Tone.GOOD) else StatusChip("투표 중", Tone.WAIT)
@@ -224,7 +231,9 @@ private fun BoardCard(item: BoardItem, onOpen: () -> Unit, onTalk: () -> Unit) {
             )
             if (place.isNotEmpty()) Text(place.joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             if (item.gist.isNotEmpty()) Text(item.gist, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            diff?.let { Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary) }
             TrustLine(item.trust, item.agree, item.persons, item.bad, item.adopted)
+            WaitReason(item.points, item.threshold, item.adopted, item.agree, agreeNeeded)
             WhoLine(0, 0, item.uses, item.by)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(ago(item.at), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
@@ -523,7 +532,7 @@ private fun PostRow(p: TalkPost, onDelete: () -> Unit, onFlag: () -> Unit, onHid
                         if (c.why.isNotBlank()) Text("왜: ${c.why}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     p.proposal?.let { r ->
-                        Text(if (r.adopted) "이 제안대로 규칙이 바뀌었어요" else "이 제안에 맞아요 ${r.persons}명 · 모이면 규칙이 바뀌어요",
+                        Text(if (r.adopted) "이 제안대로 규칙이 바뀌었어요" else "이 제안에 공감 ${r.persons}명 · 모이면 규칙이 바뀌어요",
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     }
                 }
@@ -531,15 +540,43 @@ private fun PostRow(p: TalkPost, onDelete: () -> Unit, onFlag: () -> Unit, onHid
         }
         if (p.hidden == null) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                // [COMM-13] Small words, not the rule's big 맞았어요·달라요 buttons: more posts fit, and a post's 공감 is not
+                // read as a vote on the rule (점검 보고서 하 '광장').
                 if (p.mine) {
-                    Text("맞아요 ${p.agree} · 달라요 ${p.disagree}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("공감 ${p.agree} · 비공감 ${p.disagree}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
-                    AgreeRow(p.agree, p.disagree, p.myVote, onVote)
+                    PostReactions(p.agree, p.disagree, p.myVote, onVote)
                 }
                 Spacer(Modifier.weight(1f))
-                onReply?.let { TextButton(onClick = it) { Text("답글") } }
+                onReply?.let { SmallTextButton("답글", onClick = it) }
             }
         }
+    }
+}
+
+/** [COMM-14] Points all in but still 확인 중: why, in the admin app's words too (점검 보고서 중-12). */
+@Composable
+internal fun WaitReason(points: Int, threshold: Int, adopted: Boolean, agree: Int, agreeNeeded: Int = 75) {
+    val why = com.bamnat.core.plaza.SetupDiff.waitReason(points, threshold, adopted, agree, agreeNeeded) ?: return
+    Text(why, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary)
+}
+
+/** [COMM-13] 공감 · 비공감 on a post, as small words with their counts; the one picked is bold and a tap again takes it back. */
+@Composable
+private fun PostReactions(agree: Int, disagree: Int, mine: Boolean?, onVote: (Boolean) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+        SmallTextButton("공감 $agree", picked = mine == true, label = if (mine == true) "공감 $agree, 고름" else "공감 $agree") { onVote(true) }
+        SmallTextButton("비공감 $disagree", picked = mine == false, label = if (mine == false) "비공감 $disagree, 고름" else "비공감 $disagree") { onVote(false) }
+    }
+}
+
+/** A word-sized button that still has a 48dp touch area (Material's minimum), for the many under each post. */
+@Composable
+private fun SmallTextButton(text: String, picked: Boolean = false, label: String = text, onClick: () -> Unit) {
+    TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+        modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = label }) {
+        Text(text, style = MaterialTheme.typography.labelMedium, fontWeight = if (picked) FontWeight.Bold else FontWeight.Normal,
+            color = if (picked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
