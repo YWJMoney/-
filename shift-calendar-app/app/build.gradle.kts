@@ -202,7 +202,7 @@ dependencies {
     // model is not bundled (15~25 MB less); Google Play services downloads it to the phone (pay/OcrModel), nothing is sent.
     implementation("com.google.android.gms:play-services-mlkit-text-recognition-korean:16.0.1")
     // [DAYW-07] On-device geofencing for 출퇴근 자동 기록 (off by default); no location leaves the phone.
-    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("com.google.android.gms:play-services-location:21.4.0")
     // [SHFT-08] The Wear OS watch gets the days through the Wearable Data Layer, phone to watch.
     implementation("com.google.android.gms:play-services-wearable:19.0.0")
     // [MON-03] Play billing 9.1.0 (the Java API, so the Kotlin library stays as it is).
