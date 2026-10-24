@@ -121,6 +121,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.bamnat.core.time.Today
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
@@ -184,7 +185,7 @@ class DutyRosterViewModel(private val container: AppContainer, val calendarId: S
         fun resolve(c: DutyCell): DutyCell = if (c is DutyCell.Unknown) answers[codeKey(c.raw)] ?: c else c
     }
 
-    private val today = LocalDate.now()
+    private val today = Today.date()
     private val start = container.shownMonth.month.value.let { shown ->
         // After the middle of a month the roster on the wall is usually next month's.
         if (shown == YearMonth.from(today) && today.dayOfMonth >= 15) shown.plusMonths(1) else shown
@@ -492,7 +493,7 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                         calculator = calculator,
                         weekStart = vm.weekStart,
                         selected = ui.month.atDay(ui.cursor.coerceAtMost(ui.month.lengthOfMonth())),
-                        today = LocalDate.now(),
+                        today = Today.date(),
                         memoDates = emptySet(),
                         showHours = false,
                         cellHeight = cellHeight,

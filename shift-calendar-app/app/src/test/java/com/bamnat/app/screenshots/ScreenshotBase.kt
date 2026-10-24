@@ -513,7 +513,7 @@ abstract class ScreenshotBase {
 
         /** Drags the row that shows [text] to the left by [dp] (slowly) until [until] shows, to reach a sideways key. */
         fun swipeRowLeft(text: String, until: String, dp: Int = 200, times: Int = 5) {
-            val y = reach(text, exact = true, prefix = false, scrolls = 0, across = 0.5f).boundsInWindow.center.y
+            val y = reach(text, exact = false, prefix = false, scrolls = 0, across = 0.5f).boundsInWindow.center.y
             repeat(times) {
                 if (find(until, exact = true, prefix = false) != null) return
                 gesture { w, _, d ->
