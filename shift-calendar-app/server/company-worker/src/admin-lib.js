@@ -462,8 +462,67 @@ export function adminLib() {
     return m ? [m[2] ? Number(m[2]) : null, m[1]] : [null, ""];
   }
 
+  /**
+   * [ADMUX-11] How long an open question has waited, in the same words as [ago] ("3시간 전부터"), so the list
+   * and the pills no longer say "방금 기다림" next to "2분 전" (점검 보고서 하 '관리자 웹앱').
+   */
+  function waited(hours) {
+    if (hours === null || hours === undefined) return "";
+    if (hours < 1) return "1시간 안 기다림";
+    if (hours < 24) return `${hours}시간째 기다림`;
+    return `${Math.floor(hours / 24)}일째 기다림`;
+  }
+
+  /** [ADMUX-11] A question's text for the CSV: mail addresses, phone numbers and amounts become •••. */
+  function maskPersonal(text) {
+    return String(text ?? "")
+      .replace(/[^\s@]+@[^\s@]+\.[a-z]{2,}/gi, "•••")
+      .replace(/(\+?82[\s.-]?0?|0)\d{1,2}[\s.-]?\d{3,4}[\s.-]?\d{4}/g, "•••")
+      .replace(/\d[\d,.]*\s*(원|만\s*원|천\s*원|억\s*원)|\d{1,3}(,\d{3})+|\d{5,}/g, "•••")
+      .replace(/\s+/g, " ").trim();
+  }
+
+  /** [ADMUX-10] What waits on 검토: the sidebar badge and the home tile count the same three things. */
+  function reviewCount(o) {
+    return (o?.pending ?? 0) + (o?.asks ?? 0) + (o?.flagged ?? 0);
+  }
+
+  /**
+   * [ADMUX-09] Groups of one company and department side by side (점검 보고서 중-11): each one's name (제보 1·2, by
+   * its first report) and the lines only it has, as the app says them (core SetupDiff).
+   */
+  function setupDiff(groups, max = 2) {
+    const out = new Map();
+    const byDept = new Map();
+    for (const g of groups) {
+      const k = `${g.company?.id ?? g.companyId}|${g.dept ?? ""}`;
+      byDept.set(k, [...(byDept.get(k) ?? []), g]);
+    }
+    for (const same of byDept.values()) {
+      if (same.length < 2) continue;
+      const first = (g) => Math.min(...(g.reports ?? [{ at: g.at }]).map((r) => new Date(r.at).getTime()));
+      [...same].sort((a, b) => first(a) - first(b)).forEach((g, i) => {
+        const others = same.filter((x) => x !== g).map((x) => new Set((x.lines ?? []).map(([l, t]) => `${l}\u0000${t}`)));
+        const own = (g.lines ?? []).filter(([l, t]) => others.every((o) => !o.has(`${l}\u0000${t}`)));
+        out.set(g, {
+          label: `제보 ${i + 1}`,
+          diff: own.length ? `다른 점: ${own.slice(0, max).map(([l, t]) => `${l} ${t}`).join(" · ")}${own.length > max ? ` 외 ${own.length - max}개` : ""}` : "",
+        });
+      });
+    }
+    return out;
+  }
+
+  /** [ADMUX-09] Points all in and still waiting: why, in the app's words (core SetupDiff.waitReason). */
+  function waitReason(g, agreeNeeded = 75) {
+    if (g.points < g.threshold) return "";
+    if (g.turnedDown) return "전에 거절된 설정이라 개발자 확인 대기";
+    if ((g.agree ?? 100) < agreeNeeded || (g.doubted && g.bad)) return "달라요가 많아 개발자 확인 대기";
+    return "개발자 확인 대기";
+  }
+
   return {
-    esc, ERRORS, errorText, ago, slaText, can, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, bottomTabs, likeFirst, words,
+    esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, bottomTabs, likeFirst, words,
     devCopyText, DEV_NAMES, strength, fillTemplate, sortTemplates, wordDiff, csv, ticks, barChart, contrast, keyAction, KEYS, GO,
     paletteFilter, sequencer, appVersion,
   };

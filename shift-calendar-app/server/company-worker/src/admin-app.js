@@ -278,7 +278,7 @@ transition:transform .1s,background .15s,border-color .15s;white-space:nowrap}
 .btn:disabled{opacity:.45;cursor:default;transform:none}
 .btn:active:not(:disabled),.icon-btn:active,.row:active,.tile:active{transform:scale(.98)}
 .link{border:0;background:none;padding:0;color:var(--accent);font-weight:800;cursor:pointer;text-decoration:underline}
-input:not([type]),input[type=search],input[type=text],input[type=email],input[type=password],input[type=url],textarea,select{width:100%;min-height:3rem;
+input:not([type]),input[type=search],input[type=text],input[type=email],input[type=password],input[type=url],input[type=date],input[type=number],textarea,select{width:100%;min-height:3rem;
 padding:.6rem .9rem;border-radius:var(--r-sm);border:1px solid var(--line-strong);background:var(--surface);outline:none;transition:border-color .15s}
 input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:var(--focus)}
 input[readonly]{background:var(--soft)}
@@ -367,6 +367,7 @@ details.card .steps{margin-top:.6rem}
 .row>svg{flex:none;width:1.25rem;height:1.25rem;color:var(--faint)}
 .row-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:.05rem}
 .row-main b{font-size:1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-main b.wrap{white-space:normal;overflow-wrap:anywhere}
 .row-main small{font-size:.8rem;color:var(--muted)}
 .row-main .preview{font-size:.9rem;color:var(--fg);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .row.unread .row-main b::before{content:"";display:inline-block;width:.5rem;height:.5rem;border-radius:50%;background:var(--accent);margin-right:.4rem;vertical-align:middle}
@@ -670,7 +671,7 @@ function adminApp(L, BUILD) {
   /** Where each screen lives and who sees it; badges count what waits for someone there. */
   const NAV = [
     { key: "home", label: "홈", group: "main" },
-    { key: "review", label: "검토", area: "review", group: "main", badge: (o) => (o.pending ?? 0) + (o.asks ?? 0) + (o.flagged ?? 0) },
+    { key: "review", label: "검토", area: "review", group: "main", badge: (o) => L.reviewCount(o) },
     { key: "inquiries", label: "문의", area: "inquiries", group: "main", badge: (o) => o.inquiries ?? 0 },
     // [ADMIN-10] 접수 waits for whoever may set 개발중·완료·반려; for the rest it is not a count to clear.
     { key: "dev", label: "개발사항", area: "dev", group: "main", badge: (o) => (can("devStatus", "edit") ? o.devTodo ?? 0 : 0) },
@@ -707,7 +708,7 @@ function adminApp(L, BUILD) {
   const PROGRESS_NAMES = { received: "접수됨", checking: "확인 중", answered: "답변 완료", planned: "개발 목록에 올림", building: "개발 중", released: "반영됨" };
   /** [INQ-04] How long the asker has waited: red past a day, so nothing is missed. */
   const waitPill = (q) => q.waitingHours === null || q.waitingHours === undefined || q.status !== "open" ? ""
-    : `<span class="pill ${q.waitingHours >= 24 ? "bad" : q.waitingHours >= 8 ? "warn" : ""}">${q.waitingHours < 1 ? "방금" : q.waitingHours < 24 ? `${q.waitingHours}시간` : `${Math.floor(q.waitingHours / 24)}일`} 기다림</span>`;
+    : `<span class="pill ${q.waitingHours >= 24 ? "bad" : q.waitingHours >= 8 ? "warn" : ""}">${L.waited(q.waitingHours)}</span>`;
   const ACTION_NAMES = {
     login: "로그인", login_failed: "로그인 실패", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
     invite: "관리자 초대", invite_remove: "초대 취소", join: "관리자 계정 만듦", admin_update: "관리자 권한·상태 바꿈", admin_remove: "관리자 삭제",
@@ -1353,8 +1354,8 @@ function adminApp(L, BUILD) {
       tile("아쉬워요", o.inquiriesBad, "답이 아쉬웠다는 문의", inq({ status: "answered" }), true);
     }
     if (can("review")) {
-      tile("검토 대기", o.pending, "채택이나 거절을 기다려요", href("review"), true);
-      tile("앱에 없는 방식", o.asks, "답을 기다려요", L.routeHash("review", null, { show: "asks" }), true);
+      // [ADMUX-10] The menu badge's number, with what it is made of (점검 보고서 하: badge 6 next to 검토 대기 5).
+      tile("검토 대기", L.reviewCount(o), `제보 ${o.pending ?? 0} · 앱에 없는 방식 ${o.asks ?? 0} · 달라요 ${o.flagged ?? 0}`, href("review"), true);
     }
     if (can("dev")) tile("개발사항 접수", o.devTodo, can("devStatus", "edit") ? "처리를 기다려요" : "개발 전이에요", L.routeHash("dev", null, { status: "todo" }), can("devStatus", "edit"));
     if (can("community")) tile("신고된 글", o.flaggedPosts, "토론에서 확인할 글", href("community"), true);
@@ -1485,11 +1486,16 @@ function adminApp(L, BUILD) {
     // [ADMUX-05] Opened or closed by the admin stays so across refreshes and screens (this visit).
     const key = `g:${g.company.id}.${g.setup}`;
     const siblings = (S.data.queue?.groups ?? []).filter((x) => x.company.id === g.company.id && x !== g && (x.dept ?? "") !== (g.dept ?? "")).length;
+    // [ADMUX-09] Another group of the same company and department: this one's name and what only it has.
+    const twin = L.setupDiff(S.data.queue?.groups ?? []).get(g);
+    const why = L.waitReason(g, S.overview?.settings?.adoptAgree ?? 75);
     return `<article class="card">
-      <div class="head"><h3>${esc(g.company.name)}${g.dept ? ` <span class="dept">${esc(g.dept)}</span>` : ""}</h3>${kind}</div>
+      <div class="head"><h3>${esc(g.company.name)}${g.dept ? ` <span class="dept">${esc(g.dept)}</span>` : ""}${twin ? ` <span class="ver">${twin.label}</span>` : ""}</h3>${kind}</div>
+      ${twin?.diff ? `<p class="gist twin"><b>${esc(twin.diff)}</b></p>` : ""}
       <p class="meta">${g.persons}명 · 제보 ${g.reports.length}건${verified ? ` · 명세서 확인 ${verified}건` : ""} · ${day(g.reports[0].at)}</p>
       ${gist ? `<p class="gist">${esc(gist)}</p>` : ""}
       <div class="score"><meter min="0" max="${g.threshold}" value="${Math.min(g.points, g.threshold)}" aria-label="채택 점수"></meter><b>${g.points}/${g.threshold}점</b></div>
+      ${why ? `<p class="meta wait">${esc(why)}</p>` : ""}
       <p class="meta">신뢰도 ${g.trust ?? 0} · 맞았어요 ${g.agree ?? 0}%${g.posts ? ` · 토론 ${g.posts}개` : ""}</p>
       ${g.company.hidden ? '<p class="note warn">숨긴 회사예요. 채택해도 회사 찾기에 나오지 않아요.</p>' : ""}
       ${g.turnedDown ? `<p class="note warn">${g.turnedDown === "withdrawn" ? "전에 내린 규칙과 같은 설정이에요" : "전에 거절한 설정이에요"}. 자동으로 채택되지 않아요.</p>`
@@ -2339,7 +2345,7 @@ function adminApp(L, BUILD) {
         <div class="actions start"><button class="icon-btn" data-act="ops-month" data-d="-1" aria-label="지난달">${icon(P.back)}</button>
         <button class="icon-btn" data-act="ops-month" data-d="1" aria-label="다음 달">${icon(P.chevron)}</button></div></div>
       <p class="hint">해마다 이 달에 하는 일이에요. ${left ? `${left}개 남았어요.` : "모두 마쳤어요."} 근거는 docs/ops-calendar.md에 있어요.</p>
-      <ul class="rows">${o.items.map((i) => `<li><div class="row"><span class="row-main"><b>${esc(i.text)}</b><small>${esc(i.source)}</small></span>
+      <ul class="rows">${o.items.map((i) => `<li><div class="row"><span class="row-main"><b class="wrap" title="${esc(i.text)}">${esc(i.text)}</b><small>${esc(i.source)}</small></span>
         <span class="row-side">${edit ? `<button class="btn small${i.done ? "" : " primary"}" data-act="ops-tick" data-key="${i.key}" data-done="${i.done ? "" : "1"}">${i.done ? "되돌리기" : "마침"}</button>`
           : `<span class="pill ${i.done ? "ok" : ""}">${i.done ? "마침" : "남음"}</span>`}</span></div></li>`).join("")}</ul></section>`;
     const notices = `<section class="card"><div class="card-head"><h2>앱 공지</h2>${edit ? `<button class="btn small primary" data-act="notice-new">${icon(P.plus)}새 공지</button>` : ""}</div>
@@ -2726,7 +2732,11 @@ function adminApp(L, BUILD) {
   function openDialog(html, size = "") {
     dialog.className = size;
     dialog.innerHTML = html;
-    if (!dialog.open) dialog.showModal();
+    if (!dialog.open) {
+      dialog.showModal();
+      // [ADMUX-10] The phone's back closes the box first: it gets a step of its own in the history, same address.
+      if (!history.state?.dialog) history.pushState({ dialog: true }, "", location.href);
+    }
     dialog.querySelector("input:not([type=radio]):not([type=hidden]):not([readonly]),textarea")?.focus();
   }
 
@@ -2933,14 +2943,16 @@ function adminApp(L, BUILD) {
   /** [ADMIN-17] The activity lines as a CSV file Excel opens (UTF-8 with BOM, formulas made plain text). */
   /**
    * [ADMUX-07] The list on screen as a CSV for a spreadsheet. Only the columns without personal details: no
-   * question text, contact, memo or install id, just what, when and how it stands.
+   * contact, memo or install id, just what, when and how it stands. [ADMUX-11] The question's text goes too, with
+   * mail addresses, phone numbers and amounts made ••• first, so the rows can be read without opening each.
    */
   const CSV_KINDS = {
     audit: () => [S.data.audit?.entries, S.data.audit?.more, "audit", [["시각", (e) => new Date(e.at).toLocaleString("ko-KR")], ["누가", (e) => e.actor || "앱 사용자·시스템"],
       ["한 일", (e) => ACTION_NAMES[e.action] ?? e.action], ["대상", (e) => e.label || e.target || ""], ["내용", (e) => e.detail ?? ""]]],
     inquiries: () => [S.data.inquiries?.inquiries, S.data.inquiries?.next, "inquiries", [["받은 때", (q) => new Date(q.createdAt).toLocaleString("ko-KR")],
       ["종류", (q) => KIND_NAMES[q.kind] ?? q.kind], ["주제", (q) => q.topicName ?? ""], ["상태", (q) => STATUS_NAMES[q.status ?? S.inquiryStatus] ?? ""],
-      ["맡은 사람", (q) => q.assignee?.name ?? ""], ["앱 버전", (q) => q.appVersion ?? ""], ["나도 그래요", (q) => q.count ?? 1], ["개발사항", (q) => (q.dev ? "있음" : "")]]],
+      ["맡은 사람", (q) => q.assignee?.name ?? ""], ["앱 버전", (q) => q.appVersion ?? ""], ["나도 그래요", (q) => q.count ?? 1], ["개발사항", (q) => (q.dev ? "있음" : "")],
+      ["본문", (q) => L.maskPersonal(q.text ?? q.preview ?? "")]]],
     dev: () => [S.data.devList?.items, S.data.devList?.next, "dev", [["제목", (x) => x.title], ["처리", (x) => DEV_NAMES[x.status] ?? x.status],
       ["연결된 문의", (x) => x.links ?? 0], ["답 대기", (x) => x.waiting ?? 0], ["맡은 사람", (x) => x.assignee?.name ?? ""], ["반영 버전", (x) => x.releasedIn ?? ""],
       ["고친 때", (x) => new Date(x.updatedAt).toLocaleString("ko-KR")]]],
@@ -4271,6 +4283,8 @@ function adminApp(L, BUILD) {
     if (e.target === dialog) dialog.close();
   });
   dialog.addEventListener("close", () => {
+    // [ADMUX-10] Closed another way: its history step becomes a plain one, so back is not spent on nothing later.
+    if (history.state?.dialog) history.replaceState(null, "", location.href);
     S.palette = null;
     S.linkMode = "";
     if (S.relogin) {
@@ -4278,6 +4292,9 @@ function adminApp(L, BUILD) {
       S.relogin = false;
       signedOut();
     }
+  });
+  window.addEventListener("popstate", () => {
+    if (dialog.open && !S.relogin && !history.state?.dialog) dialog.close();
   });
   window.addEventListener("hashchange", () => {
     if (S.phase !== "app") return;
@@ -4290,6 +4307,8 @@ function adminApp(L, BUILD) {
       return;
     }
     if (moved && before.name === "inquiries" && before.id) pingTyping(false);
+    // [ADMUX-10] A sheet or a question box belongs to the screen it was opened on (점검 보고서 중-14).
+    if (moved && dialog.open && !S.relogin) dialog.close();
     S.route = next;
     applyParams(next);
     if (moved) {
@@ -4412,6 +4431,8 @@ function adminApp(L, BUILD) {
     // What the server still lacks only shows on the login screen, so it is not waited for before signing in.
     const checked = health().then((h) => { S.health = h; return h; });
     try {
+      // [ADMUX-11] Asked first, so a signed-out start shows the login without a 401 in the console.
+      if (!(await api("/session")).signedIn) throw new Error("login");
       await enter();
     } catch {
       await checked;

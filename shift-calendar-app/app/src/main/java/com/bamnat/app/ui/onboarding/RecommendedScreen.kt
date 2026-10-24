@@ -71,6 +71,7 @@ import com.bamnat.core.consent.ConsentItem
 import com.bamnat.core.consent.RecommendedFeature
 import com.bamnat.core.consent.RecommendedPlan
 import com.bamnat.core.consent.SleepDevice
+import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.launch
 
 /**
@@ -83,13 +84,19 @@ import kotlinx.coroutines.launch
  * own values, saved as they are.
  */
 @Composable
-fun RecommendedScreen(container: AppContainer, firstStart: Boolean, onDone: () -> Unit, onBrowse: (() -> Unit)? = null) {
+fun RecommendedScreen(
+    container: AppContainer, firstStart: Boolean, onDone: () -> Unit, onBrowse: (() -> Unit)? = null,
+    /** [SETUP-15] The kind of work picked on the screen before; null when skipped (and from settings). */
+    style: WorkStyle? = null,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val available = remember { ConsentChecks.available(context, container.healthSleep, container.consentStore) }
     val start = remember { container.settingsRepository.current }
+    // [SETUP-15] The first start shows only that kind of work's notices; from settings every one, as the phone has them.
+    val plan = remember(style, firstStart) { RecommendedPlan.forStyle(style.takeIf { firstStart }) }
     var on by rememberSaveable {
-        mutableStateOf((if (firstStart) RecommendedPlan.NEW_INSTALL else RecommendedSettings.on(start)).map { it.key })
+        mutableStateOf((if (firstStart) plan.start else RecommendedSettings.on(start)).map { it.key })
     }
     var watch by rememberSaveable { mutableStateOf(!firstStart && start.healthSleep) }
     // [ONBOARD-05] Usage statistics go to a server: their own yes, never ticked beforehand (D42).
@@ -200,21 +207,27 @@ fun RecommendedScreen(container: AppContainer, firstStart: Boolean, onDone: () -
                         Text(if (firstStart) "밤낮을 제대로 쓰는 설정" else "추천 기능 한 번에 켜기",
                             style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
                     }
-                    Text(RecommendedPlan.REASSURE, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // [SETUP-15] Said once, so the shorter list reads as chosen for this work, not as missing.
+                    if (firstStart && style != null && style != WorkStyle.SHIFT) {
+                        Text("${com.bamnat.app.ui.setup.STYLE_CHOICES.first { it.style == style }.title.substringBefore(" · ")}에 맞춰 골라 두었어요.", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Text(plan.reassure, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-                    Section("켜 둘 기능") {
-                        RecommendedFeature.entries.forEachIndexed { i, f ->
+                    val features = if (firstStart) plan.features else RecommendedFeature.entries
+                    if (features.isNotEmpty() || ConsentItem.SLEEP in available) Section("켜 둘 기능") {
+                        features.forEachIndexed { i, f ->
                             if (i > 0) HorizontalDivider()
                             SwitchLine(f.title, f.what, f.okay, f.key in on) { v -> on = if (v) on + f.key else on - f.key }
                         }
                         if (ConsentItem.SLEEP in available) {
-                            HorizontalDivider()
+                            if (features.isNotEmpty()) HorizontalDivider()
                             SwitchLine("워치로 잰 잠 함께 보기", "워치·링이 잰 수면으로 부족한 잠을 계산해요",
                                 "워치나 링을 차고 잘 때만 켜요. 수면만 읽고 휴대폰 밖으로 보내지 않아요", watch) { watch = it }
                         }
-                        Text("이미 켜져 있어요: ${RecommendedPlan.ALREADY_ON}", style = MaterialTheme.typography.bodySmall,
+                        Text("이미 켜져 있어요: ${plan.alreadyOn}", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                        plan.leftOff?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    } else Notice(Icons.Filled.CheckCircle, "이미 켜져 있어요: ${plan.alreadyOn}." + (plan.leftOff?.let { " $it" } ?: ""))
 
                     val asks = RecommendedPlan.shown(available, watch)
                     if (asks.isNotEmpty()) Section("허용할 것") {

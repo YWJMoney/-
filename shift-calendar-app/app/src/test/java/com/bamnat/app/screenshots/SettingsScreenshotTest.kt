@@ -276,8 +276,9 @@ class SettingsScreenshotTest : ScreenshotBase() {
     @Test fun recommendedLaterLeadsToTheFirstSetupWithFeaturesOn() = shoot("523_folded_recommended_then_setup", FOLDED,
         recommended(setOf(ConsentItem.CALENDAR)) {
             tapText("허용은 나중에 할게요")
-            // The first setup comes next, the screen does not come back, and the recommended features are on.
-            tapText("순서가 돌아가요")
+            // The first setup comes next, past the work already told on the first screen [SETUP-15], the screen
+            // does not come back, and the recommended features are on.
+            assertTrue("어느 회사 question next", shows("어느 회사"))
             val c = app.container
             assertTrue(c.consentStore.seen.value!!.contains(ConsentItem.CALENDAR))
             assertTrue(c.consentStore.recommendOffered)

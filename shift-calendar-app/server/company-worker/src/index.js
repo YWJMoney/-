@@ -17,6 +17,7 @@
 // POST   /api/inquiries/:id/same  나도 그래요; /flag 신고: three people hide a question until the developer looks
 // GET    /admin/                  the developer app, installable on a phone [ADMIN-01][ADMIN-03]
 // GET    /admin/join#<invite>     an invited admin installs the app and makes an account [ADMIN-04]
+// GET    /api/admin/session       signed in or not, as a plain answer for the developer app's first screen [ADMUX-11]
 // *      /api/admin/*             behind a sign-in: the owner's password (secret ADMIN_PASSWORD), or an
 //                                 admin account the owner invited by email and approved, with only the
 //                                 permissions the owner gave it
@@ -3629,13 +3630,14 @@ async function admin(request, env, url) {
     if (request.headers.get("x-admin") !== "1" || (origin && origin !== url.origin)) return json({ error: "forbidden" }, 403);
   }
   if (path === "/login" && method === "POST") return login(request, env, now);
-  // [ADMIN-15] The invite token goes in the body, out of logs and history; the GET stays for 1.23 only,
-  // for a developer app still cached from before.
+  // [ADMIN-15] The invite token goes in the body, out of logs and history. [ADMUX-11] The 1.23 GET /join?t= is gone
+  // (the developer app has used POST /join/info since 1.23).
   if (path === "/join/info" && method === "POST") return inviteInfo(request, env, url, now);
-  if (path === "/join" && method === "GET") return inviteInfo(request, env, url, now);
   if (path === "/join/code" && method === "POST") return joinCode(request, env, now);
   if (path === "/join" && method === "POST") return join(request, env, now);
   const session = await signedIn(request, env, now);
+  // [ADMUX-11] Opening the app asks this first: signed out is an answer, not a 401 in the browser's console.
+  if (path === "/session" && method === "GET") return json({ signedIn: Boolean(session) }, 200, { "cache-control": "no-store" });
   if (!session) return json({ error: "login" }, 401);
   let res = await signedRoute(request, env, url, path, method, now, session);
   // [ADMIN-16] A list or screen that did not change since the app last had it is a 304 with no body.

@@ -72,6 +72,15 @@ class CompanyStore(context: Context) {
         prefs.edit().putLong("vote_later", at).apply()
     }
 
+    private val _plazaEntryClosed = MutableStateFlow(prefs.getString("plaza_entry_closed", null))
+    /** [COMM-12] The company name whose "같은 회사 분들 규칙 보기" card was put away; a new name shows it again. */
+    val plazaEntryClosed: StateFlow<String?> = _plazaEntryClosed.asStateFlow()
+
+    fun closePlazaEntry(company: String) {
+        _plazaEntryClosed.value = company
+        prefs.edit().putString("plaza_entry_closed", company).apply()
+    }
+
     private val _inviteClosed = MutableStateFlow(prefs.getBoolean("invite_closed", false))
     /** The invitation to share a hand-made setup was closed. */
     val inviteClosed: StateFlow<Boolean> = _inviteClosed.asStateFlow()

@@ -156,3 +156,27 @@ test("[ADMIN-15] permissions in one line, yes-or-no areas as such", () => {
   assert.equal(L.can({ owner: false, perms: { review: "view" } }, "review", "edit"), false);
   assert.equal(L.can({ owner: true, perms: {} }, "review", "edit"), true);
 });
+
+test("[ADMUX-11] waits in plain words, and a question goes out without mail, phone or amounts", () => {
+  assert.equal(L.waited(0), "1시간 안 기다림");
+  assert.equal(L.waited(5), "5시간째 기다림");
+  assert.equal(L.waited(50), "2일째 기다림");
+  assert.equal(L.waited(null), "");
+  assert.equal(L.maskPersonal("a.b@mail.com 010-1234-5678 로 연락, 월급 2,500,000원\n안 맞아요"), "••• ••• 로 연락, 월급 ••• 안 맞아요");
+});
+
+test("[ADMUX-09][ADMUX-10] same department side by side, why points-full waits, one count for 검토", () => {
+  const a = { company: { id: "c" }, dept: "간호", at: "2026-10-01", lines: [["야간 수당", "50%"], ["주휴", "있음"]] };
+  const b = { company: { id: "c" }, dept: "간호", at: "2026-10-05", lines: [["야간 수당", "30%"], ["주휴", "있음"]] };
+  const lone = { company: { id: "c" }, dept: "원무", at: "2026-10-02", lines: [["주휴", "있음"]] };
+  const m = L.setupDiff([b, a, lone]);
+  assert.deepEqual(m.get(a), { label: "제보 1", diff: "다른 점: 야간 수당 50%" });
+  assert.deepEqual(m.get(b), { label: "제보 2", diff: "다른 점: 야간 수당 30%" });
+  assert.equal(m.has(lone), false);
+  assert.equal(L.waitReason({ points: 2, threshold: 5 }), "");
+  assert.equal(L.waitReason({ points: 5, threshold: 5, agree: 60 }), "달라요가 많아 개발자 확인 대기");
+  assert.equal(L.waitReason({ points: 5, threshold: 5, turnedDown: true }), "전에 거절된 설정이라 개발자 확인 대기");
+  assert.equal(L.waitReason({ points: 6, threshold: 5, agree: 90 }), "개발자 확인 대기");
+  assert.equal(L.reviewCount({ pending: 2, asks: 1, flagged: 3 }), 6);
+  assert.equal(L.reviewCount(null), 0);
+});
