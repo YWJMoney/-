@@ -299,6 +299,16 @@ shift-calendar-app/
 - 이름: 화면·설정·찾기는 '한 달 근무 넣기', 빠른 입력 바와 도구의 키패드 시트는 '이번 달 전부 넣기'(`DutyTypingSheet`)예요.
 - 새 휴가 글자가 흔하면 `DutyCodes.LEAVE_WORDS`에 더하고 `DutyRosterTextTest`에 표본을 더해요. 회사마다 다른 건 묻는 쪽(`DutyCell.Unknown(leave = true)`)에 두세요.
 
+### 6-6. 달력 첫 화면·화면 크기 (1.24.0 묶음 R, CAL-50~52·VIS-04~05·ALRM-05·STAT-07·A11Y-05)
+
+계획은 프로젝트 파일(git 밖)의 `계획/1.24-R-개발계획.md`, 근거는 `notes/1.23/앱-직접-점검-보고서.md` 상-4·중-1~5·하.
+
+- **알림 묶음** `ui/calendar/NoticeStack`: 달 위 카드(질문·알람 경고·확인할 근무·공휴일·근무표·알람 제안·한 달 정리·공지·안내·한 일)는 순서대로 하나만 펼치고 나머지는 "알림 n개 더 보기" 한 줄. 접힌 카드도 그려 두되 자리·읽기는 없어요. 접힌 카드가 "보여 줌"으로 세지 않게 `LocalNoticeFolded`를 보고 기록을 미뤄요(AskCard·GuideCards). 새 카드는 `CalendarScreen`의 `NoticeStack(listOf(...))`에 `Notice(key, label)`로 더하세요.
+- **낮은 화면** `LOW_SCREEN_DP = 700`(또는 글씨 150% 이상): 오늘 흐름·오늘 근무 카드도 알림 묶음에 들어가고 요약은 한 줄. **옆으로 눕힌 폰** `SIDEWAYS_SCREEN_DP = 480` 미만: 넓은 두 칸 대신 세로 배치, 이름표·달 제목 한 줄, 알림은 다 접힘, 칸 높이 66dp.
+- **근무 수** `core/work/ShiftMonth.counts`·`leaveDays`·`nightTimes`: 달력 배지·1년 달력·통계가 같은 함수. 하루 통째 휴가인 날은 근무 종류로 안 세고 "휴가"로 세요. 22~06시 걸친 근무는 "밤 시간 근무"(대근 포함)로 이름이 따로예요.
+- **크기 검사** `test/.../screenshots/LayoutCheck`: 그려진 화면에서 아래·옆 잘림, 말줄임, 한 글자씩 쪼개짐, 하단 바 위에 보이는 온전한 주 수를 셉니다. `RScreenshotTest`의 `audit*`가 점검 보고서의 13가지 크기를 `build/screenshots/r-audit/`에 적고, 760~779는 잘림 0·주 수 하한을 시험해요.
+- 시트 손잡이 이름은 `res/values(-ko)/sheet_strings.xml`이 라이브러리 글을 덮어써요("끌어서 옮기기", "닫기").
+
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 
 이전 프로젝트의 파일을 묶은 압축 파일 두 개로 옮겨요. 새 프로젝트에서는 올라온 파일을 풀어 프로젝트 파일 폴더에 두고 써요.

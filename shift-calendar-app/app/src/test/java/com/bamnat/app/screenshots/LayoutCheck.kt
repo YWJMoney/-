@@ -16,7 +16,7 @@ import java.time.YearMonth
  * bottom bar.
  */
 internal object LayoutCheck {
-    var DEBUG = true
+    var DEBUG = false
     /** One text that does not show whole, with what happened to it. */
     data class Cut(val text: String, val how: String) {
         override fun toString() = "‘$text’ $how"
@@ -34,10 +34,12 @@ internal object LayoutCheck {
                 if (text.isBlank()) continue
                 val last = r.lineCount - 1
                 when {
-                    r.didOverflowHeight -> add(Cut(text, "아래가 잘림" + (if (DEBUG) " ${r.size} ${r.multiParagraph.height} ${r.layoutInput.constraints}" else "")))
+                    // Two pixels or less is the line's air above and below the letters (a chip's label at 200%, drawn whole).
+                    r.didOverflowHeight && (r.multiParagraph.didExceedMaxLines || r.multiParagraph.height - r.size.height > 2f) -> add(Cut(text, "아래가 잘림" + (if (DEBUG) " ${r.size} ${r.multiParagraph.height} ${r.layoutInput.constraints}" else "")))
                     r.isLineEllipsized(last) -> add(Cut(text, "말줄임"))
                     // Not didOverflowWidth: the layout semantics hands back is as wide as its constraints.
-                    (0 until r.lineCount).any { r.getLineRight(it) > r.size.width + 1f } -> add(Cut(text, "옆이 잘림"))
+                    // A line's width, not its right edge: centred text (a tab's label) is laid out wider than it is drawn.
+                    (0 until r.lineCount).any { r.getLineRight(it) - r.getLineLeft(it) > r.size.width + 1f } -> add(Cut(text, "옆이 잘림"))
                     split(r) -> add(Cut(text, "한 글자씩 쪼개짐"))
                 }
             }

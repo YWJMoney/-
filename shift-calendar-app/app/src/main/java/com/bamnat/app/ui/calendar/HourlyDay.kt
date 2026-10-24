@@ -190,7 +190,7 @@ private fun CoverChip(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
                     else -> menu = true
                 }
             },
-            label = { Text(if (i >= 0) "대타 · ${ExtraText.name(day.extras[i])}" else "대타", maxLines = 1) },
+            label = { ChipText(if (i >= 0) "대타 · ${ExtraText.name(day.extras[i])}" else "대타") },
             leadingIcon = if (i >= 0) ({ Icon(Icons.Filled.Check, null, Modifier.size(18.dp)) }) else null,
         )
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {

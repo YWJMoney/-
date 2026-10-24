@@ -93,6 +93,54 @@ class RScreenshotTest : ScreenshotBase() {
     @Test fun auditSettings() = auditScreen("settings", wideMatters = true) { w -> tab(4, w) }
     @Test fun auditHelp() = auditScreen("help") { askFromScreen(com.bamnat.app.ui.settings.InquiryStart(help = true)) }
     @Test fun auditMission() = auditScreen("mission") { mission(com.bamnat.core.alarm.AlarmMission.MATH, java.time.Duration.ofMinutes(1)) }
-    @Test fun auditDiag() = auditScreen("diag") { content { com.bamnat.app.ui.diag.DiagnosticsScreen(com.bamnat.app.ui.diag.DiagnosticsViewModel(app.container), onBack = {}) } }
+    @Test fun auditDiag() = auditScreen("diag") { val vm = com.bamnat.app.ui.diag.DiagnosticsViewModel(app.container); content { com.bamnat.app.ui.diag.DiagnosticsScreen(vm, onBack = {}) } }
     @Test fun auditYear() = auditScreen("year") { year() }
+
+    // ---- 760~779: the shots kept, each with what it must show ----
+    /** Shoots [SIZES]`[i]` as `[n]_r_<what>`, then asserts nothing is cut and, for the calendar, at least [weeks] whole weeks. */
+    private fun check(n: Int, what: String, i: Int, weeks: Int = 0, then: Screen.() -> Unit = {}) {
+        val (name, q, scale) = SIZES[i]
+        shoot("${n}_r_${what}_$name", q, scale) {
+            then()
+            val (cuts, shown) = look("${n}_${what}_$name")
+            assertTrue("$n $what $name: cut $cuts", cuts.isEmpty())
+            assertTrue("$n $what $name: $shown weeks shown, want $weeks", shown >= weeks)
+        }
+    }
+    private val stats: Screen.() -> Unit = { withPay()(this); tab(3, false) }
+
+    // 상-4: the month above the bottom bar on a small phone, a common one and one on its side.
+    @Test fun s760_calendar_320() = check(760, "calendar", 0, weeks = 2)
+    @Test fun s761_calendar_393() = check(761, "calendar", 3, weeks = 2)
+    @Test fun s762_calendar_landscape() = check(762, "calendar", 8, weeks = 2)
+    @Test fun s763_calendar_360x640() = check(763, "calendar", 1, weeks = 2)
+    @Test fun s764_calendar_fold_open() = check(764, "calendar", 6, weeks = 2)
+    @Test fun s765_calendar_tablet() = check(765, "calendar", 7, weeks = 4)
+    // 중-1~3: large text.
+    @Test fun s766_calendar_393_200() = check(766, "calendar", 10)
+    @Test fun s767_calendar_320_200() = check(767, "calendar", 11)
+    @Test fun s768_mission_393_200() = check(768, "mission", 10) { mission(com.bamnat.core.alarm.AlarmMission.MATH, java.time.Duration.ofMinutes(1)) }
+    @Test fun s769_diag_393_200() = check(769, "diag", 10) {
+        val vm = com.bamnat.app.ui.diag.DiagnosticsViewModel(app.container)
+        content { com.bamnat.app.ui.diag.DiagnosticsScreen(vm, onBack = {}) }
+    }
+    @Test fun s770_pay_320_200() = check(770, "pay", 11) { payScreen(com.bamnat.app.tier.Tier.PRO, withProfile = true)(this) }
+    // 중-4·하: the day's title and cells' text, the year, the search boxes.
+    @Test fun s771_day_393() = check(771, "day", 3) { openDayBelow(dayCell) }
+    @Test fun s772_day_320_200() = check(772, "day", 11) { openDayBelow(dayCell) }
+    @Test fun s773_calendar_fold_cover() = check(773, "calendar", 5, weeks = 2)
+    @Test fun s774_year_320_200() = check(774, "year", 11) { year() }
+    @Test fun s775_settings_fold_open() = check(775, "settings", 6) { tab(4, true) }
+    @Test fun s776_help_320() = check(776, "help", 0) { askFromScreen(com.bamnat.app.ui.settings.InquiryStart(help = true)) }
+    // 중-5: one count everywhere, and night-time work by its own name.
+    @Test fun s777_stats_393() = check(777, "stats", 3, then = stats)
+    @Test fun s778_stats_320_200() = check(778, "stats", 11, then = stats)
+
+    // 하: the sheet's handle in plain words.
+    @Test fun s779_sheet_handle() = shoot("779_r_sheet_handle", PHONE_393) {
+        openDayBelow(dayCell)
+        val names = nodes(merged = false).flatMap { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription).orEmpty() }
+        assertTrue("handle: $names", "끌어서 옮기기" in names)
+        assertTrue("handle: $names", names.none { it == "Drag handle" || it == "드래그 핸들" })
+    }
 }

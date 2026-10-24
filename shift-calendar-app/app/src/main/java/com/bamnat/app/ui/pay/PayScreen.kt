@@ -298,12 +298,19 @@ private fun PayResult(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // [VIS-05] With large text the month's arrows took the row and the job's name stood one letter a line:
+        // the name gets its own line above them.
+        val stack = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+        val who: @Composable (Modifier) -> Unit = { m ->
+            Text("${profile.occupation.label} · ${profile.wageLabel()}", style = MaterialTheme.typography.titleMedium, modifier = m)
+        }
+        if (stack) who(Modifier)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("${profile.occupation.label} · ${profile.wageLabel()}",
-                style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            if (stack) Spacer(Modifier.weight(1f)) else who(Modifier.weight(1f))
             IconButton(onClick = { vm.moveMonth(-1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
             Text(Fmt.month(month), style = MaterialTheme.typography.titleSmall)
             IconButton(onClick = { vm.moveMonth(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
+            if (stack) Spacer(Modifier.weight(1f))
         }
         // The month asked for is still being worked out; the one before stays meanwhile.
         if (result.month != month) LinearProgressIndicator(Modifier.fillMaxWidth())

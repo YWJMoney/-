@@ -129,11 +129,13 @@ private fun ShiftFirstCard(snapshot: ScheduleSnapshot, month: YearMonth, payTota
             }
         }
         Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            // [STAT-07] Not the 야 badge's count (1.23 점검 중-5): work into 22~06시, 대근 included, under its own name.
-            StatTile("밤 시간 근무", "${tally.nights}번", Modifier.weight(1f), caption = "22~06시에 걸친 근무 · 대근 포함")
-            StatTile("예상 급여", payTotal?.let { Fmt.won(it) } ?: "-", Modifier.weight(1f), caption = "세전")
-        }
+        // [STAT-07] Not the 야 badge's count (1.23 점검 중-5): work into 22~06시, 대근 included, under its own name.
+        val night: @Composable (Modifier) -> Unit = { StatTile("밤 시간 근무", "${tally.nights}번", it, caption = "22~06시에 걸침 · 대근 포함") }
+        val pay: @Composable (Modifier) -> Unit = { StatTile("예상 급여", payTotal?.let { p -> Fmt.won(p) } ?: "-", it, caption = "세전") }
+        // [VIS-05] With large text the two tiles stand one under the other: half a 320dp phone cut the caption.
+        if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { night(Modifier.fillMaxWidth()); pay(Modifier.fillMaxWidth()) }
+        } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { night(Modifier.weight(1f)); pay(Modifier.weight(1f)) }
     }
 }
 

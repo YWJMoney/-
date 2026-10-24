@@ -66,6 +66,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.ScheduleSnapshot
@@ -210,12 +212,11 @@ fun DayHeader(
                     modifier = Modifier.weight(1f, fill = false),
                 ) { d ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
+                        // [CAL-52] Smaller, never "10월 22…": the date is the sheet's whole point.
+                        com.bamnat.app.ui.FitText(
                             Fmt.dayTitle(d),
-                            style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false).semantics { heading() },
+                            if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                            Modifier.weight(1f, fill = false).semantics { heading() },
                         )
                         if (d == today) {
                             Spacer(Modifier.width(6.dp))
@@ -293,7 +294,7 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
             if (leave?.isFullDay == true) LeaveMark(leave, size = 20.dp)
             else ShiftBadge(type, size = 20.dp, text = type?.label ?: "휴", outlined = type == null || type.isOff)
             Spacer(Modifier.width(8.dp))
-            Text(shiftLine(day), style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(shiftLine(day), style = MaterialTheme.typography.bodyLarge, maxLines = bigLines(2), overflow = TextOverflow.Ellipsis)
         } else if (dayBook.jobs.isEmpty() && sales == null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.EventBusy, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
@@ -306,7 +307,7 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
                 Spacer(Modifier.width(2.dp))
                 ExtraKindMark(e.kind, size = 16.dp)
                 Spacer(Modifier.width(10.dp))
-                Text(extraLine(e), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(extraLine(e), style = MaterialTheme.typography.bodyMedium, maxLines = bigLines(1), overflow = TextOverflow.Ellipsis)
             }
         }
         if (day.extras.size > MAX_EXTRA_LINES) {
@@ -342,7 +343,7 @@ private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
         Column(Modifier.weight(1f)) {
             val time = job.start?.let { s -> Fmt.time(s) + (job.end?.let { "–" + Fmt.time(it) } ?: "") + " " }.orEmpty()
             // [CAL-52] Two lines before the title is cut ("욕실…" lost "타일 시공" beside 받을 돈 in a day panel).
-            Text(time + job.title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(time + job.title, style = MaterialTheme.typography.bodyLarge, maxLines = bigLines(2), overflow = TextOverflow.Ellipsis)
             val sub = listOfNotNull(
                 job.place.ifBlank { null },
                 job.client.ifBlank { null },
@@ -480,7 +481,7 @@ private fun QuickChips(
             item {
                 AssistChip(
                     onClick = { addingMoney = true },
-                    label = { Text(if (hasSales) "매출 고치기" else label, maxLines = 1) },
+                    label = { ChipText(if (hasSales) "매출 고치기" else label) },
                     leadingIcon = { Icon(Icons.Filled.Add, null, Modifier.size(18.dp)) },
                     colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -498,7 +499,7 @@ private fun QuickChips(
             FilterChip(
                 selected = i >= 0,
                 onClick = { vm.toggleExtra(day, c) },
-                label = { Text(if (i >= 0) ExtraText.name(day.extras[i]) else c.label, maxLines = 1) },
+                label = { ChipText(if (i >= 0) ExtraText.name(day.extras[i]) else c.label) },
                 leadingIcon = {
                     if (i >= 0) Icon(Icons.Filled.Check, null, Modifier.size(18.dp)) else ExtraKindMark(c.kind, size = 18.dp)
                 },
@@ -512,7 +513,7 @@ private fun QuickChips(
                 FilterChip(
                     selected = on,
                     onClick = { vm.setLeave(day.date, if (on) null else l, announce = true) },
-                    label = { Text(l.label, maxLines = 1) },
+                    label = { ChipText(l.label) },
                     leadingIcon = { LeaveMark(l, size = 18.dp) },
                 )
             }
@@ -521,7 +522,7 @@ private fun QuickChips(
             val off = day.alarmSkipped
             AssistChip(
                 onClick = { vm.setAlarmSkipped(day.date, !off, announce = true) },
-                label = { Text(if (off) "알람 켜기" else "알람 끄기", maxLines = 1) },
+                label = { ChipText(if (off) "알람 켜기" else "알람 끄기") },
                 leadingIcon = { Icon(if (off) Icons.Filled.Alarm else Icons.Filled.AlarmOff, null, Modifier.size(18.dp)) },
                 colors = if (off) AssistChipDefaults.assistChipColors(labelColor = LocalCalendarColors.current.alarmOff,
                     leadingIconContentColor = LocalCalendarColors.current.alarmOff) else AssistChipDefaults.assistChipColors(),
@@ -533,14 +534,14 @@ private fun QuickChips(
             val asleep = log.firstOrNull { it.end == null } != null
             AssistChip(
                 onClick = { if (asleep) vm.wokeUp() else vm.fellAsleep() },
-                label = { Text(if (asleep) "깼어요" else "잠들었어요", maxLines = 1) },
+                label = { ChipText(if (asleep) "깼어요" else "잠들었어요") },
                 leadingIcon = { Icon(if (asleep) Icons.Filled.WbSunny else Icons.Filled.Bedtime, null, Modifier.size(18.dp)) },
             )
         }
         item {
             AssistChip(
                 onClick = onMemo,
-                label = { Text("메모", maxLines = 1) },
+                label = { ChipText("메모") },
                 leadingIcon = { Icon(Icons.AutoMirrored.Outlined.NoteAdd, null, Modifier.size(18.dp)) },
             )
         }
@@ -639,8 +640,8 @@ private fun MoreButton(count: Int, modifier: Modifier = Modifier, onClick: () ->
         modifier = modifier,
     ) {
         Row(Modifier.heightIn(min = 32.dp).padding(start = 10.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("+$count", style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
-                modifier = Modifier.semantics { contentDescription = "${count}개 더 보기" })
+            ChipText("+$count", MaterialTheme.typography.labelLarge.merge(NumberStyle),
+                Modifier.semantics { contentDescription = "${count}개 더 보기" })
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
         }
     }
@@ -687,4 +688,23 @@ internal fun WeekNoteLine(text: String, modifier: Modifier = Modifier) {
         Spacer(Modifier.width(6.dp))
         Text(text, style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = warning)
     }
+}
+
+/** [CAL-52] A line's room in the day's header: one more line with text at 150% and up, so large text wraps before it is cut. */
+@Composable
+private fun bigLines(lines: Int): Int = if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) lines + 1 else lines
+
+/**
+ * [CAL-52] A chip's label in one line that gets smaller rather than cut when the row has less height than large
+ * text wants (320dp at 200%: "잔업 2시간" lost its bottom).
+ */
+@Composable
+internal fun ChipText(text: String, style: androidx.compose.ui.text.TextStyle = androidx.compose.material3.LocalTextStyle.current, modifier: Modifier = Modifier) {
+    androidx.compose.foundation.text.BasicText(
+        text, modifier,
+        // The line as tall as the letters: labelLarge's 20sp line, doubled, alone overran the chip.
+        style = style.copy(color = androidx.compose.material3.LocalContentColor.current, lineHeight = 1.2.em).merge(FooterTrim),
+        maxLines = 1, softWrap = false,
+        autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = style.fontSize.takeIf { it.isSp } ?: 14.sp),
+    )
 }

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<!-- values-ko holds only the library sheet strings it overrides (sheet_strings.xml): the app itself is Korean here. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
     <string name="app_name">밤낮</string>
     <string name="channel_alarm_name">근무 알람</string>
     <string name="channel_alarm_description">근무 시작 전에 울리는 알람</string>

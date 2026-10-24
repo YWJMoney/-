@@ -50,6 +50,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -866,7 +867,8 @@ internal fun JobBadge(count: Int, owed: Boolean) {
     val scheme = MaterialTheme.colorScheme
     val bg = if (owed) LocalCalendarColors.current.warningContainer else scheme.secondaryContainer
     Box(
-        Modifier.height(22.dp).clip(RoundedCornerShape(6.dp)).background(bg).padding(horizontal = 5.dp),
+        // [CAL-52] At least 22dp, taller with large text: a fixed 22dp cut the "일" in half at 200%.
+        Modifier.heightIn(min = 22.dp).clip(RoundedCornerShape(6.dp)).background(bg).padding(horizontal = 5.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(if (count > 1) "일$count" else "일", fontSize = 11.sp, lineHeight = 11.sp, fontWeight = FontWeight.Bold,

@@ -31,7 +31,7 @@ internal fun HolidayLabel(name: String, fontSize: TextUnit, color: Color, lineHe
             else with(density) { minOf(fontSize.toPx(), tallest / HANGUL_LINE).toSp() }
         // The line itself no taller than the room either, or the trimmed line still runs a pixel past it.
         @Suppress("NAME_SHADOWING") val lineHeight = if (tallest == androidx.compose.ui.unit.Constraints.Infinity || !lineHeight.isSp) lineHeight
-            else with(density) { minOf(lineHeight.toPx(), tallest.toFloat()).toSp() }
+            else with(density) { minOf(lineHeight.toPx(), tallest - 1f).toSp() }
         val (text, size) = remember(name, fontSize, width, density) {
             val labels = KoreanHolidays.labels(name)
             fun widthOf(s: String, sz: TextUnit) =
@@ -59,4 +59,4 @@ internal fun HolidayLabel(name: String, fontSize: TextUnit, color: Color, lineHe
     }
 }
 
-private const val HANGUL_LINE = 1.45f
+private const val HANGUL_LINE = 1.5f
