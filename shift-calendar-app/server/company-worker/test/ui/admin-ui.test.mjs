@@ -279,9 +279,11 @@ test("[ADMUX-07] a notice shows as the phone will show it, and lists go out as C
   t.window.URL.revokeObjectURL = () => {};
   await t.click(csv);
   const text = await saved.text();
-  assert.match(text, /^﻿받은 때,종류,주제,상태,맡은 사람/);
+  assert.match(text, /^﻿받은 때,종류,주제,상태,맡은 사람.*,본문\r\n/);
   assert.equal(text.trim().split("\r\n").length, 4);
-  assert.ok(!/알람 소리가 안 나요/.test(text), "no question text in the file");
+  // [ADMUX-11] The question goes out too, so a file can be worked through, but with no mail or phone in it.
+  assert.match(text, /알람 소리가 안 나요/, "the question is in the file");
+  assert.ok(!/[\w.+-]+@[\w-]+\.[\w.]+/.test(text) && !/01\d-?\d{3,4}-?\d{4}/.test(text), "no mail or phone in the file");
   await t.go("#/rewards");
   assert.ok(!t.$("#main").textContent.includes("드림"), "지급함, not 드림");
 });

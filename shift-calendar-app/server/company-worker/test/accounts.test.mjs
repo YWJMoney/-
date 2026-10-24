@@ -39,11 +39,13 @@ test("only an invited email can make an account, and it waits for the owner", as
   // The link is shown once and kept only as a hash.
   assert.ok(!DB.dump().includes(token(inv.data.link)));
 
-  const info = await call("GET", `/api/admin/join?t=${token(inv.data.link)}`);
+  const info = await call("POST", "/api/admin/join/info", { token: token(inv.data.link) }, APP);
   assert.equal(info.status, 200);
   assert.equal(info.data.email, "minji@example.com");
   assert.deepEqual(info.data.perms, REVIEWER);
-  assert.equal((await call("GET", "/api/admin/join?t=" + "A".repeat(32))).status, 404);
+  assert.equal((await call("POST", "/api/admin/join/info", { token: "A".repeat(32) }, APP)).status, 404);
+  // [ADMUX-11] The 1.23 GET with the token in the address is gone: it is a signed-in route now, so 401.
+  assert.equal((await call("GET", `/api/admin/join?t=${token(inv.data.link)}`)).status, 401);
   assert.equal((await call("POST", "/api/admin/join", { token: "B".repeat(32), name: "누구", password: "long-enough-pw" }, APP)).status, 404);
 
   // Weak passwords and empty names are refused before anything is made.
@@ -184,13 +186,13 @@ test("invites expire, can be renewed and taken back", async (t) => {
   const owner = await signIn(call);
   const first = await call("POST", "/api/admin/invites", { email: "junho@example.com", perms: REVIEWER }, owner);
   t.mock.timers.tick(7 * 24 * 60 * 60 * 1000 + 1000);
-  assert.equal((await call("GET", `/api/admin/join?t=${token(first.data.link)}`)).status, 404);
+  assert.equal((await call("POST", "/api/admin/join/info", { token: token(first.data.link) }, APP)).status, 404);
   assert.equal((await call("GET", "/api/admin/admins", undefined, await signIn(call))).data.invites[0].state, "expired");
   const owner2 = await signIn(call);
   const second = await call("POST", "/api/admin/invites", { email: "junho@example.com", perms: REVIEWER }, owner2);
-  assert.equal((await call("GET", `/api/admin/join?t=${token(second.data.link)}`)).status, 200);
+  assert.equal((await call("POST", "/api/admin/join/info", { token: token(second.data.link) }, APP)).status, 200);
   assert.equal((await call("POST", "/api/admin/invites/remove", { email: "junho@example.com" }, owner2)).status, 200);
-  assert.equal((await call("GET", `/api/admin/join?t=${token(second.data.link)}`)).status, 404);
+  assert.equal((await call("POST", "/api/admin/join/info", { token: token(second.data.link) }, APP)).status, 404);
   assert.equal((await call("POST", "/api/admin/invites", { email: "not an email", perms: REVIEWER }, owner2)).data.error, "email");
 });
 
@@ -205,7 +207,7 @@ test("with mail set up, the account needs the code sent to the invited email", a
   assert.equal((await call("GET", "/api/admin/server", undefined, owner)).data.mail, true);
   const inv = await call("POST", "/api/admin/invites", { email: "minji@example.com", perms: REVIEWER }, owner);
   const t1 = token(inv.data.link);
-  assert.equal((await call("GET", `/api/admin/join?t=${t1}`)).data.mail, true);
+  assert.equal((await call("POST", "/api/admin/join/info", { token: t1 }, APP)).data.mail, true);
   assert.equal((await call("POST", "/api/admin/join", { token: t1, name: "민지", password: PASSWORD }, APP)).data.error, "code_expired");
   assert.equal((await call("POST", "/api/admin/join/code", { token: t1 }, APP)).status, 200);
   assert.equal(sent[0].url, "https://api.resend.com/emails");
