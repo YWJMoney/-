@@ -14,6 +14,13 @@ object WhatsNew {
         // 계획/1.22-*-개발계획.md.
         // 1.23.0: one line per bundle's gift (J·K·L·I here; M adds its own), each opening its feature
         // (계획/1.23-*-개발계획.md). 1.22's rule of 6~8 lines holds here too.
+        // 1.24.0 (계획/1.24-직접입력-전면개선-통합계획.md 1장 규칙 5): P 2줄·Q 1줄·R 1줄·S 1줄, 8줄 상한, 통합이 접어요.
+        Release(35, "1.24.0", listOf(
+            // [ROST-01][ROST-03][ROST-05] Bundle P.
+            Line("‘한 달 근무 넣기’: 그 달 달력 위 키패드로 하루씩 누르거나 ‘이 순서 반복’으로 한 달을 넣어요. 듀티표 사진·파일도 같은 달력에 채우고, 반차·병가도 제대로 읽어요", "shift.roster"),
+            // [ROST-07][ROST-09] Bundle P.
+            Line("갤러리·카톡에서 듀티표를 밤낮으로 ‘공유’하면 바로 읽고, 빠른 입력엔 ‘이번 달 전부 넣기’와 오전·오후 반차가 생겼어요", "shift.dutyTyping"),
+        )),
         Release(34, "1.23.0", listOf(
             // [SIMPLE-03] 6~8 lines, one per feature. 2026-10-23 통합: J1·K1·L2·I1·M1 = 6 lines, N2 = 8.
             // [VIS-03][UX-08][A11Y-04][SETUP-14][SET-05] Bundle J.

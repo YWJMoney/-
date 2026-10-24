@@ -234,7 +234,7 @@ shift-calendar-app/
 | 회사 근무 파일 | 설정 > 데이터 > 회사 설정 보내기 | `밤낮-회사설정-회사.json` | `application/json` | 첫 설정 전: 회사 설정으로 시작 / 뒤: 회사 설정 적용 창 |
 | `.bamnat` 이름의 위 파일 | 사람이 이름을 바꾼 경우 | `*.bamnat` | 아무거나 | 위와 같음(이름으로도 받음) |
 
-- 받는 동작: `VIEW`(눌러 열기)와 `SEND`(공유로 보내기). `text/plain`은 받지 않아요(아무 글 공유에나 밤낮이 뜨지 않게).
+- 받는 동작: `VIEW`(눌러 열기)와 `SEND`(공유로 보내기). 이 길은 `text/plain`을 받지 않아요. 듀티표 사진·글 공유는 따로 '한 달 근무 넣기' 이름으로 받아요(6-3).
 - 확장자는 `.json` 그대로 둬요. 카카오톡 등 메신저가 모르는 확장자를 막거나 이름을 바꾸는 일이 있어서예요.
 
 ### 6-2. 쉬운 사용·관측성 (1.23.0 묶음 N, EASY-01~10·OBS-01~03)
@@ -253,6 +253,24 @@ shift-calendar-app/
 - 새 기록 지점을 더할 때: `JournalKind`에 종류를 더하고, 같은 값이 반복되면 `noteIfChanged`를 써요. detail은 숫자와 `일치개번판시분주달회째`만 받아요.
 - 새 기능이 사실을 필요로 하면 `FeatureNeeds`에 기능 id → 사실을 적으면 질문 카드와 '이걸 알려 주면 시작해요'가 따라와요.
 - 예시 달력의 값은 휴대폰 밖으로 나가지 않아요(`ExampleCalendarGuardTest`가 지켜요).
+
+### 6-3. 한 달 근무 넣기 (1.24.0 묶음 P, ROST-01~12·SETUP-15)
+
+예전 '듀티표 넣기'는 글자를 붙여 넣는 화면이 먼저였어요. 1.24에서는 그 달의 실제 달력(`MonthGrid`, 달력의 주 시작일)과 아래 고정 키패드가 먼저이고,
+사진·엑셀·CSV·붙여 넣기는 위의 보조 길이에요. 읽은 결과도 같은 달력 위에 겹쳐 보이고, 그 자리에서 고쳐요. 개발계획은 프로젝트 파일 `계획/1.24-P-개발계획.md`예요.
+
+| 층 | core (순수 Kotlin) | app | 하는 일 |
+|---|---|---|---|
+| 읽기 | `imports/DutyRoster`(`DutyCodes.read`·`splitName`·`monthIn`·`beyond`·`overwrites`), `RosterSheet` | `ui/imports/RosterReader` | 코드 뒤 기호(`*` `/` `'` `+` `△`)는 떼서 메모로, `N-O`는 한 칸, `11D`는 코드+시각 메모, `10/1`·`1(수)` 날짜, 전각, 머리말의 달, 이름+직급 나누기. 이름에 붙은 코드는 '확실하지 않은 칸'(노란 칸) |
+| 휴가 | `DutyCell.Leave(kind, quarters, fromStart)`, `DutyCodes.LEAVE_WORDS` | `data/DutyCodeBook`(SharedPreferences `duty_codes`, 백업 `dutyCodes`) | 반차 0.5·반반차 0.25·오전/오후, 생휴는 무급(근로기준법 제73조에 유급 규정 없음). 병가·공가·경조는 회사마다 달라 한 번 묻고 그 달력의 코드 사전에 기억 |
+| 화면 | `imports/MonthFill.repeat` | `ui/imports/DutyRosterScreen`(`DutyRosterViewModel`) | 키 누르면 넣고 다음 날, 끌면 마지막 키로 칠하기, 이 순서 반복·지난달과 같게·비우기·되돌리기. 넣기는 `WriteGate`를 지나고, 넣기 전 덮어쓰는 날 수를 말하고, 넣은 뒤 한 번에 되돌려요 |
+| 받기 | — | `IncomingRoster`(`MainActivity`, manifest의 '한 달 근무 넣기' SEND 필터) | 갤러리·메신저에서 사진(`image/*`)이나 글(`text/plain`)을 공유하면 이 화면이 그 내용으로 열려요. 백업 `.json` 길(`IncomingFiles`)과 따로예요 |
+| 클립보드 | — | `DutyRosterViewModel.offerClip`, `DutyCodeBook.decline` | 화면을 열 때(앞에 있을 때만) 근무표 모양 글이면 한 번 물어요. 글은 저장하지 않고, 거절한 글은 지문(해시)만 남겨 다시 묻지 않아요 |
+| 첫 설정 | — | `SetupViewModel.readRoster*`·`useRosterRow`, `SetupOrder.RosterSource` | 교대(달마다 칠하기)에서 '듀티표가 있어요 → 사진·파일·직접'. 근무·쉬는 날만 칠하고 휴가·모르는 칸은 설정 뒤에 넣어요 |
+| 한 일 | `JournalKind.ROSTER`, `RosterFrom`, `Journal.rosterDetail` | `DutyRosterViewModel.write` | "11월 근무 30일 넣음 (사진)" 한 줄. 처음 보는 코드로 근무 종류를 만들면 프로필 '추정' 출처 |
+
+- 이름: 화면·설정·찾기는 '한 달 근무 넣기', 빠른 입력 바와 도구의 키패드 시트는 '이번 달 전부 넣기'(`DutyTypingSheet`)예요.
+- 새 휴가 글자가 흔하면 `DutyCodes.LEAVE_WORDS`에 더하고 `DutyRosterTextTest`에 표본을 더해요. 회사마다 다른 건 묻는 쪽(`DutyCell.Unknown(leave = true)`)에 두세요.
 
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 

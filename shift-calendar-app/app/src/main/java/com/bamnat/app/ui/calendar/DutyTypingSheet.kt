@@ -165,7 +165,7 @@ fun DutyTypingPanel(
     }
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("${month.monthValue}월 근무 연달아 넣기", style = MaterialTheme.typography.titleLarge)
+            Text("${month.monthValue}월 근무 전부 넣기", style = MaterialTheme.typography.titleLarge)
             Text("근무표를 보며 누르면 ${month.monthValue}월 ${cursor}일에 들어가고 다음 날로 넘어가요. 날짜를 누르면 그 날부터 넣어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (toCheck.isNotEmpty()) {

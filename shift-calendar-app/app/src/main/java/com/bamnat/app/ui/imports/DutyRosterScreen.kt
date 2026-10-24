@@ -17,12 +17,14 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -417,6 +419,8 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
         if (shared == null) clipText(context)?.takeIf { !vm.declined(it) }?.let(vm::offerClip)
     }
     val byId = types.associateBy { it.id }
+    val conf = androidx.compose.ui.platform.LocalConfiguration.current
+    val wide = conf.screenWidthDp >= 600 && conf.screenWidthDp > conf.screenHeightDp
 
     Scaffold(
         topBar = {
@@ -427,11 +431,13 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
         },
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
-            if (types.isNotEmpty()) Keypad(ui, types, snap, vm)
+            if (types.isNotEmpty() && !wide) Keypad(ui, types, snap, vm)
         },
     ) { padding ->
+      // Lying down, the keypad stands beside the month instead of under it, so the month keeps the screen's height.
+      Row(Modifier.fillMaxSize().padding(padding)) {
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+            Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -503,6 +509,8 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
             }
             Spacer(Modifier.height(12.dp))
         }
+        if (wide && types.isNotEmpty()) Keypad(ui, types, snap, vm, Modifier.width(360.dp).fillMaxHeight(), wide = true)
+      }
     }
     if (pasting) PasteDialog(onDismiss = { pasting = false }) { pasting = false; vm.readText(it) }
     editing?.let { day ->
@@ -543,6 +551,10 @@ private fun Notices(ui: DutyRosterViewModel.Ui, snap: ScheduleSnapshot?) {
         if (snap != null) {
             val over = DutyRoster.overwrites(ui.writable.mapKeys { ui.month.atDay(it.key) }, snap.entries.associateBy { it.date })
             if (over.isNotEmpty()) add("이미 있던 연차·바꾼 근무 ${over.size}일을 덮어써요")
+            // Leave only counts on a day with work to take off (FEAT-10): say so before it quietly counts nothing.
+            val idle = ui.writable.filterValues { it is DutyCell.Leave }.keys.sorted()
+                .filter { !snap.resolver.resolve(ui.month.atDay(it)).isWorkDay }
+            if (idle.isNotEmpty()) add("${idle.joinToString(",")}일은 근무가 없는 날이라 휴가 일수로 세지 않아요")
         }
     }
     if (lines.isEmpty()) return
@@ -585,16 +597,31 @@ private fun AskCard(ask: DutyCell.Unknown, types: List<ShiftType>, onAnswer: (Du
  * [ROST-01][ROST-08] The keypad under the month: a key per kind of day (and 연차·반차), then moving the mark, 비우기,
  * 이 순서 반복, 지난달과 같게 and 되돌리기, then "n일 넣기". Rows scroll sideways, so a key never shrinks under a big font.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Keypad(ui: DutyRosterViewModel.Ui, types: List<ShiftType>, snap: ScheduleSnapshot?, vm: DutyRosterViewModel) {
-    Surface(tonalElevation = 3.dp, shadowElevation = 6.dp) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun Keypad(
+    ui: DutyRosterViewModel.Ui, types: List<ShiftType>, snap: ScheduleSnapshot?, vm: DutyRosterViewModel,
+    modifier: Modifier = Modifier, wide: Boolean = false,
+) {
+    // Under the month the keys scroll sideways in one row each; beside it (lying down) they wrap, all in sight.
+    @Composable fun Keys(content: @Composable () -> Unit) {
+        if (wide) FlowRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) { content() }
+        else Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) { content() }
+    }
+    Surface(modifier, tonalElevation = 3.dp, shadowElevation = 6.dp) {
+        Column(
+            Modifier.fillMaxWidth().navigationBarsPadding().then(if (wide) Modifier.verticalScroll(rememberScrollState()) else Modifier)
+                .padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             Text(
                 "${ui.month.monthValue}월 ${ui.cursor}일에 넣을 차례",
                 style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 16.dp).semantics { liveRegion = LiveRegionMode.Polite },
             )
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Keys {
                 types.forEach { t ->
                     FilledTonalButton(onClick = { vm.put(DutyCell.Shift(t.id)) }, contentPadding = KEY_PADDING,
                         modifier = Modifier.heightIn(min = 52.dp).semantics { contentDescription = "${t.name} 넣기" }) {
@@ -612,18 +639,19 @@ private fun Keypad(ui: DutyRosterViewModel.Ui, types: List<ShiftType>, snap: Sch
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Keys {
                 IconButton(onClick = { vm.step(-1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "앞 날") }
                 IconButton(onClick = { vm.step(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 날") }
+                // A wrong key is taken back first, so 되돌리기 comes before the rest.
+                TextButton(onClick = vm::undo, enabled = ui.history.isNotEmpty()) {
+                    Icon(Icons.AutoMirrored.Filled.Undo, null, Modifier.size(18.dp)); Text(" 되돌리기", maxLines = 1)
+                }
                 TextButton(onClick = vm::skip) { Icon(Icons.Outlined.Backspace, null, Modifier.size(18.dp)); Text(" 비우기", maxLines = 1) }
                 TextButton(onClick = { vm.repeatOrder() }, enabled = vm.canRepeat(ui)) {
                     Icon(Icons.Filled.Repeat, null, Modifier.size(18.dp)); Text(" 이 순서 반복", maxLines = 1)
                 }
                 if (snap != null) TextButton(onClick = { vm.sameAsLastMonth(snap) }) {
                     Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text(" 지난달과 같게", maxLines = 1)
-                }
-                TextButton(onClick = vm::undo, enabled = ui.history.isNotEmpty()) {
-                    Icon(Icons.AutoMirrored.Filled.Undo, null, Modifier.size(18.dp)); Text(" 되돌리기", maxLines = 1)
                 }
             }
             HorizontalDivider()
