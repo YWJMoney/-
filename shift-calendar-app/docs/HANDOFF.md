@@ -184,6 +184,11 @@ python3 tools/check_tracker.py                             # 추적표 검사
   - 크기: `python3 tools/app_size.py <apk|aab>`로 봐요. 예산은 APK 9.5MB, AAB 23.5MB이고, 넘으면 출시 빌드가 멈춰요. 글자 인식(ML Kit 한국어)은 앱에 넣지 않고 Google Play 서비스가 처음 쓸 때 내려받아요. 언어는 한국어만 넣어요(`localeFilters`).
   - 린트: 새 오류가 생기면 멈춰요. 예전 것은 `app/lint-baseline.xml`, `wear/lint-baseline.xml`에 있고, 고친 뒤 `:app:updateLintBaseline :wear:updateLintBaseline`으로 줄여요.
   - 백업 파일은 형식 3(zip: `backup.json`, `photos/…`, `sha256.txt`)이에요. 옛 `.json` 백업도 그대로 열려요(`data/BackupArchive.kt`).
+- **품질 규칙 (1.24 통합 직접 테스트)**
+  - 달력 칸(`MonthGrid`)을 다른 화면에서 다시 쓸 때 `cellHeight`는 **66dp + `cellTextGrowth()`** 아래로 내리지 않아요. 더 낮으면 배지 아래 줄("+2h", 공휴일 이름)이 잘려요(한 달 근무 넣기에서 52dp가 그랬어요).
+  - 글씨 150% 이상에서 고정 폭 안에 숫자를 그릴 때는 `HourlyTimeMark`처럼 글자 크기를 1.3배까지만 키워요. 한 줄에 조각 `Text` 여러 개를 `Row`로 붙이면 좁은 화면·큰 글씨에서 겹치니(빠른 입력 바 "이 주 n시간 · 넘음") `buildAnnotatedString` 한 글로 만들어 줄바꿈되게 해요.
+  - 새 화면·크기는 `test/.../screenshots/LayoutCheck.cuts()`로 잘림을 세요(R의 `RScreenshotTest.audit*` 방식). 2px 이하 세로 넘침은 글자 위아래 여백이라 잘림으로 세지 않아요(R-4).
+  - 키패드 `되돌리기`는 바뀐 첫 날로 커서를 되돌려요(`DutyRosterViewModel.undo`). 되돌린 뒤 커서가 그대로면 다음 키가 한 칸을 건너뜁니다.
 - **Maven Central이 429(요청이 많다)로 막힐 때**: `~/.gradle/init.d/central-mirror.gradle.kts`에 `https://maven-central.storage-download.googleapis.com/maven2/` 저장소를 `pluginManagement`와 `dependencyResolutionManagement` 맨 앞에 넣으면 받아져요. 내려받기는 한 번에 하나씩 하고, 빌드는 `gradle --no-daemon -Pkotlin.compiler.execution.strategy=in-process`로 돌려요. Robolectric의 안드로이드 jar(API 26 등)도 막히면 `-Pbamnat.robolectricRepo=<같은 주소>`를 붙여요.
 - 서명한 출시 파일
 

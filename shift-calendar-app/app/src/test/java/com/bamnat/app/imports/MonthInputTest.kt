@@ -77,6 +77,8 @@ class MonthInputTest {
         assertEquals(off, vm.ui.value.cells[1])
         vm.undo()
         assertEquals(day, vm.ui.value.cells[1])
+        // The mark goes back to the first day the undone step changed, so the next key fills it instead of skipping it.
+        assertEquals(1, vm.ui.value.cursor)
         vm.apply()
         val month = u.month
         idleUntil("the days written") {

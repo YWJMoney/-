@@ -251,7 +251,12 @@ class DutyRosterViewModel(private val container: AppContainer, val calendarId: S
         if (copy.isEmpty()) u else change(u, u.edits + copy, u.month.lengthOfMonth())
     }
 
-    fun undo() = _ui.update { u -> u.history.lastOrNull()?.let { u.copy(edits = it, history = u.history.dropLast(1), applied = null) } ?: u }
+    /** [ROST-08] One step back, and the mark back on the first day that step changed, so the next key lands there (1.24 통합 QA). */
+    fun undo() = _ui.update { u ->
+        val prev = u.history.lastOrNull() ?: return@update u
+        val changed = (u.edits.keys + prev.keys).filter { (it in u.edits) != (it in prev) || u.edits[it] != prev[it] }
+        u.copy(edits = prev, history = u.history.dropLast(1), applied = null, cursor = changed.minOrNull() ?: u.cursor)
+    }
 
     fun canRepeat(u: Ui): Boolean = MonthFill.repeat(u.cells, u.cursor, u.month.lengthOfMonth()) != null
 
@@ -486,7 +491,8 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                 val calculator = remember(shown) { WorkHoursCalculator(shown.resolver) }
                 WeekdayHeader(vm.weekStart, Modifier.padding(start = com.bamnat.app.ui.calendar.WEEK_BAR_SPACE))
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    val cellHeight = (maxWidth / 7 * 1.15f).coerceIn(52.dp, 84.dp)
+                    // [CAL-52] At least the calendar's 66dp (+ text growth): a shorter cell cut "+2h" under the badge (1.24 통합 직접 테스트).
+                    val cellHeight = (maxWidth / 7 * 1.2f).coerceIn(66.dp, 90.dp) + com.bamnat.app.ui.calendar.cellTextGrowth()
                     MonthGrid(
                         month = ui.month,
                         snapshot = shown,

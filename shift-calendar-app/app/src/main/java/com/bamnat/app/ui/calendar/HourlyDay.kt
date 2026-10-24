@@ -60,9 +60,12 @@ class HourlyCells(val profile: PayProfile?, val holidayWeekStart: DayOfWeek) {
 @Composable
 internal fun HourlyTimeMark(day: ResolvedDay, range: String) {
     val color = day.shiftType?.takeIf { !it.isOff }?.colorArgb?.asColor() ?: MaterialTheme.colorScheme.primary
+    // [VIS-04] At 150%+ text the digits stay at most 1.3 times their size, so "8–20" is whole in the cell (1.24 통합 직접 테스트).
+    val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+    val size = with(androidx.compose.ui.platform.LocalDensity.current) { (11.sp.toPx() / scale * minOf(scale, 1.3f)).toSp() }
     Box(Modifier.size(width = 48.dp, height = 22.dp), contentAlignment = Alignment.Center) {
-        Text(range, fontSize = 11.sp, lineHeight = 12.sp, fontWeight = FontWeight.Bold, color = color, maxLines = 1,
-            overflow = TextOverflow.Clip, style = NumberStyle)
+        Text(range, fontSize = size, lineHeight = size * 1.1f, fontWeight = FontWeight.Bold, color = color, maxLines = 1,
+            softWrap = false, overflow = TextOverflow.Clip, style = NumberStyle)
     }
 }
 
@@ -78,7 +81,11 @@ internal fun AttendanceMark(a: Attendance) {
 /** [HRLY-02] On the last day of a week that earned 주휴 (15시간, 결근 없음). */
 @Composable
 internal fun HolidayWeekCheck(modifier: Modifier = Modifier) {
-    Text("✓", fontSize = 10.sp, lineHeight = 10.sp, fontWeight = FontWeight.Bold, color = LocalCalendarColors.current.income, modifier = modifier)
+    // [VIS-04] The same 1.3× cap as HourlyTimeMark, with room under the glyph, so the ✓ is whole at 200% (1.24 통합 직접 테스트).
+    val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+    val size = with(androidx.compose.ui.platform.LocalDensity.current) { (10.sp.toPx() / scale * minOf(scale, 1.3f)).toSp() }
+    Text("✓", fontSize = size, lineHeight = size * 1.2f, fontWeight = FontWeight.Bold, color = LocalCalendarColors.current.income, modifier = modifier,
+        maxLines = 1, softWrap = false)
 }
 
 /**

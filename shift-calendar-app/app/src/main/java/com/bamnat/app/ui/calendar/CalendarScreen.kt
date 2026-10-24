@@ -125,6 +125,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.bamnat.app.alarm.Notifications
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -1850,14 +1851,18 @@ private fun HoursLine(
 /** "이 주 73시간 30분", and "· 64시간 넘음" in the warning color when it is over [overLimit] hours. */
 @Composable
 private fun HoursPart(label: String, value: String, overLimit: Int?, warning: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("$label ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.titleSmall.merge(NumberStyle),
-            color = if (overLimit != null) warning else MaterialTheme.colorScheme.onSurface)
-        if (overLimit != null) {
-            Text(" · ${overLimit}시간 넘음", style = MaterialTheme.typography.labelMedium, color = warning, fontWeight = FontWeight.Bold)
-        }
-    }
+    // One text, so on a narrow phone with large text the "· 64시간 넘음" wraps under the hours instead of over them (1.24 통합 직접 테스트).
+    val base = MaterialTheme.typography.titleSmall.merge(NumberStyle)
+    Text(
+        androidx.compose.ui.text.buildAnnotatedString {
+            withStyle(MaterialTheme.typography.bodySmall.toSpanStyle().copy(color = MaterialTheme.colorScheme.onSurfaceVariant)) { append("$label ") }
+            withStyle(base.toSpanStyle().copy(color = if (overLimit != null) warning else MaterialTheme.colorScheme.onSurface)) { append(value) }
+            if (overLimit != null) {
+                withStyle(MaterialTheme.typography.labelMedium.toSpanStyle().copy(color = warning, fontWeight = FontWeight.Bold)) { append(" · ${overLimit}시간 넘음") }
+            }
+        },
+        style = base,
+    )
 }
 
 /** [CAL-01] One line about what keeps an alarm due this week from working; the whole line fixes it. */
