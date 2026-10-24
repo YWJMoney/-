@@ -160,17 +160,17 @@ class MonthInputTest {
         assertNull(IncomingRoster.take())
     }
 
-    @Test fun clipboardTextOfferedOnceAndNeverKept() = runBlocking {
+    @Test fun clipboardTextIsReadOnTheTapOnlyAndNeverKept() = runBlocking {
         val vm = DutyRosterViewModel(c, PersonalCalendar.MAIN)
         val roster = "1 2 3 4 5 6 7 8\n주 주 야 야 휴 휴 주 주"
-        vm.offerClip("점심 뭐 먹지")
-        vm.offerClip(roster)
-        idleUntil("the offer") { vm.ui.value.clip != null }
-        assertEquals(roster, vm.ui.value.clip)
-        vm.declineClip()
-        assertNull(vm.ui.value.clip)
-        assertTrue(vm.declined(roster))
-        // Only a fingerprint stays: the text itself is nowhere in the code book.
+        // The hint asks whether pasted words fit before handing them over (ClipboardHint reads the clip on the tap).
+        assertTrue(vm.fitsClip(roster))
+        assertTrue(!vm.fitsClip("점심 뭐 먹지"))
+        vm.readText(roster)
+        idleUntil("the roster read") { vm.ui.value.rows != null }
+        assertEquals(8, vm.ui.value.cells.size)
+        // A roster on screen takes no second clip, and the text itself is nowhere in the code book.
+        assertTrue(!vm.fitsClip(roster))
         assertTrue(c.dutyCodes.export().values.none { "주 주" in it })
     }
 }

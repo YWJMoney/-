@@ -1,6 +1,5 @@
 package com.bamnat.app.ui.imports
 
-import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -86,6 +85,7 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.UndoMessage
 import com.bamnat.app.ui.calendar.MonthGrid
 import com.bamnat.app.ui.calendar.WeekdayHeader
+import com.bamnat.app.ui.components.ClipboardHint
 import com.bamnat.app.ui.components.FilterChip
 import com.bamnat.app.ui.components.LeaveMark
 import com.bamnat.app.ui.components.ShiftBadge
@@ -156,8 +156,6 @@ class DutyRosterViewModel(private val container: AppContainer, val calendarId: S
         val from: RosterFrom = RosterFrom.TYPED,
         /** [ROST-04] The month the roster named, when it did. */
         val named: YearMonth? = null,
-        /** [ROST-10] Clipboard text that reads as a roster, offered once. */
-        val clip: String? = null,
         val history: List<Map<Int, DutyCell?>> = emptyList(),
     ) {
         val row: RosterRow? get() = rows?.getOrNull(picked)
@@ -269,7 +267,7 @@ class DutyRosterViewModel(private val container: AppContainer, val calendarId: S
     fun readText(text: String) = read { c -> RosterReader.text(text, c, today) }
 
     private fun read(how: suspend (DutyCodes) -> RosterResult) {
-        _ui.update { it.copy(reading = true, error = null, applied = null, clip = null) }
+        _ui.update { it.copy(reading = true, error = null, applied = null) }
         viewModelScope.launch {
             val r = how(codes())
             _ui.update {
@@ -289,20 +287,13 @@ class DutyRosterViewModel(private val container: AppContainer, val calendarId: S
         is IncomingRoster.Shared.Text -> readText(shared.text)
     }
 
-    /** [ROST-10] Clipboard text that reads as a roster: offered, never kept. */
-    fun offerClip(text: String) {
-        if (_ui.value.rows != null || _ui.value.reading) return
-        viewModelScope.launch { if (RosterReader.looksLikeRoster(text, codes())) _ui.update { it.copy(clip = text) } }
-    }
-
-    fun useClip() { _ui.value.clip?.let(::readText) }
-
-    fun declineClip() {
-        _ui.value.clip?.let { container.dutyCodes.decline(it.hashCode()) }
-        _ui.update { it.copy(clip = null) }
-    }
-
-    fun declined(text: String): Boolean = container.dutyCodes.declined(text.hashCode())
+    /**
+     * [ROST-10] True when pasted [text] reads as a roster. The screen's [ClipboardHint] asks this only when the user taps
+     * 붙여 넣기 (결정 Q-D1: the clipboard is read on the tap, never on opening), and nothing of the text is kept.
+     */
+    fun fitsClip(text: String): Boolean =
+        _ui.value.rows == null && !_ui.value.reading && RosterReader.looksLikeRoster(text, DutyCodes(
+            types.value.map { DutyType(it.id, it.name, it.label, it.isOff, it.start, it.isNight) }, container.dutyCodes.of(calendarId)))
 
     fun pick(i: Int) = _ui.update { it.copy(picked = i, edits = emptyMap(), cursor = 1, history = emptyList()) }
 
@@ -420,10 +411,6 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
     // [ROST-09] A roster shared from the gallery or a messenger.
     val shared by IncomingRoster.shared.collectAsStateWithLifecycle()
     LaunchedEffect(shared) { if (shared != null) IncomingRoster.take()?.let(vm::receive) }
-    // [ROST-10] Read while the screen is in front (Android 10+ allows nothing else), offered once, never kept.
-    LaunchedEffect(Unit) {
-        if (shared == null) clipText(context)?.takeIf { !vm.declined(it) }?.let(vm::offerClip)
-    }
     val byId = types.associateBy { it.id }
     val conf = androidx.compose.ui.platform.LocalConfiguration.current
     val wide = conf.screenWidthDp >= 600 && conf.screenWidthDp > conf.screenHeightDp
@@ -470,7 +457,8 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                 Text("구글 렌즈나 메신저에서 복사한 근무표 글을 붙여 넣어도 돼요. 사진·파일·글은 휴대폰 밖으로 나가지 않아요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            ui.clip?.let { ClipCard(onUse = vm::useClip, onNo = vm::declineClip) }
+            // [ROST-10] "복사한 글이 있어요 · 붙여 넣기": the clip's description only, read on the tap (Q ClipboardHint, 1.24 통합).
+            if (ui.rows == null && !ui.reading) ClipboardHint("근무표", fits = vm::fitsClip, onPaste = vm::readText)
             if (ui.reading) Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             ui.error?.let { e -> Text(e, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
             val rows = ui.rows.orEmpty()
@@ -525,25 +513,6 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
     }
     newKindFor?.let { raw ->
         NewKindDialog(raw, onDismiss = { newKindFor = null }) { name, range -> vm.newKind(raw, name, range); newKindFor = null }
-    }
-}
-
-/** [ROST-10] The clipboard's text, or null; read only while the screen is in front. */
-private fun clipText(context: Context): String? = runCatching {
-    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-    cm?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()?.takeIf { it.isNotBlank() }
-}.getOrNull()
-
-@Composable
-private fun ClipCard(onUse: () -> Unit, onNo: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
-        Column(Modifier.fillMaxWidth().padding(12.dp)) {
-            Text("복사해 둔 근무표가 있어요. 붙여 넣은 글로 채울까요?", style = MaterialTheme.typography.bodyMedium)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onNo) { Text("아니요") }
-                TextButton(onClick = onUse) { Text("채우기") }
-            }
-        }
     }
 }
 

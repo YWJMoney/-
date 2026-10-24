@@ -12,8 +12,7 @@ import org.json.JSONObject
 /**
  * [ROST-06] Each calendar's code book for 한 달 근무 넣기: what the user said a roster's code means once (병가 → 유급 휴가,
  * M → 미들), so the next month's roster needs no question (결정 D63). On this phone and in the backup, like 모든 조.
- * [ROST-10] The fingerprint of clipboard text the user said no to sits beside it, so the same text is not offered again;
- * never the text itself.
+ * [ROST-10] Clipboard text is never in here: the screen's ClipboardHint remembers only the copy time it dealt with.
  */
 class DutyCodeBook(context: Context) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -38,29 +37,21 @@ class DutyCodeBook(context: Context) {
         _books.value = _books.value + (calendarId to next)
     }
 
-    /** [ROST-10] True when the clipboard text with this fingerprint was offered and turned down. */
-    fun declined(fingerprint: Int): Boolean = prefs.getInt(CLIP, 0) == fingerprint
-
-    fun decline(fingerprint: Int) = prefs.edit().putInt(CLIP, fingerprint).apply()
-
     /** For the backup: calendar id → encoded book. */
     fun export(): Map<String, String> = _books.value.filterValues { it.isNotEmpty() }.mapValues { encode(it.value) }
 
     fun import(all: Map<String, String>) {
-        val clip = prefs.getInt(CLIP, 0)
         prefs.edit().clear().apply {
             all.forEach { (k, v) -> if (decode(v).isNotEmpty()) putString(k, v) }
-            if (clip != 0) putInt(CLIP, clip)
         }.apply()
         _books.value = read()
     }
 
     private fun read(): Map<String, Map<String, DutyCell>> =
-        prefs.all.filterKeys { it != CLIP }.mapNotNull { (k, v) -> (v as? String)?.let { k to decode(it) } }.toMap()
+        prefs.all.mapNotNull { (k, v) -> (v as? String)?.let { k to decode(it) } }.toMap()
 
     companion object {
         private const val PREFS = "duty_codes"
-        private const val CLIP = "#clip"
 
         /** One cell as a short string: "S12" a kind of work, "O" a day off, "L1.2.0" leave (kind code, quarters, from start). */
         fun encodeCell(c: DutyCell): String? = when (c) {

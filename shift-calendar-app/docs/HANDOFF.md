@@ -309,7 +309,7 @@ shift-calendar-app/
 | 휴가 | `DutyCell.Leave(kind, quarters, fromStart)`, `DutyCodes.LEAVE_WORDS` | `data/DutyCodeBook`(SharedPreferences `duty_codes`, 백업 `dutyCodes`) | 반차 0.5·반반차 0.25·오전/오후, 생휴는 무급(근로기준법 제73조에 유급 규정 없음). 병가·공가·경조는 회사마다 달라 한 번 묻고 그 달력의 코드 사전에 기억 |
 | 화면 | `imports/MonthFill.repeat` | `ui/imports/DutyRosterScreen`(`DutyRosterViewModel`) | 키 누르면 넣고 다음 날, 끌면 마지막 키로 칠하기, 이 순서 반복·지난달과 같게·비우기·되돌리기. 넣기는 `WriteGate`를 지나고, 넣기 전 덮어쓰는 날 수를 말하고, 넣은 뒤 한 번에 되돌려요 |
 | 받기 | — | `IncomingRoster`(`MainActivity`, manifest의 '한 달 근무 넣기' SEND 필터) | 갤러리·메신저에서 사진(`image/*`)이나 글(`text/plain`)을 공유하면 이 화면이 그 내용으로 열려요. 백업 `.json` 길(`IncomingFiles`)과 따로예요 |
-| 클립보드 | — | `DutyRosterViewModel.offerClip`, `DutyCodeBook.decline` | 화면을 열 때(앞에 있을 때만) 근무표 모양 글이면 한 번 물어요. 글은 저장하지 않고, 거절한 글은 지문(해시)만 남겨 다시 묻지 않아요 |
+| 클립보드 | — | Q `ClipboardHint` + `DutyRosterViewModel.fitsClip` | "복사한 글이 있어요 · 붙여 넣기" 한 줄. 화면을 열 때는 복사 시각만 보고(Android가 알리지 않음), 누를 때 읽어 근무표 모양이면 채워요(1.24 통합이 P의 열 때 읽기를 바꿈, 결정 Q-D1). 글은 저장하지 않고 다룬 복사 시각만 `clip_hint`에 남아요 |
 | 첫 설정 | — | `SetupViewModel.readRoster*`·`useRosterRow`, `SetupOrder.RosterSource` | 교대(달마다 칠하기)에서 '듀티표가 있어요 → 사진·파일·직접'. 근무·쉬는 날만 칠하고 휴가·모르는 칸은 설정 뒤에 넣어요 |
 | 한 일 | `JournalKind.ROSTER`, `RosterFrom`, `Journal.rosterDetail` | `DutyRosterViewModel.write` | "11월 근무 30일 넣음 (사진)" 한 줄. 처음 보는 코드로 근무 종류를 만들면 프로필 '추정' 출처 |
 
