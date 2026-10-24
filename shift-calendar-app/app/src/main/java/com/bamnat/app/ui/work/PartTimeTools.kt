@@ -66,6 +66,10 @@ import com.bamnat.app.data.WorkToolsStore
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.ConfirmDialog
 import com.bamnat.app.ui.components.SectionCard
+import com.bamnat.app.ui.components.CountStepper
+import com.bamnat.app.ui.components.MinutesStepper
+import com.bamnat.app.ui.components.StepperRow
+import kotlin.math.roundToInt
 import com.bamnat.app.ui.components.WarningBanner
 import com.bamnat.app.ui.money.AmountField
 import com.bamnat.app.ui.money.amountDigits
@@ -229,30 +233,35 @@ private fun OfferEditor(offer: JobOffer, result: com.bamnat.core.work.OfferResul
             OutlinedTextField(offer.name, { onChange(offer.copy(name = it.take(16))) }, label = { Text("이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             AmountField("시급", amountDigits(offer.hourlyWage), { onChange(offer.copy(hourlyWage = it.toAmount())) })
             if (result.belowMinimum) Text("최저임금 ${Fmt.won(minimum)}보다 적어요", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                var hours by remember { mutableStateOf(offer.hoursPerWeek.asField()) }
-                NumberField("한 주 시간", hours, { hours = it; onChange(offer.copy(hoursPerWeek = it.toNumber())) }, Modifier.weight(1f), "시간", decimal = true)
-                NumberField("한 주 며칠", offer.daysPerWeek.takeIf { it > 0 }?.toString().orEmpty(),
-                    { onChange(offer.copy(daysPerWeek = (it.toIntOrNull() ?: 0).coerceAtMost(7))) }, Modifier.weight(1f), "일", maxLength = 1)
+            // [INPUT-02] Hours and days are stepped (held, they run), not typed.
+            StepperRow("한 주 시간") {
+                MinutesStepper(offer.hoursPerWeek.minutes(), { onChange(offer.copy(hoursPerWeek = it / 60.0)) }, step = 60, max = 80 * 60,
+                    dialogTitle = "한 주 시간")
+            }
+            StepperRow("한 주 며칠") {
+                CountStepper(offer.daysPerWeek, { onChange(offer.copy(daysPerWeek = it)) }, name = "한 주 며칠", range = 0..7, format = { "${it}일" })
             }
             SwitchLine("주휴수당 줘요", offer.holidayPay, { onChange(offer.copy(holidayPay = it)) },
                 if (result.holidayEligible) "한 주 ${Fmt.won(result.weeklyHolidayPay)}" else if (offer.hoursPerWeek < 15) "주 15시간이 안 되면 없어요" else "안 주는 곳으로 셌어요")
             SwitchLine("5명 이상 일하는 곳", offer.fiveOrMore, { onChange(offer.copy(fiveOrMore = it)) }, "야간·휴일·주 40시간 넘는 시간에 50% 더 받아요")
-            if (offer.fiveOrMore) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                var night by remember { mutableStateOf(offer.nightHoursPerWeek.asField()) }
-                var rest by remember { mutableStateOf(offer.holidayHoursPerWeek.asField()) }
-                NumberField("밤 10시~6시 (주)", night, { night = it; onChange(offer.copy(nightHoursPerWeek = it.toNumber())) }, Modifier.weight(1f), "시간", decimal = true)
-                NumberField("휴일 근무 (주)", rest, { rest = it; onChange(offer.copy(holidayHoursPerWeek = it.toNumber())) }, Modifier.weight(1f), "시간", decimal = true)
+            if (offer.fiveOrMore) {
+                StepperRow("밤 10시~6시", hint = "한 주에") {
+                    MinutesStepper(offer.nightHoursPerWeek.minutes(), { onChange(offer.copy(nightHoursPerWeek = it / 60.0)) }, step = 60, max = 60 * 60,
+                        dialogTitle = "밤 10시~6시 (주)")
+                }
+                StepperRow("휴일 근무", hint = "한 주에") {
+                    MinutesStepper(offer.holidayHoursPerWeek.minutes(), { onChange(offer.copy(holidayHoursPerWeek = it / 60.0)) }, step = 60, max = 60 * 60,
+                        dialogTitle = "휴일 근무 (주)")
+                }
             }
             Text("세금", style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TaxMode.entries.forEach { m -> FilterChip(selected = offer.taxMode == m, onClick = { onChange(offer.copy(taxMode = m)) }, label = { Text(m.label) }) }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                NumberField("오가는 시간 (왕복)", offer.commuteMinutes.takeIf { it > 0 }?.toString().orEmpty(),
-                    { onChange(offer.copy(commuteMinutes = it.toIntOrNull() ?: 0)) }, Modifier.weight(1f), "분", maxLength = 3)
-                AmountField("교통비 (왕복)", amountDigits(offer.commuteCost), { onChange(offer.copy(commuteCost = it.toAmount())) }, Modifier.weight(1f))
+            StepperRow("오가는 시간", hint = "왕복") {
+                MinutesStepper(offer.commuteMinutes, { onChange(offer.copy(commuteMinutes = it)) }, step = 10, max = 4 * 60, dialogTitle = "오가는 시간 (왕복)")
             }
+            AmountField("교통비 (왕복)", amountDigits(offer.commuteCost), { onChange(offer.copy(commuteCost = it.toAmount())) })
         }
     }
 }
@@ -494,7 +503,10 @@ private fun QuitScreen(calendarId: String, profile: PayProfile?, snapshot: Sched
         SectionCard(title = "남은 연차수당") {
             if (!five) Hint("5명 미만 사업장은 연차휴가가 법으로 정해져 있지 않아요.")
             else {
-                NumberField("쓰지 않은 연차", leaveText, { leaveText = it }, suffix = "일", maxLength = 2)
+                // [INPUT-02] Stepped, not typed; the ledger's number is still one tap below.
+                StepperRow("쓰지 않은 연차") {
+                    CountStepper(leaveText.toIntOrNull() ?: 0, { leaveText = it.toString() }, name = "쓰지 않은 연차", range = 0..99, format = { "${it}일" })
+                }
                 // [LEAVE-05] The 연차 원장 knows what is left; one tap puts it in.
                 ledgerLeft?.let { left ->
                     Hint("연차 화면에 남은 연차 ${com.bamnat.core.leave.LeaveAccrual.days(left)} (쓸 예정 뺀 값)")
@@ -543,3 +555,6 @@ private fun QuitScreen(calendarId: String, profile: PayProfile?, snapshot: Sched
         )
     }
 }
+
+/** [INPUT-02] Hours a week as the steppers' minutes. */
+private fun Double.minutes(): Int = (this * 60).roundToInt().coerceAtLeast(0)

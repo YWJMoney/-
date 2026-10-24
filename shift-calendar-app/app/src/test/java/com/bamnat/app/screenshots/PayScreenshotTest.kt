@@ -455,13 +455,16 @@ class PayScreenshotTest : ScreenshotBase() {
         leaveRulesEditor { it.copy(scheduleIsRegular = true, flexPeriod = com.bamnat.core.pay.FlexPeriod.TWO_WEEKS, flexStart = today.minusDays(3)) }.invoke(this)
         reveal("2주 단위는 취업규칙으로")
     }
-    /** [PAYX-20] 호봉표 pasted, the step now chosen, the values it gives. */
+    /** [PAYX-20][PAYX-47] 호봉표 rows filled in and added, the step now chosen, the values it gives. */
     @Test fun foldedPayScale() = shoot("475_folded_pay_scale", FOLDED) {
         payScreen(Tier.PRO, withProfile = true) { vm ->
             vm.profile.collectAsState().value?.let { p -> com.bamnat.app.ui.pay.PayScaleDialog(vm, p, onDismiss = {}) }
         }.invoke(this)
-        typeInto("호봉표", "1호봉 2,400,000\n2호봉 2,480,000\n3호봉 2,565,000\n4호봉 2,650,000")
-        tapText("2호봉", exact = true, scrolls = 0)
+        typeInto("1호봉 기본급", "2400000")
+        typeInto("2호봉 기본급", "2480000")
+        tapText("3호봉 더하기")
+        tapText("4호봉 더하기")
+        tapText("2호봉", exact = true)
     }
     /** [PAYX-22] A matched month would change: keep, from this pay period, or undo. */
     @Test fun foldedPayVerifiedChange() = shoot("476_folded_pay_verified_change", FOLDED) {
@@ -490,6 +493,7 @@ class PayScreenshotTest : ScreenshotBase() {
         payScreen(Tier.PRO, withProfile = true) { vm ->
             vm.profile.collectAsState().value?.let { p -> com.bamnat.app.ui.pay.PayScaleDialog(vm, p, onDismiss = {}) }
         }.invoke(this)
-        typeInto("호봉표", "1호봉 2,400,000\n2호봉 2,480,000")
+        typeInto("1호봉 기본급", "2400000")
+        typeInto("2호봉 기본급", "2480000")
     }
 }

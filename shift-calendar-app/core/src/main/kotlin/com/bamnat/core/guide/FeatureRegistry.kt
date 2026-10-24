@@ -473,6 +473,10 @@ object FeatureRegistry {
             ALL, "설정 맨 위 카드 › 내 정보", at(Place.PROFILE), "내 정보", "프로필", "정보 바꾸기", "처음부터", "추정", "모르는 것"),
         f("journal.list", "OBS-02", "밤낮이 한 일", "알람 다시 잡기·백업·계산 자료 갱신처럼 앱이 알아서 한 일을 날짜별로 이유와 함께 보여 줘요",
             ALL, "설정 맨 위 카드 › 밤낮이 한 일", at(Place.JOURNAL), "한 일", "기록", "자동으로", "왜 바뀌었", "알아서"),
+        // 1.24 묶음 Q: 회사 규칙을 글 대신 골라 담기 (계획/1.24-Q-개발계획.md 350).
+        f("pay.ruleBuilder", "INPUT-03", "회사 규칙 골라 담기", "대근·특근·토요일 근무가 기본급의 몇 %인지, 몇 시간 넘으면 얼마 더인지 눌러 고르면 한 문장으로 보여 주고 그대로 계산에 넣어요",
+            PAID, "${tab(SHIFT)} › 이번 달 급여 › 회사 계산 방식 › 회사만의 규칙", at(Place.PAY), "회사 규칙", "규칙 조립", "대근 계산", "가산", "기본급의 %",
+            "토요일 근무", "취업규칙", under = "pay.calc"),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }

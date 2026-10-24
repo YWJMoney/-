@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import androidx.compose.material.icons.filled.Close
 import com.bamnat.core.pay.Unknowns
 import java.time.LocalDate
 import com.bamnat.core.pay.PayScale
@@ -38,6 +39,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.Fmt
 import com.bamnat.core.pay.Cadence
@@ -77,26 +80,13 @@ internal fun MoneyField(
 }
 
 /**
- * [PAYX-23] 월 소정근로시간 typed straight in, for a company that uses e.g. 182 or 195 hours: digits only, kept
- * within 100~320 hours, so it needs no row of − taps.
+ * [PAYX-23][INPUT-02] 월 소정근로시간 for a company that uses e.g. 182 or 195 hours: the one stepper, 100~320 hours, held
+ * to run; tapping the value gives an exact entry. Replaces the − + buttons and the typed field next to the chips.
  */
 @Composable
-internal fun MonthlyHoursField(hours: Int, onChange: (Int) -> Unit, modifier: Modifier = Modifier) {
-    var text by remember(hours) { mutableStateOf(hours.toString()) }
-    OutlinedTextField(
-        value = text,
-        onValueChange = { s ->
-            text = s.filter(Char::isDigit).take(3)
-            text.toIntOrNull()?.takeIf { it in 100..320 }?.let(onChange)
-        },
-        label = { Text("직접 넣기") },
-        suffix = { Text("시간") },
-        supportingText = { Text(if (text.toIntOrNull() in 100..320) "통상시급 = 통상임금 ÷ ${text}시간" else "100~320시간 사이로 넣어요") },
-        isError = text.toIntOrNull() !in 100..320,
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        modifier = modifier.width(180.dp),
-    )
+internal fun MonthlyHoursStepper(hours: Int, onChange: (Int) -> Unit, modifier: Modifier = Modifier) {
+    com.bamnat.app.ui.components.CountStepper(hours, onChange, name = "월 소정근로시간", modifier = modifier, range = 100..320,
+        format = { "${it}시간" }, valueWidth = 96.dp)
 }
 
 /** [PAYX-25] An amount in won typed in, e.g. 작년 총급여; empty is null. */
@@ -288,16 +278,20 @@ fun RaiseDialog(vm: PayViewModel, profile: PayProfile, target: ValueTarget, onDi
                     (1..12).forEach { m -> FilterChip(selected = month == m, onClick = { month = m }, label = { Text("${m}월") }) }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = byPercent, onClick = { byPercent = true }, label = { Text("비율(%)") })
-                    FilterChip(selected = !byPercent, onClick = { byPercent = false }, label = { Text("금액(원)") })
+                    FilterChip(selected = byPercent, onClick = { if (!byPercent) text = ""; byPercent = true }, label = { Text("비율(%)") })
+                    FilterChip(selected = !byPercent, onClick = { if (byPercent) text = ""; byPercent = false }, label = { Text("금액(원)") })
                 }
-                OutlinedTextField(
+                // [INPUT-02] A rate is tapped (the usual raises) or stepped by 0.1%; an amount in won stays on the number pad.
+                if (byPercent) com.bamnat.app.ui.components.QuickDecimalChips(
+                    value = text.toDoubleOrNull(), onChange = { text = com.bamnat.app.ui.components.decimalText(it) }, name = "인상률",
+                    quick = listOf(2.0, 3.0, 3.5, 4.0, 5.0), step = 0.1, range = 0.1..30.0, unit = "%", start = 3.0,
+                ) else OutlinedTextField(
                     value = text,
-                    onValueChange = { s -> text = s.filter { it.isDigit() || (byPercent && it == '.') }.take(9) },
-                    label = { Text(if (byPercent) "인상률" else "인상 금액") },
-                    suffix = { Text(if (byPercent) "%" else "원") },
+                    onValueChange = { s -> text = s.filter { it.isDigit() }.take(9) },
+                    label = { Text("인상 금액") },
+                    suffix = { Text("원") },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = if (byPercent) KeyboardType.Decimal else KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text("끝자리 처리", style = MaterialTheme.typography.labelLarge)
@@ -542,26 +536,56 @@ fun AddItemDialog(onDismiss: () -> Unit, allowUnknownAmount: Boolean = false, on
 }
 
 /**
- * [PAYX-20] 호봉표: the company's table pasted as text, the step now and the month a step goes up. Applied, it
- * becomes the 기본급's dated values from [PayScale.since] on (the table is the raise, so no yearly rule).
+ * [PAYX-20][PAYX-47] 호봉표: the company's table as rows to fill in (호봉 n · 금액; a row added under the last starts
+ * at the last step plus its raise), the step now and the month a step goes up. Pasting the table or reading it from
+ * a photo is still there, folded under the rows (계획/1.24-Q-개발계획.md 348). Applied, it becomes the 기본급's dated
+ * values from [PayScale.since] on (the table is the raise, so no yearly rule).
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PayScaleDialog(vm: PayViewModel, profile: PayProfile, onDismiss: () -> Unit) {
+    // 기본급 by row, 1호봉 first; a blank row is null.
+    val rows = remember { androidx.compose.runtime.mutableStateListOf<Long?>(null, null) }
+    var other by remember { mutableStateOf(false) }
     var text by remember { mutableStateOf("") }
     var stepMonth by remember { mutableStateOf(1) }
     var step by remember { mutableStateOf(1) }
     val since = remember { Today.date().withDayOfMonth(1) }
-    val steps = remember(text) { PayScale.parse(text) }
-    val scale = runCatching { PayScale(steps, stepMonth, step.coerceIn(steps.keys.minOrNull() ?: 1, steps.keys.maxOrNull() ?: 1), since) }.getOrNull()
+    val steps = rows.mapIndexedNotNull { i, a -> a?.takeIf { it > 0 }?.let { (i + 1) to it } }.toMap()
+    val scale = steps.takeIf { it.isNotEmpty() }?.let {
+        runCatching { PayScale(it, stepMonth, step.coerceIn(it.keys.min(), it.keys.max()), since) }.getOrNull()
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("호봉표로 기본급 넣기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("한 줄에 한 호봉씩 붙여 넣어요. 예: 1호봉 2,400,000", style = MaterialTheme.typography.bodySmall,
+                Text("호봉마다 기본급을 넣어요. 아래 줄을 더하면 위 호봉만큼 오른 금액으로 채워 둬요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(text, { text = it.take(4000) }, label = { Text("호봉표") }, minLines = 4, modifier = Modifier.fillMaxWidth())
+                rows.forEachIndexed { i, amount ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("${i + 1}호봉", style = MaterialTheme.typography.titleSmall, modifier = Modifier.width(64.dp))
+                        StepAmountField(i + 1, amount, { rows[i] = it }, Modifier.weight(1f))
+                        if (rows.size > 1) androidx.compose.material3.IconButton(onClick = { rows.removeAt(i) }) {
+                            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Close, "${i + 1}호봉 줄 지우기")
+                        }
+                    }
+                }
+                if (rows.size < MAX_STEPS) com.bamnat.app.ui.components.AddButton("${rows.size + 1}호봉 더하기", onClick = {
+                    rows += PayScale.nextAmount(rows.filterNotNull().filter { it > 0 })
+                })
+                TextButton(onClick = { other = !other }) { Text(if (other) "사진·글로 넣기 접기" else "사진·글로 넣기") }
+                if (other) {
+                    ScanButtons(onText = { t -> text = t })
+                    OutlinedTextField(text, { text = it.take(4000) }, label = { Text("호봉표 붙여 넣기") },
+                        placeholder = { Text("1호봉 2,400,000\n2호봉 2,480,000") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                    val read = remember(text) { PayScale.parse(text) }
+                    OutlinedButton(enabled = read.isNotEmpty(), onClick = {
+                        rows.clear()
+                        (1..read.keys.max().coerceAtMost(MAX_STEPS)).forEach { n -> rows += read[n] }
+                        other = false
+                    }) { Text(if (read.isEmpty()) "읽을 호봉이 없어요" else "${read.size}개 호봉을 줄에 채우기") }
+                }
                 if (steps.isNotEmpty()) {
                     Text("지금 호봉", style = MaterialTheme.typography.labelLarge)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -586,5 +610,23 @@ fun PayScaleDialog(vm: PayViewModel, profile: PayProfile, onDismiss: () -> Unit)
             }) { Text("적용") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
+
+/** Tables past this are not 호봉표 any more (공무원 봉급표 goes to 32). */
+private const val MAX_STEPS = 40
+
+/** [PAYX-47] One 호봉's 기본급: digits on the number pad, shown grouped (2,480,000) with no line under it. */
+@Composable
+private fun StepAmountField(n: Int, value: Long?, onChange: (Long?) -> Unit, modifier: Modifier = Modifier) {
+    OutlinedTextField(
+        value = value?.toString() ?: "",
+        onValueChange = { s -> onChange(s.filter(Char::isDigit).take(10).toLongOrNull()) },
+        placeholder = { Text("기본급") },
+        suffix = { Text("원") },
+        singleLine = true,
+        visualTransformation = com.bamnat.app.ui.money.ThousandsTransformation,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = modifier.semantics { contentDescription = "${n}호봉 기본급" },
     )
 }

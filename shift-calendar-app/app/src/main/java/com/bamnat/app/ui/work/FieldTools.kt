@@ -190,7 +190,15 @@ private fun QuoteScreen(calendarId: String, initial: Quote, onClose: () -> Unit)
         }
         SectionCard(title = "그 밖에") {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                NumberField("유효기간", q.validDays.toString(), { q = q.copy(validDays = it.toIntOrNull()?.coerceIn(0, 365) ?: 0) }, suffix = "일", maxLength = 3)
+                // [INPUT-02] 견적 유효기간 tapped (7·14·30일) or stepped, not typed.
+                com.bamnat.app.ui.components.StepperRow("유효기간") {
+                    com.bamnat.app.ui.components.CountStepper(q.validDays, { q = q.copy(validDays = it) }, name = "유효기간", range = 0..365, format = { "${it}일" })
+                }
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(7, 14, 30).forEach { d ->
+                        com.bamnat.app.ui.components.FilterChip(selected = q.validDays == d, onClick = { q = q.copy(validDays = d) }, label = { Text("${d}일") })
+                    }
+                }
                 OutlinedTextField(q.note, { q = q.copy(note = it.take(200)) }, label = { Text("메모 (자재 포함 여부, 계좌 등)") },
                     modifier = Modifier.fillMaxWidth(), minLines = 2)
                 OutlinedTextField(sender, { sender = it.take(30) }, label = { Text("보내는 사람 (선택)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
