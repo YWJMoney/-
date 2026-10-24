@@ -66,6 +66,7 @@ import com.bamnat.app.data.CompanySummary
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.ConfirmDialog
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /** [COMM-02] What the report screen and the privacy policy say about what goes to the company server. */
 internal const val COMPANY_SEND_NOTICE =
@@ -375,7 +376,7 @@ private fun SentCard(r: SentReport, status: ReportStatus?, looked: Boolean, onTa
                 Column(Modifier.weight(1f)) {
                     Text(r.company + (r.dept.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""), style = MaterialTheme.typography.titleMedium)
                     Text(
-                        (if (r.ask) "앱에 없는 방식 · " else "") + Fmt.shortFullDate(r.at.atZone(ZoneId.systemDefault()).toLocalDate()),
+                        (if (r.ask) "앱에 없는 방식 · " else "") + Fmt.shortFullDate(r.at.atZone(Today.zone()).toLocalDate()),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }

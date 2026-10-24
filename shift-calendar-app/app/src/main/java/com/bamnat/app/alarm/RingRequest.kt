@@ -5,6 +5,7 @@ import com.bamnat.core.alarm.PlannedAlarm
 import org.json.JSONObject
 import java.time.LocalDate
 import java.time.LocalTime
+import com.bamnat.core.time.Today
 
 /** Everything the ringing screen and service need, carried through intents. */
 data class RingRequest(
@@ -87,7 +88,7 @@ data class RingRequest(
                 shiftStart = LocalTime.ofSecondOfDay(intent.getIntExtra(X_START, 0).toLong().coerceIn(0, 86_399)),
                 offsetMinutes = intent.getIntExtra(X_OFFSET, 0),
                 soundUri = intent.getStringExtra(X_SOUND),
-                triggerAtMillis = intent.getLongExtra(X_TRIGGER, System.currentTimeMillis()),
+                triggerAtMillis = intent.getLongExtra(X_TRIGGER, Today.millis()),
                 isSnooze = intent.getBooleanExtra(X_SNOOZE, false),
                 custom = intent.getBooleanExtra(X_CUSTOM, false),
                 label = intent.getStringExtra(X_LABEL),

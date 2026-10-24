@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /** Memos that were just moved to the trash, offered for undo until consumed. */
 data class DeletedMemos(val memos: List<Memo>) {
@@ -30,7 +31,7 @@ data class DeletedMemos(val memos: List<Memo>) {
 
 class MemoRepository(
     private val db: AppDatabase,
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: () -> Long = Today::millis,
     /** [MEMO-02] Which calendars share memos (설정 › 메모 공유), gone calendars already left out; none by default. */
     val sharing: Flow<MemoSharing> = flowOf(MemoSharing.SEPARATE),
 ) {
@@ -163,7 +164,7 @@ class MemoRepository(
 
     companion object {
         /** [NOTE-05] The days repeating memos are laid out on: a year back to three years on. */
-        fun repeatWindow(today: LocalDate = LocalDate.now()): Pair<LocalDate, LocalDate> =
+        fun repeatWindow(today: LocalDate = Today.date()): Pair<LocalDate, LocalDate> =
             today.minusYears(1).withDayOfMonth(1) to today.plusYears(3)
 
         const val TRASH_DAYS = 30L

@@ -25,6 +25,7 @@ import com.bamnat.app.alarm.AlarmScheduler
 import com.bamnat.app.data.RecordsTrash
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.ConfirmDialog
+import com.bamnat.core.time.Today
 
 /** [UNDO-01] What a row of 최근 지운 기록 says under its title. */
 internal fun RecordsTrash.Entry.caption(now: Long): String {
@@ -40,7 +41,7 @@ internal fun RecordsTrash.Entry.caption(now: Long): String {
 @Composable
 internal fun RecordsTrashDialog(entries: List<RecordsTrash.Entry>, onRestore: (RecordsTrash.Entry) -> Unit, onDismiss: () -> Unit) {
     var asking by remember { mutableStateOf<RecordsTrash.Entry?>(null) }
-    val now = System.currentTimeMillis()
+    val now = Today.millis()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("최근 지운 기록") },

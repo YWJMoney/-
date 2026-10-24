@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /**
  * [WORK-02][LEDG-05] Money notifications: a job about to start, money still owed after a job or on a
@@ -39,7 +40,7 @@ object JobReminderScheduler {
     /** Alerts the user wants: a job's own reminder, and money only while 나갈 돈·받을 돈 is on. */
     private fun wanted(a: MoneyAlerts.Alert, settings: AppSettings) = isJob(a) || settings.moneyNotices
 
-    fun reschedule(context: Context, book: MoneyBook, settings: AppSettings, now: LocalDateTime = LocalDateTime.now()) {
+    fun reschedule(context: Context, book: MoneyBook, settings: AppSettings, now: LocalDateTime = Today.dateTime()) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         val next = MoneyAlerts.all(book.jobs, book.fixed, book.entries, now.toLocalDate(), book.receivables, book.accounts, book.allStyles)
             .filter { it.at.isAfter(now) && wanted(it, settings) }.minOfOrNull { it.at }
@@ -47,7 +48,7 @@ object JobReminderScheduler {
             am.cancel(pending(context, 0L))
             return
         }
-        val at = next.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val at = next.atZone(Today.zone()).toInstant().toEpochMilli()
         val op = pending(context, at)
         if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) {
             am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, op)
@@ -116,10 +117,10 @@ class JobReminderReceiver : BroadcastReceiver() {
                 val settings = container.settingsRepository.current
                 // [LEDG-09] Repeating lines that write themselves are written before their notice says so.
                 for (cal in container.calendars.calendars.value.filterNot { it.isExample }) {
-                    runCatching { container.calendars.money(cal.id).catchUpRecurring(java.time.LocalDate.now()) }
+                    runCatching { container.calendars.money(cal.id).catchUpRecurring(Today.date()) }
                 }
                 if (atMillis != 0L) {
-                    val at = LocalDateTime.ofInstant(Instant.ofEpochMilli(atMillis), ZoneId.systemDefault())
+                    val at = LocalDateTime.ofInstant(Instant.ofEpochMilli(atMillis), Today.zone())
                     val (jobs, rest) = JobReminderScheduler.dueAt(container.calendars.everyMoneyNow(), settings, at).partition { it.key.startsWith("job-") }
                     jobs.forEach { JobReminderScheduler.postJob(context, it) }
                     if (rest.isNotEmpty() && !QuietHold.holdIfAsleep(context, QuietHold.Source.MONEY, at)) {
@@ -127,7 +128,7 @@ class JobReminderReceiver : BroadcastReceiver() {
                     }
                 }
                 // Plan the next one after this moment, so the same alert never repeats.
-                JobReminderScheduler.reschedule(context, container.calendars.everyMoneyNow(), settings, LocalDateTime.now().plusSeconds(1))
+                JobReminderScheduler.reschedule(context, container.calendars.everyMoneyNow(), settings, Today.dateTime().plusSeconds(1))
             } finally {
                 pending.finish()
             }

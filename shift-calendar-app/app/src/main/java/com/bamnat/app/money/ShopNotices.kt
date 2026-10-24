@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.first
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /**
  * [SHOP-08] Notifications a shop calendar reads as sales: a delivery app's order or a card
@@ -46,7 +47,7 @@ object ShopNotices {
     suspend fun take(c: AppContainer, id: String, text: String, pkg: String, app: String, postedAt: Long): MoneyRepository.Outcome? {
         if (styleOf(c, id) != WorkStyle.BUSINESS) return null
         val money = c.calendars.money(id)
-        val arrived = LocalDateTime.ofInstant(Instant.ofEpochMilli(postedAt), ZoneId.systemDefault())
+        val arrived = LocalDateTime.ofInstant(Instant.ofEpochMilli(postedAt), Today.zone())
         val date = arrived.toLocalDate()
         val key = "$id|$postedAt|${text.hashCode()}"
         ShopCapture.read(text, pkg, app)?.let { sale ->

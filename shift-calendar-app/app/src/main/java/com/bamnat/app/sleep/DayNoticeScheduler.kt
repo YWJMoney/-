@@ -21,6 +21,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /**
  * [SLP-15] 하루 브리핑, 퇴근길 안전 and 잘 준비, planned by [DayNotices] from the schedule and the
@@ -39,14 +40,14 @@ object DayNoticeScheduler {
         if (settings.workStyle?.usesPayEngine == false) emptyList()
         else DayNotices.plan(now, snapshot.resolver, settings.alarmsEnabled, wanted(settings), settings.sleepTargetMinutes, settings.commuteMinutes)
 
-    fun reschedule(context: Context, snapshot: ScheduleSnapshot, settings: AppSettings, now: LocalDateTime = LocalDateTime.now()) {
+    fun reschedule(context: Context, snapshot: ScheduleSnapshot, settings: AppSettings, now: LocalDateTime = Today.dateTime()) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         val next = plan(snapshot, settings, now).firstOrNull { it.at.isAfter(now) }
         if (next == null) {
             am.cancel(pending(context, 0L))
             return
         }
-        val at = next.at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val at = next.at.atZone(Today.zone()).toInstant().toEpochMilli()
         val op = pending(context, at)
         if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, op)
         else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, op)
@@ -98,9 +99,9 @@ class SleepReminderReceiver : BroadcastReceiver() {
             try {
                 val settings = container.settingsRepository.current
                 val snapshot = container.scheduleRepository.snapshot.first()
-                val now = LocalDateTime.now()
+                val now = Today.dateTime()
                 if (atMillis != 0L) {
-                    val at = LocalDateTime.ofInstant(Instant.ofEpochMilli(atMillis), ZoneId.systemDefault())
+                    val at = LocalDateTime.ofInstant(Instant.ofEpochMilli(atMillis), Today.zone())
                     // Asleep by the log already: no bed time or commute notice to wake up to.
                     val asleep = container.sleepRepository.recent(days = 2).first().any { e ->
                         e.end == null && !e.imported && Duration.between(e.start, now).toMinutes() < SleepDebt.MAX_SLEEP_MINUTES

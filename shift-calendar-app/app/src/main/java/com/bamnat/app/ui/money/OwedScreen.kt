@@ -154,6 +154,7 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 import kotlin.math.roundToLong
+import com.bamnat.core.time.Today
 
 /** [RECV-01][RECV-02][RECV-05] 받을 돈: everything owed to the user, written down here or left on a job. */
 class OwedViewModel(
@@ -222,7 +223,7 @@ class OwedViewModel(
     /** "받지 않기로 했어요": no longer owed, kept in the list of finished ones. */
     fun close(r: Receivable, closed: Boolean) {
         container.appScope.launch {
-            money.save(r.copy(closedOn = if (closed) LocalDate.now() else null))
+            money.save(r.copy(closedOn = if (closed) Today.date() else null))
             if (closed) _messages.emit(UndoMessage("받을 돈에서 뺐어요") { money.save(r) })
         }
     }
@@ -273,7 +274,7 @@ private fun rolling(target: Long): Long {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: LocalDate = LocalDate.now()) {
+fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: LocalDate = Today.date()) {
     val bookOrNull by vm.book.collectAsStateWithLifecycle()
     val style by vm.style.collectAsStateWithLifecycle()
     val book = bookOrNull ?: MoneyBook.EMPTY

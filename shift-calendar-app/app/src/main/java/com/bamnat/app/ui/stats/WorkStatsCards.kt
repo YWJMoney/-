@@ -48,6 +48,7 @@ import com.bamnat.core.work.VatEstimate
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /**
  * [FLD-02][FLD-07][FLD-10] Field work's extra cards on 일감·수입: the month's 공수 and what they
@@ -55,7 +56,7 @@ import java.time.YearMonth
  * held back and costs for the 5월 종합소득세 신고.
  */
 @Composable
-fun FieldStatsCards(book: MoneyBook, month: YearMonth, today: LocalDate = LocalDate.now(), calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN) {
+fun FieldStatsCards(book: MoneyBook, month: YearMonth, today: LocalDate = Today.date(), calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN) {
     val units = remember(book, month) { DayRate.month(month, book.jobs) }
     if (units.days > 0) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -169,7 +170,7 @@ fun StatementDialog(client: String, month: YearMonth, jobs: List<Job>, onDismiss
  * paid, the month's target and what each open day left must sell, and a rough 부가세 for the half year.
  */
 @Composable
-fun ShopStatsCards(calendarId: String, book: MoneyBook, month: YearMonth, isOpen: (LocalDate) -> Boolean, today: LocalDate = LocalDate.now()) {
+fun ShopStatsCards(calendarId: String, book: MoneyBook, month: YearMonth, isOpen: (LocalDate) -> Boolean, today: LocalDate = Today.date()) {
     val c = LocalContext.current.appContainer
     val calendars by c.calendars.calendars.collectAsStateWithLifecycle()
     val rules = calendars.firstOrNull { it.id == calendarId }?.shopMoney ?: ShopMoney()

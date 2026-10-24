@@ -71,6 +71,7 @@ import kotlinx.coroutines.launch
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.bamnat.core.time.Today
 
 /**
  * [MKT-09] Picture or link. A link shows about three months from the month on screen, read only,
@@ -157,7 +158,7 @@ fun ShareDialog(
     fun keep(made: ShareLinkState, sent: org.json.JSONObject) {
         store.saveOptions(chosen()); saved = chosen()
         store.save(made.copy(from = month), ShareLinkPayload.fingerprint(sent))
-        store.sendResult(java.time.Instant.now())
+        store.sendResult(Today.instant())
     }
     // [SHR-11] A calendar with no shifts in these months (a shop, field work, hours not yet written) has
     // nothing to show until something is ticked; say so instead of letting the server refuse it.
@@ -193,7 +194,7 @@ fun ShareDialog(
                 }
                 scope.launch {
                     runCatching {
-                        val today = java.time.LocalDate.now()
+                        val today = Today.date()
                         val doc = if (year) com.bamnat.core.report.RosterReport.year(month.year, snapshot.resolver::resolve, name, today)
                         else com.bamnat.core.report.RosterReport.month(month, snapshot.resolver::resolve, name, today)
                         com.bamnat.app.report.ReportShare.pdf(context, doc,
@@ -405,7 +406,7 @@ internal fun SentLine(sentAt: java.time.Instant?, unsent: Boolean, busy: Boolean
         }
     }
     sentAt?.let {
-        Text("마지막으로 보낸 때 " + it.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("M월 d일 HH:mm")),
+        Text("마지막으로 보낸 때 " + it.atZone(Today.zone()).format(DateTimeFormatter.ofPattern("M월 d일 HH:mm")),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -548,7 +549,7 @@ internal const val SHARE_SERVER_NOTICE =
     "링크를 만들면 적은 이름과 근무표, 고른 항목이 공유 서버(Cloudflare, 미국)에 저장되고, 주소를 받은 사람은 누구나 볼 수 있어요. 원하지 않으면 이미지로 보내 주세요."
 
 private fun expiryText(s: ShareLinkState): String =
-    s.expiresAt.atZone(ZoneId.systemDefault()).toLocalDate().format(DateTimeFormatter.ofPattern("M월 d일"))
+    s.expiresAt.atZone(Today.zone()).toLocalDate().format(DateTimeFormatter.ofPattern("M월 d일"))
 
 private fun messageFor(e: Exception, options: ShareOptions): String = when (e.message) {
     "rate_limited" -> "잠시 뒤 다시 해 주세요. 한 시간에 만들 수 있는 링크 수를 넘었어요."

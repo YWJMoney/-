@@ -23,6 +23,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /** What every widget draws, read once per update. */
 class WidgetData(
@@ -90,7 +91,7 @@ class WidgetData(
             val container = context.appContainer
             val snapshot = container.scheduleRepository.snapshot.first()
             val settings = container.settingsRepository.current
-            val now = LocalDateTime.now()
+            val now = Today.dateTime()
             val focus = CalendarFocus.of(settings.workStyle)
             val flow = if (!settings.sleepTips || settings.workStyle?.usesPayEngine == false || snapshot.isEmpty) null else {
                 val log = SleepMerge.merge(container.sleepRepository.recent(days = 2).first(), container.healthSleep.sleeps.value)

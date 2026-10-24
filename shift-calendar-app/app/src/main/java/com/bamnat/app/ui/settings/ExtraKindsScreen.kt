@@ -143,6 +143,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalTime
+import com.bamnat.core.time.Today
 
 /**
  * [EXTRA-06] Where company ways the settings cannot hold are sent until the server takes them (M12):
@@ -626,7 +627,7 @@ private fun KindEditor(
     var deleting by remember { mutableStateOf(false) }
     var previewShift by remember { mutableStateOf<Long?>(null) }
     val timed = remember(snapshot) { snapshot.shiftTypes.filter { !it.isOff && it.hasTimes } }
-    val today = remember { LocalDate.now() }
+    val today = remember { Today.date() }
     val nightLabel = remember(profile) { (profile?.rules ?: CompanyRules()).nightLabel(RateTable.on(today)) }
     val money by produceState<UnitMoney?>(null, profile, snapshot) {
         value = profile?.let { p -> withContext(Dispatchers.Default) { runCatching { vm.money(p, snapshot, today) }.getOrNull() } }
@@ -1127,7 +1128,7 @@ private fun setupText(draft: KindDraft, snapshot: ScheduleSnapshot, profile: Pay
     val k = draft.kind
     appendLine("종류: ${k.name} · ${timingText(k, snapshot.typesById)}")
     if (k.timing is ExtraTiming.Band || k.timing is ExtraTiming.AsShift) appendLine("쉬는 날에 하면: ${k.offDay.label}")
-    val night = (profile?.rules ?: CompanyRules()).nightLabel(RateTable.on(LocalDate.now()))
+    val night = (profile?.rules ?: CompanyRules()).nightLabel(RateTable.on(Today.date()))
     appendLine("지금 설정: ${draft.rule.shareText(night)}")
     draft.byShift.forEach { (id, r) -> appendLine("  ${snapshot.typesById[id]?.name ?: "근무"}: ${r.shareText(night)}") }
     profile?.let { p ->

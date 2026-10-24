@@ -44,6 +44,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
+import com.bamnat.core.time.Today
 
 /**
  * [HRLY-02][HRLY-03] What an 알바 calendar's cells need: the pay setup for each day's pay and the weekday
@@ -89,7 +90,7 @@ internal fun LazyListScope.hourlyChips(
     today: LocalDate,
     snapshot: ScheduleSnapshot,
     vm: CalendarViewModel,
-    now: LocalDateTime = LocalDateTime.now(),
+    now: LocalDateTime = Today.dateTime(),
 ) {
     val works = day.shiftType?.isOff == false
     val clockIn = day.date == today && works && day.entry?.attendance != Attendance.ABSENT
@@ -99,7 +100,7 @@ internal fun LazyListScope.hourlyChips(
         item {
             AssistChip(
                 onClick = {
-                    val now = HourlyWork.clock(LocalTime.now())
+                    val now = HourlyWork.clock(Today.time())
                     vm.changeDay(day.date, "출근 ${Fmt.time(now)} 적었어요", feature = "hourly.clock") { e ->
                         e.copy(customStart = now, customEnd = e.customEnd ?: day.shiftType?.end)
                     }
@@ -112,7 +113,7 @@ internal fun LazyListScope.hourlyChips(
     if (out != null) {
         item {
             AssistChip(
-                onClick = { vm.clockOut(out, today, LocalTime.now()) },
+                onClick = { vm.clockOut(out, today, Today.time()) },
                 label = { Text(clockOutLabel(day, out), maxLines = 1) },
                 leadingIcon = { Icon(Icons.AutoMirrored.Filled.Logout, null, Modifier.size(18.dp)) },
             )

@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /**
  * [PROV-04][FEAT-15] The links the user made go in a backup with their keys, so after a move to a new
@@ -15,7 +16,7 @@ class ShareLinkBackup(
     /** The user's calendars as they are now, read after a restore brought them back. */
     private val calendarIds: () -> List<String>,
     private val storeOf: (String) -> ShareLinkStore,
-    private val clock: () -> Instant = Instant::now,
+    private val clock: () -> Instant = Today::instant,
 ) {
     fun export(): JSONArray = JSONArray().apply {
         for (key in calendarIds().flatMap(ShareLinkKey::all)) {

@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import java.time.Instant
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /**
  * [MON-01] Two tiers for sale (결정 3): 무료 and 프로. 리더 (team rosters) waits for Phase 3. A '플러스'
@@ -109,7 +110,7 @@ class FeatureGate(
     scope: CoroutineScope,
     private val installedAt: () -> Instant?,
     private val debug: Boolean = com.bamnat.app.BuildConfig.DEBUG,
-    private val clock: () -> Instant = Instant::now,
+    private val clock: () -> Instant = Today::instant,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
 ) {
     private val tick = MutableStateFlow(0L)

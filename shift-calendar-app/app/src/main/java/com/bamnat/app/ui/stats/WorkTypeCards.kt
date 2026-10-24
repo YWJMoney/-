@@ -58,6 +58,7 @@ import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /*
  * Work-type cards of 통계: the first card a shift worker [SHFT-02] or a day worker [DAYW-02] sees, and the
@@ -189,7 +190,7 @@ private fun DayFirstCard(
     val prefs = WorkTypePrefs.get(context)
     val choices by prefs.all.collectAsStateWithLifecycle()
     val mode = choices[calendarId]?.taxMode ?: TaxMode.INSURANCE_4
-    val today = remember { LocalDate.now() }
+    val today = remember { Today.date() }
     // [LEAVE-01] The 연차 원장 of this calendar.
     val ledger by remember(calendarId) { context.appContainer.calendars.leave(calendarId).summary }
         .collectAsStateWithLifecycle(null)
@@ -386,7 +387,7 @@ private fun OvertimeCapCard(calendarId: String, summary: MonthSummary) {
 /** [DAYW-04] 징검다리 연휴 in the next 12 months: 연차 1~2일로 길게 쉬는 날. */
 @Composable
 private fun BridgeCard(snapshot: ScheduleSnapshot, style: WorkStyle?) {
-    val today = remember { LocalDate.now() }
+    val today = remember { Today.date() }
     val bridges = remember(snapshot, style, today) { com.bamnat.app.ui.leave.LeaveBridges.of(snapshot, style, today) }
     if (bridges.isEmpty()) return
     SectionCard(title = "징검다리 연휴") {

@@ -32,6 +32,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 enum class MemoTab(val label: String) { CALENDAR("달력 메모"), GENERAL("일반 메모") }
 
@@ -129,7 +130,7 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
         repo.trash.map { it.size },
     ) { all, (w, snapshots), query, selected, trashCount ->
         val notebook = if (w.calendars.size > 1) w.notebook else com.bamnat.core.memo.MemoNotebook.ALL
-        build(all.filter { notebook.shows(it, w.active, w.sharing) }, w.active, snapshots, query, selected, trashCount, LocalDate.now())
+        build(all.filter { notebook.shows(it, w.active, w.sharing) }, w.active, snapshots, query, selected, trashCount, Today.date())
             .copy(notebook = notebook, calendars = w.calendars, activeCalendar = w.active)
     }.flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MemoListState())
@@ -448,7 +449,7 @@ class MemoEditorViewModel(
      * when the memo is one already, as its new time. Null when there is nothing to ask.
      */
     val scheduleOffer: StateFlow<MemoTime.Found?> = _memo.map { m ->
-        val found = MemoTime.find(m, LocalDateTime.now()) ?: return@map null
+        val found = MemoTime.find(m, Today.dateTime()) ?: return@map null
         found.takeIf { m.reminderAsked != it.key && m.reminder?.at != it.at }
     }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 

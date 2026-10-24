@@ -22,6 +22,7 @@ import org.json.JSONObject
 import com.bamnat.core.backup.BackupCrypto
 import java.time.DayOfWeek
 import java.util.Base64
+import com.bamnat.core.time.Today
 
 /** What a backup file holds, shown before the user confirms a restore. */
 data class BackupSummary(
@@ -44,7 +45,7 @@ class BackupException(message: String) : Exception(message)
 class BackupManager(
     private val db: AppDatabase,
     private val settings: SettingsRepository,
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: () -> Long = Today::millis,
     /** [PAY-10] The pay setup and closed months live in their own file, but belong in the backup. */
     private val payStore: com.bamnat.app.pay.PayStore? = null,
     /** [MCAL-05] The added calendars belong in the backup too. */

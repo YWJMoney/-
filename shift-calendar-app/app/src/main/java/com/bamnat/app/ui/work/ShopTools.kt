@@ -65,13 +65,14 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 import java.util.UUID
+import com.bamnat.core.time.Today
 
 /**
  * [SHOP-09][SHOP-10][SHOP-11] A shop's extra cards on 매출·영업: 간이과세 기준 against this year's sales,
  * 날씨별 매출, and 직원 인건비 with the staff schedule.
  */
 @Composable
-fun ShopToolCards(calendarId: String, book: MoneyBook, month: YearMonth, today: LocalDate = LocalDate.now()) {
+fun ShopToolCards(calendarId: String, book: MoneyBook, month: YearMonth, today: LocalDate = Today.date()) {
     // [GUIDE-05] Each card can be turned off for its calendar.
     FeatureCard("shop.staff", calendarId) { StaffCostCard(calendarId, book, month) }
     FeatureCard("shop.weather", calendarId) { WeatherSalesCard(calendarId, book, month) }

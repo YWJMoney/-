@@ -49,6 +49,7 @@ import org.robolectric.shadows.ShadowDialog
 import java.io.File
 import java.time.Instant
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /**
  * [SHR-13][SHR-14][ALRM-01][ALRM-02] Bundle L's screenshots, numbers 630~659 (계획/1.23-L-서버-광장-알람-개발계획.md):
@@ -93,7 +94,7 @@ class LScreenshotTest : ScreenshotBase() {
     }
 
     private fun Screen.photoMission(wrong: Int) {
-        val since = System.currentTimeMillis() - 50_000
+        val since = Today.millis() - 50_000
         content {
             com.bamnat.app.alarm.MissionScreen(com.bamnat.core.alarm.AlarmMission.PHOTO, since, 5, onSnooze = {}, onDone = {},
                 references = listOf(1L), place = "욕실 거울", wrongBefore = wrong)

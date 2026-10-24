@@ -37,6 +37,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /** A notification text the app kept because it could not write it down alone [LEDG-02]. */
 data class Capture(val id: Long, val postedAt: Long, val app: String, val text: String, val reason: String)
@@ -48,7 +49,7 @@ data class Capture(val id: Long, val postedAt: Long, val app: String, val text: 
 class MoneyRepository(
     private val db: AppDatabase,
     private val kept: CaptureStore = CaptureStore(null),
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: () -> Long = Today::millis,
     /** [TYPE-08] The calendar's kind of work, for its built-in categories. */
     private val style: Flow<com.bamnat.core.work.WorkStyle?> = kotlinx.coroutines.flow.flowOf(null),
     /** [COMN-04] 확인하고 적기: lines not yet confirmed stay out of the book's totals. */
@@ -297,7 +298,7 @@ class MoneyRepository(
         // [LEDG-09] A new line (its id may be a deleted one's) catches up from its first day; an older one
         // set to write itself, from its first day or today, once.
         if (saved.auto && (cost.id == 0L || saved.id !in marks.all())) {
-            marks.put(mapOf(saved.id to Recurring.startMark(saved, Instant.ofEpochMilli(clock()).atZone(ZoneId.systemDefault()).toLocalDate())))
+            marks.put(mapOf(saved.id to Recurring.startMark(saved, Instant.ofEpochMilli(clock()).atZone(Today.zone()).toLocalDate())))
         }
         return saved
     }
@@ -338,7 +339,7 @@ class MoneyRepository(
         if (!PaymentParser.looksFinancial(text)) return Outcome.IGNORED
         // [LEDG-20] Ads, bills to come and limit notices carry amounts too; they are not kept either.
         if (PaymentParser.notice(text) != null) return Outcome.IGNORED
-        val arrived = LocalDateTime.ofInstant(Instant.ofEpochMilli(postedAt), ZoneId.systemDefault())
+        val arrived = LocalDateTime.ofInstant(Instant.ofEpochMilli(postedAt), Today.zone())
         val result = PaymentParser.parse(text, arrived, rules())
         val parsed = (result as? PaymentParser.Result.Ok)?.parsed
             // Without a time in the text, the time it arrived keeps two same-amount payments apart.
@@ -378,7 +379,7 @@ class MoneyRepository(
     private val captureLock = Mutex()
 
     /** Clears kept texts past their 30 days even when no new notification comes. */
-    suspend fun purgeCaptures(now: Long = System.currentTimeMillis()) = kept.purge(now - KEEP_MILLIS)
+    suspend fun purgeCaptures(now: Long = Today.millis()) = kept.purge(now - KEEP_MILLIS)
 
     companion object {
         const val KEEP_MILLIS = 30L * 24 * 60 * 60 * 1000

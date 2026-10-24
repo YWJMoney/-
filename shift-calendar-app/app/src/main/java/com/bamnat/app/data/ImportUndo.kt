@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.io.File
+import com.bamnat.core.time.Today
 
 /**
  * [SET-01] Everything as it was before a backup or a company file was put in, kept as one backup in
@@ -15,7 +16,7 @@ import java.io.File
 class ImportUndo(
     private val file: File,
     private val backups: BackupManager,
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: () -> Long = Today::millis,
     /** [UNDO-03] Where the calendars the import removed wait, with their contract photos. */
     private val recordsTrash: () -> RecordsTrash? = { null },
 ) {

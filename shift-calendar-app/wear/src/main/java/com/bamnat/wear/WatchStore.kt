@@ -24,6 +24,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.coroutines.resume
+import com.bamnat.core.time.Today
 
 /**
  * [SHFT-08][REL-09] The last days the phone sent, kept on the watch so the tile, the complication and the app
@@ -62,8 +63,8 @@ object WatchStore {
             ComplicationDataSourceUpdateRequester.create(context, ComponentName(context, WeekHoursComplicationService::class.java)).requestUpdateAll()
         }
         val am = context.getSystemService(AlarmManager::class.java) ?: return
-        val zone = ZoneId.systemDefault()
-        val midnight = LocalDate.now(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() + 5_000
+        val zone = Today.zone()
+        val midnight = Today.date(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() + 5_000
         // [SHFT-08] Still rings in Doze, so the tile does not show yesterday until the watch is picked up.
         am.setAndAllowWhileIdle(AlarmManager.RTC, midnight, PendingIntent.getBroadcast(context, 1,
             Intent(context, MidnightReceiver::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))

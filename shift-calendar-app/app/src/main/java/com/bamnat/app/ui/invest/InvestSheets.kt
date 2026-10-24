@@ -77,6 +77,7 @@ import com.bamnat.core.invest.holdingKey
 import java.time.LocalDate
 import java.time.LocalTime
 import kotlin.math.roundToLong
+import com.bamnat.core.time.Today
 
 /** [INV-01] Which of the investor's sheets is open. */
 sealed interface InvestSheet {
@@ -171,7 +172,7 @@ private fun DateRow(date: LocalDate, minuteText: String?, onDate: (LocalDate) ->
         OutlinedButton(onClick = { picking = true }) {
             Icon(Icons.Outlined.CalendarMonth, null)
             Spacer(Modifier.width(6.dp))
-            Text(if (date == LocalDate.now()) "오늘 · ${Fmt.dayTitle(date)}" else Fmt.dayTitle(date))
+            Text(if (date == Today.date()) "오늘 · ${Fmt.dayTitle(date)}" else Fmt.dayTitle(date))
         }
         if (onMinute != null && minuteText != null) {
             OutlinedTextField(
@@ -216,7 +217,7 @@ internal fun TradeSheet(
     var price by rememberSaveable { mutableStateOf(InvestFmt.input(start?.price ?: d.price)) }
     var date by rememberSaveable { mutableStateOf((start?.date ?: d.date ?: state.today).toString()) }
     var minute by rememberSaveable {
-        mutableStateOf(minuteText(start?.minute ?: if (start == null && (d.date ?: state.today) == LocalDate.now()) LocalTime.now().let { it.hour * 60 + it.minute } else null))
+        mutableStateOf(minuteText(start?.minute ?: if (start == null && (d.date ?: state.today) == Today.date()) Today.time().let { it.hour * 60 + it.minute } else null))
     }
     var fx by rememberSaveable { mutableStateOf(InvestFmt.input(start?.fxRate?.takeIf { start.market.foreign } ?: book.settings.usdKrw)) }
     // Fees follow what is typed until the user writes their own.

@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.core.invest.Side
 import com.bamnat.core.invest.TradeAlerts
+import com.bamnat.core.time.Today
 
 /**
  * [INV-32] 알림으로 찾은 거래: each 체결 notification read on the phone waits here until the user writes
@@ -59,7 +60,7 @@ private enum class FoundAction { SAVE, EDIT, DROP }
 
 @Composable
 private fun FoundTrade(p: TradeAlerts.Pending, state: InvestState, onAction: (FoundAction) -> Unit) {
-    val time = java.time.Instant.ofEpochMilli(p.at).atZone(java.time.ZoneId.systemDefault())
+    val time = java.time.Instant.ofEpochMilli(p.at).atZone(Today.zone())
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(p.side.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,

@@ -80,6 +80,7 @@ import com.bamnat.core.diag.EventBook
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.bamnat.core.time.Today
 
 /** How an [AlarmCheck] is put right. */
 sealed interface Fix {
@@ -226,7 +227,7 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
     fun setPreview(t: Tier?) = container.settingsRepository.update { it.copy(previewTier = t) }
 
     fun report(context: Context, events: List<DiagEvent>): DiagReport {
-        val now = System.currentTimeMillis()
+        val now = Today.millis()
         val settings = container.settingsRepository.current
         val next = upcoming.value
         val power = context.getSystemService(PowerManager::class.java)
@@ -264,7 +265,7 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
             "앱: ${BuildConfig.APPLICATION_ID} ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
             "기기: ${Build.MANUFACTURER} ${Build.MODEL}",
             "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
-            "시간대: ${ZoneId.systemDefault()}",
+            "시간대: ${Today.zone()}",
         )
         val usage = EventBook.counts(events, now - 30L * 24 * 60 * 60 * 1000).map { (name, n) -> "$name: $n" }
             .ifEmpty { listOf("기록 없음") }
@@ -306,10 +307,10 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
         const val SCREEN_OFF_MINUTES = 3
         private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
         private val FORMAT = DateTimeFormatter.ofPattern("MM-dd HH:mm:ss")
-        fun stamp(millis: Long): String = FORMAT.format(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()))
+        fun stamp(millis: Long): String = FORMAT.format(Instant.ofEpochMilli(millis).atZone(Today.zone()))
         private val CLOCK = DateTimeFormatter.ofPattern("a h:mm", java.util.Locale.KOREAN)
         /** "오후 3:41", for the test alarm. */
-        fun clock(millis: Long): String = CLOCK.format(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()))
+        fun clock(millis: Long): String = CLOCK.format(Instant.ofEpochMilli(millis).atZone(Today.zone()))
     }
 }
 
@@ -330,10 +331,10 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
     val report = remember(events, upcoming, snoozeAt) { vm.report(context, events.orEmpty()) }
     val testSet by vm.testAt.collectAsStateWithLifecycle()
     // [REL-13] A test time long past is over (the alarm was lost, say by a reboot): it can be tried again.
-    val testAt = remember(testSet, refresh) { testSet?.takeIf { it + 2 * 60_000L > System.currentTimeMillis() } }
+    val testAt = remember(testSet, refresh) { testSet?.takeIf { it + 2 * 60_000L > Today.millis() } }
     // [ALRM-01] R11: a missing notification permission goes first, in red.
     val checks = remember(refresh, upcoming) { vm.checks(context).sortedBy { if (it.title == "알림 허용" && it.ok == false) 0 else 1 } }
-    val week = remember(events) { events?.let { EventBook.week(it, System.currentTimeMillis()) } }
+    val week = remember(events) { events?.let { EventBook.week(it, Today.millis()) } }
     var confirmClear by remember { mutableStateOf(false) }
 
     Scaffold(

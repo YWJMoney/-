@@ -81,6 +81,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.bamnat.core.time.Today
 
 /**
  * [COMM-07] 회사 규칙 광장: the rule sets coworkers shared, from every company. Ones still being voted on
@@ -599,10 +600,10 @@ private fun ProposalEditor(
 
 private val dayFormat = DateTimeFormatter.ofPattern("M월 d일")
 
-private fun day(at: Instant): String = dayFormat.format(at.atZone(ZoneId.systemDefault()))
+private fun day(at: Instant): String = dayFormat.format(at.atZone(Today.zone()))
 
 /** 방금, 5분 전, 3시간 전, 2일 전, then the date. */
-internal fun ago(at: Instant, now: Instant = Instant.now()): String {
+internal fun ago(at: Instant, now: Instant = Today.instant()): String {
     val d = Duration.between(at, now)
     return when {
         d.isNegative || d.toMinutes() < 1 -> "방금"

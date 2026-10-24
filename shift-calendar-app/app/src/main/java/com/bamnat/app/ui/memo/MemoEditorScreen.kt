@@ -91,6 +91,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import com.bamnat.core.time.Today
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -292,7 +293,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     }
 
     if (showDatePicker) {
-        val initialMillis = (memo.date ?: LocalDate.now()).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        val initialMillis = (memo.date ?: Today.date()).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
         val state = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
@@ -312,7 +313,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
 
     if (scheduling) {
         ScheduleDialog(
-            initial = scheduleStart(answering, memo.reminder, memo.date, java.time.LocalDateTime.now()),
+            initial = scheduleStart(answering, memo.reminder, memo.date, Today.dateTime()),
             current = memo.reminder,
             onDismiss = { scheduling = false },
             onSave = { r ->
@@ -443,7 +444,7 @@ private fun MemoBodyField(
             val edit = when (action) {
                 is MemoBodyTools.Action.Mark -> com.bamnat.core.memo.MemoText.toggleMark(at, action.mark)
                 MemoBodyTools.Action.Today -> com.bamnat.core.memo.MemoText.insert(
-                    field.text, field.selection.start, field.selection.end, com.bamnat.core.memo.MemoText.dateStamp(LocalDate.now()),
+                    field.text, field.selection.start, field.selection.end, com.bamnat.core.memo.MemoText.dateStamp(Today.date()),
                 )
             }
             val done = com.bamnat.core.memo.ListContinuation.renumber(at, edit)
@@ -610,7 +611,7 @@ private fun ChecklistRow(
 private val savedFormat = DateTimeFormatter.ofPattern("a h:mm", java.util.Locale.KOREAN)
 
 private fun savedTime(millis: Long): String =
-    Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalTime().format(savedFormat)
+    Instant.ofEpochMilli(millis).atZone(Today.zone()).toLocalTime().format(savedFormat)
 
 private fun shareText(memo: Memo): String = buildString {
     if (memo.title.isNotBlank()) appendLine(memo.title)

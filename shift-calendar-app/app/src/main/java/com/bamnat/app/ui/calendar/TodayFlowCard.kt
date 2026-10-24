@@ -85,15 +85,16 @@ import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import kotlin.math.abs
+import com.bamnat.core.time.Today
 
 /** The clock to the minute, moving on at each minute's turn, for what changes with the time of day. */
 @Composable
 internal fun rememberMinute(): LocalDateTime {
-    val now by produceState(LocalDateTime.now().withSecond(0).withNano(0)) {
+    val now by produceState(Today.dateTime().withSecond(0).withNano(0)) {
         while (true) {
-            val t = LocalDateTime.now()
+            val t = Today.dateTime()
             delay(60_000L - (t.second * 1000L + t.nano / 1_000_000))
-            value = LocalDateTime.now().withSecond(0).withNano(0)
+            value = Today.dateTime().withSecond(0).withNano(0)
         }
     }
     return now

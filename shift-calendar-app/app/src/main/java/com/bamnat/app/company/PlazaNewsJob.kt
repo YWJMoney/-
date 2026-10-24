@@ -28,6 +28,7 @@ import java.net.URLEncoder
 import java.time.Instant
 import java.time.LocalDate
 import java.util.concurrent.TimeUnit
+import com.bamnat.core.time.Today
 
 /**
  * [COMM-10] 광장 소식, widened in 1.23 to 밤낮 소식 [SRV-10]: once a day, one quiet notice with what
@@ -161,7 +162,7 @@ class PlazaNewsJob : JobService() {
          * [SHR-13] Each received schedule asked with its tag, so only one that changed downloads; a change
          * in its next seven days becomes a line ("민지 10/25 주간 → 야간").
          */
-        suspend fun receivedChanges(c: AppContainer, today: LocalDate = LocalDate.now()): List<String> {
+        suspend fun receivedChanges(c: AppContainer, today: LocalDate = Today.date()): List<String> {
             if (!c.shareApi.enabled) return emptyList()
             c.received.expire()
             val lines = mutableListOf<String>()

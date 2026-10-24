@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /** What is about to ring, shown in the app. */
 data class UpcomingAlarm(val plan: PlannedAlarm, val triggerAtMillis: Long, val exact: Boolean)
@@ -38,7 +39,7 @@ class AlarmScheduler(
     private val _upcoming = MutableStateFlow<UpcomingAlarm?>(null)
     val upcoming: StateFlow<UpcomingAlarm?> = _upcoming.asStateFlow()
 
-    private val _snoozeAt = MutableStateFlow(prefs.getLong(K_SNOOZE_AT, 0L).takeIf { it > System.currentTimeMillis() })
+    private val _snoozeAt = MutableStateFlow(prefs.getLong(K_SNOOZE_AT, 0L).takeIf { it > Today.millis() })
     /** When a pending snooze will ring again, or null. */
     val snoozeAt: StateFlow<Long?> = _snoozeAt.asStateFlow()
 
@@ -49,7 +50,7 @@ class AlarmScheduler(
      * Plans the first alarm strictly after [after]. Passing the trigger time of the alarm that
      * just rang guarantees the same alarm is never registered twice.
      */
-    fun reschedule(snapshot: ScheduleSnapshot, enabled: Boolean, after: LocalDateTime = LocalDateTime.now()) =
+    fun reschedule(snapshot: ScheduleSnapshot, enabled: Boolean, after: LocalDateTime = Today.dateTime()) =
         reschedule(listOf(null to snapshot), enabled, after)
 
     /**
@@ -57,7 +58,7 @@ class AlarmScheduler(
      * an added calendar carries that calendar's name ("알바 주간 근무 알람"), the main calendar's none.
      */
     @Synchronized
-    fun reschedule(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, after: LocalDateTime = LocalDateTime.now()) {
+    fun reschedule(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, after: LocalDateTime = Today.dateTime()) {
         // [REL-11] An inexact alarm can arrive minutes late. Until it has, re-planning (another
         // alarm or a widget waking the app) must keep it rather than skip past it to the next one.
         val from = planFrom(after)
@@ -71,7 +72,7 @@ class AlarmScheduler(
             _upcoming.value = null
             return
         }
-        val triggerAt = plan.triggerAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val triggerAt = plan.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli()
         val exact = setAlarm(triggerAt, operation)
         prefs.edit().putLong(K_PENDING, triggerAt).apply()
         val previous = _upcoming.value
@@ -95,16 +96,16 @@ class AlarmScheduler(
      * Returns true when something had to be put right.
      */
     @Synchronized
-    fun verify(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, now: LocalDateTime = LocalDateTime.now()): Boolean {
+    fun verify(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, now: LocalDateTime = Today.dateTime()): Boolean {
         // An alarm that just rang is being planned past; until that is done nothing is missing.
-        if (System.currentTimeMillis() - firedAtMillis < SETTLE_MILLIS) return false
+        if (Today.millis() - firedAtMillis < SETTLE_MILLIS) return false
         val expected = if (enabled) nextOf(calendars, planFrom(now)) else null
         val held = systemHolds()
         val pending = prefs.getLong(K_PENDING, 0L)
         val problem = when {
             expected == null -> null
             !held -> "missing"
-            pending != expected.triggerAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() -> "different"
+            pending != expected.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli() -> "different"
             else -> null
         } ?: return false
         telemetry.event(DiagEvents.ALARM_REPAIRED, problem)
@@ -112,7 +113,7 @@ class AlarmScheduler(
         return true
     }
 
-    private val _testAt = MutableStateFlow(prefs.getLong(K_TEST_AT, 0L).takeIf { it > System.currentTimeMillis() })
+    private val _testAt = MutableStateFlow(prefs.getLong(K_TEST_AT, 0L).takeIf { it > Today.millis() })
     /** When the 알람 점검 test alarm will ring, or null [REL-13]. */
     val testAt: StateFlow<Long?> = _testAt.asStateFlow()
 
@@ -122,9 +123,9 @@ class AlarmScheduler(
      * own slot and never moves the shift alarm.
      */
     /** [ALRM-01] [minutes] on (3 for 화면 끄고 기다리기), on the minute and at least half a minute away. */
-    fun scheduleTest(now: LocalDateTime = LocalDateTime.now(), minutes: Int = 1): Long {
+    fun scheduleTest(now: LocalDateTime = Today.dateTime(), minutes: Int = 1): Long {
         val at = now.plusMinutes(minutes.toLong()).withSecond(0).withNano(0).let { if (it.isAfter(now.plusSeconds(30))) it else it.plusMinutes(1) }
-        val triggerAt = at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val triggerAt = at.atZone(Today.zone()).toInstant().toEpochMilli()
         val ring = RingRequest(TEST_NAME, at.toLocalDate(), at.toLocalTime(), 0, null, triggerAt, label = TEST_NAME)
         setAlarm(triggerAt, testIntent(context, ring))
         prefs.edit().putLong(K_TEST_AT, triggerAt).apply()
@@ -154,13 +155,13 @@ class AlarmScheduler(
     /** Where planning starts: an overdue inexact alarm is kept for a while [REL-11]. */
     private fun planFrom(after: LocalDateTime): LocalDateTime {
         val pending = prefs.getLong(K_PENDING, 0L)
-        val afterMillis = after.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val afterMillis = after.atZone(Today.zone()).toInstant().toEpochMilli()
         return if (pending in (afterMillis - LATE_KEEP_MILLIS + 1)..afterMillis) millisToLocal(pending - 1_000) else after
     }
 
     /** The alarm that was registered has rung (or was dropped as stale): plan past it from now on. */
     fun markFired(triggerAt: Long) {
-        firedAtMillis = System.currentTimeMillis()
+        firedAtMillis = Today.millis()
         if (prefs.getLong(K_PENDING, 0L) <= triggerAt) prefs.edit().remove(K_PENDING).apply()
     }
 
@@ -175,7 +176,7 @@ class AlarmScheduler(
         var from = after
         while (out.size < BootAlarms.AHEAD) {
             val p = nextOf(calendars, from) ?: break
-            out += RingRequest.from(p, p.triggerAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
+            out += RingRequest.from(p, p.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli())
             from = p.triggerAt
         }
         return out
@@ -197,7 +198,7 @@ class AlarmScheduler(
 
     /** Schedules a one-off snooze alarm that rings again with the same shift details. */
     fun scheduleSnooze(ring: RingRequest, minutes: Int) {
-        val triggerAt = System.currentTimeMillis() + minutes.coerceAtLeast(1) * 60_000L
+        val triggerAt = Today.millis() + minutes.coerceAtLeast(1) * 60_000L
         val snoozed = ring.copy(isSnooze = true)
         setAlarm(triggerAt, snoozeIntent(snoozed))
         BootAlarms.saveSnooze(context, snoozed, triggerAt)
@@ -233,7 +234,7 @@ class AlarmScheduler(
         }
         val at = prefs.getLong(K_SNOOZE_AT, 0L)
         val ring = RingRequest.decode(prefs.getString(K_SNOOZE_PAYLOAD, null))
-        if (ring == null || at <= System.currentTimeMillis()) {
+        if (ring == null || at <= Today.millis()) {
             clearSnoozeState()
             return
         }
@@ -244,7 +245,7 @@ class AlarmScheduler(
     private fun setAlarm(triggerAt: Long, operation: PendingIntent): Boolean = setAlarm(context, alarmManager, triggerAt, operation)
 
     private fun shiftAlarmIntent(plan: PlannedAlarm?): PendingIntent = shiftAlarmIntent(
-        context, plan?.let { RingRequest.from(it, it.triggerAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) },
+        context, plan?.let { RingRequest.from(it, it.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli()) },
     )
 
     private fun snoozeIntent(ring: RingRequest?): PendingIntent = snoozeIntent(context, ring)
@@ -306,6 +307,6 @@ class AlarmScheduler(
         private const val K_LAST_EXACT = "last_exact"
 
         fun millisToLocal(millis: Long): LocalDateTime =
-            LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault())
+            LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), Today.zone())
     }
 }

@@ -15,6 +15,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /**
  * [SETUP-01] Saves the first setup at once: the shifts, the order and the painted days in one
@@ -28,7 +29,7 @@ class FirstSetup(
     private val drafts: SetupDraftStore,
     private val share: () -> CompanyShare,
     private val company: () -> CompanyStore,
-    private val today: () -> LocalDate = LocalDate::now,
+    private val today: () -> LocalDate = Today::date,
 ) {
     private val lock = Mutex()
 
@@ -56,7 +57,7 @@ class FirstSetup(
         val setupId = source?.setupId
         if (source?.kind == SetupSource.Kind.SERVER && companyId != null && setupId != null) {
             // [COMM-03] 맞았어요·달라요 is asked about the company's setup in use.
-            store.setApplied(AppliedSetup(companyId, source.name, source.dept, setupId, source.version, source.adopted, Instant.now()))
+            store.setApplied(AppliedSetup(companyId, source.name, source.dept, setupId, source.version, source.adopted, Today.instant()))
             store.setDraft(null)
         } else if (marked.companyName.isNotBlank()) {
             // [COMM-02] Set up by hand under a company's name: the user is invited to share it later.

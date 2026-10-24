@@ -42,10 +42,11 @@ import com.bamnat.app.data.MemoRepository
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.memoBackground
 import com.bamnat.core.memo.Memo
+import com.bamnat.core.time.Today
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MemoTrashScreen(vm: MemoTrashViewModel, onBack: () -> Unit, now: () -> Long = System::currentTimeMillis) {
+fun MemoTrashScreen(vm: MemoTrashViewModel, onBack: () -> Unit, now: () -> Long = Today::millis) {
     val trash by vm.trash.collectAsStateWithLifecycle()
     var confirmEmpty by remember { mutableStateOf(false) }
     var confirmForever by remember { mutableStateOf<Memo?>(null) }

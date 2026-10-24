@@ -115,6 +115,7 @@ import com.bamnat.core.money.MoneySource
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /** [LEDG-07] What the 내역 list shows: a period counted from the month on screen, conditions and an order. */
 data class LedgerView(
@@ -414,7 +415,7 @@ private fun DayHeader(date: LocalDate, expense: Long, income: Long) {
             .semantics(mergeDescendants = true) { heading() },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(Fmt.dayTitle(date) + if (date.year != LocalDate.now().year) " ${date.year}" else "", style = MaterialTheme.typography.labelLarge,
+        Text(Fmt.dayTitle(date) + if (date.year != Today.date().year) " ${date.year}" else "", style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
         if (expense != 0L) Text("-" + Fmt.won(expense), style = MaterialTheme.typography.labelMedium.merge(NumberStyle), color = cal.expense)
         if (income != 0L) {

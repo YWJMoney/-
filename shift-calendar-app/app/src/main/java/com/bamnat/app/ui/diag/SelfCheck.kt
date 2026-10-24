@@ -56,6 +56,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.bamnat.core.time.Today
 
 /**
  * [ALRM-02] I26 서버 연결 점검: one round trip to each server, when the app last heard from the company
@@ -75,7 +76,7 @@ object ServerCheck {
     )
 
     /** The card's lines, worked out from [f] at [now]. */
-    fun lines(f: Facts, now: Instant, zone: ZoneId = ZoneId.systemDefault()): List<String> = buildList {
+    fun lines(f: Facts, now: Instant, zone: ZoneId = Today.zone()): List<String> = buildList {
         add("회사 서버: " + (f.companyMillis?.let { "연결됨 (${it}ms)" } ?: "연결 안 됨"))
         add("근무표 공유 서버: " + (f.shareMillis?.let { "연결됨 (${it}ms)" } ?: "연결 안 됨") +
             when (f.shareLinksApp) { true -> " · 링크가 앱으로 열려요"; false -> " · 링크가 웹으로 열려요"; null -> "" })
@@ -140,7 +141,7 @@ internal fun ServerCheckCard(initial: ServerCheck.Facts? = null) {
                 else "보내지 못한 것이 ${waiting}개 있어요. 연결해 보고 바로 보낼 수 있어요.",
                 style = MaterialTheme.typography.bodyMedium)
         } else {
-            ServerCheck.lines(f, Instant.now()).forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            ServerCheck.lines(f, Today.instant()).forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(enabled = !busy, onClick = {

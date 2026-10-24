@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.bamnat.core.time.Today
 
 /**
  * [ADMIN-02] 문의하기 in the app: questions this phone sent, the developer's answers, a new question
@@ -155,7 +156,7 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     /** [COMM-11] 이 사람 글 안 보기 in 모두의 문의: the same list as the plaza's, then 모두의 문의 again without them. */
     fun hideWriter(mark: String) {
         c.settingsRepository.update { s ->
-            s.copy(plazaHidden = com.bamnat.core.plaza.HideList.decode(s.plazaHidden).hide(mark, "문의 쓴 분", System.currentTimeMillis()).encode())
+            s.copy(plazaHidden = com.bamnat.core.plaza.HideList.decode(s.plazaHidden).hide(mark, "문의 쓴 분", Today.millis()).encode())
         }
         _thread.value = null
         loadBoard()
@@ -223,7 +224,7 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         act({ sent, why -> done(sent, why) }, queueOn = { e ->
             if (!e.retryable) return@act false
             val queued = c.inquiryStore.queue(com.bamnat.app.company.QueuedInquiry(requestId, kind, text.trim(), full.copy(photos = emptyList()),
-                java.time.Instant.now()))
+                Today.instant()))
             if (queued) {
                 c.inquiryStore.clearDraft()
                 com.bamnat.app.company.OutboxJob.schedule(c.appContext)

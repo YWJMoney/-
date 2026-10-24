@@ -80,6 +80,7 @@ import com.bamnat.core.money.TradeWages
 import com.bamnat.app.company.RuleVersion
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.bamnat.core.time.Today
 
 private fun won(v: Long): String = "%,d원".format(v)
 
@@ -237,7 +238,7 @@ private fun VersionRow(v: RuleVersion) {
                 }
             }
             Text(
-                "${dateFormat.format(v.adoptedAt.atZone(ZoneId.systemDefault()))} · " + when (v.source) {
+                "${dateFormat.format(v.adoptedAt.atZone(Today.zone()))} · " + when (v.source) {
                     "amend" -> "고치자는 제안에 ${v.senders}명이 맞아요"
                     "auto" -> "${v.senders}명이 같은 규칙을 보내 채택"
                     else -> "개발자가 확인해 채택"

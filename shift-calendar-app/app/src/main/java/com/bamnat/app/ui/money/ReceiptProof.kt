@@ -42,6 +42,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
+import com.bamnat.core.time.Today
 
 /**
  * [FLD-08] Receipt photos kept in the app's own folder (files/receipts), picked with the system
@@ -155,7 +156,7 @@ fun ReceiptScanChip(onRead: (com.bamnat.core.money.ReceiptReader.Draft, String) 
                 val result = runCatching { com.bamnat.app.pay.PayslipScanner.read(context, Uri.fromFile(file)) }
                 val text = result.getOrNull().orEmpty()
                 val notReady = result.exceptionOrNull() as? com.bamnat.app.pay.OcrModel.NotReady
-                val draft = com.bamnat.core.money.ReceiptReader.read(text, java.time.LocalDate.now())
+                val draft = com.bamnat.core.money.ReceiptReader.read(text, Today.date())
                 onRead(draft, name)
                 onMessage(when {
                     // [PERF-04] The model is still on its way: the photo is attached, the reading can come later.

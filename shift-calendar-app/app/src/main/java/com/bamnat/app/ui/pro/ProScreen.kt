@@ -67,6 +67,7 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /**
  * [MON-04] 프로's four pillars (수익화 확정 5-2), each with the [Feature]s it opens. [PROV-08] Since 1.20.0
@@ -151,7 +152,7 @@ fun ProScreen(onBack: () -> Unit) {
     val plans by c.billing.plans.collectAsStateWithLifecycle()
     val billingState by c.billing.state.collectAsStateWithLifecycle()
     var message by remember { mutableStateOf<String?>(null) }
-    val zone = ZoneId.systemDefault()
+    val zone = Today.zone()
     // [STAT-04] The first step of the 프로 funnel; only counted once 결제 is open.
     LaunchedEffect(Unit) { if (config.billingLive) c.telemetry.event(com.bamnat.core.stats.UsageEvent.PAYWALL_VIEW.key) }
 
@@ -271,7 +272,7 @@ private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId) {
 private fun PlansCard(c: AppContainer, gate: Gate, pro: ProState, plans: List<Plan>, state: BillingState, onMessage: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val subscribed = pro.sub?.play()?.entitled(Instant.now()) == true
+    val subscribed = pro.sub?.play()?.entitled(Today.instant()) == true
     SectionCard(title = if (subscribed) "구독" else "프로 시작하기") {
         when {
             subscribed -> Text("구독 중이에요. 요금제 바꾸기와 해지는 Play 스토어에서 해요.", style = MaterialTheme.typography.bodyMedium)
@@ -295,7 +296,7 @@ private fun PlansCard(c: AppContainer, gate: Gate, pro: ProState, plans: List<Pl
                 }
             }
         }
-        proDisclosures(plans, LocalDate.now()).forEach {
+        proDisclosures(plans, Today.date()).forEach {
             Text("• $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         @OptIn(ExperimentalLayoutApi::class)

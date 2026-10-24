@@ -30,6 +30,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /**
  * [PAYX-42] 연말정산 미리보기: from January to the month on screen, the 결정세액 roughly against the 간이세액표
@@ -79,8 +80,8 @@ private fun Line(label: String, value: String) {
 internal fun RateNewsCard(profile: PayProfile, ordinaryHourly: Long) {
     val context = LocalContext.current
     val hints = remember { HintStore(context) }
-    val hourly = if (profile.wageType == WageType.HOURLY) profile.base.on(LocalDate.now()).value else ordinaryHourly
-    val news = remember(hourly) { RateNews.of(LocalDate.now(), hourly) } ?: return
+    val hourly = if (profile.wageType == WageType.HOURLY) profile.base.on(Today.date()).value else ordinaryHourly
+    val news = remember(hourly) { RateNews.of(Today.date(), hourly) } ?: return
     var gone by remember(news.key) { mutableStateOf(hints.done(news.key)) }
     if (gone) return
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {

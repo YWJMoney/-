@@ -59,6 +59,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
 import java.time.temporal.TemporalAdjusters
+import com.bamnat.core.time.Today
 
 /**
  * [GUIDE-02][GUIDE-03] At the top of the calendar: '이 달력으로 할 수 있는 것' on a calendar's first days,
@@ -74,7 +75,7 @@ fun GuideArea(
     profile: PayProfile?,
     weekStart: DayOfWeek,
     modifier: Modifier = Modifier,
-    now: LocalDateTime = LocalDateTime.now(),
+    now: LocalDateTime = Today.dateTime(),
     /** Trades in an investor calendar ([com.bamnat.core.guide.Moment.FIRST_TRADE]). */
     trades: Int = 0,
     /** [EASY-05] False on a day the question card was shown: the tip waits (the checklist does not). */

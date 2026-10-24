@@ -51,6 +51,7 @@ import com.bamnat.core.invest.Side
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
+import com.bamnat.core.time.Today
 
 private enum class Repeat(val label: String) { WEEKDAYS("평일"), DAILY("매일"), PICK("요일 고르기"), MONTHLY("매달"), ONCE("한 번") }
 private val WEEKDAYS = setOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY)
@@ -109,7 +110,7 @@ internal fun AlarmSheet(vm: InvestViewModel, state: InvestState, kind0: AlarmKin
         )
     }
     val preview = build()
-    val next = InvestAlarms.next(preview, LocalDateTime.now())
+    val next = InvestAlarms.next(preview, Today.dateTime())
     val valid = parseMinute(time) != null && (repeat != Repeat.PICK || days.isNotEmpty()) && (!needsHolding || (name.isNotBlank() || symbol.isNotBlank()))
 
     InvestSheetFrame(

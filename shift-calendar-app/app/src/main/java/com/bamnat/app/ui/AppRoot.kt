@@ -145,6 +145,7 @@ import androidx.compose.runtime.produceState
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 private enum class TopLevel(val route: String, val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
     CALENDAR("calendar", "달력", Icons.Outlined.CalendarMonth, Icons.Filled.CalendarMonth),
@@ -332,14 +333,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             // [NAV-01] Away long enough to count as opening the app again: this month, like a fresh start.
             if (NoticeLinks.target.value == null && TopLevel.entries.any { it.route == current }) {
-                container.shownMonth.show(java.time.YearMonth.now())
+                container.shownMonth.show(Today.month())
             }
         }
     }
 
     // [IMPORT-02] When the user asked for it, new events in the chosen calendars are offered on opening the app.
     LaunchedEffect(homeRequests) {
-        val count = runCatching { container.calendarImporter.countNew(LocalDate.now()) }.getOrDefault(0)
+        val count = runCatching { container.calendarImporter.countNew(Today.date()) }.getOrDefault(0)
         if (count > 0 && snackbar.showSnackbar("캘린더에 새 일정 ${count}개가 있어요", actionLabel = "가져오기",
                 duration = androidx.compose.material3.SnackbarDuration.Long) == androidx.compose.material3.SnackbarResult.ActionPerformed) {
             NoticeLinks.open(NoticeLinks.Target.CALENDAR_IMPORT)

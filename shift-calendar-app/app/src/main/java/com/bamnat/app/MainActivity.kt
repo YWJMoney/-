@@ -20,6 +20,7 @@ import com.bamnat.app.share.ShareLinkId
 import com.bamnat.app.ui.AppRoot
 import com.bamnat.app.ui.theme.BamnatTheme
 import com.bamnat.core.diag.DiagEvents
+import com.bamnat.core.time.Today
 
 class MainActivity : ComponentActivity() {
     // [LOCK-01] The phone's own confirm screen before Android 11.
@@ -129,7 +130,7 @@ class MainActivity : ComponentActivity() {
         // [SRV-07] not in the first three days after install.
         c.syncPro()
         if (com.bamnat.core.tier.AdRules.sdkMayStart(c.remoteConfig.current.billingLive, c.featureGate.state.value.allows(com.bamnat.app.tier.Feature.NO_ADS),
-                c.installedAt, java.time.Instant.now(), c.remoteConfig.current.adQuietDays)) c.ads.start(this)
+                c.installedAt, Today.instant(), c.remoteConfig.current.adQuietDays)) c.ads.start(this)
     }
 
     override fun onStop() {

@@ -13,6 +13,7 @@ import com.bamnat.core.money.ReceivableKind
 import com.bamnat.core.money.ReceivablePayment
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /** [RECV-01] Money others owe the user; version 13. */
 @Entity(tableName = "receivables")
@@ -122,7 +123,7 @@ fun ReceivableEntity.toModel(payments: List<ReceivablePaymentEntity>) = Receivab
     payments = payments.map { it.toModel() }.sortedWith(compareBy({ it.date }, { it.id })),
 )
 
-fun Receivable.toEntity(createdAt: Long = System.currentTimeMillis()) = ReceivableEntity(
+fun Receivable.toEntity(createdAt: Long = Today.millis()) = ReceivableEntity(
     id = id, who = who.trim(), title = title.trim(), amount = amount, epochDay = date.toEpochDay(), dueEpochDay = due?.toEpochDay(),
     kind = kind.name, note = note, countAsIncome = countAsIncome, closedEpochDay = closedOn?.toEpochDay(), createdAt = createdAt,
 )

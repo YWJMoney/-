@@ -59,6 +59,7 @@ import com.bamnat.core.guide.FeatureRegistry
 import com.bamnat.core.guide.Off
 import com.bamnat.core.work.WorkStyle
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /**
  * [GUIDE-05] 설정 › 기능 켜고 끄기: every feature that can be off, for the calendar picked at the top, in
@@ -154,7 +155,7 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
                 val guideRows = features.filter { it.id.startsWith("guide.") }
                 if (guideRows.isNotEmpty()) SectionCard(title = "안내") {
                     guideRows.forEach { f -> SwitchLine(f, isOn(f), waits(f), { ask(f) }) { toggle(f, it) } }
-                    TextButton(onClick = { store.restartChecklist(active, style, LocalDate.now()); message = "달력 맨 위에 ‘이 달력으로 할 수 있는 것’을 다시 보여 드려요" }) {
+                    TextButton(onClick = { store.restartChecklist(active, style, Today.date()); message = "달력 맨 위에 ‘이 달력으로 할 수 있는 것’을 다시 보여 드려요" }) {
                         Text("‘$name’ 안내 카드 다시 보기")
                     }
                 }

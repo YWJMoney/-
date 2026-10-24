@@ -74,6 +74,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /** Quick-input tool: tap days to stamp a shift on them. */
 sealed interface PaintTool {
@@ -316,7 +317,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** The law's defaults with no money, to sort minutes before the pay setup is done. */
     private fun lawOnly(s: AppSettings) = PayProfile(Occupation.MANUFACTURING, WageType.MONTHLY, ValueTimeline(), weekStart = s.weekStart)
 
-    private val _selected = MutableStateFlow(LocalDate.now())
+    private val _selected = MutableStateFlow(Today.date())
     val selected: StateFlow<LocalDate> = _selected.asStateFlow()
 
     /** [NAV-01] The month on screen, shared with 돈 and 근무·급여. */
@@ -424,7 +425,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** [SLP-06][SLP-14] "깼어요" now, or at [at] when the user says later when they woke. */
     fun wokeUp(at: LocalDateTime? = null) = gate(WriteKind.SLEEP) {
         container.appScope.launch {
-            val millis = at?.atZone(java.time.ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
+            val millis = at?.atZone(Today.zone())?.toInstant()?.toEpochMilli()
             val sleep = container.sleepRepository.wokeUp(millis) ?: return@launch
             val minutes = sleep.minutes ?: 0
             val text = if (minutes > SleepDebt.MAX_SLEEP_MINUTES) "16시간이 넘게 열려 있던 기록이라 수면 통계에서 뺐어요"
@@ -876,14 +877,14 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     /** Reads the event log: off the main thread. */
     internal fun findAlarmSuggestion(
-        snap: ScheduleSnapshot, settings: AppSettings, sleeps: List<com.bamnat.core.sleep.SleepEntry>, today: LocalDate = LocalDate.now(),
+        snap: ScheduleSnapshot, settings: AppSettings, sleeps: List<com.bamnat.core.sleep.SleepEntry>, today: LocalDate = Today.date(),
     ): com.bamnat.core.alarm.AlarmSuggest.Suggestion? {
         val suggest = com.bamnat.core.alarm.AlarmSuggest
         val days = snap.resolver.resolveRange(today.minusDays(suggest.LOOK_BACK_DAYS), today.minusDays(1))
             .filter { !it.hasCustomTimes && !it.alarmSkipped && it.shiftType?.activeAlarms?.isNotEmpty() == true }
             .map { it.date to it.shiftType!! }
         if (days.isEmpty()) return null
-        val offs = suggest.offsOf(container.telemetry.log.read(), java.time.ZoneId.systemDefault())
+        val offs = suggest.offsOf(container.telemetry.log.read(), Today.zone())
         return suggest.find(today, snap.shiftTypes, days, offs, sleeps, settings.sleepTargetMinutes,
             settings.bedtimeNotice, com.bamnat.core.alarm.AlarmSuggest.Memory.decode(settings.alarmSuggestMemory))
     }
@@ -922,7 +923,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private fun suggestAnswered(s: com.bamnat.core.alarm.AlarmSuggest.Suggestion, answer: String, forGood: Boolean = false) {
         container.settingsRepository.update { st ->
             st.copy(alarmSuggestMemory = com.bamnat.core.alarm.AlarmSuggest.Memory.decode(st.alarmSuggestMemory)
-                .answered(s.key, LocalDate.now(), forGood).encode())
+                .answered(s.key, Today.date(), forGood).encode())
         }
         // Only the kind and the answer: no shift name, no times.
         container.telemetry.event(com.bamnat.core.diag.DiagEvents.ALARM_SUGGEST, "${s.kind.key} $answer")
@@ -1057,7 +1058,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * [DAYW-03] 지금 퇴근 on [day]: past the end it puts 잔업 from the end to now (replacing a 잔업 already
      * there), before the end the day ends now. Said back with undo.
      */
-    fun leaveNow(day: ResolvedDay, now: LocalDateTime = LocalDateTime.now()) = gate(WriteKind.DAY_TIME) {
+    fun leaveNow(day: ResolvedDay, now: LocalDateTime = Today.dateTime()) = gate(WriteKind.DAY_TIME) {
         guideUsed("day.leaveNow")
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
@@ -1156,7 +1157,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     /** Called once the review sheet was offered; Play decides whether it actually shows [OPS-20]. */
     fun markReviewAsked(moment: com.bamnat.app.review.InAppReview.Moment = com.bamnat.app.review.InAppReview.Moment.FIRST) {
-        val today = LocalDate.now().toEpochDay()
+        val today = Today.date().toEpochDay()
         container.settingsRepository.update {
             if (moment == com.bamnat.app.review.InAppReview.Moment.PAY) it.copy(payReviewDue = false, payReviewAsked = true, reviewAskedDay = today)
             else it.copy(reviewDue = false, reviewAsked = true, reviewAskedDay = today)
@@ -1225,7 +1226,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             // [NOTE-01] A quick memo belongs to the calendar it was written on.
             val memo = memoRepo.addQuick(date, text, setOf(container.calendars.active.value)) ?: return@launch
             // [SCHED-01] A quick line that names a time is asked about, like a memo written in the editor.
-            val found = com.bamnat.core.memo.MemoTime.find(memo, java.time.LocalDateTime.now()) ?: return@launch
+            val found = com.bamnat.core.memo.MemoTime.find(memo, Today.dateTime()) ?: return@launch
             _messages.tryEmit(UndoMessage("‘${found.phrase}’, 일정으로 넣을까요?", actionLabel = "일정으로 넣기") {
                 _openMemo.tryEmit(memo.id)
             })
@@ -1265,7 +1266,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
     override val categoryRules: Map<String, String> get() = rules.value
     override fun frequentAmounts(kind: com.bamnat.core.money.MoneyKind): List<Long> =
-        com.bamnat.core.money.MoneyStats.frequentAmounts(moneyBook.value.entries, kind, java.time.LocalDate.now())
+        com.bamnat.core.money.MoneyStats.frequentAmounts(moneyBook.value.entries, kind, Today.date())
 
     override fun deleteEntry(entry: MoneyEntry) {
         val money = money

@@ -50,6 +50,7 @@ import com.bamnat.core.work.WorkStyle
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /*
  * Home screen widgets [FEAT-03, REL-03]: today and tomorrow, this week, and the month.
@@ -165,7 +166,7 @@ private fun TodayContent(data: WidgetData) {
             LeaveNowWidgetButton()
         }
         // [DAILY-11] An 알바 clocks in and out from the home screen.
-        val now = java.time.LocalDateTime.now()
+        val now = Today.dateTime()
         HourlyClockAction.offered(data.style, todayDay, now) { data.day(data.today.minusDays(1)) }?.let { out ->
             Spacer(GlanceModifier.height(4.dp))
             HourlyClockButton(out, yesterday = out && clockOutDay(todayDay, data.today, now) { data.day(data.today.minusDays(1)) }?.date != data.today)

@@ -24,6 +24,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeParseException
+import com.bamnat.core.time.Today
 
 /**
  * Read-only web links to the schedule [MKT-09]. The server (server/share-worker) keeps only what
@@ -285,7 +286,7 @@ object ShareLinkKey {
 class ShareLinkStore(
     context: Context,
     val key: String = com.bamnat.app.data.PersonalCalendar.MAIN,
-    private val clock: () -> Instant = Instant::now,
+    private val clock: () -> Instant = Today::instant,
 ) {
     private val prefs = context.applicationContext.getSharedPreferences(prefsName(key), Context.MODE_PRIVATE)
     /**

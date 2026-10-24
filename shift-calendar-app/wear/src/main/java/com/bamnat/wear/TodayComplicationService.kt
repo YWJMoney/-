@@ -18,6 +18,7 @@ import com.bamnat.core.work.WatchDay
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /**
  * [SHFT-08] 오늘 근무 on a watch face: the short text is today's short name ("주", "야", "휴") with "근무" over it,
@@ -26,15 +27,15 @@ import java.time.ZoneId
  */
 class TodayComplicationService : SuspendingTimelineComplicationDataSourceService() {
     override fun getPreviewData(type: ComplicationType): ComplicationData? {
-        val today = LocalDate.now()
+        val today = Today.date()
         val day = WatchDay(today, "주간", "주", 0xFF2F80ED, LocalTime.of(9, 0), LocalTime.of(18, 0))
-        return data(type, ComplicationDays.today(listOf(day), today, ZoneId.systemDefault()))
+        return data(type, ComplicationDays.today(listOf(day), today, Today.zone()))
     }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationDataTimeline? {
         val days = WatchStore.load(this)?.days
-        val zone = ZoneId.systemDefault()
-        val today = LocalDate.now(zone)
+        val zone = Today.zone()
+        val today = Today.date(zone)
         val now = data(request.complicationType, ComplicationDays.today(days, today, zone)) ?: return null
         val ahead = days?.let { ComplicationDays.ahead(it, today, zone) }.orEmpty().mapNotNull { d ->
             data(request.complicationType, d)?.let { TimelineEntry(TimeInterval(d.start, d.end), it) }

@@ -83,6 +83,7 @@ import kotlinx.coroutines.launch
 import java.time.YearMonth
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import com.bamnat.core.time.Today
 
 private enum class MatchStage { MONTH, ROSTER, AMOUNTS, WORKING, RESULT, DONE }
 
@@ -167,7 +168,7 @@ fun PayslipMatchDialog(
     /** [PAYS-09] 회사 설정 보내기 for the invitation once the payslip and the app agree; null leaves that way out. */
     onShareWay: (() -> Unit)? = null,
 ) {
-    val latest = YearMonth.now()
+    val latest = Today.month()
     var chosen by remember { mutableStateOf(minOf(month, latest)) }
     var stage by remember { mutableStateOf(MatchStage.MONTH) }
     val form = remember { SlipForm() }
@@ -298,7 +299,7 @@ fun PayslipMatchDialog(
                                         val from = profile.period.start(chosen)
                                         names.forEachIndexed { i, (name, amount) ->
                                             added += PayItem(
-                                                "item-${System.currentTimeMillis()}-$i", name,
+                                                "item-${System.currentTimeMillis()}-$i", name,  // real clock: an id, not a time
                                                 ValueTimeline(listOf(DatedValue(from, amount))), Cadence.MONTHLY, ordinary = true,
                                             )
                                         }

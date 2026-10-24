@@ -30,6 +30,7 @@ import java.io.File
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
+import com.bamnat.core.time.Today
 
 /**
  * [EASY-01] The example calendar of 우선 둘러볼게요: laid from [ExamplePlan] into a calendar of its own
@@ -37,7 +38,7 @@ import java.time.LocalTime
  * are the one part kept in the main database (memos are one store for every calendar), so [remove] deletes
  * them instead of handing them to 내 달력, and [sweep] takes away any left by a backup restored elsewhere.
  */
-class ExampleCalendar(private val c: AppContainer, private val today: () -> LocalDate = LocalDate::now) {
+class ExampleCalendar(private val c: AppContainer, private val today: () -> LocalDate = Today::date) {
     private val book get() = c.calendars
     /** [sweep] on start and [browse] tapped meanwhile take turns, so a new example is never taken for a stale one. */
     private val lock = kotlinx.coroutines.sync.Mutex()
