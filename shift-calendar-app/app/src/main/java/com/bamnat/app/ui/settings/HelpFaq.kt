@@ -306,6 +306,21 @@ internal object HelpFaq {
             listOf("개인정보"),
             "개인정보 처리방침" to HelpAction.Page(SettingsPage.PRIVACY, "개인정보 처리방침"),
         ),
+        // ---- 1.24 묶음 S [INQ-06][COMM-12] ----
+        HelpTopic(
+            "inquiryPublic", "문의", "내 문의를 다른 사람도 보나요?",
+            "보낼 때 ‘모두의 문의에 올리기’를 켜 두면 글과 개발자 답이 모두의 문의에 올라가요. 누가 보냈는지는 보이지 않아요. " +
+                "끄면 개발자만 봐요. 회사 방식 알려 주기는 늘 개발자만 봐요.",
+            listOf("공개", "비공개", "다른 사람", "모두의 문의", "나만", "개발자만"),
+            listOf("도움말과 문의"),
+        ),
+        HelpTopic(
+            "plazaEntry", "광장", "같은 회사 분들 규칙은 어디서 보나요?",
+            "첫 설정에서 회사 이름을 넣었다면 급여 화면 아래 ‘분들이 올린 규칙 보기’를 누르세요. 회사 이름이 검색된 채 회사 규칙 광장이 열려요. " +
+                "같은 부서 설정이 둘이면 다른 점을 한 줄로 보여 줘요.",
+            listOf("광장", "같은 회사", "회사 규칙", "동료 설정", "제보"),
+            listOf("급여", "회사 규칙 광장"),
+        ),
     )
 
     /** [INQ-05] I11: the answers each of the server's topics ([com.bamnat.core.ops.InquiryTopics]) starts with. */
