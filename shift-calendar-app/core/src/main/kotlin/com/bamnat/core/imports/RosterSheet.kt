@@ -15,7 +15,7 @@ import com.bamnat.core.time.Today
  */
 
 /** One day of a roster as read: the code written and what it means on the calendar. */
-data class RosterDay(val date: LocalDate, val raw: String, val cell: DutyCell)
+data class RosterDay(val date: LocalDate, val raw: String, val cell: DutyCell, val note: String? = null)
 
 /** One person's days. [name] is blank when the file has one person only. */
 data class RosterPerson(val name: String, val days: List<RosterDay>) {
@@ -61,10 +61,14 @@ object RosterSheet {
         val columns = header.second.toMap()
         val firstDayCol = columns.keys.min()
         val people = rows.drop(header.first + 1).mapNotNull { r ->
-            val name = r.take(firstDayCol).map { it.trim() }.filter { it.isNotEmpty() && it.none(Char::isDigit) }.joinToString(" ")
+            // [ROST-04] A job title in its own column or after the name (김민지RN) is not part of the name.
+            val name = r.take(firstDayCol).map { it.trim() }.filter { it.isNotEmpty() && it.none(Char::isDigit) && DutyCodes.norm(it) !in DutyCodes.RANKS }
+                .map { n -> codes.splitName(n)?.first ?: n }.joinToString(" ")
             val days = columns.mapNotNull { (c, date) ->
                 val raw = r.getOrNull(c)?.trim().orEmpty()
-                if (raw.isEmpty()) null else RosterDay(date, raw, codes.match(raw) ?: DutyCell.Unknown(raw))
+                // [ROST-03] "D*", "N-O", "11D" as on the photo: the code, and the rest kept as the day's note.
+                val read = codes.read(raw)
+                if (raw.isEmpty()) null else RosterDay(date, raw, read?.first ?: DutyCell.Unknown(raw), read?.second)
             }.sortedBy { it.date }
             // A row of weekdays or totals is no one's duties.
             val known = days.count { it.cell !is DutyCell.Unknown }
@@ -94,7 +98,8 @@ object RosterSheet {
             val raw = r.getOrNull(codeCol)?.trim().orEmpty()
             if (raw.isEmpty()) return@mapNotNull null
             val name = if (nameCol >= 0) r.getOrNull(nameCol)?.trim().orEmpty() else ""
-            name to RosterDay(date, raw, codes.match(raw) ?: DutyCell.Unknown(raw))
+            val read = codes.read(raw)
+            name to RosterDay(date, raw, read?.first ?: DutyCell.Unknown(raw), read?.second)
         }
         if (read.size < DutyRoster.MIN_CELLS) return null
         val people = read.groupBy({ it.first }, { it.second }).map { (n, d) -> RosterPerson(n, d.distinctBy { it.date }.sortedBy { it.date }) }

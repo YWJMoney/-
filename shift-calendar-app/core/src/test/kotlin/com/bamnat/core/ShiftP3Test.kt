@@ -41,7 +41,7 @@ class ShiftP3Test {
         assertEquals(off, codes.match("O"))
         assertEquals(off, codes.match("휴"))
         assertEquals(night, codes.match("야"))
-        assertEquals(DutyCell.Leave, codes.match("연차"))
+        assertEquals(DutyCell.Leave(), codes.match("연차"))
         assertEquals(DutyCell.Shift(Fixtures.long.id), codes.match("장주간"))
         assertNull(codes.match("김민지"))
         assertEquals(listOf("D", "D", "E", "N"), codes.split("DDEN"))
@@ -64,7 +64,7 @@ class ShiftP3Test {
         assertEquals(evening, minji.cells[3])
         assertEquals(night, minji.cells[6])
         assertEquals(off, minji.cells[7])
-        assertEquals(DutyCell.Leave, minji.cells[9])
+        assertEquals(DutyCell.Leave(), minji.cells[9])
         assertEquals(night, rows.first { it.label == "박준호" }.cells[1])
     }
 
@@ -132,7 +132,7 @@ class ShiftP3Test {
         val d = LocalDate.of(2026, 11, 3)
         assertEquals(ShiftOverride.Shift(Fixtures.night.id), DutyRoster.apply(DayEntry(d), night).override)
         assertEquals(ShiftOverride.Off, DutyRoster.apply(DayEntry(d), DutyCell.Off).override)
-        assertNotNull(DutyRoster.apply(DayEntry(d), DutyCell.Leave).leave)
+        assertNotNull(DutyRoster.apply(DayEntry(d), DutyCell.Leave()).leave)
         assertEquals(DayEntry(d), DutyRoster.apply(DayEntry(d), DutyCell.Unknown("?")))
     }
 
