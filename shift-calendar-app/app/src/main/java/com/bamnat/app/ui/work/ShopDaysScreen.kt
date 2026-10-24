@@ -64,6 +64,7 @@ import kotlinx.coroutines.sync.withLock
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
+import com.bamnat.core.time.Today
 
 /**
  * [TYPE-03][TYPE-04] What a shop calendar needs instead of a shift order: the 영업 day kind with the
@@ -81,7 +82,7 @@ object ShopKeeper {
     private val lock = Mutex()
 
     /** Saves [rules] for calendar [id]: its day kinds, weekly order and the days off the rules add or take back. */
-    suspend fun apply(c: AppContainer, id: String, rules: ShopRules, today: LocalDate = LocalDate.now()) = lock.withLock {
+    suspend fun apply(c: AppContainer, id: String, rules: ShopRules, today: LocalDate = Today.date()) = lock.withLock {
         val schedule = c.calendars.repository(id)
         val types = schedule.shiftTypes.first()
         val open = openType(types)
@@ -119,7 +120,7 @@ object ShopKeeper {
      * [TYPE-04] Open days that passed with nothing sold become 임시휴무, once each, in every shop
      * calendar. Run when the app comes to the front.
      */
-    suspend fun catchUp(c: AppContainer, today: LocalDate = LocalDate.now()) = lock.withLock {
+    suspend fun catchUp(c: AppContainer, today: LocalDate = Today.date()) = lock.withLock {
         val mainStyle = c.settingsRepository.current.workStyle
         for (cal in c.calendars.calendars.value) {
             val rules = cal.shop ?: continue

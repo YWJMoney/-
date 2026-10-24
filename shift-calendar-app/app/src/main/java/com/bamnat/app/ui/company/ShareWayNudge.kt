@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.appContainer
 import com.bamnat.app.ui.appViewModel
+import com.bamnat.core.time.Today
 
 /**
  * [PAYS-09] Whether the invitation to share the company's way may show, on this phone only: "다음에" puts it off
@@ -44,9 +45,9 @@ import com.bamnat.app.ui.appViewModel
 internal class ShareWayMemory(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("share_way", Context.MODE_PRIVATE)
 
-    fun due(now: Long = System.currentTimeMillis()): Boolean = !prefs.getBoolean("never", false) && now >= prefs.getLong("later", 0)
+    fun due(now: Long = Today.millis()): Boolean = !prefs.getBoolean("never", false) && now >= prefs.getLong("later", 0)
 
-    fun later(now: Long = System.currentTimeMillis()) = prefs.edit().putLong("later", now + LATER_MILLIS).apply()
+    fun later(now: Long = Today.millis()) = prefs.edit().putLong("later", now + LATER_MILLIS).apply()
 
     fun never() = prefs.edit().putBoolean("never", true).apply()
 

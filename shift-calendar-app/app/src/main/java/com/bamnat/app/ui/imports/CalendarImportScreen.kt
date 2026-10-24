@@ -89,6 +89,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /** [IMPORT-01] The span of days to read. */
 enum class ImportRange(val label: String, val back: Long, val ahead: Long) {
@@ -147,7 +148,7 @@ class CalendarImportViewModel(private val container: AppContainer) : ViewModel()
         if (u.chosen.isEmpty()) return
         _ui.update { it.copy(loading = true, done = null) }
         viewModelScope.launch {
-            val today = LocalDate.now()
+            val today = Today.date()
             val list = runCatching { importer.propose(u.calendars, u.chosen, u.range.from(today), u.range.to(today)) }.getOrDefault(emptyList())
             importer.chosen = u.chosen
             _ui.update { it.copy(loading = false, proposals = list, left = emptySet()) }

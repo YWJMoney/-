@@ -28,6 +28,7 @@ import com.bamnat.core.invest.Trade
 import kotlinx.coroutines.flow.Flow
 import java.time.DayOfWeek
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /*
  * [INV-01..INV-21] The investor calendar's tables, version 18. Every calendar's database has them
@@ -230,7 +231,7 @@ fun InvestTradeEntity.toModel() = Trade(
     followedRules = followedRules?.let { it == 1 }, memo = memo, alarmId = alarmId, createdAt = createdAt,
 )
 
-fun Trade.toEntity(now: Long = System.currentTimeMillis()) = InvestTradeEntity(
+fun Trade.toEntity(now: Long = Today.millis()) = InvestTradeEntity(
     id = id, accountId = accountId, epochDay = date.toEpochDay(), minuteOfDay = minute, symbol = symbol.trim(), name = name.trim(),
     market = market.name, side = side.name, quantity = quantity, price = price, currency = currency, fxRate = fxRate, fee = fee, tax = tax,
     reason = reason.trim(), emotions = Emotion.encode(emotions), tags = tags.joinToString(","),
@@ -239,7 +240,7 @@ fun Trade.toEntity(now: Long = System.currentTimeMillis()) = InvestTradeEntity(
 )
 
 fun InvestCashEntity.toModel() = CashFlow(id, accountId, LocalDate.ofEpochDay(epochDay), minuteOfDay, enumOr(kind, CashKind.DEPOSIT), amount, tax, symbol, memo, createdAt)
-fun CashFlow.toEntity(now: Long = System.currentTimeMillis()) = InvestCashEntity(
+fun CashFlow.toEntity(now: Long = Today.millis()) = InvestCashEntity(
     id, accountId, date.toEpochDay(), minute, kind.name, amount, tax, symbol.trim(), memo.trim(), if (createdAt > 0) createdAt else now,
 )
 
@@ -250,7 +251,7 @@ fun InvestJournalEntity.toModel() = JournalEntry(
     LocalDate.ofEpochDay(epochDay), market, review, JournalRules.decode(checked),
     grade?.let { g -> DayGrade.entries.firstOrNull { it.name == g } }, updatedAt,
 )
-fun JournalEntry.toEntity(now: Long = System.currentTimeMillis()) =
+fun JournalEntry.toEntity(now: Long = Today.millis()) =
     InvestJournalEntity(date.toEpochDay(), market, review, JournalRules.encode(checked), grade?.name, now)
 
 fun InvestEventEntity.toModel() = InvestEvent(id, LocalDate.ofEpochDay(epochDay), enumOr(kind, EventKind.OTHER), symbol, title, memo, remind)
@@ -263,7 +264,7 @@ fun InvestAlarmEntity.toModel() = InvestAlarm(
     symbol = symbol, name = name, market = enumOr(market, Market.KR_STOCK), accountId = accountId, side = enumOr(side, Side.BUY),
     quantity = quantity, amount = amount, targetPrice = targetPrice, enabled = enabled, ring = ring, createdAt = createdAt,
 )
-fun InvestAlarm.toEntity(now: Long = System.currentTimeMillis()) = InvestAlarmEntity(
+fun InvestAlarm.toEntity(now: Long = Today.millis()) = InvestAlarmEntity(
     id = id, kind = kind.name, label = label.trim(), minuteOfDay = minute, weekdays = DayOfWeek.entries.filter { it in weekdays }.joinToString(",") { it.name },
     monthDay = monthDay, onceEpochDay = once?.toEpochDay(), skipHolidays = skipHolidays, symbol = symbol.trim(), name = name.trim(),
     market = market.name, accountId = accountId, side = side.name, quantity = quantity, amount = amount, targetPrice = targetPrice,

@@ -64,9 +64,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /** [SHR-14] 우리 조 모아 보기: start or join a 모임 코드 with one's own link, and see everyone's week side by side. */
-class ShareGroupViewModel(private val c: AppContainer, private val today: () -> LocalDate = LocalDate::now) : ViewModel() {
+class ShareGroupViewModel(private val c: AppContainer, private val today: () -> LocalDate = Today::date) : ViewModel() {
     data class Ui(
         val code: String? = null,
         val members: List<ShareGroupBoard.Member> = emptyList(),

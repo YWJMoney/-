@@ -41,6 +41,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /**
  * [SETUP-01][SETUP-02] The first setup, one question at a time. Every answer goes to the draft on the
@@ -48,7 +49,7 @@ import java.time.YearMonth
  */
 class SetupViewModel(
     private val c: AppContainer,
-    private val now: () -> LocalDateTime = LocalDateTime::now,
+    private val now: () -> LocalDateTime = Today::dateTime,
     /**
      * [MCAL-02] A calendar being added: the same questions as the first launch, saved into that
      * calendar only. The app's settings, pay setup and company stay as they are.

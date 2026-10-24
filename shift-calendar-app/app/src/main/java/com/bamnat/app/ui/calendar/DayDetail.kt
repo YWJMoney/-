@@ -132,6 +132,7 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalTime
 import com.bamnat.app.ui.calendar.DayGroupKey as G
+import com.bamnat.core.time.Today
 
 /** [DAY-02] Which of the day's groups are open: the user's own choice per group, kept from day to day. */
 @Stable
@@ -1163,7 +1164,7 @@ private fun RestWarning(issues: List<com.bamnat.core.schedule.RestCheck.Issue>) 
 @Composable
 private fun ChangeHistory(changes: List<com.bamnat.app.data.DayChange>) {
     var all by rememberSaveable { mutableStateOf(false) }
-    val zone = java.time.ZoneId.systemDefault()
+    val zone = Today.zone()
     val fmt = remember { java.time.format.DateTimeFormatter.ofPattern("M/d HH:mm") }
     SectionCard(title = "변경 이력") {
         val shown = if (all) changes else changes.take(HISTORY_ROWS)

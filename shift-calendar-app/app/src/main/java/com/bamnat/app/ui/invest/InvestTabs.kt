@@ -53,6 +53,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
 import kotlin.math.roundToLong
+import com.bamnat.core.time.Today
 
 /** [INV-03] One trade as a line: what, how many at what price, and for a sale what it made. */
 @Composable
@@ -278,7 +279,7 @@ internal fun JournalTab(state: InvestState, open: (InvestSheet) -> Unit) {
  */
 @Composable
 internal fun AlarmsTab(vm: InvestViewModel, state: InvestState, open: (InvestSheet) -> Unit) {
-    val now = LocalDateTime.now()
+    val now = Today.dateTime()
     Text("알림을 누르면 내용이 채워진 매매 기록 창이 열려요. 소리로 울릴지는 알람마다 고를 수 있어요.", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
     androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth()) {

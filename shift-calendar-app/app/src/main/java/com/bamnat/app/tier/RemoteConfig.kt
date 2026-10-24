@@ -13,6 +13,7 @@ import org.json.JSONException
 import org.json.JSONObject
 import java.time.Duration
 import java.time.Instant
+import com.bamnat.core.time.Today
 
 /**
  * [MON-02] What the company server's `GET /api/config` says: the developer app's 정식 출시 switch and
@@ -131,7 +132,7 @@ class RemoteConfigStore(context: Context) {
     }
 
     /** Asks the server when due; no answer (offline, a sign-in page) keeps the last one. */
-    suspend fun refresh(api: TierApi, now: Instant = Instant.now(), force: Boolean = false): Boolean {
+    suspend fun refresh(api: TierApi, now: Instant = Today.instant(), force: Boolean = false): Boolean {
         if (!api.enabled || (!force && !due(now))) return false
         val fresh = try {
             api.config(now)

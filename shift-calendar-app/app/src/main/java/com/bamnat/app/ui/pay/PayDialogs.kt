@@ -51,6 +51,7 @@ import com.bamnat.core.pay.RaiseRule
 import com.bamnat.core.pay.Rounding
 import java.time.YearMonth
 import kotlin.math.abs
+import com.bamnat.core.time.Today
 
 /** A won amount typed as digits; shows the grouped value underneath so long numbers stay readable. */
 @Composable
@@ -313,7 +314,7 @@ fun RaiseDialog(vm: PayViewModel, profile: PayProfile, target: ValueTarget, onDi
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
                     Text(r.describe(), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                     val t = timeline.copy(raise = r)
-                    val start = YearMonth.now()
+                    val start = Today.month()
                     (0..3).forEach { y ->
                         val m = YearMonth.of(start.year + y, r.month).let { if (it < start) start else it }
                         Fact(Fmt.month(m), won(t.on(m).value))
@@ -422,7 +423,7 @@ fun AddBonusDialog(
                 Text("명절상여", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     com.bamnat.core.pay.Festival.entries.forEach { f ->
-                        val date = remember(f) { f.date(java.time.LocalDate.now().year) }
+                        val date = remember(f) { f.date(Today.date().year) }
                         FilterChip(selected = f in festivals, onClick = {
                             festivals = if (f in festivals) festivals - f else festivals + f
                             if (festivals.isNotEmpty() && name == "상여금") name = "명절상여"
@@ -550,7 +551,7 @@ fun PayScaleDialog(vm: PayViewModel, profile: PayProfile, onDismiss: () -> Unit)
     var text by remember { mutableStateOf("") }
     var stepMonth by remember { mutableStateOf(1) }
     var step by remember { mutableStateOf(1) }
-    val since = remember { LocalDate.now().withDayOfMonth(1) }
+    val since = remember { Today.date().withDayOfMonth(1) }
     val steps = remember(text) { PayScale.parse(text) }
     val scale = runCatching { PayScale(steps, stepMonth, step.coerceIn(steps.keys.minOrNull() ?: 1, steps.keys.maxOrNull() ?: 1), since) }.getOrNull()
     AlertDialog(

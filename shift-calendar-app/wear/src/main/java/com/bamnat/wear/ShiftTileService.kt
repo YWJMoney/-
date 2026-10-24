@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /**
  * [SHFT-08] 오늘 근무 tile: today's shift big in its colour with its times, tomorrow's under it, and the next
@@ -28,13 +29,13 @@ class ShiftTileService : TileService() {
         CallbackToFutureAdapter.getFuture { done ->
             // [WEAR-03] 오늘 알람 끄기 tapped on the tile: the phone turns it off and sends the days back.
             if (requestParams.currentState.lastClickableId == ALARM_OFF) {
-                val today = java.time.LocalDate.now().toString()
+                val today = Today.date().toString()
                 kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                     WatchStore.send(applicationContext, WatchDays.ALARM_OFF_PATH, today)
                 }
             }
-            val zone = ZoneId.systemDefault()
-            val nowMs = System.currentTimeMillis()
+            val zone = Today.zone()
+            val nowMs = Today.millis()
             val now = LocalDateTime.ofInstant(Instant.ofEpochMilli(nowMs), zone)
             val untilMidnight = now.toLocalDate().plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() - nowMs + 5_000
             // [SHFT-08] Once the alarm shown has gone off, the tile moves on to the next one.

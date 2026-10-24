@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.time.format.DateTimeFormatter
+import com.bamnat.core.time.Today
 
 /**
  * Rings the alarm: plays the chosen sound on the alarm stream, vibrates, and shows a
@@ -73,7 +74,7 @@ class AlarmService : Service() {
                     val minutes = BootAlarms.ringSettings(this).snoozeMinutes
                     if (BootAlarms.isLocked(this)) {
                         // [REL-10] Still locked after a reboot: the snooze lives only in the device-protected copy.
-                        val at = System.currentTimeMillis() + minutes.coerceAtLeast(1) * 60_000L
+                        val at = Today.millis() + minutes.coerceAtLeast(1) * 60_000L
                         val snoozed = ring.copy(isSnooze = true)
                         AlarmScheduler.setAlarm(this, getSystemService(android.app.AlarmManager::class.java), at, AlarmScheduler.snoozeIntent(this, snoozed))
                         BootAlarms.saveSnooze(this, snoozed, at)
@@ -103,7 +104,7 @@ class AlarmService : Service() {
     private fun startRinging(ring: RingRequest) {
         stopOutputs()
         // [PROV-06] The mission's 5 minutes count from the first ring, not from a ring that replaced it.
-        if (_ringing.value == null) _since.value = System.currentTimeMillis()
+        if (_ringing.value == null) _since.value = Today.millis()
         _ringing.value = ring
         if (!ring.recheck && !BootAlarms.isLocked(this)) WakeCheck.cancel(this)
         startInForeground(ring)
@@ -129,7 +130,7 @@ class AlarmService : Service() {
     private fun offDetail(ring: RingRequest): String? {
         if (ring.shiftTypeId <= 0 || ring.custom || ring.label != null || ring.recheck) return null
         val due = ring.shiftDate.atTime(ring.shiftStart).minusMinutes(ring.offsetMinutes.toLong())
-            .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+            .atZone(Today.zone()).toInstant().toEpochMilli()
         return com.bamnat.core.alarm.AlarmSuggest.offDetail(ring.shiftTypeId, due, ring.offsetMinutes)
     }
 

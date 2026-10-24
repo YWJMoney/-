@@ -51,6 +51,7 @@ import com.bamnat.core.alarm.Missions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.time.LocalTime
+import com.bamnat.core.time.Today
 
 /**
  * Full-screen ringing screen, shown over the lock screen. [PROV-06] With a mission, 알람 끄기 (here, on
@@ -100,7 +101,7 @@ class AlarmActivity : ComponentActivity() {
                 if (current != null && inMission && mission != AlarmMission.NONE) {
                     MissionScreen(
                         mission = mission,
-                        since = since ?: System.currentTimeMillis(),
+                        since = since ?: Today.millis(),
                         snoozeMinutes = snoozeMinutes,
                         onSnooze = { AlarmService.snooze(this@AlarmActivity) },
                         onDone = { how -> AlarmService.dismiss(this@AlarmActivity, how) },
@@ -138,9 +139,9 @@ internal fun RingingScreen(
     onSnooze: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val now by produceState(LocalTime.now()) {
+    val now by produceState(Today.time()) {
         while (true) {
-            value = LocalTime.now()
+            value = Today.time()
             delay(1_000)
         }
     }

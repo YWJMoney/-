@@ -2,6 +2,7 @@ package com.bamnat.core.imports
 
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /*
  * [IMPORT-03] 불규칙 근무표 CSV·엑셀: wards and convenience stores hand out a roster that follows no cycle, as a
@@ -36,7 +37,7 @@ object RosterSheet {
      * [IMPORT-03] Reads [rows] either way; [month] is the month a 가로형 roster with only day numbers is for
      * (from the file when it says, e.g. "2026년 11월"), [near] picks the year of dates written without one.
      */
-    fun read(rows: List<List<String>>, codes: DutyCodes, month: YearMonth? = null, near: LocalDate = LocalDate.now()): RosterRead? =
+    fun read(rows: List<List<String>>, codes: DutyCodes, month: YearMonth? = null, near: LocalDate = Today.date()): RosterRead? =
         readWide(rows, codes, month, near) ?: readLong(rows, codes, near)
 
     /** The month a file names in its first rows, e.g. "2026년 11월 근무표". */

@@ -63,6 +63,7 @@ import kotlinx.coroutines.withContext
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /** [COMN-01] A month of every calendar's work: each day's pieces of work and the days where two calendars clash. */
 private class CombinedMonth(val spans: Map<LocalDate, List<WorkSpan>>, val clashes: List<Pair<WorkSpan, WorkSpan>>) {
@@ -161,7 +162,7 @@ private fun Grid(month: YearMonth, weekStart: DayOfWeek, m: CombinedMonth, calen
     val lead = (month.atDay(1).dayOfWeek.value - weekStart.value + 7) % 7
     val cells = lead + month.lengthOfMonth()
     val rows = (cells + 6) / 7
-    val today = LocalDate.now()
+    val today = Today.date()
     Row(Modifier.fillMaxWidth()) {
         (0 until 7).forEach { i ->
             val dow = weekStart.plus(i.toLong())

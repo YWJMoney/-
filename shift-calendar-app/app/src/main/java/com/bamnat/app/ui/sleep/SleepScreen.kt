@@ -102,6 +102,7 @@ import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
+import com.bamnat.core.time.Today
 
 /**
  * [SLP-16] The sleep log as something to use: what the two taps are for, the user's own averages
@@ -120,7 +121,7 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
         settings,
     ) { manual, measured, snapshot, s ->
         val log = SleepMerge.merge(manual, measured)
-        val today = LocalDate.now()
+        val today = Today.date()
         State(log, SleepInsights.report(log, snapshot.resolver, today, s.sleepTargetMinutes), today)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -472,7 +473,7 @@ private fun SleepEditDialog(
     onDelete: (() -> Unit)?,
     onSave: (LocalDateTime, LocalDateTime?) -> Unit,
 ) {
-    val now = remember { LocalDateTime.now().withSecond(0).withNano(0) }
+    val now = remember { Today.dateTime().withSecond(0).withNano(0) }
     var wake by rememberSaveable { mutableStateOf((initial?.end ?: initial?.start ?: now).toLocalDate().toString()) }
     var start by rememberSaveable { mutableStateOf((initial?.start?.toLocalTime() ?: LocalTime.of(23, 0)).toString()) }
     var end by rememberSaveable { mutableStateOf((initial?.end?.toLocalTime() ?: LocalTime.of(7, 0)).toString()) }

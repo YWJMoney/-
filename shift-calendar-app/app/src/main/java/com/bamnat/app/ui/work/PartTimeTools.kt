@@ -92,13 +92,14 @@ import java.time.LocalTime
 import java.time.temporal.TemporalAdjusters
 import java.util.UUID
 import kotlin.math.roundToLong
+import com.bamnat.core.time.Today
 
 /**
  * [HRLY-09][HRLY-10][HRLY-11] 알바 도구 on a part-time calendar's 통계: 두 알바 비교, 근로계약서 and
  * 그만두는 날 정리, with a reminder when the contract is about to end.
  */
 @Composable
-fun HourlyToolsCard(calendarId: String, profile: PayProfile?, snapshot: ScheduleSnapshot, today: LocalDate = LocalDate.now()) {
+fun HourlyToolsCard(calendarId: String, profile: PayProfile?, snapshot: ScheduleSnapshot, today: LocalDate = Today.date()) {
     val context = LocalContext.current
     val store = remember { WorkToolsStore.get(context) }
     val tools by store.of(calendarId).collectAsStateWithLifecycle()

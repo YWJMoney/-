@@ -13,6 +13,7 @@ import com.bamnat.app.appContainer
 import com.bamnat.core.tier.TrialConsent
 import java.time.Instant
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /**
  * [MON-06] One notice on day 23 of the month's trial (7 days before it turns paid) that the app has a
@@ -21,7 +22,7 @@ import java.time.ZoneId
 object TrialNotice {
     private const val REQUEST = 3301
 
-    fun reschedule(context: Context, state: ProState, zone: ZoneId = ZoneId.systemDefault(), now: Instant = Instant.now()) {
+    fun reschedule(context: Context, state: ProState, zone: ZoneId = Today.zone(), now: Instant = Today.instant()) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         val sub = state.sub
         val end = sub?.trialEnd(zone)
@@ -40,7 +41,7 @@ object TrialNotice {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    fun post(context: Context, end: Instant, zone: ZoneId = ZoneId.systemDefault()) {
+    fun post(context: Context, end: Instant, zone: ZoneId = Today.zone()) {
         val day = end.atZone(zone).toLocalDate()
         val notification = NotificationCompat.Builder(context, Notifications.PRO_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
@@ -59,8 +60,8 @@ class TrialNoticeReceiver : BroadcastReceiver() {
         val c = context.appContainer
         val state = c.proStore.current
         val sub = state.sub ?: return
-        val end = sub.trialEnd(ZoneId.systemDefault())
-        val stage = TrialConsent.stage(sub.play(), end, state.consentAt, Instant.now())
+        val end = sub.trialEnd(Today.zone())
+        val stage = TrialConsent.stage(sub.play(), end, state.consentAt, Today.instant())
         if (stage != TrialConsent.Stage.ASK && stage != TrialConsent.Stage.LAST_DAY) return
         TrialNotice.post(context, end)
         c.proStore.trialNoticed(sub.purchasedAt)

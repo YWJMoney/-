@@ -13,13 +13,14 @@ import com.bamnat.core.profile.Questions
 import com.bamnat.core.profile.Source
 import kotlinx.coroutines.flow.first
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /**
  * [EASY-05] An answer on the question card, written where that fact has always been kept (the 정본 of
  * research/1.23-N-설계.md 1장) and then marked as typed in the profile. Only the facts a card answers in one
  * tap, one number or one date come here; the rest open the screen that already asks them.
  */
-class ProfileAnswers(private val c: AppContainer, private val today: () -> LocalDate = LocalDate::now) {
+class ProfileAnswers(private val c: AppContainer, private val today: () -> LocalDate = Today::date) {
 
     /** Writes [value] (a chip's value, a number or an ISO date) for [key] of [calendarId]; false if it could not. */
     suspend fun answer(calendarId: String, key: FactKey, value: String): Boolean {

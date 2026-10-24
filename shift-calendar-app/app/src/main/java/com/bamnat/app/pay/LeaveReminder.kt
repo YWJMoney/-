@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /**
  * [LEAVE-03] 연차 사용 촉진: on the dates 근로기준법 제61조 sets for the company's own notices (6개월 전·2개월 전
@@ -30,19 +31,19 @@ object LeaveReminder {
     private const val REQUEST = 3201
     const val EXTRA_AT = "at"
 
-    fun reschedule(context: Context, lots: List<LeaveLot>, on: Boolean, now: LocalDateTime = LocalDateTime.now()) {
+    fun reschedule(context: Context, lots: List<LeaveLot>, on: Boolean, now: LocalDateTime = Today.dateTime()) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         val next = if (on) LeavePromotion.next(lots, now) else null
         if (next == null) {
             am.cancel(pending(context, 0L))
             return
         }
-        val at = next.at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val at = next.at.atZone(Today.zone()).toInstant().toEpochMilli()
         am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending(context, at))
     }
 
     /** [reschedule] from the ledger as it is now, e.g. after a reboot. */
-    suspend fun rescheduleNow(context: Context, now: LocalDateTime = LocalDateTime.now()) {
+    suspend fun rescheduleNow(context: Context, now: LocalDateTime = Today.dateTime()) {
         val c = context.appContainer
         reschedule(context, c.leaveRepository.now().lots.map { it.lot }, c.settingsRepository.current.leaveNotice, now)
     }
@@ -57,7 +58,7 @@ object LeaveReminder {
      * Works the ledger out now, so leave added since the alarm was set counts, and posts it for the notice
      * that is due (the latest one at or before [now] whose lapse is still ahead) when some would lapse.
      */
-    suspend fun postIfLapsing(context: Context, now: LocalDateTime = LocalDateTime.now()) {
+    suspend fun postIfLapsing(context: Context, now: LocalDateTime = Today.dateTime()) {
         val c = context.appContainer
         if (!c.settingsRepository.current.leaveNotice) return
         val summary = c.leaveRepository.now()
@@ -93,10 +94,10 @@ class LeaveReminderReceiver : BroadcastReceiver() {
         container.appScope.launch {
             try {
                 // An alarm set by 1.10 carries no time: it rang when it was due.
-                val at = if (atMillis == 0L) LocalDateTime.now()
-                else LocalDateTime.ofInstant(Instant.ofEpochMilli(atMillis), ZoneId.systemDefault())
+                val at = if (atMillis == 0L) Today.dateTime()
+                else LocalDateTime.ofInstant(Instant.ofEpochMilli(atMillis), Today.zone())
                 if (!QuietHold.holdIfAsleep(context, QuietHold.Source.LEAVE, at)) LeaveReminder.postIfLapsing(context)
-                LeaveReminder.rescheduleNow(context, LocalDateTime.now().plusSeconds(1))
+                LeaveReminder.rescheduleNow(context, Today.dateTime().plusSeconds(1))
             } finally {
                 pending.finish()
             }

@@ -118,6 +118,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 class MoneyViewModel(
     private val container: AppContainer,
@@ -139,7 +140,7 @@ class MoneyViewModel(
 
     init {
         // [LEDG-09] Repeating lines set to write themselves are written when the money tab opens.
-        container.appScope.launch { runCatching { money.catchUpRecurring(LocalDate.now()) } }
+        container.appScope.launch { runCatching { money.catchUpRecurring(Today.date()) } }
     }
 
     /** [LEDG-15] The money tab's three pages. */
@@ -219,7 +220,7 @@ class MoneyViewModel(
                 })
             }
             // [LEDG-06] Said once, when this line is the one that pushes a budget over.
-            val crossed = before?.let { Budgets.crossedBy(entry, it.budgets, it.entries, LocalDate.now()) }.orEmpty()
+            val crossed = before?.let { Budgets.crossedBy(entry, it.budgets, it.entries, Today.date()) }.orEmpty()
             if (crossed.isNotEmpty()) _undo.tryEmit(UndoMessage(overText(crossed), undo = null))
         }
     }
@@ -245,7 +246,7 @@ class MoneyViewModel(
     /** [LEDG-07] A copy of a line on today, as typed by hand. */
     fun duplicate(e: MoneyEntry) {
         container.appScope.launch {
-            val saved = money.save(Ledger.duplicate(e, LocalDate.now()))
+            val saved = money.save(Ledger.duplicate(e, Today.date()))
             _undo.tryEmit(UndoMessage("‘${e.title}’ 기록을 오늘로 복사했어요") { money.delete(saved) })
         }
     }
@@ -275,7 +276,7 @@ class MoneyViewModel(
     val captures = money.captures.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     override val categoryRules: Map<String, String> get() = rules.value
     override fun frequentAmounts(kind: MoneyKind): List<Long> =
-        MoneyStats.frequentAmounts(book.value?.entries.orEmpty(), kind, LocalDate.now())
+        MoneyStats.frequentAmounts(book.value?.entries.orEmpty(), kind, Today.date())
 
     fun saveAll(entries: List<MoneyEntry>) {
         container.appScope.launch {
@@ -318,7 +319,7 @@ class MoneyViewModel(
         container.appScope.launch {
             money.save(cost)
             // [LEDG-09] One set to write itself catches up at once, so a line due today shows now.
-            if (cost.auto) money.catchUpRecurring(LocalDate.now())
+            if (cost.auto) money.catchUpRecurring(Today.date())
         }
     }
     fun deleteFixed(cost: FixedCost) {
@@ -388,7 +389,7 @@ fun MoneyScreen(
     wide: Boolean,
     onOpenPay: () -> Unit,
     snackbar: SnackbarHostState? = null,
-    today: LocalDate = LocalDate.now(),
+    today: LocalDate = Today.date(),
 ) {
     val bookOrNull by vm.book.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()

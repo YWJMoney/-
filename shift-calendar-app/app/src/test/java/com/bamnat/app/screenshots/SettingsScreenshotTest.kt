@@ -18,6 +18,7 @@ import org.robolectric.annotation.GraphicsMode
 import java.io.File
 import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
+import com.bamnat.core.time.Today
 
 /** [QA-05] Screenshots: 설정·첫 설정·추천 설정·도움말·프로·알람 점검·백업. Shot names and numbers are the ones they had in the one big class. */
 @RunWith(AndroidJUnit4::class)
@@ -29,7 +30,7 @@ class SettingsScreenshotTest : ScreenshotBase() {
 
     @Test fun foldedDiagnostics() = shoot("22_folded_diagnostics", FOLDED) {
         val c = app.container
-        val now = System.currentTimeMillis()
+        val now = Today.millis()
         c.telemetry.event(DiagEvents.APP_OPEN)
         c.telemetry.event(DiagEvents.ALARM_FIRED, EventBook.triggerDetail(now - 3_600_000, "late_s=2"))
         c.telemetry.event(DiagEvents.ALARM_DISMISSED)
@@ -118,13 +119,13 @@ class SettingsScreenshotTest : ScreenshotBase() {
     @Test fun phoneProPlans() = shoot("377_phone_pro_plans", PHONE, launched { pro().invoke(this); reveal("구매 복원", exact = true) })
     @Test fun unfoldedProLaunched() = shoot("378_unfolded_pro_launched", UNFOLDED, launched(then = pro()))
     @Test fun phoneTrialQuestion() = shoot("380_phone_trial_question", PHONE, launched {
-        val start = java.time.Instant.now().minus(java.time.Duration.ofDays(26))
+        val start = Today.instant().minus(java.time.Duration.ofDays(26))
         app.container.proStore.setSub(com.bamnat.app.tier.SubRecord("bamnat_pro", "monthly", com.bamnat.core.tier.PlaySub.State.ACTIVE,
-            java.time.Instant.now().plus(java.time.Duration.ofDays(3)), trial = true, autoRenew = true, purchasedAt = start, verified = false,
-            checkedAt = java.time.Instant.now()))
+            Today.instant().plus(java.time.Duration.ofDays(3)), trial = true, autoRenew = true, purchasedAt = start, verified = false,
+            checkedAt = Today.instant()))
     })
     @Test fun phoneLaunchThanks() = shoot("381_phone_launch_thanks", PHONE, launched(com.bamnat.app.tier.LaunchConfig(billingLive = true,
-        launchedAt = java.time.Instant.now().minus(java.time.Duration.ofDays(1)), thanksMonths = 3)))
+        launchedAt = Today.instant().minus(java.time.Duration.ofDays(1)), thanksMonths = 3)))
     @Test fun phoneAdPrivacy() = shoot("382_phone_ad_privacy", PHONE) { settingsPage("개인정보·앱 정보"); tapText("광고 개인정보 선택", exact = true) }
     @Test fun phoneProLargeText() = shoot("384_phone_pro_large_text", PHONE, fontScale = 1.5f, launched(then = pro()))
     @Test fun phoneSettingsProRow() = shoot("383_phone_settings_pro_row", PHONE, launched { tab(4, wide = false); reveal("기능 켜고 끄기", exact = true) })

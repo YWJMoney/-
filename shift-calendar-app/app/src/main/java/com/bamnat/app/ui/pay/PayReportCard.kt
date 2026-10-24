@@ -38,6 +38,7 @@ import com.bamnat.core.report.PayReport
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /**
  * [PROV-01] 급여 리포트 (프로): the month on screen, or its year, as a PDF to keep or show the company, and
@@ -97,7 +98,7 @@ internal fun PayReportCard(vm: PayViewModel, profile: PayProfile, snapshot: Sche
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
             ReportButton("${month.monthValue}월 PDF", pdf = true, enabled = !busy) {
-                make("month_pdf") { ReportShare.pdf(context, PayReport.month(shown, who, LocalDate.now(), closed), PayReport.fileName(month, "pdf")) }
+                make("month_pdf") { ReportShare.pdf(context, PayReport.month(shown, who, Today.date(), closed), PayReport.fileName(month, "pdf")) }
             }
             ReportButton("${month.monthValue}월 CSV", pdf = false, enabled = !busy) {
                 make("month_csv") { ReportShare.csv(context, PayReport.monthCsv(shown), PayReport.fileName(month, "csv"), "${month.year}년 ${month.monthValue}월 급여") }
@@ -105,7 +106,7 @@ internal fun PayReportCard(vm: PayViewModel, profile: PayProfile, snapshot: Sche
             ReportButton("${month.year}년 PDF", pdf = true, enabled = !busy) {
                 make("year_pdf") {
                     val pays = year()
-                    ReportShare.pdf(context, PayReport.year(month.year, pays, who, LocalDate.now(), vm.closed.value.keys), PayReport.fileName(month.year, "pdf"))
+                    ReportShare.pdf(context, PayReport.year(month.year, pays, who, Today.date(), vm.closed.value.keys), PayReport.fileName(month.year, "pdf"))
                 }
             }
             ReportButton("${month.year}년 CSV", pdf = false, enabled = !busy) {
@@ -115,7 +116,7 @@ internal fun PayReportCard(vm: PayViewModel, profile: PayProfile, snapshot: Sche
         // [PAYX-45] Everything a 노무사 or the 1350 상담 asks for, as files a person reads, in one zip.
         OutlinedButton(onClick = {
             make("counsel_zip") {
-                val today = LocalDate.now()
+                val today = Today.date()
                 val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                     val pays = (0L..2L).map { month.minusMonths(it) }.reversed().mapNotNull { m -> if (m == month) shown else vm.monthPay(profile, snapshot, m) }
                     val files = linkedMapOf(

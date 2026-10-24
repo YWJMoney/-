@@ -23,6 +23,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /**
  * [FEAT-07] Keeps the phone's 밤낮 calendars in step with the calendars the user writes there
@@ -30,7 +31,7 @@ import java.time.LocalDate
  * back to a year ahead, as the .ics export covers. Without 프로 or once a calendar is switched off, its
  * phone calendar is deleted rather than left behind out of date.
  */
-class PhoneCalendarSync(private val c: AppContainer, private val today: () -> LocalDate = LocalDate::now) {
+class PhoneCalendarSync(private val c: AppContainer, private val today: () -> LocalDate = Today::date) {
     private val lock = Mutex()
     private val phone by lazy { PhoneCalendar(c.appContext) }
 
@@ -73,7 +74,7 @@ class PhoneCalendarSync(private val c: AppContainer, private val today: () -> Lo
                     phone.write(cal.id, if (cal.isMain) "밤낮 근무" else "밤낮 · ${cal.name}", cal.color.toInt(), list)
                     events += list.size
                 }
-                Status.Written(Instant.now(), events)
+                Status.Written(Today.instant(), events)
             }.getOrElse { Status.Failed(it.javaClass.simpleName) }
             if (status is Status.Written) c.telemetry.event("phone_calendar", "events=${status.events}")
             _status.value = status

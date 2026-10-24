@@ -93,6 +93,7 @@ import androidx.compose.material.icons.filled.Work
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 const val GRID_ROWS = 6
 
@@ -732,7 +733,7 @@ private fun DayCell(
             if (usesShifts && focus.addLabel != null) HorizontalDivider()
             // [DAILY-10] The types changed to most in the last 60 days come first.
             val ordered = remember(snapshot) {
-                val today = LocalDate.now()
+                val today = Today.date()
                 com.bamnat.core.schedule.QuickOrder.byUse(snapshot.shiftTypes, { it.id },
                     (0 until com.bamnat.core.schedule.QuickOrder.DAYS).mapNotNull { back ->
                         snapshot.resolver.resolve(today.minusDays(back.toLong())).takeIf { it.source == DaySource.OVERRIDE }?.shiftType?.id

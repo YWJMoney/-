@@ -32,6 +32,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /**
  * [PROV-02] 지난달·작년 비교 (프로): this month's hours, night work, work on days off, extra work and pay beside
@@ -104,7 +105,7 @@ internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: S
         }.onFailure { if (it is CancellationException) throw it }.getOrNull()
     }
     val y = year ?: return
-    val now = YearMonth.now()
+    val now = Today.month()
     ProLock(Feature.WORK_COMPARE, gate) {
         SectionCard(title = "${y.year}년 근무·급여") {
             y.months.forEach { s ->

@@ -80,6 +80,7 @@ import com.bamnat.core.profile.StatusBoard
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /** [EASY-08][OBS-03] One calendar's facts as they stand, what the features that are on still wait for, and the board. */
 internal data class ProfileView(val facts: Map<FactKey, Fact<*>>, val missing: List<Missing>, val board: StatusBoard, val hasPay: Boolean)
@@ -98,7 +99,7 @@ internal fun rememberProfile(c: AppContainer, calendar: String, tick: Int = 0): 
             val facts = c.profiles.facts(calendar)
             val style = c.calendars.styleOf(calendar, settings.workStyle)
             val on = FeatureRegistry.of(style).filter { !guide.isOff(it, calendar) }.map { it.id }
-            val today = LocalDate.now()
+            val today = Today.date()
             val missing = Needs.of(facts, on) { key -> daysUntil(key, pay?.period?.payDay, today) }
             ProfileView(facts, missing, StatusBoard.of(facts, missing), pay != null)
         }.getOrNull()
@@ -139,8 +140,8 @@ fun EasyStatusCard(modifier: Modifier = Modifier) {
                 }
             }
             HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-            val today = LocalDate.now()
-            val todays = entries.orEmpty().count { it.day(ZoneId.systemDefault()) == today }
+            val today = Today.date()
+            val todays = entries.orEmpty().count { it.day(Today.zone()) == today }
             HubLine(
                 icon = { Icon(Icons.Outlined.History, null) },
                 title = "밤낮이 한 일",
@@ -384,11 +385,11 @@ fun FactEditSheet(c: AppContainer, calendar: String, fact: Fact<*>, hasPay: Bool
 
 /** [OBS-02] The calendar's line under the question card: "오늘 밤낮이 한 일 3개 · 보기". Nothing on a day of only the usual. */
 @Composable
-fun JournalHomeLine(modifier: Modifier = Modifier, today: LocalDate = LocalDate.now()) {
+fun JournalHomeLine(modifier: Modifier = Modifier, today: LocalDate = Today.date()) {
     val c = LocalContext.current.appContainer
     val entries by c.journal.entries.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { c.journal.load() } }
-    val line = remember(entries, today) { entries?.let { Journal.todayLine(it, ZoneId.systemDefault(), today) } } ?: return
+    val line = remember(entries, today) { entries?.let { Journal.todayLine(it, Today.zone(), today) } } ?: return
     Row(
         modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClickLabel = "밤낮이 한 일 보기") { FeatureLinks.open(FeatureRoute(Place.JOURNAL)) }
             .semantics { role = Role.Button },

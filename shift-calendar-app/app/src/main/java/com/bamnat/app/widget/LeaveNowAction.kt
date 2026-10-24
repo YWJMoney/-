@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalDateTime
+import com.bamnat.core.time.Today
 
 /**
  * [DAYW-03] 지금 퇴근 from the today widget of a day calendar: the main calendar's today gets 잔업 from
@@ -38,9 +39,9 @@ class LeaveNowAction : ActionCallback {
         val container = context.appContainer
         val repo = container.scheduleRepository
         val snapshot = repo.snapshot.first()
-        val day = snapshot.resolver.resolve(LocalDate.now())
+        val day = snapshot.resolver.resolve(Today.date())
         val (_, text) = runCatching {
-            LeaveNowWriter.write(repo, day, LocalDateTime.now(), snapshot.kinds.name(ExtraKind.OVERTIME_ID))
+            LeaveNowWriter.write(repo, day, Today.dateTime(), snapshot.kinds.name(ExtraKind.OVERTIME_ID))
         }.getOrDefault(null to null)
         withContext(Dispatchers.Main) {
             Toast.makeText(context.applicationContext, text ?: "퇴근 시각이에요. 따로 적을 게 없어요", Toast.LENGTH_SHORT).show()

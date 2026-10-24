@@ -24,6 +24,7 @@ import com.google.android.gms.ads.LoadAdError
 import com.google.android.gms.ads.rewarded.RewardedAd
 import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /**
  * [MON-07] The one rewarded ad (결정 1: D), and only when the user taps for it: what it gives is said
@@ -36,7 +37,7 @@ fun DayPassButton(gate: Gate, modifier: Modifier = Modifier) {
     val config by c.remoteConfig.config.collectAsStateWithLifecycle()
     val pro by c.proStore.state.collectAsStateWithLifecycle()
     val ready by c.ads.ready.collectAsStateWithLifecycle()
-    val today = LocalDate.now()
+    val today = Today.date()
     val offer = ready && AdIds.rewarded.isNotBlank() && !gate.preview &&
         AdRules.rewardedOffer(config.billingLive, gate.tier >= Tier.PRO, true, pro.dayPass, today)
     if (!offer) return
@@ -53,7 +54,7 @@ fun DayPassButton(gate: Gate, modifier: Modifier = Modifier) {
                     override fun onAdLoaded(ad: RewardedAd) {
                         loading = false
                         ad.show(activity) {
-                            c.proStore.dayPass(LocalDate.now())
+                            c.proStore.dayPass(Today.date())
                             c.featureGate.refresh()
                         }
                     }

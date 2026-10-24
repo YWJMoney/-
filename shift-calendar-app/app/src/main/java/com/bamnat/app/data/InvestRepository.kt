@@ -26,12 +26,13 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
 import java.util.WeakHashMap
+import com.bamnat.core.time.Today
 
 /**
  * [INV-01..INV-21] One investor calendar's records, in that calendar's own database: the main
  * calendar's (bamnat.db) or an added one's (calendar_<id>.db). Everything stays on the phone.
  */
-class InvestRepository(private val db: AppDatabase, private val clock: () -> Long = System::currentTimeMillis) {
+class InvestRepository(private val db: AppDatabase, private val clock: () -> Long = Today::millis) {
     private val dao = db.investDao()
 
     private val records = combine(

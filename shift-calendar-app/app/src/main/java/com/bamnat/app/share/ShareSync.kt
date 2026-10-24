@@ -18,6 +18,7 @@ import kotlinx.coroutines.sync.withLock
 import java.io.IOException
 import java.time.Instant
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /**
  * [SHR-12] Keeps the one link this phone made in step with the calendar: a change to the shifts,
@@ -29,8 +30,8 @@ import java.time.LocalDate
  */
 class ShareSync(
     private val c: AppContainer,
-    private val today: () -> LocalDate = LocalDate::now,
-    private val clock: () -> Instant = Instant::now,
+    private val today: () -> LocalDate = Today::date,
+    private val clock: () -> Instant = Today::instant,
 ) {
     private val lock = Mutex()
 

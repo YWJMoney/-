@@ -61,6 +61,7 @@ import com.bamnat.core.alarm.ShakeCounter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
+import com.bamnat.core.time.Today
 
 /**
  * [PROV-06] The mission before the alarm goes off: [Missions.PROBLEMS] sums on a number pad, or
@@ -86,9 +87,9 @@ internal fun MissionScreen(
     var wrongPhotos by rememberSaveable { mutableIntStateOf(wrongBefore) }
     var cameraFailed by rememberSaveable { mutableStateOf(false) }
     val kind = Missions.shown(mission, references.isNotEmpty(), wrongPhotos, cameraFailed, shakeOk)
-    val now by produceState(System.currentTimeMillis()) {
+    val now by produceState(Today.millis()) {
         while (true) {
-            value = System.currentTimeMillis()
+            value = Today.millis()
             delay(1_000)
         }
     }

@@ -61,6 +61,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneOffset
+import com.bamnat.core.time.Today
 
 /**
  * [HRLY-07] The profile as pay sees it. Until the user picks a 주휴 week start, 주휴 weeks follow the pay
@@ -188,7 +189,7 @@ internal fun HourlyPayCard(
         WorkLogExport(profile, snapshot, month, onDone = {})
     }
     if (pickingDate) {
-        PickProbationEnd(profile.probationEnd ?: LocalDate.now().plusMonths(3), onDismiss = { pickingDate = false }) { d ->
+        PickProbationEnd(profile.probationEnd ?: Today.date().plusMonths(3), onDismiss = { pickingDate = false }) { d ->
             pickingDate = false
             vm.update { it.copy(probationEnd = d) }
         }

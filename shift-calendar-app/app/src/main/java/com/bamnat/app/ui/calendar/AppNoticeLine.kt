@@ -36,6 +36,7 @@ import com.bamnat.app.BuildConfig
 import com.bamnat.app.appContainer
 import com.bamnat.core.ops.AppNotice
 import com.bamnat.core.ops.AppNotices
+import com.bamnat.core.time.Today
 
 /**
  * [SRV-04] Which notices the user closed. On this phone only and not in the backup: a notice is about
@@ -97,7 +98,7 @@ fun AppNoticeLine(modifier: Modifier = Modifier) {
     val config by c.remoteConfig.config.collectAsStateWithLifecycle()
     val closed by c.closedNotices.closed.collectAsStateWithLifecycle()
     val notice = remember(config.notices, closed) {
-        AppNotices.showing(config.notices, System.currentTimeMillis(), BuildConfig.VERSION_CODE, closed, noticePhone(c))
+        AppNotices.showing(config.notices, Today.millis(), BuildConfig.VERSION_CODE, closed, noticePhone(c))
     } ?: return
     var open by remember(notice.id) { mutableStateOf(false) }
     val tone = if (notice.important) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer

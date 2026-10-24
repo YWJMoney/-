@@ -99,6 +99,7 @@ import com.bamnat.core.pay.RestDayWork
 import com.bamnat.core.pay.ValueSource
 import com.bamnat.core.pay.WageType
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 internal fun won(v: Long): String = "%,d원".format(v)
 
@@ -376,7 +377,7 @@ private fun PayResult(
             HolidayModes(vm, profile, v.holidayModes)
         }
 
-        if (unlocked && !month.isAfter(YearMonth.now())) {
+        if (unlocked && !month.isAfter(Today.month())) {
             CloseMonthCard(vm, result, closedSnap)
         }
 
@@ -1139,7 +1140,7 @@ private fun CloseMonthCard(vm: PayViewModel, result: MonthPay, closed: CalcSnaps
                 Icon(Icons.Filled.Lock, null); Text(" 이 달 마감하기")
             }
         } else {
-            val at = java.time.Instant.ofEpochMilli(closed.closedAtMillis).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+            val at = java.time.Instant.ofEpochMilli(closed.closedAtMillis).atZone(Today.zone()).toLocalDate()
             Text("${at.monthValue}월 ${at.dayOfMonth}일에 마감한 결과를 보여 주고 있어요 (요율 ${closed.ratesVersion}).",
                 style = MaterialTheme.typography.bodyMedium)
             val diff = result.total - closed.total

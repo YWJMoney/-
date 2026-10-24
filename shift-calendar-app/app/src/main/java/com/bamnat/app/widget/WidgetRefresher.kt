@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /**
  * Redraws every widget and keeps a wake-up for the next midnight so the date moves on [REL-03], or
@@ -45,7 +46,7 @@ object WidgetRefresher {
         val data = runCatching { WidgetData.load(app) }.getOrNull()
         // [WIDG-05] A countdown on the home screen moves on every 15 minutes; the others wait for the next change.
         val counting = runCatching { GlanceAppWidgetManager(app).getGlanceIds(CountdownWidget::class.java).isNotEmpty() }.getOrDefault(false)
-        val tick = if (counting && data?.countdown != null) LocalDateTime.now().plusMinutes(COUNTDOWN_MINUTES) else null
+        val tick = if (counting && data?.countdown != null) Today.dateTime().plusMinutes(COUNTDOWN_MINUTES) else null
         // [WIDG-01] I 리뷰 I20: also when a shift starts or ends, so "출근" turns into "퇴근" on time.
         scheduleNext(app, listOfNotNull(data?.flow?.changesAt, data?.nextChange, tick).minOrNull())
     }
@@ -55,8 +56,8 @@ object WidgetRefresher {
     /** An inexact, non-waking alarm: widgets are only seen with the screen on, so a few minutes late is fine. */
     private fun scheduleNext(context: Context, flowChanges: LocalDateTime?) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
-        val zone = ZoneId.systemDefault()
-        val midnight = LocalDate.now(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() + 5_000
+        val zone = Today.zone()
+        val midnight = Today.date(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() + 5_000
         val at = flowChanges?.atZone(zone)?.toInstant()?.toEpochMilli()?.plus(5_000)?.coerceAtMost(midnight) ?: midnight
         val pi = PendingIntent.getBroadcast(
             context, REQ_MIDNIGHT,

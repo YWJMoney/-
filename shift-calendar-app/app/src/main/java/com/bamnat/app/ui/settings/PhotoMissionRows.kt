@@ -35,6 +35,7 @@ import com.bamnat.core.alarm.ImageHash
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /** [ALRM-04] The row's title, which settings search points at. */
 const val PHOTO_ROW = "증명 사진 기준"
@@ -99,7 +100,7 @@ internal fun PhotoMissionRows(
         }
         references.forEachIndexed { i, r ->
             Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                val day = Instant.ofEpochMilli(r.takenAt).atZone(ZoneId.systemDefault()).toLocalDate()
+                val day = Instant.ofEpochMilli(r.takenAt).atZone(Today.zone()).toLocalDate()
                 Text("${r.place.ifBlank { "기준 ${i + 1}" }} · ${day.monthValue}월 ${day.dayOfMonth}일 찍음",
                     style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 TextButton(onClick = { onRemove(i) }) { Text("지우기") }

@@ -11,6 +11,7 @@ import com.bamnat.app.data.ThemeMode
 import com.bamnat.core.model.NightShift
 import kotlinx.coroutines.delay
 import java.time.LocalDateTime
+import com.bamnat.core.time.Today
 
 /**
  * [SHFT-05] 야간 근무 중 어둡게: dark while the calendar on the calendar tab is in a night shift (one whose
@@ -20,10 +21,10 @@ import java.time.LocalDateTime
 fun rememberThemeMode(mode: ThemeMode, container: AppContainer): ThemeMode {
     if (mode != ThemeMode.NIGHT_SHIFT) return mode
     val snapshot by container.calendars.activeSnapshot.collectAsStateWithLifecycle(initialValue = null as ScheduleSnapshot?)
-    val now by produceState(LocalDateTime.now()) {
+    val now by produceState(Today.dateTime()) {
         while (true) {
-            delay(60_000L - System.currentTimeMillis() % 60_000L)
-            value = LocalDateTime.now()
+            delay(60_000L - Today.millis() % 60_000L)
+            value = Today.dateTime()
         }
     }
     val night = remember(snapshot, now) { snapshot?.let { NightShift.isOn(now, it.resolver::resolve) } ?: false }

@@ -20,12 +20,13 @@ import kotlinx.coroutines.launch
 import java.io.IOException
 import java.time.Duration
 import java.time.Instant
+import com.bamnat.core.time.Today
 
 /**
  * [SHR-02] Received calendars: opening a link someone shared, keeping it beside the user's own
  * calendar, switching between them like accounts, and letting it go when the sharer cuts it.
  */
-class ReceivedViewModel(private val c: AppContainer, private val clock: () -> Instant = Instant::now) : ViewModel() {
+class ReceivedViewModel(private val c: AppContainer, private val clock: () -> Instant = Today::instant) : ViewModel() {
     val enabled: Boolean get() = c.shareApi.enabled
     val calendars: StateFlow<List<ReceivedCalendar>> = c.received.calendars
     val viewing: StateFlow<ReceivedCalendar?> = combine(c.received.calendars, c.received.viewing) { list, id -> list.firstOrNull { it.id == id } }

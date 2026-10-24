@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /**
  * [IMPORT-01] Brings events from the phone's calendars into 밤낮: shifts onto their days, the rest
@@ -26,7 +27,7 @@ class CalendarImporter(
     private val schedule: ScheduleRepository,
     private val memos: MemoRepository,
     private val imported: ImportedEventDao,
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: () -> Long = Today::millis,
 ) {
     private val prefs = context.applicationContext.getSharedPreferences("calendar_import", Context.MODE_PRIVATE)
 

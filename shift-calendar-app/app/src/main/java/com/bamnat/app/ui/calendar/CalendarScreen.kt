@@ -154,6 +154,7 @@ import java.time.DayOfWeek
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import com.bamnat.app.data.PhoneDayView
+import com.bamnat.core.time.Today
 
 internal const val PAGE_COUNT = 2400
 /** [CAL-01] Alarm warnings show while an alarm is due within this many days. */
@@ -412,7 +413,7 @@ fun CalendarScreen(
             vm.showMonth(m)
             val sel = vm.selected.value
             if (YearMonth.from(sel) != m) {
-                val now = LocalDate.now()
+                val now = Today.date()
                 vm.select(if (YearMonth.from(now) == m) now else m.atDay(1))
             }
         }
@@ -659,15 +660,15 @@ fun CalendarScreen(
         vm.viewCalendar(feature ?: com.bamnat.app.data.PersonalCalendar.MAIN)
         vm.setPaint(null)
         sheetOpen = feature != null && !showsDay
-        vm.select(LocalDate.now())
-        pagerState.scrollToPage(monthToPage(baseMonth, YearMonth.now()))
+        vm.select(Today.date())
+        pagerState.scrollToPage(monthToPage(baseMonth, Today.month()))
         pageScroll.scrollTo(0)
     }
     // [DAILY-06] A widget's date opens that day on 내 달력, as tapping it on the calendar does.
     LaunchedEffect(noticeTarget) {
         if (noticeTarget != NoticeLinks.Target.DAY) return@LaunchedEffect
         NoticeLinks.consume(NoticeLinks.Target.DAY)
-        val day = NoticeLinks.payload.value?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: LocalDate.now()
+        val day = NoticeLinks.payload.value?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: Today.date()
         received.view(null)
         // [DAILY-07] 근무·급여's week bar names its calendar; a widget's date is always 내 달력.
         vm.viewCalendar(NoticeLinks.calendar.value ?: com.bamnat.app.data.PersonalCalendar.MAIN)
@@ -707,7 +708,7 @@ fun CalendarScreen(
     }
     // [CAL-01] An alarm due within a week, whether or not the master switch lets it ring.
     val alarmSoon = remember(snap, today) {
-        AlarmPlanner.nextAlarm(snap.resolver, java.time.LocalDateTime.now(), lookaheadDays = ALARM_WARNING_DAYS) != null
+        AlarmPlanner.nextAlarm(snap.resolver, Today.dateTime(), lookaheadDays = ALARM_WARNING_DAYS) != null
     }
 
     // [CAL-03] The tapped date's week, Monday to Sunday, and the whole day under it: no sheet over the
@@ -818,11 +819,11 @@ fun CalendarScreen(
             onPrev = { if (weekOnly) onDateChange(selected.minusWeeks(1)) else slideToMonth(headingMonth().minusMonths(1)) },
             onNext = { if (weekOnly) onDateChange(selected.plusWeeks(1)) else slideToMonth(headingMonth().plusMonths(1)) },
             onToday = {
-                vm.select(LocalDate.now())
-                slideToMonth(YearMonth.now())
+                vm.select(Today.date())
+                slideToMonth(Today.month())
             },
             // [285] Already on today: the button stays where it is, greyed, so the bar does not jump.
-            atToday = selected == LocalDate.now() && (if (weekOnly && !wide) YearMonth.from(selected) else visibleMonth) == YearMonth.now(),
+            atToday = selected == Today.date() && (if (weekOnly && !wide) YearMonth.from(selected) else visibleMonth) == Today.month(),
             onPickMonth = { showMonthPicker = true },
             byWeek = weekOnly,
             onShare = shareCalendar,
@@ -876,7 +877,7 @@ fun CalendarScreen(
             if (askOn) com.bamnat.app.ui.guide.AskArea(context.appContainer, activeCalendar.id, settings.workStyle,
                 com.bamnat.core.profile.AskPlace.Home, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), today = today,
                 moments = remember(snap, moneyBook, payProfile, settings.workStyle, today) {
-                    com.bamnat.core.guide.GuideMoments.of(com.bamnat.app.ui.guide.factsOf(settings.workStyle, java.time.LocalDateTime.now(), snap, moneyBook, payProfile, settings.weekStart))
+                    com.bamnat.core.guide.GuideMoments.of(com.bamnat.app.ui.guide.factsOf(settings.workStyle, Today.dateTime(), snap, moneyBook, payProfile, settings.weekStart))
                 })
             val askStates by context.appContainer.asks.states.collectAsStateWithLifecycle()
             val tipAllowed = !askOn || com.bamnat.core.profile.AskScheduler.tipAllowed(askStates[activeCalendar.id] ?: com.bamnat.core.profile.AskState(), today)
@@ -2012,7 +2013,7 @@ internal fun MonthPickerDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onPick(YearMonth.now()) }) { Text("이번 달") }
+            TextButton(onClick = { onPick(Today.month()) }) { Text("이번 달") }
         },
         dismissButton = {
             Row {

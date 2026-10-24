@@ -59,6 +59,7 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import com.bamnat.core.time.Today
 
 /**
  * [EASY-05] The question card: one fact a feature that is on still waits for, asked where it is first used (the
@@ -73,7 +74,7 @@ fun AskArea(
     place: AskPlace,
     modifier: Modifier = Modifier,
     moments: Set<Moment> = emptySet(),
-    today: LocalDate = LocalDate.now(),
+    today: LocalDate = Today.date(),
     /** Above a feature's own screen: only what the card itself answers, not "open this screen". */
     inCardOnly: Boolean = false,
 ) {

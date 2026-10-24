@@ -69,6 +69,7 @@ import com.bamnat.core.money.Job
 import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.work.WorkStyle
+import com.bamnat.core.time.Today
 
 /**
  * [QA-05] What every screenshot class shares: the sample data ([seed]), [shoot] and the [Screen] that taps and scrolls.
@@ -82,7 +83,10 @@ abstract class ScreenshotBase {
     @get:Rule val fold = androidx.window.testing.layout.WindowLayoutInfoPublisherRule()
 
     internal val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()
-    internal val today = LocalDate.now()
+    init { stopTheClock() }
+
+    /** [QA-08] Every shot is drawn on 2026-10-14 (수) 10:30 in Seoul, whatever day the test runs (결정 D66). */
+    internal val today = Today.date()
     /** The day most day screenshots open: 잔업 2시간 and a memo with an amount. */
     internal val dayCell = today.minusDays(2)
     /** 특근 09–18 on a day off, before today; 야간 대근 on a day off after it. */
@@ -176,7 +180,7 @@ abstract class ScreenshotBase {
         money.save(DailySales(today.minusDays(1), sales = 860_000, costs = 240_000))
         // [LEDG-02][LEDG-05][WORK-05] Card notifications read in, one the parser could not finish, fixed costs, a memo amount.
         val md = "${today.monthValue}/${today.dayOfMonth}"
-        val posted = System.currentTimeMillis()
+        val posted = Today.millis()
         money.capture("[Web발신]\n신한카드(1234)승인 홍*동 4,500원(일시불)$md 08:10 스타벅스 누적512,300원", "신한카드", posted)
         money.capture("KB국민카드5678승인 홍*동 23,800원 일시불 $md 12:40 김밥천국 누적 88,000원", "KB Pay", posted)
         money.capture("우리(9012)승인 USD 12.99 $md 07:00 NETFLIX.COM", "우리WON카드", posted)
@@ -307,10 +311,17 @@ abstract class ScreenshotBase {
             }
             // [QA-05] settle() ends once the screen is still, so what is still on its way (Play's plans, a slow
             // query on a busy machine) gets up to a few more seconds before the shot gives up.
-            val end = System.nanoTime() + REACH_WAIT_NANOS
+            var end = System.nanoTime() + REACH_WAIT_NANOS
+            var waitedLonger = false
             while (System.nanoTime() < end) {
                 settle()
                 find(text, exact, prefix)?.let { return it }
+                // [QA-08] 363: the first shot of a cold worker on a busy CI runner can still show an empty window
+                // after the usual wait (phoneShareFeed, CI on d6b7228): a screen with nothing drawn waits longer, once.
+                if (!waitedLonger && System.nanoTime() >= end && shownWords().isEmpty()) {
+                    waitedLonger = true
+                    end = System.nanoTime() + EMPTY_WAIT_NANOS
+                }
             }
             // [QA-05] On a busy machine a fling can carry the list past the text, so look back down step by step.
             repeat(scrolls) {
@@ -544,7 +555,7 @@ abstract class ScreenshotBase {
         content {
             val profile = vm.profile.collectAsState().value
             val snap = vm.snapshot.collectAsState().value
-            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {}, onOpenKinds = {})
+            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, Today.month(), onClose = {}, onOpenKinds = {})
         }
         settle()
     }
@@ -593,12 +604,12 @@ abstract class ScreenshotBase {
     internal fun payslipMatch(): Screen.() -> Unit = payScreen(Tier.PRO, withProfile = true) { vm ->
         val profile = vm.profile.collectAsState().value
         val snap = vm.snapshot.collectAsState().value
-        if (profile != null && snap != null) com.bamnat.app.ui.pay.PayslipMatchDialog(vm, profile, snap, java.time.YearMonth.now(), onDismiss = {})
+        if (profile != null && snap != null) com.bamnat.app.ui.pay.PayslipMatchDialog(vm, profile, snap, Today.month(), onDismiss = {})
     }
     // [SHR-11] A shop shares its 매출 and a freelancer their 일정 and 일감 수입, with the figures shown before sending.
     internal fun shareSheet(style: WorkStyle): Screen.() -> Unit = style(style) {
         val snap = runBlocking { app.container.scheduleRepository.snapshot.first() }
-        content { com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}) }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}) }
     }
     // [RECV-05] 받을 돈 for each kind of work: written debts, unpaid jobs, the job and receivable sheets.
     internal fun owed(s: WorkStyle, wide: Boolean = false, then: Screen.() -> Unit = {}): Screen.() -> Unit = style(s) {
@@ -634,7 +645,7 @@ abstract class ScreenshotBase {
     internal fun foundTrades(then: Screen.() -> Unit = {}): Screen.() -> Unit = style(WorkStyle.INVEST) {
         val c = app.container
         val repo = com.bamnat.app.data.InvestRepository.of(c.database)
-        val at = System.currentTimeMillis()
+        val at = Today.millis()
         runBlocking {
             val acc = repo.ensureAccount()
             repo.saveCash(com.bamnat.core.invest.CashFlow(accountId = acc, date = today.minusDays(5), kind = com.bamnat.core.invest.CashKind.DEPOSIT, amount = 5_000_000))
@@ -725,7 +736,7 @@ abstract class ScreenshotBase {
     }
     internal fun votePay(): Screen.() -> Unit = {
         val c = companyOn()
-        c.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("c1", "(주)예시정밀", "생산팀", "s1", 2, true, java.time.Instant.now()))
+        c.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("c1", "(주)예시정밀", "생산팀", "s1", 2, true, Today.instant()))
         val nudges = com.bamnat.app.ui.company.CompanyNudgeViewModel(c)
         payScreen(Tier.PRO, withProfile = true) { vm ->
             PayScreen(vm, onBack = {}, top = { com.bamnat.app.ui.company.CompanyNudgeCards(nudges, onShare = {}, onFix = {}) })
@@ -755,7 +766,7 @@ abstract class ScreenshotBase {
         val body = com.bamnat.app.share.ShareLinkPayload.build(snap, from, "민지", 30,
             com.bamnat.app.share.ShareOptions(leaveKinds = true, extras = true, memos = true, pay = true), memos, pay)
         body.remove("ttlDays")
-        return com.bamnat.app.share.ReceivedShare(body, java.time.Instant.now().plus(java.time.Duration.ofDays(30)), java.time.Instant.now())
+        return com.bamnat.app.share.ReceivedShare(body, Today.instant().plus(java.time.Duration.ofDays(30)), Today.instant())
     }
 
     /** 준호's link from an older app: weekdays 09–18, nothing ticked. */
@@ -766,7 +777,7 @@ abstract class ScreenshotBase {
         val monday = from.minusDays((from.dayOfWeek.value - 1).toLong())
         val snap = com.bamnat.app.data.ScheduleSnapshot(listOf(weekday, off), WorkPattern.Rotation(monday, listOf(1L, 1L, 1L, 1L, 1L, 2L, 2L)), emptyList())
         val body = com.bamnat.app.share.ShareLinkPayload.build(snap, from, "준호", 30)
-        return com.bamnat.app.share.ReceivedShare(body, java.time.Instant.now().plus(java.time.Duration.ofDays(7)), java.time.Instant.now())
+        return com.bamnat.app.share.ReceivedShare(body, Today.instant().plus(java.time.Duration.ofDays(7)), Today.instant())
     }
 
     /** The share server answers at once; 준호 then 민지 were received, unless [minji] is false. */
@@ -812,6 +823,8 @@ abstract class ScreenshotBase {
         const val SETTLE_MIN_ROUNDS = 5
         const val SETTLE_MAX_NANOS = 1_000_000_000L
         const val REACH_WAIT_NANOS = 5_000_000_000L
+        /** [QA-08] Once more, for a screen that has drawn nothing at all yet. */
+        const val EMPTY_WAIT_NANOS = 15_000_000_000L
 
         // Galaxy Z Fold6: cover screen 968x2376 px and main screen 1856x2160 px at 420 dpi.
         const val FOLDED = "w369dp-h905dp-port-420dpi"
@@ -820,6 +833,27 @@ abstract class ScreenshotBase {
         const val PHONE = "w360dp-h780dp-port-450dpi"
         const val SMALL_PHONE = "w320dp-h568dp-port-xhdpi"
         const val PHONE_LANDSCAPE = "w780dp-h360dp-land-450dpi"
+
+        /** [QA-08] The fixed day and time of every shot, and the zone the phone is in. */
+        val SEOUL: java.time.ZoneId = java.time.ZoneId.of("Asia/Seoul")
+        val SHOT_TIME: java.time.ZonedDateTime = java.time.ZonedDateTime.of(2026, 10, 14, 10, 30, 0, 0, SEOUL)
+        private val systemZone: java.util.TimeZone = java.util.TimeZone.getDefault()
+
+        /**
+         * Before the class's first app object reads the date (Robolectric makes the app before the test object), and
+         * kept for the whole class; the other test classes of the same worker get the system clock back.
+         */
+        @JvmStatic @org.junit.BeforeClass
+        fun stopTheClock() {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(SEOUL))
+            Today.fix(SHOT_TIME)
+        }
+
+        @JvmStatic @org.junit.AfterClass
+        fun startTheClock() {
+            Today.reset()
+            java.util.TimeZone.setDefault(systemZone)
+        }
     }
 
     // ---- 달력 (1.15) ----
@@ -888,7 +922,7 @@ abstract class ScreenshotBase {
         val body = com.bamnat.app.share.ShareLinkPayload.build(snap, today.withDayOfMonth(1), "준호", 30,
             com.bamnat.app.share.ShareOptions(memos = true, jobs = true), memos, jobs = jobs)
         body.remove("ttlDays")
-        return com.bamnat.app.share.ReceivedShare(body, java.time.Instant.now().plus(java.time.Duration.ofDays(30)), java.time.Instant.now())
+        return com.bamnat.app.share.ReceivedShare(body, Today.instant().plus(java.time.Duration.ofDays(30)), Today.instant())
     }
     internal fun jobsLinkOn() {
         val c = app.container
@@ -931,7 +965,7 @@ abstract class ScreenshotBase {
 
     /** [UX-05] The question server for screenshots: two questions from this phone, one answered, and 모두의 문의. */
     internal class FakeInquiryApi(override val enabled: Boolean = true) : com.bamnat.app.company.InquiryApi {
-        private val now = java.time.Instant.now()
+        private val now = Today.instant()
         private fun ago(hours: Long) = now.minus(java.time.Duration.ofHours(hours))
         private val mine = mutableListOf(
             com.bamnat.app.company.Inquiry("q2", com.bamnat.app.company.InquiryKind.BUG, "answered", ago(30), ago(2), listOf(
@@ -1025,7 +1059,7 @@ abstract class ScreenshotBase {
                          then: Screen.() -> Unit = {}): Screen.() -> Unit = {
         val c = app.container
         c.billing = com.bamnat.app.billing.NoBilling(samplePlans)
-        c.remoteConfig.save(config.copy(fetchedAt = java.time.Instant.now()))
+        c.remoteConfig.save(config.copy(fetchedAt = Today.instant()))
         c.featureGate.refresh()
         settle()
         then()
@@ -1037,23 +1071,23 @@ abstract class ScreenshotBase {
         val c = app.container
         c.shareApi = shares
         c.shareLinks.save(com.bamnat.app.share.ShareLinkState("Ab3dEfGh5JkLmNoPqRsTuv", "https://bamnat-share.example.workers.dev/s/Ab3dEfGh5JkLmNoPqRsTuv",
-            "t", java.time.Instant.now().plus(java.time.Duration.ofDays(150)), "민지", 180, java.time.YearMonth.now()))
+            "t", Today.instant().plus(java.time.Duration.ofDays(150)), "민지", 180, Today.month()))
         c.shareLinks.feed = true
         val snap = runBlocking { c.scheduleRepository.snapshot.first() }
-        content { com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}, client = shares) }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares) }
         settle()
         then()
     }
     internal fun Screen.mission(kind: com.bamnat.core.alarm.AlarmMission, rangFor: java.time.Duration) {
         val sensors = app.getSystemService(android.hardware.SensorManager::class.java)
         shadowOf(sensors).addSensor(org.robolectric.shadows.ShadowSensor.newInstance(android.hardware.Sensor.TYPE_ACCELEROMETER))
-        val since = System.currentTimeMillis() - rangFor.toMillis()
+        val since = Today.millis() - rangFor.toMillis()
         content { com.bamnat.app.alarm.MissionScreen(kind, since, 5, onSnooze = {}, onDone = {}) }
     }
     // ==== 1.22 묶음 B [SRV-04][SRV-05][SRV-06][STAT-01][COMM-08][COMM-09][COMM-10]: 410–429 ====
     /** The developer's notice of the day, and [off] switches paused. */
     internal fun opsOn(vararg off: com.bamnat.core.ops.ServerSwitch) {
-        val now = java.time.Instant.now()
+        val now = Today.instant()
         app.container.remoteConfig.save(com.bamnat.app.tier.LaunchConfig(
             notices = listOf(com.bamnat.core.ops.AppNotice("nTonight01", "오늘 밤 2시 30분 동안 점검해요",
                 "광장과 근무표 링크 만들기가 새벽 2시부터 2시 30분까지 쉬어요. 달력·알람·급여는 그대로 돼요.", important = true,
@@ -1063,7 +1097,7 @@ abstract class ScreenshotBase {
         ))
     }
     internal fun writer(n: Int, nick: String?) = com.bamnat.app.company.TalkPost("p$n", n, null, true,
-        "야간 뒤 휴무가 하루뿐이라 힘들어요", java.time.Instant.now().minusSeconds(3600), mine = false, nick = nick)
+        "야간 뒤 휴무가 하루뿐이라 힘들어요", Today.instant().minusSeconds(3600), mine = false, nick = nick)
 
     // ---- [208] Store pictures (1.18.0): a common phone, no one-time hints, the phone's alarm permissions given ----
     internal fun clean(then: Screen.() -> Unit = {}): Screen.() -> Unit {
@@ -1081,7 +1115,7 @@ abstract class ScreenshotBase {
             val profile = vm.profile.collectAsState().value
             val snap = vm.snapshot.collectAsState().value
             if (profile != null && snap != null) {
-                com.bamnat.app.ui.pay.CustomItemDialog(vm, profile, snap, java.time.YearMonth.now(), onDismiss = {}, onSave = {},
+                com.bamnat.app.ui.pay.CustomItemDialog(vm, profile, snap, Today.month(), onDismiss = {}, onSave = {},
                     gap = gap, startKind = kind)
             }
         }
@@ -1112,14 +1146,14 @@ abstract class ScreenshotBase {
         val profile = vm.profile.collectAsState().value
         val snap = vm.snapshot.collectAsState().value
         if (profile != null && snap != null) {
-            com.bamnat.app.ui.pay.PayslipMatchDialog(vm, profile, snap, java.time.YearMonth.now(), onDismiss = {}, onShareWay = {})
+            com.bamnat.app.ui.pay.PayslipMatchDialog(vm, profile, snap, Today.month(), onDismiss = {}, onShareWay = {})
         }
     }
 
     /** This month as the app has it, for a payslip a little off from it. */
     internal fun appTotalNow(): Long = runBlocking {
         val c = app.container
-        PayViewModel(c).calculateOff(c.payStore.profile.value!!, c.scheduleRepository.snapshot.first(), java.time.YearMonth.now()).total
+        PayViewModel(c).calculateOff(c.payStore.profile.value!!, c.scheduleRepository.snapshot.first(), Today.month()).total
     }
 
     internal fun Screen.payslipGap() {
@@ -1152,7 +1186,7 @@ abstract class ScreenshotBase {
         val c = app.container
         val vm = PayViewModel(c)
         val snap = runBlocking { c.scheduleRepository.snapshot.first() }
-        val month = java.time.YearMonth.now()
+        val month = Today.month()
         val sample = vm.sampleProfile()
         content {
             com.bamnat.app.ui.pay.PayWizard(sample, {}, {}, snapshot = snap, preview = { vm.preview(it, snap, month) }, startAt = key)
@@ -1331,7 +1365,7 @@ abstract class ScreenshotBase {
         payScreen(Tier.PRO, withProfile = true, adjust = adjust) { vm ->
             val profile = vm.profile.collectAsState().value
             val snap = vm.snapshot.collectAsState().value
-            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {}, onOpenKinds = {})
+            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, Today.month(), onClose = {}, onOpenKinds = {})
         }
 }
 
@@ -1340,7 +1374,7 @@ internal class FakeShareApi : com.bamnat.app.share.ShareApi {
     override val enabled = true
     val links = mutableMapOf<String, com.bamnat.app.share.ReceivedShare>()
     override suspend fun create(payload: org.json.JSONObject) = com.bamnat.app.share.ShareLinkState("Ab3dEfGh5JkLmNoPqRsTuv",
-        "https://bamnat-share.example.workers.dev/s/Ab3dEfGh5JkLmNoPqRsTuv", "t", java.time.Instant.now().plus(java.time.Duration.ofDays(30)), payload.optString("title"))
+        "https://bamnat-share.example.workers.dev/s/Ab3dEfGh5JkLmNoPqRsTuv", "t", Today.instant().plus(java.time.Duration.ofDays(30)), payload.optString("title"))
     override suspend fun update(state: com.bamnat.app.share.ShareLinkState, payload: org.json.JSONObject) = state
     override suspend fun delete(state: com.bamnat.app.share.ShareLinkState) = Unit
     override suspend fun read(id: String) = links[id] ?: throw com.bamnat.app.share.ShareLinkException("not_found")
@@ -1350,7 +1384,7 @@ internal class FakeShareApi : com.bamnat.app.share.ShareApi {
 internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
     override val enabled = true
     var file = "{}"
-    private val now = java.time.Instant.now()
+    private val now = Today.instant()
 
     private fun status(id: String, status: String, company: String, dept: String, points: Int, persons: Int, ask: Boolean = false,
         review: Boolean = false, reason: String? = null, reward: com.bamnat.app.company.Reward? = null, daysAgo: Long = 0) =

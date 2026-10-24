@@ -10,6 +10,7 @@ import com.bamnat.app.NoticeLinks
 import com.bamnat.app.R
 import com.bamnat.app.alarm.Notifications
 import java.io.File
+import com.bamnat.core.time.Today
 
 /**
  * [MEAS-08] 328: when the app stops by itself, a short note of where, kept on the phone.
@@ -36,7 +37,7 @@ object CrashLog {
         val app = context.applicationContext
         val before = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
-            runCatching { write(app, thread.name, error, System.currentTimeMillis()) }
+            runCatching { write(app, thread.name, error, Today.millis()) }
             runCatching { notice(app) }
             before?.uncaughtException(thread, error)
         }
@@ -76,7 +77,7 @@ object CrashLog {
     /** How the app ended in the last 30 days, by Android's own record (Android 11+): crash, ANR, native crash. */
     data class Exits(val crashes: Int, val anrs: Int, val native: Int)
 
-    fun exits(context: Context, now: Long = System.currentTimeMillis()): Exits? {
+    fun exits(context: Context, now: Long = Today.millis()): Exits? {
         if (Build.VERSION.SDK_INT < 30) return null
         val am = context.getSystemService(ActivityManager::class.java) ?: return null
         val recent = runCatching { am.getHistoricalProcessExitReasons(context.packageName, 0, 0) }.getOrNull()
@@ -89,7 +90,7 @@ object CrashLog {
     }
 
     /** The "앱 멈춤" lines of the diagnostics report. */
-    fun reportLines(context: Context, now: Long = System.currentTimeMillis()): List<String> = buildList {
+    fun reportLines(context: Context, now: Long = Today.millis()): List<String> = buildList {
         val notes = notes(context).filter { now - (it.name.removePrefix(PREFIX).removeSuffix(".txt").toLongOrNull() ?: 0L) < DAYS_30 }
         exits(context, now)?.let { add("최근 30일: 멈춤 ${it.crashes}회 · 응답 없음(ANR) ${it.anrs}회 · 기기 쪽 멈춤 ${it.native}회") }
         add("남은 기록: ${notes.size}개")

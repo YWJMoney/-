@@ -277,7 +277,7 @@ internal fun CustomItemDialog(
     gap: Long? = null,
     startKind: ItemKind? = null,
 ) {
-    val id = remember { editing?.id ?: "rule-" + System.currentTimeMillis().toString(36) }
+    val id = remember { editing?.id ?: "rule-" + System.currentTimeMillis().toString(36) }  // real clock: an id, not a time
     val draft = remember { editing?.let { ItemDraft.of(it) } ?: ItemDraft(startKind, id).also { d -> if (startKind != null) prefill(d, gap) } }
     val start = profile.period.start(month)
     val base = remember(profile, editing) { if (editing == null) profile else profile.copy(customRules = profile.customRules.filterNot { it.id == editing.id }) }

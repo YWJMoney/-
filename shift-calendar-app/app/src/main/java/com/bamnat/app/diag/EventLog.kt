@@ -4,6 +4,7 @@ import android.content.Context
 import com.bamnat.core.diag.DiagEvent
 import com.bamnat.core.diag.EventBook
 import java.io.File
+import com.bamnat.core.time.Today
 
 /**
  * On-device event log for alarm diagnostics and usage counts [MEAS-03, MEAS-04].
@@ -15,7 +16,7 @@ class EventLog(context: Context) {
     /** File work runs here, in order, so logging a screen change never touches the disk on the main thread. */
     private val io = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "bamnat-eventlog").apply { isDaemon = true } }
 
-    fun append(name: String, detail: String = "", atMillis: Long = System.currentTimeMillis()) {
+    fun append(name: String, detail: String = "", atMillis: Long = Today.millis()) {
         io.execute {
             runCatching {
                 file.parentFile?.mkdirs()

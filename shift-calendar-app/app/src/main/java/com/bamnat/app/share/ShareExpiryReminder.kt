@@ -17,6 +17,7 @@ import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.bamnat.core.time.Today
 
 /**
  * [SHR-12] Before the link closes, a notice says when, with a button that keeps it open as long
@@ -37,21 +38,21 @@ object ShareExpiryReminder {
      * When the notice for [link] comes: 10:00 on the day [lead] before it closes, or in a minute when
      * that has passed (the phone was off) and the link is still open. Null once it was posted for this end date.
      */
-    fun noticeAt(link: ShareLinkState, noticedFor: Instant?, now: Instant, zone: ZoneId = ZoneId.systemDefault()): Instant? {
+    fun noticeAt(link: ShareLinkState, noticedFor: Instant?, now: Instant, zone: ZoneId = Today.zone()): Instant? {
         if (noticedFor == link.expiresAt || !link.expiresAt.isAfter(now)) return null
         val day = link.expiresAt.minus(lead(link.ttlDays)).atZone(zone).toLocalDate()
         val at = day.atTime(NOTICE_TIME).atZone(zone).toInstant()
         return if (at.isAfter(now)) at else now.plusSeconds(60)
     }
 
-    fun reschedule(context: Context, link: ShareLinkState?, noticedFor: Instant?, now: Instant = Instant.now()) =
+    fun reschedule(context: Context, link: ShareLinkState?, noticedFor: Instant?, now: Instant = Today.instant()) =
         reschedule(context, PersonalCalendar.MAIN, link, noticedFor, now)
 
     /**
      * [MCAL-03] Each of the user's calendars has its own link, so its own alarm and notice.
      * [PROV-04] Each of a calendar's links too: [key] is the link's, see [ShareLinkKey].
      */
-    fun reschedule(context: Context, key: String, link: ShareLinkState?, noticedFor: Instant?, now: Instant = Instant.now()) {
+    fun reschedule(context: Context, key: String, link: ShareLinkState?, noticedFor: Instant?, now: Instant = Today.instant()) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         val at = link?.let { noticeAt(it, noticedFor, now) }
         if (at == null) {
@@ -143,10 +144,10 @@ object ShareExpiryReminder {
 
     /** "11월 3일" */
     fun dateText(at: Instant): String =
-        at.atZone(ZoneId.systemDefault()).toLocalDate().format(DateTimeFormatter.ofPattern("M월 d일"))
+        at.atZone(Today.zone()).toLocalDate().format(DateTimeFormatter.ofPattern("M월 d일"))
 
     /** [SHR-12] Whether the sheet should say the link closes soon. */
-    fun closingSoon(link: ShareLinkState, now: Instant = Instant.now()): Boolean =
+    fun closingSoon(link: ShareLinkState, now: Instant = Today.instant()): Boolean =
         link.expiresAt.isAfter(now) && !link.expiresAt.minus(lead(link.ttlDays)).isAfter(now)
 }
 

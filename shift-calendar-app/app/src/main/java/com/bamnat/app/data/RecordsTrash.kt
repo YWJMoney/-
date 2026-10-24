@@ -23,6 +23,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
+import com.bamnat.core.time.Today
 
 /**
  * [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록: whatever a calendar loses — its kind of work changed, its
@@ -46,7 +47,7 @@ class RecordsTrash(
     private val calendars: CalendarBook,
     private val mainDb: AppDatabase,
     private val settings: SettingsRepository,
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: () -> Long = Today::millis,
     /** [UNDO-03] An added calendar's own folder ([CalendarStorage.filesOf]); null keeps no files. */
     private val filesOf: ((String) -> File)? = null,
     private val workTools: WorkToolsStore? = null,

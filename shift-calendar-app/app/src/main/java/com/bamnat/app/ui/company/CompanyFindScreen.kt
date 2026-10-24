@@ -89,6 +89,7 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.ShiftBadge
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /**
  * [COMM-01] 회사 찾기, the first step of setting up work when a company server is there: a coworker's
@@ -481,7 +482,7 @@ private fun SetupCard(
 @Composable
 internal fun PhaseSheet(phases: Phases, replacing: Boolean, busy: Boolean, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
     var picked by remember(phases) { mutableStateOf(phases.current ?: phases.sent) }
-    val today = remember { LocalDate.now() }
+    val today = remember { Today.date() }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 20.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {

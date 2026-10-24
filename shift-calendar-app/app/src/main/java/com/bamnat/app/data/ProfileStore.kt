@@ -18,6 +18,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import java.time.Instant
+import com.bamnat.core.time.Today
 
 /**
  * [EASY-03] The profile: every fact the app knows about one calendar, read from the store that has always
@@ -47,7 +48,7 @@ class ProfileStore(private val c: AppContainer, private val dir: File = File(c.a
         val value = values(c.scopeOf(calendarId))[key]?.value
         lock.withLock {
             val all = meta(calendarId).toMutableMap()
-            all[key.id] = Profile.written(value, source, confidence, Instant.now(), why)
+            all[key.id] = Profile.written(value, source, confidence, Today.instant(), why)
             writeMeta(calendarId, all)
         }
     }
@@ -61,7 +62,7 @@ class ProfileStore(private val c: AppContainer, private val dir: File = File(c.a
      * themselves, the shifts, the pay and every record stay as they are meanwhile. What it was before is kept
      * [UNDO_DAYS] days for [undoStartOver].
      */
-    suspend fun startOver(calendarId: String, asks: AskStore, now: Instant = Instant.now()) {
+    suspend fun startOver(calendarId: String, asks: AskStore, now: Instant = Today.instant()) {
         val values = values(c.scopeOf(calendarId))
         val known = facts(calendarId).values.filter { it.known }.map { it.key }
         lock.withLock { withContext(Dispatchers.IO) {
@@ -78,7 +79,7 @@ class ProfileStore(private val c: AppContainer, private val dir: File = File(c.a
     }
 
     /** [EASY-09] When 모두 처음부터 can still be taken back, or null. */
-    suspend fun startedOver(calendarId: String, now: Instant = Instant.now()): Instant? = withContext(Dispatchers.IO) {
+    suspend fun startedOver(calendarId: String, now: Instant = Today.instant()): Instant? = withContext(Dispatchers.IO) {
         runCatching {
             val f = reset(calendarId)
             if (!f.exists()) return@runCatching null

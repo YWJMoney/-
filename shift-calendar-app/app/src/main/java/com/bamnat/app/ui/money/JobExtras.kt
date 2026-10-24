@@ -37,6 +37,7 @@ import com.bamnat.core.money.JobStatus
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import com.bamnat.core.time.Today
 
 /**
  * [FLD-02] The client (업체·고객) field: names from the calendar's past jobs drop down as the user
@@ -104,7 +105,7 @@ fun DueRow(due: LocalDate?, onChange: (LocalDate?) -> Unit) {
         if (due != null) TextButton(onClick = { onChange(null) }) { Text("지우기") }
     }
     if (picking) {
-        val state = rememberDatePickerState(initialSelectedDateMillis = (due ?: LocalDate.now()).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+        val state = rememberDatePickerState(initialSelectedDateMillis = (due ?: Today.date()).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
         DatePickerDialog(
             onDismissRequest = { picking = false },
             confirmButton = {

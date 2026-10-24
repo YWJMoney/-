@@ -36,6 +36,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /**
  * [DAYW-07] 출퇴근 자동 기록 on the phone only: one geofence around the workplace the user set, handed to Google
@@ -147,7 +148,7 @@ object CommuteRecorder {
         if (checkIntent(context, create = false) != null) return
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         val pi = checkIntent(context, create = true) ?: return
-        am.setInexactRepeating(AlarmManager.RTC, System.currentTimeMillis() + CHECK_INTERVAL_MILLIS, CHECK_INTERVAL_MILLIS, pi)
+        am.setInexactRepeating(AlarmManager.RTC, Today.millis() + CHECK_INTERVAL_MILLIS, CHECK_INTERVAL_MILLIS, pi)
     }
 
     fun cancelCheck(context: Context) {
@@ -295,7 +296,7 @@ object CommuteRecorder {
      * [DAYW-07] After a reboot the wait's alarm is gone: a leave still waiting is finished when its wait is
      * over, else waited for again.
      */
-    suspend fun resume(context: Context, now: LocalDateTime = LocalDateTime.now()) {
+    suspend fun resume(context: Context, now: LocalDateTime = Today.dateTime()) {
         val s = CommutePrefs.get(context).current
         val pending = s.pendingLeave ?: return
         if (!s.enabled) return
@@ -412,7 +413,7 @@ object CommuteRecorder {
     private fun scheduleFinish(context: Context, at: LocalDateTime) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         // Allowed while idle, so a phone left on the desk overnight still finishes the leave.
-        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), finishIntent(context))
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at.atZone(Today.zone()).toInstant().toEpochMilli(), finishIntent(context))
     }
 
     private fun cancelFinish(context: Context) {
@@ -420,7 +421,7 @@ object CommuteRecorder {
     }
 
     fun eventTime(millis: Long?): LocalDateTime =
-        LocalDateTime.ofInstant(Instant.ofEpochMilli(millis?.takeIf { it > 0 } ?: System.currentTimeMillis()), ZoneId.systemDefault())
+        LocalDateTime.ofInstant(Instant.ofEpochMilli(millis?.takeIf { it > 0 } ?: Today.millis()), Today.zone())
 }
 
 /** [DAYW-07] Geofence crossings, the end of the wait after leaving, and 맞아요·아니요 on a record's notice. */

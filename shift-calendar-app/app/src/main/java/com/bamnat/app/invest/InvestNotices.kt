@@ -40,6 +40,7 @@ import kotlinx.coroutines.sync.withLock
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /** [INV-01] The investor calendar's records: the main calendar's database or an added calendar's own. */
 fun AppContainer.invest(calendarId: String): InvestRepository =
@@ -96,14 +97,14 @@ object InvestNotices {
         Plan(cal.id, cal.name, book.alarms, book.events)
     }
 
-    fun reschedule(context: Context, plans: List<Plan>, after: LocalDateTime = LocalDateTime.now()) {
+    fun reschedule(context: Context, plans: List<Plan>, after: LocalDateTime = Today.dateTime()) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         val next = plans.mapNotNull { InvestAlarms.nextAny(it.alarms, it.events, after) }.minOrNull()
         if (next == null) {
             am.cancel(pending(context, 0L))
             return
         }
-        val at = next.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val at = next.atZone(Today.zone()).toInstant().toEpochMilli()
         val op = pending(context, at)
         val rings = plans.any { p -> InvestAlarms.dueAt(p.alarms, next).any { it.ring } }
         when {
@@ -122,8 +123,8 @@ object InvestNotices {
      * [INV-08] The system alarm for [atMillis] came: that minute's notices, then those due since when it
      * came late (the phone dozing), then the next one set after them, so none is skipped.
      */
-    internal suspend fun fire(context: Context, c: AppContainer, atMillis: Long, now: LocalDateTime = LocalDateTime.now()) {
-        val nowMillis = now.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    internal suspend fun fire(context: Context, c: AppContainer, atMillis: Long, now: LocalDateTime = Today.dateTime()) {
+        val nowMillis = now.atZone(Today.zone()).toInstant().toEpochMilli()
         handle(context, c, atMillis, nowMillis)
         // Times too old to be shown (see [handle]) are skipped, not walked through.
         var after = maxOf(if (atMillis != 0L) AlarmScheduler.millisToLocal(atMillis) else now, now.minusNanos(STALE_AFTER_MILLIS * 1_000_000))
@@ -134,14 +135,14 @@ object InvestNotices {
                 reschedule(context, plans, after)
                 return
             }
-            handle(context, c, due.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), nowMillis)
+            handle(context, c, due.atZone(Today.zone()).toInstant().toEpochMilli(), nowMillis)
             after = due
         }
         // The rest are due already: the alarm set for the next comes at once and goes on from there.
         reschedule(context, plans, after)
     }
 
-    internal suspend fun handle(context: Context, c: AppContainer, atMillis: Long, now: Long = System.currentTimeMillis()) {
+    internal suspend fun handle(context: Context, c: AppContainer, atMillis: Long, now: Long = Today.millis()) {
         if (atMillis == 0L || now - atMillis > STALE_AFTER_MILLIS) return
         val at = AlarmScheduler.millisToLocal(atMillis)
         val ringing = mutableListOf<String>()
@@ -227,7 +228,7 @@ object InvestNotices {
         val repo = c.invest(calendarId)
         val book = repo.now()
         val alarm = book.alarms.firstOrNull { it.id == alarmId } ?: return@withLock
-        val today = LocalDate.now()
+        val today = Today.date()
         // A tap that got in anyway (two at once) finds today's trade from this alarm and writes no second one.
         if (book.trades.any { it.alarmId == alarmId && it.date == today }) return@withLock
         saveDraft(context, repo, book, alarm, today, calendarId)
@@ -244,7 +245,7 @@ object InvestNotices {
         val qty = d.quantity ?: return
         val price = d.price ?: return
         val costs = InvestFees.suggest(d.market, d.side, qty, price, book.account(account))
-        val now = LocalDateTime.now()
+        val now = Today.dateTime()
         repo.saveTrade(Trade(
             accountId = account, date = today, minute = now.hour * 60 + now.minute, symbol = d.symbol, name = d.name, market = d.market,
             side = d.side, quantity = qty, price = price, fxRate = fx, fee = costs.fee, tax = costs.tax,

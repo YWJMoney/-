@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /** [INV-05] The stretch a return is worked out over. 원금 대비 is always from the start. */
 enum class ReturnPeriod(val label: String) { ALL("처음부터"), YEAR("올해"), MONTH("이번 달") }
@@ -79,7 +80,7 @@ data class InvestState(
     val unfiltered: InvestState by lazy { if (account == null) this else of(full, null, today, loaded, fullResult) }
 
     companion object {
-        val LOADING = of(InvestBook.EMPTY, null, LocalDate.now(), loaded = false)
+        val LOADING = of(InvestBook.EMPTY, null, Today.date(), loaded = false)
 
         fun of(b: InvestBook, account: Long?, today: LocalDate, loaded: Boolean = true, built: PortfolioResult? = null): InvestState {
             val fullResult = built ?: Portfolio.build(b)
@@ -106,7 +107,7 @@ data class InvestState(
 
 class InvestViewModel(private val container: AppContainer, val calendarId: String) : ViewModel() {
     private val repo = container.invest(calendarId)
-    private val today = MutableStateFlow(LocalDate.now())
+    private val today = MutableStateFlow(Today.date())
     private val _account = MutableStateFlow<Long?>(null)
     private val _period = MutableStateFlow(ReturnPeriod.ALL)
     val period: StateFlow<ReturnPeriod> = _period.asStateFlow()
@@ -151,7 +152,7 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
     }
 
     fun refreshToday() {
-        today.value = LocalDate.now()
+        today.value = Today.date()
     }
 
     fun setAccount(id: Long?) {

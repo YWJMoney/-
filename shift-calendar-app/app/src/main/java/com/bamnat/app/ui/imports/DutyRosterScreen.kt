@@ -87,6 +87,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /**
  * [SHFT-06] 듀티표 사진으로 넣기: a photo of next month's roster is read on the phone, the user picks their own
@@ -124,7 +125,7 @@ class DutyRosterViewModel(private val container: AppContainer, val calendarId: S
 
     private val start = container.shownMonth.month.value.let { shown ->
         // After the middle of a month the roster on the wall is usually next month's.
-        if (shown == YearMonth.now() && LocalDate.now().dayOfMonth >= 15) shown.plusMonths(1) else shown
+        if (shown == Today.month() && Today.date().dayOfMonth >= 15) shown.plusMonths(1) else shown
     }
     private val _ui = MutableStateFlow(Ui(start))
     val ui: StateFlow<Ui> = _ui.asStateFlow()

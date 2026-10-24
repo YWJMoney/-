@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.padding
 import java.time.LocalDate
 import com.bamnat.core.work.WorkStyle
+import com.bamnat.core.time.Today
 
 /** [QA-05] Screenshots: 달력·하루·근무 유형·패턴·빠른 입력·위젯·스토어 사진. Shot names and numbers are the ones they had in the one big class. */
 @RunWith(AndroidJUnit4::class)
@@ -210,7 +211,7 @@ class CalendarScreenshotTest : ScreenshotBase() {
         val id = addedCalendar()
         // Shared with a link of its own [MCAL-03].
         app.container.shareLinksOf(id).save(com.bamnat.app.share.ShareLinkState("al1", "https://bamnat-share.example/s/al1", "t",
-            java.time.Instant.now().plus(java.time.Duration.ofDays(30)), "민지"))
+            Today.instant().plus(java.time.Duration.ofDays(30)), "민지"))
         addedCalendar("가족 일정")
         settle()
         tapText("달력 바꾸기", prefix = true)
@@ -285,7 +286,7 @@ class CalendarScreenshotTest : ScreenshotBase() {
         c.settingsRepository.update { it.copy(workStyle = WorkStyle.DAY) }
         settle()
         val ahead = (0..12).first { n ->
-            val m = java.time.YearMonth.now().plusMonths(n.toLong())
+            val m = Today.month().plusMonths(n.toLong())
             (1..m.lengthOfMonth()).map { m.atDay(it) }.any { it.dayOfWeek.value <= 5 && com.bamnat.core.holiday.KoreanHolidays.isHoliday(it) }
         }
         repeat(ahead) { tapText("다음 달", exact = true, scrolls = 0) }
@@ -329,7 +330,7 @@ class CalendarScreenshotTest : ScreenshotBase() {
     @Test fun calShiftHugeText() = shoot("313_phone_shift_huge_text", PHONE, 2f, withPay())
     /** [CAL-06] Any date, picked on a full calendar from the month list. */
     @Test fun calDateJump() = shoot("315_folded_date_jump", FOLDED) {
-        tapText(Fmt.month(java.time.YearMonth.now()), exact = true, scrolls = 0)
+        tapText(Fmt.month(Today.month()), exact = true, scrolls = 0)
         tapText("날짜 고르기", exact = true, scrolls = 0)
     }
     /** [CAL-18] The day's chips past the screen's edge: the end fades and "+N ›" says how many more. */

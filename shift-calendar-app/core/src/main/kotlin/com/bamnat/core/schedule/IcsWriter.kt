@@ -5,6 +5,7 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import com.bamnat.core.time.Today
 
 /**
  * Writes the schedule as an iCalendar (.ics) file that Google Calendar, Samsung Calendar and
@@ -18,7 +19,7 @@ object IcsWriter {
     fun write(
         days: List<ResolvedDay>,
         zone: ZoneId,
-        nowUtc: LocalDateTime = LocalDateTime.now(ZoneOffset.UTC),
+        nowUtc: LocalDateTime = Today.dateTime(ZoneOffset.UTC),
         calendarName: String = "밤낮 근무",
     ): String {
         val lines = mutableListOf(

@@ -119,6 +119,7 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.bamnat.core.time.Today
 
 /** [ADMIN-02] What the form and the privacy policy say about a question before it goes. */
 /** [INQ-01] A company way names the workplace, so it stays with the developer; the privacy policy 1-3항 says the same. */
@@ -420,7 +421,7 @@ private fun Inquiry.label(unread: Boolean): Pair<String, Tone> = when {
 private val stamp = DateTimeFormatter.ofPattern("M월 d일 HH:mm")
 
 /** "10월 18일 21:05" in this phone's time zone. */
-private fun stampOf(at: Instant): String = at.atZone(ZoneId.systemDefault()).format(stamp)
+private fun stampOf(at: Instant): String = at.atZone(Today.zone()).format(stamp)
 
 /** "[달력] " and the like at the start of a question: the screen it was asked from. */
 private val TAG = Regex("^\\[[^\\]]{1,30}]\\s*")
@@ -754,7 +755,7 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                Text(Fmt.shortFullDate(i.createdAt.atZone(ZoneId.systemDefault()).toLocalDate()) + "에 보냄",
+                Text(Fmt.shortFullDate(i.createdAt.atZone(Today.zone()).toLocalDate()) + "에 보냄",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                 i.label(unread = false).let { (t, tone) -> StatusChip(t, tone) }
             }
@@ -976,7 +977,7 @@ private fun PublicThreadView(vm: InquiryViewModel, id: String, onGone: () -> Uni
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-            Text("${t.kind.label} · ${t.topicName} · " + Fmt.shortFullDate(t.createdAt.atZone(ZoneId.systemDefault()).toLocalDate()),
+            Text("${t.kind.label} · ${t.topicName} · " + Fmt.shortFullDate(t.createdAt.atZone(Today.zone()).toLocalDate()),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             if (t.messages.any { it.fromDeveloper }) StatusChip("답했어요", Tone.GOOD) else StatusChip("답을 기다려요", Tone.WAIT)
         }

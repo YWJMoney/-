@@ -18,6 +18,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /**
  * [SLP-15] Money and 연차 notices that come due while the user sleeps wait here, and come 30
@@ -37,7 +38,7 @@ object QuietHold {
         val c = context.appContainer
         val settings = c.settingsRepository.current
         if (!settings.quietWhileAsleep) return@withLock false
-        holdUntil(c, settings, at, LocalDateTime.now()) ?: return@withLock false
+        holdUntil(c, settings, at, Today.dateTime()) ?: return@withLock false
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs.edit().putStringSet(K_HELD, prefs.getStringSet(K_HELD, emptySet()).orEmpty() + "${source.name}|$at").apply()
         schedule(context, c, settings)
@@ -51,7 +52,7 @@ object QuietHold {
         val held = prefs.getStringSet(K_HELD, emptySet()).orEmpty()
         if (held.isEmpty()) return@withLock
         val settings = c.settingsRepository.current
-        val now = LocalDateTime.now()
+        val now = Today.dateTime()
         val keep = mutableSetOf<String>()
         val due = mutableListOf<Pair<Source, LocalDateTime>>()
         for (entry in held) {
@@ -69,18 +70,18 @@ object QuietHold {
 
     private suspend fun schedule(context: Context, c: AppContainer, settings: AppSettings) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
-        val now = LocalDateTime.now()
+        val now = Today.dateTime()
         val held = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getStringSet(K_HELD, emptySet()).orEmpty()
         val next = held.mapNotNull(::parse).mapNotNull { (_, at) -> holdUntil(c, settings, at, now) }.minOrNull()
         val op = PendingIntent.getBroadcast(context, REQUEST, Intent(context, QuietHoldReceiver::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         if (next == null) {
             // Nothing waits any more, or what waits may come now: let the receiver send it.
-            if (held.isEmpty()) am.cancel(op) else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 1_000, op)
+            if (held.isEmpty()) am.cancel(op) else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, Today.millis() + 1_000, op)
             return
         }
         // A few minutes late is fine for these, and needs no exact alarm.
-        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), op)
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next.atZone(Today.zone()).toInstant().toEpochMilli(), op)
     }
 
     private suspend fun holdUntil(c: AppContainer, settings: AppSettings, at: LocalDateTime, now: LocalDateTime): LocalDateTime? {

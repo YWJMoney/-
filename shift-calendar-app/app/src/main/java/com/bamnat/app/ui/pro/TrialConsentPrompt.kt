@@ -26,6 +26,7 @@ import com.bamnat.core.tier.TrialConsent
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /** [MON-06] What the user is asked, word for word, and what is kept as the record of their answer. */
 fun trialConsentText(end: java.time.LocalDate, price: String): String =
@@ -48,9 +49,9 @@ fun TrialConsentPrompt(c: AppContainer) {
     val pro by c.proStore.state.collectAsStateWithLifecycle()
     var closed by rememberSaveable { mutableStateOf(false) }
     val sub = pro.sub ?: return
-    val zone = ZoneId.systemDefault()
+    val zone = Today.zone()
     val end = sub.trialEnd(zone)
-    val stage = TrialConsent.stage(sub.play(), end, pro.consentAt, Instant.now())
+    val stage = TrialConsent.stage(sub.play(), end, pro.consentAt, Today.instant())
     if (closed || (stage != TrialConsent.Stage.ASK && stage != TrialConsent.Stage.LAST_DAY)) return
     // [PERF-01] Asked only when the question shows, so Play's billing client is not built at every start.
     val plans = rememberPlans()
@@ -59,7 +60,7 @@ fun TrialConsentPrompt(c: AppContainer) {
     val price = trialPrice(sub, plans)
     val text = trialConsentText(day, price)
     val answer: (String) -> Unit = { a ->
-        val now = Instant.now()
+        val now = Today.instant()
         // [SRV-07] Queued first, then sent: without a connection it goes at the next sync instead of being lost.
         c.proStore.answer(a, now, com.bamnat.app.tier.PendingConsent(a, now, ProductIds.PRO, price, end, text))
         c.appScope.launch { c.sendConsent() }
@@ -99,9 +100,9 @@ fun LaunchThanks(c: AppContainer) {
     val pro by c.proStore.state.collectAsStateWithLifecycle()
     val config by c.remoteConfig.config.collectAsStateWithLifecycle()
     if (!config.billingLive || pro.thanksSeen) return
-    val zone = ZoneId.systemDefault()
+    val zone = Today.zone()
     val until = com.bamnat.core.tier.ProAccess.thanksUntil(c.installedAt, config.launchedAt, config.thanksMonths, zone) ?: return
-    if (!Instant.now().isBefore(until)) return
+    if (!Today.instant().isBefore(until)) return
     AlertDialog(
         onDismissRequest = { c.proStore.thanksSeen() },
         title = { Text("고마워요") },

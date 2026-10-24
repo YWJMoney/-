@@ -24,6 +24,7 @@ import com.bamnat.core.money.Repeat
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
 import java.time.LocalTime
+import com.bamnat.core.time.Today
 
 /** [LEDG-01] Household ledger lines; version 7, place/time/card/reviewed in version 9. */
 @Entity(tableName = "money_entries", indices = [Index("epochDay")])
@@ -360,7 +361,7 @@ fun MoneyEntryEntity.toModel() = MoneyEntry(
     receipt = receipt,
 )
 
-fun MoneyEntry.toEntity(createdAt: Long = System.currentTimeMillis()) = MoneyEntryEntity(
+fun MoneyEntry.toEntity(createdAt: Long = Today.millis()) = MoneyEntryEntity(
     id = id, epochDay = date.toEpochDay(), kind = kind.name, amount = amount, category = category, note = note,
     source = source.name, createdAt = createdAt, merchant = merchant, minuteOfDay = time?.let { it.hour * 60 + it.minute },
     cardLast4 = cardLast4, reviewed = reviewed,

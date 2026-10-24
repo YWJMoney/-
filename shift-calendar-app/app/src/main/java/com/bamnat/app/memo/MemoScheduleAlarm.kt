@@ -22,6 +22,7 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.bamnat.core.time.Today
 
 /**
  * [SCHED-01] Memos that are schedules: one system alarm for the next of them. At that minute each
@@ -36,14 +37,14 @@ object MemoScheduleAlarm {
     /** A schedule delivered later than this (the phone was off) is not announced any more. */
     private const val STALE_AFTER_MILLIS = 2 * 60 * 60 * 1000L
 
-    fun reschedule(context: Context, memos: List<Memo>, after: LocalDateTime = LocalDateTime.now()) {
+    fun reschedule(context: Context, memos: List<Memo>, after: LocalDateTime = Today.dateTime()) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         val next = MemoSchedules.next(memos, after)
         if (next == null) {
             am.cancel(pending(context, 0L))
             return
         }
-        val at = next.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val at = next.atZone(Today.zone()).toInstant().toEpochMilli()
         val op = pending(context, at)
         val rings = MemoSchedules.dueAt(memos, next).any { it.reminder?.ring == true }
         when {
@@ -77,7 +78,7 @@ object MemoScheduleAlarm {
         Notifications.post(context, NOTIFICATION_BASE + (memo.id.toInt() and 0x3ff), notification)
     }
 
-    internal fun handle(context: Context, memos: List<Memo>, atMillis: Long, now: Long = System.currentTimeMillis()) {
+    internal fun handle(context: Context, memos: List<Memo>, atMillis: Long, now: Long = Today.millis()) {
         if (atMillis == 0L || now - atMillis > STALE_AFTER_MILLIS) return
         val at = AlarmScheduler.millisToLocal(atMillis)
         val due = MemoSchedules.dueAt(memos, at)
@@ -113,8 +114,8 @@ class MemoScheduleReceiver : BroadcastReceiver() {
                 // Read again now, so a memo changed or deleted since the alarm was set is not announced.
                 val memos = container.memoRepository.memos.first()
                 MemoScheduleAlarm.handle(context, memos, atMillis)
-                val after = if (atMillis != 0L) AlarmScheduler.millisToLocal(atMillis) else LocalDateTime.now()
-                MemoScheduleAlarm.reschedule(context, memos, maxOf(after, LocalDateTime.now().minusSeconds(1)))
+                val after = if (atMillis != 0L) AlarmScheduler.millisToLocal(atMillis) else Today.dateTime()
+                MemoScheduleAlarm.reschedule(context, memos, maxOf(after, Today.dateTime().minusSeconds(1)))
             } finally {
                 pending.finish()
             }

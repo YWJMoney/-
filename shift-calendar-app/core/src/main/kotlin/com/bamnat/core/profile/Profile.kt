@@ -1,6 +1,7 @@
 package com.bamnat.core.profile
 
 import java.time.Instant
+import com.bamnat.core.time.Today
 
 /**
  * [EASY-03] Where a fact's value came from, strongest first: the user typed it ([TYPED]), a company setup
@@ -105,6 +106,6 @@ object Profile {
     enum class Decision { WRITE, ASK, KEEP }
 
     /** The meta to keep after [source] wrote [value]. */
-    fun written(value: Any?, source: Source, confidence: Double = 1.0, at: Instant = Instant.now(), why: String? = null) =
+    fun written(value: Any?, source: Source, confidence: Double = 1.0, at: Instant = Today.instant(), why: String? = null) =
         FactMeta(source, confidence.coerceIn(0.0, 1.0), at, fingerprint(value), why)
 }

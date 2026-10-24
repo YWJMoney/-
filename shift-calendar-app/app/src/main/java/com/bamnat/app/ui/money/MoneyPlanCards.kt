@@ -94,6 +94,7 @@ import com.bamnat.core.money.PaymentParser
 import com.bamnat.core.money.Upcoming
 import java.time.LocalDate
 import java.time.LocalDateTime
+import com.bamnat.core.time.Today
 
 /**
  * [LEDG-02] Lines the app wrote down from notifications, waiting for a glance, and texts it kept
@@ -175,7 +176,7 @@ fun NewRecordsCard(
 /** What a kept notification becomes when the user opens it: as much as the parser read. */
 fun Capture.draft(): MoneyEntry {
     // Read as of when it arrived, so a text kept on the 30th lands in that month, not today's.
-    val arrived = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(postedAt), java.time.ZoneId.systemDefault())
+    val arrived = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(postedAt), Today.zone())
     val day = arrived.toLocalDate()
     val parsed = (PaymentParser.parse(text, arrived) as? PaymentParser.Result.Ok)?.parsed
     return parsed?.let { PaymentParser.toEntry(it.copy(amount = it.amount ?: 0), day, MoneySource.NOTIFICATION) }?.copy(reviewed = true)
@@ -370,7 +371,7 @@ fun PasteDialog(
     rules: Map<String, String>,
     onSave: (List<MoneyEntry>) -> Unit,
     onDismiss: () -> Unit,
-    today: LocalDate = LocalDate.now(),
+    today: LocalDate = Today.date(),
     initialText: String = "",
 ) {
     val context = LocalContext.current
@@ -379,7 +380,7 @@ fun PasteDialog(
         // Rows earlier in the same paste count too: the card text and the pay push for one payment.
         val seen = existing.toMutableList()
         PaymentParser.splitMessages(text).map { chunk ->
-            when (val r = PaymentParser.parse(chunk, LocalDateTime.now(), rules)) {
+            when (val r = PaymentParser.parse(chunk, Today.dateTime(), rules)) {
                 is PaymentParser.Result.Fail -> PasteRow(chunk, null, r.reason, false)
                 is PaymentParser.Result.Ok -> {
                     val p = r.parsed
@@ -535,7 +536,7 @@ fun FixedCostDialog(
     onDelete: (FixedCost) -> Unit,
     onDismiss: () -> Unit,
     book: MoneyBook? = null,
-    today: LocalDate = LocalDate.now(),
+    today: LocalDate = Today.date(),
 ) {
     val ledger = rememberLedger(book)
     var kind by rememberSaveable { mutableStateOf(initial?.kind ?: MoneyKind.EXPENSE) }

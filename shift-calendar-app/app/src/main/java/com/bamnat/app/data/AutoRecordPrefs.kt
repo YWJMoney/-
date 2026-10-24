@@ -6,6 +6,7 @@ import com.bamnat.core.money.CaptureFilter
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.bamnat.core.time.Today
 
 /**
  * [LEDG-22] 결제 알림으로 적기 as the user tuned it: apps left out, words that drop a text, the
@@ -64,7 +65,7 @@ class AutoRecordPrefs(context: Context) {
     /** [COMN-04] 확인하고 적기 on, or 바로 적기. */
     fun setConfirmFirst(on: Boolean) = edit {
         putBoolean(K_CONFIRM_FIRST, on)
-        if (on && !current.confirmFirst) putLong(K_CONFIRM_SINCE, java.time.LocalDate.now().toEpochDay())
+        if (on && !current.confirmFirst) putLong(K_CONFIRM_SINCE, Today.date().toEpochDay())
     }
 
     /** [CALS-04] A calendar that goes away hands its notifications back to 내 달력. */

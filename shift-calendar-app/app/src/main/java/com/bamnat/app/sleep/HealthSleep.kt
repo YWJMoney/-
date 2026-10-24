@@ -18,13 +18,14 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+import com.bamnat.core.time.Today
 
 /**
  * [SLP-08] Sleep a watch or the phone measured, read from Health Connect on the phone.
  * Read only and kept in memory: nothing is written to Health Connect or stored by the app, and
  * the read goes to the Health Connect app on the phone, not online.
  */
-class HealthSleep(private val context: Context, private val clock: () -> Long = System::currentTimeMillis) {
+class HealthSleep(private val context: Context, private val clock: () -> Long = Today::millis) {
     enum class State { OFF, UNAVAILABLE, NEEDS_UPDATE, NEEDS_PERMISSION, READY, FAILED }
 
     private val _state = MutableStateFlow(State.OFF)
@@ -88,7 +89,7 @@ class HealthSleep(private val context: Context, private val clock: () -> Long = 
         do {
             val response = client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, filter, pageToken = page))
             response.records.mapTo(out) { r ->
-                val zone = ZoneId.systemDefault()
+                val zone = Today.zone()
                 SleepEntry(start = LocalDateTime.ofInstant(r.startTime, zone), end = LocalDateTime.ofInstant(r.endTime, zone), imported = true)
             }
             page = response.pageToken

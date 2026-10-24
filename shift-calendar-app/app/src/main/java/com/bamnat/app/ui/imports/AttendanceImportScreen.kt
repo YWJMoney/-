@@ -72,6 +72,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /**
  * [DAYW-06] 근태 엑셀·CSV 가져오기: a file exported from the company's 근태 system (.xlsx or .csv) is read on the
@@ -92,11 +93,11 @@ class AttendanceImportViewModel(private val container: AppContainer, val calenda
         val width: Int get() = rows.maxOfOrNull { it.size } ?: 0
         val days: List<AttendanceRow>
             // [DAYW-06] A date without its year takes the year nearest today (last December's export read in January).
-            get() = map?.takeIf { it.ready || AttendanceField.DATE in it.columns }?.let { LocalDate.now().let { today -> AttendanceImport.read(rows, it, today.year, near = today) } }.orEmpty()
+            get() = map?.takeIf { it.ready || AttendanceField.DATE in it.columns }?.let { Today.date().let { today -> AttendanceImport.read(rows, it, today.year, near = today) } }.orEmpty()
         val todo: List<AttendanceRow> get() = days.filter { !it.isEmpty }
         /** [IMPORT-05] Rows left out and cells not read, with why. */
         val problems: List<AttendanceImport.Problem>
-            get() = map?.takeIf { AttendanceField.DATE in it.columns }?.let { LocalDate.now().let { today -> AttendanceImport.problems(rows, it, today.year, near = today) } }.orEmpty()
+            get() = map?.takeIf { AttendanceField.DATE in it.columns }?.let { Today.date().let { today -> AttendanceImport.problems(rows, it, today.year, near = today) } }.orEmpty()
         /** What a column is called: its header, or its letter. */
         fun columnName(c: Int): String {
             val head = map?.headerRow?.takeIf { it >= 0 }?.let { rows.getOrNull(it)?.getOrNull(c) }.orEmpty()

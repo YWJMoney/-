@@ -26,6 +26,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.util.Base64
+import com.bamnat.core.time.Today
 
 /**
  * [PROV-03] 매일 자동 백업 (프로): once a day the same backup 백업 저장 makes, sealed with the user's
@@ -39,7 +40,7 @@ import java.util.Base64
 class AutoBackup(
     private val c: AppContainer,
     private val keys: () -> KeyBox,
-    private val clock: () -> Instant = Instant::now,
+    private val clock: () -> Instant = Today::instant,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
 ) {
     private val prefs = c.appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

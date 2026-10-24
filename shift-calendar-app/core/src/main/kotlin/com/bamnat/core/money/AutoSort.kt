@@ -3,6 +3,7 @@ package com.bamnat.core.money
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
+import com.bamnat.core.time.Today
 
 /**
  * [LEDG-22] What the user left out of 결제 알림으로 적기: apps whose notifications are not read,
@@ -14,7 +15,7 @@ data class CaptureFilter(
     val words: List<String> = emptyList(),
     val minAmount: Long = 0,
 ) {
-    fun drops(app: String, text: String, now: java.time.LocalDateTime = java.time.LocalDateTime.now()): Boolean {
+    fun drops(app: String, text: String, now: java.time.LocalDateTime = Today.dateTime()): Boolean {
         if (app in blockedApps) return true
         if (words.any { w -> w.isNotBlank() && text.contains(w.trim(), ignoreCase = true) }) return true
         if (minAmount > 0) {
