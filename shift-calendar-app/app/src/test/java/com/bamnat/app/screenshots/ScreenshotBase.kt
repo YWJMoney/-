@@ -366,6 +366,12 @@ abstract class ScreenshotBase {
             touch(reach(text, exact, prefix, 0, across).boundsInWindow.center)
         }
 
+        /** [SETUP-15] The system back, as the phone's back gesture sends it. */
+        fun back() {
+            scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+            settle()
+        }
+
         /** Whether [text] is on screen now, without scrolling or waiting. */
         fun shows(text: String, exact: Boolean = false): Boolean = find(text, exact, prefix = false) != null
 
@@ -817,6 +823,9 @@ abstract class ScreenshotBase {
 
     internal companion object {
         const val RULES_PERIOD_SCROLL = 420
+
+        /** [SETUP-15] The first card on "무슨 일 하세요?". */
+        const val SHIFT_CARD = "교대 근무 · 순서가 돌아가요"
 
         /** [QA-05] [settle]: rounds of 10 ms with nothing to do before a screen counts as still, and the cap. */
         const val QUIET_ROUNDS = 5
@@ -1293,11 +1302,19 @@ abstract class ScreenshotBase {
 
     // ==== 1.22 묶음 G ====
     // [ONBOARD-03][ONBOARD-04] 추천 기능 한 번에 켜기, in place of the consent pages of 1.13~1.21.
-    internal fun recommended(items: Set<ConsentItem> = ConsentItem.entries.toSet(), then: Screen.() -> Unit = {}): Screen.() -> Unit {
+    internal fun recommended(
+        items: Set<ConsentItem> = ConsentItem.entries.toSet(),
+        /** [SETUP-15] The card tapped on "무슨 일 하세요?" first; null taps "백업이나 회사 파일로 시작할게요". */
+        firstStyle: String? = SHIFT_CARD,
+        then: Screen.() -> Unit = {},
+    ): Screen.() -> Unit {
         val c = app.container
         c.consentStore.forget()
         c.consentStore.availableForTest = items
-        return fresh(null, then)
+        return fresh(null) {
+            tapText(firstStyle ?: "백업이나 회사 파일로 시작할게요", exact = true)
+            then()
+        }
     }
 
     // ==== 1.22 묶음 A ====
@@ -1384,6 +1401,8 @@ internal class FakeShareApi : com.bamnat.app.share.ShareApi {
 internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
     override val enabled = true
     var file = "{}"
+    /** [COMM-14] Two reports for (주)예시정밀 생산팀 side by side, on the board and the company screen. */
+    var twins = false
     private val now = Today.instant()
 
     private fun status(id: String, status: String, company: String, dept: String, points: Int, persons: Int, ask: Boolean = false,
@@ -1419,6 +1438,11 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
         return com.bamnat.app.company.CompanyPage(id, "(주)예시정밀", listOf("예시정밀"), listOf(
             com.bamnat.app.company.SharedSetup("s1", true, 5, 3, 1, 3, "생산팀", 2, file, main + pay, trust = 75, agree = 75, posts = 4),
             com.bamnat.app.company.SharedSetup("s2", false, 2, 1, 0, 3, "포장팀", null, file, main.take(2), trust = 67, agree = 100),
+        ) + if (!twins) emptyList() else listOf(
+            com.bamnat.app.company.SharedSetup("s3", false, 3, 2, 0, 3, "생산팀", null, file,
+                listOf("근무" to "주간 08:00~20:00 휴게 60분 · 야간 20:00~08:00 휴게 60분 · 휴무(쉬는 날)", "순서 4일" to "주간 야간 휴무 휴무") + pay, trust = 67, agree = 67),
+            com.bamnat.app.company.SharedSetup("s4", false, 2, 2, 0, 3, "생산팀", null, file,
+                listOf(main[0], "순서 4일" to "주간 야간 휴무 휴무") + pay.take(3), trust = 67, agree = 100),
         ))
     }
 
@@ -1447,6 +1471,11 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
             item("v1", "가나다화학", "품질팀", false, 2, 2, 0, 67, 100, 3, 1, "주간 08:30~17:30 휴게 60분 · 휴일(쉬는 날)", "순서 7일"),
             item("v2", "라마바전자", "생산1팀", false, 3, 2, 1, 67, 67, 5, 5, "주간 07:00~19:00 · 야간 19:00~07:00 · 휴무(쉬는 날)", "순서 8일"),
             item("v3", "예시정밀 2공장", "", false, 1, 1, 0, 33, 100, 0, 26, "오전 06:00~14:00 · 오후 14:00~22:00 · 야간 22:00~06:00", "순서 6일"),
+        ) + if (!twins) emptyList() else listOf(
+            com.bamnat.app.company.BoardItem("c1", "(주)예시정밀", "s3", "생산팀", false, 3, 2, 0, 3, 67, 67, 2, null,
+                now.minus(java.time.Duration.ofHours(50)), "주간 08:00~20:00 · 야간 20:00~08:00 · 휴무(쉬는 날)", "순서 4일", true),
+            com.bamnat.app.company.BoardItem("c1", "(주)예시정밀", "s4", "생산팀", false, 2, 2, 0, 3, 67, 100, 0, null,
+                now.minus(java.time.Duration.ofHours(8)), "주간 08:00~20:00 · 야간 20:00~08:00 · 휴무(쉬는 날)", "순서 4일", true),
         )).filter { q.isBlank() || it.company.contains(q.trim()) },
         null,
     )

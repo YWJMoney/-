@@ -12,6 +12,11 @@ object WhatsNew {
     val releases: List<Release> = listOf(
         // [SIMPLE-03] Grouped by what it gives, each line opening its feature; every bundle's own lines are in
         // 계획/1.22-*-개발계획.md.
+        // 1.24.0: P 2·Q 1·R 1·S 1 lines (계획/1.24-직접입력-전면개선-통합계획.md), folded by the integration.
+        Release(35, "1.24.0", listOf(
+            // [SETUP-15][COMM-12][INQ-06] Bundle S.
+            Line("처음 화면에서 무슨 일 하는지 먼저 묻고 그 일에 맞는 알림만 켜요. 회사 이름을 넣었으면 급여 화면에서 같은 회사 분들 규칙으로 바로 가고, 문의는 모두에게 올릴지 골라요", "settings.recommended"),
+        )),
         // 1.23.0: one line per bundle's gift (J·K·L·I here; M adds its own), each opening its feature
         // (계획/1.23-*-개발계획.md). 1.22's rule of 6~8 lines holds here too.
         Release(34, "1.23.0", listOf(
