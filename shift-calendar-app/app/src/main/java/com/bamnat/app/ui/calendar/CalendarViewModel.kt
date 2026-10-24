@@ -69,6 +69,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
+import com.bamnat.app.ui.derive
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -121,7 +122,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** [MCAL-01] The user's calendars and the one on screen. */
     val calendars: StateFlow<List<com.bamnat.app.data.PersonalCalendar>> = container.calendars.calendars
     val activeCalendar: StateFlow<com.bamnat.app.data.PersonalCalendar> =
-        container.calendars.activeCalendar.stateIn(viewModelScope, SharingStarted.Eagerly, container.calendars.current())
+        com.bamnat.app.ui.DerivedStateFlow({ container.calendars.current() }, container.calendars.activeCalendar)
 
     /** [MCAL-04] The list's order, received calendars included. */
     val calendarOrder: StateFlow<List<String>> = container.calendars.order
@@ -141,18 +142,17 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * [MCAL-01] An added calendar answers its own kind of work, so the calendar tab shows it as that
      * calendar works; everything else in settings is the app's.
      */
-    val settings: StateFlow<AppSettings> = kotlinx.coroutines.flow.combine(container.settingsRepository.settings, activeCalendar) { s, cal ->
+    val settings: StateFlow<AppSettings> = com.bamnat.app.ui.DerivedStateFlow(
+        { calendarSettings(container.settingsRepository.current, container.calendars.current()) },
+        kotlinx.coroutines.flow.combine(container.settingsRepository.settings, activeCalendar, ::calendarSettings),
+    )
+    private fun calendarSettings(s: AppSettings, cal: com.bamnat.app.data.PersonalCalendar) =
         if (cal.isMain) s else s.copy(workStyle = cal.style ?: s.workStyle, rosterMonthly = false)
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, container.settingsRepository.current.let { s ->
-        container.calendars.current().let { cal -> if (cal.isMain) s else s.copy(workStyle = cal.style ?: s.workStyle, rosterMonthly = false) }
-    })
     /** [CAL-05] What the calendar on screen is about: shifts, jobs or sales. */
-    val focus: StateFlow<CalendarFocus> = settings.map { CalendarFocus.of(it.workStyle) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, CalendarFocus.of(settings.value.workStyle))
+    val focus: StateFlow<CalendarFocus> = settings.derive { CalendarFocus.of(it.workStyle) }
 
     /** [CAL-13] An added calendar can be kept from ringing; the main one always rings. */
-    val calendarAlarmsOn: StateFlow<Boolean> = activeCalendar.map { it.isMain || it.alarms }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, activeCalendar.value.let { it.isMain || it.alarms })
+    val calendarAlarmsOn: StateFlow<Boolean> = activeCalendar.derive { it.isMain || it.alarms }
 
     /** [CAL-13] Turns the alarms of the added calendar on screen on or off, said back with undo. */
     fun setCalendarAlarms(on: Boolean) = gate(WriteKind.ALARM) {
@@ -259,8 +259,10 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     /** Pay setup, so a day on the calendar shows what it adds to pay [PAYX-08]. [MCAL-06] The calendar on screen's own. */
-    val payProfile: StateFlow<PayProfile?> = container.calendars.active.flatMapLatest { container.calendars.pay(it).profile }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, container.calendars.pay(container.calendars.active.value).profile.value)
+    val payProfile: StateFlow<PayProfile?> = com.bamnat.app.ui.DerivedStateFlow(
+        { container.calendars.pay(container.calendars.active.value).profile.value },
+        container.calendars.active.flatMapLatest { container.calendars.pay(it).profile },
+    )
     private val payCalculator = PayCalculator()
 
     // Moving from day to day in one month reuses that month's result instead of recalculating it.
@@ -1262,6 +1264,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             )
         }
     }
+    // Read from the database, so it keeps its own collector (Eagerly): a derived value would have nothing to read.
     private val rules: StateFlow<Map<String, String>> = container.calendars.active.flatMapLatest { container.calendars.money(it).rules }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
     override val categoryRules: Map<String, String> get() = rules.value

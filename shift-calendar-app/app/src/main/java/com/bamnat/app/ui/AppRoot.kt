@@ -726,7 +726,9 @@ private fun AppNavHost(
             val vm = appViewModel { CalendarViewModel(it) }
             CalendarScreen(
                 vm = vm,
-                wide = wide,
+                // [REL-16] 364 (검토 M-E5): a 7-inch tablet held upright (600dp) keeps the rail but not the day beside
+                // the month: in half of 600dp the days were too narrow for their shift chips (660 shot).
+                wide = wide && androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= CALENDAR_BESIDE_DP,
                 snackbarHostState = snackbar,
                 onOpenMemo = { id -> nav.navigate(Routes.memo(id)) },
                 onNewMemo = { date -> nav.navigate(Routes.memo(0, date)) },
@@ -1424,3 +1426,6 @@ private const val SCREEN_MILLIS = 250
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.betweenTabs(): Boolean =
     TopLevel.entries.any { it.route == initialState.destination.route } &&
         TopLevel.entries.any { it.route == targetState.destination.route }
+
+/** [REL-16] The narrowest window that shows the day beside the month: the Fold's inner screen (707dp) does, 600dp does not. */
+private const val CALENDAR_BESIDE_DP = 700
