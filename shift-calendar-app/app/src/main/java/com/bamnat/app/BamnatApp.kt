@@ -9,6 +9,7 @@ import com.bamnat.app.diag.CrashLog
 class BamnatApp : Application() {
     /** Built on first use: after a reboot the app may start before the phone is unlocked [REL-10]. */
     val container: AppContainer by lazy { AppContainer(this).also { it.start(); StartupTrace.mark(StartupTrace.Step.CONTAINER) } }
+    @Volatile private var building: Thread? = null
 
     override fun onCreate() {
         StartupTrace.begin()
@@ -18,7 +19,9 @@ class BamnatApp : Application() {
         channelsOnce()
         // While locked the database and settings cannot be opened; alarms ring from BootAlarms then,
         // and the container starts with the first use after unlocking (BOOT_COMPLETED at the latest).
-        if (!BootAlarms.isLocked(this)) container
+        // [PERF-06] 364 (검토 A1): built on a thread of its own, so its files are read while the main thread
+        // makes the window; the first use on the main thread waits for it (lazy is synchronized).
+        if (!BootAlarms.isLocked(this)) building = Thread({ container }, "bamnat-container").apply { start() }
         StartupTrace.mark(StartupTrace.Step.APP)
     }
 
@@ -57,6 +60,7 @@ class BamnatApp : Application() {
      * PhoneCalendarTest fail only in the whole-app run.
      */
     override fun onTerminate() {
+        building?.join()
         if (containerStarted()) container.appScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
         super.onTerminate()
     }
