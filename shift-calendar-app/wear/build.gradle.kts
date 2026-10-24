@@ -79,14 +79,14 @@ dependencies {
     // The day codec (WatchDays) is shared with the phone app.
     implementation("com.bamnat:core")
     implementation("com.google.android.gms:play-services-wearable:19.0.0")
-    implementation("androidx.wear.tiles:tiles:1.4.1")
-    implementation("androidx.wear.protolayout:protolayout:1.2.1")
-    implementation("androidx.wear.watchface:watchface-complications-data-source-ktx:1.2.1")
+    implementation("androidx.wear.tiles:tiles:1.6.2")
+    implementation("androidx.wear.protolayout:protolayout:1.4.2")
+    implementation("androidx.wear.watchface:watchface-complications-data-source-ktx:1.3.0")
     implementation("androidx.concurrent:concurrent-futures:1.2.0")
     implementation("androidx.wear.compose:compose-material:1.4.1")
     implementation("androidx.wear.compose:compose-foundation:1.4.1")
     implementation("androidx.activity:activity-compose:1.10.1")
-    implementation("androidx.core:core-ktx:1.16.0")
+    implementation("androidx.core:core-ktx:1.19.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     testImplementation("junit:junit:4.13.2")
 }
