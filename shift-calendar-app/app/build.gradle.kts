@@ -142,6 +142,11 @@ android {
         unitTests.all {
             it.maxHeapSize = "2g"
             it.maxParallelForks = forks
+            // [QA-06] The screenshots (ScreenshotBase writes build/screenshots) are an output of the test task, so a
+            // run Gradle takes from the build cache still has them for tools/shot_hashes.py; without this, a pull
+            // request that changes nothing the tests read (the fingerprints themselves, a tool) came back
+            // FROM-CACHE with no screenshots folder and the key-screenshot check crashed (PR #107).
+            it.outputs.dir(layout.buildDirectory.dir("screenshots"))
             // [REL-14] Where Robolectric fetches the Android jars of older versions (default Maven Central).
             (findProperty("bamnat.robolectricRepo") as String?)?.let { url -> it.systemProperty("robolectric.dependency.repo.url", url) }
             when (testSet) {
