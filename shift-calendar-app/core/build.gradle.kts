@@ -2,7 +2,7 @@
 // It has no Android dependency so it can be unit tested on any JVM:
 //   ./gradlew -p core test
 plugins {
-    kotlin("jvm") version "2.1.21"
+    kotlin("jvm") version "2.4.21"
 }
 
 group = "com.bamnat"
