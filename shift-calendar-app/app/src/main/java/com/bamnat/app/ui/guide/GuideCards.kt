@@ -110,7 +110,9 @@ fun GuideArea(
     val facts = remember(snapshot, book, profile, style, weekStart, now.hour, today, trades) { factsOf(style, now, snapshot, book, profile, weekStart).copy(trades = trades) }
     val moments = remember(facts) { GuideMoments.of(facts) }
     val pick = remember(state, calendar, style, moments, today) { GuideTips.pick(state, calendar, style, moments, today) } ?: return
-    LaunchedEffect(pick.feature.id, today) { if (pick.isNew) store.tipShown(today, pick.feature.id) }
+    // [CAL-50] A tip folded under the calendar's 알림 line is not the day's tip until it is seen.
+    val folded = com.bamnat.app.ui.calendar.LocalNoticeFolded.current
+    LaunchedEffect(pick.feature.id, today, folded) { if (pick.isNew && !folded) store.tipShown(today, pick.feature.id) }
     TipLine(
         feature = pick.feature,
         onTry = { store.used(pick.feature.id); FeatureLinks.open(pick.feature) },

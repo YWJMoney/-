@@ -51,6 +51,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -340,15 +343,11 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("알람 점검") },
+                // [ALRM-05] 중-2: at 200% text the title broke into single letters beside four buttons; it keeps one line
+                // and 복사·기록 지우기 wait in ⋮, with 보내기 the one button left beside it.
+                title = { com.bamnat.app.ui.FitText("알람 점검", MaterialTheme.typography.titleLarge) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 actions = {
-                    IconButton(onClick = {
-                        val clipboard = context.getSystemService(ClipboardManager::class.java)
-                        clipboard?.setPrimaryClip(ClipData.newPlainText("밤낮 알람 점검", report.asText()))
-                        // Android 13+ shows its own confirmation.
-                        if (Build.VERSION.SDK_INT < 33) Toast.makeText(context, "복사했어요", Toast.LENGTH_SHORT).show()
-                    }) { Icon(Icons.Filled.ContentCopy, "보고서 복사") }
                     // [SRV-10] N6: the same report to any app (메신저, 메일) as text.
                     IconButton(onClick = {
                         val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
@@ -356,7 +355,28 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                             .putExtra(android.content.Intent.EXTRA_TEXT, report.asText())
                         runCatching { context.startActivity(android.content.Intent.createChooser(send, "알람 점검 보내기")) }
                     }) { Icon(Icons.Filled.Share, "보고서 보내기") }
-                    TextButton(onClick = { confirmClear = true }) { Text("기록 지우기") }
+                    var more by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { more = true }) { Icon(Icons.Filled.MoreVert, "더 보기") }
+                        androidx.compose.material3.DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("보고서 복사") },
+                                leadingIcon = { Icon(Icons.Filled.ContentCopy, null) },
+                                onClick = {
+                                    more = false
+                                    val clipboard = context.getSystemService(ClipboardManager::class.java)
+                                    clipboard?.setPrimaryClip(ClipData.newPlainText("밤낮 알람 점검", report.asText()))
+                                    // Android 13+ shows its own confirmation.
+                                    if (Build.VERSION.SDK_INT < 33) Toast.makeText(context, "복사했어요", Toast.LENGTH_SHORT).show()
+                                },
+                            )
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("기록 지우기") },
+                                leadingIcon = { Icon(Icons.Filled.DeleteOutline, null) },
+                                onClick = { more = false; confirmClear = true },
+                            )
+                        }
+                    }
                 },
             )
         },

@@ -512,7 +512,8 @@ private fun DayGroup(
                         summary,
                         style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
                         color = summaryColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        // [VIS-05] Beside a switch "06:10에 울려요 · 직접 정함" ran past one line on the tablet: two lines.
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }

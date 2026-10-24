@@ -340,6 +340,15 @@ internal object HelpFaq {
             listOf("한 달 근무 넣기", "달력"),
             "한 달 근무 넣기 열기" to HelpAction.Go(SettingsGo.DUTY_ROSTER),
         ),
+        // ---- 1.24 묶음 R ----
+        // [CAL-50] 상-4: the cards above the month fold into one line.
+        HelpTopic(
+            "noticeStack", "달력", "달력 위 알림이 한 줄로 접혀 있어요",
+            "달력이 첫 화면에 보이도록 달력 위 알림은 가장 급한 것 하나만 펼치고 나머지는 ‘알림 n개 더 보기’ 한 줄로 접어요. " +
+                "그 줄을 누르면 모두 펼쳐지고 ‘알림 접기’로 다시 접혀요. 근무 수는 달력·통계·1년 달력이 같은 방법으로 세고, 하루 통째로 쉰 휴가 날은 ‘휴가’로 따로 세요.",
+            listOf("알림", "접혀", "더 보기", "카드", "안 보여", "근무 수", "숫자가 달라"),
+            listOf("달력"),
+        ),
     )
 
     /** [INQ-05] I11: the answers each of the server's topics ([com.bamnat.core.ops.InquiryTopics]) starts with. */

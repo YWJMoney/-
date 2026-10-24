@@ -20,6 +20,8 @@ object WhatsNew {
             Line("숫자·시각·회사 규칙을 글자로 치지 않아도 돼요. 칩과 −·+로 고르고, 호봉표는 줄마다 넣고, 복사해 둔 명세서·문자는 한 번 눌러 붙여요", "pay.ruleBuilder"),
             // [SETUP-15][COMM-12][INQ-06] Bundle S.
             Line("처음 화면에서 무슨 일 하는지 먼저 묻고 그 일에 맞는 알림만 켜요. 회사 이름을 넣었으면 급여 화면에서 같은 회사 분들 규칙으로 바로 가고, 문의는 모두에게 올릴지 골라요", "settings.recommended"),
+            // [CAL-50][CAL-51][VIS-04][STAT-07] Bundle R.
+            Line("달력 위 알림은 하나만 펼치고 나머지는 한 줄로 접어요. 작은 화면·옆으로 눕힌 폰·큰 글씨에서도 달이 보이고, 근무 수는 어느 화면이든 같은 숫자예요"),
         )),
         // [SIMPLE-03] Grouped by what it gives, each line opening its feature; every bundle's own lines are in
         // 계획/1.22-*-개발계획.md.

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [A11Y-05] 1.24 묶음 R: what TalkBack reads on every bottom sheet's handle and scrim, in plain words instead of
+     the library's "드래그 핸들" / "Drag handle". Both folders, so a Korean phone and the screenshot tests read the same. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="PrivateResource">
+    <string name="m3c_bottom_sheet_drag_handle_description">끌어서 옮기기</string>
+    <string name="m3c_bottom_sheet_dismiss_description">닫기</string>
+    <string name="m3c_bottom_sheet_collapse_description">작게 접기</string>
+    <string name="m3c_bottom_sheet_expand_description">크게 펼치기</string>
+    <string name="m3c_bottom_sheet_pane_title">아래 창</string>
+</resources>

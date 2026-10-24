@@ -318,7 +318,10 @@ class CompanyScreenshotTest : ScreenshotBase() {
     @Test fun phoneShareRosterPdf() = shoot("391_phone_share_roster_pdf", PHONE) { shareWithFeed { reveal("${Today.month().year}년 PDF", exact = true) } }
 
     @Test fun phoneNoticeLine() = shoot("410_phone_notice_line", PHONE) { opsOn() }
-    @Test fun phoneNoticeOpen() = shoot("411_phone_notice_open", PHONE) { opsOn(); settle(); tapText("오늘 밤 2시 30분 동안 점검해요", exact = true, scrolls = 0) }
+    @Test fun phoneNoticeOpen() = shoot("411_phone_notice_open", PHONE) {
+        // [CAL-50] The notice waits folded under the alarm warning.
+        opsOn(); settle(); tapText("알림 1개 더 보기", prefix = true, scrolls = 0); tapText("오늘 밤 2시 30분 동안 점검해요", exact = true, scrolls = 0)
+    }
     @Test fun phonePlazaRules() = shoot("412_phone_plaza_rules", PHONE) {
         app.container.settingsRepository.update { it.copy(plazaRulesAgreed = 0) }
         content {

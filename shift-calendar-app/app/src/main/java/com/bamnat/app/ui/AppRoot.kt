@@ -1250,18 +1250,11 @@ private fun AppNavHost(
 /** [UX-06] A tab's name, whole at every text size: at the largest sizes "근무·급여" was cut to "근무·". */
 @Composable
 private fun TabLabel(text: String) {
-    // [A11Y-04] From 150% a two-word name ("근무·급여") takes two lines, so each word stays big enough to read
-    // instead of the whole name shrinking to fit one (notes/1.22-285/F.md 4장 3번).
+    // [VIS-04] 중-3: from 150% a two-word name ("근무·급여") used to take two lines and push its icon above the others'
+    // (A11Y-04); now it keeps one line with its last word ("급여"), as big as the other tabs, and TalkBack reads it whole.
     val parts = text.split('·')
     if (parts.size == 2 && androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
-        androidx.compose.foundation.layout.Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.clearAndSetSemantics { contentDescription = text },
-        ) {
-            val style = MaterialTheme.typography.labelMedium.copy(lineHeight = MaterialTheme.typography.labelMedium.fontSize)
-            FitText(parts[0], style)
-            FitText(parts[1], style)
-        }
+        FitText(parts[1], MaterialTheme.typography.labelMedium, Modifier.clearAndSetSemantics { contentDescription = text })
     } else {
         FitText(text, MaterialTheme.typography.labelMedium)
     }

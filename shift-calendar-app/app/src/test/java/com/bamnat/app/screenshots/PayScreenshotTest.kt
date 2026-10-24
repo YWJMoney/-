@@ -125,6 +125,8 @@ class PayScreenshotTest : ScreenshotBase() {
     @Test fun foldedExtraReviewDialog() = shoot("102b_folded_extra_review_dialog", FOLDED) {
         runBlocking { app.container.scheduleRepository.addExtra(today.minusDays(5), ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 90, needsReview = true)) }
         settle()
+        // [CAL-50] Under the alarm warning the review card waits folded in "알림 1개 더 보기".
+        tapText("알림 1개 더 보기", prefix = true, scrolls = 0)
         tapText("확인하기", exact = true, scrolls = 0)
         check(shownDialogs().isNotEmpty()) { "확인 창이 열리지 않았어요" }
     }
