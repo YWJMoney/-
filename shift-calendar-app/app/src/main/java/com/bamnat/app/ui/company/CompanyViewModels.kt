@@ -384,7 +384,7 @@ class TalkHolder(private val c: AppContainer, private val scope: kotlinx.corouti
         change.flatMap { listOf(it.now, it.want, it.why) }.firstNotNullOfOrNull(CompanyText::personal)?.let { return done(talkProblem(it)) }
         // [COMM-13] 같은 글 되풀이 is held back here, before the server's own limits.
         val talkKey = "${o.company}/${o.setup}"
-        val now = java.time.Instant.now()
+        val now = com.bamnat.core.time.Today.instant()
         if (!com.bamnat.core.plaza.RepeatGuard.allowed(sentHere, talkKey, text, now)) return done(com.bamnat.core.plaza.RepeatGuard.WHY)
         scope.launch {
             val error = try {

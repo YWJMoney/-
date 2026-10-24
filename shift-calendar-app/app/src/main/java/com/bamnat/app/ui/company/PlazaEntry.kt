@@ -53,7 +53,7 @@ object PlazaEntry {
  * day no question card was shown ([AskScheduler.tipAllowed]); "괜찮아요" puts it away for that name.
  */
 @Composable
-fun PlazaEntryCard(c: AppContainer, calendar: String, onOpen: () -> Unit, modifier: Modifier = Modifier, today: LocalDate = LocalDate.now()) {
+fun PlazaEntryCard(c: AppContainer, calendar: String, onOpen: () -> Unit, modifier: Modifier = Modifier, today: LocalDate = com.bamnat.core.time.Today.date()) {
     if (!c.companyApi.enabled || calendar != PersonalCalendar.MAIN) return
     val draft by c.companyStore.draft.collectAsStateWithLifecycle()
     val applied by c.companyStore.applied.collectAsStateWithLifecycle()
