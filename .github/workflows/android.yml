@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: npm test
@@ -91,7 +91,7 @@ jobs:
           test -z "$changed" || { echo "Commit these schema files: $changed"; exit 1; }
       # The share server checks the payloads the app tests just wrote (app/build/share-payload*.json).
       - if: matrix.set == 'unit'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
       - if: matrix.set == 'unit'
