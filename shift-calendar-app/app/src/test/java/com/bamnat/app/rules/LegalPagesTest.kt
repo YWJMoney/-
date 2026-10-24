@@ -133,7 +133,7 @@ class LegalPagesTest {
         val policy = File(site, "privacy/index.html")
         assumeTrue(policy.exists())
         val text = policy.readText()
-        assertTrue(text.contains("처리방침 2.9 · 앱 버전 1.23.0 기준 · 게시일 2026년 11월 3일 · 시행일 2026년 11월 21일"))
+        assertTrue(text.contains("처리방침 2.9 · 앱 버전 1.23.0 기준 · 게시일 2026년 10월 24일 · 시행일 2026년 11월 21일"))
         assertTrue(text.contains("2.9에서 바뀐 점: 앱 1.23.0부터"))
         assertTrue(text.contains("1-11. 우리 조 모아 보기 (선택, 앱 1.23.0부터)"))
         // The group: 6 letters, the share server's limit of links, gone with the longest link.
