@@ -100,7 +100,7 @@ jobs:
       # [QA-06] 43 key screenshots (drawn on a fixed day, QA-08) against their fingerprints (tools/shot_hashes.py); a change that was meant
       # comes with `python3 tools/shot_hashes.py update app/build/screenshots` in the same pull request.
       - if: startsWith(matrix.set, 'shots-')
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Key screenshots unchanged
