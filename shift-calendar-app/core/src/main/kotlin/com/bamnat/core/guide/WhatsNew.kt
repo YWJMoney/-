@@ -20,16 +20,13 @@ object WhatsNew {
             Line("숫자·시각·회사 규칙을 글자로 치지 않아도 돼요. 칩과 −·+로 고르고, 호봉표는 줄마다 넣고, 복사해 둔 명세서·문자는 한 번 눌러 붙여요", "pay.ruleBuilder"),
             // [SETUP-15][COMM-12][INQ-06] Bundle S.
             Line("처음 화면에서 무슨 일 하는지 먼저 묻고 그 일에 맞는 알림만 켜요. 회사 이름을 넣었으면 급여 화면에서 같은 회사 분들 규칙으로 바로 가고, 문의는 모두에게 올릴지 골라요", "settings.recommended"),
+            // [CAL-50][CAL-51][VIS-04][STAT-07] Bundle R.
+            Line("달력 위 알림은 하나만 펼치고 나머지는 한 줄로 접어요. 작은 화면·옆으로 눕힌 폰·큰 글씨에서도 달이 보이고, 근무 수는 어느 화면이든 같은 숫자예요"),
         )),
         // [SIMPLE-03] Grouped by what it gives, each line opening its feature; every bundle's own lines are in
         // 계획/1.22-*-개발계획.md.
         // 1.23.0: one line per bundle's gift (J·K·L·I here; M adds its own), each opening its feature
         // (계획/1.23-*-개발계획.md). 1.22's rule of 6~8 lines holds here too.
-        // 1.24.0 (계획/1.24-직접입력-전면개선-통합계획.md): P 2·Q 1·R 1·S 1·T 0 lines, 8 at most; 통합 folds them.
-        Release(35, "1.24.0", listOf(
-            // [CAL-50][CAL-51][VIS-04][STAT-07] Bundle R.
-            Line("달력 위 알림은 하나만 펼치고 나머지는 한 줄로 접어요. 작은 화면·옆으로 눕힌 폰·큰 글씨에서도 달이 보이고, 근무 수는 어느 화면이든 같은 숫자예요"),
-        )),
         Release(34, "1.23.0", listOf(
             // [SIMPLE-03] 6~8 lines, one per feature. 2026-10-23 통합: J1·K1·L2·I1·M1 = 6 lines, N2 = 8.
             // [VIS-03][UX-08][A11Y-04][SETUP-14][SET-05] Bundle J.
