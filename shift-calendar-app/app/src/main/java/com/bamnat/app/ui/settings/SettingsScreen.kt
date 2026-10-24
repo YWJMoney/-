@@ -136,6 +136,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /**
  * [SET-01] The settings in groups, in the order people look for them, under the alarm's state.
@@ -197,7 +198,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val missed: StateFlow<Int> = _missed.asStateFlow()
 
     /** Reads the log off the main thread; called each time settings comes back to the front. */
-    fun recheckMissed(now: Long = System.currentTimeMillis()) {
+    fun recheckMissed(now: Long = Today.millis()) {
         viewModelScope.launch(Dispatchers.IO) {
             _missed.value = EventBook.possiblyMissed(container.telemetry.log.read(), now).count { it > now - MISSED_WINDOW_MILLIS }
         }
@@ -442,9 +443,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             _message.value = SettingsMessage(runCatching {
                 val snapshot = container.scheduleRepository.snapshot.first()
-                val (from, to) = IcsWriter.defaultRange(LocalDate.now())
+                val (from, to) = IcsWriter.defaultRange(Today.date())
                 val ics = withContext(Dispatchers.Default) {
-                    IcsWriter.write(snapshot.resolver.resolveRange(from, to), ZoneId.systemDefault())
+                    IcsWriter.write(snapshot.resolver.resolveRange(from, to), Today.zone())
                 }
                 withContext(Dispatchers.IO) {
                     context.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(ics.toByteArray()) }
@@ -764,7 +765,7 @@ private fun SettingsSearchField(query: String, onQuery: (String) -> Unit) {
         onValueChange = { onQuery(it.take(40)) },
         // TalkBack names the field once the example has gone.
         modifier = Modifier.fillMaxWidth().semantics { contentDescription = "설정 찾기" },
-        placeholder = { Text("설정 찾기 (예: 알람 소리, 백업)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        placeholder = { com.bamnat.app.ui.HintText("설정 찾기 (예: 알람 소리, 백업)", "설정 찾기") },
         leadingIcon = { Icon(Icons.Filled.Search, null) },
         trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { onQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") } }) else null,
         singleLine = true,
@@ -1072,7 +1073,7 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
                 askingPassword = false
                 vm.prepareExport(password)
                 sealedExport = password != null
-                exportLauncher.launch("밤낮-백업-${LocalDate.now()}.json")
+                exportLauncher.launch("밤낮-백업-${Today.date()}.json")
             },
         )
     }
@@ -1082,7 +1083,7 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
     if (sharingCompany) {
         CompanyShareDialog(
             hasPay = profile != null,
-            hasRotation = snapshot?.let { PatternTimeline.current(it.patterns, LocalDate.now()) is WorkPattern.Rotation } == true,
+            hasRotation = snapshot?.let { PatternTimeline.current(it.patterns, Today.date()) is WorkPattern.Rotation } == true,
             onDismiss = { sharingCompany = false },
             onShare = { name, amounts, team -> sharingCompany = false; vm.shareCompany(context, name, amounts, team) },
         )
@@ -1123,7 +1124,7 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
         SettingsFiles(
             saveBackup = { askingPassword = true },
             openFile = { openLauncher.launch(arrayOf(BackupManager.MIME_TYPE, com.bamnat.app.data.CompanyShare.MIME_TYPE, "text/plain", "application/octet-stream")) },
-            exportIcs = { icsLauncher.launch("밤낮-근무-${LocalDate.now()}.ics") },
+            exportIcs = { icsLauncher.launch("밤낮-근무-${Today.date()}.ics") },
             shareCompany = { sharingCompany = true },
         )
     }

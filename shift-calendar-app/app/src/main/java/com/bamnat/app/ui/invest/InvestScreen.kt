@@ -73,6 +73,7 @@ import com.bamnat.core.invest.Side
 import com.bamnat.core.invest.TradeDraft
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
+import com.bamnat.core.time.Today
 
 private enum class InvestTab(val label: String) { OVERVIEW("한눈에"), HOLDINGS("종목"), RECORDS("기록"), STATS("통계"), JOURNAL("일지"), ALARMS("알람") }
 
@@ -411,7 +412,7 @@ private fun LocalCalendarColorsSunday() = com.bamnat.app.ui.theme.LocalCalendarC
 /** [INV-08][INV-14] The next alarm and the dates coming up this week. */
 @Composable
 private fun UpcomingCard(state: InvestState, open: (InvestSheet) -> Unit) {
-    val now = LocalDateTime.now()
+    val now = Today.dateTime()
     val next = state.full.alarms.mapNotNull { a -> InvestAlarms.next(a, now)?.let { a to it } }.minByOrNull { it.second }
     val events = state.full.events.filter { !it.date.isBefore(state.today) && it.date.isBefore(state.today.plusDays(8)) }.sortedBy { it.date }
     if (next == null && events.isEmpty()) return

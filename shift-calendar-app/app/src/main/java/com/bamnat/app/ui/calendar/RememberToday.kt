@@ -6,6 +6,7 @@ import androidx.compose.runtime.produceState
 import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.LocalTime
+import com.bamnat.core.time.Today
 
 /**
  * [CAL-25] Today's date that moves on at midnight while a screen stays open (I 리뷰 P2~P4·I1). A night
@@ -15,10 +16,10 @@ import java.time.LocalTime
  */
 @Composable
 fun rememberToday(): LocalDate {
-    val today by produceState(LocalDate.now()) {
+    val today by produceState(Today.date()) {
         while (true) {
-            delay(millisToMidnight(LocalTime.now()).coerceIn(1_000L, 60_000L))
-            value = LocalDate.now()
+            delay(millisToMidnight(Today.time()).coerceIn(1_000L, 60_000L))
+            value = Today.date()
         }
     }
     return today

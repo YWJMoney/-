@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /** [SHR-01] A link's payload from the phone's own data, with only what the sharer ticked. */
 object ShareContent {
@@ -28,7 +29,7 @@ object ShareContent {
             val memos = if (options.memos) memos(c, from, calendar) else emptyMap()
             val pay = if (options.pay) money(c, snapshot, from, kind, calendar) else emptyList()
             val jobs = if (options.jobs) jobs(c, from, calendar) else emptyMap()
-            val zone = java.time.ZoneId.systemDefault().takeIf { feed && c.featureGate.allows(com.bamnat.app.tier.Feature.ICS_FEED) }
+            val zone = Today.zone().takeIf { feed && c.featureGate.allows(com.bamnat.app.tier.Feature.ICS_FEED) }
             ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone)
         }
 

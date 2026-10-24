@@ -41,10 +41,13 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.LocalDateTime
+import com.bamnat.core.time.Today
 
 /** Manual dependency container, created once in [BamnatApp]. */
 class AppContainer(context: Context) {
     val appContext: Context = context.applicationContext
+    /** [QA-08] What day and time it is: the system clock on a phone, a fixed one in screenshot tests (core Today). */
+    val clock: java.time.Clock get() = Today.clock
 
     /**
      * Work that must outlive any screen, e.g. saving a memo while leaving the editor. [STAB-01] An error
@@ -85,6 +88,8 @@ class AppContainer(context: Context) {
     val memoSharing = com.bamnat.app.data.MemoSharingStore(java.io.File(appContext.filesDir, "memo_sharing.json"))
     /** [CREW-01] Each calendar's teams for 모든 조 보기. */
     val teams by lazy { com.bamnat.app.data.TeamStore(appContext) }
+    /** [ROST-06] Each calendar's roster code book (병가 → 유급 휴가), in the backup. */
+    val dutyCodes by lazy { com.bamnat.app.data.DutyCodeBook(appContext) }
     /** [MEMO-01] Memos stay with the calendar they were written on, unless calendars share them. */
     val memoRepository = MemoRepository(database, sharing = kotlinx.coroutines.flow.combine(memoSharing.state, calendars.calendars) { s, list ->
         s.cleaned(list.map { it.id })
@@ -147,7 +152,7 @@ class AppContainer(context: Context) {
         val list = calendars.calendars.value
         val prefs = autoRecordPrefs.current
         if (list.size < 2) return com.bamnat.app.data.PersonalCalendar.MAIN
-        val arrived = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(postedAt), java.time.ZoneId.systemDefault())
+        val arrived = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(postedAt), Today.zone())
         val parsed = (com.bamnat.core.money.PaymentParser.parse(text, arrived) as? com.bamnat.core.money.PaymentParser.Result.Ok)?.parsed
         val places = list.map { com.bamnat.core.money.CaptureRoute.Place(it.id, calendars.money(it.id).allAccounts()) }
         return com.bamnat.core.money.CaptureRoute.pick(parsed?.last4, parsed?.issuer, pkg, places, prefs.appCalendars, prefs.calendar)
@@ -167,7 +172,7 @@ class AppContainer(context: Context) {
     val leaveRepository by lazy { com.bamnat.app.leave.LeaveRepository(database, scheduleRepository, payStore) }
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars, memoSharing = memoSharing,
         workTools = com.bamnat.app.data.WorkToolsStore.get(appContext), guide = com.bamnat.app.data.GuideStore.get(appContext), recordsTrash = { recordsTrash },
-        teams = teams, pro = { proStore },
+        teams = teams, pro = { proStore }, dutyCodes = { dutyCodes },
         shareLinks = com.bamnat.app.share.ShareLinkBackup({ calendars.calendars.value.filterNot { it.isExample }.map { it.id } }, { shareLinksOf(it) }),
         photos = com.bamnat.app.data.BackupPhotos(com.bamnat.app.ui.money.ReceiptFiles.dir(appContext)) { id -> com.bamnat.app.data.WorkToolsStore.get(appContext).photoDir(id) },
         staging = java.io.File(appContext.cacheDir, "backup-in"), profiles = { profiles })
@@ -203,7 +208,7 @@ class AppContainer(context: Context) {
     var shareApi: com.bamnat.app.share.ShareApi = com.bamnat.app.share.ShareLinkClient()
     /** [MKT-09][SHR-12] The one link this phone made, shared by the sheet, the automatic update and the expiry notice. */
     /** [MCAL-02] When this run began: a calendar begun since is being made, not left over. */
-    private val startedAt = System.currentTimeMillis()
+    private val startedAt = Today.millis()
     val shareLinks by lazy { com.bamnat.app.share.ShareLinkStore(appContext) }
     private val addedShareLinks = java.util.concurrent.ConcurrentHashMap<String, com.bamnat.app.share.ShareLinkStore>()
     /**
@@ -313,7 +318,7 @@ class AppContainer(context: Context) {
      */
     suspend fun sendConsent(): Boolean {
         val q = proStore.current.pendingConsent ?: return true
-        if (q.stale(java.time.Instant.now())) {
+        if (q.stale(Today.instant())) {
             proStore.consentSent(q)
             return true
         }
@@ -347,7 +352,7 @@ class AppContainer(context: Context) {
         }
         val reason = s.passes != null || companyStore.sent.value.isNotEmpty() || inquiryStore.asked || s.code != null
         val last = proStore.current.passes?.checkedAt
-        if (!reason || (!force && last != null && java.time.Duration.between(last, java.time.Instant.now()) < PASSES_EVERY)) return
+        if (!reason || (!force && last != null && java.time.Duration.between(last, Today.instant()) < PASSES_EVERY)) return
         proStore.setPasses(tierApi.passes(device))
     }
     /** [IMPORT-01] Samsung Calendar and the phone's other calendars, brought in on request. */
@@ -384,7 +389,7 @@ class AppContainer(context: Context) {
         val JOURNAL_ALARM: java.time.format.DateTimeFormatter = java.time.format.DateTimeFormatter.ofPattern("MM/dd HH:mm")
     }
 
-    suspend fun rescheduleAlarms(after: LocalDateTime = LocalDateTime.now()) {
+    suspend fun rescheduleAlarms(after: LocalDateTime = Today.dateTime()) {
         alarmScheduler.reschedule(calendars.ringing.first(), settingsRepository.current.alarmsEnabled, after)
     }
 
@@ -475,7 +480,7 @@ class AppContainer(context: Context) {
             val on = settingsRepository.settings.map { it.sleepingNotice }.distinctUntilChanged()
             combine(sleepRepository.recent(days = 2), on, alarmScheduler.upcoming) { log, show, next -> Triple(log, show, next) }
                 .collect { (log, show, next) ->
-                    val now = LocalDateTime.now()
+                    val now = Today.dateTime()
                     val open = log.firstOrNull {
                         it.end == null && !it.imported && Duration.between(it.start, now).toMinutes() < SleepDebt.MAX_SLEEP_MINUTES
                     }
@@ -618,7 +623,7 @@ class AppContainer(context: Context) {
             val on = settingsRepository.settings.map { it.widgetMemo }.distinctUntilChanged()
             combine(memoRepository.memos, on) { list, show ->
                 if (!show) emptyMap() else {
-                    val today = java.time.LocalDate.now()
+                    val today = Today.date()
                     listOf(today, today.plusDays(1)).associateWith { d -> list.filter { it.date == d }.map { it.title + it.preview } }
                 }
             }.distinctUntilChanged().drop(1).debounce(500)

@@ -119,6 +119,7 @@ import com.bamnat.core.model.OffDayTreatment
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkTime
 import com.bamnat.core.pay.CompanyRules
+import com.bamnat.core.pay.RuleDraft
 import com.bamnat.core.pay.DayPay
 import com.bamnat.core.pay.ExtraBasis
 import com.bamnat.core.pay.ExtraRule
@@ -143,6 +144,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalTime
+import com.bamnat.core.time.Today
 
 /**
  * [EXTRA-06] Where company ways the settings cannot hold are sent until the server takes them (M12):
@@ -626,7 +628,7 @@ private fun KindEditor(
     var deleting by remember { mutableStateOf(false) }
     var previewShift by remember { mutableStateOf<Long?>(null) }
     val timed = remember(snapshot) { snapshot.shiftTypes.filter { !it.isOff && it.hasTimes } }
-    val today = remember { LocalDate.now() }
+    val today = remember { Today.date() }
     val nightLabel = remember(profile) { (profile?.rules ?: CompanyRules()).nightLabel(RateTable.on(today)) }
     val money by produceState<UnitMoney?>(null, profile, snapshot) {
         value = profile?.let { p -> withContext(Dispatchers.Default) { runCatching { vm.money(p, snapshot, today) }.getOrNull() } }
@@ -1077,17 +1079,25 @@ private fun ReportDialog(draft: KindDraft, snapshot: ScheduleSnapshot, profile: 
     var company by rememberSaveable { mutableStateOf("") }
     var how by rememberSaveable { mutableStateOf("") }
     var example by rememberSaveable { mutableStateOf("") }
+    // [INPUT-03] Put together by taps, starting from this kind; the words below are only for what they cannot say.
+    var built by remember { mutableStateOf(emptyList<String>()) }
+    val start = when (draft.kind.id) {
+        ExtraKind.SPECIAL_ID -> RuleDraft.Target.SPECIAL
+        ExtraKind.OVERTIME_ID -> RuleDraft.Target.OVERTIME_WORK
+        else -> RuleDraft.Target.COVER
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("회사 방식 알려 주기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("설정으로 담을 수 없으면 말로 적어 주세요. 지금 이 종류의 설정도 함께 보내요.", style = MaterialTheme.typography.bodySmall,
+                Text("회사 방식을 골라 담고, 담기지 않는 것만 말로 적어 주세요. 지금 이 종류의 설정도 함께 보내요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(company, { company = it.take(40) }, label = { Text("회사 이름 (선택)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(how, { how = it.take(1000) }, label = { Text("회사는 어떻게 계산하나요?") },
-                    placeholder = { Text("예: 대근은 8시간에 기본급 10%, 8시간 넘으면 0.5 가산, 야간 0.5 가산") },
-                    minLines = 3, modifier = Modifier.fillMaxWidth())
+                com.bamnat.app.ui.components.RuleBuilder(built, { built = it }, start = start)
+                OutlinedTextField(how, { how = it.take(1000) }, label = { Text(if (built.isEmpty()) "회사는 어떻게 계산하나요?" else "더 적을 말 (선택)") },
+                    placeholder = { Text("예: 대근 4시간 이하는 반만 줘요") },
+                    minLines = 2, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(example, { example = it.take(500) }, label = { Text("예시 (선택)") },
                     placeholder = { Text("예: 근무 8시간 뒤 야간 대근 4시간 → 기본급의 10%") },
                     minLines = 2, modifier = Modifier.fillMaxWidth())
@@ -1097,9 +1107,10 @@ private fun ReportDialog(draft: KindDraft, snapshot: ScheduleSnapshot, profile: 
         },
         confirmButton = {
             Button(onClick = {
-                sendReport(context, "밤낮 회사 방식 제보 · ${draft.kind.name}", reportText(draft, snapshot, profile, company, how, example))
+                sendReport(context, "밤낮 회사 방식 제보 · ${draft.kind.name}",
+                    reportText(draft, snapshot, profile, company, com.bamnat.app.ui.components.ruleWords(built, how), example))
                 onSent()
-            }, enabled = how.isNotBlank()) { Text("메일로 보내기") }
+            }, enabled = how.isNotBlank() || built.isNotEmpty()) { Text("메일로 보내기") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
@@ -1127,7 +1138,7 @@ private fun setupText(draft: KindDraft, snapshot: ScheduleSnapshot, profile: Pay
     val k = draft.kind
     appendLine("종류: ${k.name} · ${timingText(k, snapshot.typesById)}")
     if (k.timing is ExtraTiming.Band || k.timing is ExtraTiming.AsShift) appendLine("쉬는 날에 하면: ${k.offDay.label}")
-    val night = (profile?.rules ?: CompanyRules()).nightLabel(RateTable.on(LocalDate.now()))
+    val night = (profile?.rules ?: CompanyRules()).nightLabel(RateTable.on(Today.date()))
     appendLine("지금 설정: ${draft.rule.shareText(night)}")
     draft.byShift.forEach { (id, r) -> appendLine("  ${snapshot.typesById[id]?.name ?: "근무"}: ${r.shareText(night)}") }
     profile?.let { p ->

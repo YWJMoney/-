@@ -1,11 +1,23 @@
 # 밤낮 인수인계 (다른 계정에서 이어 가기)
 
-마지막 정리 2026-10-23 저녁, 앱 1.23.0(versionCode 34, 워치 100034) 기준이에요. 맨 위 0항이 지금 판(1.23.0), 0-0항이 1.22.0, 0-1항이 1.21.0, 0-2항이 1.20.0, 0-3항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
+마지막 정리 2026-10-24, 앱 1.24.0(versionCode 35, 워치 100035) 기준이에요. 맨 위 0항이 지금 판(1.24.0), 0-0항이 1.23.0, 0-1항이 1.22.0, 0-2항이 1.21.0, 0-3항이 1.20.0, 0-4항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
 
 이 저장소는 공개예요(GitHub Pages로 처리방침을 올려요). 그래서 이 문서에는 비밀값, 서명 키, 사용자 개인 정보를 적지 않아요.
 그런 것은 사용자가 새 프로젝트에 파일로 따로 올려요(7항). 새 계정의 Claude는 이 문서와 그 비공개 메모를 먼저 읽고 시작해요.
 
-## 0. 지금 판: 1.23.0 고도화판 (2026-10-23 저녁)
+## 0. 지금 판: 1.24.0 직접 입력판 (2026-10-24)
+
+사용자 지시(2026-10-24): 1.23 직접 점검 보고서(비공개 `notes/1.23/앱-직접-점검-보고서.md`, 상 4·중 14·하)를 전부 고치고, 듀티표를 글자로 치게 하던 입력을 비롯해 앱 어디서든 "글자로 치는" 간접 입력을 직접 입력으로 바꾼 판이에요. 통합 스레드가 리뷰(비공개 `research/1.24-리뷰-직접입력.md`, 결정 D61~D66)를 하고 순번 341~366을 다섯 묶음(P~T)으로 나눠 개발 스레드 PR #108~#113을 통합 브랜치 `claude/project-thread-2xo1nw`에 합쳤어요(비공개 `계획/1.24-직접입력-전면개선-통합계획.md`). DB 20 그대로, 처리방침 2.9 그대로(법 문서 바뀜 없음), 회사 서버는 다시 배포해야 해요(새 비밀값 없음).
+
+- **한 달 근무 넣기(묶음 P, ROST-01~12, PR #112)**: 6-5항. 그 달 실제 달력 위 키패드가 먼저, 사진·엑셀·CSV·붙여 넣기는 보조. 읽기 22표본, 반차 0.5·모르는 휴가 글자는 묻고 `DutyCodeBook`에 기억(백업 포함), 갤러리·카톡 공유로 열기, 클립보드 제안.
+- **직접 입력(묶음 Q, INPUT-01~04·PAYX-47, PR #109)**: 6-3항. `DirectInputs`(`DayOfMonthPicker`·`TimeField`·`QuickDecimalChips`·`RuleBuilder`·`ClipboardHint`), 호봉표 편집기, 숫자·시각·날짜 칸 교체.
+- **달력 첫 화면·화면 크기(묶음 R, CAL-50~52·VIS-04~05·ALRM-05·STAT-07·A11Y-05, PR #113)**: 6-6항. 달력 위 알림 묶음 `NoticeStack`, 낮은 화면·옆으로 눕힌 폰, 큰 글씨 규칙(탭 뒤 낱말·⌫✓ 아이콘), 근무 수 `ShiftMonth.counts` 한 곳, 시험 도우미 `LayoutCheck`(13크기 잘림 검사).
+- **첫 설정·광장 입구·문의·관리자(묶음 S, SETUP-15·COMM-12~14·INQ-06~07·ADMUX-09~11, PR #110)**: 6-4항. "무슨 일 하세요?" 먼저, 광장 입구·같은 회사 구별, 문의 공개 스위치, 관리자 앱 확인 창·세션. 회사 서버 `GET /api/admin/session` 추가, 옛 `GET /join?t=` 제거.
+- **고정 시계·CI(묶음 T, PR #108·#111)**: core `time/Today.kt` 한 곳(`ClockRulesTest`가 직접 `now()`를 막음), 화면 사진은 2026-10-14 10:30 고정, 지문 43장, `DerivedStateFlow`, 컨테이너 백그라운드 생성.
+- **통합 직접 테스트(2026-10-24, 비공개 `notes/1.24/직접-테스트-보고서.md`)**: 1.23 보고서 37/38 고쳐짐 확인(1은 실기기), 새로 찾은 넷(되돌리기 커서·칸 높이·주 시간 줄·알바 200% 시각·✓)은 통합이 고침(5항 '품질 규칙 (1.24 통합 직접 테스트)').
+- **시험 결과(2026-10-24)**: 비공개 `release/1.24.0/사용자가-해야-할-일.md` '시험 결과'에 적어요. 다음 판은 1.25.0(비공개 `인계/다음-스레드-시작-1.25.md`).
+
+## 0-0. 앞 판: 1.23.0 고도화판 (2026-10-23 저녁)
 
 Phase 2에서 만든 기능을 실사용 수준 넘어 완성한 판이에요. 통합 스레드가 먼저 전체 리뷰(문제점·개선점·혁신점 50개, 비공개 `research/1.23-리뷰/`)를 하고 순번 290~340을 여덟 묶음(H~O)으로 나눠 개발 스레드 PR #75~#93을 통합 브랜치 `claude/project-thread-cc2q9i`에 합쳤어요(비공개 `계획/1.23-고도화-통합계획.md`, 결정 D51~D60). DB는 20(급여 정확도, `database/schemas/`), 앱 크기 51MB→8MB, 처리방침 2.9(게시 2026-11-03·시행 11-21). 혁신점 50개 가운데 44개를 넣고 4개는 결정으로 뺐고 1개는 줄였어요.
 
@@ -20,7 +32,7 @@ Phase 2에서 만든 기능을 실사용 수준 넘어 완성한 판이에요. �
 - **법 문서**: `privacy/index.html` 처리방침 2.9(우리 조 모아 보기·증명 사진·OCR 내려받기 문구), `docs/play-data-safety.md` 1.23.0장(바뀌는 답 없음).
 - **시험 결과(2026-10-23)**: 비공개 `release/1.23.0/사용자가-해야-할-일.md` '시험 결과'에 적어요. 다음 판은 1.24.0(비공개 `인계/다음-스레드-시작-1.24.md`).
 
-## 0-0. 앞 판: 1.22.0 Phase 2 완료판 (2026-10-23 새벽)
+## 0-1. 앞 판: 1.22.0 Phase 2 완료판 (2026-10-23 새벽)
 
 남은 Phase 2의 Claude 몫을 개발 스레드 일곱 묶음(A~G)으로 나눠 통합 브랜치 `claude/project-thread-kz90cm`에 합친 한 판이에요(PR #51~#73). DB는 19(연차 원장)이고 Room은 `:database` 모듈로 옮겼어요. 남은 체크리스트 줄은 모두 사용자·바깥 몫이에요(비공개 `계획/Phase2-완료-체크리스트.md`, `인계/다음-스레드-시작-1.23.md`).
 
@@ -34,7 +46,7 @@ Phase 2에서 만든 기능을 실사용 수준 넘어 완성한 판이에요. �
 - **법 문서**: `privacy/index.html` 처리방침 2.8(시행 2026-11-21), `docs/play-data-safety.md` 1.22.0장.
 - **시험 결과(2026-10-23)**: 아래 할 일 문서 `release/1.22.0/사용자가-해야-할-일.md`(비공개)에 적어요.
 
-## 0-1. 앞 판: 1.21.0 사용자 제안 (2026-10-22)
+## 0-2. 앞 판: 1.21.0 사용자 제안 (2026-10-22)
 
 사용자 제안(모든 조·달력 버튼·간호사와 직군·투자 알림·광장 고도화·직군별 광장)을 모두 만들었어요. DB는 18 그대로예요(결정 D40). 다음 판은 1.22.0이에요(비공개 `인계/다음-스레드-시작-1.22.md`).
 
@@ -48,7 +60,7 @@ Phase 2에서 만든 기능을 실사용 수준 넘어 완성한 판이에요. �
 - **법 문서**: `privacy/index.html` 처리방침 2.7(게시 2026-10-22, 시행 2026-11-21, 2.5·2.6과 같은 날). `docs/play-data-safety.md` 1.21.0장.
 - **시험**: core `DutyCheckTest`, `DutyRosterNurseTest`, `TakeHomeYearTest`, `PublicServantPayTest`, `Holidays2028Test`, `TradeAlertParserTest`(+`TradeAlertsTest`), `HourlyWorkTest`, 앱 `InvestAppTest`, `PersonalCalendarsTest`, `rules/LegalPagesTest`, 화면 사진 361~365, 서버 `test/plaza.test.mjs`.
 
-## 0-2. 앞 판: 1.20.0 프로 가치 (2026-10-22)
+## 0-3. 앞 판: 1.20.0 프로 가치 (2026-10-22)
 
 프로 화면 네 기둥의 남은 줄을 모두 만들었어요. 모두 프로 기능이고, 정식 출시 스위치 전에는 1.19.0처럼 모두 열려 있어요. 다음 판은 1.21.0 출시 품질·원격 갱신·원문 대조예요(`계획/Phase2-완료-체크리스트.md` 1장).
 
@@ -66,7 +78,7 @@ Phase 2에서 만든 기능을 실사용 수준 넘어 완성한 판이에요. �
 - **법 문서**: `privacy/index.html` 처리방침 2.6(1.19.0과 1.20.0을 PR #49 하나로 합쳐 2.5와 같은 날 게시, 게시 2026-10-22·시행 2026-11-21 예정, 2.5 몫 때문에 30일 고지). `docs/play-data-safety.md` 1.20.0장.
 - **시험**: core `ReportTest`·`AlarmMissionTest`·`GuideTest.whatsNewOpensRealFeatures`, 앱 `report/ReportPdfTest`, `calendar/PhoneCalendarTest`, `share/ShareLinksProTest`, `backup/AutoBackupTest`, `alarm/SureAlarmTest`, `tier/TierAppTest`, 화면 사진 385~398, 공유 서버 `worker.test.mjs`.
 
-## 0-3. 그 앞 판: 1.19.0 수익화 기반 (2026-10-22)
+## 0-4. 그 앞 판: 1.19.0 수익화 기반 (2026-10-22)
 
 일하는 규칙은 `CLAUDE.md`(문서 먼저, 판마다 체크리스트, Phase 3 진입 금지). 남은 일의 정본과 판 계획은 비공개 프로젝트 파일 `계획/Phase2-완료-체크리스트.md`에 있어요. 다음 판은 1.20.0 프로 가치(자동 암호 백업, 공유 링크 여러 개, 통계 확장, 급여 리포트 PDF·CSV, 등급 최종 시험, ICS 구독, 기기 캘린더 쓰기, 확실한 알람, 근무표 PDF)예요.
 
@@ -184,6 +196,11 @@ python3 tools/check_tracker.py                             # 추적표 검사
   - 크기: `python3 tools/app_size.py <apk|aab>`로 봐요. 예산은 APK 9.5MB, AAB 23.5MB이고, 넘으면 출시 빌드가 멈춰요. 글자 인식(ML Kit 한국어)은 앱에 넣지 않고 Google Play 서비스가 처음 쓸 때 내려받아요. 언어는 한국어만 넣어요(`localeFilters`).
   - 린트: 새 오류가 생기면 멈춰요. 예전 것은 `app/lint-baseline.xml`, `wear/lint-baseline.xml`에 있고, 고친 뒤 `:app:updateLintBaseline :wear:updateLintBaseline`으로 줄여요.
   - 백업 파일은 형식 3(zip: `backup.json`, `photos/…`, `sha256.txt`)이에요. 옛 `.json` 백업도 그대로 열려요(`data/BackupArchive.kt`).
+- **품질 규칙 (1.24 통합 직접 테스트)**
+  - 달력 칸(`MonthGrid`)을 다른 화면에서 다시 쓸 때 `cellHeight`는 **66dp + `cellTextGrowth()`** 아래로 내리지 않아요. 더 낮으면 배지 아래 줄("+2h", 공휴일 이름)이 잘려요(한 달 근무 넣기에서 52dp가 그랬어요).
+  - 글씨 150% 이상에서 고정 폭 안에 숫자를 그릴 때는 `HourlyTimeMark`처럼 글자 크기를 1.3배까지만 키워요. 한 줄에 조각 `Text` 여러 개를 `Row`로 붙이면 좁은 화면·큰 글씨에서 겹치니(빠른 입력 바 "이 주 n시간 · 넘음") `buildAnnotatedString` 한 글로 만들어 줄바꿈되게 해요.
+  - 새 화면·크기는 `test/.../screenshots/LayoutCheck.cuts()`로 잘림을 세요(R의 `RScreenshotTest.audit*` 방식). 2px 이하 세로 넘침은 글자 위아래 여백이라 잘림으로 세지 않아요(R-4).
+  - 키패드 `되돌리기`는 바뀐 첫 날로 커서를 되돌려요(`DutyRosterViewModel.undo`). 되돌린 뒤 커서가 그대로면 다음 키가 한 칸을 건너뜁니다.
 - **Maven Central이 429(요청이 많다)로 막힐 때**: `~/.gradle/init.d/central-mirror.gradle.kts`에 `https://maven-central.storage-download.googleapis.com/maven2/` 저장소를 `pluginManagement`와 `dependencyResolutionManagement` 맨 앞에 넣으면 받아져요. 내려받기는 한 번에 하나씩 하고, 빌드는 `gradle --no-daemon -Pkotlin.compiler.execution.strategy=in-process`로 돌려요. Robolectric의 안드로이드 jar(API 26 등)도 막히면 `-Pbamnat.robolectricRepo=<같은 주소>`를 붙여요.
 - 서명한 출시 파일
 
@@ -234,7 +251,7 @@ shift-calendar-app/
 | 회사 근무 파일 | 설정 > 데이터 > 회사 설정 보내기 | `밤낮-회사설정-회사.json` | `application/json` | 첫 설정 전: 회사 설정으로 시작 / 뒤: 회사 설정 적용 창 |
 | `.bamnat` 이름의 위 파일 | 사람이 이름을 바꾼 경우 | `*.bamnat` | 아무거나 | 위와 같음(이름으로도 받음) |
 
-- 받는 동작: `VIEW`(눌러 열기)와 `SEND`(공유로 보내기). `text/plain`은 받지 않아요(아무 글 공유에나 밤낮이 뜨지 않게).
+- 받는 동작: `VIEW`(눌러 열기)와 `SEND`(공유로 보내기). 이 길은 `text/plain`을 받지 않아요. 듀티표 사진·글 공유는 따로 '한 달 근무 넣기' 이름으로 받아요(6-5).
 - 확장자는 `.json` 그대로 둬요. 카카오톡 등 메신저가 모르는 확장자를 막거나 이름을 바꾸는 일이 있어서예요.
 
 ### 6-2. 쉬운 사용·관측성 (1.23.0 묶음 N, EASY-01~10·OBS-01~03)
@@ -253,6 +270,61 @@ shift-calendar-app/
 - 새 기록 지점을 더할 때: `JournalKind`에 종류를 더하고, 같은 값이 반복되면 `noteIfChanged`를 써요. detail은 숫자와 `일치개번판시분주달회째`만 받아요.
 - 새 기능이 사실을 필요로 하면 `FeatureNeeds`에 기능 id → 사실을 적으면 질문 카드와 '이걸 알려 주면 시작해요'가 따라와요.
 - 예시 달력의 값은 휴대폰 밖으로 나가지 않아요(`ExampleCalendarGuardTest`가 지켜요).
+
+### 6-3. 직접 입력 (1.24.0 묶음 Q, INPUT-01~04·PAYX-47)
+
+사용자 지시(2026-10-24): 글자로 치게 하는 입력은 불합리하니 직접 입력으로. 개발계획은 프로젝트 파일 `계획/1.24-Q-개발계획.md`(0장에 글자로 치는 칸 전수 조사 표, 결정 Q-D1~D3).
+
+| 부품 | 어디 | 쓰는 곳 |
+|---|---|---|
+| `DayOfMonthPicker` | `ui/components/DirectInputs.kt` | 1~31 격자, 31은 말일. 투자 정기 알람 |
+| `TimeField` | 같은 파일 | 칸처럼 보이는 버튼 → J의 `TimePickerDialog`. 매매 시각(비울 수 있음), 투자 알람 시각 |
+| `QuickDecimalChips` | 같은 파일 | 값 칩 + −/+(`RepeatIconButton`). 공수, 인상률, 수당 비율, 카드 수수료율, 연차 일수 |
+| `RuleBuilder` + core `pay/RuleDraft` | `ui/components/RuleBuilder.kt` | 무엇·어떻게·얼마·가산 → `RuleDraft.sentence()`. 그 문장은 `RuleText.read`가 그대로 읽어요(`RuleDraftTest` 왕복). 개발자에게 알려 주기·회사 방식 제보·회사만의 규칙 세 곳 |
+| `ClipboardHint` | `ui/components/ClipboardHint.kt` | 클립보드 **설명만** 보고 한 줄, 누를 때 읽고 모양 확인, 거절은 복사 시각으로 기억(`clip_hint` 설정 파일, 백업·클라우드 밖). 명세서·결제 문자·받은 링크·모임 코드·복구 코드 |
+
+- 새 숫자·시각 칸을 만들 때는 이 부품이나 J의 `CountStepper`·`MinutesStepper`를 먼저 써요. 글자 칸은 이름·메모·검색·코드와 금액(자릿수가 자유)만(결정 Q-D2).
+- 화면 사진 740~759는 `QScreenshotTest`.
+
+### 6-4. 첫 설정 방식별·광장 입구·문의·관리자 앱 (1.24.0 묶음 S, SETUP-15·COMM-12~14·INQ-06~07·ADMUX-09~11)
+
+개발계획과 결정 S-1~S-3은 프로젝트 파일(git 밖)의 `계획/1.24-S-개발계획.md`에 있어요.
+
+- **첫 화면 "무슨 일 하세요?"** (`ui/onboarding/FirstStyleScreen`): 새 휴대폰은 이 질문을 먼저 보고, 고른 일은 `RecommendedPlan.forStyle`로 추천 화면의 스위치를 정해요(평일·시급은 잘 준비·오늘 근무만, 현장·자영업·투자는 근무 알림 없음, 꺼 둔 것과 켜는 곳을 화면에 적어요). 답은 `AppRoot`의 `firstStyleKey`(회전·재시작에도 남음)로 `SetupHost`에 넘겨 첫 설정이 같은 질문을 다시 하지 않아요. "백업이나 회사 파일로 시작할게요"는 예전 흐름 그대로예요. 화면 시험은 `recommended(firstStyle = …)`로 먼저 카드를 눌러요.
+- **광장 입구** (`ui/company/PlazaEntry`): 첫 설정에서 회사 이름을 넣었고 같은 회사 설정을 쓰지 않으면 급여 화면 위에 카드 하나(질문 카드가 없는 날만, `AskScheduler.tipAllowed`), 합계 아래에는 늘 한 줄. 누르면 광장이 그 이름으로 검색된 채 열려요(`PlazaEntry.open` → `CompanyBoardViewModel.query`).
+- **같은 부서 제보 구분** (core `plaza/SetupDiff`): 같은 회사·부서의 설정이 둘 이상이면 "제보 1·2"나 "채택 v2" 이름과 "다른 점:" 한 줄, 점수가 찼는데 기다리는 이유. 관리자 앱도 같은 말을 써요(`admin-lib.js`의 `setupDiff`·`waitReason`).
+- **같은 글 반복 막기** (core `plaza/RepeatGuard`): 10분 안에 같은 글 세 번째는 앱에서 막아요. 서버 규칙은 그대로예요.
+- **급여 시작 달** (core `pay/PaySince`): 같은 회사 급여 가져오기는 1년 전부터, 입사일이 그 안이면 입사한 달부터, 이유를 한 줄로.
+- **문의**: "모두의 문의에 올리기" 스위치(기존 `public` 값만 씀, 처리방침 그대로), 화면에 돌아오면 새로 읽기와 당겨서 새로 고침, 도움말 첫 화면 맨 위에 "문의하기".
+- **관리자 앱**: 검토 배지와 홈 숫자는 `reviewCount` 하나, 대화창은 휴대폰 뒤로 가기·경로 바뀜에 먼저 닫혀요, 로그인 확인은 `GET /api/admin/session`(401 콘솔 오류 없음), 옛 `GET /join?t=`는 지웠어요(초대는 `#토큰` + `POST /api/admin/join/info`), 문의 CSV에 본문 열(메일·전화·금액은 •••).
+
+### 6-5. 한 달 근무 넣기 (1.24.0 묶음 P, ROST-01~12·SETUP-15)
+
+예전 '듀티표 넣기'는 글자를 붙여 넣는 화면이 먼저였어요. 1.24에서는 그 달의 실제 달력(`MonthGrid`, 달력의 주 시작일)과 아래 고정 키패드가 먼저이고,
+사진·엑셀·CSV·붙여 넣기는 위의 보조 길이에요. 읽은 결과도 같은 달력 위에 겹쳐 보이고, 그 자리에서 고쳐요. 개발계획은 프로젝트 파일 `계획/1.24-P-개발계획.md`예요.
+
+| 층 | core (순수 Kotlin) | app | 하는 일 |
+|---|---|---|---|
+| 읽기 | `imports/DutyRoster`(`DutyCodes.read`·`splitName`·`monthIn`·`beyond`·`overwrites`), `RosterSheet` | `ui/imports/RosterReader` | 코드 뒤 기호(`*` `/` `'` `+` `△`)는 떼서 메모로, `N-O`는 한 칸, `11D`는 코드+시각 메모, `10/1`·`1(수)` 날짜, 전각, 머리말의 달, 이름+직급 나누기. 이름에 붙은 코드는 '확실하지 않은 칸'(노란 칸) |
+| 휴가 | `DutyCell.Leave(kind, quarters, fromStart)`, `DutyCodes.LEAVE_WORDS` | `data/DutyCodeBook`(SharedPreferences `duty_codes`, 백업 `dutyCodes`) | 반차 0.5·반반차 0.25·오전/오후, 생휴는 무급(근로기준법 제73조에 유급 규정 없음). 병가·공가·경조는 회사마다 달라 한 번 묻고 그 달력의 코드 사전에 기억 |
+| 화면 | `imports/MonthFill.repeat` | `ui/imports/DutyRosterScreen`(`DutyRosterViewModel`) | 키 누르면 넣고 다음 날, 끌면 마지막 키로 칠하기, 이 순서 반복·지난달과 같게·비우기·되돌리기. 넣기는 `WriteGate`를 지나고, 넣기 전 덮어쓰는 날 수를 말하고, 넣은 뒤 한 번에 되돌려요 |
+| 받기 | — | `IncomingRoster`(`MainActivity`, manifest의 '한 달 근무 넣기' SEND 필터) | 갤러리·메신저에서 사진(`image/*`)이나 글(`text/plain`)을 공유하면 이 화면이 그 내용으로 열려요. 백업 `.json` 길(`IncomingFiles`)과 따로예요 |
+| 클립보드 | — | Q `ClipboardHint` + `DutyRosterViewModel.fitsClip` | "복사한 글이 있어요 · 붙여 넣기" 한 줄. 화면을 열 때는 복사 시각만 보고(Android가 알리지 않음), 누를 때 읽어 근무표 모양이면 채워요(1.24 통합이 P의 열 때 읽기를 바꿈, 결정 Q-D1). 글은 저장하지 않고 다룬 복사 시각만 `clip_hint`에 남아요 |
+| 첫 설정 | — | `SetupViewModel.readRoster*`·`useRosterRow`, `SetupOrder.RosterSource` | 교대(달마다 칠하기)에서 '듀티표가 있어요 → 사진·파일·직접'. 근무·쉬는 날만 칠하고 휴가·모르는 칸은 설정 뒤에 넣어요 |
+| 한 일 | `JournalKind.ROSTER`, `RosterFrom`, `Journal.rosterDetail` | `DutyRosterViewModel.write` | "11월 근무 30일 넣음 (사진)" 한 줄. 처음 보는 코드로 근무 종류를 만들면 프로필 '추정' 출처 |
+
+- 이름: 화면·설정·찾기는 '한 달 근무 넣기', 빠른 입력 바와 도구의 키패드 시트는 '이번 달 전부 넣기'(`DutyTypingSheet`)예요.
+- 새 휴가 글자가 흔하면 `DutyCodes.LEAVE_WORDS`에 더하고 `DutyRosterTextTest`에 표본을 더해요. 회사마다 다른 건 묻는 쪽(`DutyCell.Unknown(leave = true)`)에 두세요.
+
+### 6-6. 달력 첫 화면·화면 크기 (1.24.0 묶음 R, CAL-50~52·VIS-04~05·ALRM-05·STAT-07·A11Y-05)
+
+계획은 프로젝트 파일(git 밖)의 `계획/1.24-R-개발계획.md`, 근거는 `notes/1.23/앱-직접-점검-보고서.md` 상-4·중-1~5·하.
+
+- **알림 묶음** `ui/calendar/NoticeStack`: 달 위 카드(질문·알람 경고·확인할 근무·공휴일·근무표·알람 제안·한 달 정리·공지·안내·한 일)는 순서대로 하나만 펼치고 나머지는 "알림 n개 더 보기" 한 줄. 접힌 카드도 그려 두되 자리·읽기는 없어요. 접힌 카드가 "보여 줌"으로 세지 않게 `LocalNoticeFolded`를 보고 기록을 미뤄요(AskCard·GuideCards). 새 카드는 `CalendarScreen`의 `NoticeStack(listOf(...))`에 `Notice(key, label)`로 더하세요.
+- **낮은 화면** `LOW_SCREEN_DP = 700`(또는 글씨 150% 이상): 오늘 흐름·오늘 근무 카드도 알림 묶음에 들어가고 요약은 한 줄. **옆으로 눕힌 폰** `SIDEWAYS_SCREEN_DP = 480` 미만: 넓은 두 칸 대신 세로 배치, 이름표·달 제목 한 줄, 알림은 다 접힘, 칸 높이 66dp.
+- **근무 수** `core/work/ShiftMonth.counts`·`leaveDays`·`nightTimes`: 달력 배지·1년 달력·통계가 같은 함수. 하루 통째 휴가인 날은 근무 종류로 안 세고 "휴가"로 세요. 22~06시 걸친 근무는 "밤 시간 근무"(대근 포함)로 이름이 따로예요.
+- **크기 검사** `test/.../screenshots/LayoutCheck`: 그려진 화면에서 아래·옆 잘림, 말줄임, 한 글자씩 쪼개짐, 하단 바 위에 보이는 온전한 주 수를 셉니다. `RScreenshotTest`의 `audit*`가 점검 보고서의 13가지 크기를 `build/screenshots/r-audit/`에 적고, 760~779는 잘림 0·주 수 하한을 시험해요.
+- 시트 손잡이 이름은 `res/values(-ko)/sheet_strings.xml`이 라이브러리 글을 덮어써요("끌어서 옮기기", "닫기").
 
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 

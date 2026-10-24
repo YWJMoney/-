@@ -129,7 +129,7 @@ internal fun ExtrasContent(
                             editing = day.extras.size
                             vm.addExtra(day.date, c.entry, c.name)
                         },
-                        label = { Text(c.label, maxLines = 1) },
+                        label = { ChipText(c.label) },
                         leadingIcon = { ExtraKindMark(c.kind, size = 18.dp) },
                     )
                 }
@@ -233,7 +233,7 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                 FilterChip(
                     selected = k.id == e.kindId,
                     onClick = { if (k.id != e.kindId) update(e.copy(kindId = k.id)) },
-                    label = { Text(k.name, maxLines = 1) },
+                    label = { ChipText(k.name) },
                     leadingIcon = { ExtraKindMark(k, size = 18.dp) },
                 )
             }
@@ -247,7 +247,7 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                         selected = e.coveredShiftId == t.id,
                         // Picking the shift takes its hours, which is what a 대근 of it means.
                         onClick = { if (e.coveredShiftId != t.id) update(ExtraText.cover(extra.kind, t).copy(kindId = e.kindId)) },
-                        label = { Text(t.name, maxLines = 1) },
+                        label = { ChipText(t.name) },
                         leadingIcon = { ShiftBadge(t, size = 18.dp) },
                     )
                 }

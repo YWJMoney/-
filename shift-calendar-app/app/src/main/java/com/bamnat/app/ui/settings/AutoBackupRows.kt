@@ -26,6 +26,7 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.ConfirmDialog
 import com.bamnat.app.ui.pro.openPro
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /** [PROV-03] The row's title, which its notice and settings search point at. */
 const val AUTO_BACKUP_ROW = "매일 자동 백업"
@@ -91,7 +92,7 @@ internal fun AutoBackupRows(vm: SettingsViewModel) {
 }
 
 /** What the row says under the switch, and whether it is a problem. */
-internal fun statusLine(s: AutoBackup.State, open: Boolean, zone: ZoneId = ZoneId.systemDefault()): Pair<String, Boolean> {
+internal fun statusLine(s: AutoBackup.State, open: Boolean, zone: ZoneId = Today.zone()): Pair<String, Boolean> {
     val last = s.lastOk?.atZone(zone)?.let { "${Fmt.monthDay(it.toLocalDate())} ${Fmt.time(it.toLocalTime())}" }
     val where = s.name?.let { " · $it" }.orEmpty()
     return when {

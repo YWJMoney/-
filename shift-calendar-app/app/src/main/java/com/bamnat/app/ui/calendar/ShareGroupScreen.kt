@@ -64,9 +64,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /** [SHR-14] 우리 조 모아 보기: start or join a 모임 코드 with one's own link, and see everyone's week side by side. */
-class ShareGroupViewModel(private val c: AppContainer, private val today: () -> LocalDate = LocalDate::now) : ViewModel() {
+class ShareGroupViewModel(private val c: AppContainer, private val today: () -> LocalDate = Today::date) : ViewModel() {
     data class Ui(
         val code: String? = null,
         val members: List<ShareGroupBoard.Member> = emptyList(),
@@ -236,6 +237,9 @@ private fun Join(vm: ShareGroupViewModel, busy: Boolean, onShare: () -> Unit) {
         }
     }
     SectionCard(title = "받은 코드로 들어가기") {
+        // [INPUT-04] A code just copied from the group chat: one tap.
+        if (text.isBlank()) com.bamnat.app.ui.components.ClipboardHint("모임 코드", fits = { ShareGroup.code(it) != null },
+            onPaste = { text = ShareGroup.code(it) ?: it.take(12) })
         OutlinedTextField(
             value = text, onValueChange = { text = it.take(12) }, singleLine = true, label = { Text("모임 코드 6자") },
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),

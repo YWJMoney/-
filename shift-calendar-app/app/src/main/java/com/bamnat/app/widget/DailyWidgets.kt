@@ -50,6 +50,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalDateTime
+import com.bamnat.core.time.Today
 
 /*
  * 1.22 묶음 E on the home screen: [DAILY-03] 오늘 모든 조, [DAILY-01] a day's memo line,
@@ -134,7 +135,7 @@ class HourlyClockAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val repo = context.appContainer.scheduleRepository
         val snapshot = repo.snapshot.first()
-        val now = LocalDateTime.now()
+        val now = Today.dateTime()
         val text = runCatching {
             write(repo, parameters[OUT] == true, snapshot.resolver.resolve(now.toLocalDate()), now) { snapshot.resolver.resolve(now.toLocalDate().minusDays(1)) }
         }.getOrNull()

@@ -102,6 +102,7 @@ import com.bamnat.core.memo.Memo
 import com.bamnat.core.schedule.ResolvedDay
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
+import com.bamnat.core.time.Today
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -136,7 +137,7 @@ fun MemoListScreen(
     val filterOn = state.tag != null ||
         (if (state.tab == MemoTab.CALENDAR) state.calendarFilter != CalendarFilter.ALL else state.generalFilter != GeneralFilter.ALL)
     val fold = parts.any { it.part == MemoPart.FOLD && it.shown }
-    val today = LocalDate.now()
+    val today = Today.date()
     val open: (Memo) -> Unit = { memo -> if (state.selecting) vm.toggleSelected(memo.id) else onOpen(memo.id) }
     val actions = CardActions(
         onOpen = open,

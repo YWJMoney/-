@@ -42,3 +42,42 @@ object IncomingFiles {
         if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
         else intent.getParcelableExtra(Intent.EXTRA_STREAM)
 }
+
+/**
+ * [ROST-09] A roster shared to 밤낮 from the gallery or a messenger (리뷰 N2, 결정 D65): a photo (image/…) or text
+ * (text/plain). 한 달 근무 넣기 opens with it and reads it on the phone; nothing is saved until the user puts the days
+ * in. Kept apart from [IncomingFiles], so a shared photo never opens the backup dialog.
+ */
+object IncomingRoster {
+    sealed interface Shared {
+        data class Photo(val uri: Uri) : Shared
+        data class Text(val text: String) : Shared
+    }
+
+    private val _shared = MutableStateFlow<Shared?>(null)
+    val shared: StateFlow<Shared?> = _shared.asStateFlow()
+
+    /** Keeps the roster [intent] shares, if any; true when it shared one. */
+    fun read(intent: Intent?): Boolean {
+        val s = sharedOf(intent) ?: return false
+        _shared.value = s
+        return true
+    }
+
+    /** The waiting roster, once. */
+    fun take(): Shared? = _shared.value.also { _shared.value = null }
+
+    internal fun sharedOf(intent: Intent?): Shared? {
+        intent ?: return null
+        if (intent.action != Intent.ACTION_SEND || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return null
+        val type = intent.type.orEmpty()
+        return when {
+            type.startsWith("image/") -> IncomingFiles.uriOf(intent)?.let { Shared.Photo(it) }
+            type.startsWith("text/plain") -> intent.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() }?.take(MAX_TEXT)?.let { Shared.Text(it) }
+            else -> null
+        }
+    }
+
+    /** A month's roster is a few kilobytes; a long message is cut, never kept whole. */
+    private const val MAX_TEXT = 20_000
+}

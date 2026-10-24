@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.bamnat.core.time.Today
 
 /**
  * [ADMIN-02] 문의하기 in the app: questions this phone sent, the developer's answers, a new question
@@ -155,7 +156,7 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     /** [COMM-11] 이 사람 글 안 보기 in 모두의 문의: the same list as the plaza's, then 모두의 문의 again without them. */
     fun hideWriter(mark: String) {
         c.settingsRepository.update { s ->
-            s.copy(plazaHidden = com.bamnat.core.plaza.HideList.decode(s.plazaHidden).hide(mark, "문의 쓴 분", System.currentTimeMillis()).encode())
+            s.copy(plazaHidden = com.bamnat.core.plaza.HideList.decode(s.plazaHidden).hide(mark, "문의 쓴 분", Today.millis()).encode())
         }
         _thread.value = null
         loadBoard()
@@ -173,11 +174,13 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    fun refresh() {
+    /** [INQ-07] [done] runs once the list is read again, for 당겨서 새로고침. */
+    fun refresh(done: () -> Unit = {}) {
         viewModelScope.launch {
             // Nothing to look up before this phone has asked anything, or without the server.
             if (!online || !c.inquiryStore.asked) {
                 _list.value = emptyList()
+                done()
                 return@launch
             }
             runCatching { c.inquiryApi.mine(device) }
@@ -190,6 +193,7 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
                     _offline.value = true
                     if (_list.value == null) _list.value = emptyList()
                 }
+            done()
         }
     }
 
@@ -217,13 +221,14 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
      * Sends the question. [INQ-05] I9: when the internet or the server is not there, it waits on the phone
      * (without photos) and goes by itself once the phone is online; [done] then gets [QUEUED].
      */
-    fun send(kind: InquiryKind, text: String, diag: String?, pay: String?, photos: List<ByteArray> = emptyList(), done: (Inquiry?, String?) -> Unit) {
+    fun send(kind: InquiryKind, text: String, diag: String?, pay: String?, photos: List<ByteArray> = emptyList(), public: Boolean = true,
+        done: (Inquiry?, String?) -> Unit) {
         val requestId = InquiryClient.newRequestId()
-        val full = info.copy(diag = diag, pay = pay, photos = photos)
+        val full = info.copy(diag = diag, pay = pay, photos = photos, public = public)
         act({ sent, why -> done(sent, why) }, queueOn = { e ->
             if (!e.retryable) return@act false
             val queued = c.inquiryStore.queue(com.bamnat.app.company.QueuedInquiry(requestId, kind, text.trim(), full.copy(photos = emptyList()),
-                java.time.Instant.now()))
+                Today.instant()))
             if (queued) {
                 c.inquiryStore.clearDraft()
                 com.bamnat.app.company.OutboxJob.schedule(c.appContext)

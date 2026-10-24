@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import com.bamnat.core.time.Today
 
 /**
  * [ALRM-04] 증명 사진's reference photos, kept only as fingerprints: up to [ImageHash.MAX_REFERENCES] of
@@ -33,7 +34,7 @@ class PhotoReferences(context: Context) {
     val hashes: List<Long> get() = _all.value.map { it.hash }
 
     /** Adds one; past [ImageHash.MAX_REFERENCES] the oldest goes. [replace] starts over with this one alone. */
-    fun add(hash: Long, place: String, at: Long = System.currentTimeMillis(), replace: Boolean = false) {
+    fun add(hash: Long, place: String, at: Long = Today.millis(), replace: Boolean = false) {
         val name = place.trim().take(PLACE_MAX).ifEmpty { _all.value.lastOrNull()?.place.orEmpty() }
         val kept = if (replace) emptyList() else _all.value
         write((kept + Reference(hash, at, name)).takeLast(ImageHash.MAX_REFERENCES))

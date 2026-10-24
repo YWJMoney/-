@@ -30,6 +30,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -70,6 +72,7 @@ import kotlinx.coroutines.flow.stateIn
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.work.ShiftMonth
 import java.time.temporal.TemporalAdjusters
 
 /**
@@ -122,9 +125,12 @@ fun YearScreen(vm: YearViewModel, onBack: () -> Unit) {
             }
             if (heatMap) HeatLegend(heat)
             BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 24.dp)) {
+                // [VIS-05] Large text on a phone: one month a row, or two-digit days were cut to their first digit.
+                val big = LocalDensity.current.fontScale >= 1.5f
                 val columns = when {
-                    maxWidth >= 840.dp -> 4
-                    maxWidth >= 560.dp -> 3
+                    maxWidth >= 840.dp -> if (big) 3 else 4
+                    maxWidth >= 560.dp -> if (big) 2 else 3
+                    big -> 1
                     else -> 2
                 }
                 // Rows of months, not a FlowRow: a flow row measures its items short and the weeks run into each other.
@@ -150,9 +156,10 @@ fun YearScreen(vm: YearViewModel, onBack: () -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun YearCounts(snap: ScheduleSnapshot, days: Collection<ResolvedDay>) {
-    val counts = days.mapNotNull { it.shiftType }.groupingBy { it.id }.eachCount()
+    // [STAT-07] The month's count, a year long: a day taken off whole with leave is 휴가, not its code.
+    val counts = ShiftMonth.counts(days, snap.shiftTypes).associate { it.type.id to it.days }
     // [CAL-26] 반차 is half a day and 반반차 a quarter, as the leave ledger counts them (I 리뷰 P5).
-    val leave = days.sumOf { it.leave?.days ?: 0.0 }
+    val leave = ShiftMonth.leaveDays(days)
     if (counts.isEmpty()) {
         Text("이 해에는 넣은 근무가 없어요", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth().padding(8.dp), textAlign = TextAlign.Center)
@@ -190,8 +197,11 @@ private fun MiniMonth(month: YearMonth, days: Map<LocalDate, ResolvedDay>, heat:
                     color = if (YearMonth.from(today) == month) scheme.primary else scheme.onSurface)
                 Text("  근무 ${work}일", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
             }
+            val density = LocalDensity.current
+            var cell by remember { mutableIntStateOf(0) }
+            val dayDigits = with(density) { if (cell == 0) 9.sp else minOf(9.sp.toPx(), cell * 0.42f).toSp() }
             repeat(weeks) { w ->
-                Row(Modifier.fillMaxWidth()) {
+                Row(Modifier.fillMaxWidth().onSizeChanged { cell = it.width / 7 }) {
                     repeat(7) { d ->
                         val date = first.plusDays((w * 7 + d).toLong())
                         val inMonth = YearMonth.from(date) == month
@@ -211,8 +221,9 @@ private fun MiniMonth(month: YearMonth, days: Map<LocalDate, ResolvedDay>, heat:
                                 .then(if (date == today) Modifier.border(1.5.dp, scheme.primary, RoundedCornerShape(3.dp)) else Modifier),
                             contentAlignment = Alignment.Center,
                         ) {
+                            // [VIS-05] Grows with the font only while it fits the little square.
                             if (inMonth) Text(
-                                "${date.dayOfMonth}", fontSize = 9.sp, lineHeight = 9.sp, maxLines = 1,
+                                "${date.dayOfMonth}", fontSize = dayDigits, lineHeight = dayDigits, maxLines = 1, softWrap = false,
                                 color = when {
                                     // [CAL-42] Dark letters on 오후's orange or a light shift colour (I 리뷰 P23).
                                     fill != Color.Transparent -> contentColorOn(fill.compositeOver(scheme.surface))

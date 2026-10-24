@@ -21,6 +21,7 @@ import org.json.JSONObject
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
+import com.bamnat.core.time.Today
 
 /** What a company settings file holds, shown before the user applies it [COMM-00]. */
 data class CompanySummary(
@@ -47,7 +48,7 @@ class CompanyShare(
     private val schedule: ScheduleRepository,
     private val payStore: PayStore,
     private val settings: SettingsRepository,
-    private val today: () -> LocalDate = LocalDate::now,
+    private val today: () -> LocalDate = Today::date,
     /** [EASY-06] The facts a coworker's setup gave, for the profile to mark as 공유 (main calendar). */
     private val shared: suspend (Set<com.bamnat.core.profile.FactKey>) -> Unit = {},
 ) {

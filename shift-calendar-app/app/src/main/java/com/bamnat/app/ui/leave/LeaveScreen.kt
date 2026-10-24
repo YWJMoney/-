@@ -63,7 +63,6 @@ import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.app.ui.work.DateField
 import com.bamnat.app.ui.work.Hint
-import com.bamnat.app.ui.work.NumberField
 import com.bamnat.app.ui.work.SwitchLine
 import com.bamnat.app.ui.work.ValueLine
 import com.bamnat.app.ui.work.toNumber
@@ -93,6 +92,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /**
  * [LEAVE-06] 연차 화면: one calendar's 연차 원장 — what is usable now, what lapses when, every line that changed
@@ -192,7 +192,7 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
                     SwitchLine("연차 사용 촉진 알림", notice, vm::setNotice,
                         "연차가 없어지기 6개월 전과 2개월 전(첫해 월 연차는 3개월 전·1개월 전) 아침 9시에, 쓸 예정을 빼고도 남는 날을 알려 드려요.")
                     s?.nextLapse?.let { (date, days) ->
-                        val next = LeavePromotion.next(s.lots.map { it.lot }, java.time.LocalDateTime.now())
+                        val next = LeavePromotion.next(s.lots.map { it.lot }, Today.dateTime())
                         Hint("${Fmt.fullDate(date)}에 ${LeaveAccrual.days(days)}가 없어질 수 있어요." +
                             (next?.let { " 다음 알림은 ${Fmt.shortDate(it.at.toLocalDate())}이에요." } ?: ""))
                     }
@@ -274,7 +274,7 @@ private fun RulesCard(profile: PayProfile?, onEditRules: () -> Unit, vm: LeaveVi
             "쓰지 않은 연차는 1년이 지나면 없어져요(근로기준법 제60조).")
         if (policy.auto && hire != null) {
             // ② 80% 미만 출근한 해: 15일 대신 개근한 달마다 1일, which the user adds by hand.
-            val years = (java.time.temporal.ChronoUnit.YEARS.between(hire, LocalDate.now()).toInt()).coerceIn(0, 40)
+            val years = (java.time.temporal.ChronoUnit.YEARS.between(hire, Today.date()).toInt()).coerceIn(0, 40)
             if (years >= 1) {
                 Text("출근율 80%가 안 된 해", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -399,7 +399,7 @@ private fun PayoutCard(
 /** [LEAVE-04] 징검다리 for the calendar's kind of work: 공휴일 for a 일근 calendar, the roster's own days off otherwise. */
 @Composable
 private fun BridgesCard(snap: ScheduleSnapshot, style: WorkStyle?, left: Double?) {
-    val today = remember { LocalDate.now() }
+    val today = remember { Today.date() }
     // [LIFE-02] The ones the 연차 left can cover come first; the rest stay, marked, since more may arise before then.
     val bridges = remember(snap, style, today, left) { LeaveBridges.of(snap, style, today).sortedByDescending { LeaveBridges.fits(it, left) } }
     if (bridges.isEmpty()) return
@@ -425,7 +425,7 @@ private fun BridgesCard(snap: ScheduleSnapshot, style: WorkStyle?, left: Double?
 /** 받은 연차, 이월 or 조정, with the days, the date it arises and until when. */
 @Composable
 private fun AddDialog(kind: EntryKind, onDismiss: () -> Unit, onAdd: (LedgerEntry) -> Unit) {
-    val today = remember { LocalDate.now() }
+    val today = remember { Today.date() }
     var days by rememberSaveable { mutableStateOf("") }
     var minus by rememberSaveable { mutableStateOf(false) }
     var date by remember { mutableStateOf(if (kind == EntryKind.ADJUST) today else today.withDayOfYear(1)) }
@@ -437,7 +437,13 @@ private fun AddDialog(kind: EntryKind, onDismiss: () -> Unit, onAdd: (LedgerEntr
         title = { Text(kind.label) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                NumberField("일수", days, { days = it }, suffix = "일", decimal = true, maxLength = 5)
+                // [INPUT-02] Days tapped (the usual counts: 11 in the first year, 15 after, more with the years —
+                // 근로기준법 제60조 제1·2·4항) or stepped by half a day, not typed.
+                com.bamnat.app.ui.components.QuickDecimalChips(
+                    value = days.toDoubleOrNull(), onChange = { days = com.bamnat.app.ui.components.decimalText(it) }, name = "일수",
+                    quick = if (kind == EntryKind.GRANT) listOf(11.0, 15.0, 20.0) else listOf(0.5, 1.0, 2.0, 5.0),
+                    step = 0.5, range = 0.5..60.0, unit = "일",
+                )
                 if (kind == EntryKind.ADJUST) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = !minus, onClick = { minus = false }, label = { Text("더하기") })

@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.work
 
+import androidx.compose.material.icons.filled.Close
 import com.bamnat.app.ui.guide.FeatureCard
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -65,13 +66,14 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 import java.util.UUID
+import com.bamnat.core.time.Today
 
 /**
  * [SHOP-09][SHOP-10][SHOP-11] A shop's extra cards on 매출·영업: 간이과세 기준 against this year's sales,
  * 날씨별 매출, and 직원 인건비 with the staff schedule.
  */
 @Composable
-fun ShopToolCards(calendarId: String, book: MoneyBook, month: YearMonth, today: LocalDate = LocalDate.now()) {
+fun ShopToolCards(calendarId: String, book: MoneyBook, month: YearMonth, today: LocalDate = Today.date()) {
     // [GUIDE-05] Each card can be turned off for its calendar.
     FeatureCard("shop.staff", calendarId) { StaffCostCard(calendarId, book, month) }
     FeatureCard("shop.weather", calendarId) { WeatherSalesCard(calendarId, book, month) }
@@ -137,17 +139,23 @@ fun WeatherPicker(weather: Weather?, temperature: String, onWeather: (Weather?) 
                     leadingIcon = { Icon(w.icon, null, Modifier.size(18.dp)) })
             }
         }
+        // [INPUT-02] The temperature is stepped by a degree from this season's usual one, not typed; ✕ leaves it out.
         if (weather != null) {
-            OutlinedTextField(
-                value = temperature,
-                onValueChange = { v -> onTemperature(v.filterIndexed { i, ch -> ch.isDigit() || (i == 0 && ch == '-') }.take(3)) },
-                label = { Text("기온 (선택)") }, suffix = { Text("°C") }, singleLine = true,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-            )
+            val t = temperature.toIntOrNull()
+            if (t == null) com.bamnat.app.ui.components.AddButton("기온 넣기", onClick = { onTemperature(seasonTemperature(Today.date()).toString()) })
+            else Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text("기온", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                com.bamnat.app.ui.components.CountStepper(t, { onTemperature(it.toString()) }, name = "기온", range = -20..45, format = { "${it}°C" })
+                androidx.compose.material3.IconButton(onClick = { onTemperature("") }) {
+                    Icon(androidx.compose.material.icons.Icons.Filled.Close, "기온 빼기")
+                }
+            }
         }
     }
 }
+
+/** [INPUT-02] Where the temperature stepper starts: about a Korean month's daytime average, rounded. */
+internal fun seasonTemperature(day: LocalDate): Int = intArrayOf(2, 5, 11, 18, 23, 27, 29, 30, 26, 20, 12, 4)[day.monthValue - 1]
 
 /** [SHOP-10] Saves the day's weather for [calendarId]; null clears it. */
 fun saveWeather(store: WorkToolsStore, calendarId: String, date: LocalDate, weather: Weather?, temperature: String) {

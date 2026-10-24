@@ -49,6 +49,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /** Which value a change is about: the base pay or one allowance. */
 sealed interface ValueTarget {
@@ -91,8 +92,8 @@ class PayViewModel(
     // [PAYX-15] Opens on the pay month today belongs to: after a 20일 close, 10/25 is November's pay.
     // [NAV-01] Opened while the calendar or 근무·급여 shows another month, pay opens on that month;
     // on this month, on the pay period running now.
-    private val _month = MutableStateFlow(container.shownMonth.month.value.takeIf { it != YearMonth.now() }
-        ?: payStore.profile.value?.period?.monthOf(java.time.LocalDate.now()) ?: YearMonth.now())
+    private val _month = MutableStateFlow(container.shownMonth.month.value.takeIf { it != Today.month() }
+        ?: payStore.profile.value?.period?.monthOf(Today.date()) ?: Today.month())
     val month: StateFlow<YearMonth> = _month.asStateFlow()
     fun moveMonth(by: Long) { _month.value = _month.value.plusMonths(by) }
 
@@ -107,7 +108,7 @@ class PayViewModel(
     /** Keeps this month's result as it is now, whatever changes later [PAYX-03]. */
     fun closeMonth(result: MonthPay) = viewModelScope.launch {
         val existing = closed.value[result.month]
-        val snap = existing?.recalculated(result, System.currentTimeMillis()) ?: CalcSnapshot.close(result, System.currentTimeMillis())
+        val snap = existing?.recalculated(result, Today.millis()) ?: CalcSnapshot.close(result, Today.millis())
         payStore.saveClosed(snap, result.month)
         container.telemetry.event("pay_month_close", if (existing == null) "close" else "recalc")
         // [DAILY-17] A month closed is the second moment Play's review may be asked at, back on 내 달력.
@@ -172,7 +173,7 @@ class PayViewModel(
                 calculator.calculate(p.named(settings.value.extraKinds).hourlyWeek(settings.value), m, snap.resolver::resolve, checks = false).total
             }
             com.bamnat.core.pay.VerifiedChange.check(before, after, total)?.let { c ->
-                val start = after.period.start(after.period.monthOf(LocalDate.now()))
+                val start = after.period.start(after.period.monthOf(Today.date()))
                 VerifiedPrompt(c, before, com.bamnat.core.pay.VerifiedChange.startingOn(before, after, start))
             }
         }
@@ -230,7 +231,7 @@ class PayViewModel(
 
     /** [PAYS-01] With no [amount] the allowance is 금액 모름: left out of the total and listed until it is known. */
     fun addItem(name: String, amount: Long?, cadence: Cadence, ordinary: Boolean, from: YearMonth, fixedOvertimeMinutes: Int = 0) = update { p ->
-        val id = "item-" + System.currentTimeMillis()
+        val id = "item-" + System.currentTimeMillis()  // real clock: an id, not a time
         val value = if (amount == null) ValueTimeline() else ValueTimeline(listOf(DatedValue(p.period.start(from), amount)))
         p.copy(items = p.items + PayItem(id, name.trim().ifEmpty { "수당" }, value, cadence,
             ordinary = ordinary, fixedOvertimeMinutes = fixedOvertimeMinutes,
@@ -263,7 +264,7 @@ class PayViewModel(
         name: String, months: Set<Int>, percentOfBase: Double?, amount: Long, ordinary: Boolean, from: YearMonth,
         festivals: Set<com.bamnat.core.pay.Festival> = emptySet(), festivalMonthBefore: Boolean = false,
     ) = update { p ->
-        val id = "bonus-" + System.currentTimeMillis()
+        val id = "bonus-" + System.currentTimeMillis()  // real clock: an id, not a time
         p.copy(items = p.items + PayItem(id, name.trim().ifEmpty { if (festivals.isNotEmpty()) "명절상여" else "상여금" },
             ValueTimeline(listOf(DatedValue(from.atDay(1), amount))),
             Cadence.BONUS, ordinary = ordinary, months = months, percentOfBase = percentOfBase,
@@ -444,7 +445,7 @@ class PayViewModel(
 
     /** [PAYS-02] Keeps the matched settings and the check; one tap on 되돌리기 brings the old ones back. */
     fun applyMatch(match: PayslipMatch) = update { p ->
-        val v = match.verifiedProfile(System.currentTimeMillis())
+        val v = match.verifiedProfile(Today.millis())
         v.copy(rules = v.rules.copy(extraNames = p.rules.extraNames))
     }
 }

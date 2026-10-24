@@ -119,6 +119,7 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.bamnat.core.time.Today
 
 /** [ADMIN-02] What the form and the privacy policy say about a question before it goes. */
 /** [INQ-01] A company way names the workplace, so it stays with the developer; the privacy policy 1-3항 says the same. */
@@ -130,6 +131,12 @@ internal const val INQUIRY_PRIVATE_NOTICE =
 internal const val INQUIRY_SEND_NOTICE =
     "모두의 문의에 올라가요. 앱을 쓰는 다른 분도 적은 글과 개발자 답을 볼 수 있고, 보낸 분이 누구인지는 보이지 않아요. " +
         "3번의 ‘함께 보내는 정보’는 개발자만 봐요. 이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요. " +
+        "보낸 문의는 언제든 지울 수 있고, 180일 동안 새 글이 없으면 저절로 지워져요. " +
+        "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
+
+/** [INQ-06] 모두의 문의에 올리기 off: the developer only, with the same keeping rules. */
+internal const val INQUIRY_ONLY_DEVELOPER_NOTICE =
+    "모두의 문의에 올리지 않고 개발자만 봐요. 3번의 ‘함께 보내는 정보’도 개발자만 봐요. 이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요. " +
         "보낸 문의는 언제든 지울 수 있고, 180일 동안 새 글이 없으면 저절로 지워져요. " +
         "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
 
@@ -172,7 +179,9 @@ fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
     var about by rememberSaveable { mutableStateOf(start?.about) }
     var deleting by remember { mutableStateOf<Inquiry?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { vm.refresh() }
+    // [INQ-07] Read again whenever the screen comes back (from the notice of an answer, another app, the lock
+    // screen), so an answer that came while it stayed open shows without leaving help (점검 보고서 하 '문의').
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.refresh() }
     LaunchedEffect(Unit) { vm.loadBoard() }
     // Another screen's 문의 while this one is open (it stays on top) is taken here.
     val pending by InquiryLinks.pending.collectAsStateWithLifecycle()
@@ -262,8 +271,8 @@ fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
                         onMine = { message = null; view = LIST }, onOpenPublic = { message = null; view = PUB + it.id })
                     view == BOARD -> PublicBoard(vm, onNew = { ask("", null) }, onOpen = { message = null; view = PUB + it.id })
                     publicId != null -> PublicThreadView(vm, publicId, onGone = { message = "이 문의는 지워졌거나 가려졌어요"; view = BOARD })
-                    open != null -> InquiryThread(vm, open)
-                    else -> InquiryList(vm, list, onNew = { ask("", null) }, onOpen = { message = null; view = it.id })
+                    open != null -> PullToRefresh(vm) { InquiryThread(vm, open) }
+                    else -> PullToRefresh(vm) { InquiryList(vm, list, onNew = { ask("", null) }, onOpen = { message = null; view = it.id }) }
                 }
             }
         }
@@ -285,6 +294,16 @@ fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
             },
         )
     }
+}
+
+/** [INQ-07] 당겨서 새로고침 over 내 문의 and a question's thread: the answers are read again, no polling. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PullToRefresh(vm: InquiryViewModel, content: @Composable () -> Unit) {
+    var pulling by remember { mutableStateOf(false) }
+    androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+        isRefreshing = pulling, onRefresh = { pulling = true; vm.refresh { pulling = false } }, modifier = Modifier.fillMaxSize(),
+    ) { content() }
 }
 
 /** [UX-05] 내 문의, with the answers not opened yet counted beside it and read as words. */
@@ -420,7 +439,7 @@ private fun Inquiry.label(unread: Boolean): Pair<String, Tone> = when {
 private val stamp = DateTimeFormatter.ofPattern("M월 d일 HH:mm")
 
 /** "10월 18일 21:05" in this phone's time zone. */
-private fun stampOf(at: Instant): String = at.atZone(ZoneId.systemDefault()).format(stamp)
+private fun stampOf(at: Instant): String = at.atZone(Today.zone()).format(stamp)
 
 /** "[달력] " and the like at the start of a question: the screen it was asked from. */
 private val TAG = Regex("^\\[[^\\]]{1,30}]\\s*")
@@ -455,6 +474,8 @@ private fun InquiryForm(
     var check by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var openTip by rememberSaveable { mutableStateOf<String?>(null) }
+    // [INQ-06] 모두의 문의에 올리기: on as before, said and changed right above 보내기 (점검 보고서 중-13).
+    var share by rememberSaveable { mutableStateOf(true) }
     // [SRV-06] Up to two photos, made small and stripped on the phone; the developer's switch can pause them.
     var photos by remember { mutableStateOf<List<ByteArray>>(emptyList()) }
     val photosOpen = !mail && !context.appContainer.remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.INQUIRY_PHOTOS)
@@ -578,10 +599,16 @@ private fun InquiryForm(
                 }
             }
         }
+        if (!mail && kind?.public != false) {
+            ShareSwitch("모두의 문의에 올리기", if (share) "다른 분도 글과 개발자 답을 볼 수 있어요. 누가 보냈는지는 보이지 않아요"
+                else "개발자만 봐요. 같은 일을 겪는 분이 답을 함께 볼 수는 없어요",
+                checked = share, onChange = { share = it })
+        }
         Text(
             when {
                 mail -> "메일 앱이 열려요. 보내기 전에 한 번 더 보고 고칠 수 있어요. 받는 곳: $REPORT_EMAIL"
                 kind?.public == false -> INQUIRY_PRIVATE_NOTICE
+                !share -> INQUIRY_ONLY_DEVELOPER_NOTICE
                 else -> INQUIRY_SEND_NOTICE
             },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -604,7 +631,7 @@ private fun InquiryForm(
                 if (mail) sendByMail()
                 else scope.launch {
                     val diag = if (withCheck) check ?: vm.alarmCheck(context) else null
-                    vm.send(k, text, diag, pay.takeIf { withPay }, photos.takeIf { photosOpen }.orEmpty()) { sent, why ->
+                    vm.send(k, text, diag, pay.takeIf { withPay }, photos.takeIf { photosOpen }.orEmpty(), public = share) { sent, why ->
                         if (sent != null) {
                             com.bamnat.app.company.InquiryPhotos.skipped(sent.photosSkipped)?.let {
                                 android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
@@ -675,6 +702,25 @@ private fun CheckRow(title: String, detail: String, checked: Boolean, onChange: 
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** [INQ-06] 모두의 문의에 올리기: a switch with what it means now, the whole row toggles. */
+@Composable
+private fun ShareSwitch(title: String, detail: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 56.dp).toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge)
+                Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Spacer(Modifier.width(12.dp))
+            androidx.compose.material3.Switch(checked = checked, onCheckedChange = null)
         }
     }
 }
@@ -754,7 +800,7 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                Text(Fmt.shortFullDate(i.createdAt.atZone(ZoneId.systemDefault()).toLocalDate()) + "에 보냄",
+                Text(Fmt.shortFullDate(i.createdAt.atZone(Today.zone()).toLocalDate()) + "에 보냄",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                 i.label(unread = false).let { (t, tone) -> StatusChip(t, tone) }
             }
@@ -976,7 +1022,7 @@ private fun PublicThreadView(vm: InquiryViewModel, id: String, onGone: () -> Uni
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-            Text("${t.kind.label} · ${t.topicName} · " + Fmt.shortFullDate(t.createdAt.atZone(ZoneId.systemDefault()).toLocalDate()),
+            Text("${t.kind.label} · ${t.topicName} · " + Fmt.shortFullDate(t.createdAt.atZone(Today.zone()).toLocalDate()),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             if (t.messages.any { it.fromDeveloper }) StatusChip("답했어요", Tone.GOOD) else StatusChip("답을 기다려요", Tone.WAIT)
         }
@@ -1105,12 +1151,20 @@ private fun HelpHome(
             onValueChange = { onQuery(it.take(60)) },
             modifier = Modifier.fillMaxWidth().semantics { contentDescription = "기능과 도움말 찾기" },
             // [GUIDE-07] Features, answers and settings by name or other words.
-            placeholder = { Text("무엇을 찾으세요? (예: 주휴, 백업, 알람)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            placeholder = { com.bamnat.app.ui.HintText("무엇을 찾으세요? (예: 주휴, 백업, 알람)", "무엇을 찾으세요?") },
             leadingIcon = { Icon(Icons.Filled.Search, null) },
             trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { onQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") } }) else null,
             singleLine = true,
             shape = MaterialTheme.shapes.extraLarge,
         )
+        // [INQ-07] 문의하기 on the first tab, not only behind 내 문의 › 새 문의 쓰기 (점검 보고서 하 '문의').
+        if (query.isBlank()) {
+            FilledTonalButton(onClick = { onAsk("", null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Icon(if (vm.online) Icons.AutoMirrored.Outlined.Send else Icons.Outlined.Email, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (vm.online) "문의하기" else "메일로 문의하기")
+            }
+        }
         draft?.let { d ->
             DraftLine("쓰던 문의가 있어요: " + d.text.lineSequence().first().take(24), action = "이어 쓰기",
                 secondary = "지우기" to { vm.clearDraft() }) { onAsk("", null) }

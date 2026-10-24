@@ -4,6 +4,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.temporal.ChronoUnit
+import com.bamnat.core.time.Today
 
 /**
  * [LEDG-02][LEDG-03] Reads card, bank and pay-app texts (문자·알림) on the device, ported from the
@@ -234,7 +235,7 @@ object PaymentParser {
     /** A December text read in January belongs to last year. */
     private fun inferYear(month: Int, now: LocalDateTime): Int = if (month > now.monthValue + 1) now.year - 1 else now.year
 
-    fun parse(text: String, now: LocalDateTime = LocalDateTime.now(), rules: Map<String, String> = emptyMap()): Result {
+    fun parse(text: String, now: LocalDateTime = Today.dateTime(), rules: Map<String, String> = emptyMap()): Result {
         val src = text.trim()
         if (src.isEmpty()) return Result.Fail("빈 글")
         val fx = findForeign(src)

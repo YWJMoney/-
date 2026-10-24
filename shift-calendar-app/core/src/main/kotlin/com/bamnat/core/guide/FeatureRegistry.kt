@@ -160,13 +160,13 @@ object FeatureRegistry {
         f("shift.swapCard", "SHFT-03", "교환·대근 모아 보기", "이번 달 바꾼 근무와 대근을 사람별로 모아 보여 줘요",
             setOf(SHIFT), "${tab(SHIFT)} › 교환·대근", at(Place.STATS), "교환 모아", "대근 횟수", off = Off.CALENDAR),
         // [IMPORT-03] 1.22: an 엑셀·CSV roster too, for wards and for part-timers' irregular rosters.
-        f("shift.roster", "SHFT-06", "듀티표 넣기", "듀티표 사진, 엑셀·CSV 파일이나 붙여 넣은 글자에서 내 줄을 찾아 한 달을 넣어요",
-            setOf(SHIFT, HOURLY), "설정 › 내 근무 › 듀티표 넣기", at(Place.DUTY_ROSTER), "듀티표", "근무표 사진", "글자 인식", "간호사", "OCR",
+        f("shift.roster", "SHFT-06", "한 달 근무 넣기", "그 달 달력 위 키패드로 한 달을 바로 넣고, 듀티표 사진·엑셀·CSV·붙여 넣은 글에서 내 줄을 찾아 같은 달력에 채워요",
+            setOf(SHIFT, HOURLY), "설정 › 내 근무 › 한 달 근무 넣기", at(Place.DUTY_ROSTER), "듀티표", "듀티표 넣기", "한 달 근무", "직접 입력", "공유로 받기", "근무표 사진", "글자 인식", "간호사", "OCR",
             "근무표 파일", "엑셀 근무표", "CSV", "불규칙 근무표", "편의점 근무표"),
         f("shift.teams", "CREW-01", "모든 조 보기", "3조 2교대·4조 2교대처럼 조가 있는 근무에서 모든 조의 근무를 날짜별로 보고, 쉬는 조를 찾아 대근을 부탁해요",
             setOf(SHIFT), "달력 › 모든 조 (또는 도구 › 모든 조 보기)", at(Place.TEAMS), "모든 조", "전체 조", "조별", "다른 조", "A조", "B조", "대근 구하기", "쉬는 조"),
-        f("shift.dutyTyping", "NURS-01", "한 달 근무 연달아 넣기", "근무표를 보며 D·E·N·OFF를 누르면 다음 날로 넘어가며 한 달을 넣고, 역순·나이트 뒤 쉬는 날·연속 근무를 알려 줘요",
-            setOf(SHIFT), "달력 › 도구 › 한 달 근무 연달아 넣기 (빠른 입력 › 한 달 연달아)", at(Place.CALENDAR),
+        f("shift.dutyTyping", "NURS-01", "이번 달 전부 넣기", "근무표를 보며 D·E·N·OFF를 누르면 다음 날로 넘어가며 한 달을 넣고, 역순·나이트 뒤 쉬는 날·연속 근무를 알려 줘요",
+            setOf(SHIFT), "달력 › 도구 › 이번 달 전부 넣기 (빠른 입력 › 이번 달 전부 넣기)", at(Place.CALENDAR),
             "연달아", "키패드", "한 달 입력", "듀티 입력", "간호사", "나이트", "역순", "근무표 점검"),
         f("shift.restRules", "REST-01", "근무표 점검 기준", "휴식 11시간·나이트 뒤 쉬는 날·연속 나이트·연속 근무·한 달 나이트 기준을 병원·회사에 맞추고, 이달 나이트 수와 시간외를 함께 봐요",
             setOf(SHIFT), "달력 › 휴식 점검 카드 › 기준 바꾸기 (설정 › 알림과 잠 › 근무표 점검 기준)", at(Place.SETTINGS_NOTICES, "근무표 점검 기준"),
@@ -473,6 +473,10 @@ object FeatureRegistry {
             ALL, "설정 맨 위 카드 › 내 정보", at(Place.PROFILE), "내 정보", "프로필", "정보 바꾸기", "처음부터", "추정", "모르는 것"),
         f("journal.list", "OBS-02", "밤낮이 한 일", "알람 다시 잡기·백업·계산 자료 갱신처럼 앱이 알아서 한 일을 날짜별로 이유와 함께 보여 줘요",
             ALL, "설정 맨 위 카드 › 밤낮이 한 일", at(Place.JOURNAL), "한 일", "기록", "자동으로", "왜 바뀌었", "알아서"),
+        // 1.24 묶음 Q: 회사 규칙을 글 대신 골라 담기 (계획/1.24-Q-개발계획.md 350).
+        f("pay.ruleBuilder", "INPUT-03", "회사 규칙 골라 담기", "대근·특근·토요일 근무가 기본급의 몇 %인지, 몇 시간 넘으면 얼마 더인지 눌러 고르면 한 문장으로 보여 주고 그대로 계산에 넣어요",
+            PAID, "${tab(SHIFT)} › 이번 달 급여 › 회사 계산 방식 › 회사만의 규칙", at(Place.PAY), "회사 규칙", "규칙 조립", "대근 계산", "가산", "기본급의 %",
+            "토요일 근무", "취업규칙", under = "pay.calc"),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }

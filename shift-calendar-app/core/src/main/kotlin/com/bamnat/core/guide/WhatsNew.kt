@@ -10,6 +10,19 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.24.0 (계획/1.24-직접입력-전면개선-통합계획.md 1장 5번: P 2·Q 1·R 1·S 1, 8 lines at most; 통합 folds them).
+        Release(35, "1.24.0", listOf(
+            // [ROST-01][ROST-03][ROST-05] Bundle P.
+            Line("‘한 달 근무 넣기’: 그 달 달력 위 키패드로 하루씩 누르거나 ‘이 순서 반복’으로 한 달을 넣어요. 듀티표 사진·파일도 같은 달력에 채우고, 반차·병가도 제대로 읽어요", "shift.roster"),
+            // [ROST-07][ROST-09] Bundle P.
+            Line("갤러리·카톡에서 듀티표를 밤낮으로 ‘공유’하면 바로 읽고, 빠른 입력엔 ‘이번 달 전부 넣기’와 오전·오후 반차가 생겼어요", "shift.dutyTyping"),
+            // [INPUT-01..04][PAYX-47] Bundle Q.
+            Line("숫자·시각·회사 규칙을 글자로 치지 않아도 돼요. 칩과 −·+로 고르고, 호봉표는 줄마다 넣고, 복사해 둔 명세서·문자는 한 번 눌러 붙여요", "pay.ruleBuilder"),
+            // [SETUP-15][COMM-12][INQ-06] Bundle S.
+            Line("처음 화면에서 무슨 일 하는지 먼저 묻고 그 일에 맞는 알림만 켜요. 회사 이름을 넣었으면 급여 화면에서 같은 회사 분들 규칙으로 바로 가고, 문의는 모두에게 올릴지 골라요", "settings.recommended"),
+            // [CAL-50][CAL-51][VIS-04][STAT-07] Bundle R.
+            Line("달력 위 알림은 하나만 펼치고 나머지는 한 줄로 접어요. 작은 화면·옆으로 눕힌 폰·큰 글씨에서도 달이 보이고, 근무 수는 어느 화면이든 같은 숫자예요"),
+        )),
         // [SIMPLE-03] Grouped by what it gives, each line opening its feature; every bundle's own lines are in
         // 계획/1.22-*-개발계획.md.
         // 1.23.0: one line per bundle's gift (J·K·L·I here; M adds its own), each opening its feature

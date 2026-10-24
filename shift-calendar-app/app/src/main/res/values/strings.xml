@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<!-- values-ko holds only the library sheet strings it overrides (sheet_strings.xml): the app itself is Korean here. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
     <string name="app_name">밤낮</string>
     <string name="channel_alarm_name">근무 알람</string>
     <string name="channel_alarm_description">근무 시작 전에 울리는 알람</string>
@@ -14,5 +15,6 @@
     <string name="widget_countdown_desc">다음 근무까지 남은 시간, 근무 중이면 끝나는 시각</string>
     <string name="widget_countdown_name">다음 근무까지</string>
     <string name="open_file_label">밤낮으로 열기</string>
+    <string name="roster_share_label">한 달 근무 넣기</string>
     <string name="capture_label">밤낮 결제 알림 기록</string>
 </resources>

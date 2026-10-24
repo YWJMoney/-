@@ -12,6 +12,7 @@ import com.bamnat.core.schedule.ScheduleResolver
 import kotlinx.coroutines.flow.first
 import java.time.LocalDate
 import java.time.LocalTime
+import com.bamnat.core.time.Today
 
 /**
  * [FEAT-18] 잠금 화면 '오늘 근무': a quiet notice that stays, so today's and tomorrow's shift can be
@@ -22,7 +23,7 @@ object TodayShiftNotice {
     const val ID = 7314
 
     /** Posts or removes the notice; returns true while it is shown, so a midnight wake-up is kept. */
-    suspend fun update(context: Context, today: LocalDate = LocalDate.now()): Boolean {
+    suspend fun update(context: Context, today: LocalDate = Today.date()): Boolean {
         val container = context.appContainer
         if (!container.settingsRepository.current.todayShiftNotice || !Notifications.canPost(context)) {
             cancel(context)

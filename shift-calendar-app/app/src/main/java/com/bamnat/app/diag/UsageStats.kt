@@ -11,6 +11,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.time.LocalDate
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /**
  * [STAT-01] 사용 통계 보내기. A [TelemetrySink], so it only hears events while the user said yes (see
@@ -26,7 +27,7 @@ class UsageStats(
     private val prefs = context.applicationContext.getSharedPreferences("usage_stats", Context.MODE_PRIVATE)
     private val lock = Any()
 
-    private fun today(): Long = LocalDate.now(zone()).toEpochDay()
+    private fun today(): Long = Today.date(zone()).toEpochDay()
 
     private fun book(): UsageBook = UsageBook.decode(prefs.getString(K_BOOK, null))
 

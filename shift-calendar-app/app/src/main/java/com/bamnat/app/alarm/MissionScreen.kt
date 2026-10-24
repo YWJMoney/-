@@ -18,6 +18,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.automirrored.filled.Backspace
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -61,6 +64,7 @@ import com.bamnat.core.alarm.ShakeCounter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
+import com.bamnat.core.time.Today
 
 /**
  * [PROV-06] The mission before the alarm goes off: [Missions.PROBLEMS] sums on a number pad, or
@@ -86,9 +90,9 @@ internal fun MissionScreen(
     var wrongPhotos by rememberSaveable { mutableIntStateOf(wrongBefore) }
     var cameraFailed by rememberSaveable { mutableStateOf(false) }
     val kind = Missions.shown(mission, references.isNotEmpty(), wrongPhotos, cameraFailed, shakeOk)
-    val now by produceState(System.currentTimeMillis()) {
+    val now by produceState(Today.millis()) {
         while (true) {
-            value = System.currentTimeMillis()
+            value = Today.millis()
             delay(1_000)
         }
     }
@@ -182,10 +186,28 @@ private fun MathMission(onSolved: () -> Unit) {
                         colors = if (action) ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B5E), contentColor = com.bamnat.app.ui.components.contentColorOn(Color(0xFFFF6B5E)),
                             disabledContainerColor = Color(0xFFFF6B5E).copy(alpha = 0.35f), disabledContentColor = Color.White.copy(alpha = 0.7f))
                         else ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.14f), contentColor = Color.White),
-                    ) { Text(k, style = if (k.length == 1) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium) }
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp),
+                    ) {
+                        if (k.length == 1) Text(k, style = MaterialTheme.typography.headlineSmall)
+                        else MissionKeyLabel(if (k == "확인") androidx.compose.material.icons.Icons.Filled.Check
+                            else androidx.compose.material.icons.Icons.AutoMirrored.Filled.Backspace, k)
+                    }
                 }
             }
         }
+    }
+}
+
+/**
+ * [ALRM-05] 중-1: 지우기 and 확인 were cut to "지" and "확" at 200% text, on the screen used half asleep. Each is an icon
+ * (⌫, ✓) with its word beside it, the word no bigger than 20dp whatever the text size, so the key always reads whole.
+ */
+@Composable
+private fun MissionKeyLabel(icon: androidx.compose.ui.graphics.vector.ImageVector, word: String) {
+    val size = with(androidx.compose.ui.platform.LocalDensity.current) { minOf(MaterialTheme.typography.titleMedium.fontSize.toDp(), 20.dp).toSp() }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+        androidx.compose.material3.Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp))
+        Text(" $word", fontSize = size, lineHeight = size, maxLines = 1, softWrap = false, style = MaterialTheme.typography.titleMedium)
     }
 }
 

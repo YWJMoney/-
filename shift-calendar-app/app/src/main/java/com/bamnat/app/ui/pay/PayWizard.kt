@@ -104,6 +104,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /** [PAYS-01] How the pay is stated. 연봉 is worked out to a monthly 기본급 the engine runs on. */
 internal enum class Wage(val title: String, val subtitle: String, val type: WageType) {
@@ -194,7 +195,7 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
     var bonusAnnual by mutableStateOf<Int?>(null)
     var bonusMonths by mutableStateOf(setOf(2, 4, 6, 8, 10, 12))
     var bonusOrdinary by mutableStateOf(true)
-    private val bonusId = "bonus-" + System.currentTimeMillis()
+    private val bonusId = "bonus-" + System.currentTimeMillis()  // real clock: an id, not a time
 
     var fiveOrMore by mutableStateOf(initial?.fiveOrMoreEmployees ?: true)
     var supervisory by mutableStateOf(initial?.rules?.supervisoryApproved ?: false)
@@ -233,7 +234,7 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
     }
 
     fun addRow(name: String, amount: Long?, cadence: Cadence, ordinary: Boolean, fixedOvertimeMinutes: Int) {
-        rows += ItemRow("custom-" + System.currentTimeMillis(), name.trim().ifEmpty { "수당" }, cadence, ordinary, "", 0, true, amount,
+        rows += ItemRow("custom-" + System.currentTimeMillis(), name.trim().ifEmpty { "수당" }, cadence, ordinary, "", 0, true, amount,  // real clock: an id, not a time
             fixedOvertimeMinutes = fixedOvertimeMinutes)
     }
 
@@ -422,7 +423,7 @@ fun PayWizard(
     /** Screenshots only: the step to open by its key ("items", a question's key, "summary"), when it is asked. */
     startAt: String? = null,
 ) {
-    val today = remember { LocalDate.now() }
+    val today = remember { Today.date() }
     val s = remember {
         PaySetupState(initial, YearMonth.from(today), suggestedWage).also { st -> if (initial == null) suggestedOccupation?.let(st::choose) }
     }

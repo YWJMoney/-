@@ -22,6 +22,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /**
  * Shared by the shift type list and the pattern editor. [MCAL-01] Both edit one calendar: the one the
@@ -155,7 +156,7 @@ class PatternDraft {
     var kind by mutableStateOf(PatternKind.ROTATION)
     val rotation = mutableStateListOf<Long?>()
     val weekly = mutableStateListOf<Long?>().apply { repeat(7) { add(null) } }
-    var startDate: LocalDate by mutableStateOf(LocalDate.now())
+    var startDate: LocalDate by mutableStateOf(Today.date())
     var endDate: LocalDate? by mutableStateOf(null)
     /** [SCHED-04] 요일 고정: 공휴일엔 쉬어요. */
     var holidaysOff by mutableStateOf(false)

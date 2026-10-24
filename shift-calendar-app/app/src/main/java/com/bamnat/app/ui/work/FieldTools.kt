@@ -61,13 +61,14 @@ import com.bamnat.core.money.TradeWages
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /**
  * [FLD-11][FLD-13] A field calendar's extra cards on 일감·수입: 일용직 원천징수 for the month's day-rate
  * work, and the saved 견적서 with 새 견적서.
  */
 @Composable
-fun FieldToolCards(calendarId: String, book: MoneyBook, month: YearMonth, today: LocalDate = LocalDate.now()) {
+fun FieldToolCards(calendarId: String, book: MoneyBook, month: YearMonth, today: LocalDate = Today.date()) {
     // [GUIDE-05] Each card can be turned off for its calendar.
     FeatureCard("field.dailyTax", calendarId) { DailyTaxCard(book, month) }
     FeatureCard("field.quote", calendarId) { QuotesCard(calendarId, today) }
@@ -142,7 +143,7 @@ private fun QuoteScreen(calendarId: String, initial: Quote, onClose: () -> Unit)
     var deleting by remember { mutableStateOf(false) }
 
     fun persist(next: Quote = q): Quote {
-        val withId = if (next.id == 0L) next.copy(id = System.currentTimeMillis()) else next
+        val withId = if (next.id == 0L) next.copy(id = System.currentTimeMillis()) else next  // real clock: an id, not a time
         // The job made from it is written in the background; its id is kept once it is there.
         val madeJob = store.current(calendarId).quotes.firstOrNull { it.id == withId.id }?.jobId?.takeIf { it > 0 }
         val saved = if (madeJob != null) withId.copy(jobId = madeJob) else withId
@@ -189,7 +190,15 @@ private fun QuoteScreen(calendarId: String, initial: Quote, onClose: () -> Unit)
         }
         SectionCard(title = "그 밖에") {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                NumberField("유효기간", q.validDays.toString(), { q = q.copy(validDays = it.toIntOrNull()?.coerceIn(0, 365) ?: 0) }, suffix = "일", maxLength = 3)
+                // [INPUT-02] 견적 유효기간 tapped (7·14·30일) or stepped, not typed.
+                com.bamnat.app.ui.components.StepperRow("유효기간") {
+                    com.bamnat.app.ui.components.CountStepper(q.validDays, { q = q.copy(validDays = it) }, name = "유효기간", range = 0..365, format = { "${it}일" })
+                }
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(7, 14, 30).forEach { d ->
+                        com.bamnat.app.ui.components.FilterChip(selected = q.validDays == d, onClick = { q = q.copy(validDays = d) }, label = { Text("${d}일") })
+                    }
+                }
                 OutlinedTextField(q.note, { q = q.copy(note = it.take(200)) }, label = { Text("메모 (자재 포함 여부, 계좌 등)") },
                     modifier = Modifier.fillMaxWidth(), minLines = 2)
                 OutlinedTextField(sender, { sender = it.take(30) }, label = { Text("보내는 사람 (선택)") }, singleLine = true, modifier = Modifier.fillMaxWidth())

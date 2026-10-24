@@ -126,6 +126,8 @@ data class InquiryInfo(
     val setup: String? = null,
     /** [SRV-06] Up to two screenshots or photos, already made small and re-saved as JPEG ([InquiryPhotos]). */
     val photos: List<ByteArray> = emptyList(),
+    /** [INQ-06] 모두의 문의에 올리기, the switch above 보내기; off keeps it with the developer. A private kind never goes up. */
+    val public: Boolean = true,
 )
 
 /** [ADMIN-02] 설정 > 문의하기 through the company server; screenshots and tests answer with a fake. */
@@ -174,7 +176,7 @@ class InquiryClient(
         info.setup?.takeIf { it.isNotBlank() }?.let { i.put("setup", it.take(SETUP_MAX)) }
         // [ADMIN-02] The form says the question goes to 모두의 문의; the server keeps it private without this.
         val body = JSONObject().put("v", 1).put("device", device).put("kind", kind.code).put("text", text.trim()).put("info", i)
-            .put("public", kind.public)
+            .put("public", kind.public && info.public)
         if (info.photos.isNotEmpty()) {
             body.put("photos", org.json.JSONArray(info.photos.take(InquiryPhotos.MAX).map { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }))
         }
@@ -418,6 +420,7 @@ data class QueuedInquiry(
             info.diag?.let { put("diag", it) }
             info.pay?.let { put("pay", it) }
             info.setup?.let { put("setup", it) }
+            if (!info.public) put("public", false)
             refused?.let { put("refused", it) }
         }
 
@@ -426,7 +429,8 @@ data class QueuedInquiry(
             QueuedInquiry(
                 requestId = o.getString("id"), kind = InquiryKind.of(o.optString("kind")), text = o.getString("text"),
                 info = InquiryInfo(o.optString("app"), o.optString("model"), o.optString("android"),
-                    diag = o.optStringOrNull("diag"), pay = o.optStringOrNull("pay"), setup = o.optStringOrNull("setup")),
+                    diag = o.optStringOrNull("diag"), pay = o.optStringOrNull("pay"), setup = o.optStringOrNull("setup"),
+                    public = o.optBoolean("public", true)),
                 at = Instant.parse(o.getString("at")), refused = o.optStringOrNull("refused"),
             )
         }.getOrNull()

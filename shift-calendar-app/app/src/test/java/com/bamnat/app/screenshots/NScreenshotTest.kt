@@ -13,6 +13,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import com.bamnat.core.time.Today
 
 /**
  * [EASY-01][EASY-02][EASY-10] 묶음 N's screenshots, numbers 680~709 (N-1: 680~684, N-4: 707~709): 우선 둘러볼게요 from the first page and
@@ -29,9 +30,9 @@ class NScreenshotTest : ScreenshotBase() {
         const val FOLDED_NIGHT = "w369dp-h905dp-port-night-420dpi"
     }
 
-    @Test fun browsePicker() = shoot("680_n_browse_pick", FOLDED, recommended(setOf()) { tapText("우선 둘러볼게요", exact = true) })
+    @Test fun browsePicker() = shoot("680_n_browse_pick", FOLDED, recommended(setOf(), firstStyle = null) { tapText("우선 둘러볼게요", exact = true) })
 
-    @Test fun exampleCalendar() = shoot("681_n_example_calendar", FOLDED, recommended(setOf()) {
+    @Test fun exampleCalendar() = shoot("681_n_example_calendar", FOLDED, recommended(setOf(), firstStyle = null) {
         tapText("우선 둘러볼게요", exact = true)
         tapText("교대 근무", exact = true)
         reveal("예시 달력을 보고 있어요")
@@ -40,7 +41,7 @@ class NScreenshotTest : ScreenshotBase() {
         assertNull("nothing set for the user yet", c.settingsRepository.current.workStyle)
     })
 
-    @Test fun firstWriteAsks() = shoot("682_n_write_gate", FOLDED, recommended(setOf()) {
+    @Test fun firstWriteAsks() = shoot("682_n_write_gate", FOLDED, recommended(setOf(), firstStyle = null) {
         tapText("우선 둘러볼게요", exact = true)
         tapText("평일 근무", exact = true)
         reveal("예시 달력을 보고 있어요")
@@ -50,7 +51,7 @@ class NScreenshotTest : ScreenshotBase() {
         assertEquals(WriteKind.MEMO, WriteGate.pending.value?.kind)
     })
 
-    @Test fun startMineOpensTheSetup() = shoot("683_n_start_mine_setup", FOLDED, recommended(setOf()) {
+    @Test fun startMineOpensTheSetup() = shoot("683_n_start_mine_setup", FOLDED, recommended(setOf(), firstStyle = null) {
         tapText("우선 둘러볼게요", exact = true)
         tapText("아르바이트", exact = true)
         reveal("예시 달력을 보고 있어요")
@@ -103,7 +104,7 @@ class NScreenshotTest : ScreenshotBase() {
 
     /** A day of what the app did, at fixed times: today a backup, new files and the pay again; yesterday the news. */
     private fun journal(then: Screen.() -> Unit): Screen.() -> Unit = clean {
-        val zone = java.time.ZoneId.systemDefault()
+        val zone = Today.zone()
         fun at(d: java.time.LocalDate, h: Int, m: Int = 0) = d.atTime(h, m).atZone(zone).toInstant()
         kotlinx.coroutines.runBlocking {
             c.journal.clear()

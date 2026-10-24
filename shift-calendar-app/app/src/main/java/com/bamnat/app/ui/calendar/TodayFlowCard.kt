@@ -85,15 +85,16 @@ import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import kotlin.math.abs
+import com.bamnat.core.time.Today
 
 /** The clock to the minute, moving on at each minute's turn, for what changes with the time of day. */
 @Composable
 internal fun rememberMinute(): LocalDateTime {
-    val now by produceState(LocalDateTime.now().withSecond(0).withNano(0)) {
+    val now by produceState(Today.dateTime().withSecond(0).withNano(0)) {
         while (true) {
-            val t = LocalDateTime.now()
+            val t = Today.dateTime()
             delay(60_000L - (t.second * 1000L + t.nano / 1_000_000))
-            value = LocalDateTime.now().withSecond(0).withNano(0)
+            value = Today.dateTime().withSecond(0).withNano(0)
         }
     }
     return now
@@ -108,7 +109,9 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
     val log by vm.sleepLog.collectAsStateWithLifecycle()
     val chosen by vm.flowFolded.collectAsStateWithLifecycle()
     // [CAL-21] On a common phone (under about 860dp tall) the open card pushes the month below the screen.
-    val short = androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenHeightDp < SHORT_SCREEN_DP && it.screenWidthDp < 600 }
+    // [VIS-04] At 150% text and more the card is as tall as on a small phone.
+    val short = androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenHeightDp < SHORT_SCREEN_DP && it.screenWidthDp < 600 } ||
+        androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
     val folded = chosen ?: short
     val now = rememberMinute()
     val card = remember(snapshot, settings, log, now) { vm.todayFlow(snapshot, settings, log, now) }

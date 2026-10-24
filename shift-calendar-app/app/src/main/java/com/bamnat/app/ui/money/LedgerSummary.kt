@@ -89,6 +89,7 @@ import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.money.MonthMoney
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /**
  * [LEDG-01][LEDG-06] The month at a glance: what is left, money in and out, and with a budget,
@@ -410,8 +411,8 @@ fun AccountEditor(
                     }
                     if (ownClose) DayStepper("쓴 기간 마지막 날", closeDay) { closeDay = it }
                     val preview = MoneyAccount(name = name, type = kind, payDay = payDay, closeDay = if (ownClose) closeDay else null)
-                    val (from, to) = CardCycle.period(preview, YearMonth.now().plusMonths(1))
-                    Text("${YearMonth.now().plusMonths(1).monthValue}월 ${if (payDay >= 31) "말일" else "${payDay}일"} 결제: ${Fmt.shortDate(from)}~${Fmt.shortDate(to)}에 쓴 돈",
+                    val (from, to) = CardCycle.period(preview, Today.month().plusMonths(1))
+                    Text("${Today.month().plusMonths(1).monthValue}월 ${if (payDay >= 31) "말일" else "${payDay}일"} 결제: ${Fmt.shortDate(from)}~${Fmt.shortDate(to)}에 쓴 돈",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
                 if (card && banks.isNotEmpty()) {

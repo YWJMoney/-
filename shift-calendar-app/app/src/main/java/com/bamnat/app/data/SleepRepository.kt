@@ -10,11 +10,12 @@ import kotlinx.coroutines.flow.map
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /** [SLP-06] The sleep log: two taps, kept on the phone and in the backup file only. */
 class SleepRepository(
     private val db: AppDatabase,
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: () -> Long = Today::millis,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
 ) {
     private val dao = db.sleepDao()

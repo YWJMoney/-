@@ -9,6 +9,7 @@ import com.bamnat.app.company.serverRequest
 import com.bamnat.core.tier.PlaySub
 import org.json.JSONObject
 import java.time.Instant
+import com.bamnat.core.time.Today
 
 /** [MON-08] One reward pass the developer gave this install: [why] is "rule" (회사 방식) or "idea" (제안). */
 data class PassItem(val months: Int, val at: Instant, val why: String)
@@ -128,7 +129,7 @@ class TierClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : T
             deferred = o.optInt("deferred"),
             admin = o.optJSONObject("admin")?.let { AdminState(it.getString("status"), it.optString("name")) },
             hasCode = o.optBoolean("code"),
-            checkedAt = o.optStringOrNull("checkedAt")?.let(Instant::parse) ?: Instant.now(),
+            checkedAt = o.optStringOrNull("checkedAt")?.let(Instant::parse) ?: Today.instant(),
         )
     }
 }

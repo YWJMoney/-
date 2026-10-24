@@ -99,6 +99,7 @@ import com.bamnat.core.pay.RestDayWork
 import com.bamnat.core.pay.ValueSource
 import com.bamnat.core.pay.WageType
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 internal fun won(v: Long): String = "%,d원".format(v)
 
@@ -297,12 +298,19 @@ private fun PayResult(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // [VIS-05] With large text the month's arrows took the row and the job's name stood one letter a line:
+        // the name gets its own line above them.
+        val stack = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+        val who: @Composable (Modifier) -> Unit = { m ->
+            Text("${profile.occupation.label} · ${profile.wageLabel()}", style = MaterialTheme.typography.titleMedium, modifier = m)
+        }
+        if (stack) who(Modifier)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("${profile.occupation.label} · ${profile.wageLabel()}",
-                style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            if (stack) Spacer(Modifier.weight(1f)) else who(Modifier.weight(1f))
             IconButton(onClick = { vm.moveMonth(-1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
             Text(Fmt.month(month), style = MaterialTheme.typography.titleSmall)
             IconButton(onClick = { vm.moveMonth(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
+            if (stack) Spacer(Modifier.weight(1f))
         }
         // The month asked for is still being worked out; the one before stays meanwhile.
         if (result.month != month) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -376,7 +384,7 @@ private fun PayResult(
             HolidayModes(vm, profile, v.holidayModes)
         }
 
-        if (unlocked && !month.isAfter(YearMonth.now())) {
+        if (unlocked && !month.isAfter(Today.month())) {
             CloseMonthCard(vm, result, closedSnap)
         }
 
@@ -1139,7 +1147,7 @@ private fun CloseMonthCard(vm: PayViewModel, result: MonthPay, closed: CalcSnaps
                 Icon(Icons.Filled.Lock, null); Text(" 이 달 마감하기")
             }
         } else {
-            val at = java.time.Instant.ofEpochMilli(closed.closedAtMillis).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+            val at = java.time.Instant.ofEpochMilli(closed.closedAtMillis).atZone(Today.zone()).toLocalDate()
             Text("${at.monthValue}월 ${at.dayOfMonth}일에 마감한 결과를 보여 주고 있어요 (요율 ${closed.ratesVersion}).",
                 style = MaterialTheme.typography.bodyMedium)
             val diff = result.total - closed.total

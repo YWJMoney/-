@@ -9,6 +9,7 @@ import com.bamnat.app.appContainer
 import com.bamnat.app.data.AppSettings
 import com.bamnat.core.alarm.AlarmMission
 import org.json.JSONArray
+import com.bamnat.core.time.Today
 
 /**
  * [REL-10] The next few shift alarms and the ringing settings, copied to device-protected storage.
@@ -97,21 +98,21 @@ object BootAlarms {
     fun snooze(context: Context): Pair<RingRequest, Long>? {
         val p = prefs(context)
         val at = p.getLong(K_SNOOZE_AT, 0L)
-        return RingRequest.decode(p.getString(K_SNOOZE, null))?.takeIf { at > System.currentTimeMillis() }?.let { it to at }
+        return RingRequest.decode(p.getString(K_SNOOZE, null))?.takeIf { at > Today.millis() }?.let { it to at }
     }
 
     /**
      * Registers the first alarm still ahead from the copy (and a pending snooze), without the
      * database. Called at a locked boot and after each alarm that rings while still locked.
      */
-    fun registerNext(context: Context, after: Long = System.currentTimeMillis()) {
+    fun registerNext(context: Context, after: Long = Today.millis()) {
         val alarmManager = context.getSystemService(AlarmManager::class.java)
         upcoming(context).firstOrNull { it.triggerAtMillis > after }?.let { ring ->
             AlarmScheduler.setAlarm(context, alarmManager, ring.triggerAtMillis, AlarmScheduler.shiftAlarmIntent(context, ring))
         }
         val p = prefs(context)
         val snoozeAt = p.getLong(K_SNOOZE_AT, 0L)
-        RingRequest.decode(p.getString(K_SNOOZE, null))?.takeIf { snoozeAt > System.currentTimeMillis() }?.let { ring ->
+        RingRequest.decode(p.getString(K_SNOOZE, null))?.takeIf { snoozeAt > Today.millis() }?.let { ring ->
             AlarmScheduler.setAlarm(context, alarmManager, snoozeAt, AlarmScheduler.snoozeIntent(context, ring))
         }
     }

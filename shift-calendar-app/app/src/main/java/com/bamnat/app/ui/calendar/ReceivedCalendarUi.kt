@@ -112,6 +112,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /** [SHR-04] Days both people are off: a soft rose, the same in the grid, the chip and the day card. */
 private val TogetherColor = Color(0xFFE5487A)
@@ -212,6 +213,9 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
             Text("받은 링크를 넣으면 내 달력과 바꿔 가며 볼 수 있어요. 같이 쉬는 날도 바로 보여요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (startId == null) {
+                // [INPUT-04] A link just copied from the message: one tap opens it.
+                if (text.isBlank()) com.bamnat.app.ui.components.ClipboardHint("근무표 링크", fits = { com.bamnat.app.share.ShareLinkId.find(it) != null },
+                    onPaste = { pasted -> text = pasted; vm.preview(pasted) })
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it; if (preview is ReceivedViewModel.Preview.Failed) vm.resetPreview() },
@@ -384,16 +388,16 @@ private fun LeaveChip(label: String, size: Dp) {
     }
 }
 
-private fun expiry(at: Instant): String = Fmt.monthDay(at.atZone(ZoneId.systemDefault()).toLocalDate())
+private fun expiry(at: Instant): String = Fmt.monthDay(at.atZone(Today.zone()).toLocalDate())
 
-private fun ago(at: Instant?, now: Instant = Instant.now()): String {
+private fun ago(at: Instant?, now: Instant = Today.instant()): String {
     if (at == null) return "아직 받지 않았어요"
     val d = Duration.between(at, now)
     return when {
         d.toMinutes() < 1 -> "방금 받음"
         d.toMinutes() < 60 -> "${d.toMinutes()}분 전에 받음"
         d.toHours() < 24 -> "${d.toHours()}시간 전에 받음"
-        else -> "${Fmt.monthDay(at.atZone(ZoneId.systemDefault()).toLocalDate())}에 받음"
+        else -> "${Fmt.monthDay(at.atZone(Today.zone()).toLocalDate())}에 받음"
     }
 }
 

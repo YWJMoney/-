@@ -16,6 +16,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Duration
 import java.time.Instant
+import com.bamnat.core.time.Today
 
 /** [REMOTE-02] Reads one published file; null when it is not there or the phone is offline. */
 fun interface RemoteFetcher {
@@ -93,7 +94,7 @@ class RemoteFilesStore(
     }
 
     /** Asks for each file when due; returns the kinds that changed. A bad or missing file changes nothing. */
-    suspend fun refresh(now: Instant = Instant.now(), force: Boolean = false): List<String> {
+    suspend fun refresh(now: Instant = Today.instant(), force: Boolean = false): List<String> {
         if (!force && !due(now)) return emptyList()
         val changed = mutableListOf<String>()
         var reached = false

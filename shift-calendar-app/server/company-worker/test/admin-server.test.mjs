@@ -113,8 +113,17 @@ test("[ADMIN-15] the invite link is read with the token in the body", async () =
   assert.equal(info.status, 200);
   assert.equal(info.data.email, "junho@example.com");
   assert.equal((await call("POST", "/api/admin/join/info", { token: "x".repeat(32) }, APP)).status, 404);
-  // The old address still answers, for an app cached from before.
-  assert.equal((await call("GET", `/api/admin/join?t=${token}`)).status, 200);
+  // [ADMUX-11] The 1.23 address with the token in it is gone (1.24): not an answer to anyone signed out.
+  assert.equal((await call("GET", `/api/admin/join?t=${token}`)).status, 401);
+});
+
+test("[ADMUX-11] the developer app asks whether it is signed in without a 401", async () => {
+  const { call } = server();
+  const out = await call("GET", "/api/admin/session");
+  assert.equal(out.status, 200);
+  assert.equal(out.data.signedIn, false);
+  const owner = await signIn(call);
+  assert.equal((await call("GET", "/api/admin/session", undefined, owner)).data.signedIn, true);
 });
 
 test("[ADMIN-15] the same answer sent twice within a minute reaches the asker once", async (t) => {

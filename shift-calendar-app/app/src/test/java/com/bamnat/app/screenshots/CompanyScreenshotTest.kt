@@ -19,6 +19,7 @@ import org.robolectric.annotation.GraphicsMode
 import androidx.glance.appwidget.compose
 import java.time.LocalDate
 import com.bamnat.core.work.WorkStyle
+import com.bamnat.core.time.Today
 
 /** [QA-05] Screenshots: 회사·광장·문의·공유 링크·받은 달력·조. Shot names and numbers are the ones they had in the one big class. */
 @RunWith(AndroidJUnit4::class)
@@ -28,9 +29,9 @@ class CompanyScreenshotTest : ScreenshotBase() {
     @Test fun foldedShareLink() = shoot("48_folded_share_link", FOLDED) {
         val snap = runBlocking { app.container.scheduleRepository.snapshot.first() }
         content {
-            com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {},
+            com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {},
                 preview = com.bamnat.app.share.ShareLinkState("Ab3dE", "https://bamnat-share.example.workers.dev/s/Ab3dEfGh5JkLmNoPqRsTuv", "t",
-                    java.time.Instant.now().plus(java.time.Duration.ofDays(30)), "민지"))
+                    Today.instant().plus(java.time.Duration.ofDays(30)), "민지"))
         }
     }
     @Test fun foldedShareLinkBusiness() = shoot("200_folded_share_link_business", FOLDED, shareSheet(WorkStyle.BUSINESS))
@@ -128,7 +129,7 @@ class CompanyScreenshotTest : ScreenshotBase() {
     }
     @Test fun foldedSettingsCompany() = shoot("127_folded_settings_company", FOLDED) {
         val c = companyOn()
-        c.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("c1", "(주)예시정밀", "생산팀", "s1", 2, true, java.time.Instant.now(), vote = true))
+        c.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("c1", "(주)예시정밀", "생산팀", "s1", 2, true, Today.instant(), vote = true))
         settingsPage("급여와 연차")
         reveal("같은 회사 사람들과", exact = true)
     }
@@ -212,7 +213,7 @@ class CompanyScreenshotTest : ScreenshotBase() {
         val c = receivedOn()
         runBlocking { c.payStore.save(PayViewModel(c).sampleProfile(), keepUndo = false) }
         val snap = runBlocking { c.scheduleRepository.snapshot.first() }
-        content { com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}, client = shares, onOpenReceived = {}) }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares, onOpenReceived = {}) }
         tapText("연장·휴무일 근무", exact = true)
         tapText("메모", exact = true)
     }
@@ -220,7 +221,7 @@ class CompanyScreenshotTest : ScreenshotBase() {
         val c = receivedOn()
         runBlocking { c.payStore.save(PayViewModel(c).sampleProfile(), keepUndo = false) }
         val snap = runBlocking { c.scheduleRepository.snapshot.first() }
-        content { com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}, client = shares, onOpenReceived = {}) }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares, onOpenReceived = {}) }
         tapText("메모", exact = true)
         tapText("급여", exact = true)
         reveal("동료 근무표도 받아 볼까요?")
@@ -278,7 +279,7 @@ class CompanyScreenshotTest : ScreenshotBase() {
         addedCalendar(show = true)
         val snap = runBlocking { c.calendars.activeSnapshot.first() }
         content {
-            com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}, client = shares,
+            com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares,
                 calendar = c.calendars.current(), onOpenReceived = {})
         }
     }
@@ -314,10 +315,13 @@ class CompanyScreenshotTest : ScreenshotBase() {
     }
     @Test fun phoneShareFeed() = shoot("389_phone_share_feed", PHONE) { shareWithFeed { reveal("구독 주소 복사", exact = true) } }
     @Test fun phoneShareSecondLink() = shoot("390_phone_share_second_link", PHONE) { shareWithFeed { tapText("+ 새 링크", exact = true, scrolls = 0) } }
-    @Test fun phoneShareRosterPdf() = shoot("391_phone_share_roster_pdf", PHONE) { shareWithFeed { reveal("${java.time.YearMonth.now().year}년 PDF", exact = true) } }
+    @Test fun phoneShareRosterPdf() = shoot("391_phone_share_roster_pdf", PHONE) { shareWithFeed { reveal("${Today.month().year}년 PDF", exact = true) } }
 
     @Test fun phoneNoticeLine() = shoot("410_phone_notice_line", PHONE) { opsOn() }
-    @Test fun phoneNoticeOpen() = shoot("411_phone_notice_open", PHONE) { opsOn(); settle(); tapText("오늘 밤 2시 30분 동안 점검해요", exact = true, scrolls = 0) }
+    @Test fun phoneNoticeOpen() = shoot("411_phone_notice_open", PHONE) {
+        // [CAL-50] The notice waits folded under the alarm warning.
+        opsOn(); settle(); tapText("알림 1개 더 보기", prefix = true, scrolls = 0); tapText("오늘 밤 2시 30분 동안 점검해요", exact = true, scrolls = 0)
+    }
     @Test fun phonePlazaRules() = shoot("412_phone_plaza_rules", PHONE) {
         app.container.settingsRepository.update { it.copy(plazaRulesAgreed = 0) }
         content {
@@ -329,7 +333,7 @@ class CompanyScreenshotTest : ScreenshotBase() {
         content { com.bamnat.app.ui.company.HideWriterDialog(writer(3, "야간전담"), onDismiss = {}, onHide = {}) }
     }
     @Test fun phonePlazaActivityHidden() = shoot("414_phone_plaza_activity_hidden", PHONE) {
-        val at = System.currentTimeMillis()
+        val at = Today.millis()
         app.container.settingsRepository.update {
             it.copy(plazaHidden = com.bamnat.core.plaza.HideList().hide("a".repeat(64), "야간전담", at - 86_400_000L).hide("b".repeat(64), "참여자 7", at).encode())
         }
@@ -351,7 +355,7 @@ class CompanyScreenshotTest : ScreenshotBase() {
         settingsPage("개인정보·앱 정보"); reveal("사용 통계 보내기", exact = true)
     }
     @Test fun phoneUsageStatsPreview() = shoot("417_phone_usage_stats_preview", PHONE) {
-        val day = LocalDate.now().toEpochDay() - 1
+        val day = Today.date().toEpochDay() - 1
         app.getSharedPreferences("usage_stats", android.content.Context.MODE_PRIVATE).edit().putString("book",
             com.bamnat.core.stats.UsageBook().record(com.bamnat.core.stats.UsageEvent.OPEN, day).record(com.bamnat.core.stats.UsageEvent.OPEN, day)
                 .record(com.bamnat.core.stats.UsageEvent.PAY_VIEW, day).record(com.bamnat.core.stats.UsageEvent.SHARE_MADE, day).encode()).commit()

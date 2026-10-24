@@ -11,6 +11,7 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /** [QA-05] Screenshots: 메모·통계·1년 달력·수면·오늘 흐름. Shot names and numbers are the ones they had in the one big class. */
 @RunWith(AndroidJUnit4::class)
@@ -65,7 +66,7 @@ class MemoStatsScreenshotTest : ScreenshotBase() {
     @Test fun foldedTodaySleepLog() = shoot("86_folded_today_sleep_log", FOLDED) {
         runBlocking {
             val dao = app.container.database.sleepDao()
-            val zone = java.time.ZoneId.systemDefault()
+            val zone = Today.zone()
             fun ms(d: Long, h: Int, m: Int = 0) = today.minusDays(d).atTime(h, m).atZone(zone).toInstant().toEpochMilli()
             dao.insert(com.bamnat.app.data.db.SleepLogEntity(startMillis = ms(3, 23), endMillis = ms(2, 5, 30)))
             dao.insert(com.bamnat.app.data.db.SleepLogEntity(startMillis = ms(2, 23, 30), endMillis = ms(1, 7)))
@@ -85,7 +86,7 @@ class MemoStatsScreenshotTest : ScreenshotBase() {
     @Test fun foldedTodayHealthSleep() = shoot("90_folded_today_health_sleep", FOLDED) {
         app.container.settingsRepository.update { it.copy(healthSleep = true) }
         runBlocking {
-            val zone = java.time.ZoneId.systemDefault()
+            val zone = Today.zone()
             fun ms(d: Long, h: Int, m: Int = 0) = today.minusDays(d).atTime(h, m).atZone(zone).toInstant().toEpochMilli()
             // One night tapped by hand; the watch measured the others.
             app.container.database.sleepDao().insert(com.bamnat.app.data.db.SleepLogEntity(startMillis = ms(2, 23, 30), endMillis = ms(1, 7)))
@@ -127,7 +128,7 @@ class MemoStatsScreenshotTest : ScreenshotBase() {
     @Test fun smallPhoneYear() = shoot("372_small_phone_year", SMALL_PHONE) { year() }
     @Test fun phoneStatsCompare() = shoot("387_phone_stats_compare", PHONE) {
         runBlocking { app.container.payStore.save(PayViewModel(app.container).sampleProfile().copy(rules = companyRules), keepUndo = false) }
-        tab(3, wide = false); reveal("${java.time.YearMonth.now().monthValue}월 비교", exact = true)
+        tab(3, wide = false); reveal("${Today.month().monthValue}월 비교", exact = true)
     }
     @Test fun phoneStatsYear() = shoot("388_phone_stats_year", PHONE) {
         runBlocking { app.container.payStore.save(PayViewModel(app.container).sampleProfile().copy(rules = companyRules), keepUndo = false) }

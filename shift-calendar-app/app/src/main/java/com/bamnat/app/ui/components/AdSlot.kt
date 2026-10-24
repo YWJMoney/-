@@ -23,6 +23,7 @@ import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
 import java.time.Instant
+import com.bamnat.core.time.Today
 
 /**
  * [REL-02][MON-07] The one place a banner goes (결정 1: A): between the content and the bottom bar
@@ -38,7 +39,7 @@ fun AdSlot(place: AdRules.Place, modifier: Modifier = Modifier) {
     val config by c.remoteConfig.config.collectAsStateWithLifecycle()
     val ready by c.ads.ready.collectAsStateWithLifecycle()
     val show = ready && AdIds.banner.isNotBlank() && !gate.preview &&
-        AdRules.banner(place, config.billingLive, gate.allows(Feature.NO_ADS), true, c.installedAt, Instant.now(), config.adQuietDays)
+        AdRules.banner(place, config.billingLive, gate.allows(Feature.NO_ADS), true, c.installedAt, Today.instant(), config.adQuietDays)
     if (!show) return
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val width = maxWidth.value.toInt()

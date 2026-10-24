@@ -11,14 +11,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import com.bamnat.app.ui.components.CountStepper
 import com.bamnat.app.ui.components.StepperRow
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,7 +28,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.appContainer
@@ -58,6 +55,7 @@ import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /*
  * Work-type cards of 통계: the first card a shift worker [SHFT-02] or a day worker [DAYW-02] sees, and the
@@ -131,10 +129,13 @@ private fun ShiftFirstCard(snapshot: ScheduleSnapshot, month: YearMonth, payTota
             }
         }
         Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatTile("야간 근무", "${tally.nights}번", Modifier.weight(1f), caption = "22~06시에 걸친 근무")
-            StatTile("예상 급여", payTotal?.let { Fmt.won(it) } ?: "-", Modifier.weight(1f), caption = "세전")
-        }
+        // [STAT-07] Not the 야 badge's count (1.23 점검 중-5): work into 22~06시, 대근 included, under its own name.
+        val night: @Composable (Modifier) -> Unit = { StatTile("밤 시간 근무", "${tally.nights}번", it, caption = "22~06시에 걸침 · 대근 포함") }
+        val pay: @Composable (Modifier) -> Unit = { StatTile("예상 급여", payTotal?.let { p -> Fmt.won(p) } ?: "-", it, caption = "세전") }
+        // [VIS-05] With large text the two tiles stand one under the other: half a 320dp phone cut the caption.
+        if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { night(Modifier.fillMaxWidth()); pay(Modifier.fillMaxWidth()) }
+        } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { night(Modifier.weight(1f)); pay(Modifier.weight(1f)) }
     }
 }
 
@@ -189,7 +190,7 @@ private fun DayFirstCard(
     val prefs = WorkTypePrefs.get(context)
     val choices by prefs.all.collectAsStateWithLifecycle()
     val mode = choices[calendarId]?.taxMode ?: TaxMode.INSURANCE_4
-    val today = remember { LocalDate.now() }
+    val today = remember { Today.date() }
     // [LEAVE-01] The 연차 원장 of this calendar.
     val ledger by remember(calendarId) { context.appContainer.calendars.leave(calendarId).summary }
         .collectAsStateWithLifecycle(null)
@@ -317,6 +318,7 @@ private fun PayGapCard(calendarId: String, month: YearMonth, payTotal: Long?, pr
 }
 
 /** [DAYW-05] This month's extra hours against the monthly 시간외 상한, set here. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun OvertimeCapCard(calendarId: String, summary: MonthSummary) {
     val prefs = WorkTypePrefs.get(LocalContext.current)
@@ -350,26 +352,27 @@ private fun OvertimeCapCard(calendarId: String, summary: MonthSummary) {
         }
     }
     if (editing) {
-        var text by remember { mutableStateOf((capHours ?: DayWork.DEFAULT_CAP_HOURS).toString()) }
+        // [INPUT-02] Tapped from the usual caps or stepped by an hour, not typed.
+        var hours by remember { mutableStateOf(capHours ?: DayWork.DEFAULT_CAP_HOURS) }
         AlertDialog(
             onDismissRequest = { editing = false },
             title = { Text("한 달 시간외 상한") },
             text = {
                 Column {
-                    OutlinedTextField(
-                        value = text,
-                        onValueChange = { v -> text = v.filter(Char::isDigit).take(3) },
-                        label = { Text("시간") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    )
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CAP_CHOICES.forEach { h ->
+                            com.bamnat.app.ui.components.FilterChip(selected = hours == h, onClick = { hours = h }, label = { Text("${h}시간") })
+                        }
+                    }
+                    com.bamnat.app.ui.components.CountStepper(hours, { hours = it }, name = "한 달 시간외 상한", range = 1..300,
+                        format = { "${it}시간" }, valueWidth = 96.dp)
                     Text("잔업·특근처럼 달력에 넣은 추가 근무를 모두 더해요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    prefs.setOvertimeCap(calendarId, text.toIntOrNull()?.takeIf { it > 0 })
+                    prefs.setOvertimeCap(calendarId, hours.takeIf { it > 0 })
                     editing = false
                 }) { Text("저장") }
             },
@@ -386,7 +389,7 @@ private fun OvertimeCapCard(calendarId: String, summary: MonthSummary) {
 /** [DAYW-04] 징검다리 연휴 in the next 12 months: 연차 1~2일로 길게 쉬는 날. */
 @Composable
 private fun BridgeCard(snapshot: ScheduleSnapshot, style: WorkStyle?) {
-    val today = remember { LocalDate.now() }
+    val today = remember { Today.date() }
     val bridges = remember(snapshot, style, today) { com.bamnat.app.ui.leave.LeaveBridges.of(snapshot, style, today) }
     if (bridges.isEmpty()) return
     SectionCard(title = "징검다리 연휴") {
@@ -405,3 +408,6 @@ private fun BridgeCard(snapshot: ScheduleSnapshot, style: WorkStyle?) {
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
     }
 }
+
+/** [INPUT-02] The caps people set most: 주 12시간 × 4주 ≈ 52시간, the app's own 57 and rounder company limits. */
+private val CAP_CHOICES = listOf(40, 52, DayWork.DEFAULT_CAP_HOURS, 60)

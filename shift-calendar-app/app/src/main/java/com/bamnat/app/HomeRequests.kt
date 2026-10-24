@@ -4,6 +4,7 @@ import android.os.SystemClock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.bamnat.core.time.Today
 
 /**
  * The app should open on the calendar. A restored process or a return after a while away asks
@@ -28,7 +29,7 @@ object HomeRequests {
     private var stoppedOn: java.time.LocalDate? = null
 
     /** Today's date; a test moves it. */
-    internal var today: () -> java.time.LocalDate = { java.time.LocalDate.now() }
+    internal var today: () -> java.time.LocalDate = { Today.date() }
 
     /**
      * True while a screen the app opened itself (file picker, permission page) is in front: coming

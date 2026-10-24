@@ -11,6 +11,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /** [SHR-02] A shift as someone else's link describes it. */
 data class SharedType(val id: Long, val name: String, val short: String, val color: Long, val time: String?, val off: Boolean, val icon: String?) {
@@ -150,7 +151,7 @@ data class ReceivedCalendar(
  */
 class ReceivedCalendarStore(
     private val file: File,
-    private val clock: () -> Instant = Instant::now,
+    private val clock: () -> Instant = Today::instant,
     /** [SHR-02] Where the file is written: off the main thread, one write at a time, in order. */
     private val writer: java.util.concurrent.Executor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
         Thread(r, "received-calendars").apply { isDaemon = true }

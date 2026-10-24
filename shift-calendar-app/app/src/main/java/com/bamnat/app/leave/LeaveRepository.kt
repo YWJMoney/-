@@ -22,6 +22,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /**
  * [LEAVE-01] One calendar's 연차 원장: the stored rows in its own database (version 19), and the ledger worked out
@@ -31,8 +32,8 @@ class LeaveRepository(
     private val db: AppDatabase,
     private val schedule: ScheduleRepository,
     private val pay: PayStore,
-    private val clock: () -> Long = System::currentTimeMillis,
-    private val today: () -> LocalDate = LocalDate::now,
+    private val clock: () -> Long = Today::millis,
+    private val today: () -> LocalDate = Today::date,
 ) {
     private val dao = db.leaveLedgerDao()
 

@@ -59,6 +59,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /**
  * [SHFT-08][REL-09] The watch app: 오늘 (today's shift, tomorrow's and the next alarm), 앞으로 7일 (today and six days on as a
@@ -125,11 +126,11 @@ private fun color(d: WatchDay) = Color(ShiftTileService.readable(d.colorArgb))
 /** [WEAR-01] The clock to the minute, moving on by itself, so "알람까지" never stands still (I 리뷰 I25). */
 @Composable
 private fun rememberMinute(): LocalDateTime {
-    val now by produceState(LocalDateTime.now().withSecond(0).withNano(0)) {
+    val now by produceState(Today.dateTime().withSecond(0).withNano(0)) {
         while (true) {
-            val t = LocalDateTime.now()
+            val t = Today.dateTime()
             delay(60_000L - (t.second * 1000L + t.nano / 1_000_000))
-            value = LocalDateTime.now().withSecond(0).withNano(0)
+            value = Today.dateTime().withSecond(0).withNano(0)
         }
     }
     return now
@@ -176,7 +177,7 @@ private fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Uni
 
 @Composable
 private fun WeekPage(p: WatchPayload) {
-    val today = LocalDate.now()
+    val today = Today.date()
     val days = (0L until 7L).map { today.plusDays(it) }
     ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         item { Text("앞으로 7일", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
@@ -195,7 +196,7 @@ private fun WeekPage(p: WatchPayload) {
 
 @Composable
 private fun MonthPage(p: WatchPayload) {
-    val today = LocalDate.now()
+    val today = Today.date()
     var offset by remember { mutableIntStateOf(0) }
     // [WEAR-01] As far as the phone's days reach, not a fixed month either side (I 리뷰 I24).
     val range = remember(p) { WatchDays.monthRange(p.days, today) }

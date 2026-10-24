@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
 import java.time.LocalTime
+import com.bamnat.core.time.Today
 
 /** Everything needed to draw the calendar, as one immutable value. */
 data class ScheduleSnapshot(
@@ -60,7 +61,7 @@ class ScheduleRepository(
     private val kinds: Flow<ExtraKinds> = flowOf(ExtraKinds()),
     /** [PAYX-09] The user's names for each kind, used in the change log. */
     private val extraName: (Long) -> String = { ExtraKinds().name(it) },
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: () -> Long = Today::millis,
 ) {
     private val changeDao = db.dayChangeDao()
 
@@ -93,7 +94,7 @@ class ScheduleRepository(
         patternDao.observeAll().map { list -> list.mapNotNull { it.toModel() } }.distinctUntilChanged().flowOn(Dispatchers.Default)
 
     /** The period being worked now (or the latest one), shown in the pattern editor. */
-    val pattern: Flow<WorkPattern?> = patterns.map { PatternTimeline.current(it, LocalDate.now()) }
+    val pattern: Flow<WorkPattern?> = patterns.map { PatternTimeline.current(it, Today.date()) }
 
     val entries: Flow<List<DayEntry>> =
         combine(dayEntryDao.observeAll(), extraDao.observeAll()) { rows, extras -> assembleDays(rows, extras) }.distinctUntilChanged()
@@ -202,7 +203,7 @@ class ScheduleRepository(
      * draft does not use and nothing points at removed, then its pattern from two years back (from today
      * when a pattern was made meanwhile) or its painted days. Returns the draft with the saved ids.
      */
-    suspend fun applySetup(draft: SetupDraft, today: LocalDate = LocalDate.now()): SetupDraft = db.withTransaction {
+    suspend fun applySetup(draft: SetupDraft, today: LocalDate = Today.date()): SetupDraft = db.withTransaction {
         val existing = shiftTypeDao.getAll().map { it.toModel() }
         val ids = LinkedHashMap<Long, Long>()
         for (t in draft.typesToSave().sortedBy { it.sortOrder }) {
@@ -246,7 +247,7 @@ class ScheduleRepository(
     suspend fun savePattern(pattern: WorkPattern) = replacePatterns(listOf(pattern))
 
     /** The first pattern: it also fills the last two years so past days are not empty. */
-    suspend fun setFirstPattern(pattern: WorkPattern, today: LocalDate = LocalDate.now()) =
+    suspend fun setFirstPattern(pattern: WorkPattern, today: LocalDate = Today.date()) =
         replacePatterns(listOf(PatternTimeline.first(pattern, today)))
 
     /**
@@ -264,7 +265,7 @@ class ScheduleRepository(
     suspend fun restorePatterns(patterns: List<WorkPattern>) = replacePatterns(patterns)
 
     /** Rewrites the period being edited in place (fixing a typo, not a team change). */
-    suspend fun replaceCurrentPattern(pattern: WorkPattern, today: LocalDate = LocalDate.now()) {
+    suspend fun replaceCurrentPattern(pattern: WorkPattern, today: LocalDate = Today.date()) {
         db.withTransaction {
             val existing = patternDao.getAll().mapNotNull { it.toModel() }
             val current = PatternTimeline.current(existing, today)

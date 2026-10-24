@@ -16,6 +16,7 @@ import com.bamnat.core.money.MoneyBook
 import com.bamnat.core.money.WorkCsv
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /**
  * [SHOP-07] Beside the ledger's CSV: the shop's daily sales with how they were paid, and the jobs,
@@ -48,7 +49,7 @@ fun WorkCsvButtons(book: MoneyBook, range: Pair<LocalDate?, LocalDate?>, onMessa
                 OutlinedButton(onClick = { share(WorkCsv.jobs(jobs), WorkCsv.fileName("jobs", from, to)) }) { Text("일감 ${jobs.size}건") }
             }
             if (owed.isNotEmpty()) {
-                OutlinedButton(onClick = { share(WorkCsv.receivables(owed, LocalDate.now()), WorkCsv.fileName("receivables", from, to)) }) { Text("받을 돈 ${owed.size}건") }
+                OutlinedButton(onClick = { share(WorkCsv.receivables(owed, Today.date()), WorkCsv.fileName("receivables", from, to)) }) { Text("받을 돈 ${owed.size}건") }
             }
         }
     }

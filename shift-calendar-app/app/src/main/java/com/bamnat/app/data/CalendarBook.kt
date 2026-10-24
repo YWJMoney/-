@@ -15,6 +15,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
+import com.bamnat.core.time.Today
 
 /**
  * [MCAL-01] One of the user's own calendars. [MAIN] is the calendar the app always had: its shifts,
@@ -143,7 +144,7 @@ class CalendarBook(
     private val storage: CalendarStorage,
     /** A repository over an added calendar's database, with the same kinds of extra work as the main one. */
     private val repositoryOf: (AppDatabase) -> ScheduleRepository,
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: () -> Long = Today::millis,
     /** [MCAL-06] The main calendar's money and pay; added calendars keep their own. */
     private val mainMoney: () -> MoneyRepository = { error("No money here") },
     private val mainPay: () -> com.bamnat.app.pay.PayStore = { error("No pay here") },

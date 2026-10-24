@@ -56,6 +56,7 @@ import com.bamnat.core.pay.RateTable
 import com.bamnat.core.pay.WageType
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /**
  * [COMM-01] The pay setup after a coworker's setup was applied: the rules, allowances and bonus are
@@ -69,8 +70,8 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
     var base by rememberSaveable { mutableStateOf<Long?>(null) }
     var rough by rememberSaveable { mutableStateOf(false) }
     var dailyHours by rememberSaveable { mutableStateOf(8) }
-    // A year back, so the months already worked come to an amount too [PAYS-01].
-    var since by remember { mutableStateOf(YearMonth.now().minusMonths(12)) }
+    // A year back, so the months already worked come to an amount too [PAYS-01]; a known 입사일 in that year starts there [COMM-13].
+    var since by remember { mutableStateOf(com.bamnat.core.pay.PaySince.start(Today.month(), vm.hireDate)) }
     val amounts = remember { mutableStateMapOf<String, Long>() }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -134,7 +135,7 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
                     }
                     base?.let { b ->
                         val hourly = b / dailyHours
-                        val minimum = remember { RateTable.on(LocalDate.now()).minimumHourlyWage }
+                        val minimum = remember { RateTable.on(Today.date()).minimumHourlyWage }
                         Text("시간당 ${won(hourly)}" + if (hourly < minimum) " · 최저임금(${won(minimum)})보다 적어요" else "",
                             style = MaterialTheme.typography.bodySmall,
                             color = if (hourly < minimum) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -144,6 +145,8 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
                     Text("이 금액을 받기 시작한 달", style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     MonthStepper(since, { since = it })
+                    Text(com.bamnat.core.pay.PaySince.why(vm.hireDate, Today.month()), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
 
                 if (vm.needs.isNotEmpty()) {

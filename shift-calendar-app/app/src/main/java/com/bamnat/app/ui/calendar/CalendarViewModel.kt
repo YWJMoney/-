@@ -69,11 +69,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
+import com.bamnat.app.ui.derive
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.YearMonth
+import com.bamnat.core.time.Today
 
 /** Quick-input tool: tap days to stamp a shift on them. */
 sealed interface PaintTool {
@@ -90,8 +92,11 @@ sealed interface PaintTool {
  * [CAL-09] Besides a shift, quick input can stamp a whole day's leave or turn the day's alarm off,
  * over many days at once. Kept apart from [PaintTool], whose shift stamps the first setup shares.
  */
-enum class DayMark(val label: String) {
-    LEAVE("연차"),
+enum class DayMark(val label: String, val leave: Leave? = null) {
+    LEAVE("연차", Leave(LeaveKind.ANNUAL, 4)),
+    /** [ROST-07] 반차 stamped like 연차 (리뷰 개선 나): off the start of the shift, or off its end. */
+    HALF_AM("오전 반차", Leave(LeaveKind.ANNUAL, 2, fromStart = true)),
+    HALF_PM("오후 반차", Leave(LeaveKind.ANNUAL, 2)),
     ALARM_OFF("알람 끄기"),
 }
 
@@ -120,7 +125,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** [MCAL-01] The user's calendars and the one on screen. */
     val calendars: StateFlow<List<com.bamnat.app.data.PersonalCalendar>> = container.calendars.calendars
     val activeCalendar: StateFlow<com.bamnat.app.data.PersonalCalendar> =
-        container.calendars.activeCalendar.stateIn(viewModelScope, SharingStarted.Eagerly, container.calendars.current())
+        com.bamnat.app.ui.DerivedStateFlow({ container.calendars.current() }, container.calendars.activeCalendar)
 
     /** [MCAL-04] The list's order, received calendars included. */
     val calendarOrder: StateFlow<List<String>> = container.calendars.order
@@ -140,18 +145,17 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * [MCAL-01] An added calendar answers its own kind of work, so the calendar tab shows it as that
      * calendar works; everything else in settings is the app's.
      */
-    val settings: StateFlow<AppSettings> = kotlinx.coroutines.flow.combine(container.settingsRepository.settings, activeCalendar) { s, cal ->
+    val settings: StateFlow<AppSettings> = com.bamnat.app.ui.DerivedStateFlow(
+        { calendarSettings(container.settingsRepository.current, container.calendars.current()) },
+        kotlinx.coroutines.flow.combine(container.settingsRepository.settings, activeCalendar, ::calendarSettings),
+    )
+    private fun calendarSettings(s: AppSettings, cal: com.bamnat.app.data.PersonalCalendar) =
         if (cal.isMain) s else s.copy(workStyle = cal.style ?: s.workStyle, rosterMonthly = false)
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, container.settingsRepository.current.let { s ->
-        container.calendars.current().let { cal -> if (cal.isMain) s else s.copy(workStyle = cal.style ?: s.workStyle, rosterMonthly = false) }
-    })
     /** [CAL-05] What the calendar on screen is about: shifts, jobs or sales. */
-    val focus: StateFlow<CalendarFocus> = settings.map { CalendarFocus.of(it.workStyle) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, CalendarFocus.of(settings.value.workStyle))
+    val focus: StateFlow<CalendarFocus> = settings.derive { CalendarFocus.of(it.workStyle) }
 
     /** [CAL-13] An added calendar can be kept from ringing; the main one always rings. */
-    val calendarAlarmsOn: StateFlow<Boolean> = activeCalendar.map { it.isMain || it.alarms }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, activeCalendar.value.let { it.isMain || it.alarms })
+    val calendarAlarmsOn: StateFlow<Boolean> = activeCalendar.derive { it.isMain || it.alarms }
 
     /** [CAL-13] Turns the alarms of the added calendar on screen on or off, said back with undo. */
     fun setCalendarAlarms(on: Boolean) = gate(WriteKind.ALARM) {
@@ -258,8 +262,10 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     /** Pay setup, so a day on the calendar shows what it adds to pay [PAYX-08]. [MCAL-06] The calendar on screen's own. */
-    val payProfile: StateFlow<PayProfile?> = container.calendars.active.flatMapLatest { container.calendars.pay(it).profile }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, container.calendars.pay(container.calendars.active.value).profile.value)
+    val payProfile: StateFlow<PayProfile?> = com.bamnat.app.ui.DerivedStateFlow(
+        { container.calendars.pay(container.calendars.active.value).profile.value },
+        container.calendars.active.flatMapLatest { container.calendars.pay(it).profile },
+    )
     private val payCalculator = PayCalculator()
 
     // Moving from day to day in one month reuses that month's result instead of recalculating it.
@@ -316,7 +322,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** The law's defaults with no money, to sort minutes before the pay setup is done. */
     private fun lawOnly(s: AppSettings) = PayProfile(Occupation.MANUFACTURING, WageType.MONTHLY, ValueTimeline(), weekStart = s.weekStart)
 
-    private val _selected = MutableStateFlow(LocalDate.now())
+    private val _selected = MutableStateFlow(Today.date())
     val selected: StateFlow<LocalDate> = _selected.asStateFlow()
 
     /** [NAV-01] The month on screen, shared with 돈 and 근무·급여. */
@@ -424,7 +430,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** [SLP-06][SLP-14] "깼어요" now, or at [at] when the user says later when they woke. */
     fun wokeUp(at: LocalDateTime? = null) = gate(WriteKind.SLEEP) {
         container.appScope.launch {
-            val millis = at?.atZone(java.time.ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
+            val millis = at?.atZone(Today.zone())?.toInstant()?.toEpochMilli()
             val sleep = container.sleepRepository.wokeUp(millis) ?: return@launch
             val minutes = sleep.minutes ?: 0
             val text = if (minutes > SleepDebt.MAX_SLEEP_MINUTES) "16시간이 넘게 열려 있던 기록이라 수면 통계에서 뺐어요"
@@ -639,10 +645,10 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private fun toggleMark(date: LocalDate, mark: DayMark) = viewModelScope.launch {
         val day = currentSnapshot().resolver.resolve(date)
         when (mark) {
-            DayMark.LEAVE -> when {
-                day.leave != null -> setLeave(date, null, announceInBar = true)
-                takesLeave(day) -> setLeave(date, FULL_LEAVE, announceInBar = true)
-                else -> _lastPaint.value = PaintUndo("${Fmt.monthDay(date)}은 근무가 없어 연차를 넣지 않았어요", null)
+            DayMark.LEAVE, DayMark.HALF_AM, DayMark.HALF_PM -> when {
+                day.leave == mark.leave -> setLeave(date, null, announceInBar = true)
+                day.leave != null || takesLeave(day) -> setLeave(date, mark.leave, announceInBar = true)
+                else -> _lastPaint.value = PaintUndo("${Fmt.monthDay(date)}은 근무가 없어 ${mark.label}${Fmt.obj(mark.label)} 넣지 않았어요", null)
             }
             DayMark.ALARM_OFF -> when {
                 day.alarmSkipped -> setAlarmSkipped(date, false, announceInBar = true)
@@ -743,29 +749,31 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private fun paintMark(dates: List<LocalDate>, mark: DayMark) {
         viewModelScope.launch {
             val resolver = currentSnapshot().resolver
-            val fits = dates.map(resolver::resolve).filter { if (mark == DayMark.LEAVE) takesLeave(it) else ringsOn(it) }.map { it.date }
+            val leave = mark.leave
+            val fits = dates.map(resolver::resolve).filter { if (leave != null) takesLeave(it) else ringsOn(it) }.map { it.date }
             if (fits.isEmpty()) {
-                _lastPaint.value = PaintUndo(if (mark == DayMark.LEAVE) "연차를 넣을 근무일이 없어요" else "알람이 울릴 날이 없어요", null)
+                _lastPaint.value = PaintUndo(if (leave != null) "${mark.label}${Fmt.obj(mark.label)} 넣을 근무일이 없어요" else "알람이 울릴 날이 없어요", null)
                 return@launch
             }
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.updateDays(fits) { e ->
-                if (mark == DayMark.LEAVE) e.copy(leave = FULL_LEAVE) else e.copy(alarmSkipped = true)
+                if (leave != null) e.copy(leave = leave) else e.copy(alarmSkipped = true)
             }
             val one = before.size == 1
             val skipped = dates.size - fits.size
             // "근무일 4일에 연차를 넣었어요 · 근무 없는 1일은 빼고": the count never reads as a date.
             val done = when (mark) {
-                DayMark.LEAVE -> if (one) "${Fmt.monthDay(before.keys.first())}에 연차를 넣었어요" else "근무일 ${before.size}일에 연차를 넣었어요"
+                DayMark.LEAVE, DayMark.HALF_AM, DayMark.HALF_PM -> if (one) "${Fmt.monthDay(before.keys.first())}에 ${mark.label}${Fmt.obj(mark.label)} 넣었어요"
+                    else "근무일 ${before.size}일에 ${mark.label}${Fmt.obj(mark.label)} 넣었어요"
                 DayMark.ALARM_OFF -> if (one) "${Fmt.monthDay(before.keys.first())} 알람을 껐어요" else "${before.size}일 알람을 껐어요"
             }
-            val left = if (mark == DayMark.LEAVE) "근무 없는" else "알람 없는"
+            val left = if (leave != null) "근무 없는" else "알람 없는"
             _lastPaint.value = PaintUndo(
                 done + if (skipped > 0) " · $left ${skipped}일은 빼고" else "",
                 undo = {
                     schedule.updateDays(before.keys.toList()) { now ->
                         val was = before[now.date] ?: DayEntry(now.date)
-                        if (mark == DayMark.LEAVE) now.copy(leave = was.leave) else now.copy(alarmSkipped = was.alarmSkipped)
+                        if (leave != null) now.copy(leave = was.leave) else now.copy(alarmSkipped = was.alarmSkipped)
                     }
                 },
             )
@@ -876,14 +884,14 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     /** Reads the event log: off the main thread. */
     internal fun findAlarmSuggestion(
-        snap: ScheduleSnapshot, settings: AppSettings, sleeps: List<com.bamnat.core.sleep.SleepEntry>, today: LocalDate = LocalDate.now(),
+        snap: ScheduleSnapshot, settings: AppSettings, sleeps: List<com.bamnat.core.sleep.SleepEntry>, today: LocalDate = Today.date(),
     ): com.bamnat.core.alarm.AlarmSuggest.Suggestion? {
         val suggest = com.bamnat.core.alarm.AlarmSuggest
         val days = snap.resolver.resolveRange(today.minusDays(suggest.LOOK_BACK_DAYS), today.minusDays(1))
             .filter { !it.hasCustomTimes && !it.alarmSkipped && it.shiftType?.activeAlarms?.isNotEmpty() == true }
             .map { it.date to it.shiftType!! }
         if (days.isEmpty()) return null
-        val offs = suggest.offsOf(container.telemetry.log.read(), java.time.ZoneId.systemDefault())
+        val offs = suggest.offsOf(container.telemetry.log.read(), Today.zone())
         return suggest.find(today, snap.shiftTypes, days, offs, sleeps, settings.sleepTargetMinutes,
             settings.bedtimeNotice, com.bamnat.core.alarm.AlarmSuggest.Memory.decode(settings.alarmSuggestMemory))
     }
@@ -922,7 +930,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private fun suggestAnswered(s: com.bamnat.core.alarm.AlarmSuggest.Suggestion, answer: String, forGood: Boolean = false) {
         container.settingsRepository.update { st ->
             st.copy(alarmSuggestMemory = com.bamnat.core.alarm.AlarmSuggest.Memory.decode(st.alarmSuggestMemory)
-                .answered(s.key, LocalDate.now(), forGood).encode())
+                .answered(s.key, Today.date(), forGood).encode())
         }
         // Only the kind and the answer: no shift name, no times.
         container.telemetry.event(com.bamnat.core.diag.DiagEvents.ALARM_SUGGEST, "${s.kind.key} $answer")
@@ -1057,7 +1065,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * [DAYW-03] 지금 퇴근 on [day]: past the end it puts 잔업 from the end to now (replacing a 잔업 already
      * there), before the end the day ends now. Said back with undo.
      */
-    fun leaveNow(day: ResolvedDay, now: LocalDateTime = LocalDateTime.now()) = gate(WriteKind.DAY_TIME) {
+    fun leaveNow(day: ResolvedDay, now: LocalDateTime = Today.dateTime()) = gate(WriteKind.DAY_TIME) {
         guideUsed("day.leaveNow")
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
@@ -1156,7 +1164,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     /** Called once the review sheet was offered; Play decides whether it actually shows [OPS-20]. */
     fun markReviewAsked(moment: com.bamnat.app.review.InAppReview.Moment = com.bamnat.app.review.InAppReview.Moment.FIRST) {
-        val today = LocalDate.now().toEpochDay()
+        val today = Today.date().toEpochDay()
         container.settingsRepository.update {
             if (moment == com.bamnat.app.review.InAppReview.Moment.PAY) it.copy(payReviewDue = false, payReviewAsked = true, reviewAskedDay = today)
             else it.copy(reviewDue = false, reviewAsked = true, reviewAskedDay = today)
@@ -1225,7 +1233,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             // [NOTE-01] A quick memo belongs to the calendar it was written on.
             val memo = memoRepo.addQuick(date, text, setOf(container.calendars.active.value)) ?: return@launch
             // [SCHED-01] A quick line that names a time is asked about, like a memo written in the editor.
-            val found = com.bamnat.core.memo.MemoTime.find(memo, java.time.LocalDateTime.now()) ?: return@launch
+            val found = com.bamnat.core.memo.MemoTime.find(memo, Today.dateTime()) ?: return@launch
             _messages.tryEmit(UndoMessage("‘${found.phrase}’, 일정으로 넣을까요?", actionLabel = "일정으로 넣기") {
                 _openMemo.tryEmit(memo.id)
             })
@@ -1261,11 +1269,12 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             )
         }
     }
+    // Read from the database, so it keeps its own collector (Eagerly): a derived value would have nothing to read.
     private val rules: StateFlow<Map<String, String>> = container.calendars.active.flatMapLatest { container.calendars.money(it).rules }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
     override val categoryRules: Map<String, String> get() = rules.value
     override fun frequentAmounts(kind: com.bamnat.core.money.MoneyKind): List<Long> =
-        com.bamnat.core.money.MoneyStats.frequentAmounts(moneyBook.value.entries, kind, java.time.LocalDate.now())
+        com.bamnat.core.money.MoneyStats.frequentAmounts(moneyBook.value.entries, kind, Today.date())
 
     override fun deleteEntry(entry: MoneyEntry) {
         val money = money

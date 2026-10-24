@@ -78,6 +78,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneOffset
+import com.bamnat.core.time.Today
 
 /**
  * 회사 규칙 [PAYX-07]: everything a company decides on top of the law, edited as a draft with the
@@ -108,13 +109,13 @@ fun CompanyRulesEditor(
     val after by produceState<MonthPay?>(null, draft, snapshot, month) { value = vm.calculateOff(draft, snapshot, month) }
     // [PAYS-03] The newer choices show where setup would ask them, or once they are set.
     val asked = remember(draft.items, draft.occupation, draft.fiveOrMoreEmployees, snapshot) {
-        PaySetupQuestions.applicable(draft, snapshot.shiftTypes, PatternTimeline.current(snapshot.patterns, LocalDate.now()))
+        PaySetupQuestions.applicable(draft, snapshot.shiftTypes, PatternTimeline.current(snapshot.patterns, Today.date()))
     }
     val askedKinds = asked.map { it.question }.toSet()
 
     if (pickHire) {
         val state = rememberDatePickerState(
-            initialSelectedDateMillis = (draft.hireDate ?: LocalDate.now().minusYears(1)).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+            initialSelectedDateMillis = (draft.hireDate ?: Today.date().minusYears(1)).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
         )
         DatePickerDialog(
             onDismissRequest = { pickHire = false },
@@ -134,7 +135,7 @@ fun CompanyRulesEditor(
 
     if (pickLeave) {
         val state = rememberDatePickerState(
-            initialSelectedDateMillis = (draft.leaveDate ?: LocalDate.now()).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+            initialSelectedDateMillis = (draft.leaveDate ?: Today.date()).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
         )
         DatePickerDialog(
             onDismissRequest = { pickLeave = false },
@@ -214,12 +215,9 @@ fun CompanyRulesEditor(
                             FilterChip(selected = draft.monthlyHours == h, onClick = { draft = draft.copy(monthlyHours = h).settled(Unknowns.MONTHLY_HOURS) },
                                 label = { Text("${h}시간") })
                         }
-                        OutlinedButton(onClick = { draft = draft.copy(monthlyHours = (draft.monthlyHours - 1).coerceAtLeast(100)).settled(Unknowns.MONTHLY_HOURS) }) { Text("−") }
-                        Text("${draft.monthlyHours}시간", style = MaterialTheme.typography.titleSmall, modifier = Modifier.align(Alignment.CenterVertically))
-                        OutlinedButton(onClick = { draft = draft.copy(monthlyHours = (draft.monthlyHours + 1).coerceAtMost(320)).settled(Unknowns.MONTHLY_HOURS) }) { Text("+") }
                     }
-                    // [PAYX-23] The company's own number, e.g. 182 (주 35시간), typed in.
-                    MonthlyHoursField(draft.monthlyHours, { h -> draft = draft.copy(monthlyHours = h).settled(Unknowns.MONTHLY_HOURS) })
+                    // [PAYX-23][INPUT-02] The company's own number, e.g. 182 (주 35시간), stepped.
+                    MonthlyHoursStepper(draft.monthlyHours, { h -> draft = draft.copy(monthlyHours = h).settled(Unknowns.MONTHLY_HOURS) })
                     Hint("주 40시간이면 209시간이 보통이에요. 토요일 4시간 유급이면 226시간, 8시간 유급이면 243시간이에요. 명세서나 계약서에 다른 숫자가 있으면 그대로 넣어요.")
                     // [PAY-04] The same formula on the user's own roster (시행령 제6조 제2항).
                     val weekly = remember(snapshot, month) { StandardHours.averageWeekly(month.atDay(1), resolve = snapshot.resolver::resolve) }
@@ -406,8 +404,8 @@ fun CompanyRulesEditor(
 
             // [PAYS-06] Anything the choices above cannot say, in the company's own words; the total above follows each one.
             SectionCard(title = "회사만의 규칙") {
-                Hint("위에 없는 방식은 말로 적어 주세요. ‘토요일 근무는 50% 더’, ‘19~23시 25% 가산’처럼 적으면 그대로 계산해요. " +
-                    "가산율이나 대근 방식처럼 위에 있는 것도 적으면 알아서 맞춰 넣어요.")
+                Hint("위에 없는 방식은 아래에서 골라 담아요. 담기지 않는 것(‘19~23시 25% 가산’ 같은)은 글로 적거나 취업규칙 사진으로 읽어요. " +
+                    "가산율이나 대근 방식처럼 위에 있는 것도 담으면 알아서 맞춰 넣어요.")
                 if (draft.customRules.isNotEmpty()) {
                     CustomRuleList(
                         draft.customRules,
@@ -518,7 +516,7 @@ fun CompanyRulesEditor(
                 // [LEAVE-02] The 연차 원장 makes the law's leave from the hire date; days the company gave, 이월 and
                 // 조정 go in on the 연차 screen (급여 › 연차 카드).
                 val policy = rules.leave
-                val today = remember { LocalDate.now() }
+                val today = remember { Today.date() }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("입사일", style = MaterialTheme.typography.bodyLarge)
@@ -633,7 +631,7 @@ fun CompanyRules.summary(profile: PayProfile): List<String> = buildList {
     profile.items.filter { it.coveredKinds != it.defaultCovers }.forEach { add("‘${it.name}’ ${it.coversText()}") }
     extra.forEach { (kind, r) -> add("${extraName(kind)}: ${r.describe()}") }
     extraByShift.forEach { (kind, byType) -> if (byType.isNotEmpty()) add("${extraName(kind)}: 근무별 ${byType.size}개") }
-    if (hasNightWindow) add("야간 시간 ${nightLabel(com.bamnat.core.pay.RateTable.on(java.time.LocalDate.now()))}")
+    if (hasNightWindow) add("야간 시간 ${nightLabel(com.bamnat.core.pay.RateTable.on(Today.date()))}")
     if (overtimeRounding != MinuteRounding() && overtimeRounding.unit > 1) {
         add("연장 ${overtimeRounding.unit}분 단위 " + when (overtimeRounding.rounding) { Rounding.UP -> "올림"; Rounding.NEAREST -> "반올림"; Rounding.DOWN -> "버림" })
     }

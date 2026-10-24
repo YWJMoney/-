@@ -332,6 +332,8 @@ fun AskDeveloperDialog(
     val scope = rememberCoroutineScope()
     var name by rememberSaveable { mutableStateOf(company) }
     var how by rememberSaveable { mutableStateOf(prefill.take(800)) }
+    // [INPUT-03] The rules put together by taps; sent as words before what the user writes.
+    var built by remember { mutableStateOf(emptyList<String>()) }
     var example by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -345,12 +347,13 @@ fun AskDeveloperDialog(
                 Text("개발자가 직접 읽고 답을 드려요. 답은 설정 > 도움말과 문의 > 내 문의에서 볼 수 있어요.", style = MaterialTheme.typography.bodyMedium)
             } else {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("말과 예시로 적어 주시면 개발자가 직접 읽고, 앱에 넣을 수 있는지 답을 드려요.", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("회사 계산 방식을 골라 담고, 담기지 않는 것만 말로 적어 주세요. 개발자가 직접 읽고 앱에 넣을 수 있는지 답을 드려요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedTextField(name, { name = it.take(40) }, label = { Text("회사 이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(how, { how = it.take(800) }, label = { Text("회사는 어떻게 계산하나요?") },
-                        placeholder = { Text("예: 휴무일 근무는 8시간에 기본급 10%, 8시간 넘으면 0.5 가산") },
-                        minLines = 3, modifier = Modifier.fillMaxWidth())
+                    com.bamnat.app.ui.components.RuleBuilder(built, { built = it })
+                    OutlinedTextField(how, { how = it.take(800) }, label = { Text(if (built.isEmpty()) "회사는 어떻게 계산하나요?" else "더 적을 말 (선택)") },
+                        placeholder = { Text("예: 명절 근무는 따로 정해요") },
+                        minLines = 2, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(example, { example = it.take(400) }, label = { Text("예시 (선택)") },
                         placeholder = { Text("예: 근무 8시간 뒤 야간 4시간 → 기본급의 10%") },
                         minLines = 2, modifier = Modifier.fillMaxWidth())
@@ -377,11 +380,11 @@ fun AskDeveloperDialog(
                     busy = true
                     error = null
                     scope.launch {
-                        error = container.askDeveloper(name, how, example, setup)
+                        error = container.askDeveloper(name, com.bamnat.app.ui.components.ruleWords(built, how), example, setup)
                         busy = false
                         if (error == null) sent = true
                     }
-                }, enabled = !busy && how.isNotBlank() && name.trim().length >= 2) {
+                }, enabled = !busy && (how.isNotBlank() || built.isNotEmpty()) && name.trim().length >= 2) {
                     if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("개발자에게 보내기")
                 }
             }

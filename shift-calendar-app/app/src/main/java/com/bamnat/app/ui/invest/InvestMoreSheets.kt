@@ -51,6 +51,7 @@ import com.bamnat.core.invest.Side
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
+import com.bamnat.core.time.Today
 
 private enum class Repeat(val label: String) { WEEKDAYS("평일"), DAILY("매일"), PICK("요일 고르기"), MONTHLY("매달"), ONCE("한 번") }
 private val WEEKDAYS = setOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY)
@@ -109,7 +110,7 @@ internal fun AlarmSheet(vm: InvestViewModel, state: InvestState, kind0: AlarmKin
         )
     }
     val preview = build()
-    val next = InvestAlarms.next(preview, LocalDateTime.now())
+    val next = InvestAlarms.next(preview, Today.dateTime())
     val valid = parseMinute(time) != null && (repeat != Repeat.PICK || days.isNotEmpty()) && (!needsHolding || (name.isNotBlank() || symbol.isNotBlank()))
 
     InvestSheetFrame(
@@ -129,16 +130,20 @@ internal fun AlarmSheet(vm: InvestViewModel, state: InvestState, kind0: AlarmKin
         })
         OutlinedTextField(label, { label = it.take(30) }, label = { Text("이름 (선택)") }, placeholder = { Text(preview.title) }, singleLine = true,
             modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(time, { time = it.filter { c -> c.isDigit() || c == ':' }.take(5) }, label = { Text("시각") }, placeholder = { Text("09:00") },
-            singleLine = true, isError = parseMinute(time) == null,
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth())
+        // [INPUT-02] Picked on the wheels; kept as "HH:mm" text like before.
+        com.bamnat.app.ui.components.TimeField(
+            label = "시각", time = parseMinute(time)?.let { java.time.LocalTime.of(it / 60, it % 60) },
+            onChange = { t -> if (t != null) time = minuteText(t.hour * 60 + t.minute) }, modifier = Modifier.fillMaxWidth(),
+        )
         ChoiceChips(Repeat.entries, { it == repeat }, { it.label }, { repeat = it })
         when (repeat) {
             Repeat.PICK -> ChoiceChips(DayOfWeek.entries, { it in days }, { DAY_NAMES[it.ordinal] }, { d -> if (d in days) days.remove(d) else days.add(d) })
-            Repeat.MONTHLY -> OutlinedTextField(monthDay, { monthDay = it.filter(Char::isDigit).take(2) }, label = { Text("매달 며칠") }, suffix = { Text("일") },
-                singleLine = true, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth())
+            // [INPUT-02] The day is tapped on a 1~31 grid; 31 is the month's last day (InvestAlarms.next).
+            Repeat.MONTHLY -> {
+                val day = monthDay.toIntOrNull()?.coerceIn(1, 31) ?: 25
+                FieldLabel(com.bamnat.app.ui.components.dayOfMonthLabel(day))
+                com.bamnat.app.ui.components.DayOfMonthPicker(day, { monthDay = it.toString() })
+            }
             Repeat.ONCE -> OutlinedButton(onClick = { pickingOnce = true }) { Text(Fmt.dayTitle(runCatching { LocalDate.parse(once) }.getOrDefault(state.today))) }
             else -> Unit
         }

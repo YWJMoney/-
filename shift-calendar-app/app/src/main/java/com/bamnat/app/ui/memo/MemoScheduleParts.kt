@@ -57,6 +57,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneOffset
+import com.bamnat.core.time.Today
 
 /** [SCHED-01] "10월 20일 (화) 오후 3:00" */
 internal fun scheduleText(at: LocalDateTime): String {
@@ -134,7 +135,7 @@ internal fun ScheduleDialog(
     current: MemoReminder?,
     onDismiss: () -> Unit,
     onSave: (MemoReminder) -> Unit,
-    now: () -> LocalDateTime = LocalDateTime::now,
+    now: () -> LocalDateTime = Today::dateTime,
 ) {
     val context = LocalContext.current
     var date by rememberSaveable { mutableStateOf(initial.toLocalDate()) }

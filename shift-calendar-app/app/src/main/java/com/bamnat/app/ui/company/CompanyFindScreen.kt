@@ -74,6 +74,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -89,6 +94,7 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.ShiftBadge
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /**
  * [COMM-01] 회사 찾기, the first step of setting up work when a company server is there: a coworker's
@@ -354,9 +360,10 @@ fun CompanyDetailScreen(
                     if (p.setups.isEmpty()) {
                         Text("아직 볼 수 있는 설정이 없어요.", style = MaterialTheme.typography.bodyLarge)
                     }
+                    // [COMM-14] What only this set has, beside another of the same department.
+                    val diffs = remember(p) { com.bamnat.core.plaza.SetupDiff.diff(p.setups.map { it.diffItem() }) }
                     p.setups.forEach { su ->
-                        SetupCard(
-                            su, applied?.takeIf { it.companyId == p.id && it.setup == su.id }, onUse = { start(p, su) },
+                        SetupCard(su, diffs[su.id], applied?.takeIf { it.companyId == p.id && it.setup == su.id }, onUse = { start(p, su) },
                             // [COMM-06][COMM-07] Anyone who knows the company can vote and talk it over, using it or not.
                             vote = votes[su.id] ?: applied?.takeIf { it.companyId == p.id && it.setup == su.id }?.vote,
                             onVote = { ok, why -> vm.vote(p, su, ok, why) { e -> error = e } },
@@ -408,6 +415,7 @@ fun CompanyDetailScreen(
 @Composable
 private fun SetupCard(
     s: SharedSetup,
+    diff: String? = null,
     applied: AppliedSetup?,
     onUse: () -> Unit,
     vote: Boolean? = null,
@@ -425,8 +433,10 @@ private fun SetupCard(
                 Text(s.dept.ifEmpty { "회사 전체" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 if (s.adopted) StatusChip("채택${s.version?.let { " v$it" } ?: ""}", Tone.GOOD) else StatusChip("확인 중", Tone.WAIT)
             }
+            diff?.let { Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary) }
             TrustLine(s.trust, s.agree, s.persons, s.bad, s.adopted)
             if (!s.adopted) PointsBar(s.points, s.threshold)
+            WaitReason(s.points, s.threshold, s.adopted, s.agree)
             // [PLZ-08] Who stands behind it, in the names they chose.
             WhoLine(s.senders, s.checked, s.uses, s.by, s.checkedLong)
             main.forEach { (label, text) -> SetupLine(label, text) }
@@ -481,7 +491,7 @@ private fun SetupCard(
 @Composable
 internal fun PhaseSheet(phases: Phases, replacing: Boolean, busy: Boolean, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
     var picked by remember(phases) { mutableStateOf(phases.current ?: phases.sent) }
-    val today = remember { LocalDate.now() }
+    val today = remember { Today.date() }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 20.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -505,14 +515,25 @@ internal fun PhaseSheet(phases: Phases, replacing: Boolean, busy: Boolean, onDis
                         textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
                 }
             }
-            phases.options.forEach { o ->
+            phases.options.forEachIndexed { row, o ->
                 val selected = picked == o.step
                 val scheme = MaterialTheme.colorScheme
+                // [COMM-13] One name for the row, so TalkBack reads "2번째 줄: 오늘 주간, 내일 야간, …" and not 56 letters in a run.
+                val spoken = "${row + 1}번째 줄: " + o.days.mapIndexed { d, t ->
+                    val day = when (d) { 0 -> "오늘"; 1 -> "내일"; else -> Fmt.dayOfWeekShort(today.plusDays(d.toLong()).dayOfWeek) + "요일" }
+                    "$day ${t?.name ?: "휴무"}"
+                }.joinToString(", ")
                 Row(
                     Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
                         .background(if (selected) scheme.primaryContainer.copy(alpha = 0.55f) else scheme.surfaceContainerLow)
                         .border(if (selected) 2.dp else 0.dp, if (selected) scheme.primary else scheme.surfaceContainerLow, MaterialTheme.shapes.medium)
                         .selectable(selected = selected, role = Role.RadioButton) { picked = o.step }
+                        .clearAndSetSemantics {
+                            contentDescription = spoken
+                            this.selected = selected
+                            role = Role.RadioButton
+                            onClick { picked = o.step; true }
+                        }
                         .padding(vertical = 8.dp, horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -530,6 +551,11 @@ internal fun PhaseSheet(phases: Phases, replacing: Boolean, busy: Boolean, onDis
             }
             Button(onClick = { picked?.let(onPick) }, enabled = picked != null && !busy, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
                 if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("이 순서로 쓸게요")
+            }
+            // [COMM-13] Why the button is grey, said under it rather than left to guess.
+            if (picked == null) {
+                Text("내 근무와 같은 줄을 먼저 골라 주세요", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
             }
         }
     }

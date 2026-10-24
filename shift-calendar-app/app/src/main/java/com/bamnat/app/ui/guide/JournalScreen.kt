@@ -49,6 +49,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.bamnat.core.time.Today
 
 /**
  * [OBS-02] 설정 › 밤낮이 한 일: what the app did by itself, by day, newest first, each line with why and the place
@@ -56,11 +57,11 @@ import java.time.format.DateTimeFormatter
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun JournalScreen(onBack: () -> Unit, today: LocalDate = LocalDate.now()) {
+fun JournalScreen(onBack: () -> Unit, today: LocalDate = Today.date()) {
     val c = LocalContext.current.appContainer
     val entries by c.journal.entries.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { runCatching { c.journal.load() } }
-    val zone = ZoneId.systemDefault()
+    val zone = Today.zone()
     val days = remember(entries) { Journal.byDay(entries.orEmpty(), zone) }
     var confirmClear by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()

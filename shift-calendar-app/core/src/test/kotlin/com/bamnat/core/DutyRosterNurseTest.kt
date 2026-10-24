@@ -26,7 +26,10 @@ class DutyRosterNurseTest {
     @Test fun middleAndLeaveCodes() {
         assertEquals(DutyCell.Shift(4), codes.match("S"))
         assertEquals(DutyCell.Shift(2), codes.match("E"))
-        listOf("병", "생", "AL", "SL", "공가").forEach { assertEquals(it, DutyCell.Leave, codes.match(it)) }
+        assertEquals(DutyCell.Leave(), codes.match("AL"))
+        // [ROST-05] 생리휴가 is 무급 by law; 병가·공가 are each company's own, so the user is asked.
+        assertEquals(DutyCell.Leave(com.bamnat.core.model.LeaveKind.UNPAID), codes.match("생"))
+        listOf("병", "SL", "공가").forEach { assertTrue(it, (codes.match(it) as DutyCell.Unknown).leave) }
         assertEquals(DutyCell.Shift(5), codes.match("PH"))
     }
 

@@ -33,6 +33,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.time.Instant
 import kotlin.coroutines.resume
+import com.bamnat.core.time.Today
 
 /** [MON-03] The one subscription and its plans as entered in Play Console (계획/1.19 3장). */
 object ProductIds {
@@ -94,7 +95,7 @@ class PlayBilling(
     private val device: () -> String,
     private val scope: CoroutineScope,
     private val log: (String) -> Unit = {},
-    private val clock: () -> Instant = Instant::now,
+    private val clock: () -> Instant = Today::instant,
     /** [STAT-04] A purchase made just now in the app: true for a free trial, false for a paid start. */
     private val onBought: (trial: Boolean) -> Unit = {},
 ) : Billing, PurchasesUpdatedListener {

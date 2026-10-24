@@ -4,6 +4,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /**
  * [INV-30][INV-32] Trades found in notifications, waiting for the user's 확인 (결정 D37): only the app,
@@ -36,16 +37,16 @@ object TradeAlerts {
         val title: String get() = name.ifBlank { symbol }
         val tag: String get() = TAG_PREFIX + app.take(20)
 
-        fun day(zone: ZoneId = ZoneId.systemDefault()): LocalDate = Instant.ofEpochMilli(at).atZone(zone).toLocalDate()
-        fun minute(zone: ZoneId = ZoneId.systemDefault()): Int = LocalDateTime.ofInstant(Instant.ofEpochMilli(at), zone).let { it.hour * 60 + it.minute }
+        fun day(zone: ZoneId = Today.zone()): LocalDate = Instant.ofEpochMilli(at).atZone(zone).toLocalDate()
+        fun minute(zone: ZoneId = Today.zone()): Int = LocalDateTime.ofInstant(Instant.ofEpochMilli(at), zone).let { it.hour * 60 + it.minute }
 
         /** The trade it becomes once confirmed: fees left at zero (the sheet suggests them when opened). */
-        fun toTrade(accountId: Long, fxRate: Double, zone: ZoneId = ZoneId.systemDefault()) = Trade(
+        fun toTrade(accountId: Long, fxRate: Double, zone: ZoneId = Today.zone()) = Trade(
             accountId = accountId, date = day(zone), minute = minute(zone), symbol = symbol, name = name, market = market,
             side = side, quantity = quantity, price = price, fxRate = if (market.foreign) fxRate else 1.0, tags = listOf(tag),
         )
 
-        fun toDraft(accountId: Long?, zone: ZoneId = ZoneId.systemDefault()) = TradeDraft(
+        fun toDraft(accountId: Long?, zone: ZoneId = Today.zone()) = TradeDraft(
             symbol = symbol, name = name, market = market, side = side, quantity = quantity, price = price.takeIf { it > 0 },
             accountId = accountId, date = day(zone), tags = listOf(tag), alertAt = at,
         )

@@ -51,6 +51,7 @@ import com.bamnat.app.ui.theme.NumberStyle
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import com.bamnat.core.time.Today
 
 /*
  * Small shared parts of the work tools [HRLY-09][HRLY-10][HRLY-11][FLD-11][SHOP-11]: a full-screen page
@@ -157,7 +158,7 @@ internal fun DateField(label: String, date: LocalDate?, onChange: (LocalDate?) -
         if (clearable && date != null) TextButton(onClick = { onChange(null) }) { Text("지우기") }
     }
     if (open) {
-        val state = rememberDatePickerState(initialSelectedDateMillis = (date ?: LocalDate.now()).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+        val state = rememberDatePickerState(initialSelectedDateMillis = (date ?: Today.date()).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
         DatePickerDialog(
             onDismissRequest = { open = false },
             confirmButton = {

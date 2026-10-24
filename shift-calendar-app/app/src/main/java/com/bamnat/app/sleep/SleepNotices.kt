@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /** [SLP-15] "잠들었어요" and "깼어요" on a notice, usable from the lock screen. */
 object SleepActions {
@@ -76,7 +77,7 @@ object SleepingNotice {
             .setSilent(true)
             .setContentTitle(title)
             .setContentText(nextAlarm?.let { "다음 알람 " + (if (it.toLocalDate() == now.toLocalDate()) "" else "내일 ") + hm(it) } ?: "깨면 ‘깼어요’를 눌러 주세요")
-            .setWhen(start.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
+            .setWhen(start.atZone(Today.zone()).toInstant().toEpochMilli())
             .setUsesChronometer(true)
             .setShowWhen(true)
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, 3313))

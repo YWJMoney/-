@@ -60,6 +60,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import kotlin.math.roundToInt
+import com.bamnat.core.time.Today
 
 /*
  * [SHFT-07] 연간 건강 지표: the year's night share, longest run of nights, short rests between shifts
@@ -140,7 +141,7 @@ class HealthReportViewModel(container: AppContainer, val calendarId: String) : V
 @Composable
 fun HealthReportScreen(vm: HealthReportViewModel, onBack: () -> Unit) {
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
-    var year by rememberSaveable { mutableIntStateOf(LocalDate.now().year) }
+    var year by rememberSaveable { mutableIntStateOf(Today.date().year) }
     Scaffold(topBar = {
         TopAppBar(
             title = { Text("연간 건강 지표") },

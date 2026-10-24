@@ -44,6 +44,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
 import kotlin.math.abs
+import com.bamnat.core.time.Today
 
 /** [INV-01] The investor calendar's view of one calendar: shared by its calendar, day and 투자 screens. */
 @Composable
@@ -132,7 +133,7 @@ fun TodayInvestCard(vm: InvestViewModel, today: LocalDate, onTrade: () -> Unit, 
     val pnl = state.daily[today] ?: 0L
     val trades = state.tradesOn(today)
     val hide = state.hide
-    val now = LocalDateTime.now()
+    val now = Today.dateTime()
     val next = state.full.alarms.mapNotNull { a -> InvestAlarms.next(a, now)?.takeIf { it.toLocalDate() == today }?.let { a to it } }.minByOrNull { it.second }
     val events = state.full.events.filter { it.date == today }
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = modifier.fillMaxWidth()) {

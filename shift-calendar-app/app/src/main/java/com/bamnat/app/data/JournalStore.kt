@@ -16,6 +16,7 @@ import java.io.File
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /**
  * [OBS-01] '밤낮이 한 일': one line for each thing the app did by itself, on this phone only. The file is in
@@ -27,7 +28,7 @@ class JournalStore(
     private val file: File,
     private val scope: CoroutineScope,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
-    private val clock: () -> Instant = Instant::now,
+    private val clock: () -> Instant = Today::instant,
 ) {
     private val lock = Mutex()
     private val _entries = MutableStateFlow<List<JournalEntry>?>(null)

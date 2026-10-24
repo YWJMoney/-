@@ -77,6 +77,7 @@ import com.bamnat.core.invest.holdingKey
 import java.time.LocalDate
 import java.time.LocalTime
 import kotlin.math.roundToLong
+import com.bamnat.core.time.Today
 
 /** [INV-01] Which of the investor's sheets is open. */
 sealed interface InvestSheet {
@@ -171,14 +172,14 @@ private fun DateRow(date: LocalDate, minuteText: String?, onDate: (LocalDate) ->
         OutlinedButton(onClick = { picking = true }) {
             Icon(Icons.Outlined.CalendarMonth, null)
             Spacer(Modifier.width(6.dp))
-            Text(if (date == LocalDate.now()) "오늘 · ${Fmt.dayTitle(date)}" else Fmt.dayTitle(date))
+            Text(if (date == Today.date()) "오늘 · ${Fmt.dayTitle(date)}" else Fmt.dayTitle(date))
         }
+        // [INPUT-02] The time is picked on the wheels, not typed; it stays "HH:mm" text for the trade's minute.
         if (onMinute != null && minuteText != null) {
-            OutlinedTextField(
-                value = minuteText, onValueChange = { v -> onMinute(v.filter { it.isDigit() || it == ':' }.take(5)) },
-                label = { Text("시각") }, placeholder = { Text("09:05") }, singleLine = true,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                modifier = Modifier.weight(1f),
+            com.bamnat.app.ui.components.TimeField(
+                label = "시각", time = parseMinute(minuteText)?.let { LocalTime.of(it / 60, it % 60) },
+                onChange = { t -> onMinute(t?.let { minuteText(it.hour * 60 + it.minute) }.orEmpty()) },
+                clearable = true, start = LocalTime.of(9, 0), modifier = Modifier.weight(1f),
             )
         }
     }
@@ -216,7 +217,7 @@ internal fun TradeSheet(
     var price by rememberSaveable { mutableStateOf(InvestFmt.input(start?.price ?: d.price)) }
     var date by rememberSaveable { mutableStateOf((start?.date ?: d.date ?: state.today).toString()) }
     var minute by rememberSaveable {
-        mutableStateOf(minuteText(start?.minute ?: if (start == null && (d.date ?: state.today) == LocalDate.now()) LocalTime.now().let { it.hour * 60 + it.minute } else null))
+        mutableStateOf(minuteText(start?.minute ?: if (start == null && (d.date ?: state.today) == Today.date()) Today.time().let { it.hour * 60 + it.minute } else null))
     }
     var fx by rememberSaveable { mutableStateOf(InvestFmt.input(start?.fxRate?.takeIf { start.market.foreign } ?: book.settings.usdKrw)) }
     // Fees follow what is typed until the user writes their own.

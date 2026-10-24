@@ -11,6 +11,7 @@ import com.bamnat.core.diag.DiagEvents
 import com.bamnat.core.diag.EventBook
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
+import com.bamnat.core.time.Today
 
 /** Receives the shift alarm and snooze alarms set by [AlarmScheduler]. */
 class AlarmReceiver : BroadcastReceiver() {
@@ -21,7 +22,7 @@ class AlarmReceiver : BroadcastReceiver() {
             // from the device-protected copy; the full re-plan runs once the phone is unlocked.
             when (intent.action) {
                 ACTION_TEST_ALARM -> ring?.let { startRinging(context, it) }
-                ACTION_SHIFT_ALARM -> if (ring != null && System.currentTimeMillis() - ring.triggerAtMillis < STALE_AFTER_MILLIS) {
+                ACTION_SHIFT_ALARM -> if (ring != null && Today.millis() - ring.triggerAtMillis < STALE_AFTER_MILLIS) {
                     startRinging(context, ring)
                 }
                 ACTION_SNOOZE_ALARM -> {
@@ -30,13 +31,13 @@ class AlarmReceiver : BroadcastReceiver() {
                     ring?.let { startRinging(context, it) }
                 }
             }
-            BootAlarms.registerNext(context, after = ring?.triggerAtMillis ?: System.currentTimeMillis())
+            BootAlarms.registerNext(context, after = ring?.triggerAtMillis ?: Today.millis())
             return
         }
         val container = context.appContainer
         when (intent.action) {
             ACTION_SHIFT_ALARM -> {
-                val now = System.currentTimeMillis()
+                val now = Today.millis()
                 val firedAt = maxOf(ring?.triggerAtMillis ?: now, now)
                 ring?.let { container.alarmScheduler.markFired(it.triggerAtMillis) }
                 val pending = goAsync()
@@ -68,7 +69,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 if (ring != null) {
                     container.telemetry.event(
                         DiagEvents.ALARM_TEST_FIRED,
-                        EventBook.triggerDetail(ring.triggerAtMillis, "late_s=${(System.currentTimeMillis() - ring.triggerAtMillis) / 1000}"),
+                        EventBook.triggerDetail(ring.triggerAtMillis, "late_s=${(Today.millis() - ring.triggerAtMillis) / 1000}"),
                     )
                     startRinging(context, ring)
                 }
@@ -132,7 +133,7 @@ class SystemEventReceiver : BroadcastReceiver() {
             // [REL-13] The test alarm did not survive the reboot; 알람 점검 must not wait for it.
             if (booted) runCatching { container.alarmScheduler.cancelTest() }
             try {
-                container.rescheduleAlarms(LocalDateTime.now())
+                container.rescheduleAlarms(Today.dateTime())
                 container.alarmScheduler.restoreSnooze()
                 val settings = container.settingsRepository.current
                 // [MCAL-06] Every calendar's jobs and money.

@@ -96,6 +96,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlin.math.abs
+import com.bamnat.core.time.Today
 
 /** Most months a card payment is spread over. */
 private const val MAX_INSTALLMENTS = 36
@@ -430,7 +431,7 @@ private fun Hint(text: String) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DateRow(onDay: LocalDate, onPick: (LocalDate) -> Unit, onOpen: () -> Unit) {
-    val today = LocalDate.now()
+    val today = Today.date()
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = { onPick(onDay.minusDays(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "전날") }
         TextButton(onClick = onOpen, modifier = Modifier.weight(1f).semantics { contentDescription = "${Fmt.dayTitle(onDay)}, 날짜 고르기" }) {

@@ -69,6 +69,7 @@ import com.bamnat.core.money.Job
 import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.work.WorkStyle
+import com.bamnat.core.time.Today
 
 /**
  * [QA-05] What every screenshot class shares: the sample data ([seed]), [shoot] and the [Screen] that taps and scrolls.
@@ -82,7 +83,10 @@ abstract class ScreenshotBase {
     @get:Rule val fold = androidx.window.testing.layout.WindowLayoutInfoPublisherRule()
 
     internal val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()
-    internal val today = LocalDate.now()
+    init { stopTheClock() }
+
+    /** [QA-08] Every shot is drawn on 2026-10-14 (수) 10:30 in Seoul, whatever day the test runs (결정 D66). */
+    internal val today = Today.date()
     /** The day most day screenshots open: 잔업 2시간 and a memo with an amount. */
     internal val dayCell = today.minusDays(2)
     /** 특근 09–18 on a day off, before today; 야간 대근 on a day off after it. */
@@ -176,7 +180,7 @@ abstract class ScreenshotBase {
         money.save(DailySales(today.minusDays(1), sales = 860_000, costs = 240_000))
         // [LEDG-02][LEDG-05][WORK-05] Card notifications read in, one the parser could not finish, fixed costs, a memo amount.
         val md = "${today.monthValue}/${today.dayOfMonth}"
-        val posted = System.currentTimeMillis()
+        val posted = Today.millis()
         money.capture("[Web발신]\n신한카드(1234)승인 홍*동 4,500원(일시불)$md 08:10 스타벅스 누적512,300원", "신한카드", posted)
         money.capture("KB국민카드5678승인 홍*동 23,800원 일시불 $md 12:40 김밥천국 누적 88,000원", "KB Pay", posted)
         money.capture("우리(9012)승인 USD 12.99 $md 07:00 NETFLIX.COM", "우리WON카드", posted)
@@ -312,12 +316,21 @@ abstract class ScreenshotBase {
                 settle()
                 find(text, exact, prefix)?.let { return it }
             }
+            // [QA-08] 363: the first shot of a cold worker on a busy CI runner can still show an empty window
+            // after the usual wait (phoneShareFeed, CI on d6b7228 and 330916a): nothing drawn yet waits longer.
+            if (shownWords().isEmpty()) {
+                val more = System.nanoTime() + EMPTY_WAIT_NANOS
+                while (System.nanoTime() < more) {
+                    settle()
+                    find(text, exact, prefix)?.let { return it }
+                }
+            }
             // [QA-05] On a busy machine a fling can carry the list past the text, so look back down step by step.
             repeat(scrolls) {
                 scrollDown(350, across)
                 find(text, exact, prefix)?.let { return it }
             }
-            error("화면에서 ‘$text’를 찾지 못했어요. 보이는 글자: " + shownWords().joinToString(" | ").take(1500))
+            error("화면에서 ‘$text’를 찾지 못했어요(열린 창 ${shownDialogs().size}개). 보이는 글자: " + shownWords().joinToString(" | ").take(1500))
         }
 
         /** Every word on screen, for a failure message that says what was there instead. */
@@ -353,6 +366,12 @@ abstract class ScreenshotBase {
             // Where it is once a scroll or late data has stopped moving things.
             settle()
             touch(reach(text, exact, prefix, 0, across).boundsInWindow.center)
+        }
+
+        /** [SETUP-15] The system back, as the phone's back gesture sends it. */
+        fun back() {
+            scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+            settle()
         }
 
         /** Whether [text] is on screen now, without scrolling or waiting. */
@@ -491,6 +510,15 @@ abstract class ScreenshotBase {
             (0..40).map { x to from + dp * d * it / 40 } + listOf(x to from + dp * d)
         }
 
+        /** [CAL-51] Every node in the topmost window, for checks of what shows where (묶음 R's layout checks). */
+        fun nodes(merged: Boolean = true): List<SemanticsNode> {
+            var all: List<SemanticsNode> = emptyList()
+            scenario.onActivity { activity ->
+                all = rootOf(topWindow(activity))?.semanticsOwner?.getAllSemanticsNodes(mergingEnabled = merged).orEmpty()
+            }
+            return all
+        }
+
         /** Drags the content up by [dp] (slowly, so it does not fling). */
         fun scrollUp(dp: Int, across: Float = 0.15f) = gesture { w, h, d ->
             val x = w * across
@@ -498,6 +526,18 @@ abstract class ScreenshotBase {
             // up to the 80% line the drag used to start on), lower only when a long drag needs the room.
             val from = maxOf(h * 0.6f, minOf(h * 0.8f, h * 0.05f + dp * d))
             (0..40).map { x to from - dp * d * it / 40 } + listOf(x to from - dp * d)
+        }
+
+        /** Drags the row that shows [text] to the left by [dp] (slowly) until [until] shows, to reach a sideways key. */
+        fun swipeRowLeft(text: String, until: String, dp: Int = 200, times: Int = 5) {
+            val y = reach(text, exact = false, prefix = false, scrolls = 0, across = 0.5f).boundsInWindow.center.y
+            repeat(times) {
+                if (find(until, exact = true, prefix = false) != null) return
+                gesture { w, _, d ->
+                    val from = w * 0.85f
+                    (0..40).map { from - dp * d * it / 40 to y } + listOf(from - dp * d to y)
+                }
+            }
         }
     }
 
@@ -544,7 +584,7 @@ abstract class ScreenshotBase {
         content {
             val profile = vm.profile.collectAsState().value
             val snap = vm.snapshot.collectAsState().value
-            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {}, onOpenKinds = {})
+            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, Today.month(), onClose = {}, onOpenKinds = {})
         }
         settle()
     }
@@ -593,12 +633,12 @@ abstract class ScreenshotBase {
     internal fun payslipMatch(): Screen.() -> Unit = payScreen(Tier.PRO, withProfile = true) { vm ->
         val profile = vm.profile.collectAsState().value
         val snap = vm.snapshot.collectAsState().value
-        if (profile != null && snap != null) com.bamnat.app.ui.pay.PayslipMatchDialog(vm, profile, snap, java.time.YearMonth.now(), onDismiss = {})
+        if (profile != null && snap != null) com.bamnat.app.ui.pay.PayslipMatchDialog(vm, profile, snap, Today.month(), onDismiss = {})
     }
     // [SHR-11] A shop shares its 매출 and a freelancer their 일정 and 일감 수입, with the figures shown before sending.
     internal fun shareSheet(style: WorkStyle): Screen.() -> Unit = style(style) {
         val snap = runBlocking { app.container.scheduleRepository.snapshot.first() }
-        content { com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}) }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}) }
     }
     // [RECV-05] 받을 돈 for each kind of work: written debts, unpaid jobs, the job and receivable sheets.
     internal fun owed(s: WorkStyle, wide: Boolean = false, then: Screen.() -> Unit = {}): Screen.() -> Unit = style(s) {
@@ -634,7 +674,7 @@ abstract class ScreenshotBase {
     internal fun foundTrades(then: Screen.() -> Unit = {}): Screen.() -> Unit = style(WorkStyle.INVEST) {
         val c = app.container
         val repo = com.bamnat.app.data.InvestRepository.of(c.database)
-        val at = System.currentTimeMillis()
+        val at = Today.millis()
         runBlocking {
             val acc = repo.ensureAccount()
             repo.saveCash(com.bamnat.core.invest.CashFlow(accountId = acc, date = today.minusDays(5), kind = com.bamnat.core.invest.CashKind.DEPOSIT, amount = 5_000_000))
@@ -725,7 +765,7 @@ abstract class ScreenshotBase {
     }
     internal fun votePay(): Screen.() -> Unit = {
         val c = companyOn()
-        c.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("c1", "(주)예시정밀", "생산팀", "s1", 2, true, java.time.Instant.now()))
+        c.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("c1", "(주)예시정밀", "생산팀", "s1", 2, true, Today.instant()))
         val nudges = com.bamnat.app.ui.company.CompanyNudgeViewModel(c)
         payScreen(Tier.PRO, withProfile = true) { vm ->
             PayScreen(vm, onBack = {}, top = { com.bamnat.app.ui.company.CompanyNudgeCards(nudges, onShare = {}, onFix = {}) })
@@ -755,7 +795,7 @@ abstract class ScreenshotBase {
         val body = com.bamnat.app.share.ShareLinkPayload.build(snap, from, "민지", 30,
             com.bamnat.app.share.ShareOptions(leaveKinds = true, extras = true, memos = true, pay = true), memos, pay)
         body.remove("ttlDays")
-        return com.bamnat.app.share.ReceivedShare(body, java.time.Instant.now().plus(java.time.Duration.ofDays(30)), java.time.Instant.now())
+        return com.bamnat.app.share.ReceivedShare(body, Today.instant().plus(java.time.Duration.ofDays(30)), Today.instant())
     }
 
     /** 준호's link from an older app: weekdays 09–18, nothing ticked. */
@@ -766,7 +806,7 @@ abstract class ScreenshotBase {
         val monday = from.minusDays((from.dayOfWeek.value - 1).toLong())
         val snap = com.bamnat.app.data.ScheduleSnapshot(listOf(weekday, off), WorkPattern.Rotation(monday, listOf(1L, 1L, 1L, 1L, 1L, 2L, 2L)), emptyList())
         val body = com.bamnat.app.share.ShareLinkPayload.build(snap, from, "준호", 30)
-        return com.bamnat.app.share.ReceivedShare(body, java.time.Instant.now().plus(java.time.Duration.ofDays(7)), java.time.Instant.now())
+        return com.bamnat.app.share.ReceivedShare(body, Today.instant().plus(java.time.Duration.ofDays(7)), Today.instant())
     }
 
     /** The share server answers at once; 준호 then 민지 were received, unless [minji] is false. */
@@ -807,11 +847,16 @@ abstract class ScreenshotBase {
     internal companion object {
         const val RULES_PERIOD_SCROLL = 420
 
+        /** [SETUP-15] The first card on "무슨 일 하세요?". */
+        const val SHIFT_CARD = "교대 근무 · 순서가 돌아가요"
+
         /** [QA-05] [settle]: rounds of 10 ms with nothing to do before a screen counts as still, and the cap. */
         const val QUIET_ROUNDS = 5
         const val SETTLE_MIN_ROUNDS = 5
         const val SETTLE_MAX_NANOS = 1_000_000_000L
         const val REACH_WAIT_NANOS = 5_000_000_000L
+        /** [QA-08] Once more, for a screen that has drawn nothing at all yet. */
+        const val EMPTY_WAIT_NANOS = 15_000_000_000L
 
         // Galaxy Z Fold6: cover screen 968x2376 px and main screen 1856x2160 px at 420 dpi.
         const val FOLDED = "w369dp-h905dp-port-420dpi"
@@ -820,6 +865,27 @@ abstract class ScreenshotBase {
         const val PHONE = "w360dp-h780dp-port-450dpi"
         const val SMALL_PHONE = "w320dp-h568dp-port-xhdpi"
         const val PHONE_LANDSCAPE = "w780dp-h360dp-land-450dpi"
+
+        /** [QA-08] The fixed day and time of every shot, and the zone the phone is in. */
+        val SEOUL: java.time.ZoneId = java.time.ZoneId.of("Asia/Seoul")
+        val SHOT_TIME: java.time.ZonedDateTime = java.time.ZonedDateTime.of(2026, 10, 14, 10, 30, 0, 0, SEOUL)
+        private val systemZone: java.util.TimeZone = java.util.TimeZone.getDefault()
+
+        /**
+         * Before the class's first app object reads the date (Robolectric makes the app before the test object), and
+         * kept for the whole class; the other test classes of the same worker get the system clock back.
+         */
+        @JvmStatic @org.junit.BeforeClass
+        fun stopTheClock() {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(SEOUL))
+            Today.fix(SHOT_TIME)
+        }
+
+        @JvmStatic @org.junit.AfterClass
+        fun startTheClock() {
+            Today.reset()
+            java.util.TimeZone.setDefault(systemZone)
+        }
     }
 
     // ---- 달력 (1.15) ----
@@ -888,7 +954,7 @@ abstract class ScreenshotBase {
         val body = com.bamnat.app.share.ShareLinkPayload.build(snap, today.withDayOfMonth(1), "준호", 30,
             com.bamnat.app.share.ShareOptions(memos = true, jobs = true), memos, jobs = jobs)
         body.remove("ttlDays")
-        return com.bamnat.app.share.ReceivedShare(body, java.time.Instant.now().plus(java.time.Duration.ofDays(30)), java.time.Instant.now())
+        return com.bamnat.app.share.ReceivedShare(body, Today.instant().plus(java.time.Duration.ofDays(30)), Today.instant())
     }
     internal fun jobsLinkOn() {
         val c = app.container
@@ -931,7 +997,7 @@ abstract class ScreenshotBase {
 
     /** [UX-05] The question server for screenshots: two questions from this phone, one answered, and 모두의 문의. */
     internal class FakeInquiryApi(override val enabled: Boolean = true) : com.bamnat.app.company.InquiryApi {
-        private val now = java.time.Instant.now()
+        private val now = Today.instant()
         private fun ago(hours: Long) = now.minus(java.time.Duration.ofHours(hours))
         private val mine = mutableListOf(
             com.bamnat.app.company.Inquiry("q2", com.bamnat.app.company.InquiryKind.BUG, "answered", ago(30), ago(2), listOf(
@@ -1025,7 +1091,7 @@ abstract class ScreenshotBase {
                          then: Screen.() -> Unit = {}): Screen.() -> Unit = {
         val c = app.container
         c.billing = com.bamnat.app.billing.NoBilling(samplePlans)
-        c.remoteConfig.save(config.copy(fetchedAt = java.time.Instant.now()))
+        c.remoteConfig.save(config.copy(fetchedAt = Today.instant()))
         c.featureGate.refresh()
         settle()
         then()
@@ -1037,23 +1103,23 @@ abstract class ScreenshotBase {
         val c = app.container
         c.shareApi = shares
         c.shareLinks.save(com.bamnat.app.share.ShareLinkState("Ab3dEfGh5JkLmNoPqRsTuv", "https://bamnat-share.example.workers.dev/s/Ab3dEfGh5JkLmNoPqRsTuv",
-            "t", java.time.Instant.now().plus(java.time.Duration.ofDays(150)), "민지", 180, java.time.YearMonth.now()))
+            "t", Today.instant().plus(java.time.Duration.ofDays(150)), "민지", 180, Today.month()))
         c.shareLinks.feed = true
         val snap = runBlocking { c.scheduleRepository.snapshot.first() }
-        content { com.bamnat.app.ui.calendar.ShareDialog(snap, java.time.YearMonth.now(), {}, {}, client = shares) }
+        content { com.bamnat.app.ui.calendar.ShareDialog(snap, Today.month(), {}, {}, client = shares) }
         settle()
         then()
     }
     internal fun Screen.mission(kind: com.bamnat.core.alarm.AlarmMission, rangFor: java.time.Duration) {
         val sensors = app.getSystemService(android.hardware.SensorManager::class.java)
         shadowOf(sensors).addSensor(org.robolectric.shadows.ShadowSensor.newInstance(android.hardware.Sensor.TYPE_ACCELEROMETER))
-        val since = System.currentTimeMillis() - rangFor.toMillis()
+        val since = Today.millis() - rangFor.toMillis()
         content { com.bamnat.app.alarm.MissionScreen(kind, since, 5, onSnooze = {}, onDone = {}) }
     }
     // ==== 1.22 묶음 B [SRV-04][SRV-05][SRV-06][STAT-01][COMM-08][COMM-09][COMM-10]: 410–429 ====
     /** The developer's notice of the day, and [off] switches paused. */
     internal fun opsOn(vararg off: com.bamnat.core.ops.ServerSwitch) {
-        val now = java.time.Instant.now()
+        val now = Today.instant()
         app.container.remoteConfig.save(com.bamnat.app.tier.LaunchConfig(
             notices = listOf(com.bamnat.core.ops.AppNotice("nTonight01", "오늘 밤 2시 30분 동안 점검해요",
                 "광장과 근무표 링크 만들기가 새벽 2시부터 2시 30분까지 쉬어요. 달력·알람·급여는 그대로 돼요.", important = true,
@@ -1063,7 +1129,7 @@ abstract class ScreenshotBase {
         ))
     }
     internal fun writer(n: Int, nick: String?) = com.bamnat.app.company.TalkPost("p$n", n, null, true,
-        "야간 뒤 휴무가 하루뿐이라 힘들어요", java.time.Instant.now().minusSeconds(3600), mine = false, nick = nick)
+        "야간 뒤 휴무가 하루뿐이라 힘들어요", Today.instant().minusSeconds(3600), mine = false, nick = nick)
 
     // ---- [208] Store pictures (1.18.0): a common phone, no one-time hints, the phone's alarm permissions given ----
     internal fun clean(then: Screen.() -> Unit = {}): Screen.() -> Unit {
@@ -1081,7 +1147,7 @@ abstract class ScreenshotBase {
             val profile = vm.profile.collectAsState().value
             val snap = vm.snapshot.collectAsState().value
             if (profile != null && snap != null) {
-                com.bamnat.app.ui.pay.CustomItemDialog(vm, profile, snap, java.time.YearMonth.now(), onDismiss = {}, onSave = {},
+                com.bamnat.app.ui.pay.CustomItemDialog(vm, profile, snap, Today.month(), onDismiss = {}, onSave = {},
                     gap = gap, startKind = kind)
             }
         }
@@ -1112,14 +1178,14 @@ abstract class ScreenshotBase {
         val profile = vm.profile.collectAsState().value
         val snap = vm.snapshot.collectAsState().value
         if (profile != null && snap != null) {
-            com.bamnat.app.ui.pay.PayslipMatchDialog(vm, profile, snap, java.time.YearMonth.now(), onDismiss = {}, onShareWay = {})
+            com.bamnat.app.ui.pay.PayslipMatchDialog(vm, profile, snap, Today.month(), onDismiss = {}, onShareWay = {})
         }
     }
 
     /** This month as the app has it, for a payslip a little off from it. */
     internal fun appTotalNow(): Long = runBlocking {
         val c = app.container
-        PayViewModel(c).calculateOff(c.payStore.profile.value!!, c.scheduleRepository.snapshot.first(), java.time.YearMonth.now()).total
+        PayViewModel(c).calculateOff(c.payStore.profile.value!!, c.scheduleRepository.snapshot.first(), Today.month()).total
     }
 
     internal fun Screen.payslipGap() {
@@ -1152,7 +1218,7 @@ abstract class ScreenshotBase {
         val c = app.container
         val vm = PayViewModel(c)
         val snap = runBlocking { c.scheduleRepository.snapshot.first() }
-        val month = java.time.YearMonth.now()
+        val month = Today.month()
         val sample = vm.sampleProfile()
         content {
             com.bamnat.app.ui.pay.PayWizard(sample, {}, {}, snapshot = snap, preview = { vm.preview(it, snap, month) }, startAt = key)
@@ -1259,11 +1325,19 @@ abstract class ScreenshotBase {
 
     // ==== 1.22 묶음 G ====
     // [ONBOARD-03][ONBOARD-04] 추천 기능 한 번에 켜기, in place of the consent pages of 1.13~1.21.
-    internal fun recommended(items: Set<ConsentItem> = ConsentItem.entries.toSet(), then: Screen.() -> Unit = {}): Screen.() -> Unit {
+    internal fun recommended(
+        items: Set<ConsentItem> = ConsentItem.entries.toSet(),
+        /** [SETUP-15] The card tapped on "무슨 일 하세요?" first; null taps "백업이나 회사 파일로 시작할게요". */
+        firstStyle: String? = SHIFT_CARD,
+        then: Screen.() -> Unit = {},
+    ): Screen.() -> Unit {
         val c = app.container
         c.consentStore.forget()
         c.consentStore.availableForTest = items
-        return fresh(null, then)
+        return fresh(null) {
+            tapText(firstStyle ?: "백업이나 회사 파일로 시작할게요", exact = true)
+            then()
+        }
     }
 
     // ==== 1.22 묶음 A ====
@@ -1331,7 +1405,7 @@ abstract class ScreenshotBase {
         payScreen(Tier.PRO, withProfile = true, adjust = adjust) { vm ->
             val profile = vm.profile.collectAsState().value
             val snap = vm.snapshot.collectAsState().value
-            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {}, onOpenKinds = {})
+            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, Today.month(), onClose = {}, onOpenKinds = {})
         }
 }
 
@@ -1340,7 +1414,7 @@ internal class FakeShareApi : com.bamnat.app.share.ShareApi {
     override val enabled = true
     val links = mutableMapOf<String, com.bamnat.app.share.ReceivedShare>()
     override suspend fun create(payload: org.json.JSONObject) = com.bamnat.app.share.ShareLinkState("Ab3dEfGh5JkLmNoPqRsTuv",
-        "https://bamnat-share.example.workers.dev/s/Ab3dEfGh5JkLmNoPqRsTuv", "t", java.time.Instant.now().plus(java.time.Duration.ofDays(30)), payload.optString("title"))
+        "https://bamnat-share.example.workers.dev/s/Ab3dEfGh5JkLmNoPqRsTuv", "t", Today.instant().plus(java.time.Duration.ofDays(30)), payload.optString("title"))
     override suspend fun update(state: com.bamnat.app.share.ShareLinkState, payload: org.json.JSONObject) = state
     override suspend fun delete(state: com.bamnat.app.share.ShareLinkState) = Unit
     override suspend fun read(id: String) = links[id] ?: throw com.bamnat.app.share.ShareLinkException("not_found")
@@ -1350,7 +1424,9 @@ internal class FakeShareApi : com.bamnat.app.share.ShareApi {
 internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
     override val enabled = true
     var file = "{}"
-    private val now = java.time.Instant.now()
+    /** [COMM-14] Two reports for (주)예시정밀 생산팀 side by side, on the board and the company screen. */
+    var twins = false
+    private val now = Today.instant()
 
     private fun status(id: String, status: String, company: String, dept: String, points: Int, persons: Int, ask: Boolean = false,
         review: Boolean = false, reason: String? = null, reward: com.bamnat.app.company.Reward? = null, daysAgo: Long = 0) =
@@ -1385,6 +1461,11 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
         return com.bamnat.app.company.CompanyPage(id, "(주)예시정밀", listOf("예시정밀"), listOf(
             com.bamnat.app.company.SharedSetup("s1", true, 5, 3, 1, 3, "생산팀", 2, file, main + pay, trust = 75, agree = 75, posts = 4),
             com.bamnat.app.company.SharedSetup("s2", false, 2, 1, 0, 3, "포장팀", null, file, main.take(2), trust = 67, agree = 100),
+        ) + if (!twins) emptyList() else listOf(
+            com.bamnat.app.company.SharedSetup("s3", false, 3, 2, 0, 3, "생산팀", null, file,
+                listOf("근무" to "주간 08:00~20:00 휴게 60분 · 야간 20:00~08:00 휴게 60분 · 휴무(쉬는 날)", "순서 4일" to "주간 야간 휴무 휴무") + pay, trust = 67, agree = 67),
+            com.bamnat.app.company.SharedSetup("s4", false, 2, 2, 0, 3, "생산팀", null, file,
+                listOf(main[0], "순서 4일" to "주간 야간 휴무 휴무") + pay.take(3), trust = 67, agree = 100),
         ))
     }
 
@@ -1413,6 +1494,11 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
             item("v1", "가나다화학", "품질팀", false, 2, 2, 0, 67, 100, 3, 1, "주간 08:30~17:30 휴게 60분 · 휴일(쉬는 날)", "순서 7일"),
             item("v2", "라마바전자", "생산1팀", false, 3, 2, 1, 67, 67, 5, 5, "주간 07:00~19:00 · 야간 19:00~07:00 · 휴무(쉬는 날)", "순서 8일"),
             item("v3", "예시정밀 2공장", "", false, 1, 1, 0, 33, 100, 0, 26, "오전 06:00~14:00 · 오후 14:00~22:00 · 야간 22:00~06:00", "순서 6일"),
+        ) + if (!twins) emptyList() else listOf(
+            com.bamnat.app.company.BoardItem("c1", "(주)예시정밀", "s3", "생산팀", false, 3, 2, 0, 3, 67, 67, 2, null,
+                now.minus(java.time.Duration.ofHours(50)), "주간 08:00~20:00 · 야간 20:00~08:00 · 휴무(쉬는 날)", "순서 4일", true),
+            com.bamnat.app.company.BoardItem("c1", "(주)예시정밀", "s4", "생산팀", false, 2, 2, 0, 3, 67, 100, 0, null,
+                now.minus(java.time.Duration.ofHours(8)), "주간 08:00~20:00 · 야간 20:00~08:00 · 휴무(쉬는 날)", "순서 4일", true),
         )).filter { q.isBlank() || it.company.contains(q.trim()) },
         null,
     )

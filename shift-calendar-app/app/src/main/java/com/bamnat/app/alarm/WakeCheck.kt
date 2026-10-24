@@ -9,6 +9,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.bamnat.app.R
 import com.bamnat.app.appContainer
+import com.bamnat.core.time.Today
 
 /**
  * [PROV-07] 일어났는지 확인 (프로): some minutes after an alarm is turned off, a notice asks 일어났나요?
@@ -27,14 +28,14 @@ object WakeCheck {
     private const val K_RING = "ring"
 
     /** Asks [minutes] from now about [ring], which rings again if nobody answers. */
-    fun schedule(context: Context, ring: RingRequest, minutes: Int, now: Long = System.currentTimeMillis()) {
+    fun schedule(context: Context, ring: RingRequest, minutes: Int, now: Long = Today.millis()) {
         prefs(context).edit().putString(K_RING, ring.encode()).apply()
         set(context, now + minutes * 60_000L, intent(context, ACTION_ASK, REQ_ASK))
         context.appContainer.telemetry.event("wake_check", "scheduled")
     }
 
     /** The notice, and the ring that follows it unless 일어났어요 comes first. */
-    fun ask(context: Context, now: Long = System.currentTimeMillis()) {
+    fun ask(context: Context, now: Long = Today.millis()) {
         if (pendingRing(context) == null) return
         // [ALRM-01] R11: without the notification permission nobody could see the question, and the alarm would
         // ring again 90 seconds later for no reason the user could tell. It is left out; 알람 점검 says why.
@@ -66,7 +67,7 @@ object WakeCheck {
         clear(context)
         Notifications.cancel(context, Notifications.WAKE_CHECK_ID)
         context.appContainer.telemetry.event("wake_check", "rang")
-        AlarmService.start(context, ring.copy(recheck = true, isSnooze = false, triggerAtMillis = System.currentTimeMillis()))
+        AlarmService.start(context, ring.copy(recheck = true, isSnooze = false, triggerAtMillis = Today.millis()))
     }
 
     /** 일어났어요, or a new alarm in the meantime: nothing more for this one. */

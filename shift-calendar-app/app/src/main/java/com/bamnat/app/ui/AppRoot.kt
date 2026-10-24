@@ -145,6 +145,7 @@ import androidx.compose.runtime.produceState
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 private enum class TopLevel(val route: String, val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
     CALENDAR("calendar", "달력", Icons.Outlined.CalendarMonth, Icons.Filled.CalendarMonth),
@@ -293,16 +294,31 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val rootScope = rememberCoroutineScope()
     var browseFirst by rememberSaveable { mutableStateOf(false) }
     val startMine: (Boolean) -> Unit = { keep -> rootScope.launch { container.example.startMine(keep) } }
+    // [SETUP-15] "무슨 일 하세요?" before the consent screen: its answer ("" when skipped) shapes that screen and starts the setup.
+    var firstStyleKey by rememberSaveable { mutableStateOf<String?>(null) }
     when (needsSetup) {
         null -> return
         // "나중에" opens the calendar with a card to go on from where the user stopped.
         true -> if (setupDraft?.later != true && !browse.browsing) {
             if (consentSeen == null && setupDraft == null) {
-                ConsentPages(container, onDone = {}, onBrowse = { browseFirst = true })
+                val key = firstStyleKey
+                if (key == null) {
+                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { firstStyleKey = it.key }, onSkip = { firstStyleKey = "" })
+                    return
+                }
+                val first = com.bamnat.app.ui.onboarding.FirstStyle.of(key)
+                androidx.activity.compose.BackHandler { firstStyleKey = null }
+                ConsentPages(container, onDone = {}, style = first?.style, onBrowse = {
+                    // With the work known, 우선 둘러볼게요 opens its example at once; skipped, the setup asks which.
+                    if (first == null) browseFirst = true
+                    else { firstStyleKey = ""; rootScope.launch { container.example.browse(first.style) } }
+                })
                 return
             }
             SetupHost(appViewModel { SetupViewModel(it) },
-                onBrowse = { style -> browseFirst = false; rootScope.launch { container.example.browse(style) } }, browseFirst = browseFirst)
+                onBrowse = { style -> browseFirst = false; rootScope.launch { container.example.browse(style) } }, browseFirst = browseFirst,
+                firstStyle = com.bamnat.app.ui.onboarding.FirstStyle.of(firstStyleKey)?.let { it.style to it.roster },
+                onFirstStyleUsed = { firstStyleKey = "" })
             return
         }
         false -> Unit
@@ -332,14 +348,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             // [NAV-01] Away long enough to count as opening the app again: this month, like a fresh start.
             if (NoticeLinks.target.value == null && TopLevel.entries.any { it.route == current }) {
-                container.shownMonth.show(java.time.YearMonth.now())
+                container.shownMonth.show(Today.month())
             }
         }
     }
 
     // [IMPORT-02] When the user asked for it, new events in the chosen calendars are offered on opening the app.
     LaunchedEffect(homeRequests) {
-        val count = runCatching { container.calendarImporter.countNew(LocalDate.now()) }.getOrDefault(0)
+        val count = runCatching { container.calendarImporter.countNew(Today.date()) }.getOrDefault(0)
         if (count > 0 && snackbar.showSnackbar("캘린더에 새 일정 ${count}개가 있어요", actionLabel = "가져오기",
                 duration = androidx.compose.material3.SnackbarDuration.Long) == androidx.compose.material3.SnackbarResult.ActionPerformed) {
             NoticeLinks.open(NoticeLinks.Target.CALENDAR_IMPORT)
@@ -418,6 +434,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val incomingFile by com.bamnat.app.IncomingFiles.file.collectAsStateWithLifecycle()
     LaunchedEffect(incomingFile) {
         if (incomingFile != null) SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.DATA)
+    }
+    // [ROST-09] A roster shared from the gallery or a messenger: 한 달 근무 넣기, which reads it.
+    val sharedRoster by com.bamnat.app.IncomingRoster.shared.collectAsStateWithLifecycle()
+    LaunchedEffect(sharedRoster) {
+        if (sharedRoster != null && nav.currentBackStackEntry?.destination?.route != Routes.DUTY_ROSTER) {
+            nav.navigate(Routes.DUTY_ROSTER) { launchSingleTop = true }
+        }
     }
     val settingsLink by SettingsLinks.target.collectAsStateWithLifecycle()
     LaunchedEffect(settingsLink) {
@@ -710,7 +733,9 @@ private fun AppNavHost(
             val vm = appViewModel { CalendarViewModel(it) }
             CalendarScreen(
                 vm = vm,
-                wide = wide,
+                // [REL-16] 364 (검토 M-E5): a 7-inch tablet held upright (600dp) keeps the rail but not the day beside
+                // the month: in half of 600dp the days were too narrow for their shift chips (660 shot).
+                wide = wide && androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= CALENDAR_BESIDE_DP,
                 snackbarHostState = snackbar,
                 onOpenMemo = { id -> nav.navigate(Routes.memo(id)) },
                 onNewMemo = { date -> nav.navigate(Routes.memo(0, date)) },
@@ -969,9 +994,16 @@ private fun AppNavHost(
                         com.bamnat.core.profile.AskPlace.Screen(PAY_ASKS), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), inCardOnly = true)
                     CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                         onFix = { nav.fixCompanySetup(it) })
+                    // [COMM-12] The company is known and no coworker's rules are in use: the plaza, with its name typed.
+                    com.bamnat.app.ui.company.PlazaEntryCard(container, calendar, onOpen = { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } },
+                        Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
                 },
                 // [DAILY-16] 광장 시세 of the user's own job and region next to their pay, compared on the phone.
-                underTotal = { com.bamnat.app.ui.company.RateHintLine(profile) { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } } },
+                underTotal = {
+                    com.bamnat.app.ui.company.RateHintLine(profile) { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } }
+                    // [COMM-12] One line into the plaza from the pay; hidden without the company server.
+                    if (calendar == PersonalCalendar.MAIN) com.bamnat.app.ui.company.PlazaEntryLine(container, onOpen = { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true } })
+                },
                 // [ADMIN-02] 계산이 이상해요 is a question in the app; a build without the company server shares it.
                 onReport = if (container.inquiryApi.enabled) { check ->
                     container.pendingPayCheck = check
@@ -1218,18 +1250,11 @@ private fun AppNavHost(
 /** [UX-06] A tab's name, whole at every text size: at the largest sizes "근무·급여" was cut to "근무·". */
 @Composable
 private fun TabLabel(text: String) {
-    // [A11Y-04] From 150% a two-word name ("근무·급여") takes two lines, so each word stays big enough to read
-    // instead of the whole name shrinking to fit one (notes/1.22-285/F.md 4장 3번).
+    // [VIS-04] 중-3: from 150% a two-word name ("근무·급여") used to take two lines and push its icon above the others'
+    // (A11Y-04); now it keeps one line with its last word ("급여"), as big as the other tabs, and TalkBack reads it whole.
     val parts = text.split('·')
     if (parts.size == 2 && androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
-        androidx.compose.foundation.layout.Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.clearAndSetSemantics { contentDescription = text },
-        ) {
-            val style = MaterialTheme.typography.labelMedium.copy(lineHeight = MaterialTheme.typography.labelMedium.fontSize)
-            FitText(parts[0], style)
-            FitText(parts[1], style)
-        }
+        FitText(parts[1], MaterialTheme.typography.labelMedium, Modifier.clearAndSetSemantics { contentDescription = text })
     } else {
         FitText(text, MaterialTheme.typography.labelMedium)
     }
@@ -1401,3 +1426,6 @@ private const val SCREEN_MILLIS = 250
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.betweenTabs(): Boolean =
     TopLevel.entries.any { it.route == initialState.destination.route } &&
         TopLevel.entries.any { it.route == targetState.destination.route }
+
+/** [REL-16] The narrowest window that shows the day beside the month: the Fold's inner screen (707dp) does, 600dp does not. */
+private const val CALENDAR_BESIDE_DP = 700

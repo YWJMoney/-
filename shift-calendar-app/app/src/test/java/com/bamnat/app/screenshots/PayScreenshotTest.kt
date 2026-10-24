@@ -23,6 +23,7 @@ import org.robolectric.annotation.GraphicsMode
 import java.time.LocalDate
 import java.time.LocalTime
 import com.bamnat.core.work.WorkStyle
+import com.bamnat.core.time.Today
 
 /** [QA-05] Screenshots: 급여·연차·회사 규칙·추가 근무 종류. Shot names and numbers are the ones they had in the one big class. */
 @RunWith(AndroidJUnit4::class)
@@ -41,13 +42,13 @@ class PayScreenshotTest : ScreenshotBase() {
     @Test fun foldedCompanyRules() = shoot("34_folded_company_rules", FOLDED, payScreen(Tier.PRO, withProfile = true) { vm ->
         val profile = vm.profile.collectAsState().value
         val snap = vm.snapshot.collectAsState().value
-        if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {}, onOpenKinds = {})
+        if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, Today.month(), onClose = {}, onOpenKinds = {})
     })
     @Test fun foldedCompanyRulesExtra() = shoot("35_folded_company_rules_extra", FOLDED) {
         payScreen(Tier.PRO, withProfile = true) { vm ->
             val profile = vm.profile.collectAsState().value
             val snap = vm.snapshot.collectAsState().value
-            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {}, onOpenKinds = {})
+            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, Today.month(), onClose = {}, onOpenKinds = {})
         }.invoke(this)
         scrollUp(700)
     }
@@ -78,7 +79,7 @@ class PayScreenshotTest : ScreenshotBase() {
         payScreen(Tier.PRO, withProfile = true) { vm ->
             val profile = vm.profile.collectAsState().value
             val snap = vm.snapshot.collectAsState().value
-            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {}, onOpenKinds = {})
+            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, Today.month(), onClose = {}, onOpenKinds = {})
         }.invoke(this)
         scrollUp(800)
         scrollUp(800)
@@ -124,6 +125,8 @@ class PayScreenshotTest : ScreenshotBase() {
     @Test fun foldedExtraReviewDialog() = shoot("102b_folded_extra_review_dialog", FOLDED) {
         runBlocking { app.container.scheduleRepository.addExtra(today.minusDays(5), ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 90, needsReview = true)) }
         settle()
+        // [CAL-50] Under the alarm warning the review card waits folded in "알림 1개 더 보기".
+        tapText("알림 1개 더 보기", prefix = true, scrolls = 0)
         tapText("확인하기", exact = true, scrolls = 0)
         check(shownDialogs().isNotEmpty()) { "확인 창이 열리지 않았어요" }
     }
@@ -211,7 +214,7 @@ class PayScreenshotTest : ScreenshotBase() {
         val c = app.container
         val vm = PayViewModel(c)
         val snap = runBlocking { c.scheduleRepository.snapshot.first() }
-        val month = java.time.YearMonth.now()
+        val month = Today.month()
         val sample = vm.sampleProfile().copy(estimatedFields = setOf(com.bamnat.core.pay.Unknowns.FIVE_OR_MORE))
         content {
             com.bamnat.app.ui.pay.PayWizard(sample, {}, {}, snapshot = snap, preview = { vm.preview(it, snap, month) }, startAt = "summary")
@@ -246,7 +249,7 @@ class PayScreenshotTest : ScreenshotBase() {
         payScreen(Tier.PRO, withProfile = true, adjust = closeOn20) { vm ->
             val profile = vm.profile.collectAsState().value
             val snap = vm.snapshot.collectAsState().value
-            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, java.time.YearMonth.now(), onClose = {}, onOpenKinds = {})
+            if (profile != null && snap != null) CompanyRulesEditor(vm, profile, snap, Today.month(), onClose = {}, onOpenKinds = {})
         }.invoke(this)
         scrollUp(RULES_PERIOD_SCROLL)
     }
@@ -255,14 +258,14 @@ class PayScreenshotTest : ScreenshotBase() {
         val profile = vm.profile.collectAsState().value
         val snap = vm.snapshot.collectAsState().value
         if (profile != null && snap != null) {
-            EditValueDialog(vm, profile, snap, ValueTarget.Base, java.time.YearMonth.now(), onDismiss = {})
+            EditValueDialog(vm, profile, snap, ValueTarget.Base, Today.month(), onDismiss = {})
         }
     })
     @Test fun foldedPayLineDetail() = shoot("31_folded_pay_line_detail", FOLDED, payScreen(Tier.PRO, withProfile = true) { vm ->
         val profile = vm.profile.collectAsState().value
         val snap = vm.snapshot.collectAsState().value
         if (profile != null && snap != null) {
-            val result = vm.calculate(profile, snap, java.time.YearMonth.now())
+            val result = vm.calculate(profile, snap, Today.month())
             val line = result.lines.firstOrNull { it.kind == com.bamnat.core.pay.LineKind.NIGHT } ?: result.lines.first()
             LineDetailDialog(line, result, onDismiss = {})
         }
@@ -274,7 +277,7 @@ class PayScreenshotTest : ScreenshotBase() {
 
     @Test fun foldedCompanyPay() = shoot("119_folded_company_pay", FOLDED) {
         val c = companyOn()
-        c.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("c1", "(주)예시정밀", "생산팀", "s1", 2, true, java.time.Instant.now()))
+        c.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("c1", "(주)예시정밀", "생산팀", "s1", 2, true, Today.instant()))
         c.companyStore.pendingPay = company.file
         val vm = com.bamnat.app.ui.company.CompanyPayViewModel(c)
         content { com.bamnat.app.ui.company.CompanyPayScreen(vm, onBack = {}, onByHand = {}) }
@@ -454,19 +457,22 @@ class PayScreenshotTest : ScreenshotBase() {
         leaveRulesEditor { it.copy(scheduleIsRegular = true, flexPeriod = com.bamnat.core.pay.FlexPeriod.TWO_WEEKS, flexStart = today.minusDays(3)) }.invoke(this)
         reveal("2주 단위는 취업규칙으로")
     }
-    /** [PAYX-20] 호봉표 pasted, the step now chosen, the values it gives. */
+    /** [PAYX-20][PAYX-47] 호봉표 rows filled in and added, the step now chosen, the values it gives. */
     @Test fun foldedPayScale() = shoot("475_folded_pay_scale", FOLDED) {
         payScreen(Tier.PRO, withProfile = true) { vm ->
             vm.profile.collectAsState().value?.let { p -> com.bamnat.app.ui.pay.PayScaleDialog(vm, p, onDismiss = {}) }
         }.invoke(this)
-        typeInto("호봉표", "1호봉 2,400,000\n2호봉 2,480,000\n3호봉 2,565,000\n4호봉 2,650,000")
-        tapText("2호봉", exact = true, scrolls = 0)
+        typeInto("1호봉 기본급", "2400000")
+        typeInto("2호봉 기본급", "2480000")
+        tapText("3호봉 더하기")
+        tapText("4호봉 더하기")
+        tapText("2호봉", exact = true)
     }
     /** [PAYX-22] A matched month would change: keep, from this pay period, or undo. */
     @Test fun foldedPayVerifiedChange() = shoot("476_folded_pay_verified_change", FOLDED) {
         lateinit var vm: PayViewModel
         payScreen(Tier.PRO, withProfile = true, adjust = {
-            it.copy(verified = com.bamnat.core.pay.PayslipCheck(java.time.YearMonth.now().minusMonths(1), 3_120_000, 3_118_500, 1_760_000_000_000))
+            it.copy(verified = com.bamnat.core.pay.PayslipCheck(Today.month().minusMonths(1), 3_120_000, 3_118_500, 1_760_000_000_000))
         }) { v ->
             vm = v
             PayScreen(v, onBack = {})
@@ -489,6 +495,7 @@ class PayScreenshotTest : ScreenshotBase() {
         payScreen(Tier.PRO, withProfile = true) { vm ->
             vm.profile.collectAsState().value?.let { p -> com.bamnat.app.ui.pay.PayScaleDialog(vm, p, onDismiss = {}) }
         }.invoke(this)
-        typeInto("호봉표", "1호봉 2,400,000\n2호봉 2,480,000")
+        typeInto("1호봉 기본급", "2400000")
+        typeInto("2호봉 기본급", "2480000")
     }
 }

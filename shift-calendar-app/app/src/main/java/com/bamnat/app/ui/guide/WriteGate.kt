@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.time.LocalDate
+import com.bamnat.core.time.Today
 
 /**
  * [EASY-02] The one place a write on the example calendar is caught (research/1.23-N-설계.md 3장): every screen
@@ -37,7 +38,7 @@ object WriteGate {
     private val _pending = MutableStateFlow<Pending?>(null)
     val pending: StateFlow<Pending?> = _pending.asStateFlow()
 
-    fun request(c: AppContainer, kind: WriteKind, today: LocalDate = LocalDate.now(), proceed: () -> Unit) {
+    fun request(c: AppContainer, kind: WriteKind, today: LocalDate = Today.date(), proceed: () -> Unit) {
         val state = c.browse.current
         // A kept example (예시는 두고) is a calendar like any other, except for what leaves the phone.
         val onExample = c.calendars.active.value == PersonalCalendar.EXAMPLE && (state.browsing || kind.goesOut)
@@ -64,7 +65,7 @@ object WriteGate {
     }
 
     /** The card's answer; [start] opens the first setup (with the example's kind of work) for the first two. */
-    fun answer(c: AppContainer, choice: BrowseChoice?, start: (keepExample: Boolean) -> Unit, today: LocalDate = LocalDate.now()) {
+    fun answer(c: AppContainer, choice: BrowseChoice?, start: (keepExample: Boolean) -> Unit, today: LocalDate = Today.date()) {
         val p = _pending.value ?: return
         _pending.value = null
         when (choice) {

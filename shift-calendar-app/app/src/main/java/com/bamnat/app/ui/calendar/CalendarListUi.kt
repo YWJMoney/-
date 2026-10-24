@@ -102,6 +102,7 @@ import kotlinx.coroutines.launch
 import java.io.IOException
 import java.time.Instant
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /** [MCAL-04] One row of the calendar list, as the switcher and the list screen draw it. */
 sealed interface CalendarRow {
@@ -154,8 +155,8 @@ internal fun CalendarRow.Avatar(size: Dp = 28.dp) = when (this) {
 }
 
 /** [MCAL-03] "링크 공유 중 · 12월 1일까지", or nothing when this calendar has no open link. */
-internal fun ShareLinkState.openText(now: Instant = Instant.now()): String? =
-    if (expiresAt.isAfter(now)) "링크 공유 중 · ${Fmt.monthDay(expiresAt.atZone(ZoneId.systemDefault()).toLocalDate())}까지" else null
+internal fun ShareLinkState.openText(now: Instant = Today.instant()): String? =
+    if (expiresAt.isAfter(now)) "링크 공유 중 · ${Fmt.monthDay(expiresAt.atZone(Today.zone()).toLocalDate())}까지" else null
 
 private fun CalendarRow.Mine.subtitle(): String {
     val what = if (cal.isMain) "내 근무와 메모" else cal.style?.label ?: "직접 적는 달력"

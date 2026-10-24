@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import java.time.YearMonth
 import java.time.ZoneId
+import com.bamnat.core.time.Today
 
 /**
  * [INV-34] 월말 요약: on the last day of the month at 20:00, one notice per investor calendar with that
@@ -31,13 +32,13 @@ object InvestMonthNotice {
      * The next month-end notice, set loosely (a few minutes either way is fine for a summary); [on] false,
      * with no investor calendar, takes it away.
      */
-    fun schedule(context: Context, on: Boolean = true, now: LocalDateTime = LocalDateTime.now()) {
+    fun schedule(context: Context, on: Boolean = true, now: LocalDateTime = Today.dateTime()) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         if (!on) {
             am.cancel(pending(context))
             return
         }
-        val at = InvestMonthSummary.next(now).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val at = InvestMonthSummary.next(now).atZone(Today.zone()).toInstant().toEpochMilli()
         am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending(context))
     }
 
@@ -46,7 +47,7 @@ object InvestMonthNotice {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    internal suspend fun post(context: Context, c: AppContainer, now: LocalDateTime = LocalDateTime.now()) {
+    internal suspend fun post(context: Context, c: AppContainer, now: LocalDateTime = Today.dateTime()) {
         // A notice that came after the month turned (the phone was off) still sums the month that ended.
         val month = YearMonth.from(now.minusHours(12))
         val many = c.calendars.calendars.value.size > 1
@@ -76,7 +77,7 @@ class InvestMonthReceiver : BroadcastReceiver() {
             try {
                 InvestMonthNotice.post(context, c)
             } finally {
-                InvestMonthNotice.schedule(context, c.investCalendars().isNotEmpty(), LocalDateTime.now().plusMinutes(1))
+                InvestMonthNotice.schedule(context, c.investCalendars().isNotEmpty(), Today.dateTime().plusMinutes(1))
                 pending.finish()
             }
         }
