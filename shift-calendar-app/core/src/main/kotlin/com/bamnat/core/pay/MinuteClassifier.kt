@@ -48,6 +48,11 @@ data class DayMinutes(
     val extras: List<ExtraMinutes> = emptyList(),
     /** True when a guess was needed, e.g. extra work with no clock times. */
     val estimated: Boolean = false,
+    /**
+     * [PAYX-23] A break with no start time was spread over the shift in proportion, and that moved minutes
+     * between night and day or across midnight; the break's start time would make them exact.
+     */
+    val breakGuessed: Boolean = false,
 ) {
     val total: WorkMinutes get() = extras.fold(shift) { a, e -> a + e.minutes }
 
@@ -85,6 +90,8 @@ data class ClassifyOptions(
      * an average of 40 a week over the period are overtime, settled on the period's last day.
      */
     val flexPeriod: FlexPeriod? = null,
+    /** [PAYX-17] The day a 2주 단위기간 starts on (any one of them); null uses [FlexPeriod.FLEX_ANCHOR]. */
+    val flexStart: LocalDate? = null,
     /**
      * [PAYX-14] A shift that crosses midnight into or out of a paid holiday: true counts only the
      * minutes inside the holiday's 0~24시 as holiday work (역일 기준, the default); false counts the
@@ -93,13 +100,37 @@ data class ClassifyOptions(
     val holidayByClock: Boolean = true,
 )
 
-/** 탄력적 근로시간제 단위기간, with fixed starts so every month agrees on the periods. */
+/**
+ * 탄력적 근로시간제 단위기간, with fixed starts so every month agrees on the periods. [PAYX-17] The 2주 단위
+ * (근로기준법 제51조 제1항, 취업규칙으로 정함) starts on a date the company sets, [FLEX_ANCHOR] when not entered.
+ */
 enum class FlexPeriod(val label: String, val months: Int) {
+    TWO_WEEKS("2주 (회사가 정한 날부터)", 0),
     MONTH("1개월 (매달 1일~말일)", 1),
     QUARTER("3개월 (1·4·7·10월 1일 시작)", 3);
 
-    fun start(date: LocalDate): LocalDate = date.withDayOfMonth(1).minusMonths(((date.monthValue - 1) % months).toLong())
-    fun end(date: LocalDate): LocalDate = start(date).plusMonths(months.toLong()).minusDays(1)
+    fun start(date: LocalDate, anchor: LocalDate? = null): LocalDate = when (this) {
+        TWO_WEEKS -> {
+            val a = anchor ?: FLEX_ANCHOR
+            val k = Math.floorDiv(java.time.temporal.ChronoUnit.DAYS.between(a, date), 14L)
+            a.plusDays(14 * k)
+        }
+        else -> date.withDayOfMonth(1).minusMonths(((date.monthValue - 1) % months).toLong())
+    }
+
+    fun end(date: LocalDate, anchor: LocalDate? = null): LocalDate =
+        if (this == TWO_WEEKS) start(date, anchor).plusDays(13) else start(date).plusMonths(months.toLong()).minusDays(1)
+
+    /** "2주", "1개월", "3개월": the period in words. */
+    val unit: String get() = if (this == TWO_WEEKS) "2주" else "${months}개월"
+
+    /** [PAYX-17] The most a single week may hold (제51조 제1항 단서 48시간, 제2항 단서 52시간). */
+    val weekCapMinutes: Int get() = if (this == TWO_WEEKS) 48 * 60 else 52 * 60
+
+    companion object {
+        /** A Monday, so 2주 periods without a start the user gave run Monday to Sunday. */
+        val FLEX_ANCHOR: LocalDate = LocalDate.of(2024, 1, 1)
+    }
 }
 
 /**
@@ -171,8 +202,10 @@ class MinuteClassifier(
         var shift = WorkMinutes()
         val extras = mutableListOf<ExtraMinutes>()
         var estimated = false
+        var breakGuessed = false
         for (p in pieces) {
             val split = split(p, r)
+            if (split.breakGuessed) breakGuessed = true
             if (p.from == null) estimated = true
             // Paid-holiday minutes: on the clock, or the whole piece by the day it belongs to.
             val onHoliday = if (options.holidayByClock && split.date != null) {
@@ -201,11 +234,11 @@ class MinuteClassifier(
             val m = WorkMinutes(regular, overtime, hWithin, onHoliday - hWithin, rWithin, rOver, split.night)
             if (isShift) shift = m else extras += ExtraMinutes(p.index, p.kindId, m, estimated = p.from == null)
         }
-        return DayMinutes(day.date, shift, extras, estimated)
+        return DayMinutes(day.date, shift, extras, estimated, breakGuessed)
     }
 
     /** Paid minutes of a piece on the date it starts and on the next date, and its night minutes. */
-    private class Split(val date: LocalDate?, val onFirst: Int, val onNext: Int, val night: Int)
+    private class Split(val date: LocalDate?, val onFirst: Int, val onNext: Int, val night: Int, val breakGuessed: Boolean = false)
 
     private fun split(p: Piece, r: Rates): Split {
         val from = p.from
@@ -226,7 +259,9 @@ class MinuteClassifier(
             }
         }
         val next = (grossNext * p.paid.toDouble() / gross).roundToInt().coerceIn(0, p.paid)
-        return Split(from.toLocalDate(), p.paid - next, next, (nightGross * p.paid.toDouble() / gross).roundToInt())
+        // Only a break that the proportion actually splits is a guess: one in a shift all by day and on one date is not.
+        val guessed = p.breakMinutes > 0 && (nightGross in 1 until gross || grossNext in 1 until gross)
+        return Split(from.toLocalDate(), p.paid - next, next, (nightGross * p.paid.toDouble() / gross).roundToInt(), guessed)
     }
 
     private fun minutesAfter(from: LocalDateTime, to: LocalDateTime, at: LocalDateTime): Int {
@@ -273,8 +308,8 @@ class MinuteClassifier(
         val first = list.first().date
         val last = list.last().date
         val out = list.toMutableList()
-        list.groupBy { flex.start(it.date) }.forEach { (start, period) ->
-            val end = flex.end(start)
+        list.groupBy { flex.start(it.date, options.flexStart) }.forEach { (start, period) ->
+            val end = flex.end(start, options.flexStart)
             if (start.isBefore(first) || end.isAfter(last)) return@forEach
             val days = java.time.temporal.ChronoUnit.DAYS.between(start, end) + 1
             val limit = (days * 40 * 60 / 7.0).roundToInt()

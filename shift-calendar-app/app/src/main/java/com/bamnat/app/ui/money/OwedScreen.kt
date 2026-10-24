@@ -65,9 +65,10 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
@@ -75,7 +76,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
+import com.bamnat.app.ui.components.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarDuration
@@ -323,6 +324,18 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
                         Icon(if (searching) Icons.Filled.Close else Icons.Filled.Search, if (searching) "찾기 닫기" else "찾기")
                     }
                     SortMenu(sort) { sort = it }
+                    // [LEDG-27] Every 받을 돈 written down, as a CSV file through the share sheet.
+                    if (book.receivables.isNotEmpty()) {
+                        val scope = androidx.compose.runtime.rememberCoroutineScope()
+                        IconButton(onClick = {
+                            scope.launch {
+                                runCatching {
+                                    LedgerExport.share(context, com.bamnat.core.money.WorkCsv.receivables(book.receivables, today),
+                                        com.bamnat.core.money.WorkCsv.fileName("receivables", null, null))
+                                }.onFailure { snackbar.showSnackbar("공유하지 못했어요") }
+                            }
+                        }) { Icon(Icons.Outlined.FileDownload, "받을 돈 CSV로 내보내기") }
+                    }
                 },
             )
         },
@@ -700,7 +713,8 @@ private fun SwipeRow(o: Owed, today: LocalDate, actions: RowActions, modifier: M
                 }, label = "swipe")
             Row(Modifier.fillMaxSize().background(bg).padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = if (toRight) Arrangement.Start else Arrangement.End) {
-                val fg = if (armed) Color.White else MaterialTheme.colorScheme.onSurface
+                // [VIS-03] Ink that reads on the swipe colour in both themes (white failed on the dark theme's light blue).
+                val fg = if (armed) com.bamnat.app.ui.components.contentColorOn(if (toRight) cal.income else MaterialTheme.colorScheme.primary) else MaterialTheme.colorScheme.onSurface
                 if (toRight) {
                     Icon(Icons.Filled.Check, null, tint = fg)
                     Spacer(Modifier.width(8.dp))

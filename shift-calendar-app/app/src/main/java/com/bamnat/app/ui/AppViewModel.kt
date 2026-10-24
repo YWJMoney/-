@@ -19,5 +19,5 @@ inline fun <reified VM : ViewModel> appViewModel(
     return viewModel(key = key, factory = viewModelFactory { initializer { create(container) } })
 }
 
-/** A snackbar message with an optional action: undo by default, or another next step such as "대근으로" [DAY-03]. */
-data class UndoMessage(val message: String, val actionLabel: String = "되돌리기", val undo: (suspend () -> Unit)? = null)
+/** A snackbar message with an optional action: undo by default, or another next step such as "대근으로" [DAY-03]; [long] keeps it up ten seconds. */
+data class UndoMessage(val message: String, val actionLabel: String = "되돌리기", val long: Boolean = false, val undo: (suspend () -> Unit)? = null)

@@ -2,6 +2,7 @@ package com.bamnat.app.rules
 
 import com.bamnat.app.ui.settings.OPEN_SOURCE_NOTICES
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -42,8 +43,17 @@ class AdAndLicenseRulesTest {
         assertTrue("배너는 AdRules.banner를 따라요", read("ui/components/AdSlot.kt").contains("AdRules.banner("))
         assertTrue("보상형은 AdRules.rewardedOffer를 따라요", read("ads/RewardedAds.kt").contains("AdRules.rewardedOffer("))
         // Nothing before the 정식 출시 switch, and nothing for 프로: the SDK and consent start only then.
-        val start = read("MainActivity.kt").lines().first { it.contains("ads.start(") }
-        assertTrue(start, start.contains("billingLive") && start.contains("Feature.NO_ADS"))
+        val activity = read("MainActivity.kt").lines()
+        val at = activity.indexOfFirst { it.contains("ads.start(") }
+        val start = activity[at - 1] + activity[at]
+        assertTrue(start, start.contains("AdRules.sdkMayStart(") && start.contains("billingLive") && start.contains("Feature.NO_ADS"))
+        // [SRV-07] Nor in the first three days after install: the consent form waits for the first possible ad.
+        assertTrue(start, start.contains("installedAt") && start.contains("adQuietDays"))
+        val installed = java.time.Instant.parse("2027-03-01T00:00:00Z")
+        assertFalse(com.bamnat.core.tier.AdRules.sdkMayStart(true, false, installed, installed.plusSeconds(86_400L * 3 - 1)))
+        assertTrue(com.bamnat.core.tier.AdRules.sdkMayStart(true, false, installed, installed.plusSeconds(86_400L * 3)))
+        assertFalse(com.bamnat.core.tier.AdRules.sdkMayStart(false, false, installed, installed.plusSeconds(86_400L * 30)))
+        assertFalse(com.bamnat.core.tier.AdRules.sdkMayStart(true, true, installed, installed.plusSeconds(86_400L * 30)))
         // The SDK's own measurement waits for MobileAds.initialize, so nothing goes before the switch.
         assertTrue(File(main, "AndroidManifest.xml").readText().contains("com.google.android.gms.ads.DELAY_APP_MEASUREMENT_INIT"))
         // Google's test units are for debug builds only; a release without ids has no ads at all.
@@ -68,7 +78,8 @@ class AdAndLicenseRulesTest {
             "androidx.compose.material3" to "Jetpack Compose", "androidx.compose.material" to "Jetpack Compose",
             "androidx.compose" to "Jetpack Compose",
             "androidx.core" to "AndroidX Core", "androidx.activity" to "AndroidX Core", "androidx.lifecycle" to "AndroidX Core",
-            "androidx.navigation" to "AndroidX Core", "androidx.glance" to "Jetpack Glance", "androidx.room" to "AndroidX Room",
+            "androidx.navigation" to "AndroidX Core", "androidx.profileinstaller" to "AndroidX Core", "androidx.window" to "AndroidX Core",
+            "androidx.glance" to "Jetpack Glance", "androidx.room" to "AndroidX Room",
             "androidx.health.connect" to "Health Connect", "org.jetbrains.kotlinx" to "Kotlin",
             "com.google.mlkit" to "ML Kit", "com.google.android.play" to "Google Play",
             "com.google.android.gms" to "Google Play 서비스",

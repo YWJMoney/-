@@ -36,6 +36,13 @@ object WakeCheck {
     /** The notice, and the ring that follows it unless 일어났어요 comes first. */
     fun ask(context: Context, now: Long = System.currentTimeMillis()) {
         if (pendingRing(context) == null) return
+        // [ALRM-01] R11: without the notification permission nobody could see the question, and the alarm would
+        // ring again 90 seconds later for no reason the user could tell. It is left out; 알람 점검 says why.
+        if (!Notifications.canPost(context)) {
+            context.appContainer.telemetry.event("wake_check", "skipped_no_notifications")
+            clear(context)
+            return
+        }
         set(context, now + ANSWER_SECONDS * 1_000L, intent(context, ACTION_RING, REQ_RING))
         val notification = NotificationCompat.Builder(context, Notifications.STATUS_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)

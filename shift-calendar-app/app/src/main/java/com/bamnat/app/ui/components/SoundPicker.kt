@@ -14,6 +14,10 @@ import android.content.ContentUris
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import androidx.compose.ui.draw.clip
@@ -79,6 +83,7 @@ object SoundNames {
  * Picks an alarm sound: any system alarm, ringtone or notification sound, or an audio file.
  * [onPicked] gets null for "default", [AppSettings.SILENT_SOUND] for silent, else a URI string.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SoundPickerRow(
     sound: String?,
@@ -134,14 +139,16 @@ fun SoundPickerRow(
                 )
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // [SET-04] Two buttons that go one under the other on a narrow screen (ux-review 3 (5) 3).
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             OutlinedButton(onClick = {
                 previewing?.stop()
                 previewing = null
                 choosing = true
             }) {
                 Icon(Icons.Filled.LibraryMusic, contentDescription = null)
-                Text("  휴대폰 알람음")
+                Spacer(Modifier.width(8.dp))
+                Text("휴대폰 알람음")
             }
             OutlinedButton(onClick = {
                 previewing?.stop()
@@ -149,7 +156,8 @@ fun SoundPickerRow(
                 runCatching { filePicker.launch(arrayOf("audio/*")) }
             }) {
                 Icon(Icons.Filled.FolderOpen, contentDescription = null)
-                Text("  내 음악 파일")
+                Spacer(Modifier.width(8.dp))
+                Text("내 음악 파일")
             }
         }
     }

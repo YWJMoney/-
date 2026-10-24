@@ -31,7 +31,7 @@ import androidx.compose.material.icons.filled.Watch
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -206,7 +206,7 @@ fun SleepScreen(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit) {
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 // [UX-06] Where the target and the watch are set, and help, from the screen that uses them.
                 actions = {
-                    IconButton(onClick = { SettingsLinks.open(SettingsPage.REST, "목표 수면 시간") }) {
+                    IconButton(onClick = { SettingsLinks.open(SettingsPage.NOTICES, "목표 수면 시간") }) {
                         Icon(Icons.Outlined.Tune, "수면 설정")
                     }
                     IconButton(onClick = { InquiryLinks.ask(InquiryStart(about = "수면 기록", help = true)) }) {
@@ -294,7 +294,7 @@ private fun HowItWorks() {
     SectionCard(title = "수면 기록은 이렇게 쓰여요") {
         listOf(
             "잠들 때 ‘잠들었어요’, 깼을 때 ‘깼어요’를 누르면 돼요. 달력 위 오늘의 흐름 카드, 오늘 날짜, 자는 중 알림에 버튼이 있어요.",
-            "깜빡했으면 여기서 ‘기록 추가’로 나중에 적어도 돼요. 워치 기록은 설정 > 잠과 휴식에서 헬스 커넥트를 켜면 함께 세요.",
+            "깜빡했으면 여기서 ‘기록 추가’로 나중에 적어도 돼요. 워치 기록은 설정 > 알림과 잠에서 헬스 커넥트를 켜면 함께 세요.",
             "기록이 쌓이면 야간 뒤·아침 출근 전·쉬는 날 평균을 따로 보여 주고, 퇴근길 카드가 내 평균으로 알려 줘요.",
         ).forEachIndexed { i, line ->
             Row(Modifier.padding(vertical = 3.dp)) {
@@ -457,7 +457,7 @@ private fun hm(t: LocalDateTime) = "%02d:%02d".format(t.hour, t.minute)
 
 private fun healthNote(state: com.bamnat.app.sleep.HealthSleep.State): String? = when (state) {
     com.bamnat.app.sleep.HealthSleep.State.READY -> "헬스 커넥트 기록을 함께 보여 줘요. 직접 적은 기록과 겹치면 직접 기록을 써요."
-    com.bamnat.app.sleep.HealthSleep.State.NEEDS_PERMISSION -> "헬스 커넥트 수면 읽기 허용이 꺼져 있어요. 설정 > 잠과 휴식에서 다시 켤 수 있어요."
+    com.bamnat.app.sleep.HealthSleep.State.NEEDS_PERMISSION -> "헬스 커넥트 수면 읽기 허용이 꺼져 있어요. 설정 > 알림과 잠에서 다시 켤 수 있어요."
     else -> null
 }
 

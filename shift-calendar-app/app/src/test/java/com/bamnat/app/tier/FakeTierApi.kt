@@ -33,7 +33,14 @@ class FakeTierApi(
     override suspend fun unlink(device: String) { calls += "unlink" }
     override suspend fun purchase(device: String, product: String, token: String): ServerSub = ServerSub(verified = false).also { calls += "purchase" }
 
-    override suspend fun consent(device: String, answer: String, product: String, price: String, trialEnd: Instant, shown: String) {
+    /** [SRV-07] What a consent call answers with: null sends it, a code refuses it. */
+    var consentFails: String? = null
+    val consentTimes = mutableListOf<Instant>()
+
+    override suspend fun consent(device: String, answer: String, product: String, price: String, trialEnd: Instant, shown: String,
+        answeredAt: Instant) {
+        consentFails?.let { throw CompanyException(it) }
         consents += answer to shown
+        consentTimes += answeredAt
     }
 }

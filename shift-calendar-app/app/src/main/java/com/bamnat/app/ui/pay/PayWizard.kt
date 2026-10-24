@@ -37,7 +37,7 @@ import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -79,6 +79,7 @@ import com.bamnat.core.pay.EditScope
 import com.bamnat.core.pay.FlexPeriod
 import com.bamnat.core.pay.LineKind
 import com.bamnat.core.pay.Occupation
+import com.bamnat.core.pay.OrdinaryGuess
 import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayItem
 import com.bamnat.core.pay.PayPresets
@@ -261,11 +262,18 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
                 val fixedOt = Regex("고정.*(연장|시간외|OT)", RegexOption.IGNORE_CASE).containsMatchIn(line.name)
                 val welfare = Regex("식대|식비|교통|차량|복지|통신|자녀|가족|학자").containsMatchIn(line.name)
                 val id = "custom-" + System.nanoTime()
-                rows += ItemRow(id, line.name.take(20), Cadence.MONTHLY, ordinary = !welfare && !fixedOt, hint = "명세서에서", suggested = 0,
+                rows += ItemRow(id, line.name.take(20), Cadence.MONTHLY, ordinary = !fixedOt && (OrdinaryGuess.of(line.name, Cadence.MONTHLY) ?: !welfare), hint = "명세서에서", suggested = 0,
                     checked = true, amount = line.amount)
                 if (fixedOt) covers[id] = setOf(LineKind.OVERTIME)
             }
             added += line.name
+        }
+        // [PAYX-46] An allowance whose amount could not be read is still a row, left 금액 모름 and unticked, for the
+        // user to confirm rather than for the app to guess.
+        val unread = read.lines.filter { it.role == SlipRole.ALLOWANCE && it.amount == null && rows.none { r -> norm(r.name) == norm(it.name) } }
+        unread.forEach { line ->
+            rows += ItemRow("custom-" + System.nanoTime(), line.name.take(20), Cadence.MONTHLY, ordinary = OrdinaryGuess.of(line.name, Cadence.MONTHLY) ?: true,
+                hint = "명세서에서 · 금액을 못 읽었어요", suggested = 0, checked = false, amount = null)
         }
         val skipped = read.lines.filter { it.role in setOf(SlipRole.OVERTIME, SlipRole.NIGHT, SlipRole.HOLIDAY, SlipRole.WEEKLY_HOLIDAY, SlipRole.EXTRA_WORK) }
         val bonuses = read.lines.filter { it.role == SlipRole.BONUS }
@@ -278,6 +286,7 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
         }.joinToString(", ").ifEmpty { "읽은 금액이 없어요" }.let { "명세서에서 $it 채웠어요." } +
             (if (skipped.isNotEmpty()) " ${skipped.joinToString("·") { it.name }}은 달력 근무로 계산해요." else "") +
             (if (bonuses.isNotEmpty()) " 상여는 수당 단계에서 받는 달과 함께 넣어 주세요." else "") +
+            (if (unread.isNotEmpty()) " ${unread.joinToString("·") { it.name }}은 금액을 못 읽어 꺼 두었어요. 맞으면 켜고 금액을 넣어 주세요." else "") +
             " 끝나면 ‘명세서로 맞춰 보기’로 한 번에 확인할 수 있어요."
     }
 
@@ -337,7 +346,10 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
             if (rough && wage != Wage.ANNUAL) add(Unknowns.BASE)
             rows.filter { it.checked && it.amount == null }.forEach { add(Unknowns.item(it.id)) }
             rows.filter { it.checked && it.amount != null && it.guessed && it.original?.amount?.on(thisMonth)?.value == it.amount }.forEach { add(it.id) }
-        }.filter { k -> !k.startsWith(Unknowns.item("")) || k.removePrefix(Unknowns.item("")) in ids }.toSet()
+            // [PAYX-23] 13분할: whether the 13th share is 퇴직금 or a 정기 상여 stays 확인 필요 until answered.
+            if (annual?.divisor == 13 && items.none { it.id == Unknowns.ANNUAL_13_ITEM }) add(Unknowns.ANNUAL_13)
+        }.filter { k -> !k.startsWith(Unknowns.item("")) || k.removePrefix(Unknowns.item("")) in ids }
+            .filter { k -> k != Unknowns.ANNUAL_13 || annual?.divisor == 13 }.toSet()
         val occupationNow = occupation ?: initial?.occupation ?: Occupation.CUSTOM
         return (initial ?: PayProfile(occupationNow, type, base)).copy(
             occupation = occupationNow,
@@ -356,7 +368,7 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
                 restDayWork = restDayWork, breakPay = breakPay,
             ),
             estimatedFields = marks,
-        )
+        ).let { if (initial == null) PayPresets.firstSetup(it) else it } // [JOB-01]
     }
 
     /** [raw] with each question answered 모르겠어요 set to what the app assumes and marked 확인 필요. */
@@ -395,6 +407,8 @@ fun PayWizard(
     onCancel: (() -> Unit)?,
     onDone: (PayProfile) -> Unit,
     startStep: Int = 0,
+    /** [EASY-06] Told when the setup is done whether a payslip filled it, so the profile marks what it read as 추정. */
+    filledFromSlip: (Boolean) -> Unit = {},
     /** Screenshots only: open the step scrolled to the bottom. */
     scrollToEnd: Boolean = false,
     /** [PAYS-01] The user's shifts and order, for the questions that apply; null asks the usual ones. */
@@ -403,11 +417,15 @@ fun PayWizard(
     preview: (suspend (PayProfile) -> PayRange)? = null,
     /** How work like the user's is usually paid, chosen to start with (시급 for 아르바이트). */
     suggestedWage: WageType? = null,
+    /** [SETUP-14] The job the user's way of working points to (아르바이트 → PART_TIME), its items ticked to start with; a new setup only. */
+    suggestedOccupation: Occupation? = null,
     /** Screenshots only: the step to open by its key ("items", a question's key, "summary"), when it is asked. */
     startAt: String? = null,
 ) {
     val today = remember { LocalDate.now() }
-    val s = remember { PaySetupState(initial, YearMonth.from(today), suggestedWage) }
+    val s = remember {
+        PaySetupState(initial, YearMonth.from(today), suggestedWage).also { st -> if (initial == null) suggestedOccupation?.let(st::choose) }
+    }
     val scope = rememberCoroutineScope()
     val rosterHours = remember(snapshot) {
         snapshot?.let { snap ->
@@ -537,7 +555,7 @@ fun PayWizard(
                     question != null -> question.key in s.answered || question.key in s.unknown
                     else -> true
                 }
-                Button(onClick = { if (last) onDone(draft) else next() }, enabled = ready) {
+                Button(onClick = { if (last) { filledFromSlip(slipNote != null); onDone(draft) } else next() }, enabled = ready) {
                     Text(if (last) "계산 시작" else "다음")
                 }
             }
@@ -693,7 +711,7 @@ private fun AmountStep(s: PaySetupState, today: LocalDate, slipNote: String?) {
 @Composable
 private fun AnnualFields(s: PaySetupState) {
     MoneyField("연봉 (1년 총액)", s.yearly, { s.yearly = it }, Modifier.fillMaxWidth())
-    RuleToggle("13으로 나눠 받아요", "13번째 몫을 퇴직금으로 떼어 두는 계약이에요. 모르면 끈 채로 두세요", s.split13) { s.split13 = it }
+    RuleToggle("13으로 나눠 받아요", "13번째 몫을 퇴직금으로 떼어 두는 계약이에요. 연말에 상여로 주는 몫이면 통상임금이라 결과 화면 ‘확인 필요’에서 골라요. 모르면 끈 채로 두세요", s.split13) { s.split13 = it }
     Label("연봉 안에 따로 나오는 돈이 있나요? (있으면)")
     MoneyField("매달 고정 연장수당", s.annualOt, { s.annualOt = it }, Modifier.fillMaxWidth(), placeholder = "없으면 비워 두세요")
     if ((s.annualOt ?: 0) > 0) {
@@ -735,9 +753,12 @@ private fun ItemsStep(s: PaySetupState) {
                 label = { Text(preset.occupation.label) })
         }
     }
-    PayPresets.of(s.occupation ?: Occupation.CUSTOM).note.takeIf { it.isNotEmpty() && s.occupation != Occupation.PART_TIME }?.let { Hint(it) }
+    // The presets file's notes for 알바 (주휴수당 is calculated now) and 경비 (감시·단속 is asked as its own question)
+    // are out of date and the file is signed, so they are left out here.
+    PayPresets.of(s.occupation ?: Occupation.CUSTOM).note
+        .takeIf { it.isNotEmpty() && s.occupation != Occupation.PART_TIME && s.occupation != Occupation.SECURITY }?.let { Hint(it) }
     s.rows.forEach { row -> ItemRowEditor(row) }
-    OutlinedButton(onClick = { adding = true }) { Icon(Icons.Filled.Add, null); Text(" 다른 수당 넣기") }
+    com.bamnat.app.ui.components.AddButton("다른 수당 넣기", onClick = { adding = true })
     // [SETUP-03][PAYS-07] Nothing here has to be complete: the rest of the company's way has its own place later.
     Hint("빠진 수당이 있어도 괜찮아요. 기숙사비 같은 차감이나 회사만의 수당은 설정을 마친 뒤 ‘우리 회사 항목 만들기’로 언제든 넣어요.")
     if (s.wage == Wage.ANNUAL) {
@@ -911,7 +932,7 @@ private fun QuestionStep(
     if (q.question == SetupQuestion.MONTHLY_HOURS) {
         val chosen = known
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            (listOf(180, 209, 226, 243) + listOfNotNull(rosterHours)).distinct().sorted().forEach { h ->
+            (com.bamnat.core.pay.Unknowns.MONTHLY_HOURS_CHIPS + listOfNotNull(rosterHours)).distinct().sorted().forEach { h ->
                 FilterChip(selected = chosen && s.monthlyHours == h, onClick = { onAnswer { s.answer(key) { s.monthlyHours = h } } },
                     label = { Text("${h}시간" + if (h == rosterHours) " (근무표)" else "") })
             }
@@ -924,7 +945,7 @@ private fun QuestionStep(
     }
     answers.forEach { a -> AnswerCard(a.title, a.detail, a.selected, a.pick) }
     if (q.question == SetupQuestion.SCHEDULE_IS_REGULAR && known && s.scheduleRegular) {
-        FlexPicker(s.flexPeriod) { s.flexPeriod = it }
+        FlexPicker(s.flexPeriod, onFlex = { s.flexPeriod = it })
     }
     AnswerCard("모르겠어요", "$unknownText. ‘확인 필요’로 표시하고 범위로 보여 드려요", key in s.unknown, onUnknown)
 }
@@ -972,7 +993,7 @@ private fun PaySetupQuestion.label(s: PaySetupState): String =
 private fun PaySetupQuestion.answerText(s: PaySetupState, p: PayProfile): String = when (question) {
     SetupQuestion.FIVE_OR_MORE -> if (p.fiveOrMoreEmployees) "5명 이상" else "5명 미만"
     SetupQuestion.SUPERVISORY -> if (p.rules.supervisoryApproved) "승인 있음" else "승인 없음"
-    SetupQuestion.SCHEDULE_IS_REGULAR -> if (p.scheduleIsRegular) "기본 근무" + (p.flexPeriod?.let { " (탄력제 ${it.months}개월)" } ?: "") else "연장으로 따로"
+    SetupQuestion.SCHEDULE_IS_REGULAR -> if (p.scheduleIsRegular) "기본 근무" + (p.flexPeriod?.let { " (탄력제 ${it.unit})" } ?: "") else "연장으로 따로"
     SetupQuestion.PUBLIC_HOLIDAYS -> if (p.fiveOrMoreEmployees) (if (p.rules.publicHolidaysPaid) "휴일근로" else "휴일 대체")
         else if (p.rules.holidaysUnderFive) "유급휴일로 줌" else "평일처럼"
     SetupQuestion.REST_DAY_WORK -> p.rules.restDayWork.label
@@ -1100,7 +1121,13 @@ private fun ItemRowEditor(row: ItemRow) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun FlexPicker(flex: FlexPeriod?, onFlex: (FlexPeriod?) -> Unit) {
+internal fun FlexPicker(
+    flex: FlexPeriod?,
+    onFlex: (FlexPeriod?) -> Unit,
+    /** [PAYX-17] The day a 2주 period starts, as the company set it; null counts from a Monday. */
+    start: java.time.LocalDate? = null,
+    onStart: ((java.time.LocalDate?) -> Unit)? = null,
+) {
     Text("회사에 탄력적 근로시간제가 있나요?", style = MaterialTheme.typography.titleSmall)
     Text("법으로는 이 제도를 둔 회사만 긴 근무를 연장 없이 계산할 수 있어요. 있으면 기간 평균 주 40시간을 넘는 시간만 연장이 되고, " +
         "없거나 모르면 법정 기준과의 차액을 결과 화면에 따로 알려 드려요. 취업규칙이나 노사 합의서에 적혀 있어요.",
@@ -1108,6 +1135,12 @@ internal fun FlexPicker(flex: FlexPeriod?, onFlex: (FlexPeriod?) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         FilterChip(selected = flex == null, onClick = { onFlex(null) }, label = { Text("없거나 몰라요") })
         FlexPeriod.entries.forEach { p -> FilterChip(selected = flex == p, onClick = { onFlex(p) }, label = { Text(p.label) }) }
+    }
+    if (flex == FlexPeriod.TWO_WEEKS) {
+        if (onStart != null) com.bamnat.app.ui.work.DateField("2주가 시작하는 날", start, onStart)
+        Text("2주 단위는 취업규칙으로 정해요(근로기준법 제51조 제1항). 한 주는 48시간까지예요. " +
+            if (onStart == null) "시작하는 날은 회사 규칙에서 넣을 수 있어요." else "정하지 않으면 월요일부터 2주씩 세요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

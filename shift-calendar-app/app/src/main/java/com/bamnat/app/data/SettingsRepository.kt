@@ -51,8 +51,17 @@ data class AppSettings(
     val alarmsEnabled: Boolean = true,
     /** The user ticked "다시 표시하지 않기" on the notice shown when saving a day's alarms. */
     val hideDayAlarmNotice: Boolean = false,
-    /** Opt-in: send anonymous usage statistics once a remote service is connected [MEAS-03]. */
+    /**
+     * [STAT-01] 사용 통계 보내기: event names and daily counts to the company server, nothing else. Its own
+     * consent (개인정보 보호법 제22조), so off until the user says yes; the app works the same without it.
+     */
     val shareUsageStats: Boolean = false,
+    /** [COMM-10] 광장 소식: one bundled notice a day about the user's own plaza things. On; off on the plaza screen. */
+    val plazaNews: Boolean = true,
+    /** [COMM-09] Writers this user chose not to see in the plaza ([com.bamnat.core.plaza.HideList.encode]). */
+    val plazaHidden: String = "",
+    /** [COMM-08] The version of the community rules the user agreed to before posting; 0 is not yet. */
+    val plazaRulesAgreed: Int = 0,
     /**
      * [MON-02] A tester's preview of the screens after launch (alarm check screen): null shows the real
      * state. It counts before the 정식 출시 switch and in debug builds only. The old "tier" key, saved as
@@ -79,6 +88,8 @@ data class AppSettings(
     val restCheck: Boolean = true,
     /** [MKT-11] Delphi rules on top: at most 2 nights in a row, 2 days off after nights. */
     val strictRest: Boolean = false,
+    /** [REST-01] 근무표 점검 기준 ([RestRules.encode]); empty until changed. Read it as [rules]. */
+    val restRules: String = "",
     /** [SLP-03][SLP-14] 오늘의 흐름 on the calendar, and sleep times that fit the schedule in the day view. */
     val sleepTips: Boolean = true,
     /**
@@ -98,7 +109,7 @@ data class AppSettings(
     val quietWhileAsleep: Boolean = true,
     /** [SLP-15] 나갈 돈·받을 돈 notices; each fixed cost and job still has its own switch. */
     val moneyNotices: Boolean = true,
-    /** [SLP-15][PAY-12] 연차 소멸 안내 on 11/1 and 12/1. */
+    /** [SLP-15][PAY-12][LEAVE-03] 연차 사용 촉진 알림 on the 제61조 dates; on by default. */
     val leaveNotice: Boolean = true,
     /** [SLP-03][SLP-06] Hours of sleep the user aims for. */
     val sleepTargetMinutes: Int = 7 * 60,
@@ -136,6 +147,26 @@ data class AppSettings(
     val shiftMissions: Map<Long, String> = emptyMap(),
     /** [PROV-07] Minutes after 끄기 that 일어났나요? asks (프로); 0 is off, as at first. */
     val wakeCheckMinutes: Int = 0,
+    /** [DAILY-01] The day's first memo line on the 오늘·내일 widget; on, and off from 설정 › 달력 화면 since a home screen is seen by others. */
+    val widgetMemo: Boolean = true,
+    /** [BACK-01] Receipt and contract photos go in the backup file (결정 D13: on, off from the backup screen). */
+    val backupPhotos: Boolean = true,
+    /** [DAILY-15] 화면 꾸미기 of the 돈 page, as [calendarLayout]. */
+    val moneyLayout: String = "",
+    /** [DAILY-15] 화면 꾸미기 of the 메모 page. */
+    val memoLayout: String = "",
+    /** [DAILY-16] The 지역 시세 line on the pay screen, worked out on the phone only; off from that line. */
+    val rateHint: Boolean = true,
+    /** [DAILY-17] The second 리뷰 moment (first 급여 리포트) came, and when any review was last asked (epoch day, 0 for never). */
+    val payReviewDue: Boolean = false,
+    val payReviewAsked: Boolean = false,
+    val reviewAskedDay: Long = 0,
+    /** [CAL-46] The last month (yyyymm) whose "이번 달 내 기록" card was shown and closed; kept on this phone only. */
+    val monthRecapSeen: Int = 0,
+    /** [ALRM-03] 알람 제안: a card with one suggestion for one shift's alarm; on by default (D42), in the backup. */
+    val alarmSuggest: Boolean = true,
+    /** [ALRM-03] What was answered ([com.bamnat.core.alarm.AlarmSuggest.Memory]); kept on this phone only, like [monthRecapSeen]. */
+    val alarmSuggestMemory: String = "",
 ) {
     val limits: HourLimits get() = HourLimits(weeklyLimitHours, averageLimitHours)
 
@@ -207,6 +238,9 @@ class SettingsRepository(context: Context) {
             alarmsEnabled = prefs.getBoolean(K_ALARMS_ON, d.alarmsEnabled),
             hideDayAlarmNotice = prefs.getBoolean(K_HIDE_DAY_NOTICE, d.hideDayAlarmNotice),
             shareUsageStats = prefs.getBoolean(K_SHARE_STATS, d.shareUsageStats),
+            plazaNews = prefs.getBoolean(K_PLAZA_NEWS, d.plazaNews),
+            plazaHidden = prefs.getString(K_PLAZA_HIDDEN, null) ?: d.plazaHidden,
+            plazaRulesAgreed = prefs.getInt(K_PLAZA_RULES, d.plazaRulesAgreed),
             previewTier = Tier.parse(prefs.getString(K_PREVIEW_TIER, null)),
             workStyle = prefs.getString(K_WORK_STYLE, null)?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } },
             rosterMonthly = prefs.getBoolean(K_ROSTER_MONTHLY, d.rosterMonthly),
@@ -215,6 +249,7 @@ class SettingsRepository(context: Context) {
             calendarMemos = prefs.getBoolean(K_CAL_MEMOS, d.calendarMemos),
             restCheck = prefs.getBoolean(K_REST_CHECK, d.restCheck),
             strictRest = prefs.getBoolean(K_STRICT_REST, d.strictRest),
+            restRules = prefs.getString(K_REST_RULES, d.restRules) ?: d.restRules,
             sleepTips = prefs.getBoolean(K_SLEEP_TIPS, d.sleepTips),
             // The sleep notices of 1.10 and before carry over to the briefing and the commute notice.
             briefing = prefs.getBoolean(K_BRIEFING, prefs.getBoolean(K_SLEEP_REMINDERS, d.briefing)),
@@ -244,6 +279,17 @@ class SettingsRepository(context: Context) {
             alarmMission = prefs.getString(K_ALARM_MISSION, null) ?: d.alarmMission,
             shiftMissions = prefs.getString(K_SHIFT_MISSIONS, null)?.let(::decodeShiftMissions) ?: d.shiftMissions,
             wakeCheckMinutes = prefs.getInt(K_WAKE_CHECK, d.wakeCheckMinutes),
+            widgetMemo = prefs.getBoolean(K_WIDGET_MEMO, d.widgetMemo),
+            backupPhotos = prefs.getBoolean(K_BACKUP_PHOTOS, d.backupPhotos),
+            moneyLayout = prefs.getString(K_MONEY_LAYOUT, null) ?: d.moneyLayout,
+            memoLayout = prefs.getString(K_MEMO_LAYOUT, null) ?: d.memoLayout,
+            rateHint = prefs.getBoolean(K_RATE_HINT, d.rateHint),
+            payReviewDue = prefs.getBoolean(K_PAY_REVIEW_DUE, false),
+            payReviewAsked = prefs.getBoolean(K_PAY_REVIEW_ASKED, false),
+            reviewAskedDay = prefs.getLong(K_REVIEW_DAY, 0),
+            monthRecapSeen = prefs.getInt(K_MONTH_RECAP, 0),
+            alarmSuggest = prefs.getBoolean(K_ALARM_SUGGEST, d.alarmSuggest),
+            alarmSuggestMemory = prefs.getString(K_ALARM_SUGGEST_MEMORY, null) ?: "",
         )
     }
 
@@ -266,6 +312,9 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_ALARMS_ON, s.alarmsEnabled)
             .putBoolean(K_HIDE_DAY_NOTICE, s.hideDayAlarmNotice)
             .putBoolean(K_SHARE_STATS, s.shareUsageStats)
+            .putBoolean(K_PLAZA_NEWS, s.plazaNews)
+            .putString(K_PLAZA_HIDDEN, s.plazaHidden)
+            .putInt(K_PLAZA_RULES, s.plazaRulesAgreed)
             .putString(K_PREVIEW_TIER, s.previewTier?.name)
             .remove(K_OLD_TIER)
             .putString(K_WORK_STYLE, s.workStyle?.name)
@@ -275,6 +324,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_CAL_MEMOS, s.calendarMemos)
             .putBoolean(K_REST_CHECK, s.restCheck)
             .putBoolean(K_STRICT_REST, s.strictRest)
+            .putString(K_REST_RULES, s.restRules)
             .putBoolean(K_SLEEP_TIPS, s.sleepTips)
             .putBoolean(K_BRIEFING, s.briefing)
             .putBoolean(K_TODAY_SHIFT_NOTICE, s.todayShiftNotice)
@@ -299,6 +349,17 @@ class SettingsRepository(context: Context) {
             .putString(K_ALARM_MISSION, s.alarmMission)
             .putString(K_SHIFT_MISSIONS, encodeShiftMissions(s.shiftMissions))
             .putInt(K_WAKE_CHECK, s.wakeCheckMinutes)
+            .putBoolean(K_WIDGET_MEMO, s.widgetMemo)
+            .putBoolean(K_BACKUP_PHOTOS, s.backupPhotos)
+            .putString(K_MONEY_LAYOUT, s.moneyLayout)
+            .putString(K_MEMO_LAYOUT, s.memoLayout)
+            .putBoolean(K_RATE_HINT, s.rateHint)
+            .putBoolean(K_PAY_REVIEW_DUE, s.payReviewDue)
+            .putBoolean(K_PAY_REVIEW_ASKED, s.payReviewAsked)
+            .putLong(K_REVIEW_DAY, s.reviewAskedDay)
+            .putInt(K_MONTH_RECAP, s.monthRecapSeen)
+            .putBoolean(K_ALARM_SUGGEST, s.alarmSuggest)
+            .putString(K_ALARM_SUGGEST_MEMORY, s.alarmSuggestMemory)
             .apply()
     }
 
@@ -315,6 +376,17 @@ class SettingsRepository(context: Context) {
         const val K_ALARM_MISSION = "alarm_mission"
         const val K_SHIFT_MISSIONS = "shift_missions"
         const val K_WAKE_CHECK = "wake_check_minutes"
+        const val K_WIDGET_MEMO = "widget_memo"
+        const val K_BACKUP_PHOTOS = "backup_photos"
+        const val K_MONEY_LAYOUT = "money_layout"
+        const val K_MEMO_LAYOUT = "memo_layout"
+        const val K_RATE_HINT = "rate_hint"
+        const val K_PAY_REVIEW_DUE = "pay_review_due"
+        const val K_PAY_REVIEW_ASKED = "pay_review_asked"
+        const val K_REVIEW_DAY = "review_asked_day"
+        const val K_MONTH_RECAP = "month_recap_seen"
+        const val K_ALARM_SUGGEST = "alarm_suggest"
+        const val K_ALARM_SUGGEST_MEMORY = "alarm_suggest_memory"
         const val K_WEEKLY_LIMIT = "weekly_limit"
         const val K_AVG_LIMIT = "average_limit"
         const val K_THEME = "theme"
@@ -331,6 +403,9 @@ class SettingsRepository(context: Context) {
         const val K_ALARMS_ON = "alarms_on"
         const val K_HIDE_DAY_NOTICE = "hide_day_alarm_notice"
         const val K_SHARE_STATS = "share_usage_stats"
+        const val K_PLAZA_NEWS = "plaza_news"
+        const val K_PLAZA_HIDDEN = "plaza_hidden"
+        const val K_PLAZA_RULES = "plaza_rules_agreed"
         const val K_OLD_TIER = "tier"
         const val K_PREVIEW_TIER = "tier_preview"
         const val K_WORK_STYLE = "work_style"
@@ -340,6 +415,7 @@ class SettingsRepository(context: Context) {
         const val K_CAL_MEMOS = "calendar_memos"
         const val K_REST_CHECK = "rest_check"
         const val K_STRICT_REST = "strict_rest"
+        const val K_REST_RULES = "rest_rules"
         const val K_SLEEP_TIPS = "sleep_tips"
         /** 1.10 and before: one switch for all sleep notices, read once to carry it over. */
         const val K_SLEEP_REMINDERS = "sleep_reminders"
@@ -358,3 +434,10 @@ class SettingsRepository(context: Context) {
         const val K_REST_COMPARED = "rest_day_compared"
     }
 }
+
+/**
+ * [REST-01] The roster limits both checks use: the saved line, or 1.21's '더 엄격하게' for those who had it on, and
+ * 휴식 점검 as the on switch.
+ */
+val AppSettings.rules: com.bamnat.core.schedule.RestRules
+    get() = com.bamnat.core.schedule.RestRules.decode(restRules, strictRest).copy(on = restCheck)

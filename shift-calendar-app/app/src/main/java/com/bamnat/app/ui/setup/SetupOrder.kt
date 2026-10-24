@@ -29,7 +29,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.LayersClear
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,7 +94,8 @@ private fun RotationOrder(vm: SetupViewModel, d: SetupDraft) {
     val types = remember(d.types) { d.types.associateBy { it.id } }
     val shared = remember(d.source) { vm.sourceOrder(d) }
     val presets = remember(d.bundle, d.roles, d.types) { vm.presets(d).map { it to PatternPresets.toSteps(it, d.roles) } }
-    var custom by remember {
+    // [SETUP-14] Kept through folding and unfolding.
+    var custom by rememberSaveable {
         mutableStateOf(d.rotation.isNotEmpty() && d.rotation != shared && presets.none { it.second == d.rotation })
     }
     if (shared != null) {
@@ -155,7 +157,7 @@ internal fun orderLine(steps: List<Long?>, types: Map<Long, ShiftType>): String 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RotationEditor(d: SetupDraft, types: Map<Long, ShiftType>, onChange: (List<Long?>) -> Unit) {
-    var picked by remember { mutableStateOf<Int?>(null) }
+    var picked by rememberSaveable { mutableStateOf<Int?>(null) }
     val steps = d.rotation
     val choices: List<Long?> = d.types.map { it.id } + if (d.types.none { it.isOff }) listOf<Long?>(null) else emptyList()
     Surface(
@@ -414,7 +416,8 @@ internal fun SetupMonth(
             }
             WeekdayHeader(weekStart, Modifier.padding(start = WEEK_BAR_SPACE))
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val cellHeight = (maxWidth / 7 * 1.25f).coerceIn(60.dp, 92.dp) + cellTextGrowth()
+                // Same cell as 내 달력, so a holiday name under the shift has its line (a 60dp cell cut it off on a folded phone).
+                val cellHeight = (maxWidth / 7 * 1.3f).coerceIn(66.dp, 100.dp) + cellTextGrowth()
                 MonthGrid(
                     month = month,
                     snapshot = snapshot,

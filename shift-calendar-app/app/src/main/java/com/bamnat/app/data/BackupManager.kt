@@ -15,6 +15,7 @@ import com.bamnat.app.data.db.MoneyCategoryEntity
 import com.bamnat.app.data.db.MemoEntity
 import com.bamnat.app.data.db.PatternEntity
 import com.bamnat.app.data.db.ShiftTypeEntity
+import com.bamnat.app.data.db.toEntity
 import com.bamnat.core.work.WorkStyle
 import org.json.JSONArray
 import org.json.JSONObject
@@ -29,6 +30,8 @@ data class BackupSummary(
     val sleeps: Int = 0, val hasPay: Boolean = false,
     /** [MCAL-05] Added calendars besides the main one. */
     val calendars: Int = 0,
+    /** [BACK-01] Photos in the file and about how many bytes they take. */
+    val photos: Int = 0, val photoBytes: Long = 0,
 )
 
 class BackupException(message: String) : Exception(message)
@@ -60,6 +63,12 @@ class BackupManager(
     private val pro: () -> com.bamnat.app.tier.ProStore? = { null },
     /** [PROV-04] The links the user made, with their keys, so a new phone keeps updating them. */
     private val shareLinks: com.bamnat.app.share.ShareLinkBackup? = null,
+    /** [BACK-01] Receipt and contract photos, while 사진도 백업 is on. */
+    private val photos: BackupPhotos? = null,
+    /** [REL-15] Where a file being opened waits (its photos, a sealed file) until it is restored or put away. */
+    private val staging: java.io.File? = null,
+    /** [EASY-03] Where each fact came from (결정 N-D4), per calendar; the example's never goes. */
+    private val profiles: () -> ProfileStore? = { null },
 ) {
     /** The schedule tables of [source] (shifts, order, changed days, extra work) as a backup holds them. */
     private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
@@ -72,7 +81,9 @@ class BackupManager(
                     .put("break", t.breakMinutes).put("off", t.isOff)
                     .put("alarm", t.alarmEnabled).put("alarmOffset", t.alarmOffsetMinutes)
                     .putOpt("sound", t.alarmSoundUri).put("order", t.sortOrder).put("alarms", t.alarmOffsets).putOpt("icon", t.icon)
-                    .putOpt("breakStart", t.breakStartMinute).putOpt("premium", t.premiumPercent.takeIf { it > 0 }),
+                    .putOpt("breakStart", t.breakStartMinute).putOpt("premium", t.premiumPercent.takeIf { it > 0 })
+                    // [PAYX-32] Version 20; only when set.
+                    .putOpt("breakPaid", t.breakPaid),
             )
         }
         into.put("shiftTypes", types)
@@ -102,7 +113,25 @@ class BackupManager(
             source.dayExtraDao().getAll().forEach { x ->
                 put(JSONObject().put("day", x.epochDay).put("kind", x.kindId).putOpt("start", x.startMinute).putOpt("end", x.endMinute)
                     .put("break", x.breakMinutes).putOpt("breakStart", x.breakStartMinute).put("minutes", x.minutes)
-                    .putOpt("covered", x.coveredShiftTypeId).put("review", x.needsReview).put("pos", x.position))
+                    .putOpt("covered", x.coveredShiftTypeId).put("review", x.needsReview).put("pos", x.position)
+                    // [PAYX-18] Version 19; only when set.
+                    .apply { if (x.compLeave) put("comp", true) }
+                    // [PAYX-30] Version 20; only when set.
+                    .putOpt("sub", x.substituteEpochDay))
+            }
+        })
+        // [LEAVE-01] The 연차 원장's stored rows (version 19). Uses stay on the days above.
+        into.put("leave", JSONArray().apply {
+            source.leaveLedgerDao().all().forEach { l ->
+                put(JSONObject().put("day", l.epochDay).put("kind", l.kind).put("days", l.days)
+                    .putOpt("expires", l.expiresEpochDay).putOpt("year", l.yearStartEpochDay)
+                    .put("note", l.note).put("pool", l.pool).put("created", l.createdAt))
+            }
+        })
+        // [LEAVE-11] 연차 사용 촉진 steps (version 20).
+        into.put("leaveNotices", JSONArray().apply {
+            source.leaveNoticeDao().all().forEach { n ->
+                put(JSONObject().put("lapse", n.lapseEpochDay).put("step", n.step).put("day", n.epochDay).put("note", n.note).put("created", n.createdAt))
             }
         })
     }
@@ -195,9 +224,158 @@ class BackupManager(
         into.put("payClosed", JSONArray(store.closed.value.values.map(com.bamnat.app.pay.SnapshotCodec::encode)))
     }
 
-    suspend fun export(): String = db.withTransaction { exportNow() }
+    /** The backup as one JSON text, without the photos (those go in the file of [exportFile]). */
+    suspend fun export(): String = db.withTransaction { exportNow().toString(1) }
 
-    private suspend fun exportNow(): String {
+    /** [REL-15] The backup and the photo files that go with it, read in one transaction. */
+    private suspend fun exportWithPhotos(): Pair<String, List<BackupArchive.Photo>> = db.withTransaction {
+        val root = exportNow()
+        // [BACK-01] The photos the records point at, unless the user keeps them on the phone only.
+        val files = if (settings.current.backupPhotos) photos?.let { p -> photoNames(root).let { (r, c) -> p.files(r, c) } }.orEmpty() else emptyList()
+        root.toString(1) to files
+    }
+
+    /**
+     * [REL-15] 327: the backup file of format 3 (a zip: [BackupArchive]) written to [out], sealed with [password]
+     * when there is one. Photos stream from their files; [out] stays open.
+     */
+    suspend fun exportFile(out: java.io.OutputStream, password: CharArray? = null) {
+        val (json, files) = exportWithPhotos()
+        if (password == null) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackupArchive.write(out, json, files) }
+            return
+        }
+        val salt = BackupCrypto.newSalt()
+        val key = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { BackupCrypto.deriveKey(password, salt) }
+        try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { writeSealed(out, json, files, key, salt, BackupCrypto.ITERATIONS) }
+        } finally {
+            key.fill(0)
+        }
+    }
+
+    /** [PROV-03][REL-15] [exportFile] with a key kept by 자동 백업; the file opens with the password the key came from. */
+    suspend fun exportFileWithKey(out: java.io.OutputStream, key: ByteArray, salt: ByteArray, iterations: Int) {
+        val (json, files) = exportWithPhotos()
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { writeSealed(out, json, files, key, salt, iterations) }
+    }
+
+    /** One line saying how the file is sealed, then the sealed zip. */
+    private fun writeSealed(out: java.io.OutputStream, json: String, files: List<BackupArchive.Photo>, key: ByteArray, salt: ByteArray, iterations: Int) {
+        val iv = BackupCrypto.newIv()
+        val b64 = Base64.getEncoder()
+        val head = JSONObject().put("app", APP_ID).put("format", SEALED_FORMAT).put("v", SEALED_ZIP)
+            .put("salt", b64.encodeToString(salt)).put("iv", b64.encodeToString(iv)).put("iter", iterations)
+        out.write((head.toString() + "\n").toByteArray())
+        BackupCrypto.encrypting(BackupArchive.NotClosing(out), key, iv).use { sealed -> BackupArchive.write(sealed, json, files) }
+        out.flush()
+    }
+
+    /**
+     * [REL-15] Reads a file the user picked: a backup of format 3 (its photos wait in [staging] for [restore]),
+     * a sealed one (waits for its password: [isSealed] is true for the text this returns), or any older text
+     * file (a backup of format 2, a company file), returned as it is.
+     */
+    fun read(input: java.io.InputStream): String {
+        val buffered = java.io.BufferedInputStream(input, 64 * 1024)
+        buffered.mark(HEAD_BYTES)
+        val head = ByteArray(HEAD_BYTES).let { b -> b.copyOf(buffered.readNBytesCompat(b)) }
+        buffered.reset()
+        if (BackupArchive.isZip(head)) {
+            val dir = stagingDir()
+            val opened = BackupArchive.read(buffered, java.io.File(dir, "photos"))
+            staged = Staged(sha(opened.json), opened.photos)
+            return opened.json
+        }
+        sealedHead(head)?.let { line ->
+            val dir = stagingDir()
+            val file = java.io.File(dir, LOCKED)
+            file.outputStream().use { buffered.copyTo(it) }
+            return line
+        }
+        return buffered.readBytes().decodeToString()
+    }
+
+    /** [REL-15] Lets go of a file read but not restored. */
+    fun putAway() {
+        staged = null
+        staging?.deleteRecursively()
+    }
+
+    private class Staged(val jsonSha: String, val photos: Map<String, java.io.File>)
+
+    @Volatile private var staged: Staged? = null
+
+    private fun stagingDir(): java.io.File {
+        val dir = staging ?: throw BackupException("백업 파일을 읽을 수 없어요")
+        putAway()
+        return dir.apply { mkdirs() }
+    }
+
+    /** The first line of a sealed file of format 3, or null. */
+    private fun sealedHead(head: ByteArray): String? {
+        val end = head.indexOf('\n'.code.toByte()).takeIf { it > 0 } ?: return null
+        val line = head.copyOf(end).decodeToString()
+        val o = runCatching { JSONObject(line) }.getOrNull() ?: return null
+        return line.takeIf { o.optString("format") == SEALED_FORMAT && o.optInt("v") == SEALED_ZIP }
+    }
+
+    private fun java.io.InputStream.readNBytesCompat(into: ByteArray): Int {
+        var n = 0
+        while (n < into.size) {
+            val r = read(into, n, into.size - n)
+            if (r < 0) break
+            n += r
+        }
+        return n
+    }
+
+    private fun sha(text: String) = BackupArchive.hex(java.security.MessageDigest.getInstance("SHA-256").digest(text.toByteArray()))
+
+    /** [REL-15] Opens the sealed file waiting in [staging] with [key]; its photos wait for [restore]. */
+    private fun openStaged(line: String, key: ByteArray): String {
+        val o = JSONObject(line)
+        val iv = Base64.getDecoder().decode(o.getString("iv"))
+        val dir = staging ?: throw BackupException("백업 파일을 읽을 수 없어요")
+        val locked = java.io.File(dir, LOCKED).takeIf { it.isFile } ?: throw BackupException("백업 파일을 다시 골라 주세요")
+        val zip = java.io.File(dir, "opened.zip")
+        locked.inputStream().use { input ->
+            // Past the first line.
+            while (true) { val b = input.read(); if (b < 0 || b == '\n'.code) break }
+            zip.outputStream().use { out -> BackupCrypto.decrypt(input, key, iv, out) }
+        }
+        val opened = try {
+            zip.inputStream().use { BackupArchive.read(it, java.io.File(dir, "photos")) }
+        } finally {
+            zip.delete()
+        }
+        staged = Staged(sha(opened.json), opened.photos)
+        return opened.json
+    }
+
+    /**
+     * [PROV-03][REL-15] 자동 백업's check that the file it wrote opens: the bytes read back, opened with [key],
+     * every sum checked. Its own folder, so a file waiting for a restore is left alone.
+     */
+    fun verifyWithKey(bytes: ByteArray, key: ByteArray): String {
+        val end = bytes.indexOf('\n'.code.toByte()).takeIf { it > 0 } ?: throw BackupException("백업 파일이 손상됐어요")
+        val o = runCatching { JSONObject(bytes.copyOf(end).decodeToString()) }.getOrNull() ?: throw BackupException("백업 파일이 손상됐어요")
+        val iv = Base64.getDecoder().decode(o.getString("iv"))
+        val plain = java.io.ByteArrayOutputStream()
+        try {
+            BackupCrypto.decrypt(java.io.ByteArrayInputStream(bytes, end + 1, bytes.size - end - 1), key, iv, plain)
+        } catch (e: BackupCrypto.WrongPassword) {
+            throw BackupException("백업 파일이 손상됐어요")
+        }
+        val dir = java.io.File(staging ?: throw BackupException("백업 파일을 읽을 수 없어요"), "../backup-verify").canonicalFile
+        return try {
+            BackupArchive.read(java.io.ByteArrayInputStream(plain.toByteArray()), dir).json
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    private suspend fun exportNow(): JSONObject {
         val root = JSONObject()
             .put("app", APP_ID)
             .put("format", FORMAT_VERSION)
@@ -218,7 +396,13 @@ class BackupManager(
             book.get(PersonalCalendar.MAIN)?.let { root.put("mainCalendar", CalendarBook.run { it.toJson() }) }
         }
         val memos = JSONArray()
-        db.memoDao().getAll().forEach { m ->
+        // [EASY-01] The example calendar's memos never go in a backup (결정 N-D4); one shared with another calendar
+        // goes without the example's mark.
+        val codec = com.bamnat.core.memo.MemoCalendars
+        db.memoDao().getAll().mapNotNull { m ->
+            val on = codec.decode(m.calendars)
+            if (PersonalCalendar.EXAMPLE !in on) m else (on - PersonalCalendar.EXAMPLE).takeIf { it.isNotEmpty() }?.let { m.copy(calendars = codec.encode(it)) }
+        }.forEach { m ->
             memos.put(
                 JSONObject()
                     .put("id", m.id).putOpt("day", m.epochDay).put("title", m.title).put("body", m.body)
@@ -246,6 +430,7 @@ class BackupManager(
         teams?.let { t -> root.put("teams", JSONObject(t.export() as Map<*, *>)) }
         pro()?.let { root.put("pro", it.toBackup()) }
         shareLinks?.let { root.put("shareLinks", it.export()) }
+        profiles()?.let { p -> root.put("profile", JSONObject(p.export() as Map<*, *>)) }
         val s = settings.current
         root.put(
             "settings",
@@ -262,17 +447,59 @@ class BackupManager(
                 .put("phoneCalendars", s.phoneCalendars.joinToString(","))
                 .put("alarmMission", s.alarmMission).put("shiftMissions", encodeShiftMissions(s.shiftMissions))
                 .put("wakeCheck", s.wakeCheckMinutes)
+                // [DAILY-01][BACK-01][DAILY-15][DAILY-16] Added in 1.22.
+                .put("widgetMemo", s.widgetMemo).put("backupPhotos", s.backupPhotos)
+                .put("moneyLayout", s.moneyLayout).put("memoLayout", s.memoLayout).put("rateHint", s.rateHint)
+                // [ALRM-03] Added in 1.23; what was answered stays on the phone.
+                .put("alarmSuggest", s.alarmSuggest)
                 .put("restCheck", s.restCheck)
-                .put("strictRest", s.strictRest).put("sleepTips", s.sleepTips)
+                .put("strictRest", s.strictRest).put("restRules", s.restRules).put("sleepTips", s.sleepTips)
                 // 1.10 and before read one switch for all sleep notices.
                 .put("sleepReminders", s.briefing || s.commuteNotice)
                 .put("briefing", s.briefing).put("commuteNotice", s.commuteNotice).put("bedtimeNotice", s.bedtimeNotice)
                 .put("todayShiftNotice", s.todayShiftNotice)
                 .put("sleepingNotice", s.sleepingNotice).put("quietWhileAsleep", s.quietWhileAsleep)
                 .put("moneyNotices", s.moneyNotices).put("leaveNotice", s.leaveNotice)
-                .put("sleepTarget", s.sleepTargetMinutes).put("commute", s.commuteMinutes),
+                .put("sleepTarget", s.sleepTargetMinutes).put("commute", s.commuteMinutes)
+                // [STAT-01][COMM-08][COMM-09][COMM-10] Added in 1.22.
+                .put("usageStats", s.shareUsageStats).put("plazaNews", s.plazaNews).put("plazaHidden", s.plazaHidden)
+                .put("plazaRules", s.plazaRulesAgreed),
         )
-        return root.toString(1)
+        return root
+    }
+
+    /**
+     * [BACK-01] The photo names a backup's records point at: ledger lines' receipts on every calendar, and
+     * each calendar's contract photos.
+     */
+    private fun photoNames(root: JSONObject): Pair<Set<String>, Map<String, List<String>>> {
+        val receipts = HashSet<String>()
+        fun scan(o: JSONObject) = o.optJSONArray("money").objects().forEach { e -> e.optString("receipt").takeIf { it.isNotEmpty() }?.let(receipts::add) }
+        scan(root)
+        val ids = listOf(PersonalCalendar.MAIN) + root.optJSONArray("calendars").objects().mapNotNull { o ->
+            scan(o)
+            CalendarBook.fromJson(o)?.takeIf { !it.isMain }?.id
+        }
+        val contracts = workTools?.let { tools -> ids.associateWith { tools.current(it).contract.photos }.filterValues { it.isNotEmpty() } }.orEmpty()
+        return receipts to contracts
+    }
+
+    /** [BACK-01] What the photos would add to a backup made now: shown beside 사진도 백업. */
+    suspend fun photoSize(): BackupPhotos.Size {
+        val p = photos ?: return BackupPhotos.Size(0, 0)
+        val root = JSONObject()
+        db.withTransaction { putMoney(db, root) }
+        calendars?.let { book ->
+            root.put("calendars", JSONArray().apply {
+                book.added().forEach { cal ->
+                    val o = CalendarBook.run { cal.toJson() }
+                    book.database(cal.id).let { other -> other.withTransaction { putMoney(other, o) } }
+                    put(o)
+                }
+            })
+        }
+        val (receipts, contracts) = photoNames(root)
+        return p.size(receipts, contracts)
     }
 
     /** Reads a backup without changing anything. Throws [BackupException] for a file that is not ours. */
@@ -292,16 +519,26 @@ class BackupManager(
             sleeps = root.optJSONArray("sleep")?.length() ?: 0,
             hasPay = root.has("pay"),
             calendars = root.optJSONArray("calendars")?.length() ?: 0,
+            photos = stagedFor(json)?.photos?.size ?: BackupPhotos.count(root.optJSONObject("photos")).count,
+            photoBytes = stagedFor(json)?.photos?.values?.sumOf { it.length() } ?: BackupPhotos.count(root.optJSONObject("photos")).bytes,
         )
     }
 
     /** [MCAL-05] One calendar's schedule as a backup holds it; throws for one with no shifts. */
     private class ScheduleRows(
         val types: List<ShiftTypeEntity>, val patterns: List<PatternEntity>, val days: List<DayEntryEntity>, val extras: List<DayExtraEntity>?,
+        /** [LEAVE-01] Null for a backup from before the ledger. */
+        val leave: List<com.bamnat.app.data.db.LeaveLedgerEntity>? = null,
+        /** [LEAVE-11] Null for a backup from before version 20. */
+        val notices: List<com.bamnat.app.data.db.LeaveNoticeEntity>? = null,
     )
 
-    private fun readSchedule(from: JSONObject): ScheduleRows {
-        val types = from.getJSONArray("shiftTypes").objects().map { o ->
+    /**
+     * [orDefaults] is for an added calendar: one kept for money or investing may hold no kinds of work
+     * (순번 200), so it comes back with the default kinds instead of turning the whole backup away.
+     */
+    private fun readSchedule(from: JSONObject, orDefaults: Boolean = false): ScheduleRows {
+        val read = from.getJSONArray("shiftTypes").objects().map { o ->
             ShiftTypeEntity(
                 id = o.getLong("id"), name = o.getString("name"), label = o.getString("label"),
                 colorArgb = o.getLong("color"), startMinute = o.optIntOrNull("start"), endMinute = o.optIntOrNull("end"),
@@ -309,8 +546,10 @@ class BackupManager(
                 alarmOffsetMinutes = o.optInt("alarmOffset", 60), alarmSoundUri = o.optStringOrNull("sound"),
                 sortOrder = o.optInt("order"), alarmOffsets = o.optString("alarms", ""), icon = o.optStringOrNull("icon"),
                 breakStartMinute = o.optIntOrNull("breakStart"), premiumPercent = o.optInt("premium").coerceIn(0, 300),
+                breakPaid = if (o.has("breakPaid") && !o.isNull("breakPaid")) o.optBoolean("breakPaid") else null,
             )
         }
+        val types = read.ifEmpty { if (orDefaults) DefaultShiftTypes.all().map { it.toEntity() } else emptyList() }
         if (types.isEmpty()) throw BackupException("근무 종류가 없는 백업 파일이에요")
         // Older backups held one "pattern" object instead of the "patterns" history.
         val patternObjects = from.optJSONArray("patterns")?.objects()
@@ -342,10 +581,32 @@ class BackupManager(
                 endMinute = o.optIntOrNull("end"), breakMinutes = o.optInt("break").coerceIn(0, 24 * 60),
                 breakStartMinute = o.optIntOrNull("breakStart"), minutes = o.optInt("minutes").coerceIn(0, 24 * 60),
                 coveredShiftTypeId = if (o.has("covered") && !o.isNull("covered")) o.getLong("covered") else null,
-                needsReview = o.optBoolean("review"), position = o.optInt("pos"),
+                needsReview = o.optBoolean("review"), position = o.optInt("pos"), compLeave = o.optBoolean("comp"),
+                substituteEpochDay = if (o.has("sub") && !o.isNull("sub")) o.getLong("sub") else null,
             )
         }
-        return ScheduleRows(types, patterns, days, extras)
+        val leave = from.optJSONArray("leave")?.objects()?.mapNotNull { o ->
+            // A kind from a newer version is left out rather than read as something else.
+            val kind = com.bamnat.core.leave.EntryKind.of(o.optString("kind")) ?: return@mapNotNull null
+            val days = o.optDouble("days", Double.NaN).takeIf { it.isFinite() && kotlin.math.abs(it) <= 400 } ?: return@mapNotNull null
+            com.bamnat.app.data.db.LeaveLedgerEntity(
+                epochDay = o.getLong("day"), kind = kind.name, days = days,
+                expiresEpochDay = if (o.has("expires") && !o.isNull("expires")) o.getLong("expires") else null,
+                yearStartEpochDay = if (o.has("year") && !o.isNull("year")) o.getLong("year") else null,
+                note = o.optString("note").take(200),
+                pool = com.bamnat.core.leave.LeavePool.entries.firstOrNull { it.name == o.optString("pool") }?.name ?: "ANNUAL",
+                createdAt = o.optLong("created"),
+            )
+        }
+        val notices = from.optJSONArray("leaveNotices")?.objects()?.mapNotNull { o ->
+            // A step from a newer version is left out.
+            val step = com.bamnat.core.leave.LeavePromotion.Step.of(o.optString("step")) ?: return@mapNotNull null
+            com.bamnat.app.data.db.LeaveNoticeEntity(
+                lapseEpochDay = o.getLong("lapse"), step = step.name, epochDay = o.getLong("day"),
+                note = o.optString("note").take(200), createdAt = o.optLong("created"),
+            )
+        }
+        return ScheduleRows(types, patterns, days, extras, leave, notices)
     }
 
     /** Replaces [target]'s schedule with [rows]; the change log described the days being replaced [MKT-08]. */
@@ -353,6 +614,12 @@ class BackupManager(
         target.dayChangeDao().clear()
         target.dayEntryDao().clear()
         target.dayExtraDao().clear()
+        // [LEAVE-01] An older backup has no ledger; its 연차 in the pay setup moves in again (LeaveRepository).
+        target.leaveLedgerDao().clear()
+        rows.leave?.let { target.leaveLedgerDao().insertAll(it) }
+        // [LEAVE-11] An older backup has none: the phone's are cleared with the rest of the schedule.
+        target.leaveNoticeDao().clear()
+        rows.notices?.let { target.leaveNoticeDao().insertAll(it) }
         target.patternDao().clear()
         target.shiftTypeDao().clear()
         target.shiftTypeDao().insertAll(rows.types)
@@ -472,13 +739,34 @@ class BackupManager(
         rows.invest?.let { InvestBackup.write(target, it) }
     }
 
+    /** [REL-15] The photos [read] left waiting, when they came with this very backup. */
+    private fun stagedFor(json: String): Staged? = staged?.takeIf { it.jsonSha == sha(json) }
+
+    /**
+     * Replaces the phone's data with the backup's. [REL-15] 327 (검토 F1): all of it or none of it. Everything is
+     * read before anything changes; if writing fails halfway, the phone's data as it was a moment before goes back.
+     */
     suspend fun restore(json: String) {
         val root = parse(json)
+        val waiting = stagedFor(json)
+        val before = runCatching { export() }.getOrNull()
+        val writing = java.util.concurrent.atomic.AtomicBoolean(false)
+        try {
+            restore(root, waiting, writing)
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException || !writing.get()) throw e
+            if (before != null) runCatching { restore(parse(before), null, java.util.concurrent.atomic.AtomicBoolean()) }
+            throw BackupException("백업을 불러오지 못했어요. 지금 데이터는 그대로예요")
+        }
+        if (waiting != null) putAway()
+    }
+
+    private suspend fun restore(root: JSONObject, waiting: Staged?, writing: java.util.concurrent.atomic.AtomicBoolean) {
         val schedule = readSchedule(root)
         // [MCAL-05] Added calendars come back only from a backup that has them; read before anything changes.
         val added = if (calendars != null && root.has("calendars")) root.optJSONArray("calendars").objects().mapNotNull { o ->
             CalendarBook.fromJson(o)?.takeIf { !it.isMain }?.let { cal ->
-                AddedRows(cal, readSchedule(o), readMoney(o), o.optJSONObject("pay")?.let(com.bamnat.app.pay.PayCodec::decode),
+                AddedRows(cal, readSchedule(o, orDefaults = true), readMoney(o), o.optJSONObject("pay")?.let(com.bamnat.app.pay.PayCodec::decode),
                     o.optJSONArray("payClosed")?.objects()?.map(com.bamnat.app.pay.SnapshotCodec::decode))
             }
         }.distinctBy { it.cal.id } else null
@@ -509,6 +797,7 @@ class BackupManager(
             val back = added.map { it.cal.id }.toSet()
             calendars.calendars.value.filter { !it.isMain && it.id !in back }.forEach { cal -> runCatching { recordsTrash()?.beforeDelete(cal.id) } }
         }
+        writing.set(true)
         db.withTransaction {
             writeMoney(db, money)
             // Backups from before version 11 carry no sleep log; the one on the phone then stays.
@@ -549,6 +838,11 @@ class BackupManager(
         }
         // [PROV-04] Read once the calendars are back; a backup from before 1.20 has none, and the phone's own links always stay.
         root.optJSONArray("shareLinks")?.let { a -> shareLinks?.restore(a) }
+        root.optJSONObject("profile")?.let { o -> profiles()?.import(o.keys().asSequence().associateWith { o.get(it).toString() }) }
+        // [BACK-01] Photos first, so the records and contracts that point at them find them here.
+        photos?.restore(root.optJSONObject("photos"))
+        // [REL-15] A file of format 3 brought them as files: each moves in, never over one already here.
+        if (waiting != null) photos?.restoreFiles(waiting.photos)
         // Backups from before 1.17 carry no work tools; the phone's own then stay.
         workTools?.let { tools ->
             tools.restore(PersonalCalendar.MAIN, root.optJSONObject("workTools"))
@@ -596,9 +890,17 @@ class BackupManager(
                     alarmMission = o.optString("alarmMission", s.alarmMission),
                     shiftMissions = o.optStringOrNull("shiftMissions")?.let(::decodeShiftMissions) ?: s.shiftMissions,
                     wakeCheckMinutes = o.optInt("wakeCheck", s.wakeCheckMinutes).coerceIn(0, 30),
+                    widgetMemo = o.optBoolean("widgetMemo", s.widgetMemo),
+                    backupPhotos = o.optBoolean("backupPhotos", s.backupPhotos),
+                    moneyLayout = o.optString("moneyLayout", s.moneyLayout),
+                    memoLayout = o.optString("memoLayout", s.memoLayout),
+                    rateHint = o.optBoolean("rateHint", s.rateHint),
+                    alarmSuggest = o.optBoolean("alarmSuggest", s.alarmSuggest),
                     calendarMemos = o.optBoolean("calendarMemos", s.calendarMemos),
                     restCheck = o.optBoolean("restCheck", s.restCheck),
                     strictRest = o.optBoolean("strictRest", s.strictRest),
+                    // [REST-01] Added in 1.22.
+                    restRules = o.optString("restRules", s.restRules),
                     sleepTips = o.optBoolean("sleepTips", s.sleepTips),
                     briefing = o.optBoolean("briefing", o.optBoolean("sleepReminders", s.briefing)),
                     commuteNotice = o.optBoolean("commuteNotice", o.optBoolean("sleepReminders", s.commuteNotice)),
@@ -610,6 +912,11 @@ class BackupManager(
                     leaveNotice = o.optBoolean("leaveNotice", s.leaveNotice),
                     sleepTargetMinutes = o.optInt("sleepTarget", s.sleepTargetMinutes).coerceIn(4 * 60, 10 * 60),
                     commuteMinutes = o.optInt("commute", s.commuteMinutes).coerceIn(0, MAX_COMMUTE_MINUTES),
+                    // [STAT-01][COMM-08][COMM-09][COMM-10] Added in 1.22; older backups keep what this phone has.
+                    shareUsageStats = o.optBoolean("usageStats", s.shareUsageStats),
+                    plazaNews = o.optBoolean("plazaNews", s.plazaNews),
+                    plazaHidden = o.optStringOrNull("plazaHidden")?.let { com.bamnat.core.plaza.HideList.decode(it).encode() } ?: s.plazaHidden,
+                    plazaRulesAgreed = o.optInt("plazaRules", s.plazaRulesAgreed).coerceAtLeast(0),
                     // Old records came back with the backup; offer to fix them again.
                     swapCoversAnswered = s.swapCoversAnswered && schedule.extras != null,
                 )
@@ -643,10 +950,14 @@ class BackupManager(
 
     /** [PROV-03] The backup inside a file [sealWithKey] made, to check it was written whole. */
     fun unsealWithKey(text: String, key: ByteArray): String = try {
-        BackupCrypto.openWithKey(read(text), key).decodeToString()
+        if (sealedZip(text) != null) openStaged(text, key) else BackupCrypto.openWithKey(read(text), key).decodeToString()
     } catch (e: BackupCrypto.WrongPassword) {
         throw BackupException("백업 파일이 손상됐어요")
     }
+
+    /** The first line of a sealed file of format 3 ([read] keeps the rest), or null for one of format 2. */
+    private fun sealedZip(text: String): JSONObject? =
+        runCatching { JSONObject(text) }.getOrNull()?.takeIf { it.optString("format") == SEALED_FORMAT && it.optInt("v") == SEALED_ZIP }
 
     private fun read(text: String): BackupCrypto.Sealed {
         val o = runCatching { JSONObject(text) }.getOrNull() ?: throw BackupException("백업 파일을 읽을 수 없어요")
@@ -661,6 +972,18 @@ class BackupManager(
 
     /** The backup inside a sealed file; throws [BackupException] for a wrong password or a broken file. */
     fun unseal(text: String, password: CharArray): String {
+        sealedZip(text)?.let { o ->
+            val key = BackupCrypto.deriveKey(password, Base64.getDecoder().decode(o.getString("salt")), o.getInt("iter").also {
+                if (it !in 1..MAX_ITERATIONS) throw BackupException("백업 파일이 손상됐어요")
+            })
+            return try {
+                openStaged(text, key)
+            } catch (e: BackupCrypto.WrongPassword) {
+                throw BackupException("암호가 맞지 않아요")
+            } finally {
+                key.fill(0)
+            }
+        }
         val sealed = read(text)
         return try {
             BackupCrypto.open(sealed, password).decodeToString()
@@ -697,5 +1020,9 @@ class BackupManager(
         const val MAX_COMMUTE_MINUTES = 180
         /** A file asking for more work than this is not ours (and would freeze the phone). */
         private const val MAX_ITERATIONS = 5_000_000
+        /** [REL-15] A sealed file of format 3: one line, then the sealed zip. Format 2 sealed files are "v": 1. */
+        const val SEALED_ZIP = 3
+        private const val HEAD_BYTES = 4096
+        private const val LOCKED = "locked.bin"
     }
 }

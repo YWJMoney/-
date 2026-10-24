@@ -18,6 +18,8 @@ data class WatchDay(
     val start: LocalTime? = null,
     val end: LocalTime? = null,
     val off: Boolean = false,
+    /** [WEAR-03] The shift's icon key ([com.bamnat.core.model.ShiftIcon]), for the watch face's small image. */
+    val icon: String? = null,
 ) {
     /** "주간 09:00–18:00", "휴무", "연차". */
     val line: String
@@ -42,7 +44,19 @@ data class WatchPayload(
      * zone changing does not make a newer copy look older, as [syncedAt] (the phone's local time) can.
      */
     val sentAtMillis: Long = 0,
-)
+    /** [WEAR-01] The phone's first day of the week (1 = Monday … 7 = Sunday), so the watch's month matches (I 리뷰 I23). */
+    val weekStart: Int = 1,
+    /** [WEAR-03] This Monday-to-Sunday week's hours so far and planned, in minutes; −1 when not sent (I 리뷰 N7 a). */
+    val weekMinutes: Int = -1,
+    /** [WEAR-03] The weekly limit the phone warns at (52시간 unless the user changed it). */
+    val weekLimitMinutes: Int = 52 * 60,
+    /** [WEAR-03] What the watch can write for an 알바 calendar today: [Clock.NONE], [Clock.IN] or [Clock.OUT] (I 리뷰 N7 d). */
+    val clock: Clock = Clock.NONE,
+    /** [WEAR-03] Today has an alarm that can be turned off from the tile (I 리뷰 N7 c). */
+    val alarmToday: Boolean = false,
+) {
+    enum class Clock { NONE, IN, OUT }
+}
 
 object WatchDays {
     /** Days ahead the phone sends at least, so a watch away from the phone a while still knows. */
@@ -71,11 +85,14 @@ object WatchDays {
         return when {
             leave != null && leave.isFullDay -> WatchDay(d.date, leave.label, leave.label.take(1), OFF_COLOR, off = true)
             d.isWorkDay -> WatchDay(d.date, (type?.name ?: "근무") + (leave?.let { " · ${it.label}" } ?: ""), type?.label ?: "근",
-                type?.colorArgb ?: 0xFF2F80EDL, d.start, d.end)
+                type?.colorArgb ?: 0xFF2F80EDL, d.start, d.end, icon = type?.icon)
             d.extras.isNotEmpty() -> d.extras.first().let { e ->
-                WatchDay(d.date, e.covered?.name?.let { "$it ${e.kind.name}" } ?: e.kind.name, e.kind.mark, e.kind.colorArgb, e.start, e.end)
+                // [DAYW-10] Two pieces on a day off (특근 and a 야간 대근) both show: "특근 외 1건" (I 리뷰 1-5).
+                val first = e.covered?.name?.let { "$it ${e.kind.name}" } ?: e.kind.name
+                val more = d.extras.size - 1
+                WatchDay(d.date, if (more > 0) "$first 외 ${more}건" else first, e.kind.mark, e.kind.colorArgb, e.start, e.end)
             }
-            type != null -> WatchDay(d.date, type.name, type.label, type.colorArgb, off = true)
+            type != null -> WatchDay(d.date, type.name, type.label, type.colorArgb, off = true, icon = type.icon)
             else -> WatchDay(d.date, "쉬는 날", "휴", OFF_COLOR, off = true)
         }
     }
@@ -85,11 +102,13 @@ object WatchDays {
      * its label, calendar) and one line per day, fields apart by tabs.
      */
     fun encode(p: WatchPayload): String {
-        val head = listOf(VERSION, p.syncedAt.toString(), p.nextAlarm?.toString().orEmpty(), clean(p.alarmLabel), clean(p.calendar), p.sentAtMillis.toString())
+        // [WEAR-01][WEAR-03] Fields 6 on are new in 1.23; an older watch reads the first six and ignores them.
+        val head = listOf(VERSION, p.syncedAt.toString(), p.nextAlarm?.toString().orEmpty(), clean(p.alarmLabel), clean(p.calendar), p.sentAtMillis.toString(),
+            p.weekStart.toString(), p.weekMinutes.toString(), p.weekLimitMinutes.toString(), p.clock.name, if (p.alarmToday) "1" else "0")
             .joinToString("\t")
         return (listOf(head) + p.days.map { d ->
             listOf(d.date.toString(), clean(d.name), clean(d.label), d.colorArgb.toString(), d.start?.let(::hm).orEmpty(),
-                d.end?.let(::hm).orEmpty(), if (d.off) "1" else "0").joinToString("\t")
+                d.end?.let(::hm).orEmpty(), if (d.off) "1" else "0", d.icon.orEmpty()).joinToString("\t")
         }).joinToString("\n")
     }
 
@@ -104,11 +123,16 @@ object WatchDays {
             if (f.size < 7) return@mapNotNull null
             runCatching {
                 WatchDay(LocalDate.parse(f[0]), f[1], f[2], f[3].toLong(), f[4].takeIf { it.isNotEmpty() }?.let(LocalTime::parse),
-                    f[5].takeIf { it.isNotEmpty() }?.let(LocalTime::parse), f[6] == "1")
+                    f[5].takeIf { it.isNotEmpty() }?.let(LocalTime::parse), f[6] == "1", f.getOrNull(7)?.takeIf { it.isNotEmpty() })
             }.getOrNull()
         }
         return WatchPayload(days, synced, head[2].takeIf { it.isNotEmpty() }?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }, head[3], head[4],
-            head.getOrNull(5)?.toLongOrNull() ?: 0)
+            head.getOrNull(5)?.toLongOrNull() ?: 0,
+            weekStart = head.getOrNull(6)?.toIntOrNull()?.takeIf { it in 1..7 } ?: 1,
+            weekMinutes = head.getOrNull(7)?.toIntOrNull() ?: -1,
+            weekLimitMinutes = head.getOrNull(8)?.toIntOrNull()?.takeIf { it > 0 } ?: 52 * 60,
+            clock = head.getOrNull(9)?.let { c -> WatchPayload.Clock.entries.firstOrNull { it.name == c } } ?: WatchPayload.Clock.NONE,
+            alarmToday = head.getOrNull(10) == "1")
     }
 
     /**
@@ -139,13 +163,37 @@ object WatchDays {
         }
     }
 
-    /** Monday-first weeks of [month] for the month view, null for the days of other months. */
-    fun monthGrid(year: Int, month: Int): List<List<LocalDate?>> {
+    /** Weeks of [month] for the month view from [weekStart] (1 = Monday), null for the days of other months. */
+    fun monthGrid(year: Int, month: Int, weekStart: Int = 1): List<List<LocalDate?>> {
         val first = LocalDate.of(year, month, 1)
-        val lead = first.dayOfWeek.value - 1
+        val lead = Math.floorMod(first.dayOfWeek.value - weekStart, 7)
         val cells = List(lead) { null } + (1..first.lengthOfMonth()).map { first.withDayOfMonth(it) }
         return cells.chunked(7).map { w -> w + List(7 - w.size) { null } }
     }
+
+    /** [WEAR-01] Day-of-week names from [weekStart], for the month view's head row. */
+    fun weekHead(weekStart: Int): List<String> = (0 until 7).map { WEEKDAYS[Math.floorMod(weekStart - 1 + it, 7)] }
+
+    /**
+     * [WEAR-01] Months the watch can page to: as far as the days the phone sent reach (I 리뷰 I24), at least this
+     * month. Offsets from this month, e.g. −1..2.
+     */
+    fun monthRange(days: List<WatchDay>, today: LocalDate): IntRange {
+        val first = days.minOfOrNull { it.date } ?: return 0..0
+        val last = days.maxOf { it.date }
+        fun off(d: LocalDate) = ((d.year - today.year) * 12 + d.monthValue - today.monthValue)
+        return minOf(0, off(first))..maxOf(0, off(last))
+    }
+
+    /** [WEAR-03] "이번 주 38시간 / 52시간": the week's share of the limit for the ranged complication. */
+    fun weekText(p: WatchPayload): String? =
+        if (p.weekMinutes < 0) null else "이번 주 ${p.weekMinutes / 60}시간" + (if (p.weekMinutes % 60 != 0) " ${p.weekMinutes % 60}분" else "") + " / ${p.weekLimitMinutes / 60}시간"
+
+    /** [WEAR-03] Messages the watch sends the phone: turn today's alarm off, and an 알바's 출근·퇴근. */
+    const val ALARM_OFF_PATH = "/bamnat/sync/alarm-off"
+    const val CLOCK_PATH = "/bamnat/sync/clock"
+
+    private val WEEKDAYS = listOf("월", "화", "수", "목", "금", "토", "일")
 
     private fun clean(s: String) = s.replace('\t', ' ').replace('\n', ' ')
 }

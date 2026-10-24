@@ -242,11 +242,12 @@ internal fun GoalSheet(vm: InvestViewModel, state: InvestState, onDismiss: () ->
     var monthly by rememberSaveable { mutableStateOf(amountDigits(s0.monthlyAdd ?: 0)) }
     var method by rememberSaveable { mutableStateOf(s0.returnMethod) }
     var isa by rememberSaveable { mutableStateOf(s0.isaLimit) }
+    var monthSummary by rememberSaveable { mutableStateOf(s0.monthSummary) }
     var picking by remember { mutableStateOf(false) }
     fun settings(s: InvestSettings) = s.copy(
         goalAmount = amount.toAmount().takeIf { it > 0 }, goalReturnPercent = rate.toDecimal()?.takeIf { it > 0 },
         goalDate = runCatching { LocalDate.parse(date) }.getOrNull(), monthlyAdd = monthly.toAmount().takeIf { it > 0 },
-        returnMethod = method, isaLimit = isa,
+        returnMethod = method, isaLimit = isa, monthSummary = monthSummary,
     )
     val preview = InvestGoal.progress(settings(s0), state.fullResult.summary, state.today)
     val hide = state.hide
@@ -280,6 +281,8 @@ internal fun GoalSheet(vm: InvestViewModel, state: InvestState, onDismiss: () ->
         }
         FieldLabel("ISA 비과세 한도")
         ChoiceChips(listOf(InvestTaxes.ISA_LIMIT, InvestTaxes.ISA_LIMIT_LOW_INCOME), { it == isa }, { (if (it == InvestTaxes.ISA_LIMIT) "일반형 " else "서민형 ") + Fmt.wonShort(it) }, { isa = it })
+        // [INV-34] On by default; a month with no trade sends nothing, and 금액 가리기 hides its amounts.
+        SwitchRow("월말 요약 알림 (마지막 날 저녁 8시)", monthSummary) { monthSummary = it }
     }
     if (picking) InvestDatePicker(runCatching { LocalDate.parse(date) }.getOrDefault(state.today.plusYears(1)), { date = it.toString() }) { picking = false }
 }

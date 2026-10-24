@@ -30,7 +30,7 @@ object AdIds {
 /**
  * [MON-07] Google's consent (UMP) and the ads SDK, started only when an ad may show at all: after the
  * 정식 출시 switch, for a phone without 프로, in a build with ad ids. Where the law asks (EEA, UK and
- * the like) Google's own form asks first; 설정 › 개인정보와 권한 › 광고 개인정보 선택 opens it again.
+ * the like) Google's own form asks first; 설정 › 개인정보·앱 정보 › 광고 개인정보 선택 opens it again.
  */
 class Ads(private val scope: CoroutineScope) {
     private val _ready = MutableStateFlow(false)

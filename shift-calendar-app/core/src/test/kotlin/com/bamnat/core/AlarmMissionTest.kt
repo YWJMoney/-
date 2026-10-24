@@ -18,7 +18,8 @@ class AlarmMissionTest {
         assertEquals(AlarmMission.MATH, AlarmMission.of("math"))
         assertEquals(AlarmMission.SHAKE, AlarmMission.of("shake"))
         assertEquals(AlarmMission.NONE, AlarmMission.of("none"))
-        assertEquals("an old or broken value rings as before", AlarmMission.NONE, AlarmMission.of("photo"))
+        assertEquals(AlarmMission.PHOTO, AlarmMission.of("photo"))
+        assertEquals("an old or broken value rings as before", AlarmMission.NONE, AlarmMission.of("selfie"))
         assertEquals(AlarmMission.NONE, AlarmMission.of(null))
         assertEquals(AlarmMission.entries.map { it.key }.toSet().size, AlarmMission.entries.size)
     }

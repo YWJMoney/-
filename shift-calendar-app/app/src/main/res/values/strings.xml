@@ -9,5 +9,10 @@
     <string name="widget_today_name">오늘 근무</string>
     <string name="widget_week_name">주간 근무</string>
     <string name="widget_month_name">월간 근무표</string>
+    <string name="widget_teams_desc">조마다 오늘과 내일 근무</string>
+    <string name="widget_teams_name">오늘 모든 조</string>
+    <string name="widget_countdown_desc">다음 근무까지 남은 시간, 근무 중이면 끝나는 시각</string>
+    <string name="widget_countdown_name">다음 근무까지</string>
+    <string name="open_file_label">밤낮으로 열기</string>
     <string name="capture_label">밤낮 결제 알림 기록</string>
 </resources>

@@ -1,12 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Android 12+: cloud backup and phone-to-phone transfer [REL-04].
      Alarms are planned again on first launch, so the per-phone alarm state and the diagnostics log stay behind. -->
+<!-- [REL-15] 327 (검토 C7): receipt photos stay out of the cloud backup (a phone-to-phone transfer still takes them). Android's cloud backup stops at 25 MB, and photos past it
+     would keep the schedule from going up too; 밤낮's own backup file carries the photos (사진도 백업).
+     Contract photos (calendars/<id>/contract/) are a few pages and cannot be named without a wildcard, so they stay. -->
 <data-extraction-rules>
     <cloud-backup>
         <include domain="database" path="." />
         <include domain="sharedpref" path="settings.xml" />
         <include domain="file" path="." />
         <exclude domain="file" path="diag/" />
+        <exclude domain="file" path="receipts/" />
     </cloud-backup>
     <device-transfer>
         <include domain="database" path="." />

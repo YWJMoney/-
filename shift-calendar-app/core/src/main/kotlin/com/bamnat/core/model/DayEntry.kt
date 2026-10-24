@@ -64,13 +64,22 @@ enum class Attendance(val label: String, val code: Int) {
 }
 
 /** An alarm at a clock time on one date, set from the calendar. */
-data class DayAlarm(val time: LocalTime, val enabled: Boolean = true)
+/**
+ * One alarm set by hand for a day. [DAYW-09] [dayBefore] rings on the evening before (a night shift's 23:00 nap
+ * alarm), which the day sheet used to drop on saving (I 리뷰 P13).
+ */
+data class DayAlarm(val time: LocalTime, val enabled: Boolean = true, val dayBefore: Boolean = false) {
+    /** When it rings for the shift day [date]. */
+    fun at(date: java.time.LocalDate): java.time.LocalDateTime = (if (dayBefore) date.minusDays(1) else date).atTime(time)
+}
 
 /** Kinds of leave; [paid] keeps the day's pay, [annual] counts against 연차 [FEAT-10]. */
 enum class LeaveKind(val label: String, val paid: Boolean, val annual: Boolean) {
     ANNUAL("연차", paid = true, annual = true),
     PAID("유급 휴가", paid = true, annual = false),
     UNPAID("무급 휴가", paid = false, annual = false),
+    /** [PAYX-18] 보상휴가 (근로기준법 제57조): paid, taken from the 보상휴가 earned, not from 연차. Last, so codes stay. */
+    COMP("보상휴가", paid = true, annual = false),
     ;
 
     companion object {
@@ -82,42 +91,50 @@ enum class LeaveKind(val label: String, val paid: Boolean, val annual: Boolean) 
 
 /**
  * Leave on one day in quarters of a day [FEAT-10]: 4 = 종일, 2 = 반차, 1 = 반반차.
- * Partial leave is taken from the end of the shift.
+ * Partial leave is taken from the end of the shift, or from its start when [fromStart] (오전 반차:
+ * coming in later, so the morning alarm moves too).
  */
-data class Leave(val kind: LeaveKind = LeaveKind.ANNUAL, val quarters: Int = 4) {
+data class Leave(val kind: LeaveKind = LeaveKind.ANNUAL, val quarters: Int = 4, val fromStart: Boolean = false) {
     init {
         require(quarters in 1..4) { "quarters must be 1..4" }
     }
 
     val days: Double get() = quarters / 4.0
     val isFullDay: Boolean get() = quarters == 4
+    /** Taken off the start of the shift; a whole day has no start or end to take it from. */
+    val offStart: Boolean get() = fromStart && !isFullDay
 
     /** 연차, 반차, 반반차, or "0.75일 연차". */
     val label: String
         get() {
             val base = if (kind == LeaveKind.ANNUAL) "" else kind.label + " "
-            return when (quarters) {
-                4 -> if (kind == LeaveKind.ANNUAL) "연차" else kind.label
+            val part = when (quarters) {
+                4 -> return if (kind == LeaveKind.ANNUAL) "연차" else kind.label
                 2 -> base + "반차"
                 1 -> base + "반반차"
                 else -> "0.75일 " + kind.label
             }
+            return if (offStart) "오전 $part" else part
         }
 
     /** Short mark for calendar cells. */
-    val short: String get() = when (quarters) { 4 -> if (kind == LeaveKind.UNPAID) "무" else "연"; 3 -> "¾"; 2 -> "반"; else -> "¼" }
+    val short: String get() = when (quarters) { 4 -> when (kind) { LeaveKind.UNPAID -> "무"; LeaveKind.COMP -> "보"; else -> "연" }; 3 -> "¾"; 2 -> "반"; else -> "¼" }
 
-    /** One stored integer: kind code × 10 + quarters; 0 means no leave. */
-    val code: Int get() = kind.code * 10 + quarters
+    /** One stored integer: kind code × 10 + quarters, plus 100 when taken off the start; 0 means no leave. */
+    val code: Int get() = kind.code * 10 + quarters + if (offStart) FROM_START else 0
 
     companion object {
         val QUARTER_OPTIONS = listOf(4, 2, 1, 3)
 
+        /** Added to [code] for leave off the start; an app before 1.22 reads such a code as no leave. */
+        private const val FROM_START = 100
+
         fun fromCode(code: Int): Leave? {
             if (code <= 0) return null
-            val kind = LeaveKind.fromCode(code / 10) ?: return null
-            val q = code % 10
-            return if (q in 1..4) Leave(kind, q) else null
+            val rest = code % FROM_START
+            val kind = LeaveKind.fromCode(rest / 10) ?: return null
+            val q = rest % 10
+            return if (q in 1..4) Leave(kind, q, fromStart = code >= FROM_START && q < 4) else null
         }
     }
 }

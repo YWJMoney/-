@@ -115,7 +115,7 @@ test("개발중·완료·반려 need 처리: the owner has it and gives it per a
   const perms = (await call("GET", "/api/admin/me", undefined, junho)).data.perms;
   const viewed = (await call("POST", `/api/admin/admins/${id}`, { perms: { ...perms, devStatus: "view" } }, owner)).data;
   assert.equal(viewed.admins[0].perms.devStatus, "none");
-  assert.deepEqual(viewed.toggles, ["devStatus"]);
+  assert.deepEqual(viewed.toggles, ["devStatus", "takedown"]);
   await call("POST", `/api/admin/admins/${id}`, { perms: { ...perms, devStatus: "edit" } }, owner);
   assert.equal((await call("POST", `/api/admin/dev/${item.id}`, { status: "doing" }, junho)).data.status, "doing");
   // Without "dev" at all, nothing of it.
@@ -244,7 +244,9 @@ test("starting answers are added once even when two admins open the list at once
   assert.ok(a.data.templates.length <= after.length && b.data.templates.length <= after.length);
 });
 
-test("two changes from the same screen: only the first is written, the other is told it changed", async () => {
+test("two changes from the same screen: only the first is written, the other is told it changed", async (t) => {
+  // Made and changed twice in one millisecond: the second still sees that the item moved on.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-23T09:00:00Z") });
   const { call } = server();
   const owner = await signIn(call);
   const item = (await call("POST", "/api/admin/dev", { title: "위젯" }, owner)).data;

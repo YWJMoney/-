@@ -50,23 +50,46 @@ sealed interface WorkPattern {
             if (covers(date)) steps[stepIndexOn(date)] else null
     }
 
-    /** Fixed weekly schedule, typical for part-time work. */
+    /**
+     * Fixed weekly schedule, typical for part-time and office work. [SCHED-04] G P18·BC5: [holidaysOff] makes
+     * every 공휴일 (and 대체공휴일) a day off, so a weekday worker's alarm stays quiet then; [altSaturday] is a
+     * Saturday that is worked when Saturdays alternate (격주 토요일), and the Saturdays an odd number of weeks
+     * from it are off. Both are kept in the stored order's text, so the database stays as it is.
+     */
     data class Weekly(
         override val startDate: LocalDate,
         val byDay: Map<DayOfWeek, Long?>,
         override val endDate: LocalDate? = null,
+        val holidaysOff: Boolean = false,
+        val altSaturday: LocalDate? = null,
     ) : WorkPattern {
-        override fun shiftTypeIdOn(date: LocalDate): Long? =
-            if (covers(date)) byDay[date.dayOfWeek] else null
+        override fun shiftTypeIdOn(date: LocalDate): Long? {
+            if (!covers(date)) return null
+            if (holidaysOff && com.bamnat.core.holiday.KoreanHolidays.isHoliday(date)) return null
+            if (date.dayOfWeek == DayOfWeek.SATURDAY && altSaturday != null &&
+                Math.floorMod(ChronoUnit.WEEKS.between(altSaturday, date), 2L) == 1L
+            ) return null
+            return byDay[date.dayOfWeek]
+        }
 
         /** Steps in Monday..Sunday order, the storage form. */
         val steps: List<Long?> get() = DayOfWeek.entries.map { byDay[it] }
 
         companion object {
-            fun fromSteps(startDate: LocalDate, steps: List<Long?>, endDate: LocalDate? = null): Weekly {
+            fun fromSteps(
+                startDate: LocalDate,
+                steps: List<Long?>,
+                endDate: LocalDate? = null,
+                holidaysOff: Boolean = false,
+                altSaturday: LocalDate? = null,
+            ): Weekly {
                 require(steps.size == 7) { "A weekly pattern needs 7 steps (Mon..Sun)" }
-                return Weekly(startDate, DayOfWeek.entries.associateWith { steps[it.ordinal] }, endDate)
+                return Weekly(startDate, DayOfWeek.entries.associateWith { steps[it.ordinal] }, endDate, holidaysOff,
+                    altSaturday?.takeIf { it.dayOfWeek == DayOfWeek.SATURDAY })
             }
+
+            /** [SCHED-04] The word after the seven days in the stored order that turns [holidaysOff] on. */
+            const val HOLIDAYS_OFF = "h"
         }
     }
 }

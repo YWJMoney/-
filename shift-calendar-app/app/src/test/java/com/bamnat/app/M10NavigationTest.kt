@@ -44,6 +44,16 @@ class M10NavigationTest {
         away(45)
         HomeRequests.onStart()
         assertEquals(start + 1, HomeRequests.count.value)
+        HomeRequests.awaitingResult = false
+        // [285] Five minutes over midnight is a new day: the calendar opens on it.
+        val day = java.time.LocalDate.of(2026, 10, 22)
+        HomeRequests.today = { day }
+        HomeRequests.onStop(changingConfigurations = false)
+        away(5)
+        HomeRequests.today = { day.plusDays(1) }
+        HomeRequests.onStart()
+        assertEquals(start + 2, HomeRequests.count.value)
+        HomeRequests.today = { java.time.LocalDate.now() }
     }
 
     @Test fun aClosedAppBroughtBackSoonKeepsTheScreen() {

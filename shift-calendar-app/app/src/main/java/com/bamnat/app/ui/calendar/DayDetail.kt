@@ -1,6 +1,9 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.data.rules
 import com.bamnat.app.ui.components.labelWidth
+import com.bamnat.app.ui.components.TimeRange
+import com.bamnat.app.ui.components.TimeRangeDialog
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
@@ -51,16 +54,13 @@ import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Work
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -243,8 +243,8 @@ private fun DayGroups(
     }
     val insight = insightFor?.takeIf { it.first == date }?.second ?: DayInsight()
     val alarms = remember(snapshot, date) { plannedAlarms(snapshot, day) }
-    val rest = remember(snapshot, date, settings.restCheck, settings.strictRest) {
-        if (settings.restCheck) vm.restIssuesOn(snapshot, date, settings.strictRest) else emptyList()
+    val rest = remember(snapshot, date, settings.rules) {
+        if (settings.restCheck) vm.restIssuesOn(snapshot, date, settings.rules) else emptyList()
     }
     val tips = remember(snapshot, date, settings) {
         if (settings.sleepTips) vm.sleepTips(snapshot, date, settings) else emptyList()
@@ -585,6 +585,8 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
             )
         }
     }
+    // [DAILY-02] Whose shift the 대근 covers, kept as the day's memo.
+    day.coveredShift?.let { DayNoteField(day.date, "${it.name} 대근", vm) }
     if (day.source == DaySource.OVERRIDE) {
         val patternType = snapshot.resolver.patternShiftIdOn(day.date)?.let { snapshot.typesById[it] }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -610,16 +612,28 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
 private fun WorkTimeContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel) {
     val start = day.start ?: return
     val end = day.end ?: return
-    var editing by remember { mutableStateOf<String?>(null) }
+    // [DAYW-08] Edits start from the planned shift, never from what leave left of it: saving the shrunk
+    // times back would let the resolver take the leave off a second time (I 리뷰 P1).
+    val plannedStart = day.plannedStart ?: start
+    val plannedEnd = day.plannedEnd ?: end
+    var editing by rememberSaveable { mutableStateOf<String?>(null) }
     val hasCustom = day.hasCustomTimes || day.entry?.customBreakMinutes != null
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        TimeBox(label = "시작", time = start, onClick = { editing = "start" }, modifier = Modifier.weight(1f))
-        TimeBox(label = "끝", time = end, onClick = { editing = "end" }, modifier = Modifier.weight(1f))
+        TimeBox(label = "시작", time = plannedStart, onClick = { editing = "start" }, modifier = Modifier.weight(1f))
+        TimeBox(label = "끝", time = plannedEnd, onClick = { editing = "end" }, modifier = Modifier.weight(1f))
+    }
+    // [DAYW-08] On a 반차 day the two spans side by side: what the shift was, what is left to work.
+    if (day.leaveShrunk) {
+        Text(
+            "연차로 줄어든 근무 ${Fmt.timeRange(start, end)} · ${HoursFormat.korean(day.scheduledMinutes)}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.tertiary,
+        )
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("휴게 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         MinutesStepper(
-            minutes = day.breakMinutes,
+            minutes = day.plannedBreakMinutes,
             onChange = { vm.setBreak(day.date, it) },
             step = 10,
             max = 12 * 60,
@@ -635,16 +649,23 @@ private fun WorkTimeContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Ca
         )
         if (hasCustom) TextButton(onClick = { vm.clearCustomTimes(day.date) }) { Text("기본 시간으로") }
     }
-    editing?.let { which ->
-        TimePickerDialog(
-            title = if (which == "start") "시작 시각" else "끝 시각",
-            initial = if (which == "start") start else end,
+    editing?.let {
+        // [DAYW-11] One window for start, end and break (J's shared [TimeRangeDialog]).
+        TimeRangeDialog(
+            title = "${Fmt.monthDay(day.date)} 근무 시간",
+            initial = TimeRange(plannedStart, plannedEnd, day.plannedBreakMinutes),
             presets = timePresets(snapshot),
+            note = listOfNotNull(
+                day.shiftType?.let { t -> if (t.start != null && t.end != null) "원래 ${Fmt.timeRange(t.start!!, t.end!!)}" else null },
+                if (day.leaveShrunk) "연차 ${HoursFormat.korean(day.leaveMinutes)}은 저장한 뒤 다시 빼요" else null,
+            ).joinToString(" · ").ifEmpty { null },
+            confirmLabel = "저장",
             onDismiss = { editing = null },
-        ) {
-            editing = null
-            if (which == "start") vm.setCustomTimes(day.date, it, end) else vm.setCustomTimes(day.date, start, it)
-        }
+            onConfirm = {
+                editing = null
+                vm.setDayTimes(day.date, it.start, it.end, it.breakMinutes, day.shiftType)
+            },
+        )
     }
 }
 
@@ -685,8 +706,8 @@ private fun RestDayShiftDialog(date: LocalDate, type: ShiftType, onCover: () -> 
 }
 
 /**
- * 연차·반차·반반차 [FEAT-10]. Partial leave comes off the end of the shift; the pay screen and the
- * day's pay follow at once.
+ * 연차·반차·반반차 [FEAT-10]. Partial leave comes off the end of the shift, or off its start for 오전 반차;
+ * the pay screen and the day's pay follow at once.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -694,7 +715,7 @@ private fun LeaveContent(day: ResolvedDay, vm: CalendarViewModel) {
     val leave = day.leave
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         for (q in Leave.QUARTER_OPTIONS) {
-            val option = Leave(leave?.kind ?: LeaveKind.ANNUAL, q)
+            val option = Leave(leave?.kind ?: LeaveKind.ANNUAL, q, fromStart = leave?.fromStart == true)
             FilterChip(
                 selected = leave?.quarters == q,
                 onClick = { vm.setLeave(day.date, if (leave?.quarters == q) null else option) },
@@ -703,14 +724,29 @@ private fun LeaveContent(day: ResolvedDay, vm: CalendarViewModel) {
             )
         }
     }
+    // [LEAVE-06] 오전 반차: the part off comes from the start, so the shift (and its alarm) starts later.
+    // Only for a shift within one day; a night shift keeps its leave at the end.
+    val sameDay = day.shiftType?.let { t -> t.start != null && t.end != null && t.end!!.isAfter(t.start) } == true
+    if (leave != null && !leave.isFullDay && sameDay) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            listOf(true to "오전 · 늦게 출근", false to "오후 · 일찍 퇴근").forEach { (start, label) ->
+                FilterChip(
+                    selected = leave.fromStart == start,
+                    onClick = { vm.setLeave(day.date, leave.copy(fromStart = start)) },
+                    label = { Text(label) },
+                )
+            }
+        }
+    }
     if (leave != null) {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            LeaveKind.entries.forEachIndexed { i, k ->
-                SegmentedButton(
+        // [PAYX-18] Four kinds with 보상휴가: chips wrap at a large font where four segments would cut the words.
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            LeaveKind.entries.forEach { k ->
+                FilterChip(
                     selected = leave.kind == k,
                     onClick = { vm.setLeave(day.date, leave.copy(kind = k)) },
-                    shape = SegmentedButtonDefaults.itemShape(i, LeaveKind.entries.size),
-                ) { Text(k.label, maxLines = 1) }
+                    label = { Text(k.label) },
+                )
             }
         }
         Text(
@@ -720,11 +756,14 @@ private fun LeaveContent(day: ResolvedDay, vm: CalendarViewModel) {
                     append(" · 남은 근무 ${Fmt.timeRange(day.start!!, day.end!!)}")
                 }
                 if (leave.kind.annual) append(" · 연차에서 ${LeaveBook.days(leave.days)} 차감")
+                if (leave.kind == LeaveKind.COMP) append(" · 보상휴가에서 ${LeaveBook.days(leave.days)} 차감")
                 if (!leave.kind.paid) append(" · 무급")
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // [DAILY-02] Why the day off, kept as the day's memo.
+        DayNoteField(day.date, leave.kind.label, vm)
     } else {
         Text(
             "반차는 근무 뒤쪽 절반을 쉬는 것으로 계산해요.",
@@ -800,11 +839,9 @@ private fun AlarmContent(
         val start = day.start
         DayAlarmEditorDialog(
             date = day.date,
-            initial = custom ?: planned.filter { it.triggerAt.toLocalDate() == day.date }.map { DayAlarm(it.triggerAt.toLocalTime()) },
+            // [DAYW-09] The evening before's alarms come along as 전날 ones, so saving keeps them (I 리뷰 P13).
+            initial = custom ?: planned.map { DayAlarm(it.triggerAt.toLocalTime(), dayBefore = it.triggerAt.toLocalDate().isBefore(day.date)) },
             suggested = start?.minusHours(1) ?: LocalTime.of(8, 0),
-            // An alarm the evening before cannot be set here; say that saving drops it [QA-01].
-            eveningBefore = if (custom != null) emptyList() else planned.filter { it.triggerAt.toLocalDate().isBefore(day.date) }
-                .map { Fmt.time(it.triggerAt.toLocalTime()) },
             onDismiss = { editing = false },
             onSave = { list ->
                 editing = false
@@ -819,12 +856,14 @@ private fun DayAlarmEditorDialog(
     date: LocalDate,
     initial: List<DayAlarm>,
     suggested: LocalTime,
-    eveningBefore: List<String> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (List<DayAlarm>) -> Unit,
 ) {
-    val alarms = remember { mutableStateListOf<DayAlarm>().apply { addAll(initial.sortedBy { it.time }) } }
-    var picking by remember { mutableStateOf<Int?>(null) } // index to change, or -1 for a new alarm
+    // [CAL-30] Kept through a fold or a turn, in the alarms' own stored form.
+    val alarms = rememberSaveable(saver = DayAlarmsSaver) { mutableStateListOf<DayAlarm>().apply { addAll(initial.sortedBy { it.at(date) }) } }
+    var picking by rememberSaveable { mutableStateOf<Int?>(null) } // index to change, or -1 for a new alarm
+    // [DAYW-09] A new alarm can be for the evening before, for a night shift's nap or bedtime.
+    var newDayBefore by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         // A stray tap outside must not throw away alarms just added; 취소 or 완료 decides.
@@ -837,13 +876,6 @@ private fun DayAlarmEditorDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (eveningBefore.isNotEmpty()) {
-                    Text(
-                        "저장하면 전날 ${eveningBefore.joinToString(", ")} 알람은 울리지 않아요.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
                 if (alarms.isEmpty()) {
                     Text("알람이 없어요. 저장하면 이 날은 울리지 않아요.", style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(vertical = 8.dp))
@@ -851,7 +883,7 @@ private fun DayAlarmEditorDialog(
                 alarms.forEachIndexed { i, alarm ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            Fmt.time(alarm.time),
+                            (if (alarm.dayBefore) "전날 " else "") + Fmt.time(alarm.time),
                             style = MaterialTheme.typography.headlineSmall.merge(NumberStyle),
                             color = if (alarm.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline,
                             modifier = Modifier
@@ -865,14 +897,21 @@ private fun DayAlarmEditorDialog(
                         IconButton(onClick = { alarms.removeAt(i) }) { Icon(Icons.Filled.Close, "${Fmt.time(alarm.time)} 알람 지우기") }
                     }
                 }
-                OutlinedButton(
-                    onClick = { picking = -1 },
-                    enabled = alarms.size < ScheduleRepository.MAX_ALARMS,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Filled.AlarmAdd, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("알람 추가")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(
+                        onClick = { newDayBefore = false; picking = -1 },
+                        enabled = alarms.size < ScheduleRepository.MAX_ALARMS,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.Filled.AlarmAdd, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("알람 추가")
+                    }
+                    OutlinedButton(
+                        onClick = { newDayBefore = true; picking = -1 },
+                        enabled = alarms.size < ScheduleRepository.MAX_ALARMS,
+                        modifier = Modifier.weight(1f),
+                    ) { Text("전날 알람") }
                 }
             }
         },
@@ -880,15 +919,53 @@ private fun DayAlarmEditorDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
     picking?.let { index ->
-        val initialTime = if (index >= 0) alarms[index].time else alarms.maxOfOrNull { it.time }?.plusMinutes(10) ?: suggested
-        TimePickerDialog(if (index >= 0) "알람 시각 바꾸기" else "알람 추가", initialTime, onDismiss = { picking = null }) { t ->
-            if (alarms.none { it.time == t }) {
-                if (index >= 0) alarms[index] = alarms[index].copy(time = t) else alarms.add(DayAlarm(t))
-                alarms.sortBy { it.time }
+        val before = if (index >= 0) alarms[index].dayBefore else newDayBefore
+        val initialTime = when {
+            index >= 0 -> alarms[index].time
+            before -> LocalTime.of(22, 0)
+            else -> alarms.filter { !it.dayBefore }.maxOfOrNull { it.time }?.plusMinutes(10) ?: suggested
+        }
+        TimePickerDialog(
+            when { index >= 0 -> "알람 시각 바꾸기"; before -> "전날 알람 추가"; else -> "알람 추가" },
+            initialTime, onDismiss = { picking = null },
+        ) { t ->
+            if (alarms.none { it.time == t && it.dayBefore == before }) {
+                if (index >= 0) alarms[index] = alarms[index].copy(time = t) else alarms.add(DayAlarm(t, dayBefore = before))
+                alarms.sortBy { it.at(date) }
             }
             picking = null
         }
     }
+}
+
+/**
+ * [DAILY-02] One line saved as the day's memo beside 연차 or a 대근 ("연차 · 병원", "주간 대근 · 민지 대신"),
+ * so the reason is on the calendar and the widget without opening 메모.
+ */
+@Composable
+private fun DayNoteField(date: LocalDate, label: String, vm: CalendarViewModel) {
+    var text by rememberSaveable(date, label) { mutableStateOf("") }
+    val save = {
+        if (text.isNotBlank()) {
+            vm.addQuickMemo(date, "$label · ${text.trim()}")
+            text = ""
+        }
+    }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { text = it.take(60) },
+        modifier = Modifier.fillMaxWidth(),
+        placeholder = { Text(if (label.endsWith("대근")) "메모 남기기 (예: 누구 대신)" else "메모 남기기 (예: 병원, 가족 행사)") },
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyMedium,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { save() }),
+        trailingIcon = {
+            IconButton(onClick = { save() }, enabled = text.isNotBlank()) {
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "$label 메모 남기기")
+            }
+        },
+    )
 }
 
 /** The day's memos: a quick line that saves with one tap, and the list; deleting asks first [DAY-03]. */
@@ -913,11 +990,17 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
             text = ""
         }
     }
+    // [CAL-43] I 리뷰 N2: a line like "내일 야간 대근 7시" is offered as a change to the calendar, asked first.
+    val snapshot by vm.snapshot.collectAsStateWithLifecycle()
+    val today = rememberToday()
+    val proposal = remember(text, snapshot, date, today) {
+        snapshot?.let { s -> com.bamnat.core.schedule.QuickText.parse(text, today, date, s.shiftTypes, s.kinds) }
+    }
     OutlinedTextField(
         value = text,
         onValueChange = { text = it },
         modifier = Modifier.fillMaxWidth().focusRequester(focus),
-        placeholder = { Text("빠른 메모 (예: 인수인계, 준비물)") },
+        placeholder = { Text("빠른 메모 (예: 인수인계, 내일 야간 대근)") },
         singleLine = true,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { submit() }),
@@ -927,6 +1010,12 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
             }
         },
     )
+    proposal?.let { p ->
+        QuickTextOffer(p.text) {
+            snapshot?.let { vm.applyQuickText(p, it) }
+            text = ""
+        }
+    }
     for (memo in memos) {
         MemoRow(memo = memo, onClick = { onOpenMemo(memo.id) }, onDelete = { deleting = memo })
     }
@@ -1202,7 +1291,7 @@ private fun healthSleepNote(state: com.bamnat.app.sleep.HealthSleep.State, measu
     com.bamnat.app.sleep.HealthSleep.State.READY ->
         if (measured > 0) "헬스 커넥트에서 수면 ${measured}번을 함께 셌어요. 직접 누른 기록과 겹치면 직접 기록을 써요."
         else "헬스 커넥트에 최근 7일 수면 기록이 없어요. 워치나 수면 앱이 헬스 커넥트에 기록하는지 확인하세요."
-    com.bamnat.app.sleep.HealthSleep.State.NEEDS_PERMISSION -> "헬스 커넥트 수면 읽기 허용이 꺼져 있어요. 설정 > 수면에서 다시 켜 주세요."
+    com.bamnat.app.sleep.HealthSleep.State.NEEDS_PERMISSION -> "헬스 커넥트 수면 읽기 허용이 꺼져 있어요. 설정 > 알림과 잠에서 다시 켜 주세요."
     com.bamnat.app.sleep.HealthSleep.State.NEEDS_UPDATE -> "헬스 커넥트를 업데이트하면 워치 수면 기록을 함께 셀 수 있어요."
     com.bamnat.app.sleep.HealthSleep.State.UNAVAILABLE -> "이 휴대폰에서는 헬스 커넥트를 쓸 수 없어요."
     com.bamnat.app.sleep.HealthSleep.State.FAILED -> "헬스 커넥트 수면 기록을 읽지 못했어요. 잠시 뒤 다시 열어 주세요."
@@ -1224,4 +1313,22 @@ private fun sleepTime(tip: com.bamnat.core.sleep.SleepPlan.Tip, date: LocalDate)
         else -> "${tip.at.monthValue}/${tip.at.dayOfMonth} "
     }
     return day + hm(tip.at) + (tip.until?.let { "–" + hm(it) } ?: "")
+}
+
+/** [CAL-30] A day's alarms being edited, kept in [com.bamnat.core.alarm.AlarmCodec]'s text through a configuration change. */
+private val DayAlarmsSaver = Saver<androidx.compose.runtime.snapshots.SnapshotStateList<DayAlarm>, String>(
+    save = { com.bamnat.core.alarm.AlarmCodec.encodeDayAlarms(it.toList()) ?: com.bamnat.core.alarm.AlarmCodec.NONE },
+    restore = { mutableStateListOf<DayAlarm>().apply { addAll(com.bamnat.core.alarm.AlarmCodec.decodeDayAlarms(it).orEmpty()) } },
+)
+
+/** [CAL-43] What a typed line would put on the calendar, written only on 넣기. */
+@Composable
+internal fun QuickTextOffer(text: String, onPut: () -> Unit) {
+    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("이렇게 넣을까요? $text", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.weight(1f))
+            TextButton(onClick = onPut) { Text("넣기") }
+        }
+    }
 }

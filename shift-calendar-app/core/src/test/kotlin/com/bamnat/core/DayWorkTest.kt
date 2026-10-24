@@ -63,7 +63,7 @@ class DayWorkTest {
         assertEquals(142_500L, d["국민연금"])
         assertEquals(107_850L, d["건강보험"])
         assertEquals(14_170L, d["장기요양"])
-        assertTrue((d["근로소득세 (참고용)"] ?: 0) > 0)
+        assertTrue((d[TakeHome.TAX_LABEL] ?: 0) > 0)
         assertEquals(3_000_000 - r.deductions.sumOf { it.second }, r.net)
         // More dependents mean less income tax.
         assertTrue(TakeHome.estimate(3_000_000, TaxMode.INSURANCE_4, dependents = 3).net > r.net)
@@ -86,9 +86,9 @@ class DayWorkTest {
         assertEquals(listOf(LocalDate.of(2026, 12, 24)), xmas.leave)
         assertEquals(4, xmas.days)
         assertEquals("연차 1일로 4일 쉬어요", xmas.text)
-        // 2027-05-05 (수) 어린이날: one day is not enough, two make five.
+        // 2027-05-05 (수) 어린이날: 노동절 5/1 (토) has its 대체공휴일 on 5/3 [REMOTE-05], so 5/4 alone makes 5/1~5/5.
         val may = found.first { it.holidays.contains("어린이날") }
-        assertEquals(listOf(LocalDate.of(2027, 5, 3), LocalDate.of(2027, 5, 4)), may.leave)
+        assertEquals(listOf(LocalDate.of(2027, 5, 4)), may.leave)
         assertEquals(5, may.days)
         assertTrue(found.all { it.leave.size in 1..2 && it.days >= DayWork.MIN_BRIDGE_DAYS })
         assertTrue(found.zipWithNext().all { (a, b) -> !a.from.isAfter(b.from) })

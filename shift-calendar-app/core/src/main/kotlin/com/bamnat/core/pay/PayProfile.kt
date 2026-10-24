@@ -25,6 +25,10 @@ enum class Occupation(val label: String) {
     MANUFACTURING("제조·생산 교대"),
     CARE("요양·돌봄"),
     SECURITY("경비·시설 (24시간 맞교대)"),
+    // [JOB-01][PAYX-01] 공무원 pay follows 공무원수당 등에 관한 규정, not 근로기준법's premiums.
+    PUBLIC("공무원 (교대·현업)"),
+    POLICE("경찰 (지구대·파출소 교대)"),
+    FIRE("소방 (교대)"),
     CUSTOM("직접 설정"),
 }
 
@@ -78,6 +82,8 @@ data class PayItem(
      * takes [defaultCovers], so allowances saved before this field keep their totals.
      */
     val covers: Set<LineKind>? = null,
+    /** [PAYX-31] For a bonus paid as [percentOfBase]: the amount the percent is of. */
+    val bonusBasis: BonusBasis = BonusBasis.BASE,
 ) {
     /** How many payments of this bonus fall in [month]: its fixed months plus any 명절 [PAYX-10]. */
     fun timesIn(month: java.time.YearMonth): Int =
@@ -88,7 +94,11 @@ data class PayItem(
     /** Payments in [year]; the 명절 months change every year. */
     fun timesInYear(year: Int): Int = (1..12).sumOf { timesIn(java.time.YearMonth.of(year, it)) }
 
-    /** Payments in a usual year, for labels: fixed months plus one per 명절. */
+    /**
+     * Payments in a usual year: fixed months plus one per 명절. [PAYX-23] This, not [timesInYear], is the 연간
+     * 지급 횟수 for 통상임금: a 명절상여 paid the month before can land twice in one calendar year (설 2027-02 paid
+     * in January, 설 2028-01-26 paid in December 2027) and none in the next, but it is still one 설 상여 a year.
+     */
     val yearlyTimes: Int get() = months.size + festivals.size
 
     val isFixedOvertime: Boolean get() = fixedOvertimeMinutes > 0 && cadence == Cadence.MONTHLY
@@ -114,12 +124,22 @@ data class PayItem(
      * requires being employed on the pay date.
      */
     fun bonusMonthlyShare(base: Long, on: java.time.YearMonth): Long =
-        Math.round(bonusPayment(base, on) * timesInYear(on.year) / 12.0)
+        Math.round(bonusPayment(base, on) * yearlyTimes / 12.0)
 
     companion object {
         /** [PAYS-03] The premium lines an allowance can stand in for; company rules for extra work never are. */
         val COVERABLE: List<LineKind> = listOf(LineKind.OVERTIME, LineKind.NIGHT, LineKind.HOLIDAY)
     }
+}
+
+/**
+ * [PAYX-31] What a 상여 paid as a percent is a percent of. 취업규칙 say 기본급, 기본급+고정수당 (월정액) or 통상임금; which one
+ * is the company's. The percent is of the month's amounts, bonuses left out, so a bonus never feeds itself.
+ */
+enum class BonusBasis(val label: String) {
+    BASE("기본급"),
+    BASE_FIXED("기본급+고정수당"),
+    ORDINARY("통상임금"),
 }
 
 /** 명절 that a 명절상여 follows [PAYX-10]: lunar 1/1 and 8/15, converted for each year. */
@@ -197,6 +217,8 @@ data class PayProfile(
     val scheduleIsRegular: Boolean = false,
     /** [PAYX-07] 탄력적 근로시간제 단위기간, used with [scheduleIsRegular]; null when there is none. */
     val flexPeriod: FlexPeriod? = null,
+    /** [PAYX-17] For a 2주 단위기간: a day one of the periods starts on; null runs them from a Monday. */
+    val flexStart: LocalDate? = null,
     val weekStart: DayOfWeek = DayOfWeek.MONDAY,
     /**
      * Values the user skipped and the app guessed; shown with an "추정" label. [PAYS-01] Also the
@@ -220,6 +242,10 @@ data class PayProfile(
     val customRules: List<CustomRule> = emptyList(),
     /** [HRLY-04] How tax comes off this pay, for 예상 실수령; nothing by default. */
     val taxMode: TaxMode = TaxMode.NONE,
+    /** [PAYR-04] 간이세액표 공제대상가족 수 (본인·배우자 포함, 1~20), for 예상 실수령's 근로소득세. */
+    val taxFamily: Int = 1,
+    /** [PAYR-04] Of [taxFamily], 8세 이상 20세 이하 자녀 (간이세액표 제3호). */
+    val taxChildren: Int = 0,
     /**
      * [HRLY-05] 법정 휴게 자동 빼기: a day with no break set gets the break 근로기준법 제54조 asks for, 30 minutes
      * from 4 hours and an hour from 8 (see [com.bamnat.core.schedule.LegalBreak]).
@@ -230,9 +256,44 @@ data class PayProfile(
     val probationPercent: Int = 90,
     /** [HRLY-07] The weekday a 주휴 week starts on; null counts 주휴 by [weekStart] like the rest of the pay. */
     val holidayWeekStart: DayOfWeek? = null,
+    /** [JOB-02] A public servant's 봉급표 계급·호봉, from which the 봉급 and 수당 are set; null when not picked. */
+    val publicGrade: PublicGrade? = null,
+    /**
+     * [PAYX-24] 퇴사: the last day employed (재직 마지막 날), null while employed. With [hireDate] it sets the days the month's
+     * 기본급 is cut to ([CompanyRules.proration]); days after it are not paid.
+     */
+    val leaveDate: LocalDate? = null,
+    /**
+     * [PAYX-25] 생산직 등 근로자 (소득세법 시행령 제17조 제1항: 공장·광산 생산직, 운전원, 경비·청소·돌봄·미용 등 단순노무): its
+     * 연장·야간·휴일 수당 may be 비과세 under the limits of [TakeHome.productionFree].
+     */
+    val productionWorker: Boolean = false,
+    /** [PAYX-25] 직전 과세기간 총급여액 (작년 연봉, 비과세 뺀 것); null when not entered, which is read as within the limit. */
+    val previousYearPay: Long? = null,
+    /** [LEDG-29] The 가계부 counts pay as the take-home that arrives on the pay day ([PayIncome]) instead of the month's 세전. */
+    val ledgerTakeHome: Boolean = false,
 ) {
     /** [HRLY-07] The weekday 주휴 weeks start on. */
     val holidayWeekFrom: DayOfWeek get() = holidayWeekStart ?: weekStart
+
+    /** [PAYX-24] Employed on [date]: on or after [hireDate] and on or before [leaveDate]. */
+    fun employed(date: LocalDate): Boolean = hireDate?.let { !date.isBefore(it) } != false && leaveDate?.let { !date.isAfter(it) } != false
+
+    /**
+     * [PAYX-31] The amount [item]'s percent is of in [month]: 기본급, plus the fixed monthly allowances (not standing in
+     * for premiums) for [BonusBasis.BASE_FIXED], or plus those in 통상임금 for [BonusBasis.ORDINARY].
+     */
+    fun bonusBase(item: PayItem, month: YearMonth): Long {
+        val base = base.on(month).value
+        fun fixed(ordinaryOnly: Boolean) = items.filter {
+            it.cadence == Cadence.MONTHLY && !it.isFixedOvertime && it.coveredKinds.isEmpty() && (!ordinaryOnly || it.ordinary)
+        }.sumOf { it.amount.on(month).value }
+        return when (item.bonusBasis) {
+            BonusBasis.BASE -> base
+            BonusBasis.BASE_FIXED -> base + fixed(false)
+            BonusBasis.ORDINARY -> base + fixed(true)
+        }
+    }
 
     /** [HRLY-06] True when [date] is paid at the 수습 rate. */
     fun onProbation(date: LocalDate): Boolean = probationEnd?.let { date.isBefore(it) } == true && probationPercent in 1..99

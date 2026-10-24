@@ -1,5 +1,6 @@
 package com.bamnat.app.alarm
 
+import com.bamnat.app.invest.investCalendars
 import kotlinx.coroutines.flow.first
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -51,6 +52,7 @@ class AlarmReceiver : BroadcastReceiver() {
                         DiagEvents.ALARM_LATE_SKIPPED,
                         EventBook.triggerDetail(ring.triggerAtMillis, "late_s=${(now - ring.triggerAtMillis) / 1000}"),
                     )
+                    Notifications.postAlarmTrouble(context, (now - ring.triggerAtMillis) / 60_000)
                 }
                 container.appScope.launch {
                     try {
@@ -98,6 +100,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 EventBook.triggerDetail(ring.triggerAtMillis, e.javaClass.simpleName),
             )
             Notifications.postFallbackAlarm(context, ring)
+            Notifications.postAlarmTrouble(context, null)
         }
     }
 
@@ -134,9 +137,9 @@ class SystemEventReceiver : BroadcastReceiver() {
                 val settings = container.settingsRepository.current
                 // [MCAL-06] Every calendar's jobs and money.
                 com.bamnat.app.money.JobReminderScheduler.reschedule(context, container.calendars.everyMoneyNow(), settings)
-                com.bamnat.app.pay.LeaveReminder.reschedule(context, container.payStore.profile.value, settings)
+                com.bamnat.app.pay.LeaveReminder.rescheduleNow(context)
                 // [SHR-12] The link's expiry notice did not survive the reboot either.
-                container.calendars.calendars.value.flatMap { com.bamnat.app.share.ShareLinkKey.all(it.id) }.forEach { key ->
+                container.calendars.calendars.value.filterNot { it.isExample }.flatMap { com.bamnat.app.share.ShareLinkKey.all(it.id) }.forEach { key ->
                     val links = container.shareLinksOf(key)
                     com.bamnat.app.share.ShareExpiryReminder.reschedule(context, key, links.link.value, links.noticedFor)
                 }
@@ -144,6 +147,7 @@ class SystemEventReceiver : BroadcastReceiver() {
                 com.bamnat.app.memo.MemoScheduleAlarm.reschedule(context, container.memoRepository.memos.first())
                 // [INV-08] The investor's alarms too.
                 com.bamnat.app.invest.InvestNotices.reschedule(context, com.bamnat.app.invest.InvestNotices.plansNow(container))
+                com.bamnat.app.invest.InvestMonthNotice.schedule(context, container.investCalendars().isNotEmpty())
                 com.bamnat.app.sleep.DayNoticeScheduler.reschedule(context, container.scheduleRepository.snapshot.first(), settings)
                 // [MON-06] The trial's question before it turns paid.
                 com.bamnat.app.tier.TrialNotice.reschedule(context, container.proStore.current)

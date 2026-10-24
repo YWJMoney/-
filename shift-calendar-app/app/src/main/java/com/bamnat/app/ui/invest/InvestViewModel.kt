@@ -129,6 +129,11 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
         ReturnMethod.entries.map { InvestReturns.of(it, s.book, from, s.today, s.today, live) }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** [INV-32] Trades found in notifications, waiting for 확인. */
+    val alerts: StateFlow<List<com.bamnat.core.invest.TradeAlerts.Pending>> = repo.pendingAlerts
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val alertAuto: StateFlow<Boolean> = repo.alertAuto.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     private val _messages = MutableSharedFlow<UndoMessage>(extraBufferCapacity = 4)
     /** Saved, deleted: said once, with 되돌리기 where it can be undone. */
     val messages: SharedFlow<UndoMessage> = _messages.asSharedFlow()
@@ -201,6 +206,26 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
         val what = "${t.title} ${t.side.label}"
         if (before == null) say("$what 적었어요") { repo.deleteTrade(id) }
         else say("$what 고쳤어요") { repo.saveTrade(before) }
+    }
+
+    // [INV-32] A found trade: written as it came, opened to fix first, or let go (with 되돌리기).
+    fun confirmAlert(p: com.bamnat.core.invest.TradeAlerts.Pending) = viewModelScope.launch {
+        val t = repo.confirmAlert(p)
+        changed()
+        say("${t.title} ${t.side.label} 적었어요") { repo.deleteTrade(t.id); repo.addAlert(p) }
+    }
+
+    fun dropAlert(p: com.bamnat.core.invest.TradeAlerts.Pending) = viewModelScope.launch {
+        repo.dropAlert(p.at)
+        say("${p.title} ${p.side.label} 알림을 넘겼어요") { repo.addAlert(p) }
+    }
+
+    /** The sheet saved the trade a found one opened; it no longer waits. */
+    fun alertSaved(at: Long) = viewModelScope.launch { repo.dropAlert(at) }
+
+    fun setAlertAuto(on: Boolean) = viewModelScope.launch {
+        repo.setAlertAuto(on)
+        say(if (on) "체결 알림이 오면 바로 적어요. 적은 뒤에 고칠 수 있어요" else "체결 알림은 확인한 뒤에 적어요")
     }
 
     fun deleteTrade(t: Trade) = viewModelScope.launch {
@@ -294,6 +319,10 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
             CsvKind.CASH -> InvestCsv.cash(s.book) to InvestCsv.fileName("cash", null, null)
             CsvKind.HOLDINGS -> InvestCsv.holdings(s.result) to InvestCsv.fileName("holdings", null, null)
             CsvKind.JOURNAL -> InvestCsv.journal(s.full) to InvestCsv.fileName("journal", null, null)
+            // [INV-37] Until May the year to report is last year's; after it, this year's so far.
+            CsvKind.TAX -> (if (s.today.monthValue <= 5) s.today.year - 1 else s.today.year).let { y ->
+                InvestCsv.taxReport(s.full, s.fullResult, y) to "bamnat-invest-tax-$y.csv"
+            }
         }
     }
 
@@ -320,4 +349,4 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
         state.value.fullResult.holdings.firstOrNull { it.accountId == accountId && it.key == key }?.quantity ?: 0.0
 }
 
-enum class CsvKind(val label: String) { TRADES("매매 기록"), CASH("입출금·배당"), HOLDINGS("보유 종목"), JOURNAL("투자일지") }
+enum class CsvKind(val label: String) { TRADES("매매 기록"), CASH("입출금·배당"), HOLDINGS("보유 종목"), JOURNAL("투자일지"), TAX("해외 주식 세금 신고 자료") }

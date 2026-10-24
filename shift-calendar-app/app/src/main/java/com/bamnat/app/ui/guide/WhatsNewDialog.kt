@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -24,12 +25,30 @@ import com.bamnat.core.guide.WhatsNew
  * what is still missing. [onOpen] closes the dialog and opens the feature where it lives.
  */
 @Composable
-fun WhatsNewDialog(releases: List<WhatsNew.Release>, onOpen: (String) -> Unit, onAsk: () -> Unit, onDismiss: () -> Unit) {
+fun WhatsNewDialog(
+    releases: List<WhatsNew.Release>,
+    onOpen: (String) -> Unit,
+    onAsk: () -> Unit,
+    onDismiss: () -> Unit,
+    recommendOff: Int = 0,
+    onRecommend: () -> Unit = {},
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("${releases.first().versionName}에서 새로 생긴 것") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // [ONBOARD-04] Once, for a phone set up before: the recommended features it has off.
+                if (recommendOff > 0) {
+                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer) {
+                        Row(Modifier.fillMaxWidth().padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("꺼져 있는 추천 기능 ${recommendOff}개를 켤까요? 켜 둬도 괜찮은 것만 골랐어요.",
+                                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.weight(1f).padding(vertical = 8.dp))
+                            TextButton(onClick = onRecommend, modifier = Modifier.heightIn(min = 48.dp)) { Text("켜러 가기") }
+                        }
+                    }
+                }
                 releases.forEach { release ->
                     if (releases.size > 1) Text(release.versionName, style = MaterialTheme.typography.titleSmall)
                     release.lines.forEach { line ->

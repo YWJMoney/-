@@ -89,7 +89,7 @@ private data class Primary(val label: String, val enabled: Boolean = true, val h
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SetupHost(vm: SetupViewModel) {
+fun SetupHost(vm: SetupViewModel, onBrowse: ((com.bamnat.core.work.WorkStyle) -> Unit)? = null, browseFirst: Boolean = false) {
     val d by vm.draft.collectAsStateWithLifecycle()
     val fixing by vm.fixing.collectAsStateWithLifecycle()
     val saving by vm.saving.collectAsStateWithLifecycle()
@@ -110,11 +110,16 @@ fun SetupHost(vm: SetupViewModel) {
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.readFile(context, uri)
     }
+    // [CAL-47] A file opened from a messenger before the setup is done starts here, as 파일로 시작하기 would.
+    val incoming by com.bamnat.app.IncomingFiles.file.collectAsStateWithLifecycle()
+    LaunchedEffect(incoming) { com.bamnat.app.IncomingFiles.take()?.let { vm.readFile(context, it) } }
     val onOpenFile = { openFile.launch(arrayOf(BackupManager.MIME_TYPE, CompanyShare.MIME_TYPE, "text/plain", "application/octet-stream")) }
     var searching by remember { mutableStateOf(false) }
     var longShifts by remember { mutableStateOf<List<ShiftType>>(emptyList()) }
 
     val primary = primaryFor(d, vm, onLongShifts = { longShifts = it })
+    val bigFont = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+    val stepsLeft = if (d.style != null && !fixing) d.steps.size - d.position else null
     Scaffold(
         topBar = {
             Column {
@@ -125,15 +130,7 @@ fun SetupHost(vm: SetupViewModel) {
                                 style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             // [SETUP-06] What is left, once the kind of work says how many questions there are. A "2/8"
                             // that became "3/7" when a company file skipped a question read as going backwards.
-                            if (d.style != null && !fixing) {
-                                val left = d.steps.size - d.position
-                                Text(
-                                    if (left <= 0) "마지막 확인이에요" else "${left}단계 남았어요",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                )
-                            }
+                            if (stepsLeft != null && !bigFont) StepsLeft(stepsLeft)
                         }
                     },
                     navigationIcon = {
@@ -159,6 +156,8 @@ fun SetupHost(vm: SetupViewModel) {
                     label = "setup-progress",
                 )
                 LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(3.dp), drawStopIndicator = {})
+                // [A11Y-04] At 200% two lines no longer fit the bar's height, so what is left goes under it.
+                if (stepsLeft != null && bigFont) StepsLeft(stepsLeft, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
             }
         },
         bottomBar = { primary?.let { BottomButton(it, busy = saving) } },
@@ -189,7 +188,8 @@ fun SetupHost(vm: SetupViewModel) {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     when (step) {
-                        SetupStep.STYLE -> StyleStep(d, onPick = vm::pickStyle, onOpenFile = onOpenFile, forCalendar = vm.calendarName)
+                        SetupStep.STYLE -> StyleStep(d, onPick = vm::pickStyle, onOpenFile = onOpenFile, forCalendar = vm.calendarName,
+                            onBrowse = onBrowse.takeIf { vm.calendarId == null }, browseFirst = browseFirst)
                         SetupStep.COMPANY -> CompanyStep(vm, d, onSearch = if (vm.companySearch) ({ searching = true }) else null, onOpenFile = onOpenFile)
                         SetupStep.BUNDLE -> BundleStep(d, onPick = vm::pickBundle)
                         SetupStep.TIMES -> TimesStep(vm, d)
@@ -317,6 +317,17 @@ private fun BottomButton(p: Primary, busy: Boolean) {
             }
         }
     }
+}
+
+@Composable
+private fun StepsLeft(left: Int, modifier: Modifier = Modifier) {
+    Text(
+        if (left <= 0) "마지막 확인이에요" else "${left}단계 남았어요",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        modifier = modifier,
+    )
 }
 
 /** Said by TalkBack when a step opens. */

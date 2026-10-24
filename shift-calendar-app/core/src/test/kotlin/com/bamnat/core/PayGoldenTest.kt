@@ -10,7 +10,6 @@ import com.bamnat.core.pay.CompanyRules
 import com.bamnat.core.pay.DatedValue
 import com.bamnat.core.pay.PayItem
 import com.bamnat.core.pay.StandardHours
-import com.bamnat.core.pay.LeaveBook
 import com.bamnat.core.pay.LineKind
 import com.bamnat.core.pay.MonthPay
 import com.bamnat.core.pay.Occupation
@@ -266,7 +265,7 @@ class PayGoldenTest {
     @Test
     fun `legal annual leave by years of service`() {
         val hire = LocalDate.of(2010, 3, 2)
-        fun on(years: Long, months: Long = 0) = LeaveBook.legalDays(hire, hire.plusYears(years).plusMonths(months))
+        fun on(years: Long, months: Long = 0) = com.bamnat.core.leave.LeaveAccrual.entitlement(hire, hire.plusYears(years).plusMonths(months))
         assertEquals(11, on(0, 11))
         assertEquals(15, on(1))
         assertEquals(15, on(2))
@@ -315,6 +314,8 @@ class PayGoldenTest {
         assertEquals(226, StandardHours.monthly(40 * 60, 4 * 60))    // 토요일 유급 4시간: 225.95
         assertEquals(243, StandardHours.monthly(40 * 60, 8 * 60))    // 토요일 유급 8시간: 243.33
         assertEquals(0, StandardHours.weeklyHolidayMinutes(14 * 60))
+        // 격일제 주 24시간 (주 소정근로일 5일 미만): 주휴는 1주 소정근로시간 ÷ 5 = 4.8시간 (대법원 2025. 8. 격일제 택시 판결 보도).
+        assertEquals(288, StandardHours.weeklyHolidayMinutes(24 * 60))
     }
 
     @Test

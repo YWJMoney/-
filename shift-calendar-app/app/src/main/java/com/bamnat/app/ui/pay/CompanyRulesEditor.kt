@@ -29,13 +29,14 @@ import com.bamnat.app.ui.calendar.ExtraKindMark
 import java.time.DayOfWeek
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
@@ -93,9 +94,11 @@ fun CompanyRulesEditor(
     onOpenKinds: () -> Unit,
 ) {
     var draft by remember { mutableStateOf(saved) }
+    var example by remember { mutableStateOf<com.bamnat.core.pay.PayExamples.Example?>(null) }
     val kinds = com.bamnat.app.ui.calendar.LocalExtraKinds.current
     val rates = remember(month) { com.bamnat.core.pay.RateTable.on(month.atDay(1)) }
     var pickHire by remember { mutableStateOf(false) }
+    var pickLeave by remember { mutableStateOf(false) }
     val rules = draft.rules
     // [PAYS-01] A choice made here settles that question's 확인 필요.
     fun setRules(r: CompanyRules, vararg settled: String) { draft = draft.copy(rules = r, estimatedFields = draft.estimatedFields - settled.toSet()) }
@@ -119,16 +122,35 @@ fun CompanyRulesEditor(
                 TextButton(onClick = {
                     state.selectedDateMillis?.let { ms ->
                         val hire = Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC).toLocalDate()
-                        draft = draft.copy(
-                            hireDate = hire,
-                            rules = draft.rules.copy(annualLeaveDays = LeaveBook.legalDays(hire, LocalDate.now()).toDouble()),
-                        )
+                        // [LEAVE-02] The 연차 원장 counts the law's leave from this date by itself.
+                        draft = draft.copy(hireDate = hire)
                     }
                     pickHire = false
                 }) { Text("확인") }
             },
             dismissButton = { TextButton(onClick = { pickHire = false }) { Text("취소") } },
         ) { DatePicker(state = state, title = { Text("입사일", Modifier.padding(start = 24.dp, top = 16.dp)) }) }
+    }
+
+    if (pickLeave) {
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = (draft.leaveDate ?: LocalDate.now()).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+        )
+        DatePickerDialog(
+            onDismissRequest = { pickLeave = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let { ms -> draft = draft.copy(leaveDate = Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC).toLocalDate()) }
+                    pickLeave = false
+                }) { Text("확인") }
+            },
+            dismissButton = {
+                Row {
+                    if (draft.leaveDate != null) TextButton(onClick = { draft = draft.copy(leaveDate = null); pickLeave = false }) { Text("지우기") }
+                    TextButton(onClick = { pickLeave = false }) { Text("취소") }
+                }
+            },
+        ) { DatePicker(state = state, title = { Text("마지막 재직일", Modifier.padding(start = 24.dp, top = 16.dp)) }) }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -157,7 +179,10 @@ fun CompanyRulesEditor(
                     draft.scheduleIsRegular) {
                     draft = draft.copy(scheduleIsRegular = it, flexPeriod = if (it) draft.flexPeriod else null).settled(Unknowns.SCHEDULE_IS_REGULAR)
                 }
-                if (draft.scheduleIsRegular) FlexPicker(draft.flexPeriod) { draft = draft.copy(flexPeriod = it).settled(Unknowns.SCHEDULE_IS_REGULAR) }
+                if (draft.scheduleIsRegular) {
+                    FlexPicker(draft.flexPeriod, { draft = draft.copy(flexPeriod = it).settled(Unknowns.SCHEDULE_IS_REGULAR) },
+                        start = draft.flexStart, onStart = { draft = draft.copy(flexStart = it) })
+                }
                 if (!draft.scheduleIsRegular) {
                     Toggle("하루 8시간 넘으면 연장", "탄력적·선택적 근로시간제라면 꺼 주세요", draft.dailyLimitMinutes != null) {
                         draft = draft.copy(dailyLimitMinutes = if (it) 480 else null)
@@ -184,7 +209,8 @@ fun CompanyRulesEditor(
                 if (draft.wageType == WageType.MONTHLY) {
                     Label("월 소정근로시간 (통상시급을 나누는 시간)")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(209, 226, 243).forEach { h ->
+                        // [PAYX-34] 180시간 too: the payslip match already tries it (PayslipMatcher.SNAP_HOURS).
+                        Unknowns.MONTHLY_HOURS_CHIPS.forEach { h ->
                             FilterChip(selected = draft.monthlyHours == h, onClick = { draft = draft.copy(monthlyHours = h).settled(Unknowns.MONTHLY_HOURS) },
                                 label = { Text("${h}시간") })
                         }
@@ -192,7 +218,9 @@ fun CompanyRulesEditor(
                         Text("${draft.monthlyHours}시간", style = MaterialTheme.typography.titleSmall, modifier = Modifier.align(Alignment.CenterVertically))
                         OutlinedButton(onClick = { draft = draft.copy(monthlyHours = (draft.monthlyHours + 1).coerceAtMost(320)).settled(Unknowns.MONTHLY_HOURS) }) { Text("+") }
                     }
-                    Hint("주 40시간이면 209시간이 보통이에요. 토요일 4시간 유급이면 226시간, 8시간 유급이면 243시간이에요.")
+                    // [PAYX-23] The company's own number, e.g. 182 (주 35시간), typed in.
+                    MonthlyHoursField(draft.monthlyHours, { h -> draft = draft.copy(monthlyHours = h).settled(Unknowns.MONTHLY_HOURS) })
+                    Hint("주 40시간이면 209시간이 보통이에요. 토요일 4시간 유급이면 226시간, 8시간 유급이면 243시간이에요. 명세서나 계약서에 다른 숫자가 있으면 그대로 넣어요.")
                     // [PAY-04] The same formula on the user's own roster (시행령 제6조 제2항).
                     val weekly = remember(snapshot, month) { StandardHours.averageWeekly(month.atDay(1), resolve = snapshot.resolver::resolve) }
                     val fromRoster = StandardHours.monthly(weekly)
@@ -420,38 +448,83 @@ fun CompanyRulesEditor(
                     }
                 }
             }
-            SectionCard(title = "연차") {
-                // [FEAT-10] Days granted this year; the pay screen shows used and left.
-                val days = rules.annualLeaveDays
+            // [PAYX-24][PAYX-27][PAYX-29][PAYX-33] Company ways the law leaves open, each with what it changes.
+            SectionCard(title = "회사마다 다른 계산") {
+                if (draft.wageType == WageType.MONTHLY) {
+                    Label("입사·퇴사 달 기본급 일할")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        com.bamnat.core.pay.ProrationBasis.entries.forEach { b ->
+                            FilterChip(selected = rules.proration == b, onClick = { setRules(rules.copy(proration = b), Unknowns.PRORATION) },
+                                label = { Text(b.label) })
+                        }
+                    }
+                    Hint("법에 정한 방식이 없어 취업규칙을 따라요. 입사·퇴사한 달에만 써요. 모르면 달력 일수로 계산해요.")
+                }
+                Label("원 단위 끝처리")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selected = days == null, onClick = { setRules(rules.copy(annualLeaveDays = null)) }, label = { Text("입력 안 함") })
-                    listOf(11.0, 15.0, 20.0, 25.0).forEach { d ->
-                        FilterChip(selected = days == d, onClick = { setRules(rules.copy(annualLeaveDays = d)) }, label = { Text(LeaveBook.days(d)) })
+                    com.bamnat.core.pay.WonRounding.entries.forEach { w ->
+                        FilterChip(selected = rules.wonRounding == w, onClick = { setRules(rules.copy(wonRounding = w)) }, label = { Text(w.label) })
                     }
-                    OutlinedButton(onClick = { setRules(rules.copy(annualLeaveDays = ((days ?: 15.0) - 0.5).coerceAtLeast(0.0))) }) { Text("−") }
-                    Text(days?.let(LeaveBook::days) ?: "—", style = MaterialTheme.typography.titleSmall, modifier = Modifier.align(Alignment.CenterVertically))
-                    OutlinedButton(onClick = { setRules(rules.copy(annualLeaveDays = ((days ?: 15.0) + 0.5).coerceAtMost(40.0))) }) { Text("+") }
                 }
-                // [PAY-12][REL-08] Days left over from last year that the company lets you carry.
-                val carry = rules.annualLeaveCarry
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-                    Column(Modifier.weight(1f)) {
-                        Text("작년에서 넘어온 연차", style = MaterialTheme.typography.bodyLarge)
-                        Text("회사가 이월해 준 날만 넣어요. 올해 연차에 더해 셈해요",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Hint(if (rules.wonRounding == com.bamnat.core.pay.WonRounding.AT_END) "시급을 소수점까지 그대로 들고 가서 줄마다 반올림해요. 명세서와 몇 원 다를 때 바꿔 보세요."
+                    else "시급을 먼저 원 단위로 반올림하고 곱해요. 법 기준은 없어 회사마다 달라요.")
+                if (draft.fiveOrMoreEmployees && !rules.supervisoryApproved) {
+                    Toggle("단시간 근로자 초과근로 50%", "소정근로시간이 주 40시간보다 짧은 계약이면 켜요. 소정 넘는 시간은 8시간 안이어도 50%를 더 받아요(기간제법 제6조 제3항)",
+                        rules.partTimePremium) { setRules(rules.copy(partTimePremium = it)) }
+                }
+                Label("근로시간 제도 (주 52시간 예외)")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    com.bamnat.core.hours.HoursException.entries.forEach { e ->
+                        FilterChip(selected = rules.hoursException == e, onClick = { setRules(rules.copy(hoursException = e)) }, label = { Text(e.label) })
                     }
-                    OutlinedButton(onClick = { setRules(rules.copy(annualLeaveCarry = (carry - 0.5).coerceAtLeast(0.0))) }, enabled = carry > 0) { Text("−") }
-                    Text(LeaveBook.days(carry), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 8.dp))
-                    OutlinedButton(onClick = { setRules(rules.copy(annualLeaveCarry = (carry + 0.5).coerceAtMost(40.0))) }) { Text("+") }
                 }
-                // [PAY-10] 입사일 gives the legal number (근로기준법 제60조), which the user can still adjust.
+                Hint(rules.hoursException.note + " 근무시간 화면의 한도 경고가 이 기준으로 바뀌어요.")
+            }
+            // [PAYX-25] 생산직 연장·야간·휴일수당 비과세, for 예상 실수령.
+            SectionCard(title = "세금") {
+                Toggle("생산직 연장·야간 비과세", "공장 생산직, 운전·경비·청소·돌봄 같은 일을 하고 월정액급여가 260만 원 이하면 연장·야간·휴일 수당에 연 240만 원까지 세금이 없어요(소득세법 시행령 제17조)",
+                    draft.productionWorker) { draft = draft.copy(productionWorker = it) }
+                if (draft.productionWorker) {
+                    WonField("작년 총급여 (비과세 뺀 것)", draft.previousYearPay, { draft = draft.copy(previousYearPay = it) },
+                        hint = "3,700만 원을 넘으면 비과세가 안 돼요. 비워 두면 넘지 않는 것으로 봐요")
+                }
+            }
+            // [PAYX-16] 포괄임금·탄력제: ready examples with what each does; the app never decides whether the company's is valid.
+            SectionCard(title = "예시 규칙") {
+                Hint("계약서에 포괄임금(고정 연장수당)이나 탄력적 근로시간제가 있으면 예시를 넣고 숫자만 고쳐요. 유효한지는 앱이 판단하지 않아요.")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // [PAYX-26] Splitting a salary into 기본급 and 고정 연장 is for a monthly salary only.
+                    com.bamnat.core.pay.PayExamples.all.filter { it.kind != com.bamnat.core.pay.PayExamples.Kind.INCLUSIVE_TOTAL || draft.wageType == WageType.MONTHLY }.forEach { ex ->
+                        OutlinedButton(onClick = { example = ex }) { Text(ex.title) }
+                    }
+                }
+            }
+            example?.let { ex ->
+                AlertDialog(
+                    onDismissRequest = { example = null },
+                    title = { Text(ex.title) },
+                    text = { Text(ex.summary + "\n\n" + ex.guide) },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            draft = com.bamnat.core.pay.PayExamples.apply(ex.kind, draft, month.atDay(1))
+                                .let { if (ex.kind == com.bamnat.core.pay.PayExamples.Kind.FIXED_OVERTIME || ex.kind == com.bamnat.core.pay.PayExamples.Kind.INCLUSIVE_TOTAL) it else it.settled(Unknowns.SCHEDULE_IS_REGULAR) }
+                            example = null
+                        }) { Text("넣기") }
+                    },
+                    dismissButton = { TextButton(onClick = { example = null }) { Text("닫기") } },
+                )
+            }
+            SectionCard(title = "연차") {
+                // [LEAVE-02] The 연차 원장 makes the law's leave from the hire date; days the company gave, 이월 and
+                // 조정 go in on the 연차 screen (급여 › 연차 카드).
+                val policy = rules.leave
                 val today = remember { LocalDate.now() }
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("입사일", style = MaterialTheme.typography.bodyLarge)
-                        val legal = draft.hireDate?.let { LeaveBook.legalDays(it, today) }
+                        val legal = draft.hireDate?.let { com.bamnat.core.leave.LeaveAccrual.entitlement(it, today) }
                         Text(
-                            if (legal == null) "넣으면 법정 연차를 계산해 채워요"
+                            if (legal == null) "넣으면 연차를 법대로 세어 연차 원장에 넣어요"
                             else "오늘 기준 법정 연차 ${legal}일 (80% 이상 출근 가정)",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -461,7 +534,39 @@ fun CompanyRulesEditor(
                         Text(draft.hireDate?.let { "${it.year}.${it.monthValue}.${it.dayOfMonth}" } ?: "선택")
                     }
                 }
-                Hint("1년 이상 다니면 15일, 그 뒤 2년마다 1일씩 늘어 최대 25일이에요. 1년 안 됐으면 한 달 개근마다 1일(최대 11일)이에요. 근로기준법 제60조 · 5인 미만 사업장은 해당 없음.")
+                // [PAYX-24] 퇴사: the month is cut and later days are not paid.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("마지막 재직일 (퇴사)", style = MaterialTheme.typography.bodyLarge)
+                        Text(if (draft.leaveDate == null) "그만둘 때 넣으면 그 달을 일할하고 뒤 근무는 빼요" else "그 뒤 날은 급여를 계산하지 않아요",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    OutlinedButton(onClick = { pickLeave = true }) {
+                        Text(draft.leaveDate?.let { "${it.year}.${it.monthValue}.${it.dayOfMonth}" } ?: "선택")
+                    }
+                }
+                Toggle("연차 법대로 세기", "입사일부터 근로기준법 제60조대로 생기는 날을 원장에 넣어요", policy.auto) {
+                    setRules(rules.copy(leave = policy.copy(auto = it)))
+                }
+                if (policy.auto) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        com.bamnat.core.leave.LeaveBasis.entries.forEach { b ->
+                            FilterChip(selected = policy.basis == b, onClick = { setRules(rules.copy(leave = policy.copy(basis = b))) },
+                                label = { Text(b.label) })
+                        }
+                    }
+                    if (policy.basis == com.bamnat.core.leave.LeaveBasis.FISCAL) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                            Text("회계연도 시작", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                            OutlinedButton(onClick = { setRules(rules.copy(leave = policy.copy(fiscalStartMonth = (policy.fiscalStartMonth + 10) % 12 + 1))) }) { Text("−") }
+                            Text("${policy.fiscalStartMonth}월 1일", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 8.dp))
+                            OutlinedButton(onClick = { setRules(rules.copy(leave = policy.copy(fiscalStartMonth = policy.fiscalStartMonth % 12 + 1))) }) { Text("+") }
+                        }
+                        Hint("회계연도 기준은 법이 아니라 회사 편의예요. 입사일 기준보다 적으면 안 되고, 그만둘 때 입사일 기준으로 다시 따져요(고용노동부 해석, 원문 확인 필요).")
+                    }
+                }
+                Hint("1년 이상 다니면 15일, 그 뒤 2년마다 1일씩 늘어 최대 25일이에요. 1년 안 됐으면 한 달 개근마다 1일(최대 11일)이에요. " +
+                    "근로기준법 제60조 · 5인 미만 사업장은 해당 없음. 회사가 준 날·이월·조정은 급여 화면의 연차 카드에서 넣어요.")
             }
             Spacer(Modifier.padding(bottom = 16.dp))
         }
@@ -534,7 +639,7 @@ fun CompanyRules.summary(profile: PayProfile): List<String> = buildList {
     }
     if (profile.wageType == WageType.MONTHLY && profile.monthlyHours != 209) add("월 소정근로 ${profile.monthlyHours}시간")
     if (profile.wageType != WageType.MONTHLY && !weeklyHolidayPay) add("주휴수당 없음")
-    annualLeaveDays?.let { add("연차 ${LeaveBook.days(it)}" + if (annualLeaveCarry > 0) " + 이월 ${LeaveBook.days(annualLeaveCarry)}" else "") }
+    if (!leave.auto) add("연차 직접 넣기") else if (leave.basis == com.bamnat.core.leave.LeaveBasis.FISCAL) add("연차 회계연도 기준 (${leave.fiscalStartMonth}월)")
 }
 
 /** [PAYS-03] Which premiums [item] stands in for: a night allowance either way, a 고정 연장수당 up to all three. */

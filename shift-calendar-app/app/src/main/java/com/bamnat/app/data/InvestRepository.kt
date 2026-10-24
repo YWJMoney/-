@@ -17,6 +17,7 @@ import com.bamnat.core.invest.Quote
 import com.bamnat.core.invest.ReturnMethod
 import com.bamnat.core.invest.Snapshot
 import com.bamnat.core.invest.Trade
+import com.bamnat.core.invest.TradeAlerts
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -43,8 +44,11 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
     val book: Flow<InvestBook> = combine(
         records, dao.observeEvents(), dao.observeAlarms(), dao.observeSnapshots(), dao.observeSettings(),
     ) { (b, j), e, al, s, st ->
-        val settings = SettingsCodec.decode(st.associate { it.key to it.value })
-        b.copy(journal = j.map { it.toModel() }, events = e.map { it.toModel() }, alarms = al.map { it.toModel() },
+        val rows = st.associate { it.key to it.value }
+        val settings = SettingsCodec.decode(rows)
+        // [INV-33] Each account's market fees sit beside the settings.
+        b.copy(accounts = b.accounts.map { a -> rows[InvestAccount.feesKey(a.id)]?.let { a.copy(marketFees = InvestAccount.decodeFees(it)) } ?: a },
+            journal = j.map { it.toModel() }, events = e.map { it.toModel() }, alarms = al.map { it.toModel() },
             snapshots = s.map { it.toModel() }, settings = settings)
     }.flowOn(Dispatchers.Default)
 
@@ -58,7 +62,12 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
         dao.allAccounts().firstOrNull { !it.hidden }?.id ?: dao.upsertAccount(InvestAccount(name = AccountType.GENERAL.label).toEntity())
     }
 
-    suspend fun saveAccount(a: InvestAccount): Long = dao.upsertAccount(a.toEntity()).let { if (a.id != 0L) a.id else it }
+    suspend fun saveAccount(a: InvestAccount): Long = db.withTransaction {
+        val id = dao.upsertAccount(a.toEntity()).let { if (a.id != 0L) a.id else it }
+        // [INV-33] Its market fees, blank when none.
+        dao.upsertSetting(InvestSettingEntity(InvestAccount.feesKey(id), InvestAccount.encodeFees(a.marketFees)))
+        id
+    }
 
     /** An account with records is hidden, so its history stays in the totals; an empty one goes. */
     suspend fun deleteAccount(id: Long) = db.withTransaction {
@@ -105,6 +114,38 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
         SettingsCodec.encode(after).forEach { (k, v) -> dao.upsertSetting(InvestSettingEntity(k, v)) }
     }
 
+    // [INV-32] Trades found in notifications, waiting for 확인 (결정 D37), in the settings table (결정 D40).
+    val pendingAlerts: Flow<List<TradeAlerts.Pending>> =
+        dao.observeSettings().map { l -> TradeAlerts.decode(l.firstOrNull { it.key == TradeAlerts.KEY }?.value) }
+    val alertAuto: Flow<Boolean> = dao.observeSettings().map { l -> l.any { it.key == TradeAlerts.AUTO_KEY && it.value == "true" } }
+
+    suspend fun alertAutoNow(): Boolean = dao.allSettings().any { it.key == TradeAlerts.AUTO_KEY && it.value == "true" }
+    suspend fun setAlertAuto(on: Boolean) = dao.upsertSetting(InvestSettingEntity(TradeAlerts.AUTO_KEY, on.toString()))
+
+    /** False when the same fill is waiting already. */
+    suspend fun addAlert(p: TradeAlerts.Pending): Boolean = db.withTransaction {
+        val next = TradeAlerts.add(pendingNow(), p) ?: return@withTransaction false
+        dao.upsertSetting(InvestSettingEntity(TradeAlerts.KEY, TradeAlerts.encode(next)))
+        true
+    }
+
+    suspend fun dropAlert(at: Long) = db.withTransaction {
+        dao.upsertSetting(InvestSettingEntity(TradeAlerts.KEY, TradeAlerts.encode(pendingNow().filter { it.at != at })))
+    }
+
+    private suspend fun pendingNow() = TradeAlerts.decode(dao.allSettings().firstOrNull { it.key == TradeAlerts.KEY }?.value)
+
+    /** [INV-32] A waiting alert written as a trade into the last used open account, fees suggested, and taken off the list. */
+    suspend fun confirmAlert(p: TradeAlerts.Pending): Trade {
+        val book = now()
+        val account = book.settings.lastAccountId?.takeIf { book.account(it)?.hidden == false } ?: ensureAccount()
+        val costs = com.bamnat.core.invest.InvestFees.suggest(p.market, p.side, p.quantity, p.price, book.account(account))
+        val t = p.toTrade(account, book.settings.usdKrw).copy(fee = costs.fee, tax = costs.tax)
+        val id = saveTrade(t)
+        dropAlert(p.at)
+        return t.copy(id = id)
+    }
+
     private suspend fun setLastAccount(id: Long) {
         dao.upsertSetting(InvestSettingEntity(SettingsCodec.LAST_ACCOUNT, id.toString()))
     }
@@ -124,6 +165,8 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
             "isaLimit" to s.isaLimit.toString(),
             "returnMethod" to s.returnMethod.name,
             "hideAmounts" to s.hideAmounts.toString(),
+            // [INV-34] Absent means on.
+            "monthSummary" to s.monthSummary.toString(),
             LAST_ACCOUNT to (s.lastAccountId?.toString() ?: ""),
         )
 
@@ -139,6 +182,7 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
                 isaLimit = m["isaLimit"]?.toLongOrNull()?.takeIf { it >= 0 } ?: d.isaLimit,
                 returnMethod = ReturnMethod.entries.firstOrNull { it.name == m["returnMethod"] } ?: d.returnMethod,
                 hideAmounts = m["hideAmounts"] == "true",
+                monthSummary = m["monthSummary"] != "false",
                 lastAccountId = m[LAST_ACCOUNT]?.toLongOrNull(),
             )
         }

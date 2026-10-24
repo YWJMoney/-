@@ -62,7 +62,6 @@ import com.bamnat.core.imports.AttendanceImport
 import com.bamnat.core.imports.AttendanceRow
 import com.bamnat.core.imports.ColumnMap
 import com.bamnat.core.imports.Sheets
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -72,7 +71,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
 /**
@@ -96,6 +94,9 @@ class AttendanceImportViewModel(private val container: AppContainer, val calenda
             // [DAYW-06] A date without its year takes the year nearest today (last December's export read in January).
             get() = map?.takeIf { it.ready || AttendanceField.DATE in it.columns }?.let { LocalDate.now().let { today -> AttendanceImport.read(rows, it, today.year, near = today) } }.orEmpty()
         val todo: List<AttendanceRow> get() = days.filter { !it.isEmpty }
+        /** [IMPORT-05] Rows left out and cells not read, with why. */
+        val problems: List<AttendanceImport.Problem>
+            get() = map?.takeIf { AttendanceField.DATE in it.columns }?.let { LocalDate.now().let { today -> AttendanceImport.problems(rows, it, today.year, near = today) } }.orEmpty()
         /** What a column is called: its header, or its letter. */
         fun columnName(c: Int): String {
             val head = map?.headerRow?.takeIf { it >= 0 }?.let { rows.getOrNull(it)?.getOrNull(c) }.orEmpty()
@@ -112,26 +113,7 @@ class AttendanceImportViewModel(private val container: AppContainer, val calenda
     fun open(uri: Uri) {
         _ui.update { Ui(reading = true) }
         viewModelScope.launch {
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    val resolver = container.appContext.contentResolver
-                    val name = resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-                        if (c.moveToFirst()) c.getString(0) else null
-                    }.orEmpty()
-                    val bytes = resolver.openInputStream(uri)?.use { input ->
-                        val out = java.io.ByteArrayOutputStream()
-                        val buf = ByteArray(16 * 1024)
-                        while (true) {
-                            val n = input.read(buf)
-                            if (n < 0) break
-                            out.write(buf, 0, n)
-                            if (out.size() > Sheets.MAX_BYTES) throw Sheets.SheetException("파일이 너무 커요 (8MB까지)")
-                        }
-                        out.toByteArray()
-                    } ?: throw Sheets.SheetException("파일을 열지 못했어요")
-                    name to Sheets.read(bytes)
-                }
-            }
+            val result = runCatching { SheetFiles.read(container.appContext, uri) }
             result.onSuccess { (name, rows) ->
                 val map = AttendanceImport.guess(rows)
                 _ui.update {
@@ -221,10 +203,7 @@ fun AttendanceImportScreen(vm: AttendanceImportViewModel, onBack: () -> Unit) {
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(10.dp))
                     Button(onClick = {
-                        picker.launch(arrayOf(
-                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/csv", "text/comma-separated-values",
-                            "text/plain", "application/vnd.ms-excel", "application/octet-stream",
-                        ))
+                        picker.launch(SheetFiles.TYPES)
                     }, enabled = !ui.reading, modifier = Modifier.fillMaxWidth()) { Text(if (ui.rows.isEmpty()) "파일 고르기" else "다른 파일 고르기") }
                     Text("옛 엑셀 형식(.xls)은 엑셀이나 구글 시트에서 .xlsx나 CSV로 다시 저장해 주세요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -241,6 +220,19 @@ fun AttendanceImportScreen(vm: AttendanceImportViewModel, onBack: () -> Unit) {
                         HorizontalDivider()
                         MapRow(f.label, ui.map?.columns?.get(f)?.let(ui::columnName) ?: "안 씀") { choosing = f }
                     }
+                }
+            }
+            val problems = ui.problems
+            if (ui.rows.isNotEmpty() && problems.isNotEmpty()) item {
+                // [IMPORT-05] Which row, which column and why, instead of only a count.
+                SectionCard(title = "읽지 못한 칸 ${problems.size}곳") {
+                    problems.take(30).forEach { p ->
+                        Text("${p.row}번째 줄 · ${p.field.label}" + (if (p.cell.isNotEmpty()) " ‘${p.cell.take(20)}’" else "") + " — ${p.reason}",
+                            style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 2.dp))
+                    }
+                    if (problems.size > 30) Text("외 ${problems.size - 30}곳", style = MaterialTheme.typography.bodySmall)
+                    Text("열을 잘못 골랐다면 위에서 바꿔 보세요. 나머지 줄은 그대로 적을 수 있어요.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             val days = ui.days

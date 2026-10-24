@@ -80,7 +80,8 @@ class AutoBackupTest {
         val auto = backup()
         val r = auto.turnOn(Uri.fromFile(file), password.toCharArray())
         assertTrue("$r", r is AutoBackup.Result.Ok)
-        val text = file.readText()
+        // [REL-15] A sealed file of format 3, opened the way 파일 불러오기 opens it.
+        val text = file.inputStream().use { c.backupManager.read(it) }
         assertEquals((r as AutoBackup.Result.Ok).bytes.toLong(), file.length())
         assertTrue(c.backupManager.isSealed(text))
         val json = c.backupManager.unseal(text, password.toCharArray())
@@ -98,8 +99,8 @@ class AutoBackupTest {
         // The password itself is kept nowhere.
         val prefs = File(app.applicationInfo.dataDir, "shared_prefs/auto_backup.xml").readText()
         assertFalse(prefs.contains(password))
-        assertEquals("a job keeps it going while the app is closed", 1,
-            app.getSystemService(JobScheduler::class.java).allPendingJobs.size)
+        // [SRV-10] 밤낮 소식's daily job may be there too; this counts the backup's own.
+        assertEquals("a job keeps it going while the app is closed", 1, backupJobs())
     }
 
     @Test fun itRunsOnceADay() = runBlocking {
@@ -147,7 +148,7 @@ class AutoBackupTest {
         // Somewhere else, with the same password.
         val other = File(app.filesDir, "other.json")
         assertTrue(auto.moveTo(Uri.fromFile(other)) is AutoBackup.Result.Ok)
-        assertTrue(c.backupManager.unseal(other.readText(), password.toCharArray()).isNotEmpty())
+        assertTrue(c.backupManager.unseal(other.inputStream().use { c.backupManager.read(it) }, password.toCharArray()).isNotEmpty())
         assertEquals("other.json", auto.state.value.name)
     }
 
@@ -171,6 +172,9 @@ class AutoBackupTest {
         assertTrue(box.forgotten > before)
         assertEquals(AutoBackup.Result.Off, auto.runNow())
         assertTrue("the file stays", file.exists())
-        assertTrue(app.getSystemService(JobScheduler::class.java).allPendingJobs.isEmpty())
+        assertEquals(0, backupJobs())
     }
+
+    private fun backupJobs() = app.getSystemService(JobScheduler::class.java).allPendingJobs
+        .count { it.service.className == AutoBackupJob::class.java.name }
 }

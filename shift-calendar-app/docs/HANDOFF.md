@@ -1,11 +1,54 @@
 # 밤낮 인수인계 (다른 계정에서 이어 가기)
 
-마지막 정리 2026-10-22, 앱 1.20.0(versionCode 31, 워치 100031) 기준이에요. 맨 위 0항이 지금 판(1.20.0)과 바로 앞 판(1.19.0)이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
+마지막 정리 2026-10-23 저녁, 앱 1.23.0(versionCode 34, 워치 100034) 기준이에요. 맨 위 0항이 지금 판(1.23.0), 0-0항이 1.22.0, 0-1항이 1.21.0, 0-2항이 1.20.0, 0-3항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
 
 이 저장소는 공개예요(GitHub Pages로 처리방침을 올려요). 그래서 이 문서에는 비밀값, 서명 키, 사용자 개인 정보를 적지 않아요.
 그런 것은 사용자가 새 프로젝트에 파일로 따로 올려요(7항). 새 계정의 Claude는 이 문서와 그 비공개 메모를 먼저 읽고 시작해요.
 
-## 0. 지금 판: 1.20.0 프로 가치 (2026-10-22)
+## 0. 지금 판: 1.23.0 고도화판 (2026-10-23 저녁)
+
+Phase 2에서 만든 기능을 실사용 수준 넘어 완성한 판이에요. 통합 스레드가 먼저 전체 리뷰(문제점·개선점·혁신점 50개, 비공개 `research/1.23-리뷰/`)를 하고 순번 290~340을 여덟 묶음(H~O)으로 나눠 개발 스레드 PR #75~#93을 통합 브랜치 `claude/project-thread-cc2q9i`에 합쳤어요(비공개 `계획/1.23-고도화-통합계획.md`, 결정 D51~D60). DB는 20(급여 정확도, `database/schemas/`), 앱 크기 51MB→8MB, 처리방침 2.9(게시 2026-11-03·시행 11-21). 혁신점 50개 가운데 44개를 넣고 4개는 결정으로 뺐고 1개는 줄였어요.
+
+- **관리자 앱 대개편(묶음 H, ADMUX)**: `server/company-worker/src/admin-app.js`·`admin-lib.js`(할 일 큐 홈, 문의 답 목표 시간 SLA, 저장한 보기, 커맨드 팔레트, 부분 렌더, 라이트·다크), `push.js`(웹 푸시, `VAPID_*` 비밀값이 있을 때만, `tools/vapid-keys.mjs`). 화면 시험은 happy-dom `npm run test:ui`.
+- **달력·매일 화면·위젯·워치(묶음 I, CAL·WIDG·WEAR·DAYW)**: core `schedule/QuickText.kt`(날짜 메모의 '내일 야간 대근 7시'를 근무로), '다음 근무까지' 위젯과 달 넘기기, 연간 히트맵, 폴더블 듀얼 패널, 밖에서 여는 파일(6-1항), 워치 주 시작·범위.
+- **디자인 통일·접근성·첫 설정(묶음 J, UX·A11Y·SETUP·SET)**: 선택 색 primary 하나, 공용 컴포넌트('+ 추가', 스테퍼, 시간 범위 창), 200% 글씨에서 버튼·탭이 잘리지 않는 규칙과 지킴 시험, 근무 알람 한 번에 옮기기, 도움말·첫 설정 힌트.
+- **급여·연차·돈·원격(묶음 K, PAYX·LEAVE·LEDG·REMOTE·INV·IMPORT)**: core `pay/SlipAudit.kt`('내 월급 맞나요', 명세서 줄마다), `pay/YearEndPreview.kt`(연말정산 미리보기), `pay/PayNews.kt`(법 개정 알림), 입퇴사 일할·생산직 비과세·포괄 범위(DB 20), 연차 통일(LeaveBook 퇴출, 원장 PDF·CSV), 세율·봉급표·공휴일표 원격화(`remote/v1/`).
+- **서버·광장·문의·알람(묶음 L, SRV·COMM·INQ·ALRM·SHR·PRIV)**: core `plaza/PlazaNews.kt`·앱 `company/PlazaNewsJob.kt`(밤낮 소식 하루 한 번 알림 하나), 익명 '우리 조 모아 보기'(공유 서버 6자 코드 링크 묶음, SHR-12 ETag는 같은 밀리초에도 앞으로), 문의 답장 알림·타임라인·보내기 대기열, 알람 점검 7일 성적표와 서버 연결 카드(`ui/diag/DiagnosticsScreen.kt`), 회사 서버 `AUTHOR_KEY`(가림 목록을 `RATE_SALT`에서 분리), 쓰기 한도 자동 쉬기(`D1_WRITES_PER_DAY`·`KV_WRITES_PER_DAY`).
+- **품질·성능·크기(묶음 M, QA·PERF·REL·OPS)**: 5항 '품질 규칙'(CI 네 조각, 화면 사진 지문 40장 `app/src/test/golden/shots.json`, 시작 작업 21/7, 크기 예산 `tools/app_size.py`, 백업 zip 형식 3, 린트 기준선, Dependabot), OCR 모델은 Play 서비스가 내려받음(D52), `benchmark/` Macrobenchmark(실기기에서 사용자가 돌림), 비정상 종료·ANR 기기 안 기록.
+- **쉬운 사용·관측성(묶음 N, EASY·OBS)**: 6-2항. core `profile/`(Profile·Needs·FeatureNeeds·AskScheduler·StatusBoard), `example/Browse.kt`·`ExamplePlan.kt`, `journal/Journal.kt`; 앱 `data/ProfileStore.kt`·`BrowseStore.kt`·`ExampleCalendar.kt`·`JournalStore.kt`, `ui/guide/ProfileScreen.kt`·`JournalScreen.kt`·`WriteGate.kt`. 사실은 프로필 한 곳에 한 번만, 질문 카드는 하루 2개, 예시 달력은 기기 밖으로 나가지 않아요.
+- **스마트 알람 제안·증명 사진 미션(묶음 O, ALRM-03·04, D60)**: core `alarm/AlarmSuggest.kt`(잠·끄기 기록으로 LATE·EARLY·SHORT 제안, 한 주 한 장, 거절 뒤 30일 조용), `alarm/ImageHash.kt`(32×32 dHash 64비트, 임계값 18)·앱 `alarm/PhotoMission.kt`·`ui/settings/PhotoMissionRows.kt`(기준 사진은 지문만 보관, 3번 틀리거나 5분 지나면 계산 문제로). 지문은 백업에 넣지 않아요.
+- **법 문서**: `privacy/index.html` 처리방침 2.9(우리 조 모아 보기·증명 사진·OCR 내려받기 문구), `docs/play-data-safety.md` 1.23.0장(바뀌는 답 없음).
+- **시험 결과(2026-10-23)**: 비공개 `release/1.23.0/사용자가-해야-할-일.md` '시험 결과'에 적어요. 다음 판은 1.24.0(비공개 `인계/다음-스레드-시작-1.24.md`).
+
+## 0-0. 앞 판: 1.22.0 Phase 2 완료판 (2026-10-23 새벽)
+
+남은 Phase 2의 Claude 몫을 개발 스레드 일곱 묶음(A~G)으로 나눠 통합 브랜치 `claude/project-thread-kz90cm`에 합친 한 판이에요(PR #51~#73). DB는 19(연차 원장)이고 Room은 `:database` 모듈로 옮겼어요. 남은 체크리스트 줄은 모두 사용자·바깥 몫이에요(비공개 `계획/Phase2-완료-체크리스트.md`, `인계/다음-스레드-시작-1.23.md`).
+
+- **처음 화면과 설정(묶음 G)**: `ui/onboarding/RecommendedScreen.kt`('추천대로 켜고 시작하기' 한 번에 권한과 알림, 사용 통계는 미리 체크 안 함), `data/RecommendedSettings.kt`, 설정 7묶음 `SettingsPage`(내 근무·알람·알림과 잠·급여와 연차·달력 화면·데이터·개인정보·앱 정보) + '더 보기'. `SettingsLayoutTest`는 '설정 › X'가 있는 묶음 이름인지 봐요. 기존 사용자 설정은 바꾸지 않아요(D50).
+- **원격 계산 자료(묶음 A)**: 저장소 맨 위 `remote/v1/*.json`과 `.sig`를 GitHub Pages에서 하루 한 번 받아요(`gradle.properties` `bamnat.remoteBaseUrl`). core `remote/Ed25519.kt`(순수 Kotlin 검증), `RemoteFile.kt`, `PresetFile.kt`, 앱 `remote/`. 서명은 `tools/remote_sign.py sign --key <비공개 경로>` 뒤 `check`. 실수령 `pay/TakeHome.kt`는 간이세액표와 비과세(식대 등 항목마다 월 20만 원)를 써요.
+- **서버·광장·통계(묶음 B)**: 회사 서버 광장 소식 하루 한 번, 사용자 차단(글마다 암호화한 글쓴이 표시), 문의 사진(D1 BLOB), 동의한 사용 통계(날짜별 합계, 400일), 가려진 글 30일 확인 경고. 공유 서버 신고·삭제. `community/` 광장 운영 규칙, `terms/` 제16조 ②.
+- **직군·근무표(묶음 C)**: core `schedule/RestRules.kt`(점검 기준 하나, 기본에서 흔한 정상 근무표는 경고 0건 `NormalRostersTest`), `pay/PublicPayTable.kt`(공무원 봉급표, 현업은 57시간 상한 없음), `pay/OrdinaryGuess.kt`(이름으로 통상임금 미리 고르기), 경찰·소방 프리셋, 법정 휴게 `schedule/LegalBreak.kt`.
+- **연차·급여 2단계(묶음 D)**: core `leave/`(원장, 자동 발생, 사용 촉진, 정산), 보상휴가 `LeaveKind.COMP`, 오전 반차(`Leave.fromStart`, 저장 숫자 +100), 엑셀·CSV 듀티표 `imports/`, 포괄·탄력·호봉 규칙. 달력이 연차 사용의 정본이에요(D47).
+- **매일 화면·돈(묶음 E)**: 위젯 메모 줄·오늘 모든 조, 돈 화면 카드 순서, 영수증 글자 인식(기기 안), 백업에 사진(30MB), 반쯤 접힘 `androidx.window`, 시세 견주기, 월말 요약. 시간 표시는 `HoursFormat.korean`.
+- **품질(묶음 F)**: `perf/StartupBudgetTest`(이름 붙은 시작 작업 17), `data/db/MigrationAllVersionsTest`(1~18→19), `a11y/ContrastTest`·`AccessibilityCheckTest`(화면 사진 510~519), Baseline Profile, 시험 격리(`TestIsolationTest`, `BamnatApp.onTerminate`), `tools/check_checklist.py`.
+- **법 문서**: `privacy/index.html` 처리방침 2.8(시행 2026-11-21), `docs/play-data-safety.md` 1.22.0장.
+- **시험 결과(2026-10-23)**: 아래 할 일 문서 `release/1.22.0/사용자가-해야-할-일.md`(비공개)에 적어요.
+
+## 0-1. 앞 판: 1.21.0 사용자 제안 (2026-10-22)
+
+사용자 제안(모든 조·달력 버튼·간호사와 직군·투자 알림·광장 고도화·직군별 광장)을 모두 만들었어요. DB는 18 그대로예요(결정 D40). 다음 판은 1.22.0이에요(비공개 `인계/다음-스레드-시작-1.22.md`).
+
+- **모든 조와 대근 찾기**: core `schedule/TeamRoster.kt`(내 조가 몇 번째여도 내 주기, 다른 조 순서 유지), `schedule/CoverFinder.kt`(쉬고 싶은 날 들어올 수 있는 조, 휴식 기본 11시간 D31), 앱 `ui/calendar/TeamsScreen.kt`, `data/TeamStore.kt`. 달력 위 도구 줄과 '모든 조' 버튼은 `CalendarScreen`의 `CalendarHeader`.
+- **간호 한 달 연달아 넣기**: core `schedule/DutyCheck.kt`(11시간, 나이트 뒤 2일, 연속 나이트 3일, 7일 연속; 알려만 줌), 앱 `ui/calendar/DutyTypingSheet.kt`, `CalendarViewModel.applyDuty`(한 번에 저장·되돌리기). 듀티표 인식은 core `imports/DutyRoster.kt`(S=미들, 병가·생휴·AL·SL·PH, '1(월)').
+- **급여 엔진**: `pay/TakeHome.kt`가 그 달 날짜로 요율표 절반과 국민연금 상하한(`PENSION_BASES`)을 써요. `PayCalculator`의 수습 3개월 경고, 주휴의 공휴일 넘어가는 밤샘(`weeklyHolidayLine`의 `holiday`). 리뷰는 비공개 `research/1.21-급여엔진-리뷰.md`.
+- **직군 프리셋**: `pay/PayProfile.kt`의 `Occupation.PUBLIC·POLICE·FIRE`, `pay/PublicServantPay.kt`(봉급기준액 55%/60%, 시간외 ÷209×1.5, 야간 ÷209×0.5, 휴일 ÷26×1.5를 내 규칙 3개로), `PayPresets.firstSetup`. `PayWizard`가 처음 만들 때만 적용해요.
+- **투자 체결 알림**: core `invest/TradeAlertParser.kt`·`TradeAlerts.kt`(대기 30개, 10분 안 같은 체결은 한 번), 앱 `invest/TradeCapture.kt`(`AppContainer.capture`가 먼저 부름, `CaptureService` 필터), `data/InvestRepository.kt`(투자 설정 표의 `pendingAlerts`·`alertAuto`), 화면 `ui/invest/InvestAlertsCard.kt`.
+- **광장**: 서버 `server/company-worker/src/index.js`(글 맞아요·달라요 `post_votes`, 답글·제안 `posts.parent/kind/change`, 자동 채택 `settle`·`payOut`(D32·D33), 판 기록, 쓰는 사람 `uses`, 광장 이름 `nicks`, 직군·지역 `companies.kind/job/region`, 임금표 `rates`·`rate_votes`(D39), 내 데이터 지우기는 채택된 것을 남김(D34)), 관리자 앱 `src/admin-app.js`(채택 기준·임금표 검토·내리기). 앱 `ui/company/PlazaScreens.kt`·`CompanyBoard.kt`·`CompanyViewModels.kt`, `company/CompanyClient.kt`, `data/CompanyShare.kt`.
+- **공휴일**: `holiday/KoreanHolidays.kt`의 `ELECTIONS`(2024 선거일·국군의 날, 2028 국회의원 선거일). **복원**: `BackupManager.readSchedule`이 근무 종류 없는 추가 달력에 기본 근무 종류를 넣어요.
+- **법 문서**: `privacy/index.html` 처리방침 2.7(게시 2026-10-22, 시행 2026-11-21, 2.5·2.6과 같은 날). `docs/play-data-safety.md` 1.21.0장.
+- **시험**: core `DutyCheckTest`, `DutyRosterNurseTest`, `TakeHomeYearTest`, `PublicServantPayTest`, `Holidays2028Test`, `TradeAlertParserTest`(+`TradeAlertsTest`), `HourlyWorkTest`, 앱 `InvestAppTest`, `PersonalCalendarsTest`, `rules/LegalPagesTest`, 화면 사진 361~365, 서버 `test/plaza.test.mjs`.
+
+## 0-2. 앞 판: 1.20.0 프로 가치 (2026-10-22)
 
 프로 화면 네 기둥의 남은 줄을 모두 만들었어요. 모두 프로 기능이고, 정식 출시 스위치 전에는 1.19.0처럼 모두 열려 있어요. 다음 판은 1.21.0 출시 품질·원격 갱신·원문 대조예요(`계획/Phase2-완료-체크리스트.md` 1장).
 
@@ -15,10 +58,15 @@
 - **공유 링크**: `share/ShareLink.kt`의 `ShareLinkKey`(1번은 달력 ID, 2~5번은 `id~N`, 1번의 저장 파일 이름은 예전 그대로), 기간 7·30·90·180·365(180·365는 프로), 링크마다 `feed`(구독 주소). `ShareSync`가 모든 링크를 따라 보내고, 프로가 끝나면 2~5번은 기간까지 두되 늘리기는 `Result.Locked`(결정 D23). 공유 서버는 `GET /s/:id.ics`와 `ics`·`tz`를 받아요(서버 README '앱 1.20부터'). 만든 링크는 `share/ShareLinkBackup.kt`로 백업 파일에 열쇠와 함께 들어가고, 불러올 때 휴대폰에 있던 링크는 지우지 않아요(결정 D29).
 - **매일 자동 백업**: `backup/AutoBackup.kt`(하루 한 번, 'rwt'로 쓰고 쓴 길이로 잘라 낸 뒤 다시 읽어 풀어 봄, 3일 실패 알림), `backup/AutoBackupJob.kt`(JobScheduler 6시간, 배터리 낮지 않을 때), `backup/KeyBox.kt`(암호에서 만든 열쇠를 키 저장소 AES-GCM으로 감쌈, 암호는 저장 안 함). 파일은 손으로 한 암호 백업처럼 같은 암호로 어느 휴대폰에서나 열려요. 열쇠와 파일 위치(`auto_backup` 설정 파일)는 백업에서 빠져요.
 - **확실한 알람**: core `alarm/AlarmMission.kt`(계산 3문제, 흔들기 20번, `ShakeCounter`, 5분 뒤 미션 없이 끄기), 앱 `alarm/MissionScreen.kt`, `AlarmActivity`(미션 화면), `AlarmService`(미션이 있으면 알림의 '끄기'가 미션 화면을 엶, 끄면 `WakeCheck.schedule`), `alarm/WakeCheck.kt`(끈 뒤 N분에 '일어났나요?', 90초 뒤 한 번 더 울림, 알람 시계가 아닌 정확한 알람). 설정은 `ui/settings/SureAlarmCard.kt`, 잠금 풀기 전 사본은 `BootAlarms`가 함께 둬요. 프로가 아니면 `RingSettings.of(s, sure = false)`라 예전처럼 울려요.
+- **스마트 알람 제안(ALRM-03)**: core `alarm/AlarmSuggest.kt`가 근무 종류별 최근 5번, 첫 알람만 보고 제안 하나를 골라요(늦게 끔 3/5 → 20분 앞, 30분 넘게 먼저 깸 3/5 → 15분 뒤, 잠이 목표보다 90분 넘게 짧음 3/5 → 잘 시간 알림). 끈 시각은 `AlarmService`가 `alarm_dismissed` 줄에 `type= due= off=`로 남기고(기기 안 이벤트 기록, 사용 통계로 안 감), 잠은 수동 기록과 이미 켠 Health Connect를 합쳐 써요.
+  카드는 `CalendarScreen`의 `AlarmSuggestCard`(달력 맨 위, 내 달력만), 적용은 `CalendarViewModel.applyAlarmSuggestion`이 `AlarmShift.move`로 그 근무만 바꾸고 10초 되돌리기. 주 1장, 답한 제안은 30일 쉼, '다시 보지 않기'는 설정 › 알람 › '숨긴 제안 다시 보기'로 풀려요(`alarmSuggestMemory`, 기기에만, 백업 안 함).
+  끄는 곳은 설정 › 알람 › '알람 제안'(기본 켜짐, 백업에 들어감, `alarm.suggest`). 이벤트 기록이 1,000줄로 잘려서 화면 이동이 아주 많으면 오래된 끈 기록이 빠질 수 있어요(그러면 제안이 늦게 나올 뿐 틀리지 않음).
+- **증명 사진 미션 [ALRM-04] (1.23)**: core `alarm/ImageHash.kt`(32×32 흑백 → dHash 64비트, 해밍 ≤ `SAME_PLACE` 18이면 같은 곳, 기준 2장 중 가까운 쪽), `Missions.shown`이 기준 없음·3번 틀림·카메라 실패를 계산 문제로 바꿔요. 앱 `alarm/PhotoMission.kt`(`PhotoReferences` = 자기 prefs `photo_mission`, 백업 규칙과 밤낮 백업 파일 모두 밖, `PhotoPrint` = 카메라 앱 사진을 EXIF 방향 맞춰 줄이고 `finally`에서 지움, `PhotoAttempts`).
+- 사진은 명세서 사진과 같은 길(카메라 권한 없이 `TakePicture` + FileProvider `scan/`), 잠금 화면에서는 `requestDismissKeyguard` 뒤에 카메라를 열어요. 설정은 `ui/settings/PhotoMissionRows.kt`(끄기 미션 아래, 기준이 없으면 증명 사진을 고를 수 없음). 시험 `ImageHashTest`·`PhotoMissionTest`, 사진 715~719.
 - **법 문서**: `privacy/index.html` 처리방침 2.6(1.19.0과 1.20.0을 PR #49 하나로 합쳐 2.5와 같은 날 게시, 게시 2026-10-22·시행 2026-11-21 예정, 2.5 몫 때문에 30일 고지). `docs/play-data-safety.md` 1.20.0장.
 - **시험**: core `ReportTest`·`AlarmMissionTest`·`GuideTest.whatsNewOpensRealFeatures`, 앱 `report/ReportPdfTest`, `calendar/PhoneCalendarTest`, `share/ShareLinksProTest`, `backup/AutoBackupTest`, `alarm/SureAlarmTest`, `tier/TierAppTest`, 화면 사진 385~398, 공유 서버 `worker.test.mjs`.
 
-## 0-1. 바로 앞 판: 1.19.0 수익화 기반 (2026-10-22)
+## 0-3. 그 앞 판: 1.19.0 수익화 기반 (2026-10-22)
 
 일하는 규칙은 `CLAUDE.md`(문서 먼저, 판마다 체크리스트, Phase 3 진입 금지). 남은 일의 정본과 판 계획은 비공개 프로젝트 파일 `계획/Phase2-완료-체크리스트.md`에 있어요. 다음 판은 1.20.0 프로 가치(자동 암호 백업, 공유 링크 여러 개, 통계 확장, 급여 리포트 PDF·CSV, 등급 최종 시험, ICS 구독, 기기 캘린더 쓰기, 확실한 알람, 근무표 PDF)예요.
 
@@ -119,15 +167,24 @@
 모두 `shift-calendar-app/`에서 실행해요. JDK 17 이상, Android SDK가 필요해요.
 
 ```bash
-sh ./gradlew -p core test                                  # 급여·근무 계산 (1.12.0: 289개)
-sh ./gradlew :app:testDebugUnitTest :app:lintDebug --continue   # 앱 테스트·스크린샷·린트 (280개, 서버 연결 1개 건너뜀)
+sh ./gradlew -p core test                                  # 급여·근무 계산 (1.23.0: 839개, LC_ALL=C.UTF-8)
+sh ./gradlew :app:testDebugUnitTest :app:lintDebug --continue   # 앱 테스트·스크린샷·린트 (1.23.0: 네 조각 합쳐 약 1,070개 — unit 483, api 24, 화면 사진 두 조각; 아래 -Pbamnat.testSet)
 python3 tools/check_tracker.py                             # 추적표 검사
-(cd server/company-worker && npm test)                     # 회사 서버 (45개)
-(cd server/share-worker && npm test)                       # 공유 서버 (16개)
+(cd server/company-worker && npm test)                     # 회사 서버 (1.23.0: 193개)
+(cd server/company-worker && npm ci && npm run test:ui)    # 관리자 앱 화면 시험, happy-dom (1.23 H: 10개)
+(cd server/share-worker && npm test)                       # 공유 서버 (1.23.0: 34개)
 ```
 
 - 앱 테스트 결과는 `app/build/test-results/testDebugUnitTest`, 화면 사진은 `app/build/screenshots`, 린트는 `app/build/intermediates/lint_intermediate_text_report/`에 나와요.
 - 저장소 맨 위의 `npm test`(GitHub Actions CI)는 같은 저장소에 있는 다른 웹앱(살림왕) 테스트예요.
+- **품질 규칙 (1.23 M)**
+  - 시작 작업: `AppContainer.start()`의 이름 붙은 작업은 **21개까지(새 작업 0)**, 달력이 첫 달을 그리기 전에는 **7개 이하**예요. 나머지는 `afterFirstFrame()`에서 돌아요(`perf/StartupBudgetTest`).
+  - 화면 사진 시험: 묶음마다 `screenshots/<묶음>ScreenshotTest.kt`에 `class XScreenshotTest : ScreenshotBase()`를 만들고, `@RunWith(AndroidJUnit4::class) @GraphicsMode(NATIVE) @Config(sdk = [35])`를 붙여요. 번호대는 묶음끼리 겹치지 않게 정해요. 기다림은 `settle()`(조건 대기, 1초 상한)과 `reach()`(글자를 찾을 때까지 5초)에 맡기고 `Thread.sleep`을 새로 쓰지 않아요.
+  - 나눠 돌리기: `-Pbamnat.testSet=unit|shots-a|shots-b|api`(CI 네 조각). 안드로이드 8·11·13·15에서 도는 `rules/ApiLevelSmokeTest`·`AlarmMatrixTest`는 `api`에서만 돌아요(여러 판 샌드박스가 한 JVM에 섞이면 다른 시험의 SQLite가 죽어요). 아무 값 없이 돌리면 빠져요, `-Pbamnat.testForks=N`(기본은 코어 절반, 1~3). 느린 시험 표는 `python3 tools/slow_tests.py app/build/test-results/testDebugUnitTest`로 봐요.
+  - 크기: `python3 tools/app_size.py <apk|aab>`로 봐요. 예산은 APK 9.5MB, AAB 23.5MB이고, 넘으면 출시 빌드가 멈춰요. 글자 인식(ML Kit 한국어)은 앱에 넣지 않고 Google Play 서비스가 처음 쓸 때 내려받아요. 언어는 한국어만 넣어요(`localeFilters`).
+  - 린트: 새 오류가 생기면 멈춰요. 예전 것은 `app/lint-baseline.xml`, `wear/lint-baseline.xml`에 있고, 고친 뒤 `:app:updateLintBaseline :wear:updateLintBaseline`으로 줄여요.
+  - 백업 파일은 형식 3(zip: `backup.json`, `photos/…`, `sha256.txt`)이에요. 옛 `.json` 백업도 그대로 열려요(`data/BackupArchive.kt`).
+- **Maven Central이 429(요청이 많다)로 막힐 때**: `~/.gradle/init.d/central-mirror.gradle.kts`에 `https://maven-central.storage-download.googleapis.com/maven2/` 저장소를 `pluginManagement`와 `dependencyResolutionManagement` 맨 앞에 넣으면 받아져요. 내려받기는 한 번에 하나씩 하고, 빌드는 `gradle --no-daemon -Pkotlin.compiler.execution.strategy=in-process`로 돌려요. Robolectric의 안드로이드 jar(API 26 등)도 막히면 `-Pbamnat.robolectricRepo=<같은 주소>`를 붙여요.
 - 서명한 출시 파일
 
 ```bash
@@ -164,6 +221,38 @@ shift-calendar-app/
 
 - 서버 코드를 고친 뒤에는 사용자가 Cloudflare 대시보드에서 Worker 코드를 다시 붙여 넣고 배포해요(각 서버 README의 3단계).
   Claude는 Cloudflare 토큰이 없고, 토큰을 받지도 않아요. 출시용 `worker.js`는 그 서버의 `src/index.js`와 같은 내용이에요.
+
+### 6-1. 밖에서 여는 파일 (1.23.0, CAL-47)
+
+메신저나 파일 앱에서 받은 파일을 누르거나 "공유"로 보내면 밤낮이 목록에 나와요(`MainActivity` intent-filter → `IncomingFiles`).
+무엇인지는 파일 안을 읽어 정하고, 바꾸기 전에 늘 먼저 물어요. 첫 설정 전이면 첫 설정의 '파일로 시작하기', 뒤면 설정 > 데이터 > 파일 불러오기와 같은 길이에요.
+
+| 파일 | 만드는 곳 | 이름 | MIME | 여는 곳 |
+|---|---|---|---|---|
+| 백업 | 설정 > 데이터 > 파일로 내보내기, 자동 백업 | `밤낮-백업-날짜.json` | `application/json` | 첫 설정 전: 첫 설정에서 복원 / 뒤: 설정 > 데이터 |
+| 잠근 백업(비밀번호) | 같은 곳, 비밀번호를 넣었을 때 | `밤낮-백업-날짜.json` | `application/json` | 위와 같고, 비밀번호를 먼저 물음 |
+| 회사 근무 파일 | 설정 > 데이터 > 회사 설정 보내기 | `밤낮-회사설정-회사.json` | `application/json` | 첫 설정 전: 회사 설정으로 시작 / 뒤: 회사 설정 적용 창 |
+| `.bamnat` 이름의 위 파일 | 사람이 이름을 바꾼 경우 | `*.bamnat` | 아무거나 | 위와 같음(이름으로도 받음) |
+
+- 받는 동작: `VIEW`(눌러 열기)와 `SEND`(공유로 보내기). `text/plain`은 받지 않아요(아무 글 공유에나 밤낮이 뜨지 않게).
+- 확장자는 `.json` 그대로 둬요. 카카오톡 등 메신저가 모르는 확장자를 막거나 이름을 바꾸는 일이 있어서예요.
+
+### 6-2. 쉬운 사용·관측성 (1.23.0 묶음 N, EASY-01~10·OBS-01~03)
+
+사용자 결정 D58: 기능은 줄이지 않고 기본으로 켜 두되, 사실은 한 곳에 한 번만 두고 모르는 건 필요한 순간에 하나씩 물어요.
+설계는 프로젝트 파일(git 밖)의 `research/1.23-N-설계.md`, 개발계획은 `계획/1.23-N-쉬운-사용-관측성-개발계획.md`, 결정은 그 문서의 N-D1~N-D8이에요.
+
+| 층 | core (순수 Kotlin) | app | 하는 일 |
+|---|---|---|---|
+| 둘러보기 | `example/Browse`, `ExamplePlan` | `BrowseStore`, `ExampleCalendar`, `ui/guide/WriteGate` | 첫 화면 '우선 둘러볼게요' → 직군별 예시 달력(`PersonalCalendar.EXAMPLE`, 알람·백업·공유·통계 없음). 쓰기 동작은 `WriteGate.request`가 한 곳에서 잡아 '내 정보로 시작할까요?'를 물어요 |
+| 사실 | `profile/Profile`, `FactCatalog`, `FactText` | `ProfileStore`, `ProfileAnswers` | 값은 늘 원래 저장소(급여 설정, 근무 종류 등)에 두고, `Profile.read`가 읽어서 사실 목록을 만들어요. 따로 두는 건 출처·확신도 메타(`profile/<달력>.json`)뿐 |
+| 질문 | `Needs`, `FeatureNeeds`, `AskScheduler`, `Questions` | `AskStore`, `ui/guide/AskCard` | 켜진 기능에 빠진 사실만, 하루 2개(`PER_DAY`), '나중에' 7일, 두 번 미루면 내 정보에만. 좋은 순간(첫 야간 뒤 등)은 그 사실을 먼저 |
+| 내 정보 | `StatusBoard` | `ui/guide/ProfileScreen`(설정 맨 위 카드) | 한 화면에서 보고 바로 고침. '모두 처음부터'는 값을 지우지 않고 `Profile.RECHECK`로 다시 묻고, 7일 안에 되돌려요 |
+| 한 일 | `journal/Journal` | `JournalStore`(noBackupFilesDir/journal.jsonl), `ui/guide/JournalScreen` | 밤낮이 알아서 한 일을 종류·작은 숫자로만 적음(금액·글 없음), 90일 보관, 백업에 안 들어감. 달력 위 줄은 알람·위젯 말고 한 일이 있는 날만 |
+
+- 새 기록 지점을 더할 때: `JournalKind`에 종류를 더하고, 같은 값이 반복되면 `noteIfChanged`를 써요. detail은 숫자와 `일치개번판시분주달회째`만 받아요.
+- 새 기능이 사실을 필요로 하면 `FeatureNeeds`에 기능 id → 사실을 적으면 질문 카드와 '이걸 알려 주면 시작해요'가 따라와요.
+- 예시 달력의 값은 휴대폰 밖으로 나가지 않아요(`ExampleCalendarGuardTest`가 지켜요).
 
 ## 7. git 밖에 있는 것 (사용자가 새 프로젝트에 파일로 올림)
 

@@ -16,7 +16,7 @@ import java.time.LocalTime
 /**
  * [FEAT-18] 잠금 화면 '오늘 근무': a quiet notice that stays, so today's and tomorrow's shift can be
  * read on the lock screen without unlocking. Android has no lock-screen widgets on phones, so this
- * stands in for one. Off by default; turned on in 설정 › 알림. It moves on at midnight with the widgets.
+ * stands in for one. Off by default; turned on in 설정 › 알림과 잠. It moves on at midnight with the widgets.
  */
 object TodayShiftNotice {
     const val ID = 7314

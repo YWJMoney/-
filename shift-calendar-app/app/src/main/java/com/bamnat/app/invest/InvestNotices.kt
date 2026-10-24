@@ -48,7 +48,7 @@ fun AppContainer.invest(calendarId: String): InvestRepository =
 
 /** [INV-01] The user's calendars that are investor calendars, main first. */
 fun AppContainer.investCalendars(): List<PersonalCalendar> =
-    calendars.calendars.value.filter { calendars.styleOf(it.id, settingsRepository.current.workStyle) == WorkStyle.INVEST }
+    calendars.calendars.value.filterNot { it.isExample }.filter { calendars.styleOf(it.id, settingsRepository.current.workStyle) == WorkStyle.INVEST }
 
 /**
  * [INV-08][INV-14] The investor's alarms and date notices, on the app's own notice channels: one
@@ -262,7 +262,7 @@ object InvestNotices {
     }
 
     /** [INV-08] Re-plans the next investor notice whenever an alarm or date changes, for as long as the app runs. */
-    fun follow(c: AppContainer) = c.appScope.launch {
+    suspend fun follow(c: AppContainer) {
         plans(c).collect { reschedule(c.appContext, it) }
     }
 }

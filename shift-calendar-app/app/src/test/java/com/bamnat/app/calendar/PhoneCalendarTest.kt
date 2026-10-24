@@ -38,11 +38,20 @@ class PhoneCalendarTest {
         shadowOf(app).grantPermissions(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
     }
 
+    /**
+     * [QA-04] The app's own [PhoneCalendarSync] starts with the app and, 3 s after the last change, deletes every
+     * 밤낮 calendar the settings do not ask for: here, the one these tests write by hand. Tests that use
+     * [PhoneCalendar] directly stop their app's background work first. (An earlier test's app stops with its
+     * test: BamnatApp.onTerminate, TestIsolationTest.)
+     */
+    private fun stopTheAppsBackgroundWork() = app.container.appScope.coroutineContext[kotlinx.coroutines.Job]!!.children.forEach { it.cancel() }
+
     private fun event(day: Int, title: String = "주간") = LocalDate.of(2026, 10, day).let {
         ShiftEvent("$it", title, it.atTime(9, 0), it.atTime(18, 0), it, null)
     }
 
     @Test fun writesALocalCalendarAndKeepsItInStep() {
+        stopTheAppsBackgroundWork()
         val phone = PhoneCalendar(app)
         assertEquals(PhoneCalendar.Result(3, 0, 0), phone.write("main", "밤낮 근무", 0xFFC2A36B.toInt(), listOf(event(1), event(2), event(3))))
         val cal = store.calendars.values.single()
@@ -61,6 +70,7 @@ class PhoneCalendarTest {
     }
 
     @Test fun theImportDoesNotOfferTheAppsOwnCalendar() {
+        stopTheAppsBackgroundWork()
         PhoneCalendar(app).write("main", "밤낮 근무", 0, listOf(event(1)))
         store.calendars[99] = ContentValues().apply {
             put(CalendarContract.Calendars._ID, 99L); put(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, "내 캘린더")

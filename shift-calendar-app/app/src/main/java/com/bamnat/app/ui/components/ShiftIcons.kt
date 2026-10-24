@@ -32,6 +32,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bamnat.app.ui.theme.CalendarColors
+
+import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.model.Leave
 import com.bamnat.core.model.LeaveKind
 import com.bamnat.core.model.ShiftIcon
@@ -57,23 +60,30 @@ val ShiftIcon.vector: ImageVector
         ShiftIcon.STAR -> Icons.Filled.Star
     }
 
-/** Colour of leave marks [FEAT-10]: violet for paid, grey for unpaid. */
-fun leaveColor(kind: LeaveKind): Color = when (kind) {
-    LeaveKind.ANNUAL -> Color(0xFF7048E8)
-    LeaveKind.PAID -> Color(0xFF1C7ED6)
-    LeaveKind.UNPAID -> Color(0xFF868E96)
+/**
+ * Colour of leave marks [FEAT-10]: violet for 연차, blue for other paid leave, grey for unpaid, teal for 보상휴가
+ * [PAYX-18]. [VIS-03] Read from the theme's tokens, so the dark theme gets its lighter set; places without a
+ * theme (widgets, images) pass LightCalendarColors or DarkCalendarColors themselves; there is no default, so no
+ * caller inside the app gets the light set in the dark theme by leaving it out.
+ */
+fun leaveColor(kind: LeaveKind, colors: CalendarColors): Color = when (kind) {
+    LeaveKind.ANNUAL -> colors.leaveAnnual
+    LeaveKind.PAID -> colors.leavePaid
+    LeaveKind.UNPAID -> colors.leaveUnpaid
+    LeaveKind.COMP -> colors.leaveComp
 }
 
 /** Small square with 연/반/¼, like the 잔·특·대 marks. */
 @Composable
 fun LeaveMark(leave: Leave, size: Dp = 16.dp) {
+    val color = leaveColor(leave.kind, LocalCalendarColors.current)
     Box(
-        Modifier.size(size).clip(RoundedCornerShape(size / 4)).background(leaveColor(leave.kind)),
+        Modifier.size(size).clip(RoundedCornerShape(size / 4)).background(color),
         contentAlignment = Alignment.Center,
     ) {
         // Sized to the square, not the font setting, so a big font cannot spill out of it.
         val fs = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.6f).toSp() }
-        Text(leave.short, color = contentColorOn(leaveColor(leave.kind)), fontSize = fs,
+        Text(leave.short, color = contentColorOn(color), fontSize = fs,
             fontWeight = FontWeight.Bold, lineHeight = fs, maxLines = 1)
     }
 }

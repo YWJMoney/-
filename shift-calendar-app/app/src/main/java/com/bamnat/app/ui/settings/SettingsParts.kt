@@ -27,7 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material3.Badge
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -231,7 +231,7 @@ internal fun GroupRow(icon: ImageVector, title: String, summary: String, selecte
             .fillMaxWidth()
             .heightIn(min = 64.dp)
             .clip(MaterialTheme.shapes.medium)
-            .background(if (selected) colors.secondaryContainer else colors.surface)
+            .background(if (selected) com.bamnat.app.ui.components.Selection.container else colors.surface) // [VIS-03]
             .clickable(role = Role.Button, onClick = onClick)
             .semantics { this.selected = selected }
             .padding(horizontal = 12.dp, vertical = 10.dp),

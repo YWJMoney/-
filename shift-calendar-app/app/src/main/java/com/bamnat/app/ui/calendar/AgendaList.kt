@@ -103,7 +103,7 @@ internal fun AgendaList(
 @Composable
 private fun WeekRow(w: AgendaRow.Week, focus: CalendarFocus) {
     val total = when (focus) {
-        CalendarFocus.SHIFTS -> w.minutes.takeIf { it > 0 }?.let { HoursFormat.hours(it.toDouble()) + "시간" }
+        CalendarFocus.SHIFTS -> w.minutes.takeIf { it > 0 }?.let { HoursFormat.korean(it) }
         CalendarFocus.JOBS -> if (w.jobs > 0) "일감 ${w.jobs}건 · ${Fmt.wonShort(w.jobEarned)}" else null
         CalendarFocus.SALES -> w.sales.takeIf { it > 0 }?.let { "매출 ${Fmt.wonShort(it)}" }
         CalendarFocus.INVEST -> null

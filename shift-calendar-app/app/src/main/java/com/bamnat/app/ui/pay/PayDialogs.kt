@@ -1,5 +1,8 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.core.pay.Unknowns
+import java.time.LocalDate
+import com.bamnat.core.pay.PayScale
 import com.bamnat.app.ui.components.labelWidth
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,7 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -40,6 +43,7 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.core.pay.Cadence
 import com.bamnat.core.pay.EditScope
 import com.bamnat.core.pay.MonthPay
+import com.bamnat.core.pay.OrdinaryGuess
 import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayLine
 import com.bamnat.core.pay.PayProfile
@@ -65,6 +69,48 @@ internal fun MoneyField(
         suffix = { Text("원") },
         // [PAYS-04] Read back in words (250만 8천원) so a missing or extra zero shows at a glance.
         supportingText = value?.let { { Text("${won(it)} · ${com.bamnat.core.pay.wonWords(it)}") } },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = modifier.fillMaxWidth(),
+    )
+}
+
+/**
+ * [PAYX-23] 월 소정근로시간 typed straight in, for a company that uses e.g. 182 or 195 hours: digits only, kept
+ * within 100~320 hours, so it needs no row of − taps.
+ */
+@Composable
+internal fun MonthlyHoursField(hours: Int, onChange: (Int) -> Unit, modifier: Modifier = Modifier) {
+    var text by remember(hours) { mutableStateOf(hours.toString()) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { s ->
+            text = s.filter(Char::isDigit).take(3)
+            text.toIntOrNull()?.takeIf { it in 100..320 }?.let(onChange)
+        },
+        label = { Text("직접 넣기") },
+        suffix = { Text("시간") },
+        supportingText = { Text(if (text.toIntOrNull() in 100..320) "통상시급 = 통상임금 ÷ ${text}시간" else "100~320시간 사이로 넣어요") },
+        isError = text.toIntOrNull() !in 100..320,
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = modifier.width(180.dp),
+    )
+}
+
+/** [PAYX-25] An amount in won typed in, e.g. 작년 총급여; empty is null. */
+@Composable
+internal fun WonField(label: String, value: Long?, onChange: (Long?) -> Unit, modifier: Modifier = Modifier, hint: String? = null) {
+    var text by remember(value) { mutableStateOf(value?.toString().orEmpty()) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { s ->
+            text = s.filter(Char::isDigit).take(11)
+            onChange(text.toLongOrNull())
+        },
+        label = { Text(label) },
+        suffix = { Text("원") },
+        supportingText = { Text(text.toLongOrNull()?.let { won(it) } ?: hint.orEmpty()) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         modifier = modifier.fillMaxWidth(),
@@ -215,6 +261,11 @@ fun RaiseDialog(vm: PayViewModel, profile: PayProfile, target: ValueTarget, onDi
     var text by remember { mutableStateOf(existing?.let { it.percent?.toString() ?: it.amount?.toString() } ?: "") }
     var unit by remember { mutableStateOf(existing?.unit ?: 10L) }
     var rounding by remember { mutableStateOf(existing?.rounding ?: Rounding.UP) }
+    var scale by remember { mutableStateOf(false) }
+    if (scale) {
+        PayScaleDialog(vm, profile, onDismiss = { scale = false; onDismiss() })
+        return
+    }
     val rule = runCatching {
         val n = text.toDouble()
         require(n > 0)
@@ -229,6 +280,8 @@ fun RaiseDialog(vm: PayViewModel, profile: PayProfile, target: ValueTarget, onDi
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("입력한 값이 없는 해는 이 규칙으로 올려서 계산해요. 실제로 받은 금액을 입력하면 그 값이 우선이에요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // [PAYX-20] A company with a 호봉표 raises by step, not by a rate.
+                if (target == ValueTarget.Base) OutlinedButton(onClick = { scale = true }) { Text("호봉표로 넣기") }
                 Text("인상되는 달", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     (1..12).forEach { m -> FilterChip(selected = month == m, onClick = { month = m }, label = { Text("${m}월") }) }
@@ -400,7 +453,8 @@ fun AddBonusDialog(
                 Row(Modifier.fillMaxWidth().clickable { ordinary = !ordinary }, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("통상임금에 포함", style = MaterialTheme.typography.bodyLarge)
-                        Text("정해진 조건으로 정기적으로 받는 상여는 재직 조건이 있어도 통상임금이에요(대법원 2024.12.19. 판결). 성과에 따라 달라지면 꺼 주세요.",
+                        Text("정해진 조건으로 정기적으로 받는 상여는 재직 조건이 있어도 통상임금이에요(대법원 2024.12.19. 판결). 성과에 따라 달라지면 꺼 주세요. " +
+                            "성과급에 꼭 주는 최소 금액이 있으면 그 금액만 따로 상여로 넣고 켜요(고용노동부 통상임금 지침 2025.2.6.).",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(checked = ordinary, onCheckedChange = { ordinary = it })
@@ -431,31 +485,36 @@ fun AddItemDialog(onDismiss: () -> Unit, allowUnknownAmount: Boolean = false, on
     var amount by remember { mutableStateOf<Long?>(null) }
     var cadence by remember { mutableStateOf(Cadence.MONTHLY) }
     var ordinary by remember { mutableStateOf(false) }
+    // 순번 285: the switch follows the name until the user sets it (OrdinaryGuess).
+    var ordinaryTouched by remember { mutableStateOf(false) }
     var fixedOtHours by remember { mutableStateOf(0) }
+    fun guess() { if (!ordinaryTouched) ordinary = OrdinaryGuess.of(name, cadence) ?: false }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("수당 추가") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it.take(20) }, label = { Text("이름") },
+                OutlinedTextField(value = name, onValueChange = { name = it.take(20); guess() }, label = { Text("이름") },
                     placeholder = { Text("예: 나이트 수당") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 MoneyField(if (cadence == Cadence.MONTHLY) "한 달 금액" else "1회 금액", amount, { amount = it },
                     placeholder = if (allowUnknownAmount) "모르면 비워 두세요" else "")
                 Text("언제 받나요?", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(Cadence.MONTHLY, Cadence.PER_WORK_DAY, Cadence.PER_NIGHT_SHIFT).forEach { c ->
-                        FilterChip(selected = cadence == c, onClick = { cadence = c }, label = { Text(c.label) })
+                        FilterChip(selected = cadence == c, onClick = { cadence = c; guess() }, label = { Text(c.label) })
                     }
-                }
-                Row(Modifier.fillMaxWidth().clickable { ordinary = !ordinary }, verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("통상임금에 포함", style = MaterialTheme.typography.bodyLarge)
-                        Text("매달 고정으로 받는 수당이면 켜 주세요. 연장·야간 수당이 함께 올라가요.",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(checked = ordinary, onCheckedChange = { ordinary = it }, enabled = fixedOtHours == 0)
                 }
                 if (cadence == Cadence.MONTHLY) {
+                    Row(Modifier.fillMaxWidth().clickable(enabled = fixedOtHours == 0) { ordinary = !ordinary; ordinaryTouched = true },
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("통상임금에 포함", style = MaterialTheme.typography.bodyLarge)
+                            Text("매달 고정으로 받는 수당이면 켜 주세요. 연장·야간 수당이 함께 올라가요." +
+                                if (!ordinaryTouched && OrdinaryGuess.of(name, cadence) != null) " 이름을 보고 미리 골라 두었어요." else "",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = ordinary, onCheckedChange = { ordinary = it; ordinaryTouched = true }, enabled = fixedOtHours == 0)
+                    }
                     // [PAY-05] 고정 연장수당: prepaid overtime, never 통상임금.
                     Text("연장수당을 미리 주는 고정 수당인가요?", style = MaterialTheme.typography.labelLarge)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -473,9 +532,57 @@ fun AddItemDialog(onDismiss: () -> Unit, allowUnknownAmount: Boolean = false, on
         },
         confirmButton = {
             Button(
-                onClick = { onAdd(name, amount?.takeIf { it > 0 }, cadence, ordinary && fixedOtHours == 0, if (cadence == Cadence.MONTHLY) fixedOtHours * 60 else 0) },
+                onClick = { onAdd(name, amount?.takeIf { it > 0 }, cadence, ordinary && fixedOtHours == 0 && cadence == Cadence.MONTHLY, if (cadence == Cadence.MONTHLY) fixedOtHours * 60 else 0) },
                 enabled = name.isNotBlank() && (allowUnknownAmount || (amount ?: 0) > 0),
             ) { Text("추가") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
+
+/**
+ * [PAYX-20] 호봉표: the company's table pasted as text, the step now and the month a step goes up. Applied, it
+ * becomes the 기본급's dated values from [PayScale.since] on (the table is the raise, so no yearly rule).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun PayScaleDialog(vm: PayViewModel, profile: PayProfile, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf("") }
+    var stepMonth by remember { mutableStateOf(1) }
+    var step by remember { mutableStateOf(1) }
+    val since = remember { LocalDate.now().withDayOfMonth(1) }
+    val steps = remember(text) { PayScale.parse(text) }
+    val scale = runCatching { PayScale(steps, stepMonth, step.coerceIn(steps.keys.minOrNull() ?: 1, steps.keys.maxOrNull() ?: 1), since) }.getOrNull()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("호봉표로 기본급 넣기") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("한 줄에 한 호봉씩 붙여 넣어요. 예: 1호봉 2,400,000", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(text, { text = it.take(4000) }, label = { Text("호봉표") }, minLines = 4, modifier = Modifier.fillMaxWidth())
+                if (steps.isNotEmpty()) {
+                    Text("지금 호봉", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        steps.keys.sorted().forEach { n -> FilterChip(selected = step == n, onClick = { step = n }, label = { Text("${n}호봉") }) }
+                    }
+                }
+                Text("승급하는 달", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    (1..12).forEach { m -> FilterChip(selected = stepMonth == m, onClick = { stepMonth = m }, label = { Text("${m}월") }) }
+                }
+                scale?.let { sc ->
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    Text(sc.describe(), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    sc.values(since.plusYears(4)).take(5).forEach { v -> Fact(Fmt.month(YearMonth.from(v.from)), won(v.value)) }
+                }
+            }
+        },
+        confirmButton = {
+            Button(enabled = scale != null, onClick = {
+                scale?.let { sc -> vm.update { p -> p.copy(base = sc.applyTo(p.base, since.plusYears(40)), estimatedFields = p.estimatedFields - Unknowns.BASE) } }
+                onDismiss()
+            }) { Text("적용") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )

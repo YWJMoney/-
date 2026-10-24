@@ -64,7 +64,17 @@ data class ResolvedDay(
     val leaveMinutes: Int = 0,
     /** [EXTRA-01] Extra work this day, in the order the user added it. */
     val extras: List<ResolvedExtra> = emptyList(),
+    /**
+     * [DAYW-08] The shift before leave took its part: what an edit of the day's times starts from. Saving the
+     * shrunk [start]/[end]/[breakMinutes] back would let the leave come off a second time.
+     */
+    val plannedStart: LocalTime? = start,
+    val plannedEnd: LocalTime? = end,
+    val plannedBreakMinutes: Int = breakMinutes,
 ) {
+    /** [DAYW-08] True when partial leave moved the clock times, so the day has a planned and a worked span. */
+    val leaveShrunk: Boolean get() = leave != null && !leave.isFullDay && (plannedStart != start || plannedEnd != end)
+
     val isWorkDay: Boolean get() = scheduledMinutes > 0 || (start != null && end != null)
     val isOff: Boolean get() = !isWorkDay
     /**
@@ -171,20 +181,26 @@ class ScheduleResolver(
         val fullScheduled = if (start != null && end != null) WorkTime.workMinutes(start, end, breakMinutes) else 0
         // Leave only counts on a day with work to take off. Partial leave comes off the end of
         // the shift and the break shrinks in proportion, so 반차 of 09~18 (1h break) is 09~13:30.
+        // 오전 반차 comes off the start instead (13:30~18), unless that would start after midnight:
+        // the day's work stays on its own date, so such a shift keeps its leave at the end.
         val leave = entry?.leave?.takeIf { fullScheduled > 0 }
         val leaveMinutes = leave?.let { Math.round(fullScheduled * it.quarters / 4.0).toInt() } ?: 0
+        var workStart = start
         var workEnd = end
         var workBreak = breakMinutes
         if (leave != null && start != null) {
             if (leave.isFullDay) {
+                workStart = null
                 workEnd = null
                 workBreak = 0
             } else {
                 workBreak = Math.round(breakMinutes * (4 - leave.quarters) / 4.0).toInt()
-                workEnd = start.plusMinutes((fullScheduled - leaveMinutes + workBreak).toLong())
+                val off = leaveMinutes + breakMinutes - workBreak
+                val later = date.atTime(start).plusMinutes(off.toLong())
+                if (leave.offStart && later.toLocalDate() == date) workStart = later.toLocalTime()
+                else workEnd = start.plusMinutes((fullScheduled - leaveMinutes + workBreak).toLong())
             }
         }
-        val workStart = if (workEnd == null) null else start
         val scheduled = fullScheduled - leaveMinutes
         val shiftFrom = if (workStart != null && workEnd != null) date.atTime(workStart) else null
         val shiftTo = shiftFrom?.let { ResolvedDay.endAfter(it, workEnd!!) }
@@ -205,6 +221,9 @@ class ScheduleResolver(
             leave = leave,
             leaveMinutes = leaveMinutes,
             extras = entry?.extras?.takeIf { it.isNotEmpty() }?.let { placeExtras(date, it, shiftFrom, shiftTo) }.orEmpty(),
+            plannedStart = start,
+            plannedEnd = end,
+            plannedBreakMinutes = breakMinutes,
         )
     }
 

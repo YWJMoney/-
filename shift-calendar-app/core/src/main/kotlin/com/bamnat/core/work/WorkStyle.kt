@@ -31,7 +31,7 @@ enum class WorkStyle(val label: String, val description: String, val examples: S
 
     /** What the money tab calls the main income line. */
     val incomeLabel: String get() = when (this) {
-        SHIFT, DAY, HOURLY -> "급여 (예상)"
+        SHIFT, DAY, HOURLY -> "급여 (세전 예상)"
         FIELD -> "일감 수입"
         BUSINESS -> "가게 순수익"
         INVEST -> "투자 손익"

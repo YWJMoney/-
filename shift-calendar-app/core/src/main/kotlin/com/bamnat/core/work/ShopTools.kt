@@ -129,10 +129,22 @@ object LaborCost {
         fun ratio(sales: Long): Int? = if (sales <= 0) null else (total * 100.0 / sales).roundToLong().toInt()
     }
 
-    fun employerInsurance(pay: Long): Long {
-        val health = (pay * HEALTH).toLong() / 10 * 10
-        return (pay * PENSION).toLong() / 10 * 10 + health + (health * CARE_OF_HEALTH).toLong() / 10 * 10 + (pay * EMPLOYMENT).toLong() / 10 * 10
+    /**
+     * [LAWX-03] The employer's share on [on]: the same half of the year's rates the employee pays
+     * ([com.bamnat.core.pay.TakeHome.sharesOn], so 2027 국민연금 5% follows 국민연금법 부칙 제4조), plus 고용안정·
+     * 직업능력개발 0.25% (고용보험료징수법 시행령 제12조 제1항 제1호 가목, 150명 미만). Without [on], the 2026 rates.
+     */
+    fun employerInsurance(pay: Long, on: java.time.LocalDate? = null): Long {
+        val sh = on?.let { com.bamnat.core.pay.TakeHome.sharesOn(it) }
+        val health = (pay * (sh?.health ?: HEALTH)).toLong() / 10 * 10
+        val pension = sh?.let { (pay / 1_000 * 1_000).coerceIn(it.baseMin, it.baseMax) * it.pension } ?: (pay * PENSION)
+        val employment = sh?.let { it.employment + STABILITY } ?: EMPLOYMENT
+        return pension.toLong() / 10 * 10 + health + (health * (sh?.careOfHealth ?: CARE_OF_HEALTH)).toLong() / 10 * 10 +
+            (pay * employment).toLong() / 10 * 10
     }
+
+    /** 고용안정·직업능력개발사업 보험료율, 상시근로자 150명 미만 (사업주만 냄). */
+    const val STABILITY = 0.0025
 
     fun line(s: Staff, month: YearMonth, breaks: Boolean): Line {
         val days = (1..month.lengthOfMonth()).map { month.atDay(it) }
@@ -141,7 +153,7 @@ object LaborCost {
         val week = HourlyWeek(month.atDay(1), s.weeklyMinutes(breaks), 0)
         val sundays = days.count { it.dayOfWeek == DayOfWeek.SUNDAY }
         val holiday = if (s.holidayPay) (week.holidayPayMinutes / 60.0 * s.hourlyWage * sundays).roundToLong() else 0
-        val insurance = if (s.insured) employerInsurance(base + holiday) else 0
+        val insurance = if (s.insured) employerInsurance(base + holiday, month.atDay(1)) else 0
         return Line(s, minutes, base, holiday, insurance)
     }
 

@@ -361,6 +361,9 @@ fun CompanyDetailScreen(
                             vote = votes[su.id] ?: applied?.takeIf { it.companyId == p.id && it.setup == su.id }?.vote,
                             onVote = { ok, why -> vm.vote(p, su, ok, why) { e -> error = e } },
                             onTalk = { vm.talk.show(p.id, su.id, "${p.name} · ${su.dept.ifEmpty { "회사 전체" }}") },
+                            // [PLZ-10][PLZ-04] My own month with these rules, and how the rule got here.
+                            onTry = if (su.hasPay) ({ vm.tryPay(su) }) else null,
+                            onHistory = if (su.adopted && (su.version ?: 1) > 1) ({ vm.showHistory(p, su) }) else null,
                         )
                     }
                     SoftCard {
@@ -387,6 +390,9 @@ fun CompanyDetailScreen(
     }
 
     TalkSheet(vm.talk)
+    TrialSheet(vm.trial.collectAsStateWithLifecycle().value, onClose = vm::closeTrial,
+        onVote = { ok -> page?.setups?.firstOrNull { it.id == vm.trial.value?.setup }?.let { su -> vm.vote(page, su, ok, if (ok) null else "wrong") { e -> error = e } } })
+    HistorySheet(vm.history.collectAsStateWithLifecycle().value, onClose = vm::closeHistory)
     val pick = choosing
     if (pick != null && page != null) {
         PhaseSheet(
@@ -407,6 +413,8 @@ private fun SetupCard(
     vote: Boolean? = null,
     onVote: ((Boolean, String?) -> Unit)? = null,
     onTalk: (() -> Unit)? = null,
+    onTry: (() -> Unit)? = null,
+    onHistory: (() -> Unit)? = null,
 ) {
     var more by rememberSaveable(s.id) { mutableStateOf(false) }
     val main = s.lines.filter { (label, _) -> label == "근무" || label.startsWith("순서") || label == "연장·휴무일 근무" }
@@ -419,6 +427,8 @@ private fun SetupCard(
             }
             TrustLine(s.trust, s.agree, s.persons, s.bad, s.adopted)
             if (!s.adopted) PointsBar(s.points, s.threshold)
+            // [PLZ-08] Who stands behind it, in the names they chose.
+            WhoLine(s.senders, s.checked, s.uses, s.by, s.checkedLong)
             main.forEach { (label, text) -> SetupLine(label, text) }
             if (pay.isNotEmpty()) {
                 Row(
@@ -448,9 +458,15 @@ private fun SetupCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
                 VoteButtons(vote, onVote)
             }
+            if (onTry != null || onHistory != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    onTry?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("내 월급으로 시험") } }
+                    onHistory?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("바뀐 기록") } }
+                }
+            }
             if (onTalk != null) {
                 TextButton(onClick = onTalk, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-                    Text(if (s.posts > 0) "토론 ${s.posts}개 보기" else "토론 열기")
+                    Text(if (s.posts > 0) "토론 ${s.posts}개 보기 · 고치자고 제안하기" else "토론 열기 · 고치자고 제안하기")
                 }
             }
         }

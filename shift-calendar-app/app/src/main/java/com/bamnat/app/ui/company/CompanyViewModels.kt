@@ -16,6 +16,7 @@ import com.bamnat.app.company.SharedSetup
 import com.bamnat.app.data.BackupException
 import com.bamnat.app.data.CompanyShare
 import com.bamnat.app.data.CompanySummary
+import com.bamnat.app.ui.pay.hourlyWeek
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.schedule.PatternTimeline
 import com.bamnat.core.pay.WageType
@@ -197,6 +198,10 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
         viewModelScope.launch {
             try {
                 val result = c.companyShare.apply(setup.text, rotation = true, todayStep = todayStep)
+                // [PLZ-08] 쓰는 사람: this phone now uses this rule set, and no longer the one before.
+                val before = c.companyStore.applied.value
+                if (before != null && before.setup != setup.id) launch { runCatching { c.companyApi.use(c.companyStore.device, before.company, before.setup, false) } }
+                launch { runCatching { c.companyApi.use(c.companyStore.device, page.id, setup.id, true) } }
                 c.companyStore.setApplied(AppliedSetup(page.id, page.name, setup.dept, setup.id, setup.version, setup.adopted, Instant.now()))
                 c.companyStore.setDraft(null)
                 c.companyStore.pendingPay = if (result.pendingPay) setup.text else null
@@ -237,6 +242,79 @@ class CompanyDetailViewModel(private val c: AppContainer, private val id: String
 
     /** [COMM-06] The talk on one setup, while its sheet is open. */
     val talk = TalkHolder(c, viewModelScope)
+
+    /** [PLZ-10] 내 월급으로 시험 of one setup, while its sheet is open. */
+    private val _trial = MutableStateFlow<Trial?>(null)
+    val trial: StateFlow<Trial?> = _trial.asStateFlow()
+
+    fun tryPay(setup: SharedSetup, month: YearMonth = YearMonth.now()) {
+        _trial.value = Trial(setup.id, month, loading = true)
+        viewModelScope.launch { _trial.value = payTrial(c, setup.text, setup.id, month) }
+    }
+
+    fun closeTrial() {
+        _trial.value = null
+    }
+
+    /** [PLZ-04] The versions of one department's rule, while its sheet is open. */
+    private val _history = MutableStateFlow<HistoryState?>(null)
+    val history: StateFlow<HistoryState?> = _history.asStateFlow()
+
+    fun showHistory(page: CompanyPage, setup: SharedSetup) {
+        _history.value = HistoryState(setup.dept.ifEmpty { "회사 전체" }, null)
+        viewModelScope.launch {
+            _history.value = try {
+                HistoryState(setup.dept.ifEmpty { "회사 전체" }, c.companyApi.history(page.id, setup.id))
+            } catch (e: CompanyException) {
+                HistoryState(setup.dept.ifEmpty { "회사 전체" }, null, companyProblem(e.code, e.field))
+            }
+        }
+    }
+
+    fun closeHistory() {
+        _history.value = null
+    }
+}
+
+data class HistoryState(val title: String, val versions: List<com.bamnat.app.company.RuleVersion>?, val error: String? = null)
+
+/**
+ * [PLZ-10] One month's pay worked out on the phone twice, with the user's own rules and with a shared
+ * setup's, line by line. Nothing leaves the phone (결정 D36); [note] says why it could not be done.
+ */
+data class Trial(
+    val setup: String,
+    val month: YearMonth,
+    val loading: Boolean = false,
+    val now: Long = 0,
+    val then: Long = 0,
+    val lines: List<TrialLine> = emptyList(),
+    val note: String? = null,
+) {
+    val diff: Long get() = then - now
+}
+
+data class TrialLine(val label: String, val now: Long, val then: Long)
+
+internal suspend fun payTrial(c: AppContainer, text: String, setup: String, month: YearMonth): Trial {
+    val mine = c.payStore.profile.value ?: return Trial(setup, month, note = "내 급여 설정이 없어 비교할 수 없어요. 급여 설정을 먼저 해 주세요")
+    val trial = try {
+        c.companyShare.trial(text)
+    } catch (e: Exception) {
+        null
+    } ?: return Trial(setup, month, note = "이 규칙에는 급여 계산 방식이 없어 근무표만 비교할 수 있어요")
+    val snapshot = c.scheduleRepository.snapshot.first()
+    val settings = c.settingsRepository.current
+    val calc = com.bamnat.core.pay.PayCalculator()
+    return runCatching {
+        val a = calc.calculate(mine.hourlyWeek(settings), month, snapshot.resolver::resolve, checks = false)
+        val b = calc.calculate(trial.hourlyWeek(settings), month, snapshot.resolver::resolve, checks = false)
+        val nowBy = a.lines.groupBy { it.label }.mapValues { (_, l) -> l.sumOf { it.amount } }
+        val thenBy = b.lines.groupBy { it.label }.mapValues { (_, l) -> l.sumOf { it.amount } }
+        val labels = (nowBy.keys + thenBy.keys).toList()
+        Trial(setup, month, now = a.total, then = b.total,
+            lines = labels.map { TrialLine(it, nowBy[it] ?: 0, thenBy[it] ?: 0) }.sortedByDescending { kotlin.math.abs(it.then - it.now) })
+    }.getOrElse { Trial(setup, month, note = "이 달은 계산하지 못했어요") }
 }
 
 /**
@@ -258,6 +336,19 @@ class TalkHolder(private val c: AppContainer, private val scope: kotlinx.corouti
         _open.value = null
     }
 
+    /** [SRV-04] The developer paused writing in the plaza: the talk is read only for now. */
+    val writePaused: Boolean get() = c.remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)
+
+    /** [COMM-09] 이 사람 글 안 보기: the writer's posts in every talk go, on this phone only. */
+    fun hide(p: com.bamnat.app.company.TalkPost) {
+        val mark = p.author ?: return
+        c.settingsRepository.update { s ->
+            s.copy(plazaHidden = com.bamnat.core.plaza.HideList.decode(s.plazaHidden).hide(mark, p.nick ?: "참여자 ${p.who}", System.currentTimeMillis()).encode())
+        }
+        c.telemetry.event("plaza_hide")
+        reload()
+    }
+
     fun reload() {
         val o = _open.value ?: return
         scope.launch {
@@ -270,19 +361,57 @@ class TalkHolder(private val c: AppContainer, private val scope: kotlinx.corouti
         }
     }
 
-    /** Sends a post; [done] gets what to tell the user when it was not taken. */
-    fun send(text: String, done: (String?) -> Unit) {
+    /**
+     * Sends a post; [done] gets what to tell the user when it was not taken. [parent] answers a post,
+     * [kind] is talk, question or proposal; a proposal carries its [change] lines and, with [withSetup],
+     * this phone's own setup (amounts left out) as the rule should be ([PLZ-09]).
+     */
+    fun send(
+        text: String,
+        parent: String? = null,
+        kind: String = "talk",
+        change: List<com.bamnat.app.company.ChangeLine> = emptyList(),
+        withSetup: Boolean = false,
+        done: (String?) -> Unit,
+    ) {
         val o = _open.value ?: return done(null)
         CompanyText.personal(text)?.let { return done(talkProblem(it)) }
+        change.flatMap { listOf(it.now, it.want, it.why) }.firstNotNullOfOrNull(CompanyText::personal)?.let { return done(talkProblem(it)) }
         scope.launch {
             val error = try {
-                c.companyApi.post(c.companyStore.device, o.company, o.setup, text)
-                c.telemetry.event("company_post", "sent")
+                val setup = if (kind == "proposal" && withSetup) c.companyShare.exportForServer() else null
+                if (parent == null && kind == "talk") c.companyApi.post(c.companyStore.device, o.company, o.setup, text)
+                else c.companyApi.post(c.companyStore.device, o.company, o.setup, text, parent, kind, change, setup)
+                c.telemetry.event("company_post", if (kind == "proposal") "proposal" else if (parent != null) "reply" else "sent")
                 null
             } catch (e: CompanyException) {
                 talkProblem(e.code)
             }
             if (error == null) reload()
+            done(error)
+        }
+    }
+
+    /** [PLZ-01] 맞아요 (true) or 달라요 (false) on someone's post; the same again takes it back. */
+    fun vote(id: String, ok: Boolean, done: (String?) -> Unit = {}) {
+        val o = _open.value ?: return
+        val post = o.talk?.posts?.firstOrNull { it.id == id } ?: return
+        val next = if (post.myVote == ok) null else ok
+        scope.launch {
+            val error = try {
+                val v = c.companyApi.postVote(c.companyStore.device, id, next)
+                val now = _open.value
+                if (now?.setup == o.setup && now.talk != null) {
+                    _open.value = now.copy(talk = now.talk.copy(posts = now.talk.posts.map {
+                        if (it.id == id) it.copy(agree = v.agree, disagree = v.disagree, trust = v.trust, myVote = v.myVote) else it
+                    }))
+                }
+                // A proposal people agree with can be adopted by this vote; its state comes back with the talk.
+                if (post.proposal != null) reload()
+                null
+            } catch (e: CompanyException) {
+                talkProblem(e.code)
+            }
             done(error)
         }
     }
@@ -316,7 +445,11 @@ fun talkProblem(code: String): String = when (code) {
     "body" -> "두 글자 이상, 500자 안으로 적어 주세요"
     "muted" -> "운영 원칙을 지키지 않은 글이 있어 지금은 글을 쓸 수 없어요"
     "rate_limited" -> "오늘은 글을 더 쓸 수 없어요. 내일 다시 써 주세요"
-    "own" -> "내 글은 신고할 수 없어요"
+    "own" -> "내 글에는 할 수 없어요"
+    "parent" -> "답글을 달 글이 지워졌어요"
+    "change" -> "무엇을 어떻게 바꾸자는지 한 줄 이상 적어 주세요"
+    "same" -> "지금 규칙과 같은 설정이에요. 앱 설정을 실제와 맞게 고친 뒤 보내 주세요"
+    "paused" -> com.bamnat.core.ops.ServerSwitch.pausedText(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)
     else -> companyProblem(code)
 }
 
@@ -337,8 +470,26 @@ class CompanyBoardViewModel(private val c: AppContainer) : ViewModel() {
     val query = MutableStateFlow("")
     private var asked = ""
 
+    /** [PLZ-12][PLZ-05] The job plaza and 시·도 shown (empty for all), and the order. */
+    data class Filter(val job: String = "", val region: String = "", val sort: String = "recent")
+    private val _filter = MutableStateFlow(Filter())
+    val filter: StateFlow<Filter> = _filter.asStateFlow()
+    private val _plazas = MutableStateFlow<List<com.bamnat.app.company.PlazaJob>>(emptyList())
+    val plazas: StateFlow<List<com.bamnat.app.company.PlazaJob>> = _plazas.asStateFlow()
+
+    fun setFilter(f: Filter) {
+        if (f == _filter.value) return
+        _filter.value = f
+        tabs.values.forEach { it.value = Tab() }
+        more()
+    }
+
+    /** [PLZ-08] 내 활동 and the plaza name, while its sheet is open. */
+    val activity = ActivityHolder(c, viewModelScope)
+
     init {
         viewModelScope.launch { _terms.value = c.loadTerms() }
+        viewModelScope.launch { _plazas.value = runCatching { c.companyApi.plazas() }.getOrDefault(emptyList()) }
         more(false)
         viewModelScope.launch {
             query.collectLatest { typed ->
@@ -370,17 +521,171 @@ class CompanyBoardViewModel(private val c: AppContainer) : ViewModel() {
         if (f.value.loading) return
         f.value = f.value.copy(loading = true, error = null)
         val q = asked
+        val fl = _filter.value
         viewModelScope.launch {
             val done = try {
-                val b = c.companyApi.board(adopted, from, q)
+                val b = c.companyApi.board(adopted, from, q, fl.job, fl.region, fl.sort)
                 f.value.copy(items = f.value.items + b.items, next = b.next, loading = false)
             } catch (e: CompanyException) {
                 f.value.copy(loading = false, error = companyProblem(e.code, e.field))
             }
             // A page for a name no longer in the box is dropped; the new name's pages are on their way.
-            if (q == asked) f.value = done
+            if (q == asked && fl == _filter.value) f.value = done
         }
     }
+}
+
+/** [PLZ-08] 내 활동: what this phone sent to the plaza, and the name it is shown by. */
+class ActivityHolder(private val c: AppContainer, private val scope: kotlinx.coroutines.CoroutineScope) {
+    data class Open(val activity: com.bamnat.app.company.Activity? = null, val error: String? = null)
+
+    private val _open = MutableStateFlow<Open?>(null)
+    val open: StateFlow<Open?> = _open.asStateFlow()
+
+    fun show() {
+        _open.value = Open()
+        scope.launch {
+            _open.value = try {
+                Open(c.companyApi.activity(c.companyStore.device))
+            } catch (e: CompanyException) {
+                Open(error = companyProblem(e.code, e.field))
+            }
+        }
+    }
+
+    fun close() {
+        _open.value = null
+    }
+
+    /** Sets the plaza name, or none when blank; [done] gets what to tell the user. */
+    fun setNick(nick: String, done: (String?) -> Unit) {
+        val t = nick.trim()
+        if (t.isNotEmpty() && (t.length < 2 || t.length > 12)) return done("별명은 2~12자로 정해 주세요")
+        CompanyText.personal(t)?.let { return done(talkProblem(it)) }
+        scope.launch {
+            val error = try {
+                val saved = c.companyApi.nick(c.companyStore.device, t)
+                _open.value = _open.value?.let { o -> o.copy(activity = o.activity?.copy(nick = saved)) }
+                null
+            } catch (e: CompanyException) {
+                when (e.code) {
+                    "taken" -> "다른 분이 쓰는 별명이에요"
+                    "nick" -> "쓸 수 없는 별명이에요. 관리자·개발자·운영자 같은 말은 빼 주세요"
+                    else -> talkProblem(e.code)
+                }
+            }
+            done(error)
+        }
+    }
+}
+
+/**
+ * [PLZ-14][PLZ-15] 임금표: what a trade is paid per day, hour or month in a job and region, as people
+ * shared it, with the adopted ones' middle as 광장 시세. Sending one asks no name or pay slip.
+ */
+class RatesViewModel(private val c: AppContainer) : ViewModel() {
+    data class Filter(val job: String = "construction", val region: String = "", val unit: String = "")
+    data class State(val board: com.bamnat.app.company.RateBoard? = null, val loading: Boolean = true, val error: String? = null)
+
+    val enabled: Boolean = c.companyApi.enabled
+    private val _filter = MutableStateFlow(Filter())
+    val filter: StateFlow<Filter> = _filter.asStateFlow()
+    private val _state = MutableStateFlow(State())
+    val state: StateFlow<State> = _state.asStateFlow()
+
+    init {
+        load()
+    }
+
+    fun setFilter(f: Filter) {
+        _filter.value = f
+        load()
+    }
+
+    fun load() {
+        val f = _filter.value
+        _state.value = _state.value.copy(loading = true, error = null)
+        viewModelScope.launch {
+            val next = try {
+                State(c.companyApi.rates(c.companyStore.device, f.job, f.region, f.unit).also { b ->
+                    c.rateHints.keep(f.region, b.groups)
+                    b.entries.firstOrNull { it.mine }?.let { c.rateHints.shared(it.job, it.region, it.trade) }
+                }, loading = false)
+            } catch (e: CompanyException) {
+                State(_state.value.board, loading = false, error = companyProblem(e.code, e.field))
+            }
+            if (f == _filter.value) _state.value = next
+        }
+    }
+
+    /** Sends a rate; [done] gets what to tell the user when it was not taken, null when it was. */
+    fun add(trade: String, unit: String, amount: Long, note: String, done: (String?) -> Unit) {
+        val f = _filter.value
+        val u = com.bamnat.app.company.Plaza.RATE_UNITS[unit] ?: return done("일당·시급·월급 가운데 골라 주세요")
+        if (trade.trim().length < 2) return done("직종을 두 글자 이상 적어 주세요 (예: 형틀목수)")
+        if (amount !in u.min..u.max) return done("${u.name}은 ${won(u.min)}~${won(u.max)} 사이로 적어 주세요")
+        CompanyText.personal(trade)?.let { return done(talkProblem(it)) }
+        CompanyText.personal(note)?.let { return done(talkProblem(it)) }
+        viewModelScope.launch {
+            val error = try {
+                c.companyApi.addRate(c.companyStore.device, f.job, f.region, trade, unit, amount, note)
+                c.rateHints.shared(f.job, f.region, trade)
+                c.telemetry.event("plaza_rate", "sent")
+                null
+            } catch (e: CompanyException) {
+                when (e.code) {
+                    "adopted" -> "같은 시세가 이미 채택됐어요. 다른 분의 시세에 맞아요·달라요를 눌러 주세요"
+                    "trade" -> "직종을 두 글자 이상, 20자 안으로 적어 주세요"
+                    else -> talkProblem(e.code)
+                }
+            }
+            if (error == null) load()
+            done(error)
+        }
+    }
+
+    fun vote(rate: com.bamnat.app.company.Rate, ok: Boolean) {
+        viewModelScope.launch {
+            runCatching { c.companyApi.rateVote(c.companyStore.device, rate.id, if (rate.myVote == ok) null else ok) }
+            load()
+        }
+    }
+
+    fun takeBack(rate: com.bamnat.app.company.Rate, done: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val kept = runCatching { c.companyApi.takeRateBack(c.companyStore.device, rate.id) }.getOrDefault(false)
+            load()
+            done(kept)
+        }
+    }
+
+    /**
+     * [PLZ-11] 광장 시세를 내 급여에: the middle of [g] becomes my 일당·시급·월급 from this month, when my pay is
+     * paid that way. Earlier months keep what they were; undo is the pay screen's. [done] gets what to say.
+     */
+    fun applyToMyPay(g: com.bamnat.app.company.RateGroup, done: (String) -> Unit) {
+        val p = c.payStore.profile.value ?: return done("급여 설정이 없어요. 급여 설정을 먼저 해 주세요")
+        val want = when (g.unit) {
+            "day" -> WageType.DAILY
+            "hour" -> WageType.HOURLY
+            else -> WageType.MONTHLY
+        }
+        if (p.wageType != want) return done("내 급여는 ${wageName(p.wageType)} 방식이라 ${com.bamnat.app.company.Plaza.unit(g.unit)}을 넣을 수 없어요")
+        viewModelScope.launch {
+            val from = YearMonth.now().atDay(1)
+            c.payStore.save(p.copy(base = p.base.with(com.bamnat.core.pay.DatedValue(from, g.mid))))
+            c.telemetry.event("plaza_rate", "applied")
+            done("${from.monthValue}월부터 ${com.bamnat.app.company.Plaza.unit(g.unit)}을 ${won(g.mid)}으로 바꿨어요. 급여 화면에서 되돌릴 수 있어요")
+        }
+    }
+
+    private fun wageName(w: WageType) = when (w) {
+        WageType.DAILY -> "일당"
+        WageType.HOURLY -> "시급"
+        else -> "월급"
+    }
+
+    private fun won(v: Long) = "%,d원".format(v)
 }
 
 /** [COMM-01] The first pay setup from a shared setup: only the user's own amounts are asked. */
@@ -460,15 +765,21 @@ class CompanyReportViewModel(private val c: AppContainer) : ViewModel() {
         ?: c.companyStore.applied.value?.let { CompanyDraft(it.company, it.dept) }
 
     /** Sends the setup; a text with an amount, phone or mail address is caught here before it goes. */
-    fun send(company: String, dept: String, verified: Boolean, note: String) {
-        CompanyText.personal(company)?.let { _sending.value = Sending.Failed(it, "company"); return }
+    fun send(company: String, dept: String, verified: Boolean, note: String, job: String = "", region: String = "", topic: Boolean = false) {
+        if (topic && job.isEmpty()) { _sending.value = Sending.Failed("job", "job"); return }
+        // [SRV-04] The developer paused new reports; nothing is sent and the form stays as written.
+        if (c.remoteConfig.current.paused(com.bamnat.core.ops.ServerSwitch.COMPANY_REPORT)) { _sending.value = Sending.Failed("paused", "report"); return }
+        if (!topic) CompanyText.personal(company)?.let { _sending.value = Sending.Failed(it, "company"); return }
         CompanyText.personal(dept)?.let { _sending.value = Sending.Failed(it, "dept"); return }
         CompanyText.personal(note)?.let { _sending.value = Sending.Failed(it, "note"); return }
-        if (CompanyText.norm(company).length < 2) { _sending.value = Sending.Failed("company", "company"); return }
+        if (!topic && CompanyText.norm(company).length < 2) { _sending.value = Sending.Failed("company", "company"); return }
         _sending.value = Sending.Busy
         viewModelScope.launch {
             _sending.value = try {
-                val status = c.companyApi.report(c.companyStore.device, company, dept, verified, note, c.companyShare.exportForServer())
+                val setup = c.companyShare.exportForServer()
+                // [PLZ-12][PLZ-13] Its job plaza and 시·도, or a rule for a whole job rather than one place.
+                val status = if (job.isEmpty() && region.isEmpty() && !topic) c.companyApi.report(c.companyStore.device, company, dept, verified, note, setup)
+                    else c.companyApi.report(c.companyStore.device, company, dept, verified, note, setup, job, region, topic)
                 c.companyStore.addSent(SentReport(status.id, status.company, status.dept, ask = false, at = Instant.now()))
                 _statuses.value = _statuses.value + (status.id to status)
                 c.companyStore.setDraft(null)
@@ -513,9 +824,13 @@ class CompanyReportViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     /** Everything this phone sent goes from the server; the setup in use stays on the phone. */
-    fun forgetAll(done: (Boolean) -> Unit) {
+    fun forgetAll(done: (Boolean) -> Unit) = forgetAllSaying { ok, _ -> done(ok) }
+
+    /** [INQ-05] I28: as [forgetAll], with what was deleted in words. */
+    fun forgetAllSaying(done: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
-            val ok = runCatching { c.companyApi.forgetMine(c.companyStore.device) }.isSuccess
+            val counts = runCatching { c.companyApi.forgetMineCounts(c.companyStore.device) }.getOrNull()
+            val ok = counts != null
             if (ok) {
                 c.companyStore.forgetSent()
                 _statuses.value = emptyMap()
@@ -523,7 +838,7 @@ class CompanyReportViewModel(private val c: AppContainer) : ViewModel() {
                 c.inquiryStore.update(emptyList())
                 c.inquiryStore.asked = false
             }
-            done(ok)
+            done(ok, counts?.words())
         }
     }
 }

@@ -60,7 +60,7 @@ class PhoneCalendarSync(private val c: AppContainer, private val today: () -> Lo
         withContext(Dispatchers.IO) {
             val ids = c.settingsRepository.current.phoneCalendars.toSet()
             val open = c.featureGate.allows(Feature.DEVICE_CALENDAR)
-            val wanted = if (open) c.calendars.calendars.value.filter { it.id in ids } else emptyList()
+            val wanted = if (open) c.calendars.calendars.value.filterNot { it.isExample }.filter { it.id in ids } else emptyList()
             val status = runCatching {
                 if (!phone.allowed()) return@runCatching if (ids.isEmpty()) Status.Off else Status.NeedsPermission
                 (phone.written() - wanted.map { it.id }.toSet()).forEach { phone.remove(it) }

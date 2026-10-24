@@ -9,6 +9,18 @@
 // GET    /s/:id                the schedule as a web page (noindex, no scripts)
 // GET    /s/:id.ics            [FEAT-15] the same days as a calendar to subscribe to, only when the sharer turned it on
 // GET    /.well-known/assetlinks.json   lets Android open /s/ links in the app (ANDROID_CERT_SHA256)
+// POST   /api/share/:id/report body {reason} -> 204   [SRV-05] the app's 신고
+// POST   /s/:id/report         the page's own form (no script) -> a thank-you page
+// GET    /api/admin/reports    [SRV-05] reported links, most reported first (Bearer SHARE_ADMIN_TOKEN)
+// DELETE /api/admin/share/:id  takes a link down: the page then says it was removed (410)
+// GET    /api/admin/stats?days=  links made, pages seen, reports and take-downs per day [STAT-04]
+// PUT    /api/admin/flags      [SRV-08] {createOff}: the company server's 근무표 링크 새로 만들기 switch
+// POST   /api/groups           [SHR-14] {link, token} -> { code, expiresAt }: a 6-letter 모임 코드 holding that link
+// POST   /api/groups/:code     {link, token} -> { code, expiresAt, links }: adds one's own link to a group
+// DELETE /api/groups/:code/:id header X-Delete-Token -> 204: takes one's own link out
+// GET    /api/groups/:code     -> { code, expiresAt, links: [id…] }: the links still open, nothing else
+//                              The admin paths answer 404 until SHARE_ADMIN_TOKEN (20+ characters) is set;
+//                              the company server's 개발자 앱 calls them with the same token.
 //
 // Only what the page shows is stored: dates, shift names, colours and times, and since v2 [SHR-01]
 // only what the sharer ticked of 휴가 종류, 연장·휴무일 근무, 메모 and 급여, and since 1.13 [SHR-11] 일정 (a
@@ -37,6 +49,29 @@ export const LIMITS = {
   // [SHR-11] A freelancer's jobs on a day: title and time only.
   jobs: 4,
   jobName: 12,
+  // [SRV-05] Reports: a few an hour from one caller, one per link and caller a day.
+  reportsPerHour: 10,
+  // A taken-down link answers "removed" this long, then is gone like any other.
+  removedDays: 90,
+  // [STAT-04] Day counters are kept this long, and written at most every few minutes per Worker.
+  statsDays: 400,
+  statsFlushMs: 5 * 60 * 1000,
+  // [SHR-13] The words an operator gave when taking a link down.
+  removedReason: 200,
+  // [SHR-14] A 모임 코드: how many links, how many groups one caller may start or join in an hour.
+  groupLinks: 12,
+  groupsPerHour: 10,
+  // [SRV-08] .ics: calendar apps may keep it this long.
+  icsMaxAge: 300,
+};
+
+/** [SRV-05] Why someone reports a link (the page and the app offer the same list). */
+export const REPORT_REASONS = {
+  personal: "다른 사람의 개인정보",
+  abuse: "욕설·괴롭힘",
+  spam: "광고·스팸",
+  illegal: "불법 정보",
+  other: "그 밖의 문제",
 };
 
 /** [SHR-01] The parts a sharer can tick on top of the shifts. */
@@ -59,11 +94,15 @@ export function plainLeave(label) {
 const ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     try {
       return await route(request, env);
     } catch (e) {
       return json({ error: "server" }, 500);
+    } finally {
+      // [STAT-04] Counts reach KV in batches, so a busy link does not spend the day's writes.
+      const due = flushStats(env, false);
+      if (ctx?.waitUntil) ctx.waitUntil(due); else await due;
     }
   },
 };
@@ -72,6 +111,10 @@ async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
   if (path === "/api/share" && request.method === "POST") return create(request, env, url);
+  if (path === "/api/groups" || path.startsWith("/api/groups/")) return groups(request, env, path);
+  if (path.startsWith("/api/admin/")) return admin(request, env, url);
+  const reported = path.match(/^\/(api\/share|s)\/([A-Za-z0-9]{16,32})\/report$/);
+  if (reported && request.method === "POST") return report(request, env, reported[2], reported[1] === "s");
   const api = path.match(/^\/api\/share\/([A-Za-z0-9]{16,32})$/);
   if (api && request.method === "PUT") return update(request, env, url, api[1]);
   if (api && request.method === "DELETE") return remove(request, env, api[1]);
@@ -80,7 +123,7 @@ async function route(request, env) {
   const page = path.match(/^\/s\/([A-Za-z0-9]{16,32})$/);
   if (page && (request.method === "GET" || request.method === "HEAD")) return view(request, env, page[1]);
   const feed = path.match(/^\/s\/([A-Za-z0-9]{16,32})\.ics$/);
-  if (feed && (request.method === "GET" || request.method === "HEAD")) return calendar(env, feed[1]);
+  if (feed && (request.method === "GET" || request.method === "HEAD")) return calendar(request, env, feed[1]);
   if (path === "/" || path === "/robots.txt") {
     return new Response("User-agent: *\nDisallow: /\n", { headers: { "content-type": "text/plain; charset=utf-8" } });
   }
@@ -88,6 +131,8 @@ async function route(request, env) {
 }
 
 async function create(request, env, url) {
+  // [SRV-08] Resting (the company server's switch): nothing new, whatever app asks.
+  if (await env.SHARES.get(CREATE_OFF)) return json({ error: "paused" }, 503);
   if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
   const parsed = await readSchedule(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
@@ -100,6 +145,7 @@ async function create(request, env, url) {
     updatedAt: new Date().toISOString(),
   };
   await put(env, id, record);
+  count(env, "created");
   return json({ id, url: `${url.origin}/s/${id}`, deleteToken, expiresAt: record.expiresAt }, 201);
 }
 
@@ -112,7 +158,10 @@ async function update(request, env, url, id) {
   const expiresAt = parsed.ttlDays == null ? record.expiresAt : expiry(parsed.ttlDays);
   if (Date.parse(expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
   const same = JSON.stringify(parsed.schedule) === JSON.stringify(record.schedule);
-  const next = { ...record, schedule: parsed.schedule, expiresAt, updatedAt: same ? record.updatedAt : new Date().toISOString() };
+  // [SHR-12] The ETag is built from updatedAt, so a change in the same millisecond as the last write
+  // must still move it forward, or a subscriber keeps getting 304 for a schedule that changed.
+  const stamp = new Date(Math.max(Date.now(), (Date.parse(record.updatedAt) || 0) + 1)).toISOString();
+  const next = { ...record, schedule: parsed.schedule, expiresAt, updatedAt: same ? record.updatedAt : stamp };
   await put(env, id, next);
   return json({ id, url: `${url.origin}/s/${id}`, expiresAt: next.expiresAt, updatedAt: next.updatedAt });
 }
@@ -120,7 +169,7 @@ async function update(request, env, url, id) {
 async function remove(request, env, id) {
   const record = await authorized(request, env, id);
   if (record instanceof Response) return record;
-  await env.SHARES.delete(id);
+  await kvDel(env, id);
   return new Response(null, { status: 204 });
 }
 
@@ -128,43 +177,63 @@ async function authorized(request, env, id) {
   const token = request.headers.get("x-delete-token") || "";
   const record = await env.SHARES.get(id, "json");
   if (!record) return json({ error: "not_found" }, 404);
+  // [SRV-05] A link taken down for breaking the rules cannot be edited back.
+  if (record.removed) return json({ error: "removed" }, 410);
   if (!token || (await sha256(token)) !== record.tokenHash) return json({ error: "forbidden" }, 403);
   return record;
 }
 
 async function view(request, env, id) {
   const record = await env.SHARES.get(id, "json");
+  if (record?.removed) return html(page("내려진 링크예요", `<p class="empty">${REMOVED_TEXT}</p>`), 410);
   if (!record || Date.parse(record.expiresAt) < Date.now()) {
     return html(page("링크가 없어요", `<p class="empty">이 근무표 링크는 만료되었거나 공유한 사람이 끊었어요.</p>`), 404);
   }
+  if (request.method === "GET") count(env, "views");
   // [SHR-02] On Android the page offers the app, which keeps it as a 받은 달력 next to the user's own.
   const android = /Android/i.test(request.headers.get("user-agent") || "");
-  return html(renderSchedule(record.schedule, record.expiresAt, android ? id : null));
+  return html(renderSchedule(record.schedule, record.expiresAt, android ? id : null, id));
 }
+
+/** [SRV-08] The key the company server's switch writes while new links rest. */
+const CREATE_OFF = "flag:create_off";
+
+const REMOVED_TEXT = "이 근무표 링크는 신고를 받아 운영 규칙에 따라 내려졌어요. 공유한 분이 앱에서 새 링크를 만들 수 있어요.";
 
 /**
  * [FEAT-15] The link's days as an iCalendar feed that Google, Apple and Outlook calendars subscribe to.
  * Only for a link whose sharer turned the address on; it says no more than the page does.
  */
-async function calendar(env, id) {
+async function calendar(request, env, id) {
   const record = await env.SHARES.get(id, "json");
-  if (!record || Date.parse(record.expiresAt) < Date.now() || record.schedule.ics !== true) {
+  if (!record || record.removed || Date.parse(record.expiresAt) < Date.now() || record.schedule.ics !== true) {
     return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
   }
-  return new Response(renderIcs(record.schedule, id, record.updatedAt), {
-    headers: {
-      "content-type": "text/calendar; charset=utf-8",
-      "content-disposition": `inline; filename="bamnat-${id.slice(0, 6)}.ics"`,
-      // Calendar apps come back on their own schedule; a short cache spares the KV when several ask at once.
-      "cache-control": "public, max-age=900",
-      "x-robots-tag": "noindex, nofollow",
-    },
-  });
+  // [SRV-08] A calendar app that has the same days gets 304, and caches for five minutes only, so a
+  // link taken down leaves subscribed calendars soon after.
+  const tag = `W/"${(await sha256(`ics|${record.updatedAt ?? ""}|${record.expiresAt}`)).slice(0, 20)}"`;
+  const headers = {
+    "content-type": "text/calendar; charset=utf-8",
+    "content-disposition": `inline; filename="bamnat-${id.slice(0, 6)}.ics"`,
+    "cache-control": `public, max-age=${LIMITS.icsMaxAge}`,
+    "x-robots-tag": "noindex, nofollow",
+    etag: tag,
+  };
+  if (matches(request, tag)) return new Response(null, { status: 304, headers });
+  return new Response(renderIcs(record.schedule, id, record.updatedAt), { headers });
+}
+
+/** Whether If-None-Match names [tag] (weak or strong). */
+function matches(request, tag) {
+  const asked = (request.headers.get("if-none-match") || "").split(",").map((t) => t.trim().replace(/^W\//, ""));
+  return asked.includes(tag.replace(/^W\//, ""));
 }
 
 /** [SHR-02] What the app's 받은 달력 shows: the same schedule as the page, never the token hash. */
 async function read(request, env, id) {
   const record = await env.SHARES.get(id, "json");
+  // [SHR-13] The sharer's app (and a receiver) is told why, in the operator's words.
+  if (record?.removed) return json({ error: "removed", ...(record.reason ? { reason: record.reason } : {}), at: record.at ?? null }, 410);
   if (!record || Date.parse(record.expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
   // [SHR-12] Receivers ask often and download only when the schedule or its end date changed.
   const tag = `W/"${(await sha256(`${record.updatedAt ?? ""}|${record.expiresAt}`)).slice(0, 20)}"`;
@@ -190,6 +259,257 @@ function assetLinks(env) {
     target: { namespace: "android_app", package_name: env.ANDROID_PACKAGE || "com.bamnat.app", sha256_cert_fingerprints: prints },
   }];
   return new Response(JSON.stringify(body), { headers: { "content-type": "application/json", "cache-control": "max-age=3600" } });
+}
+
+// ---- [SRV-05] reports and take-downs ----
+
+/**
+ * Someone who got the link reports it. Kept per link as a count by reason (in the key's metadata, so the
+ * list needs no extra reads), never who reported: the caller is only a salted hash that expires in a day.
+ */
+async function report(request, env, id, fromPage) {
+  const done = (status, text) => fromPage
+    ? html(page("신고", `<p class="empty">${text}</p>`), status)
+    : status === 204 ? new Response(null, { status }) : json({ error: text }, status);
+  let reason;
+  const type = request.headers.get("content-type") || "";
+  const text = (await request.text()).slice(0, 1024);
+  if (type.startsWith("application/x-www-form-urlencoded")) reason = new URLSearchParams(text).get("reason");
+  else if (type.startsWith("application/json")) {
+    try { reason = JSON.parse(text)?.reason; } catch { reason = null; }
+  }
+  if (!Object.hasOwn(REPORT_REASONS, reason ?? "")) return done(400, fromPage ? "신고 이유를 골라 주세요." : "reason");
+  const record = await env.SHARES.get(id, "json");
+  if (!record || record.removed || Date.parse(record.expiresAt) < Date.now()) return done(404, fromPage ? "이미 닫힌 링크예요." : "not_found");
+  const ip = request.headers.get("cf-connecting-ip") || "unknown";
+  const day = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  const once = `rp:${(await sha256(`${env.RATE_SALT || "bamnat"}:${ip}:${id}:${day}`)).slice(0, 24)}`;
+  const thanks = "신고를 받았어요. 운영자가 확인하고 운영 규칙에 어긋나면 링크를 내려요. 고마워요.";
+  // The same caller reporting the same link again the same day is thanked and not counted twice.
+  if (await env.SHARES.get(once)) return done(fromPage ? 200 : 204, thanks);
+  if (!(await allow(env, request, "rr", LIMITS.reportsPerHour))) return done(429, fromPage ? "잠시 뒤에 다시 신고해 주세요." : "rate_limited");
+  await kvPut(env, once, "1", { expirationTtl: 86400 });
+  const key = `report:${id}`;
+  const got = await env.SHARES.getWithMetadata?.(key);
+  const was = got?.metadata ?? { count: 0, reasons: {} };
+  const next = { count: was.count + 1, reasons: { ...was.reasons, [reason]: (was.reasons?.[reason] ?? 0) + 1 }, last: new Date().toISOString() };
+  const ttl = Math.max(60, Math.ceil((Date.parse(record.expiresAt) - Date.now()) / 1000));
+  await kvPut(env, key, "1", { expirationTtl: ttl, metadata: next });
+  count(env, "reports");
+  return done(fromPage ? 200 : 204, thanks);
+}
+
+/** The company server's 개발자 앱 only: a shared token in Authorization, compared as digests. */
+async function admin(request, env, url) {
+  const secret = typeof env.SHARE_ADMIN_TOKEN === "string" ? env.SHARE_ADMIN_TOKEN.trim() : "";
+  if (secret.length < 20) return new Response("Not found", { status: 404 });
+  const given = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+  if ((await sha256(`admin|${given}`)) !== (await sha256(`admin|${secret}`))) return json({ error: "forbidden" }, 403);
+  const path = url.pathname.slice("/api/admin".length);
+  if (path === "/reports" && request.method === "GET") return json({ reports: await reports(env) });
+  const m = path.match(/^\/share\/([A-Za-z0-9]{16,32})$/);
+  if (m && request.method === "DELETE") return takeDown(request, env, m[1]);
+  if (path === "/stats" && request.method === "GET") return json(await stats(env, url.searchParams.get("days")));
+  if (path === "/flags" && request.method === "PUT") {
+    let body = {};
+    try { body = JSON.parse((await request.text()).slice(0, 256)); } catch { /* nothing */ }
+    if (body.createOff === true) await kvPut(env, CREATE_OFF, "1");
+    else await kvDel(env, CREATE_OFF);
+    return json({ createOff: body.createOff === true });
+  }
+  return json({ error: "not_found" }, 404);
+}
+
+async function reports(env) {
+  const out = [];
+  let cursor;
+  do {
+    const page = await env.SHARES.list({ prefix: "report:", cursor });
+    for (const k of page.keys) if (k.metadata) out.push({ id: k.name.slice("report:".length), ...k.metadata });
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor && out.length < 1000);
+  return out.sort((a, b) => b.count - a.count || b.last.localeCompare(a.last)).slice(0, 200);
+}
+
+async function takeDown(request, env, id) {
+  const record = await env.SHARES.get(id, "json");
+  if (!record) return json({ error: "not_found" }, 404);
+  let reason = "";
+  try {
+    reason = String(JSON.parse((await request.text()).slice(0, 2048))?.reason ?? "");
+  } catch { /* no reason given */ }
+  reason = reason.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, LIMITS.removedReason);
+  if (!record.removed) {
+    // Only the mark stays: the schedule itself is gone at once. [SHR-13] With the operator's reason, as long as the mark.
+    await kvPut(env, id, JSON.stringify({ removed: true, at: new Date().toISOString(), ...(reason ? { reason } : {}) }),
+      { expirationTtl: LIMITS.removedDays * 86400 });
+    count(env, "removed");
+  }
+  await kvDel(env, `report:${id}`);
+  return new Response(null, { status: 204 });
+}
+
+// ---- [SHR-14] 우리 조 모아 보기: links put together under a 6-letter code ----
+//
+// Each coworker shares their own link and adds it to a group with its code. The group is a list of link
+// ids and nothing else: no names, no company, not who made it. Only a link's own delete token adds or
+// takes it out, so nobody can add someone else's link, and a link cut or expired drops out by itself.
+// The group goes when its longest link ends.
+
+const GROUP_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const GROUP_CODE = /^[A-HJ-NP-Z2-9]{6}$/;
+
+async function groups(request, env, path) {
+  const m = path.match(/^\/api\/groups(?:\/([A-Za-z0-9]{6}))?(?:\/([A-Za-z0-9]{16,32}))?$/);
+  if (!m) return json({ error: "not_found" }, 404);
+  const code = m[1]?.toUpperCase();
+  if (code && !GROUP_CODE.test(code)) return json({ error: "not_found" }, 404);
+  if (!code && request.method === "POST") return groupStart(request, env);
+  if (code && !m[2] && request.method === "POST") return groupJoin(request, env, code);
+  if (code && !m[2] && request.method === "GET") return groupRead(env, code);
+  if (code && m[2] && request.method === "DELETE") return groupLeave(request, env, code, m[2]);
+  return json({ error: "not_found" }, 404);
+}
+
+/** The caller's own link, proved by its delete token, or the answer that refuses it. */
+async function ownLink(request, env) {
+  let body = {};
+  try { body = JSON.parse((await request.text()).slice(0, 1024)); } catch { return { error: json({ error: "bad_json" }, 400) }; }
+  const id = typeof body.link === "string" && /^[A-Za-z0-9]{16,32}$/.test(body.link) ? body.link : null;
+  if (!id || typeof body.token !== "string") return { error: json({ error: "link" }, 400) };
+  const record = await env.SHARES.get(id, "json");
+  if (!record || record.removed || Date.parse(record.expiresAt) < Date.now()) return { error: json({ error: "not_found" }, 404) };
+  if ((await sha256(body.token)) !== record.tokenHash) return { error: json({ error: "forbidden" }, 403) };
+  return { id, record };
+}
+
+async function liveLinks(env, ids) {
+  const out = [];
+  for (const id of ids) {
+    const r = await env.SHARES.get(id, "json");
+    if (r && !r.removed && Date.parse(r.expiresAt) >= Date.now()) out.push({ id, expiresAt: r.expiresAt });
+  }
+  return out;
+}
+
+async function saveGroup(env, code, links) {
+  const ends = links.reduce((a, l) => (l.expiresAt > a ? l.expiresAt : a), new Date().toISOString());
+  const ttl = Math.max(60, Math.ceil((Date.parse(ends) - Date.now()) / 1000));
+  await kvPut(env, `group:${code}`, JSON.stringify({ ids: links.map((l) => l.id) }), { expirationTtl: ttl });
+  return ends;
+}
+
+async function groupStart(request, env) {
+  if (!(await allow(env, request, "rg", LIMITS.groupsPerHour))) return json({ error: "rate_limited" }, 429);
+  const own = await ownLink(request, env);
+  if (own.error) return own.error;
+  let code;
+  for (let i = 0; i < 5 && !code; i++) {
+    const c = groupCode();
+    if (!(await env.SHARES.get(`group:${c}`))) code = c;
+  }
+  if (!code) return json({ error: "server" }, 503);
+  const expiresAt = await saveGroup(env, code, [{ id: own.id, expiresAt: own.record.expiresAt }]);
+  return json({ code, expiresAt, links: [own.id] }, 201);
+}
+
+async function groupJoin(request, env, code) {
+  if (!(await allow(env, request, "rg", LIMITS.groupsPerHour))) return json({ error: "rate_limited" }, 429);
+  const group = await env.SHARES.get(`group:${code}`, "json");
+  if (!group) return json({ error: "not_found" }, 404);
+  const own = await ownLink(request, env);
+  if (own.error) return own.error;
+  const links = (await liveLinks(env, group.ids)).filter((l) => l.id !== own.id);
+  if (links.length >= LIMITS.groupLinks) return json({ error: "full" }, 409);
+  links.push({ id: own.id, expiresAt: own.record.expiresAt });
+  const expiresAt = await saveGroup(env, code, links);
+  return json({ code, expiresAt, links: links.map((l) => l.id) });
+}
+
+async function groupRead(env, code) {
+  const group = await env.SHARES.get(`group:${code}`, "json");
+  if (!group) return json({ error: "not_found" }, 404);
+  const links = await liveLinks(env, group.ids);
+  if (links.length === 0) return json({ error: "not_found" }, 404);
+  return json({ code, expiresAt: links.reduce((a, l) => (l.expiresAt > a ? l.expiresAt : a), ""), links: links.map((l) => l.id) });
+}
+
+async function groupLeave(request, env, code, id) {
+  const group = await env.SHARES.get(`group:${code}`, "json");
+  if (!group || !group.ids.includes(id)) return new Response(null, { status: 204 });
+  const record = await env.SHARES.get(id, "json");
+  // A link already cut or taken down has left by itself; otherwise only its own token takes it out.
+  if (record && !record.removed && (await sha256(request.headers.get("x-delete-token") || "")) !== record.tokenHash) {
+    return json({ error: "forbidden" }, 403);
+  }
+  const links = (await liveLinks(env, group.ids)).filter((l) => l.id !== id);
+  if (links.length === 0) await kvDel(env, `group:${code}`);
+  else await saveGroup(env, code, links);
+  return new Response(null, { status: 204 });
+}
+
+function groupCode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  // 32 letters divide 256, so every letter is equally likely.
+  return [...bytes].map((b) => GROUP_CHARS[b % 32]).join("");
+}
+
+// ---- [STAT-04] day counters ----
+
+// [SRV-10] Every KV write is counted too (KV's free day is 1,000 writes), so the company server can rest
+// 근무표 링크 새로 만들기 before the limit (N8). Like the rest, a rough number.
+async function kvPut(env, key, value, options) {
+  count(env, "writes");
+  return env.SHARES.put(key, value, options);
+}
+
+async function kvDel(env, key) {
+  count(env, "writes");
+  return env.SHARES.delete(key);
+}
+
+const pending = new WeakMap();
+
+function count(env, field) {
+  if (!env.SHARES) return;
+  const day = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  let p = pending.get(env.SHARES);
+  if (!p) pending.set(env.SHARES, (p = { since: Date.now(), days: {} }));
+  const d = (p.days[day] ??= {});
+  d[field] = (d[field] ?? 0) + 1;
+}
+
+/**
+ * Adds what this Worker counted to the day keys, at most every [LIMITS.statsFlushMs] unless [now] is
+ * asked. Two Workers flushing at the same moment can lose a few counts: these are rough numbers.
+ */
+export async function flushStats(env, now = true) {
+  const p = env.SHARES && pending.get(env.SHARES);
+  if (!p || Object.keys(p.days).length === 0) return;
+  if (!now && Date.now() - p.since < LIMITS.statsFlushMs) return;
+  pending.delete(env.SHARES);
+  for (const [day, add] of Object.entries(p.days)) {
+    const key = `stats:${day}`;
+    const was = (await env.SHARES.get(key, "json")) ?? {};
+    for (const [k, v] of Object.entries(add)) was[k] = (was[k] ?? 0) + v;
+    was.writes = (was.writes ?? 0) + 1;
+    await env.SHARES.put(key, JSON.stringify(was), { expirationTtl: LIMITS.statsDays * 86400 });
+  }
+}
+
+async function stats(env, daysParam) {
+  const n = Math.min(90, Math.max(1, parseInt(daysParam ?? "28", 10) || 28));
+  await flushStats(env);
+  const today = Date.now() + 9 * 3600 * 1000;
+  const days = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const day = new Date(today - i * 86400 * 1000).toISOString().slice(0, 10);
+    const got = (await env.SHARES.get(`stats:${day}`, "json")) ?? {};
+    days.push({ day, created: got.created ?? 0, views: got.views ?? 0, reports: got.reports ?? 0, removed: got.removed ?? 0, writes: got.writes ?? 0 });
+  }
+  const sum = (k) => days.reduce((a, d) => a + d[k], 0);
+  // [SRV-08] Counted in each Worker and added up every few minutes: two at once can lose a few, so 대략.
+  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), approximate: true };
 }
 
 // ---- input ----
@@ -328,7 +648,7 @@ const isTimeRange = (t) => typeof t === "string" && /^([01]\d|2[0-3]):[0-5]\d-([
 
 async function put(env, id, record) {
   const ttl = Math.max(60, Math.ceil((Date.parse(record.expiresAt) - Date.now()) / 1000));
-  await env.SHARES.put(id, JSON.stringify(record), { expirationTtl: ttl });
+  await kvPut(env, id, JSON.stringify(record), { expirationTtl: ttl });
 }
 
 function expiry(days) {
@@ -336,13 +656,35 @@ function expiry(days) {
 }
 
 /** A per-hour count of new links per caller. The key is a salted hash, so no address is stored. */
-async function allowCreate(request, env) {
+const allowCreate = (request, env) => allow(env, request, "rl", LIMITS.createsPerHour);
+
+/**
+ * [SRV-08] KV has no atomic add, so twenty requests at the same moment could all read the same count.
+ * Each Worker also counts in memory (synchronously, before any await), and the larger of the two counts
+ * decides: a burst from one caller reaches one Worker and is held to [max]. Across Workers the limit is
+ * still approximate (KV is eventually consistent); Durable Objects would make it exact but are not on
+ * the free plan this server is meant for (README).
+ */
+const counted = new WeakMap();
+
+async function allow(env, request, prefix, max) {
   const ip = request.headers.get("cf-connecting-ip") || "unknown";
   const hour = Math.floor(Date.now() / 3600000);
-  const key = `rl:${(await sha256(`${env.RATE_SALT || "bamnat"}:${ip}:${hour}`)).slice(0, 24)}`;
-  const count = parseInt((await env.SHARES.get(key)) || "0", 10);
-  if (count >= LIMITS.createsPerHour) return false;
-  await env.SHARES.put(key, String(count + 1), { expirationTtl: 3600 });
+  const local = `${prefix}|${ip}|${hour}`;
+  let counts = counted.get(env.SHARES);
+  if (!counts) counted.set(env.SHARES, (counts = new Map()));
+  const mine = (counts.get(local) ?? 0) + 1;
+  counts.set(local, mine);
+  if (counts.size > 5000) for (const k of counts.keys()) if (!k.endsWith(`|${hour}`)) counts.delete(k);
+  if (mine > max) return false;
+  // "rl" keeps the hash it always had, so a deploy does not reset the hour's count.
+  const salt = prefix === "rl" ? "" : `${prefix}:`;
+  const key = `${prefix}:${(await sha256(`${env.RATE_SALT || "bamnat"}:${salt}${ip}:${hour}`)).slice(0, 24)}`;
+  // The first use here adds to what other Workers counted; after that this Worker's own count leads.
+  const stored = parseInt((await env.SHARES.get(key)) || "0", 10);
+  const n = Math.max(mine === 1 ? stored + 1 : stored, mine);
+  if (n > max) return false;
+  await kvPut(env, key, String(n), { expirationTtl: 3600 });
   return true;
 }
 
@@ -377,7 +719,8 @@ function html(body, status = 200) {
       "x-robots-tag": "noindex, nofollow",
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",
-      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      // [SRV-05] The only form is the page's own 신고, sent back to this address.
+      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
     },
   });
 }
@@ -405,7 +748,7 @@ function appLink(id) {
 }
 
 /** Month grids for every month the days touch, weeks starting on Sunday. */
-export function renderSchedule(schedule, expiresAt, appId = null) {
+export function renderSchedule(schedule, expiresAt, appId = null, reportId = null) {
   const types = new Map(schedule.types.map((t) => [t.id, t]));
   const byDate = new Map(schedule.days.map((d) => [d.date, d]));
   const months = [...new Set(schedule.days.map((d) => d.date.slice(0, 7)))];
@@ -455,7 +798,16 @@ export function renderSchedule(schedule, expiresAt, appId = null) {
     ? `<p class="app"><a href="${esc(appLink(appId))}">밤낮 앱에서 보기</a><span class="muted">앱에서는 내 달력과 바꿔 가며 볼 수 있어요</span></p>`
     : "";
   return page(title, `<h1>${esc(title)}</h1>${has}${app}${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
-    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 근무표예요. ${until}까지 열려요.</p>`);
+    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 근무표예요. ${until}까지 열려요.</p>` + (reportId ? reportForm(reportId) : ""));
+}
+
+/** [SRV-05] A plain form, so reporting works without scripts (the page allows none). */
+function reportForm(id) {
+  const options = Object.entries(REPORT_REASONS).map(([k, v], i) =>
+    `<label><input type="radio" name="reason" value="${k}"${i === 0 ? " required" : ""}> ${esc(v)}</label>`).join("");
+  return `<details class="report"><summary>이 링크 신고하기</summary><form method="post" action="/s/${esc(id)}/report">` +
+    `<p class="muted">운영자가 확인해 운영 규칙에 어긋나면 링크를 내려요. 누가 신고했는지는 남지 않아요.</p>${options}` +
+    `<button type="submit">신고 보내기</button></form></details>`;
 }
 
 /**
@@ -547,6 +899,6 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .app{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0 0 8px}.app a{display:inline-block;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none}
 .pay ul{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.pay li{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}.pay li:first-child{border-top:none}
 .legend{list-style:none;padding:0;margin:20px 0 0;display:flex;flex-wrap:wrap;gap:8px 16px}
-.legend li{display:flex;align-items:center;gap:6px}.muted{color:var(--muted)}.foot{margin-top:24px;font-size:13px}.empty{margin-top:40px}
+.legend li{display:flex;align-items:center;gap:6px}.report{margin-top:16px;font-size:13px}.report summary{color:var(--muted);cursor:pointer}.report label{display:block;padding:4px 0}.report button{margin-top:8px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg)}.muted{color:var(--muted)}.foot{margin-top:24px;font-size:13px}.empty{margin-top:40px}
 </style></head><body><main>${body}</main></body></html>`;
 }

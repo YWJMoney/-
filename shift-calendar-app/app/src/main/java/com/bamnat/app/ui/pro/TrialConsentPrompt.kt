@@ -46,23 +46,23 @@ fun trialPrice(sub: SubRecord, plans: List<Plan>): String =
 @Composable
 fun TrialConsentPrompt(c: AppContainer) {
     val pro by c.proStore.state.collectAsStateWithLifecycle()
-    val plans = rememberPlans()
     var closed by rememberSaveable { mutableStateOf(false) }
     val sub = pro.sub ?: return
     val zone = ZoneId.systemDefault()
     val end = sub.trialEnd(zone)
     val stage = TrialConsent.stage(sub.play(), end, pro.consentAt, Instant.now())
     if (closed || (stage != TrialConsent.Stage.ASK && stage != TrialConsent.Stage.LAST_DAY)) return
+    // [PERF-01] Asked only when the question shows, so Play's billing client is not built at every start.
+    val plans = rememberPlans()
     val context = LocalContext.current
     val day = end.atZone(zone).toLocalDate()
     val price = trialPrice(sub, plans)
     val text = trialConsentText(day, price)
     val answer: (String) -> Unit = { a ->
         val now = Instant.now()
-        c.proStore.answer(a, now)
-        c.appScope.launch {
-            runCatching { c.tierApi.takeIf { it.enabled }?.consent(c.companyStore.device, a, ProductIds.PRO, price, end, text) }
-        }
+        // [SRV-07] Queued first, then sent: without a connection it goes at the next sync instead of being lost.
+        c.proStore.answer(a, now, com.bamnat.app.tier.PendingConsent(a, now, ProductIds.PRO, price, end, text))
+        c.appScope.launch { c.sendConsent() }
         closed = true
     }
     AlertDialog(

@@ -97,7 +97,46 @@ object Sheets {
         val strings = parts["xl/sharedStrings.xml"]?.let(::sharedStrings).orEmpty()
         val sheet = parts[firstSheet(parts)] ?: parts.keys.filter { it.startsWith("xl/worksheets/") }.minOrNull()?.let { parts[it] }
             ?: throw SheetException("엑셀 파일에서 시트를 찾지 못했어요")
-        return sheetRows(sheet, strings, parts["xl/styles.xml"]?.let(::timeStyles).orEmpty())
+        val styles = parts["xl/styles.xml"]
+        // [IMPORT-04] A workbook made on a Mac may count dates from 1904-01-01 (<workbookPr date1904="1"/>).
+        val date1904 = parts["xl/workbook.xml"]?.let { wb ->
+            Regex("""<workbookPr\b[^>]*>""").find(wb)?.value?.let { attr(it, "date1904") } in setOf("1", "true")
+        } == true
+        return sheetRows(sheet, strings, styles?.let(::timeStyles).orEmpty(), styles?.let(::dateStyles).orEmpty(), date1904)
+    }
+
+    /**
+     * [IMPORT-04] Which cell styles show a number as a date: Excel's built-in date formats 14–17 and 22, or a
+     * format of its own with a year or a day. Such a cell comes back as 2026-10-01 (with its time when it has
+     * one), so the 1900 and 1904 date systems read the same.
+     */
+    private fun dateStyles(xml: String): Set<Int> {
+        val custom = Regex("""<numFmt\b[^>]*>""").findAll(xml).mapNotNull { m ->
+            val id = attr(m.value, "numFmtId")?.toIntOrNull() ?: return@mapNotNull null
+            id to unescape(attr(m.value, "formatCode").orEmpty())
+        }.toMap()
+        fun isDate(id: Int): Boolean {
+            if (id in 14..17 || id == 22) return true
+            val code = custom[id] ?: return false
+            val bare = code.replace(Regex("\"[^\"]*\""), "").replace(Regex("""\[[^\]]*]"""), "").lowercase()
+            return bare.contains('y') || bare.contains('d')
+        }
+        val xfs = Regex("""<cellXfs\b[^>]*>(.*?)</cellXfs>""", RegexOption.DOT_MATCHES_ALL).find(xml)?.groupValues?.get(1) ?: return emptySet()
+        return Regex("""<xf\b[^>]*>""").findAll(xfs).withIndex()
+            .filter { (_, m) -> attr(m.value, "numFmtId")?.toIntOrNull()?.let(::isDate) == true }.map { it.index }.toSet()
+    }
+
+    /**
+     * [IMPORT-04] Excel's day number as a date: days since 1899-12-30 (1900 system, its 1900-02-29 included), or
+     * since 1904-01-01 when the workbook says date1904. A fraction is the time of day.
+     */
+    internal fun serialDate(v: String, date1904: Boolean): String {
+        val d = v.trim().toDoubleOrNull() ?: return v
+        if (d < 1.0 || d > 2_958_465.0) return v
+        val day = kotlin.math.floor(d)
+        val date = (if (date1904) java.time.LocalDate.of(1904, 1, 1) else java.time.LocalDate.of(1899, 12, 30)).plusDays(day.toLong())
+        val minutes = Math.round((d - day) * 24 * 60).toInt()
+        return if (minutes in 1 until 24 * 60) String.format(java.util.Locale.ROOT, "%s %d:%02d", date, minutes / 60, minutes % 60) else date.toString()
     }
 
     /**
@@ -138,7 +177,9 @@ object Sheets {
             Regex("""<t\b[^>]*>(.*?)</t>""", RegexOption.DOT_MATCHES_ALL).findAll(body).joinToString("") { unescape(it.groupValues[1]) }
         }.toList()
 
-    private fun sheetRows(xml: String, strings: List<String>, timeStyles: Set<Int> = emptySet()): List<List<String>> {
+    private fun sheetRows(
+        xml: String, strings: List<String>, timeStyles: Set<Int> = emptySet(), dateStyles: Set<Int> = emptySet(), date1904: Boolean = false,
+    ): List<List<String>> {
         val rows = mutableListOf<List<String>>()
         val rowRe = Regex("""<row\b[^>]*?(?:/>|>(.*?)</row>)""", RegexOption.DOT_MATCHES_ALL)
         val cellRe = Regex("""<c\b([^>]*?)(?:/>|>(.*?)</c>)""", RegexOption.DOT_MATCHES_ALL)
@@ -156,7 +197,11 @@ object Sheets {
                     "s" -> v?.trim()?.toIntOrNull()?.let { strings.getOrNull(it) }
                     "inlineStr" -> Regex("""<t\b[^>]*>(.*?)</t>""", RegexOption.DOT_MATCHES_ALL).findAll(body).joinToString("") { unescape(it.groupValues[1]) }
                     // Only a cell shown as a time is a fraction of a day; 0.5 in a decimal-hours column is half an hour.
-                    null, "n" -> if (attr(attrs, "s")?.toIntOrNull() in timeStyles) v?.let(::dayFraction) else v
+                    null, "n" -> when (attr(attrs, "s")?.toIntOrNull()) {
+                        in timeStyles -> v?.let(::dayFraction)
+                        in dateStyles -> v?.let { serialDate(it, date1904) }
+                        else -> v
+                    }
                     else -> v
                 }.orEmpty().trim()
                 if (col < 200) cells[col] = text

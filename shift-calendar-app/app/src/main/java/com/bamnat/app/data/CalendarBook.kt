@@ -40,17 +40,23 @@ data class PersonalCalendar(
     val createdAt: Long = 0,
 ) {
     val isMain: Boolean get() = id == MAIN
+    /** [EASY-01] The example of 우선 둘러볼게요: no alarms, never backed up, shared or counted as an added calendar. */
+    val isExample: Boolean get() = id == EXAMPLE
     /** The letter in its avatar. */
     val initial: String get() = if (isMain) "나" else name.trim().take(1).ifEmpty { "?" }
 
     companion object {
         const val MAIN = "main"
         const val MAIN_NAME = "내 달력"
+        /** [EASY-01] The example calendar's id; its database and files are in no-backup storage. */
+        const val EXAMPLE = "example"
         /** Avatar colours for added calendars, apart from the received ones' so the two kinds read apart. */
         val COLORS = listOf(0xFF2F80ED, 0xFF27AE60, 0xFFB5651D, 0xFF8E44AD, 0xFFD6457A, 0xFF00A88F, 0xFFE0A100, 0xFF5D6D7E)
         const val MAX_NAME = 20
         /** [MCAL-07] Added calendars free of charge besides the main one; more are [com.bamnat.app.tier.Feature.MORE_CALENDARS]. */
         const val FREE_ADDED = 1
+        /** [EASY-01] A grey that reads as "not mine". */
+        const val EXAMPLE_COLOR = 0xFF8E9AAF
     }
 }
 
@@ -93,10 +99,10 @@ interface CalendarStorage {
     fun delete(id: String, db: AppDatabase?, keepTools: Boolean = false)
 
     class Files(private val context: android.content.Context) : CalendarStorage {
-        override fun open(id: String): AppDatabase = AppDatabase.create(context, fileName(id))
+        override fun open(id: String): AppDatabase = AppDatabase.create(context, pathOf(context, id))
         override fun delete(id: String, db: AppDatabase?, keepTools: Boolean) {
             db?.close()
-            context.deleteDatabase(fileName(id))
+            context.deleteDatabase(pathOf(context, id))
             // [MCAL-06] Its pay setup and closed months go with it.
             val dir = filesOf(context, id)
             if (!keepTools) dir.deleteRecursively()
@@ -108,8 +114,16 @@ interface CalendarStorage {
         /** In the databases folder beside the main one, so backups and phone transfers carry it [REL-04]. */
         fun fileName(id: String) = "calendar_$id.db"
 
+        /**
+         * [EASY-01] The database's name for Room: [fileName] in the databases folder, or for the example calendar a
+         * whole path in no-backup storage, which no backup or phone transfer carries (결정 N-D4).
+         */
+        fun pathOf(context: android.content.Context, id: String): String =
+            if (id == PersonalCalendar.EXAMPLE) File(context.noBackupFilesDir, fileName(id)).absolutePath else fileName(id)
+
         /** [MCAL-06] An added calendar's other files (its pay setup), in app storage so backups carry them. */
-        fun filesOf(context: android.content.Context, id: String) = File(context.filesDir, "calendars/$id")
+        fun filesOf(context: android.content.Context, id: String) =
+            File(if (id == PersonalCalendar.EXAMPLE) context.noBackupFilesDir else context.filesDir, "calendars/$id")
 
         /** [HRLY-10] What [WorkToolsStore] keeps there (contract photos are not in backups). */
         val TOOL_FILES = setOf(WorkToolsStore.FILE, WorkToolsStore.PHOTOS)
@@ -135,6 +149,8 @@ class CalendarBook(
     private val mainPay: () -> com.bamnat.app.pay.PayStore = { error("No pay here") },
     private val moneyOf: (String, AppDatabase) -> MoneyRepository = { _, db -> MoneyRepository(db) },
     private val payOf: (String) -> com.bamnat.app.pay.PayStore = { error("No pay here") },
+    /** [LEAVE-01] The main calendar's 연차 원장; an added calendar's is made over its own database. */
+    private val mainLeave: () -> com.bamnat.app.leave.LeaveRepository = { error("No leave here") },
 ) {
     private data class State(val calendars: List<PersonalCalendar>, val order: List<String>, val active: String)
 
@@ -163,6 +179,7 @@ class CalendarBook(
 
     private class Opened(val db: AppDatabase, val schedule: ScheduleRepository) {
         var money: MoneyRepository? = null
+        var leave: com.bamnat.app.leave.LeaveRepository? = null
     }
 
     private val open = HashMap<String, Opened>()
@@ -218,6 +235,14 @@ class CalendarBook(
         return pays.getOrPut(id) { payOf(id) }
     }
 
+    /** [LEAVE-01] Calendar [id]'s 연차 원장, in its own database with its own pay setup; the main one's otherwise. */
+    @Synchronized
+    fun leave(id: String): com.bamnat.app.leave.LeaveRepository {
+        if (id == PersonalCalendar.MAIN || get(id) == null) return mainLeave()
+        val o = opened(id)
+        return o.leave ?: com.bamnat.app.leave.LeaveRepository(o.db, o.schedule, pay(id)).also { o.leave = it }
+    }
+
     /** [MCAL-01] What the calendar tab works on now; a write started here stays with this calendar. */
     fun activeRepository(): ScheduleRepository = repository(_active.value)
 
@@ -228,7 +253,7 @@ class CalendarBook(
      * [MCAL-01] Every calendar whose alarms ring, with the name an alarm from it is told by; the main
      * calendar has none, so its alarms read as before.
      */
-    val ringing: Flow<List<Pair<String?, ScheduleSnapshot>>> = _calendars.map { list -> list.filter { it.isMain || it.alarms } }
+    val ringing: Flow<List<Pair<String?, ScheduleSnapshot>>> = _calendars.map { list -> list.filter { it.isMain || (it.alarms && !it.isExample) } }
         .flatMapLatest { list ->
             if (list.isEmpty()) flowOf(emptyList())
             else combine(list.map { cal -> repository(cal.id).snapshot.map { s -> (if (cal.isMain) null else cal.name) to s } }) { it.toList() }
@@ -258,6 +283,18 @@ class CalendarBook(
         )
         write(state.value.copy(calendars = all + cal))
         return id
+    }
+
+    /**
+     * [EASY-01] The example calendar of [style], ready and shown at once: its alarms off, so nothing rings for
+     * a made-up schedule. Begun again it starts over.
+     */
+    @Synchronized
+    fun addExample(style: WorkStyle, name: String): PersonalCalendar {
+        if (get(PersonalCalendar.EXAMPLE) != null) delete(PersonalCalendar.EXAMPLE)
+        val cal = PersonalCalendar(PersonalCalendar.EXAMPLE, name, PersonalCalendar.EXAMPLE_COLOR, style, alarms = false, createdAt = clock())
+        write(state.value.copy(calendars = all + cal, active = cal.id))
+        return cal
     }
 
     /** [MCAL-02] Its first setup is saved: listed from now on, and shown. */
@@ -366,7 +403,7 @@ class CalendarBook(
      * [MCAL-05] What a backup carries besides the main calendar: each added calendar's details and the
      * list's order. The schedules themselves come from [repository].
      */
-    fun added(): List<PersonalCalendar> = all.filter { !it.isMain && it.ready }
+    fun added(): List<PersonalCalendar> = all.filter { !it.isMain && it.ready && !it.isExample }
 
     /**
      * [MCAL-05] A restore replaces the added calendars with the backup's, ids and order kept. One that

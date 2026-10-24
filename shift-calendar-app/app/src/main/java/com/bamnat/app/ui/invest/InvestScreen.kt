@@ -25,7 +25,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -191,6 +191,10 @@ private fun InvestHeader(vm: InvestViewModel, state: InvestState, open: (InvestS
                 DropdownMenuItem(text = { Text("목표와 수익률") }, onClick = { menu = false; open(InvestSheet.Goal) })
                 DropdownMenuItem(text = { Text("내 투자 원칙") }, onClick = { menu = false; open(InvestSheet.Principles) })
                 DropdownMenuItem(text = { Text("계좌 추가") }, onClick = { menu = false; open(InvestSheet.AccountEdit()) })
+                // [INV-32] Found trades written at once or after 확인, also when none is waiting.
+                val auto by vm.alertAuto.collectAsStateWithLifecycle()
+                DropdownMenuItem(text = { Text(if (auto) "체결 알림 바로 적기 끄기" else "체결 알림 오면 바로 적기") },
+                    onClick = { menu = false; vm.setAlertAuto(!auto) })
                 CsvKind.entries.forEach { k ->
                     DropdownMenuItem(text = { Text("${k.label} CSV로 내보내기") }, onClick = { menu = false; onCsv(k) })
                 }
@@ -222,6 +226,7 @@ private fun OverviewTab(vm: InvestViewModel, state: InvestState, open: (InvestSh
             }
         }
     }
+    FoundTradesCard(vm, state, open)
     SummaryCard(vm, state, open)
     QuickActions(open)
     if (s.missingQuotes.isNotEmpty()) WarningBanner(
@@ -312,7 +317,7 @@ private fun GoalCard(state: InvestState, open: (InvestSheet) -> Unit) {
     val g = state.goal
     val hide = state.hide
     if (!g.hasGoal) {
-        TextButton(onClick = { open(InvestSheet.Goal) }) { Icon(Icons.Filled.Add, null); Spacer(Modifier.width(4.dp)); Text("목표 정하기 (금액·수익률)") }
+        com.bamnat.app.ui.components.AddButton("목표 정하기 (금액·수익률)", onClick = { open(InvestSheet.Goal) })
         return
     }
     SectionCard(title = "목표", trailing = { TextButton(onClick = { open(InvestSheet.Goal) }) { Text("고치기") } }) {

@@ -29,12 +29,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -75,8 +77,9 @@ data class Pillar(val title: String, val lines: List<String>, val features: Set<
 val PRO_PILLARS = listOf(
     Pillar("월급을 증명해요",
         listOf("급여 명세서 사진으로 맞춰 보고 다른 곳 짚기", "회사 임금 규칙 글로 자동 채우기", "기간을 골라 값 한 번에 바꾸기, 연도별 인상 계산",
-            "월·연 급여 리포트 PDF·CSV(어떻게 계산했는지까지)", "지난달·작년 같은 달과 비교, 1년 급여·근무 흐름"),
-        setOf(Feature.PAYSLIP_MATCH, Feature.PAY_RULE_IMPORT, Feature.PAY_BULK_EDIT, Feature.PAY_REPORT, Feature.WORK_COMPARE)),
+            "월·연 급여 리포트 PDF·CSV(어떻게 계산했는지까지)", "지난달·작년 같은 달과 비교, 1년 급여·근무 흐름",
+            "못 쓴 연차가 돈으로 얼마인지(미사용 연차수당)"),
+        setOf(Feature.PAYSLIP_MATCH, Feature.PAY_RULE_IMPORT, Feature.PAY_BULK_EDIT, Feature.PAY_REPORT, Feature.WORK_COMPARE, Feature.LEAVE_PAYOUT)),
     Pillar("근무를 어디서나",
         listOf("휴대폰 캘린더(삼성·구글 캘린더 앱)에 근무 자동 쓰기", "다른 캘린더 앱이 따라오는 구독 주소", "매일 자동 암호 백업(드라이브 같은 고른 파일에)",
             "달력마다 공유 링크 5개까지, 180일·1년", "근무표 PDF(한 달·1년, 인쇄용)"),
@@ -149,6 +152,8 @@ fun ProScreen(onBack: () -> Unit) {
     val billingState by c.billing.state.collectAsStateWithLifecycle()
     var message by remember { mutableStateOf<String?>(null) }
     val zone = ZoneId.systemDefault()
+    // [STAT-04] The first step of the 프로 funnel; only counted once 결제 is open.
+    LaunchedEffect(Unit) { if (config.billingLive) c.telemetry.event(com.bamnat.core.stats.UsageEvent.PAYWALL_VIEW.key) }
 
     Scaffold(topBar = {
         TopAppBar(
@@ -162,6 +167,7 @@ fun ProScreen(onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 StatusCard(gate, pro, zone)
+                ConsentWaiting(c, pro, onMessage = { message = it })
                 message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
 
                 SectionCard(title = "프로가 더해 주는 것") {
@@ -218,6 +224,27 @@ private fun Mark(on: Boolean) {
             tint = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
     }
 }
+
+/** [SRV-07] The trial answer that has not reached the server yet: said plainly, with a way to try now. */
+@Composable
+internal fun ConsentWaiting(c: AppContainer, pro: ProState, onMessage: (String) -> Unit) {
+    val q = pro.pendingConsent ?: return
+    val scope = rememberCoroutineScope()
+    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(consentWaitingText(q), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer)
+            OutlinedButton(onClick = {
+                scope.launch { onMessage(if (c.sendConsent()) "답을 서버에 기록했어요" else "아직 보내지 못했어요. 인터넷을 켜고 다시 해 주세요.") }
+            }) { Text("지금 다시 보내기") }
+        }
+    }
+}
+
+/** [SRV-07] What the waiting answer means for the user, in their words. */
+fun consentWaitingText(q: com.bamnat.app.tier.PendingConsent): String =
+    (if (q.answer == "keep") "'계속 쓸게요' 답을 아직 밤낮 서버에 기록하지 못했어요."
+    else "'해지할래요' 답을 아직 밤낮 서버에 기록하지 못했어요.") +
+        " 인터넷이 연결되면 저절로 다시 보내요. 답은 이 휴대폰에 그대로 있어요."
 
 @Composable
 private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId) {

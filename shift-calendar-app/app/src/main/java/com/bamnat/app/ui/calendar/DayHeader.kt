@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.core.schedule.QuickOrder
+import com.bamnat.app.data.rules
 import com.bamnat.app.appContainer
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -35,7 +37,7 @@ import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -380,8 +382,8 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
     val memos by vm.datedMemos.collectAsStateWithLifecycle()
     val dayMemos = remember(memos, day.date) { memos.filter { it.date == day.date } }
     val alarms = remember(snapshot, day.date) { plannedAlarms(snapshot, day) }
-    val rest = remember(snapshot, day.date, settings.restCheck, settings.strictRest) {
-        if (settings.restCheck) vm.restIssuesOn(snapshot, day.date, settings.strictRest) else emptyList()
+    val rest = remember(snapshot, day.date, settings.rules) {
+        if (settings.restCheck) vm.restIssuesOn(snapshot, day.date, settings.rules) else emptyList()
     }
     val calendarAlarms by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
     return buildList {
@@ -452,7 +454,10 @@ private fun QuickChips(
     val leaveDay = leaveNowDay(settings.workStyle, day, today, now, yesterday)
     val choices = remember(snapshot, day) {
         if (moneyFirst) emptyList() else {
-            val (on, off) = ExtraText.choices(snapshot.kinds, snapshot.shiftTypes, day).partition { ExtraText.indexOf(day, it) >= 0 }
+            val (on, off0) = ExtraText.choices(snapshot.kinds, snapshot.shiftTypes, day).partition { ExtraText.indexOf(day, it) >= 0 }
+            // [CAL-37] The kinds used in the last 60 days first; a new user gets their kind of work's usual order.
+            val used = snapshot.entries.filter { !it.date.isBefore(today.minusDays(QuickOrder.DAYS.toLong())) }.flatMap { e -> e.extras.map { it.kindId } }
+            val off = QuickOrder.extras(off0, { it.kind.id }, used, settings.workStyle.takeIf { !day.isWorkDay })
             on + off.take((QUICK_EXTRAS - on.size).coerceAtLeast(0))
         }
     }
@@ -674,7 +679,7 @@ fun DayPreview(
     }
 }
 
-/** [CAL-01] "이 주 73.5시간 · 64시간 넘음": the line that goes with the bar beside an over-limit week. */
+/** [CAL-01] "이 주 73시간 30분 · 64시간 넘음": the line that goes with the bar beside an over-limit week. */
 @Composable
 internal fun WeekNoteLine(text: String, modifier: Modifier = Modifier) {
     val warning = LocalCalendarColors.current.warning

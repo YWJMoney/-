@@ -23,7 +23,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -181,7 +181,8 @@ private fun ExtraRow(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(name, style = MaterialTheme.typography.titleSmall)
-                Text(ExtraText.time(extra), style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = scheme.onSurfaceVariant)
+                Text(ExtraText.time(extra) + if (extra.entry.compLeave) " · 보상휴가로" else "",
+                    style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = scheme.onSurfaceVariant)
             }
             if (amount != null && amount != 0L) {
                 Text(
@@ -302,6 +303,30 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                 Spacer(Modifier.width(6.dp))
                 Text("시각으로 적기")
             }
+        }
+        // [PAYX-18] 근로기준법 제57조: the company may give time off instead of the pay, by 근로자대표 agreement.
+        FilterChip(
+            selected = e.compLeave,
+            onClick = { update(e.copy(compLeave = !e.compLeave)) },
+            label = { Text("돈 대신 보상휴가로 받기") },
+        )
+        if (e.compLeave) {
+            Text(
+                "이 시간은 급여에서 빠지고, 가산을 더한 시간만큼 연차 화면의 보상휴가로 쌓여요. 회사가 근로자대표와 서면 합의를 했을 때만 이렇게 받아요(근로기준법 제57조).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        // [PAYX-30] 휴일대체: work on a holiday swapped in advance for another day is a working day's; that day is the holiday.
+        if (day.isRestDay || com.bamnat.core.holiday.KoreanHolidays.isHoliday(day.date)) {
+            com.bamnat.app.ui.work.DateField("휴일대체: 대신 쉬는 날", e.substitute, { update(e.copy(substitute = it?.takeIf { d -> d != day.date })) })
+            val sub = e.substitute
+            Text(
+                if (sub == null) "회사가 미리(보통 24시간 전) 이 휴일과 다른 날을 바꿨다면 그 날을 골라요. 그러면 이 근무는 휴일근로가 아니라 평일 근무로 계산해요."
+                else "이 근무는 평일 근무로, ${sub.monthValue}/${sub.dayOfMonth}이 휴일로 계산돼요. 공휴일을 바꾸려면 근로자대표와 서면 합의가 있어야 하고, 노동절은 바꿀 수 없어요(근로기준법 제55조).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         Row {
             Spacer(Modifier.weight(1f))

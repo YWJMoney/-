@@ -42,9 +42,24 @@ data class DutyType(
     val night: Boolean = false,
 )
 
-/** One person's line of the roster: the name at its left (may be blank) and the cell of each day of the month. */
-data class RosterRow(val label: String, val cells: Map<Int, DutyCell>) {
+/**
+ * One person's line of the roster: the name at its left (may be blank) and the cell of each day of the month.
+ * [guessed] are the days read from a common code (주, N, 휴) rather than the calendar's own name or short name
+ * of a kind of day, so they may be the wrong one of the user's kinds [NURS-04].
+ */
+data class RosterRow(val label: String, val cells: Map<Int, DutyCell>, val guessed: Set<Int> = emptySet()) {
     val unknown: Int get() = cells.values.count { it is DutyCell.Unknown }
+
+    /**
+     * [NURS-04] The days to look at before saving (순번 275): cells read but not matched, cells guessed from a
+     * common code, and days missing between the first and last cell read (a cell the photo lost).
+     */
+    fun doubtful(lastDay: Int): Set<Int> {
+        val days = cells.keys.filter { it <= lastDay }
+        if (days.isEmpty()) return emptySet()
+        val missing = (days.min()..days.max()).filter { it !in cells }
+        return (cells.filter { it.value is DutyCell.Unknown }.keys + guessed + missing).filter { it <= lastDay }.toSortedSet()
+    }
 }
 
 /**
@@ -53,13 +68,17 @@ data class RosterRow(val label: String, val cells: Map<Int, DutyCell>) {
  */
 class DutyCodes(private val types: List<DutyType>) {
     private enum class Group(val words: Set<String>) {
-        DAY(setOf("D", "DAY", "DY", "데", "데이", "주", "주간", "낮")),
-        EVENING(setOf("E", "EV", "EVE", "이", "이브", "이브닝", "오후", "저녁", "S")),
-        NIGHT(setOf("N", "NT", "NIGHT", "나", "나이트", "야", "야간", "밤")),
-        MID(setOf("M", "MD", "MID", "미", "미드")),
-        DUTY(setOf("당", "당직", "당번")),
-        OFF(setOf("O", "OF", "OFF", "0", "휴", "휴무", "휴일", "X", "-", "/", "비", "비번", "오프", "OH", "공", "공휴")),
-        LEAVE(setOf("연", "연차", "V", "VA", "VAC", "AL", "휴가", "년", "년차")),
+        // [IMPORT-06] 경찰 (주·야·비·휴, 일근) and 소방 (당·비·휴) words, from no real roster yet (표본 없음, 확인 필요). A lone
+        // "일" is left out: it is also 일요일 in a weekday row.
+        DAY(setOf("D", "DAY", "DY", "데", "데이", "주", "주간", "낮", "일근", "주간근무", "상시", "상시근무")),
+        EVENING(setOf("E", "EV", "EVE", "이", "이브", "이브닝", "오후", "저녁")),
+        NIGHT(setOf("N", "NT", "NIGHT", "나", "나이트", "야", "야간", "밤", "야간근무")),
+        // [NURS-03] S is a middle shift (09~18) on the rosters seen, not an evening.
+        MID(setOf("M", "MD", "MID", "미", "미드", "S", "중", "중간")),
+        DUTY(setOf("당", "당직", "당번", "당무", "당직근무", "24H")),
+        OFF(setOf("O", "OF", "OFF", "0", "휴", "휴무", "휴일", "X", "-", "/", "비", "비번", "오프", "OH", "공", "공휴", "PH", "주휴", "비번일", "휴무일")),
+        // [NURS-03] Leave of every kind a roster writes: annual, sick, 생리휴가, 경조, 공가, 특별휴가.
+        LEAVE(setOf("연", "연차", "V", "VA", "VAC", "AL", "휴가", "년", "년차", "SL", "병", "병가", "생", "생휴", "보", "보건", "경조", "공가", "특휴", "반", "반차")),
     }
 
     private val exact: Map<String, Long> = buildMap {
@@ -98,6 +117,13 @@ class DutyCodes(private val types: List<DutyType>) {
         return null
     }
 
+    /**
+     * [NURS-04] True when [cell] is a kind of work picked from a common code in [token] (주, N, 이브닝) rather than
+     * the calendar's own name or short name: the right group, maybe not the user's own kind. Days off never are.
+     */
+    fun guessedWork(token: String, cell: DutyCell): Boolean =
+        cell is DutyCell.Shift && types.firstOrNull { it.id == cell.shiftTypeId }?.isOff == false && !exact.containsKey(norm(token))
+
     /** True for a token that stands in a code's place but matches nothing: short and not a number. */
     fun looksLikeCode(token: String): Boolean {
         val n = norm(token)
@@ -123,7 +149,8 @@ class DutyCodes(private val types: List<DutyType>) {
 }
 
 object DutyRoster {
-    private val DAY_TOKEN = Regex("""^(\d{1,2})일?$""")
+    // [NURS-03] "1", "1일", "01", and a day with its weekday in one cell: "1(월)". "1월" is a month, never a day.
+    private val DAY_TOKEN = Regex("""^(\d{1,2})일?(?:\((?:월|화|수|목|금|토|일)\))?$""")
     private val WEEKDAYS = setOf("월", "화", "수", "목", "금", "토", "일", "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
     /** Fewest days in a row of numbers for it to be the roster's row of days. */
     const val MIN_DAYS = 5
@@ -220,10 +247,11 @@ object DutyRoster {
             if (i in headers || isWeekdayRow(row)) return@forEachIndexed
             // The row of days this line belongs under: the nearest above, or below for a table drawn upside down.
             val h = headers.lastOrNull { it < i } ?: headers.first()
-            val columns = rows[h].mapNotNull { w -> dayOf(w.text)?.let { it to w.centerX } }
+            val columns = monthColumns(rows[h].mapNotNull { w -> dayOf(w.text)?.let { it to w.centerX } })
             val spacing = columns.zipWithNext().map { (a, b) -> abs(b.second - a.second) }.sorted().let { it.getOrNull(it.size / 2) } ?: return@forEachIndexed
             val firstX = columns.minOf { it.second }
             val cells = LinkedHashMap<Int, DutyCell>()
+            val guessed = HashSet<Int>()
             val label = StringBuilder()
             for (w in row) {
                 val near = columns.minByOrNull { abs(it.second - w.centerX) } ?: continue
@@ -231,24 +259,38 @@ object DutyRoster {
                 val aligned = !leftOfDays && abs(near.second - w.centerX) * 10 <= spacing * 6
                 val cell = codes.match(w.text) ?: if (codes.looksLikeCode(w.text) && aligned) DutyCell.Unknown(w.text.trim()) else null
                 when {
-                    cell != null && aligned -> cells.putIfAbsent(near.first, cell)
+                    cell != null && aligned -> if (cells.putIfAbsent(near.first, cell) == null && codes.guessedWork(w.text, cell)) guessed += near.first
                     leftOfDays && dayOf(w.text) == null -> label.append(w.text.trim())
                 }
             }
-            if (cells.size >= MIN_CELLS) out += RosterRow(label.toString(), cells.toSortedMap())
+            if (cells.size >= MIN_CELLS) out += RosterRow(label.toString(), cells.toSortedMap(), guessed)
         }
         return out
+    }
+
+    /**
+     * [NURS-03] A roster that starts in the month before (…29 30 31 1 2 3…) or runs into the next: only the
+     * longer run of days is one month, so the other side's numbers never land on this month's same dates.
+     */
+    internal fun monthColumns(cols: List<Pair<Int, Int>>): List<Pair<Int, Int>> {
+        val sorted = cols.sortedBy { it.second }
+        val wrap = sorted.zipWithNext().indexOfFirst { (a, b) -> b.first < a.first - 20 }
+        if (wrap < 0) return cols
+        val before = sorted.subList(0, wrap + 1)
+        val after = sorted.subList(wrap + 1, sorted.size)
+        return if (after.size >= before.size) after else before
     }
 
     /** Lines of the same person under the 1–15 and 16–31 rows of days become one. */
     private fun merge(rows: List<RosterRow>): List<RosterRow> {
         val named = rows.filter { it.label.isNotBlank() }.groupBy { it.label }.map { (label, parts) ->
-            RosterRow(label, parts.fold(sortedMapOf<Int, DutyCell>()) { acc, r -> acc.apply { r.cells.forEach { (d, c) -> putIfAbsent(d, c) } } })
+            RosterRow(label, parts.fold(sortedMapOf<Int, DutyCell>()) { acc, r -> acc.apply { r.cells.forEach { (d, c) -> putIfAbsent(d, c) } } },
+                parts.flatMap { it.guessed }.toSet())
         }
         val blank = rows.filter { it.label.isBlank() }
         // Two blank lines whose days do not overlap are one person's two halves.
         val joined = if (blank.size == 2 && blank[0].cells.keys.intersect(blank[1].cells.keys).isEmpty()) {
-            listOf(RosterRow("", (blank[0].cells + blank[1].cells).toSortedMap()))
+            listOf(RosterRow("", (blank[0].cells + blank[1].cells).toSortedMap(), blank[0].guessed + blank[1].guessed))
         } else blank
         return named + joined
     }
@@ -256,14 +298,16 @@ object DutyRoster {
     /** A roster written as a list, one day per line: "1 D", "10/3 N", "3일 주간". */
     private fun listRow(rows: List<List<RosterWord>>, codes: DutyCodes): RosterRow? {
         val cells = sortedMapOf<Int, DutyCell>()
+        val guessed = HashSet<Int>()
         val dated = Regex("""^(?:\d{1,2}[/.월-])?(\d{1,2})일?(?:\([^)]*\))?$""")
         for (row in rows) {
             if (row.size < 2 || row.size > 4) continue
             val day = dated.matchEntire(row[0].text.trim())?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in 1..31 } ?: continue
             val rest = row.drop(1).filter { DutyCodes.norm(it.text) !in WEEKDAYS && !it.text.trim().matches(Regex("""\([^)]*\)""")) }
-            val cell = rest.firstNotNullOfOrNull { codes.match(it.text) } ?: continue
-            cells.putIfAbsent(day, cell)
+            val word = rest.firstOrNull { codes.match(it.text) != null } ?: continue
+            val cell = codes.match(word.text)!!
+            if (cells.putIfAbsent(day, cell) == null && codes.guessedWork(word.text, cell)) guessed += day
         }
-        return RosterRow("", cells).takeIf { cells.size >= MIN_CELLS }
+        return RosterRow("", cells, guessed).takeIf { cells.size >= MIN_CELLS }
     }
 }

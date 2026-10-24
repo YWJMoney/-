@@ -202,7 +202,7 @@ class SetupViewModel(
         viewModelScope.launch {
             runCatching {
                 val text = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)!!.use { it.readBytes().decodeToString() }
+                    context.contentResolver.openInputStream(uri)!!.use { c.backupManager.read(it) }
                 }
                 when {
                     CompanyShare.isCompanyFile(text) -> importCompany(text)
@@ -236,6 +236,7 @@ class SetupViewModel(
     fun cancelFile() {
         _locked.value = null
         _pendingRestore.value = null
+        c.backupManager.putAway()
     }
 
     /** The user's own backup: everything comes back as it was and the first setup is not needed. */
@@ -448,6 +449,14 @@ class SetupViewModel(
 
     /** [SETUP-02] Same 조 as the coworker who sent the file: their order lines up as it is. */
     fun sameTeam() = update { d -> d.copy(anchor = d.source?.anchor, todayConfirmed = false) }
+
+    /**
+     * [SETUP-14] "잘 모르겠어요": the month is painted by hand instead of a repeating order. The shifts stay; the
+     * order and today's answer go, and the setup goes to the painting step.
+     */
+    fun paintInstead() = update { d ->
+        d.copy(rosterMonthly = true, rotation = emptyList(), anchor = null, todayConfirmed = false, step = SetupStep.ORDER)
+    }
 
     fun clearToday() = update { it.copy(anchor = null, todayConfirmed = false) }
 

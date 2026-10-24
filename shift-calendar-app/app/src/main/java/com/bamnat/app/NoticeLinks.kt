@@ -53,6 +53,18 @@ object NoticeLinks {
         PRO,
         /** [PROV-03] 설정 › 데이터 at 매일 자동 백업, from its notice. */
         BACKUP,
+        /** [DAILY-06] 내 달력 on the day in [payload] (yyyy-mm-dd) with that day open, from a widget's date. */
+        DAY,
+        /** [COMM-10] 회사 규칙 광장, from 광장 소식. */
+        PLAZA,
+        /** [INQ-05] 문의하기 on 내 문의, from 밤낮 소식's answer line. */
+        INQUIRY,
+        /** [ALRM-01] 설정 › 데이터 at 휴대폰 캘린더에 근무 쓰기, from the permission notice. */
+        PHONE_CALENDAR,
+        /** [SRV-09] What the update brought, from a notice's button. */
+        WHATS_NEW,
+        /** [SHR-14] 우리 조 모아 보기. */
+        GROUP,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"

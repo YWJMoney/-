@@ -26,7 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddAPhoto
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -453,6 +454,8 @@ private fun QuitScreen(calendarId: String, profile: PayProfile?, snapshot: Sched
     val weekly = remember(snapshot, lastWork) { averageWeeklyHours(snapshot, profile, lastWork).oneDecimal() }
     val five = profile?.fiveOrMoreEmployees ?: true
     val leaveMade = QuitCheck.leaveDays(hire, lastEmployed, weekly)
+    val ledger by remember(calendarId) { c.calendars.leave(calendarId).summary }.collectAsState(initial = null)
+    val ledgerLeft = ledger?.takeIf { it.lots.isNotEmpty() }?.afterPlanned?.coerceAtLeast(0.0)
     var leaveText by remember { mutableStateOf((saved?.unusedLeave ?: leaveMade).toString()) }
     val leaveDays = leaveText.toIntOrNull() ?: 0
     val leavePay = if (five) leaveDays * QuitCheck.leaveDayPay(weekly, wage) else 0
@@ -473,7 +476,7 @@ private fun QuitScreen(calendarId: String, profile: PayProfile?, snapshot: Sched
             Hint("최근 4주 평균 한 주 ${weekly}시간 · 시급 ${Fmt.won(wage)}로 셌어요.")
         }
         SectionCard(title = "마지막 주 주휴수당") {
-            Text("${Fmt.shortDate(last.weekStart)}~${Fmt.shortDate(last.weekEnd)} · ${"%.1f".format(last.minutes / 60.0)}시간" +
+            Text("${Fmt.shortDate(last.weekStart)}~${Fmt.shortDate(last.weekEnd)} · ${com.bamnat.core.hours.HoursFormat.korean(last.minutes.toInt())}" +
                 if (last.absent > 0) " · 결근 ${last.absent}일" else "", style = MaterialTheme.typography.bodyMedium)
             ValueLine("받을 돈", if (last.owed) Fmt.won(last.pay) else "없어요", strong = true)
             Hint(when {
@@ -491,6 +494,11 @@ private fun QuitScreen(calendarId: String, profile: PayProfile?, snapshot: Sched
             if (!five) Hint("5명 미만 사업장은 연차휴가가 법으로 정해져 있지 않아요.")
             else {
                 NumberField("쓰지 않은 연차", leaveText, { leaveText = it }, suffix = "일", maxLength = 2)
+                // [LEAVE-05] The 연차 원장 knows what is left; one tap puts it in.
+                ledgerLeft?.let { left ->
+                    Hint("연차 화면에 남은 연차 ${com.bamnat.core.leave.LeaveAccrual.days(left)} (쓸 예정 뺀 값)")
+                    if (left.toInt().toString() != leaveText) OutlinedButton(onClick = { leaveText = left.toInt().toString() }) { Text("${left.toInt()}일 넣기") }
+                }
                 Hint(if (leaveMade > 0) "이 기간에 생긴 연차는 약 ${leaveMade}일이에요. 쓴 날을 빼고 적어 주세요." else "주 15시간이 안 되거나 한 달을 못 채우면 연차가 없어요.")
                 ValueLine("받을 돈", Fmt.won(leavePay), strong = true)
                 Hint("하루치 = 하루 일하는 시간(한 주 시간 ÷ 5, 최대 8시간) × 시급으로 셌어요.")

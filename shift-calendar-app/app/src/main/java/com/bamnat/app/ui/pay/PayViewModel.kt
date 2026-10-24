@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.core.profile.FactKey
 import com.bamnat.app.pay.named
 
 import androidx.lifecycle.ViewModel
@@ -43,6 +44,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -82,6 +84,9 @@ class PayViewModel(
     val gate: StateFlow<Gate> = container.featureGate.state
     val snapshot: StateFlow<ScheduleSnapshot?> =
         scope.schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    /** [LEAVE-01] The calendar's 연차 원장 today. */
+    val leave: StateFlow<com.bamnat.core.leave.LeaveSummary?> =
+        scope.leave.summary.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     // [PAYX-15] Opens on the pay month today belongs to: after a 20일 close, 10/25 is November's pay.
     // [NAV-01] Opened while the calendar or 근무·급여 shows another month, pay opens on that month;
@@ -105,6 +110,8 @@ class PayViewModel(
         val snap = existing?.recalculated(result, System.currentTimeMillis()) ?: CalcSnapshot.close(result, System.currentTimeMillis())
         payStore.saveClosed(snap, result.month)
         container.telemetry.event("pay_month_close", if (existing == null) "close" else "recalc")
+        // [DAILY-17] A month closed is the second moment Play's review may be asked at, back on 내 달력.
+        if (existing == null) container.settingsRepository.update { if (it.payReviewAsked) it else it.copy(payReviewDue = true) }
     }
 
     fun reopenMonth(month: YearMonth) = viewModelScope.launch { payStore.saveClosed(null, month) }
@@ -126,9 +133,17 @@ class PayViewModel(
         )
     }
 
-    fun saveSetup(profile: PayProfile) = viewModelScope.launch {
-        payStore.save(profile, keepUndo = false)
+    // [PAYS-01] A second setup over an existing one can be undone like any other change ('방금 바꾼 것 되돌리기').
+    fun saveSetup(profile: PayProfile, fromSlip: Boolean = false) = viewModelScope.launch {
+        payStore.save(profile)
         container.telemetry.event("pay_setup_done", profile.occupation.name)
+        // [EASY-06] What a payslip photo filled is the profile's 추정 until the user changes it (K's flow is kept as it is).
+        val read = if (fromSlip) listOfNotNull(FactKey.WAGE_TYPE, FactKey.BASE_PAY, FactKey.PAY_ITEMS.takeIf { profile.items.isNotEmpty() }) else emptyList()
+        read.forEach { container.profiles.mark(calendarId, it, com.bamnat.core.profile.Source.INFERRED, SLIP_CONFIDENCE, "명세서 사진") }
+        // What the setup asked and the user answered is theirs, even an answer that is also the law's starting value;
+        // a 모르겠어요 stays the 법대로 가정 it is.
+        WIZARD_ASKS.filter { (key, mark) -> key !in read && (mark == null || mark !in profile.estimatedFields) && profile.has(key) }
+            .forEach { (key, _) -> container.profiles.mark(calendarId, key, com.bamnat.core.profile.Source.TYPED, why = "급여 설정") }
     }
 
     fun reset() = viewModelScope.launch { payStore.save(null) }
@@ -136,7 +151,49 @@ class PayViewModel(
     fun undo() = viewModelScope.launch { payStore.undo() }
 
     fun update(transform: (PayProfile) -> PayProfile) = viewModelScope.launch {
+        val before = payStore.profile.value
         payStore.update(transform)
+        checkVerified(before, payStore.profile.value)
+    }
+
+    /** [PAYX-22] A change that would move a month matched with a payslip, until the user picks what to do. */
+    data class VerifiedPrompt(val change: com.bamnat.core.pay.VerifiedChange.Change, val before: PayProfile, val scoped: PayProfile?)
+
+    private val _verifiedPrompt = MutableStateFlow<VerifiedPrompt?>(null)
+    val verifiedPrompt: StateFlow<VerifiedPrompt?> = _verifiedPrompt.asStateFlow()
+
+    private suspend fun checkVerified(before: PayProfile?, after: PayProfile?) {
+        if (before == null || after == null || before == after) return
+        // A month kept as it was ([closeMonth]) does not move.
+        if ((after.verified ?: before.verified)?.month in closed.value) return
+        val snap = snapshot.value ?: scope.schedule.snapshot.first()
+        val prompt = withContext(Dispatchers.Default) {
+            val total = { p: PayProfile, m: YearMonth ->
+                calculator.calculate(p.named(settings.value.extraKinds).hourlyWeek(settings.value), m, snap.resolver::resolve, checks = false).total
+            }
+            com.bamnat.core.pay.VerifiedChange.check(before, after, total)?.let { c ->
+                val start = after.period.start(after.period.monthOf(LocalDate.now()))
+                VerifiedPrompt(c, before, com.bamnat.core.pay.VerifiedChange.startingOn(before, after, start))
+            }
+        }
+        _verifiedPrompt.value = prompt
+    }
+
+    /** [PAYX-22] Keep the change as made; the matched month shows its new total. */
+    fun keepVerifiedChange() { _verifiedPrompt.value = null }
+
+    /** [PAYX-22] The change from this pay period on; the matched month keeps its total. */
+    fun startChangeNow() = viewModelScope.launch {
+        val p = _verifiedPrompt.value?.scoped ?: return@launch
+        _verifiedPrompt.value = null
+        payStore.update { p }
+    }
+
+    /** [PAYX-22] Back to before the change. */
+    fun undoVerifiedChange() = viewModelScope.launch {
+        val p = _verifiedPrompt.value?.before ?: return@launch
+        _verifiedPrompt.value = null
+        payStore.update { p }
     }
 
     // ---- values over time ----
@@ -176,7 +233,8 @@ class PayViewModel(
         val id = "item-" + System.currentTimeMillis()
         val value = if (amount == null) ValueTimeline() else ValueTimeline(listOf(DatedValue(p.period.start(from), amount)))
         p.copy(items = p.items + PayItem(id, name.trim().ifEmpty { "수당" }, value, cadence,
-            ordinary = ordinary, fixedOvertimeMinutes = fixedOvertimeMinutes),
+            ordinary = ordinary, fixedOvertimeMinutes = fixedOvertimeMinutes,
+            taxable = !(cadence == Cadence.MONTHLY && fixedOvertimeMinutes == 0 && com.bamnat.core.pay.TakeHome.looksNonTaxable(name))),
             estimatedFields = if (amount == null) p.estimatedFields + Unknowns.item(id) else p.estimatedFields)
     }
 
@@ -312,6 +370,10 @@ class PayViewModel(
         (1..12).map { asShown(calculate(profile, snapshot, YearMonth.of(year, it))) }
     }
 
+    /** [PAYX-45] One month as shown (마감 kept), for a bundle. */
+    fun monthPay(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): MonthPay? =
+        runCatching { asShown(calculate(profile, snapshot, month)) }.getOrNull()
+
     /** [PROV-01] Which report was made, never what it said. */
     fun reportMade(what: String) = container.telemetry.event("pay_report", what)
 
@@ -385,4 +447,22 @@ class PayViewModel(
         val v = match.verifiedProfile(System.currentTimeMillis())
         v.copy(rules = v.rules.copy(extraNames = p.rules.extraNames))
     }
+}
+
+/** [EASY-06] How sure a payslip read is taken to be: the user saw every value it filled before saving. */
+private const val SLIP_CONFIDENCE = 0.8
+
+/** [EASY-06] The facts the pay setup asks, with the mark its 모르겠어요 leaves. */
+private val WIZARD_ASKS: List<Pair<FactKey, String?>> = listOf(
+    FactKey.WAGE_TYPE to null, FactKey.BASE_PAY to com.bamnat.core.pay.Unknowns.BASE, FactKey.PAY_ITEMS to null,
+    FactKey.PAY_DAY to null, FactKey.HIRE_DATE to null,
+    FactKey.MONTHLY_HOURS to com.bamnat.core.pay.Unknowns.MONTHLY_HOURS, FactKey.HOLIDAY_PAY to com.bamnat.core.pay.Unknowns.HOLIDAY_PAY_MODE,
+    FactKey.PUBLIC_HOLIDAYS to com.bamnat.core.pay.Unknowns.PUBLIC_HOLIDAYS, FactKey.FIVE_OR_MORE to com.bamnat.core.pay.Unknowns.FIVE_OR_MORE,
+)
+
+private fun PayProfile.has(key: FactKey): Boolean = when (key) {
+    FactKey.PAY_DAY -> period.payDay != null
+    FactKey.HIRE_DATE -> hireDate != null
+    FactKey.PAY_ITEMS -> items.isNotEmpty()
+    else -> true
 }

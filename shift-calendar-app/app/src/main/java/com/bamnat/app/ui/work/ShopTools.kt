@@ -18,7 +18,7 @@ import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Umbrella
 import androidx.compose.material.icons.outlined.WbSunny
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -337,10 +337,10 @@ private fun StaffEditor(s: Staff, minimum: Long, onChange: (Staff) -> Unit, onRe
                     TextButton(onClick = { picking = d to true }) { Text(Fmt.time(sh.start)) }
                     Text("~")
                     TextButton(onClick = { picking = d to false }) { Text(Fmt.time(sh.end)) }
-                    Text("${"%.1f".format(sh.spanMinutes / 60.0)}시간", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(com.bamnat.core.hours.HoursFormat.korean(sh.spanMinutes.toInt()), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            if (s.shifts.isNotEmpty()) Hint("한 주 ${"%.1f".format(s.weeklyMinutes(false) / 60.0)}시간 (휴게 빼기 전)")
+            if (s.shifts.isNotEmpty()) Hint("한 주 ${com.bamnat.core.hours.HoursFormat.korean(s.weeklyMinutes(false).toInt())} (휴게 빼기 전)")
         }
     }
     picking?.let { (day, isStart) ->

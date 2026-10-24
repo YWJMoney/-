@@ -94,6 +94,14 @@ data class ExtraEntry(
     val coveredShiftId: Long? = null,
     /** [EXTRA-05] Moved from an older record that may hold hours nobody meant; asks the user once. */
     val needsReview: Boolean = false,
+    /** [PAYX-18] Paid in time off instead of money (보상휴가, 근로기준법 제57조). */
+    val compLeave: Boolean = false,
+    /**
+     * [PAYX-30] 휴일대체: the holiday this work fell on was swapped in advance for this day (근로기준법 제55조 제2항 단서,
+     * 근로자대표와 서면 합의; 주휴일은 취업규칙). The work is then an ordinary working day's and the day named here is
+     * the holiday instead. Null for none.
+     */
+    val substitute: java.time.LocalDate? = null,
 ) {
     val hasTimes: Boolean get() = start != null && end != null
 

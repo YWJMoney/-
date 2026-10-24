@@ -33,14 +33,14 @@ import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
+import com.bamnat.app.ui.components.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
@@ -176,7 +176,9 @@ private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, 
                 Spacer(Modifier.width(10.dp))
             }
             Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f),
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // [A11Y-03] Two lines, so large text shows "이번 달 예산" instead of "이번 달 …".
+                maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.width(8.dp))
             Text("${Fmt.won(b.spent)} / ${Fmt.won(b.budget)}", style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -296,7 +298,7 @@ fun AccountsCard(book: MoneyBook, today: LocalDate, onAdd: (AccountType?) -> Uni
     val balances = remember(book) { MoneyAccounts.balances(book.accounts, book.entries) }
     SectionCard(
         title = "결제수단·계좌",
-        trailing = { TextButton(onClick = { onAdd(null) }) { Icon(Icons.Filled.Add, null); Spacer(Modifier.width(4.dp)); Text("추가") } },
+        trailing = { com.bamnat.app.ui.components.AddButton("추가", onClick = { onAdd(null) }) },
     ) {
         if (accounts.isEmpty()) {
             Text("현금·통장·카드를 적어 두면 어디서 얼마 나갔는지, 이번 달 카드값이 얼마 나올지 알려 줘요. 카드 결제 알림도 끝 4자리로 알아서 이어 줘요.",
@@ -450,14 +452,13 @@ fun AccountEditor(
 
 @Composable
 private fun DayStepper(label: String, day: Int, onChange: (Int) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        IconButton(onClick = { onChange(if (day <= 1) 31 else day - 1) }) { Text("−", style = MaterialTheme.typography.titleLarge) }
-        Text(if (day >= 31) "말일" else "${day}일", style = MaterialTheme.typography.titleMedium, modifier = Modifier.widthIn(min = 48.dp),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        IconButton(onClick = { onChange(if (day >= 31) 1 else day + 1) }) { Text("+", style = MaterialTheme.typography.titleLarge) }
+    // [UX-08] The app's one stepper; 말일 runs on to 1일.
+    com.bamnat.app.ui.components.StepperRow(label) {
+        com.bamnat.app.ui.components.CountStepper(day, onChange, name = label, range = 1..31, wrap = true, format = ::dayOfMonth)
     }
 }
+
+private fun dayOfMonth(day: Int): String = if (day >= 31) "말일" else "${day}일"
 
 /** One category in the editor: its name now, the name it had, and whether it is hidden. */
 private data class EditRow(val name: String, val was: String?, val hidden: Boolean)

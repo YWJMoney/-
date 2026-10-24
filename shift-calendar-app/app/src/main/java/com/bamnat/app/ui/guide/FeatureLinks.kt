@@ -71,7 +71,6 @@ object FeatureLinks {
 fun Place.settingsPage(): SettingsPage? = when (this) {
     Place.SETTINGS_WORK -> SettingsPage.WORK
     Place.SETTINGS_ALARM -> SettingsPage.ALARM
-    Place.SETTINGS_REST -> SettingsPage.REST
     Place.SETTINGS_NOTICES -> SettingsPage.NOTICES
     Place.SETTINGS_PAY -> SettingsPage.PAY
     Place.SETTINGS_CALENDAR -> SettingsPage.CALENDAR
@@ -93,11 +92,12 @@ val TOOL_KEYS = setOf(
 /**
  * [GUIDE-05] One switch per feature that can be off, read and set in one place. The app's own switches
  * are in [GuideStore]; a switch that was there before is used as it is, never copied: 오늘의 흐름 and 잠금
- * 화면 오늘 근무 in settings, 출퇴근 자동 기록, a shop's 매출 없으면 휴무, and 결제 알림 읽기.
+ * 화면 오늘 근무 in settings, 출퇴근 자동 기록, a shop's 매출 없으면 휴무, 결제 알림 읽기 and 연차 사용 촉진 알림.
  */
 object FeatureSwitches {
     /** The features of [Off.ELSEWHERE], each with its own branch below. */
-    val LINKED = setOf("today.flow", "lock.today", "day.commute", "shop.autoClose", "money.auto")
+    val LINKED = setOf("today.flow", "lock.today", "day.commute", "shop.autoClose", "money.auto", "shift.restRules", "privacy.usageStats", "plaza.news", "leave.promotion",
+        "alarm.suggest") // O 1.23 (I)
 
     fun isOn(c: AppContainer, feature: AppFeature, calendar: String): Boolean = when (feature.off) {
         null -> true
@@ -108,6 +108,12 @@ object FeatureSwitches {
             "day.commute" -> CommutePrefs.get(c.appContext).current.enabled
             "shop.autoClose" -> c.calendars.get(calendar)?.shop?.autoClosed ?: true
             "money.auto" -> CaptureService.isOn(c.appContext) && CaptureService.hasAccess(c.appContext)
+            "shift.restRules" -> c.settingsRepository.current.restCheck
+            "privacy.usageStats" -> c.settingsRepository.current.shareUsageStats
+            "plaza.news" -> c.settingsRepository.current.plazaNews
+            // [LEAVE-03] The notice switch in settings and on the 연차 screen.
+            "leave.promotion" -> c.settingsRepository.current.leaveNotice
+            "alarm.suggest" -> c.settingsRepository.current.alarmSuggest // O 1.23 (I)
             else -> true
         }
     }
@@ -133,6 +139,12 @@ object FeatureSwitches {
                 "day.commute" -> if (on) { FeatureLinks.open(feature); return false } else com.bamnat.app.commute.CommuteRecorder.turnOff(c.appContext)
                 "shop.autoClose" -> c.calendars.updateShop(calendar) { it.copy(autoClosed = on) }
                 "money.auto" -> if (on) { FeatureLinks.open(feature); return false } else CaptureService.setOn(c.appContext, false)
+                "shift.restRules" -> c.settingsRepository.update { it.copy(restCheck = on) }
+                // A yes to sending is given where what goes is shown.
+                "privacy.usageStats" -> if (on) { FeatureLinks.open(feature); return false } else c.setUsageStats(false)
+                "plaza.news" -> c.settingsRepository.update { it.copy(plazaNews = on) }
+                "leave.promotion" -> c.settingsRepository.update { it.copy(leaveNotice = on) }
+                "alarm.suggest" -> c.settingsRepository.update { it.copy(alarmSuggest = on) } // O 1.23 (I)
                 else -> { FeatureLinks.open(feature); return false }
             }
         }

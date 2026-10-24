@@ -77,6 +77,8 @@ fun GuideArea(
     now: LocalDateTime = LocalDateTime.now(),
     /** Trades in an investor calendar ([com.bamnat.core.guide.Moment.FIRST_TRADE]). */
     trades: Int = 0,
+    /** [EASY-05] False on a day the question card was shown: the tip waits (the checklist does not). */
+    tipAllowed: Boolean = true,
 ) {
     val context = LocalContext.current
     val store = remember { GuideStore.get(context) }
@@ -103,6 +105,7 @@ fun GuideArea(
         )
         return
     }
+    if (!tipAllowed) return
     val facts = remember(snapshot, book, profile, style, weekStart, now.hour, today, trades) { factsOf(style, now, snapshot, book, profile, weekStart).copy(trades = trades) }
     val moments = remember(facts) { GuideMoments.of(facts) }
     val pick = remember(state, calendar, style, moments, today) { GuideTips.pick(state, calendar, style, moments, today) } ?: return

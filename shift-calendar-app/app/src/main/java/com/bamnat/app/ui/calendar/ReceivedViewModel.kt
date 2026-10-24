@@ -92,11 +92,27 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
                 Refresh.Idle
             } catch (e: ShareLinkException) {
                 // Cut or run out: what the sharer took back goes from this phone too.
-                if (e.message == "not_found") c.received.markGone(id)
+                if (e.message == "not_found") c.received.markGone(id, e.removedReason)
                 if (e.message == "not_found") Refresh.Idle else Refresh.Offline(id)
             } catch (e: IOException) {
                 Refresh.Offline(id)
             }
+        }
+    }
+
+    /** [SRV-05] 이 근무표 신고하기; [done] gets what to tell the user. */
+    fun report(id: String, reason: com.bamnat.app.share.ShareReport, done: (String) -> Unit) {
+        viewModelScope.launch {
+            val said = try {
+                c.shareApi.report(id, reason.code)
+                c.telemetry.event("share_report", reason.code)
+                "신고했어요. 운영자가 확인하고 운영 규칙에 어긋나면 링크를 내려요. 누가 신고했는지는 남지 않아요."
+            } catch (e: ShareLinkException) {
+                if (e.message == "rate_limited") "잠시 뒤에 다시 신고해 주세요." else "신고를 보내지 못했어요. 잠시 뒤 다시 해 주세요."
+            } catch (e: IOException) {
+                "인터넷에 연결되지 않았어요. 연결을 확인하고 다시 해 주세요."
+            }
+            done(said)
         }
     }
 
@@ -119,9 +135,10 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
                 Preview.Ready(id, share, SharedSchedule.parse(share.schedule), existing = c.received.get(id) != null)
             } catch (e: ShareLinkException) {
                 // A kept calendar whose link is gone loses its schedule here too.
-                if (e.message == "not_found" && c.received.get(id) != null) c.received.markGone(id)
+                if (e.message == "not_found" && c.received.get(id) != null) c.received.markGone(id, e.removedReason)
                 Preview.Failed(
-                    if (e.message == "not_found") "이 링크는 끊겼거나 기간이 지났어요. 보낸 분께 새 링크를 부탁해 보세요."
+                    if (e.removedReason != null) "운영자가 이 링크를 내렸어요. 이유: ${e.removedReason}"
+                    else if (e.message == "not_found") "이 링크는 끊겼거나 기간이 지났어요. 보낸 분께 새 링크를 부탁해 보세요."
                     else "근무표를 받지 못했어요 (${e.message}). 잠시 뒤 다시 해 주세요.",
                 )
             } catch (e: IOException) {

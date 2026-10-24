@@ -17,13 +17,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddAPhoto
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -131,4 +134,45 @@ fun ProofSection(proof: String, onProof: (String) -> Unit, receipt: String, onRe
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+/**
+ * [LEDG-25] 영수증으로 채우기: a receipt photo read on the phone (ML Kit, the same model as payslips) into a
+ * spending line to check. The photo stays as the line's receipt; nothing is saved until the user saves.
+ */
+@Composable
+fun ReceiptScanChip(onRead: (com.bamnat.core.money.ReceiptReader.Draft, String) -> Unit, onMessage: (String) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var reading by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) scope.launch {
+            reading = true
+            try {
+                val name = ReceiptFiles.import(context, uri)
+                val file = name?.let { ReceiptFiles.file(context, it) }
+                if (name == null || file == null) { onMessage("사진을 읽지 못했어요"); return@launch }
+                val result = runCatching { com.bamnat.app.pay.PayslipScanner.read(context, Uri.fromFile(file)) }
+                val text = result.getOrNull().orEmpty()
+                val notReady = result.exceptionOrNull() as? com.bamnat.app.pay.OcrModel.NotReady
+                val draft = com.bamnat.core.money.ReceiptReader.read(text, java.time.LocalDate.now())
+                onRead(draft, name)
+                onMessage(when {
+                    // [PERF-04] The model is still on its way: the photo is attached, the reading can come later.
+                    notReady != null -> "사진만 붙였어요. ${notReady.message}"
+                    draft.isEmpty -> "글자를 찾지 못했어요. 사진만 붙였어요"
+                    draft.sure -> "영수증에서 읽었어요. 맞는지 보고 저장해 주세요"
+                    else -> "합계를 못 찾아 가장 큰 금액을 넣었어요. 꼭 확인해 주세요"
+                })
+            } finally {
+                reading = false
+            }
+        }
+    }
+    AssistChip(
+        onClick = { runCatching { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) } },
+        enabled = !reading,
+        label = { Text(if (reading) "읽는 중…" else "영수증 사진으로 채우기") },
+        leadingIcon = { Icon(Icons.Outlined.AddAPhoto, null, Modifier.size(18.dp)) },
+    )
 }

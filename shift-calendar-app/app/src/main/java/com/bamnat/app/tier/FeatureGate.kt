@@ -67,6 +67,8 @@ enum class Feature(val label: String, val minTier: Tier) {
     ROSTER_PDF("근무표 PDF", Tier.PRO),
     /** [PROV-06][PROV-07] A task before the alarm stops, and a check a few minutes later that the user is up. */
     SURE_ALARM("끄기 미션·일어났는지 확인", Tier.PRO),
+    /** [LEAVE-05] 미사용 연차수당: what the days left are worth, and a 정산 row on the 연차 원장. */
+    LEAVE_PAYOUT("미사용 연차수당 계산", Tier.PRO),
     /** Phase 3 (M24), not sold yet. */
     TEAM_ROSTER("팀 근무표 만들기", Tier.LEADER),
 }

@@ -1,5 +1,9 @@
 package com.bamnat.app.pay
 
+import com.bamnat.core.hours.HoursException
+import com.bamnat.core.pay.BonusBasis
+import com.bamnat.core.pay.ProrationBasis
+import com.bamnat.core.pay.WonRounding
 import android.content.Context
 import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.pay.FlexPeriod
@@ -39,6 +43,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import com.bamnat.core.leave.LeaveBasis
+import com.bamnat.core.leave.LeavePolicy
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -185,6 +191,8 @@ object PayCodec {
         .put("weeklyLimit", p.weeklyLimitMinutes ?: -1)
         .put("scheduleIsRegular", p.scheduleIsRegular)
         .put("flexPeriod", p.flexPeriod?.name)
+        // [PAYX-17] The date a 2주 탄력 period counts from; left out when unset.
+        .putOpt("flexStart", p.flexStart?.toString())
         .put("weekStart", p.weekStart.name)
         .put("estimated", JSONArray(p.estimatedFields.toList()))
         .put("period", period(p.period))
@@ -197,10 +205,22 @@ object PayCodec {
         .apply { if (p.customRules.isNotEmpty()) put("customRules", JSONArray(p.customRules.map(::customRule))) }
         // [HRLY-04..HRLY-07] 알바 settings, left out at their defaults so older files stay the same.
         .apply { if (p.taxMode != com.bamnat.core.pay.TaxMode.NONE) put("taxMode", p.taxMode.name) }
+        // [PAYR-04] 간이세액표 가족·자녀 수, left out at 1·0.
+        .apply { if (p.taxFamily != 1) put("taxFamily", p.taxFamily) }
+        .apply { if (p.taxChildren != 0) put("taxChildren", p.taxChildren) }
         .apply { if (p.legalBreaks) put("legalBreaks", true) }
         .putOpt("probationEnd", p.probationEnd?.toString())
         .apply { if (p.probationPercent != 90) put("probationPercent", p.probationPercent) }
         .putOpt("holidayWeekStart", p.holidayWeekStart?.name)
+        // [JOB-02] 공무원 직급·호봉, left out when not set so older files stay the same.
+        .putOpt("publicGrade", p.publicGrade?.let { g ->
+            JSONObject().put("grade", g.gradeId).put("step", g.step).putOpt("start", g.serviceStart?.toString()).put("onSite", g.onSite)
+        })
+        // [PAYX-24][PAYX-25] 1.23; left out when not set so older files stay the same.
+        .putOpt("leaveDate", p.leaveDate?.toString())
+        .apply { if (p.productionWorker) put("production", true) }
+        .putOpt("previousYearPay", p.previousYearPay)
+        .apply { if (p.ledgerTakeHome) put("ledgerNet", true) }
 
     fun decode(o: JSONObject): PayProfile = PayProfile(
         // [PAYS-03] A job or wage type from a newer version reads as 직접 설정 and 월급제 rather than failing the file.
@@ -216,6 +236,7 @@ object PayCodec {
         weeklyLimitMinutes = o.optInt("weeklyLimit", 2400).takeIf { it >= 0 },
         scheduleIsRegular = o.optBoolean("scheduleIsRegular", false),
         flexPeriod = o.optString("flexPeriod").let { n -> FlexPeriod.entries.firstOrNull { it.name == n } },
+        flexStart = o.optString("flexStart").takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
         weekStart = runCatching { DayOfWeek.valueOf(o.getString("weekStart")) }.getOrDefault(DayOfWeek.MONDAY),
         estimatedFields = o.optJSONArray("estimated")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet(),
         rules = o.optJSONObject("rules")?.let(::rules) ?: CompanyRules(),
@@ -225,10 +246,27 @@ object PayCodec {
         verified = o.optJSONObject("verified")?.let(::verifiedFrom),
         customRules = o.optJSONArray("customRules").objects().mapNotNull(::customRuleFrom).take(CustomRule.MAX),
         taxMode = com.bamnat.core.pay.TaxMode.entries.firstOrNull { it.name == o.optString("taxMode") } ?: com.bamnat.core.pay.TaxMode.NONE,
+        taxFamily = o.optInt("taxFamily", 1).coerceIn(1, 20),
+        taxChildren = o.optInt("taxChildren", 0).coerceIn(0, 19),
         legalBreaks = o.optBoolean("legalBreaks", false),
         probationEnd = o.optString("probationEnd").takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
         probationPercent = o.optInt("probationPercent", 90).coerceIn(50, 100),
         holidayWeekStart = o.optString("holidayWeekStart").let { n -> DayOfWeek.entries.firstOrNull { it.name == n } },
+        // [JOB-02] A grade this version's table does not have is dropped rather than failing the file.
+        publicGrade = o.optJSONObject("publicGrade")?.let { g ->
+            com.bamnat.core.pay.PublicPayTable.grade(g.optString("grade"))?.let {
+                com.bamnat.core.pay.PublicGrade(
+                    gradeId = it.id,
+                    step = g.optInt("step", 1).coerceAtLeast(1),
+                    serviceStart = g.optString("start").takeIf { s -> s.isNotEmpty() }?.let { s -> runCatching { LocalDate.parse(s) }.getOrNull() },
+                    onSite = g.optBoolean("onSite", true),
+                )
+            }
+        },
+        leaveDate = o.optString("leaveDate").takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
+        productionWorker = o.optBoolean("production", false),
+        previousYearPay = if (o.has("previousYearPay") && !o.isNull("previousYearPay")) o.optLong("previousYearPay").coerceAtLeast(0) else null,
+        ledgerTakeHome = o.optBoolean("ledgerNet", false),
     )
 
     /** [PAYS-06] One of the user's own rules. */
@@ -343,10 +381,17 @@ object PayCodec {
         .put("leaveCarry", r.annualLeaveCarry)
         .putOpt("publicHolidayAs", r.publicHolidayAs?.toString())
         .put("holidayLeaveFree", r.holidayLeaveFree)
+        // [LEAVE-02] How 연차 is counted; left out at its default so older files stay the same.
+        .apply { if (r.leave != LeavePolicy()) put("leave", leavePolicy(r.leave)) }
         .put("holidayByStart", r.holidayByShiftStart)
         .putOpt("nightStart", r.nightStart?.toString()).putOpt("nightEnd", r.nightEnd?.toString())
         // [PAYS-03] 감시·단속 승인, 5인 미만 회사가 주는 공휴일, 휴게 처리.
         .put("supervisory", r.supervisoryApproved).put("holidaysU5", r.holidaysUnderFive).put("breakPay", r.breakPay.name)
+        // [PAYX-24][PAYX-27][PAYX-29][PAYX-33] 1.23; each left out at its default.
+        .apply { if (r.proration != ProrationBasis.CALENDAR_DAYS) put("proration", r.proration.name) }
+        .apply { if (r.wonRounding != WonRounding.HOURLY_FIRST) put("wonRounding", r.wonRounding.name) }
+        .apply { if (r.hoursException != HoursException.NONE) put("hoursException", r.hoursException.name) }
+        .apply { if (r.partTimePremium) put("partTime50", true) }
         // [EXTRA-03] Keyed by kind id; 1.8 and earlier used OVERTIME / SPECIAL / COVER.
         .put("extraByShift", JSONObject().apply {
             r.extraByShift.forEach { (kind, byType) ->
@@ -376,10 +421,16 @@ object PayCodec {
         annualLeaveCarry = o.optDouble("leaveCarry", 0.0),
         publicHolidayAs = o.optString("publicHolidayAs").takeIf { it.isNotEmpty() && it != "null" }?.let(::kindId),
         holidayLeaveFree = o.optBoolean("holidayLeaveFree", false),
+        leave = o.optJSONObject("leave")?.let(::leavePolicyFrom) ?: LeavePolicy(),
         holidayByShiftStart = o.optBoolean("holidayByStart", false),
         supervisoryApproved = o.optBoolean("supervisory", false),
         holidaysUnderFive = o.optBoolean("holidaysU5", false),
         breakPay = o.optString("breakPay").let { n -> BreakPay.entries.firstOrNull { it.name == n } } ?: BreakPay.UNPAID,
+        // A value from a newer version reads as the default.
+        proration = o.optString("proration").let { n -> ProrationBasis.entries.firstOrNull { it.name == n } } ?: ProrationBasis.CALENDAR_DAYS,
+        wonRounding = o.optString("wonRounding").let { n -> WonRounding.entries.firstOrNull { it.name == n } } ?: WonRounding.HOURLY_FIRST,
+        hoursException = HoursException.of(o.optString("hoursException")),
+        partTimePremium = o.optBoolean("partTime50", false),
         extra = o.optJSONObject("extra")?.let { x ->
             x.keys().asSequence().mapNotNull { key ->
                 val kind = kindId(key) ?: return@mapNotNull null
@@ -402,6 +453,8 @@ object PayCodec {
         .put("percent", e.percentOfBase).put("cover", e.coverMinutes ?: -1).put("premiums", e.legalPremiums).put("bonus", e.bonus)
         .put("dayTiers", tiers(e.dayTiers)).put("nightTiers", tiers(e.nightTiers))
         .put("unit", e.unit.name).put("unitMin", e.unitMinutes).put("adds", premiums(e.premiums))
+        // [PAYX-21] Left out when off so older files stay the same.
+        .apply { if (e.tiersFromDayStart) put("tiersFromDay", true) }
 
     private fun extraRule(e: JSONObject): ExtraRule = ExtraRule(
         // A basis this version does not know (a newer file) is paid by law rather than guessed.
@@ -419,6 +472,17 @@ object PayCodec {
         unit = runCatching { PayUnit.valueOf(e.optString("unit")) }.getOrDefault(PayUnit.ORDINARY),
         unitMinutes = e.optInt("unitMin", 8 * 60).coerceIn(30, 24 * 60),
         premiums = e.optJSONArray("adds")?.let(::premiums).orEmpty(),
+        tiersFromDayStart = e.optBoolean("tiersFromDay", false),
+    )
+
+    private fun leavePolicy(l: LeavePolicy): JSONObject = JSONObject().put("auto", l.auto).put("basis", l.basis.name)
+        .put("fiscalMonth", l.fiscalStartMonth).put("low", JSONArray(l.lowAttendanceYears.sorted()))
+
+    private fun leavePolicyFrom(o: JSONObject): LeavePolicy = LeavePolicy(
+        auto = o.optBoolean("auto", true),
+        basis = LeaveBasis.entries.firstOrNull { it.name == o.optString("basis") } ?: LeaveBasis.HIRE,
+        fiscalStartMonth = o.optInt("fiscalMonth", 1).coerceIn(1, 12),
+        lowAttendanceYears = o.optJSONArray("low")?.let { a -> (0 until a.length()).map { a.optInt(it) }.filter { it >= 1 }.toSet() }.orEmpty(),
     )
 
     private fun premiums(p: List<Premium>): JSONArray = JSONArray(p.map {
@@ -536,6 +600,8 @@ object PayCodec {
         .put("festivals", JSONArray(i.festivals.map { it.name })).put("festivalBefore", i.festivalMonthBefore)
         // [PAYS-03] Only when chosen: without it the allowance keeps its default (연장 for a 고정 연장수당).
         .putOpt("covers", i.covers?.let { c -> JSONArray(PayItem.COVERABLE.filter { it in c }.map { it.name }) })
+        // [PAYX-31] Only when not 기본급.
+        .apply { if (i.bonusBasis != BonusBasis.BASE) put("bonusBasis", i.bonusBasis.name) }
 
     private fun item(o: JSONObject): PayItem = PayItem(
         id = o.getString("id"),
@@ -553,6 +619,7 @@ object PayCodec {
         covers = o.optJSONArray("covers")?.let { a ->
             (0 until a.length()).mapNotNull { n -> PayItem.COVERABLE.firstOrNull { it.name == a.optString(n) } }.toSet()
         },
+        bonusBasis = o.optString("bonusBasis").let { n -> BonusBasis.entries.firstOrNull { it.name == n } } ?: BonusBasis.BASE,
     )
 
     private fun JSONArray?.objects(): List<JSONObject> =

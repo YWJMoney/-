@@ -25,20 +25,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bamnat.app.data.ThemeMode
 
-private val LightColors = lightColorScheme(
+// [A11Y-01] Text colours reach 4.5:1 on the page, cards and sheets (ContrastTest); secondary, tertiary and error
+// were made a shade darker in 1.22 for that.
+internal val LightColors = lightColorScheme(
     primary = Color(0xFF2F5BEA),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFDDE4FF),
     onPrimaryContainer = Color(0xFF001257),
-    secondary = Color(0xFF00897B),
+    secondary = Color(0xFF00756A),
     onSecondary = Color(0xFFFFFFFF),
     secondaryContainer = Color(0xFFC8F2EA),
     onSecondaryContainer = Color(0xFF00201C),
-    tertiary = Color(0xFFE07A1F),
+    tertiary = Color(0xFFA14F00),
     onTertiary = Color(0xFFFFFFFF),
     tertiaryContainer = Color(0xFFFFE2CC),
     onTertiaryContainer = Color(0xFF2E1500),
-    error = Color(0xFFD92D20),
+    error = Color(0xFFC4261A),
     onError = Color(0xFFFFFFFF),
     errorContainer = Color(0xFFFEE4E2),
     onErrorContainer = Color(0xFF55160C),
@@ -57,7 +59,7 @@ private val LightColors = lightColorScheme(
     surfaceContainerHighest = Color(0xFFE0E3ED),
 )
 
-private val DarkColors = darkColorScheme(
+internal val DarkColors = darkColorScheme(
     primary = Color(0xFFB4C4FF),
     onPrimary = Color(0xFF00218B),
     primaryContainer = Color(0xFF1D41C2),
@@ -99,30 +101,51 @@ data class CalendarColors(
     val holidayWork: Color,
     val memoDot: Color,
     /** [LEDG-01] Money in and out. */
-    val income: Color = Color(0xFF12805C),
-    val expense: Color = Color(0xFFD14343),
+    val income: Color = Color(0xFF0F7A56),
+    val expense: Color = Color(0xFFC53030),
     /** [VIS-01] A day whose alarms were turned off. */
-    val alarmOff: Color = Color(0xFFD92D20),
+    val alarmOff: Color = Color(0xFFC4261A),
     /** [VIS-01] A day the user changed by hand. */
-    val changed: Color = Color(0xFFB45309),
+    val changed: Color = Color(0xFFA14F00),
     /** [SLP-14] Sleep and naps on the today strip, and the button that starts a sleep. */
     val sleep: Color = Color(0xFF4F5BD5),
     val nap: Color = Color(0xFFA5ADF0),
     val sleepContainer: Color = Color(0xFFCDD1FB),
     val onSleepContainer: Color = Color(0xFF1F287A),
+    /**
+     * [VIS-03] Leave marks (연·반·¼ squares and the leave lines): violet for 연차, blue for other paid leave,
+     * grey for unpaid, teal for 보상휴가 [FEAT-10, PAYX-18]. Letters on them come from contentColorOn (4.45:1),
+     * and the square itself stands out from the page at 3:1 (ContrastTest).
+     */
+    val leaveAnnual: Color = Color(0xFF7048E8),
+    val leavePaid: Color = Color(0xFF1A75CC),
+    val leaveUnpaid: Color = Color(0xFF666E77),
+    val leaveComp: Color = Color(0xFF0B7F92),
+    /**
+     * [VIS-03] The pay lines' colours, matching the walkthrough's time bar; the base pay line is the theme's
+     * primary. They are also written as text (an amount's colour), so 4.5:1 on cards and sheets (ContrastTest).
+     */
+    val payOvertime: Color = Color(0xFFA35200),
+    val payNight: Color = Color(0xFF6741D9),
+    val payHoliday: Color = Color(0xFFC92A2A),
+    val payExtra: Color = Color(0xFFC2255C),
+    val payExtraHours: Color = Color(0xFF1864AB),
+    val payAllowance: Color = Color(0xFF237032),
+    val payLeave: Color = Color(0xFF7048E8),
 )
 
 // [VIS-01] Weekend numbers and the extra-hours text reach 4.5:1 on white and on a shift's tint.
-private val LightCalendarColors = CalendarColors(
-    sunday = Color(0xFFD92D20),
+// [A11Y-01] And on cards and sheets too (ContrastTest): the reds, oranges and greens are a shade darker since 1.22.
+internal val LightCalendarColors = CalendarColors(
+    sunday = Color(0xFFC4261A),
     saturday = Color(0xFF2F5BEA),
-    warning = Color(0xFFD92D20),
+    warning = Color(0xFFC4261A),
     warningContainer = Color(0xFFFEE4E2),
-    holidayWork = Color(0xFFB45309),
+    holidayWork = Color(0xFFA14F00),
     memoDot = Color(0xFF00897B),
 )
 
-private val DarkCalendarColors = CalendarColors(
+internal val DarkCalendarColors = CalendarColors(
     sunday = Color(0xFFFF7A7F),
     saturday = Color(0xFF8AB0FF),
     warning = Color(0xFFFF8A80),
@@ -137,6 +160,17 @@ private val DarkCalendarColors = CalendarColors(
     nap = Color(0xFF5A64B8),
     sleepContainer = Color(0xFF323A7A),
     onSleepContainer = Color(0xFFDFE1FF),
+    leaveAnnual = Color(0xFFB197FC),
+    leavePaid = Color(0xFF74C0FC),
+    leaveUnpaid = Color(0xFFADB5BD),
+    leaveComp = Color(0xFF66D9E8),
+    payOvertime = Color(0xFFFFA94D),
+    payNight = Color(0xFFB197FC),
+    payHoliday = Color(0xFFFF8787),
+    payExtra = Color(0xFFF783AC),
+    payExtraHours = Color(0xFF74C0FC),
+    payAllowance = Color(0xFF69DB7C),
+    payLeave = Color(0xFFB197FC),
 )
 
 val LocalCalendarColors = staticCompositionLocalOf { LightCalendarColors }
@@ -206,16 +240,16 @@ fun BamnatTheme(
     }
 }
 
-/** Palette offered for shift types. */
+/** Palette offered for shift types. [A11Y-03] Every colour carries its letters at 4.45:1 or more (ContrastTest). */
 val ShiftPalette: List<Long> = listOf(
     0xFF2F80ED, 0xFF2F5BEA, 0xFF6C5CE7, 0xFF9B51E0, 0xFFE84393, 0xFFE5484D,
-    0xFFF2994A, 0xFFF2C94C, 0xFF27AE60, 0xFF00897B, 0xFF00A3C4, 0xFF8E9AAF,
+    0xFFF2994A, 0xFFF2C94C, 0xFF27AE60, 0xFF00857A, 0xFF00A3C4, 0xFF8E9AAF,
 )
 
 /** [EXTRA-01] Palette offered for kinds of extra work; the first three are the built-in 잔업·특근·대근. */
 val ExtraPalette: List<Long> = listOf(
-    0xFFE8900C, 0xFFE03131, 0xFF0E9F6E, 0xFF7048E8, 0xFF1C7ED6, 0xFFD6336C,
-    0xFF0B7285, 0xFF5C940D, 0xFF862E9C, 0xFFB35C00, 0xFF495057, 0xFF2B8A3E,
+    0xFFE8900C, 0xFFE03131, 0xFF0E9F6E, 0xFF7048E8, 0xFF1A75CC, 0xFFD6336C,
+    0xFF0B7285, 0xFF5C940D, 0xFF862E9C, 0xFFB35C00, 0xFF495057, 0xFF268038,
 )
 
 /** Soft backgrounds for memo cards: index 0 is the plain surface. */

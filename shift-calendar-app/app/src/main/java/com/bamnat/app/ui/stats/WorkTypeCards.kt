@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.CountStepper
+import com.bamnat.app.ui.components.StepperRow
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -23,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.data.WorkTypePrefs
 import com.bamnat.app.ui.Fmt
@@ -51,6 +55,7 @@ import com.bamnat.core.pay.TaxMode
 import com.bamnat.core.work.DayWork
 import com.bamnat.core.work.ShiftMonth
 import com.bamnat.core.work.WorkStyle
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -74,11 +79,13 @@ internal fun WorkTypeFirstCard(
     payTotal: Long?,
     profile: PayProfile?,
     columns: Int,
+    /** [PAYX-25] The month's 비과세 when it needs the month's pay (생산직); null works it out from the setup. */
+    nonTaxable: Long? = null,
 ) {
     when {
         // [GUIDE-05] Each card can be turned off for its calendar.
         style.isShift() -> FeatureCard("shift.firstCard", calendarId) { ShiftFirstCard(snapshot, month, payTotal) }
-        style == WorkStyle.DAY -> FeatureCard("day.firstCard", calendarId) { DayFirstCard(calendarId, snapshot, month, summary, payTotal, profile, columns) }
+        style == WorkStyle.DAY -> FeatureCard("day.firstCard", calendarId) { DayFirstCard(calendarId, snapshot, month, summary, payTotal, profile, columns, nonTaxable) }
     }
 }
 
@@ -93,15 +100,17 @@ internal fun WorkTypeMoreCards(
     payTotal: Long?,
     profile: PayProfile?,
     book: MoneyBook?,
+    nonTaxable: Long? = null,
 ) {
     // [GUIDE-05] Each card can be turned off for its calendar.
-    if (style?.usesPayEngine != false) FeatureCard("pay.gap", calendarId) { PayGapCard(calendarId, month, payTotal, profile, book, style) }
+    if (style?.usesPayEngine != false) FeatureCard("pay.gap", calendarId) { PayGapCard(calendarId, month, payTotal, profile, book, style, nonTaxable) }
     if (style.isShift()) FeatureCard("shift.swapCard", calendarId) { SwapCard(snapshot, month) }
     // [SHFT-07] The year's night share, runs of nights and short rests.
-    if (style.isShift()) FeatureCard("shift.health", calendarId) { HealthYearCard(snapshot) }
-    if (style == WorkStyle.DAY) {
-        FeatureCard("day.overtimeCap", calendarId) { OvertimeCapCard(calendarId, summary) }
-        FeatureCard("day.bridges", calendarId) { BridgeCard(snapshot) }
+    if (style.isShift()) FeatureCard("shift.health", calendarId) { HealthYearCard(snapshot, calendarId) }
+    if (style == WorkStyle.DAY) FeatureCard("day.overtimeCap", calendarId) { OvertimeCapCard(calendarId, summary) }
+    // [LEAVE-04] 징검다리 for every kind of work that takes leave.
+    if (style == null || style == WorkStyle.DAY || style == WorkStyle.SHIFT || style == WorkStyle.HOURLY) {
+        FeatureCard("day.bridges", calendarId) { BridgeCard(snapshot, style) }
     }
 }
 
@@ -174,18 +183,22 @@ private fun DayFirstCard(
     payTotal: Long?,
     profile: PayProfile?,
     columns: Int,
+    nonTaxable: Long? = null,
 ) {
-    val prefs = WorkTypePrefs.get(LocalContext.current)
+    val context = LocalContext.current
+    val prefs = WorkTypePrefs.get(context)
     val choices by prefs.all.collectAsStateWithLifecycle()
     val mode = choices[calendarId]?.taxMode ?: TaxMode.INSURANCE_4
     val today = remember { LocalDate.now() }
-    val balance = remember(profile?.rules, snapshot, month.year) {
-        val rules = profile?.rules
-        LeaveBook.balance(month.year, rules?.annualLeaveDays, today, snapshot.resolver::resolve,
-            free = { rules?.holidayLeaveFree == true && KoreanHolidays.isHoliday(it) },
-            carried = if (rules != null && month.year == today.year) rules.annualLeaveCarry else 0.0)
+    // [LEAVE-01] The 연차 원장 of this calendar.
+    val ledger by remember(calendarId) { context.appContainer.calendars.leave(calendarId).summary }
+        .collectAsStateWithLifecycle(null)
+    val used = remember(snapshot, month) {
+        (1..month.lengthOfMonth()).mapNotNull { snapshot.resolver.resolve(month.atDay(it)).leave }.filter { it.kind.annual }.sumOf { it.days }
     }
-    val takeHome = payTotal?.let { TakeHome.estimate(it, mode) }
+    val left = ledger?.takeIf { it.lots.isNotEmpty() }?.available
+    val takeHome = payTotal?.let { TakeHome.estimate(it, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
+        nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0) }
     val overtimeDays = remember(snapshot, month) {
         (1..month.lengthOfMonth()).count { snapshot.resolver.resolve(month.atDay(it)).hasExtraWork }
     }
@@ -193,9 +206,9 @@ private fun DayFirstCard(
         val tiles: List<@Composable (Modifier) -> Unit> = listOf(
             { m -> StatTile("야근", HoursFormat.korean(summary.extraMinutes), m, caption = "${overtimeDays}일") },
             { m ->
-                StatTile("연차", "${LeaveBook.days(balance.used)} 씀", m,
-                    caption = balance.remaining?.let { "남은 ${LeaveBook.days(it)}" } ?: "연차 일수를 넣으면 남은 날이 보여요",
-                    warning = (balance.remaining ?: 0.0) < 0)
+                StatTile("연차", "${LeaveBook.days(used)} 씀", m,
+                    caption = left?.let { "남은 ${LeaveBook.days(it)}" } ?: "입사일을 넣으면 남은 날이 보여요",
+                    warning = (left ?: 0.0) < 0)
             },
             { m ->
                 StatTile("예상 실수령", takeHome?.let { Fmt.won(it.net) } ?: "-", m,
@@ -209,13 +222,42 @@ private fun DayFirstCard(
             }
         }
         TaxModeChips(mode) { prefs.setTaxMode(calendarId, it) }
+        if (mode == TaxMode.INSURANCE_4 && profile != null) TaxFamilyRow(calendarId, profile)
         takeHome?.takeIf { it.deductions.isNotEmpty() }?.let { r ->
             Text(
                 r.deductions.joinToString(" · ") { (name, v) -> "$name ${Fmt.won(v)}" },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
             )
+            // [PAYX-23] The pension line is this month's pay, the bill last year's.
+            if (mode == TaxMode.INSURANCE_4) Text(TakeHome.PENSION_NOTE, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+}
+
+/**
+ * [PAYR-04] 간이세액표's two questions for 근로소득세: 공제대상가족 수 (본인 포함) and 8~20세 자녀 수, kept in the pay
+ * setup (so they go into backups with it). Small steppers right under the tax chips; no new menu.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TaxFamilyRow(calendarId: String, profile: PayProfile) {
+    val store = LocalContext.current.appContainer.calendars.pay(calendarId)
+    val scope = rememberCoroutineScope()
+    fun set(change: (PayProfile) -> PayProfile) = scope.launch { store.update(change) }
+    Column(Modifier.padding(top = 4.dp)) {
+        // [UX-08] The app's one stepper; the row puts it under the words on a narrow screen or a big font.
+        StepperRow("가족 수", hint = "본인·배우자 포함") {
+            CountStepper(profile.taxFamily, { n -> set { it.copy(taxFamily = n, taxChildren = it.taxChildren.coerceAtMost((n - 1).coerceAtLeast(0))) } },
+                name = "가족 수", range = 1..20, format = { "${it}명" })
+        }
+        StepperRow("8~20세 자녀") {
+            CountStepper(profile.taxChildren, { n -> set { it.copy(taxChildren = n) } }, name = "8~20세 자녀",
+                range = 0..(profile.taxFamily - 1).coerceAtLeast(0), format = { "${it}명" })
+        }
+        Text("근로소득세는 국세청 간이세액표 값이에요. 가족 수는 본인·배우자를 포함해 세어 주세요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -235,12 +277,13 @@ private fun TaxModeChips(mode: TaxMode, onChange: (TaxMode) -> Unit) {
  * was from the estimate after tax.
  */
 @Composable
-private fun PayGapCard(calendarId: String, month: YearMonth, payTotal: Long?, profile: PayProfile?, book: MoneyBook?, style: WorkStyle?) {
+private fun PayGapCard(calendarId: String, month: YearMonth, payTotal: Long?, profile: PayProfile?, book: MoneyBook?, style: WorkStyle?, nonTaxable: Long? = null) {
     val prefs = WorkTypePrefs.get(LocalContext.current)
     val choices by prefs.all.collectAsStateWithLifecycle()
     // [HRLY-04] A part-timer chose how tax comes off on the pay screen; others choose it on the first card.
     val mode = if (style == WorkStyle.HOURLY) profile?.taxMode ?: TaxMode.NONE else choices[calendarId]?.taxMode ?: TaxMode.INSURANCE_4
-    val expected = payTotal?.let { TakeHome.estimate(it, mode).net }
+    val expected = payTotal?.let { TakeHome.estimate(it, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
+        nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0).net }
     val gap = remember(book, month, expected, profile) {
         book?.let { PayGaps.of(month, expected, profile?.period?.payDate(month), it.entries) }
     } ?: return
@@ -342,17 +385,15 @@ private fun OvertimeCapCard(calendarId: String, summary: MonthSummary) {
 
 /** [DAYW-04] 징검다리 연휴 in the next 12 months: 연차 1~2일로 길게 쉬는 날. */
 @Composable
-private fun BridgeCard(snapshot: ScheduleSnapshot) {
+private fun BridgeCard(snapshot: ScheduleSnapshot, style: WorkStyle?) {
     val today = remember { LocalDate.now() }
-    val bridges = remember(snapshot, today) {
-        DayWork.bridges(today, isWorkDay = { snapshot.resolver.resolve(it).let { d -> d.isWorkDay && d.leave == null } })
-    }
+    val bridges = remember(snapshot, style, today) { com.bamnat.app.ui.leave.LeaveBridges.of(snapshot, style, today) }
     if (bridges.isEmpty()) return
     SectionCard(title = "징검다리 연휴") {
         bridges.take(8).forEach { b ->
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("${Fmt.shortDate(b.from)}~${Fmt.shortDate(b.to)} · ${b.holidays.joinToString("·")}",
+                    Text("${Fmt.shortDate(b.from)}~${Fmt.shortDate(b.to)}" + if (b.holidays.isNotEmpty()) " · ${b.holidays.joinToString("·")}" else "",
                         style = MaterialTheme.typography.bodyLarge.merge(NumberStyle))
                     Text("연차: " + b.leave.joinToString(", ") { "${Fmt.shortDate(it)}(${Fmt.dayOfWeekShort(it.dayOfWeek)})" },
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -360,7 +401,7 @@ private fun BridgeCard(snapshot: ScheduleSnapshot) {
                 Text(b.text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             }
         }
-        Text("앞으로 12개월의 공휴일과 쉬는 요일로 찾았어요.", style = MaterialTheme.typography.bodySmall,
+        Text(com.bamnat.app.ui.leave.LeaveBridges.caption(style), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
     }
 }

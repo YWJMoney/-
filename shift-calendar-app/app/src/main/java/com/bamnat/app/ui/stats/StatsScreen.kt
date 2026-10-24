@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.stats
 
+import com.bamnat.core.hours.shortRests
 import com.bamnat.app.ui.guide.FeatureCard
 import com.bamnat.app.appContainer
 import kotlinx.coroutines.withContext
@@ -130,9 +131,22 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
     val calc = remember(snap, settings.limits) {
         WorkHoursCalculator(snap.resolver, DayOfWeek.MONDAY, settings.limits)
     }
-    val summary = remember(calc, month) { calc.month(month) }
-    val three = remember(calc, month) { calc.threeMonths(month) }
-    val trend = remember(calc, month) { (5 downTo 0).map { calc.month(month.minusMonths(it.toLong())) } }
+    val today = com.bamnat.app.ui.calendar.rememberToday() // [CAL-25]
+    // [CAL-41] I 리뷰 P18: the month, three months and the six-month trend are worked out off the main thread, so
+    // the first open of 통계 draws at once instead of waiting on nine months of days.
+    val figures by androidx.compose.runtime.produceState<StatsFigures?>(null, calc, month) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            StatsFigures(calc.month(month), calc.threeMonths(month), (5 downTo 0).map { calc.month(month.minusMonths(it.toLong())) })
+        }
+    }
+    val shownFigures = figures
+    if (shownFigures == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        return
+    }
+    val summary = shownFigures.summary
+    val three = shownFigures.three
+    val trend = shownFigures.trend
     // [LEDG-15] Field and shop work show their jobs or sales; hours only once some are on the calendar.
     val hasHours = pays || summary.totalMinutes > 0 || three.totalMinutes > 0
     val columns = if (wide) 4 else 2
@@ -202,8 +216,14 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                     .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
             }
         }.value
+        // [PAYX-25] The month's 비과세 with the 생산직 연장·야간 part, which needs the month's lines.
+        val payFree = produceState<Long?>(null, payProfile, snap, month) {
+            value = payProfile?.takeIf { pays && it.productionWorker }?.let { p ->
+                withContext(Dispatchers.Default) { com.bamnat.core.pay.TakeHome.nonTaxable(p, month, vm.monthPay(p, snap, month)) }
+            }
+        }.value
         // [SHFT-02][DAYW-02] A shift or day worker's first card.
-        WorkTypeFirstCard(style, vm.calendarId, snap, month, summary, payTotal, payProfile, columns)
+        WorkTypeFirstCard(style, vm.calendarId, snap, month, summary, payTotal, payProfile, columns, payFree)
 
         // [EXTRA-01] The four tiles add up to the total: the roster, extra work on working days, work on days off.
         val tiles: List<@Composable (Modifier) -> Unit> = listOf(
@@ -239,23 +259,41 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                 onClick = onOpenPay,
             )
             // [HRLY-04] 예상 실수령 next to the pay before tax.
-            if (style == WorkStyle.HOURLY && total != null) payProfile?.let { TakeHomeLine(total, it.taxMode, Modifier.padding(start = 4.dp)) }
+            if (style == WorkStyle.HOURLY && total != null) payProfile?.let { TakeHomeLine(total, it.taxMode, Modifier.padding(start = 4.dp), on = month.atDay(1)) }
         }
         // [HRLY-09][HRLY-10][HRLY-11] 두 알바 비교, 근로계약서, 그만두는 날 정리.
         if (style == WorkStyle.HOURLY) FeatureCard("hourly.tools", vm.calendarId) { com.bamnat.app.ui.work.HourlyToolsCard(vm.calendarId, payProfile, snap) }
         // [SHFT-03][SHFT-04][DAYW-04][DAYW-05] Swaps, pay that came in, the 시간외 상한 and 징검다리 연휴.
-        WorkTypeMoreCards(style, vm.calendarId, snap, month, summary, payTotal, payProfile, book)
+        WorkTypeMoreCards(style, vm.calendarId, snap, month, summary, payTotal, payProfile, book, payFree)
 
         // [EXTRA-02] 주 52시간 (제53조), 64 under 탄력적 근로시간제; it does not apply under 5 employees.
+        // [PAYX-29] The company's 52시간 exception sets the week's limit (none for 선택적·특례·감시단속), and 특례 업종 checks the
+        // 11-hour rest instead.
         val profile = payProfile
+        val exception = profile?.rules?.hoursException ?: com.bamnat.core.hours.HoursException.NONE
         if (profile?.fiveOrMoreEmployees != false) {
-            val legalHours = if (profile?.flexPeriod != null && profile.scheduleIsRegular) 64 else 52
-            val overLegal = summary.weeks.filter { it.totalMinutes > legalHours * 60 }
-            if (overLegal.isNotEmpty()) {
+            val legalHours = when {
+                exception != com.bamnat.core.hours.HoursException.NONE -> exception.weeklyHours
+                profile?.flexPeriod != null && profile.scheduleIsRegular -> 64
+                else -> 52
+            }
+            val overLegal = legalHours?.let { h -> summary.weeks.filter { it.totalMinutes > h * 60 } }.orEmpty()
+            if (legalHours != null && overLegal.isNotEmpty()) {
                 WarningBanner(
                     "주 ${legalHours}시간을 넘은 주가 ${overLegal.size}번 있어요",
-                    overLegal.joinToString(", ") { "${Fmt.shortDate(it.start)}주 ${HoursFormat.hours(it.totalMinutes.toDouble())}시간" } +
-                        ". 연장근로는 한 주 12시간까지예요 (근로기준법 제53조). 참고용이에요.",
+                    overLegal.joinToString(", ") { "${Fmt.shortDate(it.start)}주 ${HoursFormat.korean(it.totalMinutes)}" } +
+                        ". " + (if (exception == com.bamnat.core.hours.HoursException.NONE) "연장근로는 한 주 12시간까지예요 (근로기준법 제53조)" else exception.note) + ". 참고용이에요.",
+                )
+            }
+            if (exception == com.bamnat.core.hours.HoursException.SPECIAL_INDUSTRY) {
+                val short = remember(snap, month) {
+                    com.bamnat.core.hours.WorkHoursCalculator.shortRests(snap.resolver.resolveRange(month.atDay(1).minusDays(1), month.atEndOfMonth()))
+                        .filter { java.time.YearMonth.from(it.first) == month }
+                }
+                if (short.isNotEmpty()) WarningBanner(
+                    "다음 근무까지 11시간을 못 쉰 날이 ${short.size}번 있어요",
+                    short.joinToString(", ") { (d, m) -> "${Fmt.shortDate(d)} (${HoursFormat.korean(m)})" } +
+                        ". 근로시간 특례 업종은 근무가 끝나고 11시간 이상 연속으로 쉬어야 해요 (근로기준법 제59조 제2항). 참고용이에요.",
                 )
             }
         }
@@ -287,16 +325,16 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         StatTile(
                             "주 평균",
-                            HoursFormat.hours(three.averageWeeklyMinutes) + "시간",
+                            HoursFormat.korean(Math.round(three.averageWeeklyMinutes).toInt()),
                             Modifier.weight(1f),
                             caption = "기준 ${settings.averageLimitHours}시간",
                             warning = three.overLimit,
                         )
                         StatTile(
                             "월 평균",
-                            HoursFormat.hours(three.averageMonthlyMinutes) + "시간",
+                            HoursFormat.korean(Math.round(three.averageMonthlyMinutes).toInt()),
                             Modifier.weight(1f),
-                            caption = "합계 ${HoursFormat.hours(three.totalMinutes.toDouble())}시간",
+                            caption = "합계 ${HoursFormat.korean(three.totalMinutes)}",
                         )
                     }
                     Spacer(Modifier.height(12.dp))
@@ -309,7 +347,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                         Spacer(Modifier.height(10.dp))
                         WarningBanner(
                             "3개월 평균 주 ${settings.averageLimitHours}시간 초과",
-                            "평균 주 ${HoursFormat.hours(three.averageWeeklyMinutes)}시간이에요. 앞으로의 근무를 줄여야 평균이 내려가요.",
+                            "평균 주 ${HoursFormat.korean(Math.round(three.averageWeeklyMinutes).toInt())}이에요. 앞으로의 근무를 줄여야 평균이 내려가요.",
                         )
                     }
                 }
@@ -322,8 +360,21 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
                         summary.weeks.maxOfOrNull { it.totalMinutes / 60.0 } ?: 0.0,
                     )
                     summary.weeks.forEachIndexed { i, week ->
-                        WeekRow(week, settings.weeklyLimitHours, maxHours)
+                        // [DAILY-07] A week's bar opens that week on the calendar, its Monday chosen.
+                        WeekRow(week, settings.weeklyLimitHours, maxHours) {
+                            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.DAY, vm.calendarId, week.start.toString())
+                        }
                         if (i != summary.weeks.lastIndex) Spacer(Modifier.height(10.dp))
+                    }
+                    // [CAL-40] I 리뷰 I19: the coming week read from the roster, so 52시간 is seen before it is passed.
+                    val next = remember(calc, today) { calc.glance(today.plusWeeks(1)) }
+                    if (next.minutes > 0) {
+                        Text(
+                            "다음 주(${Fmt.shortDate(next.start)}~) 예상 ${next.text}",
+                            style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
+                            color = if (next.leftToLegal < 0) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
                     }
                     Text(
                         "주 근무시간은 월요일부터 일요일까지 세요(달력이 일요일부터 보여도 같아요). 달에 걸친 주도 7일 전체를 셉니다.",
@@ -359,10 +410,10 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {}) {
 
 
 @Composable
-private fun WeekRow(week: WeekSummary, limitHours: Int, maxHours: Double) {
+private fun WeekRow(week: WeekSummary, limitHours: Int, maxHours: Double, onOpen: () -> Unit) {
     val cal = LocalCalendarColors.current
     val hours = week.totalMinutes / 60.0
-    Column {
+    Column(Modifier.clickable(onClickLabel = "달력에서 이 주 보기", onClick = onOpen).padding(vertical = 2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "${Fmt.shortDate(week.start)}–${Fmt.shortDate(week.end)}",
@@ -674,7 +725,7 @@ private fun StatsEditSheet(settings: AppSettings, update: ((AppSettings) -> AppS
             com.bamnat.app.ui.components.EditGroup("위쪽 (이번 달)", rows(false)),
             com.bamnat.app.ui.components.EditGroup("아래쪽 카드 순서", rows(true)),
         ),
-        middle = "근무 유형 카드",
+        middle = "일하는 방식 카드", // [SET-05]
         onShow = { id, shown -> write(placed.map { if (it.part.id == id) it.copy(shown = shown) else it }) },
         onMove = { id, by ->
             val fixed = placed.filterNot { it.part.movable }
@@ -689,3 +740,10 @@ private fun StatsEditSheet(settings: AppSettings, update: ((AppSettings) -> AppS
         onDismiss = onDismiss,
     )
 }
+
+/** [CAL-41] What 통계 shows for a month, worked out together off the main thread. */
+private data class StatsFigures(
+    val summary: com.bamnat.core.hours.MonthSummary,
+    val three: com.bamnat.core.hours.ThreeMonthSummary,
+    val trend: List<com.bamnat.core.hours.MonthSummary>,
+)

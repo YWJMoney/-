@@ -36,6 +36,11 @@ class MappersTest {
         assertEquals(shifted, shifted.toEntity().toModel())
         val weekly = WorkPattern.Weekly.fromSteps(date, listOf(1L, 1L, 1L, 1L, 1L, null, null))
         assertEquals(weekly, weekly.toEntity().toModel())
+        // [SCHED-04] 공휴일 휴무 and 격주 토요일 ride in the same row: the order's text and the anchor.
+        val office = WorkPattern.Weekly.fromSteps(date, listOf(1L, 1L, 1L, 1L, 1L, 1L, null), holidaysOff = true,
+            altSaturday = LocalDate.of(2026, 10, 17))
+        assertEquals("1,1,1,1,1,1,,h", office.toEntity().steps)
+        assertEquals(office, office.toEntity().toModel())
         // A corrupt weekly row is ignored rather than crashing the calendar.
         assertNull(weekly.toEntity().copy(steps = "1,2").toModel())
     }

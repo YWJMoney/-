@@ -39,7 +39,7 @@ object ShopNotices {
     fun route(c: AppContainer, pkg: String, app: String): String? {
         if (ShopCapture.source(pkg, app) == null) return null
         if (pkg in c.autoRecordPrefs.current.appCalendars) return null
-        return c.calendars.calendars.value.filter { styleOf(c, it.id) == WorkStyle.BUSINESS }.singleOrNull()?.id
+        return c.calendars.calendars.value.filterNot { it.isExample }.filter { styleOf(c, it.id) == WorkStyle.BUSINESS }.singleOrNull()?.id
     }
 
     /** Takes [text] into calendar [id]'s sales when it is a shop's; null when it is not, for the usual reading. */
@@ -50,6 +50,10 @@ object ShopNotices {
         val date = arrived.toLocalDate()
         val key = "$id|$postedAt|${text.hashCode()}"
         ShopCapture.read(text, pkg, app)?.let { sale ->
+            // [DAILY-13] 결정 D7-3: with 확인하고 적기 on, the sale waits for the user like a payment line does.
+            if (c.autoRecordPrefs.current.confirmFirst) return once(c, key) {
+                ShopPendingStore.get(c.appContext).add(id, ShopCapture.Pending(key, date, sale))
+            }
             return once(c, key) {
                 val day = money.book.first().sales.firstOrNull { it.date == date }
                 val next = ShopCapture.add(day, date, sale)
@@ -66,6 +70,18 @@ object ShopNotices {
         return once(c, key) {
             for (e in matched) book.sales.firstOrNull { it.date == e.saleDate }?.let { money.save(it.copy(cardSettled = true)) }
         }
+    }
+
+    /** [DAILY-13] A waiting sale goes into its day's sales, as it would have without 확인하고 적기. */
+    suspend fun confirm(c: AppContainer, id: String, pending: List<ShopCapture.Pending>) {
+        val money = c.calendars.money(id)
+        for (p in pending) {
+            val day = money.book.first().sales.firstOrNull { it.date == p.date }
+            val next = ShopCapture.add(day, p.date, p.sale)
+            money.save(next)
+            com.bamnat.app.ui.work.ShopKeeper.salesSaved(c, id, p.date, next.sales)
+        }
+        ShopPendingStore.get(c.appContext).remove(id, pending.map { it.key })
     }
 
     /** Runs [save] unless [key] was taken before; the key is remembered only once it saved, so a failed save can come again. */

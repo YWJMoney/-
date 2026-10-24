@@ -48,6 +48,8 @@ class CompanyShare(
     private val payStore: PayStore,
     private val settings: SettingsRepository,
     private val today: () -> LocalDate = LocalDate::now,
+    /** [EASY-06] The facts a coworker's setup gave, for the profile to mark as 공유 (main calendar). */
+    private val shared: suspend (Set<com.bamnat.core.profile.FactKey>) -> Unit = {},
 ) {
     suspend fun export(company: String, withAmounts: Boolean, team: String = ""): String {
         val snapshot = schedule.snapshot.first()
@@ -77,7 +79,9 @@ class CompanyShare(
                 .apply { team.trim().take(MAX_TEAM).takeIf { it.isNotEmpty() }?.let { put("team", it) } })
         }
         payStore.profile.value?.let { p ->
-            val rules = p.rules.copy(annualLeaveDays = null, annualLeaveCarry = 0.0, extraNames = emptyMap())
+            // [LEAVE-02] The company's leave year goes along; whether the app counts and the 80% years are the user's own.
+            val rules = p.rules.copy(annualLeaveDays = null, annualLeaveCarry = 0.0, extraNames = emptyMap(),
+                leave = p.rules.leave.copy(auto = true, lowAttendanceYears = emptySet()))
             val rulesJson = PayCodec.rulesJson(rules)
             // Rules per shift type are keyed by name in the file.
             rulesJson.optJSONObject("extraByShift")?.let { by -> rulesJson.put("extraByShift", rekey(by) { names[it.toLongOrNull()] }) }
@@ -86,6 +90,7 @@ class CompanyShare(
                 .put("holidayMode", p.holidayPayMode.name)
                 .put("dailyLimit", p.dailyLimitMinutes ?: -1).put("weeklyLimit", p.weeklyLimitMinutes ?: -1)
                 .put("scheduleIsRegular", p.scheduleIsRegular).putOpt("flexPeriod", p.flexPeriod?.name)
+                .putOpt("flexStart", p.flexStart?.toString())
                 .put("weekStart", p.weekStart.name)
                 .put("period", PayCodec.period(p.period))
                 .put("rules", rulesJson)
@@ -217,10 +222,12 @@ class CompanyShare(
                 root.optJSONObject("extraKindShiftSets"), ids)
             kindIds = map
             settings.update { it.copy(extraKinds = merged) }
+            shared(setOf(com.bamnat.core.profile.FactKey.EXTRA_KINDS))
         }
         val pay = root.optJSONObject("pay") ?: return false to false
         val profile = payStore.profile.value ?: return false to true
         payStore.save(merge(profile, pay, ids, kindIds))
+        shared(setOf(com.bamnat.core.profile.FactKey.NIGHT_OT, com.bamnat.core.profile.FactKey.PUBLIC_HOLIDAYS, com.bamnat.core.profile.FactKey.FIVE_OR_MORE))
         return true to false
     }
 
@@ -266,6 +273,28 @@ class CompanyShare(
     }
 
     data class Applied(val addedTypes: Int, val cycleDays: Int?, val rules: Boolean, val pendingPay: Boolean)
+
+    /**
+     * [PLZ-10] 내 월급으로 시험: the user's own pay setup with [text]'s rules in place of the company part,
+     * nothing saved, so the same month can be worked out both ways on the phone (결정 D36). Shift types
+     * are matched by name to the user's own; kinds of extra work the user does not have keep their ids.
+     * Null when the file has no pay rules or the user has no pay setup to try them on.
+     */
+    suspend fun trial(text: String): PayProfile? {
+        val root = parse(text)
+        check(root)
+        val pay = root.optJSONObject("pay") ?: return null
+        val profile = payStore.profile.value ?: return null
+        val ids = schedule.snapshot.first().shiftTypes.associate { it.name to it.id }
+        val mine = settings.current.extraKinds
+        val kindIds = root.optString("extraKinds").takeIf { it.isNotEmpty() }?.let { encoded ->
+            ExtraKinds.decode(encoded).kinds.mapNotNull { k ->
+                val id = if (k.isBuiltIn) k.id else mine.kinds.firstOrNull { !it.isBuiltIn && it.name == k.name }?.id
+                id?.let { k.id to it }
+            }.toMap()
+        }.orEmpty()
+        return merge(profile, JSONObject(pay.toString()), ids, kindIds)
+    }
 
     /** [COMM-01] One amount a shared setup leaves to each person: an allowance or a fixed extra-work rule. */
     data class AmountNeed(val key: String, val label: String, val hint: String)
@@ -372,11 +401,13 @@ class CompanyShare(
             weeklyLimitMinutes = if (pay.has("weeklyLimit")) pay.getInt("weeklyLimit").takeIf { it in 1..168 * 60 } else p.weeklyLimitMinutes,
             scheduleIsRegular = pay.optBoolean("scheduleIsRegular", p.scheduleIsRegular),
             flexPeriod = pay.optString("flexPeriod").let { n -> FlexPeriod.entries.firstOrNull { it.name == n } },
+            flexStart = pay.optString("flexStart").takeIf { it.isNotEmpty() }?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() },
             weekStart = runCatching { DayOfWeek.valueOf(pay.getString("weekStart")) }.getOrDefault(p.weekStart),
             period = pay.optJSONObject("period")?.let(PayCodec::periodFrom) ?: p.period,
             items = p.items + items,
             // The user's own leave days stay theirs.
-            rules = merged?.copy(annualLeaveDays = p.rules.annualLeaveDays, annualLeaveCarry = p.rules.annualLeaveCarry) ?: p.rules,
+            rules = merged?.copy(annualLeaveDays = p.rules.annualLeaveDays, annualLeaveCarry = p.rules.annualLeaveCarry,
+                leave = merged.leave.copy(auto = p.rules.leave.auto, lowAttendanceYears = p.rules.leave.lowAttendanceYears)) ?: p.rules,
         )
     }
 

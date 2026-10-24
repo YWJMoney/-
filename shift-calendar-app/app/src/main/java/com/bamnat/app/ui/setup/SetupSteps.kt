@@ -41,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
@@ -55,7 +56,10 @@ import com.bamnat.app.ui.company.CompanyFindScreen
 import com.bamnat.app.ui.company.CompanyFindViewModel
 import com.bamnat.app.ui.components.MinutesStepper
 import com.bamnat.app.ui.components.ShiftBadge
-import com.bamnat.app.ui.components.TimePickerDialog
+import com.bamnat.app.ui.components.TimeRange
+import com.bamnat.app.ui.components.TimeRangeDialog
+import com.bamnat.app.ui.components.TimeRangePart
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.bamnat.app.ui.shifts.ShiftTypeEditorDialog
 import com.bamnat.app.ui.work.icon
 import com.bamnat.core.hours.HoursFormat
@@ -89,7 +93,21 @@ internal fun StyleStep(
     d: SetupDraft, onPick: (WorkStyle, Boolean) -> Unit, onOpenFile: () -> Unit,
     /** [MCAL-02] The name of a calendar being added; null on the first launch. */
     forCalendar: String? = null,
+    /** [EASY-01] 우선 둘러볼게요 on the first launch: the kind of work picked opens its example calendar. */
+    onBrowse: ((WorkStyle) -> Unit)? = null,
+    /** Came from the first page's 우선 둘러볼게요: the cards pick the example straight away. */
+    browseFirst: Boolean = false,
 ) {
+    var browsing by rememberSaveable { mutableStateOf(browseFirst && onBrowse != null) }
+    if (browsing && onBrowse != null) {
+        StepHeader("어떤 일로 둘러볼까요?", "고른 일의 예시 달력이 열려요. 둘러보는 동안 적은 건 이 휴대폰 밖으로 나가지 않아요.")
+        STYLE_CHOICES.filter { it.style != WorkStyle.SHIFT || !it.roster }.forEach { c ->
+            ChoiceCard(title = c.title.substringBefore(" · ").let { if (c.style == WorkStyle.SHIFT) "교대 근무" else it },
+                subtitle = c.subtitle.substringBefore(" · "), icon = c.icon, selected = false, onClick = { onBrowse(c.style) })
+        }
+        TextButton(onClick = { browsing = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("내 정보로 바로 시작할게요") }
+        return
+    }
     if (forCalendar != null) {
         StepHeader("$forCalendar 달력은 어떻게 일하세요?", "처음 시작할 때처럼 하나씩 물어볼게요. 이 달력에만 들어가고 다른 달력은 그대로예요.")
     } else {
@@ -107,6 +125,9 @@ internal fun StyleStep(
     FileCard("파일로 시작하기",
         if (forCalendar != null) "동료가 보낸 회사 설정 파일이 있으면 골라 주세요" else "동료가 보낸 회사 설정 파일이나, 쓰던 백업 파일이 있으면 골라 주세요",
         onOpenFile)
+    if (onBrowse != null) {
+        TextButton(onClick = { browsing = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("우선 둘러볼게요") }
+    }
 }
 
 /** The answer to "어떻게 일하세요?" as it was given. */
@@ -138,7 +159,7 @@ internal fun CompanyStep(vm: SetupViewModel, d: SetupDraft, onSearch: (() -> Uni
         else "회사 이름은 나중에 같은 회사 분들과 설정을 나눌 때만 써요. 비워 둬도 괜찮아요.",
     )
     // Typed here and sent on: the draft would put the cursor back on every letter.
-    var name by remember { mutableStateOf(d.companyName) }
+    var name by rememberSaveable { mutableStateOf(d.companyName) }
     val focus = LocalFocusManager.current
     OutlinedTextField(
         value = name,
@@ -297,9 +318,11 @@ internal fun TimesStep(vm: SetupViewModel, d: SetupDraft) {
             else -> "회사 근무표와 다르면 시각을 눌러 바로 고쳐요."
         },
     )
-    var editing by remember { mutableStateOf<ShiftType?>(null) }
-    d.workTypes.forEach { t -> ShiftTimeCard(t, onChange = vm::saveType, onMore = { editing = t }) }
-    OutlinedButton(onClick = { editing = vm.newType() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+    // [SETUP-14] Kept by id through folding and unfolding; a new shift is the next id, made again.
+    var editingId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val editing = editingId?.let { id -> d.types.firstOrNull { it.id == id } ?: vm.newType().takeIf { it.id == id } }
+    d.workTypes.forEach { t -> ShiftTimeCard(t, onChange = vm::saveType, onMore = { editingId = t.id }) }
+    OutlinedButton(onClick = { editingId = vm.newType().id }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
         Icon(Icons.Filled.Add, null)
         Spacer(Modifier.width(6.dp))
         Text("근무 더하기")
@@ -310,7 +333,7 @@ internal fun TimesStep(vm: SetupViewModel, d: SetupDraft) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             offs.forEach { t ->
                 AssistChip(
-                    onClick = { editing = t },
+                    onClick = { editingId = t.id },
                     label = { Text(t.name) },
                     leadingIcon = { ShiftBadge(t, size = 18.dp, outlined = true) },
                 )
@@ -325,14 +348,14 @@ internal fun TimesStep(vm: SetupViewModel, d: SetupDraft) {
         val canDelete = known && (t.isOff || d.workTypes.size > 1)
         ShiftTypeEditorDialog(
             initial = t,
-            onDismiss = { editing = null },
+            onDismiss = { editingId = null },
             onSave = {
                 vm.saveType(it)
-                editing = null
+                editingId = null
             },
             onDelete = if (canDelete) ({
                 vm.removeType(t.id)
-                editing = null
+                editingId = null
             }) else null,
             showAlarms = false,
         )
@@ -342,7 +365,8 @@ internal fun TimesStep(vm: SetupViewModel, d: SetupDraft) {
 /** One work shift: its two times as big buttons, the break and what is left as work. */
 @Composable
 private fun ShiftTimeCard(t: ShiftType, onChange: (ShiftType) -> Unit, onMore: () -> Unit) {
-    var picking by remember { mutableStateOf<Boolean?>(null) }
+    // [SETUP-14] Which part of the times is open, kept through folding and unfolding.
+    var picking by rememberSaveable { mutableStateOf<TimeRangePart?>(null) }
     val start = t.start ?: LocalTime.of(9, 0)
     val end = t.end ?: LocalTime.of(18, 0)
     val overnight = !end.isAfter(start)
@@ -360,12 +384,12 @@ private fun ShiftTimeCard(t: ShiftType, onChange: (ShiftType) -> Unit, onMore: (
                 IconButton(onClick = onMore) { Icon(Icons.Filled.Edit, "${t.name} 이름·색 고치기") }
             }
             Row(Modifier.padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TimeBox("시작", start, Modifier.weight(1f)) { picking = true }
+                TimeBox("시작", start, Modifier.weight(1f)) { picking = TimeRangePart.START }
                 Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                TimeBox(if (overnight) "끝 · 다음 날" else "끝", end, Modifier.weight(1f)) { picking = false }
+                TimeBox(if (overnight) "끝 · 다음 날" else "끝", end, Modifier.weight(1f)) { picking = TimeRangePart.END }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("쉬는 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            // [A11Y-04] On a big font the stepper goes under the words instead of squeezing them into two lines.
+            val breakStepper: @Composable () -> Unit = {
                 MinutesStepper(
                     minutes = t.breakMinutes,
                     onChange = { onChange(t.copy(breakMinutes = it)) },
@@ -374,6 +398,15 @@ private fun ShiftTimeCard(t: ShiftType, onChange: (ShiftType) -> Unit, onMore: (
                     dialogTitle = "${t.name} 쉬는 시간",
                 )
             }
+            if (LocalDensity.current.fontScale >= 1.5f) {
+                Text("쉬는 시간", style = MaterialTheme.typography.bodyLarge)
+                breakStepper()
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("쉬는 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    breakStepper()
+                }
+            }
             Text(
                 "실제 근무 ${HoursFormat.korean(t.workMinutes)}" + if (t.breakMinutes > 0) " (쉬는 시간 빼고)" else "",
                 style = MaterialTheme.typography.bodySmall,
@@ -381,15 +414,18 @@ private fun ShiftTimeCard(t: ShiftType, onChange: (ShiftType) -> Unit, onMore: (
             )
         }
     }
-    picking?.let { isStart ->
-        TimePickerDialog(
-            title = if (isStart) "${t.name} 시작 시각" else "${t.name} 끝나는 시각",
-            initial = if (isStart) start else end,
+    // [UX-08] Start, end and break in one window, opened on the one tapped.
+    picking?.let { part ->
+        TimeRangeDialog(
+            title = "${t.name.ifBlank { "근무" }} 시간",
+            initial = TimeRange(start, end, t.breakMinutes),
+            startOn = part,
             onDismiss = { picking = null },
-        ) { time ->
-            picking = null
-            onChange(if (isStart) t.copy(start = time, end = end) else t.copy(start = start, end = time))
-        }
+            onConfirm = { r ->
+                picking = null
+                onChange(t.copy(start = r.start, end = r.end, breakMinutes = r.breakMinutes))
+            },
+        )
     }
 }
 

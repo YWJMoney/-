@@ -10,7 +10,7 @@ class WorkToolsSearchTest {
     private fun first(query: String) = SettingsIndex.search(query).firstOrNull()?.title
 
     @Test fun theToolsAreFound() {
-        assertEquals("듀티표 사진으로 넣기", first("듀티표"))
+        assertEquals("듀티표 넣기", first("듀티표"))
         assertEquals("연간 건강 지표", first("야간 비율"))
         assertEquals("근태 엑셀 가져오기", first("엑셀"))
         assertEquals("출퇴근 자동 기록", first("자동 출근"))

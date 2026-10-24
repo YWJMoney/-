@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.layout
@@ -89,12 +90,9 @@ private val DarkInk = Color(0xFF151927)
  * [VIS-01] Readable text color on top of [background]: whichever of white and the app's dark ink
  * has the higher contrast (WCAG), so 오후 #F2994A or 대근 #0E9F6E get dark letters, not faint white.
  */
-fun contentColorOn(background: Color): Color {
-    val l = background.luminance()
-    val onWhite = 1.05f / (l + 0.05f)
-    val onDark = (l + 0.05f) / (DarkInk.luminance() + 0.05f)
-    return if (onDark > onWhite) DarkInk else Color.White
-}
+fun contentColorOn(background: Color): Color =
+    // [WEAR-02] The same rule as the widgets and the watch, in core.
+    if (com.bamnat.core.layout.Contrast.inkOn(background.toArgb().toLong() and 0xFFFFFFFFL, DarkInk.toArgb().toLong() and 0xFFFFFFFFL) == com.bamnat.core.layout.Contrast.WHITE) Color.White else DarkInk
 
 /** [DAY-02] Inside the day's groups sections drop their own card, so a group never holds a box in a box. */
 val LocalFlatSections = androidx.compose.runtime.staticCompositionLocalOf { false }
@@ -267,20 +265,23 @@ fun StatTile(
                     autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 12.sp),
                 )
             }
+            // [UX-08] At a big font the value and the caption take two lines at a size that can be read, instead of
+            // shrinking to 9sp on one (notes/1.22-285/E.md 4장, F.md 4장 3번).
+            val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
             BasicText(
                 value,
                 style = MaterialTheme.typography.titleLarge.merge(NumberStyle).copy(
                     color = if (warning) cal.warning else MaterialTheme.colorScheme.onSurface,
                 ),
-                maxLines = 1,
-                autoSize = TextAutoSize.StepBased(minFontSize = 12.sp, maxFontSize = 22.sp),
+                maxLines = if (big) 2 else 1,
+                autoSize = TextAutoSize.StepBased(minFontSize = if (big) 16.sp else 12.sp, maxFontSize = 22.sp),
             )
             if (caption != null) {
                 BasicText(
                     caption,
                     style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                    maxLines = 1,
-                    autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = 11.sp),
+                    maxLines = if (big) 2 else 1,
+                    autoSize = TextAutoSize.StepBased(minFontSize = if (big) 11.sp else 9.sp, maxFontSize = 11.sp),
                 )
             }
         }
@@ -328,6 +329,8 @@ fun MinutesStepper(
     step: Int = 30,
     max: Int = 24 * 60,
     dialogTitle: String = "시간 입력",
+    /** [UX-08] How the value reads ("1시간 30분" by default; a limit in hours can say "52시간"). */
+    format: (Int) -> String = HoursFormat::korean,
 ) {
     var editing by remember { mutableStateOf(false) }
     // Shown value runs ahead of the database so quick repeated taps all count.
@@ -369,7 +372,7 @@ fun MinutesStepper(
             contentAlignment = Alignment.Center,
         ) {
             BasicText(
-                HoursFormat.korean(shown),
+                format(shown),
                 style = style.copy(color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center),
                 maxLines = 1,
                 autoSize = TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = style.fontSize),
@@ -400,9 +403,9 @@ private val STEPPER_VALUE_WIDTH = 104.dp
 
 private const val STEPPER_SAVE_DELAY_MILLIS = 350L
 
-/** A − or + button that steps once on a tap and keeps stepping while held. */
+/** A − or + button that steps once on a tap and keeps stepping while held. [UX-08] Shared with CountStepper. */
 @Composable
-private fun RepeatIconButton(onStep: () -> Unit, enabled: Boolean, content: @Composable () -> Unit) {
+internal fun RepeatIconButton(onStep: () -> Unit, enabled: Boolean, content: @Composable () -> Unit) {
     val step by androidx.compose.runtime.rememberUpdatedState(onStep)
     val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()

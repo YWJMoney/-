@@ -85,12 +85,39 @@ internal object HelpFaq {
             listOf("달력", "내 근무"),
             "근무 주기 열기" to HelpAction.Go(SettingsGo.PATTERN),
         ),
+        // [SCHED-03] 1.23 I: the most common write-in about patterns, a day off by one after a swap or a sick day.
+        HelpTopic(
+            "realign", "근무 주기", "근무 순서가 하루 밀렸어요",
+            "순서가 어긋난 날을 길게 누르고 ‘이 날부터 순서 다시 맞추기’에서 그날이 몇 번째 날인지 골라요. 그날부터 다시 돌고, " +
+                "그 전 날은 그대로 남아요. 직접 바꿔 둔 날은 목록으로 보여 패턴대로 돌릴지 골라요.",
+            listOf("밀렸", "밀림", "어긋", "하루 밀", "순서 틀", "다시 맞추", "꼬였"),
+            listOf("달력", "내 근무"),
+            "달력 열기" to HelpAction.Tab(NoticeLinks.Target.TODAY),
+        ),
+        // [CAL-43] 1.23 I
+        HelpTopic(
+            "quicktext", "달력", "메모처럼 적어서 근무를 넣을 수 있나요",
+            "날짜를 누르고 빠른 메모에 ‘내일 야간 대근 7시’, ‘다음주 월화 연차’, ‘11/3 휴무’처럼 적어요. 넣을 수 있는 말이면 " +
+                "‘이렇게 넣을까요?’가 떠서 ‘넣기’를 누를 때만 달력에 들어가요. 그냥 보내면 메모로 남아요.",
+            listOf("메모로 넣기", "글로 입력", "말로 입력", "적어서", "한 줄", "빠른 메모"),
+            listOf("달력"),
+            "달력 열기" to HelpAction.Tab(NoticeLinks.Target.TODAY),
+        ),
         HelpTopic(
             "oneday", "달력", "하루만 근무를 바꾸고 싶어요",
             "날짜를 누르고 하루 화면의 ‘근무’에서 다른 근무를 고르면 그날만 바뀌어요. 날짜를 길게 누르면 빠른 설정이 열리고, " +
                 "여러 날은 달력 오른쪽 아래 ‘빠른 입력’으로 한 번에 바꿔요.",
             listOf("하루", "바꾸기", "변경", "휴가", "연차", "근무 변경", "날짜", "빠른 입력"),
             listOf("달력"),
+        ),
+        // [LEAVE-01..06] 1.22 묶음 D.
+        HelpTopic(
+            "leave", "연차", "남은 연차와 없어지는 날을 보고 싶어요",
+            "급여 화면 연차 카드의 ‘연차 화면’에서 봐요. 입사일을 넣으면 제60조대로 세고 달력의 연차·반차를 빼요. " +
+                "회사가 준 날·이월은 ‘직접 넣기’로 넣어요. 없어지기 전 알림은 켜 두어도 손해가 없고, 필요 없으면 연차 화면이나 설정 › 알림과 잠에서 꺼요.",
+            listOf("연차", "남은 연차", "연차 계산", "소멸", "이월", "입사일", "연차 알림", "촉진", "보상휴가", "연차수당"),
+            listOf("급여", "연차"),
+            "연차 화면 열기" to HelpAction.Tab(NoticeLinks.Target.LEAVE),
         ),
         HelpTopic(
             "extra", "추가 근무", "잔업·특근·대근은 어떻게 적어요?",
@@ -107,6 +134,14 @@ internal object HelpFaq {
             listOf("급여", "월급", "명세서", "계산", "수당", "다르", "틀려", "안 맞"),
             listOf("급여"),
             "급여 계산 열기" to HelpAction.Go(SettingsGo.PAY), ask = InquiryKind.BUG,
+        ),
+        // [PAYR-04][REMOTE-02] Where 실수령's tax and the year's rates come from, and how they stay current.
+        HelpTopic(
+            "takeHome", "실수령", "예상 실수령의 세금은 어떻게 계산하나요?",
+            "4대보험은 그 달의 해 요율로, 근로소득세는 국세청 간이세액표 그대로예요. ‘○월 한눈에’ 카드에서 가족 수(본인·배우자 포함)와 " +
+                "8~20세 자녀 수를 고르세요. 식대 등 비과세가 있으면 명세서와 조금 달라요. 요율·세액표가 바뀌면 앱이 하루 한 번 받아 바꿔요.",
+            listOf("실수령", "세금", "소득세", "간이세액표", "부양가족", "자녀", "4대보험", "요율", "세후"),
+            listOf("통계", "급여"),
         ),
         HelpTopic(
             "backup", "백업", "휴대폰을 바꿔도 기록을 옮길 수 있나요?",
@@ -150,10 +185,30 @@ internal object HelpFaq {
         HelpTopic(
             "sleep", "수면", "잠든 시간을 기록하고 싶어요",
             "‘수면 기록’ 화면이나 오늘 하루 화면에서 ‘잠들었어요’, 일어나면 ‘깼어요’를 눌러요. 근무별 평균을 보고 기록을 고칠 수 있어요. " +
-                "워치 기록도 설정 › 잠과 휴식에서 켜면 함께 봐요.",
+                "워치 기록도 설정 › 알림과 잠에서 켜면 함께 봐요.",
             listOf("잠", "수면", "잠들었어요", "깼어요", "워치", "낮잠"),
-            listOf("수면", "잠과 휴식"),
+            listOf("수면", "알림과 잠"),
             "수면 기록 열기" to HelpAction.Go(SettingsGo.SLEEP),
+        ),
+        // [REST-01] Where the roster check's limits are changed, and how to turn it off.
+        HelpTopic(
+            "restRules", "근무표 점검", "휴식 점검이 우리 병원 기준과 달라요 · 끄고 싶어요",
+            "달력의 휴식 점검 카드에서 ‘기준 바꾸기’를 누르면 휴식 시간, 나이트 뒤 쉬는 날, 연속 나이트, 연속 근무, 한 달 나이트 수를 바꿔요. " +
+                "0으로 두면 그 항목은 보지 않아요. 끄려면 같은 화면 맨 위 ‘근무표 점검’을 끄거나 설정 › 알림과 잠 › 휴식 점검을 꺼요. " +
+                "알려만 주고 저장은 막지 않아요.",
+            listOf("휴식 점검", "근무표 점검", "기준", "나이트", "N-O-D", "나오데", "연속 나이트", "끄기", "병원 기준"),
+            listOf("알림과 잠", "달력"),
+            "근무표 점검 기준 열기" to HelpAction.Page(SettingsPage.NOTICES, "근무표 점검 기준"),
+        ),
+        // [JOB-02][JOB-03] 공무원 봉급표 and the 57-hour cap.
+        HelpTopic(
+            "publicPay", "공무원 급여", "공무원·경찰·소방 봉급과 시간외를 넣고 싶어요",
+            "급여 설정에서 직군을 공무원·경찰·소방으로 고르면 급여 화면에 ‘공무원 봉급표’가 생겨요. 계급과 호봉, 근무 연수를 고르고 " +
+                "‘봉급표로 채우기’를 누르면 봉급, 시간외·야간·휴일 수당, 정근수당·명절휴가비가 들어가요. 교대·현업이 아니면 평일 하루 1시간을 빼고 " +
+                "한 달 57시간까지 세고, 달력 휴식 점검 카드에 ‘이달 시간외 41/57’처럼 보여요.",
+            listOf("공무원", "경찰", "소방", "호봉", "봉급표", "시간외", "57시간", "정근수당", "명절휴가비"),
+            listOf("급여"),
+            "급여와 연차 설정 열기" to HelpAction.Page(SettingsPage.PAY),
         ),
         HelpTopic(
             "memo", "메모", "메모에 알람을 넣고 싶어요",
@@ -170,6 +225,79 @@ internal object HelpFaq {
             listOf("데이터", "가져오기"),
             "캘린더에서 가져오기" to HelpAction.Go(SettingsGo.CALENDAR_IMPORT),
         ),
+        // [DAILY-01][BACK-01][DAILY-16][INV-34] 1.22: on by default, and how to turn each off (S10).
+        HelpTopic(
+            "defaultsOff", "끄는 법", "1.22에 새로 켜진 기능을 끄고 싶어요",
+            "끄는 법: 위젯 메모 줄은 설정 › 달력 › ‘위젯에 메모 보이기’, 백업 속 사진은 설정 › 데이터 › ‘사진도 백업’, " +
+                "급여 화면의 광장 시세 카드는 설정 › 급여와 연차 › ‘광장 시세와 내 단가 견주기’, 투자 월말 요약은 투자 › ⋮ › 목표와 수익률 › ‘월말 요약 알림’에서 꺼요. " +
+                "돈·메모 화면의 카드는 각 화면의 ‘화면 꾸미기’에서 숨겨요.",
+            listOf("끄기", "끄는 법", "위젯 메모", "사진 백업", "시세", "월말 요약", "화면 꾸미기", "숨기기"),
+            listOf("달력", "데이터", "급여", "투자", "돈", "메모"),
+            "달력 설정 열기" to HelpAction.Page(SettingsPage.CALENDAR, "위젯에 메모 보이기"),
+        ),
+        HelpTopic(
+            "receiptScan", "영수증", "영수증 사진을 찍으면 어디로 가나요?",
+            "영수증 글자는 휴대폰 안에서 읽고 어디로도 보내지 않아요. 금액·날짜·가게를 채운 뒤 저장 전에 확인해 주세요. " +
+                "합계를 못 찾으면 가장 큰 금액을 넣고 ‘확인해 주세요’라고 알려 드려요. 사진은 그 기록의 영수증으로 남고, 백업 파일에도 들어가요(끄는 법: 설정 › 데이터 › ‘사진도 백업’).",
+            listOf("영수증", "사진", "OCR", "읽기", "금액"),
+            listOf("돈"),
+            "데이터 설정 열기" to HelpAction.Page(SettingsPage.DATA, "사진도 백업"),
+        ),
+        // [SIMPLE-02] Where the features that start on are turned off, and why leaving them on is fine.
+        HelpTopic(
+            "turnOff", "기능", "켜져 있는 알림이나 기능을 끄고 싶어요",
+            "알림은 설정 › 알림과 잠에서 하나씩 꺼요. 처음에 켜 둔 하루 브리핑·잘 준비·잠금 화면 오늘 근무는 소리가 없고, " +
+                "퇴근길 안전은 야간이 끝날 때 한 번뿐이에요. 모두 이 휴대폰 안에서만 돌아서 켜 둬도 괜찮아요. " +
+                "달력·급여 화면의 카드와 안내는 설정 › 기능 켜고 끄기에서 끄고, ‘추천 기능 한 번에 켜기’에서 알림 넷을 한 화면으로 바꿀 수도 있어요.",
+            listOf("끄기", "끄고", "알림 끄기", "너무 많", "귀찮", "브리핑", "잠금 화면", "추천", "기본", "켜져"),
+            listOf("기능 켜고 끄기", "알림과 잠", "추천 기능"),
+            "알림과 잠 열기" to HelpAction.Page(SettingsPage.NOTICES, "하루 브리핑"),
+        ),
+        // [EASY-01][EASY-02] 1.23 N: the example calendar, and leaving it.
+        HelpTopic(
+            "browse", "둘러보기", "예시 달력을 그만 보고 내 달력으로 시작하고 싶어요",
+            "‘우선 둘러볼게요’로 연 예시 달력은 화면 위 띠의 ‘내 정보로 시작’을 누르면 끝나요. 둘러보다 근무를 적으려 하면 ‘예시는 두고 새 달력에서 시작’도 고를 수 있어요. " +
+                "둘러보는 동안 적은 건 이 휴대폰 밖으로 나가지 않고, 알람·백업·공유에도 들어가지 않아요.",
+            listOf("둘러보기", "둘러볼게요", "예시 달력", "예시", "체험", "내 정보로 시작", "처음부터", "시작하기"),
+            listOf("달력", "내 정보"),
+            "달력 열기" to HelpAction.Tab(NoticeLinks.Target.TODAY),
+        ),
+        // [EASY-05][EASY-08][EASY-09] 1.23 N: the question cards and where every answer is kept.
+        HelpTopic(
+            "profile", "내 정보", "질문 카드가 떠요 · 답한 정보를 바꾸고 싶어요",
+            "질문 카드는 기능에 필요한 정보만 하루 두 개까지 물어요. ‘나중에’는 7일 뒤, ‘모르겠어요’는 법대로 계산해요. " +
+                "답한 것은 설정 맨 위 ‘내 정보’에 모여 있고, 누르면 바로 고쳐져 쓰는 기능에 함께 적용돼요. ‘모두 처음부터’는 값을 지우지 않고 다시 물어요.",
+            listOf("내 정보", "질문 카드", "질문", "물어봐", "프로필", "입사일", "월급날", "다시 묻기", "모두 처음부터", "정보 바꾸기"),
+            listOf("내 정보", "달력"),
+            "내 정보 열기" to HelpAction.Go(SettingsGo.PROFILE),
+        ),
+        // [OBS-01][OBS-02] 1.23 N
+        HelpTopic(
+            "journal", "밤낮이 한 일", "앱이 알아서 무엇을 했는지 보고 싶어요",
+            "설정 맨 위 ‘밤낮이 한 일’에서 알람을 다시 잡은 시각, 자동 백업, 계산 자료 갱신, 결제 알림 기록처럼 밤낮이 알아서 한 일을 날짜별로 봐요. " +
+                "금액이나 글 내용은 적지 않고, 이 휴대폰에만 남아요. 달력 위엔 평소보다 많이 한 날만 한 줄로 보여요.",
+            listOf("밤낮이 한 일", "한 일", "한 일 기록", "알아서", "자동으로", "백업 됐", "알람 다시", "갱신", "무엇을 했"),
+            listOf("밤낮이 한 일", "달력"),
+            "밤낮이 한 일 열기" to HelpAction.Go(SettingsGo.JOURNAL),
+        ),
+        // [COMM-08][COMM-09] 1.22.0: what the plaza asks of a post, and how to stop seeing someone.
+        HelpTopic(
+            "plaza", "광장", "광장에서 불쾌한 글을 봤어요. 그 사람 글을 안 보고 싶어요",
+            "글 옆 ⋮에서 ‘신고’를 누르면 운영자가 확인하고, ‘이 사람 글 안 보기’를 누르면 그 사람 글이 이 휴대폰에서 바로 사라져요. " +
+                "가린 사람은 광장 › 내 활동 › ‘가린 사람’에서 다시 볼 수 있어요. 글을 처음 쓸 때 보는 운영 규칙은 언제든 웹에서도 볼 수 있어요.",
+            listOf("광장", "차단", "가리기", "안 보기", "신고", "욕설", "운영 규칙"),
+            listOf("광장", "회사 규칙 광장"),
+            "밤낮 소식 알림 설정" to HelpAction.Page(SettingsPage.NOTICES, "밤낮 소식"),
+        ),
+        // [STAT-01] 1.22.0: what 사용 통계 sends, and that it stays off without a yes.
+        HelpTopic(
+            "usageStats", "사용 통계", "사용 통계 보내기는 무엇을 보내나요?",
+            "켰을 때만 어떤 기능을 하루에 몇 번 썼는지와 앱 버전을 하루 한 번 보내요. 근무·금액·메모·글·휴대폰 정보는 보내지 않아요. " +
+                "설정 › 개인정보·앱 정보 › ‘사용 통계 보내기’에서 보낼 내용을 미리 보고 언제든 끌 수 있고, 꺼도 앱은 똑같이 돼요.",
+            listOf("통계", "사용 통계", "보내는 것", "익명", "수집", "끄기"),
+            listOf("개인정보"),
+            "사용 통계 설정 열기" to HelpAction.Page(SettingsPage.PRIVACY, "사용 통계 보내기"),
+        ),
         HelpTopic(
             "privacy", "개인정보", "내 기록은 어디에 저장되나요?",
             "근무, 메모, 돈 기록, 급여는 이 휴대폰에만 저장돼요. 링크 공유, 회사 규칙 광장, 문의처럼 직접 보내는 것만 서버로 가요. " +
@@ -179,6 +307,28 @@ internal object HelpFaq {
             "개인정보 처리방침" to HelpAction.Page(SettingsPage.PRIVACY, "개인정보 처리방침"),
         ),
     )
+
+    /** [INQ-05] I11: the answers each of the server's topics ([com.bamnat.core.ops.InquiryTopics]) starts with. */
+    private val BY_TOPIC = mapOf(
+        "alarm" to listOf("alarm", "sound", "wake"),
+        "pay" to listOf("pay", "takeHome", "extra", "leave", "publicPay"),
+        "schedule" to listOf("pattern", "oneday", "calendars", "restRules", "import"),
+        "share" to listOf("share", "receive"),
+        "company" to listOf("plaza"),
+        "backup" to listOf("backup", "phoneCalendar"),
+        "app" to listOf("widget", "alarm", "turnOff", "profile", "journal"),
+    )
+
+    /**
+     * [INQ-05] I11: while a question is written, the answers on its topic (sorted the way the server will
+     * sort the question) come first, then the best of the rest.
+     */
+    fun forQuestion(text: String, topics: List<HelpTopic> = topics(), limit: Int = 2): List<HelpTopic> {
+        val key = com.bamnat.core.ops.InquiryTopics.of(text)
+        val ids = BY_TOPIC[key].orEmpty()
+        val first = search(text, topics.filter { it.id in ids }, limit).ifEmpty { topics.filter { it.id in ids }.take(1) }
+        return (first + search(text, topics, limit)).distinctBy { it.id }.take(limit)
+    }
 
     /** The answers that fit [query], best first. */
     fun search(query: String, topics: List<HelpTopic> = topics(), limit: Int = 6): List<HelpTopic> =

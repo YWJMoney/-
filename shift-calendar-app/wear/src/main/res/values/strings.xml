@@ -3,4 +3,5 @@
     <string name="app_name">밤낮</string>
     <string name="tile_label">오늘 근무</string>
     <string name="complication_label">밤낮 오늘 근무</string>
+    <string name="week_complication_label">밤낮 이번 주 근무시간</string>
 </resources>

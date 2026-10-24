@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.filled.Construction
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.WorkOutline
 import androidx.compose.material3.Icon
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -74,13 +76,25 @@ fun WorkStyle.changedMessage(): String = when (this) {
  * the calendar and money tab show; it can be changed in settings at any time.
  */
 @Composable
-fun WorkStyleScreen(current: WorkStyle?, onPick: (WorkStyle) -> Unit, title: String = "어떻게 일하세요?", company: Boolean = false) {
+fun WorkStyleScreen(
+    current: WorkStyle?,
+    onPick: (WorkStyle) -> Unit,
+    title: String = "어떻게 일하세요?",
+    company: Boolean = false,
+    /** [285] Changing it later from settings: a way back without changing anything. Null on first run. */
+    onBack: (() -> Unit)? = null,
+) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
             Column(
                 Modifier.widthIn(max = 560.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                if (onBack != null) {
+                    androidx.compose.material3.IconButton(onClick = onBack, modifier = Modifier.offset(x = (-12).dp)) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로")
+                    }
+                }
                 Text(title, style = MaterialTheme.typography.headlineMedium)
                 Text(
                     "고른 형태에 맞춰 달력과 돈 관리가 바뀌어요. 설정에서 언제든 바꿀 수 있고, 적어 둔 기록은 그대로 남아요.",

@@ -41,6 +41,8 @@ object Notifications {
     const val PRO_CHANNEL_ID = "pro_notice_v1"
     /** [PROV-03] 자동 백업 that has not worked for days. */
     const val BACKUP_CHANNEL_ID = "auto_backup_v1"
+    /** [COMM-10] 광장 소식, since 1.23 밤낮 소식 [SRV-10]: one bundled notice a day. */
+    const val PLAZA_CHANNEL_ID = "plaza_news_v1"
     /** Before 1.11 every sleep tip made a sound here; a channel's importance cannot be lowered, so it goes. */
     private const val OLD_SLEEP_CHANNEL_ID = "sleep_tips_v1"
 
@@ -59,6 +61,11 @@ object Notifications {
     const val SHARE_ID = 7202
     const val PRO_ID = 7203
     const val BACKUP_ID = 7204
+    const val PLAZA_ID = 7205
+    /** [ALRM-01] 휴대폰 캘린더 permission taken back. */
+    const val CALENDAR_PERMISSION_ID = 7206
+    /** [ALRM-01] Why an alarm rang late or only as a plain notice. */
+    const val ALARM_LATE_ID = 7006
     /** [PROV-07] 일어났나요? */
     const val WAKE_CHECK_ID = 7005
 
@@ -112,7 +119,7 @@ object Notifications {
             description = "곧 나갈 돈과 아직 못 받은 돈을 알려요. 자는 동안에는 깬 뒤로 미뤄요"
             group = GROUP_MONEY
         }
-        val leave = NotificationChannel(LEAVE_CHANNEL_ID, "연차 소멸 안내", NotificationManager.IMPORTANCE_DEFAULT).apply {
+        val leave = NotificationChannel(LEAVE_CHANNEL_ID, "연차 사용 촉진", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "올해 안 쓰면 없어지는 연차를 11월과 12월 첫날에 알려요"
             group = GROUP_MONEY
         }
@@ -144,7 +151,12 @@ object Notifications {
             description = "매일 자동 백업이 ${com.bamnat.app.backup.AutoBackup.FAIL_DAYS}일 넘게 안 되면 알려요"
             group = GROUP_DAY
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup))
+        // [SRV-10] The id stays, so a channel the user turned off stays off; its name says what it carries now.
+        val plaza = NotificationChannel(PLAZA_CHANNEL_ID, "밤낮 소식", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "문의 답, 받은 근무표 바뀜, 광장 규칙·신고 결과를 하루에 한 번 모아서 조용히 알려요"
+            group = GROUP_DAY
+        }
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
     }
 
@@ -182,6 +194,28 @@ object Notifications {
             .build()
         post(context, EXACT_WARNING_ID, notification)
     }
+
+    /**
+     * [ALRM-01] I23: after an alarm that came hours late (and so did not ring) or could only show as a plain
+     * notice, one line in 알람 상태 says what happened and opens 알람 점검, where the battery settings are.
+     */
+    fun postAlarmTrouble(context: Context, lateMinutes: Long?) {
+        val title = if (lateMinutes != null) "알람이 ${formatLate(lateMinutes)} 늦게 와서 울리지 않았어요" else "알람 화면을 띄우지 못해 알림으로만 울렸어요"
+        val notification = NotificationCompat.Builder(context, STATUS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText("눌러서 알람 점검에서 배터리·절전 설정을 봐 주세요")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(
+                (if (lateMinutes != null) "휴대폰이 꺼져 있었거나 절전 기능이 앱을 멈춰 알람이 제때 오지 못했어요. "
+                else "다른 앱 위에 화면을 띄우는 권한이나 전체 화면 알림이 막혔을 수 있어요. ") +
+                    "알람 점검에서 빨간 줄을 고치면 다음 알람은 제때 울려요."))
+            .setContentIntent(open(context, NoticeLinks.Target.ALARM_CHECK, 2105))
+            .setAutoCancel(true)
+            .build()
+        post(context, ALARM_LATE_ID, notification)
+    }
+
+    internal fun formatLate(minutes: Long): String = if (minutes >= 60) "${minutes / 60}시간" + (if (minutes % 60 > 0) " ${minutes % 60}분" else "") else "${minutes}분"
 
     /** Plain alarm notification used when the ringing service cannot start. */
     fun postFallbackAlarm(context: Context, ring: RingRequest) {

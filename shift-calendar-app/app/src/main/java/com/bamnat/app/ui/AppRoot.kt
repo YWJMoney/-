@@ -17,6 +17,8 @@ import android.os.Build
 import androidx.compose.foundation.layout.Column
 import com.bamnat.app.alarm.AlarmService
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Button
@@ -170,7 +172,7 @@ private fun TopLevel?.adPlace(): com.bamnat.core.tier.AdRules.Place = when (this
 
 private object Routes {
     // [MCAL-01] Shifts and the order are edited for one calendar: the main one unless one is named.
-    const val SHIFT_TYPES = "shift_types?calendar={calendar}"
+    const val SHIFT_TYPES = "shift_types?calendar={calendar}&edit={edit}"
     const val PATTERN = "pattern?weekdays={weekdays}&setup={setup}&calendar={calendar}"
     // [CALS-02] The kind of work of one calendar: the main one unless one is named.
     const val WORK_STYLE = "work_style?calendar={calendar}"
@@ -182,7 +184,8 @@ private object Routes {
     const val SHOP_DAYS = "shop_days?calendar={calendar}"
     fun shopDays(calendar: String = PersonalCalendar.MAIN) = "shop_days?calendar=$calendar"
 
-    fun shiftTypes(calendar: String = PersonalCalendar.MAIN) = "shift_types?calendar=$calendar"
+    /** [DAILY-08] [edit] opens that shift type's editor at once (the day's shift, from its sheet). */
+    fun shiftTypes(calendar: String = PersonalCalendar.MAIN, edit: Long = 0L) = "shift_types?calendar=$calendar&edit=$edit"
     fun pattern(weekdays: Boolean = false, setup: Boolean = false, calendar: String = PersonalCalendar.MAIN) =
         "pattern?weekdays=$weekdays&setup=$setup&calendar=$calendar"
 
@@ -197,6 +200,9 @@ private object Routes {
     /** [MCAL-06] The pay of one of the user's calendars; without one, the main calendar's. */
     const val PAY = "pay?calendar={calendar}"
     fun pay(calendar: String = PersonalCalendar.MAIN) = "pay?calendar=$calendar"
+    /** [LEAVE-06] One calendar's 연차 원장; without one, the main calendar's. */
+    const val LEAVE = "leave?calendar={calendar}"
+    fun leave(calendar: String = PersonalCalendar.MAIN) = "leave?calendar=$calendar"
     /** [MCAL-06] How extra work is paid, in one calendar's pay; without one, the main calendar's. */
     const val EXTRA_KINDS = "extra_kinds?calendar={calendar}"
     fun extraKinds(calendar: String = PersonalCalendar.MAIN) = "extra_kinds?calendar=$calendar"
@@ -213,8 +219,11 @@ private object Routes {
     const val COMPANY_SENT = "company_sent"
     // [COMM-07] 회사 규칙 광장: every company's rule sets, to vote on, talk over and use.
     const val COMPANY_BOARD = "company_board"
+    const val PLAZA_RATES = "plaza_rates"
     /** [ADMIN-02] 설정 > 문의하기. */
     const val INQUIRY = "inquiry"
+    /** [SHR-14] 우리 조 모아 보기: links put together under a 6-letter code. */
+    const val SHARE_GROUP = "share_group"
 
     // [SLP-16][RECV-02][IMPORT-01] The sleep log, money owed, and bringing in the phone's calendar.
     const val SLEEP = "sleep"
@@ -233,6 +242,11 @@ private object Routes {
     const val FEATURES = "features"
     /** [MON-04] 프로: what it adds, the plans, passes and the admin link. */
     const val PRO = "pro"
+    /** [ONBOARD-04] 추천 기능 한 번에 켜기, from settings and the 1.22 update notice. */
+    const val RECOMMENDED = "recommended"
+    // [EASY-08][OBS-02] 1.23 묶음 N.
+    const val PROFILE = "profile"
+    const val JOURNAL = "journal"
 
     fun companyFind(setup: Boolean = false, weekdays: Boolean = false) = "company_find?setup=$setup&weekdays=$weekdays"
     fun company(id: String, setup: Boolean, weekdays: Boolean) = "company/$id?setup=$setup&weekdays=$weekdays"
@@ -274,15 +288,21 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
     // [ONBOARD-01] A new phone sees what the app may ask for, and why, before the first setup.
     val consentSeen by container.consentStore.seen.collectAsStateWithLifecycle()
+    // [EASY-01] 우선 둘러볼게요: the app opens on its example calendar; the first write asks for the setup.
+    val browse by container.browse.state.collectAsStateWithLifecycle()
+    val rootScope = rememberCoroutineScope()
+    var browseFirst by rememberSaveable { mutableStateOf(false) }
+    val startMine: (Boolean) -> Unit = { keep -> rootScope.launch { container.example.startMine(keep) } }
     when (needsSetup) {
         null -> return
         // "나중에" opens the calendar with a card to go on from where the user stopped.
-        true -> if (setupDraft?.later != true) {
+        true -> if (setupDraft?.later != true && !browse.browsing) {
             if (consentSeen == null && setupDraft == null) {
-                ConsentPages(container, onDone = {})
+                ConsentPages(container, onDone = {}, onBrowse = { browseFirst = true })
                 return
             }
-            SetupHost(appViewModel { SetupViewModel(it) })
+            SetupHost(appViewModel { SetupViewModel(it) },
+                onBrowse = { style -> browseFirst = false; rootScope.launch { container.example.browse(style) } }, browseFirst = browseFirst)
             return
         }
         false -> Unit
@@ -333,7 +353,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         when (target) {
             // Over an editor the calendar goes on top, so the editor's input is still there after back.
             // [SHR-12] The calendar opens its share sheet itself.
-            NoticeLinks.Target.TODAY, NoticeLinks.Target.SHARE, NoticeLinks.Target.RECEIVE -> {
+            NoticeLinks.Target.TODAY, NoticeLinks.Target.SHARE, NoticeLinks.Target.RECEIVE, NoticeLinks.Target.DAY -> {
                 val current = nav.currentBackStackEntry?.destination?.route
                 when {
                     current == TopLevel.CALENDAR.route -> Unit
@@ -355,7 +375,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             // [LEDG-16] The money tab takes this one itself, to open 자동 기록.
             NoticeLinks.Target.AUTO_RECORD -> nav.navigateTopLevel(TopLevel.MONEY.route)
             NoticeLinks.Target.MEMOS -> { nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target) }
-            NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.pay()) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.leave()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.SLEEP -> { nav.navigate(Routes.SLEEP) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.OWED -> { nav.navigate(Routes.OWED) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.CALENDAR_IMPORT -> { nav.navigate(Routes.CALENDAR_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -366,6 +386,16 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.ATTENDANCE_IMPORT -> { nav.navigate(Routes.ATTENDANCE_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PRO -> { nav.navigate(Routes.PRO) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.PLAZA -> { nav.navigate(Routes.COMPANY_BOARD) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            // [INQ-05] 밤낮 소식's answer line opens 내 문의 (문의하기 opens there when an answer is new).
+            NoticeLinks.Target.INQUIRY -> { nav.navigate(Routes.INQUIRY) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.GROUP -> { nav.navigate(Routes.SHARE_GROUP) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.PHONE_CALENDAR -> {
+                com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.DATA, com.bamnat.app.ui.settings.PHONE_CALENDAR_ROW)
+                NoticeLinks.consume(target)
+            }
+            // [SRV-09] Shown by the update's own dialog below, which takes the target.
+            NoticeLinks.Target.WHATS_NEW -> Unit
             NoticeLinks.Target.BACKUP -> {
                 com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.DATA, com.bamnat.app.ui.settings.AUTO_BACKUP_ROW)
                 NoticeLinks.consume(target)
@@ -384,6 +414,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 
     // [UX-04] A help answer, a search result or a screen's own "설정" opens the setting or screen it names.
     // A group of settings opens over an inner screen, so back returns there; a screen opens on top.
+    // [CAL-47] A file opened from outside: 설정 > 데이터, whose screen reads it and asks before changing anything.
+    val incomingFile by com.bamnat.app.IncomingFiles.file.collectAsStateWithLifecycle()
+    LaunchedEffect(incomingFile) {
+        if (incomingFile != null) SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.DATA)
+    }
     val settingsLink by SettingsLinks.target.collectAsStateWithLifecycle()
     LaunchedEffect(settingsLink) {
         when (val link = settingsLink ?: return@LaunchedEffect) {
@@ -431,13 +466,31 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         val fresh = info == null || info.firstInstallTime == info.lastUpdateTime
         mutableStateOf(com.bamnat.app.data.GuideStore.get(ctx).whatsNew(com.bamnat.app.BuildConfig.VERSION_CODE, fresh))
     }
+    // [ONBOARD-04] A phone set up before 1.22 keeps its own values; the update notice offers the rest once.
+    val recommendOff = remember {
+        val ctx = container.appContext
+        val info = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0) }.getOrNull()
+        val fresh = info == null || info.firstInstallTime == info.lastUpdateTime
+        val on = com.bamnat.app.data.RecommendedSettings.on(container.settingsRepository.current)
+        if (com.bamnat.core.consent.RecommendedPlan.offerOnce(fresh, container.consentStore.recommendOffered, on))
+            com.bamnat.core.consent.RecommendedPlan.offNow(on).size else 0
+    }
+    // [SRV-09] A notice's 새 기능 보기 button: this version's lines again, from wherever.
+    LaunchedEffect(noticeTarget) {
+        if (noticeTarget != NoticeLinks.Target.WHATS_NEW) return@LaunchedEffect
+        NoticeLinks.consume(NoticeLinks.Target.WHATS_NEW)
+        whatsNew.value = com.bamnat.core.guide.WhatsNew.releases.filter { it.versionCode <= com.bamnat.app.BuildConfig.VERSION_CODE }.take(1)
+    }
     if (whatsNew.value.isNotEmpty()) {
         val closeNew = {
             com.bamnat.app.data.GuideStore.get(container.appContext).whatsNewSeen(com.bamnat.app.BuildConfig.VERSION_CODE)
+            if (recommendOff > 0) container.consentStore.markRecommendOffered()
             whatsNew.value = emptyList()
         }
         com.bamnat.app.ui.guide.WhatsNewDialog(
             releases = whatsNew.value,
+            recommendOff = recommendOff,
+            onRecommend = { closeNew(); SettingsLinks.go(SettingsGo.RECOMMENDED) },
             onOpen = { id -> closeNew(); com.bamnat.core.guide.FeatureRegistry.get(id)?.let(com.bamnat.app.ui.guide.FeatureLinks::open) },
             onAsk = { closeNew(); com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "업데이트")) },
             onDismiss = closeNew,
@@ -502,62 +555,79 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 
     val navigateTop: (TopLevel) -> Unit = { dest -> nav.navigateTopLevel(dest.route) }
 
-    Row(Modifier.fillMaxSize()) {
-        if (wide && showNav) {
-            NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
-                Spacer(Modifier.height(12.dp))
-                for (dest in TopLevel.entries) {
-                    val selected = dest == topLevel
-                    NavigationRailItem(
-                        selected = selected,
-                        onClick = { navigateTop(dest) },
-                        icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
-                        label = { TabLabel(dest.labelFor(activeStyle)) },
-                    )
+    // [DAILY-09] Half open like a laptop (Flex): the calendar splits at the hinge.
+    val tabletop = rememberTabletop()
+    androidx.compose.runtime.CompositionLocalProvider(LocalTabletop provides tabletop) {
+        Row(Modifier.fillMaxSize()) {
+            if (wide && showNav) {
+                NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+                    Spacer(Modifier.height(12.dp))
+                    for (dest in TopLevel.entries) {
+                        val selected = dest == topLevel
+                        NavigationRailItem(
+                            selected = selected,
+                            onClick = { navigateTop(dest) },
+                            icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
+                            label = { TabLabel(dest.labelFor(activeStyle)) },
+                            // [VIS-03] The chosen tab in the same blue as every other chosen thing.
+                            colors = com.bamnat.app.ui.components.Selection.navRailItemColors(),
+                        )
+                    }
                 }
             }
-        }
-        Scaffold(
-            modifier = Modifier.weight(1f),
-            snackbarHost = { SnackbarHost(snackbar) },
-            // Inner screens with their own top bar handle insets themselves.
-            contentWindowInsets = if (showNav) ScaffoldDefaults.contentWindowInsets else WindowInsets(0, 0, 0, 0),
-            bottomBar = {
-                if (!wide && showNav) {
-                    Column {
-                        AdSlot(topLevel.adPlace())
-                        NavigationBar {
-                            for (dest in TopLevel.entries) {
-                                val selected = dest == topLevel
-                                NavigationBarItem(
-                                    selected = selected,
-                                    onClick = { navigateTop(dest) },
-                                    icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
-                                    label = { TabLabel(dest.labelFor(activeStyle)) },
-                                )
+            Scaffold(
+                modifier = Modifier.weight(1f),
+                snackbarHost = { SnackbarHost(snackbar) },
+                // Inner screens with their own top bar handle insets themselves.
+                contentWindowInsets = if (showNav) ScaffoldDefaults.contentWindowInsets else WindowInsets(0, 0, 0, 0),
+                bottomBar = {
+                    if (!wide && showNav) {
+                        Column {
+                            AdSlot(topLevel.adPlace())
+                            NavigationBar {
+                                for (dest in TopLevel.entries) {
+                                    val selected = dest == topLevel
+                                    NavigationBarItem(
+                                        selected = selected,
+                                        onClick = { navigateTop(dest) },
+                                        icon = { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) },
+                                        label = { TabLabel(dest.labelFor(activeStyle)) },
+                                        colors = com.bamnat.app.ui.components.Selection.navBarItemColors(),
+                                    )
+                                }
                             }
                         }
                     }
+                },
+            ) { padding ->
+                Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+                    if (activeCalendarId == com.bamnat.app.data.PersonalCalendar.EXAMPLE) {
+                        com.bamnat.app.ui.guide.ExampleBand(onStart = { startMine(false) })
+                    }
+                    RingingBanner()
+                    AppNavHost(
+                        nav = nav,
+                        container = container,
+                        wide = wide,
+                        snackbar = snackbar,
+                        styleExtras = styleExtras,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (wide && showNav) AdSlot(topLevel.adPlace())
                 }
-            },
-        ) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-                RingingBanner()
-                AppNavHost(
-                    nav = nav,
-                    container = container,
-                    wide = wide,
-                    snackbar = snackbar,
-                    styleExtras = styleExtras,
-                    modifier = Modifier.weight(1f),
-                )
-                if (wide && showNav) AdSlot(topLevel.adPlace())
             }
         }
     }
 
     // [ONBOARD-01] A phone set up before the consent pages is asked only about what is new since.
     NewConsentPrompt(container)
+
+    // [EASY-02] A write on the example calendar asks here, over whichever screen began it.
+    com.bamnat.app.ui.guide.WriteGateCard(container, start = startMine)
+    LaunchedEffect(route, activeCalendarId) {
+        val kind = route?.let(com.bamnat.app.ui.guide.WriteGate::kindOf) ?: return@LaunchedEffect
+        com.bamnat.app.ui.guide.WriteGate.request(container, kind) {}
+    }
 
     // [SETUP-01] Right after the first setup, once: the pay comes next for work paid by the hour or month.
     val justSaved by container.firstSetup.saved.collectAsStateWithLifecycle()
@@ -578,6 +648,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
     }
 }
+
+/** [EASY-05] The features of the pay screen, for the questions asked above it. */
+private val PAY_ASKS = setOf("pay.calc", "pay.report", "pay.gap", "pay.whatIf", "pay.compLeave", "hourly.takeHome", "hourly.weeks", "leave.ledger")
 
 /** [UNDO-01] A kind-of-work change's own extras, for its 되돌리기: the 시급 types it added and the next step it opened (a route pattern). */
 internal class StyleExtras(val entryId: String, val calendar: String, val addedTypes: List<Long>, val opened: String?)
@@ -764,7 +837,7 @@ private fun AppNavHost(
                     if (entry != null) styleExtras.value = StyleExtras(entry.id, calendar, added, opened)
                 }
             }
-            WorkStyleScreen(current = current, title = if (isMain) "근무 형태 바꾸기" else "‘${cal?.name}’ 근무 형태", onPick = { style ->
+            WorkStyleScreen(current = current, title = if (isMain) "근무 형태 바꾸기" else "‘${cal?.name}’ 근무 형태", onBack = { nav.popFrom(Routes.WORK_STYLE) }, onPick = { style ->
                 if (current == null || style == current) apply(style, null)
                 else scope.launch {
                     val records = container.recordsTrash.records(calendar)
@@ -785,12 +858,28 @@ private fun AppNavHost(
         }
         composable(TopLevel.MEMOS.route) {
             val vm = appViewModel { MemoListViewModel(it) }
-            MemoListScreen(
-                vm = vm,
-                onOpen = { id -> nav.navigate(Routes.memo(id)) },
-                onNew = { checklist, date -> nav.navigate(Routes.memo(0, date, checklist, notebook = true)) },
-                onOpenTrash = { nav.navigate(Routes.MEMO_TRASH) { launchSingleTop = true } },
-            )
+            // [DAILY-15] Unfolded, a memo opens in the right pane (list 40%, memo 60%) instead of a screen of its own.
+            var pane by rememberSaveable(stateSaver = com.bamnat.app.ui.memo.MemoPane.Saver) { mutableStateOf<com.bamnat.app.ui.memo.MemoPane?>(null) }
+            fun next(id: Long, checklist: Boolean = false, date: LocalDate? = null) =
+                com.bamnat.app.ui.memo.MemoPane(id, checklist, date, (pane?.n ?: 0) + 1)
+            val list = @Composable {
+                MemoListScreen(
+                    vm = vm,
+                    onOpen = { id -> if (wide) pane = next(id) else nav.navigate(Routes.memo(id)) },
+                    onNew = { checklist, date -> if (wide) pane = next(0, checklist, date) else nav.navigate(Routes.memo(0, date, checklist, notebook = true)) },
+                    onOpenTrash = { nav.navigate(Routes.MEMO_TRASH) { launchSingleTop = true } },
+                )
+            }
+            if (wide) com.bamnat.app.ui.memo.MemoPanes(pane, onOpenChange = { pane = it }, onNew = { pane = next(0) }) { list() }
+            else {
+                // Folded again with a memo open: it carries on full screen (a new one not yet saved is in the list).
+                LaunchedEffect(Unit) {
+                    val p = pane ?: return@LaunchedEffect
+                    pane = null
+                    if (p.id != 0L) nav.navigate(Routes.memo(p.id))
+                }
+                list()
+            }
         }
         composable(Routes.MEMO_TRASH) {
             val vm = appViewModel { MemoTrashViewModel(it) }
@@ -838,6 +927,11 @@ private fun AppNavHost(
                 onOpenCalendars = { nav.navigate(Routes.CALENDARS) { launchSingleTop = true } },
             )
         }
+        composable(Routes.SHARE_GROUP) {
+            val vm = appViewModel { com.bamnat.app.ui.calendar.ShareGroupViewModel(it) }
+            com.bamnat.app.ui.calendar.ShareGroupScreen(vm, onBack = { nav.popFrom(Routes.SHARE_GROUP) },
+                onShare = { nav.popFrom(Routes.SHARE_GROUP); NoticeLinks.open(NoticeLinks.Target.SHARE) })
+        }
         composable(Routes.INQUIRY) {
             val vm = appViewModel { InquiryViewModel(it) }
             InquiryScreen(vm = vm, onBack = { nav.popFrom(Routes.INQUIRY) })
@@ -867,10 +961,17 @@ private fun AppNavHost(
             }
             PayScreen(vm = vm, onBack = { nav.popFrom(Routes.PAY) },
                 onOpenExtraKinds = { nav.navigate(Routes.extraKinds(calendar)) { launchSingleTop = true } },
+                onOpenLeave = { nav.navigate(Routes.leave(calendar)) { launchSingleTop = true } },
                 top = {
+                    // [EASY-05] A pay fact still guessed, asked here where it is used: only those one tap answers.
+                    if (profile != null) com.bamnat.app.ui.guide.AskArea(container, calendar,
+                        container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle),
+                        com.bamnat.core.profile.AskPlace.Screen(PAY_ASKS), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), inCardOnly = true)
                     CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
                         onFix = { nav.fixCompanySetup(it) })
                 },
+                // [DAILY-16] 광장 시세 of the user's own job and region next to their pay, compared on the phone.
+                underTotal = { com.bamnat.app.ui.company.RateHintLine(profile) { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } } },
                 // [ADMIN-02] 계산이 이상해요 is a question in the app; a build without the company server shares it.
                 onReport = if (container.inquiryApi.enabled) { check ->
                     container.pendingPayCheck = check
@@ -957,7 +1058,12 @@ private fun AppNavHost(
                 onBack = { nav.popFrom(Routes.COMPANY_BOARD) },
                 onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) },
                 onShare = { nav.navigate(Routes.COMPANY_REPORT) { launchSingleTop = true } },
+                onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
             )
+        }
+        composable(Routes.PLAZA_RATES) {
+            val vm = appViewModel { com.bamnat.app.ui.company.RatesViewModel(it) }
+            com.bamnat.app.ui.company.RatesScreen(vm = vm, onBack = { nav.popFrom(Routes.PLAZA_RATES) })
         }
         composable(Routes.COMPANY_REPORT) {
             val vm = appViewModel { CompanyReportViewModel(it) }
@@ -998,8 +1104,10 @@ private fun AppNavHost(
         composable(Routes.TEAMS) {
             val calendar = remember { container.calendars.active.value }
             val vm = appViewModel(key = "teams_$calendar") { com.bamnat.app.ui.calendar.TeamsViewModel(it, calendar) }
+            // [CREW-04] Opened from a day's 대근 찾기, the finder starts on that day.
+            val startDay = remember { NoticeLinks.payload.value?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() } }
             com.bamnat.app.ui.calendar.TeamsScreen(vm = vm, onBack = { nav.popFrom(Routes.TEAMS) },
-                onOpenPattern = { nav.openPattern(container, calendar) })
+                onOpenPattern = { nav.openPattern(container, calendar) }, startDay = startDay)
         }
         composable(Routes.YEAR) {
             val calendar = remember { container.calendars.active.value }
@@ -1020,8 +1128,19 @@ private fun AppNavHost(
             val vm = appViewModel { com.bamnat.app.ui.work.CommuteViewModel(it) }
             com.bamnat.app.ui.work.CommuteScreen(vm = vm, onBack = { nav.popFrom(Routes.COMMUTE) })
         }
+        composable(Routes.LEAVE, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+            val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
+            val vm = appViewModel(key = "leave_$calendar") { com.bamnat.app.ui.leave.LeaveViewModel(it, calendar) }
+            com.bamnat.app.ui.leave.LeaveScreen(vm = vm, onBack = { nav.popFrom(Routes.LEAVE) },
+                onEditRules = { nav.navigate(Routes.pay(calendar)) { launchSingleTop = true } })
+        }
         composable(Routes.FEATURES) { com.bamnat.app.ui.guide.FeatureSwitchesScreen(onBack = { nav.popFrom(Routes.FEATURES) }) }
         composable(Routes.PRO) { com.bamnat.app.ui.pro.ProScreen(onBack = { nav.popFrom(Routes.PRO) }) }
+        composable(Routes.PROFILE) { com.bamnat.app.ui.guide.ProfileScreen(onBack = { nav.popFrom(Routes.PROFILE) }) }
+        composable(Routes.JOURNAL) { com.bamnat.app.ui.guide.JournalScreen(onBack = { nav.popFrom(Routes.JOURNAL) }) }
+        composable(Routes.RECOMMENDED) {
+            com.bamnat.app.ui.onboarding.RecommendedScreen(container, firstStart = false, onDone = { nav.popFrom(Routes.RECOMMENDED) })
+        }
         composable(Routes.EXTRA_KINDS, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
             val vm = appViewModel(key = "extra_kinds_$calendar") { ExtraKindsViewModel(it, calendar) }
@@ -1036,10 +1155,13 @@ private fun AppNavHost(
             val vm = appViewModel { DiagnosticsViewModel(it) }
             DiagnosticsScreen(vm = vm, testing = entry.arguments?.getBoolean("testing") == true, onBack = { nav.popFrom(Routes.DIAGNOSTICS) })
         }
-        composable(Routes.SHIFT_TYPES, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+        composable(Routes.SHIFT_TYPES, arguments = listOf(
+            navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN },
+            navArgument("edit") { type = NavType.LongType; defaultValue = 0L },
+        )) { entry ->
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
             val vm = appViewModel(key = "shifts_$calendar") { ShiftsViewModel(it, calendar) }
-            ShiftTypesScreen(vm = vm, onBack = { nav.popFrom(Routes.SHIFT_TYPES) })
+            ShiftTypesScreen(vm = vm, onBack = { nav.popFrom(Routes.SHIFT_TYPES) }, editId = entry.arguments?.getLong("edit") ?: 0L)
         }
         composable(
             Routes.PATTERN,
@@ -1095,7 +1217,23 @@ private fun AppNavHost(
 
 /** [UX-06] A tab's name, whole at every text size: at the largest sizes "근무·급여" was cut to "근무·". */
 @Composable
-private fun TabLabel(text: String) = FitText(text, MaterialTheme.typography.labelMedium)
+private fun TabLabel(text: String) {
+    // [A11Y-04] From 150% a two-word name ("근무·급여") takes two lines, so each word stays big enough to read
+    // instead of the whole name shrinking to fit one (notes/1.22-285/F.md 4장 3번).
+    val parts = text.split('·')
+    if (parts.size == 2 && androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
+        androidx.compose.foundation.layout.Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.clearAndSetSemantics { contentDescription = text },
+        ) {
+            val style = MaterialTheme.typography.labelMedium.copy(lineHeight = MaterialTheme.typography.labelMedium.fontSize)
+            FitText(parts[0], style)
+            FitText(parts[1], style)
+        }
+    } else {
+        FitText(text, MaterialTheme.typography.labelMedium)
+    }
+}
 
 /** [UX-05] A tab's icon; 설정 carries how many answers to the user's questions are new. */
 @Composable
@@ -1158,7 +1296,11 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.INQUIRY -> com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(help = true))
         Place.FEATURES -> screen(Routes.FEATURES)
         Place.PRO -> screen(Routes.PRO)
-        Place.SETTINGS_WORK, Place.SETTINGS_ALARM, Place.SETTINGS_REST, Place.SETTINGS_NOTICES, Place.SETTINGS_PAY,
+        Place.RECOMMENDED -> screen(Routes.RECOMMENDED)
+        Place.LEAVE -> screen(Routes.leave(cal))
+        Place.PROFILE -> screen(Routes.PROFILE)
+        Place.JOURNAL -> screen(Routes.JOURNAL)
+        Place.SETTINGS_WORK, Place.SETTINGS_ALARM, Place.SETTINGS_NOTICES, Place.SETTINGS_PAY,
         Place.SETTINGS_CALENDAR, Place.SETTINGS_DATA, Place.SETTINGS_PRIVACY ->
             link.place.settingsPage()?.let { SettingsLinks.open(it, link.focus) }
     }
@@ -1177,6 +1319,9 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.BOARD -> Routes.COMPANY_BOARD
     SettingsGo.FEATURES -> Routes.FEATURES
     SettingsGo.PRO -> Routes.PRO
+    SettingsGo.RECOMMENDED -> Routes.RECOMMENDED
+    SettingsGo.PROFILE -> Routes.PROFILE
+    SettingsGo.JOURNAL -> Routes.JOURNAL
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,
     SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT, SettingsGo.COMMUTE -> null
 }

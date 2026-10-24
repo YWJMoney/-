@@ -27,10 +27,53 @@ data class TeamRoster(val teams: List<Team>) {
 
     val mine: Team get() = teams.firstOrNull { it.mine } ?: teams.first()
 
+    /** Where my team sits in the order, 0 for the first. */
+    val mineIndex: Int get() = teams.indexOfFirst { it.mine }.takeIf { it >= 0 } ?: 0
+
+    /**
+     * [CREW-02] My team always works my own calendar, so its lag is 0 and every other team keeps its
+     * distance from it. Rosters saved before 1.21 could mark a later team as mine while it still ran
+     * a few days behind (the first team's lag stayed 0); this moves every team by the same days so the
+     * one marked mine is my calendar again and the order between teams is kept.
+     */
+    fun anchored(size: Int): TeamRoster {
+        if (size <= 0) return this
+        val shift = mine.lag
+        val single = teams.indexOfFirst { it.mine }.let { i -> teams.mapIndexed { j, t -> t.copy(mine = j == (if (i < 0) 0 else i)) } }
+        return copy(teams = single.map { it.copy(lag = Math.floorMod(it.lag - shift, size)) })
+    }
+
+    /** [CREW-02] Marks the team at [index] as mine and moves every team with it, so that team runs my calendar. */
+    fun withMine(index: Int, size: Int): TeamRoster =
+        copy(teams = teams.mapIndexed { i, t -> t.copy(mine = i == index) }).anchored(size)
+
+    /**
+     * [CREW-03] "우리 조는 3번째": the teams evenly spread in the order shown, the team at [index] mine.
+     * Team j then works today what my team worked (j − index) shares of the order ago, the way
+     * [suggest] spreads them; names stay where they are.
+     */
+    fun inOrder(rotation: WorkPattern.Rotation, index: Int): TeamRoster {
+        val size = rotation.steps.size
+        val n = teams.size
+        val share = maxOf(1, size / n)
+        return copy(teams = teams.mapIndexed { j, t -> t.copy(lag = Math.floorMod((j - index) * share, size), mine = j == index) })
+    }
+
+    /** [CREW-03] The same teams with the one at [from] moved to [to]; only the order on screen changes. */
+    fun moved(from: Int, to: Int): TeamRoster {
+        if (from !in teams.indices || to !in teams.indices || from == to) return this
+        val list = teams.toMutableList()
+        val t = list.removeAt(from)
+        list.add(to, t)
+        return copy(teams = list)
+    }
+
     /** The same roster with [team] set to work [stepIndex] of the order today, the way people know it ("B조 오늘 야간"). */
     fun withToday(rotation: WorkPattern.Rotation, name: String, stepIndex: Int, today: LocalDate): TeamRoster {
         val size = rotation.steps.size
         val lag = Math.floorMod(rotation.stepIndexOn(today) - stepIndex, size)
+        // [CREW-02] My team is my calendar: what it works today comes from there, never from here.
+        if (teams.any { it.name == name && it.mine }) return this
         return copy(teams = teams.map { if (it.name == name) it.copy(lag = lag) else it })
     }
 

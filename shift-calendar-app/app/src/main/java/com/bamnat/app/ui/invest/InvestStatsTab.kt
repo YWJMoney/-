@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -238,6 +238,9 @@ private fun TaxCard(state: InvestState, year: Int) {
             color = LocalCalendarColors.current.warning)
         else if (t.financialNear) Text("금융소득이 2,000만 원에 가까워요. 넘으면 종합과세 대상이에요.", style = MaterialTheme.typography.bodySmall,
             color = LocalCalendarColors.current.warning)
+        // [INV-35] Why this gain and the 보유 tab's can differ.
+        if (t.foreignGain != 0L) Text(InvestTaxes.AVERAGE_VS_FIFO, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("참고용 계산이에요. 실제 세금은 증권사 자료와 홈택스로 확인해 주세요.", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

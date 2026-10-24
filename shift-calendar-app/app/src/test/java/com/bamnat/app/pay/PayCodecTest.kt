@@ -171,6 +171,17 @@ class PayCodecTest {
         assertEquals(base, PayCodec.decode(plain))
     }
 
+    /** [JOB-02] 공무원 계급·호봉 round trip; a file without it, or with a grade this table lacks, reads as none. */
+    @Test fun publicGradeRoundTrip() {
+        val base = PayProfile(Occupation.FIRE, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_542_700))))
+        val g = com.bamnat.core.pay.PublicGrade("FIRE:소방교", 5, LocalDate.of(2019, 3, 1), onSite = false)
+        val p = base.copy(publicGrade = g)
+        assertEquals(p, PayCodec.decode(PayCodec.encode(p)))
+        assertEquals(false, PayCodec.encode(base).has("publicGrade"))
+        val newer = PayCodec.encode(p).apply { getJSONObject("publicGrade").put("grade", "FIRE:미래계급") }
+        assertNull(PayCodec.decode(newer).publicGrade)
+    }
+
     /** [PAYS-03] A file from 1.11 reads with the new fields at their defaults; values from a newer version do not fail it. */
     @Test fun olderAndNewerFilesStillRead() {
         val json = PayCodec.encode(PayProfile(Occupation.NURSE, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_500_000)))))
@@ -229,5 +240,29 @@ class PayCodecTest {
         val stored = json.getJSONArray("customRules").getJSONObject(2).getJSONObject("pay")
         assertEquals("minus", stored.getString("type"))
         assertEquals("perTime", stored.getJSONObject("of").getString("type"))
+    }
+
+    /** [PAYX-24]~[PAYX-33] 1.23's fields survive a round trip and are left out at their defaults, so older files stay the same. */
+    @Test fun fields123RoundTrip() {
+        val p = PayProfile(
+            Occupation.MANUFACTURING, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_500_000))),
+            items = listOf(PayItem("b", "상여", ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 0))), Cadence.BONUS,
+                months = setOf(12), percentOfBase = 1.0, bonusBasis = com.bamnat.core.pay.BonusBasis.ORDINARY)),
+            hireDate = LocalDate.of(2026, 3, 16), leaveDate = LocalDate.of(2026, 11, 13),
+            productionWorker = true, previousYearPay = 31_000_000, ledgerTakeHome = true,
+            rules = CompanyRules(
+                proration = com.bamnat.core.pay.ProrationBasis.WORK_DAYS, wonRounding = com.bamnat.core.pay.WonRounding.AT_END,
+                hoursException = com.bamnat.core.hours.HoursException.FLEX_3M, partTimePremium = true,
+            ),
+        )
+        assertEquals(p, PayCodec.decode(PayCodec.encode(p)))
+        val plain = PayProfile(Occupation.CUSTOM, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_500_000))))
+        val json = PayCodec.encode(plain).toString()
+        listOf("leaveDate", "production", "previousYearPay", "proration", "wonRounding", "hoursException", "partTime50", "bonusBasis", "ledgerNet")
+            .forEach { assertEquals(it, false, "\"$it\"" in json) }
+        // A value from a newer version reads as the default.
+        val newer = JSONObject(PayCodec.encode(p).toString()).apply { getJSONObject("rules").put("proration", "FUTURE").put("hoursException", "FUTURE") }
+        assertEquals(com.bamnat.core.pay.ProrationBasis.CALENDAR_DAYS, PayCodec.decode(newer).rules.proration)
+        assertEquals(com.bamnat.core.hours.HoursException.NONE, PayCodec.decode(newer).rules.hoursException)
     }
 }

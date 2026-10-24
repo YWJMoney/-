@@ -15,11 +15,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -78,9 +80,9 @@ val TaxMode.label: String
 
 /** [HRLY-04] "예상 실수령 1,784,750원 (4대보험)" under a pay before tax; nothing when no tax is taken. */
 @Composable
-fun TakeHomeLine(gross: Long, mode: TaxMode, modifier: Modifier = Modifier) {
+fun TakeHomeLine(gross: Long, mode: TaxMode, modifier: Modifier = Modifier, on: java.time.LocalDate? = null) {
     if (mode == TaxMode.NONE) return
-    val r = remember(gross, mode) { TakeHome.estimate(gross, mode) }
+    val r = remember(gross, mode, on) { TakeHome.estimate(gross, mode, on = on) }
     Text("예상 실수령 ${won(r.net)} (${mode.label})", style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary, modifier = modifier)
 }
@@ -91,7 +93,10 @@ fun TakeHomeLine(gross: Long, mode: TaxMode, modifier: Modifier = Modifier) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun HourlyPayCard(vm: PayViewModel, profile: PayProfile, gross: Long, unlocked: Boolean, snapshot: ScheduleSnapshot, month: YearMonth) {
+internal fun HourlyPayCard(
+    vm: PayViewModel, profile: PayProfile, gross: Long, unlocked: Boolean, snapshot: ScheduleSnapshot, month: YearMonth,
+    holidayWeeks: List<com.bamnat.core.pay.HolidayWeek> = emptyList(),
+) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     var pickingDate by remember { mutableStateOf(false) }
     SectionCard(title = "예상 실수령") {
@@ -101,7 +106,10 @@ internal fun HourlyPayCard(vm: PayViewModel, profile: PayProfile, gross: Long, u
                 FilterChip(selected = profile.taxMode == m, onClick = { vm.update { it.copy(taxMode = m) } }, label = { Text(m.label) })
             }
         }
-        val r = remember(gross, profile.taxMode) { TakeHome.estimate(gross, profile.taxMode) }
+        // [PAYR-04] The same 가족·자녀 the stats card sets, so both screens show one take-home.
+        val r = remember(gross, profile, month) {
+            TakeHome.estimate(gross, profile.taxMode, profile.taxFamily, month.atDay(1), profile.taxChildren, TakeHome.nonTaxable(profile, month))
+        }
         r.deductions.forEach { (name, amount) ->
             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                 Text(name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
@@ -118,7 +126,9 @@ internal fun HourlyPayCard(vm: PayViewModel, profile: PayProfile, gross: Long, u
             when (profile.taxMode) {
                 TaxMode.NONE -> "가게에서 세금을 떼지 않으면 세전 금액이 그대로 들어와요."
                 TaxMode.WITHHOLDING_3_3 -> "3.3%(소득세 3% + 지방소득세 0.3%)로 떼였다면 다음 해 5월 종합소득세 신고로 돌려받을 수 있어요."
-                TaxMode.INSURANCE_4 -> "4대보험은 2026년 근로자 몫이에요. 소득세는 간이세액표를 흉내 낸 참고용이고, 실제는 회사 계산과 연말정산으로 정해져요."
+                TaxMode.INSURANCE_4 -> "4대보험은 그해 근로자 몫이에요. 소득세는 국세청 간이세액표(가족 ${profile.taxFamily}명" +
+                    (if (profile.taxChildren > 0) ", 8~20세 자녀 ${profile.taxChildren}명" else "") +
+                    ") 값이고, 실제는 회사 선택(80·100·120%)과 연말정산으로 정해져요. 가족 수는 통계 ‘○월 한눈에’에서 바꿔요. " + TakeHome.PENSION_NOTE
             },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp),
         )
@@ -128,7 +138,7 @@ internal fun HourlyPayCard(vm: PayViewModel, profile: PayProfile, gross: Long, u
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("법정 휴게 자동 빼기", style = MaterialTheme.typography.bodyLarge)
-                Text("휴게를 안 적은 날, 4시간 넘게 일하면 30분·8시간이면 1시간을 빼요", style = MaterialTheme.typography.bodySmall,
+                Text("휴게를 안 적은 날, 4시간 넘게 일하면 30분·8시간이면 1시간을 빼요. 4시간 근무에 휴게를 안 쓰기로 했다면 그날 휴게를 0분으로 적어요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.width(12.dp))
@@ -153,6 +163,24 @@ internal fun HourlyPayCard(vm: PayViewModel, profile: PayProfile, gross: Long, u
             DayOfWeek.entries.forEach { d ->
                 FilterChip(selected = weekFrom == d, onClick = { vm.update { it.copy(holidayWeekStart = d) } }, label = { Text(WEEKDAYS[d.ordinal]) })
             }
+        }
+        // [PAYX-35] Week by week: did it earn 주휴, and if not why (근로기준법 제55조, 시행령 제30조: 주 15시간 이상, 개근).
+        if (holidayWeeks.isNotEmpty()) {
+            Text("이번 달 주마다 주휴", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                holidayWeeks.forEach { w ->
+                    androidx.compose.material3.AssistChip(
+                        onClick = {},
+                        label = { Text("${w.from.monthValue}/${w.from.dayOfMonth}~${w.to.monthValue}/${w.to.dayOfMonth} · ${w.text}") },
+                        leadingIcon = {
+                            Icon(if (w.earned) Icons.Filled.Check else Icons.Filled.Close, contentDescription = if (w.earned) "받아요" else "못 받아요",
+                                modifier = Modifier.size(16.dp))
+                        },
+                    )
+                }
+            }
+            Text("주 15시간 이상 일하고 결근이 없는 주에 받아요. 쉬는 날을 바꿔 넣으면 바로 다시 세요.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))

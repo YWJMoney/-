@@ -361,7 +361,7 @@ private fun AddRow(label: String, onClick: () -> Unit, shape: Shape, badge: Stri
 
 /** [MCAL-07] "프로" beside 새 달력 만들기 once the free added calendars are made. */
 internal fun List<CalendarRow>.newCalendarBadge(): String? =
-    Tier.PRO.label.takeIf { count { it is CalendarRow.Mine && !it.cal.isMain } >= PersonalCalendar.FREE_ADDED }
+    Tier.PRO.label.takeIf { count { it is CalendarRow.Mine && !it.cal.isMain && !it.cal.isExample } >= PersonalCalendar.FREE_ADDED }
 
 /**
  * [MCAL-02] Naming a new calendar before its setup. The name and colour can be changed later in the
@@ -416,7 +416,7 @@ internal fun ColorRow(selected: Long, onPick: (Long) -> Unit) {
                     .clickable(role = Role.RadioButton) { onPick(c) }
                     .semantics { this.selected = on; contentDescription = "색 ${i + 1}" },
                 contentAlignment = Alignment.Center,
-            ) { if (on) Icon(Icons.Filled.Check, null, tint = Color.White) }
+            ) { if (on) Icon(Icons.Filled.Check, null, tint = com.bamnat.app.ui.components.contentColorOn(c.asColor())) } // [VIS-03]
         }
     }
 }
@@ -719,7 +719,7 @@ fun rememberAddCalendar(c: AppContainer, onSetup: (String) -> Unit): () -> Unit 
     val setup by androidx.compose.runtime.rememberUpdatedState(onSetup)
     val calendars by c.calendars.calendars.collectAsStateWithLifecycle()
     val gate by c.featureGate.state.collectAsStateWithLifecycle()
-    val made = calendars.count { !it.isMain }
+    val made = calendars.count { !it.isMain && !it.isExample }
     val pro = made >= PersonalCalendar.FREE_ADDED
     if (naming && pro && !gate.allows(Feature.MORE_CALENDARS)) {
         // [MCAL-07] Past the free calendars once paid features are on: said, not made.
@@ -775,10 +775,10 @@ fun CalendarScopeChips(
     if (list.size < 2) return
     FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (onAll != null) {
-            androidx.compose.material3.FilterChip(selected = all, onClick = { onAll(true) }, label = { Text("전체") })
+            com.bamnat.app.ui.components.FilterChip(selected = all, onClick = { onAll(true) }, label = { Text("전체") })
         }
         list.forEach { cal ->
-            androidx.compose.material3.FilterChip(
+            com.bamnat.app.ui.components.FilterChip(
                 selected = cal.id == active && !all,
                 onClick = {
                     onAll?.invoke(false)

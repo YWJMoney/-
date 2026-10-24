@@ -59,11 +59,9 @@ import androidx.compose.material.icons.filled.AlarmOff
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.PrivacyTip
@@ -104,6 +102,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
 import com.bamnat.app.BuildConfig
+import com.bamnat.app.data.rules
+import com.bamnat.app.appContainer
 import com.bamnat.app.NoticeLinks
 import com.bamnat.app.alarm.AlarmScheduler
 import com.bamnat.app.alarm.Notifications
@@ -137,17 +137,19 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.ZoneId
 
-/** [SET-01] The settings in nine groups, in the order people look for them, under the alarm's state. */
+/**
+ * [SET-01] The settings in groups, in the order people look for them, under the alarm's state.
+ * [SET-02] Seven since 1.22: 잠과 휴식 went into 알림과 잠 (both say when the app tells you something),
+ * and 앱 정보 into 개인정보·앱 정보 (처리방침 was in both).
+ */
 enum class SettingsPage(val title: String, val icon: ImageVector) {
     WORK("내 근무", Icons.Outlined.WorkOutline),
     ALARM("알람", Icons.Outlined.Alarm),
-    REST("잠과 휴식", Icons.Outlined.Bedtime),
-    NOTICES("알림", Icons.Outlined.Notifications),
+    NOTICES("알림과 잠", Icons.Outlined.Notifications),
     PAY("급여와 연차", Icons.Outlined.Payments),
     CALENDAR("달력 화면", Icons.Outlined.CalendarMonth),
     DATA("데이터", Icons.Outlined.SettingsBackupRestore),
-    PRIVACY("개인정보와 권한", Icons.Outlined.PrivacyTip),
-    ABOUT("앱 정보", Icons.Outlined.Info),
+    PRIVACY("개인정보·앱 정보", Icons.Outlined.PrivacyTip),
 }
 
 /** A result to show once; [undo] offers to take an import back. */
@@ -209,6 +211,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.healthSleep.refresh(on, force = true) }
     }
 
+    /** [SET-05] Moves every shift's alarms [minutes] earlier (later when negative); the alarms are set again from the saved shifts. */
+    fun moveAllAlarms(minutes: Int) {
+        viewModelScope.launch {
+            val types = container.scheduleRepository.shiftTypes.first()
+            com.bamnat.core.model.AlarmShift.moveAll(types, minutes).forEach { container.scheduleRepository.saveShiftType(it) }
+        }
+    }
+
     fun setAlarmsEnabled(on: Boolean) {
         update { it.copy(alarmsEnabled = on) }
         if (!on) container.alarmScheduler.cancelSnooze()
@@ -257,10 +267,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
         viewModelScope.launch {
             _message.value = SettingsMessage(runCatching {
-                val json = container.backupManager.export()
-                val text = if (password == null) json else withContext(Dispatchers.Default) { container.backupManager.seal(json, password) }
+                // [REL-15] A file of format 3: the photos stream from their files, sealed as they go when there is a password.
                 withContext(Dispatchers.IO) {
-                    context.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(text.toByteArray()) }
+                    context.contentResolver.openOutputStream(uri, "wt")!!.use { container.backupManager.exportFile(it, password) }
                 }
                 container.telemetry.event(DiagEvents.BACKUP_EXPORT)
                 if (password == null) "백업 파일을 저장했어요" else "암호 건 백업을 저장했어요. 암호를 잊으면 열 수 없어요"
@@ -348,6 +357,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun cancelUnlock() {
         _locked.value = null
+        container.backupManager.putAway()
     }
 
     /** [COMM-00] A company file read and checked, waiting for the user to apply it. */
@@ -450,7 +460,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             runCatching {
                 val json = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)!!.use { it.readBytes().decodeToString() }
+                    context.contentResolver.openInputStream(uri)!!.use { container.backupManager.read(it) }
                 }
                 if (com.bamnat.app.data.CompanyShare.isCompanyFile(json)) {
                     _pendingCompany.value = json to container.companyShare.summarize(json)
@@ -466,6 +476,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun cancelRestore() {
         _pendingRestore.value = null
+        _locked.value = null
+        container.backupManager.putAway()
     }
 
     fun confirmRestore() {
@@ -570,7 +582,7 @@ fun SettingsScreen(
             page = p, vm = vm, settings = settings, refresh = refresh, files = files, askNotifications = askNotifications,
             onOpenShiftTypes = onOpenShiftTypes, onOpenPattern = onOpenPattern, onOpenDiagnostics = onOpenDiagnostics,
             onOpenWorkStyle = onOpenWorkStyle, onOpenExtraKinds = onOpenExtraKinds, onOpenPay = onOpenPay, company = company,
-            onOpenPage = openPage, onOpenInquiry = onOpenInquiry, onOpenCalendars = onOpenCalendars,
+            onOpenCalendars = onOpenCalendars,
         )
     }
     val hub: @Composable (Modifier, SettingsPage?) -> Unit = { modifier, selected ->
@@ -637,15 +649,13 @@ private fun PageColumn(page: SettingsPage, onBack: (() -> Unit)?, content: @Comp
         }
         content()
         // [UX-05] Every group ends with where to ask, with the group named so the answers start there.
-        if (page != SettingsPage.ABOUT) {
-            TextButton(
-                onClick = { InquiryLinks.ask(InquiryStart(about = "설정 > ${page.title}", help = true)) },
-                modifier = Modifier.align(Alignment.CenterHorizontally),
-            ) {
-                Icon(Icons.AutoMirrored.Outlined.HelpOutline, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("${page.title}${com.bamnat.app.ui.Fmt.ro(page.title)} 도움이 필요하면 · 도움말·문의")
-            }
+        TextButton(
+            onClick = { InquiryLinks.ask(InquiryStart(about = "설정 > ${page.title}", help = true)) },
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+        ) {
+            Icon(Icons.AutoMirrored.Outlined.HelpOutline, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("${page.title}${com.bamnat.app.ui.Fmt.ro(page.title)} 도움이 필요하면 · 도움말·문의")
         }
         Spacer(Modifier.size(24.dp))
     }
@@ -690,19 +700,26 @@ private fun SettingsHub(
         if (unread > 0) NewAnswerLine(unread, onOpenInquiry)
         AlarmReadyCard(vm, settings, refresh, askNotifications, onOpenDiagnostics, onOpenShiftTypes)
         Spacer(Modifier.size(4.dp))
+        // [EASY-08][OBS-03] 내 정보 (알고 있는 것·추정·모르는 것) and 밤낮이 한 일, before the groups.
+        com.bamnat.app.ui.guide.EasyStatusCard()
+        Spacer(Modifier.size(4.dp))
         Shortcuts(onFound)
         Spacer(Modifier.size(4.dp))
         val work by vm.workSettings.collectAsStateWithLifecycle()
         for (p in SettingsPage.entries) {
             GroupRow(p.icon, p.title, summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk), selected == p) { onOpen(p) }
         }
+        // [SET-02] The seven groups, then the rows that are not settings of their own under a small heading,
+        // so the list reads as the "7묶음" the 1.22 notice names.
+        Text("더 보기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp).semantics { heading() })
         // [MON-04] 프로: what it is now, and the screen to start, manage or restore it.
         val gate by vm.gate.collectAsStateWithLifecycle()
         GroupRow(Icons.Outlined.WorkspacePremium, "프로", proSummary(gate), false) { SettingsLinks.go(SettingsGo.PRO) }
         // [COMM-07] Its own row, so it is one tap away rather than inside 급여.
         if (onOpenBoard != null) GroupRow(Icons.Outlined.Forum, "회사 규칙 광장", "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론", false, onClick = onOpenBoard)
         // [GUIDE-05] Every feature that can be off, and where to turn it back on.
-        GroupRow(Icons.Outlined.Tune, "기능 켜고 끄기", "쓰지 않는 카드·안내·자동 기능 끄고 다시 켜기", false) {
+        GroupRow(Icons.Outlined.Tune, "기능 켜고 끄기", "추천 기능 한 번에 켜기 · 쓰지 않는 카드·안내 끄고 다시 켜기", false) {
             SettingsLinks.go(SettingsGo.FEATURES)
         }
         // [UX-05] Help and questions on their own row, with new answers counted on it.
@@ -853,23 +870,20 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
         snapshot?.shiftTypes?.count { !it.isOff }?.takeIf { it > 0 }?.let { "근무 ${it}가지" },
     ).joinToString(" · ")
     SettingsPage.ALARM -> if (s.alarmsEnabled) "켜짐 · 다시 울림 ${s.snoozeMinutes}분 · ${s.ringMinutes}분 뒤 꺼짐" else "모두 꺼짐"
-    SettingsPage.REST -> listOfNotNull(
-        "오늘의 흐름".takeIf { s.sleepTips },
-        "목표 ${sleepHours(s.sleepTargetMinutes)}",
-        "휴식 점검".takeIf { s.restCheck },
+    // [SET-02] Notices first (or that they are off), then sleep, in one line.
+    SettingsPage.NOTICES -> (
+        (if (!notificationsOk) listOf("알림이 꺼져 있어요") else listOfNotNull(
+            "브리핑".takeIf { s.briefing }, "퇴근길".takeIf { s.commuteNotice }, "잘 준비".takeIf { s.bedtimeNotice },
+            "돈".takeIf { s.moneyNotices }, "연차".takeIf { s.leaveNotice },
+        ).ifEmpty { listOf("근무 알람만 와요") }) + listOfNotNull("목표 수면 ${sleepHours(s.sleepTargetMinutes)}", "휴식 점검".takeIf { s.restCheck })
     ).joinToString(" · ")
-    SettingsPage.NOTICES -> if (!notificationsOk) "알림이 꺼져 있어요" else listOfNotNull(
-        "하루 브리핑".takeIf { s.briefing }, "퇴근길 안전".takeIf { s.commuteNotice }, "잘 준비".takeIf { s.bedtimeNotice },
-        "자는 중".takeIf { s.sleepingNotice }, "돈".takeIf { s.moneyNotices }, "연차".takeIf { s.leaveNotice },
-    ).ifEmpty { listOf("근무 알람만 와요") }.joinToString(" · ")
     SettingsPage.PAY -> if (hasPay) "급여 계산 · 연차 · 회사 설정 주고받기" else "급여 계산 시작하기 · 회사 설정 주고받기"
     SettingsPage.CALENDAR -> listOf(
         when (s.themeMode) { ThemeMode.SYSTEM -> "휴대폰 테마"; ThemeMode.LIGHT -> "밝게"; ThemeMode.DARK -> "어둡게"; ThemeMode.NIGHT_SHIFT -> "야간 근무 중 어둡게" },
         "날짜 칸 아래 " + when { s.showLunar -> "음력"; s.showHoursInCells -> "근무시간"; else -> "비움" },
     ).joinToString(" · ")
     SettingsPage.DATA -> "백업 저장 · 불러오기 · 캘린더 가져오기·내보내기"
-    SettingsPage.PRIVACY -> "개인정보 처리방침 · 권한 확인 · 앱 잠금"
-    SettingsPage.ABOUT -> "밤낮 ${BuildConfig.VERSION_NAME} · 알람 점검 · 처리방침"
+    SettingsPage.PRIVACY -> "처리방침 · 권한 확인 · 앱 잠금 · 약관 · 밤낮 ${BuildConfig.VERSION_NAME}"
 }
 
 /** [MON-04] The 프로 row's words: before the 정식 출시, with 프로, and without it. */
@@ -951,6 +965,19 @@ private fun AlarmReadyCard(
                         }
                     }
                     Text(line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // [SRV-10] N5: the work the next alarm wakes for, against the rest rules.
+                    val nudge by androidx.compose.runtime.produceState<String?>(null, next?.plan?.shiftDate, settings.rules, settings.restCheck) {
+                        val date = next?.plan?.shiftDate?.takeIf { next.plan.shiftTypeId != 0L && settings.restCheck } ?: return@produceState
+                        value = runCatching {
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                val snap = context.appContainer.scheduleRepository.snapshot.first()
+                                val days = generateSequence(com.bamnat.core.schedule.RestCheck.lookbackFrom(date, settings.rules)) { it.plusDays(1) }
+                                    .takeWhile { !it.isAfter(date) }.map(snap.resolver::resolve).toList()
+                                com.bamnat.core.schedule.RestNudge.alarmLine(com.bamnat.core.schedule.RestNudge.on(days, date, settings.rules))
+                            }
+                        }.getOrNull()
+                    }
+                    nudge?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = cal.warning) }
                 }
                 when {
                     !settings.alarmsEnabled -> TextButton(onClick = { vm.setAlarmsEnabled(true) }) { Text("켜기") }
@@ -1034,6 +1061,9 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
     val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.readFile(context, uri)
     }
+    // [CAL-47] A file opened from a messenger after the setup: read here, as 파일 불러오기 does.
+    val incoming by com.bamnat.app.IncomingFiles.file.collectAsStateWithLifecycle()
+    LaunchedEffect(incoming) { com.bamnat.app.IncomingFiles.take()?.let { vm.readFile(context, it) } }
     var askingPassword by remember { mutableStateOf(false) }
     if (askingPassword) {
         ExportPasswordDialog(
@@ -1109,6 +1139,8 @@ internal fun restoreMessage(s: BackupSummary): String {
         if (s.sleeps > 0) add("수면 기록 ${s.sleeps}개")
         if (s.hasPay) add("급여 설정")
         if (s.calendars > 0) add("추가한 달력 ${s.calendars}개")
+        // [BACK-01] Receipt and contract photos.
+        if (s.photos > 0) add("사진 ${s.photos}장(${com.bamnat.app.ui.settings.photoMegabytes(s.photoBytes)})")
     }
     val saved = if (s.exportedAtMillis > 0) " (${Fmt.dayTitle(AlarmScheduler.millisToLocal(s.exportedAtMillis).toLocalDate())} 저장)" else ""
     return "들어 있는 것: ${parts.joinToString(", ")}$saved.\n" +

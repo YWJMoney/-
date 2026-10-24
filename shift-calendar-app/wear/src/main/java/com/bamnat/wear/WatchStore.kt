@@ -58,6 +58,9 @@ object WatchStore {
         runCatching {
             ComplicationDataSourceUpdateRequester.create(context, ComponentName(context, TodayComplicationService::class.java)).requestUpdateAll()
         }
+        runCatching {
+            ComplicationDataSourceUpdateRequester.create(context, ComponentName(context, WeekHoursComplicationService::class.java)).requestUpdateAll()
+        }
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         val zone = ZoneId.systemDefault()
         val midnight = LocalDate.now(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() + 5_000
@@ -79,6 +82,14 @@ object WatchStore {
         }
         val nodes = await(Wearable.getNodeClient(context).connectedNodes).orEmpty()
         nodes.forEach { node -> await(Wearable.getMessageClient(context).sendMessage(node.id, SYNC_PATH, ByteArray(0))) }
+    }
+
+    /** [WEAR-03] Tells the phone to do something (turn today's alarm off, write 출근·퇴근); it sends fresh days back. */
+    suspend fun send(context: Context, path: String, text: String): Boolean {
+        val nodes = await(Wearable.getNodeClient(context).connectedNodes).orEmpty()
+        var sent = false
+        nodes.forEach { node -> if (await(Wearable.getMessageClient(context).sendMessage(node.id, path, text.toByteArray())) != null) sent = true }
+        return sent
     }
 
     private suspend fun <T> await(task: Task<T>): T? = suspendCancellableCoroutine { cont ->

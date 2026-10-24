@@ -37,7 +37,7 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,7 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
+import com.bamnat.app.ui.components.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SuggestionChip
@@ -171,6 +171,9 @@ fun EntryDialog(
     // [FLD-08] 증빙 and a receipt photo, for field and shop costs.
     var proof by rememberSaveable { mutableStateOf(initial?.proof.orEmpty()) }
     var receipt by rememberSaveable { mutableStateOf(initial?.receipt.orEmpty()) }
+    // [LEDG-25] The time a receipt said, for a new line filled from it.
+    var readTime by rememberSaveable { mutableStateOf<String?>(null) }
+    var scanNote by rememberSaveable { mutableStateOf<String?>(null) }
     val proofs = ledger.style == com.bamnat.core.work.WorkStyle.FIELD || ledger.style == com.bamnat.core.work.WorkStyle.BUSINESS
     var more by rememberSaveable {
         mutableStateOf(initial != null && (initial.memo.isNotBlank() || initial.tags.isNotEmpty() || initial.parts.isNotEmpty()))
@@ -200,6 +203,7 @@ fun EntryDialog(
             parts = if (kind == MoneyKind.TRANSFER) emptyList() else parts.filter { it.amount > 0 && it.category != category },
             installments = if (credit) installments else 1,
             proof = if (kind == MoneyKind.EXPENSE) proof else "", receipt = if (kind == MoneyKind.EXPENSE) receipt else "",
+            time = readTime?.let { runCatching { java.time.LocalTime.parse(it) }.getOrNull() } ?: base.time,
         )
     }
 
@@ -234,6 +238,22 @@ fun EntryDialog(
                             },
                             shape = SegmentedButtonDefaults.itemShape(i, MoneyKind.entries.size),
                         ) { Text(k.label) }
+                    }
+                }
+                // [LEDG-25] A new spending line can be filled from a receipt photo, read on the phone.
+                if (isNew && kind == MoneyKind.EXPENSE) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        ReceiptScanChip(
+                            onRead = { d, name ->
+                                receipt = name
+                                d.amount?.let { digits = amountDigits(it) }
+                                d.date?.let { day = it.toString() }
+                                readTime = d.time?.toString()
+                                if (d.merchant.isNotBlank()) place = d.merchant
+                            },
+                            onMessage = { scanNote = it },
+                        )
+                        scanNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
                     }
                 }
                 AmountField(
@@ -478,10 +498,10 @@ private fun SplitEditor(main: String, categories: List<String>, amount: Long, pa
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("나눠 적기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            TextButton(onClick = {
-                val next = categories.firstOrNull { c -> c != main && parts.none { it.category == c } } ?: return@TextButton
-                onChange(parts + EntryPart(next, 0))
-            }) { Icon(Icons.Filled.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("분류 더하기") }
+            com.bamnat.app.ui.components.AddButton("분류 더하기", onClick = {
+                val next = categories.firstOrNull { c -> c != main && parts.none { it.category == c } }
+                if (next != null) onChange(parts + EntryPart(next, 0))
+            })
         }
         if (parts.isEmpty()) {
             Hint("장보며 생활용품도 샀다면 한 결제를 여러 분류로 나눠 적을 수 있어요.")

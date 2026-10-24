@@ -288,6 +288,11 @@ class ShareLinkStore(
     private val clock: () -> Instant = Instant::now,
 ) {
     private val prefs = context.applicationContext.getSharedPreferences(prefsName(key), Context.MODE_PRIVATE)
+    /**
+     * [QA-03] Set once the calendar's links were forgotten ([retire]): a send still on its way with this
+     * store must not write the link back into a file that was just deleted.
+     */
+    @Volatile private var retired = false
     /** The calendar this link shows. */
     val calendarId: String get() = ShareLinkKey.calendar(key)
     /** [PROV-04] Which of the calendar's links, from 1. */
@@ -327,6 +332,7 @@ class ShareLinkStore(
 
     /** [SHR-12] Saves the link as the server now has it; [sent] is the [ShareLinkPayload.fingerprint] of what was sent. */
     fun save(s: ShareLinkState, sent: String? = null) {
+        if (retired) return
         prefs.edit().putString("id", s.id).putString("url", s.url).putString("token", s.deleteToken)
             .putString("expires", s.expiresAt.toString()).putString("title", s.title).putInt("ttl", s.ttlDays)
             .apply { if (s.from != null) putString("from", s.from.toString()) else remove("from") }
@@ -337,6 +343,7 @@ class ShareLinkStore(
 
     /** [PROV-04] A link from a backup, kept like one made here and sent again at the next update. */
     fun restore(s: ShareLinkState, auto: Boolean, feed: Boolean, options: ShareOptions) {
+        if (retired) return
         prefs.edit().remove("sent").remove("noticed").apply()
         save(s)
         this.auto = auto
@@ -347,8 +354,15 @@ class ShareLinkStore(
     /** Forgets the link; what the sharer ticked stays for the next one. */
     fun clear() {
         prefs.edit().remove("id").remove("url").remove("token").remove("expires").remove("title").remove("ttl").remove("from")
-            .remove("sent").remove("noticed").apply()
+            .remove("sent").remove("noticed").remove("unsent").remove("sent_at").apply()
         _link.value = null
+        _unsent.value = false
+    }
+
+    /** [MCAL-03][QA-03] The calendar went: the link is forgotten, and nothing written with this store from now on is kept. */
+    fun retire() {
+        retired = true
+        clear()
     }
 
     /** [SHR-02] Drops a link that ran out while the app stayed open. */
@@ -359,20 +373,37 @@ class ShareLinkStore(
     /** [SHR-12] The fingerprint of what the server last got, null when unknown (a link from before 1.14). */
     val sent: String? get() = prefs.getString("sent", null)
 
+    private val _unsent = MutableStateFlow(prefs.getBoolean("unsent", false))
+    /**
+     * [SHR-13] A change the link has not got yet: the server could not be reached. [OutboxJob] sends it when
+     * the phone is online again; the share card says so meanwhile.
+     */
+    val unsent: StateFlow<Boolean> = _unsent.asStateFlow()
+
+    /** [SHR-13] When the link last got the calendar, or null before 1.23 or for a link not sent since. */
+    val sentAt: Instant? get() = prefs.getString("sent_at", null)?.let { runCatching { Instant.parse(it) }.getOrNull() }
+
+    /** [SHR-13] The server has what the calendar shows now ([at]), or it could not be reached ([at] null). */
+    fun sendResult(at: Instant?) {
+        if (retired) return
+        prefs.edit().putBoolean("unsent", at == null).apply { if (at != null) putString("sent_at", at.toString()) }.apply()
+        _unsent.value = at == null
+    }
+
     /** [SHR-12] Whether a change on the calendar goes to the link by itself; on unless the sharer turned it off. */
     var auto: Boolean
         get() = prefs.getBoolean("auto", true)
-        set(value) { prefs.edit().putBoolean("auto", value).apply() }
+        set(value) { if (!retired) prefs.edit().putBoolean("auto", value).apply() }
 
     /** [SHR-12] The end date the expiry notice was last posted for, so it comes once per period. */
     var noticedFor: Instant?
         get() = prefs.getString("noticed", null)?.let { runCatching { Instant.parse(it) }.getOrNull() }
-        set(value) { prefs.edit().apply { if (value == null) remove("noticed") else putString("noticed", value.toString()) }.apply() }
+        set(value) { if (!retired) prefs.edit().apply { if (value == null) remove("noticed") else putString("noticed", value.toString()) }.apply() }
 
     /** [SHR-01] What the sharer ticked last time, used again for the next link and for 고치기. */
     fun options(): ShareOptions = ShareOptions.of(prefs.getStringSet("shows", emptySet()).orEmpty())
 
-    fun saveOptions(o: ShareOptions) = prefs.edit().putStringSet("shows", o.shows.toSet()).apply()
+    fun saveOptions(o: ShareOptions) { if (!retired) prefs.edit().putStringSet("shows", o.shows.toSet()).apply() }
 
     /**
      * [FEAT-15] Whether the link also serves a calendar feed (…/s/<id>.ics) to subscribe to; off until the
@@ -380,7 +411,7 @@ class ShareLinkStore(
      */
     var feed: Boolean
         get() = prefs.getBoolean("ics", false)
-        set(value) { prefs.edit().putBoolean("ics", value).apply() }
+        set(value) { if (!retired) prefs.edit().putBoolean("ics", value).apply() }
 }
 
 /** [FEAT-15] A link's calendar feed address: the page's address with .ics, which the server serves while the feed is on. */
@@ -409,6 +440,30 @@ interface ShareApi {
      * A server or fake without tags always reads it.
      */
     suspend fun readIfChanged(id: String, etag: String?): ReceivedShare? = read(id)
+
+    /** [SRV-05] Reports a received link to the developer ([ShareReport] reasons); nobody learns who sent it. */
+    suspend fun report(id: String, reason: String) {}
+
+    /** [SHR-14] Starts a 모임 코드 holding the user's own link [own]. */
+    suspend fun groupStart(own: ShareLinkState): ShareGroup = throw ShareLinkException("unsupported")
+
+    /** [SHR-14] Adds [own] to the group [code]. */
+    suspend fun groupJoin(code: String, own: ShareLinkState): ShareGroup = throw ShareLinkException("unsupported")
+
+    /** [SHR-14] The links still open in [code]; "not_found" once none is. */
+    suspend fun groupRead(code: String): ShareGroup = throw ShareLinkException("unsupported")
+
+    /** [SHR-14] Takes [own] out of [code]. */
+    suspend fun groupLeave(code: String, own: ShareLinkState) {}
+}
+
+/** [SRV-05] Why a link is reported: the share server's codes and the words for them. */
+enum class ShareReport(val code: String, val label: String) {
+    PERSONAL("personal", "다른 사람의 개인정보가 있어요"),
+    ABUSE("abuse", "욕설·괴롭힘이 있어요"),
+    SPAM("spam", "광고·스팸이에요"),
+    ILLEGAL("illegal", "불법 정보예요"),
+    OTHER("other", "그 밖의 문제"),
 }
 
 /** [SHR-02] The link id in a shared message: "…/s/<id>" from the web page, or bamnat://s/<id> from its app button. */
@@ -418,7 +473,11 @@ object ShareLinkId {
     fun find(text: String?): String? = text?.let { pattern.find(it)?.groupValues?.get(1) }
 }
 
-class ShareLinkException(message: String) : IOException(message)
+class ShareLinkException(
+    message: String,
+    /** [SHR-13] Why the developer took the link down, when the share server says (410 removed). */
+    val removedReason: String? = null,
+) : IOException(message)
 
 class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) : ShareApi {
     override val enabled: Boolean get() = baseUrl.isNotBlank()
@@ -462,6 +521,34 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
         }
     }
 
+    override suspend fun report(id: String, reason: String) = withContext(Dispatchers.IO) {
+        request("POST", "/api/share/$id/report", JSONObject().put("reason", reason), null)
+        Unit
+    }
+
+    override suspend fun groupStart(own: ShareLinkState): ShareGroup = withContext(Dispatchers.IO) {
+        group(request("POST", "/api/groups", JSONObject().put("link", own.id).put("token", own.deleteToken), null).body)
+    }
+
+    override suspend fun groupJoin(code: String, own: ShareLinkState): ShareGroup = withContext(Dispatchers.IO) {
+        group(request("POST", "/api/groups/$code", JSONObject().put("link", own.id).put("token", own.deleteToken), null).body)
+    }
+
+    override suspend fun groupRead(code: String): ShareGroup = withContext(Dispatchers.IO) {
+        group(request("GET", "/api/groups/$code", null, null).body)
+    }
+
+    override suspend fun groupLeave(code: String, own: ShareLinkState) = withContext(Dispatchers.IO) {
+        try {
+            request("DELETE", "/api/groups/$code/${own.id}", null, own.deleteToken)
+        } catch (e: ShareLinkException) {
+            if (e.message != "not_found") throw e
+        }
+        Unit
+    }
+
+    private fun group(o: JSONObject): ShareGroup = readable { ShareGroup.parse(o) }
+
     private class Reply(val code: Int, val body: JSONObject, val etag: String?)
 
     private fun request(method: String, path: String, body: JSONObject?, token: String?, etag: String? = null): Reply {
@@ -480,7 +567,14 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
             val code = conn.responseCode
             if (code == HttpURLConnection.HTTP_NOT_MODIFIED) return Reply(code, JSONObject(), etag)
             val text = (if (code < 400) conn.inputStream else conn.errorStream)?.use { it.readCapped() }.orEmpty()
-            if (code >= 400) throw ShareLinkException(runCatching { JSONObject(text).getString("error") }.getOrDefault("http_$code"))
+            // [SRV-05] A link the developer took down (410 removed) is gone like one its sharer cut;
+            // [SHR-13] the reason the developer gave comes with it.
+            if (code >= 400) {
+                val err = runCatching { JSONObject(text) }.getOrNull()
+                val word = err?.optString("error")?.takeIf { it.isNotEmpty() } ?: "http_$code"
+                throw ShareLinkException(if (word == "removed") "not_found" else word,
+                    err?.optString("reason")?.takeIf { word == "removed" && it.isNotBlank() }?.take(200))
+            }
             return Reply(code, if (text.isBlank()) JSONObject() else readable { JSONObject(text) }, conn.getHeaderField("ETag"))
         } finally {
             conn.disconnect()

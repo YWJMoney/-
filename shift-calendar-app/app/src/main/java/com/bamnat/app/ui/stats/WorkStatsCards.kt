@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -70,6 +70,8 @@ fun FieldStatsCards(book: MoneyBook, month: YearMonth, today: LocalDate = LocalD
     val yearDays = remember(book, year, yearEnd) { FieldYear.workedDays(book.jobs, LocalDate.of(year, 1, 1), yearEnd) }
     // [GUIDE-05] 출역일 and the year's totals go off together, for this calendar.
     FeatureCard("field.year", calendarId) { FieldYearCards(book, month, today, monthDays, yearDays) }
+    // [LEDG-26] The year's 수입·경비·떼인 세금 for the 5월 신고, with where the numbers come from.
+    FeatureCard("money.incomeTax", calendarId) { IncomeTaxCard(book, year) }
 }
 
 @Composable
@@ -86,16 +88,30 @@ private fun FieldYearCards(book: MoneyBook, month: YearMonth, today: LocalDate, 
             modifier = Modifier.padding(top = 8.dp),
         )
     }
-    val totals = remember(book, year) { FieldYear.totals(year, book.jobs, book.entries) }
-    if (totals.jobs > 0 || totals.expenses > 0) {
-        SectionCard(title = "${year}년 합계") {
-            YearLine("번 돈 (3.3% 떼고)", Fmt.won(totals.earned))
-            YearLine("떼인 3.3%", Fmt.won(totals.withheld))
-            YearLine("경비", Fmt.won(totals.expenses))
-            Text("5월 종합소득세 신고 때 쓰세요. 떼인 3.3%는 미리 낸 세금이라, 경비를 챙기면 돌려받을 수 있어요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp))
+}
+
+/**
+ * [LEDG-26] 종합소득세 참고 정리 for a field worker or a shop: the year's 사업 수입, the costs written down,
+ * the 3.3% already held back as its two taxes, and when to file. Only sums, never a tax worked out.
+ */
+@Composable
+fun IncomeTaxCard(book: MoneyBook, year: Int) {
+    val note = remember(book, year) { com.bamnat.core.money.IncomeTaxNote.of(year, book.jobs, book.sales, book.entries) }
+    if (note.isEmpty) return
+    SectionCard(title = "${year}년 종합소득세 참고") {
+        YearLine("수입" + (if (note.jobs > 0) " (일감 ${note.jobs}건)" else "") + (if (note.salesDays > 0) " (매출 ${note.salesDays}일)" else ""), Fmt.won(note.income))
+        YearLine("적은 경비", Fmt.won(note.costs))
+        YearLine("수입 − 경비", Fmt.won(note.left))
+        if (note.withheld > 0) {
+            YearLine("떼인 3.3%", Fmt.won(note.withheld))
+            Text("소득세 ${Fmt.won(note.withheldIncomeTax)} + 지방소득세 ${Fmt.won(note.withheldLocalTax)} · 미리 낸 세금이라 신고 때 빼요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        Text("신고 기간 ${note.fileFrom.year}년 ${note.fileFrom.monthValue}월 ${note.fileFrom.dayOfMonth}일 ~ ${note.fileTo.monthValue}월 ${note.fileTo.dayOfMonth}일 (소득세법 제70조)",
+            style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+        Text(com.bamnat.core.money.IncomeTaxNote.NOT_ADVICE,
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp))
     }
 }
 
@@ -157,6 +173,8 @@ fun ShopStatsCards(calendarId: String, book: MoneyBook, month: YearMonth, isOpen
     val c = LocalContext.current.appContainer
     val calendars by c.calendars.calendars.collectAsStateWithLifecycle()
     val rules = calendars.firstOrNull { it.id == calendarId }?.shopMoney ?: ShopMoney()
+    // [DAILY-13] Sales from notices that wait for 적기, first.
+    PendingSalesCard(calendarId)
     val split = remember(book, month) { SalesSplit.of(month, book.sales) }
     // [GUIDE-05] Each card can be turned off for its calendar.
     if (split.total > split.unsplit) FeatureCard("shop.split", calendarId) {
@@ -179,6 +197,8 @@ fun ShopStatsCards(calendarId: String, book: MoneyBook, month: YearMonth, isOpen
             c.calendars.updateShopMoney(calendarId) { it.copy(simpleTax = simple) }
         }
     }
+    // [LEDG-26] The year's 매출·경비 for the 5월 종합소득세 신고.
+    FeatureCard("money.incomeTax", calendarId) { IncomeTaxCard(book, month.year) }
 }
 
 /** [SHOP-05] 목표 매출: achieved %, what is left and the daily target over the open days left. */
@@ -237,5 +257,38 @@ private fun VatCard(rules: ShopMoney, book: MoneyBook, date: LocalDate, onSimple
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp),
         )
+    }
+}
+
+/**
+ * [DAILY-13] 결정 D7-3: sales read from a card terminal's or delivery app's notice while 확인하고 적기 is on,
+ * each with 적기 and 버리기, and 모두 적기. Nothing counts in the day's sales until it is written.
+ */
+@Composable
+fun PendingSalesCard(calendarId: String) {
+    val c = LocalContext.current.appContainer
+    val store = remember { com.bamnat.app.money.ShopPendingStore.get(c.appContext) }
+    val pending by store.pending(calendarId).collectAsStateWithLifecycle()
+    if (pending.isEmpty()) return
+    val scope = rememberCoroutineScope()
+    SectionCard(title = "확인할 매출 알림 ${pending.size}건") {
+        Text("확인하고 적기가 켜져 있어 알림으로 읽은 매출을 바로 더하지 않았어요. 맞는 것만 적어요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        pending.sortedByDescending { it.date }.take(20).forEach { p ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text((if (p.sale.amount < 0) "취소 " else "") + Fmt.won(kotlin.math.abs(p.sale.amount)),
+                        style = MaterialTheme.typography.titleSmall.merge(NumberStyle))
+                    Text("${Fmt.shortDate(p.date)} · ${p.sale.bucket.label} · ${p.sale.app}", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                }
+                TextButton(onClick = { store.remove(calendarId, listOf(p.key)) }) { Text("버리기") }
+                TextButton(onClick = { scope.launch { com.bamnat.app.money.ShopNotices.confirm(c, calendarId, listOf(p)) } }) { Text("적기") }
+            }
+        }
+        if (pending.size > 1) {
+            androidx.compose.material3.FilledTonalButton(onClick = { scope.launch { com.bamnat.app.money.ShopNotices.confirm(c, calendarId, pending) } },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) { Text("모두 적기") }
+        }
     }
 }

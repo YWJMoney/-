@@ -48,7 +48,7 @@ import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -119,7 +119,7 @@ private val TogetherColor = Color(0xFFE5487A)
 /** [SHR-02] A round avatar with one letter, the face of a calendar in the switcher. */
 @Composable
 fun CalendarAvatar(
-    initial: String, color: Color, modifier: Modifier = Modifier, size: Dp = 28.dp, contentColor: Color = Color.White,
+    initial: String, color: Color, modifier: Modifier = Modifier, size: Dp = 28.dp, contentColor: Color = com.bamnat.app.ui.components.contentColorOn(color),
     shape: androidx.compose.ui.graphics.Shape = CircleShape,
 ) {
     Box(modifier.size(size).clip(shape).background(color), contentAlignment = Alignment.Center) {
@@ -177,7 +177,7 @@ internal fun SwitchRow(
 
 /** "10월 1일~12월 31일", or what happened to it. */
 internal fun ReceivedCalendar.summary(): String {
-    val s = schedule ?: return "공유가 끝났어요"
+    val s = schedule ?: return removedReason?.let { "운영자가 내렸어요 · $it" } ?: "공유가 끝났어요"
     return if (s.first != null && s.last != null) "${Fmt.monthDay(s.first)}~${Fmt.monthDay(s.last)}" else "근무 없음"
 }
 
@@ -415,6 +415,8 @@ fun ReceivedCalendarView(
     startMonth: YearMonth,
     identityBar: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    /** [NURS-06] The user's own 근무표 점검 기준, to read their roster with. */
+    rules: com.bamnat.core.schedule.RestRules = com.bamnat.core.schedule.RestRules(),
 ) {
     val refresh by vm.refresh.collectAsState()
     // Each time the app comes back too, so a link that ran out or changed meanwhile shows as it is now.
@@ -513,9 +515,12 @@ fun ReceivedCalendarView(
         Column(m, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ReceivedDayCard(selected, today, cal, schedule, mine.resolver.resolve(selected).takeIf { canCompare }, restTogether(selected))
             schedule.pay.firstOrNull { it.month == month }?.let { PayCard(cal, it, schedule.payKind) }
+            val duty = remember(schedule, month, rules) { com.bamnat.app.share.ReceivedDutyCheck.warnings(schedule, month, rules) }
+            if (duty.isNotEmpty()) ReceivedDutyCard(cal, duty)
             Text("${cal.expiresAt?.let(::expiry) ?: "기간 끝"}까지 볼 수 있어요 · 받은 달력은 이 휴대폰에만 있어요",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 4.dp))
+            ReportLink(vm, cal.id)
         }
     }
     if (wide) {
@@ -530,6 +535,34 @@ fun ReceivedCalendarView(
             detailPart(Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         }
     }
+}
+
+/** [SRV-05] A received link that breaks the rules can be reported; the share server never learns by whom. */
+@Composable
+private fun ReportLink(vm: ReceivedViewModel, id: String) {
+    var open by remember { mutableStateOf(false) }
+    var said by remember(id) { mutableStateOf<String?>(null) }
+    said?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 4.dp)) }
+    TextButton(onClick = { open = true }) { Text("이 근무표 신고하기") }
+    if (!open) return
+    var reason by remember { mutableStateOf(com.bamnat.app.share.ShareReport.PERSONAL) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { open = false },
+        title = { Text("이 근무표를 신고할까요?") },
+        text = {
+            Column {
+                com.bamnat.app.share.ShareReport.entries.forEach { r ->
+                    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { reason = r }.padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.RadioButton(selected = reason == r, onClick = { reason = r })
+                        Text(r.label, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { open = false; vm.report(id, reason) { said = it } }) { Text("신고하기") } },
+        dismissButton = { TextButton(onClick = { open = false }) { Text("취소") } },
+    )
 }
 
 /** How fresh the copy on this phone is, with a refresh; offline it says the copy is what shows. */
@@ -855,6 +888,33 @@ private fun PayCard(cal: ReceivedCalendar, pay: com.bamnat.app.share.SharedPay, 
             // [SHR-11] Pay is the sender's estimate; job income and sales are what the sender wrote down.
             Text((pay.label.ifBlank { "예상" }) + " · " + if (kind == com.bamnat.core.work.MoneyShare.PAY && pay.label != "받은 급여") "보낸 분의 앱이 계산한 금액이라 명세서와 다를 수 있어요" else "보낸 분이 앱에 적은 금액을 달마다 더했어요",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/**
+ * [NURS-06] The shared roster read with the user's own 근무표 점검 기준: "알려 주기" only, so someone who cares can
+ * see a hard week coming. Nothing here goes back to the sharer.
+ */
+@Composable
+private fun ReceivedDutyCard(cal: ReceivedCalendar, warnings: List<com.bamnat.core.schedule.DutyCheck.Warning>) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("${cal.name}님 근무표 점검 ${warnings.size}건", style = MaterialTheme.typography.titleSmall)
+            // [REST-02] The same sign over the month is one line: the first in full, then the other days.
+            val groups = warnings.groupBy { it.kind to it.pattern }.values.toList()
+            groups.take(5).forEach { same ->
+                val more = same.drop(1).map { it.date.dayOfMonth }
+                Text("· ${same.first().text}" + if (more.isEmpty()) "" else " 외 ${more.size}번 (${more.take(4).joinToString("·")}${if (more.size > 4) "…" else ""}일)",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (groups.size > 5) Text("그 밖에 ${groups.size - 5}가지", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            Text("내 근무표 점검 기준으로 본 참고예요. 받은 근무표는 바뀌지 않고, 상대에게 알리지도 않아요.",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
         }
     }
 }

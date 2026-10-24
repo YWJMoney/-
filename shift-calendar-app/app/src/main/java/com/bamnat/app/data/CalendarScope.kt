@@ -14,6 +14,8 @@ class CalendarScope(private val book: CalendarBook, private val settingsReposito
     val schedule: ScheduleRepository get() = book.repository(id)
     val money: MoneyRepository get() = book.money(id)
     val pay: PayStore get() = book.pay(id)
+    /** [LEAVE-01] */
+    val leave: com.bamnat.app.leave.LeaveRepository get() = book.leave(id)
 
     val settings: Flow<AppSettings> = combine(settingsRepository.settings, book.calendars) { s, list ->
         s.forCalendar(list.firstOrNull { it.id == id })

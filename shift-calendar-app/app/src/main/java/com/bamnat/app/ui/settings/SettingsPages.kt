@@ -1,11 +1,15 @@
 package com.bamnat.app.ui.settings
 
+import com.bamnat.app.data.rules
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.AlertDialog
@@ -13,6 +17,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,20 +68,24 @@ internal fun ColumnScope.SettingsPageContent(
     onOpenExtraKinds: () -> Unit,
     onOpenPay: () -> Unit,
     company: (@Composable ColumnScope.() -> Unit)?,
-    onOpenPage: (SettingsPage) -> Unit,
-    onOpenInquiry: () -> Unit = {},
     onOpenCalendars: () -> Unit = {},
 ) {
     when (page) {
         SettingsPage.WORK -> WorkPage(vm, settings, onOpenWorkStyle, onOpenPattern, onOpenShiftTypes, onOpenExtraKinds)
         SettingsPage.ALARM -> AlarmPage(vm, settings, onOpenShiftTypes, onOpenDiagnostics)
-        SettingsPage.REST -> RestPage(vm, settings)
-        SettingsPage.NOTICES -> NoticesPage(vm, settings, refresh, askNotifications, onOpenPage)
-        SettingsPage.PAY -> PayPage(vm, files, onOpenPay, company)
+        // [SET-02] 알림과 잠: the notices, then sleep and the rest check.
+        SettingsPage.NOTICES -> {
+            NoticesPage(vm, settings, refresh, askNotifications)
+            RestPage(vm, settings)
+        }
+        SettingsPage.PAY -> PayPage(vm, settings, files, onOpenPay, company)
         SettingsPage.CALENDAR -> CalendarPage(vm, settings, onOpenCalendars)
         SettingsPage.DATA -> DataPage(vm, files)
-        SettingsPage.PRIVACY -> PrivacyPage(vm, settings, refresh, askNotifications, onOpenPage)
-        SettingsPage.ABOUT -> AboutPage(vm, onOpenDiagnostics, onOpenInquiry)
+        // [SET-02] 개인정보·앱 정보: privacy and permissions, then the terms, licences and version.
+        SettingsPage.PRIVACY -> {
+            PrivacyPage(vm, settings, refresh, askNotifications)
+            AboutPage()
+        }
     }
 }
 
@@ -119,7 +130,7 @@ private fun WorkTools(style: com.bamnat.core.work.WorkStyle?) {
     fun open(t: com.bamnat.app.NoticeLinks.Target) = com.bamnat.app.NoticeLinks.open(t)
     when (style) {
         null, com.bamnat.core.work.WorkStyle.SHIFT -> SectionCard(title = "교대 근무 도구") {
-            NavRow("듀티표 사진으로 넣기", "한 달 듀티표 사진을 읽어 근무를 한 번에 넣어요") { open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER) }
+            NavRow("듀티표 넣기", "듀티표 사진이나 엑셀·CSV 파일을 읽어 한 달 근무를 한 번에 넣어요") { open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER) }
             HorizontalDivider()
             NavRow("연간 건강 지표", "야간 비율, 연속 야간, 짧은 휴식, 주말·공휴일 근무") { open(com.bamnat.app.NoticeLinks.Target.HEALTH_REPORT) }
         }
@@ -190,6 +201,16 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
                 .joinToString(" · ") { Fmt.time(t.start!!.minusMinutes(it.offsetMinutes.toLong())) }
             NavRow(t.name, "${Fmt.time(t.start)} 시작 · " + if (times.isEmpty()) "켜진 알람 없음" else "알람 $times", onOpenShiftTypes)
         }
+        // [SET-05] Every shift's alarms earlier or later at once, instead of opening each shift (G.md P21).
+        var moving by rememberSaveable { mutableStateOf(false) }
+        if (ringing.isNotEmpty()) HorizontalDivider()
+        NavRow(MOVE_ALL_ALARMS_ROW, if (ringing.isEmpty()) "알람이 켜진 근무가 생기면 쓸 수 있어요" else "예: 모든 근무 알람을 10분 일찍") {
+            if (ringing.isNotEmpty()) moving = true
+        }
+        if (moving) MoveAllAlarmsDialog(ringing, onDismiss = { moving = false }) { minutes ->
+            moving = false
+            vm.moveAllAlarms(minutes)
+        }
     }
     SectionCard(title = "소리") {
         SoundPickerRow(
@@ -210,6 +231,19 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
             listOf(3, 5, 10, 15, 20).map { it to "${it}분" }, settings.snoozeMinutes) { m -> vm.update { it.copy(snoozeMinutes = m) } }
         ChoiceRow("자동으로 끄기", "끄지 않으면 이만큼 울리고 멈춰요",
             listOf(1, 3, 5, 10, 20, 30).map { it to "${it}분 뒤" }, settings.ringMinutes) { m -> vm.update { it.copy(ringMinutes = m) } }
+    }
+    // [ALRM-03] 스마트 알람 제안: on by default, all on the phone; the hidden ones can come back.
+    SectionCard(title = null) {
+        SwitchRow("알람 제안", "알람을 끈 때와 잠 기록을 보고, 근무별로 알람을 옮기자고 가끔 물어봐요. 기록은 이 폰에만 있어요",
+            settings.alarmSuggest) { v -> vm.update { it.copy(alarmSuggest = v) } }
+        val hidden = remember(settings.alarmSuggestMemory) {
+            com.bamnat.core.alarm.AlarmSuggest.Memory.decode(settings.alarmSuggestMemory).never.size
+        }
+        if (settings.alarmSuggest && hidden > 0) {
+            NavRow("숨긴 제안 다시 보기", "‘다시 보지 않기’로 숨긴 제안 ${hidden}개") {
+                vm.update { s -> s.copy(alarmSuggestMemory = com.bamnat.core.alarm.AlarmSuggest.Memory.decode(s.alarmSuggestMemory).copy(never = emptySet()).encode()) }
+            }
+        }
     }
     SectionCard(title = null) {
         NavRow("알람 점검", "알람이 안 울리거나 늦을 때 원인을 찾아요") { onOpenDiagnostics(false) }
@@ -238,12 +272,19 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
     }
     // [SLP-01][MKT-07][MKT-11]
     SectionCard(title = "휴식 점검") {
-        SwitchRow("휴식 점검", "근무 사이 휴식이 11시간보다 짧거나 야간이 4일 이어지면 달력에 표시해요", settings.restCheck) { v ->
+        SwitchRow("휴식 점검", "근무 사이 휴식이 짧거나 나이트가 이어지면 달력에 알려 줘요. 병원·회사 기준에 맞출 수 있어요", settings.restCheck) { v ->
             vm.update { it.copy(restCheck = v) }
         }
         if (settings.restCheck) {
-            SwitchRow("더 엄격하게", "야간이 3일 이어지거나, 야간 뒤 쉬는 날이 2일보다 적어도 표시해요", settings.strictRest) { v ->
-                vm.update { it.copy(strictRest = v) }
+            // [REST-01] 1.21's '더 엄격하게' is a preset of the same 근무표 점검 기준 the calendar card opens.
+            var rulesOpen by remember { mutableStateOf(false) }
+            val r = settings.rules
+            NavRow("근무표 점검 기준", "${r.preset?.label ?: "직접 정함"} · 휴식 ${r.minRestHours}시간, 연속 나이트 ${r.maxNightsInRow}일, 한 달 나이트 ${r.maxNightsPerMonth}개") {
+                rulesOpen = true
+            }
+            if (rulesOpen) com.bamnat.app.ui.calendar.RestRulesSheet(r, com.bamnat.core.schedule.RotationSpeed.NONE, onDismiss = { rulesOpen = false }) { n ->
+                vm.update { it.copy(restRules = n.copy(on = true).encode(), restCheck = n.on, strictRest = false) }
+                rulesOpen = false
             }
         }
     }
@@ -269,7 +310,6 @@ private fun NoticesPage(
     settings: AppSettings,
     refresh: Int,
     askNotifications: () -> Unit,
-    onOpenPage: (SettingsPage) -> Unit,
 ) {
     val context = LocalContext.current
     val canPost = remember(refresh) { Notifications.canPost(context) }
@@ -296,7 +336,8 @@ private fun NoticesPage(
         PermissionRow(ok = canPost && Notifications.ALARM_CHANNEL_ID !in off, title = "울릴 때 잠금 화면에 크게 떠요", fixLabel = "켜기") {
             if (!canPost) askNotifications() else SystemSettings.channel(context, Notifications.ALARM_CHANNEL_ID)
         }
-        NavRow("알람 설정", "근무 알람 켜고 끄기, 소리, 다시 울림") { onOpenPage(SettingsPage.ALARM) }
+        // [SET-02] The alarm's own switches are in 설정 › 알람 only.
+        Note("근무 알람을 켜고 끄는 것과 소리는 설정 › 알람에서 정해요.")
     }
     val planned = settings.workStyle?.usesPayEngine != false
     SectionCard(title = "하루 안내") {
@@ -329,11 +370,19 @@ private fun NoticesPage(
             settings.moneyNotices, warning = warning(settings.moneyNotices, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
             set(on) { it.copy(moneyNotices = on) }
         }
-        SwitchRow("연차 소멸 안내", "올해 안 쓰면 없어지는 연차를 11월·12월 첫날에 알려 줘요", settings.leaveNotice,
+        SwitchRow("연차 사용 촉진 알림", "연차가 없어지기 6개월 전·2개월 전에 남는 날을 알려 줘요(연차 화면에서도 끌 수 있어요)", settings.leaveNotice,
             warning = warning(settings.leaveNotice, Notifications.LEAVE_CHANNEL_ID), onFix = fix(Notifications.LEAVE_CHANNEL_ID)) { on ->
             set(on) { it.copy(leaveNotice = on) }
         }
         Note("일감 시작 전 알림은 일감마다 정해요.")
+    }
+    // [COMM-10] The plaza's news once a day; [SRV-10] since 1.23 밤낮 소식 with answers, notices and received schedules.
+    SectionCard(title = "소식") {
+        SwitchRow("밤낮 소식", "문의에 답이 오거나, 받은 동료 근무표의 다음 7일이 바뀌거나, 광장에서 쓰는 규칙·보낸 글·신고에 소식이 있으면 " +
+            "하루 한 번 묶어서 소리 없이 알려 줘요", settings.plazaNews,
+            warning = warning(settings.plazaNews, Notifications.PLAZA_CHANNEL_ID), onFix = fix(Notifications.PLAZA_CHANNEL_ID)) { on ->
+            set(on) { it.copy(plazaNews = on) }
+        }
     }
     SectionCard(title = "자는 동안") {
         SwitchRow("자는 동안 미루기", "자는 동안 생긴 돈·연차 알림은 깨고 30분 뒤에 보내요. 근무 알람과 일감 알림은 그대로 와요",
@@ -342,12 +391,16 @@ private fun NoticesPage(
 }
 
 @Composable
-private fun PayPage(vm: SettingsViewModel, files: SettingsFiles, onOpenPay: () -> Unit, company: (@Composable ColumnScope.() -> Unit)?) {
+private fun PayPage(vm: SettingsViewModel, settings: AppSettings, files: SettingsFiles, onOpenPay: () -> Unit, company: (@Composable ColumnScope.() -> Unit)?) {
     val profile by vm.hasPayProfile.collectAsStateWithLifecycle()
     // [CALS-02] Each calendar has its own pay setup.
     CalendarPick()
     SectionCard(title = null) {
         NavRow("급여 계산", if (profile != null) "기본급·수당·회사 규칙·연차·급여일" else "기본급만 넣으면 이번 달 예상 급여가 보여요", onOpenPay)
+        // [DAILY-16] 결정 D36: compared on the phone only; on by default, off here.
+        SwitchRow("광장 시세와 내 단가 견주기", if (settings.rateHint) "광장에서 본 내 직군·내 지역 시세와 내 일당·시급·월급이 10% 넘게 다르면 급여 화면에 카드로 보여요. 내 급여는 어디로도 보내지 않아요"
+            else "급여 화면에 시세 비교 카드를 보이지 않아요", settings.rateHint) { on -> vm.update { it.copy(rateHint = on) } }
+        if (settings.rateHint) RateRegionRow()
     }
     // [COMM-01][COMM-02]
     if (company != null) SectionCard(title = "같은 회사 사람들과", content = company)
@@ -360,7 +413,7 @@ private fun PayPage(vm: SettingsViewModel, files: SettingsFiles, onOpenPay: () -
     }
 }
 
-private enum class CellLine { NONE, HOURS, LUNAR }
+private enum class CellLine { NONE, HOURS, LUNAR, BOTH }
 private enum class MemoView { PLAIN, BELOW, CELLS }
 
 @Composable
@@ -379,13 +432,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             com.bamnat.app.ui.memo.MemoSharingDialog(memoSharing, calendars, onDismiss = { sharingMemos = false },
                 onSave = { vm.setMemoSharing(it); sharingMemos = false })
         }
-        HorizontalDivider()
-        // [UX-03] Sharing is also where people look for it in settings; both open the calendar with the sheet up.
-        NavRow("근무표 공유", "이미지나 링크로 동료·가족에게 보내요") { SettingsLinks.go(SettingsGo.SHARE) }
-        if (vm.shareOn) {
-            HorizontalDivider()
-            NavRow("동료 근무표 받기", "받은 링크를 넣으면 내 달력과 바꿔 가며 봐요") { SettingsLinks.go(SettingsGo.RECEIVE) }
-        }
+        // [SET-02] 근무표 공유 and 동료 근무표 받기 live in the calendar's 도구 only; settings search still finds them.
     }
     SectionCard(title = "모양") {
         // [SHFT-05] 야간 근무 중 어둡게: dark during a night shift on the calendar being viewed.
@@ -404,10 +451,16 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             vm.update { it.copy(weekStart = d) }
         }
         // One choice: before, two switches quietly took each other's place.
-        val line = when { settings.showLunar -> CellLine.LUNAR; settings.showHoursInCells -> CellLine.HOURS; else -> CellLine.NONE }
+        // [CAL-28] Both together is a choice of its own (I 리뷰 P10·I15), and what older settings with both on show.
+        val line = when {
+            settings.showLunar && settings.showHoursInCells -> CellLine.BOTH
+            settings.showLunar -> CellLine.LUNAR
+            settings.showHoursInCells -> CellLine.HOURS
+            else -> CellLine.NONE
+        }
         ChoiceRow("날짜 칸 아래", "날짜 밑에 작게 보여 줄 것을 골라요",
-            listOf(CellLine.NONE to "비움", CellLine.HOURS to "근무시간 (8h)", CellLine.LUNAR to "음력 (8.24)"), line) { l ->
-            vm.update { it.copy(showHoursInCells = l == CellLine.HOURS, showLunar = l == CellLine.LUNAR) }
+            listOf(CellLine.NONE to "비움", CellLine.HOURS to "근무시간 (8h)", CellLine.LUNAR to "음력 (8.24)", CellLine.BOTH to "둘 다 (8h·8.24)"), line) { l ->
+            vm.update { it.copy(showHoursInCells = l == CellLine.HOURS || l == CellLine.BOTH, showLunar = l == CellLine.LUNAR || l == CellLine.BOTH) }
         }
         // [FEAT-17][DAY-04] For people who keep their days in notes. Where 메모 sits in the day is the order below.
         val memo = when { settings.memoInCells -> MemoView.CELLS; settings.calendarMemos -> MemoView.BELOW; else -> MemoView.PLAIN }
@@ -417,6 +470,13 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             MemoView.CELLS -> "날짜 밑에 그날 메모 첫 글자가 보이고, 이번 달 메모도 달력 아래에 모여요"
         }, listOf(MemoView.PLAIN to "기본", MemoView.BELOW to "달력 아래 목록", MemoView.CELLS to "날짜 밑 메모"), memo) { m ->
             vm.update { it.copy(calendarMemos = m != MemoView.PLAIN, memoInCells = m == MemoView.CELLS) }
+        }
+        // [DAILY-01] On by default; a home screen is seen by others, so it turns off here.
+        val widgetContext = LocalContext.current
+        SwitchRow("위젯에 메모 보이기", if (settings.widgetMemo) "오늘·내일 위젯에 그날 메모 첫 줄이 보여요. 홈 화면을 남이 볼 수 있으면 끄세요"
+            else "위젯에는 근무만 보여요", settings.widgetMemo) { on ->
+            vm.update { it.copy(widgetMemo = on) }
+            widgetContext.appContainer.appScope.launch { com.bamnat.app.widget.WidgetRefresher.refresh(widgetContext) }
         }
         // [CAL-03] Unfolded, the day is always beside the calendar; this is for the cover screen and phones.
         ChoiceRow("날짜를 누르면", "접은 화면과 일반 휴대폰에서 " + when (settings.phoneDayView) {
@@ -444,6 +504,23 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
     }
 }
 
+/** [BACK-01] 사진도 백업, with what the photos add to the file now. */
+@Composable
+private fun BackupPhotosRow(vm: SettingsViewModel) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val size by androidx.compose.runtime.produceState<com.bamnat.app.data.BackupPhotos.Size?>(null, settings.backupPhotos) {
+        value = runCatching { context.appContainer.backupManager.photoSize() }.getOrNull()
+    }
+    val about = size?.takeIf { !it.isEmpty }?.let { "지금 ${it.count}장 · ${photoMegabytes(it.bytes)}. " }.orEmpty()
+    SwitchRow(
+        "사진도 백업",
+        about + if (settings.backupPhotos) "영수증·계약서 사진이 백업 파일에 들어가 새 휴대폰에서도 보여요. 끄면 사진은 이 휴대폰에만 남아요"
+        else "꺼져 있어요. 사진은 이 휴대폰에만 있어서 휴대폰을 바꾸면 옮겨지지 않아요",
+        settings.backupPhotos,
+    ) { on -> vm.update { it.copy(backupPhotos = on) } }
+}
+
 @Composable
 private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
     val savedAt by vm.importSavedAt.collectAsStateWithLifecycle()
@@ -462,6 +539,9 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
     SectionCard(title = "백업") {
         Note("근무, 바꾼 날짜, 메모, 돈 기록, 수면 기록, 급여 설정, 앱 설정, 내가 만든 근무표 링크를 파일 하나로 저장해요. 휴대폰을 바꾸거나 앱을 다시 설치할 때 불러오세요. 암호를 걸면 남이 열어 볼 수 없어요.")
         NavRow("백업 저장", "파일로 저장해요. 암호를 걸 수 있어요", files.saveBackup)
+        HorizontalDivider()
+        // [BACK-01] 결정 D13: photos go in unless the user keeps them on this phone only.
+        BackupPhotosRow(vm)
         HorizontalDivider()
         // [PROV-03] The same file every day by itself (프로).
         AutoBackupRows(vm)
@@ -486,21 +566,81 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles) {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.CALENDAR_IMPORT)
         }
         HorizontalDivider()
-        // [SHFT-06]
-        NavRow("듀티표 사진으로 넣기", "듀티표 사진이나 복사한 글자로 한 달 근무를 넣어요") {
-            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER)
-        }
-        HorizontalDivider()
-        // [DAYW-06]
-        NavRow("근태 엑셀 가져오기", "회사 근태 시스템의 엑셀(.xlsx)·CSV 파일로 출퇴근·연차를 넣어요") {
-            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.ATTENDANCE_IMPORT)
-        }
-        HorizontalDivider()
+        // [SET-02] 듀티표 넣기 and 근태 엑셀 가져오기 are in 내 근무 only (its tools for the kind of work).
         // [REL-04]
         NavRow("캘린더 앱으로 내보내기", "구글·삼성 캘린더에 근무를 넣는 파일을 만들어요 (3개월 전부터 1년 뒤까지)", files.exportIcs)
         HorizontalDivider()
         // [FEAT-07] The same, kept up to date by itself (프로).
         PhoneCalendarRows(vm)
+    }
+    if (vm.shareOn) ShareLinkRows()
+}
+
+/** [SHR-13][SHR-14] 근무표 링크: 우리 조 모아 보기, and every link cut at once. */
+@Composable
+private fun ShareLinkRows() {
+    val c = LocalContext.current.appContainer
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var keys by remember { mutableStateOf(c.shareSync.allLinks()) }
+    var asking by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var said by remember { mutableStateOf<String?>(null) }
+    SectionCard(title = "근무표 링크") {
+        NavRow(GROUP_ROW, "동료들이 각자 만든 링크를 6자 코드 하나로 묶어 나란히 봐요. 서버에는 링크 목록만 남아요") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.GROUP)
+        }
+        HorizontalDivider()
+        NavRow(CUT_ALL_ROW, said ?: if (keys.isEmpty()) "지금 열려 있는 링크가 없어요"
+            else "이 휴대폰이 만든 링크 ${keys.size}개를 한 번에 끊어요. 받은 사람은 더 볼 수 없어요") {
+            if (keys.isNotEmpty() && !busy) asking = true
+        }
+    }
+    if (asking) ConfirmDialog(
+        title = "모든 링크를 끊을까요?",
+        message = "링크 ${keys.size}개가 서버에서 지워지고, 받은 사람의 달력에는 ‘끊긴 링크’로 남아요. 다시 보내려면 새 링크를 만들어야 해요.",
+        confirmLabel = "모두 끊기",
+        destructive = true,
+        onDismiss = { asking = false },
+        onConfirm = {
+            asking = false; busy = true
+            scope.launch {
+                val left = c.shareSync.cutAll()
+                keys = c.shareSync.allLinks()
+                said = if (left == 0) "모두 끊었어요" else "인터넷이 안 돼 ${left}개는 못 끊었어요. 연결된 뒤 다시 눌러 주세요"
+                busy = false
+            }
+        },
+    )
+}
+
+/** [SHR-14] 설정 › 데이터 rows, also found by search. */
+internal const val GROUP_ROW = "우리 조 모아 보기"
+internal const val CUT_ALL_ROW = "모든 링크 끊기"
+/** [ALRM-02] 설정 › 개인정보: 동의·권한 요약. */
+internal const val SUMMARY_ROW = "보내는 것과 권한 한눈에"
+
+/**
+ * [STAT-01] 사용 통계 보내기 with what exactly goes: event names and daily counts, the app version, never
+ * the phone, the schedule, amounts or text. "보낼 내용 보기" shows the waiting bundle as it will be sent.
+ */
+@Composable
+internal fun UsageStatsRow(on: Boolean, onChange: (Boolean) -> Unit) {
+    val c = LocalContext.current.appContainer
+    var show by remember { mutableStateOf(false) }
+    SwitchRow(
+        "사용 통계 보내기",
+        "어떤 기능을 하루에 몇 번 썼는지만 보내 앱을 고치는 데 써요. 휴대폰·근무·금액·글은 보내지 않고, 서버에는 날짜별 합계만 400일 남아요. 꺼도 앱은 똑같이 돼요",
+        on,
+        onChange = onChange,
+    )
+    if (on) TextButton(onClick = { show = true }) { Text("보낼 내용 보기") }
+    if (show) {
+        AlertDialog(
+            onDismissRequest = { show = false },
+            title = { Text("보낼 내용") },
+            text = { Text(c.usageStats.preview() ?: "아직 보낼 내용이 없어요. 하루가 지나면 그날 쓴 기능 이름과 횟수가 여기 보여요.") },
+            confirmButton = { TextButton(onClick = { show = false }) { Text("확인") } },
+        )
     }
 }
 
@@ -510,14 +650,20 @@ private fun PrivacyPage(
     settings: AppSettings,
     refresh: Int,
     askNotifications: () -> Unit,
-    onOpenPage: (SettingsPage) -> Unit,
 ) {
     val context = LocalContext.current
     val pkg = Uri.parse("package:${context.packageName}")
+    var summary by remember { mutableStateOf(false) }
     SectionCard(title = "개인정보") {
-        // [STAB-01] No '사용 통계 보내기' switch: the app sends no usage statistics anywhere, so it promised
-        // something it does not do. It comes back only with a real place to send them (Telemetry sinks).
         NavRow("개인정보 처리방침", "무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
+        HorizontalDivider()
+        // [ALRM-02] I27: every yes and no, and every permission, on one sheet.
+        NavRow(SUMMARY_ROW, "사용 통계·소식·권한을 한 장에서 보고 바꿔요") { summary = true }
+        if (summary) com.bamnat.app.ui.diag.ConsentSummarySheet { summary = false }
+        HorizontalDivider()
+        // [STAT-01] Back with a real place to send to (UsageStats, 처리방침 2.8). Its own yes, so it starts off;
+        // the app works the same either way.
+        UsageStatsRow(settings.shareUsageStats) { on -> context.appContainer.setUsageStats(on) }
         // [MON-07] Google's consent form again where the law gives one (EEA, UK and the like); elsewhere, what there is.
         val adPrivacy by vm.adPrivacy.collectAsStateWithLifecycle()
         var adWords by remember { mutableStateOf(false) }
@@ -537,7 +683,7 @@ private fun PrivacyPage(
         val lockable = remember(refresh) { com.bamnat.app.AppLock.available(context) }
         SwitchRow(
             "앱 잠금",
-            if (lockable) "열 때와 1분 넘게 다른 앱을 쓰다 돌아올 때 지문·얼굴·PIN을 물어요. 알람은 그대로 울려요"
+            if (lockable) "열 때와 1분 넘게 다른 앱을 쓰다 돌아올 때 지문·얼굴·PIN을 물어요. 최근 앱 화면과 화면 캡처에도 내용이 안 보여요. 알람은 그대로 울려요"
             else "휴대폰에 잠금(PIN·패턴·지문)을 먼저 설정하면 켤 수 있어요",
             settings.appLock && lockable,
             enabled = lockable,
@@ -562,8 +708,8 @@ private fun PrivacyPage(
         }
         // Reading sleep is a choice, not something missing: it says where it is turned on.
         HorizontalDivider()
-        NavRow("워치·휴대폰 수면 기록", if (settings.healthSleep) "헬스 커넥트에서 읽고 있어요" else "읽지 않아요 · 잠과 휴식에서 켜요") {
-            onOpenPage(SettingsPage.REST)
+        NavRow("워치·휴대폰 수면 기록", if (settings.healthSleep) "헬스 커넥트에서 읽고 있어요" else "읽지 않아요 · 알림과 잠에서 켜요") {
+            SettingsLinks.open(SettingsPage.NOTICES, "워치·휴대폰 수면 기록 함께 보기")
         }
         // [UX-04] Where 결제 알림 읽기 is turned on, as a way there.
         // [LEDG-16] Straight to the money tab's 자동 기록 sheet.
@@ -574,22 +720,14 @@ private fun PrivacyPage(
     }
 }
 
+/**
+ * [SET-02] What was 앱 정보, under privacy: the terms and licences and the version. 알람 점검 is in 설정 › 알람,
+ * 도움말과 문의 on the settings list and 처리방침 just above, each in one place.
+ */
 @Composable
-private fun AboutPage(vm: SettingsViewModel, onOpenDiagnostics: (Boolean) -> Unit, onOpenInquiry: () -> Unit) {
+private fun AboutPage() {
     val context = LocalContext.current
-    val unread by vm.inquiryUnread.collectAsStateWithLifecycle()
-    SectionCard(title = null) {
-        NavRow("알람 점검", "알람이 안 울리거나 늦을 때 원인을 찾아요") { onOpenDiagnostics(false) }
-        HorizontalDivider()
-        // [ADMIN-02][UX-05] Help first, then a question: in the app when the build has the server, by mail when not.
-        NavRow("도움말과 문의", when {
-            unread > 0 -> "개발자 답이 ${unread}개 왔어요"
-            vm.inquiryOn -> "자주 묻는 질문을 보고, 앱 안에서 묻고 답을 받아요"
-            else -> "자주 묻는 질문을 보고, 메일로 물어요"
-        }) { onOpenInquiry() }
-        HorizontalDivider()
-        NavRow("개인정보 처리방침", null) { openPrivacy(context) }
-        HorizontalDivider()
+    SectionCard(title = "앱 정보") {
         // [MON-05] What paying for 프로 agrees to.
         NavRow("이용약관", "프로 구독·체험·해지·환불") {
             runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(com.bamnat.app.ui.pro.TERMS_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
@@ -684,4 +822,68 @@ private fun HealthSleepRow(vm: SettingsViewModel, on: Boolean) {
         }
     }
     message?.let { Note(it) }
+}
+
+/**
+ * [DAILY-16] The 시·도 the 광장 시세 card compares in. Without it (and without a rate the user shared), no card
+ * shows: a 시세 of another region says nothing about the user's pay.
+ */
+@Composable
+private fun RateRegionRow() {
+    val store = LocalContext.current.appContainer.rateHints
+    val own by store.own.collectAsStateWithLifecycle()
+    var picking by remember { mutableStateOf(false) }
+    val region = own.picked.ifBlank { own.region }
+    NavRow("견줄 내 지역", if (region.isBlank()) "고르지 않았어요. 고르면 같은 지역 시세와만 견줘요"
+        else com.bamnat.app.company.Plaza.region(region) + (if (own.picked.isBlank()) " (내가 나눈 시세의 지역)" else "")) { picking = true }
+    if (picking) {
+        AlertDialog(
+            onDismissRequest = { picking = false },
+            title = { Text("견줄 내 지역") },
+            text = {
+                androidx.compose.foundation.lazy.LazyColumn {
+                    items(com.bamnat.app.company.Plaza.REGIONS.entries.toList(), key = { it.key }) { (code, name) ->
+                        androidx.compose.foundation.layout.Row(
+                            Modifier.fillMaxWidth().clickable { store.pick(code); picking = false }.padding(vertical = 10.dp),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.RadioButton(selected = region == code, onClick = null)
+                            Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 12.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { picking = false }) { Text("닫기") } },
+            dismissButton = if (own.picked.isNotBlank()) ({ TextButton(onClick = { store.pick(""); picking = false }) { Text("고르지 않기") } }) else null,
+        )
+    }
+}
+
+/**
+ * [SET-05] How far to move every shift's alarms: earlier or later in 5-minute steps, with the first shift's
+ * alarms before and after, so the user sees what changes before saving.
+ */
+@Composable
+private fun MoveAllAlarmsDialog(ringing: List<com.bamnat.core.model.ShiftType>, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
+    var minutes by rememberSaveable { mutableIntStateOf(10) }
+    val say: (Int) -> String = { m -> when { m > 0 -> "${m}분 일찍"; m < 0 -> "${-m}분 늦게"; else -> "그대로" } }
+    val sample = ringing.first()
+    fun times(t: com.bamnat.core.model.ShiftType) = t.alarms.filter { it.enabled }.sortedByDescending { it.offsetMinutes }
+        .joinToString(" · ") { Fmt.time(t.start!!.minusMinutes(it.offsetMinutes.toLong())) }.ifEmpty { "켜진 알람 없음" }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("모든 근무 알람 옮기기") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("알람이 켜진 근무 ${ringing.size}개의 알람을 모두 같은 만큼 옮겨요. 근무 시작보다 늦게 울리지는 않아요.",
+                    style = MaterialTheme.typography.bodyMedium)
+                com.bamnat.app.ui.components.CountStepper(minutes, { minutes = it }, name = "옮길 시간", range = -60..60, step = 5,
+                    format = say, valueWidth = 104.dp, modifier = Modifier.align(Alignment.CenterHorizontally))
+                Text("${sample.name}: ${times(sample)} → ${times(com.bamnat.core.model.AlarmShift.move(sample, minutes))}",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(minutes) }, enabled = minutes != 0) { Text("옮기기") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
 }

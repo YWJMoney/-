@@ -1,0 +1,441 @@
+{
+ "format": 1,
+ "kind": "presets",
+ "version": 2026102301,
+ "issued": "2026-10-22",
+ "minApp": 33,
+ "source": "밤낮 앱에 든 근무 순서·근무 종류 묶음·직군 급여 시작값 (금액은 명세서로 바꾸는 자리 표시)",
+ "data": {
+  "patterns": [
+   {
+    "id": "p-3j2k",
+    "name": "3조 2교대",
+    "description": "주주야야비휴",
+    "codes": "DDNNOO"
+   },
+   {
+    "id": "p-4j2k",
+    "name": "4조 2교대",
+    "description": "주야비휴",
+    "codes": "DNOO"
+   },
+   {
+    "id": "p-4j3k",
+    "name": "4조 3교대",
+    "description": "주주오오야야휴휴",
+    "codes": "DDEENNOO"
+   },
+   {
+    "id": "p-3k-week",
+    "name": "3교대 주 단위",
+    "description": "주간 5일 · 오후 5일 · 야간 5일, 사이 2일 휴무",
+    "codes": "DDDDDOOEEEEEOONNNNNOO"
+   },
+   {
+    "id": "p-alt-day",
+    "name": "격일 근무",
+    "description": "근무 · 휴무 반복",
+    "codes": "DO"
+   },
+   {
+    "id": "p-5day",
+    "name": "주 5일 주간",
+    "description": "시작일을 월요일로 두면 월–금 근무",
+    "codes": "DDDDDOO"
+   },
+   {
+    "id": "p-3j2k-9",
+    "name": "3조 2교대 9일",
+    "description": "주주주야야야휴휴휴",
+    "codes": "DDDNNNOOO"
+   },
+   {
+    "id": "p-4j3k-12",
+    "name": "4조 3교대 12일",
+    "description": "주주주오오오야야야휴휴휴",
+    "codes": "DDDEEENNNOOO"
+   },
+   {
+    "id": "p-5j3k",
+    "name": "5조 3교대",
+    "description": "주주오오야야휴휴휴휴",
+    "codes": "DDEENNOOOO"
+   },
+   {
+    "id": "p-4j2k-8",
+    "name": "4조 2교대 8일",
+    "description": "주주야야휴휴휴휴",
+    "codes": "DDNNOOOO"
+   },
+   {
+    "id": "p-4j2k-8-dond",
+    "name": "4조 2교대 8일 (주휴야휴)",
+    "description": "주주휴휴야야휴휴",
+    "codes": "DDOONNOO"
+   },
+   {
+    "id": "p-24h-2",
+    "name": "24시간 격일 맞교대",
+    "description": "당번 · 비번 반복",
+    "codes": "XB"
+   },
+   {
+    "id": "p-24h-3",
+    "name": "24시간 3조 맞교대",
+    "description": "당번 · 비번 · 휴무 (소방 3조 1교대: 24시간 근무 뒤 이틀 쉬기)",
+    "codes": "XBO",
+    "jobs": [
+     "FIRE"
+    ],
+    "source": "뉴시스 2019-04-24 소방 3조1교대 도입 https://www.newsis.com/view/NISX20190424_0000630921",
+    "checked": "2026-10-22"
+   },
+   {
+    "id": "p-24h-4",
+    "name": "24시간 4조 맞교대",
+    "description": "당번 · 비번 · 당번 · 비번 · 휴무 · 휴무 · 휴무 · 휴무",
+    "codes": "XBXBOOOO"
+   },
+   {
+    "id": "p-police-4j2k",
+    "name": "4조 2교대 (경찰 지구대·파출소)",
+    "description": "주야비휴 · 12시간씩, 4일 주기",
+    "codes": "DNBO",
+    "jobs": [
+     "POLICE"
+    ],
+    "source": "위드뉴스 2025-10-13 경찰 근무체계 기사 https://car.withnews.kr/society/police-shift-system-change-chaos",
+    "checked": "2026-10-22"
+   },
+   {
+    "id": "p-fire-3j2k-21",
+    "name": "3조 2교대 21일 (소방)",
+    "description": "주간 5일 · 휴무 2일 · 야간·비번 7번 (주간 주의 쉬는 날이 다르면 고쳐 쓰세요)",
+    "codes": "DDDDDOONBNBNBNBNBNBNB",
+    "jobs": [
+     "FIRE"
+    ],
+    "source": "서울신문 2022-07-26 서울소방 3조2교대(21일) https://m.go.seoul.co.kr/news/2022/07/26/20220726500124",
+    "checked": "2026-10-22"
+   }
+  ],
+  "shiftSets": [
+   {
+    "id": "s-hospital-den",
+    "name": "병원 3교대 (D/E/N)",
+    "description": "데이 07–15 · 이브닝 15–23 · 나이트 23–07",
+    "jobs": [
+     "NURSE"
+    ],
+    "types": [
+     {
+      "name": "데이",
+      "label": "D",
+      "color": "#2F80ED",
+      "start": "07:00",
+      "end": "15:00",
+      "break": 0,
+      "alarmBefore": 90
+     },
+     {
+      "name": "이브닝",
+      "label": "E",
+      "color": "#F2994A",
+      "start": "15:00",
+      "end": "23:00",
+      "break": 0,
+      "alarmBefore": 60
+     },
+     {
+      "name": "나이트",
+      "label": "N",
+      "color": "#6C5CE7",
+      "start": "23:00",
+      "end": "07:00",
+      "break": 0,
+      "alarmBefore": 60
+     }
+    ]
+   },
+   {
+    "id": "s-factory-3",
+    "name": "공장 3교대",
+    "description": "주간 06–14 · 오후 14–22 · 야간 22–06",
+    "jobs": [
+     "MANUFACTURING"
+    ],
+    "types": [
+     {
+      "name": "주간",
+      "label": "주",
+      "color": "#2F80ED",
+      "start": "06:00",
+      "end": "14:00",
+      "break": 30,
+      "alarmBefore": 90
+     },
+     {
+      "name": "오후",
+      "label": "오",
+      "color": "#F2994A",
+      "start": "14:00",
+      "end": "22:00",
+      "break": 30,
+      "alarmBefore": 60
+     },
+     {
+      "name": "야간",
+      "label": "야",
+      "color": "#6C5CE7",
+      "start": "22:00",
+      "end": "06:00",
+      "break": 30,
+      "alarmBefore": 60
+     }
+    ]
+   },
+   {
+    "id": "s-12h-2",
+    "name": "12시간 2교대",
+    "description": "주간 07–19 · 야간 19–07",
+    "types": [
+     {
+      "name": "주간",
+      "label": "주",
+      "color": "#2F80ED",
+      "start": "07:00",
+      "end": "19:00",
+      "break": 60,
+      "alarmBefore": 90
+     },
+     {
+      "name": "야간",
+      "label": "야",
+      "color": "#6C5CE7",
+      "start": "19:00",
+      "end": "07:00",
+      "break": 60,
+      "alarmBefore": 60
+     }
+    ]
+   },
+   {
+    "id": "s-24h",
+    "name": "24시간 맞교대",
+    "description": "당번 09–다음날 09 (휴게 4시간)",
+    "jobs": [
+     "SECURITY"
+    ],
+    "types": [
+     {
+      "name": "당번",
+      "label": "당",
+      "color": "#EB5757",
+      "start": "09:00",
+      "end": "09:00",
+      "break": 240,
+      "alarmBefore": 90
+     }
+    ]
+   }
+  ],
+  "pay": [
+   {
+    "occupation": "NURSE",
+    "wageType": "MONTHLY",
+    "baseHint": 3000000,
+    "items": [
+     {
+      "id": "night",
+      "name": "나이트 수당",
+      "cadence": "PER_NIGHT_SHIFT",
+      "amount": 30000,
+      "hint": "야간근무 1회당 정액"
+     },
+     {
+      "id": "shift",
+      "name": "교대근무 수당",
+      "cadence": "MONTHLY",
+      "amount": 100000,
+      "ordinary": true
+     },
+     {
+      "id": "license",
+      "name": "면허·자격 수당",
+      "cadence": "MONTHLY",
+      "amount": 50000,
+      "ordinary": true,
+      "checked": false
+     },
+     {
+      "id": "meal",
+      "name": "식대",
+      "cadence": "MONTHLY",
+      "amount": 200000,
+      "checked": false,
+      "hint": "월 20만원까지 비과세"
+     }
+    ],
+    "note": "병원마다 수당 이름과 금액이 달라요. 급여명세서를 보고 맞춰 주세요"
+   },
+   {
+    "occupation": "PART_TIME",
+    "wageType": "HOURLY",
+    "baseHint": 10320,
+    "items": [
+     {
+      "id": "meal",
+      "name": "식대",
+      "cadence": "PER_WORK_DAY",
+      "amount": 0,
+      "checked": false
+     }
+    ],
+    "note": "주 15시간 이상 일하면 주휴수당을 근무표대로(개근 가정) 계산해요"
+   },
+   {
+    "occupation": "MANUFACTURING",
+    "wageType": "MONTHLY",
+    "baseHint": 2700000,
+    "items": [
+     {
+      "id": "shift",
+      "name": "교대 수당",
+      "cadence": "MONTHLY",
+      "amount": 150000,
+      "ordinary": true
+     },
+     {
+      "id": "night",
+      "name": "야간 근무 수당",
+      "cadence": "PER_NIGHT_SHIFT",
+      "amount": 20000
+     },
+     {
+      "id": "meal",
+      "name": "식대",
+      "cadence": "MONTHLY",
+      "amount": 200000,
+      "checked": false
+     }
+    ]
+   },
+   {
+    "occupation": "CARE",
+    "wageType": "MONTHLY",
+    "baseHint": 2400000,
+    "items": [
+     {
+      "id": "night",
+      "name": "야간 수당",
+      "cadence": "PER_NIGHT_SHIFT",
+      "amount": 20000
+     }
+    ]
+   },
+   {
+    "occupation": "SECURITY",
+    "wageType": "MONTHLY",
+    "baseHint": 2300000,
+    "items": [
+     {
+      "id": "duty",
+      "name": "당직 수당",
+      "cadence": "PER_WORK_DAY",
+      "amount": 0,
+      "checked": false
+     }
+    ],
+    "note": "감시·단속 근로로 노동부 승인을 받았는지 다음 질문에서 물어봐요. 승인이 있으면 연장·휴일 가산은 빠지고 야간 가산은 그대로예요"
+   },
+   {
+    "occupation": "PUBLIC",
+    "wageType": "MONTHLY",
+    "baseHint": 2542700,
+    "items": [
+     {
+      "id": "meal",
+      "name": "정액급식비",
+      "cadence": "MONTHLY",
+      "amount": 160000,
+      "hint": "명세서 금액으로 고쳐 주세요"
+     },
+     {
+      "id": "duty",
+      "name": "직급보조비",
+      "cadence": "MONTHLY",
+      "amount": 0,
+      "checked": false
+     }
+    ],
+    "note": "공무원은 근로기준법 가산 대신 공무원수당 규정으로 계산해요. 입력한 봉급으로 야간·휴일·시간외 수당을 회사 규칙에 넣었어요. 기준호봉 봉급이 다르면 금액을 고쳐 주세요. 시간외는 월 57시간 상한이 있어요"
+   },
+   {
+    "occupation": "POLICE",
+    "wageType": "MONTHLY",
+    "baseHint": 2542700,
+    "items": [
+     {
+      "id": "meal",
+      "name": "정액급식비",
+      "cadence": "MONTHLY",
+      "amount": 160000,
+      "hint": "명세서 금액으로 고쳐 주세요"
+     },
+     {
+      "id": "risk",
+      "name": "위험근무수당",
+      "cadence": "MONTHLY",
+      "amount": 0,
+      "hint": "명세서 금액"
+     },
+     {
+      "id": "field",
+      "name": "현장 근무 수당",
+      "cadence": "MONTHLY",
+      "amount": 0,
+      "checked": false,
+      "hint": "지구대·파출소 근무자"
+     }
+    ],
+    "note": "공무원은 근로기준법 가산 대신 공무원수당 규정으로 계산해요. 입력한 봉급으로 야간·휴일·시간외 수당을 회사 규칙에 넣었어요. 기준호봉 봉급이 다르면 금액을 고쳐 주세요. 시간외는 월 57시간 상한이 있어요"
+   },
+   {
+    "occupation": "FIRE",
+    "wageType": "MONTHLY",
+    "baseHint": 2542700,
+    "items": [
+     {
+      "id": "meal",
+      "name": "정액급식비",
+      "cadence": "MONTHLY",
+      "amount": 160000,
+      "hint": "명세서 금액으로 고쳐 주세요"
+     },
+     {
+      "id": "risk",
+      "name": "위험근무수당",
+      "cadence": "MONTHLY",
+      "amount": 0,
+      "hint": "명세서 금액"
+     },
+     {
+      "id": "fire",
+      "name": "화재진화수당",
+      "cadence": "MONTHLY",
+      "amount": 0,
+      "checked": false,
+      "hint": "명세서 금액"
+     }
+    ],
+    "note": "공무원은 근로기준법 가산 대신 공무원수당 규정으로 계산해요. 입력한 봉급으로 야간·휴일·시간외 수당을 회사 규칙에 넣었어요. 기준호봉 봉급이 다르면 금액을 고쳐 주세요. 시간외는 월 57시간 상한이 있어요"
+   },
+   {
+    "occupation": "CUSTOM",
+    "wageType": "MONTHLY",
+    "baseHint": 0,
+    "items": []
+   }
+  ]
+ }
+}

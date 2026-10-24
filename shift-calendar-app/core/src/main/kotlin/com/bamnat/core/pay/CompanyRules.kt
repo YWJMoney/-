@@ -134,6 +134,12 @@ data class ExtraRule(
     val unitMinutes: Int = 8 * 60,
     /** [EXTRA-08] For [ExtraBasis.UNIT]: the premiums, the four always listed first, then the company's own. */
     val premiums: List<Premium> = emptyList(),
+    /**
+     * [PAYX-21] For [ExtraBasis.TIERED]: count the blocks from the day's first minute of work (the shift and any
+     * work before this piece), not from this piece's start. E.g. 8시간 100% then 150%: 2 hours of 잔업 after an
+     * 8-hour shift are all in the 150% block.
+     */
+    val tiersFromDayStart: Boolean = false,
 ) {
     /** By law with nothing on top: the same as having no rule. */
     val isLegal: Boolean get() = basis == ExtraBasis.LEGAL && bonus <= 0
@@ -149,14 +155,21 @@ data class ExtraRule(
     /** [EXTRA-08] The premiums that count, in the order they are paid. */
     val ticked: List<Premium> get() = premiums.filter { it.on && it.rate > 0 }
 
-    /** Money for [minutes] of this work at [hourly], by the tiers for a day or night shift. */
-    fun tieredAmount(minutes: Int, hourly: Long, night: Boolean): Long {
+    /**
+     * Money for [minutes] of this work at [hourly], by the tiers for a day or night shift. [before] minutes of the
+     * day already worked fill the first blocks when [tiersFromDayStart] [PAYX-21].
+     */
+    fun tieredAmount(minutes: Int, hourly: Long, night: Boolean, before: Int = 0): Long {
         val tiers = (if (night) nightTiers else dayTiers).ifEmpty { listOf(Tier(minutes, 0.0)) }
+        var skip = if (tiersFromDayStart) before.coerceAtLeast(0) else 0
         var left = minutes
         var total = 0.0
         for ((i, t) in tiers.withIndex()) {
             if (left <= 0) break
-            val m = if (i == tiers.lastIndex) left else minOf(left, t.minutes)
+            val room = if (i == tiers.lastIndex) Int.MAX_VALUE else t.minutes
+            val skipped = minOf(skip, room)
+            skip -= skipped
+            val m = if (i == tiers.lastIndex) left else minOf(left, room - skipped)
             total += m / 60.0 * hourly * (1.0 + t.premium)
             left -= m
         }
@@ -205,7 +218,7 @@ data class ExtraRule(
         ExtraBasis.FIXED_PER_TIME -> "1회 ${won(amount)}"
         ExtraBasis.PERCENT_OF_BASE -> "1회 기본급의 ${percent(percentOfBase)}"
         ExtraBasis.FIXED_PER_HOUR -> "시간당 ${won(amount)}"
-        ExtraBasis.TIERED -> "주간 ${describeTiers(false)} · 야간 ${describeTiers(true)}"
+        ExtraBasis.TIERED -> "주간 ${describeTiers(false)} · 야간 ${describeTiers(true)}" + if (tiersFromDayStart) " (그날 첫 근무부터)" else ""
         ExtraBasis.UNIT -> describeUnit()
     } + (if (perTime && coverMinutes != null) " (${PayCalculator.hours(coverMinutes)}까지)" else "")
 
@@ -255,6 +268,29 @@ enum class BreakPay(val label: String) {
      * anything is sorted, so it can make 연장, 야간 and 주휴 hours.
      */
     AS_WORK("근무시간"),
+}
+
+/**
+ * [PAYX-24] How a monthly 기본급 is cut for a month worked in part (입사·퇴사 달). 근로기준법 has no rule for it, so it
+ * is the company's (취업규칙·근로계약); 달력 일수 is the usual way and the default.
+ */
+enum class ProrationBasis(val label: String) {
+    /** 기본급 × 재직 일수 ÷ 그 달(급여기간) 달력 일수. */
+    CALENDAR_DAYS("달력 일수"),
+    /** 기본급 × 재직 중 소정근로일 ÷ 그 달 소정근로일 (근무표의 근무일). */
+    WORK_DAYS("소정근로일"),
+    /** 일할하지 않고 한 달 치를 줘요. */
+    NONE("일할 안 함"),
+}
+
+/**
+ * [PAYX-27] Where 원 단위 is cut. No law sets it (research/1.23-K-원문.md 10장); companies differ, so a payslip can be a
+ * few won apart. [HOURLY_FIRST] rounds 통상시급 to the won first and multiplies (the app's way so far); [AT_END] keeps the
+ * hourly rate exact (14,354.07원) and rounds each line once.
+ */
+enum class WonRounding(val label: String) {
+    HOURLY_FIRST("시급을 먼저 원 단위로"),
+    AT_END("줄마다 마지막에"),
 }
 
 /** Rounding of overtime minutes per day, e.g. 30분 단위 버림. */
@@ -332,6 +368,20 @@ data class CompanyRules(
     val holidaysUnderFive: Boolean = false,
     /** [PAYS-03] How breaks are treated; unpaid, as the law has it, by default. */
     val breakPay: BreakPay = BreakPay.UNPAID,
+    /** [LEAVE-02] How 연차 arises: by the hire date or 회계연도, made by the app or entered by hand. */
+    val leave: com.bamnat.core.leave.LeavePolicy = com.bamnat.core.leave.LeavePolicy(),
+    /** [PAYX-24] 입사·퇴사 달 일할 방식. */
+    val proration: ProrationBasis = ProrationBasis.CALENDAR_DAYS,
+    /** [PAYX-27] 원 단위 끝처리. */
+    val wonRounding: WonRounding = WonRounding.HOURLY_FIRST,
+    /** [PAYX-29] 주 52시간 예외 유형, for the 근무시간 limits; the pay itself is set by the other rules. */
+    val hoursException: com.bamnat.core.hours.HoursException = com.bamnat.core.hours.HoursException.NONE,
+    /**
+     * [PAYX-33] 단시간근로자의 초과근로 가산: hours past the 소정근로시간 but inside 8시간·40시간 earn 50% on top
+     * (기간제 및 단시간근로자 보호 등에 관한 법률 제6조 제3항, 상시 5명 이상). Off by default: whether the worker is
+     * 단시간 (소정이 통상근로자보다 짧은지) only the contract tells.
+     */
+    val partTimePremium: Boolean = false,
 ) {
     fun extraRule(kind: Long?): ExtraRule? = kind?.let { extra[it] }?.takeUnless { it.isLegal }
 

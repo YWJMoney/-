@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- [ALRM-01] 알람 점검's 배터리 최적화 제외 asks straight away; allowed for alarm clocks (Play's 배터리 최적화 정책). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- [SLP-08] Read only: sleep sessions a watch or the phone wrote to Health Connect. -->
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
     <!-- [IMPORT-01] Read only, asked when the user opens 캘린더에서 가져오기; nothing read leaves the phone. -->
@@ -55,6 +57,11 @@
         <meta-data
             android:name="com.google.android.gms.ads.DELAY_APP_MEASUREMENT_INIT"
             android:value="true" />
+        <!-- [PERF-04] 결정 D52: Play services downloads ML Kit's Korean text model when the app is installed
+             (OcrModel asks again if it is still missing); photos are read on the phone only. -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="ocr_korean" />
 
         <!-- resizeableActivity + configChanges keep state smooth when a Fold opens or closes.
              singleTop: a shared calendar link tapped while the app is open comes to onNewIntent [SHR-02]. -->
@@ -68,6 +75,26 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- [CAL-47] A 회사 근무 파일 or a backup opened or shared from a messenger or a file app
+                 (table in docs/HANDOFF.md). The file is read and asked about before anything changes. -->
+            <intent-filter android:label="@string/open_file_label">
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="application/vnd.bamnat+json" />
+            </intent-filter>
+            <intent-filter android:label="@string/open_file_label">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.bamnat" />
+                <data android:pathPattern=".*\\..*\\.bamnat" />
             </intent-filter>
         </activity>
 
@@ -138,6 +165,10 @@
         <receiver
             android:name=".invest.InvestActionReceiver"
             android:exported="false" />
+        <!-- [INV-34] 월말 요약 on the last day of the month. -->
+        <receiver
+            android:name=".invest.InvestMonthReceiver"
+            android:exported="false" />
 
         <!-- [PAY-12][REL-08] 연차 lapse notice on 11/1 and 12/1. -->
         <receiver
@@ -203,6 +234,18 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <!-- [COMM-10] 광장 소식 once a day: only the system's job scheduler binds it. -->
+        <service
+            android:name=".company.PlazaNewsJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- [SRV-07][INQ-05][SHR-13] What could not reach a server, sent once the phone is online. -->
+        <service
+            android:name=".company.OutboxJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- [SHFT-08] The Wear OS app asks for fresh days when it opens; only Google Play services binds it. -->
         <service
             android:name=".watch.WatchRequestService"
@@ -262,6 +305,32 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_month_info" />
+        </receiver>
+
+        <!-- [WIDG-05] 다음 근무까지. -->
+        <receiver
+            android:name=".widget.CountdownWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_countdown_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_countdown_info" />
+        </receiver>
+
+        <!-- [DAILY-03] 오늘 모든 조. -->
+        <receiver
+            android:name=".widget.TeamsWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_teams_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_teams_info" />
         </receiver>
 
         <receiver

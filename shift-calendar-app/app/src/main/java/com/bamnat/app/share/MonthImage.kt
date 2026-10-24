@@ -7,8 +7,12 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.FileProvider
 import com.bamnat.app.data.ScheduleSnapshot
+import com.bamnat.app.ui.components.contentColorOn
+import com.bamnat.app.ui.theme.LightCalendarColors
 import com.bamnat.core.holiday.KoreanHolidays
 import com.bamnat.core.schedule.CalendarGrid
 import java.io.File
@@ -87,7 +91,7 @@ object MonthImage {
                         c.drawRoundRect(b, 14f, 14f, fill)
                         text.textSize = if (t.label.length > 1 || halves.size > 1) 28f else 44f
                         text.typeface = bold; text.textAlign = Paint.Align.CENTER
-                        text.color = if (t.isOff) 0xFF6B7280.toInt() else 0xFFFFFFFF.toInt()
+                        text.color = if (t.isOff) 0xFF6B7280.toInt() else inkOn(t.colorArgb)
                         c.drawText(t.label, b.centerX(), b.centerY() + text.textSize / 3, text)
                     }
                     return@forEachIndexed
@@ -105,7 +109,7 @@ object MonthImage {
                 c.drawRoundRect(box, 18f, 18f, fill)
                 text.textSize = if (type.label.length > 1) 34f else 44f
                 text.typeface = bold; text.textAlign = Paint.Align.CENTER
-                text.color = if (type.isOff) 0xFF6B7280.toInt() else 0xFFFFFFFF.toInt()
+                text.color = if (type.isOff) 0xFF6B7280.toInt() else inkOn(type.colorArgb)
                 c.drawText(type.label, box.centerX(), box.centerY() + text.textSize / 3, text)
             }
         }
@@ -127,10 +131,13 @@ object MonthImage {
     }
 
     private fun colorFor(d: DayOfWeek, holiday: Boolean): Int = when {
-        holiday || d == DayOfWeek.SUNDAY -> 0xFFE5484D.toInt()
-        d == DayOfWeek.SATURDAY -> 0xFF2F80ED.toInt()
+        holiday || d == DayOfWeek.SUNDAY -> LightCalendarColors.sunday.toArgb()
+        d == DayOfWeek.SATURDAY -> LightCalendarColors.saturday.toArgb()
         else -> 0xFF1B1F2A.toInt()
     }
+
+    /** [A11Y-03] The same readable letters as the app's badges: dark ink on 오후 orange, white on 야간 purple. */
+    private fun inkOn(argb: Long): Int = contentColorOn(Color((argb or 0xFF000000).toInt())).toArgb()
 
     /** Writes the image to the share cache and opens the share sheet. */
     suspend fun share(context: Context, snapshot: ScheduleSnapshot, month: YearMonth, weekStart: DayOfWeek) {

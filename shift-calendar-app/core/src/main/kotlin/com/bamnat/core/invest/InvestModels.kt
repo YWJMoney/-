@@ -42,7 +42,28 @@ data class InvestAccount(
     val feeRate: Double? = null,
     val sortOrder: Int = 0,
     val hidden: Boolean = false,
-)
+    /**
+     * [INV-33] The account's fee for one market where it differs from [feeRate], e.g. a 국내 account at
+     * 0.015% that charges 0.07% on 해외 주식. Kept in the calendar's invest settings, not in the account's row.
+     */
+    val marketFees: Map<Market, Double> = emptyMap(),
+) {
+    /** [INV-33] The fee in percent this account charges on [market]. */
+    fun feeFor(market: Market): Double = marketFees[market] ?: feeRate ?: market.defaultFeeRate
+
+    companion object {
+        /** [INV-33] The settings key that holds account [id]'s market fees. */
+        fun feesKey(id: Long) = "fees.$id"
+
+        fun encodeFees(fees: Map<Market, Double>): String = fees.entries.sortedBy { it.key.ordinal }.joinToString(",") { "${it.key.name}=${it.value}" }
+
+        fun decodeFees(text: String?): Map<Market, Double> = text.orEmpty().split(',').mapNotNull { part ->
+            val (k, v) = part.split('=').takeIf { it.size == 2 } ?: return@mapNotNull null
+            val m = Market.entries.firstOrNull { it.name == k.trim() } ?: return@mapNotNull null
+            v.trim().toDoubleOrNull()?.takeIf { it in 0.0..5.0 }?.let { m to it }
+        }.toMap()
+    }
+}
 
 /** [INV-03] Where a holding trades: its currency, usual fee and the tax on selling it. */
 enum class Market(val label: String, val currency: String, val defaultFeeRate: Double, val sellTaxRate: Double) {
@@ -280,6 +301,8 @@ data class InvestSettings(
     val hideAmounts: Boolean = false,
     /** The account a new trade starts in: the last one used. */
     val lastAccountId: Long? = null,
+    /** [INV-34] 월말 요약 알림: the month's trades and realised result on its last evening; on, off on the 투자 screen. */
+    val monthSummary: Boolean = true,
 ) {
     companion object {
         val DEFAULT_PRINCIPLES = listOf("손절가를 지켰어요", "한 종목에 몰빵하지 않았어요", "계획한 종목만 샀어요", "뉴스 보고 바로 사지 않았어요")
