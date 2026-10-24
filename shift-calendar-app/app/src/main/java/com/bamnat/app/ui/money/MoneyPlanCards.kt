@@ -1,7 +1,6 @@
 package com.bamnat.app.ui.money
 
 import android.content.ActivityNotFoundException
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.clickable
@@ -52,7 +51,6 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.FilledTonalButton
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -374,7 +372,6 @@ fun PasteDialog(
     today: LocalDate = Today.date(),
     initialText: String = "",
 ) {
-    val context = LocalContext.current
     var text by rememberSaveable { mutableStateOf(initialText) }
     val rows = remember(text, existing, rules) {
         // Rows earlier in the same paste count too: the card text and the pay push for one payment.
@@ -408,12 +405,10 @@ fun PasteDialog(
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(value = text, onValueChange = { text = it.take(20_000) }, label = { Text("문자 내용") },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp), maxLines = 8)
-                if (text.isBlank()) {
-                    FilledTonalButton(onClick = {
-                        val clip = context.getSystemService(ClipboardManager::class.java)?.primaryClip
-                        text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
-                    }) { Icon(Icons.Filled.ContentPaste, null); Spacer(Modifier.width(6.dp)); Text("복사한 문자 가져오기") }
-                }
+                // [INPUT-04] A payment message just copied: one tap, read only when tapped (계획/1.24-Q-개발계획.md Q-D1).
+                if (text.isBlank()) com.bamnat.app.ui.components.ClipboardHint("결제 문자",
+                    fits = { t -> PaymentParser.splitMessages(t).any { PaymentParser.parse(it, Today.dateTime(), rules) is PaymentParser.Result.Ok } },
+                    onPaste = { text = it.take(20_000) })
                 rows.forEachIndexed { i, r ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = r.entry != null && i !in skipped, enabled = r.entry != null,

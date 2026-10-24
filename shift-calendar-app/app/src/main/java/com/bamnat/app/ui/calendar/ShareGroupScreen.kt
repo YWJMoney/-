@@ -237,6 +237,9 @@ private fun Join(vm: ShareGroupViewModel, busy: Boolean, onShare: () -> Unit) {
         }
     }
     SectionCard(title = "받은 코드로 들어가기") {
+        // [INPUT-04] A code just copied from the group chat: one tap.
+        if (text.isBlank()) com.bamnat.app.ui.components.ClipboardHint("모임 코드", fits = { ShareGroup.code(it) != null },
+            onPaste = { text = ShareGroup.code(it) ?: it.take(12) })
         OutlinedTextField(
             value = text, onValueChange = { text = it.take(12) }, singleLine = true, label = { Text("모임 코드 6자") },
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),

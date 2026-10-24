@@ -355,6 +355,9 @@ private fun PassesCard(c: AppContainer, pro: ProState, gate: Gate, zone: ZoneId,
             TextButton(onClick = { entering = !entering }) { Text("다른 휴대폰의 복구 코드 넣기") }
         }
         if (entering) {
+            // [INPUT-04] The code copied on the old phone (or from the backup note): one tap.
+            if (code.isBlank()) com.bamnat.app.ui.components.ClipboardHint("복구 코드", fits = { RECOVERY_CODE.matches(it.trim().uppercase()) },
+                onPaste = { code = it.trim().uppercase().filter { ch -> ch.isLetterOrDigit() || ch == '-' }.take(24) })
             OutlinedTextField(code, { code = it.uppercase().filter { ch -> ch.isLetterOrDigit() || ch == '-' }.take(24) },
                 label = { Text("복구 코드") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Button(onClick = {
@@ -450,3 +453,6 @@ private fun open(context: Context, url: String) {
 private fun copy(context: Context, text: String) {
     runCatching { context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("복구 코드", text)) }
 }
+
+/** [INPUT-04] A recovery code as the server makes it: 16 letters and digits, a dash every four (company-worker passCode). */
+private val RECOVERY_CODE = Regex("""[A-Z0-9]{4}(-?[A-Z0-9]{4}){3}""")
