@@ -157,10 +157,13 @@ class SScreenshotTest : ScreenshotBase() {
         content { CompanyDetailScreen(vm, setup = true, onBack = {}, onApplied = { _, _ -> }, onByHand = {}) }
         reveal("다른 점:")
     }
-    @Test fun phaseSheetSaysWhatToPick() = shoot("796_s_phase_sheet", FOLDED) {
+    @Test fun phaseSheetRowsSayTheirDays() = shoot("796_s_phase_sheet", FOLDED) {
+        // Each row is read as one: its number and the days in it, not seven loose letters. (Here the row the
+        // calendar matches is picked already; "내 근무와 같은 줄을 먼저 골라 주세요" shows only with none picked.)
         val vm = CompanyDetailViewModel(companyOn(), "c1")
         content { CompanyDetailScreen(vm, setup = true, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, openPhasesFor = "s1") }
-        reveal("내 근무와 같은 줄을 먼저 골라 주세요")
+        reveal("1번째 줄: 오늘 주간")
+        assertFalse(shows("내 근무와 같은 줄을 먼저 골라 주세요"))
     }
 
     // ---- 360 [INQ-06][INQ-07] ----

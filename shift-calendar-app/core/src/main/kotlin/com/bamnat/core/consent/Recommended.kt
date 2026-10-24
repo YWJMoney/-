@@ -87,16 +87,18 @@ object RecommendedPlan {
      * (결정 S-1); 현장·자영업·투자 have no shifts for any of the four. Null (not picked) is the shift screen.
      */
     fun forStyle(style: WorkStyle?): StylePlan = when (style) {
-        null, WorkStyle.SHIFT -> StylePlan(RecommendedFeature.entries, ALREADY_ON, null)
+        null, WorkStyle.SHIFT -> StylePlan(RecommendedFeature.entries, ALREADY_ON, null, REASSURE)
         WorkStyle.DAY -> StylePlan(listOf(RecommendedFeature.BEDTIME, RecommendedFeature.TODAY_SHIFT),
-            "급여 예상, 주 52시간·휴식 점검, 연차 남은 날, 돈 알림, 위젯 메모 줄", OFF_FOR_DAY_WORK)
+            "급여 예상, 주 52시간·휴식 점검, 연차 남은 날, 돈 알림, 위젯 메모 줄", OFF_FOR_DAY_WORK, REASSURE_DAY_WORK)
         WorkStyle.HOURLY -> StylePlan(listOf(RecommendedFeature.BEDTIME, RecommendedFeature.TODAY_SHIFT),
-            "시급 급여 예상, 주휴수당 주별 확인, 휴식 점검, 돈 알림, 광장 시세 견주기", OFF_FOR_DAY_WORK)
-        WorkStyle.FIELD -> StylePlan(emptyList(), "입금 약속일과 미수 알림, 연간 3.3%·경비 합계, 돈 알림, 위젯 메모 줄", OFF_FOR_NO_SHIFTS)
-        WorkStyle.BUSINESS -> StylePlan(emptyList(), "하루 마감, 카드 입금 예정, 매출 없으면 휴무, 부가세 예상", OFF_FOR_NO_SHIFTS)
-        WorkStyle.INVEST -> StylePlan(emptyList(), "알림으로 찾은 거래, 수익률, 세금 미리 보기, 투자일지", OFF_FOR_NO_SHIFTS)
+            "시급 급여 예상, 주휴수당 주별 확인, 휴식 점검, 돈 알림, 광장 시세 견주기", OFF_FOR_DAY_WORK, REASSURE_DAY_WORK)
+        WorkStyle.FIELD -> StylePlan(emptyList(), "입금 약속일과 미수 알림, 연간 3.3%·경비 합계, 돈 알림, 위젯 메모 줄", OFF_FOR_NO_SHIFTS, REASSURE_NO_SHIFTS)
+        WorkStyle.BUSINESS -> StylePlan(emptyList(), "하루 마감, 카드 입금 예정, 매출 없으면 휴무, 부가세 예상", OFF_FOR_NO_SHIFTS, REASSURE_NO_SHIFTS)
+        WorkStyle.INVEST -> StylePlan(emptyList(), "알림으로 찾은 거래, 수익률, 세금 미리 보기, 투자일지", OFF_FOR_NO_SHIFTS, REASSURE_NO_SHIFTS)
     }
 
+    private const val REASSURE_DAY_WORK = "켜 둬도 괜찮아요. 모두 이 휴대폰 안에서만 돌고, 소리 나는 알림은 근무 알람뿐이에요. 언제든 끌 수 있어요."
+    private const val REASSURE_NO_SHIFTS = "모두 이 휴대폰 안에서만 돌아요. 소리 나는 알림은 직접 정한 것만 울려요."
     private const val OFF_FOR_DAY_WORK = "교대·야간용 알림(하루 브리핑, 퇴근길 안전)은 꺼 두었어요. 필요하면 ${TURN_OFF}에서 켜요."
     private const val OFF_FOR_NO_SHIFTS = "근무 알림(하루 브리핑, 잘 준비, 퇴근길 안전, 잠금 화면 오늘 근무)은 꺼 두었어요. 필요하면 ${TURN_OFF}에서 켜요."
 }
@@ -105,7 +107,7 @@ object RecommendedPlan {
  * [SETUP-15] What the first-start screen shows for one kind of work: the switches ([features], all on to
  * start), what is already on for everyone of that kind, and what was left off, with where to turn it on.
  */
-data class StylePlan(val features: List<RecommendedFeature>, val alreadyOn: String, val leftOff: String?) {
+data class StylePlan(val features: List<RecommendedFeature>, val alreadyOn: String, val leftOff: String?, val reassure: String = RecommendedPlan.REASSURE) {
     /** What a new phone of this kind starts with. */
     val start: Set<RecommendedFeature> get() = features.toSet()
 }

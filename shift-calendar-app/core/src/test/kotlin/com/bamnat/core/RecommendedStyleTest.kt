@@ -31,6 +31,8 @@ class RecommendedStyleTest {
             assertFalse("커피" in plan.alreadyOn || "오늘의 흐름" in plan.alreadyOn)
             // What is off is said, with where to turn it on.
             assertTrue(plan.leftOff!!.contains(RecommendedPlan.TURN_OFF))
+            // The reassurance does not promise a 퇴근길 notice that is off.
+            assertFalse("퇴근길" in plan.reassure)
         }
         assertTrue("주휴수당" in RecommendedPlan.forStyle(WorkStyle.HOURLY).alreadyOn)
         assertTrue("급여 예상" in RecommendedPlan.forStyle(WorkStyle.DAY).alreadyOn)
@@ -41,6 +43,7 @@ class RecommendedStyleTest {
             val plan = RecommendedPlan.forStyle(s)
             assertTrue("$s", plan.start.isEmpty())
             assertNotNull(plan.leftOff)
+            assertFalse("근무 알람" in plan.reassure || "퇴근길" in plan.reassure)
         }
         assertTrue("미수" in RecommendedPlan.forStyle(WorkStyle.FIELD).alreadyOn)
         assertTrue("하루 마감" in RecommendedPlan.forStyle(WorkStyle.BUSINESS).alreadyOn)

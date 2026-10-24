@@ -211,7 +211,7 @@ fun RecommendedScreen(
                     if (firstStart && style != null && style != WorkStyle.SHIFT) {
                         Text("${com.bamnat.app.ui.setup.STYLE_CHOICES.first { it.style == style }.title.substringBefore(" · ")}에 맞춰 골라 두었어요.", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                     }
-                    Text(RecommendedPlan.REASSURE, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(plan.reassure, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                     val features = if (firstStart) plan.features else RecommendedFeature.entries
                     if (features.isNotEmpty() || ConsentItem.SLEEP in available) Section("켜 둘 기능") {
