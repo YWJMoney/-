@@ -1,0 +1,6330 @@
+{
+ "format": 1,
+ "kind": "cycles",
+ "version": 2026102501,
+ "issued": "2026-10-25",
+ "minApp": 37,
+ "source": "공개 자료(기사·채용 공고·노무 사이트·정부 자료·커뮤니티)로 모은 회사별 교대 주기, 2026-10-25. 사실(근무형태·순서·시간)과 출처 링크만",
+ "data": {
+  "forms": [
+   {
+    "key": "주간연속2교대",
+    "name": "주간연속2교대"
+   },
+   {
+    "key": "6조3교대",
+    "name": "6조 3교대"
+   },
+   {
+    "key": "5조3교대",
+    "name": "5조 3교대"
+   },
+   {
+    "key": "4조3교대",
+    "name": "4조 3교대"
+   },
+   {
+    "key": "4조2교대",
+    "name": "4조 2교대"
+   },
+   {
+    "key": "3조3교대",
+    "name": "3조 3교대"
+   },
+   {
+    "key": "3조2교대",
+    "name": "3조 2교대"
+   },
+   {
+    "key": "3조1교대",
+    "name": "3조 1교대"
+   },
+   {
+    "key": "2조2교대",
+    "name": "2조 2교대"
+   },
+   {
+    "key": "격일제",
+    "name": "격일제"
+   },
+   {
+    "key": "4부제",
+    "name": "4부제"
+   },
+   {
+    "key": "주야교대",
+    "name": "주야 교대"
+   },
+   {
+    "key": "3교대",
+    "name": "3교대"
+   },
+   {
+    "key": "2교대",
+    "name": "2교대"
+   },
+   {
+    "key": "고정",
+    "name": "고정 근무"
+   },
+   {
+    "key": "기타",
+    "name": "그 밖의 교대"
+   }
+  ],
+  "cycles": [
+   {
+    "id": "c001",
+    "display": "ADT캡스(SK쉴더스) [출동·관제 일부] · 보안",
+    "company": "ADT캡스(SK쉴더스)",
+    "industry": "보안",
+    "site": "출동·관제 일부",
+    "form": "2조 격일제 + 당직",
+    "order": "근무·휴무 격일",
+    "time": "조 전체 07-22 + 당직 1명 22-07",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=2",
+    "formKey": "격일제",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "22:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c002",
+    "display": "CJ대한통운 (굿윌아이엔씨 모집) [옥천허브터미널 야간 상하차] · 물류",
+    "company": "CJ대한통운 (굿윌아이엔씨 모집)",
+    "industry": "물류",
+    "site": "옥천허브터미널 야간 상하차",
+    "form": "야간 고정",
+    "order": "요일 협의 (주5일 가능)",
+    "time": "18:00-익일 08:30",
+    "asOf": "2026-08 공고",
+    "trust": "공고",
+    "source": "https://www.albamon.com/jobs/detail/118788592",
+    "formKey": "고정",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "18:00",
+      "end": "08:30",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c003",
+    "display": "CJ제일제당 일부 공장 [생산 (일부)] · 식품",
+    "company": "CJ제일제당 일부 공장",
+    "industry": "식품",
+    "site": "생산 (일부)",
+    "form": "3조3교대 주5일 가동",
+    "order": "1조→2조→3조 주 단위",
+    "time": "00-08 / 08-16 / 16-24",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=4",
+    "formKey": "3조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "NNNNNOODDDDDOOEEEEEOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "16:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "16:00",
+      "end": "00:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "00:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c004",
+    "display": "GS EPS [생산] · 발전",
+    "company": "GS EPS",
+    "industry": "발전",
+    "site": "생산",
+    "form": "4조2교대",
+    "order": "주2·휴2·야2·휴2 (코드 2222)",
+    "time": "12시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=5",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDOONNOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c005",
+    "display": "GS칼텍스 [생산] · 정유",
+    "company": "GS칼텍스",
+    "industry": "정유",
+    "site": "생산",
+    "form": "4조2교대",
+    "order": "공개 순서 없음",
+    "time": "12시간",
+    "asOf": "2023 운영 중",
+    "trust": "기사",
+    "source": "https://v.daum.net/v/8neK7iD7JM",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c006",
+    "display": "GS파워 [생산] · 발전",
+    "company": "GS파워",
+    "industry": "발전",
+    "site": "생산",
+    "form": "4조2교대",
+    "order": "주2·휴2·야2·휴2 (코드 2222)",
+    "time": "12시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=5",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDOONNOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c007",
+    "display": "HL클레무브 [생산 (일부)] · 자동차부품",
+    "company": "HL클레무브",
+    "industry": "자동차부품",
+    "site": "생산 (일부)",
+    "form": "3조3교대 주5일 가동",
+    "order": "1조→2조→3조 주 단위",
+    "time": "00-08 / 08-16 / 16-24",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=4",
+    "formKey": "3조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "NNNNNOODDDDDOOEEEEEOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "16:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "16:00",
+      "end": "00:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "00:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c008",
+    "display": "KC환경서비스 [생산 (일부 공정)] · 화학·환경",
+    "company": "KC환경서비스",
+    "industry": "화학·환경",
+    "site": "생산 (일부 공정)",
+    "form": "3조2교대 7일 가동",
+    "order": "주→야→휴",
+    "time": "주 08-20 / 야 20-08",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=3",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "20:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "20:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c009",
+    "display": "KT에스테이트 [시설 당직] · 시설관리",
+    "company": "KT에스테이트",
+    "industry": "시설관리",
+    "site": "시설 당직",
+    "form": "2조 격일제 + 당직",
+    "order": "근무·휴무 격일",
+    "time": "07-22 + 당직 22-07",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=2",
+    "formKey": "격일제",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "22:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c010",
+    "display": "LG이노텍 [구미1공장 생산 (계약직)] · 전자부품",
+    "company": "LG이노텍",
+    "industry": "전자부품",
+    "site": "구미1공장 생산 (계약직)",
+    "form": "3조2교대",
+    "order": "4근2휴 (주4·휴2·야4·휴2)",
+    "time": "07-19 / 19-07",
+    "asOf": "2026-06 공고",
+    "trust": "공고",
+    "source": "https://www.albamon.com/jobs/detail/116993920",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDOONNNNOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c011",
+    "display": "LG화학 [생산 (4조2교대 전환 전 방식일 수 있음)] · 정유·화학",
+    "company": "LG화학",
+    "industry": "정유·화학",
+    "site": "생산 (4조2교대 전환 전 방식일 수 있음)",
+    "form": "4조3교대",
+    "order": "4근1휴·4근2휴 섞음 (16일)",
+    "time": "06-14 / 14-22 / 22-06",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=6",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c012",
+    "display": "MEMC코리아 [오퍼레이터] · 반도체 웨이퍼",
+    "company": "MEMC코리아",
+    "industry": "반도체 웨이퍼",
+    "site": "오퍼레이터",
+    "form": "4조2교대",
+    "order": "공개 순서 없음 (노무사이트 코드 3224)",
+    "time": "07-19 / 19-07",
+    "asOf": "2024-01 마감 공고",
+    "trust": "공고+노무사이트",
+    "source": "https://www.theteams.kr/recruit/wanted/2702369",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "LABOR",
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c013",
+    "display": "OCI [생산 (일부 공정)] · 화학·환경",
+    "company": "OCI",
+    "industry": "화학·환경",
+    "site": "생산 (일부 공정)",
+    "form": "3조2교대 7일 가동",
+    "order": "주→야→휴",
+    "time": "주 08-20 / 야 20-08",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=3",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "20:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "20:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c014",
+    "display": "SFA반도체 [품질검사원] · 반도체 후공정",
+    "company": "SFA반도체",
+    "industry": "반도체 후공정",
+    "site": "품질검사원",
+    "form": "3조2교대(5근2휴)",
+    "order": "Day·Swing·GY 8시간 + Day2·GY2 12시간",
+    "time": "06-14 / 14-22 / 22-06 / 06-18 / 18-06",
+    "asOf": "2026-09 공고",
+    "trust": "공고",
+    "source": "https://www.theteams.kr/recruit/wanted/3967489",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c015",
+    "display": "SK에너지 [생산 (4조2교대 전환 전 방식일 수 있음)] · 정유",
+    "company": "SK에너지",
+    "industry": "정유",
+    "site": "생산 (4조2교대 전환 전 방식일 수 있음)",
+    "form": "4조3교대",
+    "order": "5근2휴·5근1휴 섞음 (20일)",
+    "time": "06-14 / 14-22 / 22-06",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=6",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c016",
+    "display": "SK이노베이션 [울산CLX] · 정유",
+    "company": "SK이노베이션",
+    "industry": "정유",
+    "site": "울산CLX",
+    "form": "4조2교대",
+    "order": "공개 순서 없음",
+    "time": "12시간",
+    "asOf": "2023-02-08 전면(2022 시범)",
+    "trust": "기사",
+    "source": "https://magazine.hankyung.com/business/article/202303010529b",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c017",
+    "display": "SK하이닉스 [이천 (협력사 공고)] · 반도체",
+    "company": "SK하이닉스",
+    "industry": "반도체",
+    "site": "이천 (협력사 공고)",
+    "form": "4조3교대",
+    "order": "6근2휴 / 야→오후→오전 역순이라는 글 있음",
+    "time": "07-15 / 15-23 / 23-07",
+    "asOf": "2026 공고",
+    "trust": "공고+커뮤니티(링크 대응 확인 필요)",
+    "source": "https://www.albamon.com/jobs/detail/118245653",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "COMMUNITY",
+     "NOTICE"
+    ],
+    "linkCheck": true,
+    "partner": true,
+    "codes": "DDEENNOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "15:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "15:00",
+      "end": "23:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "23:00",
+      "end": "07:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c018",
+    "display": "SK하이닉스 [청주 장비관리 (협력사 공고)] · 반도체",
+    "company": "SK하이닉스",
+    "industry": "반도체",
+    "site": "청주 장비관리 (협력사 공고)",
+    "form": "4조3교대",
+    "order": "5근2휴",
+    "time": "06-14 / 14-22 / 22-06",
+    "asOf": "2026 공고",
+    "trust": "공고(링크 대응 확인 필요)",
+    "source": "https://www.albamon.com/jobs/detail/118196914",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": true,
+    "partner": true,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c019",
+    "display": "SPC (파리크라상 등) [공장 생산] · 식품",
+    "company": "SPC (파리크라상 등)",
+    "industry": "식품",
+    "site": "공장 생산",
+    "form": "3조3교대 (2교대 폐지)",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "2025-08 기사",
+    "trust": "기사",
+    "source": "https://www.khan.co.kr/article/202508300704001",
+    "formKey": "3조3교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c020",
+    "display": "SPC삼립 [생산] · 식품·환경",
+    "company": "SPC삼립",
+    "industry": "식품·환경",
+    "site": "생산",
+    "form": "3조3교대 7일 가동 (주6일)",
+    "order": "3조→2조→1조 역순",
+    "time": "00-08 / 08-16 / 16-24",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=4",
+    "formKey": "3조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "16:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "16:00",
+      "end": "00:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "00:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c021",
+    "display": "경기도 광역버스(준공영제) [운전기사] · 버스",
+    "company": "경기도 광역버스(준공영제)",
+    "industry": "버스",
+    "site": "운전기사",
+    "form": "1일2교대 (격일제에서 전환)",
+    "order": "오전·오후조",
+    "time": "하루 최대 9시간",
+    "asOf": "2018",
+    "trust": "기사",
+    "source": "https://m.seoul.co.kr/news/2018/04/04/20180404500106",
+    "formKey": "2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": []
+   },
+   {
+    "id": "c022",
+    "display": "경북대학교병원 [교대 부서] · 병원",
+    "company": "경북대학교병원",
+    "industry": "병원",
+    "site": "교대 부서",
+    "form": "5조3교대",
+    "order": "코드 646464 (D·E·N + 지정근로)",
+    "time": "8시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=7",
+    "formKey": "5조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c023",
+    "display": "경찰청 [지구대·파출소 지역경찰] · 경찰",
+    "company": "경찰청",
+    "industry": "경찰",
+    "site": "지구대·파출소 지역경찰",
+    "form": "4조2교대 (80% 이상)",
+    "order": "주·야·비·휴 (4일)",
+    "time": "12시간 주·야",
+    "asOf": "2025-10 기준 (4조3교대·5조3교대 8곳 8주 시범)",
+    "trust": "기사",
+    "source": "https://car.withnews.kr/society/police-shift-system-change-chaos",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DNBO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c024",
+    "display": "계룡 식품공장 [생산직] · 식품",
+    "company": "계룡 식품공장",
+    "industry": "식품",
+    "site": "생산직",
+    "form": "3조2교대",
+    "order": "주4·휴2·야4·휴2 (12일)",
+    "time": "07:30-19:30 / 19:30-07:30",
+    "asOf": "2026-07 공고",
+    "trust": "공고",
+    "source": "https://www.albamon.com/jobs/detail/118141337",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDOONNNNOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:30",
+      "end": "19:30",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:30",
+      "end": "07:30",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c025",
+    "display": "고려아연 [온산제련소 생산직] · 비철금속",
+    "company": "고려아연",
+    "industry": "비철금속",
+    "site": "온산제련소 생산직",
+    "form": "주간 또는 4조2교대",
+    "order": "공개 순서 없음",
+    "time": "12시간",
+    "asOf": "2026 3분기 공고",
+    "trust": "공고",
+    "source": "https://m.jobkorea.co.kr/Recruit/GI_Read/49454449",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c026",
+    "display": "국도화학 [생산] · 화학",
+    "company": "국도화학",
+    "industry": "화학",
+    "site": "생산",
+    "form": "4조2교대",
+    "order": "주·야·비·휴 (4일)",
+    "time": "12시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=5",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DNBO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c027",
+    "display": "규성 (세아창원특수강 안 협력사) [창원 환봉 교정·절단] · 철강 협력",
+    "company": "규성 (세아창원특수강 안 협력사)",
+    "industry": "철강 협력",
+    "site": "창원 환봉 교정·절단",
+    "form": "3교대 (기본 주간 1·2근)",
+    "order": "1근·2근 위주 + 필요시 3근",
+    "time": "07-15 / 15-23 / 23-07",
+    "asOf": "공고",
+    "trust": "공고",
+    "source": "https://www.invione.com/jobs/recruitment/all/detail/K131132605280058",
+    "formKey": "3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": true,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": true,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "15:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "15:00",
+      "end": "23:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "23:00",
+      "end": "07:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c028",
+    "display": "금호석유화학 [여수·울산 운전 (고졸·전문대)] · 화학",
+    "company": "금호석유화학",
+    "industry": "화학",
+    "site": "여수·울산 운전 (고졸·전문대)",
+    "form": "4조3교대",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "2020 무렵 답변",
+    "trust": "커뮤니티",
+    "source": "https://comento.kr/job-questions/금호석유화학/기계설비/금호석유화학_운전관리_직무-185906",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "COMMUNITY"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c029",
+    "display": "기상청 [예보관실] · 기상",
+    "company": "기상청",
+    "industry": "기상",
+    "site": "예보관실",
+    "form": "4조3교대",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "2002 기사 (지금은 확인 필요)",
+    "trust": "기사",
+    "source": "https://m.seoul.co.kr/news/2002/01/05/20020105015001",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c030",
+    "display": "기아 [생산] · 자동차",
+    "company": "기아",
+    "industry": "자동차",
+    "site": "생산",
+    "form": "주간연속2교대",
+    "order": "1조·2조 주 단위 교대",
+    "time": "확인 필요",
+    "asOf": "2013 시행",
+    "trust": "기사",
+    "source": "https://newstomato.com/ReadNews.aspx?no=339622",
+    "formKey": "주간연속2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDDOOEEEEEOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c031",
+    "display": "남해군 [CCTV 통합관제센터 관제요원] · 지자체",
+    "company": "남해군",
+    "industry": "지자체",
+    "site": "CCTV 통합관제센터 관제요원",
+    "form": "4조3교대",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "기사",
+    "trust": "기사(링크 대응 확인 필요)",
+    "source": "https://www.metroseoul.co.kr/article/20240625500371",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": true,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c032",
+    "display": "농심 [공장 생산] · 식품",
+    "company": "농심",
+    "industry": "식품",
+    "site": "공장 생산",
+    "form": "2조2교대 (12시간 맞교대)",
+    "order": "주·야 맞교대",
+    "time": "12시간",
+    "asOf": "2025-08 기사",
+    "trust": "기사",
+    "source": "https://www.khan.co.kr/article/202508300704001",
+    "formKey": "2조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c033",
+    "display": "다올하이텍 [생산직] · PCB 가공",
+    "company": "다올하이텍",
+    "industry": "PCB 가공",
+    "site": "생산직",
+    "form": "3조2교대",
+    "order": "4근2휴",
+    "time": "주 08:30-17:30(+2.5h) / 야 20:30-05:30 전후",
+    "asOf": "2026 공고",
+    "trust": "공고",
+    "source": "https://www.invione.com/jobs/recruitment/all/detail/K140062607010022",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDOONNNNOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:30",
+      "end": "17:30",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "20:30",
+      "end": "05:30",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c034",
+    "display": "대구교통공사 [교대 직원] · 도시철도",
+    "company": "대구교통공사",
+    "industry": "도시철도",
+    "site": "교대 직원",
+    "form": "4조2교대 요구 (노조 2022)",
+    "order": "확인 필요",
+    "time": "",
+    "asOf": "2022-11 기사",
+    "trust": "기사",
+    "source": "https://www.kbmaeil.com/article/202211300349359",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": []
+   },
+   {
+    "id": "c035",
+    "display": "덕계성심병원 [양산 정신건강의학과 간호사] · 병원",
+    "company": "덕계성심병원",
+    "industry": "병원",
+    "site": "양산 정신건강의학과 간호사",
+    "form": "2교대 (E·N)",
+    "order": "E·N 순환",
+    "time": "D 07:30-15:30 / S 09-18 / E 14-22 / N 22-08",
+    "asOf": "공고",
+    "trust": "공고(링크 대응 확인 필요)",
+    "source": "https://www.theteams.kr/recruit/wanted/3464471",
+    "formKey": "2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": true,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": true,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:30",
+      "end": "15:30",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c036",
+    "display": "도레이BSF [생산] · 화학",
+    "company": "도레이BSF",
+    "industry": "화학",
+    "site": "생산",
+    "form": "4조2교대",
+    "order": "주2·휴2·야2·휴2 (코드 2222)",
+    "time": "12시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=5",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDOONNOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c037",
+    "display": "동진쎄미켐 [생산] · 반도체 소재",
+    "company": "동진쎄미켐",
+    "industry": "반도체 소재",
+    "site": "생산",
+    "form": "4조3교대 / 3조2교대 라인도 있음",
+    "order": "6근2휴 (4조3교대) / 주4·휴2·야4·휴2 (3조2교대)",
+    "time": "07-15 / 15-23 / 23-07",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=6",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDEENNOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "15:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "15:00",
+      "end": "23:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "23:00",
+      "end": "07:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c038",
+    "display": "동화기업 [선재코일 절단 생산직] · 목재·소재",
+    "company": "동화기업",
+    "industry": "목재·소재",
+    "site": "선재코일 절단 생산직",
+    "form": "4조2교대",
+    "order": "공개 순서 없음",
+    "time": "07-19 / 19-07",
+    "asOf": "2025-08 마감 공고",
+    "trust": "공고",
+    "source": "https://www.theteams.kr/recruit/wanted/3264732",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c039",
+    "display": "디에스아이 [하동 설비 운전 Operator] · 화학",
+    "company": "디에스아이",
+    "industry": "화학",
+    "site": "하동 설비 운전 Operator",
+    "form": "4조3교대",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "2026 공고",
+    "trust": "공고",
+    "source": "https://kr.indeed.com/4%EC%A1%B03%EA%B5%90%EB%8C%80%EC%A7%81-%EC%B7%A8%EC%97%85",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c040",
+    "display": "롯데정밀화학 [생산 (일부 공정)] · 화학·환경",
+    "company": "롯데정밀화학",
+    "industry": "화학·환경",
+    "site": "생산 (일부 공정)",
+    "form": "3조2교대 7일 가동",
+    "order": "주→야→휴",
+    "time": "주 08-20 / 야 20-08",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=3",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "20:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "20:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c041",
+    "display": "롯데케미칼 [여수3공장 생산] · 화학",
+    "company": "롯데케미칼",
+    "industry": "화학",
+    "site": "여수3공장 생산",
+    "form": "4조2교대",
+    "order": "2근2휴 계열 (순서 공개 안 됨)",
+    "time": "12시간",
+    "asOf": "2024-06 6개월 시범 → 2025-06 전면 계획",
+    "trust": "기사",
+    "source": "https://www.sisajournal-e.com/news/articleView.html?idxno=403063",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDOONNOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c042",
+    "display": "린데코리아 [용인·화성·탕정] · 산업가스",
+    "company": "린데코리아",
+    "industry": "산업가스",
+    "site": "용인·화성·탕정",
+    "form": "4조3교대",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "2026 글",
+    "trust": "커뮤니티",
+    "source": "https://www.threads.com/@operator24hr/post/DUSqN1-D2p1",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "COMMUNITY"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c043",
+    "display": "린데코리아 [창원·대산·여수] · 산업가스",
+    "company": "린데코리아",
+    "industry": "산업가스",
+    "site": "창원·대산·여수",
+    "form": "주간 2교대",
+    "order": "",
+    "time": "",
+    "asOf": "2026 글",
+    "trust": "커뮤니티",
+    "source": "https://www.threads.com/@operator24hr/post/DUSqN1-D2p1",
+    "formKey": "2교대",
+    "trustKinds": [
+     "COMMUNITY"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": []
+   },
+   {
+    "id": "c044",
+    "display": "린데코리아 [평택·청주·인주·이천·울산] · 산업가스",
+    "company": "린데코리아",
+    "industry": "산업가스",
+    "site": "평택·청주·인주·이천·울산",
+    "form": "4조2교대",
+    "order": "공개 순서 없음",
+    "time": "12시간",
+    "asOf": "2026 글",
+    "trust": "커뮤니티",
+    "source": "https://www.threads.com/@operator24hr/post/DUSqN1-D2p1",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "COMMUNITY"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c045",
+    "display": "만도 [생산 (일부)] · 자동차부품",
+    "company": "만도",
+    "industry": "자동차부품",
+    "site": "생산 (일부)",
+    "form": "3조3교대 주5일 가동",
+    "order": "1조→2조→3조 주 단위",
+    "time": "00-08 / 08-16 / 16-24",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=4",
+    "formKey": "3조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "NNNNNOODDDDDOOEEEEEOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "16:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "16:00",
+      "end": "00:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "00:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c046",
+    "display": "머크(버슘머트리얼즈) [생산] · 화학",
+    "company": "머크(버슘머트리얼즈)",
+    "industry": "화학",
+    "site": "생산",
+    "form": "4조2교대",
+    "order": "주3·휴3·야3·휴3 (12일 / 코드 3333)",
+    "time": "12시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=5",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDOOONNNOOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c047",
+    "display": "무림P&P [생산] · 제지",
+    "company": "무림P&P",
+    "industry": "제지",
+    "site": "생산",
+    "form": "4조3교대",
+    "order": "6근2휴 (8일 · 전근→야간→후근)",
+    "time": "전근 07-15 / 후근 15-23 / 야간 23-07",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=6",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDNNEEOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "15:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "15:00",
+      "end": "23:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "23:00",
+      "end": "07:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c048",
+    "display": "법무부 교정본부 [교도관 보안] · 교정",
+    "company": "법무부 교정본부",
+    "industry": "교정",
+    "site": "교도관 보안",
+    "form": "4부제 (변형 4부제 운영)",
+    "order": "주·야·비·휴 (원래) / 변형은 8일 중 1일 휴무",
+    "time": "주 09-18 / 야 17-09",
+    "asOf": "2017 기사 / 2026-08 야간 4개조",
+    "trust": "기사",
+    "source": "https://m.go.seoul.co.kr/news/2017/11/06/20171106035013",
+    "formKey": "4부제",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DNBO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "09:00",
+      "end": "18:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "17:00",
+      "end": "09:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c049",
+    "display": "삼구아이앤씨 (인천공항본부세관 용역) [인천공항 세관 현장] · 공공 용역",
+    "company": "삼구아이앤씨 (인천공항본부세관 용역)",
+    "industry": "공공 용역",
+    "site": "인천공항 세관 현장",
+    "form": "4조2교대 (새로 시행)",
+    "order": "공개 순서 없음",
+    "time": "12시간",
+    "asOf": "2026-11-01 시행 (2026-10-23 기사)",
+    "trust": "기사",
+    "source": "https://biz.heraldcorp.com/article/10912989",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c050",
+    "display": "삼동 [충북 음성 / 충남 아산 생산] · 다이캐스팅·소재",
+    "company": "삼동",
+    "industry": "다이캐스팅·소재",
+    "site": "충북 음성 / 충남 아산 생산",
+    "form": "4조2교대",
+    "order": "공개 순서 없음",
+    "time": "12시간",
+    "asOf": "공고",
+    "trust": "공고",
+    "source": "https://www.saramin.co.kr/zf_user/jobs/list/domestic?loc_cd=115100",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c051",
+    "display": "삼미산업 [안산 생산직] · 제조",
+    "company": "삼미산업",
+    "industry": "제조",
+    "site": "안산 생산직",
+    "form": "4조3교대",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "2024-04 마감 공고",
+    "trust": "공고",
+    "source": "https://www.papayastory.com/employ-info/view/%EC%82%BC%EB%AF%B8%EC%82%B0%EC%97%85%EC%A3%BC-4%EC%A1%B03%EA%B5%90%EB%8C%80-%EC%83%9D%EC%82%B0%EC%A7%81-%EC%A0%95%EA%B7%9C%EC%A7%81-%EC%B1%84%EC%9A%A9-%EC%99%B8%EA%B5%AD%EC%9D%B8-%EB%8C%80%ED%95%99-%EC%A1%B8%EC%97%85%EC%9E%90-%EC%9A%B0%EB%8C%80-f4-f5-e7%EB%B9%84%EC%9E%90-%EC%86%8C%EC%A7%80%EC%9E%90",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c052",
+    "display": "삼성디스플레이 [탕정 A2·A3·A4 (협력사 티엠씨 공고)] · 디스플레이",
+    "company": "삼성디스플레이",
+    "industry": "디스플레이",
+    "site": "탕정 A2·A3·A4 (협력사 티엠씨 공고)",
+    "form": "4조3교대",
+    "order": "5근2휴",
+    "time": "06-14 / 14-22 / 22-06",
+    "asOf": "2026 공고",
+    "trust": "공고(링크 대응 확인 필요 · 3750207도 같은 회사)",
+    "source": "https://www.theteams.kr/recruit/wanted/3879611",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": true,
+    "partner": true,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c053",
+    "display": "삼성바이오로직스 [생산] · 바이오",
+    "company": "삼성바이오로직스",
+    "industry": "바이오",
+    "site": "생산",
+    "form": "4조2교대 주야연속",
+    "order": "코드 4334(순서 확인 필요) / 3개월 단위 주야 고정이라는 글도 있음",
+    "time": "12시간",
+    "asOf": "",
+    "trust": "노무사이트+커뮤니티",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=5",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "LABOR",
+     "COMMUNITY"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c054",
+    "display": "삼성씨에스 [문경 생산] · 제조",
+    "company": "삼성씨에스",
+    "industry": "제조",
+    "site": "문경 생산",
+    "form": "주야 1주 교대",
+    "order": "주간 1주 · 야간 1주",
+    "time": "주 08-18 / 야 21-08",
+    "asOf": "2026-09 공고",
+    "trust": "공고(링크 대응 확인 필요)",
+    "source": "https://www.jobploy.kr/ko/recruit/manufacturing-gyeongbuk-production-worker-166106",
+    "formKey": "주야교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": true,
+    "partner": false,
+    "codes": "DDDDDOONNNNNOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "18:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "21:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c055",
+    "display": "삼성전기 [일부 생산라인] · 전자부품",
+    "company": "삼성전기",
+    "industry": "전자부품",
+    "site": "일부 생산라인",
+    "form": "3조2교대 주5일 가동",
+    "order": "1조→2조→휴 주 단위",
+    "time": "",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=3",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": []
+   },
+   {
+    "id": "c056",
+    "display": "삼성전자 [DS 생산·설비] · 반도체",
+    "company": "삼성전자",
+    "industry": "반도체",
+    "site": "DS 생산·설비",
+    "form": "4조3교대",
+    "order": "3근1휴 (12일, 노무사이트)",
+    "time": "06-14 / 14-22 / 22-06",
+    "asOf": "2023 기준",
+    "trust": "기사+노무사이트",
+    "source": "https://v.daum.net/v/8neK7iD7JM",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "LABOR",
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDOEEEONNNO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c057",
+    "display": "상계한신2차아파트 [경비원] · 경비",
+    "company": "상계한신2차아파트",
+    "industry": "경비",
+    "site": "경비원",
+    "form": "24시간 격일제",
+    "order": "근무·휴무 (2일)",
+    "time": "06:00 교대",
+    "asOf": "공고",
+    "trust": "공고",
+    "source": "https://www.theteams.kr/recruit/wanted/3650085",
+    "formKey": "격일제",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "XB",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "X",
+      "name": "당번",
+      "label": "당",
+      "start": "06:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c058",
+    "display": "새한비엔피 [생산직] · 제조",
+    "company": "새한비엔피",
+    "industry": "제조",
+    "site": "생산직",
+    "form": "3조2교대",
+    "order": "4근2휴",
+    "time": "08:30-20:30 / 20:30-08:30",
+    "asOf": "2026-09 공고",
+    "trust": "공고",
+    "source": "https://www.jobploy.kr/ko/recruit/manufacturing-chungbuk-production-operator-166570",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDOONNNNOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:30",
+      "end": "20:30",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "20:30",
+      "end": "08:30",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c059",
+    "display": "서울교통공사 [역무·전기 교대] · 도시철도",
+    "company": "서울교통공사",
+    "industry": "도시철도",
+    "site": "역무·전기 교대",
+    "form": "4조2교대",
+    "order": "주·야·비·휴 (4일)",
+    "time": "주 08:50-18:10 / 야 18:00-09:00 (역무)",
+    "asOf": "",
+    "trust": "노조 게시판·커뮤니티",
+    "source": "http://www.smlu.or.kr/bbs/board.php?bo_table=3_1&wr_id=14716",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "UNION",
+     "COMMUNITY"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DNBO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:50",
+      "end": "18:10",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "18:00",
+      "end": "09:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c060",
+    "display": "소방(서울 등) [현장 대원] · 소방",
+    "company": "소방(서울 등)",
+    "industry": "소방",
+    "site": "현장 대원",
+    "form": "3조1교대 (당·비·비)",
+    "order": "당(24시간)·비·비 (3일)",
+    "time": "24시간 근무 후 2일 휴식",
+    "asOf": "서울 2023 기준 43.7% (4조2교대 6.8%)",
+    "trust": "기사",
+    "source": "http://www.ydptimes.com/news/news.php?m=view&num=20905",
+    "formKey": "3조1교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "XBO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "X",
+      "name": "당번",
+      "label": "당",
+      "start": "09:00",
+      "end": "09:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c061",
+    "display": "소방(서울) [현장 대원] · 소방",
+    "company": "소방(서울)",
+    "industry": "소방",
+    "site": "현장 대원",
+    "form": "3조2교대 21주기",
+    "order": "주간 1주 + 야·비 반복 2주 (21일)",
+    "time": "",
+    "asOf": "2022 기사",
+    "trust": "기사",
+    "source": "https://m.go.seoul.co.kr/news/2022/08/09/20220809500129",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDDOONBNBNBNBNBNBNB",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c062",
+    "display": "소방(전북 남원·순창 등) [현장 대원] · 소방",
+    "company": "소방(전북 남원·순창 등)",
+    "industry": "소방",
+    "site": "현장 대원",
+    "form": "3조1교대",
+    "order": "당·비·비",
+    "time": "24시간",
+    "asOf": "",
+    "trust": "기사",
+    "source": "https://m.nocutnews.co.kr/news/amp/5634869",
+    "formKey": "3조1교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "XBO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "X",
+      "name": "당번",
+      "label": "당",
+      "start": "09:00",
+      "end": "09:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c063",
+    "display": "솔브레인 [생산] · 반도체 소재·화학",
+    "company": "솔브레인",
+    "industry": "반도체 소재·화학",
+    "site": "생산",
+    "form": "3조2교대",
+    "order": "주4·휴2·야4·휴2 (12일)",
+    "time": "12시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=3",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDOONNNNOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c064",
+    "display": "송전 [전북 익산 생산] · 제조",
+    "company": "송전",
+    "industry": "제조",
+    "site": "전북 익산 생산",
+    "form": "4조3교대",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "2026 공고 (검색 결과)",
+    "trust": "공고",
+    "source": "https://www.jobkorea.co.kr/Search/?stext=4%EC%A1%B0+3%EA%B5%90%EB%8C%80",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c065",
+    "display": "스틸로지스 [광양 덤프 운전] · 철강 물류",
+    "company": "스틸로지스",
+    "industry": "철강 물류",
+    "site": "광양 덤프 운전",
+    "form": "4조2교대 (4조3교대로 바꿀 예정)",
+    "order": "공개 순서 없음",
+    "time": "12시간",
+    "asOf": "공고 (날짜 확인 필요)",
+    "trust": "공고",
+    "source": "https://kr.indeed.com/q-4%EC%A1%B0-2%EA%B5%90%EB%8C%80-%EC%B1%84%EC%9A%A9%EA%B3%B5%EA%B3%A0.html",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c066",
+    "display": "승산팩 [여수 포장·검수] · 포장",
+    "company": "승산팩",
+    "industry": "포장",
+    "site": "여수 포장·검수",
+    "form": "4조2교대",
+    "order": "공개 순서 없음",
+    "time": "12시간",
+    "asOf": "공고 (날짜 확인 필요)",
+    "trust": "공고",
+    "source": "https://kr.indeed.com/q-4%EC%A1%B0-2%EA%B5%90%EB%8C%80-%EC%B1%84%EC%9A%A9%EA%B3%B5%EA%B3%A0.html",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c067",
+    "display": "신아메드 [안성 포장·검수] · 의료용품",
+    "company": "신아메드",
+    "industry": "의료용품",
+    "site": "안성 포장·검수",
+    "form": "3교대 (7시간 근무)",
+    "order": "공개 순서 없음",
+    "time": "7시간",
+    "asOf": "2026 공고 (검색 결과)",
+    "trust": "공고",
+    "source": "https://www.jobkorea.co.kr/Search/?stext=%EC%83%9D%EC%82%B0%EC%A7%81+3%EA%B5%90%EB%8C%80",
+    "formKey": "3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": []
+   },
+   {
+    "id": "c068",
+    "display": "신우산업관리 (롯데마트 충주점) [시설기사] · 시설관리",
+    "company": "신우산업관리 (롯데마트 충주점)",
+    "industry": "시설관리",
+    "site": "시설기사",
+    "form": "4조2교대 (주야비휴)",
+    "order": "주·야·비·휴 (4일)",
+    "time": "",
+    "asOf": "2026-07 공고",
+    "trust": "공고(링크 대응 확인 필요)",
+    "source": "https://www.invione.com/jobs/recruitment/all",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": true,
+    "partner": false,
+    "codes": "DNBO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c069",
+    "display": "실로암사랑요양병원 [간호사] · 요양병원",
+    "company": "실로암사랑요양병원",
+    "industry": "요양병원",
+    "site": "간호사",
+    "form": "3교대",
+    "order": "D·E·N",
+    "time": "D 07:30-15:30 / E 15:30-22:30 / N 22:30-07:30",
+    "asOf": "공고",
+    "trust": "공고",
+    "source": "https://www.theteams.kr/recruit/wanted/3860785",
+    "formKey": "3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": true,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:30",
+      "end": "15:30",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "15:30",
+      "end": "22:30",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:30",
+      "end": "07:30",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c070",
+    "display": "아주피피얀 [경기 광주 생산] · 제조",
+    "company": "아주피피얀",
+    "industry": "제조",
+    "site": "경기 광주 생산",
+    "form": "주야 1주 교대",
+    "order": "주간 1주 · 야간 1주",
+    "time": "주 09-18 / 야 20-09",
+    "asOf": "2026-06 공고",
+    "trust": "공고(링크 대응 확인 필요)",
+    "source": "https://www.jobploy.kr/ko/recruit/manufacturing-gyeonggi-production-associate-153151",
+    "formKey": "주야교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": true,
+    "partner": false,
+    "codes": "DDDDDOONNNNNOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "09:00",
+      "end": "18:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "20:00",
+      "end": "09:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c071",
+    "display": "애경케미칼 [울산공장] · 화학",
+    "company": "애경케미칼",
+    "industry": "화학",
+    "site": "울산공장",
+    "form": "4조2교대",
+    "order": "공개 순서 없음",
+    "time": "12시간",
+    "asOf": "2022-12",
+    "trust": "기사",
+    "source": "https://magazine.hankyung.com/business/article/202303010529b",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c072",
+    "display": "에드워드코리아 [생산] · 반도체 장비",
+    "company": "에드워드코리아",
+    "industry": "반도체 장비",
+    "site": "생산",
+    "form": "4조2교대",
+    "order": "주4·휴4·야4·휴4 + 법정공휴일 휴무",
+    "time": "12시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=5",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDOOOONNNNOOOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c073",
+    "display": "에스앤피글로벌 [생산직] · 제조",
+    "company": "에스앤피글로벌",
+    "industry": "제조",
+    "site": "생산직",
+    "form": "3조2교대",
+    "order": "주·주·야·야·휴·휴 (6일)",
+    "time": "12시간",
+    "asOf": "공고",
+    "trust": "공고",
+    "source": "https://www.theteams.kr/recruit/wanted/3302404",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDNNOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c074",
+    "display": "에스에프시 [여수 생산 Operator] · 화학",
+    "company": "에스에프시",
+    "industry": "화학",
+    "site": "여수 생산 Operator",
+    "form": "4조3교대",
+    "order": "공개 순서 없음",
+    "time": "M 07-15 / E 15-23 / N 23-07",
+    "asOf": "2026 공고",
+    "trust": "공고",
+    "source": "https://kr.indeed.com/4%EC%A1%B03%EA%B5%90%EB%8C%80%EC%A7%81-%EC%B7%A8%EC%97%85",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "15:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "15:00",
+      "end": "23:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "23:00",
+      "end": "07:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c075",
+    "display": "에스원 [출동·관제 일부] · 보안",
+    "company": "에스원",
+    "industry": "보안",
+    "site": "출동·관제 일부",
+    "form": "2조 격일제 + 당직",
+    "order": "근무·휴무 격일",
+    "time": "조 전체 07-22 + 당직 1명 22-07",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=2",
+    "formKey": "격일제",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "22:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c076",
+    "display": "에쓰오일 [울산공장] · 정유",
+    "company": "에쓰오일",
+    "industry": "정유",
+    "site": "울산공장",
+    "form": "4조2교대",
+    "order": "코드 2232(2-2-3형 추정 순서 확인 필요)",
+    "time": "12시간",
+    "asOf": "2021-01 (정유 첫 도입)",
+    "trust": "기사+노무사이트",
+    "source": "https://magazine.hankyung.com/business/article/202303010529b",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "LABOR",
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c077",
+    "display": "에이젝코리아 [경기 이천 생산] · 반도체 부품",
+    "company": "에이젝코리아",
+    "industry": "반도체 부품",
+    "site": "경기 이천 생산",
+    "form": "4조3교대",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "2026 공고 (검색 결과)",
+    "trust": "공고",
+    "source": "https://www.jobkorea.co.kr/Search/?stext=4%EC%A1%B0+3%EA%B5%90%EB%8C%80",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c078",
+    "display": "에이치커넥트 [안산 생산] · 2차전지·포장재",
+    "company": "에이치커넥트",
+    "industry": "2차전지·포장재",
+    "site": "안산 생산",
+    "form": "3조3교대",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "2026 공고 (검색 결과)",
+    "trust": "공고",
+    "source": "https://www.jobkorea.co.kr/Search/?stext=3%EC%A1%B03%EA%B5%90%EB%8C%80+%EC%83%9D%EC%82%B0%EC%A7%81",
+    "formKey": "3조3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c079",
+    "display": "에코프로 [생산] · 배터리 소재",
+    "company": "에코프로",
+    "industry": "배터리 소재",
+    "site": "생산",
+    "form": "4조2교대",
+    "order": "공개 순서 없음",
+    "time": "12시간",
+    "asOf": "2024 초 시작",
+    "trust": "기사",
+    "source": "https://www.sisajournal-e.com/news/articleView.html?idxno=403063",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c080",
+    "display": "엘앤에프 [생산] · 배터리 소재",
+    "company": "엘앤에프",
+    "industry": "배터리 소재",
+    "site": "생산",
+    "form": "3조2교대 → 4조2교대 예정",
+    "order": "공개 순서 없음",
+    "time": "12시간",
+    "asOf": "2023 발표 / 2024-05 기사 기준 시작일 미정",
+    "trust": "기사",
+    "source": "https://v.daum.net/v/8neK7iD7JM",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c081",
+    "display": "엠에스파이프 [포항 생산팀] · 제조",
+    "company": "엠에스파이프",
+    "industry": "제조",
+    "site": "포항 생산팀",
+    "form": "2조2교대",
+    "order": "주·야 교대",
+    "time": "08-20 / 20-08",
+    "asOf": "2026-09 공고",
+    "trust": "공고",
+    "source": "https://www.jobploy.kr/ko/recruit/manufacturing-gyeongbuk-production-operator-166738",
+    "formKey": "2조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "20:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "20:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c082",
+    "display": "영진테크 [생산] · 제조",
+    "company": "영진테크",
+    "industry": "제조",
+    "site": "생산",
+    "form": "2조2교대 (1주 단위 주야)",
+    "order": "주간 1주·야간 1주",
+    "time": "하루 최대 10시간 24분",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=1",
+    "formKey": "2조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDDOONNNNNOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c083",
+    "display": "오뚜기 [생산 (일부)] · 식품",
+    "company": "오뚜기",
+    "industry": "식품",
+    "site": "생산 (일부)",
+    "form": "3조3교대 주5일 가동",
+    "order": "1조→2조→3조 주 단위",
+    "time": "00-08 / 08-16 / 16-24",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=4",
+    "formKey": "3조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "NNNNNOODDDDDOOEEEEEOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "16:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "16:00",
+      "end": "00:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "00:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c084",
+    "display": "오리온 [공장 생산] · 식품",
+    "company": "오리온",
+    "industry": "식품",
+    "site": "공장 생산",
+    "form": "2조2교대 (12시간 맞교대)",
+    "order": "주·야 맞교대",
+    "time": "12시간",
+    "asOf": "2025-08 기사",
+    "trust": "기사",
+    "source": "https://www.khan.co.kr/article/202508300704001",
+    "formKey": "2조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c085",
+    "display": "온세미컨덕터 [생산] · 반도체",
+    "company": "온세미컨덕터",
+    "industry": "반도체",
+    "site": "생산",
+    "form": "4조2교대",
+    "order": "코드 3224(순서 확인 필요)",
+    "time": "12시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=5",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c086",
+    "display": "와이엠에스 [삼성디스플레이 천안·아산 현장] · 디스플레이 협력",
+    "company": "와이엠에스",
+    "industry": "디스플레이 협력",
+    "site": "삼성디스플레이 천안·아산 현장",
+    "form": "4조3교대",
+    "order": "주5일",
+    "time": "06-14 / 14-22 / 22-06",
+    "asOf": "2026-01 공고",
+    "trust": "공고",
+    "source": "https://zighang.com/recruitment/fcfc805f-59fe-4f55-b7ae-b72a08a517f3",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": true,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c087",
+    "display": "요양원 (여러 곳) [요양보호사] · 요양",
+    "company": "요양원 (여러 곳)",
+    "industry": "요양",
+    "site": "요양보호사",
+    "form": "2교대",
+    "order": "주·주·야·야·휴·휴 (6일)",
+    "time": "주 09-18 / 야 18-09 (또는 08:30 교대)",
+    "asOf": "2024~ 공고",
+    "trust": "공고",
+    "source": "https://www.theteams.kr/recruit/wanted/3290217",
+    "formKey": "2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDNNOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "09:00",
+      "end": "18:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "18:00",
+      "end": "09:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c088",
+    "display": "원익머트리얼즈 [생산] · 반도체 소재·화학",
+    "company": "원익머트리얼즈",
+    "industry": "반도체 소재·화학",
+    "site": "생산",
+    "form": "3조2교대",
+    "order": "주4·휴2·야4·휴2 (12일)",
+    "time": "12시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=3",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDOONNNNOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c089",
+    "display": "유니호텔 제주 (주식회사 유니) [제주 애월 프런트] · 호텔",
+    "company": "유니호텔 제주 (주식회사 유니)",
+    "industry": "호텔",
+    "site": "제주 애월 프런트",
+    "form": "3교대",
+    "order": "A·D·N",
+    "time": "A 07-16 / D 13-22 / N 22-07",
+    "asOf": "2026 공고",
+    "trust": "공고(링크 대응 확인 필요)",
+    "source": "https://www.theteams.kr/recruit/wanted/3670936",
+    "formKey": "3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": true,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": true,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "16:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "13:00",
+      "end": "22:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "07:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c090",
+    "display": "유성인더스트리 [대구 제직기사] · 섬유",
+    "company": "유성인더스트리",
+    "industry": "섬유",
+    "site": "대구 제직기사",
+    "form": "4조3교대",
+    "order": "주5일",
+    "time": "오전 07:30-15:30 (나머지 확인 필요)",
+    "asOf": "2026 공고",
+    "trust": "공고",
+    "source": "https://kr.indeed.com/4%EC%A1%B03%EA%B5%90%EB%8C%80%EC%A7%81-%EC%B7%A8%EC%97%85",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:30",
+      "end": "15:30",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c091",
+    "display": "유진기업 [여수 여천산단 생산보조·포장] · 화학 협력",
+    "company": "유진기업",
+    "industry": "화학 협력",
+    "site": "여수 여천산단 생산보조·포장",
+    "form": "4조2교대",
+    "order": "주·주·휴·휴·야·야·휴·휴 (8일)",
+    "time": "07-19 / 19-07",
+    "asOf": "공고 (날짜 확인 필요)",
+    "trust": "공고",
+    "source": "https://kr.indeed.com/q-%EC%97%AC%EC%88%98%EC%82%B0%EB%8B%A8-%EC%B1%84%EC%9A%A9%EA%B3%B5%EA%B3%A0.html",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": true,
+    "codes": "DDOONNOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c092",
+    "display": "유한킴벌리 [생산] · 제지·위생용품",
+    "company": "유한킴벌리",
+    "industry": "제지·위생용품",
+    "site": "생산",
+    "form": "4조2교대",
+    "order": "주4·휴4·야4·휴4 (16일 / 코드 4444)",
+    "time": "12시간",
+    "asOf": "1993~ (기사마다 1993·1998)",
+    "trust": "기사+노무사이트",
+    "source": "https://www.seoul.co.kr/news/2003/12/31/20031231020001",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "LABOR",
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDOOOONNNNOOOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c093",
+    "display": "인천공항 자회사 3사(운영서비스·시설관리·보안) [현장] · 공항",
+    "company": "인천공항 자회사 3사(운영서비스·시설관리·보안)",
+    "industry": "공항",
+    "site": "현장",
+    "form": "3조2교대 (4조2교대 합의 미이행)",
+    "order": "주·주·야·야·비·휴 (6일, 주 48시간)",
+    "time": "",
+    "asOf": "2025-11 기사 (2025-10 4조2교대 요구 파업)",
+    "trust": "기사",
+    "source": "https://newstomato.com/ReadNews.aspx?no=1281594",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDNNBO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c094",
+    "display": "인천종합에너지 [생산] · 에너지",
+    "company": "인천종합에너지",
+    "industry": "에너지",
+    "site": "생산",
+    "form": "4조2교대",
+    "order": "코드 2232(순서 확인 필요)",
+    "time": "12시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=5",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c095",
+    "display": "전북소방본부 [119종합상황실] · 소방",
+    "company": "전북소방본부",
+    "industry": "소방",
+    "site": "119종합상황실",
+    "form": "3조2교대",
+    "order": "공개 순서 없음",
+    "time": "",
+    "asOf": "2021 기사",
+    "trust": "기사",
+    "source": "https://jjan.kr/article/20211108743664",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": []
+   },
+   {
+    "id": "c096",
+    "display": "전주바로병원 [병동 간호사] · 병원",
+    "company": "전주바로병원",
+    "industry": "병원",
+    "site": "병동 간호사",
+    "form": "3교대",
+    "order": "D·E·N (병원이 근무표 짬)",
+    "time": "D 07-15 / E 15-22 / N 22-07",
+    "asOf": "공고",
+    "trust": "공고",
+    "source": "https://www.theteams.kr/recruit/wanted/3878359",
+    "formKey": "3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": true,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "15:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "15:00",
+      "end": "22:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "07:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c097",
+    "display": "제이씨텍 [청주 수액 생산] · 제약",
+    "company": "제이씨텍",
+    "industry": "제약",
+    "site": "청주 수액 생산",
+    "form": "3조3교대",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "2026 공고 (검색 결과)",
+    "trust": "공고",
+    "source": "https://www.jobkorea.co.kr/Search/?stext=3%EC%A1%B03%EA%B5%90%EB%8C%80+%EC%83%9D%EC%82%B0%EC%A7%81",
+    "formKey": "3조3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c098",
+    "display": "제이케이머티리얼즈 [당진 생산] · 소재",
+    "company": "제이케이머티리얼즈",
+    "industry": "소재",
+    "site": "당진 생산",
+    "form": "4조3교대",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "2026-07 마감 공고",
+    "trust": "공고",
+    "source": "https://www.jobkorea.co.kr/Recruit/GI_Read/49413818",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c099",
+    "display": "주식회사하얀 (BAT코리아 사천공장 안) [지게차·생산보조] · 담배 물류·생산보조",
+    "company": "주식회사하얀 (BAT코리아 사천공장 안)",
+    "industry": "담배 물류·생산보조",
+    "site": "지게차·생산보조",
+    "form": "4조2교대",
+    "order": "공고마다 2근2휴 / 3근3휴 표기",
+    "time": "07-19 / 19-07",
+    "asOf": "2021·2025 공고",
+    "trust": "공고",
+    "source": "https://zighang.com/recruitment/56e941d7-0245-4145-a303-f14a4f065428",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDOONNOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c100",
+    "display": "진평 [광양 생산 제조] · 철강 협력",
+    "company": "진평",
+    "industry": "철강 협력",
+    "site": "광양 생산 제조",
+    "form": "4조3교대",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "공고 (날짜 확인 필요)",
+    "trust": "공고",
+    "source": "https://www.jobkorea.co.kr/Search/?stext=%EA%B4%91%EC%96%91%EC%A0%9C%EC%B2%A0",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": true,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c101",
+    "display": "철도보안정보센터 (용역업체) [CCTV 관제요원] · 관제",
+    "company": "철도보안정보센터 (용역업체)",
+    "industry": "관제",
+    "site": "CCTV 관제요원",
+    "form": "4조2교대",
+    "order": "주·야·비·휴 (4일)",
+    "time": "주 08-18 / 야 18-08 (탄력근로)",
+    "asOf": "2026 공고",
+    "trust": "공고(링크 대응 확인 필요)",
+    "source": "https://www.invione.com/jobs/recruitment/all/detail/K161132608050034",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": true,
+    "partner": false,
+    "codes": "DNBO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "18:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "18:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c102",
+    "display": "청우특수 [울산 생산] · 제조",
+    "company": "청우특수",
+    "industry": "제조",
+    "site": "울산 생산",
+    "form": "4조3교대",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "2026 공고 (검색 결과)",
+    "trust": "공고",
+    "source": "https://www.jobkorea.co.kr/Search/?stext=4%EC%A1%B0+3%EA%B5%90%EB%8C%80",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c103",
+    "display": "캠텍 [생산] · 제조",
+    "company": "캠텍",
+    "industry": "제조",
+    "site": "생산",
+    "form": "2조2교대 (1주 단위 주야)",
+    "order": "주간 1주·야간 1주",
+    "time": "하루 최대 10시간 24분",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=1",
+    "formKey": "2조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDDOONNNNNOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c104",
+    "display": "코엔텍 [생산] · 식품·환경",
+    "company": "코엔텍",
+    "industry": "식품·환경",
+    "site": "생산",
+    "form": "3조3교대 7일 가동 (주6일)",
+    "order": "3조→2조→1조 역순",
+    "time": "00-08 / 08-16 / 16-24",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=4",
+    "formKey": "3조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "16:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "16:00",
+      "end": "00:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "00:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c105",
+    "display": "코텍스타일 [대구 제직원] · 섬유",
+    "company": "코텍스타일",
+    "industry": "섬유",
+    "site": "대구 제직원",
+    "form": "4조3교대",
+    "order": "6근2휴",
+    "time": "07:30-14:30 / 14:30-22:00 / 22:00-07:30",
+    "asOf": "2026-10 공고",
+    "trust": "공고",
+    "source": "https://www.jobploy.kr/ko/recruit/manufacturing-daegu-weaver",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDEENNOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:30",
+      "end": "14:30",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:30",
+      "end": "22:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "07:30",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c106",
+    "display": "쿠팡 인천4센터 [검색·관제 대원] · 물류",
+    "company": "쿠팡 인천4센터",
+    "industry": "물류",
+    "site": "검색·관제 대원",
+    "form": "3조2교대",
+    "order": "주·주·야·야·휴·휴 (6일)",
+    "time": "08-18 / 18-08",
+    "asOf": "2025 공고",
+    "trust": "공고",
+    "source": "https://www.invione.com/jobs/recruitment/all/detail/K120032511170002",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDNNOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "18:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "18:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c107",
+    "display": "쿠팡풀필먼트서비스 [시흥 1센터] · 물류",
+    "company": "쿠팡풀필먼트서비스",
+    "industry": "물류",
+    "site": "시흥 1센터",
+    "form": "주간 고정 / 야간 고정",
+    "order": "고정조 주5일",
+    "time": "주 08-17 / 야 17-02",
+    "asOf": "2026 공고",
+    "trust": "공고",
+    "source": "https://www.jobploy.kr/ko/company/coupang-fulfillment-service",
+    "formKey": "고정",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "17:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "17:00",
+      "end": "02:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c108",
+    "display": "쿠팡풀필먼트서비스 [시흥 2·3센터] · 물류",
+    "company": "쿠팡풀필먼트서비스",
+    "industry": "물류",
+    "site": "시흥 2·3센터",
+    "form": "주간 고정 / 야간 고정",
+    "order": "고정조 주5일",
+    "time": "주 08-18 / 야 18-04",
+    "asOf": "2026 공고",
+    "trust": "공고",
+    "source": "https://www.jobploy.kr/ko/company/coupang-fulfillment-service",
+    "formKey": "고정",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "18:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "18:00",
+      "end": "04:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c109",
+    "display": "크리에이션코리아 (네패스 협력) [청주·오창 생산] · 반도체 후공정",
+    "company": "크리에이션코리아 (네패스 협력)",
+    "industry": "반도체 후공정",
+    "site": "청주·오창 생산",
+    "form": "4조3교대",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "2021 공고",
+    "trust": "공고",
+    "source": "https://www.saramin.co.kr/zf_user/jobs/view?rec_idx=39478595",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": true,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c110",
+    "display": "키퍼테크놀로지 [생산] · 제조",
+    "company": "키퍼테크놀로지",
+    "industry": "제조",
+    "site": "생산",
+    "form": "2조2교대 (1주 단위 주야)",
+    "order": "주간 1주·야간 1주",
+    "time": "하루 최대 10시간 24분",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=1",
+    "formKey": "2조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDDOONNNNNOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c111",
+    "display": "타이코에이엠피 [창고 관리 (기간제)] · 전자부품",
+    "company": "타이코에이엠피",
+    "industry": "전자부품",
+    "site": "창고 관리 (기간제)",
+    "form": "2조2교대 평일",
+    "order": "주간 월~금 / 야간 일~목",
+    "time": "06-18 / 18-06",
+    "asOf": "공고",
+    "trust": "공고",
+    "source": "https://www.theteams.kr/recruit/wanted/3695599",
+    "formKey": "2조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "18:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "18:00",
+      "end": "06:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c112",
+    "display": "테크놀로지코리아 [인천 제조직] · 반도체",
+    "company": "테크놀로지코리아",
+    "industry": "반도체",
+    "site": "인천 제조직",
+    "form": "4조3교대",
+    "order": "주5일",
+    "time": "06-14 / 14-22 / 22-06",
+    "asOf": "2024-04 공고",
+    "trust": "공고",
+    "source": "https://www.incheon.go.kr/wp/WC020201/2182335",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c113",
+    "display": "파리크라상 [상대원 공장 (대행 공고)] · 식품(SPC)",
+    "company": "파리크라상",
+    "industry": "식품(SPC)",
+    "site": "상대원 공장 (대행 공고)",
+    "form": "주간·야간 조",
+    "order": "주5일 (주말 포함)",
+    "time": "주 07-16 / 야 22-07",
+    "asOf": "2026-06 공고",
+    "trust": "공고",
+    "source": "https://www.albamon.com/jobs/detail/117491061",
+    "formKey": "고정",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "16:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "07:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c114",
+    "display": "포스코 [포항·광양 운전·정비(기계·금속)] · 철강",
+    "company": "포스코",
+    "industry": "철강",
+    "site": "포항·광양 운전·정비(기계·금속)",
+    "form": "4조2교대",
+    "order": "2근2휴",
+    "time": "12시간",
+    "asOf": "2026-03 채용 글 (2011 전면 도입, 기사)",
+    "trust": "커뮤니티+기사",
+    "source": "https://www.threads.com/@jobless_kim/post/DVglqnhEb-V",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "COMMUNITY",
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDOONNOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c115",
+    "display": "포스코 [포항·광양 정비(전기·기계) 상주] · 철강",
+    "company": "포스코",
+    "industry": "철강",
+    "site": "포항·광양 정비(전기·기계) 상주",
+    "form": "주5일 일근",
+    "order": "월~금",
+    "time": "08-17",
+    "asOf": "2026-03 채용 글",
+    "trust": "커뮤니티",
+    "source": "https://www.threads.com/@jobless_kim/post/DVglqnhEb-V",
+    "formKey": "고정",
+    "trustKinds": [
+     "COMMUNITY"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDDOO",
+    "orderState": "exact",
+    "weekly": true,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "17:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c116",
+    "display": "풀무원 [공장 생산] · 식품",
+    "company": "풀무원",
+    "industry": "식품",
+    "site": "공장 생산",
+    "form": "2조2교대 (12시간 맞교대)",
+    "order": "주·야 맞교대",
+    "time": "12시간",
+    "asOf": "2025-08 기사",
+    "trust": "기사",
+    "source": "https://www.khan.co.kr/article/202508300704001",
+    "formKey": "2조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c117",
+    "display": "프로에스콤 [인천공항 화물터미널 보안검색·특수경비] · 공항 보안",
+    "company": "프로에스콤",
+    "industry": "공항 보안",
+    "site": "인천공항 화물터미널 보안검색·특수경비",
+    "form": "3조2교대",
+    "order": "주·야·휴 (3일)",
+    "time": "주 08:30-18:30 / 야 18:30-08:30",
+    "asOf": "2026 인천일자리한마당 공고",
+    "trust": "공고(링크 대응 확인 필요)",
+    "source": "https://www.theteams.kr/recruit/wanted/3817017",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": true,
+    "partner": false,
+    "codes": "DNO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:30",
+      "end": "18:30",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "18:30",
+      "end": "08:30",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c118",
+    "display": "프로텍스 [아산 탕정 생산] · 진공펌프 제조",
+    "company": "프로텍스",
+    "industry": "진공펌프 제조",
+    "site": "아산 탕정 생산",
+    "form": "주야 4근4휴",
+    "order": "주4·휴4·야4·휴4 추정",
+    "time": "12시간",
+    "asOf": "공고",
+    "trust": "공고",
+    "source": "https://www.saramin.co.kr/zf_user/jobs/list/domestic?loc_cd=115100",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDOOOONNNNOOOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c119",
+    "display": "피제이전자 [생산] · 전자",
+    "company": "피제이전자",
+    "industry": "전자",
+    "site": "생산",
+    "form": "2조2교대 (2주 단위 주야)",
+    "order": "주간 2주·야간 2주",
+    "time": "주 08-20 / 야 20-08",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=1",
+    "formKey": "2조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDDOODDDDDOONNNNNOONNNNNOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "20:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "20:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c120",
+    "display": "하이트진로 [이천공장 생산] · 주류",
+    "company": "하이트진로",
+    "industry": "주류",
+    "site": "이천공장 생산",
+    "form": "교대 (주말 휴무 원칙)",
+    "order": "공개 순서 없음",
+    "time": "",
+    "asOf": "2018~2023 답변",
+    "trust": "커뮤니티",
+    "source": "https://comento.kr/job-questions/하이트진로/생산/하이트진로_이천공장_생산직_질문드립니다-212898",
+    "formKey": "기타",
+    "trustKinds": [
+     "COMMUNITY"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": []
+   },
+   {
+    "id": "c121",
+    "display": "한국가스공사 [생산기지 운전] · 가스",
+    "company": "한국가스공사",
+    "industry": "가스",
+    "site": "생산기지 운전",
+    "form": "5조3교대",
+    "order": "코드 2242 + 지정근로(W)",
+    "time": "8시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=7",
+    "formKey": "5조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c122",
+    "display": "한국남부발전 [발전 운전] · 발전",
+    "company": "한국남부발전",
+    "industry": "발전",
+    "site": "발전 운전",
+    "form": "5조3교대 (기본형 주 33.6시간)",
+    "order": "D·A·N 순환",
+    "time": "8시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=7",
+    "formKey": "5조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c123",
+    "display": "한국동서발전 [발전 운전] · 발전",
+    "company": "한국동서발전",
+    "industry": "발전",
+    "site": "발전 운전",
+    "form": "5조3교대 (기본형 주 33.6시간)",
+    "order": "D·A·N 순환",
+    "time": "8시간",
+    "asOf": "날짜 없음 (2014 기사엔 4조3교대+멀티엔지니어조)",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=7",
+    "formKey": "5조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c124",
+    "display": "한국서부발전 [발전 운전] · 발전",
+    "company": "한국서부발전",
+    "industry": "발전",
+    "site": "발전 운전",
+    "form": "5조3교대",
+    "order": "코드 323232 + 지정근로(W)",
+    "time": "8시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=7",
+    "formKey": "5조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c125",
+    "display": "한국서부발전 등 발전 5사 [발전 운전] · 발전",
+    "company": "한국서부발전 등 발전 5사",
+    "industry": "발전",
+    "site": "발전 운전",
+    "form": "4조2교대",
+    "order": "주·야·비·휴 또는 주주야야비비휴휴 (8일)",
+    "time": "",
+    "asOf": "2024 답변",
+    "trust": "커뮤니티",
+    "source": "https://www.comento.kr/job-questions/한국서부발전/전기기사/서부발전_교대근무_스케쥴-561107",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "COMMUNITY"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DNBO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c126",
+    "display": "한국수력원자력 [발전 운전원] · 원자력",
+    "company": "한국수력원자력",
+    "industry": "원자력",
+    "site": "발전 운전원",
+    "form": "6조3교대 (교육조 빼면 5조)",
+    "order": "코드 323133 + 지정근로(S)·교육(T)",
+    "time": "8시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=7",
+    "formKey": "6조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c127",
+    "display": "한국전력공사 [송변전 교대] · 전력",
+    "company": "한국전력공사",
+    "industry": "전력",
+    "site": "송변전 교대",
+    "form": "4조2교대 (일부 3조2교대)",
+    "order": "주·야·비·휴",
+    "time": "",
+    "asOf": "",
+    "trust": "커뮤니티",
+    "source": "https://comento.kr/job-questions/한국전력공사/전기기사/한전_송변전 교대근무-615530",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "COMMUNITY"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DNBO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c128",
+    "display": "한국중부발전 [보령 발전 운전] · 발전",
+    "company": "한국중부발전",
+    "industry": "발전",
+    "site": "보령 발전 운전",
+    "form": "5조3교대",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "2019~2022 답변",
+    "trust": "커뮤니티",
+    "source": "https://comento.kr/job-questions/%ED%95%9C%EA%B5%AD%EC%A4%91%EB%B6%80%EB%B0%9C%EC%A0%84/%EA%B8%B0%EA%B3%84/%ED%95%9C%EA%B5%AD%EC%A4%91%EB%B6%80%EB%B0%9C%EC%A0%84_4%EC%A7%81%EA%B8%89_%EA%B8%B0%EA%B3%84%EC%A7%81_%EA%B5%90%EB%8C%80%EA%B7%BC%EB%AC%B4-457511",
+    "formKey": "5조3교대",
+    "trustKinds": [
+     "COMMUNITY"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c129",
+    "display": "한국지역난방공사 [지사 운영 교대] · 에너지",
+    "company": "한국지역난방공사",
+    "industry": "에너지",
+    "site": "지사 운영 교대",
+    "form": "5조3교대",
+    "order": "데이·애프터·나이트 순환",
+    "time": "8시간",
+    "asOf": "2019 답변",
+    "trust": "커뮤니티",
+    "source": "https://www.comento.kr/job-questions/한국지역난방공사/전자/한국지역난방공사_고졸_전자직-159382",
+    "formKey": "5조3교대",
+    "trustKinds": [
+     "COMMUNITY"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c130",
+    "display": "한국철도공사(코레일) [관제] · 철도",
+    "company": "한국철도공사(코레일)",
+    "industry": "철도",
+    "site": "관제",
+    "form": "3조2교대 (4조2교대 전환 검토)",
+    "order": "공개 순서 없음",
+    "time": "",
+    "asOf": "2026-04",
+    "trust": "기사",
+    "source": "https://www.heraldk.com/article/2026042407141053997",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": []
+   },
+   {
+    "id": "c131",
+    "display": "한국철도공사(코레일) [사무·시설·차량·전기] · 철도",
+    "company": "한국철도공사(코레일)",
+    "industry": "철도",
+    "site": "사무·시설·차량·전기",
+    "form": "4조2교대",
+    "order": "주·야·비·휴 (4일)",
+    "time": "주간 09:20-18:40 정도(사업소마다 다름)",
+    "asOf": "2022 기준",
+    "trust": "기사+커뮤니티",
+    "source": "https://mobile.newsis.com/view/NISX20221221_0002131689",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "COMMUNITY",
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DNBO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "09:20",
+      "end": "18:40",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c132",
+    "display": "한국필립모리스 [생산] · 담배",
+    "company": "한국필립모리스",
+    "industry": "담배",
+    "site": "생산",
+    "form": "4조2교대",
+    "order": "주4·휴4·야4·휴4 + 법정공휴일 휴무",
+    "time": "12시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=5",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDOOOONNNNOOOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c133",
+    "display": "한라시멘트 [생산] · 시멘트",
+    "company": "한라시멘트",
+    "industry": "시멘트",
+    "site": "생산",
+    "form": "5조3교대",
+    "order": "코드 323232 (M·A·N + 지정근로)",
+    "time": "8시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=7",
+    "formKey": "5조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c134",
+    "display": "한솔페이퍼 [생산] · 제지",
+    "company": "한솔페이퍼",
+    "industry": "제지",
+    "site": "생산",
+    "form": "4조3교대",
+    "order": "6근2휴 (8일)",
+    "time": "07-15 / 15-23 / 23-07",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=6",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDEENNOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "15:00",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "15:00",
+      "end": "23:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "23:00",
+      "end": "07:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c135",
+    "display": "한전산업개발 [생산] · 발전 설비",
+    "company": "한전산업개발",
+    "industry": "발전 설비",
+    "site": "생산",
+    "form": "4조2교대",
+    "order": "코드 2123(순서 확인 필요)",
+    "time": "12시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=5",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c136",
+    "display": "한화솔루션 [생산 (여수 등)] · 화학",
+    "company": "한화솔루션",
+    "industry": "화학",
+    "site": "생산 (여수 등)",
+    "form": "4조2교대 검토",
+    "order": "2023 투표 부결 → 2024-06 재조사",
+    "time": "",
+    "asOf": "2024-05 기사",
+    "trust": "기사",
+    "source": "https://www.sisajournal-e.com/news/articleView.html?idxno=403063",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": []
+   },
+   {
+    "id": "c137",
+    "display": "합천군 [CCTV 통합관제센터 관제요원] · 지자체",
+    "company": "합천군",
+    "industry": "지자체",
+    "site": "CCTV 통합관제센터 관제요원",
+    "form": "4조3교대",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "기사",
+    "trust": "기사(링크 대응 확인 필요)",
+    "source": "https://www.metroseoul.co.kr/article/20240625500371",
+    "formKey": "4조3교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": true,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c138",
+    "display": "해양경찰청 [파출소·출장소] · 해양경찰",
+    "company": "해양경찰청",
+    "industry": "해양경찰",
+    "site": "파출소·출장소",
+    "form": "3교대 (훈령: 8시간당 휴게 1시간)",
+    "order": "공개 순서 없음",
+    "time": "8시간",
+    "asOf": "2023 기사",
+    "trust": "기사",
+    "source": "https://www.dt.co.kr/article/12018289",
+    "formKey": "3교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "22:00",
+      "end": "06:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c139",
+    "display": "핸즈식스 [생산·공무·지게차] · 자동차 알루미늄 휠",
+    "company": "핸즈식스",
+    "industry": "자동차 알루미늄 휠",
+    "site": "생산·공무·지게차",
+    "form": "3조2교대",
+    "order": "주4·휴2·야4·휴2 (12일)",
+    "time": "08-20 / 20-08",
+    "asOf": "2025 공고",
+    "trust": "공고",
+    "source": "https://www.invione.com/jobs/recruitment/all/detail/K151152511070075",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDOONNNNOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "20:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "20:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c140",
+    "display": "핸즈코퍼레이션 [주조·가공·도장] · 자동차 휠",
+    "company": "핸즈코퍼레이션",
+    "industry": "자동차 휠",
+    "site": "주조·가공·도장",
+    "form": "3조2교대",
+    "order": "공개 순서 없음",
+    "time": "08-20 / 20-08",
+    "asOf": "2024 공고",
+    "trust": "공고",
+    "source": "https://www.theteams.kr/recruit/wanted/2608981",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "20:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "20:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c141",
+    "display": "현대오일뱅크 [생산] · 정유",
+    "company": "현대오일뱅크",
+    "industry": "정유",
+    "site": "생산",
+    "form": "4조2교대",
+    "order": "공개 순서 없음",
+    "time": "12시간",
+    "asOf": "2023 운영 중",
+    "trust": "기사",
+    "source": "https://v.daum.net/v/8neK7iD7JM",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c142",
+    "display": "현대자동차 [생산] · 자동차",
+    "company": "현대자동차",
+    "industry": "자동차",
+    "site": "생산",
+    "form": "주간연속2교대(8+8)",
+    "order": "1조·2조 주 단위 교대",
+    "time": "2013 시행 때 1조 07:00-15:40 / 2조 15:40-01:30 (지금 시간은 확인 필요)",
+    "asOf": "2013 시행 / 2016 8+8",
+    "trust": "기사",
+    "source": "https://m.seoul.co.kr/news/2013/01/18/20130118800102",
+    "formKey": "주간연속2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDDOOEEEEEOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "15:40",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "14:00",
+      "end": "22:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "15:40",
+      "end": "01:30",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c143",
+    "display": "현대제철 [제철소 생산] · 철강",
+    "company": "현대제철",
+    "industry": "철강",
+    "site": "제철소 생산",
+    "form": "4조2교대",
+    "order": "2일 주기 패턴(주주·야야 단위)",
+    "time": "12시간",
+    "asOf": "2023-03-26 시행",
+    "trust": "기사",
+    "source": "https://www.metroseoul.co.kr/article/20230228500381",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDOONNOO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c144",
+    "display": "현성의료재단 [양산 내과병동 간호사] · 병원",
+    "company": "현성의료재단",
+    "industry": "병원",
+    "site": "양산 내과병동 간호사",
+    "form": "2교대 (데이·이브닝 주간형)",
+    "order": "D·E",
+    "time": "D 07:30-15:30 / E 09-17",
+    "asOf": "공고",
+    "trust": "공고(링크 대응 확인 필요)",
+    "source": "https://www.theteams.kr/recruit/wanted/3169222",
+    "formKey": "2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": true,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": true,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:30",
+      "end": "15:30",
+      "usual": false
+     },
+     {
+      "code": "E",
+      "name": "오후",
+      "label": "오",
+      "start": "09:00",
+      "end": "17:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c145",
+    "display": "호텔 비즈인 [원주 야간 프런트] · 호텔",
+    "company": "호텔 비즈인",
+    "industry": "호텔",
+    "site": "원주 야간 프런트",
+    "form": "야간 고정",
+    "order": "주5일",
+    "time": "23-08",
+    "asOf": "2026-08 공고",
+    "trust": "공고(링크 대응 확인 필요)",
+    "source": "https://www.albamon.com/jobs/detail/118212040",
+    "formKey": "고정",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": true,
+    "partner": false,
+    "codes": "NNNNNOO",
+    "orderState": "usual",
+    "weekly": true,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "23:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c146",
+    "display": "호텔아마레 [인천 연수 프런트] · 호텔",
+    "company": "호텔아마레",
+    "industry": "호텔",
+    "site": "인천 연수 프런트",
+    "form": "격일제",
+    "order": "월·수·금 근무",
+    "time": "14:00-익일 08:00",
+    "asOf": "2026-07 공고",
+    "trust": "공고(링크 대응 확인 필요)",
+    "source": "https://www.albamon.com/jobs/detail/118164625",
+    "formKey": "격일제",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": true,
+    "partner": false,
+    "codes": "NONONOO",
+    "orderState": "exact",
+    "weekly": true,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "14:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c147",
+    "display": "화성 플라스틱 필름 공장 [압출기사] · 제조",
+    "company": "화성 플라스틱 필름 공장",
+    "industry": "제조",
+    "site": "압출기사",
+    "form": "3조2교대",
+    "order": "주4·휴2·야4·휴2 (12일)",
+    "time": "07-19 / 19-07",
+    "asOf": "2026-07 공고",
+    "trust": "공고",
+    "source": "https://www.jobploy.kr/ko/recruit/manufacturing-gyeonggi-production-worker-157717",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDOONNNNOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c148",
+    "display": "후성 [생산] · 반도체 소재·화학",
+    "company": "후성",
+    "industry": "반도체 소재·화학",
+    "site": "생산",
+    "form": "3조2교대",
+    "order": "주4·휴2·야4·휴2 (12일)",
+    "time": "12시간",
+    "asOf": "",
+    "trust": "노무사이트",
+    "source": "https://k-labor.co.kr/main/rotation_view.html?lang=ko&code2=3",
+    "formKey": "3조2교대",
+    "trustKinds": [
+     "LABOR"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDOONNNNOO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   }
+  ]
+ }
+}

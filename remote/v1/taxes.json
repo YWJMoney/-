@@ -1,0 +1,20 @@
+{
+ "format": 1,
+ "kind": "taxes",
+ "version": 2026102301,
+ "issued": "2026-10-23",
+ "minApp": 34,
+ "source": "소득세법 제94조 제1항 제3호·제103조·제104조(해외 주식 양도 20%, 기본공제 250만 원)와 지방소득세(그 10%), 조문 번호 확인 필요, 제14조 제3항(금융소득 2,000만 원), 조세특례제한법 제91조의18(ISA), 가상자산 과세 2027-01-01 시행(2024년 12월 개정, 확인 필요)",
+ "data": {
+  "foreignDeduction": 2500000,
+  "capitalGainsRate": 0.22,
+  "cryptoDeduction": 2500000,
+  "cryptoFromYear": 2027,
+  "isaLimit": 2000000,
+  "isaLimitLowIncome": 4000000,
+  "isaOverRate": 0.099,
+  "financialIncomeLimit": 20000000,
+  "dividendRate": 0.154,
+  "usDividendRate": 0.15
+ }
+}
