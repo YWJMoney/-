@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>밤낮 레시피</title>
+<style>
+  :root { --bg: #f7f7fb; --card: #fff; --text: #1d1d22; --muted: #5b5b66; --accent: #3f51b5; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #121216; --card: #1d1d23; --text: #ececf1; --muted: #a8a8b3; --accent: #9fa8da; } }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Noto Sans KR", sans-serif; }
+  main { max-width: 480px; margin: 0 auto; padding: 32px 16px; }
+  .card { background: var(--card); border-radius: 16px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  p { color: var(--muted); margin: 8px 0; }
+  .code { font: 600 28px/1.2 ui-monospace, monospace; letter-spacing: 4px; margin: 16px 0; text-align: center; }
+  a.btn, button { display: block; width: 100%; box-sizing: border-box; text-align: center; padding: 14px; border-radius: 12px; border: 0;
+    font-size: 16px; font-weight: 600; text-decoration: none; margin-top: 10px; cursor: pointer; }
+  a.primary { background: var(--accent); color: #fff; }
+  @media (prefers-color-scheme: dark) { a.primary { color: #121216; } }
+  button, a.plain { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  small { display: block; color: var(--muted); margin-top: 16px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>밤낮 나눔 판 레시피</h1>
+    <p>다른 분이 나눈 근무 색·알람·메모 틀·규칙이에요. 앱에서 미리 보고, 고른 것만 내 달력에 넣어요. 7일 안에 되돌릴 수 있어요.</p>
+    <div class="code" id="code">--------</div>
+    <a class="btn primary" id="open" href="#">밤낮 앱에서 열기</a>
+    <button type="button" id="copy">코드 복사</button>
+    <a class="btn plain" href="https://play.google.com/store/apps/details?id=com.bamnat.app">밤낮 앱 받기</a>
+    <small>앱이 열리지 않으면 앱의 광장 › 나눔 판 › 코드로 받기에 위 코드를 넣어 주세요. 이 페이지는 아무것도 저장하지 않아요.</small>
+  </div>
+</main>
+<script>
+  (function () {
+    var c = (new URLSearchParams(location.search).get("c") || "").toUpperCase();
+    if (!/^[2-9A-HJ-NP-Z]{8}$/.test(c)) { document.getElementById("code").textContent = "코드가 없어요"; document.getElementById("open").style.display = "none"; return; }
+    document.getElementById("code").textContent = c;
+    document.getElementById("open").href = "bamnat://r/" + c;
+    document.getElementById("copy").onclick = function () {
+      if (navigator.clipboard) navigator.clipboard.writeText(c).then(function () { document.getElementById("copy").textContent = "복사했어요"; });
+    };
+  })();
+</script>
+</body>
+</html>
