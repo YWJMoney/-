@@ -1,10 +1,10 @@
 {
  "format": 1,
  "kind": "cycles",
- "version": 2026102501,
- "issued": "2026-10-25",
+ "version": 2026110501,
+ "issued": "2026-11-05",
  "minApp": 37,
- "source": "공개 자료(기사·채용 공고·노무 사이트·정부 자료·커뮤니티)로 모은 회사별 교대 주기, 2026-10-25. 사실(근무형태·순서·시간)과 출처 링크만",
+ "source": "공개 자료(기사·채용 공고·노무 사이트·정부 자료·커뮤니티)로 모은 회사별 교대 주기, 2026-10-25 · 2026-11-05 더함. 사실(근무형태·순서·시간)과 출처 링크만",
  "data": {
   "forms": [
    {
@@ -6324,6 +6324,227 @@
       "usual": true
      }
     ]
+   },
+   {
+    "id": "c149",
+    "display": "광진구 CCTV 통합관제센터 [관제원] · 관제",
+    "company": "광진구 CCTV 통합관제센터",
+    "industry": "관제",
+    "site": "관제원(기간제)",
+    "form": "4조2교대",
+    "order": "주·야·비·휴 (4일)",
+    "time": "주간 08-18 / 야간 18-08 (휴게 포함)",
+    "asOf": "2024-03 공고",
+    "trust": "공고",
+    "source": "https://www.gwangjin.go.kr/portal/bbs/B0000004/view.do?nttId=6208852",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DNBO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "18:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "18:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c150",
+    "display": "법무부 교정시설 [보안근무 4부제] · 교정",
+    "company": "법무부 교정본부",
+    "industry": "교정",
+    "site": "보안근무(교도관)",
+    "form": "4부제",
+    "order": "주·야·비·휴 또는 조별 윤번",
+    "time": "공개 시간 없음",
+    "asOf": "2026-09 기사",
+    "trust": "기사",
+    "source": "https://khan.co.kr/article/202609251314001",
+    "formKey": "4부제",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DNBO",
+    "orderState": "usual",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c151",
+    "display": "법무부 교정시설 [변형 4부제] · 교정",
+    "company": "법무부 교정본부",
+    "industry": "교정",
+    "site": "보안근무(교도관)",
+    "form": "변형 4부제",
+    "order": "주·야·비·주·주·야·비·휴 (8일)",
+    "time": "주간 09-18 / 야간 17-09 (원래 4부제 시간)",
+    "asOf": "2017-11 기사",
+    "trust": "기사",
+    "source": "https://m.go.seoul.co.kr/news/2017/11/06/20171106035013",
+    "formKey": "4부제",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DNBDDNBO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "09:00",
+      "end": "18:00",
+      "usual": false
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "17:00",
+      "end": "09:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c152",
+    "display": "소방 [3조1교대 24시간] · 소방",
+    "company": "소방청(일부 관서)",
+    "industry": "소방",
+    "site": "현장(3조1교대 도입 관서)",
+    "form": "3조1교대",
+    "order": "당·비·비",
+    "time": "24시간 당번",
+    "asOf": "2019-04 기사",
+    "trust": "기사",
+    "source": "https://www.newsis.com/view/NISX20190424_0000630921",
+    "formKey": "3조1교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "XBO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "X",
+      "name": "당번",
+      "label": "당",
+      "start": "09:00",
+      "end": "09:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c153",
+    "display": "서울교통공사 [역무] · 철도·지하철",
+    "company": "서울교통공사",
+    "industry": "철도·지하철",
+    "site": "역무",
+    "form": "4조2교대",
+    "order": "주·야·비·휴 (4일)",
+    "time": "공개 시간 없음",
+    "asOf": "",
+    "trust": "커뮤니티",
+    "source": "https://www.teamblind.com/kr/post/서울교통공사-사무이신분-있나요-0l6ax13j",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "COMMUNITY"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DNBO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c154",
+    "display": "대한적십자사 경인의료재활센터병원 [병동 간호사] · 병원",
+    "company": "대한적십자사 경인의료재활센터병원",
+    "industry": "병원",
+    "site": "병동 간호사(야간전담 따로)",
+    "form": "3교대",
+    "order": "D·E·N (병원이 근무표 짬)",
+    "time": "공개 시간 없음",
+    "asOf": "2022-01 공고",
+    "trust": "공고",
+    "source": "https://www.incheon.go.kr/job/JOB010201/2081321",
+    "formKey": "3교대",
+    "trustKinds": [
+     "NOTICE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": true,
+    "shifts": []
    }
   ]
  }
