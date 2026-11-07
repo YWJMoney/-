@@ -1,10 +1,10 @@
 {
  "format": 1,
  "kind": "cycles",
- "version": 2026110501,
- "issued": "2026-11-05",
+ "version": 2026110602,
+ "issued": "2026-11-06",
  "minApp": 37,
- "source": "공개 자료(기사·채용 공고·노무 사이트·정부 자료·커뮤니티)로 모은 회사별 교대 주기, 2026-10-25 · 2026-11-05 더함. 사실(근무형태·순서·시간)과 출처 링크만",
+ "source": "공개 자료(기사·채용 공고·노무 사이트·정부 자료·커뮤니티)로 모은 회사별 교대 주기, 2026-10-25 · 2026-11-05 · 2026-11-06 더함. 사실(근무형태·순서·시간)과 출처 링크만",
  "data": {
   "forms": [
    {
@@ -38,6 +38,10 @@
    {
     "key": "3조1교대",
     "name": "3조 1교대"
+   },
+   {
+    "key": "4조1교대",
+    "name": "4조 1교대"
    },
    {
     "key": "2조2교대",
@@ -5615,8 +5619,8 @@
       "code": "N",
       "name": "야간",
       "label": "야",
-      "start": "19:00",
-      "end": "07:00",
+      "start": "18:40",
+      "end": "09:20",
       "usual": true
      }
     ]
@@ -6545,6 +6549,235 @@
     "weekly": false,
     "roster": true,
     "shifts": []
+   },
+   {
+    "id": "c155",
+    "display": "포항남부경찰서 상대지구대 [지구대 지역경찰] · 경찰",
+    "company": "포항남부경찰서 상대지구대",
+    "industry": "경찰",
+    "site": "지구대 지역경찰",
+    "form": "4조2교대",
+    "order": "주·야·비·휴 (4일)",
+    "time": "야간 17:00-익일 08:00",
+    "asOf": "2020-02 기사",
+    "trust": "기사",
+    "source": "https://www.kbmaeil.com/article/202002200271920",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DNBO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "08:00",
+      "end": "17:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "17:00",
+      "end": "08:00",
+      "usual": false
+     }
+    ]
+   },
+   {
+    "id": "c156",
+    "display": "서울소방재난본부 [고강도 구급대 15곳] · 소방",
+    "company": "서울소방재난본부",
+    "industry": "소방",
+    "site": "고강도 구급대 15곳",
+    "form": "4조2교대 (3조2교대에서 바꿈)",
+    "order": "공개 순서 없음",
+    "time": "",
+    "asOf": "2022-07 기사",
+    "trust": "기사",
+    "source": "https://www.asiae.co.kr/en/article/2022072507440295436",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": []
+   },
+   {
+    "id": "c157",
+    "display": "농림축산검역본부 인천공항지역본부 [휴대품검역과] · 공항 검역",
+    "company": "농림축산검역본부 인천공항지역본부",
+    "industry": "공항 검역",
+    "site": "휴대품검역과",
+    "form": "3조1교대 (24시간 근무 후 이틀 휴식)",
+    "order": "당(24시간)·비·비 (3일)",
+    "time": "24시간",
+    "asOf": "2015-08 기사",
+    "trust": "기사",
+    "source": "https://www.fnnews.com/news/201508051752128539",
+    "formKey": "3조1교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "XBO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "X",
+      "name": "당번",
+      "label": "당",
+      "start": "09:00",
+      "end": "09:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c158",
+    "display": "관세청 세관 [24시간 현업] · 세관",
+    "company": "관세청 세관",
+    "industry": "세관",
+    "site": "24시간 현업",
+    "form": "격일제 (24시간 2교대)",
+    "order": "근무·휴무 (2일)",
+    "time": "24시간",
+    "asOf": "2017-11 기사",
+    "trust": "기사",
+    "source": "https://m.go.seoul.co.kr/news/2017/11/20/20171120031001",
+    "formKey": "격일제",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "XB",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "X",
+      "name": "당번",
+      "label": "당",
+      "start": "09:00",
+      "end": "09:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c159",
+    "display": "SR [역무] · 철도",
+    "company": "SR",
+    "industry": "철도",
+    "site": "역무",
+    "form": "4조2교대 (5조3교대에서 바꿈, 2020-06 시행)",
+    "order": "주·야·비·휴 (4일)",
+    "time": "",
+    "asOf": "2020-04 기사",
+    "trust": "기사",
+    "source": "https://m.go.seoul.co.kr/news/2020/04/22/20200422500048",
+    "formKey": "4조2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DNBO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "07:00",
+      "end": "19:00",
+      "usual": true
+     },
+     {
+      "code": "N",
+      "name": "야간",
+      "label": "야",
+      "start": "19:00",
+      "end": "07:00",
+      "usual": true
+     }
+    ]
+   },
+   {
+    "id": "c160",
+    "display": "서울 법인택시 [2인 1차 운전] · 택시",
+    "company": "서울 법인택시",
+    "industry": "택시",
+    "site": "2인 1차 운전",
+    "form": "1일 2교대 (2인 1차, 오전·오후조)",
+    "order": "공개 순서 없음",
+    "time": "평균 10시간 40분",
+    "asOf": "2013 서울시 자료",
+    "trust": "기사",
+    "source": "https://news.seoul.go.kr/traffic/archives/11838",
+    "formKey": "2교대",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "",
+    "orderState": "none",
+    "weekly": false,
+    "roster": false,
+    "shifts": []
+   },
+   {
+    "id": "c161",
+    "display": "대구 법인택시 [1인 1차 운전 (8부제)] · 택시",
+    "company": "대구 법인택시",
+    "industry": "택시",
+    "site": "1인 1차 운전 (8부제)",
+    "form": "1인 1차 (8부제)",
+    "order": "7근1휴 (8일)",
+    "time": "",
+    "asOf": "2004-01 기사",
+    "trust": "기사",
+    "source": "https://www.imaeil.com/page/view/2004011413475593095",
+    "formKey": "기타",
+    "trustKinds": [
+     "ARTICLE"
+    ],
+    "linkCheck": false,
+    "partner": false,
+    "codes": "DDDDDDDO",
+    "orderState": "exact",
+    "weekly": false,
+    "roster": false,
+    "shifts": [
+     {
+      "code": "D",
+      "name": "주간",
+      "label": "주",
+      "start": "06:00",
+      "end": "14:00",
+      "usual": true
+     }
+    ]
    }
   ]
  }
