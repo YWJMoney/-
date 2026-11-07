@@ -68,19 +68,20 @@ function calc(){
   rows+='<tr><td>세전 월급 (시간×시급)</td><td>'+B.won(gross)+'</td></tr>';
   if(mode==='biz'){var it=B.floor10(gross*0.03),lt=B.floor10(it*0.1);ded=it+lt;
     rows+='<tr><td>사업소득세 3% + 지방소득세 0.3%</td><td>-'+B.won(ded)+'</td></tr>';}
-  if(mode==='ins'){var r=B.rateFor(year),pb=B.pensionBaseFor(year);
-    var pen=B.floor10(Math.min(Math.max(gross,pb.min),pb.max)*r.pensionRate/2),hea=B.floor10(gross*r.healthRate/2),
-        ltc=B.floor10(gross*r.longTermCareRate/2),emp=B.floor10(gross*r.unemploymentRate/2);ded=pen+hea+ltc+emp;
-    rows+='<tr><td>국민연금 '+(r.pensionRate*50).toFixed(2)+'%</td><td>-'+B.won(pen)+'</td></tr>'+
-      '<tr><td>건강보험 '+(r.healthRate*50).toFixed(3)+'%</td><td>-'+B.won(hea)+'</td></tr>'+
-      '<tr><td>장기요양</td><td>-'+B.won(ltc)+'</td></tr>'+
-      '<tr><td>고용보험 '+(r.unemploymentRate*50).toFixed(1)+'%</td><td>-'+B.won(emp)+'</td></tr>'+
-      '<tr><td colspan="2" class="note">근로소득세는 간이세액표(부양가족 수)에 따라 달라 여기서는 빼지 않았어요.</td></tr>';}
+  if(mode==='ins'){var x=B.insurance(gross,year),r=x.rates,tax=B.incomeTax(gross,1,0),lt=tax?Math.floor(tax/100)*10:0;
+    ded=x.pension+x.health+x.care+x.employment+(tax||0)+lt;
+    rows+='<tr><td>국민연금 '+(r.pensionRate*50).toFixed(2)+'%</td><td>-'+B.won(x.pension)+'</td></tr>'+
+      '<tr><td>건강보험 '+(r.healthRate*50).toFixed(3)+'%</td><td>-'+B.won(x.health)+'</td></tr>'+
+      '<tr><td>장기요양</td><td>-'+B.won(x.care)+'</td></tr>'+
+      '<tr><td>고용보험 '+(r.unemploymentRate*50).toFixed(1)+'%</td><td>-'+B.won(x.employment)+'</td></tr>'+
+      (tax===null?'<tr><td colspan="2" class="note">근로소득세 표를 불러오지 못해 소득세는 빼지 않았어요.</td></tr>':
+      '<tr><td>근로소득세 (간이세액표, 본인 1명)</td><td>-'+B.won(tax)+'</td></tr><tr><td>지방소득세</td><td>-'+B.won(lt)+'</td></tr>')+
+      '<tr><td colspan="2" class="note">가족 수·비과세 식대까지 넣으려면 <a href="../salary/">월급 실수령액 계산기</a>를 써요.</td></tr>';}
   rows+='<tr class="sum"><td>실수령</td><td>'+B.won(gross-ded)+'</td></tr>';
   $('out').textContent=B.won(gross-ded);$('lines').innerHTML=rows;
 }
 $('tax').querySelectorAll('.chip').forEach(function(b){b.onclick=function(){$('tax').querySelectorAll('.chip').forEach(function(c){c.setAttribute('aria-pressed','false')});b.setAttribute('aria-pressed','true');mode=b.dataset.v;calc();};});
-B.ready.then(function(){year=B.years()[0]||year;$('wage').value=B.rateFor(year).minimumHourlyWage;
+Promise.all([B.ready,B.loadTaxTable().catch(function(){})]).then(function(){year=B.years()[0]||year;$('wage').value=B.rateFor(year).minimumHourlyWage;
   B.yearChips($('years'),function(y){year=y;$('wage').value=B.rateFor(y).minimumHourlyWage;calc();});calc();});
 ['wage','days','hours'].forEach(function(i){$(i).addEventListener('input',calc);});
 })();

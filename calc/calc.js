@@ -26,6 +26,43 @@
       B.pensionBases.forEach(function (p) { if (p.from <= day) pick = p; });
       return pick;
     },
+    // 원 × 요율을 10원 미만 버림 (공단 고지 방식). 소수 오차(26,999.999…)를 먼저 다듬어요.
+    cut10: function (base, rate) { return Math.max(0, Math.floor(Math.floor(Math.round(base * rate * 1000) / 1000) / 10) * 10); },
+    // 근로자 몫 4대보험 (앱 TakeHome과 같은 방식): 국민연금은 천 원 미만 버린 기준소득월액을 하한·상한 안에서,
+    // 건강보험은 보수 하한 28만 원, 장기요양은 건강보험료 × 장기요양률 ÷ 건강보험률.
+    insurance: function (taxable, year) {
+      var r = B.rateFor(year), pb = B.pensionBaseFor(year);
+      if (taxable <= 0) return { pension: 0, health: 0, care: 0, employment: 0 };
+      var pension = B.cut10(Math.min(Math.max(Math.floor(taxable / 1000) * 1000, pb.min), pb.max), r.pensionRate / 2);
+      var health = B.cut10(Math.max(taxable, 280000), r.healthRate / 2);
+      var care = Math.floor(Math.floor(Math.round(health * r.longTermCareRate / r.healthRate * 1e6) / 1e6) / 10) * 10;
+      var employment = B.cut10(taxable, r.unemploymentRate / 2);
+      return { pension: pension, health: health, care: care, employment: employment, rates: r };
+    },
+    // 근로소득 간이세액표 (remote/v1/taxtable.json, 소득세법 시행령 별표 2). 앱 WithholdingTable과 같은 읽기.
+    taxTable: null,
+    loadTaxTable: function () {
+      return fetch(base + 'remote/v1/taxtable.json', { cache: 'no-cache' }).then(function (r) { return r.json(); })
+        .then(function (j) { var t = j.data.tables.slice().sort(function (a, b) { return a.from < b.from ? -1 : 1; }); B.taxTable = t[t.length - 1]; return B.taxTable; });
+    },
+    incomeTax: function (pay, family, children) {
+      var t = B.taxTable; if (!t) return null;
+      var f = Math.max(1, family | 0);
+      var col = function (r, n) { return n <= 11 ? r[n - 1] : Math.max(0, r[10] - (r[9] - r[10]) * (n - 11)); };
+      var tax;
+      if (pay < t.rows[0][0] * 1000) tax = 0;
+      else if (pay < 10000000) {
+        var row = null; for (var i = 0; i < t.rows.length; i++) if (pay >= t.rows[i][0] * 1000) row = t.rows[i];
+        tax = row ? col(row.slice(2, 13), f) : 0;
+      } else {
+        tax = col(t.top, f); var o = null;
+        t.over.slice().sort(function (a, b) { return a.above - b.above; }).forEach(function (x) { if (pay > x.above) o = x; });
+        if (o) tax += o.add + B.cut10(pay - o.above, o.factor * o.rate);
+      }
+      var k = Math.max(0, children | 0);
+      var kid = k === 0 ? 0 : k === 1 ? t.children.one : t.children.two + t.children.more * (k - 2);
+      return Math.max(0, tax - kid);
+    },
     years: function () {
       var ys = {}; B.rates.forEach(function (r) { ys[r.from.slice(0, 4)] = true; });
       var now = new Date().getFullYear();

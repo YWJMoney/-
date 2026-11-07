@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>퇴직금 계산기 (평균임금 × 30일 × 재직일수/365) | 밤낮</title>
+<meta name="description" content="입사일, 마지막 근무일, 최근 3개월 월급과 상여·연차수당을 넣으면 평균임금과 예상 퇴직금을 계산해요. 1년 미만, 3개월 일수까지 법정 방식 그대로.">
+<link rel="canonical" href="https://bamnat.app/calc/severance/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="퇴직금 계산기 (평균임금 × 30일 × 재직일수/365) | 밤낮">
+<meta property="og:description" content="입사일, 마지막 근무일, 최근 3개월 월급과 상여·연차수당을 넣으면 평균임금과 예상 퇴직금을 계산해요. 1년 미만, 3개월 일수까지 법정 방식 그대로.">
+<meta property="og:url" content="https://bamnat.app/calc/severance/">
+<meta property="og:locale" content="ko_KR">
+<link rel="stylesheet" href="../../calc/calc.css">
+<script src="../../calc/calc.js"></script>
+<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "WebApplication", "name": "퇴직금 계산기", "url": "https://bamnat.app/calc/severance/", "applicationCategory": "FinanceApplication", "operatingSystem": "Any", "inLanguage": "ko", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "KRW"}, "publisher": {"@type": "Organization", "name": "밤낮"}}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "퇴직금은 누가 받나요?", "acceptedAnswer": {"@type": "Answer", "text": "같은 회사에서 1년 이상 일했고 4주 평균 1주 15시간 이상 일한 근로자가 받아요(근로자퇴직급여 보장법 제4조). 알바·계약직도 같아요."}}, {"@type": "Question", "name": "평균임금은 어떻게 구하나요?", "acceptedAnswer": {"@type": "Answer", "text": "퇴직 전 3개월 동안 받은 임금 총액을 그 3개월의 날수(89~92일)로 나눠요. 1년 상여와 연차수당은 3/12만 더해요(근로기준법 제2조)."}}, {"@type": "Question", "name": "야간·연장 수당도 들어가나요?", "acceptedAnswer": {"@type": "Answer", "text": "네. 매달 받은 야간·연장·휴일 수당도 임금이라 평균임금에 들어가요. 교대 근무자는 수당이 많은 달이 마지막 3개월이면 퇴직금이 커져요."}}, {"@type": "Question", "name": "세금은 얼마나 떼나요?", "acceptedAnswer": {"@type": "Answer", "text": "퇴직금에는 퇴직소득세가 따로 붙어요. 근속 연수가 길수록 공제가 커서 근로소득세보다 훨씬 적어요. 이 계산기는 세전 금액이에요."}}]}]</script>
+</head>
+<body>
+<main>
+<nav class="top"><a href="../../">밤낮</a> › <a href="../../calc/">근무·급여 계산기</a></nav>
+<h1>퇴직금 계산기</h1>
+<p class="lead">입사일과 마지막 근무일, 최근 석 달 월급만 넣으면 돼요. 상여와 연차수당이 있으면 함께 넣어요.</p>
+<div class="card">
+  <div class="row">
+    <div><label for="start">입사일</label><input id="start" type="date" value="2022-03-02"></div>
+    <div><label for="last">마지막 근무일</label><input id="last" type="date"></div>
+  </div>
+  <label for="pay">최근 3개월 월 평균 세전 임금 (원)<span class="hint">기본급과 매달 받은 수당(야간·연장 포함)을 더한 금액, 세금 떼기 전</span></label>
+  <input id="pay" inputmode="numeric" value="3000000">
+  <div class="row">
+    <div><label for="bonus">1년 상여 합계</label><input id="bonus" inputmode="numeric" value="0"></div>
+    <div><label for="leavepay">1년 연차수당</label><input id="leavepay" inputmode="numeric" value="0"></div>
+  </div>
+</div>
+<div class="card result" aria-live="polite">
+  <div class="muted">예상 퇴직금 (세전)</div>
+  <div class="big" id="out">-</div>
+  <table class="lines" id="lines"></table>
+</div>
+<div class="cta">
+  <strong>퇴직 전 3개월 수당까지 기록해 두세요</strong>
+  <span class="muted">밤낮에 근무를 넣어 두면 달마다 야간·연장 수당을 담은 예상 월급이 남아 퇴직금 평균임금을 맞춰 보기 좋아요.</span><br>
+  <a class="btn" data-play="severance" href="https://play.google.com/store/apps/details?id=com.bamnat.app">밤낮 무료로 받기 (Android)</a>
+</div>
+<h2>자주 묻는 것</h2>
+<details><summary>퇴직금은 누가 받나요?</summary><p>같은 회사에서 1년 이상 일했고 4주 평균 1주 15시간 이상 일한 근로자가 받아요(근로자퇴직급여 보장법 제4조). 알바·계약직도 같아요.</p></details>
+<details><summary>평균임금은 어떻게 구하나요?</summary><p>퇴직 전 3개월 동안 받은 임금 총액을 그 3개월의 날수(89~92일)로 나눠요. 1년 상여와 연차수당은 3/12만 더해요(근로기준법 제2조).</p></details>
+<details><summary>야간·연장 수당도 들어가나요?</summary><p>네. 매달 받은 야간·연장·휴일 수당도 임금이라 평균임금에 들어가요. 교대 근무자는 수당이 많은 달이 마지막 3개월이면 퇴직금이 커져요.</p></details>
+<details><summary>세금은 얼마나 떼나요?</summary><p>퇴직금에는 퇴직소득세가 따로 붙어요. 근속 연수가 길수록 공제가 커서 근로소득세보다 훨씬 적어요. 이 계산기는 세전 금액이에요.</p></details>
+<p class="note" style="margin-top:18px">참고용 계산이에요. 실제 지급액은 근로계약·회사 규정·세법 적용에 따라 달라질 수 있어요. 요율은 밤낮 앱과 같은 공개 자료(최저임금 고시, 4대보험 요율)를 써요.</p>
+<footer>
+  <a href="../../calc/">다른 계산기</a> · <a href="../../shift/">교대 근무 달력 만들기</a> · <a href="../../privacy/">개인정보 처리방침</a><br>
+  상호 밤낮 · 문의 <a href="mailto:yoj0790@naver.com">yoj0790@naver.com</a> · 입력한 값은 이 화면에서만 계산하고 어디에도 보내지 않아요.
+</footer>
+</main>
+<script>
+(function(){
+var B=Bamnat,$=function(i){return document.getElementById(i)};
+function d(v){var p=v.split('-');return new Date(+p[0],+p[1]-1,+p[2]);}
+function days(a,b){return Math.round((b-a)/864e5);}
+function calc(){
+  if(!$('start').value||!$('last').value)return;
+  var s=d($('start').value),l=d($('last').value),retire=new Date(l.getFullYear(),l.getMonth(),l.getDate()+1);
+  var served=days(s,retire);if(served<=0){$('out').textContent='-';$('lines').innerHTML='';return;}
+  var from=new Date(retire.getFullYear(),retire.getMonth()-3,retire.getDate()),n3=days(from,retire);
+  var pay=B.num($('pay').value)*3,bonus=B.num($('bonus').value)*3/12,lp=B.num($('leavepay').value)*3/12;
+  var avg=(pay+bonus+lp)/n3,sev=Math.floor(avg*30*served/365);
+  var rows='<tr><td>재직 일수</td><td>'+served.toLocaleString('ko-KR')+'일 (약 '+(Math.floor(served/365*10)/10)+'년)</td></tr>'+
+    '<tr><td>최근 3개월 일수</td><td>'+n3+'일</td></tr>'+
+    '<tr><td>3개월 임금 + 상여·연차수당의 3/12</td><td>'+B.won(pay+bonus+lp)+'</td></tr>'+
+    '<tr><td>1일 평균임금</td><td>'+B.won(avg)+'</td></tr>';
+  if(served<365){$('out').textContent='0원';rows+='<tr><td colspan="2">계속 근로 1년 미만이면 퇴직금이 생기지 않아요.</td></tr>';}
+  else{$('out').textContent=B.won(sev);rows+='<tr class="sum"><td>평균임금 × 30일 × 재직일수 ÷ 365</td><td>'+B.won(sev)+'</td></tr>';}
+  $('lines').innerHTML=rows;
+}
+var n=new Date();$('last').value=n.getFullYear()+'-'+('0'+(n.getMonth()+1)).slice(-2)+'-'+('0'+n.getDate()).slice(-2);
+['start','last','pay','bonus','leavepay'].forEach(function(i){$(i).addEventListener('input',calc);});calc();
+})();
+</script>
+</body>
+</html>

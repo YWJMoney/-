@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>연차 계산기 (입사일 기준 · 1년 미만 월차 · 근속 가산) | 밤낮</title>
+<meta name="description" content="입사일만 넣으면 지금 쓸 수 있는 연차, 다음 연차가 생기는 날, 근속 연수별 연차 개수(15일~25일)를 바로 보여 줘요. 1년 미만 매달 1일, 3년차부터 2년마다 1일 가산.">
+<link rel="canonical" href="https://bamnat.app/calc/leave/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="연차 계산기 (입사일 기준 · 1년 미만 월차 · 근속 가산) | 밤낮">
+<meta property="og:description" content="입사일만 넣으면 지금 쓸 수 있는 연차, 다음 연차가 생기는 날, 근속 연수별 연차 개수(15일~25일)를 바로 보여 줘요. 1년 미만 매달 1일, 3년차부터 2년마다 1일 가산.">
+<meta property="og:url" content="https://bamnat.app/calc/leave/">
+<meta property="og:locale" content="ko_KR">
+<link rel="stylesheet" href="../../calc/calc.css">
+<script src="../../calc/calc.js"></script>
+<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "WebApplication", "name": "연차 계산기", "url": "https://bamnat.app/calc/leave/", "applicationCategory": "FinanceApplication", "operatingSystem": "Any", "inLanguage": "ko", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "KRW"}, "publisher": {"@type": "Organization", "name": "밤낮"}}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "연차는 몇 개 생기나요?", "acceptedAnswer": {"@type": "Answer", "text": "1년 동안 80% 이상 출근하면 15일이 생기고, 3년 이상 일하면 처음 1년을 넘은 뒤 2년마다 1일씩 늘어 최대 25일이에요(근로기준법 제60조)."}}, {"@type": "Question", "name": "입사 1년이 안 됐어요.", "acceptedAnswer": {"@type": "Answer", "text": "1년 미만이거나 1년 동안 출근율이 80% 미만이면 한 달 개근할 때마다 1일씩, 최대 11일이 생겨요. 이 연차는 입사 1년이 되는 날까지 써야 해요."}}, {"@type": "Question", "name": "회사가 회계연도(1월 1일) 기준으로 줘요.", "acceptedAnswer": {"@type": "Answer", "text": "회계연도 기준으로 줄 수도 있지만, 퇴사할 때 입사일 기준보다 적으면 그만큼 정산해야 해요. 이 계산기는 입사일 기준이에요."}}, {"@type": "Question", "name": "5명 미만 회사도 연차가 있나요?", "acceptedAnswer": {"@type": "Answer", "text": "상시 근로자 5명 미만 사업장은 연차 규정이 적용되지 않아요(근로기준법 제11조)."}}, {"@type": "Question", "name": "교대 근무라 연차를 언제 썼는지 헷갈려요.", "acceptedAnswer": {"@type": "Answer", "text": "밤낮 앱 달력에 연차를 적으면 올해 쓴 날과 남은 날을 함께 보여 줘요."}}]}]</script>
+</head>
+<body>
+<main>
+<nav class="top"><a href="../../">밤낮</a> › <a href="../../calc/">근무·급여 계산기</a></nav>
+<h1>연차 계산기</h1>
+<p class="lead">입사일만 넣으면 돼요. 1년 미만은 한 달 개근마다 1일, 1년이 지나면 15일, 그 뒤 2년마다 1일씩 늘어 25일까지예요.</p>
+<div class="card">
+  <div class="row">
+    <div><label for="start">입사일</label><input id="start" type="date" value="2025-03-02"></div>
+    <div><label for="today">기준일</label><input id="today" type="date"></div>
+  </div>
+</div>
+<div class="card result" aria-live="polite">
+  <div class="muted" id="headline">지금 생긴 연차</div>
+  <div class="big" id="out">-</div>
+  <table class="lines" id="lines"></table>
+</div>
+<div class="cta">
+  <strong>쓴 연차, 남은 연차를 달력에서</strong>
+  <span class="muted">밤낮 달력에 연차·반차를 적으면 남은 연차와 쓴 날이 한눈에 보이고, 연차 날엔 근무 알람이 쉬어요.</span><br>
+  <a class="btn" data-play="leave" href="https://play.google.com/store/apps/details?id=com.bamnat.app">밤낮 무료로 받기 (Android)</a>
+</div>
+<h2>자주 묻는 것</h2>
+<details><summary>연차는 몇 개 생기나요?</summary><p>1년 동안 80% 이상 출근하면 15일이 생기고, 3년 이상 일하면 처음 1년을 넘은 뒤 2년마다 1일씩 늘어 최대 25일이에요(근로기준법 제60조).</p></details>
+<details><summary>입사 1년이 안 됐어요.</summary><p>1년 미만이거나 1년 동안 출근율이 80% 미만이면 한 달 개근할 때마다 1일씩, 최대 11일이 생겨요. 이 연차는 입사 1년이 되는 날까지 써야 해요.</p></details>
+<details><summary>회사가 회계연도(1월 1일) 기준으로 줘요.</summary><p>회계연도 기준으로 줄 수도 있지만, 퇴사할 때 입사일 기준보다 적으면 그만큼 정산해야 해요. 이 계산기는 입사일 기준이에요.</p></details>
+<details><summary>5명 미만 회사도 연차가 있나요?</summary><p>상시 근로자 5명 미만 사업장은 연차 규정이 적용되지 않아요(근로기준법 제11조).</p></details>
+<details><summary>교대 근무라 연차를 언제 썼는지 헷갈려요.</summary><p>밤낮 앱 달력에 연차를 적으면 올해 쓴 날과 남은 날을 함께 보여 줘요.</p></details>
+<p class="note" style="margin-top:18px">참고용 계산이에요. 실제 지급액은 근로계약·회사 규정·세법 적용에 따라 달라질 수 있어요. 요율은 밤낮 앱과 같은 공개 자료(최저임금 고시, 4대보험 요율)를 써요.</p>
+<footer>
+  <a href="../../calc/">다른 계산기</a> · <a href="../../shift/">교대 근무 달력 만들기</a> · <a href="../../privacy/">개인정보 처리방침</a><br>
+  상호 밤낮 · 문의 <a href="mailto:yoj0790@naver.com">yoj0790@naver.com</a> · 입력한 값은 이 화면에서만 계산하고 어디에도 보내지 않아요.
+</footer>
+</main>
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+function d(v){var p=v.split('-');return new Date(+p[0],+p[1]-1,+p[2]);}
+function addY(x,n){return new Date(x.getFullYear()+n,x.getMonth(),x.getDate());}
+function addM(x,n){return new Date(x.getFullYear(),x.getMonth()+n,x.getDate());}
+function f(x){return x.getFullYear()+'.'+(x.getMonth()+1)+'.'+x.getDate();}
+function per(n){return Math.min(25,15+Math.floor((n-1)/2));}
+function calc(){
+  if(!$('start').value||!$('today').value)return;var s=d($('start').value),t=d($('today').value);if(t<s){$('out').textContent='-';$('lines').innerHTML='';return;}
+  var years=0;while(addY(s,years+1)<=t)years++;
+  var rows='';
+  if(years<1){var m=0;while(m<11&&addM(s,m+1)<=t)m++;
+    $('headline').textContent='입사 1년 전, 지금까지 생긴 연차';$('out').textContent=m+'일';
+    rows+='<tr><td>한 달 개근마다 1일 (최대 11일)</td><td>'+m+'일</td></tr>';
+    if(m<11)rows+='<tr><td>다음 1일이 생기는 날</td><td>'+f(addM(s,m+1))+'</td></tr>';
+    rows+='<tr><td>입사 1년 되는 날 ('+f(addY(s,1))+')</td><td>15일 생김</td></tr>';
+  }else{$('headline').textContent='근속 '+years+'년, 올해 생긴 연차';$('out').textContent=per(years)+'일';
+    rows+='<tr><td>다음 연차가 생기는 날 ('+f(addY(s,years+1))+')</td><td>'+per(years+1)+'일</td></tr>';}
+  rows+='<tr><td colspan="2" class="note">근속 연수별 (입사일 기준)</td></tr>';
+  [1,2,3,5,7,10,15,21].forEach(function(n){rows+='<tr><td>'+n+'년 ('+f(addY(s,n))+')</td><td>'+per(n)+'일</td></tr>';});
+  $('lines').innerHTML=rows;
+}
+var n=new Date();$('today').value=n.getFullYear()+'-'+('0'+(n.getMonth()+1)).slice(-2)+'-'+('0'+n.getDate()).slice(-2);
+['start','today'].forEach(function(i){$(i).addEventListener('input',calc);});calc();
+})();
+</script>
+</body>
+</html>
