@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>알바 월급 계산기 · 시급으로 월급 (주휴수당·3.3%·4대보험) | 밤낮</title>
+<meta name="description" content="시급, 하루 근무 시간, 주 근무일을 넣으면 주휴수당을 포함한 한 달 월급과 3.3% 또는 4대보험을 뺀 실수령액을 계산해요. 2026·2027 최저시급 반영.">
+<link rel="canonical" href="https://bamnat.app/calc/alba/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="알바 월급 계산기 · 시급으로 월급 (주휴수당·3.3%·4대보험) | 밤낮">
+<meta property="og:description" content="시급, 하루 근무 시간, 주 근무일을 넣으면 주휴수당을 포함한 한 달 월급과 3.3% 또는 4대보험을 뺀 실수령액을 계산해요. 2026·2027 최저시급 반영.">
+<meta property="og:url" content="https://bamnat.app/calc/alba/">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:image" content="https://bamnat.app/og/calc.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="../../calc/calc.css">
+<script src="../../calc/calc.js"></script>
+<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "WebApplication", "name": "알바 월급 계산기", "url": "https://bamnat.app/calc/alba/", "applicationCategory": "FinanceApplication", "operatingSystem": "Any", "inLanguage": "ko", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "KRW"}, "publisher": {"@type": "Organization", "name": "밤낮"}}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "3.3%는 왜 떼나요?", "acceptedAnswer": {"@type": "Answer", "text": "근로계약 대신 프리랜서(사업소득)로 처리하면 소득세 3%와 지방소득세 0.3%를 떼고 줘요. 실제로 사장님 지시를 받아 정해진 시간에 일하면 근로자라서 4대보험·주휴수당 대상일 수 있어요."}}, {"@type": "Question", "name": "한 달은 몇 주로 계산하나요?", "acceptedAnswer": {"@type": "Answer", "text": "1년 365일 ÷ 7 ÷ 12 = 약 4.345주로 계산해요. 주 40시간이면 주휴 포함 월 209시간이 돼요."}}, {"@type": "Question", "name": "4대보험은 얼마나 떼나요?", "acceptedAnswer": {"@type": "Answer", "text": "근로자 몫은 국민연금 4.75%(2026년), 건강보험 3.595%, 장기요양(건강보험료의 약 13%), 고용보험 0.9%예요. 2027년 국민연금은 5%예요."}}, {"@type": "Question", "name": "주마다 근무 시간이 달라요.", "acceptedAnswer": {"@type": "Answer", "text": "밤낮 앱에 실제 근무를 넣으면 주마다 주휴 조건을 따로 따져서 그달 월급을 계산해요. 근무 알람도 같이 맞출 수 있어요."}}]}]</script>
+</head>
+<body>
+<main>
+<nav class="top"><a href="../../">밤낮</a> › <a href="../../calc/">근무·급여 계산기</a></nav>
+<h1>알바 월급 계산기</h1>
+<p class="lead">시급과 근무 시간으로 한 달 월급을 계산해요. 주휴수당을 넣고, 3.3% 떼는지 4대보험인지 골라 손에 쥐는 돈까지 봐요.</p>
+<div class="card">
+  <label for="wage">시급 (원)</label>
+  <input id="wage" inputmode="numeric" autocomplete="off">
+  <div class="chips" id="years"></div>
+  <div class="row">
+    <div><label for="days">1주 근무일</label><input id="days" inputmode="decimal" value="5"></div>
+    <div><label for="hours">하루 근무 시간</label><input id="hours" inputmode="decimal" value="8"></div>
+  </div>
+  <label>떼는 것</label>
+  <div class="chips" id="tax">
+    <button type="button" class="chip" data-v="none" aria-pressed="false">안 뗌</button>
+    <button type="button" class="chip" data-v="biz" aria-pressed="true">3.3%</button>
+    <button type="button" class="chip" data-v="ins" aria-pressed="false">4대보험</button>
+  </div>
+</div>
+<div class="card result" aria-live="polite">
+  <div class="muted">한 달 실수령 (예상)</div>
+  <div class="big" id="out">-</div>
+  <table class="lines" id="lines"></table>
+</div>
+<div class="cta">
+  <strong>시간표가 매주 바뀌는 알바라면</strong>
+  <span class="muted">밤낮에 근무를 넣으면 주마다 주휴수당 조건을 따로 따져 이번 달 월급을 보여 줘요. 근무 30분 전 알람도 근무마다 달리 맞춰요.</span><br>
+  <a class="btn" data-play="alba" href="https://play.google.com/store/apps/details?id=com.bamnat.app">밤낮 무료로 받기 (Android)</a>
+</div>
+<h2>자주 묻는 것</h2>
+<details><summary>3.3%는 왜 떼나요?</summary><p>근로계약 대신 프리랜서(사업소득)로 처리하면 소득세 3%와 지방소득세 0.3%를 떼고 줘요. 실제로 사장님 지시를 받아 정해진 시간에 일하면 근로자라서 4대보험·주휴수당 대상일 수 있어요.</p></details>
+<details><summary>한 달은 몇 주로 계산하나요?</summary><p>1년 365일 ÷ 7 ÷ 12 = 약 4.345주로 계산해요. 주 40시간이면 주휴 포함 월 209시간이 돼요.</p></details>
+<details><summary>4대보험은 얼마나 떼나요?</summary><p>근로자 몫은 국민연금 4.75%(2026년), 건강보험 3.595%, 장기요양(건강보험료의 약 13%), 고용보험 0.9%예요. 2027년 국민연금은 5%예요.</p></details>
+<details><summary>주마다 근무 시간이 달라요.</summary><p>밤낮 앱에 실제 근무를 넣으면 주마다 주휴 조건을 따로 따져서 그달 월급을 계산해요. 근무 알람도 같이 맞출 수 있어요.</p></details>
+<p class="note" style="margin-top:18px">참고용 계산이에요. 실제 지급액은 근로계약·회사 규정·세법 적용에 따라 달라질 수 있어요. 요율은 밤낮 앱과 같은 공개 자료(최저임금 고시, 4대보험 요율)를 써요.</p>
+<footer>
+  <a href="../../calc/">다른 계산기</a> · <a href="../../shift/">교대 근무 달력 만들기</a> · <a href="../../privacy/">개인정보 처리방침</a><br>
+  상호 밤낮 · 문의 <a href="mailto:yoj0790@naver.com">yoj0790@naver.com</a> · 입력한 값은 이 화면에서만 계산하고 어디에도 보내지 않아요.
+</footer>
+</main>
+<script>
+(function(){
+var B=Bamnat,$=function(i){return document.getElementById(i)},mode='biz',year=new Date().getFullYear();
+function calc(){
+  var w=B.num($('wage').value),d=B.num($('days').value),h=B.num($('hours').value),week=d*h;
+  if(!w||!week){$('out').textContent='-';$('lines').innerHTML='';return;}
+  var weeks=365/7/12,juh=week>=15?Math.min(week,40)/40*8:0,hrs=Math.round((week+juh)*weeks),gross=hrs*w,rows='',ded=0;
+  rows+='<tr><td>1주 근무 '+week+'시간 + 주휴 '+(Math.round(juh*100)/100)+'시간'+(week<15?' (주 15시간 미만이라 주휴 없음)':'')+'</td><td></td></tr>';
+  rows+='<tr><td>한 달 유급 시간 (×4.345주)</td><td>'+hrs+'시간</td></tr>';
+  rows+='<tr><td>세전 월급 (시간×시급)</td><td>'+B.won(gross)+'</td></tr>';
+  if(mode==='biz'){var it=B.floor10(gross*0.03),lt=B.floor10(it*0.1);ded=it+lt;
+    rows+='<tr><td>사업소득세 3% + 지방소득세 0.3%</td><td>-'+B.won(ded)+'</td></tr>';}
+  if(mode==='ins'){var x=B.insurance(gross,year),r=x.rates,tax=B.incomeTax(gross,1,0),lt=tax?Math.floor(tax/100)*10:0;
+    ded=x.pension+x.health+x.care+x.employment+(tax||0)+lt;
+    rows+='<tr><td>국민연금 '+(r.pensionRate*50).toFixed(2)+'%</td><td>-'+B.won(x.pension)+'</td></tr>'+
+      '<tr><td>건강보험 '+(r.healthRate*50).toFixed(3)+'%</td><td>-'+B.won(x.health)+'</td></tr>'+
+      '<tr><td>장기요양</td><td>-'+B.won(x.care)+'</td></tr>'+
+      '<tr><td>고용보험 '+(r.unemploymentRate*50).toFixed(1)+'%</td><td>-'+B.won(x.employment)+'</td></tr>'+
+      (tax===null?'<tr><td colspan="2" class="note">근로소득세 표를 불러오지 못해 소득세는 빼지 않았어요.</td></tr>':
+      '<tr><td>근로소득세 (간이세액표, 본인 1명)</td><td>-'+B.won(tax)+'</td></tr><tr><td>지방소득세</td><td>-'+B.won(lt)+'</td></tr>')+
+      '<tr><td colspan="2" class="note">가족 수·비과세 식대까지 넣으려면 <a href="../salary/">월급 실수령액 계산기</a>를 써요.</td></tr>';}
+  rows+='<tr class="sum"><td>실수령</td><td>'+B.won(gross-ded)+'</td></tr>';
+  $('out').textContent=B.won(gross-ded);$('lines').innerHTML=rows;
+}
+$('tax').querySelectorAll('.chip').forEach(function(b){b.onclick=function(){$('tax').querySelectorAll('.chip').forEach(function(c){c.setAttribute('aria-pressed','false')});b.setAttribute('aria-pressed','true');mode=b.dataset.v;calc();};});
+Promise.all([B.ready,B.loadTaxTable().catch(function(){})]).then(function(){year=B.years()[0]||year;$('wage').value=B.rateFor(year).minimumHourlyWage;
+  B.yearChips($('years'),function(y){year=y;$('wage').value=B.rateFor(y).minimumHourlyWage;calc();});calc();});
+['wage','days','hours'].forEach(function(i){$(i).addEventListener('input',calc);});
+})();
+</script>
+</body>
+</html>

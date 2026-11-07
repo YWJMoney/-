@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>월급·연봉 실수령액 계산기 2026 (4대보험·간이세액표) | 밤낮</title>
+<meta name="description" content="월급이나 연봉을 넣으면 국민연금·건강보험·장기요양·고용보험과 근로소득세(간이세액표), 지방소득세를 뺀 실수령액을 계산해요. 부양가족·자녀·비과세 식대 반영, 2027년 국민연금 5%도.">
+<link rel="canonical" href="https://bamnat.app/calc/salary/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="월급·연봉 실수령액 계산기 2026 (4대보험·간이세액표) | 밤낮">
+<meta property="og:description" content="월급이나 연봉을 넣으면 국민연금·건강보험·장기요양·고용보험과 근로소득세(간이세액표), 지방소득세를 뺀 실수령액을 계산해요. 부양가족·자녀·비과세 식대 반영, 2027년 국민연금 5%도.">
+<meta property="og:url" content="https://bamnat.app/calc/salary/">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:image" content="https://bamnat.app/og/calc.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="../../calc/calc.css">
+<script src="../../calc/calc.js"></script>
+<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "WebApplication", "name": "월급·연봉 실수령액 계산기", "url": "https://bamnat.app/calc/salary/", "applicationCategory": "FinanceApplication", "operatingSystem": "Any", "inLanguage": "ko", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "KRW"}, "publisher": {"@type": "Organization", "name": "밤낮"}}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "실수령액은 어떻게 계산하나요?", "acceptedAnswer": {"@type": "Answer", "text": "세전 월급에서 국민연금(2026년 4.75%), 건강보험(3.595%), 장기요양(건강보험료×13.14%), 고용보험(0.9%)과 근로소득세(간이세액표), 지방소득세(소득세의 10%)를 빼요. 비과세 식대는 보험료와 세금 계산에서 빠져요."}}, {"@type": "Question", "name": "근로소득세는 왜 회사마다 다르게 떼나요?", "acceptedAnswer": {"@type": "Answer", "text": "회사는 간이세액표 금액의 80%, 100%, 120% 중 하나를 고를 수 있고(소득세법 시행령 제194조), 1년치는 연말정산에서 맞춰요. 이 계산기는 100% 기준이에요."}}, {"@type": "Question", "name": "2027년에는 얼마나 달라지나요?", "acceptedAnswer": {"@type": "Answer", "text": "2027년에는 국민연금 근로자 몫이 5%로 올라요. 요율 연도에서 2027년을 고르면 바로 볼 수 있어요."}}, {"@type": "Question", "name": "야간·연장 수당이 달마다 달라요.", "acceptedAnswer": {"@type": "Answer", "text": "밤낮 앱에 근무를 넣으면 그달 수당을 더한 세전 월급으로 실수령을 저절로 계산해요. 명세서 사진과 맞춰 볼 수도 있어요."}}]}]</script>
+</head>
+<body>
+<main>
+<nav class="top"><a href="../../">밤낮</a> › <a href="../../calc/">근무·급여 계산기</a></nav>
+<h1>월급·연봉 실수령액 계산기</h1>
+<p class="lead">세전 월급이나 연봉을 넣으면 4대보험과 소득세를 뺀 통장에 들어오는 돈을 계산해요. 소득세는 국세청 근로소득 간이세액표 원문 그대로예요.</p>
+<div class="card">
+  <div class="chips" id="kind">
+    <button type="button" class="chip" data-v="month" aria-pressed="true">월급</button>
+    <button type="button" class="chip" data-v="year" aria-pressed="false">연봉</button>
+  </div>
+  <label for="amount" id="amountLabel">세전 월급 (원)</label>
+  <input id="amount" inputmode="numeric" value="3000000" autocomplete="off">
+  <label for="free">비과세 (식대 등, 월)<span class="hint">식대는 월 20만 원까지 비과세예요. 없으면 0.</span></label>
+  <input id="free" inputmode="numeric" value="200000">
+  <div class="row">
+    <div><label for="family">부양가족 수 (본인 포함)</label><input id="family" inputmode="numeric" value="1"></div>
+    <div><label for="kids">그중 8~20세 자녀</label><input id="kids" inputmode="numeric" value="0"></div>
+  </div>
+  <label>요율 연도</label>
+  <div class="chips" id="years"></div>
+</div>
+<div class="card result" aria-live="polite">
+  <div class="muted">한 달 실수령 (예상)</div>
+  <div class="big" id="out">-</div>
+  <table class="lines" id="lines"></table>
+</div>
+<div class="cta">
+  <strong>수당이 달마다 바뀐다면, 이번 달 실수령은?</strong>
+  <span class="muted">밤낮은 근무표로 야간·연장·휴일 수당을 더한 이번 달 세전 월급을 만들고, 같은 방식으로 실수령까지 보여 줘요.</span><br>
+  <a class="btn" data-play="salary" href="https://play.google.com/store/apps/details?id=com.bamnat.app">밤낮 무료로 받기 (Android)</a>
+</div>
+<h2>자주 묻는 것</h2>
+<details><summary>실수령액은 어떻게 계산하나요?</summary><p>세전 월급에서 국민연금(2026년 4.75%), 건강보험(3.595%), 장기요양(건강보험료×13.14%), 고용보험(0.9%)과 근로소득세(간이세액표), 지방소득세(소득세의 10%)를 빼요. 비과세 식대는 보험료와 세금 계산에서 빠져요.</p></details>
+<details><summary>근로소득세는 왜 회사마다 다르게 떼나요?</summary><p>회사는 간이세액표 금액의 80%, 100%, 120% 중 하나를 고를 수 있고(소득세법 시행령 제194조), 1년치는 연말정산에서 맞춰요. 이 계산기는 100% 기준이에요.</p></details>
+<details><summary>2027년에는 얼마나 달라지나요?</summary><p>2027년에는 국민연금 근로자 몫이 5%로 올라요. 요율 연도에서 2027년을 고르면 바로 볼 수 있어요.</p></details>
+<details><summary>야간·연장 수당이 달마다 달라요.</summary><p>밤낮 앱에 근무를 넣으면 그달 수당을 더한 세전 월급으로 실수령을 저절로 계산해요. 명세서 사진과 맞춰 볼 수도 있어요.</p></details>
+<p class="note" style="margin-top:18px">참고용 계산이에요. 실제 지급액은 근로계약·회사 규정·세법 적용에 따라 달라질 수 있어요. 요율은 밤낮 앱과 같은 공개 자료(최저임금 고시, 4대보험 요율)를 써요.</p>
+<footer>
+  <a href="../../calc/">다른 계산기</a> · <a href="../../shift/">교대 근무 달력 만들기</a> · <a href="../../privacy/">개인정보 처리방침</a><br>
+  상호 밤낮 · 문의 <a href="mailto:yoj0790@naver.com">yoj0790@naver.com</a> · 입력한 값은 이 화면에서만 계산하고 어디에도 보내지 않아요.
+</footer>
+</main>
+<script>
+(function(){
+var B=Bamnat,$=function(i){return document.getElementById(i)},kind='month',year=new Date().getFullYear();
+function calc(){
+  var a=B.num($('amount').value);if(!a){$('out').textContent='-';$('lines').innerHTML='';return;}
+  var gross=Math.floor(kind==='year'?a/12:a),free=Math.min(B.num($('free').value),gross),taxable=gross-free;
+  var x=B.insurance(taxable,year),tax=B.incomeTax(taxable,B.num($('family').value)||1,B.num($('kids').value)),lt=tax?Math.floor(tax/100)*10:0;
+  var ded=x.pension+x.health+x.care+x.employment+(tax||0)+lt,net=gross-ded,r=x.rates;
+  $('out').textContent=B.won(net);
+  $('lines').innerHTML=(kind==='year'?'<tr><td>월 세전 (연봉÷12)</td><td>'+B.won(gross)+'</td></tr>':'')+
+    '<tr><td>국민연금 '+(r.pensionRate*50).toFixed(2)+'%</td><td>-'+B.won(x.pension)+'</td></tr>'+
+    '<tr><td>건강보험 '+(r.healthRate*50).toFixed(3)+'%</td><td>-'+B.won(x.health)+'</td></tr>'+
+    '<tr><td>장기요양</td><td>-'+B.won(x.care)+'</td></tr>'+
+    '<tr><td>고용보험 '+(r.unemploymentRate*50).toFixed(1)+'%</td><td>-'+B.won(x.employment)+'</td></tr>'+
+    (tax===null?'<tr><td colspan="2" class="note">소득세 표를 불러오지 못했어요. 잠시 뒤 다시 열어 주세요.</td></tr>':
+    '<tr><td>근로소득세 (간이세액표)</td><td>-'+B.won(tax)+'</td></tr><tr><td>지방소득세 (10%)</td><td>-'+B.won(lt)+'</td></tr>')+
+    '<tr><td>공제 합계</td><td>-'+B.won(ded)+'</td></tr>'+
+    '<tr class="sum"><td>월 실수령</td><td>'+B.won(net)+'</td></tr>'+
+    '<tr><td>1년 실수령 (×12)</td><td>'+B.won(net*12)+'</td></tr>';
+}
+$('kind').querySelectorAll('.chip').forEach(function(b){b.onclick=function(){$('kind').querySelectorAll('.chip').forEach(function(c){c.setAttribute('aria-pressed','false')});b.setAttribute('aria-pressed','true');kind=b.dataset.v;
+  $('amountLabel').textContent=kind==='year'?'세전 연봉 (원, 퇴직금 빼고)':'세전 월급 (원)';var v=B.num($('amount').value);$('amount').value=kind==='year'?v*12:Math.floor(v/12);calc();};});
+Promise.all([B.ready,B.loadTaxTable().catch(function(){})]).then(function(){
+  var box=$('years');B.years().forEach(function(y,i){var b=document.createElement('button');b.type='button';b.className='chip';b.textContent=y+'년';b.setAttribute('aria-pressed',i===0?'true':'false');
+    b.onclick=function(){box.querySelectorAll('.chip').forEach(function(c){c.setAttribute('aria-pressed','false')});b.setAttribute('aria-pressed','true');year=y;calc();};box.appendChild(b);});
+  year=B.years()[0]||year;calc();});
+['amount','free','family','kids'].forEach(function(i){$(i).addEventListener('input',calc);});
+})();
+</script>
+</body>
+</html>
