@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>교대 근무 달력 만들기 · 4조2교대·3조2교대·주야비휴 근무표 | 밤낮</title>
+<meta name="description" content="4조2교대, 3조2교대, 4조3교대, 주야비휴, 24시간 맞교대 순서와 첫 근무 날만 고르면 석 달 근무 달력을 바로 보여 줘요. 공개 자료로 확인한 회사별 교대 방식도 찾아봐요.">
+<link rel="canonical" href="https://bamnat.app/shift/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="교대 근무 달력 만들기 · 4조2교대·3조2교대·주야비휴 근무표 | 밤낮">
+<meta property="og:description" content="4조2교대, 3조2교대, 4조3교대, 주야비휴, 24시간 맞교대 순서와 첫 근무 날만 고르면 석 달 근무 달력을 바로 보여 줘요. 공개 자료로 확인한 회사별 교대 방식도 찾아봐요.">
+<meta property="og:url" content="https://bamnat.app/shift/">
+<meta property="og:locale" content="ko_KR">
+<link rel="stylesheet" href="../calc/calc.css">
+<script src="../calc/calc.js"></script>
+<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "WebApplication", "name": "교대 근무 달력 만들기", "url": "https://bamnat.app/shift/", "applicationCategory": "FinanceApplication", "operatingSystem": "Any", "inLanguage": "ko", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "KRW"}, "publisher": {"@type": "Organization", "name": "밤낮"}}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "4조 2교대는 어떤 순서인가요?", "acceptedAnswer": {"@type": "Answer", "text": "가장 흔한 것은 주간·야간·비번·휴무(주야비휴) 4일 순서예요. 회사에 따라 주주야야휴휴휴휴(8일)처럼 길게 도는 곳도 있어요. 위에서 순서를 골라 첫날만 넣으면 달력이 나와요."}}, {"@type": "Question", "name": "3조 2교대와 4조 3교대는 어떻게 다른가요?", "acceptedAnswer": {"@type": "Answer", "text": "3조 2교대는 세 조가 주간·야간 두 근무를 돌아가며(예: 주주야야휴휴), 4조 3교대는 네 조가 주간·오후·야간 세 근무를 돌아가요(예: 주주오오야야휴휴)."}}, {"@type": "Question", "name": "우리 회사 교대 방식이 목록에 없어요.", "acceptedAnswer": {"@type": "Answer", "text": "밤낮 앱의 회사 찾기에서 알려 주시면 기사·공고 같은 공개 자료로 확인한 뒤 더해요. 확인 전에도 순서를 직접 적어 쓸 수 있어요."}}, {"@type": "Question", "name": "달력을 휴대폰에 넣고 알람도 맞출 수 있나요?", "acceptedAnswer": {"@type": "Answer", "text": "밤낮 앱에서 같은 순서를 고르면 몇 년치가 한 번에 채워지고, 주간·야간마다 다른 시각에 울리는 근무 알람도 맞춰요. 쉬는 날엔 조용해요."}}]}]</script>
+</head>
+<body>
+<main>
+<nav class="top"><a href="../">밤낮</a> › <a href="../calc/">근무·급여 계산기</a></nav>
+<h1>교대 근무 달력 만들기</h1>
+<p class="lead">근무 순서와 첫날만 고르면 석 달 근무 달력이 바로 나와요. 우리 회사 교대 방식을 모르면 아래에서 회사 이름으로 찾아봐요.</p>
+<div class="card">
+  <label for="pat">근무 순서</label>
+  <select id="pat"></select>
+  <label for="custom">직접 적기<span class="hint">주=D 오후=E 야=N 휴=O 당번=X 비번=B. 예: DDNNOO</span></label>
+  <input id="custom" autocomplete="off" autocapitalize="characters">
+  <label for="first">이 순서의 첫날<span class="hint">순서 맨 앞 근무를 하는 날이에요. 예: 주주야야휴휴면 첫 주간 날.</span></label>
+  <input id="first" type="date">
+</div>
+<div class="card" aria-live="polite">
+  <div id="today" style="font-weight:700"></div>
+  <div id="cal"></div>
+</div>
+<h2>회사별 교대 방식 찾기</h2>
+<p class="note">기사·채용 공고·노무 사이트처럼 공개된 자료에서 확인한 것만 모았어요. 조나 부서마다 다를 수 있으니 출처를 같이 봐요.</p>
+<input id="q" placeholder="회사 이름이나 업종 (예: 발전, 제철, 반도체)" autocomplete="off">
+<div id="firms"></div>
+<div class="card" style="margin-top:18px">
+  <strong>간호사처럼 매달 근무표가 바뀌나요?</strong><br>
+  <span class="muted">순서가 정해지지 않은 듀티표는 밤낮 앱에서 근무표 사진을 찍거나 열면 내 줄을 찾아 달력에 넣어 줘요.</span>
+</div>
+<div class="cta">
+  <strong>이 달력을 휴대폰에, 근무 알람까지</strong>
+  <span class="muted">밤낮 앱에서 같은 순서를 고르면 몇 년치 근무가 한 번에 채워지고, 주간·야간마다 다른 근무 알람과 이번 달 예상 월급까지 봐요.</span><br>
+  <a class="btn" data-play="shift" href="https://play.google.com/store/apps/details?id=com.bamnat.app">밤낮 무료로 받기 (Android)</a>
+</div>
+<h2>자주 묻는 것</h2>
+<details><summary>4조 2교대는 어떤 순서인가요?</summary><p>가장 흔한 것은 주간·야간·비번·휴무(주야비휴) 4일 순서예요. 회사에 따라 주주야야휴휴휴휴(8일)처럼 길게 도는 곳도 있어요. 위에서 순서를 골라 첫날만 넣으면 달력이 나와요.</p></details>
+<details><summary>3조 2교대와 4조 3교대는 어떻게 다른가요?</summary><p>3조 2교대는 세 조가 주간·야간 두 근무를 돌아가며(예: 주주야야휴휴), 4조 3교대는 네 조가 주간·오후·야간 세 근무를 돌아가요(예: 주주오오야야휴휴).</p></details>
+<details><summary>우리 회사 교대 방식이 목록에 없어요.</summary><p>밤낮 앱의 회사 찾기에서 알려 주시면 기사·공고 같은 공개 자료로 확인한 뒤 더해요. 확인 전에도 순서를 직접 적어 쓸 수 있어요.</p></details>
+<details><summary>달력을 휴대폰에 넣고 알람도 맞출 수 있나요?</summary><p>밤낮 앱에서 같은 순서를 고르면 몇 년치가 한 번에 채워지고, 주간·야간마다 다른 시각에 울리는 근무 알람도 맞춰요. 쉬는 날엔 조용해요.</p></details>
+<p class="note" style="margin-top:18px">참고용 계산이에요. 실제 지급액은 근로계약·회사 규정·세법 적용에 따라 달라질 수 있어요. 요율은 밤낮 앱과 같은 공개 자료(최저임금 고시, 4대보험 요율)를 써요.</p>
+<footer>
+  <a href="../calc/">다른 계산기</a> · <a href="../shift/">교대 근무 달력 만들기</a> · <a href="../privacy/">개인정보 처리방침</a><br>
+  상호 밤낮 · 문의 <a href="mailto:yoj0790@naver.com">yoj0790@naver.com</a> · 입력한 값은 이 화면에서만 계산하고 어디에도 보내지 않아요.
+</footer>
+</main>
+<script>
+(function(){
+var B=Bamnat,$=function(i){return document.getElementById(i)},pats=[],firms=[];
+var NAME={D:'주',E:'오',N:'야',O:'휴',X:'당',B:'비'};
+function iso(d){return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);}
+function codes(){var c=$('custom').value.toUpperCase().replace(/[^DENOXB]/g,'');return c||$('pat').value;}
+function draw(){
+  var c=codes(),f=$('first').value;if(!c||!f){$('cal').innerHTML='';$('today').textContent='';return;}
+  var p=f.split('-'),start=new Date(+p[0],+p[1]-1,+p[2]),now=new Date();now=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  var at=function(d){var k=Math.round((d-start)/864e5)%c.length;if(k<0)k+=c.length;return c[k];};
+  var t=at(now);$('today').textContent='오늘('+(now.getMonth()+1)+'/'+now.getDate()+')은 '+(NAME[t]||t)+' · 순서 '+c.length+'일';
+  var out='';for(var m=0;m<3;m++){var first=new Date(now.getFullYear(),now.getMonth()+m,1),last=new Date(first.getFullYear(),first.getMonth()+1,0);
+    out+='<div class="month-title">'+first.getFullYear()+'년 '+(first.getMonth()+1)+'월</div><div class="cal">';
+    '일월화수목금토'.split('').forEach(function(w){out+='<div class="h">'+w+'</div>';});
+    for(var i=0;i<first.getDay();i++)out+='<div></div>';
+    for(var d=1;d<=last.getDate();d++){var day=new Date(first.getFullYear(),first.getMonth(),d),s=at(day);
+      out+='<div class="d'+(+day===+now?' today':'')+'"><span class="n">'+d+'</span><span class="s '+s+'">'+(NAME[s]||s)+'</span></div>';}
+    out+='</div>';}
+  $('cal').innerHTML=out;
+  try{history.replaceState(null,'','?p='+c+'&s='+f);}catch(e){}
+}
+function esc(s){return String(s||'').replace(/[&<>"]/g,function(ch){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});}
+function list(){
+  var q=$('q').value.trim();if(!q){$('firms').innerHTML='';return;}
+  var hit=firms.filter(function(x){return (x.display+' '+x.form+' '+x.industry).indexOf(q)>=0;}).slice(0,30);
+  $('firms').innerHTML=hit.length?hit.map(function(x,i){
+    return '<div class="list-item"><strong>'+esc(x.display)+'</strong><br><span class="muted">'+esc(x.form)+(x.order?' · '+esc(x.order):'')+(x.time?' · '+esc(x.time):'')+'</span><br>'+
+      (x.source&&/^https?:/.test(x.source)?'<a href="'+esc(x.source)+'" target="_blank" rel="noopener nofollow">출처</a> ':'')+
+      (x.codes?'<button type="button" class="chip" data-c="'+esc(x.codes)+'">이 순서로 달력 보기</button>':'<span class="note">순서가 공개되지 않았어요</span>')+'</div>';
+  }).join(''):'<p class="note">아직 없어요. 밤낮 앱의 회사 찾기에서 알려 주시면 공개 자료를 확인해 더해요.</p>';
+  $('firms').querySelectorAll('button[data-c]').forEach(function(b){b.onclick=function(){$('custom').value=b.dataset.c;draw();$('cal').scrollIntoView({behavior:'smooth'});};});
+}
+var qs=new URLSearchParams(location.search);
+$('first').value=qs.get('s')||iso(new Date());if(qs.get('p'))$('custom').value=qs.get('p');
+Promise.all([
+  fetch(B.base+'remote/v1/presets.json').then(function(r){return r.json();}).catch(function(){return null;}),
+  fetch(B.base+'remote/v1/cycles.json').then(function(r){return r.json();}).catch(function(){return null;})
+]).then(function(a){
+  pats=(a[0]&&a[0].data&&a[0].data.patterns)||[{name:'4조 2교대',description:'주야비휴',codes:'DNOO'},{name:'3조 2교대',description:'주주야야비휴',codes:'DDNNOO'}];
+  firms=(a[1]&&a[1].data&&a[1].data.cycles)||[];
+  $('pat').innerHTML=pats.map(function(p){return '<option value="'+esc(p.codes)+'">'+esc(p.name)+' · '+esc(p.description)+'</option>';}).join('');
+  draw();list();
+});
+$('pat').addEventListener('change',function(){$('custom').value='';draw();});
+['custom','first'].forEach(function(i){$(i).addEventListener('input',draw);});$('q').addEventListener('input',list);
+})();
+</script>
+</body>
+</html>
