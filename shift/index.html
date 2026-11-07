@@ -11,6 +11,10 @@
 <meta property="og:description" content="4조2교대, 3조2교대, 4조3교대, 주야비휴, 24시간 맞교대 순서와 첫 근무 날만 고르면 석 달 근무 달력을 바로 보여 줘요. 공개 자료로 확인한 회사별 교대 방식도 찾아봐요.">
 <meta property="og:url" content="https://bamnat.app/shift/">
 <meta property="og:locale" content="ko_KR">
+<meta property="og:image" content="https://bamnat.app/og/shift.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="../calc/calc.css">
 <script src="../calc/calc.js"></script>
 <script type="application/ld+json">[{"@context": "https://schema.org", "@type": "WebApplication", "name": "교대 근무 달력 만들기", "url": "https://bamnat.app/shift/", "applicationCategory": "FinanceApplication", "operatingSystem": "Any", "inLanguage": "ko", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "KRW"}, "publisher": {"@type": "Organization", "name": "밤낮"}}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "4조 2교대는 어떤 순서인가요?", "acceptedAnswer": {"@type": "Answer", "text": "가장 흔한 것은 주간·야간·비번·휴무(주야비휴) 4일 순서예요. 회사에 따라 주주야야휴휴휴휴(8일)처럼 길게 도는 곳도 있어요. 위에서 순서를 골라 첫날만 넣으면 달력이 나와요."}}, {"@type": "Question", "name": "3조 2교대와 4조 3교대는 어떻게 다른가요?", "acceptedAnswer": {"@type": "Answer", "text": "3조 2교대는 세 조가 주간·야간 두 근무를 돌아가며(예: 주주야야휴휴), 4조 3교대는 네 조가 주간·오후·야간 세 근무를 돌아가요(예: 주주오오야야휴휴)."}}, {"@type": "Question", "name": "우리 회사 교대 방식이 목록에 없어요.", "acceptedAnswer": {"@type": "Answer", "text": "밤낮 앱의 회사 찾기에서 알려 주시면 기사·공고 같은 공개 자료로 확인한 뒤 더해요. 확인 전에도 순서를 직접 적어 쓸 수 있어요."}}, {"@type": "Question", "name": "달력을 휴대폰에 넣고 알람도 맞출 수 있나요?", "acceptedAnswer": {"@type": "Answer", "text": "밤낮 앱에서 같은 순서를 고르면 몇 년치가 한 번에 채워지고, 주간·야간마다 다른 시각에 울리는 근무 알람도 맞춰요. 쉬는 날엔 조용해요."}}]}]</script>
@@ -31,6 +35,8 @@
 <div class="card" aria-live="polite">
   <div id="today" style="font-weight:700"></div>
   <div id="cal"></div>
+  <button type="button" class="chip" id="share" style="margin-top:12px">같은 조 동료에게 이 달력 보내기</button>
+  <span class="note" id="shared"></span>
 </div>
 <h2>교대 순서별 설명</h2><ul class="links"><li><a href="p/3j2k/">3조 2교대</a> · 주주야야비휴</li><li><a href="p/4j2k/">4조 2교대</a> · 주야비휴</li><li><a href="p/4j3k/">4조 3교대</a> · 주주오오야야휴휴</li><li><a href="p/3k-week/">3교대 주 단위</a> · 주간 5일 · 오후 5일 · 야간 5일, 사이 2일 휴무</li><li><a href="p/alt-day/">격일 근무</a> · 근무 · 휴무 반복</li><li><a href="p/3j2k-9/">3조 2교대 9일</a> · 주주주야야야휴휴휴</li><li><a href="p/4j3k-12/">4조 3교대 12일</a> · 주주주오오오야야야휴휴휴</li><li><a href="p/5j3k/">5조 3교대</a> · 주주오오야야휴휴휴휴</li><li><a href="p/4j2k-8/">4조 2교대 8일</a> · 주주야야휴휴휴휴</li><li><a href="p/4j2k-8-dond/">4조 2교대 8일 (주휴야휴)</a> · 주주휴휴야야휴휴</li><li><a href="p/24h-2/">24시간 격일 맞교대</a> · 당번 · 비번 반복</li><li><a href="p/24h-3/">24시간 3조 맞교대</a> · 당번 · 비번 · 휴무 (소방 3조 1교대: 24시간 근무 뒤 이틀 쉬기)</li><li><a href="p/24h-4/">24시간 4조 맞교대</a> · 당번 · 비번 · 당번 · 비번 · 휴무 · 휴무 · 휴무 · 휴무</li><li><a href="p/police-4j2k/">4조 2교대 (경찰 지구대·파출소)</a> · 주야비휴 · 12시간씩, 4일 주기</li><li><a href="p/fire-3j2k-21/">3조 2교대 21일 (소방)</a> · 주간 5일 · 휴무 2일 · 야간·비번 7번 (주간 주의 쉬는 날이 다르면 고쳐 쓰세요)</li></ul>
 <h2>회사별 교대 방식 찾기</h2><p class="note"><a href="firms/">업종별 전체 목록 (154곳)</a></p>
@@ -100,6 +106,9 @@ Promise.all([
   $('pat').innerHTML=pats.map(function(p){return '<option value="'+esc(p.codes)+'">'+esc(p.name)+' · '+esc(p.description)+'</option>';}).join('');
   draw();list();
 });
+$('share').onclick=function(){var u=location.href,t='우리 조 근무 달력 ('+codes()+')';
+  if(navigator.share){navigator.share({title:t,url:u}).catch(function(){});}
+  else if(navigator.clipboard){navigator.clipboard.writeText(u).then(function(){$('shared').textContent=' 링크를 복사했어요. 카톡에 붙여 넣어 보내요.';});}};
 $('pat').addEventListener('change',function(){$('custom').value='';draw();});
 ['custom','first'].forEach(function(i){$(i).addEventListener('input',draw);});$('q').addEventListener('input',list);
 })();
