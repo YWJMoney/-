@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>야간수당·연장수당·휴일수당 계산기 (밤 10시~아침 6시 50%) | 밤낮</title>
+<meta name="description" content="출근·퇴근 시각과 시급을 넣으면 야간(22~06시)·연장(8시간 초과)·휴일 가산수당을 나눠서 계산해요. 5인 미만 사업장, 자정 넘는 야간 근무도 반영.">
+<link rel="canonical" href="https://bamnat.app/calc/allowance/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="야간수당·연장수당·휴일수당 계산기 (밤 10시~아침 6시 50%) | 밤낮">
+<meta property="og:description" content="출근·퇴근 시각과 시급을 넣으면 야간(22~06시)·연장(8시간 초과)·휴일 가산수당을 나눠서 계산해요. 5인 미만 사업장, 자정 넘는 야간 근무도 반영.">
+<meta property="og:url" content="https://bamnat.app/calc/allowance/">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:image" content="https://bamnat.app/og/calc.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="../../calc/calc.css">
+<script src="../../calc/calc.js"></script>
+<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "WebApplication", "name": "야간·연장·휴일수당 계산기", "url": "https://bamnat.app/calc/allowance/", "applicationCategory": "FinanceApplication", "operatingSystem": "Any", "inLanguage": "ko", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "KRW"}, "publisher": {"@type": "Organization", "name": "밤낮"}}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "야간수당은 몇 시부터인가요?", "acceptedAnswer": {"@type": "Answer", "text": "밤 10시부터 다음 날 아침 6시 사이에 일한 시간에 통상임금의 50%를 더 받아요(근로기준법 제56조 제3항). 야간이 연장이나 휴일과 겹치면 각각 더해요."}}, {"@type": "Question", "name": "연장수당은 언제 붙나요?", "acceptedAnswer": {"@type": "Answer", "text": "하루 8시간이나 1주 40시간을 넘게 일한 시간에 50%를 더 받아요. 이 계산기는 하루 8시간 기준만 셈해요. 1주 40시간 초과까지 보려면 한 주 근무를 모두 넣어야 해서 밤낮 앱에서 저절로 계산해요."}}, {"@type": "Question", "name": "휴일에 일하면 얼마나 더 받나요?", "acceptedAnswer": {"@type": "Answer", "text": "휴일에 일한 시간 중 8시간까지는 50%, 8시간을 넘은 시간은 100%를 더 받아요(근로기준법 제56조 제2항)."}}, {"@type": "Question", "name": "5명 미만 회사도 받을 수 있나요?", "acceptedAnswer": {"@type": "Answer", "text": "상시 근로자가 5명 미만이면 야간·연장·휴일 가산수당 규정이 적용되지 않아요. 다만 일한 시간만큼의 기본 시급과 주휴수당은 받아요."}}]}]</script>
+</head>
+<body>
+<main>
+<nav class="top"><a href="../../">밤낮</a> › <a href="../../calc/">근무·급여 계산기</a></nav>
+<h1>야간·연장·휴일수당 계산기</h1>
+<p class="lead">출근과 퇴근 시각만 넣으면 밤 10시~아침 6시 야간 시간과 8시간을 넘은 연장 시간을 저절로 나눠요. 자정을 넘는 야간 근무도 그대로 넣으세요.</p>
+<div class="card">
+  <label for="wage">시급 (원)</label>
+  <input id="wage" inputmode="numeric" autocomplete="off">
+  <div class="chips" id="years"></div>
+  <div class="row">
+    <div><label for="start">출근</label><input id="start" type="time" value="22:00"></div>
+    <div><label for="end">퇴근</label><input id="end" type="time" value="07:00"></div>
+  </div>
+  <label for="rest">휴게 시간 (분)<span class="hint">휴게는 야간이 아닌 시간에서 먼저 빼요. 밤에 쉬었다면 아래를 켜요.</span></label>
+  <input id="rest" inputmode="numeric" value="60">
+  <label class="check"><input type="checkbox" id="restNight"> 휴게를 밤 10시~아침 6시 사이에 했어요</label>
+  <label class="check"><input type="checkbox" id="holiday"> 쉬는 날(주휴일·공휴일)에 일했어요</label>
+  <label class="check"><input type="checkbox" id="small"> 상시 5명 미만 사업장이에요 (가산수당 없음)</label>
+</div>
+<div class="card result" aria-live="polite">
+  <div class="muted">이날 받을 금액 (가산 포함)</div>
+  <div class="big" id="out">-</div>
+  <table class="lines" id="lines"></table>
+</div>
+<div class="cta">
+  <strong>야간 근무가 많은 달, 이번 달 월급은?</strong>
+  <span class="muted">밤낮에 근무표를 넣으면 근무마다 야간·연장·휴일 시간을 나눠 수당까지 담은 이번 달 예상 월급을 보여 줘요. 명세서와 다르면 근무 종류마다 시수를 맞출 수 있어요.</span><br>
+  <a class="btn" data-play="allowance" href="https://play.google.com/store/apps/details?id=com.bamnat.app">밤낮 무료로 받기 (Android)</a>
+</div>
+<h2>자주 묻는 것</h2>
+<details><summary>야간수당은 몇 시부터인가요?</summary><p>밤 10시부터 다음 날 아침 6시 사이에 일한 시간에 통상임금의 50%를 더 받아요(근로기준법 제56조 제3항). 야간이 연장이나 휴일과 겹치면 각각 더해요.</p></details>
+<details><summary>연장수당은 언제 붙나요?</summary><p>하루 8시간이나 1주 40시간을 넘게 일한 시간에 50%를 더 받아요. 이 계산기는 하루 8시간 기준만 셈해요. 1주 40시간 초과까지 보려면 한 주 근무를 모두 넣어야 해서 밤낮 앱에서 저절로 계산해요.</p></details>
+<details><summary>휴일에 일하면 얼마나 더 받나요?</summary><p>휴일에 일한 시간 중 8시간까지는 50%, 8시간을 넘은 시간은 100%를 더 받아요(근로기준법 제56조 제2항).</p></details>
+<details><summary>5명 미만 회사도 받을 수 있나요?</summary><p>상시 근로자가 5명 미만이면 야간·연장·휴일 가산수당 규정이 적용되지 않아요. 다만 일한 시간만큼의 기본 시급과 주휴수당은 받아요.</p></details>
+<p class="note" style="margin-top:18px">참고용 계산이에요. 실제 지급액은 근로계약·회사 규정·세법 적용에 따라 달라질 수 있어요. 요율은 밤낮 앱과 같은 공개 자료(최저임금 고시, 4대보험 요율)를 써요.</p>
+<footer>
+  <a href="../../calc/">다른 계산기</a> · <a href="../../shift/">교대 근무 달력 만들기</a> · <a href="../../privacy/">개인정보 처리방침</a><br>
+  상호 밤낮 · 문의 <a href="mailto:yoj0790@naver.com">yoj0790@naver.com</a> · 입력한 값은 이 화면에서만 계산하고 어디에도 보내지 않아요.
+</footer>
+</main>
+<script>
+(function(){
+var B=Bamnat,$=function(i){return document.getElementById(i)};
+function mins(t){var p=(t||'0:0').split(':');return (+p[0])*60+(+p[1]);}
+function calc(){
+  var w=B.num($('wage').value);if(!w){$('out').textContent='-';$('lines').innerHTML='';return;}
+  var s=mins($('start').value),e=mins($('end').value);if(e<=s)e+=1440;
+  var total=0,night=0;for(var m=s;m<e;m++){total++;var t=m%1440;if(t>=1320||t<360)night++;}
+  var rest=Math.min(B.num($('rest').value),total);
+  if($('restNight').checked){var r=Math.min(rest,night);night-=r;}else{var dayPart=total-night,r2=Math.max(0,rest-dayPart);night-=Math.min(r2,night);}
+  var work=total-rest,h=function(x){return x/60;};
+  var hol=$('holiday').checked,small=$('small').checked;
+  var over=Math.max(0,work-480);
+  var base=h(work)*w,ext=0,nightP=0,holP=0;
+  if(!small){nightP=h(night)*w*0.5;
+    if(hol){holP=h(Math.min(work,480))*w*0.5+h(over)*w*1.0;}else{ext=h(over)*w*0.5;}}
+  var sum=base+ext+nightP+holP;$('out').textContent=B.won(sum);
+  var fmt=function(x){return Math.floor(x/60)+'시간'+(x%60?' '+(x%60)+'분':'');};
+  var rows='<tr><td>일한 시간 (휴게 '+rest+'분 뺌)</td><td>'+fmt(work)+'</td></tr>'+
+    '<tr><td>그중 야간 (22~06시)</td><td>'+fmt(night)+'</td></tr>'+
+    '<tr><td>그중 8시간 넘은 시간</td><td>'+fmt(over)+'</td></tr>'+
+    '<tr><td>기본 (시간×시급)</td><td>'+B.won(base)+'</td></tr>';
+  if(small)rows+='<tr><td colspan="2">5명 미만 사업장은 야간·연장·휴일 가산을 주지 않아도 돼요(근로기준법 제11조).</td></tr>';
+  else{rows+='<tr><td>야간 가산 50%</td><td>'+B.won(nightP)+'</td></tr>';
+    rows+=hol?'<tr><td>휴일 가산 (8시간까지 50%, 넘으면 100%)</td><td>'+B.won(holP)+'</td></tr>':'<tr><td>연장 가산 50%</td><td>'+B.won(ext)+'</td></tr>';}
+  rows+='<tr class="sum"><td>합계</td><td>'+B.won(sum)+'</td></tr>';$('lines').innerHTML=rows;
+}
+B.ready.then(function(){var y=B.years()[0]||new Date().getFullYear();$('wage').value=B.rateFor(y).minimumHourlyWage;
+  B.yearChips($('years'),function(y){$('wage').value=B.rateFor(y).minimumHourlyWage;calc();});calc();});
+['wage','start','end','rest','restNight','holiday','small'].forEach(function(i){$(i).addEventListener('input',calc);$(i).addEventListener('change',calc);});
+})();
+</script>
+</body>
+</html>
