@@ -30,13 +30,20 @@
     <div class="code" id="code">--------</div>
     <a class="btn primary" id="open" href="#">밤낮 앱에서 열기</a>
     <button type="button" id="copy">코드 복사</button>
-    <a class="btn plain" href="https://play.google.com/store/apps/details?id=com.bamnat.app">밤낮 앱 받기</a>
+    <a class="btn plain" id="get" href="https://play.google.com/store/apps/details?id=com.bamnat.app&amp;referrer=utm_source%3Dbamnat_share%26utm_medium%3Drecipe%26utm_campaign%3Drecipe">밤낮 앱 받기 · 무료</a>
+    <small id="after">앱을 받은 뒤 이 링크를 다시 누르면 앱에서 열려요.</small>
     <small>앱이 열리지 않으면 앱의 광장 › 나눔 판 › 코드로 받기에 위 코드를 넣어 주세요. 이 페이지는 아무것도 저장하지 않아요.</small>
   </div>
 </main>
 <script>
   (function () {
     var c = (new URLSearchParams(location.search).get("c") || "").toUpperCase();
+    // 1.39 [SPREAD-03] 밤낮 is an Android app: on an iPhone, say so instead of a store button that leads nowhere.
+    if (/iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)) {
+      document.getElementById("get").style.display = "none";
+      document.getElementById("open").style.display = "none";
+      document.getElementById("after").textContent = "밤낮은 Android 앱이에요. 레시피는 Android 휴대폰의 밤낮 앱에서 받을 수 있어요.";
+    }
     if (!/^[2-9A-HJ-NP-Z]{8}$/.test(c)) { document.getElementById("code").textContent = "코드가 없어요"; document.getElementById("open").style.display = "none"; return; }
     document.getElementById("code").textContent = c;
     document.getElementById("open").href = "bamnat://r/" + c;
