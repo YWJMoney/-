@@ -1,8 +1,8 @@
 {
  "format": 1,
  "kind": "presets",
- "version": 2026102301,
- "issued": "2026-10-22",
+ "version": 2026110801,
+ "issued": "2026-11-08",
  "minApp": 33,
  "source": "밤낮 앱에 든 근무 순서·근무 종류 묶음·직군 급여 시작값 (금액은 명세서로 바꾸는 자리 표시)",
  "data": {
@@ -10,13 +10,13 @@
    {
     "id": "p-3j2k",
     "name": "3조 2교대",
-    "description": "주주야야비휴",
+    "description": "주주야야휴휴",
     "codes": "DDNNOO"
    },
    {
     "id": "p-4j2k",
     "name": "4조 2교대",
-    "description": "주야비휴",
+    "description": "주야휴휴 (주야비휴)",
     "codes": "DNOO"
    },
    {
