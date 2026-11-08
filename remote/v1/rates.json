@@ -1,8 +1,8 @@
 {
  "format": 1,
  "kind": "rates",
- "version": 2026102201,
- "issued": "2026-10-22",
+ "version": 2026110501,
+ "issued": "2026-11-05",
  "minApp": 33,
  "source": "최저임금 고시, 국민연금법 부칙(법률 제20903호) 제4조, 국민건강보험법 시행령 제44조, 노인장기요양보험법 시행령 제4조, 고용보험료징수법 시행령 제12조, 국민연금 기준소득월액 고시",
  "data": {
@@ -34,7 +34,7 @@
     "minimumHourlyWage": 10700,
     "pensionRate": 0.1,
     "healthRate": 0.0719,
-    "longTermCareRate": null,
+    "longTermCareRate": 0.009994,
     "unemploymentRate": 0.018
    }
   ],
