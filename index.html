@@ -2,48 +2,233 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>밤낮 · 교대 근무표·근무 알람·급여 계산 앱</title>
-<meta name="description" content="교대·일근·알바·현장·사장님까지, 근무가 있는 모든 사람의 근무 앱 밤낮. 근무표와 근무 알람, 수당까지 급여 계산. 무료 계산기도 있어요.">
+<meta name="description" content="교대·일근·알바·현장·사장님까지, 근무가 있는 모든 사람의 근무 앱 밤낮. 근무표를 넣으면 한 달이 채워지고, 근무마다 다른 알람과 잘 시간, 수당까지 이번 달 월급. 로그인 없이 무료로.">
 <meta name="naver-site-verification" content="9b76a60eab24da1353f46874f6fbc86169e6bc78" />
 <link rel="canonical" href="https://bamnat.app/">
-<style>
-  :root { --fg:#1d1f2b; --muted:#5b5f73; --line:#e3e5ee; --bg:#fff; --accent:#3d4fd8; }
-  @media (prefers-color-scheme: dark) { :root { --fg:#e8e9f2; --muted:#a3a7bd; --line:#2c2f40; --bg:#151726; --accent:#9aa6ff; } }
-  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.7 -apple-system, "Noto Sans KR", "Apple SD Gothic Neo", sans-serif; }
-  main { max-width:720px; margin:0 auto; padding:32px 16px 64px; }
-  h1 { font-size:26px; margin:0 0 4px; }
-  h2 { font-size:19px; margin:36px 0 8px; padding-top:20px; border-top:1px solid var(--line); }
-  .muted { color:var(--muted); font-size:14px; }
-  a { color:var(--accent); }
-  ol li, ul li { margin:4px 0; }
-</style>
+<meta name="theme-color" content="#0d1022">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="밤낮">
+<meta property="og:title" content="밤낮 · 밤낮이 바뀌어도 내 하루는 한눈에">
+<meta property="og:description" content="근무표·근무 알람·잘 시간·수당까지 이번 달 월급. 교대 근무자부터 팀 리더, 사장님까지 로그인 없이 한 앱에서.">
+<meta property="og:url" content="https://bamnat.app/">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:image" content="https://bamnat.app/og/home.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/pretendard.css" as="style">
+<link rel="stylesheet" href="assets/fonts/pretendard.css">
+<link rel="stylesheet" href="calc/calc.css">
+<link rel="stylesheet" href="assets/home.css">
+<script src="calc/calc.js"></script>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"MobileApplication","name":"밤낮","operatingSystem":"ANDROID","applicationCategory":"ProductivityApplication","inLanguage":"ko","url":"https://bamnat.app/","installUrl":"https://play.google.com/store/apps/details?id=com.bamnat.app","offers":{"@type":"Offer","price":"0","priceCurrency":"KRW"},"publisher":{"@type":"Organization","name":"밤낮","url":"https://bamnat.app/"}},{"@type":"FAQPage","mainEntity":[{"@type": "Question", "name": "밤낮은 무료인가요?", "acceptedAnswer": {"@type": "Answer", "text": "근무표, 근무마다 다른 기본 알람, 위젯은 무료로 써요. 광고는 원할 때만 하루 두 편까지 소리 없이 나와요. 프로(구독 또는 자동 갱신 없는 1년 이용권)에는 광고가 없고 명세서 대조·급여 리포트 같은 기능이 더해져요. 팀원과 직원은 무료이고, 리더·사장님 기능은 팀·직원 요금제로 써요."}}, {"@type": "Question", "name": "회원가입을 해야 하나요?", "acceptedAnswer": {"@type": "Answer", "text": "아니요. 로그인이나 회원가입 없이 설치하자마자 근무를 넣어요."}}, {"@type": "Question", "name": "우리 회사 교대 순서가 특이해요.", "acceptedAnswer": {"@type": "Answer", "text": "주주야야휴휴처럼 순서를 직접 적어도 되고, 종이·엑셀·PDF 근무표를 찍거나 열면 내 줄을 찾아 달력에 넣어요. 공개 자료로 확인한 회사별 교대 방식도 목록에서 골라요."}}, {"@type": "Question", "name": "간호사처럼 근무표가 매달 바뀌어도 되나요?", "acceptedAnswer": {"@type": "Answer", "text": "네. 근무표가 나오는 날 사진을 찍거나 파일을 열면 내 줄을 찾아 한 달을 채워요. 헷갈리는 날은 따로 보여 줘서 바로 고쳐요."}}, {"@type": "Question", "name": "아이폰에서도 쓸 수 있나요?", "acceptedAnswer": {"@type": "Answer", "text": "지금 앱은 안드로이드(Google Play)에서 받을 수 있어요. 팀 리더나 사장님이 보낸 근무표·출퇴근 링크는 아이폰에서도 앱 없이 열어 볼 수 있어요."}}, {"@type": "Question", "name": "궁금한 게 있으면 어디로 물어요?", "acceptedAnswer": {"@type": "Answer", "text": "앱의 설정 › 도움말과 문의에서 보내 주세요. 보내 주신 의견으로 고친 판이 나오면 앱에서 알려 드려요. 전자우편 yoj0790@naver.com으로도 받아요."}}]}]}</script>
 </head>
-<body>
-<main>
-<h1>밤낮</h1>
-<p class="muted">교대 근무 달력 앱 ‘밤낮’의 공개 안내 페이지입니다.</p>
-<h2 style="border-top:0;padding-top:0;margin-top:20px">무료 계산기</h2>
-<ul>
-  <li><a href="calc/juhyu/">주휴수당 계산기</a> · <a href="calc/alba/">알바 월급 계산기</a></li>
-  <li><a href="calc/allowance/">야간·연장·휴일수당 계산기</a> · <a href="calc/daily/">일당 계산기</a></li>
-  <li><a href="calc/salary/">월급·연봉 실수령액 계산기</a> · <a href="calc/leave/">연차 계산기</a> · <a href="calc/severance/">퇴직금 계산기</a></li>
-  <li><a href="holiday/2027/">2027년 공휴일·연휴</a> · <a href="holiday/2026/">2026년 공휴일</a></li>
-  <li><a href="shift/">교대 근무 달력 만들기</a> · <a href="shift/firms/">회사별 교대 근무 방식</a></li>
-</ul>
-<p><a href="https://play.google.com/store/apps/details?id=com.bamnat.app&amp;referrer=utm_source%3Dbamnat_web%26utm_medium%3Dhome%26utm_campaign%3Dhome">밤낮 앱 받기 (Google Play)</a></p>
-<h2>안내</h2>
-<ul>
-  <li><a href="privacy/">개인정보 처리방침</a></li>
-  <li><a href="terms/">이용약관</a></li>
-  <li><a href="community/">광장 운영 규칙</a></li>
-</ul>
-<p class="muted">문의: <a href="mailto:yoj0790@naver.com">yoj0790@naver.com</a> (앱 안에서는 설정 › 도움말과 문의)</p>
-<footer class="muted" style="margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-size:13px">
-  상호 밤낮 · 대표자 양원준 · 사업자등록번호 327-25-02565 (<a href="https://www.ftc.go.kr/bizCommPop.do?wrkr_no=3272502565" target="_blank" rel="noopener">사업자 정보 확인</a>)<br>
-  통신판매업 신고번호 제2026-전남여수-0424호 · 전남광주통합특별시 여수시 안산1길 179, 2동 105호<br>
-  전화 010-6408-8825 · 전자우편 yoj0790@naver.com · 호스팅 Cloudflare, Inc., GitHub, Inc.
-</footer>
+<body class="home">
+<a class="skip" href="#main">본문으로</a>
+<header class="site-header">
+  <div class="in">
+    <a class="brand" href="" aria-label="밤낮 처음으로"><svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="#f2ece1" stroke-linecap="round"><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(0 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(15 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(30 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(45 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(60 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(75 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(90 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(105 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(120 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(135 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(150 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(165 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(180 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(195 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(210 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(225 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(240 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(255 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(270 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(285 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(300 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(315 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(330 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(345 32 32)"/></g><circle cx="32" cy="32" r="18" fill="none" stroke="#f2ece1" stroke-width="2.2"/><path class="dial-day" d="M14 32a18 18 0 0 1 36 0z" fill="#f2ece1"/><circle cx="32" cy="41" r="2.4" fill="#c2a36b"/></svg><span>밤낮</span></a>
+    <nav class="site-nav" aria-label="사이트"><a href="calc/">무료 계산기</a><a href="shift/">교대 근무 달력</a><a href="holiday/2027/">공휴일</a><a href="form/">근무표 양식</a></nav>
+    <span class="grow"></span>
+    <a class="get" data-play="header" href="https://play.google.com/store/apps/details?id=com.bamnat.app"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.6v16.8c0 .8.9 1.3 1.6.9l14.1-8.4c.7-.4.7-1.4 0-1.8L6.6 2.7C5.9 2.3 5 2.8 5 3.6z" fill="currentColor"/></svg>앱 받기</a>
+    <button class="menu-btn" type="button" aria-label="메뉴" aria-expanded="false"><svg class="bars" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg class="x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="menu"><div><ul><li class="grp">계산기</li><li><a href="calc/juhyu/">주휴수당</a></li><li><a href="calc/alba/">알바 월급</a></li><li><a href="calc/allowance/">야간·연장·휴일수당</a></li><li><a href="calc/daily/">일당</a></li><li><a href="calc/salary/">실수령액</a></li><li><a href="calc/leave/">연차</a></li><li><a href="calc/severance/">퇴직금</a></li><li><a href="calc/">계산기 모두</a></li><li class="grp">근무 달력</li><li><a href="shift/">교대 근무 달력 만들기</a></li><li><a href="shift/firms/">회사별 교대 방식</a></li><li><a href="shift/print/">2027 달력 인쇄</a></li><li><a href="form/">근무표 엑셀 양식</a></li><li><a href="holiday/2027/">2027 공휴일</a></li><li><a href="holiday/2026/">2026 공휴일</a></li></ul></div></div>
+</header>
+<main id="main">
+
+<!-- 1. 첫 장면: 시각에 맞춘 인사, 살아 있는 근무 달력 -->
+<section class="hero" aria-labelledby="hero-title">
+  <canvas id="sky" aria-hidden="true"></canvas>
+  <div class="horizon" aria-hidden="true"></div>
+  <div class="wrap grid">
+    <div>
+      <span class="greet"><b id="clock">--:--</b><span id="greet">근무가 있는 모든 분께</span></span>
+      <h1 id="hero-title"><span class="line"><span>밤낮이 바뀌어도</span></span><span class="line"><span class="gold">내 하루는 한눈에</span></span></h1>
+      <p class="lede">근무표를 넣으면 한 달이 채워지고, 근무마다 다른 알람과 잘 시간, 야간·휴일 수당까지 이번 달 월급이 따라와요. 교대 근무자부터 팀 리더, 사장님까지.</p>
+      <div class="acts">
+        <a class="btn shine" data-play="hero" data-medium="home" href="https://play.google.com/store/apps/details?id=com.bamnat.app"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.6v16.8c0 .8.9 1.3 1.6.9l14.1-8.4c.7-.4.7-1.4 0-1.8L6.6 2.7C5.9 2.3 5 2.8 5 3.6z" fill="currentColor"/></svg>Google Play에서 무료로 받기</a>
+        <a class="btn ghost" href="#try" id="try-link">내 근무로 미리 보기</a>
+      </div>
+      <div class="trust">
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.2 4L19 7"/></svg>로그인·회원가입 없이</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.2 4L19 7"/></svg>근무 알람·위젯 무료</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.2 4L19 7"/></svg>Android</span>
+      </div>
+    </div>
+    <div class="stage" id="try">
+      <p class="pick-label">근무 순서를 골라 보세요</p>
+      <div class="pick" id="pats" role="group" aria-label="근무 순서"></div>
+      <div class="pick teams" id="teams" role="group" aria-label="몇 조"></div>
+      <div class="phone-wrap">
+        <div class="phone" id="phone" aria-label="밤낮 달력 미리 보기">
+          <div class="screen">
+            <div class="notch"></div>
+            <div class="sb"><span id="ptime">9:41</span><i></i></div>
+            <div class="bar"><span class="who"><b>나</b>내 달력 ▾</span><span class="share">공유</span></div>
+            <div class="month"><span id="pmonth">11월</span><small id="pyear">2026년</small></div>
+            <div class="wk"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
+            <div class="days" id="pdays"></div>
+            <div class="todaycard"><span class="ic" id="tic">야</span><div><strong id="ttitle">오늘 야간 19:00–07:00</strong><span id="tsub">출근 알람 17:40</span></div></div>
+            <div class="tabs"><span class="on"><i></i>달력</span><span><i></i>가계부</span><span><i></i>메모</span><span><i></i>근무·급여</span><span><i></i>마을</span></div>
+          </div>
+        </div>
+        <div class="bubble b1"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="7.5"/><path d="M12 9.5V13l2.2 1.6M4.5 4.8 7 2.8M19.5 4.8 17 2.8"/></svg></span><div><strong>근무마다 다른 알람</strong><small class="v" id="bAlarm">야간 날 17:40</small></div></div>
+        <div class="bubble b2"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></span><div><strong class="v" id="bCount">이번 달 야간 8번</strong><small class="v" id="bOff">쉬는 날 14일</small></div></div>
+        <div class="bubble b3"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg></span><div><strong class="v" id="bNext">다음 쉬는 날 D-2</strong><small>몇 년치도 한 번에</small></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="ribbon" aria-hidden="true">
+  <div class="track"><span>간호사 3교대</span><span>공장 4조2교대</span><span>발전소</span><span>경찰 지구대</span><span>소방 3조1교대</span><span>반도체 4조3교대</span><span>제철</span><span>보안·경비</span><span>관제 센터</span><span>24시간 맞교대</span><span>간호사 3교대</span><span>공장 4조2교대</span><span>발전소</span><span>경찰 지구대</span><span>소방 3조1교대</span><span>반도체 4조3교대</span><span>제철</span><span>보안·경비</span><span>관제 센터</span><span>24시간 맞교대</span></div>
+  <div class="track rev"><span>편의점 알바</span><span>카페 알바</span><span>인테리어 현장</span><span>건설 일용직</span><span>식당 사장님</span><span>팀 근무표 짜는 리더</span><span>사무직 야근</span><span>물류 센터</span><span>요양 보호사</span><span>버스·택시 기사님</span><span>편의점 알바</span><span>카페 알바</span><span>인테리어 현장</span><span>건설 일용직</span><span>식당 사장님</span><span>팀 근무표 짜는 리더</span><span>사무직 야근</span><span>물류 센터</span><span>요양 보호사</span><span>버스·택시 기사님</span></div>
+</div>
+
+<!-- 2. 하루가 한 바퀴: 24시간 다이얼 -->
+<section class="sec day-sec" aria-labelledby="day-title">
+  <div class="wrap">
+    <span class="eyebrow">하루가 한 바퀴</span>
+    <h2 id="day-title">근무에 맞춰 <span class="gold">알람·잠·하루</span>가 같이 돌아요</h2>
+    <p class="sub">위쪽 반은 낮, 아래쪽 반은 밤이에요. 밤낮 로고의 다이얼 그대로, 오늘 근무에 따라 하루가 어떻게 바뀌는지 눌러 보세요.</p>
+    <div class="modes" role="group" aria-label="어떤 날">
+      <button type="button" data-mode="day" aria-pressed="false">주간 근무 날</button>
+      <button type="button" data-mode="night" aria-pressed="true">야간 근무 날</button>
+      <button type="button" data-mode="off" aria-pressed="false">쉬는 날</button>
+    </div>
+    <div class="grid">
+      <div class="dial reveal">
+        <svg id="dial" viewBox="-30 -30 460 460" role="img" aria-label="24시간 다이얼"></svg>
+        <div class="center"><div id="dialc"></div></div>
+      </div>
+      <ul class="legend-list" id="legend"></ul>
+    </div>
+  </div>
+</section>
+
+<!-- 3. 누구의 근무든 -->
+<section class="sec who-sec" aria-labelledby="who-title">
+  <div class="wrap">
+    <span class="eyebrow">누구의 근무든</span>
+    <h2 id="who-title">처음에 하는 일만 고르면<br>맞는 화면이 바로 준비돼요</h2>
+    <p class="sub">교대·일근·알바·현장·가게, 그리고 근무표를 짜는 리더와 직원을 둔 사장님까지.</p>
+    <div class="who-tabs" role="tablist" aria-label="사용자 유형" id="whoTabs"></div>
+    <div class="who-panel" role="tabpanel" id="whoPanel" aria-live="polite"></div>
+  </div>
+</section>
+
+<!-- 4. 이것까지 한 앱에 -->
+<section class="gallery" aria-labelledby="gal-title">
+  <div class="wrap head">
+    <div>
+      <span class="eyebrow">이것까지 한 앱에</span>
+      <h2 id="gal-title" style="font-size:clamp(28px,5.4vw,46px);line-height:1.2;letter-spacing:-0.04em;margin:0">근무 날의 모든 순간</h2>
+    </div>
+    <div class="nav"><button type="button" id="gPrev" aria-label="앞으로"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button><button type="button" id="gNext" aria-label="다음"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button></div>
+  </div>
+  <div class="rail" id="rail"><figure><div class="img"><img src="assets/app/03-alarm-360.webp" srcset="assets/app/03-alarm-360.webp 360w, assets/app/03-alarm-720.webp 720w" sizes="270px" width="360" height="640" alt="근무가 바뀌면 알람도 알아서" loading="lazy" decoding="async"></div><figcaption><b>근무가 바뀌면 알람도 알아서</b>주간·야간마다 다른 시각, 쉬는 날엔 조용해요</figcaption></figure><figure><div class="img"><img src="assets/app/04-today-360.webp" srcset="assets/app/04-today-360.webp 360w, assets/app/04-today-720.webp 720w" sizes="270px" width="360" height="640" alt="출근부터 잠까지 오늘 하루 한 줄" loading="lazy" decoding="async"></div><figcaption><b>출근부터 잠까지 오늘 하루 한 줄</b>퇴근까지 남은 시간과 잘 시간</figcaption></figure><figure><div class="img"><img src="assets/app/13-sleep-360.webp" srcset="assets/app/13-sleep-360.webp 360w, assets/app/13-sleep-720.webp 720w" sizes="270px" width="360" height="640" alt="오늘 몇 시에 잘까, 내 하루에 맞춰" loading="lazy" decoding="async"></div><figcaption><b>오늘 몇 시에 잘까, 내 하루에 맞춰</b>잠드는 소리와 아침 기분까지</figcaption></figure><figure><div class="img"><img src="assets/app/05-pay-360.webp" srcset="assets/app/05-pay-360.webp 360w, assets/app/05-pay-720.webp 720w" sizes="270px" width="360" height="640" alt="야간·연장 수당까지 이번 달 월급 미리" loading="lazy" decoding="async"></div><figcaption><b>야간·연장 수당까지 이번 달 월급 미리</b>항목마다 어떻게 계산했는지 보여 줘요</figcaption></figure><figure><div class="img"><img src="assets/app/11-holiday-360.webp" srcset="assets/app/11-holiday-360.webp 360w, assets/app/11-holiday-720.webp 720w" sizes="270px" width="360" height="640" alt="설 연휴에 일해도 휴일 수당까지" loading="lazy" decoding="async"></div><figcaption><b>설 연휴에 일해도 휴일 수당까지</b>공휴일·대체공휴일이 근무 달력에</figcaption></figure><figure><div class="img"><img src="assets/app/12-leave-360.webp" srcset="assets/app/12-leave-360.webp 360w, assets/app/12-leave-720.webp 720w" sizes="270px" width="360" height="640" alt="남은 연차, 세지 않아도 돼요" loading="lazy" decoding="async"></div><figcaption><b>남은 연차, 세지 않아도 돼요</b>입사일만 넣으면 생기는 날·없어지는 날</figcaption></figure><figure><div class="img"><img src="assets/app/14-ledger-360.webp" srcset="assets/app/14-ledger-360.webp 360w, assets/app/14-ledger-720.webp 720w" sizes="270px" width="360" height="640" alt="카드 쓰면 가계부가 알아서" loading="lazy" decoding="async"></div><figcaption><b>카드 쓰면 가계부가 알아서</b>결제 알림을 켜면 분류까지 저절로</figcaption></figure><figure><div class="img"><img src="assets/app/15-memo-360.webp" srcset="assets/app/15-memo-360.webp 360w, assets/app/15-memo-720.webp 720w" sizes="270px" width="360" height="640" alt="사진 넣은 메모, 할 일까지 한 곳에" loading="lazy" decoding="async"></div><figcaption><b>사진 넣은 메모, 할 일까지 한 곳에</b>날짜에 적으면 달력에 보이고 알려 줘요</figcaption></figure><figure><div class="img"><img src="assets/app/08-memo-studio-360.webp" srcset="assets/app/08-memo-studio-360.webp 360w, assets/app/08-memo-studio-720.webp 720w" sizes="270px" width="360" height="640" alt="근무 날 메모를 내 마음대로" loading="lazy" decoding="async"></div><figcaption><b>근무 날 메모를 내 마음대로</b>스튜디오에서 달력·위젯까지 꾸며요</figcaption></figure></div>
+  <div class="dots" id="dots" aria-hidden="true"></div>
+</section>
+
+<!-- 5. 약속 -->
+<section class="sec promise" aria-labelledby="pr-title">
+  <div class="wrap">
+    <span class="eyebrow">밤낮의 약속</span>
+    <h2 id="pr-title">근무만으로도 피곤하니까,<br>앱은 편해야 해요</h2>
+    <div class="cards">
+      <div class="pcard reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z"/><path d="M8.5 12.2 11 14.6l4.6-5"/></svg></div><h3>로그인 없이 바로</h3><p>회원가입도 계정도 없이 설치하자마자 근무를 넣어요.</p></div>
+      <div class="pcard reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6.5 8.8H3.5v6.4h3L11 19z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/></svg></div><h3>광고는 고를 때만</h3><p>하루 두 편까지, 소리 없이. 달력·알람·메모·설정과 켤 때는 광고가 없어요.</p></div>
+      <div class="pcard reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="7.5"/><path d="M12 9.5V13l2.2 1.6M4.5 4.8 7 2.8M19.5 4.8 17 2.8"/></svg></div><h3>알람·위젯은 무료</h3><p>근무마다 다른 기본 알람과 오늘·이번 주·이번 달 위젯은 무료예요.</p></div>
+      <div class="pcard reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg></div><h3>잠 소리는 폰 안에</h3><p>원할 때만 잠을 기록하고, 소리는 휴대폰 밖으로 나가지 않아요.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 6. 무료 도구 -->
+<section class="sec tools" aria-labelledby="tools-title">
+  <div class="wrap">
+    <span class="eyebrow">앱 없이도</span>
+    <h2 id="tools-title">무료 계산기와 근무 달력</h2>
+    <p class="sub">입력한 값은 이 화면에서만 계산하고 어디에도 보내지 않아요.</p>
+    <div class="bento">
+      <a class="tile big-t reveal" href="shift/"><span class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span><h3>교대 근무 달력 만들기</h3><p>4조2교대·3조2교대·주야비휴 순서와 첫날만 고르면 석 달 달력이 나와요. 공개 자료로 확인한 회사별 교대 방식도 찾아봐요.</p><div class="mini" id="miniCal"></div><span class="count">161<small>곳</small></span></a>
+      <div class="tile quick reveal">
+        <h3>주휴수당, 여기서 바로</h3>
+        <p>1주에 일하는 시간을 움직여 보세요.</p>
+        <div class="row2"><output id="qOut">0원</output><span class="per">1주 주휴수당</span></div>
+        <input type="range" id="qHours" min="5" max="52" step="1" value="20" aria-label="1주 근무 시간">
+        <div class="lbl"><span>1주 <b id="qH">20</b>시간</span><span id="qMonth">한 달 약 0원</span></div>
+        <div class="chips" id="qYears"></div>
+        <p class="foot"><a href="calc/juhyu/">자세히 계산하기 →</a></p>
+      </div>
+      <a class="tile reveal" href="calc/allowance/"><span class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span><h3>야간·연장·휴일수당</h3><p>출퇴근 시각만 넣으면 밤 10시~아침 6시를 나눠요</p></a>
+      <a class="tile reveal" href="calc/alba/"><span class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span><h3>알바 월급</h3><p>주휴 포함, 3.3%·4대보험 뺀 실수령</p></a>
+      <a class="tile reveal" href="calc/salary/"><span class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span><h3>월급·연봉 실수령액</h3><p>4대보험과 간이세액표 소득세를 뺀 통장 금액</p></a>
+      <a class="tile reveal" href="calc/daily/"><span class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span><h3>일당 계산기</h3><p>현장·건설 일용직 일당의 세금과 실수령</p></a>
+      <a class="tile reveal" href="calc/leave/"><span class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span><h3>연차 계산기</h3><p>입사일로 지금 연차와 근속별 개수</p></a>
+      <a class="tile reveal" href="calc/severance/"><span class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span><h3>퇴직금 계산기</h3><p>평균임금 × 30일 × 재직일수/365</p></a>
+      <a class="tile reveal" href="holiday/2027/"><span class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span><h3>2027년 공휴일·연휴</h3><p>대체공휴일과 사흘 이상 연휴, 교대 근무자 쉬는 날</p></a>
+      <a class="tile reveal" href="holiday/2026/"><span class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span><h3>2026년 공휴일</h3><p>남은 공휴일과 연휴 한눈에</p></a>
+      <a class="tile reveal" href="shift/print/"><span class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span><h3>2027 교대 달력 인쇄</h3><p>A4 한 장에 1년 근무, 공휴일·야간 횟수까지</p></a>
+      <a class="tile reveal" href="form/"><span class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span><h3>근무표 엑셀 양식</h3><p>듀티표·조별 근무표·알바 스케줄표·출역표</p></a>
+    </div>
+  </div>
+</section>
+
+<!-- 7. 묻는 것 -->
+<section class="sec faq" aria-labelledby="faq-title">
+  <div class="wrap">
+    <span class="eyebrow">자주 묻는 것</span>
+    <h2 id="faq-title">궁금한 것부터 풀어요</h2>
+    <details><summary>밤낮은 무료인가요?</summary><p>근무표, 근무마다 다른 기본 알람, 위젯은 무료로 써요. 광고는 원할 때만 하루 두 편까지 소리 없이 나와요. 프로(구독 또는 자동 갱신 없는 1년 이용권)에는 광고가 없고 명세서 대조·급여 리포트 같은 기능이 더해져요. 팀원과 직원은 무료이고, 리더·사장님 기능은 팀·직원 요금제로 써요.</p></details>
+    <details><summary>회원가입을 해야 하나요?</summary><p>아니요. 로그인이나 회원가입 없이 설치하자마자 근무를 넣어요.</p></details>
+    <details><summary>우리 회사 교대 순서가 특이해요.</summary><p>주주야야휴휴처럼 순서를 직접 적어도 되고, 종이·엑셀·PDF 근무표를 찍거나 열면 내 줄을 찾아 달력에 넣어요. 공개 자료로 확인한 회사별 교대 방식도 목록에서 골라요.</p></details>
+    <details><summary>간호사처럼 근무표가 매달 바뀌어도 되나요?</summary><p>네. 근무표가 나오는 날 사진을 찍거나 파일을 열면 내 줄을 찾아 한 달을 채워요. 헷갈리는 날은 따로 보여 줘서 바로 고쳐요.</p></details>
+    <details><summary>아이폰에서도 쓸 수 있나요?</summary><p>지금 앱은 안드로이드(Google Play)에서 받을 수 있어요. 팀 리더나 사장님이 보낸 근무표·출퇴근 링크는 아이폰에서도 앱 없이 열어 볼 수 있어요.</p></details>
+    <details><summary>궁금한 게 있으면 어디로 물어요?</summary><p>앱의 설정 › 도움말과 문의에서 보내 주세요. 보내 주신 의견으로 고친 판이 나오면 앱에서 알려 드려요. 전자우편 yoj0790@naver.com으로도 받아요.</p></details>
+  </div>
+</section>
+
+<!-- 8. 마지막 권유 -->
+<section class="sec final" aria-labelledby="final-title">
+  <div class="wrap">
+    <div class="big-dial" aria-hidden="true"><svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="#f2ece1" stroke-linecap="round"><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(0 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(15 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(30 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(45 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(60 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(75 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(90 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(105 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(120 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(135 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(150 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(165 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(180 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(195 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(210 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(225 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(240 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(255 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(270 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(285 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(300 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(315 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(330 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(345 32 32)"/></g><circle cx="32" cy="32" r="18" fill="none" stroke="#f2ece1" stroke-width="2.2"/><path class="dial-day" d="M14 32a18 18 0 0 1 36 0z" fill="#f2ece1"/><circle cx="32" cy="41" r="2.4" fill="#c2a36b"/></svg></div>
+    <h2 id="final-title">오늘 근무부터,<br><span class="gold">밤낮에 맡겨요</span></h2>
+    <p class="sub">근무표 한 번 넣으면 몇 년치 달력과 알람이 저절로. 무료로 시작해요.</p>
+    <div class="acts">
+      <a class="btn shine" id="finalBtn" data-play="final" data-medium="home" href="https://play.google.com/store/apps/details?id=com.bamnat.app"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.6v16.8c0 .8.9 1.3 1.6.9l14.1-8.4c.7-.4.7-1.4 0-1.8L6.6 2.7C5.9 2.3 5 2.8 5 3.6z" fill="currentColor"/></svg>Google Play에서 무료로 받기</a>
+      <div class="qr"><div class="code"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 49 49" shape-rendering="crispEdges" role="img" aria-label="밤낮 설치 QR 코드"><path class="qrline" stroke="#15192b" d="M0 0.5h7m1 0h2m3 0h1m2 0h1m1 0h3m1 0h5m1 0h3m1 0h1m1 0h4m2 0h1m1 0h7m-49 1h1m5 0h1m1 0h2m2 0h2m3 0h3m1 0h2m1 0h1m1 0h1m2 0h4m1 0h1m2 0h4m1 0h1m5 0h1m-49 1h1m1 0h3m1 0h1m1 0h1m2 0h3m3 0h2m1 0h1m2 0h3m1 0h1m1 0h1m2 0h1m4 0h1m1 0h2m1 0h1m1 0h3m1 0h1m-49 1h1m1 0h3m1 0h1m2 0h2m2 0h3m3 0h4m1 0h1m2 0h3m1 0h3m1 0h3m1 0h1m2 0h1m1 0h3m1 0h1m-49 1h1m1 0h3m1 0h1m1 0h1m3 0h1m2 0h1m1 0h2m1 0h8m2 0h3m4 0h1m4 0h1m1 0h3m1 0h1m-49 1h1m5 0h1m10 0h3m1 0h2m3 0h4m1 0h1m4 0h1m1 0h1m3 0h1m5 0h1m-49 1h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7m-39 1h6m3 0h4m3 0h3m1 0h1m2 0h2m4 0h2m-41 1h1m2 0h8m1 0h2m1 0h3m2 0h1m1 0h5m1 0h1m1 0h1m2 0h1m1 0h2m1 0h2m1 0h1m2 0h1m1 0h3m-49 1h1m1 0h1m1 0h1m3 0h1m2 0h1m2 0h1m1 0h1m3 0h1m1 0h7m1 0h1m1 0h15m-46 1h2m2 0h3m1 0h3m2 0h1m1 0h2m4 0h3m4 0h1m2 0h3m6 0h1m2 0h1m3 0h1m-49 1h1m3 0h1m2 0h2m1 0h1m2 0h4m4 0h2m4 0h1m2 0h1m1 0h4m1 0h2m2 0h1m1 0h4m1 0h1m-49 1h1m2 0h2m1 0h3m2 0h1m2 0h1m1 0h1m2 0h7m2 0h3m1 0h1m1 0h1m1 0h1m1 0h2m1 0h1m1 0h2m2 0h2m-49 1h1m2 0h1m1 0h1m1 0h1m1 0h3m1 0h2m2 0h1m3 0h4m1 0h5m2 0h1m1 0h1m2 0h2m2 0h1m1 0h2m1 0h1m-46 1h2m2 0h1m2 0h1m1 0h4m4 0h3m1 0h2m1 0h1m4 0h1m1 0h1m1 0h1m1 0h2m1 0h1m4 0h4m-49 1h1m1 0h1m1 0h1m2 0h1m6 0h2m2 0h2m1 0h1m1 0h1m4 0h2m2 0h2m3 0h2m1 0h1m4 0h2m1 0h1m-48 1h4m1 0h1m1 0h1m3 0h2m1 0h3m1 0h1m1 0h1m1 0h4m1 0h2m1 0h1m2 0h1m1 0h2m1 0h2m1 0h6m-45 1h2m3 0h1m4 0h1m1 0h3m4 0h2m1 0h1m6 0h6m1 0h2m1 0h5m-44 1h1m2 0h8m1 0h4m1 0h5m4 0h2m2 0h1m2 0h2m3 0h1m3 0h2m1 0h1m-42 1h2m2 0h1m3 0h1m4 0h2m1 0h1m4 0h2m3 0h1m1 0h1m1 0h2m3 0h1m2 0h1m1 0h2m-49 1h2m1 0h1m2 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m2 0h4m1 0h3m4 0h2m2 0h1m1 0h1m1 0h1m3 0h2m-49 1h2m1 0h1m3 0h1m2 0h1m4 0h1m3 0h7m1 0h2m1 0h1m2 0h3m1 0h7m3 0h1m-48 1h1m1 0h1m1 0h6m1 0h4m3 0h2m1 0h6m2 0h1m1 0h4m2 0h1m1 0h6m3 0h1m-49 1h1m1 0h1m1 0h1m3 0h5m2 0h1m3 0h4m3 0h1m3 0h3m1 0h2m1 0h2m1 0h1m3 0h3m-46 1h1m2 0h1m1 0h1m1 0h1m2 0h1m4 0h2m1 0h1m1 0h2m1 0h1m1 0h1m1 0h2m2 0h1m1 0h1m1 0h1m1 0h3m1 0h1m1 0h2m-46 1h1m2 0h2m3 0h1m3 0h1m1 0h3m1 0h1m1 0h3m3 0h1m1 0h3m1 0h2m1 0h4m1 0h1m3 0h1m-44 1h1m2 0h6m1 0h4m1 0h1m2 0h1m2 0h5m1 0h2m1 0h1m4 0h10m1 0h2m-49 1h4m1 0h1m1 0h2m2 0h2m1 0h1m1 0h2m1 0h2m3 0h1m1 0h1m2 0h1m4 0h1m2 0h1m1 0h1m2 0h1m1 0h3m1 0h1m-49 1h1m1 0h1m3 0h3m1 0h2m2 0h1m1 0h2m1 0h8m3 0h5m1 0h1m2 0h2m4 0h2m1 0h1m-49 1h1m2 0h1m5 0h1m1 0h1m1 0h1m3 0h2m3 0h1m2 0h1m2 0h1m1 0h1m1 0h1m1 0h1m2 0h1m2 0h1m1 0h2m1 0h1m1 0h1m-47 1h2m1 0h1m1 0h1m3 0h1m4 0h1m4 0h1m2 0h1m1 0h2m1 0h1m1 0h1m2 0h1m2 0h2m1 0h2m1 0h1m3 0h1m1 0h1m-49 1h1m1 0h1m1 0h1m3 0h1m2 0h2m2 0h1m3 0h2m1 0h2m1 0h1m1 0h1m2 0h5m1 0h1m2 0h3m1 0h3m1 0h2m-49 1h3m1 0h3m2 0h1m1 0h3m2 0h1m1 0h5m2 0h1m1 0h5m2 0h8m1 0h2m1 0h3m-48 1h1m1 0h3m1 0h3m2 0h2m1 0h1m2 0h1m1 0h1m3 0h1m2 0h2m1 0h1m1 0h4m2 0h4m2 0h4m-48 1h2m2 0h1m1 0h1m3 0h2m2 0h1m6 0h1m2 0h4m2 0h1m1 0h5m2 0h1m1 0h5m2 0h1m-47 1h3m2 0h1m3 0h1m1 0h3m10 0h1m4 0h3m2 0h1m1 0h2m1 0h1m1 0h1m1 0h3m-48 1h1m1 0h1m3 0h2m1 0h2m1 0h1m2 0h1m2 0h1m1 0h1m1 0h1m3 0h1m1 0h1m2 0h4m1 0h1m1 0h2m2 0h1m5 0h1m-49 1h2m1 0h2m2 0h1m1 0h2m3 0h5m1 0h1m1 0h3m1 0h2m1 0h3m1 0h1m2 0h3m1 0h1m1 0h5m-46 1h1m3 0h4m2 0h1m1 0h2m1 0h1m5 0h3m4 0h1m1 0h1m1 0h1m1 0h4m3 0h1m1 0h5m-48 1h3m5 0h7m2 0h2m2 0h3m5 0h1m2 0h2m2 0h1m1 0h1m1 0h1m2 0h4m-48 1h3m3 0h2m1 0h1m1 0h3m2 0h1m5 0h5m2 0h1m1 0h3m2 0h1m2 0h6m1 0h3m-41 1h2m2 0h4m1 0h1m1 0h1m2 0h1m3 0h3m1 0h1m1 0h1m1 0h2m1 0h1m1 0h2m3 0h1m1 0h1m-47 1h7m1 0h1m3 0h1m1 0h1m2 0h1m3 0h2m1 0h1m1 0h1m1 0h2m3 0h1m1 0h3m2 0h1m1 0h1m1 0h1m3 0h1m-49 1h1m5 0h1m1 0h1m1 0h2m4 0h1m5 0h1m3 0h4m1 0h1m1 0h1m3 0h4m3 0h2m1 0h2m-49 1h1m1 0h3m1 0h1m1 0h2m2 0h2m1 0h1m2 0h2m2 0h5m1 0h2m1 0h1m2 0h3m3 0h6m1 0h2m-49 1h1m1 0h3m1 0h1m1 0h3m4 0h5m6 0h2m1 0h4m1 0h1m2 0h2m2 0h3m1 0h1m2 0h1m-49 1h1m1 0h3m1 0h1m2 0h2m1 0h2m1 0h2m1 0h1m2 0h1m2 0h4m1 0h1m1 0h2m1 0h1m2 0h1m3 0h4m1 0h2m-48 1h1m5 0h1m2 0h1m2 0h4m3 0h4m5 0h1m4 0h2m2 0h1m2 0h1m1 0h1m2 0h4m-49 1h7m1 0h1m5 0h2m1 0h2m3 0h1m3 0h1m2 0h1m1 0h2m1 0h3m1 0h4m1 0h3m2 0h1"/></svg></div><span>휴대폰 카메라로 찍으면<br>바로 설치 화면으로 가요</span></div>
+    </div>
+  </div>
+</section>
+
 </main>
+<footer class="site-footer">
+  <div class="in">
+    <div class="top">
+      <div class="about"><a class="brand" href=""><svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="#f2ece1" stroke-linecap="round"><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(0 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(15 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(30 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(45 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(60 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(75 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(90 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(105 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(120 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(135 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(150 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(165 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(180 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(195 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(210 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(225 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(240 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(255 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(270 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(285 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(300 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(315 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(330 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(345 32 32)"/></g><circle cx="32" cy="32" r="18" fill="none" stroke="#f2ece1" stroke-width="2.2"/><path class="dial-day" d="M14 32a18 18 0 0 1 36 0z" fill="#f2ece1"/><circle cx="32" cy="41" r="2.4" fill="#c2a36b"/></svg><span>밤낮</span></a><p>교대·일근·알바·현장·사장님까지, 근무가 있는 모든 사람의 근무 앱이에요.</p></div>
+      <div><h4>계산기</h4><ul><li><a href="calc/juhyu/">주휴수당</a></li><li><a href="calc/alba/">알바 월급</a></li><li><a href="calc/allowance/">야간·연장·휴일수당</a></li><li><a href="calc/daily/">일당</a></li><li><a href="calc/salary/">실수령액</a></li><li><a href="calc/leave/">연차</a></li><li><a href="calc/severance/">퇴직금</a></li></ul></div>
+      <div><h4>근무 달력</h4><ul><li><a href="shift/">교대 근무 달력 만들기</a></li><li><a href="shift/firms/">회사별 교대 방식</a></li><li><a href="shift/print/">2027 달력 인쇄</a></li><li><a href="form/">근무표 엑셀 양식</a></li><li><a href="holiday/2027/">2027 공휴일</a></li><li><a href="holiday/2026/">2026 공휴일</a></li></ul></div>
+      <div><h4>안내</h4><ul><li><a href="privacy/">개인정보 처리방침</a></li><li><a href="terms/">이용약관</a></li><li><a href="community/">광장 운영 규칙</a></li></ul></div>
+    </div>
+    <div class="biz">
+      문의 <a href="mailto:yoj0790@naver.com">yoj0790@naver.com</a> (앱 안에서는 설정 › 도움말과 문의)<br>
+      상호 밤낮 · 대표자 양원준 · 사업자등록번호 327-25-02565 (<a href="https://www.ftc.go.kr/bizCommPop.do?wrkr_no=3272502565" target="_blank" rel="noopener">사업자 정보 확인</a>)<br>
+      통신판매업 신고번호 제2026-전남여수-0424호 · 전남광주통합특별시 여수시 안산1길 179, 2동 105호<br>
+      전화 010-6408-8825 · 전자우편 yoj0790@naver.com · 호스팅 Cloudflare, Inc., GitHub, Inc.
+      <div class="safe">계산기에 입력한 값은 이 화면에서만 계산하고 어디에도 보내지 않아요.</div>
+    </div>
+  </div>
+</footer>
+<div class="dock" id="dock" aria-hidden="true">
+  <svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><g stroke="#f2ece1" stroke-linecap="round"><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(0 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(15 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(30 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(45 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(60 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(75 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(90 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(105 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(120 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(135 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(150 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(165 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(180 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(195 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(210 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(225 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(240 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(255 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(270 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(285 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(300 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(315 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(330 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(345 32 32)"/></g><circle cx="32" cy="32" r="18" fill="none" stroke="#f2ece1" stroke-width="2.2"/><path class="dial-day" d="M14 32a18 18 0 0 1 36 0z" fill="#f2ece1"/><circle cx="32" cy="41" r="2.4" fill="#c2a36b"/></svg>
+  <div class="t"><strong>밤낮</strong><span>교대 근무표·알람·월급 · 무료</span></div>
+  <a class="btn" data-play="dock" data-medium="home" href="https://play.google.com/store/apps/details?id=com.bamnat.app" tabindex="-1">받기</a>
+</div>
+<script src="assets/home.js" defer></script>
 </body>
 </html>

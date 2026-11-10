@@ -1,5 +1,6 @@
 // 밤낮 공개 계산기 공통: 요율(remote/v1/rates.json), 금액 쓰기, 앱 링크.
 (function () {
+  document.documentElement.className += ' js';
   var base = document.currentScript.src.replace(/calc\/calc\.js.*$/, '');
   var fallback = [
     { from: '2026-01-01', minimumHourlyWage: 10320, pensionRate: 0.095, healthRate: 0.0719, longTermCareRate: 0.009448, unemploymentRate: 0.018 },
@@ -69,9 +70,21 @@
       return Object.keys(ys).map(Number).filter(function (y) { return y >= now; }).sort();
     },
     // Play 설치 링크: 어디서 왔는지(utm_campaign)를 남겨 Play Console 획득 보고서에서 봐요.
-    playLink: function (campaign) {
-      var ref = 'utm_source=bamnat_web&utm_medium=calc&utm_campaign=' + campaign;
+    // 커뮤니티 글 등에서 ?utm_source=…로 들어온 방문이면 그 출처를 이 방문 동안 이어 붙여요(이 브라우저 안에만 둠).
+    playLink: function (campaign, medium) {
+      var src = 'bamnat_web', from = B.from();
+      if (from) { src = from.s; campaign = from.c ? from.c + '_' + campaign : campaign; }
+      var ref = 'utm_source=' + src + '&utm_medium=' + (medium || 'calc') + '&utm_campaign=' + campaign;
       return 'https://play.google.com/store/apps/details?id=com.bamnat.app&referrer=' + encodeURIComponent(ref);
+    },
+    from: function () {
+      var clean = function (v) { return String(v || '').replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 40); };
+      try {
+        var q = new URLSearchParams(location.search), s = clean(q.get('utm_source')), c = clean(q.get('utm_campaign'));
+        if (s) { sessionStorage.setItem('bn_from', JSON.stringify({ s: s, c: c })); return { s: s, c: c }; }
+        var j = JSON.parse(sessionStorage.getItem('bn_from') || 'null');
+        return j && j.s ? { s: clean(j.s), c: clean(j.c) } : null;
+      } catch (e) { return null; }
     },
     // 최저시급 칩: 올해와 내년(고시된 해)만.
     yearChips: function (box, onPick) {
@@ -97,6 +110,33 @@
     })
     .catch(function () {});
   document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('a[data-play]').forEach(function (a) { a.href = B.playLink(a.dataset.play); });
+    document.querySelectorAll('a[data-play]').forEach(function (a) { a.href = B.playLink(a.dataset.play, a.dataset.medium); });
+    B.ui();
   });
+  // 머리 띠(스크롤하면 진하게, 휴대폰 메뉴), 결과 숫자가 바뀌면 살짝 올라오기, 아래 카드 나타나기.
+  B.ui = function () {
+    var head = document.querySelector('.site-header');
+    if (head) {
+      var onScroll = function () { head.classList.toggle('scrolled', window.scrollY > 8); };
+      onScroll(); window.addEventListener('scroll', onScroll, { passive: true });
+      var btn = head.querySelector('.menu-btn');
+      if (btn) btn.addEventListener('click', function () {
+        var open = head.classList.toggle('open'); btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && head.classList.contains('open')) btn.click(); });
+    }
+    if (window.MutationObserver) document.querySelectorAll('.big').forEach(function (el) {
+      var last = el.textContent;
+      new MutationObserver(function () {
+        if (el.textContent === last) return; last = el.textContent;
+        el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+      }).observe(el, { childList: true, characterData: true, subtree: true });
+    });
+    var items = document.querySelectorAll('.reveal');
+    if (!('IntersectionObserver' in window)) { items.forEach(function (el) { el.classList.add('in'); }); return; }
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, { rootMargin: '0px 0px -8% 0px' });
+    items.forEach(function (el) { io.observe(el); });
+  };
 })();
