@@ -132,6 +132,21 @@
         el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
       }).observe(el, { childList: true, characterData: true, subtree: true });
     });
+    // 휴대폰 아래 받기 띠: 머리 그림을 지나 내려가면 나오고, 아래 앱 카드·앱에서 이어지는 것·바닥이 보이거나 입력 중(자판이 열림)이면 숨어요.
+    // 첫 화면은 assets/home.js가 따로 다뤄요.
+    var dock = document.getElementById('dock');
+    if (dock && !document.body.classList.contains('home') && 'IntersectionObserver' in window) {
+      var vis = { hero: true, cta: false, next: false, foot: false }, typing = false;
+      var upd = function () {
+        var on = !vis.hero && !vis.cta && !vis.next && !vis.foot && !typing;
+        dock.classList.toggle('on', on); dock.setAttribute('aria-hidden', on ? 'false' : 'true');
+        dock.querySelector('a').tabIndex = on ? 0 : -1;
+      };
+      var watch = function (el, key) { if (el) new IntersectionObserver(function (e) { vis[key] = e[0].isIntersecting; upd(); }).observe(el); };
+      watch(document.querySelector('.page-hero'), 'hero'); watch(document.querySelector('.cta'), 'cta'); watch(document.querySelector('.app-next'), 'next'); watch(document.querySelector('.site-footer'), 'foot');
+      document.addEventListener('focusin', function (e) { if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) { typing = true; upd(); } });
+      document.addEventListener('focusout', function () { typing = false; setTimeout(upd, 150); });
+    }
     var items = document.querySelectorAll('.reveal');
     if (!('IntersectionObserver' in window)) { items.forEach(function (el) { el.classList.add('in'); }); return; }
     var io = new IntersectionObserver(function (es) {
