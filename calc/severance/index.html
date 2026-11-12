@@ -106,18 +106,19 @@
 var B=Bamnat,$=function(i){return document.getElementById(i)};
 function d(v){var p=v.split('-');return new Date(+p[0],+p[1]-1,+p[2]);}
 function days(a,b){return Math.round((b-a)/864e5);}
+function addM(x,n){var m=x.getMonth()+n,last=new Date(x.getFullYear(),m+1,0).getDate();return new Date(x.getFullYear(),m,Math.min(x.getDate(),last));}
 function calc(){
-  if(!$('start').value||!$('last').value)return;
+  if(!$('start').value||!$('last').value){$('out').textContent='-';$('lines').innerHTML='';return;}
   var s=d($('start').value),l=d($('last').value),retire=new Date(l.getFullYear(),l.getMonth(),l.getDate()+1);
   var served=days(s,retire);if(served<=0){$('out').textContent='-';$('lines').innerHTML='';return;}
-  var from=new Date(retire.getFullYear(),retire.getMonth()-3,retire.getDate()),n3=days(from,retire);
+  var from=addM(retire,-3),n3=days(from,retire),year=new Date(s.getFullYear()+1,s.getMonth(),s.getDate())<=retire;
   var pay=B.num($('pay').value)*3,bonus=B.num($('bonus').value)*3/12,lp=B.num($('leavepay').value)*3/12;
   var avg=(pay+bonus+lp)/n3,sev=Math.floor(avg*30*served/365);
   var rows='<tr><td>재직 일수</td><td>'+served.toLocaleString('ko-KR')+'일 (약 '+(Math.floor(served/365*10)/10)+'년)</td></tr>'+
     '<tr><td>최근 3개월 일수</td><td>'+n3+'일</td></tr>'+
     '<tr><td>3개월 임금 + 상여·연차수당의 3/12</td><td>'+B.won(pay+bonus+lp)+'</td></tr>'+
     '<tr><td>1일 평균임금</td><td>'+B.won(avg)+'</td></tr>';
-  if(served<365){$('out').textContent='0원';rows+='<tr><td colspan="2">계속 근로 1년 미만이면 퇴직금이 생기지 않아요.</td></tr>';}
+  if(!year){$('out').textContent='0원';rows+='<tr><td colspan="2">계속 근로 1년 미만이면 퇴직금이 생기지 않아요.</td></tr>';}
   else{$('out').textContent=B.won(sev);rows+='<tr class="sum"><td>평균임금 × 30일 × 재직일수 ÷ 365</td><td>'+B.won(sev)+'</td></tr>';}
   $('lines').innerHTML=rows;
 }

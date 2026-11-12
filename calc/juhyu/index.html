@@ -107,12 +107,13 @@ function calc(){
   if(!w||!week){$('out').textContent='-';$('lines').innerHTML='';return;}
   if(week<15){$('out').textContent='0원';
     $('lines').innerHTML='<tr><td>1주 근무 시간</td><td>'+week+'시간</td></tr><tr><td colspan="2">1주 15시간보다 적으면 주휴수당이 생기지 않아요.</td></tr>';return;}
-  var hrs=Math.min(week,40)/40*8,pay=hrs*w,month=pay*365/7/12;
+  var hrs=Math.min(week,40)/40*8,pay=hrs*w,month=pay*365/7/12,tot=Math.round((week+hrs)*365/7/12);
   $('out').textContent=B.won(pay);
   $('lines').innerHTML='<tr><td>1주 근무 시간</td><td>'+week+'시간'+(week>40?' (40시간까지만 셈)':'')+'</td></tr>'+
     '<tr><td>주휴 시간 (근무시간÷40×8)</td><td>'+(Math.round(hrs*100)/100)+'시간</td></tr>'+
     '<tr><td>한 달 환산 (4.345주)</td><td>'+B.won(month)+'</td></tr>'+
-    '<tr class="sum"><td>근무+주휴 한 달 합계</td><td>'+B.won(week*w*365/7/12+month)+'</td></tr>';
+    '<tr class="sum"><td>근무+주휴 한 달 합계 (월 '+tot+'시간)</td><td>'+B.won(tot*w)+'</td></tr>'+
+    (week>=40?'<tr><td colspan="2" class="note">주 40시간이면 고시 월 환산액(209시간)과 같아요.</td></tr>':'');
 }
 B.ready.then(function(){
   var y=B.years()[0]||new Date().getFullYear();$('wage').value=B.rateFor(y).minimumHourlyWage;

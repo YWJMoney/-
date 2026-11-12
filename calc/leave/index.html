@@ -101,11 +101,11 @@
 var $=function(i){return document.getElementById(i)};
 function d(v){var p=v.split('-');return new Date(+p[0],+p[1]-1,+p[2]);}
 function addY(x,n){return new Date(x.getFullYear()+n,x.getMonth(),x.getDate());}
-function addM(x,n){return new Date(x.getFullYear(),x.getMonth()+n,x.getDate());}
+function addM(x,n){var m=x.getMonth()+n,last=new Date(x.getFullYear(),m+1,0).getDate();return new Date(x.getFullYear(),m,Math.min(x.getDate(),last));}
 function f(x){return x.getFullYear()+'.'+(x.getMonth()+1)+'.'+x.getDate();}
 function per(n){return Math.min(25,15+Math.floor((n-1)/2));}
 function calc(){
-  if(!$('start').value||!$('today').value)return;var s=d($('start').value),t=d($('today').value);if(t<s){$('out').textContent='-';$('lines').innerHTML='';return;}
+  if(!$('start').value||!$('today').value){$('out').textContent='-';$('lines').innerHTML='';return;}var s=d($('start').value),t=d($('today').value);if(t<s){$('out').textContent='-';$('lines').innerHTML='';return;}
   var years=0;while(addY(s,years+1)<=t)years++;
   var rows='';
   if(years<1){var m=0;while(m<11&&addM(s,m+1)<=t)m++;

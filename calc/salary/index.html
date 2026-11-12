@@ -125,7 +125,7 @@ function calc(){
     '<tr class="sum"><td>월 실수령</td><td>'+B.won(net)+'</td></tr>'+
     '<tr><td>1년 실수령 (×12)</td><td>'+B.won(net*12)+'</td></tr>';
 }
-$('kind').querySelectorAll('.chip').forEach(function(b){b.onclick=function(){$('kind').querySelectorAll('.chip').forEach(function(c){c.setAttribute('aria-pressed','false')});b.setAttribute('aria-pressed','true');kind=b.dataset.v;
+$('kind').querySelectorAll('.chip').forEach(function(b){b.onclick=function(){if(b.getAttribute('aria-pressed')==='true')return;$('kind').querySelectorAll('.chip').forEach(function(c){c.setAttribute('aria-pressed','false')});b.setAttribute('aria-pressed','true');kind=b.dataset.v;
   $('amountLabel').textContent=kind==='year'?'세전 연봉 (원, 퇴직금 빼고)':'세전 월급 (원)';var v=B.num($('amount').value);$('amount').value=kind==='year'?v*12:Math.floor(v/12);calc();};});
 Promise.all([B.ready,B.loadTaxTable().catch(function(){})]).then(function(){
   var box=$('years');B.years().forEach(function(y,i){var b=document.createElement('button');b.type='button';b.className='chip';b.textContent=y+'년';b.setAttribute('aria-pressed',i===0?'true':'false');
