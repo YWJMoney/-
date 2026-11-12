@@ -1,0 +1,1720 @@
+{
+ "version": "4cf371a3",
+ "letters": 513,
+ "source": "github.com/google/fonts",
+ "commit": "c30b221beb0c1da59d563feb91ec8656a1fa972a",
+ "path": "card-fonts/4cf371a3/<id>-r.ttf",
+ "fonts": {
+  "notosanskr": {
+   "family": "Noto Sans KR",
+   "name": "BN Card 01",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Source",
+   "copyright": "Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'",
+   "from": "ofl/notosanskr",
+   "repository": "https://github.com/notofonts/noto-cjk",
+   "upstreamCommit": "523d033d6cb47f4a80c58a35753646f5c3608a78",
+   "notice": false,
+   "r": {
+    "file": "notosanskr-r.ttf",
+    "weight": 400,
+    "bytes": 134876,
+    "sha256": "009093b5c8fba625830f84948282bb27dd79bb4823da05c9f7e3e1343cc1ea10",
+    "original": "NotoSansKR[wght].ttf",
+    "originalBytes": 10414588
+   },
+   "b": {
+    "file": "notosanskr-b.ttf",
+    "weight": 700,
+    "bytes": 135652,
+    "sha256": "0c361159f0bd41c77073211447ef6918bb142fdb8506cc584cf57edad2b63d79",
+    "original": "NotoSansKR[wght].ttf",
+    "originalBytes": 10414588
+   }
+  },
+  "nanumgothic": {
+   "family": "Nanum Gothic",
+   "name": "BN Card 02",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Nanum, Naver Nanum, NanumGothic, Naver NanumGothic, NanumMyeongjo, Naver NanumMyeongjo, NanumBrush, Naver NanumBrush, NanumPen, Naver NanumPen",
+   "copyright": "Copyright (c) 2010, NHN Corporation (http://www.nhncorp.com), with Reserved Font Name Nanum, Naver Nanum, NanumGothic, Naver NanumGothic, NanumMyeongjo, Naver NanumMyeongjo, NanumBrush, Naver NanumBrush, NanumPen, Naver NanumPen.",
+   "from": "ofl/nanumgothic",
+   "repository": "https://github.com/googlefonts/nanumgothic",
+   "upstreamCommit": "1893597aed63d9fecf2e84a70804f60ae490162d",
+   "notice": false,
+   "r": {
+    "file": "nanumgothic-r.ttf",
+    "weight": 400,
+    "bytes": 123860,
+    "sha256": "53e2937704550c78f879fc159613173189195223b27e869949696a53a33f8446",
+    "original": "NanumGothic-Regular.ttf",
+    "originalBytes": 2054744
+   },
+   "b": {
+    "file": "nanumgothic-b.ttf",
+    "weight": 700,
+    "bytes": 124836,
+    "sha256": "61531f5e01a344272569453fe806de97c3d7006e9441dc3c205928d81d7cf84c",
+    "original": "NanumGothic-Bold.ttf",
+    "originalBytes": 2073868
+   }
+  },
+  "gothica1": {
+   "family": "Gothic A1",
+   "name": "BN Card 03",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "(C) Copyright HanYang I&C Co.,Ltd. All rights reserved.",
+   "from": "ofl/gothica1",
+   "repository": "https://github.com/hanyangfont/Gothic",
+   "upstreamCommit": "599d7e34fff27a50f3e9266b753ad661d3167b91",
+   "notice": false,
+   "r": {
+    "file": "gothica1-r.ttf",
+    "weight": 400,
+    "bytes": 100316,
+    "sha256": "644ad93ff01574026779ee422647f27d5e25637d861bebdae01d1e580cdcb04e",
+    "original": "GothicA1-Regular.ttf",
+    "originalBytes": 2295400
+   },
+   "b": {
+    "file": "gothica1-b.ttf",
+    "weight": 700,
+    "bytes": 101208,
+    "sha256": "ecccc737aef89a6fec2d34a90abeae826fb46b82d16bb99f9f4323d8977ec6b2",
+    "original": "GothicA1-Bold.ttf",
+    "originalBytes": 2287068
+   }
+  },
+  "ibmplexsanskr": {
+   "family": "IBM Plex Sans KR",
+   "name": "BN Card 04",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Plex",
+   "copyright": "Copyright © 2017 IBM Corp. with Reserved Font Name \"Plex\"",
+   "from": "ofl/ibmplexsanskr",
+   "repository": "https://github.com/googlefonts/plex",
+   "upstreamCommit": "1331d4514d6ab96ddf2efbb59f0b640b9a4e9d87",
+   "notice": false,
+   "r": {
+    "file": "ibmplexsanskr-r.ttf",
+    "weight": 400,
+    "bytes": 120044,
+    "sha256": "c91bad35fa1551448202fe50a9fa6a241d043fe062d0e52e43bb45d8d9a165f7",
+    "original": "IBMPlexSansKR-Regular.ttf",
+    "originalBytes": 2797100
+   },
+   "b": {
+    "file": "ibmplexsanskr-b.ttf",
+    "weight": 700,
+    "bytes": 116884,
+    "sha256": "f8c99c3a5baaf1c45308e000cb13e386959a469b21fa9e24cfddf0ab69b16fa5",
+    "original": "IBMPlexSansKR-Bold.ttf",
+    "originalBytes": 2875584
+   }
+  },
+  "gowundodum": {
+   "family": "Gowun Dodum",
+   "name": "BN Card 05",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2021 The Gowun Dodum Project Authors (https://github.com/yangheeryu/Gowun-Dodum)",
+   "from": "ofl/gowundodum",
+   "repository": "https://github.com/yangheeryu/Gowun-Dodum",
+   "upstreamCommit": "6d9ef10fc745cf3b0a4aba02dad1c740f94d029b",
+   "notice": false,
+   "r": {
+    "file": "gowundodum-r.ttf",
+    "weight": 400,
+    "bytes": 187272,
+    "sha256": "aa193795aec896223d510f717e9bd26bbbf0ff762ebd9147f193cb0396fed73e",
+    "original": "GowunDodum-Regular.ttf",
+    "originalBytes": 7229088
+   }
+  },
+  "orbit": {
+   "family": "Orbit",
+   "name": "BN Card 06",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2022 The Orbit Project Authors (https://github.com/JAMO-TYPEFACE/Orbit)",
+   "from": "ofl/orbit",
+   "repository": "https://github.com/JAMO-TYPEFACE/Orbit",
+   "upstreamCommit": "95122395c6d1fda07aebdf36f566a75678bc3bdd",
+   "notice": false,
+   "r": {
+    "file": "orbit-r.ttf",
+    "weight": 400,
+    "bytes": 57720,
+    "sha256": "30609a8f20ee8917a9e2e81ccc4dc7e2708e15ee18068b1b9d17bb5d7854685c",
+    "original": "Orbit-Regular.ttf",
+    "originalBytes": 784480
+   }
+  },
+  "sunflower": {
+   "family": "Sunflower",
+   "name": "BN Card 07",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2008 The Sunflower Project Authors",
+   "from": "ofl/sunflower",
+   "repository": "https://github.com/googlefonts/sunflower",
+   "upstreamCommit": "ee6d06ce4876d1493f59c9db050c550d21cfd645",
+   "notice": false,
+   "r": {
+    "file": "sunflower-r.ttf",
+    "weight": 500,
+    "bytes": 54676,
+    "sha256": "75dc2560c6b65c3f1adf0ce5388a9e1fd4651b2fe9546128e0f89bdd8585c107",
+    "original": "Sunflower-Medium.ttf",
+    "originalBytes": 770536
+   },
+   "b": {
+    "file": "sunflower-b.ttf",
+    "weight": 700,
+    "bytes": 55284,
+    "sha256": "36c58fa4b02624e5581778cb478c7a66b3f46c3c855198ab4e2f1f616dbc988b",
+    "original": "Sunflower-Bold.ttf",
+    "originalBytes": 746300
+   }
+  },
+  "notoserifkr": {
+   "family": "Noto Serif KR",
+   "name": "BN Card 08",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2012 Google Inc. All Rights Reserved.",
+   "from": "ofl/notoserifkr",
+   "repository": "https://www.github.com/notofonts/noto-cjk",
+   "upstreamCommit": "985fa52c81c1d6692ccdd82bc3656e8fb932fd89",
+   "notice": false,
+   "r": {
+    "file": "notoserifkr-r.ttf",
+    "weight": 400,
+    "bytes": 293084,
+    "sha256": "66ab4aa92349e8007e885bd947c2cdfc5394ddb9e59e4b474397a2702aed1780",
+    "original": "NotoSerifKR[wght].ttf",
+    "originalBytes": 23795420
+   },
+   "b": {
+    "file": "notoserifkr-b.ttf",
+    "weight": 700,
+    "bytes": 293600,
+    "sha256": "5134a56729eb5e4165eb40352518b42f3ad321cacf43a8782261663296b264df",
+    "original": "NotoSerifKR[wght].ttf",
+    "originalBytes": 23795420
+   }
+  },
+  "nanummyeongjo": {
+   "family": "Nanum Myeongjo",
+   "name": "BN Card 09",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Nanum, Naver Nanum, NanumGothic, Naver NanumGothic, NanumMyeongjo, Naver NanumMyeongjo, NanumBrush, Naver NanumBrush, NanumPen, Naver NanumPen",
+   "copyright": "Copyright (c) 2010, NHN Corporation (http://www.nhncorp.com), with Reserved Font Name Nanum, Naver Nanum, NanumGothic, Naver NanumGothic, NanumMyeongjo, Naver NanumMyeongjo, NanumBrush, Naver NanumBrush, NanumPen, Naver NanumPen",
+   "from": "ofl/nanummyeongjo",
+   "repository": "https://github.com/googlefonts/googlefontdirectory-hg",
+   "upstreamCommit": "52f780bc9d197280a9f430574e179a5f233c56b6",
+   "notice": false,
+   "r": {
+    "file": "nanummyeongjo-r.ttf",
+    "weight": 400,
+    "bytes": 166476,
+    "sha256": "bda963cc952bc2543efef3ec12cbcf87fb4fc323240aaf843d02831311438658",
+    "original": "NanumMyeongjo-Regular.ttf",
+    "originalBytes": 3058408
+   },
+   "b": {
+    "file": "nanummyeongjo-b.ttf",
+    "weight": 700,
+    "bytes": 172288,
+    "sha256": "496a4b0a9ab4f3caadca8cfd7a7e1a773e3f874ebe70fc75eb384e4e0049dc62",
+    "original": "NanumMyeongjo-Bold.ttf",
+    "originalBytes": 3074720
+   }
+  },
+  "gowunbatang": {
+   "family": "Gowun Batang",
+   "name": "BN Card 10",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2021 The Gowun Batang Project Authors (https://github.com/yangheeryu/Gowun-Batang)",
+   "from": "ofl/gowunbatang",
+   "repository": "https://github.com/yangheeryu/Gowun-Batang",
+   "upstreamCommit": "4e73f5a9a004927220354f4b68a4c720da538147",
+   "notice": false,
+   "r": {
+    "file": "gowunbatang-r.ttf",
+    "weight": 400,
+    "bytes": 216960,
+    "sha256": "24edc3d98f7c1cd5e9861067a4b250fc1b9f782ec2ab79e98728be8ae391b111",
+    "original": "GowunBatang-Regular.ttf",
+    "originalBytes": 8433296
+   },
+   "b": {
+    "file": "gowunbatang-b.ttf",
+    "weight": 700,
+    "bytes": 216328,
+    "sha256": "665946174861af94891da7ee204d1b17536170715202d5403b369367df799eb8",
+    "original": "GowunBatang-Bold.ttf",
+    "originalBytes": 8178712
+   }
+  },
+  "songmyung": {
+   "family": "Song Myung",
+   "name": "BN Card 11",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2018 The SongMyung Project Authors",
+   "from": "ofl/songmyung",
+   "repository": "https://github.com/googlefonts/songmyung",
+   "upstreamCommit": "34d21808ddde0fc48444269a2541e57c6746ae09",
+   "notice": false,
+   "r": {
+    "file": "songmyung-r.ttf",
+    "weight": 400,
+    "bytes": 172968,
+    "sha256": "6582b595c9367b2024d88287c6c879d5e0dea46eab7f11cdadc5e59f56372a38",
+    "original": "SongMyung-Regular.ttf",
+    "originalBytes": 2035300
+   }
+  },
+  "hahmlet": {
+   "family": "Hahmlet",
+   "name": "BN Card 12",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2020 The Hahmlet Project Authors (https://github.com/hyper-type/hahmlet)",
+   "from": "ofl/hahmlet",
+   "repository": "https://github.com/hyper-type/hahmlet/",
+   "upstreamCommit": "106541144954a9b7037b8d3837097ba660312655",
+   "notice": false,
+   "r": {
+    "file": "hahmlet-r.ttf",
+    "weight": 400,
+    "bytes": 208064,
+    "sha256": "31c8dc4eb55dcd1c730f4b0adc26cef6c98886cc5480fcd0f66898675f877e11",
+    "original": "Hahmlet[wght].ttf",
+    "originalBytes": 3559144
+   },
+   "b": {
+    "file": "hahmlet-b.ttf",
+    "weight": 700,
+    "bytes": 208664,
+    "sha256": "7ad5fe1ffc2cf289f28181571592894c6b16e632db136b84161cf7ef44897b7c",
+    "original": "Hahmlet[wght].ttf",
+    "originalBytes": 3559144
+   }
+  },
+  "diphylleia": {
+   "family": "Diphylleia",
+   "name": "BN Card 13",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2022 The Diphylleia Project Authors (https://github.com/JAMO-TYPEFACE/Diphylleia)",
+   "from": "ofl/diphylleia",
+   "repository": "https://github.com/JAMO-TYPEFACE/Diphylleia",
+   "upstreamCommit": "6a20531aa22286238d89f3bc1d8c29694acaec53",
+   "notice": false,
+   "r": {
+    "file": "diphylleia-r.ttf",
+    "weight": 400,
+    "bytes": 181712,
+    "sha256": "02f5b2d8278998c4623562294ac6e95bb091ef3583c48eef4491aee5f2f1690e",
+    "original": "Diphylleia-Regular.ttf",
+    "originalBytes": 1947768
+   }
+  },
+  "jua": {
+   "family": "Jua",
+   "name": "BN Card 14",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2018 The Jua Project Authors",
+   "from": "ofl/jua",
+   "repository": "https://github.com/googlefonts/jua",
+   "upstreamCommit": "9dce1f17069004ee8d777d4d6ee407793037d7f0",
+   "notice": false,
+   "r": {
+    "file": "jua-r.ttf",
+    "weight": 400,
+    "bytes": 212468,
+    "sha256": "4e5a5a87f2c977f8a7822ac971d0c81d30fe8f441ec60ea35c214218845aefb4",
+    "original": "Jua-Regular.ttf",
+    "originalBytes": 2119352
+   }
+  },
+  "dongle": {
+   "family": "Dongle",
+   "name": "BN Card 15",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2021 The Dongle Project Authors (https://github.com/yangheeryu/Dongle)",
+   "from": "ofl/dongle",
+   "repository": "https://github.com/yangheeryu/Dongle",
+   "upstreamCommit": "f7127c4d2450e1cad20254ec692591347e2fc260",
+   "notice": false,
+   "r": {
+    "file": "dongle-r.ttf",
+    "weight": 400,
+    "bytes": 121996,
+    "sha256": "3e0ecc4fb8ac7b6fb63b058e4833ca43ce52f8c988ea6e59c85ff29ec7745e6f",
+    "original": "Dongle-Regular.ttf",
+    "originalBytes": 4458600
+   },
+   "b": {
+    "file": "dongle-b.ttf",
+    "weight": 700,
+    "bytes": 123816,
+    "sha256": "f9c9c900ec368825654bbee0e1dbbda6ed467fcabbaf586d9338d38da4c0712f",
+    "original": "Dongle-Bold.ttf",
+    "originalBytes": 4476536
+   }
+  },
+  "cutefont": {
+   "family": "Cute Font",
+   "name": "BN Card 16",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2018 The Cute Font Project Authors",
+   "from": "ofl/cutefont",
+   "repository": "https://github.com/googlefonts/cutefont",
+   "upstreamCommit": "759c5c5d251f5f9f70d0f3e509057cd8d03f7630",
+   "notice": false,
+   "r": {
+    "file": "cutefont-r.ttf",
+    "weight": 400,
+    "bytes": 91992,
+    "sha256": "d7121fc70af50e93ad20f01dac675298b9c4430ede652e7ffdf0ecaa77257cc3",
+    "original": "CuteFont-Regular.ttf",
+    "originalBytes": 1027936
+   }
+  },
+  "stylish": {
+   "family": "Stylish",
+   "name": "BN Card 17",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright (c) 1992-2018 AsiaSoft Inc. Seoul Korea All Rights Reserved.",
+   "from": "ofl/stylish",
+   "repository": "https://github.com/googlefonts/stylish",
+   "upstreamCommit": "e0b178c4cb090a6805ab41f8d4c3a7d8d3176633",
+   "notice": false,
+   "r": {
+    "file": "stylish-r.ttf",
+    "weight": 400,
+    "bytes": 159192,
+    "sha256": "3b2f9ad064e7e4540febd4ee8d10c407d9f32464785f01543a0dba2c3125bc8b",
+    "original": "Stylish-Regular.ttf",
+    "originalBytes": 10854004
+   }
+  },
+  "gamjaflower": {
+   "family": "Gamja Flower",
+   "name": "BN Card 18",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright (c) YoonDesign Inc. All Rights Reserved.",
+   "from": "ofl/gamjaflower",
+   "repository": "https://github.com/googlefonts/gamjaflower",
+   "upstreamCommit": "c98981a4f463a583f619d53b419678c6bc1fb7d9",
+   "notice": false,
+   "r": {
+    "file": "gamjaflower-r.ttf",
+    "weight": 400,
+    "bytes": 178304,
+    "sha256": "7385e44915d000fbfaf8683e69832390cc377a8e90ba00dba7a1d5b06e3c3691",
+    "original": "GamjaFlower-Regular.ttf",
+    "originalBytes": 12615444
+   }
+  },
+  "himelody": {
+   "family": "Hi Melody",
+   "name": "BN Card 19",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright (c) YoonDesign Inc. All Rights Reserved.",
+   "from": "ofl/himelody",
+   "repository": "https://github.com/googlefonts/himelody",
+   "upstreamCommit": "a322a95b160571d7bb5a8efc3b64a5f847c80fce",
+   "notice": false,
+   "r": {
+    "file": "himelody-r.ttf",
+    "weight": 400,
+    "bytes": 175724,
+    "sha256": "cdce4195843950f99a02c9860acbbc80a459ecd3f6e726330d702b36af5478dc",
+    "original": "HiMelody-Regular.ttf",
+    "originalBytes": 12623412
+   }
+  },
+  "poorstory": {
+   "family": "Poor Story",
+   "name": "BN Card 20",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright (c) YoonDesign Inc. All Rights Reserved.",
+   "from": "ofl/poorstory",
+   "repository": "https://github.com/googlefonts/poorstory",
+   "upstreamCommit": "b2d4c0cc67e5a36633e2f55784612e04e721d3e8",
+   "notice": false,
+   "r": {
+    "file": "poorstory-r.ttf",
+    "weight": 400,
+    "bytes": 67432,
+    "sha256": "51c98515ac17e252229b00901027391cbdc0e8d8bc19674a6a2871b2d7aff7f6",
+    "original": "PoorStory-Regular.ttf",
+    "originalBytes": 3966768
+   }
+  },
+  "singleday": {
+   "family": "Single Day",
+   "name": "BN Card 21",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2015 DXKorea Inc. All rights reserved.",
+   "from": "ofl/singleday",
+   "repository": "",
+   "upstreamCommit": "",
+   "notice": false,
+   "r": {
+    "file": "singleday-r.ttf",
+    "weight": 400,
+    "bytes": 93688,
+    "sha256": "dc77e7e42fc9870bf3e8091fbe843165856401abd9b052c856b15f4e0a696a29",
+    "original": "SingleDay-Regular.ttf",
+    "originalBytes": 816524
+   }
+  },
+  "nanumpen": {
+   "family": "Nanum Pen Script",
+   "name": "BN Card 22",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Nanum, Naver Nanum, NanumGothic, Naver NanumGothic, NanumMyeongjo, Naver NanumMyeongjo, NanumBrush, Naver NanumBrush, NanumPen, Naver NanumPen",
+   "copyright": "Copyright (c) 2010, NHN Corporation (http://www.nhncorp.com), with Reserved Font Name Nanum, Naver Nanum, NanumGothic, Naver NanumGothic, NanumMyeongjo, Naver NanumMyeongjo, NanumBrush, Naver NanumBrush, NanumPen, Naver NanumPen.",
+   "from": "ofl/nanumpenscript",
+   "repository": "https://github.com/googlefonts/nanumpenscript",
+   "upstreamCommit": "404860478f027e805535e22988a7823fc43d1848",
+   "notice": false,
+   "r": {
+    "file": "nanumpen-r.ttf",
+    "weight": 400,
+    "bytes": 185356,
+    "sha256": "70f7b0b2c4b83a4ce7a3a5e723fc896c806e01b2e23c6abca7a02cdf4738e20a",
+    "original": "NanumPenScript-Regular.ttf",
+    "originalBytes": 3201664
+   }
+  },
+  "nanumbrush": {
+   "family": "Nanum Brush Script",
+   "name": "BN Card 23",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Nanum, Naver Nanum, NanumGothic, Naver NanumGothic, NanumMyeongjo, Naver NanumMyeongjo, NanumBrush, Naver NanumBrush, NanumPen, Naver NanumPen",
+   "copyright": "Copyright (c) 2010, NHN Corporation (http://www.nhncorp.com), with Reserved Font Name Nanum, Naver Nanum, NanumGothic, Naver NanumGothic, NanumMyeongjo, Naver NanumMyeongjo, NanumBrush, Naver NanumBrush, NanumPen, Naver NanumPen.",
+   "from": "ofl/nanumbrushscript",
+   "repository": "https://github.com/googlefonts/nanumbrushscript",
+   "upstreamCommit": "5b703ee26d2c686003d96d63189461e08402c1f0",
+   "notice": false,
+   "r": {
+    "file": "nanumbrush-r.ttf",
+    "weight": 400,
+    "bytes": 231320,
+    "sha256": "20a623ea8fc1a0857527dcf14b9e6f3ee61286c99790334283dafedc423efbae",
+    "original": "NanumBrushScript-Regular.ttf",
+    "originalBytes": 3564804
+   }
+  },
+  "gaegu": {
+   "family": "Gaegu",
+   "name": "BN Card 24",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2018 The Gaegu Project Authors",
+   "from": "ofl/gaegu",
+   "repository": "",
+   "upstreamCommit": "",
+   "notice": false,
+   "r": {
+    "file": "gaegu-r.ttf",
+    "weight": 400,
+    "bytes": 245692,
+    "sha256": "7652d03362bf92e69e413eb005e98a1d0831f360ad83e2762f941b0533cd946a",
+    "original": "Gaegu-Regular.ttf",
+    "originalBytes": 3165816
+   },
+   "b": {
+    "file": "gaegu-b.ttf",
+    "weight": 700,
+    "bytes": 252048,
+    "sha256": "d5130cebfeb779b655ae687fde60c8ff66a8eca812ea85511c3935c0e52061b2",
+    "original": "Gaegu-Bold.ttf",
+    "originalBytes": 2962664
+   }
+  },
+  "yeonsung": {
+   "family": "Yeon Sung",
+   "name": "BN Card 25",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2018 The BM YEONSUNG Project Authors",
+   "from": "ofl/yeonsung",
+   "repository": "https://github.com/googlefonts/yeonsung",
+   "upstreamCommit": "8979fd9bff991f4cc9eb2141534b376a296a3bb6",
+   "notice": false,
+   "r": {
+    "file": "yeonsung-r.ttf",
+    "weight": 400,
+    "bytes": 225528,
+    "sha256": "747eb493a285a78b0306aba39a67e682cae6d81b26eacbf2fccb9db7884050df",
+    "original": "YeonSung-Regular.ttf",
+    "originalBytes": 2511004
+   }
+  },
+  "dokdo": {
+   "family": "Dokdo",
+   "name": "BN Card 26",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright (c) 2005-2017 FONTRIX. All Rights Reserved.",
+   "from": "ofl/dokdo",
+   "repository": "https://github.com/googlefonts/dokdo",
+   "upstreamCommit": "47a91e8d460eb2891c66c1af36bc675f23855087",
+   "notice": false,
+   "r": {
+    "file": "dokdo-r.ttf",
+    "weight": 400,
+    "bytes": 220512,
+    "sha256": "e2ebe6a6983d05b0aaa445f5bd3b0bd3e4ba15101e8822db7054753f26f0d0ad",
+    "original": "Dokdo-Regular.ttf",
+    "originalBytes": 2150860
+   }
+  },
+  "eastseadokdo": {
+   "family": "East Sea Dokdo",
+   "name": "BN Card 27",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright (c) YoonDesign Inc. All Rights Reserved.",
+   "from": "ofl/eastseadokdo",
+   "repository": "https://github.com/googlefonts/eastseadokdo",
+   "upstreamCommit": "7826832c41f58f84cc819f5c4353ad989db69b49",
+   "notice": false,
+   "r": {
+    "file": "eastseadokdo-r.ttf",
+    "weight": 400,
+    "bytes": 494904,
+    "sha256": "cfeb42a6aa87c378af14f3efedda0bdbd0998d9b9b01cb48a0fbd217dab12f20",
+    "original": "EastSeaDokdo-Regular.ttf",
+    "originalBytes": 3178684
+   }
+  },
+  "kiranghaerang": {
+   "family": "Kirang Haerang",
+   "name": "BN Card 28",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2018 The Kirang Haerang Project Authors",
+   "from": "ofl/kiranghaerang",
+   "repository": "https://github.com/woowabros/KirangHaerang",
+   "upstreamCommit": "544ae6224fa83a85a0b4954e188c4791a98e3ce9",
+   "notice": false,
+   "r": {
+    "file": "kiranghaerang-r.ttf",
+    "weight": 400,
+    "bytes": 472772,
+    "sha256": "be9c33a6dd10be93c4c9aeea9da6370c22c6f7d07d392f85443406665b3d208d",
+    "original": "KirangHaerang-Regular.ttf",
+    "originalBytes": 5995608
+   }
+  },
+  "bwpicture": {
+   "family": "Black And White Picture",
+   "name": "BN Card 29",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright (c) 1992-2018 AsiaSoft Inc. Seoul Korea All Rights Reserved.",
+   "from": "ofl/blackandwhitepicture",
+   "repository": "https://github.com/googlefonts/blackandwhitepicture",
+   "upstreamCommit": "75469c6eb209e3b87717e10f604a15fc501b46e2",
+   "notice": false,
+   "r": {
+    "file": "bwpicture-r.ttf",
+    "weight": 400,
+    "bytes": 350296,
+    "sha256": "c256659440e1da9a3c2b9049ed3bd6ef5f7087102119166f15ea4f85aca332eb",
+    "original": "BlackAndWhitePicture-Regular.ttf",
+    "originalBytes": 9606352
+   }
+  },
+  "blackhansans": {
+   "family": "Black Han Sans",
+   "name": "BN Card 30",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2015 The Black Han Sans Project Authors (https://github.com/zesstype/Black-Han-Sans)",
+   "from": "ofl/blackhansans",
+   "repository": "https://github.com/googlefonts/blackhansans",
+   "upstreamCommit": "41b7d933d1c5d9c570f9f2a71affc5c2f8142818",
+   "notice": false,
+   "r": {
+    "file": "blackhansans-r.ttf",
+    "weight": 400,
+    "bytes": 54452,
+    "sha256": "e7661cae7cc9a975d91d90849a31f211724b1f73cf35f6f9e0864de4ad28b0c8",
+    "original": "BlackHanSans-Regular.ttf",
+    "originalBytes": 998424
+   }
+  },
+  "dohyeon": {
+   "family": "Do Hyeon",
+   "name": "BN Card 31",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2018 The Do Hyeon Project Authors",
+   "from": "ofl/dohyeon",
+   "repository": "https://github.com/googlefonts/dohyeon",
+   "upstreamCommit": "8607d13340cc290d880417b2392fe01cd8260664",
+   "notice": false,
+   "r": {
+    "file": "dohyeon-r.ttf",
+    "weight": 400,
+    "bytes": 62684,
+    "sha256": "f5bb2173fad4a2445013ae2375482aea3b67732cca87387a98ae1a8fac88bf3e",
+    "original": "DoHyeon-Regular.ttf",
+    "originalBytes": 879764
+   }
+  },
+  "gugi": {
+   "family": "Gugi",
+   "name": "BN Card 32",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright (c) 2017 by TAE System & Typefaces Co.. All rights reserved.",
+   "from": "ofl/gugi",
+   "repository": "https://github.com/googlefonts/gugi",
+   "upstreamCommit": "cb3b662a31375df2083eb5522e4123194e8ebe1b",
+   "notice": false,
+   "r": {
+    "file": "gugi-r.ttf",
+    "weight": 400,
+    "bytes": 85540,
+    "sha256": "3a5b4d78deb11848056a9bc921b412ca9fe6e428f02cebdde0c2c8e35cadca7d",
+    "original": "Gugi-Regular.ttf",
+    "originalBytes": 990856
+   }
+  },
+  "bagelfatone": {
+   "family": "Bagel Fat One",
+   "name": "BN Card 33",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2022 The Bagel Fat Project Authors (https://github.com/JAMO-TYPEFACE/BagelFat)",
+   "from": "ofl/bagelfatone",
+   "repository": "https://github.com/JAMO-TYPEFACE/BagelFat",
+   "upstreamCommit": "d8dd4e8b5dd0e74fbf87a78290ee9a9aaed1270b",
+   "notice": false,
+   "r": {
+    "file": "bagelfatone-r.ttf",
+    "weight": 400,
+    "bytes": 125900,
+    "sha256": "3ea9d5b074764995d0f6f668698d2f0037faadf4fac3e69e34b8e0642df7e119",
+    "original": "BagelFatOne-Regular.ttf",
+    "originalBytes": 1585984
+   }
+  },
+  "gasoekone": {
+   "family": "Gasoek One",
+   "name": "BN Card 34",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2022 The Gasoek Project Authors (https://github.com/JAMO-TYPEFACE/Gasoek)",
+   "from": "ofl/gasoekone",
+   "repository": "https://github.com/JAMO-TYPEFACE/Gasoek",
+   "upstreamCommit": "f6b875c95ad933c5f937c2494ae2337f5aef2694",
+   "notice": false,
+   "r": {
+    "file": "gasoekone-r.ttf",
+    "weight": 400,
+    "bytes": 74528,
+    "sha256": "e264236e76e4642195d0cde4a3bde653f8f66536faa6d5e15b8da056de6ba004",
+    "original": "GasoekOne-Regular.ttf",
+    "originalBytes": 1061372
+   }
+  },
+  "moiraione": {
+   "family": "Moirai One",
+   "name": "BN Card 35",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2022 The Moirai Project Authors (https://github.com/JAMO-TYPEFACE/Moirai)",
+   "from": "ofl/moiraione",
+   "repository": "https://github.com/JAMO-TYPEFACE/Moirai",
+   "upstreamCommit": "2da483959021f384eebc39feb6da1e8cbcdf452d",
+   "notice": false,
+   "r": {
+    "file": "moiraione-r.ttf",
+    "weight": 400,
+    "bytes": 182036,
+    "sha256": "f4c750e9709c024201f3d63fcc56c329de0ac966d6a2906cf9a2036f398b9579",
+    "original": "MoiraiOne-Regular.ttf",
+    "originalBytes": 2102128
+   }
+  },
+  "grandifloraone": {
+   "family": "Grandiflora One",
+   "name": "BN Card 36",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2022 The Grandiflora Project Authors (https://github.com/JAMO-TYPEFACE/Grandiflora)",
+   "from": "ofl/grandifloraone",
+   "repository": "https://github.com/JAMO-TYPEFACE/Grandiflora",
+   "upstreamCommit": "5e5d39d3d49c5de0815020ba3996e9725d717e3f",
+   "notice": false,
+   "r": {
+    "file": "grandifloraone-r.ttf",
+    "weight": 400,
+    "bytes": 156440,
+    "sha256": "ba16fc0cdd0ade0a687575703a82894200b37cba19c6ea981f145be1502797d0",
+    "original": "GrandifloraOne-Regular.ttf",
+    "originalBytes": 2342680
+   }
+  },
+  "nanumgothiccoding": {
+   "family": "Nanum Gothic Coding",
+   "name": "BN Card 37",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Nanum, Naver Nanum, NanumGothic, Naver NanumGothic, NanumMyeongjo, Naver NanumMyeongjo, NanumBrush, Naver NanumBrush, NanumPen, Naver NanumPen",
+   "copyright": "Copyright (c) 2010, NHN Corporation (http://www.nhncorp.com), with Reserved Font Name Nanum, Naver Nanum, NanumGothic, Naver NanumGothic, NanumMyeongjo, Naver NanumMyeongjo, NanumBrush, Naver NanumBrush, NanumPen, Naver NanumPen.",
+   "from": "ofl/nanumgothiccoding",
+   "repository": "https://github.com/naver/nanumfont",
+   "upstreamCommit": "770142018d7b23abe48a1ff9370adeac3bbbcd0e",
+   "notice": false,
+   "r": {
+    "file": "nanumgothiccoding-r.ttf",
+    "weight": 400,
+    "bytes": 112016,
+    "sha256": "2a1b178b5da8f5dd141d1acd60e27e81f09d3694b57554d1454f4c9965354fb0",
+    "original": "NanumGothicCoding-Regular.ttf",
+    "originalBytes": 2315924
+   },
+   "b": {
+    "file": "nanumgothiccoding-b.ttf",
+    "weight": 700,
+    "bytes": 112896,
+    "sha256": "4dff418832ccd1124551dfdcdba2aa72925cbe8f556f24d3fb596922250f98d6",
+    "original": "NanumGothicCoding-Bold.ttf",
+    "originalBytes": 2246240
+   }
+  },
+  "bebasneue": {
+   "family": "Bebas Neue",
+   "name": "BN Card 38",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright © 2010 by Dharma Type.",
+   "from": "ofl/bebasneue",
+   "repository": "https://github.com/dharmatype/Bebas-Neue",
+   "upstreamCommit": "686d14af640c17af3691c597778f121d840d9051",
+   "notice": false,
+   "r": {
+    "file": "bebasneue-r.ttf",
+    "weight": 400,
+    "bytes": 17148,
+    "sha256": "5907740df4155a759e7a5248a9444c2a2619937aeab88437188d37765c59ec1f",
+    "original": "BebasNeue-Regular.ttf",
+    "originalBytes": 61400
+   }
+  },
+  "oswald": {
+   "family": "Oswald",
+   "name": "BN Card 39",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2016 The Oswald Project Authors (https://github.com/googlefonts/OswaldFont)",
+   "from": "ofl/oswald",
+   "repository": "https://github.com/googlefonts/OswaldFont",
+   "upstreamCommit": "89795261ac9eeb9aa8cd99f43982c4e4b0e53261",
+   "notice": false,
+   "r": {
+    "file": "oswald-r.ttf",
+    "weight": 400,
+    "bytes": 18004,
+    "sha256": "a415fba4d75851ef4502a38f76b8f9b7f76fe0ea4e70852c3558a6a9ba6c8478",
+    "original": "Oswald[wght].ttf",
+    "originalBytes": 172088
+   },
+   "b": {
+    "file": "oswald-b.ttf",
+    "weight": 700,
+    "bytes": 18020,
+    "sha256": "6134afbcdc5a11271968638adb36427373c6c4837ba48d6d5241accb898e1cf5",
+    "original": "Oswald[wght].ttf",
+    "originalBytes": 172088
+   }
+  },
+  "anton": {
+   "family": "Anton",
+   "name": "BN Card 40",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2020 The Anton Project Authors (https://github.com/googlefonts/AntonFont.git)",
+   "from": "ofl/anton",
+   "repository": "https://github.com/googlefonts/AntonFont",
+   "upstreamCommit": "beb92fcad87808357123bb66881b4032dc96efe7",
+   "notice": false,
+   "r": {
+    "file": "anton-r.ttf",
+    "weight": 400,
+    "bytes": 22824,
+    "sha256": "6b1344beb07ba371eec958eeed696b3227114f2336e09e9229ebf01a279046f5",
+    "original": "Anton-Regular.ttf",
+    "originalBytes": 170812
+   }
+  },
+  "archivoblack": {
+   "family": "Archivo Black",
+   "name": "BN Card 41",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2017 The Archivo Black Project Authors (https://github.com/Omnibus-Type/ArchivoBlack)",
+   "from": "ofl/archivoblack",
+   "repository": "https://github.com/Omnibus-Type/ArchivoBlack",
+   "upstreamCommit": "95df3c54d818473a3e362f30ae3059bd85b80036",
+   "notice": false,
+   "r": {
+    "file": "archivoblack-r.ttf",
+    "weight": 400,
+    "bytes": 15016,
+    "sha256": "a039afde7f80fa315858a3bdf161264fde7a869dc0fb38d4561d32aa6bbea37f",
+    "original": "ArchivoBlack-Regular.ttf",
+    "originalBytes": 90988
+   }
+  },
+  "montserrat": {
+   "family": "Montserrat",
+   "name": "BN Card 42",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2024 The Montserrat.Git Project Authors (https://github.com/JulietaUla/Montserrat.git)",
+   "from": "ofl/montserrat",
+   "repository": "https://github.com/JulietaUla/Montserrat",
+   "upstreamCommit": "cc8daf2e7085006b9c112542fc82b58afc13521d",
+   "notice": false,
+   "r": {
+    "file": "montserrat-r.ttf",
+    "weight": 400,
+    "bytes": 59164,
+    "sha256": "0cabec538e54c9bdafc670a253170fc689d36f2ca83cf57ad4903d259bcb2de2",
+    "original": "Montserrat[wght].ttf",
+    "originalBytes": 744936
+   },
+   "b": {
+    "file": "montserrat-b.ttf",
+    "weight": 700,
+    "bytes": 59416,
+    "sha256": "69b876f453a7949d00d02be3f223697400e74ff31eaa6e2c79784b8c5035b42e",
+    "original": "Montserrat[wght].ttf",
+    "originalBytes": 744936
+   }
+  },
+  "poppins": {
+   "family": "Poppins",
+   "name": "BN Card 43",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2020 The Poppins Project Authors (https://github.com/itfoundry/Poppins)",
+   "from": "ofl/poppins",
+   "repository": "https://github.com/itfoundry/Poppins",
+   "upstreamCommit": "738d9d691b66f1ad917123c58df104d16c74e1a7",
+   "notice": false,
+   "r": {
+    "file": "poppins-r.ttf",
+    "weight": 400,
+    "bytes": 12380,
+    "sha256": "5d9b414005817588bb7c0bba8fd5071ee3b83a2cc46d3d973c2cc9840a76e7e0",
+    "original": "Poppins-Regular.ttf",
+    "originalBytes": 160316
+   },
+   "b": {
+    "file": "poppins-b.ttf",
+    "weight": 700,
+    "bytes": 12236,
+    "sha256": "3630da258320db92fa59f984ea16c4e57a7341f2f0259939e551912f77b074d3",
+    "original": "Poppins-Bold.ttf",
+    "originalBytes": 155996
+   }
+  },
+  "quicksand": {
+   "family": "Quicksand",
+   "name": "BN Card 44",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Quicksand",
+   "copyright": "Copyright 2011 The Quicksand Project Authors (https://github.com/andrew-paglinawan/QuicksandFamily), with Reserved Font Name “Quicksand”.",
+   "from": "ofl/quicksand",
+   "repository": "https://github.com/ThomasJockin/QuicksandFamily",
+   "upstreamCommit": "02ead1c009102a433b9cd155f611df1e5f49bd9c",
+   "notice": false,
+   "r": {
+    "file": "quicksand-r.ttf",
+    "weight": 400,
+    "bytes": 24932,
+    "sha256": "0f7c3a57bb18835bde5deb055d495864029a88bab6d11ca500dd8b2743df800c",
+    "original": "Quicksand[wght].ttf",
+    "originalBytes": 124824
+   },
+   "b": {
+    "file": "quicksand-b.ttf",
+    "weight": 700,
+    "bytes": 24808,
+    "sha256": "be644e1e6a720f1d35aea43d91db4a9f42009528d12a267d3a6f2dcea1307a7b",
+    "original": "Quicksand[wght].ttf",
+    "originalBytes": 124824
+   }
+  },
+  "comfortaa": {
+   "family": "Comfortaa",
+   "name": "BN Card 45",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Comfortaa",
+   "copyright": "Copyright 2011 The Comfortaa Project Authors (https://github.com/alexeiva/comfortaa), with Reserved Font Name \"Comfortaa\".",
+   "from": "ofl/comfortaa",
+   "repository": "https://github.com/alexeiva/comfortaa",
+   "upstreamCommit": "4aa21cfb7b018629dcf17aab6220e638411c7164",
+   "notice": false,
+   "r": {
+    "file": "comfortaa-r.ttf",
+    "weight": 400,
+    "bytes": 23964,
+    "sha256": "97d44e89b34a3a0097071cfdbef615cec6d27b58d761721688107e714432a6eb",
+    "original": "Comfortaa[wght].ttf",
+    "originalBytes": 201756
+   },
+   "b": {
+    "file": "comfortaa-b.ttf",
+    "weight": 700,
+    "bytes": 23896,
+    "sha256": "9d465e3d911f91b9ffb21862f36709dfabf71c1c67584b627733cd4457acc866",
+    "original": "Comfortaa[wght].ttf",
+    "originalBytes": 201756
+   }
+  },
+  "fredoka": {
+   "family": "Fredoka",
+   "name": "BN Card 46",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2016 The Fredoka Project Authors (https://github.com/hafontia/Fredoka-One)",
+   "from": "ofl/fredoka",
+   "repository": "https://github.com/hafontia-zz/Fredoka-One",
+   "upstreamCommit": "35c584ff23450c9bcdf8819706e12fcdeefe1712",
+   "notice": false,
+   "r": {
+    "file": "fredoka-r.ttf",
+    "weight": 400,
+    "bytes": 25140,
+    "sha256": "a30a1149e113b32280cd3130dc8cbad84348780e231e9a8c3e109aff4d56fde8",
+    "original": "Fredoka[wdth,wght].ttf",
+    "originalBytes": 159184
+   },
+   "b": {
+    "file": "fredoka-b.ttf",
+    "weight": 700,
+    "bytes": 24996,
+    "sha256": "9c860d46a1bb3540ce3d0e14e2b12779342c131e0091f77b4b07c6609bdb6321",
+    "original": "Fredoka[wdth,wght].ttf",
+    "originalBytes": 159184
+   }
+  },
+  "nunito": {
+   "family": "Nunito",
+   "name": "BN Card 47",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2014 The Nunito Project Authors (https://github.com/googlefonts/nunito)",
+   "from": "ofl/nunito",
+   "repository": "https://github.com/googlefonts/nunito",
+   "upstreamCommit": "8c6a9bb9732545b9ed53f29ec5e1ab0ff53c4e6f",
+   "notice": false,
+   "r": {
+    "file": "nunito-r.ttf",
+    "weight": 400,
+    "bytes": 26580,
+    "sha256": "d754d18d0a4e99ad4f2c7bd7fbb63b6772637a065a6f530fd2d2d65db92fc26a",
+    "original": "Nunito[wght].ttf",
+    "originalBytes": 276932
+   },
+   "b": {
+    "file": "nunito-b.ttf",
+    "weight": 700,
+    "bytes": 26504,
+    "sha256": "ef549b8f945453636d634dd5dca17d3c338bfcd41eb26f42bc94cd6469692059",
+    "original": "Nunito[wght].ttf",
+    "originalBytes": 276932
+   }
+  },
+  "rubik": {
+   "family": "Rubik",
+   "name": "BN Card 48",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2015 The Rubik Project Authors (https://github.com/googlefonts/rubik)",
+   "from": "ofl/rubik",
+   "repository": "https://github.com/googlefonts/rubik",
+   "upstreamCommit": "9167c98fa8699d75ee51769eba20d81beb16bcb5",
+   "notice": false,
+   "r": {
+    "file": "rubik-r.ttf",
+    "weight": 400,
+    "bytes": 37824,
+    "sha256": "d2acd908c9ed3765d684632c38c96c9d036d21cea069d7f7f8d36ad46095960a",
+    "original": "Rubik[wght].ttf",
+    "originalBytes": 359804
+   },
+   "b": {
+    "file": "rubik-b.ttf",
+    "weight": 700,
+    "bytes": 37792,
+    "sha256": "806c03ba0dce3a2df436e59f0a06c27595ff8c6dc69c8aaae05ef93343434d54",
+    "original": "Rubik[wght].ttf",
+    "originalBytes": 359804
+   }
+  },
+  "josefinsans": {
+   "family": "Josefin Sans",
+   "name": "BN Card 49",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Josefin Sans",
+   "copyright": "Copyright 2010 The Josefin Sans Project Authors (https://github.com/ThomasJockin/JosefinSansFont-master), with Reserved Font Name \"Josefin Sans\".",
+   "from": "ofl/josefinsans",
+   "repository": "https://github.com/googlefonts/josefinsans",
+   "upstreamCommit": "bf6907e3a34924300dd407201262f62c2fc2a642",
+   "notice": false,
+   "r": {
+    "file": "josefinsans-r.ttf",
+    "weight": 400,
+    "bytes": 17828,
+    "sha256": "945cefe13735122ff66d4471986cc0152c971e100cf4b004a91463d2df2373fe",
+    "original": "JosefinSans[wght].ttf",
+    "originalBytes": 118588
+   },
+   "b": {
+    "file": "josefinsans-b.ttf",
+    "weight": 700,
+    "bytes": 17672,
+    "sha256": "f3241582ca4b7e005d2915325113e67b27dc6a24316bb8b10e99218e1db0ccaf",
+    "original": "JosefinSans[wght].ttf",
+    "originalBytes": 118588
+   }
+  },
+  "playfair": {
+   "family": "Playfair Display",
+   "name": "BN Card 50",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Playfair Display",
+   "copyright": "Copyright 2017 The Playfair Display Project Authors (https://github.com/clauseggers/Playfair-Display), with Reserved Font Name \"Playfair Display\"",
+   "from": "ofl/playfairdisplay",
+   "repository": "https://github.com/clauseggers/Playfair",
+   "upstreamCommit": "80a334101928546b04fa9e709ad4b2f11f8a9e10",
+   "notice": false,
+   "r": {
+    "file": "playfair-r.ttf",
+    "weight": 400,
+    "bytes": 54900,
+    "sha256": "b2fe7493455c7082212c7b77e0328b1223834138263280e99fda7c232b21e278",
+    "original": "PlayfairDisplay[wght].ttf",
+    "originalBytes": 300724
+   },
+   "b": {
+    "file": "playfair-b.ttf",
+    "weight": 700,
+    "bytes": 54956,
+    "sha256": "e9fccc2d0d8d0581ad07d80690cede9b4adfa0bccd3e5dc05650e8333a260990",
+    "original": "PlayfairDisplay[wght].ttf",
+    "originalBytes": 300724
+   }
+  },
+  "lora": {
+   "family": "Lora",
+   "name": "BN Card 51",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Lora",
+   "copyright": "Copyright 2011 The Lora Project Authors (https://github.com/cyrealtype/Lora-Cyrillic), with Reserved Font Name \"Lora\".",
+   "from": "ofl/lora",
+   "repository": "https://github.com/cyrealtype/Lora-Cyrillic",
+   "upstreamCommit": "403b1a66ca2e79f81d749c5299559e168591a4df",
+   "notice": false,
+   "r": {
+    "file": "lora-r.ttf",
+    "weight": 400,
+    "bytes": 30744,
+    "sha256": "788fc5108acfa1099a2524152fa2d17973a469db4b1eda4c9eae1382d23922a7",
+    "original": "Lora[wght].ttf",
+    "originalBytes": 212196
+   },
+   "b": {
+    "file": "lora-b.ttf",
+    "weight": 700,
+    "bytes": 30616,
+    "sha256": "b9607f50bdfa331994f9164efe86bf475dda82932809e25ec9e0a041b75073ff",
+    "original": "Lora[wght].ttf",
+    "originalBytes": 212196
+   }
+  },
+  "abrilfatface": {
+   "family": "Abril Fatface",
+   "name": "BN Card 52",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Abril\" and \"Abril Fatface",
+   "copyright": "Copyright (c) 2011, TypeTogether (www.type-together.com), with Reserved Font Names \"Abril\" and \"Abril Fatface\"",
+   "from": "ofl/abrilfatface",
+   "repository": "https://github.com/googlefonts/abrilfatface",
+   "upstreamCommit": "9d1486e10152a225e46f9d1f787410d7d269015e",
+   "notice": false,
+   "r": {
+    "file": "abrilfatface-r.ttf",
+    "weight": 400,
+    "bytes": 21492,
+    "sha256": "091389cee64b52e7e9b07001a24f99d8934834704612d27a225c02280b491ec6",
+    "original": "AbrilFatface-Regular.ttf",
+    "originalBytes": 67364
+   }
+  },
+  "dmserif": {
+   "family": "DM Serif Display",
+   "name": "BN Card 53",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Source",
+   "copyright": "Copyright 2014-2018 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'. All Rights Reserved. Source is a trademark of Adobe in the United States and/or other countries. Copyright 2019 Google LLC.",
+   "from": "ofl/dmserifdisplay",
+   "repository": "https://github.com/googlefonts/dm-fonts",
+   "upstreamCommit": "027cea4e4f45827128860a4dec7b9a0852a295d7",
+   "notice": false,
+   "r": {
+    "file": "dmserif-r.ttf",
+    "weight": 400,
+    "bytes": 25808,
+    "sha256": "a0cfcda82cfc535750569ea0416462c980fef8fb287886907fd1e842d993c278",
+    "original": "DMSerifDisplay-Regular.ttf",
+    "originalBytes": 76580
+   }
+  },
+  "pacifico": {
+   "family": "Pacifico",
+   "name": "BN Card 54",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2018 The Pacifico Project Authors (https://github.com/googlefonts/Pacifico)",
+   "from": "ofl/pacifico",
+   "repository": "https://github.com/googlefonts/Pacifico",
+   "upstreamCommit": "423e7cb2b036ead2624c05197e17a83ddf5c6068",
+   "notice": false,
+   "r": {
+    "file": "pacifico-r.ttf",
+    "weight": 400,
+    "bytes": 45864,
+    "sha256": "5cdff7dfe485cab12328bd7fa4d77c6e63d0459d593fb278af3e45319988f471",
+    "original": "Pacifico-Regular.ttf",
+    "originalBytes": 329380
+   }
+  },
+  "lobster": {
+   "family": "Lobster",
+   "name": "BN Card 55",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Lobster",
+   "copyright": "Copyright 2010 The Lobster Project Authors (https://github.com/impallari/The-Lobster-Font), with Reserved Font Name \"Lobster\".",
+   "from": "ofl/lobster",
+   "repository": "https://github.com/impallari/The-Lobster-Font",
+   "upstreamCommit": "0796aa8aa42f6cbc89fa61be4a2a12fdcd2b8998",
+   "notice": false,
+   "r": {
+    "file": "lobster-r.ttf",
+    "weight": 400,
+    "bytes": 38384,
+    "sha256": "f602d75161539c1d6ca2a4ca108e6ad547cb53a60d157bf7aeabe72a5ae31c94",
+    "original": "Lobster-Regular.ttf",
+    "originalBytes": 406076
+   }
+  },
+  "dancingscript": {
+   "family": "Dancing Script",
+   "name": "BN Card 56",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Dancing Script",
+   "copyright": "Copyright 2016 The Dancing Script Project Authors (https://github.com/googlefonts/DancingScript), with Reserved Font Name 'Dancing Script'.",
+   "from": "ofl/dancingscript",
+   "repository": "https://github.com/googlefonts/DancingScript",
+   "upstreamCommit": "291f87c05206179b6bfd53735a5638b5cc84e3b3",
+   "notice": false,
+   "r": {
+    "file": "dancingscript-r.ttf",
+    "weight": 400,
+    "bytes": 39100,
+    "sha256": "1a7cb2deca3951c702dc99a1d19ac31c31450f583b734b1ab94e8e34823f9a0f",
+    "original": "DancingScript[wght].ttf",
+    "originalBytes": 133636
+   },
+   "b": {
+    "file": "dancingscript-b.ttf",
+    "weight": 700,
+    "bytes": 39176,
+    "sha256": "4cbc2d51c11b77335a0eb208f1a58dbcac3b028ed68057348dac229118d259f4",
+    "original": "DancingScript[wght].ttf",
+    "originalBytes": 133636
+   }
+  },
+  "caveat": {
+   "family": "Caveat",
+   "name": "BN Card 57",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2014 The Caveat Project Authors (https://github.com/googlefonts/caveat)",
+   "from": "ofl/caveat",
+   "repository": "https://github.com/googlefonts/caveat",
+   "upstreamCommit": "59745e818ef7973e11e70cb1358d0e902b56c5fc",
+   "notice": false,
+   "r": {
+    "file": "caveat-r.ttf",
+    "weight": 400,
+    "bytes": 102808,
+    "sha256": "75fcd2dcbcfd341d481fae51f5e269c5598990fe0af1f779451671a60ddd055a",
+    "original": "Caveat[wght].ttf",
+    "originalBytes": 403648
+   },
+   "b": {
+    "file": "caveat-b.ttf",
+    "weight": 700,
+    "bytes": 102752,
+    "sha256": "4e4602bbdff8419b3af33aa4dee9c1032f660dc6e1506e872570982af48dbf07",
+    "original": "Caveat[wght].ttf",
+    "originalBytes": 403648
+   }
+  },
+  "permanentmarker": {
+   "family": "Permanent Marker",
+   "name": "BN Card 58",
+   "license": "apache",
+   "licenseName": "Apache 2.0",
+   "metadataLicense": "APACHE2",
+   "rfn": "",
+   "copyright": "Copyright (c) 2010 by Font Diner, Inc. All rights reserved.",
+   "from": "apache/permanentmarker",
+   "repository": "https://github.com/googlefonts/permanentmarker",
+   "upstreamCommit": "b0786e381d1475883fef04d2f3c7541fe51efe93",
+   "notice": false,
+   "r": {
+    "file": "permanentmarker-r.ttf",
+    "weight": 400,
+    "bytes": 39972,
+    "sha256": "4a3c44e03d9882e4932fc04a95a86ac785cc5f99842efeccca5a0db285b78d5f",
+    "original": "PermanentMarker-Regular.ttf",
+    "originalBytes": 74632
+   }
+  },
+  "shadowsintolight": {
+   "family": "Shadows Into Light",
+   "name": "BN Card 59",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright (c) 2010, Kimberly Geswein (kimberlygeswein.com)",
+   "from": "ofl/shadowsintolight",
+   "repository": "https://github.com/googlefonts/googlefontdirectory-hg",
+   "upstreamCommit": "52f780bc9d197280a9f430574e179a5f233c56b6",
+   "notice": false,
+   "r": {
+    "file": "shadowsintolight-r.ttf",
+    "weight": 400,
+    "bytes": 27428,
+    "sha256": "c636f828ccf1d9f7abc92e0a424b78a6791724b8a27df6dd897e41a8a4642fcc",
+    "original": "ShadowsIntoLight.ttf",
+    "originalBytes": 54304
+   }
+  },
+  "righteous": {
+   "family": "Righteous",
+   "name": "BN Card 60",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Righteous",
+   "copyright": "Copyright (c) 2011 by Brian J. Bonislawsky DBA Astigmatic (AOETI) (astigma@astigmatic.com), with Reserved Font Names \"Righteous\"",
+   "from": "ofl/righteous",
+   "repository": "https://github.com/librefonts/righteous",
+   "upstreamCommit": "583c13c301c5e1dd0a4ae2d7b6cd42bc9c58f953",
+   "notice": false,
+   "r": {
+    "file": "righteous-r.ttf",
+    "weight": 400,
+    "bytes": 20384,
+    "sha256": "fc1d9a75fbb0f3aeffee0c9de8d68090c939f37913cd69ad8cf541317035f2db",
+    "original": "Righteous-Regular.ttf",
+    "originalBytes": 43104
+   }
+  },
+  "bungee": {
+   "family": "Bungee",
+   "name": "BN Card 61",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2023 The Bungee Project Authors (https://github.com/djrrb/Bungee)",
+   "from": "ofl/bungee",
+   "repository": "https://github.com/djrrb/Bungee",
+   "upstreamCommit": "eb03cf69adab5094f6b84e95357789cdf3bfeb99",
+   "notice": false,
+   "r": {
+    "file": "bungee-r.ttf",
+    "weight": 400,
+    "bytes": 37960,
+    "sha256": "37ba4f04ee1e11e4db5065e2515a46c1c1a172cae231f76850d004c407ec0ae3",
+    "original": "Bungee-Regular.ttf",
+    "originalBytes": 118996
+   }
+  },
+  "monoton": {
+   "family": "Monoton",
+   "name": "BN Card 62",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Monoton",
+   "copyright": "Copyright (c) 2011 by vernon adams (vern@newtypography.co.uk), with Reserved Font Names \"Monoton\"",
+   "from": "ofl/monoton",
+   "repository": "https://github.com/googlefonts/monoton",
+   "upstreamCommit": "db46b75aa0eb707b7ba00a5dfaa97b8004d10a3b",
+   "notice": false,
+   "r": {
+    "file": "monoton-r.ttf",
+    "weight": 400,
+    "bytes": 26464,
+    "sha256": "a5a5c30f5ea17d87ae330402934ab2909a4a21029796a097fee16257fe510aa3",
+    "original": "Monoton-Regular.ttf",
+    "originalBytes": 51604
+   }
+  },
+  "shrikhand": {
+   "family": "Shrikhand",
+   "name": "BN Card 63",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright (c) 2015 Jonny Pinhorn (jonpinhorn.typedesign@gmail.com)",
+   "from": "ofl/shrikhand",
+   "repository": "https://github.com/jonpinhorn/shrikhand",
+   "upstreamCommit": "c11c9b0720fba977fad7cb4f339ebacdba1d1394",
+   "notice": false,
+   "r": {
+    "file": "shrikhand-r.ttf",
+    "weight": 400,
+    "bytes": 27844,
+    "sha256": "48cb9712f3968be71002b89591b24eaed339b50527004aafe01e77f6faaa5e36",
+    "original": "Shrikhand-Regular.ttf",
+    "originalBytes": 220804
+   }
+  },
+  "orbitron": {
+   "family": "Orbitron",
+   "name": "BN Card 64",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Orbitron",
+   "copyright": "Copyright 2018 The Orbitron Project Authors (https://github.com/theleagueof/orbitron), with Reserved Font Name: \"Orbitron\"",
+   "from": "ofl/orbitron",
+   "repository": "https://github.com/googlefonts/orbitron-vf",
+   "upstreamCommit": "f16482824e0ce4d008dee59b9b632e9ce9663359",
+   "notice": false,
+   "r": {
+    "file": "orbitron-r.ttf",
+    "weight": 400,
+    "bytes": 18212,
+    "sha256": "e03581f69291c5e2e02395d8fa1080e1c487cd1487fb599e7f9ea0cf4d72ed62",
+    "original": "Orbitron[wght].ttf",
+    "originalBytes": 38576
+   },
+   "b": {
+    "file": "orbitron-b.ttf",
+    "weight": 700,
+    "bytes": 18172,
+    "sha256": "9ca6a1b6c3ab80135523746a26b3fa46930f1fd67df1b3760468d7f5bd288b19",
+    "original": "Orbitron[wght].ttf",
+    "originalBytes": 38576
+   }
+  },
+  "pressstart": {
+   "family": "Press Start 2P",
+   "name": "BN Card 65",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "Press Start 2P",
+   "copyright": "Copyright 2012 The Press Start 2P Project Authors (cody@zone38.net), with Reserved Font Name \"Press Start 2P\".",
+   "from": "ofl/pressstart2p",
+   "repository": "https://github.com/googlefonts/googlefontdirectory-hg",
+   "upstreamCommit": "52f780bc9d197280a9f430574e179a5f233c56b6",
+   "notice": false,
+   "r": {
+    "file": "pressstart-r.ttf",
+    "weight": 400,
+    "bytes": 11620,
+    "sha256": "2f9a885fdf079280313912bbce2b328117f48cac0eebb4ace42b4cde6de44100",
+    "original": "PressStart2P-Regular.ttf",
+    "originalBytes": 118204
+   }
+  },
+  "silkscreen": {
+   "family": "Silkscreen",
+   "name": "BN Card 66",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2001 The Silkscreen Project Authors (https://github.com/googlefonts/silkscreen)",
+   "from": "ofl/silkscreen",
+   "repository": "https://github.com/googlefonts/silkscreen",
+   "upstreamCommit": "206ccf3f5234c281461e63ecc59cbc6b0563472b",
+   "notice": false,
+   "r": {
+    "file": "silkscreen-r.ttf",
+    "weight": 400,
+    "bytes": 9560,
+    "sha256": "ee8a84b113b3e5ba2547b791660dfbb9df27c1df6b510142a08bf33972cbb812",
+    "original": "Silkscreen-Regular.ttf",
+    "originalBytes": 32220
+   },
+   "b": {
+    "file": "silkscreen-b.ttf",
+    "weight": 700,
+    "bytes": 8812,
+    "sha256": "5f286fe577cf8e50bdcbb6a25c5ddfe5990c6fc24261b71c8c68cd0dc2d594e1",
+    "original": "Silkscreen-Bold.ttf",
+    "originalBytes": 30632
+   }
+  },
+  "vt323": {
+   "family": "VT323",
+   "name": "BN Card 67",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2011, The VT323 Project Authors (peter.hull@oikoi.com)",
+   "from": "ofl/vt323",
+   "repository": "https://github.com/phoikoi/VT323",
+   "upstreamCommit": "9bd4b3f69887fd960d51d07602db60a28a789145",
+   "notice": false,
+   "r": {
+    "file": "vt323-r.ttf",
+    "weight": 400,
+    "bytes": 32348,
+    "sha256": "8cc154baa3d868bdaa206a628b7cfbb6dfbbe7c14c454d8fb871a879eb742f3e",
+    "original": "VT323-Regular.ttf",
+    "originalBytes": 153116
+   }
+  },
+  "spacemono": {
+   "family": "Space Mono",
+   "name": "BN Card 68",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2016 The Space Mono Project Authors (https://github.com/googlefonts/spacemono)",
+   "from": "ofl/spacemono",
+   "repository": "https://github.com/googlefonts/spacemono",
+   "upstreamCommit": "329858c2c4dbd3476f972a4ae00624b018cf4b81",
+   "notice": false,
+   "r": {
+    "file": "spacemono-r.ttf",
+    "weight": 400,
+    "bytes": 19440,
+    "sha256": "c7d4646543c07c3847844ad5277188b12f9dcb18eb023280ff6575ebb6e4f105",
+    "original": "SpaceMono-Regular.ttf",
+    "originalBytes": 99356
+   },
+   "b": {
+    "file": "spacemono-b.ttf",
+    "weight": 700,
+    "bytes": 19052,
+    "sha256": "83147382d26aeeda79b67e07218ce2fbcd920ecee4378a309f56a635257a43e5",
+    "original": "SpaceMono-Bold.ttf",
+    "originalBytes": 98232
+   }
+  },
+  "robotomono": {
+   "family": "Roboto Mono",
+   "name": "BN Card 69",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2015 The Roboto Mono Project Authors (https://github.com/googlefonts/robotomono)",
+   "from": "ofl/robotomono",
+   "repository": "https://github.com/googlefonts/RobotoMono",
+   "upstreamCommit": "111eb14e367888c9374da4da0b018e72cf8ac46d",
+   "notice": false,
+   "r": {
+    "file": "robotomono-r.ttf",
+    "weight": 400,
+    "bytes": 16948,
+    "sha256": "d24571a18db7c7ffc2867f00711f2ddcd65c6d7bc3e328514da209a285f4d185",
+    "original": "RobotoMono[wght].ttf",
+    "originalBytes": 183700
+   },
+   "b": {
+    "file": "robotomono-b.ttf",
+    "weight": 700,
+    "bytes": 16912,
+    "sha256": "99ae06f4d7ec9ea1079db4c2c72898aed47d5b9050e30a7552350a284c6ef35f",
+    "original": "RobotoMono[wght].ttf",
+    "originalBytes": 183700
+   }
+  },
+  "jetbrainsmono": {
+   "family": "JetBrains Mono",
+   "name": "BN Card 70",
+   "license": "ofl",
+   "licenseName": "SIL OFL 1.1",
+   "metadataLicense": "OFL",
+   "rfn": "",
+   "copyright": "Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)",
+   "from": "ofl/jetbrainsmono",
+   "repository": "https://github.com/JetBrains/JetBrainsMono",
+   "upstreamCommit": "19371302b95d218af43299bce79ddbddd0bc364d",
+   "notice": false,
+   "r": {
+    "file": "jetbrainsmono-r.ttf",
+    "weight": 400,
+    "bytes": 49068,
+    "sha256": "d5b5fa05576257349b859369d35025d5fb57fdd5def8edae01d482cbd0fd02fe",
+    "original": "JetBrainsMono[wght].ttf",
+    "originalBytes": 187208
+   },
+   "b": {
+    "file": "jetbrainsmono-b.ttf",
+    "weight": 700,
+    "bytes": 48972,
+    "sha256": "7f60a5ac0d4f2bd4f2f4b4b080bc8d27d0427301a3e13a5702a1c9f6d2975898",
+    "original": "JetBrainsMono[wght].ttf",
+    "originalBytes": 187208
+   }
+  }
+ },
+ "bytes": 9894216
+}
