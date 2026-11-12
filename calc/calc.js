@@ -50,7 +50,8 @@
   };
   B.won = function (n) { return Math.round(n).toLocaleString('ko-KR') + '원'; };
   B.minus = function (n) { return n > 0 ? '-' + B.won(n) : '0원'; };
-  B.fmt = function (n, digits) { return (Math.round(n * 100) / 100).toLocaleString('ko-KR', { maximumFractionDigits: digits == null ? 2 : digits }); };
+  // digits: 소수 몇 자리까지(기본 2). 요율 3.595%처럼 셋째 자리가 있는 값을 3.6%로 줄이지 않게 그 자리에서 반올림해요(2.0.0 [I50b-01]).
+  B.fmt = function (n, digits) { var d = digits == null ? 2 : digits, p = Math.pow(10, d); return (Math.round(n * p) / p).toLocaleString('ko-KR', { maximumFractionDigits: d }); };
   // 3000000 → "300만 원", 12345678 → "1,234만 5,678원", 150000000 → "1억 5,000만 원"
   B.read = function (n) {
     n = Math.floor(n);
@@ -233,9 +234,138 @@
     out.net = gross - out.ded;
     return out;
   };
+  // ---------- 근무 시간 (앱 core와 같은 식) ----------
+  // 법정 휴게(근로기준법 제54조): 4시간이면 30분, 8시간 30분부터 1시간(앱 core LegalBreak.minutesFor).
+  F.legalBreak = function (span) { return span >= 510 ? 60 : span >= 240 ? 30 : 0; };
+  // 출근·퇴근(0시부터 분) → 걸친 분. 퇴근이 출근보다 이르면 다음 날까지, 같으면 24시간(앱 core StaffShift.spanMinutes).
+  F.span = function (s, e) { var d = e - s; return d <= 0 ? d + 1440 : d; };
+  // 22~06시 안의 분([from, to)는 그 주 월요일 0시부터 센 분).
+  F.nightOf = function (from, to) {
+    var n = 0;
+    for (var d = Math.floor(from / 1440) - 1; d * 1440 < to; d++) {
+      var a = Math.max(from, d * 1440 + 1320), b = Math.min(to, d * 1440 + 1800);
+      if (b > a) n += b - a;
+    }
+    return n;
+  };
+
+  // ---------- 사장님 인건비 [I50b-01·T50-09] (앱 core LaborCost와 같은 식) ----------
+  // 사업주 4대보험: 국민연금·건강보험·장기요양은 근로자와 같은 몫, 고용보험은 실업급여 몫 + 고용안정·직업능력개발 0.25%
+  // (고용산재보험료징수법 시행령 제12조 제1항 제1호 가목, 150명 미만). 사업주 몫에는 건강보험 하한·상한을 두지 않아요(앱과 같음).
+  // off.pension·off.health: 주 15시간 미만은 국민연금·건강보험 사업장 가입 대상이 아니에요(국민연금법 시행령 제2조, 국민건강보험법 시행령 제9조).
+  F.STABILITY = 0.0025;
+  F.employer = function (pay, day, off) {
+    off = off || {};
+    var r = rowOn(day), pr = B.pensionRateOn(day), hr = r.healthRate != null ? r.healthRate : 0.0719, ur = r.unemploymentRate, pb = B.pensionBaseOn(day);
+    if (!(pay > 0)) return { pension: 0, health: 0, care: 0, employment: 0, total: 0, pensionRate: pr / 2, healthRate: hr / 2, employmentRate: ur / 2 + F.STABILITY };
+    var pension = off.pension ? 0 : B.cut10(Math.min(Math.max(Math.floor(pay / 1000) * 1000, pb.min), pb.max), pr / 2);
+    var health = off.health ? 0 : B.cut10(pay, hr / 2);
+    var cr = B.careRatioOn(day), care = B.cutRatio(health, cr[0], cr[1]);
+    var employment = off.employment ? 0 : B.cut10(pay, ur / 2 + F.STABILITY);
+    return { pension: pension, health: health, care: care, employment: employment, total: pension + health + care + employment,
+      pensionRate: pr / 2, healthRate: hr / 2, employmentRate: ur / 2 + F.STABILITY };
+  };
+  // o: { month: 'YYYY-MM', wage, days: [[요일 1(월)~7(일), 출근 분, 퇴근 분], …], breaks: 법정 휴게 빼기, insured: 4대보험, shortOff: 주 15시간 미만이면 연금·건강 빼기 }
+  // 그달 날마다 그 요일 근무를 더하고(시간 × 시급, 원 미만 반올림), 주휴는 1주 15시간 이상이면 min(1주 분 ÷ 5, 8시간) × 그달 일요일 수
+  // (주휴일이 그달에 든 주마다). 사업주 4대보험은 기본급 + 주휴에 그달 1일 요율로.
+  F.labor = function (o) {
+    var m = /^(\d{4})-(\d{2})$/.exec(o.month || ''), y = m ? +m[1] : 2026, mo = m ? +m[2] - 1 : 0;
+    var last = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate(), paid = {};
+    (o.days || []).forEach(function (d) { var sp = F.span(d[1], d[2]); paid[d[0]] = sp - (o.breaks ? F.legalBreak(sp) : 0); });
+    var minutes = 0, workDays = 0, sundays = 0;
+    for (var i = 1; i <= last; i++) {
+      var wd = new Date(Date.UTC(y, mo, i)).getUTCDay() || 7;
+      if (paid[wd] != null) { minutes += paid[wd]; workDays++; }
+      if (wd === 7) sundays++;
+    }
+    var week = Object.keys(paid).reduce(function (a, k) { return a + paid[k]; }, 0);
+    var hol = week >= 900 ? Math.min(Math.floor(week / 5), 480) : 0;
+    var base = Math.round(minutes / 60 * o.wage), holiday = o.holidayPay === false ? 0 : Math.round(hol / 60 * o.wage * sundays), pay = base + holiday;
+    var short = week < 900, day = (m ? m[0] : '2026-01') + '-01';
+    var ins = o.insured ? F.employer(pay, day, short && o.shortOff ? { pension: true, health: true } : null) : null;
+    var insurance = ins ? ins.total : 0;
+    return { minutes: minutes, workDays: workDays, week: week, holMin: hol, sundays: sundays, base: base, holiday: holiday, pay: pay,
+      ins: ins, insurance: insurance, total: pay + insurance, short: short,
+      perHour: minutes ? pay / (minutes / 60) : 0, costPerHour: minutes ? (pay + insurance) / (minutes / 60) : 0 };
+  };
+
+  // ---------- 한 주 연장·야간·휴일 [I50b-03] (앱 core MinuteClassifier 기본값과 같은 식) ----------
+  // o.days: 월~일 7칸, 칸마다 { s: 출근 분, e: 퇴근 분, rest: 휴게 분 } 또는 null(쉬는 날). o.holidays: 월~일 7칸 true/false(유급휴일: 주휴일·공휴일).
+  // 하루: 휴게는 근무 시간에 고르게 나눠 빼요(휴게 시각을 모를 때 앱과 같음). 휴일(그날 0~24시) 안의 분은 휴일 근로(8시간까지 50%, 넘으면 100%,
+  // 제56조 제2항), 나머지는 하루 8시간까지 소정, 넘으면 연장. 휴일에 시작한 근무는 휴일 분이 먼저 8시간을 채워요(검토 PAYC-02).
+  // 한 주: 월요일부터 날짜 순으로 쌓아 40시간을 넘는 소정 분은 연장. 휴일 근로도 40시간을 채우되 그 분은 휴일 가산만 받아요
+  // (제2조 제1항 제7호 '1주는 휴일을 포함한 7일', 검토 PAYC-01). 야간(22~06시)은 무엇이든 50% 더해요(제56조 제3항).
+  F.week = function (o) {
+    var hols = o.holidays || [], isHol = function (i) { return i >= 0 && i < 7 && !!hols[i]; };
+    var days = [], used = 0, T = { regular: 0, overtime: 0, daily: 0, hWithin: 0, hOver: 0, night: 0, worked: 0, rest: 0 };
+    for (var i = 0; i < 7; i++) {
+      var d = o.days && o.days[i];
+      if (!d) { days.push(null); continue; }
+      var gross = F.span(d.s, d.e), rest = Math.min(Math.max(0, Math.round(d.rest || 0)), gross), paid = gross - rest;
+      var from = i * 1440 + d.s, to = from + gross, mid = (i + 1) * 1440;
+      var grossNext = Math.max(0, to - Math.max(from, mid));
+      var next = paid > 0 ? Math.min(Math.max(Math.round(grossNext * paid / gross), 0), paid) : 0;
+      var night = paid > 0 ? Math.round(F.nightOf(from, to) * paid / gross) : 0;
+      var onHol = (isHol(i) ? paid - next : 0) + (isHol(i + 1) ? next : 0), left = paid - onHol, slot = 480;
+      if (onHol > 0 && left > 0 && isHol(i)) slot -= Math.min(onHol, Math.max(slot, 0));
+      var hWithin = Math.min(onHol, 480), regular = Math.min(left, Math.max(slot, 0)), overtime = left - regular;
+      days.push({ paid: paid, rest: rest, regular: regular, overtime: overtime, daily: overtime, hWithin: hWithin, hOver: onHol - hWithin, night: night });
+    }
+    days.forEach(function (x) {
+      if (!x) return;
+      var over = Math.min(Math.max(used + x.regular - 2400, 0), x.regular);
+      used += x.regular - over + x.hWithin + x.hOver;
+      x.regular -= over; x.overtime += over;
+      ['regular', 'overtime', 'daily', 'hWithin', 'hOver', 'night', 'rest'].forEach(function (k) { T[k] += x[k]; });
+      T.worked += x.paid;
+    });
+    T.weekly = T.overtime - T.daily;
+    T.days = days;
+    // 주휴: 1주 소정(휴일 근로 빼고 연장 전) 15시간 이상이면 min(분 ÷ 5, 8시간). 그 주를 모두 나왔다고 보고 셈해요.
+    var plan = T.regular + T.weekly;
+    T.holMin = plan >= 900 ? Math.min(Math.floor(plan / 5), 480) : 0;
+    T.over52 = T.worked > 52 * 60;
+    if (o.wage != null) {
+      var h = function (x) { return x / 60 * o.wage; }, small = !!o.small;
+      T.base = h(T.worked);
+      T.ext = small ? 0 : h(T.overtime) * 0.5;
+      T.nightP = small ? 0 : h(T.night) * 0.5;
+      T.holP = small ? 0 : h(T.hWithin) * 0.5 + h(T.hOver) * 1.0;
+      T.sum = T.base + T.ext + T.nightP + T.holP;
+      T.holPay = h(T.holMin);
+    }
+    return T;
+  };
+
   // 일용근로소득: 하루 (일당 − 15만 원) × 6% × (1 − 55%) = 2.7%를 원 미만 버림. 받을 때(지급 한 번)마다 그 날들의 합에서
   // 10원 미만을 버리고(국고금 관리법 제47조), 1,000원 미만이면 떼지 않아요(소액부징수). 지방소득세는 그 소득세의 10%에서 10원 미만 버림.
   // 날마다 받으면 날마다 한 번의 지급이에요. 국세청 '일용근로자 원천징수' 예: 20만 원 5일 한 번에 → 6,750원·670원. 앱 core DailyWorkerTax와 같은 식.
+  // [I50b-02] 통상시급(근로기준법 시행령 제6조): (기본급 + 매달 정해진 통상 수당 + 정기상여 1년 합 ÷ 12) ÷ 월 기준시간, 원 단위 반올림.
+  // 정기상여는 대법원 2024. 12. 19. 선고 2020다247190·2023다302838 전원합의체 판결 뒤의 임금부터 재직 조건이 붙어도 통상임금이에요.
+  // 앱 core PayCalculator(ordinaryWage, 통상시급)와 같은 식이에요(상여 월할도 원 단위 반올림).
+  F.ordinary = function (o) {
+    var bonus = Math.round((o.bonusYear || 0) / 12), month = (o.base || 0) + (o.allow || 0) + bonus, h = Math.max(1, o.hours || 209);
+    return { bonus: bonus, month: month, hours: h, hourly: Math.round(month / h), baseOnly: Math.round((o.base || 0) / h) };
+  };
+  // [I50b-02] 명세서 한 줄: 시간 × 통상시급 × 배율(연장 1.5, 야간 가산 0.5, 휴일 8시간까지 1.5·넘으면 2.0, 근로기준법 제56조).
+  // 5명 미만은 가산 없이 연장 1.0·야간 0·휴일 1.0(제11조). 명세서 금액 ÷ 시간 ÷ 배율로 회사가 쓴 시급을 거꾸로 구해, 통상임금이나
+  // 기본급만을 흔한 시수(180·209·226·243)로 나눈 값과 3% 안에서 맞는지 봐요(앱 core SlipRules의 시수 거꾸로 찾기와 같은 방법).
+  F.SLIP = { ext: [1.5, 1.0], night: [0.5, 0], hol: [1.5, 1.0], hol8: [2.0, 1.0] };
+  F.HOURS = [180, 209, 226, 243];
+  F.slip = function (o) {
+    var mult = F.SLIP[o.kind][o.small ? 1 : 0], want = Math.round(o.minutes / 60 * o.hourly * mult);
+    var r = { mult: mult, want: want, diff: Math.round(o.paid) - want, ok: Math.abs(Math.round(o.paid) - want) <= Math.max(100, want * 0.005) };
+    if (o.paid > 0 && o.minutes > 0 && mult > 0) {
+      var rate = o.paid / (o.minutes / 60) / mult, best = null;
+      r.rate = rate;
+      [['ordinary', o.month], ['base', o.base]].forEach(function (w) {
+        if (!(w[1] > 0)) return;
+        F.HOURS.forEach(function (h) { var err = Math.abs(w[1] / h - rate) / (w[1] / h); if (err <= 0.03 && (!best || err < best.err)) best = { of: w[0], hours: h, err: err }; });
+      });
+      if (best) { r.of = best.of; r.hours = best.hours; }
+    }
+    return r;
+  };
   F.dailyTaxOfDay = function (pay) { return Math.floor(Math.max(0, Math.floor(pay) - 150000) * 27 / 1000); };
   F.daily = function (o) {
     var whole = Math.floor(o.days), part = Math.round((o.days - whole) * 100) / 100, pays = [];
@@ -310,6 +440,87 @@
     return { days: days, n3: n3, total: total, avg: avg, daily: daily, byOrdinary: ordinary > avg, fullYear: fullYear, amount: fullYear ? Math.round(daily * 30 * days / 365) : 0 };
   };
 
+  // ---------- 2.0.0 (검토 I50b-04) 그만두거나 쉴 때 ----------
+  // 구직급여(실업급여): 고용보험법 제45조(기초일액 = 평균임금, 통상임금이 더 크면 통상임금, 최저기초일액 = 최저임금 × 1일 소정근로시간),
+  // 제46조(구직급여일액 = 기초일액 × 60%, 최저구직급여일액 = 최저기초일액 × 80%보다 적으면 그 금액), 제50조 [별표 1](소정급여일수, 2019.10.1. 이후 이직).
+  // 기초일액 상한은 시행령 제68조: 2019.1.1.~2025.12.31. 이직 11만 원(구직급여 6만6천 원), 2026.1.1. 이후 이직 11만3,500원(6만8,100원,
+  // 대통령령 제35934호 2025.12.23. 공포, 부칙 제1조·제4조). 2027년 이직의 상한은 아직 고시 전이라 11만3,500원으로 셈하고 '확인 필요'로 보여 줘요.
+  // 원 단위는 버림으로 셈해요(고용센터 결정액과 몇 원 다를 수 있어요).
+  F.JOBLESS = [{ from: '2019-10-01', cap: 110000 }, { from: '2026-01-01', cap: 113500 }];
+  F.JOBLESS_DAYS = [[120, 150, 180, 210, 240], [120, 180, 210, 240, 270]];
+  F.JOBLESS_SURE = '2026-12-31';
+  F.jobless = function (o) {
+    var left = o.left || '', rule = null;
+    F.JOBLESS.forEach(function (r) { if (left >= r.from) rule = r; });
+    if (!rule) return null;
+    var avg = o.days3 > 0 ? Math.floor((o.pay3 || 0) / o.days3) : 0, ord = Math.floor(o.ordinaryDaily || 0);
+    var hours = Math.min(8, Math.max(1, o.hours || 8)), lowBase = Math.floor((o.minWage || 0) * hours);
+    var base = Math.max(avg, ord), capped = Math.min(base, rule.cap);
+    var floor = Math.floor(lowBase * 0.8), byRate = Math.floor(capped * 0.6), daily = Math.max(byRate, floor);
+    var days = F.JOBLESS_DAYS[o.older ? 1 : 0][Math.min(4, Math.max(0, o.years || 0))];
+    return { avg: avg, base: base, byOrdinary: ord > avg, cap: rule.cap, capDaily: Math.floor(rule.cap * 0.6), capped: base > rule.cap,
+      floor: floor, byFloor: floor > byRate, daily: daily, days: days, total: daily * days, month: daily * 30, sure: left <= F.JOBLESS_SURE };
+  };
+  // 출산전후휴가: 근로기준법 제74조(90일, 한 번에 둘 이상이면 120일, 처음 60일·75일은 회사가 유급), 고용보험법 제75·76조.
+  // 고용보험 급여 상한은 고용노동부고시 제2026-67호(2026.9.18.~12.31.): 90일 660만 원, 120일 880만 원(30일에 220만 원).
+  // 마지막 30일(둘 이상이면 45일)은 고용보험이 통상임금을 상한까지 주고, 처음 60일·75일은 회사가 통상임금 그대로(우선지원대상기업은
+  // 고용보험이 상한까지 먼저 주고 회사가 나머지, 근로기준법 제74조 제4항 단서). 통상임금이 최저임금보다 낮을 때의 하한은 확인 필요라 셈하지 않아요.
+  F.MATERNITY = { single: { days: 90, paid: 60, cap30: 2200000 }, multi: { days: 120, paid: 75, cap30: 2200000 } };
+  // 고시 제2026-67호의 적용 기간 끝. 이 날이 지나면 쪽이 '확인 필요'를 보여요(새 고시를 확인하면 값과 함께 옮겨요).
+  F.MATERNITY_SURE = '2026-12-31';
+  F.maternity = function (o) {
+    var k = F.MATERNITY[o.kind] || F.MATERNITY.single, w = Math.max(0, o.month || 0), rest = k.days - k.paid;
+    var company = Math.round(w * k.paid / 30), insured = Math.round(Math.min(w, k.cap30) * rest / 30);
+    return { days: k.days, paid: k.paid, rest: rest, company: company, insured: insured, total: company + insured, full: Math.round(w * k.days / 30), cut: w > k.cap30 };
+  };
+  // 육아휴직 급여(2025.1.1.~, 사후지급금 없음): 1~3개월 통상임금 100%(월 250만 원), 4~6개월 100%(200만 원), 7개월부터 80%(160만 원).
+  // 6+6(부모가 아이 생후 18개월 안에 함께·차례로): 처음 6개월 100%, 달마다 상한 250·250·300·350·400·450만 원. 한부모: 처음 3개월 100%(300만 원).
+  // 출처: 고용24 '육아휴직급여' 제도 안내, 고용노동부 '달라지는 육아지원제도 2025 자주묻는 질문'. 하한액은 확인 필요라 셈하지 않아요.
+  F.PARENTAL = { normal: [2500000, 2500000, 2500000, 2000000, 2000000, 2000000], sixsix: [2500000, 2500000, 3000000, 3500000, 4000000, 4500000],
+    single: [3000000, 3000000, 3000000, 2000000, 2000000, 2000000], late: 1600000 };
+  F.parental = function (o) {
+    var caps = F.PARENTAL[o.kind] || F.PARENTAL.normal, w = Math.max(0, o.month || 0), n = Math.min(18, Math.max(1, o.months || 12)), out = [], sum = 0;
+    for (var m = 1; m <= n; m++) {
+      var pay = m <= 6 ? Math.min(w, caps[m - 1]) : Math.min(Math.floor(w * 0.8), F.PARENTAL.late);
+      out.push(pay); sum += pay;
+    }
+    return { months: out, total: sum, full: w * n };
+  };
+
+  // ---------- 2.0.0 (검토 T50-04) 혼자 하는 가게: 문 여는 날과 하루 매출 목표 ----------
+  // 그달 문 여는 날: 매주 쉬는 요일(월=1…일=7), 공휴일에 쉬면 그 공휴일(쉬는 요일과 겹친 날은 한 번만), 그 밖에 쉬는 날 수를 빼요.
+  // 앱 '영업일·정기휴무'(core WorkKit)처럼 날마다 세요.
+  F.openDays = function (o) {
+    var first = D.parse(o.month + '-01'), off = String(o.off || ''), hol = {}, n = 0, weekly = 0, holidays = 0;
+    if (!first) return null;
+    (o.holidays || []).forEach(function (d) { hol[d] = true; });
+    for (var x = first; x.getUTCMonth() === first.getUTCMonth(); x = D.plusDays(x, 1)) {
+      var wd = ((x.getUTCDay() + 6) % 7) + 1;
+      if (off.indexOf(String(wd)) >= 0) weekly++;
+      else if (o.holOff && hol[D.iso(x)]) holidays++;
+      else n++;
+    }
+    var extra = Math.min(n, Math.max(0, Math.floor(o.extra || 0)));
+    return { days: D.between(first, D.plusMonths(first, 1)), open: n - extra, weekly: weekly, holidays: holidays, extra: extra };
+  };
+  // 한 달 매출 S: 부가세를 뺀 매출 R(일반과세자 S ÷ 1.1, 아니면 S)에서 재료·원가(R × 원가율)와 수수료(S × 수수료율)를 빼고
+  // 고정비와 가져갈 돈이 남는 매출. R × (1 − 원가율) − S × 수수료율 = 고정비 + 가져갈 돈.
+  // 일반과세자는 받은 돈의 11분의 1이 부가세이고 재료에 낸 부가세는 공제받아 낼 몫은 R × 10% × (1 − 원가율)이에요
+  // (부가가치세법 제30조 세율 10%, 제38조 매입세액 공제, 대략: 카드 매출 세액공제·고정비의 부가세는 빼요). 줄은 S로 다 더해져요.
+  F.shop = function (o) {
+    var v = o.vat ? 1.1 : 1, c = Math.max(0, o.cost || 0) / 100, f = Math.max(0, o.fee || 0) / 100;
+    var fixed = Math.max(0, o.fixed || 0), want = Math.max(0, o.want || 0), k = (1 - c) / v - f;
+    // 원가·수수료가 매출을 다 먹으면(소수 오차까지) 셀 수 없어요.
+    if (k <= 1e-9) return { ok: false };
+    var S = (fixed + want) / k, R = S / v, open = o.open || 0;
+    return {
+      ok: true, sales: Math.round(S), cost: Math.round(c * R * v), fee: Math.round(f * S), vat: Math.round((v - 1) * R * (1 - c)), fixed: fixed, want: want,
+      // 하루 목표는 100원 단위로 올려요(목표가 모자라지 않게).
+      daily: open > 0 ? Math.ceil(S / open / 100) * 100 : null,
+      more: open > 1 ? Math.ceil(S / (open - 1) / 100) * 100 - Math.ceil(S / open / 100) * 100 : null
+    };
+  };
+
   // ---------- 자료 받기 ----------
   var getJson = function (name) {
     if (typeof fetch !== 'function') return Promise.resolve(null);
@@ -341,9 +552,30 @@
   // 받는 쪽 페이지(레시피 링크 r/)는 body에 data-source="bamnat_share"를 둬요. 주소로는 바꿀 수 없고 이 두 값만 받아요.
   B.source = function () { return hasDoc && document.body && document.body.dataset.source === 'bamnat_share' ? 'bamnat_share' : 'bamnat_web'; };
   B.playLink = function (campaign, medium, extra) {
-    var from = hasDoc ? B.visit() : '';
-    var ref = 'utm_source=' + B.source() + '&utm_medium=' + (medium || B.medium()) + '&utm_campaign=' + (from ? from + '-' : '') + campaign + (from ? '&utm_term=' + from : '') + (extra || '');
+    var c = B.carry || {}, from = hasDoc ? B.visit() : '';
+    // '명세서 맞추기' 링크만 갈 곳을 실어요(같은 쪽의 다른 받기 단추는 앱 첫 화면 그대로).
+    var carry = B.handoff(campaign === 'slip_check' ? { p: c.p, s: c.s, o: c.o, w: c.w, t: 'slip' } : c);
+    var ref = 'utm_source=' + B.source() + '&utm_medium=' + (medium || B.medium()) + '&utm_campaign=' + (from ? from + '-' : '') + campaign + (from ? '&utm_term=' + from : '') + (extra || '') +
+      (carry && !/utm_content=/.test(extra || '') ? '&utm_content=' + carry : '');
     return 'https://play.google.com/store/apps/details?id=com.bamnat.app&referrer=' + encodeURIComponent(ref);
+  };
+  // [I50c-01·03] 웹 → 앱 이어받기: 이 쪽에서 고른 설정만(순서 글자·첫날·한 번만·시급, 갈 곳 '명세서 맞추기') Play 링크의 utm_content에
+  // 실어요. 앱 첫 실행이 휴대폰 안에서만 읽어 "웹에서 보던 …부터 채울까요?" 한 번으로 묻고, 서버로는 가지 않아요.
+  // 모양은 앱 core WebHandoff와 같아요: p-DNBO_s-20261110_o-1_w-10320_t-slip(모두 고를 때만).
+  B.carry = {};
+  B.handoff = function (c) {
+    if (!c) return '';
+    var out = [], p = /^[DENOXB]{1,62}$/.test(c.p || '') ? c.p : '';
+    if (p) out.push('p-' + p);
+    if (p && /^\d{4}-\d{2}-\d{2}$/.test(c.s || '')) out.push('s-' + c.s.replace(/-/g, ''));
+    if (p && c.o) out.push('o-1');
+    if (c.w >= 1 && c.w < 1000000) out.push('w-' + Math.round(c.w));
+    if (c.t === 'slip') out.push('t-' + c.t);
+    return out.join('_');
+  };
+  // 받기 링크마다 지금 실을 것으로 다시 써요(달력을 그릴 때, 받기를 누를 때).
+  B.relink = function () {
+    if (hasDoc) document.querySelectorAll('a[data-play]').forEach(function (a) { a.href = B.playLink(a.dataset.play, a.dataset.medium); });
   };
 
   // ---------- 칸·칩·결과 표 ----------
@@ -424,7 +656,9 @@
     var q = new URLSearchParams(location.search);
     ids.forEach(function (id) {
       var el = B.$(id); if (!el || !q.has(id)) return;
-      if (el.type === 'checkbox') el.checked = q.get(id) === '1'; else el.value = q.get(id);
+      if (el.type === 'checkbox') el.checked = q.get(id) === '1';
+      // [I50b-02] 받은 링크의 금액도 쉼표를 넣어 보여 줘요(전에는 '2500000'처럼 붙어 나왔어요).
+      else { var v = q.get(id), n = B.num(v); el.value = el.hasAttribute('data-money') && v !== '' && !isNaN(n) ? Math.floor(n).toLocaleString('ko-KR') : v; }
     });
     Object.keys(chipBoxes || {}).forEach(function (k) { if (q.has(k)) chipBoxes[k].set(q.get(k)); });
     var timer = null;
@@ -436,6 +670,55 @@
         Object.keys(chipBoxes || {}).forEach(function (k) { var v = chipBoxes[k].get(); if (v != null) p.set(k, v); });
         try { history.replaceState(null, '', location.pathname + '?' + p.toString()); } catch (e) {}
       }, 250);
+    };
+  };
+  // [I50b-01·03] 요일 7줄: 요일 단추(일하는 날·쉬는 날, #on에 '12345'처럼 적어 결과 링크로 나눠요)와 출근·퇴근 칸. 쉬는 날은 칸이 잠겨요.
+  // 사장님 인건비·한 주 계산기가 같이 써요. 칸 모양은 public_pages.py week_grid().
+  B.weekGrid = function (onChange) {
+    var on = B.$('on'), N = [1, 2, 3, 4, 5, 6, 7];
+    var mins = function (t) { var p = /^(\d{1,2}):(\d{2})/.exec(t || ''); return p ? (+p[1]) * 60 + (+p[2]) : null; };
+    var works = function (i) { return on.value.indexOf(String(i)) >= 0; };
+    var paint = function () {
+      N.forEach(function (i) {
+        var w = works(i);
+        B.$('w' + i).setAttribute('aria-pressed', w ? 'true' : 'false'); B.$('r' + i).classList.toggle('off', !w);
+        B.$('s' + i).disabled = !w; B.$('e' + i).disabled = !w;
+      });
+    };
+    var setOn = function (list) { on.value = N.filter(function (i) { return list.indexOf(i) >= 0; }).join(''); paint(); };
+    N.forEach(function (i) {
+      B.$('w' + i).addEventListener('click', function () {
+        var list = N.filter(works), at = list.indexOf(i);
+        if (at >= 0) list.splice(at, 1);
+        else {
+          // 새로 켠 날은 가장 가까운 일하는 날의 시각을 따라요(같은 시간을 일곱 번 넣지 않게).
+          var near = list.slice().sort(function (a, b) { return Math.abs(a - i) - Math.abs(b - i) || a - b; })[0];
+          if (near) { B.$('s' + i).value = B.$('s' + near).value; B.$('e' + i).value = B.$('e' + near).value; }
+          list.push(i);
+        }
+        setOn(list); onChange();
+      });
+      ['s', 'e'].forEach(function (k) { var el = B.$(k + i); el.addEventListener('input', onChange); el.addEventListener('change', onChange); });
+    });
+    return {
+      ids: ['on'].concat(N.map(function (i) { return 's' + i; }), N.map(function (i) { return 'e' + i; })),
+      sync: paint,
+      read: function () {
+        return N.map(function (i) { var s = mins(B.$('s' + i).value), e = mins(B.$('e' + i).value); return { day: i, work: works(i) && s != null && e != null, s: s, e: e }; });
+      },
+      fill: function (days, s, e) {
+        N.forEach(function (i) { if (days.indexOf(String(i)) >= 0) { B.$('s' + i).value = s; B.$('e' + i).value = e; } });
+        setOn(N.filter(function (i) { return days.indexOf(String(i)) >= 0; }));
+      },
+      // '1@07:00-19:00,3@19:00-07:00': 요일마다 다른 근무(2교대 등).
+      plan: function (spec) {
+        var list = [];
+        spec.split(',').forEach(function (p) {
+          var m = /^([1-7])@(\d{2}:\d{2})-(\d{2}:\d{2})$/.exec(p);
+          if (m) { list.push(+m[1]); B.$('s' + m[1]).value = m[2]; B.$('e' + m[1]).value = m[3]; }
+        });
+        setOn(list);
+      }
     };
   };
   B.shareButton = function (btn, title) {
@@ -463,11 +746,13 @@
     if (B.ios(navigator.userAgent, navigator.maxTouchPoints || 0)) {
       document.documentElement.classList.add('ios');
       document.querySelectorAll('a[data-play]').forEach(function (a) {
-        if (a.closest('.dock') || a.classList.contains('get')) a.hidden = true; else if (!a.closest('.ios-skip')) B.iosNote(a);
+        if (a.closest('.dock') || a.classList.contains('get') || a.classList.contains('app-line')) a.hidden = true; else if (!a.closest('.ios-skip')) B.iosNote(a);
       });
       var dk = document.getElementById('dock'); if (dk) dk.hidden = true;
     }
-    document.querySelectorAll('a[data-play]').forEach(function (a) { a.href = B.playLink(a.dataset.play, a.dataset.medium); });
+    B.relink();
+    // 받기를 누르는 그때의 설정을 실어요(계산하며 바뀐 시급·순서).
+    document.addEventListener('click', function (e) { var a = e.target.closest && e.target.closest('a[data-play]'); if (a) a.href = B.playLink(a.dataset.play, a.dataset.medium); }, true);
     document.querySelectorAll('input[data-money]').forEach(B.money);
     B.ui();
   });
@@ -492,11 +777,15 @@
       document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && head.classList.contains('open')) { btn.click(); btn.focus(); } });
       if (wide && wide.addEventListener) wide.addEventListener('change', function () { if (wide.matches && head.classList.contains('open')) btn.click(); });
     }
+    // [RVR-32 길에 찾음] 큰 금액은 쉼표 뒤에서만 줄을 바꿔요: 글자 200%·접은 폭에서 '23,100' / ',000원'처럼 쉼표가 줄 머리로 가지 않게(조건 12).
+    var wrapMoney = function (el) { var t = el.textContent; if (/^-?[\d,]+원$/.test(t) && el.innerHTML.indexOf('<wbr>') < 0) el.innerHTML = t.replace(/,/g, ',<wbr>'); };
     if (window.MutationObserver) document.querySelectorAll('.big').forEach(function (el) {
       var last = el.textContent;
+      wrapMoney(el);
       new MutationObserver(function () {
         if (el.textContent === last) return; last = el.textContent;
         el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+        wrapMoney(el);
       }).observe(el, { childList: true, characterData: true, subtree: true });
     });
     // 휴대폰 아래 받기 띠: 머리 그림을 지나 내려가면 나오고, 아래 앱 카드·앱에서 이어지는 것·바닥이 보이거나 입력 중(자판이 열림)이면 숨어요.
