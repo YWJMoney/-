@@ -333,3 +333,16 @@ a.tile:hover .go { transform: rotate(-45deg); background: var(--ink); color: var
 .home .site-footer { margin-top: 0; }
 
 /* 휴대폰 아래 받기 띠(.dock)는 calc/calc.css에 있어요(모든 쪽이 함께 씀). */
+
+/* 2.0.0 글자 200%(폭 380이 190으로). 도구 칸은 한 줄에 하나(설명이 네댓 글자씩 꺾이지 않게), 단추 글은 두 줄 안에,
+   다이얼 가운데 글은 한 줄(설명은 두 줄)까지. */
+@media (max-width: 300px) {
+  .bento { grid-template-columns: 1fr; }
+  .hero .btn, .final .btn { font-size: 15px; padding: 14px 12px; }
+  .dial .center div { width: 72%; }
+  .dial .center strong, .dial .center strong.time { font-size: 15px; }
+  .dial .center span { font-size: 12px; line-height: 1.35; }
+  /* 빠른 계산 칸: 이름 아래에 금액을 한 줄로 */
+  .quick .row2 { flex-wrap: wrap; }
+  .quick .row2 output { white-space: nowrap; }
+}

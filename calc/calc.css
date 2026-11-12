@@ -411,6 +411,8 @@ table.lines tr.noterow td { text-align: left; white-space: normal; padding-left:
 @container (max-width: 280px) {
   /* 큰 금액은 한 단계 낮춰 쉼표 뒤에서 두 줄 안에(조건 12: 줄이지 말고 줄 바꾸거나 한 단계 낮춤). */
   .big { font-size: 26px; }
+  /* 2.0.0 한 단계 더 낮춰도 한 줄에(쉼표에서 '307, / 700원'으로 꺾이지 않게). 18px 아래로는 줄이지 않아요. */
+  .big { font-size: clamp(18px, 14cqi, 26px); white-space: nowrap; }
   /* 두 칸 줄(재료·수수료, 근무일·시간 등)도 좁으면 한 줄에 하나씩: 칸 안 글이 잘리지 않게. */
   .row { grid-template-columns: minmax(0, 1fr); gap: 0; }
   table.lines, table.lines tbody, table.lines tr, table.lines th, table.lines td { display: block; width: auto; }
@@ -543,3 +545,13 @@ input[aria-invalid] { border-color: var(--caution); }
 ul.src { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 6px; }
 ul.src li { color: var(--text-2); font-size: 14px; line-height: 1.5; }
 ul.src a { color: inherit; }
+
+/* 2.0.0 글자 200%(폭 380이 190으로)와 아주 좁은 화면. 단추 글은 두 줄 안에(한 낱말씩 네 줄로 서지 않게), 카드·본문
+   안쪽 여백을 줄여 글 상자가 네댓 글자씩 꺾이지 않게. 같은 부품(.btn·.card·.cta·main)을 쓰는 모든 쪽에 같이 적용돼요. */
+@media (max-width: 300px) {
+  main { padding: 0 10px 48px; }
+  .card { padding: 16px 14px; }
+  .cta { padding: 22px 14px 0; }
+  .btn { display: flex; width: 100%; max-width: 100%; padding: 13px 12px; font-size: 15px; white-space: normal; text-align: center; }
+  .btn svg { display: none; }
+}
