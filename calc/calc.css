@@ -321,6 +321,11 @@ ul.links li .muted { font-size: 14px; }
 .cal .h:first-child { color: var(--duty); }
 .cal .d { background: var(--surface-2); border-radius: 10px; min-height: 52px; padding: 4px 4px 5px; display: flex; flex-direction: column; justify-content: space-between; gap: 2px; transition: transform 0.15s var(--ease); }
 .cal .d:hover { transform: scale(1.04); }
+/* '반복하지 않아요'일 때 날짜를 눌러 근무를 칠해요. */
+.cal .d.tap { cursor: pointer; }
+.cal .d.tap:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.paint { margin: 4px 0 10px; }
+.paint .note { margin: 6px 0 0; }
 .cal .d.today { outline: 2px solid var(--accent); outline-offset: 1px; background: var(--surface); }
 .cal .d .n { font-size: 12px; color: var(--text-2); padding-left: 2px; font-variant-numeric: tabular-nums; }
 .cal .d .s { font-weight: 700; text-align: center; border-radius: 7px; font-size: 13px; padding: 2px 0; }

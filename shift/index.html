@@ -56,13 +56,17 @@
   <input id="custom" autocomplete="off" autocapitalize="characters" maxlength="62">
   <label for="first">이 순서의 첫날<span class="hint">순서 맨 앞 근무를 하는 날이에요. 예: 주주야야휴휴면 첫 주간 날.</span></label>
   <input id="first" type="date">
-  <label class="check"><input type="checkbox" id="once"> 반복하지 않아요 (한 달 듀티표처럼 적은 만큼만)</label>
+  <label class="check"><input type="checkbox" id="once"> 반복하지 않아요 (한 달 듀티표처럼 적은 만큼만, 달력 날짜를 눌러 칠해요)</label>
   <label class="check" id="keepRow"><input type="checkbox" id="keep" checked> 이 브라우저에 기억해요 (다음에 열면 바로 내 달력)</label>
 </div>
 <div class="card" id="calCard">
   <div class="today-big" id="today" aria-live="polite"></div>
   <div class="soon" id="soon"></div>
   <div class="mine-row" id="mineRow" hidden><span id="mineSum"></span><button type="button" class="chip" id="edit" aria-controls="setup" aria-expanded="true">바꾸기</button></div>
+  <div class="paint" id="paint" hidden>
+    <div class="chips" role="group" aria-label="누를 근무"><button type="button" class="chip" data-c="D" aria-pressed="true">주간</button><button type="button" class="chip" data-c="E" aria-pressed="false">오후</button><button type="button" class="chip" data-c="N" aria-pressed="false">야간</button><button type="button" class="chip" data-c="O" aria-pressed="false">휴무</button></div>
+    <p class="note" id="paintNote" aria-live="polite">근무를 고르고 달력의 날짜를 누르면 그날이 바뀌어요. 사이에 빈 날은 휴무로 채워져요.</p>
+  </div>
   <div class="calnav">
     <button type="button" class="chip" id="prev">◀ 앞 석 달</button>
     <button type="button" class="chip" id="now">오늘로</button>
@@ -91,7 +95,7 @@
 <h2 id="order-list">교대 순서별 설명</h2><ul class="links"><li><a href="p/3j2k/">3조 2교대</a> · 주주야야휴휴</li><li><a href="p/4j2k/">4조 2교대</a> · 주야휴휴 (주야비휴)</li><li><a href="p/4j3k/">4조 3교대</a> · 주주오오야야휴휴</li><li><a href="p/3k-week/">3교대 주 단위</a> · 주간 5일 · 오후 5일 · 야간 5일, 사이 2일 휴무</li><li><a href="p/alt-day/">격일 근무</a> · 근무 · 휴무 반복</li><li><a href="p/3j2k-9/">3조 2교대 9일</a> · 주주주야야야휴휴휴</li><li><a href="p/4j3k-12/">4조 3교대 12일</a> · 주주주오오오야야야휴휴휴</li><li><a href="p/5j3k/">5조 3교대</a> · 주주오오야야휴휴휴휴</li><li><a href="p/4j2k-8/">4조 2교대 8일</a> · 주주야야휴휴휴휴</li><li><a href="p/4j2k-8-dond/">4조 2교대 8일 (주휴야휴)</a> · 주주휴휴야야휴휴</li><li><a href="p/24h-2/">24시간 격일 맞교대</a> · 당번 · 비번 반복</li><li><a href="p/24h-3/">24시간 3조 맞교대</a> · 당번 · 비번 · 휴무 (소방 3조 1교대: 24시간 근무 뒤 이틀 쉬기)</li><li><a href="p/24h-4/">24시간 4조 맞교대</a> · 당번 · 비번 · 당번 · 비번 · 휴무 · 휴무 · 휴무 · 휴무</li><li><a href="p/police-4j2k/">4조 2교대 (경찰 지구대·파출소)</a> · 주야비휴 · 12시간씩, 4일 주기</li><li><a href="p/fire-3j2k-21/">3조 2교대 21일 (소방)</a> · 주간 5일 · 휴무 2일 · 야간·비번 7번 (주간 주의 쉬는 날이 다르면 고쳐 쓰세요)</li></ul>
 <div class="card" style="margin-top:18px">
   <strong>간호사처럼 매달 근무표가 바뀌나요?</strong><br>
-  <span class="muted">위 '직접 적기'에 한 달 순서를 적고 '반복하지 않아요'를 켜면 그달 듀티를 달력으로 볼 수 있어요. 밤낮 앱에서는 근무표 사진을 찍으면 내 줄을 찾아 달력에 넣어 줘요.</span>
+  <span class="muted">위에서 '반복하지 않아요'를 켜고 주간·오후·야간·휴무를 골라 달력 날짜를 누르면 그달 듀티가 칠해져요. 두 달까지 적을 수 있고, 같은 링크로 동료에게 보내거나 홈 화면에 더해 매일 봐요. 밤낮 앱에서는 근무표 사진을 찍으면 내 줄을 찾아 달력에 넣어 줘요.</span>
 </div>
 <div class="cta reveal">
   <div class="acts">
@@ -149,16 +153,18 @@ function draw(){
   var now=D.today(),t=at(c,start,now);
   $('today').innerHTML='<span class="t">오늘 '+(now.getUTCMonth()+1)+'월 '+now.getUTCDate()+'일 '+WD[now.getUTCDay()]+'</span> '+chip(t);
   $('soon').innerHTML='<span>내일 '+chip(at(c,start,D.plusDays(now,1)),1)+'</span><span>모레 '+chip(at(c,start,D.plusDays(now,2)),1)+'</span>';
-  $('mineSum').textContent=(own?'':'받은 달력 · ')+label(c)+' · '+D.md(start)+'부터'+($('once').checked?' 한 번만':'');
+  var mine=$('once').checked&&!pats.some(function(p){return p.codes===c;});
+  $('mineSum').textContent=(own?'':'받은 달력 · ')+(mine?'직접 적은 근무 '+c.length+'일':label(c))+' · '+D.md(start)+'부터'+($('once').checked&&!mine?' 한 번만':'');
   var out='',base=D.plusMonths(new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1)),off*3);
   for(var m=0;m<3;m++){var first=D.plusMonths(base,m),y=first.getUTCFullYear(),mo=first.getUTCMonth(),last=new Date(Date.UTC(y,mo+1,0)).getUTCDate();
     out+='<h3 class="month-title">'+y+'년 '+(mo+1)+'월</h3><div class="cal">';
     '일월화수목금토'.split('').forEach(function(w){out+='<div class="h">'+w+'</div>';});
     for(var i=0;i<first.getUTCDay();i++)out+='<div></div>';
     for(var d=1;d<=last;d++){var day=new Date(Date.UTC(y,mo,d)),s=at(c,start,day);
-      out+='<div class="d'+(+day===+now?' today':'')+'"><span class="n">'+d+'</span>'+(s?'<span class="s '+s+'" title="'+FULL[s]+'">'+NAME[s]+'</span>':'')+'</div>';}
+      var tap=$('once').checked?' tap" role="button" tabindex="0" data-k="'+D.between(start,day)+'" aria-label="'+(mo+1)+'월 '+d+'일 '+(FULL[s]||'근무 없음')+', 누르면 '+FULL[paint]:'';
+      out+='<div class="d'+(+day===+now?' today':'')+tap+'"><span class="n">'+d+'</span>'+(s?'<span class="s '+s+'" title="'+FULL[s]+'">'+NAME[s]+'</span>':'')+'</div>';}
     out+='</div>';}
-  $('cal').innerHTML=out;
+  $('cal').innerHTML=out;$('paint').hidden=!$('once').checked;
   try{history.replaceState(null,'','?p='+c+'&s='+$('first').value+($('once').checked?'&o=1':''));}catch(e){}
   if(own)store(app||$('keep').checked);ask();
   // [I50c-01] 앱 받기 링크에 이 순서·첫날을 실어요(앱 첫 설정이 한 번 물어요).
@@ -202,6 +208,20 @@ fetch(B.base+'remote/v1/presets.json').then(function(r){return r.json();}).catch
   var c=$('custom').value.toUpperCase();if(pats.some(function(p){return p.codes===c;})){$('pat').value=c;$('custom').value='';}
   draw();
 });
+// 순서가 없는 듀티(간호사처럼 달마다 바뀌는 근무표): '반복하지 않아요'를 켜면 달력 날짜를 눌러 근무를 칠해요.
+// 첫날보다 앞을 누르면 첫날이 그날로 옮겨지고, 사이 빈 날은 휴무로 채워요. 앱이 이어받는 길이(62일, 두 달)까지만.
+var paint='D',MAX=62;
+$('paint').addEventListener('click',function(e){var b=e.target.closest('.chip');if(!b)return;paint=b.dataset.c;
+  [].forEach.call($('paint').querySelectorAll('.chip'),function(x){x.setAttribute('aria-pressed',x===b?'true':'false');});draw();});
+function put(k){var c=$('custom').value.toUpperCase().replace(/[^DENOXB]/g,''),start=D.parse($('first').value);if(!start)return;
+  if(k<0){if(c.length-k>MAX)return full();c=new Array(-k+1).join('O')+c;start=D.plusDays(start,k);k=0;$('first').value=D.iso(start);}
+  if(k>=MAX)return full();
+  while(c.length<=k)c+='O';
+  c=c.slice(0,k)+paint+c.slice(k+1);$('custom').value=c;own=true;var x=D.plusDays(start,k);$('paintNote').textContent=(x.getUTCMonth()+1)+'월 '+x.getUTCDate()+'일을 '+{D:'주간으로',E:'오후로',N:'야간으로',O:'휴무로'}[paint]+' 바꿨어요.';draw();
+  var el=$('cal').querySelector('[data-k="'+k+'"]');if(el)el.focus({preventScroll:true});}
+function full(){$('paintNote').textContent='한 번에 두 달('+MAX+'일)까지 적을 수 있어요. 다음 달은 첫날을 옮겨 새로 적어요.';}
+$('cal').addEventListener('click',function(e){var t=e.target.closest('.d.tap');if(t)put(+t.dataset.k);});
+$('cal').addEventListener('keydown',function(e){var t=e.target.closest('.d.tap');if(t&&(e.key==='Enter'||e.key===' ')){e.preventDefault();put(+t.dataset.k);}});
 B.shareButton($('share'),'우리 조 근무 달력');
 $('pat').addEventListener('change',function(){own=true;$('custom').value='';draw();});
 ['custom','first','once'].forEach(function(i){var mine=function(){own=true;draw();};$(i).addEventListener('input',mine);$(i).addEventListener('change',mine);});
