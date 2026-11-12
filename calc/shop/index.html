@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>가게 하루 매출 목표 계산기 (쉬는 날·고정비·카드 수수료) | 밤낮</title>
+<meta name="description" content="쉬는 요일·공휴일과 고정비·원가·수수료로 이번 달 문 여는 날과 하루 매출 목표, 다가오는 가게 세금 날을 봐요.">
+<link rel="canonical" href="https://bamnat.app/calc/shop/">
+<meta name="robots" content="max-image-preview:large">
+<meta name="theme-color" content="#15192b">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="밤낮">
+<meta property="og:title" content="가게 하루 매출 목표 계산기 (쉬는 날·고정비·카드 수수료) | 밤낮">
+<meta property="og:description" content="쉬는 요일·공휴일과 고정비·원가·수수료로 이번 달 문 여는 날과 하루 매출 목표, 다가오는 가게 세금 날을 봐요.">
+<meta property="og:url" content="https://bamnat.app/calc/shop/">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:image" content="https://bamnat.app/og/calc.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="가게 하루 매출 목표 계산기 · 밤낮">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../../assets/icon.svg" type="image/svg+xml">
+<link rel="preload" href="../../assets/fonts/pretendard.css" as="style">
+<link rel="stylesheet" href="../../assets/fonts/pretendard.css">
+<link rel="stylesheet" href="../../calc/calc.css">
+<script src="../../calc/calc.js"></script>
+<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "WebApplication", "name": "가게 하루 매출 목표 계산기", "url": "https://bamnat.app/calc/shop/", "applicationCategory": "FinanceApplication", "operatingSystem": "Any", "inLanguage": "ko", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "KRW"}, "publisher": {"@type": "Organization", "name": "밤낮"}}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "하루 매출 목표는 어떻게 셈하나요?", "acceptedAnswer": {"@type": "Answer", "text": "한 달에 나가는 고정비와 내가 가져갈 돈이 남으려면 얼마를 팔아야 하는지 먼저 구해요. 매출에서 재료·원가와 카드·배달 수수료(일반과세자는 부가세도)를 빼고 남은 돈이 고정비와 가져갈 돈이 되는 매출이에요. 그 매출을 그달 문 여는 날 수로 나눈 것이 하루 목표예요."}}, {"@type": "Question", "name": "쉬는 날을 하루 늘리면 얼마나 더 팔아야 하나요?", "acceptedAnswer": {"@type": "Answer", "text": "한 달에 필요한 매출은 그대로라 문 여는 날이 하루 줄면 남은 날이 그만큼 나눠 져요. 결과의 '하루 더 쉬면 하루 목표' 줄이 그 차이예요. 쉬는 요일을 바꾸면 달마다 문 여는 날이 달라지는 것도 함께 보여요."}}, {"@type": "Question", "name": "부가세는 언제 내나요?", "acceptedAnswer": {"@type": "Answer", "text": "개인 일반과세자는 1월 25일(지난해 7~12월)과 7월 25일(1~6월)에 신고하고 내고, 4월·10월에는 지난 6개월 낸 부가세의 절반을 고지서로 내요(50만 원 미만은 고지하지 않아요). 간이과세자는 1월 25일에 지난해 한 해 몫을 신고해요(국세청 부가가치세 신고납부기한 안내). 기한이 주말·공휴일이면 그다음 날이에요(국세기본법 제5조)."}}, {"@type": "Question", "name": "간이과세자는 무엇이 다른가요?", "acceptedAnswer": {"@type": "Answer", "text": "직전 연도 매출(공급대가)이 1억 400만 원보다 적은 개인사업자는 간이과세자가 될 수 있어요(부가가치세법 제61조, 시행령 제109조). 부가세는 매출에 업종별 부가가치율과 10%를 곱해 일반과세자보다 적어요(제63조). 그래서 이 계산기는 간이과세자일 때 부가세를 빼고 셈해요."}}, {"@type": "Question", "name": "직원이 있으면요?", "acceptedAnswer": {"@type": "Answer", "text": "직원 인건비를 한 달 고정비에 더해 넣으면 돼요. 직원 한 명의 주휴수당과 사업주 4대보험까지는 사장님 인건비 계산기에서 구할 수 있어요."}}]}, {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "밤낮", "item": "https://bamnat.app/"}, {"@type": "ListItem", "position": 2, "name": "무료 계산기", "item": "https://bamnat.app/calc/"}, {"@type": "ListItem", "position": 3, "name": "가게 하루 매출 목표 계산기", "item": "https://bamnat.app/calc/shop/"}]}]</script>
+</head>
+<body class="k-calc">
+<a class="skip" href="#main">본문으로</a>
+<header class="site-header">
+  <div class="in">
+    <a class="brand" href="../../" aria-label="밤낮 처음으로"><svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="#f2ece1" stroke-linecap="round"><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(0 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(15 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(30 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(45 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(60 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(75 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(90 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(105 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(120 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(135 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(150 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(165 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(180 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(195 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(210 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(225 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(240 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(255 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(270 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(285 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(300 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(315 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(330 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(345 32 32)"/></g><circle cx="32" cy="32" r="18" fill="none" stroke="#f2ece1" stroke-width="2.2"/><path class="dial-day" d="M14 32a18 18 0 0 1 36 0z" fill="#f2ece1"/><circle cx="32" cy="41" r="2.4" fill="#c2a36b"/></svg><span>밤낮</span></a>
+    <nav class="site-nav" aria-label="사이트"><a href="../../calc/" aria-current="page">무료 계산기</a><a href="../../shift/">교대 근무 달력</a><a href="../../holiday/">공휴일</a><a href="../../form/">근무표 양식</a></nav>
+    <span class="grow"></span>
+    <a class="get" data-play="header" href="https://play.google.com/store/apps/details?id=com.bamnat.app"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.6v16.8c0 .8.9 1.3 1.6.9l14.1-8.4c.7-.4.7-1.4 0-1.8L6.6 2.7C5.9 2.3 5 2.8 5 3.6z" fill="currentColor"/></svg>앱 받기</a>
+    <button class="menu-btn" type="button" aria-label="메뉴 열기" aria-expanded="false" aria-controls="site-menu"><svg class="bars" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg class="x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <nav class="menu" id="site-menu" aria-label="전체 메뉴" inert><div><ul><li class="grp" role="presentation">계산기</li><li><a href="../../calc/juhyu/">주휴수당</a></li><li><a href="../../calc/alba/">알바 월급</a></li><li><a href="../../calc/allowance/">야간·연장·휴일수당</a></li><li><a href="../../calc/week/">한 주 연장·52시간</a></li><li><a href="../../calc/ordinary/">통상임금·명세서</a></li><li><a href="../../calc/daily/">일당</a></li><li><a href="../../calc/salary/">실수령액</a></li><li><a href="../../calc/leave/">연차</a></li><li><a href="../../calc/severance/">퇴직금</a></li><li><a href="../../calc/jobless/">실업급여</a></li><li><a href="../../calc/parental/">출산·육아휴직</a></li><li><a href="../../calc/boss/">사장님 인건비</a></li><li><a href="../../calc/shop/" aria-current="page">가게 매출 목표</a></li><li><a href="../../calc/">계산기 모두</a></li><li class="grp" role="presentation">근무 달력</li><li><a href="../../shift/">교대 근무 달력 만들기</a></li><li><a href="../../shift/print/">2027 달력 인쇄</a></li><li><a href="../../form/">근무표 엑셀 양식</a></li><li><a href="../../holiday/">공휴일·연휴</a></li><li class="grp" role="presentation">길잡이</li><li><a href="../../guide/shift-4j2k-pay/">4조 2교대 수당</a></li><li><a href="../../guide/nurse-night-pay/">간호사 나이트 수당</a></li><li><a href="../../guide/holiday-work-pay/">공휴일 근무 수당</a></li><li><a href="../../guide/juhyu-not-paid/">주휴수당 못 받는 경우</a></li><li><a href="../../guide/">길잡이 모두</a></li></ul></div></nav>
+</header>
+<header class="page-hero">
+  <div class="in">
+    <nav class="crumbs" aria-label="위치"><a href="../../">밤낮</a><span class="sep">/</span><a href="../../calc/">무료 계산기</a></nav>
+    <h1>가게 하루 매출 목표 계산기</h1>
+    <p class="lead">쉬는 요일과 한 달 고정비만 넣으면 문 여는 날과 하루 매출 목표가 나와요.</p>
+    <div class="tags"><span>무료</span><span>로그인 없이</span><span>입력값은 보내지 않아요</span></div>
+  </div>
+</header>
+<main id="main" class="tool">
+<div class="card">
+  <span class="glabel" id="monthL">어느 달</span>
+  <div class="chips" id="month" role="group" aria-labelledby="monthL"></div>
+  <span class="glabel" id="offL">매주 쉬는 요일</span>
+  <input type="hidden" id="off" value="7">
+  <div class="chips wd" id="offs" role="group" aria-labelledby="offL"><button type="button" class="chip" data-d="1" aria-pressed="false" aria-label="월요일에 쉬어요">월</button><button type="button" class="chip" data-d="2" aria-pressed="false" aria-label="화요일에 쉬어요">화</button><button type="button" class="chip" data-d="3" aria-pressed="false" aria-label="수요일에 쉬어요">수</button><button type="button" class="chip" data-d="4" aria-pressed="false" aria-label="목요일에 쉬어요">목</button><button type="button" class="chip" data-d="5" aria-pressed="false" aria-label="금요일에 쉬어요">금</button><button type="button" class="chip" data-d="6" aria-pressed="false" aria-label="토요일에 쉬어요">토</button><button type="button" class="chip" data-d="7" aria-pressed="true" aria-label="일요일에 쉬어요">일</button></div>
+  <label class="check"><input type="checkbox" id="hol"> 공휴일에도 쉬어요</label>
+  <label for="extra">그 밖에 쉬는 날<span class="hint">휴가·임시휴무처럼 이달 더 쉬는 날 수</span></label>
+  <input id="extra" inputmode="numeric" value="0" data-max="31" data-unit="일">
+  <label for="fixed">한 달 고정비 (원)<span class="hint">월세·관리비·전기·가스·통신·대출 이자처럼 매달 나가는 돈. 직원이 있으면 인건비도.</span></label>
+  <input id="fixed" inputmode="numeric" autocomplete="off" data-money value="2,000,000" data-max="1000000000">
+  <label for="want">한 달에 내가 가져갈 돈 (원)</label>
+  <input id="want" inputmode="numeric" autocomplete="off" data-money value="3,000,000" data-max="1000000000">
+  <div class="row">
+    <div><label for="cost">재료·원가 (매출의 %)</label><input id="cost" inputmode="decimal" value="35" data-max="95" data-unit="%"></div>
+    <div><label for="fee">카드·배달 수수료 (%)</label><input id="fee" inputmode="decimal" placeholder="0" data-max="30" data-unit="%"></div>
+  </div>
+  <span class="hint">수수료는 카드사·배달앱이 알려 준 가맹점 수수료율, 모르면 비워요. 매출이 모두 카드라고 보고 셈해요.</span>
+  <label class="check"><input type="checkbox" id="vat"> 일반과세자예요 (받은 돈의 부가세를 떼어 둬요)</label>
+</div>
+<div class="card result">
+  <div class="muted" id="head">하루 매출 목표</div>
+  <div class="big" id="out" aria-live="polite">-</div>
+  <table class="lines" id="lines"></table>
+  <div class="share"><button type="button" class="chip" id="share">결과 링크 보내기</button></div>
+</div>
+<div class="card">
+  <h2 class="in-card">다가오는 가게 세금 날</h2>
+  <div class="dday" id="taxNext"></div>
+  <table class="lines info tax" id="tax"><tr data-d="2026-01-26" data-n="부가세 확정신고"><th scope="row">2026. 1. 26. (월)</th><td><b>부가세 확정신고</b><span class="muted">일반과세자는 지난해 7~12월, 간이과세자는 지난해 한 해 몫을 신고하고 내요. · 25일이 일요일이라 옮김</span></td></tr><tr data-d="2026-02-10" data-n="사업장현황신고"><th scope="row">2026. 2. 10. (화)</th><td><b>사업장현황신고</b><span class="muted">부가세가 면제되는 가게(학원·병의원·농축수산물 판매 등)만 지난해 수입을 신고해요.</span></td></tr><tr data-d="2026-04-27" data-n="부가세 예정고지"><th scope="row">2026. 4. 27. (월)</th><td><b>부가세 예정고지</b><span class="muted">일반과세자에게 고지서가 오면 내요(지난 6개월 낸 부가세의 절반, 50만 원 미만이면 오지 않아요). · 25일이 토요일이라 옮김</span></td></tr><tr data-d="2026-06-01" data-n="종합소득세 신고"><th scope="row">2026. 6. 1. (월)</th><td><b>종합소득세 신고</b><span class="muted">지난해 번 돈을 신고하고 내요. 성실신고확인 대상은 6월 30일까지예요. · 31일이 일요일이라 옮김</span></td></tr><tr data-d="2026-07-27" data-n="부가세 확정신고"><th scope="row">2026. 7. 27. (월)</th><td><b>부가세 확정신고</b><span class="muted">일반과세자는 올해 1~6월 몫을 신고하고 내요. 간이과세자는 예정부과 고지서가 오면 내요. · 25일이 토요일이라 옮김</span></td></tr><tr data-d="2026-10-26" data-n="부가세 예정고지"><th scope="row">2026. 10. 26. (월)</th><td><b>부가세 예정고지</b><span class="muted">일반과세자에게 고지서가 오면 내요. · 25일이 일요일이라 옮김</span></td></tr><tr data-d="2026-11-30" data-n="종합소득세 중간예납"><th scope="row">2026. 11. 30. (월)</th><td><b>종합소득세 중간예납</b><span class="muted">고지서가 오면 내요(지난해 종합소득세의 절반쯤).</span></td></tr><tr data-d="2027-01-25" data-n="부가세 확정신고"><th scope="row">2027. 1. 25. (월)</th><td><b>부가세 확정신고</b><span class="muted">일반과세자는 지난해 7~12월, 간이과세자는 지난해 한 해 몫을 신고하고 내요.</span></td></tr><tr data-d="2027-02-10" data-n="사업장현황신고"><th scope="row">2027. 2. 10. (수)</th><td><b>사업장현황신고</b><span class="muted">부가세가 면제되는 가게(학원·병의원·농축수산물 판매 등)만 지난해 수입을 신고해요.</span></td></tr><tr data-d="2027-04-26" data-n="부가세 예정고지"><th scope="row">2027. 4. 26. (월)</th><td><b>부가세 예정고지</b><span class="muted">일반과세자에게 고지서가 오면 내요(지난 6개월 낸 부가세의 절반, 50만 원 미만이면 오지 않아요). · 25일이 일요일이라 옮김</span></td></tr><tr data-d="2027-05-31" data-n="종합소득세 신고"><th scope="row">2027. 5. 31. (월)</th><td><b>종합소득세 신고</b><span class="muted">지난해 번 돈을 신고하고 내요. 성실신고확인 대상은 6월 30일까지예요.</span></td></tr><tr data-d="2027-07-26" data-n="부가세 확정신고"><th scope="row">2027. 7. 26. (월)</th><td><b>부가세 확정신고</b><span class="muted">일반과세자는 올해 1~6월 몫을 신고하고 내요. 간이과세자는 예정부과 고지서가 오면 내요. · 25일이 일요일이라 옮김</span></td></tr><tr data-d="2027-10-25" data-n="부가세 예정고지"><th scope="row">2027. 10. 25. (월)</th><td><b>부가세 예정고지</b><span class="muted">일반과세자에게 고지서가 오면 내요.</span></td></tr><tr data-d="2027-11-30" data-n="종합소득세 중간예납"><th scope="row">2027. 11. 30. (화)</th><td><b>종합소득세 중간예납</b><span class="muted">고지서가 오면 내요(지난해 종합소득세의 절반쯤).</span></td></tr></table>
+  <p class="note">기한이 토요일·일요일·공휴일이면 그다음 날로 옮겨 적었어요(국세기본법 제5조). 출처: 국세청 부가가치세 신고납부기한·사업장현황신고·중간예납 안내, 소득세법 제65·70·70조의2·78조.</p>
+</div>
+<div class="cta reveal">
+  <div class="acts">
+    <strong>가게 매출과 쉬는 날을 한 달력에</strong>
+    <span class="muted">밤낮 가게 화면에서 결제 수단별로 매출을 적으면 남은 영업일로 나눈 하루 목표가 날마다 바뀌고, 부가세·종합소득세 낼 달을 미리 알려 줘요.</span><br>
+    <a class="btn" data-play="shop" href="https://play.google.com/store/apps/details?id=com.bamnat.app"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.6v16.8c0 .8.9 1.3 1.6.9l14.1-8.4c.7-.4.7-1.4 0-1.8L6.6 2.7C5.9 2.3 5 2.8 5 3.6z" fill="currentColor"/></svg>밤낮 무료로 받기</a>
+  </div>
+  <div class="shot"><img src="../../assets/app/14-ledger-360.webp" srcset="../../assets/app/14-ledger-360.webp 360w, ../../assets/app/14-ledger-720.webp 720w" sizes="260px" width="360" height="640" alt="밤낮 앱의 가게 매출·가계부 화면" loading="lazy" decoding="async"></div>
+</div>
+<h2>자주 묻는 것</h2>
+<details><summary>하루 매출 목표는 어떻게 셈하나요?</summary><p>한 달에 나가는 고정비와 내가 가져갈 돈이 남으려면 얼마를 팔아야 하는지 먼저 구해요. 매출에서 재료·원가와 카드·배달 수수료(일반과세자는 부가세도)를 빼고 남은 돈이 고정비와 가져갈 돈이 되는 매출이에요. 그 매출을 그달 문 여는 날 수로 나눈 것이 하루 목표예요.</p></details>
+<details><summary>쉬는 날을 하루 늘리면 얼마나 더 팔아야 하나요?</summary><p>한 달에 필요한 매출은 그대로라 문 여는 날이 하루 줄면 남은 날이 그만큼 나눠 져요. 결과의 &#x27;하루 더 쉬면 하루 목표&#x27; 줄이 그 차이예요. 쉬는 요일을 바꾸면 달마다 문 여는 날이 달라지는 것도 함께 보여요.</p></details>
+<details><summary>부가세는 언제 내나요?</summary><p>개인 일반과세자는 1월 25일(지난해 7~12월)과 7월 25일(1~6월)에 신고하고 내고, 4월·10월에는 지난 6개월 낸 부가세의 절반을 고지서로 내요(50만 원 미만은 고지하지 않아요). 간이과세자는 1월 25일에 지난해 한 해 몫을 신고해요(국세청 부가가치세 신고납부기한 안내). 기한이 주말·공휴일이면 그다음 날이에요(국세기본법 제5조).</p></details>
+<details><summary>간이과세자는 무엇이 다른가요?</summary><p>직전 연도 매출(공급대가)이 1억 400만 원보다 적은 개인사업자는 간이과세자가 될 수 있어요(부가가치세법 제61조, 시행령 제109조). 부가세는 매출에 업종별 부가가치율과 10%를 곱해 일반과세자보다 적어요(제63조). 그래서 이 계산기는 간이과세자일 때 부가세를 빼고 셈해요.</p></details>
+<details><summary>직원이 있으면요?</summary><p>직원 인건비를 한 달 고정비에 더해 넣으면 돼요. 직원 한 명의 주휴수당과 사업주 4대보험까지는 사장님 인건비 계산기에서 구할 수 있어요.</p></details>
+<p class="note" style="margin-top:18px">참고용 계산이에요. 실제 지급액은 근로계약·회사 규정·세법 적용에 따라 달라질 수 있어요. 요율은 밤낮 앱과 같은 공개 자료(최저임금 고시, 4대보험 요율, 근로소득 간이세액표)를 써요.</p>
+</main>
+<footer class="site-footer">
+  <div class="in">
+    <div class="top">
+      <div class="about"><a class="brand" href="../../"><svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="#f2ece1" stroke-linecap="round"><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(0 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(15 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(30 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(45 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(60 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(75 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(90 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(105 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(120 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(135 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(150 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(165 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(180 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(195 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(210 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(225 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(240 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(255 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(270 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(285 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(300 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(315 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(330 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(345 32 32)"/></g><circle cx="32" cy="32" r="18" fill="none" stroke="#f2ece1" stroke-width="2.2"/><path class="dial-day" d="M14 32a18 18 0 0 1 36 0z" fill="#f2ece1"/><circle cx="32" cy="41" r="2.4" fill="#c2a36b"/></svg><span>밤낮</span></a><p>교대·일근·알바·현장·가게·투자, 사장님과 팀 리더까지. 근무가 있는 모든 사람의 근무 앱이에요.</p></div>
+      <div><h2>계산기</h2><ul><li><a href="../../calc/juhyu/">주휴수당</a></li><li><a href="../../calc/alba/">알바 월급</a></li><li><a href="../../calc/allowance/">야간·연장·휴일수당</a></li><li><a href="../../calc/week/">한 주 연장·52시간</a></li><li><a href="../../calc/ordinary/">통상임금·명세서</a></li><li><a href="../../calc/daily/">일당</a></li><li><a href="../../calc/salary/">실수령액</a></li></ul></div>
+      <div><h2>근무 달력</h2><ul><li><a href="../../shift/">교대 근무 달력 만들기</a></li><li><a href="../../shift/print/">2027 달력 인쇄</a></li><li><a href="../../form/">근무표 엑셀 양식</a></li><li><a href="../../holiday/">공휴일·연휴</a></li></ul></div>
+      <div><h2>안내</h2><ul><li><a href="../../privacy/">개인정보 처리방침</a></li><li><a href="../../terms/">이용약관</a></li><li><a href="../../community/">광장 운영 규칙</a></li></ul></div>
+    </div>
+    <div class="biz">
+      문의 <a href="mailto:yoj0790@naver.com">yoj0790@naver.com</a> (앱 안에서는 설정 › 도움말과 문의)<br>
+      상호 밤낮 · 대표자 양원준 · 사업자등록번호 327-25-02565 (<a href="https://www.ftc.go.kr/bizCommPop.do?wrkr_no=3272502565" target="_blank" rel="noopener">사업자 정보 확인</a>)<br>
+      통신판매업 신고번호 제2026-전남여수-0424호 · 전남광주통합특별시 여수시 안산1길 179, 2동 105호<br>
+      전화 010-6408-8825 · 전자우편 yoj0790@naver.com · 호스팅 Cloudflare, Inc., GitHub, Inc.
+      <div class="safe">계산기·달력에 넣은 값은 이 화면에서만 쓰고 어디에도 보내지 않아요.</div>
+    </div>
+  </div>
+</footer>
+<div class="dock" id="dock" aria-hidden="true">
+  <img class="logo" src="../../assets/icon.svg" alt="" width="34" height="34">
+  <div class="t"><strong>가게 매출과 쉬는 날을 한 달력에</strong><span>밤낮 앱 · 무료 · 로그인 없이</span></div>
+  <a class="btn" data-play="shop_dock" href="https://play.google.com/store/apps/details?id=com.bamnat.app" tabindex="-1">받기</a>
+</div>
+<script>
+(function(){
+var B=Bamnat,F=B.f,$=B.$,D=B.d,H=["2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-03-01", "2026-03-02", "2026-05-01", "2026-05-05", "2026-05-24", "2026-05-25", "2026-06-03", "2026-06-06", "2026-07-17", "2026-08-15", "2026-08-17", "2026-09-24", "2026-09-25", "2026-09-26", "2026-10-03", "2026-10-05", "2026-10-09", "2026-12-25", "2027-01-01", "2027-02-06", "2027-02-07", "2027-02-08", "2027-02-09", "2027-03-01", "2027-05-01", "2027-05-03", "2027-05-05", "2027-05-13", "2027-06-06", "2027-07-17", "2027-07-19", "2027-08-15", "2027-08-16", "2027-09-14", "2027-09-15", "2027-09-16", "2027-10-03", "2027-10-04", "2027-10-09", "2027-10-11", "2027-12-25", "2027-12-27"],save=function(){};
+var t=D.today(),ms=[0,1].map(function(k){return D.iso(D.plusMonths(new Date(Date.UTC(t.getUTCFullYear(),t.getUTCMonth(),1)),k)).slice(0,7);});
+$('month').innerHTML=ms.map(function(m,i){return '<button type="button" class="chip" data-v="'+m+'" aria-pressed="'+(i===0)+'">'+(+m.slice(5))+'월'+(i===0?' (이번 달)':'')+'</button>';}).join('');
+var month=B.chips($('month'),function(){calc();});
+function offSync(){var v=$('off').value;[].forEach.call($('offs').querySelectorAll('.chip'),function(c){c.setAttribute('aria-pressed',v.indexOf(c.dataset.d)>=0?'true':'false');});}
+$('offs').addEventListener('click',function(e){var b=e.target.closest('.chip');if(!b)return;b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')!=='true');
+  $('off').value=[].filter.call($('offs').querySelectorAll('.chip'),function(c){return c.getAttribute('aria-pressed')==='true';}).map(function(c){return c.dataset.d;}).join('');calc();});
+var WDN='월화수목금토일';
+function calc(){
+  var m=month.get()||ms[0],off=$('off').value,o=F.openDays({month:m,off:off,holOff:$('hol').checked,holidays:H,extra:B.val('extra')}),rows=[];
+  var known=H.some(function(d){return d.slice(0,4)===m.slice(0,4);});
+  var r=F.shop({fixed:B.val('fixed'),want:B.val('want'),cost:B.val('cost'),fee:B.val('fee'),vat:$('vat').checked,open:o.open});
+  if(!o.open){$('out').textContent='-';$('lines').innerHTML=B.rows([{note:'문 여는 날이 없어요. 쉬는 요일을 하나 이상 풀어 주세요.'}]);save();return;}
+  if(!r.ok){$('out').textContent='-';$('lines').innerHTML=B.rows([{note:'재료·원가와 수수료가 매출보다 커서 목표를 셀 수 없어요. 두 비율을 확인해 주세요.',warn:1}]);save();return;}
+  var why=[];if(o.weekly)why.push((off.split('').sort().map(function(d){return WDN[d-1];}).join('·'))+'요일 '+o.weekly+'일');if(o.holidays)why.push('공휴일 '+o.holidays+'일');if(o.extra)why.push('더 쉬는 날 '+o.extra+'일');
+  rows.push([(+m.slice(5))+'월 문 여는 날',o.open+'일'],{note:o.days+'일 가운데 '+(why.length?why.join(', ')+' 쉬어요.':'쉬는 날 없이 매일 열어요.')});
+  if($('hol').checked&&!known)rows.push({note:m.slice(0,4)+'년 공휴일 자료가 아직 없어 공휴일은 빼지 않았어요.',warn:1});
+  rows.push(['재료·원가',B.won(r.cost)]);
+  if(r.fee)rows.push(['카드·배달 수수료',B.won(r.fee)]);
+  if($('vat').checked)rows.push(['부가세 낼 몫 (재료에 낸 부가세는 뺌)',B.won(r.vat)]);
+  rows.push(['고정비',B.won(r.fixed)],['내가 가져갈 돈',B.won(r.want)],['한 달 필요한 매출',B.won(r.sales),'sum']);
+  if(r.more!=null)rows.push(['하루 더 쉬면 하루 목표',(r.more>0?'+':'')+B.won(r.more)]);
+  if(!$('vat').checked)rows.push({note:'간이과세자는 부가세가 업종별 부가가치율로 훨씬 적어 빼고 셈했어요. 일반과세자면 위 칸을 켜요.'});
+  else rows.push({note:'부가세는 받은 돈의 11분의 1에서 재료에 낸 부가세를 뺀 대략이에요(카드 매출 세액공제·고정비의 부가세는 빼요).'});
+  if(r.sales*12>=104000000&&!$('vat').checked)rows.push({note:'한 해 매출이 1억 400만 원을 넘으면 다음 해 7월부터 일반과세자가 돼요(부가가치세법 시행령 제109조).'});
+  $('out').textContent=B.won(r.daily);$('lines').innerHTML=B.rows(rows);save();
+}
+// 지난 세금 날은 숨기고 1년 안의 날만, 맨 위에 다음 날까지 며칠.
+(function(){var next=null,until=D.plusYears(t,1);[].forEach.call(document.querySelectorAll('#tax tr[data-d]'),function(tr){var d=D.parse(tr.dataset.d);
+  if(d<t||d>until){tr.hidden=true;return;}if(!next)next={d:d,n:tr.dataset.n};});
+  if(next){var k=D.between(t,next.d);$('taxNext').innerHTML='<span class="muted">다음 세금 날</span><span class="big">'+(k?'D-'+k:'오늘')+'</span><span>'+D.md(next.d)+' '+next.n+'</span>';}
+  else $('taxNext').hidden=true;})();
+save=B.keep(['off','hol','extra','fixed','want','cost','fee','vat'],{month:month});offSync();
+['hol','extra','fixed','want','cost','fee','vat'].forEach(function(i){$(i).addEventListener('input',calc);$(i).addEventListener('change',calc);});calc();
+B.shareButton($('share'),'가게 하루 매출 목표');
+})();
+</script>
+</body>
+</html>

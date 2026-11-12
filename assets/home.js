@@ -77,6 +77,8 @@
     { k: '일근 월~금', c: 'DDDDDOO', teams: 0, step: 0, t: { D: [9, 18] } }
   ];
   var ANCHOR = new Date(2026, 0, 5); // 월요일. 1조가 순서 첫날을 하는 날
+  // 출근 알람은 출근 1시간 20분 전. 폰 그림·다이얼·말풍선이 모두 이 값 하나로 셈해요.
+  var LEAD = 4 / 3;
   var state = { p: 0, team: 0 }, holidays = {};
   function hm(x) { var h = Math.floor(x), m = Math.round((x - h) * 60); return pad((h + 24) % 24) + ':' + pad(m); }
   function codeOn(p, team, d) {
@@ -110,13 +112,13 @@
     }
     if (tt) {
       $('ttitle').textContent = '오늘 ' + LONG[ts] + ' ' + hm(tt[0]) + '–' + (ts === 'X' ? '내일 ' : '') + hm(tt[1]);
-      $('tsub').textContent = '출근 알람 ' + hm(tt[0] - 4 / 3) + ' · 근무 ' + (ts === 'X' ? 24 : ((tt[1] - tt[0] + 24) % 24)) + '시간';
+      $('tsub').textContent = '출근 알람 ' + hm(tt[0] - LEAD) + ' · 근무 ' + (ts === 'X' ? 24 : ((tt[1] - tt[0] + 24) % 24)) + '시간';
     } else {
       $('ttitle').textContent = '오늘은 쉬는 날';
       $('tsub').textContent = '근무 알람은 조용해요' + (nextWork ? ' · ' + (nextWork.j === 1 ? '내일' : nextWork.j + '일 뒤') + ' ' + LONG[nextWork.c] : '');
     }
     var ac = tt ? ts : nextWork && nextWork.c, at = ac && p.t[ac];
-    setV('bAlarm', at ? LONG[ac] + ' 날 ' + hm(at[0] - 4 / 3) : '쉬는 날엔 조용');
+    setV('bAlarm', at ? LONG[ac] + ' 날 ' + hm(at[0] - LEAD) : '쉬는 날엔 조용');
     setV('bCount', p.c.indexOf('N') >= 0 ? '이번 달 야간 ' + nights + '번' : p.c.indexOf('X') >= 0 ? '이번 달 당번 ' + nights + '번' : '이번 달 근무 ' + work + '일');
     setV('bOff', '쉬는 날 ' + offs + '일');
     setV('bNext', !tt ? '오늘은 쉬는 날' : nextOff ? '다음 쉬는 날 D-' + nextOff : '다음 쉬는 날');
@@ -168,15 +170,16 @@
   }
 
   /* ---------- 4. 24시간 다이얼 ---------- */
+  var DAY_IN = 7, NIGHT_IN = 19, dayAlarm = DAY_IN - LEAD, nightAlarm = NIGHT_IN - LEAD;
   var MODES = {
-    day: { name: '주간 근무 날', head: '07:00 출근', sub: '알람 05:30 · 잠 7시간', items: [
-      { from: 22.5, to: 5.5, color: '#e9dcc0', icon: 'moon', title: '잠 22:30 – 05:30', text: '근무에 맞춘 잘 시간을 오늘 하루 줄에 보여 줘요.' },
-      { at: 5.5, icon: 'alarm', title: '출근 알람 05:30', text: '주간 근무 날 시각에 울려요. 점점 커지는 소리와 다시 울림까지.' },
-      { from: 7, to: 19, color: '#5c8cff', icon: 'cal', title: '주간 근무 07:00 – 19:00', text: '달력에 이미 채워져 있어요. 야근·대근도 그 날짜를 눌러 적어요.' }] },
-    night: { name: '야간 근무 날', head: '19:00 출근', sub: '알람 17:20 · 아침잠 6시간 반', items: [
-      { from: 19, to: 7, color: '#9a83ff', icon: 'cal', title: '야간 근무 19:00 – 07:00', text: '야간·연장 수당까지 이번 달 예상 월급에 들어가요.' },
+    day: { name: '주간 근무 날', head: hm(DAY_IN) + ' 출근', sub: '알람 ' + hm(dayAlarm) + ' · 잠 7시간', items: [
+      { from: dayAlarm - 7, to: dayAlarm, color: '#e9dcc0', icon: 'moon', title: '잠 ' + hm(dayAlarm - 7) + ' – ' + hm(dayAlarm), text: '근무에 맞춘 잘 시간을 오늘 하루 줄에 보여 줘요.' },
+      { at: dayAlarm, icon: 'alarm', title: '출근 알람 ' + hm(dayAlarm), text: '주간 근무 날 시각에 울려요. 점점 커지는 소리와 다시 울림까지.' },
+      { from: DAY_IN, to: NIGHT_IN, color: '#5c8cff', icon: 'cal', title: '주간 근무 ' + hm(DAY_IN) + ' – ' + hm(NIGHT_IN), text: '달력에 이미 채워져 있어요. 야근·대근도 그 날짜를 눌러 적어요.' }] },
+    night: { name: '야간 근무 날', head: hm(NIGHT_IN) + ' 출근', sub: '알람 ' + hm(nightAlarm) + ' · 아침잠 6시간 반', items: [
+      { from: NIGHT_IN, to: DAY_IN, color: '#9a83ff', icon: 'cal', title: '야간 근무 ' + hm(NIGHT_IN) + ' – ' + hm(DAY_IN), text: '야간·연장 수당까지 이번 달 예상 월급에 들어가요.' },
       { from: 8.5, to: 15, color: '#e9dcc0', icon: 'moon', title: '아침잠 08:30 – 15:00', text: '야간 뒤 잘 시간도 계획에 넣고, 자는 동안 방해 금지를 켤 수 있어요.' },
-      { at: 17.33, icon: 'alarm', title: '출근 알람 17:20', text: '야간 날은 저녁 시각에. 주간 날 알람과 따로 맞춰져요.' },
+      { at: nightAlarm, icon: 'alarm', title: '출근 알람 ' + hm(nightAlarm), text: '야간 날은 저녁 시각에. 주간 날 알람과 따로 맞춰져요.' },
       { ref: 1, icon: 'heart', title: '가족에게 \'지금 자는 중\'', text: '근무표를 나눈 가족이 몇 시쯤 깨는지 알아요. 링크마다 켜고 꺼요.' }] },
     off: { name: '쉬는 날', head: '알람 없음', sub: '근무 알람도 쉬어요', items: [
       { from: 0.5, to: 9, color: '#e9dcc0', icon: 'moon', title: '푹 자기 00:30 – 09:00', text: '쉬는 날엔 근무 알람이 울리지 않아요.' },
@@ -205,17 +208,19 @@
     s += '<g id="arcs"></g><g id="hand"></g>';
     return s;
   }
-  var dial = $('dial'), legend = $('legend'), dialc = $('dialc'), mode = 'night';
-  function center(small, strong, span) {
-    dialc.innerHTML = '<div class="swap"><small>' + small + '</small><strong>' + strong + '</strong><span>' + span + '</span></div>';
+  var dial = $('dial'), legend = $('legend'), dialc = $('dialc'), mode = 'night', pinned = null;
+  function center(small, strong, span, time) {
+    dialc.innerHTML = '<div class="swap"><small>' + small + '</small><strong' + (time ? ' class="time"' : '') + '>' + strong + '</strong><span>' + span + '</span></div>';
   }
   function hi(i) {
     var m = MODES[mode], target = i == null ? null : (m.items[i].ref != null ? m.items[i].ref : i);
     dial.querySelectorAll('.arc').forEach(function (a) {
       var k = +a.dataset.i; a.classList.toggle('dim', target != null && target >= 0 && k !== target); a.classList.toggle('hi', k === target);
     });
-    legend.querySelectorAll('li').forEach(function (li, k) { li.classList.toggle('hi', k === i); });
-    if (i == null) center(m.name, m.head, m.sub); else center(m.name, m.items[i].title, '');
+    legend.querySelectorAll('li').forEach(function (li, k) { li.classList.toggle('hi', k === i); var b = li.querySelector('button'); if (b) b.setAttribute('aria-pressed', k === pinned ? 'true' : 'false'); });
+    // 고른 칸: 이름은 위 작은 글, 시각은 큰 글 한 줄('야간 근무' / '19:00 – 07:00'). 시각이 없는 칸은 이름을 큰 글로.
+    var t = i == null ? null : m.items[i].title, tm = t && /^(.*?)\s(\d\d:\d\d.*)$/.exec(t);
+    if (i == null) center(m.name, m.head, m.sub); else if (tm) center(tm[1], tm[2], m.name, true); else center(m.name, t, '');
   }
   function drawMode(name) {
     mode = name; var m = MODES[name], g = dial.querySelector('#arcs'), s = '';
@@ -229,21 +234,27 @@
     });
     g.innerHTML = s;
     if (!reduce) requestAnimationFrame(function () { requestAnimationFrame(function () { g.querySelectorAll('path.arc').forEach(function (p, k) { p.style.transitionDelay = (k * 0.15) + 's'; p.setAttribute('stroke-dashoffset', '0'); }); }); });
+    // 범례 한 줄은 단추: 마우스를 올리거나, 누르거나, 자판으로 골라도 다이얼의 그 칸이 밝아져요.
     legend.innerHTML = m.items.map(function (it, i) {
       var col = it.color || '#e2c48a';
-      return '<li style="--i:' + i + '" data-i="' + i + '"><span class="dot" style="background:' + col + '22;color:' + col + '">' + ICON[it.icon] + '</span><div><strong>' + it.title + '</strong><span>' + it.text + '</span></div></li>';
+      return '<li style="--i:' + i + '" data-i="' + i + '"><button type="button" aria-pressed="false"><span class="dot" style="background:' + col + '22;color:' + col + '" aria-hidden="true">' + ICON[it.icon] + '</span><span class="txt"><strong>' + it.title + '</strong><span>' + it.text + '</span></span></button></li>';
     }).join('');
     legend.querySelectorAll('li').forEach(function (li) {
-      var i = +li.dataset.i;
-      li.addEventListener('mouseenter', function () { hi(i); }); li.addEventListener('mouseleave', function () { hi(null); });
-      li.addEventListener('click', function () { hi(li.classList.contains('hi') ? null : i); });
+      var i = +li.dataset.i, b = li.querySelector('button');
+      li.addEventListener('mouseenter', function () { hi(i); }); li.addEventListener('mouseleave', function () { hi(pinned); });
+      b.addEventListener('click', function () { pinned = pinned === i ? null : i; hi(pinned); });
     });
+    pinned = null;
     hi(null);
   }
   function hand() {
     // 지금 시각: 눈금 바깥에 작은 표시와 '지금'
     var d = new Date(), h = d.getHours() + d.getMinutes() / 60, a = pt(h, 168), b = pt(h, 194), l = pt(h, 226);
-    dial.querySelector('#hand').innerHTML = '<line x1="' + a[0].toFixed(1) + '" y1="' + a[1].toFixed(1) + '" x2="' + b[0].toFixed(1) + '" y2="' + b[1].toFixed(1) + '" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round"/><circle cx="' + a[0].toFixed(1) + '" cy="' + a[1].toFixed(1) + '" r="4.5" fill="#fff"/><text x="' + l[0].toFixed(1) + '" y="' + (l[1] + 5).toFixed(1) + '" text-anchor="middle" fill="#fff" font-size="13" font-weight="800">지금 ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + '</text>';
+    // '지금' 글은 다이얼 안쪽으로 붙여 좁은 화면에서 잘리지 않게, 0·6·12·18시 글과도 겹치지 않게 비켜요.
+    var lx = l[0], ly = l[1] + 5, anchor = lx > 330 ? 'end' : lx < 70 ? 'start' : 'middle';
+    if (Math.abs(l[1] - C) < 26) ly = C + (l[1] >= C ? 32 : -22);
+    if (Math.abs(l[0] - C) < 26) { lx = C + (l[0] >= C ? 30 : -30); anchor = l[0] >= C ? 'start' : 'end'; }
+    dial.querySelector('#hand').innerHTML = '<line x1="' + a[0].toFixed(1) + '" y1="' + a[1].toFixed(1) + '" x2="' + b[0].toFixed(1) + '" y2="' + b[1].toFixed(1) + '" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round"/><circle cx="' + a[0].toFixed(1) + '" cy="' + a[1].toFixed(1) + '" r="4.5" fill="#fff"/><text x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="' + anchor + '" fill="#fff" font-size="13" font-weight="800">지금 ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + '</text>';
   }
   if (dial) {
     dial.innerHTML = dialBase(); hand(); setInterval(hand, 60000);
@@ -260,14 +271,18 @@
   }
 
   /* ---------- 5. 누구의 근무든 ---------- */
+  // 알바와 현장은 따로(알바는 주휴·알바 월급, 현장은 일당), 혼자 하는 가게, 투자도 한 자리씩.
   var WHO = [
-    { tab: '교대 근무자', tag: '교대 근무자', h: '근무 순서만 고르면<br>몇 년치가 한 번에', img: '01-calendar', li: [['3조2교대·4조2교대·4조3교대·주야비휴', '순서와 첫날만 고르면 달력이 채워져요.'], ['근무마다 다른 알람', '주간·야간마다 다른 시각, 쉬는 날엔 조용해요.'], ['야간·휴일 수당까지', '이번 달 예상 월급을 미리 봐요.']], more: ['shift/', '내 교대 순서로 달력 만들어 보기'] },
-    { tab: '간호사·병원', tag: '매달 바뀌는 듀티표', h: '근무표 나오는 날,<br>찍으면 한 달 끝', img: '02-roster', li: [['사진·엑셀·PDF 근무표', '열면 내 줄을 찾아 달력에 넣어요.'], ['헷갈리는 날은 따로', '바로 고칠 수 있게 짚어 줘요.'], ['나이트 뒤 잘 시간', '오늘 하루 줄에 낮잠까지 들어가요.']], more: ['form/duty/', '듀티표 엑셀 양식 받기'] },
-    { tab: '직장인', tag: '일근·사무직', h: '야근·연차·공휴일을<br>한 달력에', img: '12-leave', li: [['연차는 저절로', '입사일만 넣으면 생기는 날·없어지는 날까지.'], ['야근·특근은 그 자리에서', '날짜를 눌러 적으면 이번 달 월급에 들어가요.'], ['공휴일·대체공휴일', '내 달력에 함께 보여요.']], more: ['calc/salary/', '월급 실수령액 계산하기'] },
-    { tab: '알바·현장', tag: '알바·현장 일당', h: '어느 현장 며칠,<br>일당까지 달력에', img: '09-field', li: [['일한 날·현장·일당', '칸마다 적으면 이번 달 번 돈이 한눈에.'], ['받을 돈 챙기기', '아직 못 받은 돈을 따로 보여 줘요.'], ['주휴수당까지', '알바 시급이면 주마다 주휴 조건을 따져요.']], more: ['calc/daily/', '일당 세금 계산하기'] },
-    { tab: '팀 리더', tag: '근무표를 짜는 리더', h: '팀 근무표,<br>링크 하나로 공유', img: '06-team', li: [['팀원마다 자기 근무만', '팀원은 앱 없이도 링크로 열어 봐요.'], ['근무 신청도 링크로', '날마다 몇 명이 신청했는지 한눈에.'], ['무리한 배치 짚기', '연속 근무, 야간 바로 뒤 주간을 알려 줘요.']], more: ['form/shift-team/', '조별 근무표 양식 받기'] },
-    { tab: '사장님', tag: '직원을 둔 사장님', h: '알바 스케줄부터<br>급여 대장까지', img: '07-boss', li: [['요일별 직원 근무표', '출퇴근은 직원에게 보낸 링크로 기록해요.'], ['주휴·가산까지 급여 대장', '근무 시간과 시급으로 달마다 만들어요.'], ['근로계약서 링크 서명', '만들어 보내면 직원이 링크로 서명해요.']], more: ['form/alba-week/', '알바 주간 스케줄표 받기'] },
-    { tab: '가족', tag: '가족과 근무 나누기', h: '아빠 지금 자요?<br>링크 하나로 알아요', img: '10-family', li: [['같이 쉬는 날', '받은 근무표로 서로 겹치는 쉬는 날을 보여 줘요.'], ['지금 자는 중 · 몇 시쯤 깸', '보내는 사람이 링크마다 켜고 꺼요.'], ['내 달력과 오가며', '받은 달력과 내 달력을 한 앱에서 봐요.']], more: null }
+    { tab: '교대 근무자', tag: '교대 근무자', h: '근무 순서만 고르면<br>몇 년치가 한 번에', img: '01-calendar', alt: '밤낮 앱의 한 달 근무 달력', li: [['3조2교대·4조2교대·4조3교대·주야비휴', '순서와 첫날만 고르면 달력이 채워져요.'], ['근무마다 다른 알람', '주간·야간마다 다른 시각, 쉬는 날엔 조용해요.'], ['야간·휴일 수당까지', '이번 달 예상 월급을 미리 봐요.']], more: ['shift/', '내 교대 순서로 달력 만들어 보기'] },
+    { tab: '간호사·병원', tag: '매달 바뀌는 듀티표', h: '근무표 나오는 날,<br>찍으면 한 달 끝', img: '02-roster', alt: '밤낮 앱의 근무표 사진 넣기 화면', li: [['사진·엑셀·PDF 근무표', '열면 내 줄을 찾아 달력에 넣어요.'], ['헷갈리는 날은 따로', '바로 고칠 수 있게 짚어 줘요.'], ['나이트 뒤 잘 시간', '오늘 하루 줄에 낮잠까지 들어가요.']], more: ['form/duty/', '듀티표 엑셀 양식 받기'] },
+    { tab: '직장인', tag: '일근·사무직', h: '야근·연차·공휴일을<br>한 달력에', img: '12-leave', alt: '밤낮 앱의 남은 연차 화면', li: [['연차는 저절로', '입사일만 넣으면 생기는 날·없어지는 날까지.'], ['야근·특근은 그 자리에서', '날짜를 눌러 적으면 이번 달 월급에 들어가요.'], ['공휴일·대체공휴일', '내 달력에 함께 보여요.']], more: ['calc/salary/', '월급 실수령액 계산하기'] },
+    { tab: '알바', tag: '알바·시급', h: '일한 시간만 적으면<br>주휴까지 이번 달 월급', img: '05-pay', alt: '밤낮 앱의 이번 달 예상 월급 화면', li: [['일한 날과 시간', '출퇴근 시각을 적으면 이번 달 시간이 쌓여요.'], ['주휴수당은 주마다', '주 15시간을 넘긴 주를 따져 더해요.'], ['3.3%·4대보험 뺀 금액', '통장에 들어올 돈을 미리 봐요.']], more: ['calc/alba/', '알바 월급 계산하기'] },
+    { tab: '현장', tag: '현장·프리랜서', h: '어느 현장 며칠,<br>일당까지 달력에', img: '09-field', alt: '밤낮 앱의 현장 일정·일당 화면', li: [['일한 날·현장·일당', '칸마다 적으면 이번 달 번 돈이 한눈에.'], ['받을 돈 챙기기', '아직 못 받은 돈을 따로 보여 줘요.'], ['계약금·잔금까지', '건마다 받은 돈과 남은 돈을 나눠 적어요.']], more: ['calc/daily/', '일당 세금 계산하기'] },
+    { tab: '가게', tag: '가게를 하는 분', h: '오늘 매출과 쉬는 날을<br>한 달력에', img: '14-ledger', alt: '밤낮 앱의 가계부 화면', li: [['결제 수단별 매출', '카드·현금·배달로 나눠 적고, 마감 시재도 맞춰 봐요.'], ['카드 대금 들어온 날', '그날 카드 매출이 입금됐는지 표시해요.'], ['부가세·종합소득세', '세금 낼 달을 달력에서 미리 알려 줘요.']], more: ['calc/shop/', '쉬는 날로 하루 매출 목표 계산하기'] },
+    { tab: '투자', tag: '주식·ETF·코인', h: '사고판 날과 그날 손익을<br>달력 한 칸에', img: '01-calendar', alt: '밤낮 앱의 한 달 달력', li: [['매매 기록', '국내·해외 주식, ETF, 코인을 사고판 날에 적어요.'], ['그날 손익', '달력 칸마다 수익과 손실이 보여요.'], ['넣은 돈도 함께', '입금한 날도 같은 달력에 남아요.']], more: null },
+    { tab: '팀 리더', tag: '근무표를 짜는 리더', h: '팀 근무표,<br>링크 하나로 공유', img: '06-team', alt: '밤낮 앱의 팀 근무표 화면', li: [['팀원마다 자기 근무만', '팀원은 앱 없이도 링크로 열어 봐요.'], ['근무 신청도 링크로', '날마다 몇 명이 신청했는지 한눈에.'], ['무리한 배치 짚기', '연속 근무, 야간 바로 뒤 주간을 알려 줘요.']], more: ['shift/print/', '조 나란히 근무표 인쇄하기'] },
+    { tab: '사장님', tag: '직원을 둔 사장님', h: '알바 스케줄부터<br>급여 대장까지', img: '07-boss', alt: '밤낮 앱의 사장님 직원 근무 화면', li: [['요일별 직원 근무표', '출퇴근은 직원에게 보낸 링크로 기록해요.'], ['주휴·가산까지 급여 대장', '근무 시간과 시급으로 달마다 만들어요.'], ['근로계약서 링크 서명', '만들어 보내면 직원이 링크로 서명해요.']], more: ['form/alba-week/', '알바 주간 스케줄표 받기'] },
+    { tab: '가족', tag: '가족과 근무 나누기', h: '아빠 지금 자요?<br>링크 하나로 알아요', img: '10-family', alt: '밤낮 앱의 가족과 나눈 근무 화면', li: [['같이 쉬는 날', '받은 근무표로 서로 겹치는 쉬는 날을 보여 줘요.'], ['지금 자는 중 · 몇 시쯤 깸', '보내는 사람이 링크마다 켜고 꺼요.'], ['내 달력과 오가며', '받은 달력과 내 달력을 한 앱에서 봐요.']], more: null }
   ];
   var whoTabs = $('whoTabs'), whoPanel = $('whoPanel');
   function who(i, focus) {
@@ -276,7 +291,7 @@
     whoPanel.innerHTML = '<div class="txt"><span class="tag">' + w.tag + '</span><h3>' + w.h + '</h3><ul>' +
       w.li.map(function (x) { return '<li>' + ICON.check + '<span><b>' + x[0] + '</b><br>' + x[1] + '</span></li>'; }).join('') + '</ul>' +
       (w.more ? '<a class="more" href="' + w.more[0] + '">' + w.more[1] + ' →</a>' : '') + '</div>' +
-      '<div class="pic"><img src="assets/app/' + w.img + '-360.webp" srcset="assets/app/' + w.img + '-360.webp 360w, assets/app/' + w.img + '-720.webp 720w" sizes="(min-width: 900px) 440px, 330px" width="360" height="640" alt="' + w.tag + ' 밤낮 화면" decoding="async"></div>';
+      '<div class="pic"><img src="assets/app/' + w.img + '-360.webp" srcset="assets/app/' + w.img + '-360.webp 360w, assets/app/' + w.img + '-720.webp 720w" sizes="(min-width: 900px) 440px, 330px" width="360" height="640" alt="' + w.alt + '" decoding="async"></div>';
   }
   if (whoTabs) {
     whoTabs.innerHTML = WHO.map(function (w, i) { return '<button type="button" role="tab" id="who-' + i + '" aria-controls="whoPanel">' + w.tab + '</button>'; }).join('');
@@ -285,6 +300,8 @@
       var cur = [].findIndex.call(whoTabs.children, function (b) { return b.getAttribute('aria-selected') === 'true'; });
       if (e.key === 'ArrowRight') { e.preventDefault(); who((cur + 1) % WHO.length, true); }
       if (e.key === 'ArrowLeft') { e.preventDefault(); who((cur + WHO.length - 1) % WHO.length, true); }
+      if (e.key === 'Home') { e.preventDefault(); who(0, true); }
+      if (e.key === 'End') { e.preventDefault(); who(WHO.length - 1, true); }
     });
     who(0);
     WHO.forEach(function (w) { var im = new Image(); im.src = 'assets/app/' + w.img + '-360.webp'; });
@@ -324,11 +341,12 @@
   var qH = $('qHours');
   if (qH && window.Bamnat) {
     var B = window.Bamnat, wage = 10320;
+    // 주휴는 계산기 쪽과 같은 식(Bamnat.f.juhyu, 앱과 같은 사례로 시험)으로만 셈해요.
     var qcalc = function () {
-      var hrs = +qH.value, pay = hrs < 15 ? 0 : Math.min(hrs, 40) / 40 * 8 * wage, month = pay * 365 / 7 / 12;
+      var hrs = +qH.value, r = B.f.juhyu(wage, hrs * 60);
       qH.style.setProperty('--p', ((hrs - qH.min) / (qH.max - qH.min) * 100) + '%');
-      $('qH').textContent = hrs; $('qOut').textContent = B.won(pay);
-      $('qMonth').textContent = hrs < 15 ? '주 15시간부터 생겨요' : '한 달 약 ' + B.won(month);
+      $('qH').textContent = hrs; $('qOut').textContent = B.won(r.pay);
+      $('qMonth').textContent = r.holMin ? '한 달 약 ' + B.won(r.monthPay) : '주 15시간부터 생겨요';
     };
     qH.addEventListener('input', qcalc);
     B.ready.then(function () {

@@ -2,55 +2,109 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
-<title>밤낮 레시피</title>
+<title>밤낮 나눔 판 레시피 | 밤낮</title>
+<meta name="description" content="다른 분이 나눈 근무 색·알람·메모 틀·규칙이에요. 밤낮 앱에서 미리 보고, 고른 것만 내 달력에 넣어요.">
+<meta name="theme-color" content="#15192b">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="밤낮">
+<meta property="og:title" content="밤낮 나눔 판 레시피">
+<meta property="og:description" content="다른 분이 나눈 근무 색·알람·메모 틀·규칙이에요. 밤낮 앱에서 미리 보고, 고른 것만 내 달력에 넣어요.">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:image" content="https://bamnat.app/og/recipe.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="밤낮 나눔 판 레시피 · 밤낮">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
+<link rel="preload" href="../assets/fonts/pretendard.css" as="style">
+<link rel="stylesheet" href="../assets/fonts/pretendard.css">
+<link rel="stylesheet" href="../calc/calc.css">
+<script src="../calc/calc.js"></script>
 <style>
-  :root { --bg: #f7f7fb; --card: #fff; --text: #1d1d22; --muted: #5b5b66; --accent: #3f51b5; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #121216; --card: #1d1d23; --text: #ececf1; --muted: #a8a8b3; --accent: #9fa8da; } }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Noto Sans KR", sans-serif; }
-  main { max-width: 480px; margin: 0 auto; padding: 32px 16px; }
-  .card { background: var(--card); border-radius: 16px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-  h1 { font-size: 22px; margin: 0 0 8px; }
-  p { color: var(--muted); margin: 8px 0; }
-  .code { font: 600 28px/1.2 ui-monospace, monospace; letter-spacing: 4px; margin: 16px 0; text-align: center; }
-  a.btn, button { display: block; width: 100%; box-sizing: border-box; text-align: center; padding: 14px; border-radius: 12px; border: 0;
-    font-size: 16px; font-weight: 600; text-decoration: none; margin-top: 10px; cursor: pointer; }
-  a.primary { background: var(--accent); color: #fff; }
-  @media (prefers-color-scheme: dark) { a.primary { color: #121216; } }
-  button, a.plain { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
-  small { display: block; color: var(--muted); margin-top: 16px; }
+.code { font: 800 30px/1.2 ui-monospace, 'SFMono-Regular', Menlo, monospace; letter-spacing: 5px; text-align: center; margin: 6px 0 4px; font-variant-numeric: tabular-nums; }
+.code.none { font: 650 17px/1.5 var(--font); letter-spacing: 0; color: var(--text-2); }
+.recipe .btns { justify-content: center; }
+.recipe .btn { min-width: 220px; }
+.recipe ol { margin: 8px 0 0; padding-left: 20px; color: var(--text-2); font-size: 14.5px; }
+.recipe ol li + li { margin-top: 4px; }
 </style>
 </head>
-<body>
-<main>
-  <div class="card">
-    <h1>밤낮 나눔 판 레시피</h1>
-    <p>다른 분이 나눈 근무 색·알람·메모 틀·규칙이에요. 앱에서 미리 보고, 고른 것만 내 달력에 넣어요. 7일 안에 되돌릴 수 있어요.</p>
-    <div class="code" id="code">--------</div>
-    <a class="btn primary" id="open" href="#">밤낮 앱에서 열기</a>
-    <button type="button" id="copy">코드 복사</button>
-    <a class="btn plain" id="get" href="https://play.google.com/store/apps/details?id=com.bamnat.app&amp;referrer=utm_source%3Dbamnat_share%26utm_medium%3Drecipe%26utm_campaign%3Drecipe">밤낮 앱 받기 · 무료</a>
-    <small id="after">앱을 받은 뒤 이 링크를 다시 누르면 앱에서 열려요.</small>
-    <small>앱이 열리지 않으면 앱의 광장 › 나눔 판 › 코드로 받기에 위 코드를 넣어 주세요. 이 페이지는 아무것도 저장하지 않아요.</small>
+<body class="k-recipe" data-source="bamnat_share">
+<a class="skip" href="#main">본문으로</a>
+<header class="site-header">
+  <div class="in">
+    <a class="brand" href="../" aria-label="밤낮 처음으로"><svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="#f2ece1" stroke-linecap="round"><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(0 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(15 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(30 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(45 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(60 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(75 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(90 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(105 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(120 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(135 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(150 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(165 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(180 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(195 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(210 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(225 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(240 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(255 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(270 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(285 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(300 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(315 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(330 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(345 32 32)"/></g><circle cx="32" cy="32" r="18" fill="none" stroke="#f2ece1" stroke-width="2.2"/><path class="dial-day" d="M14 32a18 18 0 0 1 36 0z" fill="#f2ece1"/><circle cx="32" cy="41" r="2.4" fill="#c2a36b"/></svg><span>밤낮</span></a>
+    <nav class="site-nav" aria-label="사이트"><a href="../calc/">무료 계산기</a><a href="../shift/">교대 근무 달력</a><a href="../holiday/">공휴일</a><a href="../form/">근무표 양식</a></nav>
+    <span class="grow"></span>
+    <a class="get" data-play="header" href="https://play.google.com/store/apps/details?id=com.bamnat.app"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.6v16.8c0 .8.9 1.3 1.6.9l14.1-8.4c.7-.4.7-1.4 0-1.8L6.6 2.7C5.9 2.3 5 2.8 5 3.6z" fill="currentColor"/></svg>앱 받기</a>
+    <button class="menu-btn" type="button" aria-label="메뉴 열기" aria-expanded="false" aria-controls="site-menu"><svg class="bars" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg class="x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   </div>
+  <nav class="menu" id="site-menu" aria-label="전체 메뉴" inert><div><ul><li class="grp" role="presentation">계산기</li><li><a href="../calc/juhyu/">주휴수당</a></li><li><a href="../calc/alba/">알바 월급</a></li><li><a href="../calc/allowance/">야간·연장·휴일수당</a></li><li><a href="../calc/week/">한 주 연장·52시간</a></li><li><a href="../calc/ordinary/">통상임금·명세서</a></li><li><a href="../calc/daily/">일당</a></li><li><a href="../calc/salary/">실수령액</a></li><li><a href="../calc/leave/">연차</a></li><li><a href="../calc/severance/">퇴직금</a></li><li><a href="../calc/jobless/">실업급여</a></li><li><a href="../calc/parental/">출산·육아휴직</a></li><li><a href="../calc/boss/">사장님 인건비</a></li><li><a href="../calc/shop/">가게 매출 목표</a></li><li><a href="../calc/">계산기 모두</a></li><li class="grp" role="presentation">근무 달력</li><li><a href="../shift/">교대 근무 달력 만들기</a></li><li><a href="../shift/print/">2027 달력 인쇄</a></li><li><a href="../form/">근무표 엑셀 양식</a></li><li><a href="../holiday/">공휴일·연휴</a></li><li class="grp" role="presentation">길잡이</li><li><a href="../guide/shift-4j2k-pay/">4조 2교대 수당</a></li><li><a href="../guide/nurse-night-pay/">간호사 나이트 수당</a></li><li><a href="../guide/holiday-work-pay/">공휴일 근무 수당</a></li><li><a href="../guide/juhyu-not-paid/">주휴수당 못 받는 경우</a></li><li><a href="../guide/">길잡이 모두</a></li></ul></div></nav>
+</header>
+<header class="page-hero">
+  <div class="in">
+    <h1>밤낮 나눔 판 레시피</h1>
+    <p class="lead">다른 분이 나눈 근무 색·알람·메모 틀·규칙이에요. 밤낮 앱에서 미리 보고, 고른 것만 내 달력에 넣어요.</p>
+    <div class="tags"><span>7일 안에 되돌리기</span><span>고른 것만 넣기</span><span>로그인 없이</span></div>
+  </div>
+</header>
+<main id="main" class="tool">
+<div class="card recipe ios-skip">
+  <div class="muted" style="text-align:center">레시피 코드</div>
+  <div class="code" id="code" aria-live="polite">--------</div>
+  <div class="btns">
+    <a class="btn" id="open" href="#">밤낮 앱에서 열기</a>
+    <button type="button" class="chip" id="copy">코드 복사</button>
+  </div>
+  <span class="say" id="copied" aria-live="polite"></span>
+  <p class="note" id="after">앱이 없으면 아래에서 받은 뒤 이 링크를 다시 누르면 앱에서 열려요.</p>
+  <p class="btns"><a class="chip" id="get" data-play="recipe" data-medium="recipe" href="https://play.google.com/store/apps/details?id=com.bamnat.app"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.6v16.8c0 .8.9 1.3 1.6.9l14.1-8.4c.7-.4.7-1.4 0-1.8L6.6 2.7C5.9 2.3 5 2.8 5 3.6z" fill="currentColor"/></svg>밤낮 앱 받기 · 무료</a></p>
+  <strong>앱이 열리지 않으면</strong>
+  <ol><li>밤낮 앱을 열어요.</li><li>광장 › 나눔 판 › 코드로 받기를 눌러요.</li><li>위 코드를 넣어요.</li></ol>
+  <p class="note">이 쪽은 아무것도 저장하거나 보내지 않아요.</p>
+</div>
 </main>
+<footer class="site-footer">
+  <div class="in">
+    <div class="top">
+      <div class="about"><a class="brand" href="../"><svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="#f2ece1" stroke-linecap="round"><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(0 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(15 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(30 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(45 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(60 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(75 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(90 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(105 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(120 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(135 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(150 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(165 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(180 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(195 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(210 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(225 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(240 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(255 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(270 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(285 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(300 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(315 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(330 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(345 32 32)"/></g><circle cx="32" cy="32" r="18" fill="none" stroke="#f2ece1" stroke-width="2.2"/><path class="dial-day" d="M14 32a18 18 0 0 1 36 0z" fill="#f2ece1"/><circle cx="32" cy="41" r="2.4" fill="#c2a36b"/></svg><span>밤낮</span></a><p>교대·일근·알바·현장·가게·투자, 사장님과 팀 리더까지. 근무가 있는 모든 사람의 근무 앱이에요.</p></div>
+      <div><h2>계산기</h2><ul><li><a href="../calc/juhyu/">주휴수당</a></li><li><a href="../calc/alba/">알바 월급</a></li><li><a href="../calc/allowance/">야간·연장·휴일수당</a></li><li><a href="../calc/week/">한 주 연장·52시간</a></li><li><a href="../calc/ordinary/">통상임금·명세서</a></li><li><a href="../calc/daily/">일당</a></li><li><a href="../calc/salary/">실수령액</a></li></ul></div>
+      <div><h2>근무 달력</h2><ul><li><a href="../shift/">교대 근무 달력 만들기</a></li><li><a href="../shift/print/">2027 달력 인쇄</a></li><li><a href="../form/">근무표 엑셀 양식</a></li><li><a href="../holiday/">공휴일·연휴</a></li></ul></div>
+      <div><h2>안내</h2><ul><li><a href="../privacy/">개인정보 처리방침</a></li><li><a href="../terms/">이용약관</a></li><li><a href="../community/">광장 운영 규칙</a></li></ul></div>
+    </div>
+    <div class="biz">
+      문의 <a href="mailto:yoj0790@naver.com">yoj0790@naver.com</a> (앱 안에서는 설정 › 도움말과 문의)<br>
+      상호 밤낮 · 대표자 양원준 · 사업자등록번호 327-25-02565 (<a href="https://www.ftc.go.kr/bizCommPop.do?wrkr_no=3272502565" target="_blank" rel="noopener">사업자 정보 확인</a>)<br>
+      통신판매업 신고번호 제2026-전남여수-0424호 · 전남광주통합특별시 여수시 안산1길 179, 2동 105호<br>
+      전화 010-6408-8825 · 전자우편 yoj0790@naver.com · 호스팅 Cloudflare, Inc., GitHub, Inc.
+      <div class="safe">계산기·달력에 넣은 값은 이 화면에서만 쓰고 어디에도 보내지 않아요.</div>
+    </div>
+  </div>
+</footer>
 <script>
-  (function () {
-    var c = (new URLSearchParams(location.search).get("c") || "").toUpperCase();
-    // 1.39 [SPREAD-03] 밤낮 is an Android app: on an iPhone, say so instead of a store button that leads nowhere.
-    if (/iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)) {
-      document.getElementById("get").style.display = "none";
-      document.getElementById("open").style.display = "none";
-      document.getElementById("after").textContent = "밤낮은 Android 앱이에요. 레시피는 Android 휴대폰의 밤낮 앱에서 받을 수 있어요.";
-    }
-    if (!/^[2-9A-HJ-NP-Z]{8}$/.test(c)) { document.getElementById("code").textContent = "코드가 없어요"; document.getElementById("open").style.display = "none"; return; }
-    document.getElementById("code").textContent = c;
-    document.getElementById("open").href = "bamnat://r/" + c;
-    document.getElementById("copy").onclick = function () {
-      if (navigator.clipboard) navigator.clipboard.writeText(c).then(function () { document.getElementById("copy").textContent = "복사했어요"; });
-    };
-  })();
+(function () {
+  var $ = function (i) { return document.getElementById(i); };
+  var c = (new URLSearchParams(location.search).get('c') || '').toUpperCase();
+  // 1.39 밤낮은 Android 앱이에요. 아이폰이면 받기·열기 단추 대신 알려요.
+  if (Bamnat.ios(navigator.userAgent, navigator.maxTouchPoints || 0)) {
+    $('get').parentNode.hidden = true; $('open').hidden = true;
+    $('after').textContent = '밤낮은 Android 앱이에요. 레시피는 Android 휴대폰의 밤낮 앱에서 받을 수 있어요.';
+  }
+  if (!/^[2-9A-HJ-NP-Z]{8}$/.test(c)) {
+    // 코드가 없거나 틀리면 누를 수 없는 단추를 남기지 않아요.
+    $('code').textContent = '링크에 레시피 코드가 없어요. 받은 링크를 다시 눌러 주세요.'; $('code').className = 'code none';
+    $('open').hidden = true; $('copy').hidden = true; $('after').hidden = true;
+    return;
+  }
+  $('code').textContent = c;
+  $('open').href = 'bamnat://r/' + c;
+  $('copy').onclick = function () {
+    if (navigator.clipboard) navigator.clipboard.writeText(c).then(function () { $('copied').textContent = '코드를 복사했어요.'; }, function () { $('copied').textContent = '복사하지 못했어요. 코드를 길게 눌러 복사해 주세요.'; });
+    else $('copied').textContent = '코드를 길게 눌러 복사해 주세요.';
+  };
+})();
 </script>
 </body>
 </html>
