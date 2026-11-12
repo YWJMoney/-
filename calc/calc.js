@@ -233,17 +233,19 @@
     out.net = gross - out.ded;
     return out;
   };
-  // 일용근로소득: 하루 (일당 − 15만 원) × 6% × (1 − 55%) = 2.7%를 원 미만 버림. 1,000원 미만은 떼지 않는데(소액부징수),
-  // 날마다 받으면 하루씩, 여러 날 치를 한꺼번에 받으면 합계로 따져요. 지방소득세는 소득세의 10%.
+  // 일용근로소득: 하루 (일당 − 15만 원) × 6% × (1 − 55%) = 2.7%를 원 미만 버림. 받을 때(지급 한 번)마다 그 날들의 합에서
+  // 10원 미만을 버리고(국고금 관리법 제47조), 1,000원 미만이면 떼지 않아요(소액부징수). 지방소득세는 그 소득세의 10%에서 10원 미만 버림.
+  // 날마다 받으면 날마다 한 번의 지급이에요. 국세청 '일용근로자 원천징수' 예: 20만 원 5일 한 번에 → 6,750원·670원. 앱 core DailyWorkerTax와 같은 식.
   F.dailyTaxOfDay = function (pay) { return Math.floor(Math.max(0, Math.floor(pay) - 150000) * 27 / 1000); };
   F.daily = function (o) {
     var whole = Math.floor(o.days), part = Math.round((o.days - whole) * 100) / 100, pays = [];
     for (var i = 0; i < whole; i++) pays.push(Math.floor(o.pay));
     if (part > 0) pays.push(Math.floor(o.pay * part));
-    var per = pays.map(F.dailyTaxOfDay), income;
-    if (o.paid === 'together') { income = per.reduce(function (a, b) { return a + b; }, 0); if (income < 1000) income = 0; }
-    else income = per.filter(function (t) { return t >= 1000; }).reduce(function (a, b) { return a + b; }, 0);
-    var local = Math.floor(income / 10), gross = pays.reduce(function (a, b) { return a + b; }, 0), r = rowOn(o.day);
+    var per = pays.map(F.dailyTaxOfDay);
+    var paid = function (days) { var t = floor10(days.reduce(function (a, b) { return a + b; }, 0)); t = t < 1000 ? 0 : t; return { income: t, local: floor10(t / 10) }; };
+    var runs = o.paid === 'together' ? [paid(per)] : per.map(function (d) { return paid([d]); });
+    var income = runs.reduce(function (a, r) { return a + r.income; }, 0), local = runs.reduce(function (a, r) { return a + r.local; }, 0);
+    var gross = pays.reduce(function (a, b) { return a + b; }, 0), r = rowOn(o.day);
     var emp = !o.emp ? 0 : o.paid === 'together' ? B.cut10(gross, r.unemploymentRate / 2)
       : pays.reduce(function (a, p) { return a + B.cut10(p, r.unemploymentRate / 2); }, 0);
     return { gross: gross, income: income, local: local, emp: emp, net: gross - income - local - emp, perDay: per[0] || 0, dayCount: pays.length };
