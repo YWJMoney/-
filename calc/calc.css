@@ -337,7 +337,7 @@ ul.links li .muted { font-size: 14px; }
   .reveal { opacity: 1; transform: none; }
 }
 @media print {
-  .site-header, .site-footer, .page-hero, .skip { display: none !important; }
+  .site-header, .site-footer, .page-hero, .skip, .ios-note { display: none !important; }
   main.tool { margin-top: 0; }
   body { font-family: var(--font); }
 }
@@ -367,3 +367,9 @@ ul.links li .muted { font-size: 14px; }
 .ticks b { display: block; }
 .ticks span { color: var(--text-2); font-size: 14.5px; }
 .app-next .note { display: block; margin-top: 8px; }
+
+/* [U50-15] 아이폰·아이패드: 받기 단추 대신 한 줄 안내(calc.js가 html에 ios를 붙여요). */
+.ios a[data-play][hidden], .ios .dock[hidden], .ios .note[hidden] { display: none !important; }
+.ios-note { display: block; margin-top: 16px; padding: 12px 14px; border-radius: var(--radius-s); background: var(--surface-2); color: var(--text-2); font-size: 14.5px; line-height: 1.5; }
+.cta .ios-note, .hero .ios-note, .final .ios-note { background: rgba(255, 255, 255, 0.08); color: rgba(242, 236, 225, 0.86); }
+.cta .ios-note a, .hero .ios-note a, .final .ios-note a { color: var(--gold-2); }

@@ -109,7 +109,29 @@
       if (j && j.data && j.data.pensionBases && j.data.pensionBases.length) B.pensionBases = j.data.pensionBases;
     })
     .catch(function () {});
+  // [U50-15] 밤낮은 Android 앱이에요. 아이폰·아이패드에서는 받기 단추 자리에 한 줄로 알리고, 이 사이트에서 바로 쓰는 곳으로 이어요.
+  // 머리 띠의 '앱 받기'와 아래 받기 띠는 숨기고, 나머지 받기 단추는 한 줄 안내로 바꿔요.
+  B.ios = function (ua, touch) { return /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && touch > 1); };
+  B.iosNote = function (a) {
+    var onShift = /\/shift\/$/.test(location.pathname), p = document.createElement('p');
+    p.className = 'ios-note';
+    var dev = /iPad|Macintosh/.test(navigator.userAgent) ? '아이패드' : '아이폰';
+    p.innerHTML = '밤낮 앱은 Android(Google Play)용이에요. ' + dev + '에서는 ' + (onShift
+      ? '이 달력을 여기서 바로 써요. 공유 단추(네모에 위 화살표) › 홈 화면에 추가를 누르면 내 순서 그대로 다시 열려요.'
+      : '<a href="' + base + 'shift/">교대 근무 달력</a>과 계산기를 여기서 바로 써요.');
+    a.replaceWith(p);
+    // 받기 단추 바로 아래 '로그인·회원가입 없이 무료예요' 같은 앱 이야기는 함께 숨겨요.
+    var nx = p.nextElementSibling; if (nx && nx.classList.contains('note')) nx.hidden = true;
+  };
   document.addEventListener('DOMContentLoaded', function () {
+    if (B.ios(navigator.userAgent, navigator.maxTouchPoints || 0)) {
+      document.documentElement.classList.add('ios');
+      document.querySelectorAll('a[data-play]').forEach(function (a) {
+        // 달력 바로 아래(app-next)에서 이미 알렸으면, 이어지는 앱 카드(cta)에서는 같은 말을 다시 하지 않아요.
+        if (a.closest('.dock') || a.classList.contains('get') || (a.closest('.cta') && document.querySelector('.app-next .ios-note'))) a.hidden = true; else B.iosNote(a);
+      });
+      var dk = document.getElementById('dock'); if (dk) dk.hidden = true;
+    }
     document.querySelectorAll('a[data-play]').forEach(function (a) { a.href = B.playLink(a.dataset.play, a.dataset.medium); });
     B.ui();
   });
