@@ -347,3 +347,20 @@
     watch(heroEl, 'hero'); watch(finalEl, 'final'); watch(foot, 'foot');
   }
 })();
+
+// 롤샷 매장 QR·광고로 들어온 방문(utm_source=rollshot…)만, 링크에 붙은 표시(출처·매장 코드·광고)를 한 번 알려요. 방문자 정보는 보내지 않아요.
+(function () {
+  try {
+    var q = new URLSearchParams(location.search);
+    if (!/rollshot|bamnat_photo/.test(q.get('utm_source') || '')) return;
+    var ref = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term']
+      .filter(function (n) { return q.get(n); })
+      .map(function (n) { return n + '=' + encodeURIComponent(q.get(n).slice(0, 60)); }).join('&');
+    var key = 'rs_attrib:' + ref;
+    try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); } catch (e) {}
+    fetch('https://p.bamnat.app/api/attrib', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'omit', keepalive: true,
+      body: JSON.stringify({ app: 'bamnat', kind: 'web', referrer: ref })
+    }).catch(function () {});
+  } catch (e) {}
+})();
