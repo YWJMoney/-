@@ -24,45 +24,48 @@
 <link rel="stylesheet" href="../../assets/fonts/pretendard.css">
 <link rel="stylesheet" href="../../calc/calc.css">
 <script src="../../calc/calc.js"></script>
-<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "WebApplication", "name": "퇴직금 계산기", "url": "https://bamnat.app/calc/severance/", "applicationCategory": "FinanceApplication", "operatingSystem": "Any", "inLanguage": "ko", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "KRW"}, "publisher": {"@type": "Organization", "name": "밤낮"}}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "퇴직금은 누가 받나요?", "acceptedAnswer": {"@type": "Answer", "text": "같은 회사에서 1년 이상 일했고 4주 평균 1주 15시간 이상 일한 근로자가 받아요(근로자퇴직급여 보장법 제4조). 알바·계약직도 같아요."}}, {"@type": "Question", "name": "평균임금은 어떻게 구하나요?", "acceptedAnswer": {"@type": "Answer", "text": "퇴직 전 3개월 동안 받은 임금 총액을 그 3개월의 날수(89~92일)로 나눠요. 1년 상여와 연차수당은 3/12만 더해요(근로기준법 제2조)."}}, {"@type": "Question", "name": "야간·연장 수당도 들어가나요?", "acceptedAnswer": {"@type": "Answer", "text": "네. 매달 받은 야간·연장·휴일 수당도 임금이라 평균임금에 들어가요. 교대 근무자는 수당이 많은 달이 마지막 3개월이면 퇴직금이 커져요."}}, {"@type": "Question", "name": "세금은 얼마나 떼나요?", "acceptedAnswer": {"@type": "Answer", "text": "퇴직금에는 퇴직소득세가 따로 붙어요. 근속 연수가 길수록 공제가 커서 근로소득세보다 훨씬 적어요. 이 계산기는 세전 금액이에요."}}]}, {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "밤낮", "item": "https://bamnat.app/"}, {"@type": "ListItem", "position": 2, "name": "무료 계산기", "item": "https://bamnat.app/calc/"}, {"@type": "ListItem", "position": 3, "name": "퇴직금 계산기", "item": "https://bamnat.app/calc/severance/"}]}]</script>
+<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "WebApplication", "name": "퇴직금 계산기", "url": "https://bamnat.app/calc/severance/", "applicationCategory": "FinanceApplication", "operatingSystem": "Any", "inLanguage": "ko", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "KRW"}, "publisher": {"@type": "Organization", "name": "밤낮"}}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "퇴직금은 누가 받나요?", "acceptedAnswer": {"@type": "Answer", "text": "같은 회사에서 1년 이상 일했고 4주 평균 1주 15시간 이상 일한 근로자가 받아요(근로자퇴직급여 보장법 제4조). 알바·계약직도 같아요."}}, {"@type": "Question", "name": "평균임금은 어떻게 구하나요?", "acceptedAnswer": {"@type": "Answer", "text": "퇴직 전 3개월 동안 받은 임금 총액을 그 3개월의 날수(89~92일)로 나눠요. 1년 상여와 연차수당은 3/12만 더해요(근로기준법 제2조). 이렇게 구한 값이 통상임금보다 낮으면 통상임금으로 셈해요."}}, {"@type": "Question", "name": "1년은 365일인가요?", "acceptedAnswer": {"@type": "Answer", "text": "달력으로 만 1년이에요. 2월 29일이 끼면 366일을 다녀야 1년이에요. 마지막 근무일 다음 날이 입사 1년 되는 날이거나 그 뒤면 받아요."}}, {"@type": "Question", "name": "야간·연장 수당도 들어가나요?", "acceptedAnswer": {"@type": "Answer", "text": "네. 매달 받은 야간·연장·휴일 수당도 임금이라 평균임금에 들어가요. 교대 근무자는 수당이 많은 달이 마지막 3개월이면 퇴직금이 커져요."}}, {"@type": "Question", "name": "세금은 얼마나 떼나요?", "acceptedAnswer": {"@type": "Answer", "text": "퇴직금에는 퇴직소득세가 따로 붙어요. 근속 연수가 길수록 공제가 커서 근로소득세보다 훨씬 적어요. 이 계산기는 세전 금액이에요."}}]}, {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "밤낮", "item": "https://bamnat.app/"}, {"@type": "ListItem", "position": 2, "name": "무료 계산기", "item": "https://bamnat.app/calc/"}, {"@type": "ListItem", "position": 3, "name": "퇴직금 계산기", "item": "https://bamnat.app/calc/severance/"}]}]</script>
 </head>
-<body>
+<body class="k-calc">
 <a class="skip" href="#main">본문으로</a>
 <header class="site-header">
   <div class="in">
     <a class="brand" href="../../" aria-label="밤낮 처음으로"><svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="#f2ece1" stroke-linecap="round"><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(0 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(15 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(30 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(45 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(60 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(75 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(90 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(105 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(120 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(135 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(150 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(165 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(180 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(195 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(210 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(225 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(240 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(255 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(270 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(285 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(300 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(315 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(330 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(345 32 32)"/></g><circle cx="32" cy="32" r="18" fill="none" stroke="#f2ece1" stroke-width="2.2"/><path class="dial-day" d="M14 32a18 18 0 0 1 36 0z" fill="#f2ece1"/><circle cx="32" cy="41" r="2.4" fill="#c2a36b"/></svg><span>밤낮</span></a>
-    <nav class="site-nav" aria-label="사이트"><a href="../../calc/" aria-current="page">무료 계산기</a><a href="../../shift/">교대 근무 달력</a><a href="../../holiday/2027/">공휴일</a><a href="../../form/">근무표 양식</a></nav>
+    <nav class="site-nav" aria-label="사이트"><a href="../../calc/" aria-current="page">무료 계산기</a><a href="../../shift/">교대 근무 달력</a><a href="../../holiday/">공휴일</a><a href="../../form/">근무표 양식</a></nav>
     <span class="grow"></span>
     <a class="get" data-play="header" href="https://play.google.com/store/apps/details?id=com.bamnat.app"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.6v16.8c0 .8.9 1.3 1.6.9l14.1-8.4c.7-.4.7-1.4 0-1.8L6.6 2.7C5.9 2.3 5 2.8 5 3.6z" fill="currentColor"/></svg>앱 받기</a>
-    <button class="menu-btn" type="button" aria-label="메뉴" aria-expanded="false"><svg class="bars" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg class="x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <button class="menu-btn" type="button" aria-label="메뉴 열기" aria-expanded="false" aria-controls="site-menu"><svg class="bars" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg class="x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   </div>
-  <div class="menu"><div><ul><li class="grp">계산기</li><li><a href="../../calc/juhyu/">주휴수당</a></li><li><a href="../../calc/alba/">알바 월급</a></li><li><a href="../../calc/allowance/">야간·연장·휴일수당</a></li><li><a href="../../calc/daily/">일당</a></li><li><a href="../../calc/salary/">실수령액</a></li><li><a href="../../calc/leave/">연차</a></li><li><a href="../../calc/severance/">퇴직금</a></li><li><a href="../../calc/">계산기 모두</a></li><li class="grp">근무 달력</li><li><a href="../../shift/">교대 근무 달력 만들기</a></li><li><a href="../../shift/print/">2027 달력 인쇄</a></li><li><a href="../../form/">근무표 엑셀 양식</a></li><li><a href="../../holiday/2027/">2027 공휴일</a></li><li><a href="../../holiday/2026/">2026 공휴일</a></li></ul></div></div>
+  <nav class="menu" id="site-menu" aria-label="전체 메뉴" inert><div><ul><li class="grp" role="presentation">계산기</li><li><a href="../../calc/juhyu/">주휴수당</a></li><li><a href="../../calc/alba/">알바 월급</a></li><li><a href="../../calc/allowance/">야간·연장·휴일수당</a></li><li><a href="../../calc/week/">한 주 연장·52시간</a></li><li><a href="../../calc/ordinary/">통상임금·명세서</a></li><li><a href="../../calc/daily/">일당</a></li><li><a href="../../calc/salary/">실수령액</a></li><li><a href="../../calc/leave/">연차</a></li><li><a href="../../calc/severance/" aria-current="page">퇴직금</a></li><li><a href="../../calc/jobless/">실업급여</a></li><li><a href="../../calc/parental/">출산·육아휴직</a></li><li><a href="../../calc/boss/">사장님 인건비</a></li><li><a href="../../calc/shop/">가게 매출 목표</a></li><li><a href="../../calc/">계산기 모두</a></li><li class="grp" role="presentation">근무 달력</li><li><a href="../../shift/">교대 근무 달력 만들기</a></li><li><a href="../../shift/print/">2027 달력 인쇄</a></li><li><a href="../../form/">근무표 엑셀 양식</a></li><li><a href="../../holiday/">공휴일·연휴</a></li><li class="grp" role="presentation">길잡이</li><li><a href="../../guide/shift-4j2k-pay/">4조 2교대 수당</a></li><li><a href="../../guide/nurse-night-pay/">간호사 나이트 수당</a></li><li><a href="../../guide/holiday-work-pay/">공휴일 근무 수당</a></li><li><a href="../../guide/juhyu-not-paid/">주휴수당 못 받는 경우</a></li><li><a href="../../guide/">길잡이 모두</a></li></ul></div></nav>
 </header>
 <header class="page-hero">
   <div class="in">
     <nav class="crumbs" aria-label="위치"><a href="../../">밤낮</a><span class="sep">/</span><a href="../../calc/">무료 계산기</a></nav>
     <h1>퇴직금 계산기</h1>
-    <p class="lead">입사일과 마지막 근무일, 최근 석 달 월급만 넣으면 돼요. 상여와 연차수당이 있으면 함께 넣어요.</p>
+    <p class="lead">입사일, 마지막 근무일, 최근 석 달 월급만 넣으면 퇴직금이 나와요.</p>
     <div class="tags"><span>무료</span><span>로그인 없이</span><span>입력값은 보내지 않아요</span></div>
   </div>
 </header>
 <main id="main" class="tool">
 <div class="card">
   <div class="row">
-    <div><label for="start">입사일</label><input id="start" type="date" value="2022-03-02"></div>
+    <div><label for="start">입사일</label><input id="start" type="date"></div>
     <div><label for="last">마지막 근무일</label><input id="last" type="date"></div>
   </div>
   <label for="pay">최근 3개월 월 평균 세전 임금 (원)<span class="hint">기본급과 매달 받은 수당(야간·연장 포함)을 더한 금액, 세금 떼기 전</span></label>
-  <input id="pay" inputmode="numeric" value="3000000">
+  <input id="pay" inputmode="numeric" autocomplete="off" data-money value="3,000,000" data-max="1000000000">
   <div class="row">
-    <div><label for="bonus">1년 상여 합계</label><input id="bonus" inputmode="numeric" value="0"></div>
-    <div><label for="leavepay">1년 연차수당</label><input id="leavepay" inputmode="numeric" value="0"></div>
+    <div><label for="bonus">1년 상여 합계</label><input id="bonus" inputmode="numeric" autocomplete="off" data-money value="0" data-max="10000000000"></div>
+    <div><label for="leavepay">1년 연차수당</label><input id="leavepay" inputmode="numeric" autocomplete="off" data-money value="0" data-max="1000000000"></div>
   </div>
+  <label for="ordinary">1일 통상임금 (모르면 비워 둬요)<span class="hint">평균임금이 통상임금보다 낮으면 통상임금으로 셈해요(근로기준법 제2조 제2항).</span></label>
+  <input id="ordinary" inputmode="numeric" autocomplete="off" data-money data-max="10000000">
 </div>
-<div class="card result" aria-live="polite">
-  <div class="muted">예상 퇴직금 (세전)</div>
-  <div class="big" id="out">-</div>
+<div class="card result">
+  <div class="muted" id="head">예상 퇴직금 (세전)</div>
+  <div class="big" id="out" aria-live="polite">-</div>
   <table class="lines" id="lines"></table>
+  <div class="share"><button type="button" class="chip" id="share">결과 링크 보내기</button></div>
 </div>
 <div class="cta reveal">
   <div class="acts">
@@ -70,29 +73,31 @@
     <span class="muted">밤낮에 근무를 넣어 두면 달마다 야간·연장 수당을 담은 예상 월급이 남아 퇴직금 평균임금을 맞춰 보기 좋아요.</span><br>
     <a class="btn" data-play="severance" href="https://play.google.com/store/apps/details?id=com.bamnat.app"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.6v16.8c0 .8.9 1.3 1.6.9l14.1-8.4c.7-.4.7-1.4 0-1.8L6.6 2.7C5.9 2.3 5 2.8 5 3.6z" fill="currentColor"/></svg>밤낮 무료로 받기</a>
   </div>
-  <div class="shot"><img src="../../assets/app/05-pay-360.webp" srcset="../../assets/app/05-pay-360.webp 360w, ../../assets/app/05-pay-720.webp 720w" sizes="260px" width="360" height="640" alt="밤낮 앱 화면" loading="lazy" decoding="async"></div>
+  <div class="shot"><img src="../../assets/app/05-pay-360.webp" srcset="../../assets/app/05-pay-360.webp 360w, ../../assets/app/05-pay-720.webp 720w" sizes="260px" width="360" height="640" alt="밤낮 앱의 이번 달 예상 월급 화면" loading="lazy" decoding="async"></div>
 </div>
+<h2 id="guides">읽어 볼 길잡이</h2><ul class="links"><li><a href="../../guide/ordinary-wage-bonus/">정기상여가 통상임금에 들어가면 수당이 얼마나 오르나요</a></li><li><a href="../../guide/severance-with-allowances/">퇴직금에 야간·연장수당도 들어가나요</a></li><li><a href="../../guide/annual-leave-days/">연차는 며칠 생기나요</a></li></ul>
 <h2>자주 묻는 것</h2>
 <details><summary>퇴직금은 누가 받나요?</summary><p>같은 회사에서 1년 이상 일했고 4주 평균 1주 15시간 이상 일한 근로자가 받아요(근로자퇴직급여 보장법 제4조). 알바·계약직도 같아요.</p></details>
-<details><summary>평균임금은 어떻게 구하나요?</summary><p>퇴직 전 3개월 동안 받은 임금 총액을 그 3개월의 날수(89~92일)로 나눠요. 1년 상여와 연차수당은 3/12만 더해요(근로기준법 제2조).</p></details>
+<details><summary>평균임금은 어떻게 구하나요?</summary><p>퇴직 전 3개월 동안 받은 임금 총액을 그 3개월의 날수(89~92일)로 나눠요. 1년 상여와 연차수당은 3/12만 더해요(근로기준법 제2조). 이렇게 구한 값이 통상임금보다 낮으면 통상임금으로 셈해요.</p></details>
+<details><summary>1년은 365일인가요?</summary><p>달력으로 만 1년이에요. 2월 29일이 끼면 366일을 다녀야 1년이에요. 마지막 근무일 다음 날이 입사 1년 되는 날이거나 그 뒤면 받아요.</p></details>
 <details><summary>야간·연장 수당도 들어가나요?</summary><p>네. 매달 받은 야간·연장·휴일 수당도 임금이라 평균임금에 들어가요. 교대 근무자는 수당이 많은 달이 마지막 3개월이면 퇴직금이 커져요.</p></details>
 <details><summary>세금은 얼마나 떼나요?</summary><p>퇴직금에는 퇴직소득세가 따로 붙어요. 근속 연수가 길수록 공제가 커서 근로소득세보다 훨씬 적어요. 이 계산기는 세전 금액이에요.</p></details>
-<p class="note" style="margin-top:18px">참고용 계산이에요. 실제 지급액은 근로계약·회사 규정·세법 적용에 따라 달라질 수 있어요. 요율은 밤낮 앱과 같은 공개 자료(최저임금 고시, 4대보험 요율)를 써요.</p>
+<p class="note" style="margin-top:18px">참고용 계산이에요. 실제 지급액은 근로계약·회사 규정·세법 적용에 따라 달라질 수 있어요. 요율은 밤낮 앱과 같은 공개 자료(최저임금 고시, 4대보험 요율, 근로소득 간이세액표)를 써요.</p>
 </main>
 <footer class="site-footer">
   <div class="in">
     <div class="top">
-      <div class="about"><a class="brand" href="../../"><svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="#f2ece1" stroke-linecap="round"><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(0 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(15 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(30 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(45 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(60 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(75 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(90 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(105 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(120 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(135 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(150 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(165 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(180 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(195 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(210 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(225 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(240 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(255 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(270 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(285 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(300 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(315 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(330 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(345 32 32)"/></g><circle cx="32" cy="32" r="18" fill="none" stroke="#f2ece1" stroke-width="2.2"/><path class="dial-day" d="M14 32a18 18 0 0 1 36 0z" fill="#f2ece1"/><circle cx="32" cy="41" r="2.4" fill="#c2a36b"/></svg><span>밤낮</span></a><p>교대·일근·알바·현장·사장님까지, 근무가 있는 모든 사람의 근무 앱이에요.</p></div>
-      <div><h4>계산기</h4><ul><li><a href="../../calc/juhyu/">주휴수당</a></li><li><a href="../../calc/alba/">알바 월급</a></li><li><a href="../../calc/allowance/">야간·연장·휴일수당</a></li><li><a href="../../calc/daily/">일당</a></li><li><a href="../../calc/salary/">실수령액</a></li><li><a href="../../calc/leave/">연차</a></li><li><a href="../../calc/severance/">퇴직금</a></li></ul></div>
-      <div><h4>근무 달력</h4><ul><li><a href="../../shift/">교대 근무 달력 만들기</a></li><li><a href="../../shift/print/">2027 달력 인쇄</a></li><li><a href="../../form/">근무표 엑셀 양식</a></li><li><a href="../../holiday/2027/">2027 공휴일</a></li><li><a href="../../holiday/2026/">2026 공휴일</a></li></ul></div>
-      <div><h4>안내</h4><ul><li><a href="../../privacy/">개인정보 처리방침</a></li><li><a href="../../terms/">이용약관</a></li><li><a href="../../community/">광장 운영 규칙</a></li></ul></div>
+      <div class="about"><a class="brand" href="../../"><svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="#f2ece1" stroke-linecap="round"><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(0 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(15 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(30 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(45 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(60 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(75 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(90 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(105 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(120 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(135 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(150 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(165 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(180 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(195 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(210 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(225 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(240 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(255 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(270 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(285 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(300 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(315 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(330 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(345 32 32)"/></g><circle cx="32" cy="32" r="18" fill="none" stroke="#f2ece1" stroke-width="2.2"/><path class="dial-day" d="M14 32a18 18 0 0 1 36 0z" fill="#f2ece1"/><circle cx="32" cy="41" r="2.4" fill="#c2a36b"/></svg><span>밤낮</span></a><p>교대·일근·알바·현장·가게·투자, 사장님과 팀 리더까지. 근무가 있는 모든 사람의 근무 앱이에요.</p></div>
+      <div><h2>계산기</h2><ul><li><a href="../../calc/juhyu/">주휴수당</a></li><li><a href="../../calc/alba/">알바 월급</a></li><li><a href="../../calc/allowance/">야간·연장·휴일수당</a></li><li><a href="../../calc/week/">한 주 연장·52시간</a></li><li><a href="../../calc/ordinary/">통상임금·명세서</a></li><li><a href="../../calc/daily/">일당</a></li><li><a href="../../calc/salary/">실수령액</a></li></ul></div>
+      <div><h2>근무 달력</h2><ul><li><a href="../../shift/">교대 근무 달력 만들기</a></li><li><a href="../../shift/print/">2027 달력 인쇄</a></li><li><a href="../../form/">근무표 엑셀 양식</a></li><li><a href="../../holiday/">공휴일·연휴</a></li></ul></div>
+      <div><h2>안내</h2><ul><li><a href="../../privacy/">개인정보 처리방침</a></li><li><a href="../../terms/">이용약관</a></li><li><a href="../../community/">광장 운영 규칙</a></li></ul></div>
     </div>
     <div class="biz">
       문의 <a href="mailto:yoj0790@naver.com">yoj0790@naver.com</a> (앱 안에서는 설정 › 도움말과 문의)<br>
       상호 밤낮 · 대표자 양원준 · 사업자등록번호 327-25-02565 (<a href="https://www.ftc.go.kr/bizCommPop.do?wrkr_no=3272502565" target="_blank" rel="noopener">사업자 정보 확인</a>)<br>
       통신판매업 신고번호 제2026-전남여수-0424호 · 전남광주통합특별시 여수시 안산1길 179, 2동 105호<br>
       전화 010-6408-8825 · 전자우편 yoj0790@naver.com · 호스팅 Cloudflare, Inc., GitHub, Inc.
-      <div class="safe">계산기에 입력한 값은 이 화면에서만 계산하고 어디에도 보내지 않아요.</div>
+      <div class="safe">계산기·달력에 넣은 값은 이 화면에서만 쓰고 어디에도 보내지 않아요.</div>
     </div>
   </div>
 </footer>
@@ -103,26 +108,24 @@
 </div>
 <script>
 (function(){
-var B=Bamnat,$=function(i){return document.getElementById(i)};
-function d(v){var p=v.split('-');return new Date(+p[0],+p[1]-1,+p[2]);}
-function days(a,b){return Math.round((b-a)/864e5);}
+var B=Bamnat,F=B.f,$=B.$,D=B.d,save=function(){};
 function calc(){
-  if(!$('start').value||!$('last').value)return;
-  var s=d($('start').value),l=d($('last').value),retire=new Date(l.getFullYear(),l.getMonth(),l.getDate()+1);
-  var served=days(s,retire);if(served<=0){$('out').textContent='-';$('lines').innerHTML='';return;}
-  var from=new Date(retire.getFullYear(),retire.getMonth()-3,retire.getDate()),n3=days(from,retire);
-  var pay=B.num($('pay').value)*3,bonus=B.num($('bonus').value)*3/12,lp=B.num($('leavepay').value)*3/12;
-  var avg=(pay+bonus+lp)/n3,sev=Math.floor(avg*30*served/365);
-  var rows='<tr><td>재직 일수</td><td>'+served.toLocaleString('ko-KR')+'일 (약 '+(Math.floor(served/365*10)/10)+'년)</td></tr>'+
-    '<tr><td>최근 3개월 일수</td><td>'+n3+'일</td></tr>'+
-    '<tr><td>3개월 임금 + 상여·연차수당의 3/12</td><td>'+B.won(pay+bonus+lp)+'</td></tr>'+
-    '<tr><td>1일 평균임금</td><td>'+B.won(avg)+'</td></tr>';
-  if(served<365){$('out').textContent='0원';rows+='<tr><td colspan="2">계속 근로 1년 미만이면 퇴직금이 생기지 않아요.</td></tr>';}
-  else{$('out').textContent=B.won(sev);rows+='<tr class="sum"><td>평균임금 × 30일 × 재직일수 ÷ 365</td><td>'+B.won(sev)+'</td></tr>';}
-  $('lines').innerHTML=rows;
+  var s=D.parse($('start').value),l=D.parse($('last').value);
+  if(!s||!l||l<s){$('out').textContent='-';$('lines').innerHTML=B.rows([s&&l&&l<s?{note:'마지막 근무일이 입사일보다 빨라요.'}:null]);save();return;}
+  var r=F.severance({hire:s,last:l,monthPay:B.val('pay'),bonus:B.val('bonus'),leavePay:B.val('leavepay'),ordinaryDaily:B.val('ordinary')});
+  var rows=[['재직 일수',r.days.toLocaleString('ko-KR')+'일 (약 '+B.fmt(Math.floor(r.days/365*10)/10)+'년)'],['최근 3개월 날수',r.n3+'일'],
+    ['3개월 임금 + 상여·연차수당의 3/12',B.won(r.total)],['1일 평균임금',B.won(r.avg)]];
+  if(r.byOrdinary)rows.push(['통상임금이 더 높아 그 값으로',B.won(r.daily)]);
+  if(!r.fullYear){$('out').textContent='0원';var need=D.between(D.plusDays(l,1),D.plusYears(s,1));
+    rows.push({note:'계속 근로 1년 미만이면 퇴직금이 생기지 않아요. '+need+'일 더 다니면 생겨요.'});}
+  else{$('out').textContent=B.won(r.amount);rows.push(['1일 평균임금 × 30일 × 재직일수 ÷ 365',B.won(r.amount),'sum']);}
+  rows.push({note:'4주 평균 1주 15시간 이상 일했을 때 받아요. 퇴직소득세를 떼기 전 금액이에요.'});
+  $('lines').innerHTML=B.rows(rows);save();
 }
-var n=new Date();$('last').value=n.getFullYear()+'-'+('0'+(n.getMonth()+1)).slice(-2)+'-'+('0'+n.getDate()).slice(-2);
-['start','last','pay','bonus','leavepay'].forEach(function(i){$(i).addEventListener('input',calc);});calc();
+var t=D.today();$('last').value=D.iso(t);$('start').value=D.iso(D.plusYears(t,-4));
+save=B.keep(['start','last','pay','bonus','leavepay','ordinary']);
+['start','last','pay','bonus','leavepay','ordinary'].forEach(function(i){$(i).addEventListener('input',calc);});calc();
+B.shareButton($('share'),'퇴직금 계산 결과');
 })();
 </script>
 </body>

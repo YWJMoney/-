@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>사장님 인건비 계산기 (주휴·4대보험 사업주 몫) | 밤낮</title>
+<meta name="description" content="알바·직원 시급과 요일별 근무로 주휴수당과 사업주 4대보험까지 한 달 인건비를 계산해요. 2026·2027 요율.">
+<link rel="canonical" href="https://bamnat.app/calc/boss/">
+<meta name="robots" content="max-image-preview:large">
+<meta name="theme-color" content="#15192b">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="밤낮">
+<meta property="og:title" content="사장님 인건비 계산기 (주휴·4대보험 사업주 몫) | 밤낮">
+<meta property="og:description" content="알바·직원 시급과 요일별 근무로 주휴수당과 사업주 4대보험까지 한 달 인건비를 계산해요. 2026·2027 요율.">
+<meta property="og:url" content="https://bamnat.app/calc/boss/">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:image" content="https://bamnat.app/og/calc.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="사장님 인건비 계산기 · 밤낮">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../../assets/icon.svg" type="image/svg+xml">
+<link rel="preload" href="../../assets/fonts/pretendard.css" as="style">
+<link rel="stylesheet" href="../../assets/fonts/pretendard.css">
+<link rel="stylesheet" href="../../calc/calc.css">
+<script src="../../calc/calc.js"></script>
+<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "WebApplication", "name": "사장님 인건비 계산기", "url": "https://bamnat.app/calc/boss/", "applicationCategory": "FinanceApplication", "operatingSystem": "Any", "inLanguage": "ko", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "KRW"}, "publisher": {"@type": "Organization", "name": "밤낮"}}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "알바 한 명 인건비는 얼마인가요?", "acceptedAnswer": {"@type": "Answer", "text": "시급 × 일한 시간에 주휴수당(1주 15시간 이상)을 더한 것이 직원이 받는 돈이고, 4대보험에 가입하면 사업주 몫을 더 내요. 2026년 사업주 몫은 국민연금 4.75%, 건강보험 3.595%, 장기요양 0.4724%, 고용보험 1.15%(실업급여 0.9% + 고용안정·직업능력개발 0.25%, 150명 미만)로 월급의 약 10.0%예요. 산재보험은 업종마다 달라 따로 내요."}}, {"@type": "Question", "name": "5명 미만 가게도 주휴수당을 줘야 하나요?", "acceptedAnswer": {"@type": "Answer", "text": "네. 1주에 일하기로 한 시간이 15시간 이상이고 그 주를 다 나왔으면 사업장 크기와 상관없이 주휴수당을 줘요(근로기준법 제55조, 제18조 제3항). 5명 미만에서 빠지는 것은 야간·연장·휴일 가산수당 등이에요."}}, {"@type": "Question", "name": "주 15시간보다 적게 일하는 알바도 4대보험에 넣나요?", "acceptedAnswer": {"@type": "Answer", "text": "1개월 소정근로시간이 60시간 미만이면 국민연금·건강보험 사업장 가입 대상이 아니에요(국민연금법 시행령 제2조, 국민건강보험법 시행령 제9조). 고용보험은 3개월 넘게 계속 일하면 넣고, 산재보험은 모두 적용돼요."}}, {"@type": "Question", "name": "주휴수당은 한 달에 몇 번 주나요?", "acceptedAnswer": {"@type": "Answer", "text": "주휴일이 그달에 든 주마다 줘요. 이 계산기는 주휴일을 일요일로 보고 그달 일요일 수만큼 셈해서, 달마다 4번이나 5번이에요(밤낮 앱 사장님 인건비와 같은 셈)."}}, {"@type": "Question", "name": "퇴직금도 인건비로 잡아야 하나요?", "acceptedAnswer": {"@type": "Answer", "text": "1년 넘게 주 15시간 이상 일한 직원이 그만두면 1년에 30일분 평균임금 이상을 퇴직금으로 줘요(근로자퇴직급여 보장법 제8조). 그래서 매달 세전의 12분의 1쯤을 따로 모아 두는 사장님이 많아요."}}]}, {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "밤낮", "item": "https://bamnat.app/"}, {"@type": "ListItem", "position": 2, "name": "무료 계산기", "item": "https://bamnat.app/calc/"}, {"@type": "ListItem", "position": 3, "name": "사장님 인건비 계산기", "item": "https://bamnat.app/calc/boss/"}]}]</script>
+</head>
+<body class="k-calc">
+<a class="skip" href="#main">본문으로</a>
+<header class="site-header">
+  <div class="in">
+    <a class="brand" href="../../" aria-label="밤낮 처음으로"><svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="#f2ece1" stroke-linecap="round"><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(0 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(15 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(30 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(45 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(60 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(75 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(90 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(105 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(120 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(135 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(150 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(165 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(180 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(195 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(210 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(225 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(240 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(255 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(270 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(285 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(300 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(315 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(330 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(345 32 32)"/></g><circle cx="32" cy="32" r="18" fill="none" stroke="#f2ece1" stroke-width="2.2"/><path class="dial-day" d="M14 32a18 18 0 0 1 36 0z" fill="#f2ece1"/><circle cx="32" cy="41" r="2.4" fill="#c2a36b"/></svg><span>밤낮</span></a>
+    <nav class="site-nav" aria-label="사이트"><a href="../../calc/" aria-current="page">무료 계산기</a><a href="../../shift/">교대 근무 달력</a><a href="../../holiday/">공휴일</a><a href="../../form/">근무표 양식</a></nav>
+    <span class="grow"></span>
+    <a class="get" data-play="header" href="https://play.google.com/store/apps/details?id=com.bamnat.app"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.6v16.8c0 .8.9 1.3 1.6.9l14.1-8.4c.7-.4.7-1.4 0-1.8L6.6 2.7C5.9 2.3 5 2.8 5 3.6z" fill="currentColor"/></svg>앱 받기</a>
+    <button class="menu-btn" type="button" aria-label="메뉴 열기" aria-expanded="false" aria-controls="site-menu"><svg class="bars" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg class="x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <nav class="menu" id="site-menu" aria-label="전체 메뉴" inert><div><ul><li class="grp" role="presentation">계산기</li><li><a href="../../calc/juhyu/">주휴수당</a></li><li><a href="../../calc/alba/">알바 월급</a></li><li><a href="../../calc/allowance/">야간·연장·휴일수당</a></li><li><a href="../../calc/week/">한 주 연장·52시간</a></li><li><a href="../../calc/ordinary/">통상임금·명세서</a></li><li><a href="../../calc/daily/">일당</a></li><li><a href="../../calc/salary/">실수령액</a></li><li><a href="../../calc/leave/">연차</a></li><li><a href="../../calc/severance/">퇴직금</a></li><li><a href="../../calc/jobless/">실업급여</a></li><li><a href="../../calc/parental/">출산·육아휴직</a></li><li><a href="../../calc/boss/" aria-current="page">사장님 인건비</a></li><li><a href="../../calc/shop/">가게 매출 목표</a></li><li><a href="../../calc/">계산기 모두</a></li><li class="grp" role="presentation">근무 달력</li><li><a href="../../shift/">교대 근무 달력 만들기</a></li><li><a href="../../shift/print/">2027 달력 인쇄</a></li><li><a href="../../form/">근무표 엑셀 양식</a></li><li><a href="../../holiday/">공휴일·연휴</a></li><li class="grp" role="presentation">길잡이</li><li><a href="../../guide/shift-4j2k-pay/">4조 2교대 수당</a></li><li><a href="../../guide/nurse-night-pay/">간호사 나이트 수당</a></li><li><a href="../../guide/holiday-work-pay/">공휴일 근무 수당</a></li><li><a href="../../guide/juhyu-not-paid/">주휴수당 못 받는 경우</a></li><li><a href="../../guide/">길잡이 모두</a></li></ul></div></nav>
+</header>
+<header class="page-hero">
+  <div class="in">
+    <nav class="crumbs" aria-label="위치"><a href="../../">밤낮</a><span class="sep">/</span><a href="../../calc/">무료 계산기</a></nav>
+    <h1>사장님 인건비 계산기</h1>
+    <p class="lead">시급과 일하는 요일만 넣으면 주휴수당과 사업주 4대보험까지 한 달 인건비가 나와요.</p>
+    <div class="tags"><span>무료</span><span>로그인 없이</span><span>입력값은 보내지 않아요</span></div>
+  </div>
+</header>
+<main id="main" class="tool">
+<div class="card">
+  <label for="wage">시급 (원)</label>
+  <input id="wage" inputmode="numeric" autocomplete="off" data-money data-max="1000000">
+  <div class="chips" id="years" role="group" aria-label="최저시급으로 채우기"></div>
+  <span class="glabel" id="daysL">일하는 요일과 시간</span>
+  <div class="chips" id="preset" role="group" aria-label="자주 쓰는 근무로 채우기">
+    <button type="button" class="chip" data-days="12345" data-s="09:00" data-e="18:00">평일 9&#8288;–&#8288;18</button>
+    <button type="button" class="chip" data-days="12345" data-s="18:00" data-e="23:00">평일 저녁 18&#8288;–&#8288;23</button>
+    <button type="button" class="chip" data-days="67" data-s="10:00" data-e="20:00">주말 10&#8288;–&#8288;20</button>
+    <button type="button" class="chip" data-days="1234567" data-s="11:00" data-e="15:00">매일 점심 11&#8288;–&#8288;15</button>
+  </div>
+  <input type="hidden" id="on" value="12345"><div class="wk" role="group" aria-label="요일별 출근·퇴근"><div class="wk-row" id="r1"><button type="button" class="wk-day" id="w1" aria-pressed="true" aria-label="월요일에 일해요">월</button><input type="time" id="s1" value="09:00" aria-label="월요일 출근"><span class="wk-to" aria-hidden="true">~</span><input type="time" id="e1" value="18:00" aria-label="월요일 퇴근"></div><div class="wk-row" id="r2"><button type="button" class="wk-day" id="w2" aria-pressed="true" aria-label="화요일에 일해요">화</button><input type="time" id="s2" value="09:00" aria-label="화요일 출근"><span class="wk-to" aria-hidden="true">~</span><input type="time" id="e2" value="18:00" aria-label="화요일 퇴근"></div><div class="wk-row" id="r3"><button type="button" class="wk-day" id="w3" aria-pressed="true" aria-label="수요일에 일해요">수</button><input type="time" id="s3" value="09:00" aria-label="수요일 출근"><span class="wk-to" aria-hidden="true">~</span><input type="time" id="e3" value="18:00" aria-label="수요일 퇴근"></div><div class="wk-row" id="r4"><button type="button" class="wk-day" id="w4" aria-pressed="true" aria-label="목요일에 일해요">목</button><input type="time" id="s4" value="09:00" aria-label="목요일 출근"><span class="wk-to" aria-hidden="true">~</span><input type="time" id="e4" value="18:00" aria-label="목요일 퇴근"></div><div class="wk-row" id="r5"><button type="button" class="wk-day" id="w5" aria-pressed="true" aria-label="금요일에 일해요">금</button><input type="time" id="s5" value="09:00" aria-label="금요일 출근"><span class="wk-to" aria-hidden="true">~</span><input type="time" id="e5" value="18:00" aria-label="금요일 퇴근"></div><div class="wk-row off" id="r6"><button type="button" class="wk-day" id="w6" aria-pressed="false" aria-label="토요일에 일해요">토</button><input type="time" id="s6" value="09:00" aria-label="토요일 출근" disabled><span class="wk-to" aria-hidden="true">~</span><input type="time" id="e6" value="18:00" aria-label="토요일 퇴근" disabled></div><div class="wk-row off" id="r7"><button type="button" class="wk-day" id="w7" aria-pressed="false" aria-label="일요일에 일해요">일</button><input type="time" id="s7" value="09:00" aria-label="일요일 출근" disabled><span class="wk-to" aria-hidden="true">~</span><input type="time" id="e7" value="18:00" aria-label="일요일 퇴근" disabled></div></div><span class="hint">요일을 누르면 일하는 날·쉬는 날이 바뀌어요. 자정을 넘기면 퇴근에 다음 날 시각을 적어요.</span>
+  <label class="check"><input type="checkbox" id="breaks" checked> 휴게 시간 빼기 (4시간이면 30분, 8시간 30분부터 1시간)</label>
+  <label class="check"><input type="checkbox" id="insured" checked> 4대보험에 가입해요</label>
+  <span class="glabel" id="monthL">어느 달</span>
+  <div class="chips" id="month" role="group" aria-labelledby="monthL"></div>
+  <label for="people">이 근무로 일하는 직원 수</label>
+  <input id="people" inputmode="numeric" value="1" data-min="1" data-max="50" data-unit="명">
+</div>
+<div class="card result">
+  <div class="muted" id="head">한 달 인건비 (사업주 부담 포함)</div>
+  <div class="big" id="out" aria-live="polite">-</div>
+  <table class="lines" id="lines"></table>
+  <div class="share"><button type="button" class="chip" id="share">결과 링크 보내기</button></div>
+</div>
+<div class="cta reveal">
+  <div class="acts">
+    <strong>직원 근무표로 인건비를 매달 저절로</strong>
+    <span class="muted">밤낮 사장님 화면에 직원과 요일별 근무를 넣으면 이번 달 인건비·인건비율을 매출과 함께 보여 줘요. 주휴와 4대보험 사업주 몫도 같은 식으로 셈해요.</span><br>
+    <a class="btn" data-play="boss" href="https://play.google.com/store/apps/details?id=com.bamnat.app"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.6v16.8c0 .8.9 1.3 1.6.9l14.1-8.4c.7-.4.7-1.4 0-1.8L6.6 2.7C5.9 2.3 5 2.8 5 3.6z" fill="currentColor"/></svg>밤낮 무료로 받기</a>
+  </div>
+  <div class="shot"><img src="../../assets/app/07-boss-360.webp" srcset="../../assets/app/07-boss-360.webp 360w, ../../assets/app/07-boss-720.webp 720w" sizes="260px" width="360" height="640" alt="밤낮 앱의 사장님 직원 근무 화면" loading="lazy" decoding="async"></div>
+</div>
+<h2 id="guides">읽어 볼 길잡이</h2><ul class="links"><li><a href="../../guide/week-52-hours/">주 52시간은 어떻게 세나요</a></li></ul>
+<h2>자주 묻는 것</h2>
+<details><summary>알바 한 명 인건비는 얼마인가요?</summary><p>시급 × 일한 시간에 주휴수당(1주 15시간 이상)을 더한 것이 직원이 받는 돈이고, 4대보험에 가입하면 사업주 몫을 더 내요. 2026년 사업주 몫은 국민연금 4.75%, 건강보험 3.595%, 장기요양 0.4724%, 고용보험 1.15%(실업급여 0.9% + 고용안정·직업능력개발 0.25%, 150명 미만)로 월급의 약 10.0%예요. 산재보험은 업종마다 달라 따로 내요.</p></details>
+<details><summary>5명 미만 가게도 주휴수당을 줘야 하나요?</summary><p>네. 1주에 일하기로 한 시간이 15시간 이상이고 그 주를 다 나왔으면 사업장 크기와 상관없이 주휴수당을 줘요(근로기준법 제55조, 제18조 제3항). 5명 미만에서 빠지는 것은 야간·연장·휴일 가산수당 등이에요.</p></details>
+<details><summary>주 15시간보다 적게 일하는 알바도 4대보험에 넣나요?</summary><p>1개월 소정근로시간이 60시간 미만이면 국민연금·건강보험 사업장 가입 대상이 아니에요(국민연금법 시행령 제2조, 국민건강보험법 시행령 제9조). 고용보험은 3개월 넘게 계속 일하면 넣고, 산재보험은 모두 적용돼요.</p></details>
+<details><summary>주휴수당은 한 달에 몇 번 주나요?</summary><p>주휴일이 그달에 든 주마다 줘요. 이 계산기는 주휴일을 일요일로 보고 그달 일요일 수만큼 셈해서, 달마다 4번이나 5번이에요(밤낮 앱 사장님 인건비와 같은 셈).</p></details>
+<details><summary>퇴직금도 인건비로 잡아야 하나요?</summary><p>1년 넘게 주 15시간 이상 일한 직원이 그만두면 1년에 30일분 평균임금 이상을 퇴직금으로 줘요(근로자퇴직급여 보장법 제8조). 그래서 매달 세전의 12분의 1쯤을 따로 모아 두는 사장님이 많아요.</p></details>
+<p class="note" style="margin-top:18px">참고용 계산이에요. 실제 지급액은 근로계약·회사 규정·세법 적용에 따라 달라질 수 있어요. 요율은 밤낮 앱과 같은 공개 자료(최저임금 고시, 4대보험 요율, 근로소득 간이세액표)를 써요.</p>
+</main>
+<footer class="site-footer">
+  <div class="in">
+    <div class="top">
+      <div class="about"><a class="brand" href="../../"><svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="#f2ece1" stroke-linecap="round"><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(0 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(15 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(30 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(45 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(60 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(75 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(90 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(105 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(120 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(135 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(150 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(165 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(180 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(195 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(210 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(225 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(240 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(255 32 32)"/><line x1="32" y1="3" x2="32" y2="8" stroke-width="2.2" opacity="1" transform="rotate(270 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(285 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(300 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(315 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(330 32 32)"/><line x1="32" y1="5" x2="32" y2="7.2" stroke-width="1.4" opacity="0.5" transform="rotate(345 32 32)"/></g><circle cx="32" cy="32" r="18" fill="none" stroke="#f2ece1" stroke-width="2.2"/><path class="dial-day" d="M14 32a18 18 0 0 1 36 0z" fill="#f2ece1"/><circle cx="32" cy="41" r="2.4" fill="#c2a36b"/></svg><span>밤낮</span></a><p>교대·일근·알바·현장·가게·투자, 사장님과 팀 리더까지. 근무가 있는 모든 사람의 근무 앱이에요.</p></div>
+      <div><h2>계산기</h2><ul><li><a href="../../calc/juhyu/">주휴수당</a></li><li><a href="../../calc/alba/">알바 월급</a></li><li><a href="../../calc/allowance/">야간·연장·휴일수당</a></li><li><a href="../../calc/week/">한 주 연장·52시간</a></li><li><a href="../../calc/ordinary/">통상임금·명세서</a></li><li><a href="../../calc/daily/">일당</a></li><li><a href="../../calc/salary/">실수령액</a></li></ul></div>
+      <div><h2>근무 달력</h2><ul><li><a href="../../shift/">교대 근무 달력 만들기</a></li><li><a href="../../shift/print/">2027 달력 인쇄</a></li><li><a href="../../form/">근무표 엑셀 양식</a></li><li><a href="../../holiday/">공휴일·연휴</a></li></ul></div>
+      <div><h2>안내</h2><ul><li><a href="../../privacy/">개인정보 처리방침</a></li><li><a href="../../terms/">이용약관</a></li><li><a href="../../community/">광장 운영 규칙</a></li></ul></div>
+    </div>
+    <div class="biz">
+      문의 <a href="mailto:yoj0790@naver.com">yoj0790@naver.com</a> (앱 안에서는 설정 › 도움말과 문의)<br>
+      상호 밤낮 · 대표자 양원준 · 사업자등록번호 327-25-02565 (<a href="https://www.ftc.go.kr/bizCommPop.do?wrkr_no=3272502565" target="_blank" rel="noopener">사업자 정보 확인</a>)<br>
+      통신판매업 신고번호 제2026-전남여수-0424호 · 전남광주통합특별시 여수시 안산1길 179, 2동 105호<br>
+      전화 010-6408-8825 · 전자우편 yoj0790@naver.com · 호스팅 Cloudflare, Inc., GitHub, Inc.
+      <div class="safe">계산기·달력에 넣은 값은 이 화면에서만 쓰고 어디에도 보내지 않아요.</div>
+    </div>
+  </div>
+</footer>
+<div class="dock" id="dock" aria-hidden="true">
+  <img class="logo" src="../../assets/icon.svg" alt="" width="34" height="34">
+  <div class="t"><strong>직원 근무표로 인건비를 매달 저절로</strong><span>밤낮 앱 · 무료 · 로그인 없이</span></div>
+  <a class="btn" data-play="boss_dock" href="https://play.google.com/store/apps/details?id=com.bamnat.app" tabindex="-1">받기</a>
+</div>
+<script>
+(function(){
+var B=Bamnat,F=B.f,$=B.$,D=B.d,year=new Date().getFullYear(),save=function(){};
+var grid=B.weekGrid(calc);
+var t=D.today(),ms=[0,1].map(function(k){var x=D.plusMonths(new Date(Date.UTC(t.getUTCFullYear(),t.getUTCMonth(),1)),k);return D.iso(x).slice(0,7);});
+$('month').innerHTML=ms.map(function(m,i){return '<button type="button" class="chip" data-v="'+m+'" aria-pressed="'+(i===0)+'">'+(+m.slice(5))+'월'+(i===0?' (이번 달)':'')+'</button>';}).join('');
+var month=B.chips($('month'),function(){calc();});
+$('preset').addEventListener('click',function(e){var b=e.target.closest('.chip');if(!b)return;grid.fill(b.dataset.days,b.dataset.s,b.dataset.e);calc();});
+function hm(x){return Math.floor(x/60)+'시간'+(x%60?' '+(x%60)+'분':'');}
+function calc(){
+  var w=B.val('wage'),days=grid.read().filter(function(d){return d.work;}).map(function(d){return [d.day,d.s,d.e];}),n=Math.max(1,Math.round(B.val('people')||1));
+  if(!w||!days.length){$('out').textContent='-';$('lines').innerHTML=B.rows([days.length?null:{note:'일하는 요일을 하나 이상 골라 주세요.'}]);save();return;}
+  var m=month.get()||ms[0],r=F.labor({month:m,wage:w,days:days,breaks:$('breaks').checked,insured:$('insured').checked,shortOff:true}),rows=[];
+  rows.push([(+m.slice(5))+'월 일한 시간 ('+r.workDays+'일)',hm(r.minutes)]);
+  rows.push(['기본급 (시간 × 시급)',B.won(r.base)]);
+  if(r.holMin)rows.push(['주휴수당 ('+B.fmt(r.holMin/60)+'시간 × 일요일 '+r.sundays+'번)',B.won(r.holiday)]);
+  else rows.push({note:'1주 '+B.fmt(r.week/60)+'시간이라 주휴수당이 없어요(1주 15시간부터).'});
+  rows.push(['직원이 받는 돈 (세전)',B.won(r.pay),'sum']);
+  if(r.ins){var x=r.ins;
+    if(r.short)rows.push({note:'주 15시간 미만은 국민연금·건강보험 가입 대상이 아니라 사업주 몫도 없어요(1개월 60시간 미만). 고용보험은 3개월 넘게 일하면 내요.'});
+    else rows.push(['국민연금 '+B.fmt(x.pensionRate*100,3)+'%',B.won(x.pension)],['건강보험 '+B.fmt(x.healthRate*100,3)+'%',B.won(x.health)],['장기요양',B.won(x.care)]);
+    rows.push(['고용보험 '+B.fmt(x.employmentRate*100,2)+'%',B.won(x.employment)]);}
+  rows.push(['한 달 인건비',B.won(r.total),'sum']);
+  rows.push(['주휴 포함 실제 시급',B.won(r.perHour)]);
+  if(r.ins)rows.push(['사업주 부담까지 1시간에',B.won(r.costPerHour)]);
+  if(n>1)rows.push(['직원 '+n+'명이면',B.won(r.total*n),'sum']);
+  if(!r.short)rows.push({note:'퇴직금: 1년 넘게 일하면 따로 줘요. 한 달에 약 '+B.won(Math.round(r.pay/12/10)*10)+'씩(세전의 12분의 1쯤) 모아 두면 편해요(근로자퇴직급여 보장법 제8조).'});
+  rows.push({note:'산재보험(업종마다 다름)은 빠졌어요. 밤 10시~아침 6시·하루 8시간·주 40시간을 넘는 가산은 <a href="../week/">한 주 연장·야간·휴일 계산기</a>에서 봐요.'});
+  var min=B.rateOn(B.dayOf(+m.slice(0,4))).minimumHourlyWage;if(min&&w<min)rows.push({note:m.slice(0,4)+'년 최저시급 '+B.won(min)+'보다 낮아요.',warn:1});
+  $('out').textContent=B.won(r.total*n);$('lines').innerHTML=B.rows(rows);save();
+}
+B.ready.then(function(){
+  year=B.years()[0];var put=function(y){$('wage').value=B.rateOn(B.dayOf(y)).minimumHourlyWage.toLocaleString('ko-KR');};
+  B.yearChips($('years'),function(y){year=y;put(y);calc();});put(year);
+  save=B.keep(['wage','breaks','insured','people'].concat(grid.ids),{month:month});grid.sync();calc();
+});
+['wage','breaks','insured','people'].forEach(function(i){$(i).addEventListener('input',calc);$(i).addEventListener('change',calc);});
+B.shareButton($('share'),'사장님 인건비 계산 결과');
+})();
+</script>
+</body>
+</html>

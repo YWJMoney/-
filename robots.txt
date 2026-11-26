@@ -1,6 +1,6 @@
 User-agent: *
 Allow: /
-Disallow: /r/
+# 레시피 링크 쪽(/r/)은 막지 않아요: 막으면 검색 로봇이 그 쪽의 noindex를 못 읽어 제목 없는 주소가 남을 수 있어요.
 # 앱이 읽는 회사별 교대 자료는 검색에 내보내지 않아요(앱은 robots와 상관없이 읽어요).
 Disallow: /remote/v1/cycles.json
 # 장터 카드 글꼴은 앱만 받아요.
