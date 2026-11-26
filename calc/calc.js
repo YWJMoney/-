@@ -181,7 +181,7 @@
 // 롤샷 광고로 온 방문 알리기는 밤낮 처리방침 3.15 시행일까지 멈춰요. 보내기 시작하는 날(한국 날짜) RS_FROM이 비어 있으면 보내지 않아요.
 // 시작한 뒤에는 출처에 rollshot이 들거나 bamnat_photo인 방문만, 출처·매체·광고 이름·매장 코드 넷(영문·숫자·_-. 64자 모양만)을 한 번 알려요.
 (function () {
-  var RS_FROM = '';
+  var RS_FROM = '2026-12-31';
   try {
     if (!RS_FROM || new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10) < RS_FROM) return;
     var q = new URLSearchParams(location.search), out = [];
