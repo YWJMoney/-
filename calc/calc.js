@@ -181,7 +181,7 @@
 // 롤샷 광고로 온 방문 알리기는 밤낮 처리방침 3.15 시행일까지 멈춰요. 보내기 시작하는 날(한국 날짜) RS_FROM이 비어 있으면 보내지 않아요.
 // 시작한 뒤에는 출처에 rollshot이 들거나 bamnat_photo인 방문만, 출처·매체·광고 이름·매장 코드 넷(영문·숫자·_-. 64자 모양만)을 한 번 알려요.
 (function () {
-  var RS_FROM = '';
+  var RS_FROM = '2026-12-31';
   try {
     if (!RS_FROM || new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10) < RS_FROM) return;
     var q = new URLSearchParams(location.search), out = [];
@@ -196,6 +196,20 @@
     fetch('https://p.bamnat.app/api/attrib', {
       method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'omit', keepalive: true,
       body: JSON.stringify({ app: 'bamnat', kind: 'web', referrer: ref })
+    }).catch(function () {});
+  } catch (e) {}
+})();
+
+// 웹 방문의 휴대폰 종류 세기(밤낮 처리방침 3.15 1-15항)는 7일 줄 시행일부터예요. 시작하는 날(한국 날짜) SP_FROM이 비어 있으면 보내지 않아요.
+// 시작한 뒤에는 bamnat.app을 연 탭에서 한 번만, 본문·쿠키·연 쪽 주소 없는 빈 요청 하나를 보내요. 서버는 휴대폰 종류(아이폰·안드로이드·그 밖)만 날짜별 합계에 더해요.
+(function () {
+  var SP_FROM = '2026-12-08';
+  try {
+    if (!SP_FROM || new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10) < SP_FROM) return;
+    if (location.hostname !== 'bamnat.app' || (typeof navigator !== 'undefined' && navigator.webdriver)) return;
+    try { if (sessionStorage.getItem('bn_seen')) return; sessionStorage.setItem('bn_seen', '1'); } catch (e) { return; }
+    fetch('https://api.bamnat.app/api/site/visit', {
+      method: 'POST', credentials: 'omit', keepalive: true, cache: 'no-store', referrerPolicy: 'no-referrer'
     }).catch(function () {});
   } catch (e) {}
 })();
